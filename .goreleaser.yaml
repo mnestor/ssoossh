@@ -1,0 +1,105 @@
+---
+version: 2
+
+# This is an example .goreleaser.yml file with some sensible defaults.
+# Make sure to check the documentation at https://goreleaser.com
+before:
+  hooks:
+    # You may remove this if you don't use go modules.
+    - go mod tidy
+    # you may remove this if you don't need go generate
+    # - go generate ./...
+
+# env:
+#   - CGO_ENABLED=0
+#   - GOFLAGS=-buildvcs=false
+
+builds:
+  - id: "ssoossh-server"
+    binary: "ssoossh-server"
+    main: "./cmd/ssoossh-server/ssoossh-server.go"
+    goos:
+      - linux
+    goarch:
+      - amd64
+
+  - id: windows
+    binary: "ssoossh"
+    main: "./cmd/ssoossh/ssoossh.go"
+    goos:
+      - windows
+
+  - id: linux
+    binary: "ssoossh"
+    main: "./cmd/ssoossh/ssoossh.go"
+    goos:
+      - linux
+
+  - id: macos
+    binary: "ssoossh"
+    main: "./cmd/ssoossh/ssoossh.go"
+    goos:
+      - darwin
+    goarm:
+      - "7"
+    goarch:
+      - amd64
+      - arm64
+    env:
+      # complex, templated envs (v1.14+):
+      - >-
+        {{- if eq .Arch "amd64"}}CC=o64-clang{{- end }}
+        {{- if eq .Arch "arm64"}}CC=aarch64-apple-darwin20.2-clang{{- end }}
+
+universal_binaries:
+  - id: macos_universal
+    ids:
+      - macos
+    replace: true
+    hooks:
+      post: release/quill sign-and-notarize dist/macos_universal_darwin_all/ssoossh
+
+archives:
+  - formats: ["gz"]
+    id: ssoossh-server
+    builds:
+      - ssoossh-server
+    name_template: '{{.ProjectName}}-server-v{{.RawVersion}}-{{.Os}}-{{- if eq .Arch "amd64" }}x86_64{{- else if eq .Arch "386" }}i386{{- else }}{{ .Arch }}{{ end }}'
+
+  - formats: ["gz"]
+    id: linux
+    builds:
+      - linux
+    name_template: '{{.ProjectName}}-v{{.RawVersion}}-{{.Os}}-{{- if eq .Arch "amd64" }}x86_64{{- else if eq .Arch "386" }}i386{{- else }}{{ .Arch }}{{ end }}'
+
+  - formats: ["zip"]
+    id: windows
+    builds:
+      - windows
+    name_template: '{{.ProjectName}}-v{{.RawVersion}}-{{.Os}}-{{- if eq .Arch "amd64" }}x86_64{{- else if eq .Arch "386" }}i386{{- else }}{{ .Arch }}{{ end }}'
+
+  - formats: ["zip"]
+    id: macos
+    builds:
+      - macos_universal
+    name_template: "{{.ProjectName}}-v{{.RawVersion}}-{{.Os}}"
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .RawVersion }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "README"
+
+release:
+  ids:
+    - macos
+    - nonmac
+    - ssoossh-server

@@ -1,0 +1,112 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/docker-existing-docker-compose
+{
+  "name": "client",
+  // Update the 'dockerComposeFile' list if you have more compose files or use different names.
+  // The .devcontainer/docker-compose.yml file contains any overrides you need/want to make.
+  "dockerComposeFile": [
+    "../../docker-compose.yml",
+    "../docker-compose.yml"
+  ],
+  // The 'service' property is the name of the service for the container that VS Code should
+  // use. Update this value and .devcontainer/docker-compose.yml to the real service name.
+  "service": "client",
+  // The optional 'workspaceFolder' property is the path VS Code should open by default when
+  // connected. This is typically a file mount in .devcontainer/docker-compose.yml
+  "workspaceFolder": "/workspace",
+  "features": {
+    // "ghcr.io/guiyomh/features/golangci-lint:0": {
+    // 	"version": "latest"
+    // },
+    // "ghcr.io/devcontainers-contrib/features/bash-command:1": {},
+    // "ghcr.io/guiyomh/features/vim": {},
+    // "ghcr.io/guiyomh/features/gotestsum:0": {},
+    // "ghcr.io/guiyomh/features/goreleaser:0": {},
+    // "ghcr.io/guiyomh/features/gomarkdoc:0": {}
+  },
+  // "postCreateCommand": "go mod download && go mod tidy",
+  // Features to add to the dev container. More info: https://containers.dev/features.
+  // "features": {},
+  // Use 'forwardPorts' to make a list of ports inside the container available locally.
+  // "forwardPorts": [],
+  // Uncomment the next line if you want start specific services in your Docker Compose config.
+  // "runServices": [],
+  // Uncomment the next line if you want to keep your containers running after VS Code shuts down.
+  "shutdownAction": "none",
+  // Uncomment the next line to run commands after the container is created.
+  "postCreateCommand": {
+    "allow-git": "git config --global --add safe.directory /workspace"
+    // "install-node": "echo;echo;echo \"************* YOU MUST MANUALLY INSTALL NODE!!!! *************** 'nvm install node'\";echo;echo;echo"
+  },
+  // Configure tool-specific properties.
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "files.eol": "\n",
+        "remote.extensionKind": {
+          "ms-azuretools.vscode-docker": "workspace"
+        },
+        "go.useLanguageServer": true,
+        "[go]": {
+          "editor.codeActionsOnSave": {
+            "source.organizeImports": true
+          },
+        },
+        "[go.mod]": {
+          "editor.codeActionsOnSave": {
+            "source.organizeImports": true
+          }
+        },
+        "gopls": {
+          "build.buildFlags": [
+            "-tags",
+            ""
+          ],
+          "usePlaceholders": false,
+          "staticcheck": true,
+        },
+        "go.lintTool": "golangci-lint",
+        "go.lintOnSave": "package",
+        "editor.formatOnSave": true,
+        "go.toolsEnvVars": {
+          "CGO_ENABLED": "0"
+        },
+        "go.testEnvVars": {
+          "": "",
+        },
+        "go.testFlags": [
+          "-v",
+          "-race"
+        ],
+        "go.testTimeout": "10s",
+        "go.coverOnSingleTest": true,
+        "go.coverOnSingleTestFile": true,
+        "go.coverOnTestPackage": true
+      },
+      "extensions": [
+        "golang.go",
+        "eamodio.gitlens", // IDE Git information
+        "davidanson.vscode-markdownlint",
+        "ms-azuretools.vscode-docker", // Docker integration and linting
+        "shardulm94.trailing-spaces", // Show trailing spaces
+        "Gruntfuggly.todo-tree", // Highlights TODO comments
+        "bierner.emojisense", // Emoji sense for markdown
+        "stkb.rewrap", // rewrap comments after n characters on one line
+        "vscode-icons-team.vscode-icons", // Better file extension icons
+        "github.vscode-pull-request-github", // Github interaction
+        "redhat.vscode-yaml", // Kubernetes, Drone syntax highlighting
+        "bajdzis.vscode-database", // Supports connections to mysql or postgres, over SSL, socked
+        "IBM.output-colorizer", // Colorize your output/test logs
+        "EditorConfig.EditorConfig"
+        // "mohsen1.prettify-json", // Prettify JSON data
+        // "zxh404.vscode-proto3", // Supports Proto syntax
+        // "jrebocho.vscode-random", // Generates random values
+        // "alefragnani.Bookmarks", // Manage bookmarks
+        // "quicktype.quicktype", // Paste JSON as code
+        // "spikespaz.vscode-smoothtype", // smooth cursor animation
+      ]
+    }
+  }
+  // Uncomment to connect as an existing user other than the container default. More info: https://aka.ms/dev-containers-non-root.
+  // "remoteUser": "mnestor"
+}

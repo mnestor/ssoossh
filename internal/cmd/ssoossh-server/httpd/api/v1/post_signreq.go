@@ -1,0 +1,52 @@
+// Created by Mike Nestor <me@mikenestor.org>
+package api
+
+import (
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/render"
+
+	"github.com/mnestor/ssoossh/internal/api/types"
+	mware "github.com/mnestor/ssoossh/internal/cmd/ssoossh-server/httpd/middleware"
+	"github.com/mnestor/ssoossh/internal/store"
+)
+
+func init() {
+	// Browser API for approving signing request
+	router.Post("/signreq", apiSignRequestPost)
+}
+
+// apiSignRequestPost is sent by browser js with authenticated user
+// will submit a signing request for approval to get a cert generated
+func apiSignRequestPost(w http.ResponseWriter, r *http.Request) {
+	data := &types.SignRequest{}
+	if err := render.Bind(r, data); err != nil {
+		_ = render.Render(w, r, ErrInvalidRequest(err))
+		return
+	}
+
+	s := r.Context().Value(
+		store.CertRequestContext).(*store.MemoryCertRequestStore)
+
+	cr := store.CertRequest{
+		Pubkey:    data.PublicKey,
+		CreatedAt: time.Now(),
+	}
+
+	// create sign request in db and return the uuid
+	if err := s.Create(&cr); err != nil {
+		render.Status(r, http.StatusBadRequest)
+		_ = render.Render(w, r, ErrInvalidRequest(err))
+		return
+	}
+
+	mware.GetSession(r).Put(r.Context(), "signreq", cr.ID)
+	resp := types.NewSignRequestResponse("success", cr.ID)
+
+	slog.Info("got a signing request", slog.String("id", cr.ID), slog.String("pubkey", data.PublicKey))
+
+	render.Status(r, http.StatusCreated)
+	_ = render.Render(w, r, resp)
+}
