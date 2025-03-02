@@ -2,13 +2,14 @@
 package types
 
 type ResponseCAList struct {
-	*ResponseBase
-	CA string `json:"ca"`
+	*ResponseRender
+	StatusText string `json:"status"`
+	CA         string `json:"ca"`
 }
 
 func NewCAListResponse(s string, ca string) *ResponseCAList {
 	return &ResponseCAList{
-		ResponseBase: &ResponseBase{StatusText: s},
-		CA:           ca,
+		StatusText: s,
+		CA:         ca,
 	}
 }

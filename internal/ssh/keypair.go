@@ -8,12 +8,15 @@ import (
 )
 
 type KeyPair struct {
-	Private interface{}
-	Public  *ssh.PublicKey
-	Cert    *ssh.Certificate
+	Private    interface{}
+	Public     *ssh.PublicKey
+	Cert       *ssh.Certificate
+	CertString string
+	Type       string
+	Username   string
 }
 
-func NewKeyPair(keyTypeRSA bool, keyTypeEC bool, keySize int) (*KeyPair, error) {
+func NewKeyPair(keyTypeRSA bool, keyTypeEC bool, keySize int, t string) (*KeyPair, error) {
 	// Generate keypair
 	keyType := keys.DefaultKeyType
 	if keyTypeRSA {
@@ -33,9 +36,11 @@ func NewKeyPair(keyTypeRSA bool, keyTypeEC bool, keySize int) (*KeyPair, error) 
 	}
 
 	return &KeyPair{
-		Private: priv,
-		Public:  &sshPub,
-		Cert:    nil,
+		Private:    priv,
+		Public:     &sshPub,
+		Cert:       nil,
+		CertString: "",
+		Type:       t,
 	}, nil
 }
 
@@ -49,6 +54,7 @@ func (k *KeyPair) ParseCertificate(c string) error {
 		return err
 	}
 
+	k.CertString = c
 	k.Cert = sshPubkeyCert.(*ssh.Certificate)
 	return nil
 }

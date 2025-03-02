@@ -55,6 +55,7 @@ func New() *Enforcer {
     # p = policy
     # not logged in = anonymous
     p, default, /, GET, allow
+    p, default, /ca, GET, allow
     p, default, /favicon.ico, GET, allow
 
     # error pages

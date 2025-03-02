@@ -8,17 +8,19 @@ import (
 
 type SignRequest struct {
 	PublicKey string `json:"pubkey"`
+	Type      string `json:"type"`
 }
 
 type SignRequestResponse struct {
-	*ResponseBase
-	ID string `json:""`
+	*ResponseRender
+	StatusText string `json:"status"`
+	ID         string `json:""`
 }
 
 func NewSignRequestResponse(s string, id string) *SignRequestResponse {
 	return &SignRequestResponse{
-		ResponseBase: &ResponseBase{StatusText: s},
-		ID:           id,
+		StatusText: s,
+		ID:         id,
 	}
 }
 

@@ -15,6 +15,7 @@ const (
 type CertRequest struct {
 	ID        string
 	Pubkey    string
+	Type      string
 	CreatedAt time.Time
 }
 

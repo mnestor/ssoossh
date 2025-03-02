@@ -2,3 +2,6 @@ ssoossh-server.yaml
 ssoossh.yaml
 release/
 dist/
+id_*
+__debug*
+ssl/

@@ -24,7 +24,6 @@ var (
 	outWriter io.Writer
 	errWriter io.Writer
 	config    Config
-	debug     bool
 )
 
 func GetCommand(
@@ -40,33 +39,57 @@ func GetCommand(
 	outWriter = o
 	errWriter = e
 
+	rootCmd.PersistentFlags().String("file", "", "configuration file")
+
 	rootCmd.PersistentFlags().StringP("server", "s", "", "server that signs pubkeys")
-	_ = rootCmd.MarkFlagRequired("server")
 
 	rootCmd.AddCommand(caCmd)
 	rootCmd.AddCommand(inspectCmd)
 	rootCmd.AddCommand(logoutCmd)
-
-	// these 2 need to add some extra parameters
 	rootCmd.AddCommand(proxyCmd)
-	proxyCmd.Flags().Int("key-size", 4096, "Key Size to generate (2048, 4096)")
-	proxyCmd.Flags().Bool("type-rsa", false, "Generate RSA SSH keypair (default)")
-	proxyCmd.Flags().Bool("type-ec", false, "Generate EC SSH keypair")
-	proxyCmd.MarkFlagsMutuallyExclusive("type-rsa", "type-ec")
-
 	rootCmd.AddCommand(loginCmd)
-	loginCmd.Flags().Int("key-size", 4096, "Key Size to generate (2048, 4096)")
-	loginCmd.Flags().Bool("type-rsa", false, "Generate RSA SSH keypair (default)")
-	loginCmd.Flags().Bool("type-ec", false, "Generate EC SSH keypair")
-	loginCmd.MarkFlagsMutuallyExclusive("type-rsa", "type-ec")
+	rootCmd.AddCommand(hostCmd)
+	rootCmd.AddCommand(serviceCmd)
+
+	loadConfig(args)
+
+	return rootCmd
+}
+
+func loadConfig(args []string) {
+	// I really wish I could figure out a better way of doing this!
+	// let the user specify the file as a flag to force a specific config
+	var f string
+	if len(args) > 1 {
+		p := "--file"
+		for i, v := range args {
+			if v == p {
+				f = args[i+1]
+				break
+			} else if strings.HasPrefix(v, p) {
+				f = strings.Split(v, "=")[1]
+				break
+			}
+		}
+	}
 
 	var v *viper.Viper = getViper()
+
+	v.SetDefault("key-size", 4096)
+	v.SetDefault("type-rsa", true)
+	v.SetDefault("write-only", true)
+	v.SetDefault("host-pubkey", "/etc/ssh/ssh_host_rsa_key.pub")
+
 	v.SetTypeByDefaultValue(true)
-	v.SetConfigName("ssoossh")
-	v.SetConfigType("yaml")
-	v.AddConfigPath("/etc/ssoosh")
-	v.AddConfigPath(".")
-	v.AddConfigPath("~/.config")
+	if f != "" {
+		v.SetConfigFile(f)
+	} else {
+		v.SetConfigName("ssoossh")
+		v.SetConfigType("yaml")
+		v.AddConfigPath("/etc")
+		v.AddConfigPath(".")
+		v.AddConfigPath("~/.config")
+	}
 
 	v.SetEnvPrefix("SSOOSSH")
 	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
@@ -77,12 +100,10 @@ func GetCommand(
 		os.Exit(1)
 	}
 
-	if err := v.MergeInConfig(); err != nil {
+	if err := v.ReadInConfig(); err != nil {
 		fmt.Fprint(errWriter, "unable to load config")
 		os.Exit(1)
 	}
 
 	v.Unmarshal(&config)
-
-	return rootCmd
 }

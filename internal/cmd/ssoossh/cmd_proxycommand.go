@@ -18,6 +18,13 @@ var (
 	port int
 )
 
+func init() {
+	proxyCmd.Flags().Int("key-size", 4096, "Key Size to generate (2048, 4096)")
+	proxyCmd.Flags().Bool("type-rsa", false, "Generate RSA SSH keypair (default)")
+	proxyCmd.Flags().Bool("type-ec", false, "Generate EC SSH keypair")
+	proxyCmd.MarkFlagsMutuallyExclusive("type-rsa", "type-ec")
+}
+
 var proxyCmd = &cobra.Command{
 	Use:   "proxycommand",
 	Short: "retrieve certificates and proxy through an ssh bastion host",
@@ -26,18 +33,21 @@ var proxyCmd = &cobra.Command{
 		cobra.MaximumNArgs(2),
 		cobra.OnlyValidArgs,
 	),
+	ValidArgs: []cobra.Completion{
+		"host", "port",
+	},
 	RunE:    proxyCommand,
 	PreRunE: preGetCertRun,
 }
 
 func proxyCommand(cmd *cobra.Command, args []string) error {
 	if !agent.HasKeys() {
-		kp, err := ssh.NewKeyPair(config.KeyTypeRSA, config.KeyTypeEC, config.KeySize)
+		kp, err := ssh.NewKeyPair(config.KeyTypeRSA, config.KeyTypeEC, config.KeySize, "user")
 		if err != nil {
 			return err
 		}
 
-		if err := getCertIntoAgent(kp); err != nil {
+		if err := getCertIntoAgent(kp, true); err != nil {
 			return err
 		}
 	}

@@ -6,14 +6,15 @@ type CertificateRequest struct {
 }
 
 type CertificateRequestResponse struct {
-	*ResponseBase
+	*ResponseRender
+	StatusText  string `json:"status"`
 	Certificate string `json:"certificate"`
 }
 
 func NewCertificateRequestResponse(s string, c string) *CertificateRequestResponse {
 	return &CertificateRequestResponse{
-		ResponseBase: &ResponseBase{StatusText: s},
-		Certificate:  c,
+		StatusText:  s,
+		Certificate: c,
 	}
 }
 

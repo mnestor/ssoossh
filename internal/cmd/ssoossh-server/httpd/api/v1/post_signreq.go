@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-chi/render"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/mnestor/ssoossh/internal/api/types"
 	mware "github.com/mnestor/ssoossh/internal/cmd/ssoossh-server/httpd/middleware"
@@ -30,9 +31,21 @@ func apiSignRequestPost(w http.ResponseWriter, r *http.Request) {
 	s := r.Context().Value(
 		store.CertRequestContext).(*store.MemoryCertRequestStore)
 
+	// validate that we have a valid PublicKey
+	_, _, _, _, err := ssh.ParseAuthorizedKey([]byte(data.PublicKey))
+	if err != nil {
+		render.Status(r, http.StatusBadRequest)
+		_ = render.Render(w, r, types.ResponseError{
+			StatusText: "fail",
+			Message:    "please sent a valid public key",
+		})
+		return
+	}
+
 	cr := store.CertRequest{
 		Pubkey:    data.PublicKey,
 		CreatedAt: time.Now(),
+		Type:      data.Type,
 	}
 
 	// create sign request in db and return the uuid

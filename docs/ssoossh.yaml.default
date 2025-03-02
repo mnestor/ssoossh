@@ -1,14 +1,4 @@
 ---
-## Can be set in multiple places.
-# All settings are merged so defaults can be set at
-#  global level and only specific ones overriden
-# Order;
-#  arguments at runtime
-#  Environment
-#  ./
-#  ~/.config
-#  /etc/ssoossh
-
 server: https://<domain> # Env: SSOOSSH_SERVER
 key-size: 4096 # Env: SSOOSSH_KEY_SIZE
 

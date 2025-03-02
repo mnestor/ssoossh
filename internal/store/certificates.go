@@ -37,13 +37,9 @@ func (s *MemoryCertificatesStore) Create(c *Certificate) error {
 		return &DuplicateKeyError{ID: c.ID}
 	}
 
-	cert := Certificate{
-		ID:          c.ID,
-		Certificate: c.Certificate,
-		CreatedAt:   time.Now().UTC(),
-	}
+	c.CreatedAt = time.Now().UTC()
 
-	s.certs[c.ID] = cert
+	s.certs[c.ID] = *c
 	return nil
 }
 

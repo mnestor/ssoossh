@@ -3,6 +3,7 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -17,7 +18,9 @@ func init() {
 }
 
 func apiGetCertificate(w http.ResponseWriter, r *http.Request) {
-	ctxWait, ctxCancel := context.WithCancel(r.Context())
+	timeout := 120 * time.Second
+	ctxEnd, ctxCancel := context.WithTimeout(r.Context(), timeout)
+
 	h := w.Header()
 	h.Set("Content-Type", "text/event-stream")
 	h.Set("Cache-Control", "no-cache")
@@ -32,29 +35,36 @@ func apiGetCertificate(w http.ResponseWriter, r *http.Request) {
 	s := r.Context().Value(
 		store.CertificateContext).(*store.MemoryCertificatesStore)
 
-	done := false
-	go func() {
-		for _ = range time.Tick(1 * time.Second) {
-			if done {
-				ctxCancel()
-				return
-			}
+	// TODO: just get redis or postgres for pubsub idiot
+	ticker := time.NewTicker(1 * time.Second)
+
+	cleanup := func() {
+		_ = s.Delete(id)
+		ticker.Stop()
+		ctxCancel()
+	}
+
+	for {
+		select {
+		case <-ticker.C:
+			slog.Info("tick")
 			cert, err := s.Get(id)
 			if err != nil {
-				time.Sleep(1 * time.Second)
-
 				continue
 			}
-			_ = s.Delete(id)
+
 			// we have the cert now
 			render.Status(r, http.StatusOK)
 			_ = render.Render(w, r, types.NewCertificateRequestResponse("success", cert.Certificate))
-			ctxCancel()
+			cleanup()
+			return
+
+		// parent timeout is slightly longer so we can get the fail response out first
+		case <-ctxEnd.Done():
+			slog.Info("ctxEnd")
+			http.Error(w, "Request timed out", http.StatusRequestTimeout)
+			cleanup()
 			return
 		}
-	}()
-
-	// hold open until client disconnects
-	<-ctxWait.Done()
-	done = true // make sure the loop ends
+	}
 }

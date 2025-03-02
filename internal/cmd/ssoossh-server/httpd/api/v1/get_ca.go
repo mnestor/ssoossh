@@ -3,6 +3,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/render"
 
@@ -15,7 +16,7 @@ func init() {
 }
 
 func apiGetCAs(w http.ResponseWriter, r *http.Request) {
-	key := config.GetConfig().SshPubKey()
+	key := strings.Trim(config.GetConfig().SshPubKey(), "\n")
 	resp := types.NewCAListResponse("success", key)
 
 	render.Status(r, http.StatusOK)

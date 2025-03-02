@@ -42,13 +42,9 @@ func (s *MemoryCertRequestStore) Create(c *CertRequest) error {
 		return &DuplicateKeyError{ID: c.ID}
 	}
 
-	req := CertRequest{
-		ID:        c.ID,
-		Pubkey:    c.Pubkey,
-		CreatedAt: time.Now().UTC(),
-	}
+	c.CreatedAt = time.Now().UTC()
 
-	s.requests[c.ID] = req
+	s.requests[c.ID] = *c
 	return nil
 }
 

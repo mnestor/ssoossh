@@ -26,10 +26,6 @@ var (
 	// provider        *oidc.Provider
 )
 
-type IDToken struct {
-	Username string `json:"preferred_username"`
-}
-
 func SetupRoutes(r *chi.Mux) {
 	router := chi.NewRouter()
 	router.Get("/oauth", loginCallback)
@@ -117,6 +113,8 @@ func loginCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Debug("Unsafe", slog.String("token", rawIDToken))
+
 	idToken, err := verifier.Verify(ctx, rawIDToken)
 	if err != nil {
 		http.Error(w, "Failed to verify ID Token: "+err.Error(), http.StatusInternalServerError)
@@ -133,18 +131,41 @@ func loginCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var claims IDToken
+	var claims map[string]interface{}
 
 	if err := idToken.Claims(&claims); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	middleware.GetSession(r).Put(r.Context(), "username", claims.Username)
+	c := config.GetConfig().Server.AuthConfig.Fields
+
+	usernameR, ok := claims[c.Username]
+	if !ok {
+		slog.Error("Oauth response did not have a username", slog.Any("id_token", claims))
+		return
+	}
+	username := usernameR.(string)
+
+	var groups []string
+	if c.Groups != "" {
+		groupsR, ok := claims[c.Groups]
+		if !ok {
+			slog.Error("Oauth response did not have a group we expected", slog.Any("id_token", claims))
+			return
+		}
+		groupsI := groupsR.([]interface{})
+		for _, v := range groupsI {
+			groups = append(groups, v.(string))
+		}
+	}
+
+	middleware.GetSession(r).Put(r.Context(), "username", username)
+	middleware.GetSession(r).Put(r.Context(), "groups", groups)
 
 	// log.Println(claims.Roles)
 	enforcer := GetEnforcerFromContext(r)
-	enforcer.AddRoles(r, claims.Username, []string{"user"})
+	enforcer.AddRoles(r, username, []string{"user"})
 
 	preLoginPath := middleware.GetSession(r).GetString(r.Context(), "prelogin")
 	if preLoginPath != "" {

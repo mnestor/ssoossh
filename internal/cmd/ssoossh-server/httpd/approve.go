@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -33,23 +35,45 @@ func apiGetApprove(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("doesn't exist"))
 		return
 	}
+	_ = s.Delete(id)
 
 	pubKey, _, _, _, _ := ssh.ParseAuthorizedKey([]byte(cr.Pubkey))
 
 	username := middleware.GetUserName(r)
+	groups := middleware.GetGroups(r)
 
 	certOptions := config.GetConfig().CertOptions
 
 	var hoursValid time.Duration
 	var certType uint32
 	var principals = []string{}
+	var ext []string
+	var requiredGroup = ""
 	extensions := make(map[string]string)
 	criticalOptions := make(map[string]string)
 
-	certType = ssh.UserCert
+	switch cr.Type {
+	case "host":
+		certType = ssh.HostCert
+		requiredGroup = certOptions.Host.RequireGroup
+	case "user":
+		certType = ssh.UserCert
+		ext = certOptions.User.Extensions
+	case "service":
+		certType = ssh.UserCert
+		ext = certOptions.Service.Extensions
+		requiredGroup = certOptions.Service.RequireGroup
+	}
+
+	if requiredGroup != "" && !slices.Contains(groups, requiredGroup) {
+		w.Write([]byte(fmt.Sprintf("Missing required group: %s", requiredGroup)))
+		return
+	}
+
 	principals = append(principals, username)
 	// find all enabled/unlocked generic/aa accounts and add them to principals
-	for _, v := range certOptions.User.Extensions {
+
+	for _, v := range ext {
 		extensions[v] = ""
 	}
 
@@ -68,7 +92,7 @@ func apiGetApprove(w http.ResponseWriter, r *http.Request) {
 		Key:             pubKey,
 		Serial:          serial,
 		CertType:        certType,
-		KeyId:           fmt.Sprintf("%s", username),
+		KeyId:           username,
 		ValidPrincipals: principals, //cr.Principals,
 		ValidAfter:      uint64(validAfter.Unix()),
 		ValidBefore:     uint64(validBefore.Unix()),
@@ -88,7 +112,7 @@ func apiGetApprove(w http.ResponseWriter, r *http.Request) {
 
 	c := store.Certificate{
 		ID:          id,
-		Certificate: string(ssh.MarshalAuthorizedKey(cert)),
+		Certificate: strings.Trim(string(ssh.MarshalAuthorizedKey(cert)), "\n"),
 		CreatedAt:   time.Now(),
 	}
 

@@ -64,3 +64,13 @@ func GetUserName(r *http.Request) string {
 
 	return username
 }
+
+func GetGroups(r *http.Request) []string {
+	groupsR := GetSession(r).Get(r.Context(), "groups")
+	if groupsR == nil {
+		return []string{}
+	}
+	groups := groupsR.([]string)
+
+	return groups
+}

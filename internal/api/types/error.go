@@ -2,13 +2,14 @@
 package types
 
 type ResponseError struct {
-	*ResponseBase
-	Message string `json:"message"`
+	*ResponseRender
+	StatusText string `json:"status"`
+	Message    string `json:"message"`
 }
 
 func NewResponseError(s string, m string) *ResponseError {
 	return &ResponseError{
-		ResponseBase: &ResponseBase{StatusText: s},
-		Message:      m,
+		StatusText: s,
+		Message:    m,
 	}
 }

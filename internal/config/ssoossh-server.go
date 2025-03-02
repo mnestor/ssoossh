@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,7 @@ type ServerSettings struct {
 	CookieKey    string        `mapstructure:"cookiekey"`
 	RateLimit    int           `mapstructure:"ratelimit"`
 	RateDuration time.Duration `mapstructure:"rate_duration"`
+	Hsts         string        `mapstructure:"hsts"`
 	Tls          TlsConfig     `mapstructure:"tls"`
 	RBAC         RBACConfig    `mapstructure:"rbac"`
 	AuthConfig   OAuthConfig   `mapstructure:"oauth"`
@@ -39,10 +41,16 @@ type TlsConfig struct {
 }
 
 type OAuthConfig struct {
-	ClientID     string `mapstructure:"clientid"`
-	ClientSecret string `mapstructure:"clientsecret"`
-	ProviderUrl  string `mapstructure:"providerurl"`
-	Scopes       string `mapstructure:"scopes"`
+	ClientID     string      `mapstructure:"clientid"`
+	ClientSecret string      `mapstructure:"clientsecret"`
+	ProviderUrl  string      `mapstructure:"providerurl"`
+	Scopes       string      `mapstructure:"scopes"`
+	Fields       OAuthFields `mapstructure:"fields"`
+}
+
+type OAuthFields struct {
+	Username string `mapstructure:"username"`
+	Groups   string `mapstructure:"groups"`
 }
 
 type RBACConfig struct {
@@ -65,7 +73,6 @@ type CertOptions struct {
 }
 
 type CertOptionsUser struct {
-	RequireGroup  string        `mapstructure:"require_group"`
 	ValidDuration time.Duration `mapstructure:"valid_duration,string"`
 	Extensions    []string      `mapstructure:"extensions"`
 }
@@ -86,9 +93,12 @@ func init() {
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("/etc/")
-	viper.AddConfigPath("./config/") // config file path
+
 	viper.SetEnvPrefix("SSOOSSH")
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	viper.AutomaticEnv()
+
+	setDefaults()
 
 	_ = LoadConfig(true)
 }
@@ -102,7 +112,7 @@ func GetConfig() *Config {
 func LoadConfig(fail bool) error {
 	configLock.Lock()
 
-	err := viper.ReadInConfig()
+	err := viper.MergeInConfig()
 	if err != nil {
 		if !fail {
 			return err
@@ -126,4 +136,43 @@ func LoadConfig(fail bool) error {
 	log.SetupLogger(config.Logging)
 
 	return nil
+}
+
+func setDefaults() {
+	viper.SetDefault("logging.level", 4)
+	viper.SetDefault("logging.color", false)
+	viper.SetDefault("logging.json", true)
+
+	viper.SetDefault("sshkey", "")
+
+	viper.SetDefault("certoptions.host.require_group", "")
+	viper.SetDefault("certoptions.host.valid_duration", "")
+
+	viper.SetDefault("certoptions.service.require_group", "")
+	viper.SetDefault("certoptions.service.valid_duration", "")
+
+	viper.SetDefault("certoptions.user.valid_duration", "")
+	viper.SetDefault("certoptions.user.extensions", []string{
+		"permit-X11-forwarding",
+		"permit-agent-forwarding",
+		"permit-port-forwarding",
+		"permit-pty",
+		"permit-user-rc",
+	})
+
+	viper.SetDefault("server.accesslog", true)
+	viper.SetDefault("server.domain", "localhost")
+	viper.SetDefault("server.ratelimit", 10)
+	viper.SetDefault("server.rate_duration", "1m")
+	viper.SetDefault("server.address", "0.0.0.0")
+	viper.SetDefault("server.port", "443")
+
+	viper.SetDefault("server.oauth.clientid", "CHANGEME")
+	viper.SetDefault("server.oauth.clientsecret", "CHANGEME")
+	viper.SetDefault("server.oauth.providerurl", "CHANGEME")
+	viper.SetDefault("server.oauthscopes", "profile email")
+	viper.SetDefault("server.fields.username", "preferred_username")
+
+	viper.SetDefault("server.tls.cert_file", "")
+	viper.SetDefault("server.tls.key_file", "")
 }

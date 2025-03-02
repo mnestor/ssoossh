@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -48,8 +47,21 @@ func NewServer() (*HttpServer, error) {
 	}
 
 	router.Use(middleware.NoCache)
-	router.Use(httprate.LimitByIP(c.Server.RateLimit, c.Server.RateDuration))
-	// router.Use(mware.Sni)
+	router.Use(mware.Hsts)
+
+	// https://github.com/chi-middleware/proxy maybe?
+	// if config.C.Server.Proxy.Enabled {
+	// 	serverConfig.EnableTrustedProxyCheck = config.C.Server.Proxy.TrustedCheck
+	// 	if len(config.C.Server.Proxy.Header) > 0 {
+	// 		serverConfig.ProxyHeader = config.C.Server.Proxy.Header
+	// 	}
+	// 	if len(config.C.Server.Proxy.TrustedNetworks) > 0 {
+	// 		serverConfig.TrustedProxies = config.C.Server.Proxy.TrustedNetworks
+	// 	}
+	// }
+
+	router.Use(httprate.LimitByRealIP(c.Server.RateLimit, c.Server.RateDuration))
+	router.Use(mware.Sni)
 	router.Use(middleware.RealIP)
 	router.Use(middleware.Recoverer)
 
@@ -78,6 +90,9 @@ func NewServer() (*HttpServer, error) {
 	auth.SetupRoutes(router)
 
 	router.Mount("/api/v1", apiV1.GetRouter())
+	router.Get("/ca", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/api/v1/ca", http.StatusFound)
+	})
 
 	router.Get("/approve/{id}", apiGetApprove)
 
@@ -97,18 +112,6 @@ func NewServer() (*HttpServer, error) {
 		certStore,
 		reqCertStore,
 	}, nil
-
-	// https://github.com/chi-middleware/proxy maybe?
-	// if config.C.Server.Proxy.Enabled {
-	// 	serverConfig.EnableTrustedProxyCheck = config.C.Server.Proxy.TrustedCheck
-	// 	if len(config.C.Server.Proxy.Header) > 0 {
-	// 		serverConfig.ProxyHeader = config.C.Server.Proxy.Header
-	// 	}
-	// 	if len(config.C.Server.Proxy.TrustedNetworks) > 0 {
-	// 		serverConfig.TrustedProxies = config.C.Server.Proxy.TrustedNetworks
-	// 	}
-	// }
-
 }
 
 func (s *HttpServer) Listen() error {
@@ -119,32 +122,34 @@ func (s *HttpServer) Listen() error {
 		c.Port,
 	)
 
-	var ln net.Listener
-	var err error
-	if c.Tls.Cert == "" {
-		slog.Info("Running without TLS")
-		ln, err = net.Listen("tcp", listen)
-	} else {
-		cert, _ := tls.X509KeyPair([]byte(c.Tls.Cert), []byte(c.Tls.Key))
-		tlsConfig := &tls.Config{Certificates: []tls.Certificate{cert}}
-
-		// Create custom listener
-		ln, err = tls.Listen("tcp", listen, tlsConfig)
-	}
-
-	if err != nil {
-		return err
-	}
-
-	defer ln.Close()
 	defer s.Close()
-
-	server := &http.Server{Addr: listen, Handler: s}
 
 	// Run the server
 	// This will hold
 	slog.Info("Webserver is now listening for connections", "Address", listen)
-	return server.Serve(ln)
+	if c.Port == 80 {
+		server := &http.Server{Addr: listen, Handler: s}
+		return server.ListenAndServe()
+	}
+
+	server := &http.Server{
+		Addr:    listen,
+		Handler: s,
+		TLSConfig: &tls.Config{
+			GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+				ct := config.GetConfig().Server.Tls
+				var cert tls.Certificate
+				var err error
+				if ct.KeyFile != "" {
+					cert, err = tls.LoadX509KeyPair(ct.CertFile, ct.KeyFile)
+				} else if ct.Key != "" {
+					cert, err = tls.X509KeyPair([]byte(c.Tls.Cert), []byte(c.Tls.Key))
+				}
+				return &cert, err
+			},
+		},
+	}
+	return server.ListenAndServeTLS("", "")
 }
 
 func (s *HttpServer) Close() {
