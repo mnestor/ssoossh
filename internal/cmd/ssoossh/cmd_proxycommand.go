@@ -1,5 +1,5 @@
 // Created By Mike Nestor <me@mikenestor.org>
-package ssh
+package ssoossh
 
 import (
 	"io"
@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/mnestor/ssoossh/internal/ssh"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -30,8 +31,15 @@ var proxyCmd = &cobra.Command{
 }
 
 func proxyCommand(cmd *cobra.Command, args []string) error {
-	if err := doLogin(); err != nil {
-		return err
+	if !agent.HasKeys() {
+		kp, err := ssh.NewKeyPair(config.KeyTypeRSA, config.KeyTypeEC, config.KeySize)
+		if err != nil {
+			return err
+		}
+
+		if err := getCertIntoAgent(kp); err != nil {
+			return err
+		}
 	}
 
 	return proxyDirect(host, strconv.Itoa(port))

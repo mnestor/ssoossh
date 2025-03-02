@@ -49,6 +49,7 @@ func dialAgent() (*Agent, error) {
 				err, "error connecting with ssh-agent")
 		}
 	}
+
 	return &Agent{
 		ExtendedAgent: agent.NewClient(conn),
 		Conn:          conn,

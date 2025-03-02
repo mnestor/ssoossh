@@ -1,0 +1,62 @@
+logging:
+  # -4 DEBUG, 0 INFO, 4 WARN, 8 ERROR
+  level: -4
+  color: true
+  json: false
+
+sshkey: |
+  -----BEGIN OPENSSH PRIVATE KEY-----
+  -----END OPENSSH PRIVATE KEY-----
+
+certoptions:
+  host:
+    require_group: "SSH Host Signers"
+    valid_duration: 8760h # 1year - bigest time period supported is hours
+
+  service:
+    require_group: "SSH Service Signers"
+    valid_duration: 8760h
+    # extensions:
+    # - "permit-pty"
+
+  user:
+    valid_duration: 30s # we are using these as token after all
+    extensions:
+      - "permit-X11-forwarding"
+      - "permit-agent-forwarding"
+      - "permit-port-forwarding"
+      - "permit-pty"
+      - "permit-user-rc"
+
+server:
+  accesslog: true
+  domain:
+
+  ratelimit: 10
+  rate_duration: 1m
+  cookiekey: <random string>
+  address: 0.0.0.0
+  port: 443
+
+  oauth:
+    # production
+    clientid: ""
+    clientsecret: ""
+    providerurl: "" # do not include the .well-known/configuration part
+
+    # openid is already included in scopes
+    scopes: "profile email"
+    fields:
+      username: preferred_username
+
+  tls:
+    #   cert_file:
+    cert: |
+      -----BEGIN CERTIFICATE-----
+      -----END CERTIFICATE-----
+      -----BEGIN CERTIFICATE-----
+      -----END CERTIFICATE-----
+    #   key_file:
+    key: |
+      -----BEGIN RSA PRIVATE KEY-----
+      -----END RSA PRIVATE KEY-----

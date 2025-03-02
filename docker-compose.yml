@@ -1,0 +1,75 @@
+# This is just for development. Not to use in production!!!!!!!
+
+services:
+  server:
+    build:
+      context: Docker/servers
+    tty: true
+    # Set to your live site to use tinyproxy and redirect your browser
+    hostname: ssh.nanestor.us
+    networks:
+      - nginx
+      # - db
+    restart: "no"
+    # depends_on:
+    #   - db
+    environment:
+      LOG: "*"
+
+  client:
+    build:
+      context: Docker/servers
+    tty: true
+    networks:
+      - nginx
+    restart: "no"
+    environment:
+      LOG: "*"
+
+  # redis:
+  #   image: postgres:15
+  #   # container_name: db
+  #   # user: 70:20
+  #   networks:
+  #     - db
+  #   environment:
+  #     # *******SOC!*******
+  #     # this is only for a local dev system
+  #     # this password means nothing and is required to start
+  #     # then changed after initial setup
+  #     # *******SOC!*******
+  #     - POSTGRES_PASSWORD=kasueh35kuaheruhg
+  #     # *******SOC!*******
+  #     - POSTGRES_USER=session
+  #   command: [ "postgres", "-c", "log_statement=all" ]
+  #   volumes:
+  #     - db:/var/lib/postgresql/data
+  #     - ./database_create.sh:/docker-entrypoint-initdb.d/database_create.sh
+
+  tinyproxy:
+    platform: linux/amd64
+    image: docker.io/kalaksi/tinyproxy
+    # You can also use GitLab as an alternative to Docker Hub:
+    # image: registry.gitlab.com/kalaksi-containers/tinyproxy
+    restart: "no"
+    networks:
+      - nginx
+    cap_drop:
+      - ALL
+    ports:
+      - 127.0.0.1:8888:8888
+    environment:
+      DISABLE_VIA_HEADER: 'yes'
+      STAT_HOST: tinyproxy.stats
+      MAX_CLIENTS: 100
+      LOG_LEVEL: INFO
+      TIMEOUT: 900
+    healthcheck:
+      test: ["CMD", "curl", "-I", "-H", "Host: tinyproxy.stats", "http://localhost:8888"]
+      interval: 5m
+      timeout: 10s
+      retries: 1
+
+networks:
+  nginx:
+  # redis:

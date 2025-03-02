@@ -12,13 +12,16 @@
       "program": "${workspaceFolder}/cmd/ssoossh/ssoossh.go",
       "args": [
         // "-d",
-        "ssh",
-        "login",
-        "-s",
-        "https://ssh.nanestor.us"
+        "login"
+        // "-s",
+        // "https://ssh.nanestor.us"
       ],
       "cwd": "${workspaceFolder}",
-      "buildFlags": "-tags=DEV"
+      "buildFlags": "-tags=DEV",
+      // "env": {
+      //   "SSOOSSH_KEY_SIZE": "5000",
+      //   "SSOOSSH_SERVER": "htaskdiunkauer"
+      // }
     },
     {
       "name": "Launch Server",

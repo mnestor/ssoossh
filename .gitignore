@@ -1,5 +1,4 @@
-ca.pub
-ca
 ssoossh-server.yaml
+ssoossh.yaml
 release/
 dist/

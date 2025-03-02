@@ -1,7 +1,7 @@
 /*
 Created by - 2022 Mike Nestor <mnestor@nasa.gov>
 */
-package ssh
+package ssoossh
 
 import (
 	"github.com/spf13/cobra"
