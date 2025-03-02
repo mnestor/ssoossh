@@ -4,6 +4,19 @@ Small webserver that generates SSH certificates on authorization done by an OIDC
 
 Certificates generated should be usable for a short period of time so they work more like tokens to avoid needing to deal with a CRL (Certificate Revocation List). Client is used as an SSH ProxyCommand to retrieve the certificate, load it into the users ssh-agent, then connect to the remote server. Certificate lifetime can be configured in the server configuration though.
 
+## How it works
+
+The ssoossh client generates a ssh keypair and sends the public key to the ssoossh server. Server sends back an ID and prints a url in the terminal trying to open the users web browser. Once the user opens the url and authenticates the certificate is generated on the server and the client picks it up. At the point the client loads it into the ssh-agent and the user is able to ssh to their ssh server. See [Server API](#server-api)
+
+If the server has host keys signed then clients can validate the server that way instead of being prompted to trust the server by having
+
+```
+# ~/.ssh/known_hosts or at the server level config with GlobalKnownHostsFile
+@cert-authority *.example.com ssh-rsa AAAA....
+```
+
+The certificate contains a principal. Which looks like a username but isn't. Users can have a `~/.ssh/authorize_principals` or the server could utilize the `AuthorizedPrincipalsCommand` directive. By default if you ssh to a system as `user51@remoteserver` you need a principal of `user51` unless you have other principals mapped some way. Google is your friend.
+
 ## Config
 
 Configuration can be loaded from files and/or environment. All files found will have their settings merged so you can have a global level config and override specific settings as needed per user and per run.
@@ -16,7 +29,7 @@ Configuration can be loaded from files and/or environment. All files found will 
 
 Filename: [`ssoossh.yaml`](docs/ssoossh.yaml.default)
 
-At a bare minimum you MUST define `server`
+At a bare minimum you MUST define `server` either in the file or environment!
 
 ## Server
 
@@ -52,6 +65,30 @@ $ ssoossh inspect
 
 # remove certificate
 $ ssoossh logout
+```
+
+If you have gotten a `service` or `host` certificate it is in a file. To see the details like you can with a cert loaded into the ssh-agent you can use ssh-keygen `ssh-keygen -L -f file-cert.pub`
+
+A certificate looks like this
+
+```
+Valid certificates that are signed by SSH Certificate Service
+
+        Type: ssh-rsa-cert-v01@openssh.com user certificate
+        Public key: RSA-CERT SHA256:asdfasdfasdfasdfasdf
+        Signing CA: ED25519 SHA256:asdfasdfasdfasdfasdf
+        Key ID: "mnestor"
+        Serial: 15763573021619799549
+        Valid: from 2025-03-02T22:15:57 to 2025-03-02T22:20:57
+        Principals: 
+                mnestor
+        Critical Options: (none)
+        Extensions: 
+                permit-port-forwarding 
+                permit-pty 
+                permit-user-rc 
+                permit-X11-forwarding 
+                permit-agent-forwarding
 ```
 
 # SSH Server Configuration

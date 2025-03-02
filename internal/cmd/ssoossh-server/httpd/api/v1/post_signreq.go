@@ -46,6 +46,7 @@ func apiSignRequestPost(w http.ResponseWriter, r *http.Request) {
 		Pubkey:    data.PublicKey,
 		CreatedAt: time.Now(),
 		Type:      data.Type,
+		Account:   data.Account,
 	}
 
 	// create sign request in db and return the uuid

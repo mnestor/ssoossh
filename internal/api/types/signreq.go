@@ -9,6 +9,7 @@ import (
 type SignRequest struct {
 	PublicKey string `json:"pubkey"`
 	Type      string `json:"type"`
+	Account   string `json:"username"`
 }
 
 type SignRequestResponse struct {

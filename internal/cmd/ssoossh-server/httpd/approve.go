@@ -59,10 +59,12 @@ func apiGetApprove(w http.ResponseWriter, r *http.Request) {
 	case "user":
 		certType = ssh.UserCert
 		ext = certOptions.User.Extensions
+		principals = append(principals, username)
 	case "service":
 		certType = ssh.UserCert
 		ext = certOptions.Service.Extensions
 		requiredGroup = certOptions.Service.RequireGroup
+		principals = append(principals, cr.Account)
 	}
 
 	if requiredGroup != "" && !slices.Contains(groups, requiredGroup) {
@@ -70,7 +72,6 @@ func apiGetApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	principals = append(principals, username)
 	// find all enabled/unlocked generic/aa accounts and add them to principals
 
 	for _, v := range ext {

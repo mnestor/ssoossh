@@ -10,7 +10,6 @@ import (
 var caCmd = &cobra.Command{
 	Use:     "ca",
 	Short:   "print certificate authority pubkeys",
-	Example: "asdf",
 	RunE:    caRun,
 	PreRunE: preRun,
 }

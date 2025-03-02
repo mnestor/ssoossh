@@ -13,6 +13,7 @@ func (c *Client) PostPubKey(kp *ssh.KeyPair) (string, error) {
 		SetBody(types.SignRequest{
 			PublicKey: kp.String(),
 			Type:      kp.Type,
+			Account:   kp.Username,
 		}).
 		SetResult(&types.SignRequestResponse{}).
 		SetError(&types.ResponseError{}).

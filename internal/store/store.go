@@ -17,6 +17,7 @@ type CertRequest struct {
 	Pubkey    string
 	Type      string
 	CreatedAt time.Time
+	Account   string
 }
 
 type Certificate struct {

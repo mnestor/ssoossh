@@ -11,6 +11,7 @@ import (
 var inspectCmd = &cobra.Command{
 	Use:     "inspect",
 	Short:   "inspect key that exists in ssh-agent",
+	Long:    "If you have a certificate file you can always do ssh-keygen",
 	RunE:    inspectRun,
 	PreRunE: preRun,
 }

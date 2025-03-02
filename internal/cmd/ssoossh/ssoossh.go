@@ -40,7 +40,6 @@ func GetCommand(
 	errWriter = e
 
 	rootCmd.PersistentFlags().String("file", "", "configuration file")
-
 	rootCmd.PersistentFlags().StringP("server", "s", "", "server that signs pubkeys")
 
 	rootCmd.AddCommand(caCmd)
