@@ -1,0 +1,98 @@
+## uses log/slog
+# logging:
+  ## -4 DEBUG, 0 INFO, 4 WARN, 8 ERROR
+  # level: 4
+  # color: false
+  # json: true
+
+## this is really bad but initially what we're doing
+# sshkey: |
+  # -----BEGIN OPENSSH PRIVATE KEY-----
+  # -----END OPENSSH PRIVATE KEY-----
+
+## options put into certificates generated
+# certoptions:
+  ## host certificates are so that the server can be implicitly trusted
+  ## by clients that have a @cert-authority line in their known_hosts
+  # host:
+    ## require the user to be in a specific group in order to approve
+    ## certificate issuance
+    # require_group: "SSH Host Signers"
+
+    ## duration in hours that the host certificate will be valid for
+    # valid_duration: 8760h # 1year - bigest time period supported is hours
+
+  ## the bread and butter of this is user certificates
+  # user:
+    # valid_duration: 30s # we are using these as token after all
+    
+    ## what abilities will the session be allowed to do
+    # extensions:
+      # - "permit-X11-forwarding"
+      # - "permit-agent-forwarding"
+      # - "permit-port-forwarding"
+      # - "permit-pty"
+      # - "permit-user-rc"
+
+  ## service is for accounts or processes that are not used for interactive
+  ## sessions
+  # service:
+    # require_group: "SSH Service Signers"
+    # valid_duration: 8760h
+    # extensions:
+      # - "permit-X11-forwarding"
+      # - "permit-agent-forwarding"
+      # - "permit-port-forwarding"
+      # - "permit-pty"
+      # - "permit-user-rc"
+
+## http server configuration
+## Partially hot reloadable
+# server:
+  ### Not hot reloadable!
+  ## enable/disable logging to stdout for access
+  # accesslog: true
+  
+  ## control the rate of requests received
+  # ratelimit: 10
+  # rate_duration: 1m
+
+  ## interface ip and port to listen on
+  # address: 0.0.0.0
+  # port: 443
+
+  ### Hot reloadable options
+  ## full domain name being used. server will reject everything else
+  # domain:
+
+  ## authentication server configuration
+  # oauth:
+    # clientid: ""
+    # clientsecret: ""
+
+    ## do not include the .well-known/configuration part
+    # providerurl: ""
+
+    ## openid is already included in scopes
+    # scopes: "profile email"
+
+    ## field extractions from oidc id_token
+    # fields:
+      ## we need a username at least!
+      # username: preferred_username
+      # groups: groups
+
+  ## certificate configuration, can be inline or in files
+  # tls:
+    # cert_file:
+    # # You can provide the full certificate chain
+    # cert: |
+    #   -----BEGIN CERTIFICATE-----
+    #   -----END CERTIFICATE-----
+    #   -----BEGIN CERTIFICATE-----
+    #   -----END CERTIFICATE-----
+
+    # key_file:
+    # key: |
+    #   -----BEGIN RSA PRIVATE KEY-----
+    #   -----END RSA PRIVATE KEY-----

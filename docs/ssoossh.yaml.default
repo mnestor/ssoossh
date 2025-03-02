@@ -1,0 +1,8 @@
+---
+# server: https://<domain> # Env: SSOOSSH_SERVER
+# key-size: 4096 # Env: SSOOSSH_KEY_SIZE
+
+## Mutually exclusive!
+#  If both of these are set then RSA takes precedence
+# type-rsa: true # Env: SSOOSSH_TYPE_RSA
+# type-ec: false # Env: SSOOSSH_TYPE_EC

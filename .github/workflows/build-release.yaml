@@ -1,0 +1,51 @@
+name: build-release
+
+on:
+  workflow_dispatch:
+  push:
+    # run only against tags
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+  issues: write
+
+jobs:
+  build-client:
+    runs-on: linux
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ssh-strict: false
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          check-latest: true
+          go-version-file: "go.mod"
+          cache: true
+      - uses: robinraju/release-downloader@v1
+        with:
+          repository: "anchore/quill"
+          latest: true
+          fileName: "quill_*_linux_amd64.tar.gz"
+          out-file-path: "downloads"
+          extract: true
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          # either 'goreleaser' (default) or 'goreleaser-pro'
+          distribution: goreleaser
+          version: latest
+          args: release --clean -f .goreleaser.yaml ${{ vars.DEBUG }}
+        env:
+          QUILL_SIGN_P12: ${{ secrets.QUILL_SIGN_P12 }}
+          QUILL_SIGN_PASSWORD: ${{ secrets.QUILL_SIGN_PASSWORD }}
+          QUILL_NOTARY_ISSUER: ${{ secrets.QUILL_NOTARY_ISSUER }}
+          QUILL_NOTARY_KEY_ID: ${{ secrets.QUILL_NOTARY_KEY_ID }}
+          QUILL_NOTARY_KEY: ${{ secrets.QUILL_NOTARY_KEY }}
+          GITHUB_TOKEN: ${{ secrets.MNESTOR_TOKEN }}
+          GOPATH: ${{ env.RUNNER_WORKSPACE }}/go
+          GOCACHE: ${{ env.RUNNER_WORKSPACE }}/gocache
