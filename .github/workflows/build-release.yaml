@@ -46,3 +46,4 @@ jobs:
           QUILL_NOTARY_ISSUER: ${{ secrets.QUILL_NOTARY_ISSUER }}
           QUILL_NOTARY_KEY_ID: ${{ secrets.QUILL_NOTARY_KEY_ID }}
           QUILL_NOTARY_KEY: ${{ secrets.QUILL_NOTARY_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
