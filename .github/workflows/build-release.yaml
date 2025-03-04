@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   build-client:
-    runs-on: self-hosted
+    runs-on: linux
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,6 +46,3 @@ jobs:
           QUILL_NOTARY_ISSUER: ${{ secrets.QUILL_NOTARY_ISSUER }}
           QUILL_NOTARY_KEY_ID: ${{ secrets.QUILL_NOTARY_KEY_ID }}
           QUILL_NOTARY_KEY: ${{ secrets.QUILL_NOTARY_KEY }}
-          GITHUB_TOKEN: ${{ secrets.MNESTOR_TOKEN }}
-          GOPATH: ${{ env.RUNNER_WORKSPACE }}/go
-          GOCACHE: ${{ env.RUNNER_WORKSPACE }}/gocache
