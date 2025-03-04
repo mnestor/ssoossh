@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   build-client:
-    runs-on: linux
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
         with:
