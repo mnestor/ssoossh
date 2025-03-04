@@ -31,7 +31,7 @@ Filename: [`ssoossh.yaml`](docs/ssoossh.yaml.default)
 
 At a bare minimum you MUST define `server` either in the file or environment!
 
-## Server
+### Server
 
 Server supports hot reloading of most configuration values, only a few settings in the `server` section are not able to be hot reloaded
 
@@ -91,7 +91,7 @@ Valid certificates that are signed by SSH Certificate Service
                 permit-agent-forwarding
 ```
 
-# SSH Server Configuration
+## SSH Server Configuration
 
 In order to accept clients that are presenting ssh-keys signed by our little app here we need to set a few things in `sshd_config`
 
@@ -107,7 +107,7 @@ TrustedUserCAKeys /etc/ssh/trusted_cas
 $ curl -sL https://domain/ca | jq -r '.ca' >> /etc/ssh/trusted_cas
 ```
 
-# Server API
+## Server API
 
 ```
 # You MUST configure curl to use cookies in order to access the session created by the first command to then retrieve the certificate!
@@ -127,3 +127,7 @@ $ curl -sL -c cookies.txt -b cookies.txt https://domain/api/v1/certificate
 # Pipe it into `jq` or just parse it (eww) and save it to `id_example-cert.pub`
 # you are now able to ssh with that key, load it into your ssh-agent or use it as files
 ```
+
+## References
+
+<https://cvsweb.openbsd.org/src/usr.bin/ssh/PROTOCOL.certkeys?annotate=HEAD>

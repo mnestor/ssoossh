@@ -76,6 +76,7 @@ builds:
 
 nfpms:
   - id: client
+    package_name: ssoossh
     license: &license "Apache 2.0"
     maintainer: &maintainer "Mike Nestor"
     homepage: &website "https://github.com/mnestor/ssoossh"
@@ -92,6 +93,7 @@ nfpms:
         type: "config|noreplace"
 
   - id: server
+    package_name: ssoossh-server
     license: *license
     maintainer: *maintainer
     homepage: *website
@@ -101,7 +103,7 @@ nfpms:
     formats: *nfpmFormats
     contents:
       # Basic file that applies to all packagers
-      - src: docs/ssoossh-serveryaml.default
+      - src: docs/ssoossh-server.yaml.default
         dst: /etc/soossh-server.yaml
         type: "config|noreplace"
 
