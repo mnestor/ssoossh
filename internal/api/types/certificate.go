@@ -8,6 +8,7 @@ type CertificateRequest struct {
 type CertificateRequestResponse struct {
 	*ResponseRender
 	StatusText  string `json:"status"`
+	Message     string `json:"message"`
 	Certificate string `json:"certificate"`
 }
 

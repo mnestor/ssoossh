@@ -33,7 +33,7 @@ func GetCommand(
 	args []string,
 ) *cobra.Command {
 	rootCmd.SetOut(o)
-	rootCmd.SetErr(e)
+	// rootCmd.SetErr(e)
 
 	// since cobra doesn't expose the Output and Error writers we set above
 	outWriter = o

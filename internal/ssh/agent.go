@@ -68,9 +68,9 @@ func (a *Agent) CleanupAgent() error {
 		return err
 	}
 	if found {
-		fmt.Fprintf(os.Stdout, "Keys are removed")
+		fmt.Fprintf(os.Stdout, "Keys are removed\n")
 	} else {
-		fmt.Fprintf(os.Stdout, "No key signed by our CA present")
+		fmt.Fprintf(os.Stdout, "No key signed by your CA present\n")
 	}
 
 	return nil

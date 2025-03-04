@@ -28,8 +28,12 @@ func (c *Client) getApiPath(p string) string {
 func GetClient(o io.Writer, e io.Writer, s string) *Client {
 	outWriter = o
 	errWriter = e
-	client := resty.New().R().
-		SetHeader("Accept", "application/json")
+	client := resty.New().
+		// SetOutputDirectory("/workspace/log").
+		// SetSaveResponse(true).
+		SetHeader("Accept", "application/json").
+		R()
+		// SetDebug(true)
 
 	return &Client{client, s}
 }

@@ -3,25 +3,30 @@ package api
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/mnestor/ssoossh/internal/api/types"
 )
 
 func (c *Client) GetCertificate(id string) (string, error) {
+	result := &types.CertificateRequestResponse{}
+	resErr := &types.ResponseError{}
 	res, err := c.
-		SetResult(&types.CertificateRequestResponse{}).
-		SetError(&types.ResponseError{}).
+		SetResult(result).
+		SetError(resErr).
 		Get(c.getApiPath("certificate"))
+	// slog.Error("blah", slog.Any("err", resErr.Message))
 	if err != nil {
-		e := res.Error().(*types.ResponseError)
-		return "", errors.New(e.Message)
+		return "", err
 	}
-	if res.IsSuccess() {
-		certResponse := res.Result().(*types.CertificateRequestResponse)
-		return certResponse.Certificate, nil
+
+	if resErr.StatusText != "success" && resErr.StatusText != "" {
+		return "", errors.New(resErr.Message)
+	}
+
+	if res.IsSuccess() && result.StatusText == "success" {
+		return result.Certificate, nil
 	} else {
-		return "", fmt.Errorf("timeout waiting for response")
+		return "", errors.New(result.Message)
 	}
 
 }
