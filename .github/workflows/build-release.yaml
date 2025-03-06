@@ -14,12 +14,9 @@ permissions:
 
 jobs:
   build-client:
-    runs-on: linux
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ssh-strict: false
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -38,8 +35,8 @@ jobs:
         with:
           # either 'goreleaser' (default) or 'goreleaser-pro'
           distribution: goreleaser
-          version: latest
-          args: release --clean -f .goreleaser.yaml ${{ vars.DEBUG }}
+          version: nightly
+          args: release --clean -f .goreleaser.yaml --snapshot=${{github.event_name == 'workflow_dispatch'}} ${{ vars.DEBUG }}
         env:
           QUILL_SIGN_P12: ${{ secrets.QUILL_SIGN_P12 }}
           QUILL_SIGN_PASSWORD: ${{ secrets.QUILL_SIGN_PASSWORD }}

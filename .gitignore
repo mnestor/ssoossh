@@ -6,3 +6,4 @@ id_*
 __debug*
 downloads/
 ssl/
+.envrc

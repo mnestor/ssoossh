@@ -4,6 +4,15 @@ version: 2
 release:
   prerelease: auto
   draft: false
+  disable: false
+  skip_upload: false
+
+# before_publish:
+#   artifacts:
+#     - package
+#     - archive
+#     - source
+#     - checksum
 
 before:
   hooks:
@@ -30,19 +39,9 @@ builds:
       -X internal.Commit={{.Commit}}
       -X internal.Date={{.Date}}
 
-  - id: windows-build
+  - id: linux-build
     binary: &name "ssoossh"
     dir: &dir ./cmd/ssoossh
-    # main: "./cmd/ssoossh/ssoossh.go"
-    goos:
-      - windows
-    goarch:
-      - amd64
-    ldflags: *build-ldflags
-
-  - id: linux-build
-    binary: *name
-    dir: *dir
     goos:
       - linux
     goarch:
@@ -50,6 +49,15 @@ builds:
       - arm64
       - ppc64le
       - s390x
+    ldflags: *build-ldflags
+
+  - id: windows-build
+    binary: *name
+    dir: *dir
+    goos:
+      - windows
+    goarch:
+      - amd64
     ldflags: *build-ldflags
 
   - id: macos-build
@@ -61,9 +69,9 @@ builds:
       - amd64
       - arm64
     ldflags: *build-ldflags
-    hooks:
-      post:
-        - cmd: downloads/quill sign-and-notarize "{{ .Path }}" --dry-run={{ .IsSnapshot }} --ad-hoc={{ .IsSnapshot }} -vv
+    # hooks:
+    #   post:
+    #     - cmd: downloads/quill sign-and-notarize "{{ .Path }}" --dry-run={{ .IsSnapshot }} --ad-hoc={{ .IsSnapshot }} -vv
 
   - id: netbsd-build
     dir: *dir
@@ -76,13 +84,15 @@ builds:
 
 nfpms:
   - id: client
-    package_name: ssoossh
+    package_name: ssoossh-client
+    file_name_template: 'ssoossh-client_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
     license: &license "Apache 2.0"
     maintainer: &maintainer "Mike Nestor"
     homepage: &website "https://github.com/mnestor/ssoossh"
     description: &description "client for ssoossh-server to retrieve and manage ssh certificates"
     builds:
       - linux-build
+    bindir: /usr/local/bin
     formats: &nfpmFormats
       - rpm
       - deb
@@ -94,12 +104,14 @@ nfpms:
 
   - id: server
     package_name: ssoossh-server
+    file_name_template: 'ssoossh-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
     license: *license
     maintainer: *maintainer
     homepage: *website
     description: &description "server to authorize and sign ssh public keys with a certificate"
     builds:
       - server-linux-build
+    bindir: /usr/local/sbin
     formats: *nfpmFormats
     contents:
       # Basic file that applies to all packagers
@@ -108,25 +120,32 @@ nfpms:
         type: "config|noreplace"
 
 archives:
-  - id: server-archives
-    name_template: '{{ .Binary }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
-    builds:
-      - server-linux-build
-
   - id: linux-archives
     builds:
       - linux-build
+    files:
+      - docs/README.md
+      - docs/ssoossh.yaml.default
 
   - id: netbsd-archives
     builds:
       - netbsd-build
+    files:
+      - docs/README.md
+      - docs/ssoossh.yaml.default
 
   - formats: ["zip"]
     id: windows-archives
     builds:
       - windows-build
+    files:
+      - docs/README.md
+      - docs/ssoossh.yaml.default
 
   - formats: ["zip"]
     id: macos-archives
     builds:
       - macos-build
+    files:
+      - docs/README.md
+      - docs/ssoossh.yaml.default
