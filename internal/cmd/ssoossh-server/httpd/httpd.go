@@ -19,6 +19,7 @@ import (
 	"github.com/mnestor/ssoossh/internal/config"
 	"github.com/mnestor/ssoossh/internal/log"
 	"github.com/mnestor/ssoossh/internal/store"
+	"github.com/mnestor/ssoossh/internal/version"
 )
 
 type HttpServer struct {
@@ -91,14 +92,14 @@ func NewServer() (*HttpServer, error) {
 
 	router.Mount("/api/v1", apiV1.GetRouter())
 	router.Get("/ca", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/api/v1/ca", http.StatusFound)
+		http.Redirect(w, r, fmt.Sprintf("/api/%s/ca", version.ApiPath), http.StatusFound)
 	})
 
 	router.Get("/approve/{id}", apiGetApprove)
 
 	// // WebGUI should always be current
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello World!"))
+		_, _ = w.Write([]byte("Hello World!"))
 	})
 
 	// sometimes we gotta make things hard on ourselves

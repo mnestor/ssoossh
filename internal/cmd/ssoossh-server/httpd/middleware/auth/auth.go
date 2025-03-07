@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/casbin/casbin/v2/persist"
 	"github.com/mnestor/ssoossh/internal/cmd/ssoossh-server/httpd/middleware"
 	"github.com/mnestor/ssoossh/internal/config"
+	"github.com/mnestor/ssoossh/internal/version"
 )
 
 type Enforcer struct {
@@ -50,7 +52,7 @@ func New() *Enforcer {
     m = g(r.sub, p.sub) && globMatch(r.obj, p.obj) && (p.act == '*' || regexMatch(r.act, p.act))
   `
 
-	policyString := `
+	policyString := fmt.Sprintf(`
     # p, role, path, method, action
     # p = policy
     # not logged in = anonymous
@@ -66,13 +68,13 @@ func New() *Enforcer {
     p, login, /login/oauth, GET, allow
 
     # Client
-    p, default, /api/v1/ca, GET, allow
-    p, default, /api/v1/certificate, GET, allow
-    p, default, /api/v1/signreq, POST, allow
+    p, default, /api/%[1]s/ca, GET, allow
+    p, default, /api/%[1]s/certificate, GET, allow
+    p, default, /api/%[1]s/signreq, POST, allow
 
     # Browser GUI
     p, user, /approve/*, GET, allow
-  `
+  `, version.ApiPath)
 
 	modelFromString, err := model.NewModelFromString(modelString)
 	if err != nil {

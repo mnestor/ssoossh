@@ -10,7 +10,7 @@ The ssoossh client generates a ssh keypair and sends the public key to the ssoos
 
 If the server has host keys signed then clients can validate the server that way instead of being prompted to trust the server by having
 
-```
+```bash
 # ~/.ssh/known_hosts or at the server level config with GlobalKnownHostsFile
 @cert-authority *.example.com ssh-rsa AAAA....
 ```
@@ -39,13 +39,13 @@ Filename: [`ssoossh-server.yaml`](docs/ssoossh-server.yaml.default)
 
 ## Usage
 
-```
+```bash
 ssh -o ProxyCommand="ssoossh proxycommand %h %p" DestServer
 ```
 
 Or defined in your `ssh_config`
 
-```
+```bash
 # ~/.ssh/config
 Host *
   ProxyCommand ssoossh proxycommand %h %p
@@ -56,7 +56,7 @@ $ ssh DestServer
 
 If you set the server to issue user certificates with a longer duration you can pre-generate a cert before needing it and avoid using ProxyCommand directive entirely. This is NOT recommended though.
 
-```
+```bash
 # gets a certificate
 $ ssoossh login
 
@@ -71,7 +71,7 @@ If you have gotten a `service` or `host` certificate it is in a file. To see the
 
 A certificate looks like this
 
-```
+```etc
 Valid certificates that are signed by SSH Certificate Service
 
         Type: ssh-rsa-cert-v01@openssh.com user certificate
@@ -97,19 +97,19 @@ In order to accept clients that are presenting ssh-keys signed by our little app
 
 You can submit your current ssh key to get signed as well through `curl` calls if you so desire. Though it can be a bit messy!
 
-```
+```bash
 # /etc/ssh/sshd_config
 TrustedUserCAKeys /etc/ssh/trusted_cas
 ```
 
-```
+```bash
 # Now create the file with our ca public key
 $ curl -sL https://domain/ca | jq -r '.ca' >> /etc/ssh/trusted_cas
 ```
 
 ## Server API
 
-```
+```bash
 # You MUST configure curl to use cookies in order to access the session created by the first command to then retrieve the certificate!
 
 # Example: your ssh key files are `id_example` and `id_example.pub`

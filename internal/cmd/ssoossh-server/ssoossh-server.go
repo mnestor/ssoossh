@@ -43,6 +43,7 @@ func runCommand(cmd *cobra.Command, args []string) error {
 	signal.Notify(sigs, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	serverCtx, serverCtxCancel := context.WithCancel(cmd.Context())
 
+	config.Init()
 	_ = config.LoadConfig(true)
 	webServer, err := httpd.NewServer()
 	if err != nil {

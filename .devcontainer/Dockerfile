@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/go:1.23
+FROM mcr.microsoft.com/devcontainers/go:dev-1.24
 ARG CREATED
 ARG COMMIT
 ARG VERSION=local

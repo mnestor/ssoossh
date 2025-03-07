@@ -1,7 +1,7 @@
 // Created by Mike Nestor <me@mikenestor.org>
 package version
 
-const (
+var (
 	Version = "development"
 	Commit  = "commit"
 	Date    = "1970-01-01 00:00 UTC"

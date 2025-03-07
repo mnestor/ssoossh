@@ -202,6 +202,8 @@ func parseECDSA(in []byte) (*ecdsa.PublicKey, error) {
 		return nil, errors.Errorf("unsupported curve %s", w.Curve)
 	}
 
+	// TODO fix deprecation of elliptic.Unmarshal in favor of crypto/ecdh
+	//nolint:staticcheck // SA1019 ignore, we know but we'll fix later
 	key.X, key.Y = elliptic.Unmarshal(key.Curve, w.KeyBytes)
 	if key.X == nil || key.Y == nil {
 		return nil, errors.New("invalid curve point")

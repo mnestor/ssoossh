@@ -70,14 +70,14 @@ func proxyDirect(host, port string) error {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		io.Copy(conn, os.Stdin)
-		conn.CloseWrite()
+		_, _ = io.Copy(conn, os.Stdin)
+		_ = conn.CloseWrite()
 		wg.Done()
 	}()
 	wg.Add(1)
 	go func() {
-		io.Copy(os.Stdout, conn)
-		conn.CloseRead()
+		_, _ = io.Copy(os.Stdout, conn)
+		_ = conn.CloseRead()
 		wg.Done()
 	}()
 

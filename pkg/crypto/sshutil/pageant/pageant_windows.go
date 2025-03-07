@@ -1,3 +1,6 @@
+//go:build !codeanalysis
+// +build !codeanalysis
+
 // Package pageant provides native Go support for using PuTTY Pageant as an
 // SSH agent with the golang.org/x/crypto/ssh/agent package.
 // Based loosely on the Java JNA package jsch-agent-proxy-pageant.

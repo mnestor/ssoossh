@@ -8,15 +8,17 @@ import (
 	"github.com/go-chi/render"
 
 	"github.com/mnestor/ssoossh/internal/api/types"
-	"github.com/mnestor/ssoossh/internal/config"
+	cfg "github.com/mnestor/ssoossh/internal/config"
 )
+
+var gConfig = cfg.GetConfig
 
 func init() {
 	router.Get("/ca", apiGetCAs)
 }
 
 func apiGetCAs(w http.ResponseWriter, r *http.Request) {
-	key := strings.Trim(config.GetConfig().SshPubKey(), "\n")
+	key := strings.Trim(gConfig().SshPubKey(), "\n")
 	resp := types.NewCAListResponse("success", key)
 
 	render.Status(r, http.StatusOK)

@@ -32,7 +32,7 @@ func apiGetApprove(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		//probably doesn't exit?
 		slog.Error("Failed to get request", slog.Any("error", err))
-		w.Write([]byte("doesn't exist"))
+		_, _ = w.Write([]byte("doesn't exist"))
 		return
 	}
 	_ = s.Delete(id)
@@ -68,7 +68,7 @@ func apiGetApprove(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if requiredGroup != "" && !slices.Contains(groups, requiredGroup) {
-		w.Write([]byte(fmt.Sprintf("Missing required group: %s", requiredGroup)))
+		_, _ = w.Write([]byte(fmt.Sprintf("Missing required group: %s", requiredGroup)))
 		return
 	}
 

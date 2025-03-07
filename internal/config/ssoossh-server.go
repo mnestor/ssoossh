@@ -88,7 +88,7 @@ var (
 	configLock = new(sync.RWMutex)
 )
 
-func init() {
+func Init() {
 	viper.SetConfigName("ssoossh-server") // config file name without extension
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
@@ -104,6 +104,7 @@ func init() {
 }
 
 func GetConfig() *Config {
+
 	configLock.RLock()
 	defer configLock.RUnlock()
 	return config

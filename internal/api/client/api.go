@@ -3,7 +3,6 @@ package api
 
 import (
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/mnestor/ssoossh/internal/version"
@@ -11,9 +10,7 @@ import (
 )
 
 var (
-	outWriter io.Writer
-	errWriter io.Writer
-	api_root  = fmt.Sprintf("api/%s", version.ApiPath)
+	api_root = fmt.Sprintf("api/%s", version.ApiPath)
 )
 
 type Client struct {
@@ -25,9 +22,7 @@ func (c *Client) getApiPath(p string) string {
 	return fmt.Sprintf("%s/%s/%s", strings.Trim(c.Server, "/"), api_root, p)
 }
 
-func GetClient(o io.Writer, e io.Writer, s string) *Client {
-	outWriter = o
-	errWriter = e
+func GetClient(s string) *Client {
 	client := resty.New().
 		// SetOutputDirectory("/workspace/log").
 		// SetSaveResponse(true).

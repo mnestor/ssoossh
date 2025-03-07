@@ -33,7 +33,7 @@ func preRun(cmd *cobra.Command, args []string) error {
 	}
 
 	var err error
-	apiClient = api.GetClient(outWriter, errWriter, config.Server)
+	apiClient = api.GetClient(config.Server)
 
 	ca, err = apiClient.GetCA()
 	if err != nil {

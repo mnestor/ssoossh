@@ -50,6 +50,20 @@ func GetCommand(
 	rootCmd.AddCommand(hostCmd)
 	rootCmd.AddCommand(serviceCmd)
 
+	rootCmd.SetVersionTemplate(
+		fmt.Sprintf(`Version: %s
+Build Time: %s
+Commit: %s
+Built By: %s
+APIPath: %s
+`,
+			verInfo.Version,
+			verInfo.Date,
+			verInfo.Commit,
+			verInfo.BuiltBy,
+			verInfo.ApiPath,
+		))
+
 	loadConfig(args)
 
 	return rootCmd
@@ -104,5 +118,5 @@ func loadConfig(args []string) {
 		os.Exit(1)
 	}
 
-	v.Unmarshal(&config)
+	_ = v.Unmarshal(&config)
 }
