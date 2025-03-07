@@ -66,7 +66,7 @@ func WithRemoveExpiredCerts(t time.Time) AgentOption {
 		o.removeExpiredKey = func(a *Agent, k *agent.Key) bool {
 			if cert, err := ParseCertificate(k.Marshal()); err == nil {
 				if before := int64(cert.ValidBefore); cert.ValidBefore != uint64(ssh.CertTimeInfinity) && (unixNow >= before || before < 0) {
-					if err := a.Remove(k); err == nil {
+					if err := a.ExtendedAgent.Remove(k); err == nil {
 						return true
 					}
 				}
@@ -102,13 +102,13 @@ func (a *Agent) Close() error {
 
 // AuthMethod returns the ssh.Agent as an ssh.AuthMethod.
 func (a *Agent) AuthMethod() ssh.AuthMethod {
-	return ssh.PublicKeysCallback(a.Signers)
+	return ssh.PublicKeysCallback(a.ExtendedAgent.Signers)
 }
 
 // HasKeys returns if a key filtered with the given options exists.
 func (a *Agent) HasKeys(opts ...AgentOption) (bool, error) {
 	o := newOptions(opts)
-	keys, err := a.List()
+	keys, err := a.ExtendedAgent.List()
 	if err != nil {
 		return false, errors.Wrap(err, "error listing keys")
 	}
@@ -126,7 +126,7 @@ func (a *Agent) HasKeys(opts ...AgentOption) (bool, error) {
 // ListKeys returns the list of keys in the agent.
 func (a *Agent) ListKeys(opts ...AgentOption) ([]*agent.Key, error) {
 	o := newOptions(opts)
-	keys, err := a.List()
+	keys, err := a.ExtendedAgent.List()
 	if err != nil {
 		return nil, errors.Wrap(err, "error listing keys")
 	}
@@ -160,7 +160,7 @@ func (a *Agent) ListCertificates(opts ...AgentOption) ([]*ssh.Certificate, error
 // GetKey retrieves a key from the agent by the given comment.
 func (a *Agent) GetKey(comment string, opts ...AgentOption) (*agent.Key, error) {
 	o := newOptions(opts)
-	keys, err := a.List()
+	keys, err := a.ExtendedAgent.List()
 	if err != nil {
 		return nil, errors.Wrap(err, "error listing keys")
 	}
@@ -184,7 +184,7 @@ func (a *Agent) GetSigner(comment string, opts ...AgentOption) (ssh.Signer, erro
 		return nil, err
 	}
 
-	signers, err := a.Signers()
+	signers, err := a.ExtendedAgent.Signers()
 	if err != nil {
 		return nil, errors.Wrap(err, "error listing signers")
 	}
@@ -233,7 +233,7 @@ func (a *Agent) RemoveKeys(opts ...AgentOption) (bool, error) {
 	var removed bool
 	for _, key := range keys {
 		if o.filterBySignatureKey != nil && o.filterBySignatureKey(key) {
-			if err := a.Remove(key); err != nil {
+			if err := a.ExtendedAgent.Remove(key); err != nil {
 				return false, errors.Wrap(err, "error removing key")
 			}
 			removed = true
@@ -264,7 +264,7 @@ func (a *Agent) AddCertificate(subject string, cert *ssh.Certificate, priv inter
 		lifetime = 0
 	}
 
-	return errors.Wrap(a.Add(agent.AddedKey{
+	return errors.Wrap(a.ExtendedAgent.Add(agent.AddedKey{
 		PrivateKey:   priv,
 		Certificate:  cert,
 		Comment:      subject,
