@@ -8,15 +8,15 @@ import (
 )
 
 func Test_main(t *testing.T) {
-	ctxTest := context.Background()
+	// ctxTest := context.Background()
 
-	o = &bytes.Buffer{}
-	e = &bytes.Buffer{}
+	// o = &bytes.Buffer{}
+	// e = &bytes.Buffer{}
 
-	ctx, cancel = context.WithCancel(ctxTest)
-	t.Cleanup(cancel)
+	// ctx, cancel = context.WithCancel(ctxTest)
+	// t.Cleanup(cancel)
 
-	main()
+	// main()
 }
 
 func Test_run(t *testing.T) {

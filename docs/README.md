@@ -1,5 +1,7 @@
 # SSOoSSH - Single Sign-On over SSH
 
+[![codecov](https://codecov.io/gh/mnestor/ssoossh/graph/badge.svg?token=HF0BFKF285)](https://codecov.io/gh/mnestor/ssoossh) [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://GitHub.com/mnestor/ssoossh/graphs/commit-activity)
+
 Small webserver that generates SSH certificates on authorization done by an OIDC server along with a client for retrieval.
 
 Certificates generated should be usable for a short period of time so they work more like tokens to avoid needing to deal with a CRL (Certificate Revocation List). Client is used as an SSH ProxyCommand to retrieve the certificate, load it into the users ssh-agent, then connect to the remote server. Certificate lifetime can be configured in the server configuration though.
