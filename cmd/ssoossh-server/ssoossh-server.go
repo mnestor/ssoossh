@@ -18,6 +18,7 @@ func main() {
 		os.Exit(1)
 	}
 }
+
 func run(ctx context.Context, o io.Writer, e io.Writer, args []string) error {
 	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt)
 	defer cancel()

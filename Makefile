@@ -49,7 +49,10 @@ update-go-version:
 	@echo "Must update .devcontainer/Dockerfile, go.mod"
 
 ci:
-	golangci-lint run -c .golangci.yml
+	golangci-lint run
+
+act-ci:
+	act --container-architecture linux/amd64 -s GITHUB_TOKEN --secret-file .secrets -P workflow_dispatch --container-daemon-socket=- -j golangci
 
 tag-dev:
 	@echo git tag -a 'v$(shell date -u '+%Y.%U.%u')-$(shell git rev-parse --short HEAD)-dev'

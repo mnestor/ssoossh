@@ -17,6 +17,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # - uses: 1password/load-secrets-action@v2
+      # with:
+      #   export-env: true
+      # env:
+      #   QUILL_NOTARY_ISSUER: ${{ op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_NOTARY_ISSUER }}
+      #   QUILL_NOTARY_KEY: ${{ op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_NOTARY_KEY }}
+      #   QUILL_NOTARY_KEY_ID: ${{ op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_NOTARY_KEY_ID }}
+      #   QUILL_SIGN_P12: ${{ op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_SIGN_P12 }}
+      #   QUILL_SIGN_PASSWORD: ${{ op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_SIGN_PASSWORD }}
       - name: Set up Go
         uses: actions/setup-go@v5
         with:

@@ -10,7 +10,7 @@ type DuplicateKeyError struct {
 }
 
 func (e *DuplicateKeyError) Error() string {
-	return fmt.Sprintf("duplicate movie id: %v", e.ID)
+	return fmt.Sprintf("duplicate id: %v", e.ID)
 }
 
 type RecordNotFoundError struct{}

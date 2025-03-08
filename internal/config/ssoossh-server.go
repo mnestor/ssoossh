@@ -104,7 +104,6 @@ func Init() {
 }
 
 func GetConfig() *Config {
-
 	configLock.RLock()
 	defer configLock.RUnlock()
 	return config

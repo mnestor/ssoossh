@@ -35,8 +35,10 @@ func (s *MemoryCertRequestStore) Create(c *CertRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	id := uuid.New().String()
-	c.ID = id
+	if c.ID == "" {
+		id := uuid.New().String()
+		c.ID = id
+	}
 
 	if _, ok := s.requests[c.ID]; ok {
 		return &DuplicateKeyError{ID: c.ID}
@@ -54,4 +56,11 @@ func (s *MemoryCertRequestStore) Delete(id string) error {
 
 	delete(s.requests, id)
 	return nil
+}
+
+func (s *MemoryCertRequestStore) Count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return len(s.requests)
 }

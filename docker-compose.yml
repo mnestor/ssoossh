@@ -1,12 +1,11 @@
 # This is just for development. Not to use in production!!!!!!!
 
 services:
-  server:
-    build:
-      context: Docker/servers
+  client: &base
+    image: mcr.microsoft.com/devcontainers/go:dev-1.24
+    # build: &build
+    #   context: Docker/servers
     tty: true
-    # Set to your live site to use tinyproxy and redirect your browser
-    hostname: ssh.nanestor.us
     networks:
       - nginx
       # - db
@@ -16,15 +15,10 @@ services:
     environment:
       LOG: "*"
 
-  client:
-    build:
-      context: Docker/servers
-    tty: true
-    networks:
-      - nginx
-    restart: "no"
-    environment:
-      LOG: "*"
+  server: 
+    <<: *base
+    # Set to your live site to use tinyproxy and redirect your browser
+    hostname: ssh.nanestor.us
 
   # redis:
   #   image: postgres:15

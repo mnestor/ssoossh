@@ -2,7 +2,6 @@
 package store
 
 import (
-	"log/slog"
 	"sync"
 	"time"
 )
@@ -49,6 +48,9 @@ func findSub(id string) *Subscriber {
 }
 
 func (s *MemoryCertificatesStore) GetWait(id string) *Subscriber {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if sub := findSub(id); sub != nil {
 		return sub
 	}
@@ -70,15 +72,16 @@ func (s *MemoryCertificatesStore) GetWait(id string) *Subscriber {
 	//     }()
 	//   return channel
 	// }
-	slog.Info("Waiting for someone to add the cert to the store")
 
 	return sub
 }
 
 func (s *MemoryCertificatesStore) Create(c *Certificate) error {
 	s.mu.Lock()
+	// defer unlock - we need to unlock before end so don't do it here
 
 	if _, ok := s.certs[c.ID]; ok {
+		s.mu.Unlock()
 		return &DuplicateKeyError{ID: c.ID}
 	}
 
@@ -87,14 +90,10 @@ func (s *MemoryCertificatesStore) Create(c *Certificate) error {
 	s.mu.Unlock()
 
 	if sub := findSub(c.ID); sub != nil {
-		slog.Info("Hey someone wants this!")
 		// someone is already listening so just send it
 		sub.Phone <- 1
-		slog.Info("All done here")
 		return nil
 	}
-
-	slog.Info("Create was called without a listener")
 
 	return nil
 }
@@ -105,4 +104,11 @@ func (s *MemoryCertificatesStore) Delete(id string) error {
 
 	delete(s.certs, id)
 	return nil
+}
+
+func (s *MemoryCertificatesStore) Count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return len(s.certs)
 }

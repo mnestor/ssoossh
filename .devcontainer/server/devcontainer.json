@@ -15,14 +15,23 @@
   // connected. This is typically a file mount in .devcontainer/docker-compose.yml
   "workspaceFolder": "/workspace",
   "features": {
-    // "ghcr.io/guiyomh/features/golangci-lint:0": {
-    // 	"version": "latest"
-    // },
     // "ghcr.io/devcontainers-contrib/features/bash-command:1": {},
-    // "ghcr.io/guiyomh/features/vim": {},
-    // "ghcr.io/guiyomh/features/gotestsum:0": {},
-    // "ghcr.io/guiyomh/features/goreleaser:0": {},
-    // "ghcr.io/guiyomh/features/gomarkdoc:0": {}
+    "ghcr.io/guiyomh/features/vim": {},
+    "ghcr.io/devcontainers/features/git": {},
+    "ghcr.io/devcontainers/features/common-utils": {},
+    "ghcr.io/devcontainers/features/go": {},
+    "ghcr.io/guiyomh/features/gotestsum:0": {},
+    "ghcr.io/guiyomh/features/goreleaser:0": {},
+    "ghcr.io/guiyomh/features/gomarkdoc:0": {},
+    "ghcr.io/guiyomh/features/golangci-lint:0": {},
+    "ghcr.io/eitsupi/devcontainer-features/jq-likes:2": {},
+    "ghcr.io/dhoeric/features/act:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/flexwie/devcontainer-features/op:1": {},
+    "ghcr.io/devcontainers-extra/features/direnv:1": {}
+    // "ghcr.io/devcontainer-community/devcontainer-features/asdf-vm.com:1": {},
+    // "ghcr.io/devcontainers-extra/features/asdf-package:1": {},
+    // "ghcr.io/devcontainers-extra/features/svu-asdf:2": {}
   },
   // "postCreateCommand": "go mod download && go mod tidy",
   // Features to add to the dev container. More info: https://containers.dev/features.
@@ -34,10 +43,10 @@
   // Uncomment the next line if you want to keep your containers running after VS Code shuts down.
   "shutdownAction": "none",
   // Uncomment the next line to run commands after the container is created.
-  "postCreateCommand": {
-    "allow-git": "git config --global --add safe.directory /workspace"
+  // "postCreateCommand": {
+    // "allow-git": "git config --global --add safe.directory /workspace"
     // "install-node": "echo;echo;echo \"************* YOU MUST MANUALLY INSTALL NODE!!!! *************** 'nvm install node'\";echo;echo;echo"
-  },
+  // },
   // Configure tool-specific properties.
   "customizations": {
     "vscode": {

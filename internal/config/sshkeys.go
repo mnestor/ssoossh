@@ -7,12 +7,12 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func (k *Config) SshPubKey() string {
+func (k *Config) SshPubKey() (string, error) {
 	pkey, err := ssh.ParsePrivateKey([]byte(k.SshKey))
 	if err != nil {
 		slog.Error("unable to parse private key", slog.Any("error", err))
-		return ""
+		return "", err
 	}
 	pubKey := ssh.MarshalAuthorizedKey(pkey.PublicKey())
-	return string(pubKey)
+	return string(pubKey), nil
 }
