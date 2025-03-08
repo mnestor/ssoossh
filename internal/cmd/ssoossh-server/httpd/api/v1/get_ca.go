@@ -18,8 +18,13 @@ func init() {
 }
 
 func apiGetCAs(w http.ResponseWriter, r *http.Request) {
-	key := strings.Trim(gConfig().SshPubKey(), "\n")
-	resp := types.NewCAListResponse("success", key)
+	key, err := gConfig().SshPubKey()
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		_ = render.Render(w, r, types.NewResponseError("signingkey", "unable to load signing key"))
+		return
+	}
+	resp := types.NewCAListResponse("success", strings.Trim(key, "\n"))
 
 	render.Status(r, http.StatusOK)
 	_ = render.Render(w, r, resp)

@@ -1,6 +1,6 @@
 module github.com/mnestor/ssoossh
 
-go 1.23.4
+go 1.24
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
