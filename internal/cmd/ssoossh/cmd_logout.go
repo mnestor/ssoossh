@@ -7,16 +7,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// certificateCmd represents the certificate command
-var logoutCmd = &cobra.Command{
-	Use:   "logout",
-	Short: "Removes ssh keypair and certificate from ssh-agent",
-	Long: `Manual cleanup of ssh-agent. Removes only certificates and
+func newLogoutCmd() *cobra.Command {
+	// certificateCmd represents the certificate command
+	logoutCmd := &cobra.Command{
+		Use:   "logout",
+		Short: "Removes ssh keypair and certificate from ssh-agent",
+		Long: `Manual cleanup of ssh-agent. Removes only certificates and
 ssh keypairs generated with this utility.`,
-	RunE:    logoutRun,
-	PreRunE: preRun,
+		RunE:    logoutRun,
+		PreRunE: preRun,
+	}
+	return logoutCmd
 }
-
 func logoutRun(cmd *cobra.Command, args []string) error {
 	return agent.CleanupAgent()
 }

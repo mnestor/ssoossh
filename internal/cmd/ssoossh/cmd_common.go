@@ -2,6 +2,7 @@
 package ssoossh
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -20,12 +21,11 @@ var (
 	ca        string
 )
 
-func init() {
-	// set default port
-	port = 22
-}
-
 func preRun(cmd *cobra.Command, args []string) error {
+	// log.Println("Getting context preRun")
+	// log.Printf("p1: %v", cmd.Context())
+	// log.Printf("p2: %v", cmd.Context().Value(CONFIG_CTX))
+	config := cmd.Context().Value(CONFIG_CTX).(*Config)
 	var err error
 	apiClient = api.GetClient(config.Server)
 
@@ -63,7 +63,7 @@ func preGetCertRun(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func getCert(kp *ssh.KeyPair, allToErr bool) error {
+func getCert(ctx context.Context, kp *ssh.KeyPair, allToErr bool) error {
 	var out = errWriter
 	if !allToErr {
 		out = outWriter
@@ -73,6 +73,7 @@ func getCert(kp *ssh.KeyPair, allToErr bool) error {
 	if err != nil {
 		return err
 	}
+	config := ctx.Value(CONFIG_CTX).(Config)
 
 	url := fmt.Sprintf("%s/approve/%s", config.Server, id)
 
@@ -108,8 +109,8 @@ func getCert(kp *ssh.KeyPair, allToErr bool) error {
 	return nil
 }
 
-func getCertIntoAgent(kp *ssh.KeyPair, allToErr bool) error {
-	if err := getCert(kp, allToErr); err != nil {
+func getCertIntoAgent(ctx context.Context, kp *ssh.KeyPair, allToErr bool) error {
+	if err := getCert(ctx, kp, allToErr); err != nil {
 		return err
 	}
 

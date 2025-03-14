@@ -8,12 +8,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var inspectCmd = &cobra.Command{
-	Use:     "inspect",
-	Short:   "inspect key that exists in ssh-agent",
-	Long:    "If you have a certificate file you can always do ssh-keygen",
-	RunE:    inspectRun,
-	PreRunE: preRun,
+func newInspectCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "inspect",
+		Short:   "inspect key that exists in ssh-agent",
+		Long:    "If you have a certificate file you can always do ssh-keygen",
+		RunE:    inspectRun,
+		PreRunE: preRun,
+	}
 }
 
 func inspectRun(cmd *cobra.Command, args []string) error {

@@ -4,12 +4,8 @@ package ssoossh
 import (
 	"bytes"
 	"context"
-	"os"
 	"testing"
 )
-
-var exit func()
-var osExit = os.Exit
 
 func Test_run(t *testing.T) {
 	tests := []struct {

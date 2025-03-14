@@ -12,26 +12,23 @@ import (
 	issh "github.com/mnestor/ssoossh/internal/ssh"
 )
 
-var hostCmd = &cobra.Command{
-	Use:     "host",
-	Short:   "submit host keys and get the certificate",
-	Long:    "If you disable writing the new file the certificate is written to Stderr instead of Stdout for piping.",
-	RunE:    hostRun,
-	PreRunE: preRun,
-}
-
-var (
-	hostPubkey string
-	writeOnly  bool
-)
-
-func init() {
-	hostCmd.Flags().StringVarP(&hostPubkey, "host-pubkey", "p", "/etc/ssh/ssh_host_rsa_key.pub", "Public key file to submit for signing Env: SSOOSSH_FILE")
-	hostCmd.Flags().BoolVar(&writeOnly, "write-cert", true, "write certificate to parsed filename (ie. /etc/ssh/ssh_host_rsa_key-cert.pub) Env: SSOOSSH_WRITE_FILE")
+func newHostCmd() *cobra.Command {
+	hostCmd := &cobra.Command{
+		Use:     "host",
+		Short:   "submit host keys and get the certificate",
+		Long:    "If you disable writing the new file the certificate is written to Stderr instead of Stdout for piping.",
+		RunE:    hostRun,
+		PreRunE: preRun,
+	}
+	hostCmd.Flags().StringP("host-pubkey", "p", "/etc/ssh/ssh_host_rsa_key.pub", "Public key file to submit for signing Env: SSOOSSH_FILE")
+	hostCmd.Flags().Bool("write-cert", true, "write certificate to parsed filename (ie. /etc/ssh/ssh_host_rsa_key-cert.pub) Env: SSOOSSH_WRITE_FILE")
+	return hostCmd
 }
 
 func hostRun(cmd *cobra.Command, args []string) error {
-	p, err := os.ReadFile(hostPubkey) // the file is inside the local directory
+
+	config := cmd.Context().Value(CONFIG_CTX).(Config)
+	p, err := os.ReadFile(config.HostPubkey) // the file is inside the local directory
 	if err != nil {
 		return err
 	}
@@ -46,16 +43,16 @@ func hostRun(cmd *cobra.Command, args []string) error {
 		Type:   "host",
 	}
 
-	if err := getCert(kp, false); err != nil {
+	if err := getCert(cmd.Context(), kp, false); err != nil {
 		return err
 	}
 
-	if writeOnly {
-		if !strings.HasSuffix(hostPubkey, ".pub") {
+	if config.WriteCert {
+		if !strings.HasSuffix(config.HostPubkey, ".pub") {
 			fmt.Fprintf(outWriter, "Unable to figure out filename to create, missing .pub extension\n")
 		} else {
-			fs := strings.Split(hostPubkey, ".")
-			fs[0] = fmt.Sprintf("%s-cert", fs[0])
+			fs := strings.Split(config.HostPubkey, ".")
+			fs[0] = fmt.Sprintf("%s-cert.pub", fs[0])
 			newFile := strings.Join(fs, ".")
 			if err := os.WriteFile(newFile, []byte(kp.CertString), 0600); err != nil {
 				return err

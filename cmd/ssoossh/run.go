@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/signal"
 
@@ -23,7 +24,10 @@ func run(ctx context.Context, o io.Writer, e io.Writer, args []string) int {
 		if err != nil {
 			fmt.Fprint(os.Stderr, err.Error())
 		} else {
-			cmd.Execute()
+			// cmd.SetContext(ctx)
+			// log.Printf("run: %v", ctx)
+			cmd.ExecuteContext(ctx)
+			log.Printf("run: %v", cmd.Context())
 			ret = 0
 		}
 		cancel()

@@ -18,36 +18,37 @@ var (
 	port int
 )
 
-func init() {
+func newProxyCmd() *cobra.Command {
+	proxyCmd := &cobra.Command{
+		Use:   "proxycommand",
+		Short: "retrieve certificates and proxy through an ssh bastion host",
+		Args: cobra.MatchAll(
+			cobra.MinimumNArgs(1),
+			cobra.MaximumNArgs(2),
+			cobra.OnlyValidArgs,
+		),
+		ValidArgs: []cobra.Completion{
+			"host", "port",
+		},
+		RunE:    proxyCommand,
+		PreRunE: preGetCertRun,
+	}
 	proxyCmd.Flags().Int("key-size", 4096, "Key Size to generate (2048, 4096)")
 	proxyCmd.Flags().Bool("type-rsa", false, "Generate RSA SSH keypair (default)")
 	proxyCmd.Flags().Bool("type-ec", false, "Generate EC SSH keypair")
 	proxyCmd.MarkFlagsMutuallyExclusive("type-rsa", "type-ec")
-}
-
-var proxyCmd = &cobra.Command{
-	Use:   "proxycommand",
-	Short: "retrieve certificates and proxy through an ssh bastion host",
-	Args: cobra.MatchAll(
-		cobra.MinimumNArgs(1),
-		cobra.MaximumNArgs(2),
-		cobra.OnlyValidArgs,
-	),
-	ValidArgs: []cobra.Completion{
-		"host", "port",
-	},
-	RunE:    proxyCommand,
-	PreRunE: preGetCertRun,
+	return proxyCmd
 }
 
 func proxyCommand(cmd *cobra.Command, args []string) error {
 	if !agent.HasKeys() {
+		config := cmd.Context().Value(CONFIG_CTX).(Config)
 		kp, err := ssh.NewKeyPair(config.KeyTypeRSA, config.KeyTypeEC, config.KeySize, "user")
 		if err != nil {
 			return err
 		}
 
-		if err := getCertIntoAgent(kp, true); err != nil {
+		if err := getCertIntoAgent(cmd.Context(), kp, true); err != nil {
 			return err
 		}
 	}

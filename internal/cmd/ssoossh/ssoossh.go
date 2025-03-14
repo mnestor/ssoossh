@@ -14,7 +14,7 @@ import (
 var (
 	outWriter io.Writer
 	errWriter io.Writer
-	config    Config
+	// config    Config
 )
 
 func NewRootCommand(
@@ -27,6 +27,15 @@ func NewRootCommand(
 		Use:     "ssoossh",
 		Short:   "client for managing ssh certificate retrieval",
 		Version: verInfo.Version,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			config, err := loadConfig(cmd, args)
+			if err != nil {
+				return err
+			}
+			ctx := context.WithValue(ctx, CONFIG_CTX, config)
+			cmd.SetContext(ctx)
+			return nil
+		},
 	}
 	rootCmd.SetOut(o)
 	rootCmd.SetErr(e)
@@ -40,13 +49,13 @@ func NewRootCommand(
 	rootCmd.PersistentFlags().StringP("server", "s", "", "server that signs pubkeys")
 	rootCmd.SilenceUsage = true
 
-	rootCmd.AddCommand(caCmd)
-	rootCmd.AddCommand(inspectCmd)
-	rootCmd.AddCommand(logoutCmd)
-	rootCmd.AddCommand(proxyCmd)
-	rootCmd.AddCommand(loginCmd)
-	rootCmd.AddCommand(hostCmd)
-	rootCmd.AddCommand(serviceCmd)
+	rootCmd.AddCommand(newCaCmd())
+	rootCmd.AddCommand(newInspectCmd())
+	rootCmd.AddCommand(newLogoutCmd())
+	rootCmd.AddCommand(newProxyCmd())
+	rootCmd.AddCommand(newLoginCmd())
+	rootCmd.AddCommand(newHostCmd())
+	rootCmd.AddCommand(newServiceCmd())
 
 	rootCmd.SetVersionTemplate(
 		fmt.Sprintf(`Version: %s
@@ -61,10 +70,6 @@ APIPath: %s
 			verInfo.BuiltBy,
 			verInfo.ApiPath,
 		))
-
-	cobra.OnInitialize(func() {
-		loadConfig(rootCmd, args)
-	})
 
 	return rootCmd, nil
 }
