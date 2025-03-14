@@ -14,6 +14,9 @@ func (c *Client) GetCA() (string, error) {
 		Get(c.getApiPath("ca"))
 	if err != nil {
 		e := res.Error().(*types.ResponseError)
+		if e.Message == "" {
+			return "", errors.New("unable to talk to server please check your configuration")
+		}
 		return "", errors.New(e.Message)
 	}
 

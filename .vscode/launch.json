@@ -13,13 +13,9 @@
       "args": [
         "ca",
         "--config",
-        "internal/cmd/ssoossh/testdata/ssoossh.server.yaml"
-        // "-d",
-        // "--server",
-        // "ssoossh.default.yaml",
-        // "ca",
-        // "--key-size",
-        // "1024"
+        "internal/cmd/ssoossh/testdata/ssoossh.ca.yaml",
+        "--server",
+        "nothing"
       ],
       "cwd": "${workspaceFolder}",
       "buildFlags": "-tags=DEV",

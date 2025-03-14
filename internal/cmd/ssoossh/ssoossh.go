@@ -8,6 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	api "github.com/mnestor/ssoossh/internal/api/client"
+	"github.com/mnestor/ssoossh/internal/ssh"
 	verInfo "github.com/mnestor/ssoossh/internal/version"
 )
 
@@ -33,6 +35,14 @@ func NewRootCommand(
 				return err
 			}
 			ctx := context.WithValue(ctx, CONFIG_CTX, config)
+			apiClient := api.GetClient(config.Server)
+			if ctx.Value(APICLIENT_CTX) == nil {
+				ctx = context.WithValue(ctx, APICLIENT_CTX, apiClient)
+			}
+			if ctx.Value(AGENT_CTX) == nil {
+				agent, _ := ssh.GetAgent()
+				ctx = context.WithValue(ctx, AGENT_CTX, agent)
+			}
 			cmd.SetContext(ctx)
 			return nil
 		},
@@ -47,6 +57,7 @@ func NewRootCommand(
 
 	rootCmd.PersistentFlags().StringP("config", "c", "", "configuration file")
 	rootCmd.PersistentFlags().StringP("server", "s", "", "server that signs pubkeys")
+	rootCmd.MarkFlagRequired("server")
 	rootCmd.SilenceUsage = true
 
 	rootCmd.AddCommand(newCaCmd())

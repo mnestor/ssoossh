@@ -62,7 +62,10 @@ update:
 	go mod tidy
 
 test:
-	go test -v -tags=coverprofile ./...
+	go test -v -coverprofile=coverage.out -tags=coverprofile ./...
+	
+cover:
+	go tool cover -html=coverage.out -o coverage.html
 
 version:
 	@echo "Version: $(VERSION)"

@@ -15,29 +15,24 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	agent     *ssha.Agent
-	apiClient *api.Client
-	ca        string
-)
-
 func preRun(cmd *cobra.Command, args []string) error {
-	// log.Println("Getting context preRun")
-	// log.Printf("p1: %v", cmd.Context())
-	// log.Printf("p2: %v", cmd.Context().Value(CONFIG_CTX))
 	config := cmd.Context().Value(CONFIG_CTX).(*Config)
-	var err error
-	apiClient = api.GetClient(config.Server)
+	apiClient := cmd.Context().Value(APICLIENT_CTX).(api.ClientI)
+	agent := cmd.Context().Value(AGENT_CTX).(*ssha.Agent)
 
-	ca, err = apiClient.GetCA()
-	if err != nil {
-		return errors.New("unable to talk to server please check your configuration")
+	var ca string = config.CA
+	if ca == "" {
+		ca, err := apiClient.GetCA()
+		if err != nil {
+			return err
+		}
+		config.CA = ca
 	}
 
-	agent, err = ssh.GetAgent()
-	if err != nil {
-		return err
-	}
+	// agent, err := ssh.GetAgent()
+	// if err != nil {
+	// 	return err
+	// }
 
 	agent.LoadCA(ca)
 
@@ -68,6 +63,7 @@ func getCert(ctx context.Context, kp *ssh.KeyPair, allToErr bool) error {
 	if !allToErr {
 		out = outWriter
 	}
+	apiClient := ctx.Value(APICLIENT_CTX).(*api.Client)
 
 	id, err := apiClient.PostPubKey(kp)
 	if err != nil {
@@ -113,6 +109,7 @@ func getCertIntoAgent(ctx context.Context, kp *ssh.KeyPair, allToErr bool) error
 	if err := getCert(ctx, kp, allToErr); err != nil {
 		return err
 	}
+	agent := ctx.Value(AGENT_CTX).(*ssha.Agent)
 
 	return agent.AddCertificate(kp)
 }

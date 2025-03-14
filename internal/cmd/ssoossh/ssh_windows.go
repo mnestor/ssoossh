@@ -2,13 +2,9 @@
 
 package ssoossh
 
-import (
-	"github.com/mnestor/ssoossh/pkg/crypto/sshutil"
-)
-
-func init() {
-	rootCmd.PersistentFlags().BoolVar(&sshutil.NoPageant,
-		"no-pageant",
-		false,
-		"Use openssh agent from cigwyn or linux subsystem (WSL) instead of Pageant")
-}
+// func init() {
+// 	rootCmd.PersistentFlags().BoolVar(&sshutil.NoPageant,
+// 		"no-pageant",
+// 		false,
+// 		"Use openssh agent from cigwyn or linux subsystem (WSL) instead of Pageant")
+// }

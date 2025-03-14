@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/mnestor/ssoossh/internal/ssh"
+	ssha "github.com/mnestor/ssoossh/internal/ssh"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -41,6 +42,7 @@ func newProxyCmd() *cobra.Command {
 }
 
 func proxyCommand(cmd *cobra.Command, args []string) error {
+	agent := cmd.Context().Value(AGENT_CTX).(*ssha.Agent)
 	if !agent.HasKeys() {
 		config := cmd.Context().Value(CONFIG_CTX).(Config)
 		kp, err := ssh.NewKeyPair(config.KeyTypeRSA, config.KeyTypeEC, config.KeySize, "user")

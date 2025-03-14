@@ -3,6 +3,7 @@ package ssoossh
 
 import (
 	"github.com/mnestor/ssoossh/internal/ssh"
+	ssha "github.com/mnestor/ssoossh/internal/ssh"
 	"github.com/spf13/cobra"
 )
 
@@ -22,6 +23,7 @@ func newLoginCmd() *cobra.Command {
 }
 
 func loginRun(cmd *cobra.Command, args []string) error {
+	agent := cmd.Context().Value(AGENT_CTX).(*ssha.Agent)
 	if agent.HasKeys() {
 		return nil
 	}

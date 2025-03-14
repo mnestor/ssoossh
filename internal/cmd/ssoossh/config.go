@@ -12,8 +12,11 @@ import (
 type contextKey string
 
 const CONFIG_CTX string = "config"
+const APICLIENT_CTX string = "apiclient"
+const AGENT_CTX string = "agent"
 
 type Config struct {
+	CA         string `mapstructure:"ca"`
 	ConfigFile string `mapstructure:"config"`
 	Server     string `mapstructure:"server"`
 	KeyTypeRSA bool   `mapstructure:"type-rsa"`
