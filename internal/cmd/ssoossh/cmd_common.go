@@ -4,7 +4,6 @@ package ssoossh
 import (
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"runtime"
 	"strconv"
@@ -27,17 +26,12 @@ func init() {
 }
 
 func preRun(cmd *cobra.Command, args []string) error {
-	if config.Server == "" {
-		fmt.Fprintf(errWriter, "must set server being used!\n")
-		os.Exit(1)
-	}
-
 	var err error
 	apiClient = api.GetClient(config.Server)
 
 	ca, err = apiClient.GetCA()
 	if err != nil {
-		return err
+		return errors.New("unable to talk to server please check your configuration")
 	}
 
 	agent, err = ssh.GetAgent()

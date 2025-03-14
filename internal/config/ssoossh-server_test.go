@@ -4,6 +4,8 @@ package config
 import (
 	"reflect"
 	"testing"
+
+	"github.com/spf13/viper"
 )
 
 func TestInit(t *testing.T) {
@@ -66,4 +68,6 @@ func Test_setDefaults(t *testing.T) {
 			setDefaults()
 		})
 	}
+
+	viper.WriteConfig()
 }

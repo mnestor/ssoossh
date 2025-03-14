@@ -8,13 +8,15 @@
       "name": "Launch Client",
       "type": "go",
       "request": "launch",
-      "mode": "auto",
-      "program": "${workspaceFolder}/cmd/ssoossh/ssoossh.go",
+      "mode": "debug",
+      "program": "${workspaceFolder}/cmd/ssoossh",
       "args": [
         // "-d",
-        "login",
-        // "-u=gome",
-        // "https://ssh.nanestor.us"
+        // "--server",
+        // "ssoossh.default.yaml",
+        // "ca",
+        // "--key-size",
+        // "1024"
       ],
       "cwd": "${workspaceFolder}",
       "buildFlags": "-tags=DEV",
