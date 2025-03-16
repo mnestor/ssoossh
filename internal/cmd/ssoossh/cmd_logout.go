@@ -4,7 +4,6 @@ Created by - 2022 Mike Nestor <mnestor@nasa.gov>
 package ssoossh
 
 import (
-	ssha "github.com/mnestor/ssoossh/internal/ssh"
 	"github.com/spf13/cobra"
 )
 
@@ -20,7 +19,10 @@ ssh keypairs generated with this utility.`,
 	}
 	return logoutCmd
 }
+
 func logoutRun(cmd *cobra.Command, args []string) error {
-	agent := cmd.Context().Value(AGENT_CTX).(*ssha.Agent)
-	return agent.CleanupAgent()
+	agent := getAgent(cmd.Context())
+	msg, err := agent.CleanupAgent()
+	cmd.Println(msg)
+	return err
 }

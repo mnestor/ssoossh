@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/mnestor/ssoossh/internal/api/types"
+	types "github.com/mnestor/ssoossh/internal/api/response_types"
 	cfg "github.com/mnestor/ssoossh/internal/config"
 )
 
@@ -38,8 +38,8 @@ func TestApiGetCAs(t *testing.T) {
 		t.Errorf("Expected: ssh publickey")
 	}
 
-	if ca.CA != "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCQm/GexBJx34czOpqmsnduTYy8d9Vpq7ZsDLibogqgN6LDiDdDevrzdn1sET7HnbQAsq7AAcmQCeRTlyHMmv2tULpQYRiB3HjyByUkHYcmBrpIqiiS5qIvqEmV9a5rm9MzUuJb6e41YSFXjWe8kjBrl3TeSeP3RH7d4vQEySap+laeljxMmvTtsouJqDONPi+sIU4AD0mMwO5qgQsVu5+TamDUwuEr4LlTDMEp6fmWiKmhgYB5QUId3LZtehEBDyQhbRvydi7yB9yUHUl3yCD2WRAyAEATy2+3E1y/T+eoqssZNLCKpR0E/9zU+tA/uuxtvPe9pklEOskgZvHKCYOyu1whCIyJSzQhH3ns7jZmAoiw4C1/rreb9MWWsAW7wDrBHnRvmXHD4oH7UmKJZlsJiJDp0Dfth5XgOp+YUjrQmFwbrjy1RmotIzXZ3smXBg7TVRB/mIipcKhouCG0kE94gVPPTbZDLh2GdMX3hIgFgJtycAYtpcT/gSNY22b/yBE= vscode@ssh.nanestor.us" {
-		t.Errorf("Expected: ssh publickey")
+	if ca.CA != "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCQm/GexBJx34czOpqmsnduTYy8d9Vpq7ZsDLibogqgN6LDiDdDevrzdn1sET7HnbQAsq7AAcmQCeRTlyHMmv2tULpQYRiB3HjyByUkHYcmBrpIqiiS5qIvqEmV9a5rm9MzUuJb6e41YSFXjWe8kjBrl3TeSeP3RH7d4vQEySap+laeljxMmvTtsouJqDONPi+sIU4AD0mMwO5qgQsVu5+TamDUwuEr4LlTDMEp6fmWiKmhgYB5QUId3LZtehEBDyQhbRvydi7yB9yUHUl3yCD2WRAyAEATy2+3E1y/T+eoqssZNLCKpR0E/9zU+tA/uuxtvPe9pklEOskgZvHKCYOyu1whCIyJSzQhH3ns7jZmAoiw4C1/rreb9MWWsAW7wDrBHnRvmXHD4oH7UmKJZlsJiJDp0Dfth5XgOp+YUjrQmFwbrjy1RmotIzXZ3smXBg7TVRB/mIipcKhouCG0kE94gVPPTbZDLh2GdMX3hIgFgJtycAYtpcT/gSNY22b/yBE=" {
+		t.Errorf("Expected: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCQm/GexBJx34czOpqmsnduTYy8d9Vpq7ZsDLibogqgN6LDiDdDevrzdn1sET7HnbQAsq7AAcmQCeRTlyHMmv2tULpQYRiB3HjyByUkHYcmBrpIqiiS5qIvqEmV9a5rm9MzUuJb6e41YSFXjWe8kjBrl3TeSeP3RH7d4vQEySap+laeljxMmvTtsouJqDONPi+sIU4AD0mMwO5qgQsVu5+TamDUwuEr4LlTDMEp6fmWiKmhgYB5QUId3LZtehEBDyQhbRvydi7yB9yUHUl3yCD2WRAyAEATy2+3E1y/T+eoqssZNLCKpR0E/9zU+tA/uuxtvPe9pklEOskgZvHKCYOyu1whCIyJSzQhH3ns7jZmAoiw4C1/rreb9MWWsAW7wDrBHnRvmXHD4oH7UmKJZlsJiJDp0Dfth5XgOp+YUjrQmFwbrjy1RmotIzXZ3smXBg7TVRB/mIipcKhouCG0kE94gVPPTbZDLh2GdMX3hIgFgJtycAYtpcT/gSNY22b/yBE=")
 	}
 }
 

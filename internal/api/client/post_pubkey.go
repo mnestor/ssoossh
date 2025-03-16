@@ -4,20 +4,21 @@ package api
 import (
 	"errors"
 
-	"github.com/mnestor/ssoossh/internal/api/types"
+	types "github.com/mnestor/ssoossh/internal/api/response_types"
 	"github.com/mnestor/ssoossh/internal/ssh"
 )
 
-func (c *Client) PostPubKey(kp *ssh.KeyPair) (string, error) {
+func (c *Client) PostPubKey(kp ssh.KeyPairI) (string, error) {
 	res, err := c.
 		SetBody(types.SignRequest{
 			PublicKey: kp.String(),
-			Type:      kp.Type,
-			Account:   kp.Username,
+			Type:      kp.GetCertType(),
+			Account:   kp.GetUsername(),
 		}).
 		SetResult(&types.SignRequestResponse{}).
 		SetError(&types.ResponseError{}).
-		Post(c.getApiPath("signreq"))
+		Post("signreq")
+
 	if err != nil {
 		e := res.Error().(*types.ResponseError)
 		return "", errors.New(e.Message)

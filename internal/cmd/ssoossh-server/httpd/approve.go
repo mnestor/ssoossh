@@ -13,7 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
-	"github.com/mnestor/ssoossh/internal/api/types"
+	types "github.com/mnestor/ssoossh/internal/api/response_types"
 	"github.com/mnestor/ssoossh/internal/cmd/ssoossh-server/httpd/api/v1"
 	"github.com/mnestor/ssoossh/internal/cmd/ssoossh-server/httpd/middleware"
 	"github.com/mnestor/ssoossh/internal/config"
@@ -56,6 +56,9 @@ func apiGetApprove(w http.ResponseWriter, r *http.Request) {
 	case "host":
 		certType = ssh.HostCert
 		requiredGroup = certOptions.Host.RequireGroup
+	case "pam":
+		certType = ssh.UserCert
+		principals = append(principals, username)
 	case "user":
 		certType = ssh.UserCert
 		ext = certOptions.User.Extensions

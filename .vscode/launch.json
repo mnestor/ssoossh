@@ -11,26 +11,27 @@
       "mode": "debug",
       "program": "${workspaceFolder}/cmd/ssoossh",
       "args": [
-        "ca",
-        "--config",
-        "internal/cmd/ssoossh/testdata/ssoossh.ca.yaml",
+        "login",
+        // "--config",
+        // "internal/cmd/ssoossh/testdata/ssoossh.ca.yaml",
         "--server",
-        "nothing"
+        "https://ssh.nanestor.us"
       ],
       "cwd": "${workspaceFolder}",
       "buildFlags": "-tags=DEV",
-      // "env": {
-      //   "VIPER_DEBUG": "1"
-      //   //   "SSOOSSH_KEY_SIZE": "5000",
-      //   //   "SSOOSSH_SERVER": "htaskdiunkauer"
-      // }
+      "env": {
+        "SSH_AUTH_SOCK": "/tmp/ssh-PVKMGT1quqpS/agent.22779"
+        //   "VIPER_DEBUG": "1"
+        //   //   "SSOOSSH_KEY_SIZE": "5000",
+        //   //   "SSOOSSH_SERVER": "htaskdiunkauer"
+      }
     },
     {
       "name": "Launch Server",
       "type": "go",
       "request": "launch",
       "mode": "auto",
-      "program": "${workspaceFolder}/cmd/ssoossh-server/ssoossh-server.go",
+      "program": "${workspaceFolder}/cmd/ssoossh-server/",
       "args": [
         // "-c",
         // "${workspaceFolder}/webserver.yaml"

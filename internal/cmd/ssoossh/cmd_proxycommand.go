@@ -2,14 +2,13 @@
 package ssoossh
 
 import (
+	"fmt"
 	"io"
 	"net"
 	"os"
 	"strconv"
 	"sync"
 
-	"github.com/mnestor/ssoossh/internal/ssh"
-	ssha "github.com/mnestor/ssoossh/internal/ssh"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
@@ -25,12 +24,9 @@ func newProxyCmd() *cobra.Command {
 		Short: "retrieve certificates and proxy through an ssh bastion host",
 		Args: cobra.MatchAll(
 			cobra.MinimumNArgs(1),
-			cobra.MaximumNArgs(2),
+			cobra.MaximumNArgs(3),
 			cobra.OnlyValidArgs,
 		),
-		ValidArgs: []cobra.Completion{
-			"host", "port",
-		},
 		RunE:    proxyCommand,
 		PreRunE: preGetCertRun,
 	}
@@ -41,16 +37,30 @@ func newProxyCmd() *cobra.Command {
 	return proxyCmd
 }
 
-func proxyCommand(cmd *cobra.Command, args []string) error {
-	agent := cmd.Context().Value(AGENT_CTX).(*ssha.Agent)
-	if !agent.HasKeys() {
-		config := cmd.Context().Value(CONFIG_CTX).(Config)
-		kp, err := ssh.NewKeyPair(config.KeyTypeRSA, config.KeyTypeEC, config.KeySize, "user")
-		if err != nil {
-			return err
-		}
+func preGetCertRun(cmd *cobra.Command, args []string) error {
+	if e := preRun(cmd, args); e != nil {
+		return e
+	}
 
-		if err := getCertIntoAgent(cmd.Context(), kp, true); err != nil {
+	if len(args) == 1 {
+		host = args[0]
+	} else {
+		host = args[0]
+		var err error
+		port, err = strconv.Atoi(args[1])
+		if err != nil {
+			return fmt.Errorf("unable to convert %s to port number (default: 22)", args[1])
+		}
+	}
+
+	return nil
+}
+
+func proxyCommand(cmd *cobra.Command, args []string) error {
+	agent := getAgent(cmd.Context())
+
+	if !agent.HasKeys() {
+		if err := loginRun(cmd, args); err != nil {
 			return err
 		}
 	}

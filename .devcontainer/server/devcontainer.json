@@ -2,6 +2,7 @@
 // README at: https://github.com/devcontainers/templates/tree/main/src/docker-existing-docker-compose
 {
   "name": "server",
+  // "image": "mcr.microsoft.com/devcontainers/go:dev-1.24",
   // Update the 'dockerComposeFile' list if you have more compose files or use different names.
   // The .devcontainer/docker-compose.yml file contains any overrides you need/want to make.
   "dockerComposeFile": [
@@ -15,13 +16,12 @@
   // connected. This is typically a file mount in .devcontainer/docker-compose.yml
   "workspaceFolder": "/workspace",
   "features": {
-    // "ghcr.io/devcontainers-contrib/features/bash-command:1": {},
     "ghcr.io/guiyomh/features/vim": {},
     "ghcr.io/devcontainers/features/git": {},
     "ghcr.io/devcontainers/features/common-utils": {},
     "ghcr.io/devcontainers/features/go": {},
     "ghcr.io/guiyomh/features/gotestsum:0": {},
-    "ghcr.io/guiyomh/features/goreleaser:0": {},
+    "ghcr.io/marcozac/devcontainer-features/goreleaser:1": {},
     "ghcr.io/guiyomh/features/gomarkdoc:0": {},
     "ghcr.io/guiyomh/features/golangci-lint:0": {},
     "ghcr.io/eitsupi/devcontainer-features/jq-likes:2": {},
@@ -43,10 +43,10 @@
   // Uncomment the next line if you want to keep your containers running after VS Code shuts down.
   "shutdownAction": "none",
   // Uncomment the next line to run commands after the container is created.
-  // "postCreateCommand": {
-    // "allow-git": "git config --global --add safe.directory /workspace"
+  "postCreateCommand": {
+    "allow-git": "git config --global --add safe.directory /workspace"
     // "install-node": "echo;echo;echo \"************* YOU MUST MANUALLY INSTALL NODE!!!! *************** 'nvm install node'\";echo;echo;echo"
-  // },
+  },
   // Configure tool-specific properties.
   "customizations": {
     "vscode": {
@@ -114,6 +114,11 @@
         // "quicktype.quicktype", // Paste JSON as code
         // "spikespaz.vscode-smoothtype", // smooth cursor animation
       ]
+    }
+  },
+  "portsAttributes": {
+    "443": {
+      "label": "443"
     }
   }
   // Uncomment to connect as an existing user other than the container default. More info: https://aka.ms/dev-containers-non-root.

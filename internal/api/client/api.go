@@ -2,37 +2,35 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
+	"github.com/mnestor/ssoossh/internal/ssh"
 	"github.com/mnestor/ssoossh/internal/version"
 	"resty.dev/v3"
 )
 
-var (
-	api_root = fmt.Sprintf("api/%s", version.ApiPath)
-)
-
 type ClientI interface {
 	GetCA() (string, error)
+	GetCertificate(string) (string, error)
+	PostPubKey(ssh.KeyPairI) (string, error)
 }
+
 type Client struct {
 	// ClientI
 	*resty.Request
-	Server string
 }
 
-func (c *Client) getApiPath(p string) string {
-	return fmt.Sprintf("%s/%s/%s", strings.Trim(c.Server, "/"), api_root, p)
-}
-
-func GetClient(s string) ClientI {
+func NewClient(ctx context.Context, s string) ClientI {
 	client := resty.New().
-		// SetOutputDirectory("/workspace/log").
-		// SetSaveResponse(true).
+		SetContext(ctx).
+		SetBaseURL(fmt.Sprintf("%s/api/%s/", strings.Trim(s, "/"), version.ApiPath)).
 		SetHeader("Accept", "application/json").
-		R()
-		// SetDebug(true)
+		R(). // this passes a contextWithoutCancel so set it with our cancel
+		SetContext(ctx)
 
-	return &Client{client, s}
+	return &Client{
+		Request: client,
+	}
 }

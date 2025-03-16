@@ -2,8 +2,6 @@
 package ssh
 
 import (
-	"fmt"
-	"os"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -11,12 +9,19 @@ import (
 	"github.com/mnestor/ssoossh/pkg/crypto/sshutil"
 )
 
+type AgentI interface {
+	HasKeys() bool
+	ListCertificates() ([]*ssh.Certificate, error)
+	LoadCA(string) bool
+	CleanupAgent() (string, error)
+	AddCertificate(KeyPairI) error
+}
 type Agent struct {
 	*sshutil.Agent
 	ca []ssh.PublicKey
 }
 
-func GetAgent() (*Agent, error) {
+func NewAgent() (*Agent, error) {
 	a, err := sshutil.DialAgent()
 	if err != nil {
 		return nil, err
@@ -53,29 +58,36 @@ func (a *Agent) ListCertificates() ([]*ssh.Certificate, error) {
 	return certs, nil
 }
 
-func (a *Agent) LoadCA(ca string) {
-	userKey, _, _, _, _ := ssh.ParseAuthorizedKey([]byte(ca))
+func (a *Agent) LoadCA(ca string) bool {
+	userKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(ca))
+	if err != nil {
+		return false
+	}
 	a.ca = append(a.ca, []ssh.PublicKey{userKey}...)
+	return true
 }
 
-func (a *Agent) CleanupAgent() error {
-
+func (a *Agent) CleanupAgent() (string, error) {
 	found, err := a.RemoveKeys(
 		sshutil.WithSignatureKey(a.ca),
+		sshutil.WithRemoveExpiredCerts(time.Now()),
 	)
 
 	if err != nil {
-		return err
-	}
-	if found {
-		fmt.Fprintf(os.Stdout, "Keys are removed\n")
-	} else {
-		fmt.Fprintf(os.Stdout, "No key signed by your CA present\n")
+		return "", err
 	}
 
-	return nil
+	if found {
+		return "Keys are removed", nil
+	}
+
+	return "No key signed by your CA present", nil
 }
 
-func (a *Agent) AddCertificate(k *KeyPair) error {
-	return a.Agent.AddCertificate("ssoossh", k.Cert, k.Private)
+func (a *Agent) AddCertificate(k KeyPairI) error {
+	return a.Agent.AddCertificate(
+		"ssoossh",
+		k.GetCertficiate(),
+		k.GetPrivate(),
+	)
 }

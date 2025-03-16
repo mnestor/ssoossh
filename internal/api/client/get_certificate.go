@@ -4,7 +4,7 @@ package api
 import (
 	"errors"
 
-	"github.com/mnestor/ssoossh/internal/api/types"
+	types "github.com/mnestor/ssoossh/internal/api/response_types"
 )
 
 func (c *Client) GetCertificate(id string) (string, error) {
@@ -13,8 +13,7 @@ func (c *Client) GetCertificate(id string) (string, error) {
 	res, err := c.
 		SetResult(result).
 		SetError(resErr).
-		Get(c.getApiPath("certificate"))
-	// slog.Error("blah", slog.Any("err", resErr.Message))
+		Get("certificate")
 	if err != nil {
 		return "", err
 	}

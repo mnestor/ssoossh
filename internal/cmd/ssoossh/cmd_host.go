@@ -2,12 +2,12 @@
 package ssoossh
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/crypto/ssh"
 
 	issh "github.com/mnestor/ssoossh/internal/ssh"
 )
@@ -26,43 +26,49 @@ func newHostCmd() *cobra.Command {
 }
 
 func hostRun(cmd *cobra.Command, args []string) error {
+	config := getConfig(cmd.Context())
+	apiClient := getApiClient(cmd.Context())
 
-	config := cmd.Context().Value(CONFIG_CTX).(Config)
 	p, err := os.ReadFile(config.HostPubkey) // the file is inside the local directory
 	if err != nil {
 		return err
 	}
 
-	pubKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(p))
+	kp := issh.NewKeyPairForHost(p)
+
+	id, err := apiClient.PostPubKey(kp)
 	if err != nil {
 		return err
 	}
 
-	kp := &issh.KeyPair{
-		Public: &pubKey,
-		Type:   "host",
+	url := fmt.Sprintf("%s/approve/%s", config.Server, id)
+	cmd.Printf("Please visit the URL to continue!:\n%s\n", url)
+
+	var cert string
+	if cert, err = apiClient.GetCertificate(id); err != nil {
+		return err
 	}
 
-	if err := getCert(cmd.Context(), kp, false); err != nil {
-		return err
+	if cert == "" {
+		return errors.New("empty response")
 	}
 
 	if config.WriteCert {
 		if !strings.HasSuffix(config.HostPubkey, ".pub") {
-			fmt.Fprintf(outWriter, "Unable to figure out filename to create, missing .pub extension\n")
+			cmd.Println("Unable to figure out filename to create, missing .pub extension")
 		} else {
 			fs := strings.Split(config.HostPubkey, ".")
 			fs[0] = fmt.Sprintf("%s-cert.pub", fs[0])
 			newFile := strings.Join(fs, ".")
-			if err := os.WriteFile(newFile, []byte(kp.CertString), 0600); err != nil {
+			if err := os.WriteFile(newFile, []byte(cert), 0600); err != nil {
 				return err
 			}
-			fmt.Fprintf(outWriter, "Certificate saved to: %s\n", fs)
+			cmd.Printf("Certificate saved to: %s\n", fs)
 			return nil
 		}
 	}
 
-	fmt.Fprintf(errWriter, "%s", kp.CertString)
+	cmd.Printf("%s", cert)
 
 	return nil
 }

@@ -18,12 +18,3 @@ func NewCertificateRequestResponse(s string, c string) *CertificateRequestRespon
 		Certificate: c,
 	}
 }
-
-// func (a *CertificateRequest) Bind(r *http.Request) error {
-// 	if a.ID == "" {
-// 		return errors.New("missing required signrequest fields")
-// 	}
-
-// 	// just a post-process after a decode..
-// 	return nil
-// }

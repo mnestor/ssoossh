@@ -19,6 +19,8 @@ services:
     <<: *base
     # Set to your live site to use tinyproxy and redirect your browser
     hostname: ssh.nanestor.us
+    ports:
+      - "0.0.0.0:443:443"
 
   # redis:
   #   image: postgres:15

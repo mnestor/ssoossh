@@ -4,7 +4,6 @@ package ssoossh
 import (
 	"fmt"
 
-	ssha "github.com/mnestor/ssoossh/internal/ssh"
 	"github.com/mnestor/ssoossh/pkg/crypto/sshutil"
 	"github.com/spf13/cobra"
 )
@@ -20,14 +19,14 @@ func newInspectCmd() *cobra.Command {
 }
 
 func inspectRun(cmd *cobra.Command, args []string) error {
-	agent := cmd.Context().Value(AGENT_CTX).(*ssha.Agent)
+	agent := getAgent(cmd.Context())
 	agentCerts, err := agent.ListCertificates()
 	if err != nil {
 		return err
 	}
 
 	if len(agentCerts) == 0 {
-		fmt.Fprintf(outWriter, "no certificates from our ca present in ssh-agent")
+		cmd.Println("no certificates from our ca present in ssh-agent")
 	}
 
 	for _, agentKey := range agentCerts {

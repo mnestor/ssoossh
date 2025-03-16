@@ -8,11 +8,8 @@ import (
 	"github.com/go-chi/render"
 )
 
-var (
-	router *chi.Mux = chi.NewRouter()
-)
-
-func init() {
+func NewRouter() *chi.Mux {
+	router := chi.NewRouter()
 	router.Use(render.SetContentType(render.ContentTypeJSON))
 	router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -20,8 +17,10 @@ func init() {
 			next.ServeHTTP(w, r)
 		})
 	})
-}
 
-func GetRouter() *chi.Mux {
+	router.Get("/ca", apiGetCAs)
+	router.Get("/certificate", apiGetCertificate)
+	router.Post("/signreq", apiSignRequestPost)
+
 	return router
 }

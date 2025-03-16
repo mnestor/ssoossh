@@ -25,6 +25,35 @@ env:
 #   - GOFLAGS=-buildvcs=false
 
 builds:
+  - id: linux-pam-build
+    binary: pam_oauth
+    dir: &dirsrv ./cmd/pam_ssoossh/
+    buildmode: "c-shared"
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=1
+    ldflags: &build-ldflags |
+      -X github.com/mnestor/ssoossh/internal/version.Version={{.Version}}
+      -X github.com/mnestor/ssoossh/internal/version.Commit={{.Commit}}
+      -X github.com/mnestor/ssoossh/internal/version.Date={{.Date}}
+      -X github.com/mnestor/ssoossh/internal/version.ApiPath={{- if index .Env "API_PATH" }}{{ .Env.API_PATH }}{{ else }}v1{{ end }}
+      -X github.com/mnestor/ssoossh/internal/version.BuiltBy={{- if index .Env "github" }}{{.Env.github.runner.name}}{{ else }}goreleaser{{ end }}
+    overrides:
+      - goos: linux
+        goarch: amd64
+        env:
+          - CC=x86_64-linux-gnu-gcc
+          - PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
+      - goos: linux
+        goarch: arm64
+        env:
+          - CC=aarch64-linux-gnu-gcc
+          - PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
+
   - id: server-linux-build
     binary: ssoossh-server
     dir: &dirsrv ./cmd/ssoossh-server
@@ -35,12 +64,7 @@ builds:
       - arm64
       - ppc64le
       - s390x
-    ldflags: &build-ldflags |
-      -X github.com/mnestor/ssoossh/internal/version.Version={{.Version}}
-      -X github.com/mnestor/ssoossh/internal/version.Commit={{.Commit}}
-      -X github.com/mnestor/ssoossh/internal/version.Date={{.Date}}
-      -X github.com/mnestor/ssoossh/internal/version.ApiPath={{- if index .Env "API_PATH" }}{{ .Env.API_PATH }}{{ else }}v1{{ end }}
-      -X github.com/mnestor/ssoossh/internal/version.BuiltBy={{- if index .Env "github" }}{{.Env.github.runner.name}}{{ else }}goreleaser{{ end }}
+    ldflags: *build-ldflags
 
   - id: linux-build
     binary: &name "ssoossh"

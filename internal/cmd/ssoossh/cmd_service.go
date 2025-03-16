@@ -27,21 +27,29 @@ func newServiceCmd() *cobra.Command {
 }
 
 func serviceRun(cmd *cobra.Command, args []string) error {
-	config := cmd.Context().Value(CONFIG_CTX).(Config)
-	kp, err := issh.NewKeyPair(config.KeyTypeRSA, config.KeyTypeEC, config.KeySize, "service")
+	config := getConfig(cmd.Context())
+	apiClient := getApiClient(cmd.Context())
+	kp, err := issh.NewKeyPair(config.KeyTypeRSA, config.KeyTypeEC, config.KeySize, "service", config.Username)
 	if err != nil {
 		return err
 	}
 
-	kp.Username = config.Username
-
-	if err := getCert(cmd.Context(), kp, false); err != nil {
+	id, err := apiClient.PostPubKey(kp)
+	if err != nil {
 		return err
 	}
 
-	pKeyRaw, err := ssh.MarshalPrivateKey(kp.Private, fmt.Sprintf("ssoossh-%s", config.Username))
+	url := fmt.Sprintf("%s/approve/%s", config.Server, id)
+	cmd.Printf("Please visit the URL to continue!:\n%s\n", url)
+
+	var cert string
+	if cert, err = apiClient.GetCertificate(id); err != nil {
+		return err
+	}
+
+	pKeyRaw, err := ssh.MarshalPrivateKey(kp.GetPrivate(), fmt.Sprintf("ssoossh-%s", config.Username))
 	if err != nil {
-		fmt.Fprintln(outWriter, "Unable to convert private key to usable format")
+		cmd.Printf("Unable to convert private key to usable format")
 		return nil
 	}
 
@@ -56,7 +64,7 @@ func serviceRun(cmd *cobra.Command, args []string) error {
 	if err := os.WriteFile(pubFile, []byte(kp.String()), 0600); err != nil {
 		return err
 	}
-	if err := os.WriteFile(certFile, []byte(kp.CertString), 0600); err != nil {
+	if err := os.WriteFile(certFile, []byte(cert), 0600); err != nil {
 		return err
 	}
 
@@ -72,7 +80,7 @@ func serviceRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(outWriter, "ssh keys saved to: %s{,.pub,-cert.pub}\n", outputFile)
+	cmd.Printf("ssh keys saved to: %s{,.pub,-cert.pub}\n", outputFile)
 
 	return nil
 }

@@ -62,10 +62,13 @@ update:
 	go mod tidy
 
 test:
-	go test -v -coverprofile=coverage.out -tags=coverprofile ./...
+	go test -coverprofile=coverage.out -tags=coverprofile ./...
 	
 cover:
 	go tool cover -html=coverage.out -o coverage.html
 
 version:
 	@echo "Version: $(VERSION)"
+
+pam :
+	goreleaser build --clean --snapshot --id linux-pam-build

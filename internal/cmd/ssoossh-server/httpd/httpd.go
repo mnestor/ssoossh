@@ -90,7 +90,7 @@ func NewServer() (*HttpServer, error) {
 	// do this before other routes to setup oauth
 	auth.SetupRoutes(router)
 
-	router.Mount("/api/v1", apiV1.GetRouter())
+	router.Mount("/api/v1", apiV1.NewRouter())
 	router.Get("/ca", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, fmt.Sprintf("/api/%s/ca", version.ApiPath), http.StatusFound)
 	})

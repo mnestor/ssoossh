@@ -8,14 +8,10 @@ import (
 	"time"
 
 	"github.com/go-chi/render"
-	"github.com/mnestor/ssoossh/internal/api/types"
+	types "github.com/mnestor/ssoossh/internal/api/response_types"
 	mware "github.com/mnestor/ssoossh/internal/cmd/ssoossh-server/httpd/middleware"
 	"github.com/mnestor/ssoossh/internal/store"
 )
-
-func init() {
-	router.Get("/certificate", apiGetCertificate)
-}
 
 func apiGetCertificate(w http.ResponseWriter, r *http.Request) {
 	timeout := 90 * time.Second

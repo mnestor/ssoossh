@@ -4,14 +4,15 @@ package api
 import (
 	"errors"
 
-	"github.com/mnestor/ssoossh/internal/api/types"
+	types "github.com/mnestor/ssoossh/internal/api/response_types"
 )
 
 func (c *Client) GetCA() (string, error) {
 	res, err := c.
 		SetResult(&types.ResponseCAList{}).
 		SetError(&types.ResponseError{}).
-		Get(c.getApiPath("ca"))
+		Get("ca")
+
 	if err != nil {
 		e := res.Error().(*types.ResponseError)
 		if e.Message == "" {

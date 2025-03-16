@@ -2,8 +2,6 @@
 package ssoossh
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 )
 
@@ -17,11 +15,11 @@ func newCaCmd() *cobra.Command {
 }
 
 func caRun(cmd *cobra.Command, args []string) error {
-	config := cmd.Context().Value(CONFIG_CTX).(*Config)
+	config := getConfig(cmd.Context())
 	if len(config.CA) == 0 {
-		fmt.Fprintf(outWriter, "Unable to get CA from server: %s\n", config.Server)
+		cmd.Printf("Unable to get CA from server: %s\n", config.Server)
 	} else {
-		fmt.Fprintf(outWriter, "%s\n", config.CA)
+		cmd.Printf("%s\n", config.CA)
 	}
 
 	return nil

@@ -9,15 +9,10 @@ import (
 	"github.com/go-chi/render"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/mnestor/ssoossh/internal/api/types"
+	types "github.com/mnestor/ssoossh/internal/api/response_types"
 	mware "github.com/mnestor/ssoossh/internal/cmd/ssoossh-server/httpd/middleware"
 	"github.com/mnestor/ssoossh/internal/store"
 )
-
-func init() {
-	// Browser API for approving signing request
-	router.Post("/signreq", apiSignRequestPost)
-}
 
 // apiSignRequestPost is sent by browser js with authenticated user
 // will submit a signing request for approval to get a cert generated

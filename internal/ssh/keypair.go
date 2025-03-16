@@ -7,16 +7,29 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-type KeyPair struct {
-	Private    interface{}
-	Public     *ssh.PublicKey
-	Cert       *ssh.Certificate
-	CertString string
-	Type       string
-	Username   string
+type KeyPairI interface {
+	String() string
+	ParseCertificate(string) error
+	GetCertficiate() *ssh.Certificate
+	GetCertficiateS() string
+	GetPrivate() interface{}
+	GetUsername() string
+	GetCertType() string
 }
 
-func NewKeyPair(keyTypeRSA bool, keyTypeEC bool, keySize int, t string) (*KeyPair, error) {
+type KeyPair struct {
+	private interface{}
+	public  *ssh.PublicKey
+	cert    *ssh.Certificate
+	// string represenation of certificate
+	certString string
+	// host, user, service, pam
+	certType string
+	// uhh?
+	username string
+}
+
+func NewKeyPair(keyTypeRSA bool, keyTypeEC bool, keySize int, t string, u string) (KeyPairI, error) {
 	// Generate keypair
 	keyType := keys.DefaultKeyType
 	if keyTypeRSA {
@@ -36,25 +49,59 @@ func NewKeyPair(keyTypeRSA bool, keyTypeEC bool, keySize int, t string) (*KeyPai
 	}
 
 	return &KeyPair{
-		Private:    priv,
-		Public:     &sshPub,
-		Cert:       nil,
-		CertString: "",
-		Type:       t,
+		private:    priv,
+		public:     &sshPub,
+		cert:       nil,
+		certString: "",
+		certType:   t,
+		username:   u,
 	}, nil
 }
 
-func (k *KeyPair) String() string {
-	return string(ssh.MarshalAuthorizedKey(*k.Public))
+func NewKeyPairForHost(p []byte) KeyPairI {
+	pubKey, _, _, _, err := ssh.ParseAuthorizedKey(p)
+	if err != nil {
+		return nil
+	}
+
+	return &KeyPair{
+		public:   &pubKey,
+		certType: "host",
+	}
 }
 
+func (k *KeyPair) String() string {
+	return string(ssh.MarshalAuthorizedKey(*k.public))
+}
+
+// Parse a string represenation of a cert into a Certificate and keep the string
 func (k *KeyPair) ParseCertificate(c string) error {
 	sshPubkeyCert, _, _, _, err := ssh.ParseAuthorizedKey([]byte(c))
 	if err != nil {
 		return err
 	}
 
-	k.CertString = c
-	k.Cert = sshPubkeyCert.(*ssh.Certificate)
+	k.certString = c
+	k.cert = sshPubkeyCert.(*ssh.Certificate)
 	return nil
+}
+
+func (k *KeyPair) GetCertficiate() *ssh.Certificate {
+	return k.cert
+}
+
+func (k *KeyPair) GetCertficiateS() string {
+	return k.certString
+}
+
+func (k *KeyPair) GetPrivate() interface{} {
+	return k.private
+}
+
+func (k *KeyPair) GetUsername() string {
+	return k.username
+}
+
+func (k *KeyPair) GetCertType() string {
+	return k.certType
 }

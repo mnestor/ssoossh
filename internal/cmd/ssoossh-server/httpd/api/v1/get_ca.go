@@ -7,15 +7,11 @@ import (
 
 	"github.com/go-chi/render"
 
-	"github.com/mnestor/ssoossh/internal/api/types"
-	cfg "github.com/mnestor/ssoossh/internal/config"
+	types "github.com/mnestor/ssoossh/internal/api/response_types"
+	"github.com/mnestor/ssoossh/internal/config"
 )
 
-var gConfig = cfg.GetConfig
-
-func init() {
-	router.Get("/ca", apiGetCAs)
-}
+var gConfig = config.GetConfig
 
 func apiGetCAs(w http.ResponseWriter, r *http.Request) {
 	key, err := gConfig().SshPubKey()

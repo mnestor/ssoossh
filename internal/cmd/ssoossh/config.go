@@ -28,7 +28,7 @@ type Config struct {
 	Username   string `mapstructure:"username"`
 }
 
-func loadConfig(cmd *cobra.Command, args []string) (*Config, error) {
+func loadConfig(cmd *cobra.Command) (*Config, error) {
 	v := viper.New()
 	v.BindPFlags(cmd.Flags())
 	config := &Config{}
