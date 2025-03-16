@@ -49,18 +49,9 @@ func apiGetCertificate(w http.ResponseWriter, r *http.Request) {
 			render.Status(r, http.StatusOK)
 			_ = render.Render(w, r, types.NewCertificateRequestResponse("success", cert.Certificate))
 			cleanup()
-			// case <-ticker.C:
-			// 	slog.Info("tick")
-			// 	cert, err := s.Get(id)
-			// 	if err != nil {
-			// 		continue
-			// 	}
-
 			return
 
-		// parent timeout is slightly longer so we can get the fail response out first
 		case <-ctxEnd.Done():
-			// http.Error(w, "Request timed out", http.StatusRequestTimeout)
 			render.Status(r, http.StatusRequestTimeout)
 			_ = render.Render(w, r, types.NewResponseError("timeout", "Request timed out waiting for approval"))
 			cleanup()

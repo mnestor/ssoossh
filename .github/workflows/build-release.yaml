@@ -39,6 +39,8 @@ jobs:
           fileName: "quill_*_linux_amd64.tar.gz"
           out-file-path: "downloads"
           extract: true
+      - name: Install build deps
+        run: bash scripts/build-config.sh
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
