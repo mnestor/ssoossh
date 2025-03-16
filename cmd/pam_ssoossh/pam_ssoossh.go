@@ -33,7 +33,7 @@ func go_authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, args **C.cha
 
 	w, err := syslog.New(syslog.LOG_AUTHPRIV, "ssoossh")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, err.Error())
+		fmt.Fprint(os.Stderr, err.Error())
 		return C.PAM_AUTH_ERR
 	}
 
