@@ -3,7 +3,6 @@ package api
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"time"
 
@@ -31,20 +30,14 @@ func apiGetCertificate(w http.ResponseWriter, r *http.Request) {
 	s := r.Context().Value(
 		store.CertificateContext).(*store.MemoryCertificatesStore)
 
-	// TODO: just get redis or postgres for pubsub idiot
-	// ticker := time.NewTicker(1 * time.Second)
-
 	cleanup := func() {
 		_ = s.Delete(id)
-		// ticker.Stop()
 		ctxCancel()
 	}
 	blockedCertChan := make(chan bool)
+
 	go func() {
-		sub := *s.GetWait(id)
-		slog.Info("What the fuck", slog.Any("chan", <-sub.Phone))
-		slog.Info("finally unblocked")
-		time.Sleep(1 * time.Second)
+		_ = *s.GetWait(id)
 		blockedCertChan <- true
 	}()
 
@@ -52,7 +45,6 @@ func apiGetCertificate(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-blockedCertChan:
 			cert, _ := s.Get(id)
-			slog.Info("we received the certificate")
 			// we have the cert now
 			render.Status(r, http.StatusOK)
 			_ = render.Render(w, r, types.NewCertificateRequestResponse("success", cert.Certificate))
@@ -68,7 +60,6 @@ func apiGetCertificate(w http.ResponseWriter, r *http.Request) {
 
 		// parent timeout is slightly longer so we can get the fail response out first
 		case <-ctxEnd.Done():
-			slog.Info("ctxEnd")
 			// http.Error(w, "Request timed out", http.StatusRequestTimeout)
 			render.Status(r, http.StatusRequestTimeout)
 			_ = render.Render(w, r, types.NewResponseError("timeout", "Request timed out waiting for approval"))
