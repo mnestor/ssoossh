@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"os/signal"
@@ -17,16 +16,11 @@ func run(ctx context.Context, o io.Writer, e io.Writer, args []string) int {
 
 	var ret = 1
 
-	cmd, err := ssoossh.NewRootCommand(ctx, o, e, args)
+	cmd := ssoossh.NewRootCommand(ctx, o, e, args)
 
 	go func() {
-		if err != nil {
-			fmt.Fprint(os.Stderr, err.Error())
-		} else {
-			err = cmd.ExecuteContext(ctx)
-			if err == nil {
-				ret = 0
-			}
+		if err := cmd.ExecuteContext(ctx); err == nil {
+			ret = 0
 		}
 		cancel()
 	}()

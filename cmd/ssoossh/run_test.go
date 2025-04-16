@@ -22,6 +22,13 @@ func Test_run(t *testing.T) {
 			wantE:   "",
 			wantErr: false,
 		},
+		{
+			name:    "we want error",
+			args:    []string{"ca"},
+			wantO:   "",
+			wantE:   "Error: server is required\n",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

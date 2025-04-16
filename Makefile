@@ -65,10 +65,12 @@ test:
 	go test -coverprofile=coverage.out -tags=coverprofile ./...
 	
 cover:
+	grep -v -E -f exclude-from-coverage.txt coverage.out > coverage.filtered.out
+	mv coverage.filtered.out coverage.out
 	go tool cover -html=coverage.out -o coverage.html
 
 version:
 	@echo "Version: $(VERSION)"
 
-pam :
+pam:
 	goreleaser build --clean --snapshot --id linux-pam-build
