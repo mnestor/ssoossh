@@ -30,6 +30,11 @@
     "ghcr.io/flexwie/devcontainer-features/op:1": {},
     "ghcr.io/devcontainers-extra/features/direnv:1": {}
   },
+  "containerEnv": {
+    "GREP_OPTIONS": "--exclude-dir=node_modules",
+    "MY_CONTAINER_VAR": "some-value-here",
+    "MY_CONTAINER_VAR2": "${localEnv:SOME_LOCAL_VAR}"
+  },
   // "postCreateCommand": "go mod download && go mod tidy",
   // Features to add to the dev container. More info: https://containers.dev/features.
   // "features": {},

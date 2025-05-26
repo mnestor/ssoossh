@@ -139,13 +139,14 @@ func loginCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	c := config.GetConfig().Server.AuthConfig.Fields
-
 	usernameR, ok := claims[c.Username]
 	if !ok {
 		slog.Error("Oauth response did not have a username", slog.Any("id_token", claims))
 		return
 	}
 	username := usernameR.(string)
+
+	// _, _ = w.Write([]byte(fmt.Sprintf("%+v", claims)))
 
 	var groups []string
 	if c.Groups != "" {

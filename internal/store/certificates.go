@@ -84,10 +84,10 @@ func (s *MemoryCertificatesStore) Create(c *Certificate) error {
 		s.mu.Unlock()
 		return &DuplicateKeyError{ID: c.ID}
 	}
+	defer s.mu.Unlock()
 
 	c.CreatedAt = time.Now().UTC()
 	s.certs[c.ID] = *c
-	s.mu.Unlock()
 
 	if sub := findSub(c.ID); sub != nil {
 		// someone is already listening so just send it

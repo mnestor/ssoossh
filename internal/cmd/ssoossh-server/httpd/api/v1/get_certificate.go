@@ -37,7 +37,7 @@ func apiGetCertificate(w http.ResponseWriter, r *http.Request) {
 	blockedCertChan := make(chan bool)
 
 	go func() {
-		_ = *s.GetWait(id)
+		<-s.GetWait(id).Phone
 		blockedCertChan <- true
 	}()
 

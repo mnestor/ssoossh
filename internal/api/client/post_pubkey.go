@@ -5,15 +5,14 @@ import (
 	"errors"
 
 	types "github.com/mnestor/ssoossh/internal/api/response_types"
-	"github.com/mnestor/ssoossh/internal/ssh"
 )
 
-func (c *Client) PostPubKey(kp ssh.KeyPairI) (string, error) {
+func (c *Client) PostPubKey(pkey string, certType string, account string) (string, error) {
 	res, err := c.
 		SetBody(types.SignRequest{
-			PublicKey: kp.String(),
-			Type:      kp.GetCertType(),
-			Account:   kp.GetUsername(),
+			PublicKey: pkey,
+			Type:      certType,
+			Account:   account,
 		}).
 		SetResult(&types.SignRequestResponse{}).
 		SetError(&types.ResponseError{}).

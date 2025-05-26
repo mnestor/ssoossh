@@ -36,7 +36,7 @@ func NewServer() (*HttpServer, error) {
 
 	if c.Server.AccessLog {
 		slogSettings := slogchi.Config{
-			WithRequestHeader:  false,
+			WithRequestHeader:  true,
 			WithResponseHeader: false,
 			WithSpanID:         false,
 			WithTraceID:        false,
