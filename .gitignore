@@ -1,10 +1,61 @@
-ssoossh-server.yaml
-ssoossh.yaml
-release/
-dist/
-id_*
-__debug*
-downloads/
-ssl/
-.envrc
-.secrets
+# JetBrains
+**/.idea
+
+# Node
+node_modules
+
+# PNPM
+.pnpm-store/
+
+# Output
+.output
+.vercel
+/frontend/.svelte-kit
+/frontend/build
+/backend/bin
+pocket-id
+/tests/test-results/*.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.development-example
+!.env.test
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/backend/.bin
+/pocket-id
+
+# Application specific
+data
+/tests/.auth
+/tests/.report
+/backend/GeoLite2-City.mmdb
+/backend/frontend/dist
+
+# Misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+#Debug
+backend/cmd/__debug_*

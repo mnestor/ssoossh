@@ -1,0 +1,1 @@
+github.com/mnestor/ssoossh/cmd/ssoossh/ssoossh.go

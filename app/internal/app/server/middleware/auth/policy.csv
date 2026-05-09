@@ -1,0 +1,11 @@
+
+# p, role, path, method, action
+# p = policy
+
+p, ,/api/version, GET, allow
+
+p, default, /api/users/me, GET, allow
+p, default, /api/users/:username, GET, allow
+p, default, /api/users/:username/*, GET, allow
+
+p, global ssoossh admin, /api/.*, *, allow

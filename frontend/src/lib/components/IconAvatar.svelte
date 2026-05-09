@@ -1,0 +1,30 @@
+<script lang="ts">
+  import { Avatar, Indicator } from 'flowbite-svelte';
+  import type { IndicatorProps } from 'flowbite-svelte';
+  import type { Snippet } from 'svelte';
+  // import type { IconAvatarProps } from './types';
+
+  let { children, src, color = 'primary' }: {
+    children: Snippet;
+    src: string;
+    color?: IndicatorProps['color'];
+  } = $props();
+</script>
+
+<Avatar class="h-11 w-11">
+  <img alt="" {src} class="rounded-full" />
+  <Indicator placement="bottom-right" class="h-5 w-5 translate-y-0" {color}>
+    {@render children()}
+  </Indicator>
+</Avatar>
+
+<!--
+@component
+[Go to docs](https://flowbite-svelte-admin-dashboard.vercel.app/)
+## Type
+[IconAvatarProps](https://github.com/themesberg/flowbite-svelte-admin-dashboard/blob/main/src/lib/types.ts#L44)
+## Props
+@prop children
+@prop src
+@prop color = 'primary'
+-->

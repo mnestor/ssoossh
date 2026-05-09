@@ -1,0 +1,23 @@
+{
+  "name": "ssoossh",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/go:1": {}
+  },
+  "appPort": [ "0.0.0.0:3001:3001" ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "golang.go",
+        "svelte.svelte-vscode",
+        "bradlc.vscode-tailwindcss",
+        "esbenp.prettier-vscode",
+        "EditorConfig.EditorConfig"
+      ]
+    }
+  },
+  "containerEnv": {
+    "HOST": "0.0.0.0"
+  }
+  // "postCreateCommand": "npm install --prefix frontend && cd backend && go mod download"
+}
