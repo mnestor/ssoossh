@@ -21,6 +21,7 @@ func NewRouter() *chi.Mux {
 	router.Get("/ca", apiGetCAs)
 	router.Get("/certificate", apiGetCertificate)
 	router.Post("/signreq", apiSignRequestPost)
+	router.Get("/audit", apiGetAuditLog)
 
 	return router
 }

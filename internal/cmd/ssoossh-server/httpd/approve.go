@@ -22,27 +22,29 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+var getApproveConfig = config.GetConfig
+
 func apiGetApprove(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	s := r.Context().Value(
-		store.CertRequestContext).(*store.MemoryCertRequestStore)
+	reqStore := r.Context().Value(store.CertRequestContext).(store.CertRequestInterface)
+	certStore := r.Context().Value(store.CertificateContext).(store.CertificateInterface)
+	auditStore := r.Context().Value(store.AuditLogContext).(store.AuditLogInterface)
 
-	cr, err := s.Get(id)
+	cr, err := reqStore.Get(id)
 	if err != nil {
-		//probably doesn't exit?
 		slog.Error("Failed to get request", slog.Any("error", err))
 		_, _ = w.Write([]byte("doesn't exist"))
 		return
 	}
-	_ = s.Delete(id)
+	_ = reqStore.Delete(id)
 
 	pubKey, _, _, _, _ := ssh.ParseAuthorizedKey([]byte(cr.Pubkey))
 
 	username := middleware.GetUserName(r)
 	groups := middleware.GetGroups(r)
 
-	certOptions := config.GetConfig().CertOptions
+	certOptions := getApproveConfig().CertOptions
 
 	var hoursValid time.Duration
 	var certType uint32
@@ -75,14 +77,11 @@ func apiGetApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// find all enabled/unlocked generic/aa accounts and add them to principals
-
 	for _, v := range ext {
 		extensions[v] = ""
 	}
 
 	var serial uint64
-	// generate serial for certificate
 	if err := binary.Read(rand.Reader, binary.BigEndian, &serial); err != nil {
 		slog.Error("unable to read from queue", slog.Any("error", err))
 		return
@@ -97,7 +96,7 @@ func apiGetApprove(w http.ResponseWriter, r *http.Request) {
 		Serial:          serial,
 		CertType:        certType,
 		KeyId:           fmt.Sprintf("%s@%s", username, r.RemoteAddr),
-		ValidPrincipals: principals, //cr.Principals,
+		ValidPrincipals: principals,
 		ValidAfter:      uint64(validAfter.Unix()),
 		ValidBefore:     uint64(validBefore.Unix()),
 		Permissions: ssh.Permissions{
@@ -107,7 +106,7 @@ func apiGetApprove(w http.ResponseWriter, r *http.Request) {
 		SignatureKey: pubKey,
 	}
 
-	signer, err := ssh.ParsePrivateKey([]byte(config.GetConfig().SshKey))
+	signer, err := ssh.ParsePrivateKey([]byte(getApproveConfig().SshKey))
 	if err != nil {
 		slog.Error("error loading signer", slog.Any("error", err))
 		return
@@ -120,15 +119,53 @@ func apiGetApprove(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:   time.Now(),
 	}
 
-	certStore := r.Context().Value(
-		store.CertificateContext).(*store.MemoryCertificatesStore)
-
 	if err = certStore.Create(&c); err != nil {
 		render.Status(r, http.StatusBadRequest)
 		_ = render.Render(w, r, api.ErrInvalidRequest(err))
 		return
 	}
 
+	_ = auditStore.Create(&store.AuditLogEntry{
+		RequestID: id,
+		UserName:  username,
+		Decision:  "approved",
+		PublicKey: cr.Pubkey,
+		Account:   cr.Account,
+		CertType:  cr.Type,
+	})
+
 	render.Status(r, http.StatusOK)
 	_ = render.Render(w, r, &types.ResponseBase{StatusText: "success"})
+}
+
+func apiGetReject(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	reqStore := r.Context().Value(store.CertRequestContext).(store.CertRequestInterface)
+	certStore := r.Context().Value(store.CertificateContext).(store.CertificateInterface)
+	auditStore := r.Context().Value(store.AuditLogContext).(store.AuditLogInterface)
+
+	cr, err := reqStore.Get(id)
+	if err != nil {
+		slog.Error("Failed to get request for rejection", slog.Any("error", err))
+		_, _ = w.Write([]byte("doesn't exist"))
+		return
+	}
+	_ = reqStore.Delete(id)
+
+	username := middleware.GetUserName(r)
+
+	_ = certStore.Reject(id)
+
+	_ = auditStore.Create(&store.AuditLogEntry{
+		RequestID: id,
+		UserName:  username,
+		Decision:  "rejected",
+		PublicKey: cr.Pubkey,
+		Account:   cr.Account,
+		CertType:  cr.Type,
+	})
+
+	render.Status(r, http.StatusOK)
+	_ = render.Render(w, r, &types.ResponseBase{StatusText: "rejected"})
 }

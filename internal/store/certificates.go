@@ -2,21 +2,14 @@
 package store
 
 import (
+	"errors"
 	"sync"
 	"time"
 )
 
-type Subscriber struct {
-	ID    string
-	Phone chan int
-}
-
-var (
-	subscriptions []*Subscriber
-)
-
 type MemoryCertificatesStore struct {
 	certs map[string]Certificate
+	subs  []*Subscriber
 	mu    sync.RWMutex
 }
 
@@ -38,8 +31,8 @@ func (s *MemoryCertificatesStore) Get(id string) (*Certificate, error) {
 	return &m, nil
 }
 
-func findSub(id string) *Subscriber {
-	for _, v := range subscriptions {
+func (s *MemoryCertificatesStore) findSub(id string) *Subscriber {
+	for _, v := range s.subs {
 		if v.ID == id {
 			return v
 		}
@@ -51,48 +44,44 @@ func (s *MemoryCertificatesStore) GetWait(id string) *Subscriber {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if sub := findSub(id); sub != nil {
+	if sub := s.findSub(id); sub != nil {
 		return sub
 	}
 
 	sub := &Subscriber{
 		ID:    id,
-		Phone: make(chan int),
+		Phone: make(chan error, 1),
 	}
 
-	subscriptions = append(subscriptions, sub)
-
-	//there should be no way someone could pull this off
-	//so i'm not going to really code it
-	// cert, err := s.Get(id)
-	// if err != nil {
-	//   go func(){
-	//       wait 2 seconds
-	//       send cert into channel
-	//     }()
-	//   return channel
-	// }
+	s.subs = append(s.subs, sub)
 
 	return sub
 }
 
 func (s *MemoryCertificatesStore) Create(c *Certificate) error {
 	s.mu.Lock()
-	// defer unlock - we need to unlock before end so don't do it here
+	defer s.mu.Unlock()
 
 	if _, ok := s.certs[c.ID]; ok {
-		s.mu.Unlock()
 		return &DuplicateKeyError{ID: c.ID}
 	}
-	defer s.mu.Unlock()
 
 	c.CreatedAt = time.Now().UTC()
 	s.certs[c.ID] = *c
 
-	if sub := findSub(c.ID); sub != nil {
-		// someone is already listening so just send it
-		sub.Phone <- 1
-		return nil
+	if sub := s.findSub(c.ID); sub != nil {
+		sub.Phone <- nil
+	}
+
+	return nil
+}
+
+func (s *MemoryCertificatesStore) Reject(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if sub := s.findSub(id); sub != nil {
+		sub.Phone <- errors.New("rejected")
 	}
 
 	return nil

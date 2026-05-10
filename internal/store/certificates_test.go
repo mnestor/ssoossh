@@ -141,3 +141,65 @@ func TestMemoryCertificatesStore_CreateGetDelete(t *testing.T) {
 		}
 	}()
 }
+
+func TestMemoryCertificatesStore_Reject(t *testing.T) {
+	s := NewMemoryCertificatesStore()
+
+	// Register subscriber synchronously before calling Reject so it's visible.
+	sub := s.GetWait("pending-id")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- <-sub.Phone
+	}()
+
+	if err := s.Reject("pending-id"); err != nil {
+		t.Fatalf("Reject returned unexpected error: %v", err)
+	}
+
+	select {
+	case got := <-done:
+		if got == nil {
+			t.Error("expected non-nil error from channel after Reject, got nil")
+		} else if got.Error() != "rejected" {
+			t.Errorf("expected error 'rejected', got %q", got.Error())
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Error("timed out waiting for rejection signal")
+	}
+}
+
+func TestMemoryCertificatesStore_RejectNoWaiter(t *testing.T) {
+	s := NewMemoryCertificatesStore()
+
+	// Reject on an ID with no subscriber should not block or panic.
+	if err := s.Reject("nonexistent"); err != nil {
+		t.Errorf("Reject on missing ID returned error: %v", err)
+	}
+}
+
+func TestMemoryCertificatesStore_CreateSignalsNil(t *testing.T) {
+	s := NewMemoryCertificatesStore()
+
+	// Register subscriber synchronously before Create so the signal isn't missed.
+	sub := s.GetWait("cert-id")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- <-sub.Phone
+	}()
+
+	cert := &Certificate{ID: "cert-id", Certificate: "ssh-rsa ..."}
+	if err := s.Create(cert); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	select {
+	case got := <-done:
+		if got != nil {
+			t.Errorf("expected nil error from channel after Create, got %v", got)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Error("timed out waiting for approval signal")
+	}
+}

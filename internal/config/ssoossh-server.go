@@ -31,6 +31,7 @@ type ServerSettings struct {
 	Tls          TlsConfig     `mapstructure:"tls"`
 	RBAC         RBACConfig    `mapstructure:"rbac"`
 	AuthConfig   OAuthConfig   `mapstructure:"oauth"`
+	DatabasePath string        `mapstructure:"db_path"`
 }
 
 type TlsConfig struct {
@@ -175,4 +176,5 @@ func setDefaults() {
 
 	viper.SetDefault("server.tls.cert_file", "")
 	viper.SetDefault("server.tls.key_file", "")
+	viper.SetDefault("server.db_path", "ssoossh.db")
 }

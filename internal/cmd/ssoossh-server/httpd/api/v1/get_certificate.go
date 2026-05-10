@@ -23,31 +23,31 @@ func apiGetCertificate(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Accel-Buffering", "no")
 
 	id := mware.GetSession(r).GetString(r.Context(), "signreq")
-
-	// clear it
 	mware.GetSession(r).Put(r.Context(), "signreq", "")
 
-	s := r.Context().Value(
-		store.CertificateContext).(*store.MemoryCertificatesStore)
+	certStore := r.Context().Value(store.CertificateContext).(store.CertificateInterface)
 
 	cleanup := func() {
-		_ = s.Delete(id)
+		_ = certStore.Delete(id)
 		ctxCancel()
 	}
-	blockedCertChan := make(chan bool)
 
+	resultChan := make(chan error, 1)
 	go func() {
-		<-s.GetWait(id).Phone
-		blockedCertChan <- true
+		resultChan <- <-certStore.GetWait(id).Phone
 	}()
 
 	for {
 		select {
-		case <-blockedCertChan:
-			cert, _ := s.Get(id)
-			// we have the cert now
-			render.Status(r, http.StatusOK)
-			_ = render.Render(w, r, types.NewCertificateRequestResponse("success", cert.Certificate))
+		case err := <-resultChan:
+			if err != nil {
+				render.Status(r, http.StatusForbidden)
+				_ = render.Render(w, r, types.NewResponseError("rejected", "Request was rejected"))
+			} else {
+				cert, _ := certStore.Get(id)
+				render.Status(r, http.StatusOK)
+				_ = render.Render(w, r, types.NewCertificateRequestResponse("success", cert.Certificate))
+			}
 			cleanup()
 			return
 

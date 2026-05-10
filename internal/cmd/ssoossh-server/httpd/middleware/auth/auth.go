@@ -74,6 +74,10 @@ func New() *Enforcer {
 
     # Browser GUI
     p, user, /approve/*, GET, allow
+    p, user, /reject/*, GET, allow
+
+    # Audit log
+    p, user, /api/%[1]s/audit, GET, allow
   `, version.ApiPath)
 
 	modelFromString, err := model.NewModelFromString(modelString)

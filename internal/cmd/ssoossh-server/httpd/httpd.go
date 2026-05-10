@@ -8,10 +8,12 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/glebarez/sqlite"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/httprate"
 	slogchi "github.com/samber/slog-chi"
+	"gorm.io/gorm"
 
 	apiV1 "github.com/mnestor/ssoossh/internal/cmd/ssoossh-server/httpd/api/v1"
 	mware "github.com/mnestor/ssoossh/internal/cmd/ssoossh-server/httpd/middleware"
@@ -25,8 +27,9 @@ import (
 type HttpServer struct {
 	*chi.Mux
 	SessionManager   *mware.SessionManager
-	CertificateStore *store.MemoryCertificatesStore
-	CertRequestStore *store.MemoryCertRequestStore
+	CertificateStore store.CertificateInterface
+	CertRequestStore store.CertRequestInterface
+	AuditLogStore    store.AuditLogInterface
 }
 
 func NewServer() (*HttpServer, error) {
@@ -50,17 +53,6 @@ func NewServer() (*HttpServer, error) {
 	router.Use(middleware.NoCache)
 	router.Use(mware.Hsts)
 
-	// https://github.com/chi-middleware/proxy maybe?
-	// if config.C.Server.Proxy.Enabled {
-	// 	serverConfig.EnableTrustedProxyCheck = config.C.Server.Proxy.TrustedCheck
-	// 	if len(config.C.Server.Proxy.Header) > 0 {
-	// 		serverConfig.ProxyHeader = config.C.Server.Proxy.Header
-	// 	}
-	// 	if len(config.C.Server.Proxy.TrustedNetworks) > 0 {
-	// 		serverConfig.TrustedProxies = config.C.Server.Proxy.TrustedNetworks
-	// 	}
-	// }
-
 	router.Use(httprate.LimitByRealIP(c.Server.RateLimit, c.Server.RateDuration))
 	router.Use(mware.Sni)
 	router.Use(middleware.RealIP)
@@ -73,11 +65,22 @@ func NewServer() (*HttpServer, error) {
 	certStore := store.NewMemoryCertificatesStore()
 	reqCertStore := store.NewMemoryCertRequestStore()
 
+	db, err := gorm.Open(sqlite.Open(c.Server.DatabasePath), &gorm.Config{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+
+	auditStore, err := store.NewGormAuditLogStore(db)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init audit log store: %w", err)
+	}
+
 	router.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
-			ctx = context.WithValue(ctx, store.CertRequestContext, reqCertStore)
-			ctx = context.WithValue(ctx, store.CertificateContext, certStore)
+			ctx = context.WithValue(ctx, store.CertRequestContext, store.CertRequestInterface(reqCertStore))
+			ctx = context.WithValue(ctx, store.CertificateContext, store.CertificateInterface(certStore))
+			ctx = context.WithValue(ctx, store.AuditLogContext, store.AuditLogInterface(auditStore))
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	})
@@ -96,22 +99,18 @@ func NewServer() (*HttpServer, error) {
 	})
 
 	router.Get("/approve/{id}", apiGetApprove)
+	router.Get("/reject/{id}", apiGetReject)
 
-	// // WebGUI should always be current
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("Hello World!"))
 	})
-
-	// sometimes we gotta make things hard on ourselves
-	// router.Method("GET", "/*", frontend.SvelteKitHandler("/"))
-
-	// router.Handle("/*", frontend.SvelteKitHandler("/"))
 
 	return &HttpServer{
 		router,
 		sessionManager,
 		certStore,
 		reqCertStore,
+		auditStore,
 	}, nil
 }
 
@@ -125,8 +124,6 @@ func (s *HttpServer) Listen() error {
 
 	defer s.Close()
 
-	// Run the server
-	// This will hold
 	slog.Info("Webserver is now listening for connections", "Address", listen)
 	if c.Port == 80 {
 		server := &http.Server{Addr: listen, Handler: s}
@@ -154,5 +151,4 @@ func (s *HttpServer) Listen() error {
 }
 
 func (s *HttpServer) Close() {
-	// s.SessionManager.Close()
 }

@@ -23,17 +23,13 @@ func apiSignRequestPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s := r.Context().Value(
-		store.CertRequestContext).(*store.MemoryCertRequestStore)
+	s := r.Context().Value(store.CertRequestContext).(store.CertRequestInterface)
 
 	// validate that we have a valid PublicKey
 	_, _, _, _, err := ssh.ParseAuthorizedKey([]byte(data.PublicKey))
 	if err != nil {
 		render.Status(r, http.StatusBadRequest)
-		_ = render.Render(w, r, types.ResponseError{
-			StatusText: "fail",
-			Message:    "please sent a valid public key",
-		})
+		_ = render.Render(w, r, types.NewResponseError("fail", "please send a valid public key"))
 		return
 	}
 
