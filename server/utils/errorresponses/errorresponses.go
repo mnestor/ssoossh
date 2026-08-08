@@ -26,3 +26,17 @@ func (e *MisdirectedRequestError) Error() string {
 
 // HTTPStatusCode reports the HTTP status this error should be rendered as.
 func (e *MisdirectedRequestError) HTTPStatusCode() int { return http.StatusMisdirectedRequest }
+
+// NotImplementedError indicates a route or check exists as a scaffold but
+// its logic hasn't been implemented yet. Handlers/middleware that are still
+// placeholders should fail closed with this rather than silently allowing
+// the request through.
+type NotImplementedError struct{}
+
+// Error implements the error interface.
+func (e *NotImplementedError) Error() string {
+	return "Not implemented"
+}
+
+// HTTPStatusCode reports the HTTP status this error should be rendered as.
+func (e *NotImplementedError) HTTPStatusCode() int { return http.StatusNotImplemented }

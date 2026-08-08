@@ -74,7 +74,7 @@ func TestInitRouter_ShouldServeRequestsWhenTracesEnabled(t *testing.T) {
 	}
 }
 
-func TestInitRouter_ShouldSendHstsHeaderOnlyWhenServerTerminatesTLS(t *testing.T) {
+func TestInitRouter_ShouldSendHstsHeaderWheneverConfiguredRegardlessOfTLS(t *testing.T) {
 	t.Parallel()
 
 	certPEM, keyPEM := newTestTLSCertPEM(t)
@@ -105,11 +105,14 @@ func TestInitRouter_ShouldSendHstsHeaderOnlyWhenServerTerminatesTLS(t *testing.T
 			want: "max-age=63072000",
 		},
 		{
-			name: "should not send hsts header when tls is not configured",
+			// A reverse proxy in front may terminate TLS itself, in which
+			// case this process only ever sees plain HTTP but the header
+			// still needs to reach the browser.
+			name: "should send hsts header when tls is not configured but hsts value is",
 			configure: func(c *config.Config) {
 				c.HTTP.Hsts = "max-age=31536000; includeSubDomains"
 			},
-			want: "",
+			want: "max-age=31536000; includeSubDomains",
 		},
 		{
 			name: "should not send hsts header when hsts value is empty",
@@ -120,12 +123,12 @@ func TestInitRouter_ShouldSendHstsHeaderOnlyWhenServerTerminatesTLS(t *testing.T
 			want: "",
 		},
 		{
-			name: "should not send hsts header when certificate is configured without a key",
+			name: "should send hsts header when certificate is configured without a key but hsts value is set",
 			configure: func(c *config.Config) {
 				c.HTTP.TLS.Certificate = certPEM
 				c.HTTP.Hsts = "max-age=31536000; includeSubDomains"
 			},
-			want: "",
+			want: "max-age=31536000; includeSubDomains",
 		},
 	}
 

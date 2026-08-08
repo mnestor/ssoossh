@@ -100,15 +100,21 @@ type TLSConfig struct {
 // Build resolves this TLSConfig into a usable *tls.Config: it loads the
 // certificate/key pair and resolves CipherSuites, TLSMinVersion, and
 // CurveNames via this package's CipherSuites, MinVersion, and Curve
-// functions. Callers should check HasKeyPair first to decide whether TLS
-// applies at all -- Build returns an error if no certificate/key pair is
-// configured, or if any of the three fields above name something
+// functions. If no certificate/key pair is configured, Build returns
+// (nil, nil) rather than an error -- callers use that nil to mean "TLS
+// doesn't apply here" (see bootstrap.configureAppServerTransport). Build
+// still returns an error if a certificate/key pair is partially configured
+// but invalid, or if any of the three fields above name something
 // unrecognized.
 //
 // tls.Config.ServerName is deliberately left unset: it's a client-side
 // field servers ignore, so enforcing a specific server name is a caller
 // concern, not this package's.
 func (t TLSConfig) Build() (*tls.Config, error) {
+	if !t.HasKeyPair() {
+		return nil, nil
+	}
+
 	cert, err := t.LoadX509KeyPair()
 	if err != nil {
 		return nil, err

@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"encoding/pem"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -44,7 +46,8 @@ func newTestSSHKeyPEM(t *testing.T) string {
 type bootstrapConfigOpts struct {
 	dbProvider string // database provider; defaults to sqlite
 	sshKey     string // CA key material; defaults to a freshly generated valid key
-	extra      string // appended verbatim to the file
+	httpExtra  string // appended verbatim inside the http: block (must be indented)
+	extra      string // appended verbatim at the top level of the file
 }
 
 // writeBootstrapConfig writes an ssoosshd config file (port 0, in-memory
@@ -68,17 +71,47 @@ func writeBootstrapConfig(t *testing.T, opts bootstrapConfigOpts) string {
 	content := fmt.Sprintf(`http:
   address: 127.0.0.1
   port: 0
+%s
 db:
   provider: %s
   connection_string: ":memory:"
 %s
-%s`, opts.dbProvider, sshKeyYAML, opts.extra)
+%s`, opts.httpExtra, opts.dbProvider, sshKeyYAML, opts.extra)
 
 	path := filepath.Join(t.TempDir(), "ssoosshd.yaml")
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatalf("failed to write config file: %v", err)
 	}
 	return path
+}
+
+// newTestOIDCProvider starts a fake OIDC provider serving just enough of
+// the discovery document (github.com/coreos/go-oidc/v3/oidc.NewProvider
+// only needs this to succeed synchronously; the jwks endpoint is fetched
+// lazily on first token verification, which these bootstrap tests never
+// reach) for service.NewAuthService's discovery call to succeed.
+func newTestOIDCProvider(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	var srv *httptest.Server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{
+			"issuer": %q,
+			"authorization_endpoint": %q,
+			"token_endpoint": %q,
+			"jwks_uri": %q
+		}`, srv.URL, srv.URL+"/auth", srv.URL+"/token", srv.URL+"/keys")
+	})
+	mux.HandleFunc("/keys", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"keys":[]}`)
+	})
+
+	srv = httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
 }
 
 // newBootstrapCommand builds a cobra command carrying the --config flag
@@ -100,13 +133,21 @@ func TestBootstrap_ShouldStartAndShutDownCleanlyWhenContextCanceled(t *testing.T
 	saveSlogDefault(t)
 	t.Setenv("OTEL_LOGS_EXPORTER", "none")
 
+	oidcSrv := newTestOIDCProvider(t)
+	httpExtra := fmt.Sprintf(`  authentication:
+    client_id: test-client
+    redirect_url: "https://ssoossh.example.com/auth/callback"
+    provider_url: %q
+    fields:
+      username: sub`, oidcSrv.URL)
+
 	// A pre-canceled context makes the server run its full startup and then
 	// shut down immediately, exercising the whole Bootstrap sequence
 	// without leaving anything running.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	cc := newBootstrapCommand(t, ctx, writeBootstrapConfig(t, bootstrapConfigOpts{}))
+	cc := newBootstrapCommand(t, ctx, writeBootstrapConfig(t, bootstrapConfigOpts{httpExtra: httpExtra}))
 
 	if err := Bootstrap(cc); err != nil {
 		t.Fatalf("expected Bootstrap to shut down cleanly, got %v", err)

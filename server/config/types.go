@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/DeRuina/timberjack"
+
 	"github.com/mnestor/ssoossh/server/config/tlsutils"
 )
 
@@ -158,15 +159,30 @@ type HTTPSettings struct {
 	// OAuthConfig for details on provider URL, scopes, and field mapping
 	// from OIDC claims to ssoossh identity fields (username, groups).
 	AuthConfig OAuthConfig `mapstructure:"authentication"`
+
+	// LDAP optionally enriches the identity resolved from OIDC with
+	// attributes looked up by username. See LDAPConfig.
+	LDAP LDAPConfig `mapstructure:"ldap"`
 }
 
 // OAuthConfig configures the OIDC provider used to authenticate users.
 type OAuthConfig struct {
-	ClientID     string      `mapstructure:"client_id"`
-	ClientSecret string      `mapstructure:"client_secret"`
-	ProviderURL  string      `mapstructure:"provider_url"`
-	Scopes       string      `mapstructure:"scopes"`
-	Fields       OAuthFields `mapstructure:"fields"`
+	ClientID     string `mapstructure:"client_id"`
+	ClientSecret string `mapstructure:"client_secret"`
+	ProviderURL  string `mapstructure:"provider_url"`
+
+	// RedirectURL is the full callback URL registered with the OIDC
+	// provider, e.g. "https://sso.example.com/auth/callback" - it must
+	// match the router's /auth/callback route (see bootstrap/router.go).
+	// Not derived from the incoming request's Host/scheme headers, since
+	// those aren't trustworthy without a configured trusted-proxy list
+	// this project doesn't have yet; set explicitly instead.
+	RedirectURL string `mapstructure:"redirect_url"`
+
+	// Scopes is a space-separated list of additional scopes to request
+	// alongside the always-included "openid" scope, e.g. "profile email".
+	Scopes string      `mapstructure:"scopes"`
+	Fields OAuthFields `mapstructure:"fields"`
 }
 
 // OAuthFields maps ssoossh identity fields to claim names in the OIDC
@@ -174,6 +190,22 @@ type OAuthConfig struct {
 type OAuthFields struct {
 	Username string `mapstructure:"username"`
 	Groups   string `mapstructure:"groups"`
+}
+
+// LDAPConfig configures optional LDAP identity enrichment, looked up by the
+// username resolved from OIDC (see docs/ssoossh-context.md — "Which LDAP
+// attributes become principals" is still an open question). Enabled false
+// (the default) skips LDAP entirely; OIDC claims alone are sufficient.
+//
+// TODO: not yet consumed by service.AuthService — fields are a starting
+// guess at what a reference deployment (lldap) needs.
+type LDAPConfig struct {
+	Enabled      bool   `mapstructure:"enabled"`
+	URL          string `mapstructure:"url"`
+	BindDN       string `mapstructure:"bind_dn"`
+	BindPassword string `mapstructure:"bind_password"`
+	BaseDN       string `mapstructure:"base_dn"`
+	UserFilter   string `mapstructure:"user_filter"`
 }
 
 // CertificateOptions groups the certificate-issuance options for each

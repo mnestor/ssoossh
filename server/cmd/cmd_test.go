@@ -10,7 +10,10 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
+	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +23,34 @@ import (
 
 	"golang.org/x/crypto/ssh"
 )
+
+// newTestOIDCProvider starts a fake OIDC provider serving just enough of
+// the discovery document for service.NewAuthService's discovery call to
+// succeed (the jwks endpoint is fetched lazily on first token verification,
+// which these command tests never reach).
+func newTestOIDCProvider(t *testing.T) *httptest.Server {
+	t.Helper()
+
+	var srv *httptest.Server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{
+			"issuer": %q,
+			"authorization_endpoint": %q,
+			"token_endpoint": %q,
+			"jwks_uri": %q
+		}`, srv.URL, srv.URL+"/auth", srv.URL+"/token", srv.URL+"/keys")
+	})
+	mux.HandleFunc("/keys", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"keys":[]}`)
+	})
+
+	srv = httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
 
 func TestNewCommand_ShouldSetUseToSsoosshd(t *testing.T) {
 	t.Parallel()
@@ -80,9 +111,17 @@ func writeServerTestConfig(t *testing.T) string {
 	}
 	keyPEM := strings.TrimRight(string(pem.EncodeToMemory(block)), "\n")
 
+	oidcSrv := newTestOIDCProvider(t)
+
 	content := `http:
   address: 127.0.0.1
   port: 0
+  authentication:
+    client_id: test-client
+    redirect_url: "https://ssoossh.example.com/auth/callback"
+    provider_url: "` + oidcSrv.URL + `"
+    fields:
+      username: sub
 db:
   provider: sqlite
   connection_string: ":memory:"

@@ -20,6 +20,22 @@ http:
     log_response_header: false
     log_span_id: false
     log_trace_id: false
+  ldap:
+    enabled: false
+    url: ""
+    bind_dn: ""
+    bind_password: ""
+    base_dn: ""
+    user_filter: ""
+  authentication:
+    client_id: ""
+    client_secret: ""
+    provider_url: ""
+    redirect_url: ""
+    scopes: "profile email"
+    fields:
+      username: "preferred_username"
+      groups: ""
 
 logging:
   level: WARN

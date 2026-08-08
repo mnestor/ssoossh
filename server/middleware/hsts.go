@@ -3,9 +3,11 @@ package middleware
 import "github.com/gin-gonic/gin"
 
 // HstsMiddleware sets the Strict-Transport-Security header on responses,
-// telling browsers to reach this host only over HTTPS. Register it only on
-// a server that terminates TLS itself: browsers ignore HSTS on plain-HTTP
-// responses (RFC 6797).
+// telling browsers to reach this host only over HTTPS. Safe to register
+// even when this process doesn't terminate TLS itself (e.g. behind a
+// reverse proxy): browsers ignore the header on a connection they see as
+// plain HTTP (RFC 6797), so sending it unconditionally is harmless, and
+// some deployments require it present on the HTTP response regardless.
 type HstsMiddleware struct {
 	headerValue string
 }

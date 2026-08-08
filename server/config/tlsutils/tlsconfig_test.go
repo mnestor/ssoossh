@@ -257,10 +257,6 @@ func TestTLSConfig_Build_ShouldError(t *testing.T) {
 		cfg  TLSConfig
 	}{
 		{
-			name: "should error when no certificate is configured",
-			cfg:  TLSConfig{TLSMinVersion: "TLS1.3"},
-		},
-		{
 			name: "should error when TLSMinVersion is empty",
 			cfg:  TLSConfig{CertificateInfo: validCert},
 		},
@@ -286,5 +282,19 @@ func TestTLSConfig_Build_ShouldError(t *testing.T) {
 				t.Error("expected an error, got nil")
 			}
 		})
+	}
+}
+
+func TestTLSConfig_Build_ShouldReturnNilConfigAndNilErrorWhenNoCertificateConfigured(t *testing.T) {
+	t.Parallel()
+
+	cfg := TLSConfig{TLSMinVersion: "TLS1.3"}
+
+	tlsConfig, err := cfg.Build()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if tlsConfig != nil {
+		t.Errorf("expected a nil *tls.Config when no certificate/key pair is configured, got %+v", tlsConfig)
 	}
 }

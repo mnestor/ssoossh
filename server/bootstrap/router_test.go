@@ -32,11 +32,12 @@ import (
 // listeners) live in router_run_test.go; those verify end-to-end behavior
 // including TLS, network I/O, and listener lifecycle.
 
-// newTestApp builds a minimal *app sufficient to call initRouter: a config
-// and a services struct holding a real *service.CAService built from a
+// newTestApp builds a minimal *app sufficient to call initRouter: a config,
+// a services struct holding a real *service.CAService built from a
 // throwaway test SSH key (caController.caService is a concrete type, not an
 // interface, so a fake can't be substituted without changing production
-// code).
+// code), and an in-memory sqlite *gorm.DB (initRouter's session store setup
+// needs a real *gorm.DB - it AutoMigrates its own table on construction).
 func newTestApp(t *testing.T, c *config.Config) *app {
 	t.Helper()
 
@@ -55,7 +56,15 @@ func newTestApp(t *testing.T, c *config.Config) *app {
 		t.Fatalf("failed to build CAService: %v", err)
 	}
 
-	return &app{config: c, svc: &services{ca: caSvc}}
+	dbConfig := &config.Config{}
+	dbConfig.DB.Provider = config.DBProviderSqlite
+	dbConfig.DB.Connection = ":memory:"
+	db, err := connectDatabase(dbConfig)
+	if err != nil {
+		t.Fatalf("failed to connect to in-memory test database: %v", err)
+	}
+
+	return &app{config: c, svc: &services{ca: caSvc}, db: db}
 }
 
 func TestInitRouter_ShouldDisableRateLimitWhenRateLimitIsZero(t *testing.T) {

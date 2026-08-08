@@ -2,7 +2,7 @@ package bootstrap
 
 import (
 	"context"
-	"crypto/tls"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-contrib/sessions"
+	gormsessions "github.com/gin-contrib/sessions/gorm"
 	"github.com/gin-gonic/gin"
 	sloggin "github.com/samber/slog-gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
@@ -22,7 +24,6 @@ import (
 
 	"github.com/mnestor/ssoossh/internal/version"
 	"github.com/mnestor/ssoossh/server/config"
-	"github.com/mnestor/ssoossh/server/config/tlsutils"
 	"github.com/mnestor/ssoossh/server/controller"
 	"github.com/mnestor/ssoossh/server/frontend"
 	"github.com/mnestor/ssoossh/server/middleware"
@@ -55,6 +56,25 @@ func (a *app) initRouter() (*Server, error) {
 	}
 
 	r := gin.New()
+
+	// gin.Recovery, tracing, the access log, and ErrorHandlerMiddleware all
+	// have to come before RateLimitMiddleware, not after: each works by
+	// calling c.Next() and only doing its real work (ending the span,
+	// logging the request, translating c.Errors into a response) once the
+	// rest of the chain has run, so they must already be running
+	// (registered earlier, wrapping everything after them) by the time
+	// RateLimitMiddleware calls c.Error+c.Abort - otherwise a rate-limited
+	// request would never get traced or logged, and its error would never
+	// get translated into a 429. These are all cheap, though, so this is
+	// still effectively "reject flooding clients before doing any other
+	// per-request work" - the expensive stuff (HSTS, CORS/CSP, route
+	// dispatch) all comes after the rate limiter instead.
+	r.Use(gin.Recovery())
+
+	if c.Traces {
+		r.Use(otelgin.Middleware(version.Name))
+	}
+
 	r.Use(sloggin.NewWithConfig(slog.With("type", "accesslog"), sloggin.Config{
 		WithUserAgent:      c.HTTP.AccessLogging.WithUserAgent,
 		WithClientIP:       c.HTTP.AccessLogging.WithClientIP,
@@ -66,44 +86,37 @@ func (a *app) initRouter() (*Server, error) {
 		WithSpanID:         c.HTTP.AccessLogging.WithSpanID,
 		WithTraceID:        c.HTTP.AccessLogging.WithTraceID,
 	}))
-
-	r.Use(gin.Recovery())
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
 
-	if c.Traces {
-		r.Use(otelgin.Middleware(version.Name))
+	// A rate_limit of 0 (or less) disables rate limiting entirely.
+	if c.HTTP.RateLimit > 0 {
+		rateLimitInterval := c.HTTP.RateDuration / time.Duration(c.HTTP.RateLimit)
+		r.Use(middleware.NewRateLimitMiddleware().Add(rate.Every(rateLimitInterval), c.HTTP.RateLimit))
 	}
 
-	// The server terminates TLS only when the config provides a complete
-	// certificate/key pair; startAppServer makes the same decision when it
-	// builds the listener.
-	useTLS := c.HTTP.TLS.HasKeyPair()
-
-	// Browsers ignore Strict-Transport-Security over plain HTTP (RFC 6797),
-	// so the header is sent only when this server terminates TLS itself; an
-	// empty http.hsts value disables it. Unlike the global middleware block
-	// below, this sits before the health-check routes on purpose: the header
-	// only adds information and must reach every response, /healthz and
-	// /ping included.
-	if useTLS && c.HTTP.Hsts != "" {
+	// Sent regardless of whether this server terminates TLS itself: a
+	// reverse proxy in front may be the one doing TLS termination, in which
+	// case this process only ever sees plain HTTP but the header still
+	// needs to reach the browser. Browsers ignore the header over a
+	// connection they see as plain HTTP anyway (RFC 6797), so sending it
+	// unconditionally is harmless when there's no proxy, and some
+	// deployments require it present even on the HTTP response regardless.
+	// An empty http.hsts value disables it. Unlike the global middleware
+	// block below, this sits before the health-check routes on purpose: the
+	// header only adds information and must reach every response, /healthz
+	// and /ping included.
+	if c.HTTP.Hsts != "" {
 		r.Use(middleware.NewHstsMiddleware(c.HTTP.Hsts).Add())
 	}
 
 	// basic health checks
-	r.GET("/healthz", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	r.GET("/healthz", func(gc *gin.Context) {
+		gc.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	r.GET("/ping", func(c *gin.Context) {
-		c.String(http.StatusOK, "pong")
+	r.GET("/ping", func(gc *gin.Context) {
+		gc.String(http.StatusOK, "pong")
 	})
-
-	// A rate_limit of 0 (or less) disables rate limiting entirely.
-	var apiMiddleware []gin.HandlerFunc
-	if c.HTTP.RateLimit > 0 {
-		rateLimitInterval := c.HTTP.RateDuration / time.Duration(c.HTTP.RateLimit)
-		apiMiddleware = append(apiMiddleware, middleware.NewRateLimitMiddleware().Add(rate.Every(rateLimitInterval), c.HTTP.RateLimit))
-	}
 
 	// Setup global middleware
 	// The healthz and ping routes above predate these Use calls, so health
@@ -113,22 +126,67 @@ func (a *app) initRouter() (*Server, error) {
 	r.Use(middleware.NewCorsMiddleware().Add())
 	r.Use(middleware.NewCspMiddleware().Add())
 
-	err := frontend.RegisterFrontend(r)
+	sessionSecret, err := resolveSessionSecret(c)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve session secret: %w", err)
+	}
+
+	// expiredSessionCleanup=true starts a background goroutine that
+	// periodically deletes expired rows. gormsessions.NewStore AutoMigrates
+	// its own "sessions" table on a.db every startup - a deliberate,
+	// narrow exception to the no-AutoMigrate convention (see
+	// server/model/model.go and .claude/rules/go.md): that table is
+	// entirely owned and queried by the gormstore library, not by our own
+	// model/ or migrations, so there's no schema this project's migrations
+	// need to track for it.
+	sessionStore := gormsessions.NewStore(a.db, true, sessionSecret)
+	r.Use(sessions.Sessions("ssoossh_session", sessionStore))
+
+	err = frontend.RegisterFrontend(r)
 	if errors.Is(err, frontend.ErrFrontendNotIncluded) {
 		slog.Warn("Frontend is not included in the build. Skipping frontend registration.")
 	} else if err != nil {
 		return nil, fmt.Errorf("failed to register frontend: %w", err)
 	}
 
+	// Browser-facing OIDC login/callback, outside /api since these are
+	// redirects rather than JSON API calls.
+	authGroup := r.Group("/auth")
+	controller.NewAuthController(authGroup, a.svc.auth)
+
 	// Set up API routes
-	apiGroup := r.Group("/api", apiMiddleware...)
+	apiGroup := r.Group("/api")
 	controller.NewCaController(apiGroup, a.svc.ca)
+	controller.NewCertRequestController(apiGroup, a.svc.certRequest, middleware.NewSessionAuthMiddleware().Add())
+	controller.NewHostController(apiGroup, a.svc.host, middleware.NewHostCertAuthMiddleware().Add())
+	controller.NewEnrollmentController(apiGroup, a.svc.enrollment)
 
 	return &Server{
 		router: r,
 		config: c,
-		useTLS: useTLS,
+		// useTLS is set later, by configureAppServerTransport.
 	}, nil
+}
+
+// resolveSessionSecret returns c.HTTP.CookieKey as raw bytes to key the
+// session store's encryption/signing, or a freshly generated one if none is
+// configured. A generated key is process-local only (see
+// config.HTTPSettings.CookieKey's doc comment): every existing session
+// becomes unreadable on restart, and it can't be shared across multiple
+// server instances, so production deployments should set an explicit key.
+func resolveSessionSecret(c *config.Config) ([]byte, error) {
+	if c.HTTP.CookieKey != "" {
+		return []byte(c.HTTP.CookieKey), nil
+	}
+
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return nil, fmt.Errorf("failed to generate a random session secret: %w", err)
+	}
+
+	slog.Warn("http.cookie_key is not configured; using a random session secret for this process only - existing sessions will not survive a restart, and this won't work across multiple server instances")
+
+	return key, nil
 }
 
 // Run the web server
@@ -220,26 +278,17 @@ func (s *Server) startAppServer(ctx context.Context) error {
 
 // configureAppServerTransport loads the TLS certificate (if configured) and
 // sets s.appSrv.TLSConfig, or configures h2c for plaintext HTTP/2 when no
-// certificate/key pair is present. It also updates s.useTLS to reflect
-// whether a usable certificate was found.
+// certificate/key pair is present. It also sets s.useTLS to reflect whether
+// a usable certificate was found.
 func (s *Server) configureAppServerTransport() error {
-	var cert tls.Certificate
 	var err error
-	switch {
-	case s.config.HTTP.TLS.Certificate != "" && s.config.HTTP.TLS.PrivateKey != "":
-		cert, err = tls.X509KeyPair([]byte(s.config.HTTP.TLS.Certificate), []byte(s.config.HTTP.TLS.PrivateKey))
-	case s.config.HTTP.TLS.CertificateFile != "" && s.config.HTTP.TLS.PrivateKeyFile != "":
-		cert, err = tls.LoadX509KeyPair(s.config.HTTP.TLS.CertificateFile, s.config.HTTP.TLS.PrivateKeyFile)
-	default:
-		s.useTLS = false
-	}
+	s.appSrv.TLSConfig, err = s.config.HTTP.TLS.Build()
 	if err != nil {
 		return err
 	}
 
-	if !s.useTLS {
-		// Not using TLS
-		// Here we also need to enable HTTP/2 Cleartext (h2c)
+	if s.appSrv.TLSConfig == nil {
+		// Not using TLS: also need to enable HTTP/2 Cleartext (h2c)
 		protocols := &http.Protocols{}
 		protocols.SetHTTP1(true)
 		protocols.SetUnencryptedHTTP2(true)
@@ -247,28 +296,8 @@ func (s *Server) configureAppServerTransport() error {
 		return nil
 	}
 
-	cipherSuites, err := tlsutils.CipherSuites(s.config.HTTP.TLS.CipherSuites)
-	if err != nil {
-		return err
-	}
-	minVersion, err := tlsutils.MinVersion(s.config.HTTP.TLS.TLSMinVersion)
-	if err != nil {
-		return err
-	}
-	curves, err := tlsutils.Curve(s.config.HTTP.TLS.CurveNames)
-	if err != nil {
-		return err
-	}
+	s.useTLS = true
 
-	// Note tls.Config.ServerName is deliberately not set: it's a
-	// client-side field the server ignores. The configured server_name
-	// is enforced by middleware.ServerNameMiddleware instead.
-	s.appSrv.TLSConfig = &tls.Config{
-		Certificates:     []tls.Certificate{cert},
-		MinVersion:       minVersion,
-		CurvePreferences: curves,
-		CipherSuites:     cipherSuites,
-	}
 	return nil
 }
 
