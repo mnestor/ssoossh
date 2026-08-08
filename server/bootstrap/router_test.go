@@ -1,0 +1,204 @@
+package bootstrap
+
+// Test methodology: Unit tests for router setup and middleware chain using
+// httptest.ResponseRecorder to capture responses without a real listener.
+// Tests run in parallel (t.Parallel()) and are fast. Each test verifies one
+// specific routing behavior or middleware effect. See router_run_test.go for
+// integration tests with real network listeners.
+
+import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/pem"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"golang.org/x/crypto/ssh"
+
+	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/service"
+)
+
+// Tests in this file are unit tests for router setup: they call initRouter to
+// build a *Server, then use httptest to send requests through the router
+// without starting an actual listener. These tests verify the middleware chain,
+// handler registration, and request routing logic in isolation, and run fast
+// with t.Parallel().
+//
+// Integration tests that actually start a server (Server.Run with real
+// listeners) live in router_run_test.go; those verify end-to-end behavior
+// including TLS, network I/O, and listener lifecycle.
+
+// newTestApp builds a minimal *app sufficient to call initRouter: a config
+// and a services struct holding a real *service.CAService built from a
+// throwaway test SSH key (caController.caService is a concrete type, not an
+// interface, so a fake can't be substituted without changing production
+// code).
+func newTestApp(t *testing.T, c *config.Config) *app {
+	t.Helper()
+
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate ed25519 key: %v", err)
+	}
+	block, err := ssh.MarshalPrivateKey(priv, "test-key")
+	if err != nil {
+		t.Fatalf("failed to marshal private key: %v", err)
+	}
+	c.SSHKey = string(pem.EncodeToMemory(block))
+
+	caSvc, err := service.NewCAService(c, nil)
+	if err != nil {
+		t.Fatalf("failed to build CAService: %v", err)
+	}
+
+	return &app{config: c, svc: &services{ca: caSvc}}
+}
+
+func TestInitRouter_ShouldDisableRateLimitWhenRateLimitIsZero(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	c.HTTP.RateLimit = 0
+	c.HTTP.RateDuration = time.Minute
+
+	a := newTestApp(t, c)
+
+	srv, err := a.initRouter()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	// Fire far more requests than any positive rate limit would allow, all
+	// from the same non-local IP (localhost bypasses the limiter
+	// separately, so it wouldn't prove anything about the disable-at-zero
+	// behavior specifically). Every one of them must reach the real
+	// handler and get the full CA payload back.
+	for i := 0; i < 25; i++ {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/ca", nil)
+		req.RemoteAddr = "203.0.113.50:12345"
+
+		srv.router.ServeHTTP(w, req)
+
+		if !strings.Contains(w.Body.String(), `"ca"`) {
+			t.Fatalf("request %d: expected the CA payload (rate limiting disabled), got body %q", i, w.Body.String())
+		}
+	}
+}
+
+func TestInitRouter_ShouldEnforceRateLimitWhenRateLimitPositive(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	c.HTTP.RateLimit = 1
+	c.HTTP.RateDuration = time.Minute // one request per minute, burst of 1
+
+	a := newTestApp(t, c)
+
+	srv, err := a.initRouter()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	ip := "203.0.113.51:12345"
+
+	w1 := httptest.NewRecorder()
+	req1 := httptest.NewRequest(http.MethodGet, "/api/ca", nil)
+	req1.RemoteAddr = ip
+	srv.router.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK || !strings.Contains(w1.Body.String(), `"ca"`) {
+		t.Fatalf("expected first request to succeed with the CA payload, got status %d body %s", w1.Code, w1.Body.String())
+	}
+
+	w2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/api/ca", nil)
+	req2.RemoteAddr = ip
+	srv.router.ServeHTTP(w2, req2)
+	// The burst of 1 was already consumed by the first request, so the
+	// second, immediately-following request from the same IP must be
+	// rejected by RateLimitMiddleware and translated into a 429 by
+	// ErrorHandlerMiddleware, with no CA payload in the body.
+	if w2.Code != http.StatusTooManyRequests {
+		t.Errorf("expected second immediate request to get status %d, got %d", http.StatusTooManyRequests, w2.Code)
+	}
+	if strings.Contains(w2.Body.String(), `"ca"`) {
+		t.Fatalf("expected second immediate request to be rejected by the rate limiter, but got the CA payload: %s", w2.Body.String())
+	}
+}
+
+func TestInitRouter_ShouldRejectMismatchedHostWhenServerNameConfigured(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	c.HTTP.ServerName = "ssh.example.com"
+	a := newTestApp(t, c)
+
+	srv, err := a.initRouter()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/ca", nil)
+	req.Host = "other.example.com"
+	srv.router.ServeHTTP(w, req)
+	if w.Code != http.StatusMisdirectedRequest {
+		t.Errorf("mismatched host: got status %d, want %d", w.Code, http.StatusMisdirectedRequest)
+	}
+
+	w2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodGet, "/api/ca", nil)
+	req2.Host = "ssh.example.com"
+	srv.router.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Errorf("matching host: got status %d, want %d", w2.Code, http.StatusOK)
+	}
+}
+
+func TestInitRouter_ShouldKeepHealthEndpointsReachableWhenServerNameConfigured(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	c.HTTP.ServerName = "ssh.example.com"
+	a := newTestApp(t, c)
+
+	srv, err := a.initRouter()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	// Probes commonly address the server by IP; healthz and ping are
+	// registered before the server-name middleware, so they must answer
+	// regardless of Host.
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req.Host = "203.0.113.9"
+	srv.router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("got status %d, want %d", w.Code, http.StatusOK)
+	}
+}
+
+func TestInitRouter_ShouldRegisterHealthzRoute(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	a := newTestApp(t, c)
+
+	srv, err := a.initRouter()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	srv.router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("got status %d, want %d", w.Code, http.StatusOK)
+	}
+}

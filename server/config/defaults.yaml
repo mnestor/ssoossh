@@ -1,0 +1,56 @@
+http:
+  address: 127.0.0.1
+  port: 8443
+  server_name: ""
+  cookie_key: ""
+  rate_limit: 60
+  rate_duration: 1m
+  hsts: "max-age=31536000; includeSubDomains"
+  tls:
+    min_version: TLS1.3
+    cipher_suites: []
+    curves: []
+  access_logging:
+    log_user_agent: true
+    log_request_header: true
+    log_client_ip: true
+    log_request_id: false
+    log_request_body: false
+    log_response_body: false
+    log_response_header: false
+    log_span_id: false
+    log_trace_id: false
+
+logging:
+  level: WARN
+  include_app_name: true
+  include_app_version: true
+  log_json: false
+
+production: true
+traces: false
+metrics: false
+
+db:
+  provider: sqlite
+  connection_string: "ssoossh.db"
+  retry_attempts: 3
+  retry_interval: 3s
+  logging:
+    level: WARN
+    add_source: false
+    log_json: false
+
+cert_options:
+  user:
+    valid_duration: 30s
+    extensions:
+      - permit-pty
+      - permit-user-rc
+  service:
+    require_group: ""
+    valid_duration: 8760h
+    extensions: []
+  host:
+    require_group: ""
+    valid_duration: 8760h
