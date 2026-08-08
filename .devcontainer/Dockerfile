@@ -1,10 +1,10 @@
-FROM mcr.microsoft.com/devcontainers/go:dev-1.24
+FROM node:22-bookworm-slim AS claude-builder
+RUN npm install -g @anthropic-ai/claude-code
+
+FROM mcr.microsoft.com/devcontainers/go
 ARG CREATED
 ARG COMMIT
 ARG VERSION=local
-ARG GITHUBAPI=https://api.github.com/repos/
-ARG GORELEASER=goreleaser/goreleaser/releases/latest
-ARG GOMARKDOC=princjef/gomarkdoc/releases/latest
 LABEL \
   org.opencontainers.image.created=$CREATED \
   org.opencontainers.image.version=$VERSION \
@@ -14,33 +14,33 @@ LABEL \
 ENV GOPATH=/go
 ENV PATH=$GOPATH/bin:/usr/local/go/bin:$PATH \
   CGO_ENABLED=0 \
-  GO111MODULE=on
+  GO111MODULE=on \
+  GOSUMDB=off
 
-# COPY --from=1password/op:2 /usr/local/bin/op /usr/local/bin/op
+COPY --from=1password/op:2 /usr/local/bin/op /usr/local/bin/op
+COPY --from=claude-builder /usr/local/lib/node_modules/@anthropic-ai /usr/local/lib/node_modules/@anthropic-ai
+COPY --from=claude-builder /usr/local/bin/claude /usr/local/bin/claude
 
-# RUN mkdir -p -m 755 /etc/apt/keyrings \
-#   && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-#   && cat $out | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
-#   && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
-#   && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-RUN apt-get update \
+RUN install -d -m 0755 /etc/apt/keyrings \
+  && echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sources.list.d/goreleaser.list \
+  
+  && apt-get update \
   && apt-get -y install \
-  # gh \
-  # vim \
   dnsutils \
-  # golint \
-  # gotestsum \
+  goreleaser \
+  jq \
+  ripgrep \
   git-crypt \
-  docker \
-  # && curl -Ls https://github.com/tmatilai/direnv-1password/raw/v1.0.0/1password.sh -o /usr/local/bin/1password.sh \ 
-  # && chmod +x /usr/local/bin/1password.sh \
-  # && curl -L -s -o goreleaser.deb \
-  # $(curl -sL $GITHUBAPI$GORELEASER|jq -r '.assets[] |select(.name | endswith("arm64.deb")) .browser_download_url') \
-  # && dpkg -i goreleaser.deb \
-  # && curl -L -s -o gomarkdoc.tar.gz \
-  # $(curl -sL $GITHUBAPI$GOMARKDOC|jq -r '.assets[] |select(.name | contains("linux_arm64.tar.gz")) .browser_download_url') \
-  # && tar --strip-components=1 --wildcards -zxvf gomarkdoc.tar.gz -C /usr/bin "*/gomarkdoc" \
-  # && curl -sLo svu.tgz `curl -s https://api.github.com/repos/caarlos0/svu/releases/latest |jq -r '.assets[] |select(.name | contains("_linux_arm64.tar.gz")) .browser_download_url'` \
-  # && tar -zxvf svu.tgz -C /usr/bin svu \
-  # && curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/bin
+  yamllint \
+
+  && curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(go env GOPATH)/bin
+
+USER vscode
+
+RUN go install github.com/princjef/gomarkdoc/cmd/gomarkdoc@latest \
+  && go install github.com/caarlos0/svu/v3@latest \
+  && go install golang.org/x/lint/golint@latest \
+  && go install gotest.tools/gotestsum@latest \
+  && go install github.com/rhysd/actionlint/cmd/actionlint@latest
+
 
