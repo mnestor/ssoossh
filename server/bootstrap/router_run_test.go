@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/pires/go-proxyproto"
 
 	"github.com/mnestor/ssoossh/server/config"
 )
@@ -586,4 +587,113 @@ func TestStartAppServer_ShouldLogWhenServeFailsOnClosedListener(t *testing.T) {
 
 	// Give the serve goroutine a moment to observe the closed listener.
 	time.Sleep(100 * time.Millisecond)
+}
+
+func TestBuildListener_ShouldListenOnUnixSocket(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	c.HTTP.UnixSocket = filepath.Join(t.TempDir(), "ssoosshd.sock")
+
+	ln, err := buildListener(c)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer ln.Close()
+
+	if ln.Addr().Network() != "unix" {
+		t.Errorf("got network %q, want %q", ln.Addr().Network(), "unix")
+	}
+}
+
+func TestBuildListener_ShouldRemoveStaleSocketFile(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "ssoosshd.sock")
+	if err := os.WriteFile(path, []byte("stale"), 0600); err != nil {
+		t.Fatalf("failed to create stale socket file: %v", err)
+	}
+
+	c := &config.Config{}
+	c.HTTP.UnixSocket = path
+
+	ln, err := buildListener(c)
+	if err != nil {
+		t.Fatalf("unexpected error binding over a stale socket file: %v", err)
+	}
+	defer ln.Close()
+}
+
+func TestBuildListener_ShouldErrorWhenUnixSocketAndProxyProtocolBothSet(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	c.HTTP.UnixSocket = filepath.Join(t.TempDir(), "ssoosshd.sock")
+	c.HTTP.ProxyProtocol = []string{"10.0.0.0/8"}
+
+	if _, err := buildListener(c); err == nil {
+		t.Fatal("expected an error when unix_socket and proxy_protocol are both set, got nil")
+	}
+}
+
+func TestBuildListener_ShouldWrapTCPListenerWhenProxyProtocolConfigured(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	c.HTTP.Address = "127.0.0.1"
+	c.HTTP.Port = 0
+	c.HTTP.ProxyProtocol = []string{"127.0.0.1/32"}
+
+	ln, err := buildListener(c)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer ln.Close()
+
+	if _, ok := ln.(*proxyproto.Listener); !ok {
+		t.Errorf("expected a *proxyproto.Listener, got %T", ln)
+	}
+}
+
+func TestBuildListener_ShouldErrorOnInvalidProxyProtocolCIDR(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	c.HTTP.Address = "127.0.0.1"
+	c.HTTP.Port = 0
+	c.HTTP.ProxyProtocol = []string{"not-a-cidr"}
+
+	if _, err := buildListener(c); err == nil {
+		t.Fatal("expected an error for an invalid proxy_protocol CIDR, got nil")
+	}
+}
+
+func TestBuildListener_ShouldReturnPlainTCPListenerByDefault(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	c.HTTP.Address = "127.0.0.1"
+	c.HTTP.Port = 0
+
+	ln, err := buildListener(c)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer ln.Close()
+
+	if _, ok := ln.(*proxyproto.Listener); ok {
+		t.Error("expected a plain TCP listener when proxy_protocol is unset, got a *proxyproto.Listener")
+	}
+}
+
+func TestInitEngine_ShouldErrorOnInvalidTrustedProxyCIDR(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	c.HTTP.TrustedProxies = []string{"not-a-cidr"}
+	a := newTestApp(t, c)
+
+	if _, err := a.initEngine(); err == nil {
+		t.Fatal("expected an error for an invalid trusted_proxies entry, got nil")
+	}
 }

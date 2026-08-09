@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -29,7 +30,10 @@ type authController struct {
 
 // loginHandler handles GET /auth/login: starts the OIDC flow by redirecting
 // to the provider's authorization URL, with a fresh CSRF state value stored
-// in the session for callbackHandler to check.
+// in the session for callbackHandler to check. An optional ?return_to= is
+// captured for callbackHandler to redirect back to once login completes —
+// the web UI (a JS/AJAX API consumer, not this server) decides when to send
+// the browser here with one; see middleware.SetReturnURL.
 func (a *authController) loginHandler(g *gin.Context) {
 	state, err := randomState()
 	if err != nil {
@@ -51,15 +55,20 @@ func (a *authController) loginHandler(g *gin.Context) {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 		return
 	}
+	if returnTo := g.Query("return_to"); isSafeReturnURL(returnTo) {
+		if err := middleware.SetReturnURL(g, returnTo); err != nil {
+			_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+			return
+		}
+	}
 
 	g.Redirect(http.StatusFound, authURL)
 }
 
 // callbackHandler handles GET /auth/callback: checks the OIDC state value
 // against the one loginHandler stored, exchanges the authorization code,
-// establishes the session, and redirects into the web UI.
-//
-// TODO: redirect to the pending request (if any) rather than always "/".
+// establishes the session, and redirects to the URL loginHandler captured
+// (falling back to "/" if none was set).
 func (a *authController) callbackHandler(g *gin.Context) {
 	code := g.Query("code")
 	state := g.Query("state")
@@ -91,7 +100,26 @@ func (a *authController) callbackHandler(g *gin.Context) {
 		return
 	}
 
-	g.Redirect(http.StatusFound, "/")
+	returnURL, err := middleware.PopReturnURL(g)
+	if err != nil {
+		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		return
+	}
+	if !isSafeReturnURL(returnURL) {
+		returnURL = "/"
+	}
+
+	g.Redirect(http.StatusFound, returnURL)
+}
+
+// isSafeReturnURL reports whether url is safe to redirect to: a same-site,
+// path-only relative URL. Rejects anything that could send the browser off
+// this server — an absolute URL (has a scheme) or a protocol-relative one
+// ("//evil.example.com", which browsers resolve using the current scheme
+// against that host) — since return_to is untrusted, attacker-controllable
+// query input.
+func isSafeReturnURL(url string) bool {
+	return strings.HasPrefix(url, "/") && !strings.HasPrefix(url, "//")
 }
 
 // randomState returns a random, URL-safe CSRF state value for the OIDC

@@ -110,8 +110,29 @@ type HTTPSettings struct {
 
 	// Port is the TCP port to listen on, e.g. 80 for HTTP or 443 for HTTPS.
 	// Port 0 is reserved for testing and tells the OS to pick an unused port;
-	// the actual port is logged on startup.
+	// the actual port is logged on startup. Ignored when UnixSocket is set.
 	Port int `mapstructure:"port"`
+
+	// UnixSocket, when set, is a filesystem path to listen on a Unix domain
+	// socket instead of TCP — Address and Port are ignored. Mutually
+	// exclusive with ProxyProtocol (PROXY protocol is a TCP-connection
+	// concept; it has nothing to prefix on a Unix socket).
+	UnixSocket string `mapstructure:"unix_socket"`
+
+	// ProxyProtocol lists the CIDR ranges of reverse proxies trusted to
+	// prefix connections with a PROXY protocol v1/v2 header (so the real
+	// client address survives a TCP-level proxy, as opposed to
+	// TrustedProxies below which is for HTTP-level proxies setting
+	// X-Forwarded-For). Empty disables PROXY protocol support entirely;
+	// connections from any other source are rejected outright once this is
+	// set. Ignored (must be empty) when UnixSocket is set.
+	ProxyProtocol []string `mapstructure:"proxy_protocol"`
+
+	// TrustedProxies lists the CIDR ranges of reverse proxies trusted to
+	// set X-Forwarded-For/X-Forwarded-Proto, passed to gin's
+	// SetTrustedProxies. Empty means gin trusts no proxy headers at all
+	// (c.ClientIP() always reports the direct connection's address).
+	TrustedProxies []string `mapstructure:"trusted_proxies"`
 
 	// ServerName, when set, is the host name this server answers to:
 	// requests addressed to anything else (by Host header, or SNI on TLS
@@ -186,10 +207,28 @@ type OAuthConfig struct {
 }
 
 // OAuthFields maps ssoossh identity fields to claim names in the OIDC
-// provider's ID token.
+// provider's ID token. Username is the only required field; the rest are
+// empty by default, meaning "not populated from OIDC".
 type OAuthFields struct {
 	Username string `mapstructure:"username"`
-	Groups   string `mapstructure:"groups"`
+
+	// Groups, OtherAccounts, and ServiceAccounts all name a claim expected
+	// to hold a JSON array of strings, parsed the same way. Groups feeds
+	// the certificate lifetime decision only (never placed in a
+	// certificate, see root CLAUDE.md Hard Constraints). OtherAccounts are
+	// alternate account identifiers this identity is known by on target
+	// systems (e.g. a different username, UPN, or sAMAccountName),
+	// intended to be added to a certificate's principal list alongside
+	// Username. ServiceAccounts are service-account identifiers this
+	// identity is authorized to manage/enroll certificates for.
+	Groups          string `mapstructure:"groups"`
+	OtherAccounts   string `mapstructure:"other_accounts"`
+	ServiceAccounts string `mapstructure:"service_accounts"`
+
+	// Email names the claim to read the user's email from. Empty falls
+	// back to the standard "email" claim opportunistically (not an error
+	// if absent either way).
+	Email string `mapstructure:"email"`
 }
 
 // LDAPConfig configures optional LDAP identity enrichment, looked up by the
@@ -221,6 +260,13 @@ type CertificateOptions struct {
 type CertOptions struct {
 	RequireGroup  string        `mapstructure:"require_group"`
 	ValidDuration time.Duration `mapstructure:"valid_duration,string"`
+
+	// KeyIDTemplate is a Go text/template string executed against the
+	// issuance context to produce the certificate's key ID (see
+	// docs/certificate-keyid-template.md for available fields and the
+	// per-type fallback rule). Empty falls back to
+	// CertificateOptions.User.KeyIDTemplate.
+	KeyIDTemplate string `mapstructure:"key_id_template"`
 }
 
 // CertOptionsUser configures issuance of user certificates: how long
@@ -228,6 +274,12 @@ type CertOptions struct {
 type CertOptionsUser struct {
 	ValidDuration time.Duration `mapstructure:"valid_duration,string"`
 	Extensions    []string      `mapstructure:"extensions"`
+
+	// KeyIDTemplate is the fallback for CertOptionsService.KeyIDTemplate
+	// and CertOptions.KeyIDTemplate (host) when either is empty, since
+	// user certificates are the common case. See
+	// docs/certificate-keyid-template.md.
+	KeyIDTemplate string `mapstructure:"key_id_template"`
 }
 
 // CertOptionsService configures issuance of service certificates: the OIDC
@@ -237,4 +289,9 @@ type CertOptionsService struct {
 	RequireGroup  string        `mapstructure:"require_group"`
 	ValidDuration time.Duration `mapstructure:"valid_duration,string"`
 	Extensions    []string      `mapstructure:"extensions"`
+
+	// KeyIDTemplate; see CertOptions.KeyIDTemplate and
+	// docs/certificate-keyid-template.md. Empty falls back to
+	// CertificateOptions.User.KeyIDTemplate.
+	KeyIDTemplate string `mapstructure:"key_id_template"`
 }

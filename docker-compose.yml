@@ -2,9 +2,9 @@
 
 services:
   client: &base
-    image: mcr.microsoft.com/devcontainers/go:dev-1.24
-    # build: &build
-    #   context: Docker/servers
+    # image: mcr.microsoft.com/devcontainers/go:dev-1.24
+    build:
+      context: .devcontainer
     tty: true
     networks:
       - nginx
@@ -12,15 +12,15 @@ services:
     restart: "no"
     # depends_on:
     #   - db
-    environment:
-      LOG: "*"
+    # environment:
+    #   LOG: "*"
 
   server: 
     <<: *base
     # Set to your live site to use tinyproxy and redirect your browser
     hostname: ssh.nanestor.us
-    ports:
-      - "0.0.0.0:443:443"
+    # ports:
+    #   - "0.0.0.0:443:443"
 
   # redis:
   #   image: postgres:15

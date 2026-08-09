@@ -1,5 +1,0 @@
-# this will do nothing just setup the needed values and show help
-ssoossh --server https://example.com --ca "ssh-rsa AAAAB3NzaC1..."
-
-# retrieve the ca of the server instead of settings it in config or as a flag
-ssoossh --server https://example.com ca

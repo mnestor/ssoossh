@@ -1,4 +1,3 @@
-// Created By Mike Nestor <me@mikenestor.org>
 package main
 
 /*
@@ -19,8 +18,8 @@ import (
 
 // http://www.fifi.org/doc/libpam-doc/html/pam_modules-3.html#ss3.2
 //
-//export go_authenticate
-func go_authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, args **C.char) C.int {
+//export authenticate
+func authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, args **C.char) C.int {
 	if args == nil {
 		return C.PAM_AUTH_ERR
 	}
@@ -31,19 +30,20 @@ func go_authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, args **C.cha
 		return C.PAM_AUTH_ERR
 	}
 
-	w, err := syslog.New(syslog.LOG_AUTHPRIV, "ssoossh")
+	w, err := syslog.New(syslog.LOG_AUTHPRIV, version.Name)
 	if err != nil {
 		fmt.Fprint(os.Stderr, err.Error())
 		return C.PAM_AUTH_ERR
 	}
 
+	// TODO: validate this is safe and correct
 	length := int(argc)
 	tmpSlice := (*[1 << 30]*C.char)(unsafe.Pointer(args))[:length:length]
 	pamArgs := make([]string, length)
 	for i, s := range tmpSlice {
 		t := C.GoString(s)
 		pamArgs[i] = t
-		// do we need to free this? How? // could not determine what C.free refers to
+		// TODO: do we need to free this? How? // could not determine what C.free refers to
 		// defer C.free(unsafe.Pointer(t))
 	}
 

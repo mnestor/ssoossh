@@ -6,19 +6,10 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
-
-	"golang.org/x/crypto/ssh"
 )
 
-// rsaKeyPair manages an RSA SSH keypair.
-type rsaKeyPair struct {
-	PrivateKey   *rsa.PrivateKey
-	PublicKey    *rsa.PublicKey
-	_Certificate *ssh.Certificate
-}
-
 // NewRSAKeyPair generates a new RSA SSH keypair of the given bit size.
-func NewRSAKeyPair(bits int) (*SshKeypair, error) {
+func NewRSAKeyPair(bits int) (*SSHKeypair, error) {
 	if bits < 2048 {
 		return nil, errors.New("key size too small, must be at least 2048 bits")
 	}
@@ -26,14 +17,14 @@ func NewRSAKeyPair(bits int) (*SshKeypair, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &SshKeypair{
+	return &SSHKeypair{
 		privateKey: priv,
 		publicKey:  &priv.PublicKey,
 	}, nil
 }
 
-// LoadrsaKeyPair loads an rsaKeyPair from PEM-encoded private key bytes.
-func LoadRSAKeyPair(privPEM []byte) (*SshKeypair, error) {
+// LoadRSAKeyPair loads an RSA keypair from PEM-encoded ("RSA PRIVATE KEY") private key bytes.
+func LoadRSAKeyPair(privPEM []byte) (*SSHKeypair, error) {
 	block, _ := pem.Decode(privPEM)
 	if block == nil || block.Type != "RSA PRIVATE KEY" {
 		return nil, errors.New("invalid PEM block for RSA private key")
@@ -42,7 +33,7 @@ func LoadRSAKeyPair(privPEM []byte) (*SshKeypair, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &SshKeypair{
+	return &SSHKeypair{
 		privateKey: priv,
 		publicKey:  &priv.PublicKey,
 	}, nil

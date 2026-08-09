@@ -1,6 +1,9 @@
 http:
   address: 127.0.0.1
   port: 8443
+  unix_socket: ""
+  proxy_protocol: []
+  trusted_proxies: []
   server_name: ""
   cookie_key: ""
   rate_limit: 60
@@ -36,6 +39,9 @@ http:
     fields:
       username: "preferred_username"
       groups: ""
+      other_accounts: ""
+      service_accounts: ""
+      email: ""
 
 logging:
   level: WARN
@@ -63,10 +69,13 @@ cert_options:
     extensions:
       - permit-pty
       - permit-user-rc
+    key_id_template: ""
   service:
     require_group: ""
     valid_duration: 8760h
     extensions: []
+    key_id_template: ""
   host:
     require_group: ""
     valid_duration: 8760h
+    key_id_template: ""

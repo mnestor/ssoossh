@@ -7,6 +7,9 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -53,6 +56,12 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		v.SetConfigType("yaml")
 
 		v.AddConfigPath(".")
+		home, err := os.UserHomeDir()
+		if err == nil {
+			slog.Info(fmt.Errorf("failed to parse config: %w", err).Error())
+			v.AddConfigPath(filepath.Join(home, ".config"))
+			v.AddConfigPath(filepath.Join(home, ".config/ssoossh"))
+		}
 		v.AddConfigPath("/etc")
 		v.AddConfigPath("/etc/ssoossh")
 	}

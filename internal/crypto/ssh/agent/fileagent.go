@@ -2,22 +2,26 @@ package agent
 
 import (
 	"bytes"
-	"encoding/base64"
 	"errors"
 	"os"
-	"strings"
 
-	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+
+	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 )
 
-// FileAgent implements the agent.Agent interface using SSH key files on disk.
+// FileAgent implements the Agent interface using SSH key files on disk:
+// privKey holds the private key, privKey+".pub" the public key, and
+// privKey+"-cert.pub" the signed certificate, mirroring the OpenSSH
+// convention. It manages a single identity per instance.
 type FileAgent struct {
-	keypair *keypair.SshKeypair
-	// cert       *ssh.Certificate
-	privKey    string
-	ca         ssh.PublicKey
+	keypair *keypair.SSHKeypair
+	privKey string
+	cas     []ssh.PublicKey
+
+	// HasPrivKey, HasPubKey, and HasCert record whether each corresponding
+	// file existed on disk at construction time (see NewFileAgent).
 	HasPrivKey bool
 	HasPubKey  bool
 	HasCert    bool
@@ -43,7 +47,7 @@ func NewFileAgent(path string) (Agent, error) {
 		ag.HasPrivKey = true
 		data, err := os.ReadFile(path)
 		if err == nil {
-			kp, err := keypair.LoadSshKeypair(data)
+			kp, err := keypair.LoadSSHKeypair(data)
 			if err == nil {
 				ag.keypair = kp
 			}
@@ -62,43 +66,47 @@ func NewFileAgent(path string) (Agent, error) {
 		ag.HasCert = true
 		certData, err := os.ReadFile(certPath)
 		if err == nil && ag.keypair != nil {
-			// Try to parse and set the certificate on the keypair
-			ag.keypair.ParseCertificateFromString(string(certData))
-			// if ed, ok := *ag.keypair.(*keypair.Ed25519KeyPair); ok {
-			// 	_ = ed.ParseCertificateFromString(string(certData))
-			// 	ag.cert = ed.Certificate()
-			// }
-			// Add support for other keypair types if needed
+			// Best-effort: an unparseable cert file just leaves the
+			// keypair without a certificate loaded.
+			_ = ag.keypair.ParseCertificateFromString(string(certData)) //nolint:errcheck // best-effort, see comment above
 		}
 	}
 
 	return ag, nil
 }
 
+// Type always returns AgentTypeFile.
 func (a *FileAgent) Type() string {
 	return AgentTypeFile
 }
 
-// List returns the identities known to the agent.
-func (f *FileAgent) List() ([]*ssh.PublicKey, error) {
+// Backend reports the storage backend for this agent; always BackendFile.
+func (a *FileAgent) Backend() string {
+	return BackendFile
+}
+
+// List returns the identities known to the agent. When filterByCA is true,
+// the keypair is only included if it's signed by one of the trusted CAs
+// (see SetCA); when false, the keypair is included regardless.
+func (f *FileAgent) List(filterByCA bool) ([]*ssh.PublicKey, error) {
 	var keys []*ssh.PublicKey
 	if f.keypair == nil {
 		return keys, nil
 	}
 
-	if f.keypair.SignedBy(f.ca) {
+	if !filterByCA {
 		pub := f.keypair.Public()
 		keys = append(keys, &pub)
+		return keys, nil
 	}
-	// // Only include ssh.Certificate keys signed by the CA if CA is set
-	// if f.keypair.Certificate() != nil && f.ca != nil {
-	// 	if publicKeysEqual(f.cert.SignatureKey, f.ca) {
-	// 		certPub := ssh.PublicKey(f.cert)
-	// 		keys = append(keys, &certPub)
-	// 	}
-	// } else {
-	// 	keys = append(keys, &pub)
-	// }
+
+	for _, ca := range f.cas {
+		if f.keypair.SignedBy(ca) {
+			pub := f.keypair.Public()
+			keys = append(keys, &pub)
+			break
+		}
+	}
 	return keys, nil
 }
 
@@ -121,21 +129,25 @@ func (f *FileAgent) List() ([]*ssh.PublicKey, error) {
 // 	return nil, errors.New("key not found")
 // }
 
-// Add is not supported for FileAgent.
-func (f *FileAgent) Add(key interface{}) error {
+// Add is not supported for FileAgent; use AddKeypair to write a keypair to disk.
+func (f *FileAgent) Add(key any) error {
 	return errors.New("Add not supported for FileAgent")
 }
 
-// Remove is not supported for FileAgent.
+// Remove deletes the key files for this agent's identity, regardless of the
+// key passed in; a FileAgent only ever manages a single identity, so this is
+// equivalent to RemoveAll.
 func (f *FileAgent) Remove(key ssh.PublicKey) error {
-	_, _ = f.RemoveAll()
-	return nil
+	_, err := f.RemoveAll()
+	return err
 }
 
-// RemoveAll is not supported for FileAgent.
+// RemoveAll deletes the private key, public key, and certificate files on
+// disk for this agent's identity path. It returns 1 if files were removed,
+// or 0 if there was nothing to remove.
 func (f *FileAgent) RemoveAll() (int, error) {
 	// privkey is ours so we just remove it
-	if x, _ := os.Stat(f.privKey); x == nil {
+	if _, err := os.Stat(f.privKey); err != nil {
 		return 0, nil
 	}
 	os.Remove(f.privKey)
@@ -144,8 +156,10 @@ func (f *FileAgent) RemoveAll() (int, error) {
 	return 1, nil
 }
 
+// CleanupAgent removes the on-disk key files if the loaded certificate is
+// not time-valid or not signed by a trusted CA (see SetCA).
 func (a *FileAgent) CleanupAgent() error {
-	keys, err := a.List()
+	keys, err := a.List(false)
 	if err != nil {
 		return err
 	}
@@ -163,8 +177,9 @@ func (a *FileAgent) CleanupAgent() error {
 	if !ok {
 		return nil
 	}
-	if !CertificateValid(cert, a.ca) {
-		a.RemoveAll()
+	if !CertificateValid(cert, a.cas) {
+		_, err := a.RemoveAll()
+		return err
 	}
 	return nil
 }
@@ -181,39 +196,38 @@ func (f *FileAgent) Signers() ([]ssh.Signer, error) {
 	return []ssh.Signer{signer}, nil
 }
 
+// Close is a no-op for FileAgent, which does not maintain a persistent connection.
 func (f *FileAgent) Close() error {
-	// FileAgent does not maintain a persistent connection, so nothing to close.
 	return nil
 }
 
+// Agent always returns nil for FileAgent, which has no underlying
+// golang.org/x/crypto/ssh/agent.Agent connection.
 func (f *FileAgent) Agent() agent.Agent {
 	return nil
 }
 
-func (a *FileAgent) SetCA(caStr string) error {
-	if caStr == "" {
-		return errors.New("CA public key string cannot be empty")
+// SetCA registers one or more trusted CA public keys, in addition to any
+// already registered via previous calls.
+func (a *FileAgent) SetCA(cas ...string) error {
+	if len(cas) == 0 {
+		return errors.New("at least one CA public key string is required")
 	}
-	caStr = strings.TrimSpace(caStr)
-	pub, _, _, rest, err := ssh.ParseAuthorizedKey([]byte(caStr))
-	if err != nil || len(rest) > 0 {
-		// Try parsing as raw base64
-		data, err2 := base64.StdEncoding.DecodeString(caStr)
-		if err2 != nil {
-			return errors.New("failed to parse CA public key string")
-		}
-		pub, err = ssh.ParsePublicKey(data)
+	parsed := make([]ssh.PublicKey, 0, len(cas))
+	for _, caStr := range cas {
+		pub, err := parseCAPublicKey(caStr)
 		if err != nil {
-			return errors.New("failed to parse CA public key from base64")
+			return err
 		}
+		parsed = append(parsed, pub)
 	}
-	a.ca = pub
+	a.cas = append(a.cas, parsed...)
 	return nil
 }
 
-// Certificates returns the ssh.Certificate from the file privKey+"-cert.pub" if it is signed by the CA.
+// Certificates returns the ssh.Certificate from the file privKey+"-cert.pub" if it is signed by any trusted CA.
 func (f *FileAgent) Certificates() ([]*ssh.Certificate, error) {
-	if f.ca == nil {
+	if len(f.cas) == 0 {
 		return nil, errors.New("CA public key is not set")
 	}
 	certPath := f.privKey + "-cert.pub"
@@ -229,7 +243,7 @@ func (f *FileAgent) Certificates() ([]*ssh.Certificate, error) {
 	if !ok {
 		return nil, errors.New("file is not an ssh certificate: " + certPath)
 	}
-	if !CertificateValid(cert, f.ca) {
+	if !CertificateValid(cert, f.cas) {
 		return nil, errors.New("no valid certifiates found: " + certPath)
 	}
 	var certs []*ssh.Certificate
@@ -237,10 +251,10 @@ func (f *FileAgent) Certificates() ([]*ssh.Certificate, error) {
 	return certs, nil
 }
 
-// AddKeypair adds an SshKeypair to the FileAgent's list of signers,
+// AddKeypair adds an SSHKeypair to the FileAgent's list of signers,
 // writes the private key to file, the certificate (if present) to privKey+"-cert.pub",
 // and the SSH public key to privKey+".pub".
-func (f *FileAgent) AddKeypair(keypair *keypair.SshKeypair) error {
+func (f *FileAgent) AddKeypair(keypair *keypair.SSHKeypair) error {
 	// Write private key PEM to file
 	privPEM, err := keypair.MarshalPrivateKey()
 	if err != nil {
@@ -256,12 +270,12 @@ func (f *FileAgent) AddKeypair(keypair *keypair.SshKeypair) error {
 		return err
 	}
 	pubPath := f.privKey + ".pub"
-	if err := os.WriteFile(pubPath, []byte(pubStr), 0644); err != nil {
+	if err := os.WriteFile(pubPath, []byte(pubStr), 0644); err != nil { //nolint:gosec // public key, standard OpenSSH .pub convention is world-readable; no secret material
 		return err
 	}
 
 	certPath := f.privKey + "-cert.pub"
-	if err := os.WriteFile(certPath, keypair.MarshalCertificate(), 0644); err != nil {
+	if err := os.WriteFile(certPath, keypair.MarshalCertificate(), 0644); err != nil { //nolint:gosec // certificate, same as the .pub file above: public, no secret material
 		return err
 	}
 

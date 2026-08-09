@@ -4,26 +4,35 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/google/uuid"
 	"golang.org/x/oauth2"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/model"
 )
 
 // Identity is the resolved user identity after OIDC (+ optional LDAP)
 // authentication. Groups are used only for the certificate lifetime
 // decision — never placed in a certificate (see root CLAUDE.md Hard
-// Constraints).
+// Constraints). OtherAccounts and ServiceAccounts are persisted on
+// model.User but not otherwise consumed yet.
 type Identity struct {
-	Subject  string
-	Username string
-	Email    string
-	Groups   []string
+	Subject         string
+	Username        string
+	Email           string
+	Groups          []string
+	OtherAccounts   []string
+	ServiceAccounts []string
 }
 
 // AuthProvider handles OIDC login. AuthService is the production
@@ -39,13 +48,14 @@ type AuthProvider interface {
 }
 
 // AuthService handles OIDC authentication: building the authorization URL,
-// exchanging the callback code, and mapping ID token claims (optionally
-// enriched from LDAP per config.LDAPConfig) to an Identity.
+// exchanging the callback code, mapping ID token claims (optionally
+// enriched from LDAP per config.LDAPConfig) to an Identity, and upserting
+// the corresponding model.User.
 //
-// TODO: LDAP enrichment (config.LDAPConfig) and persisting/upserting the
-// resulting identity as a model.User aren't implemented yet.
+// TODO: LDAP enrichment (config.LDAPConfig) isn't implemented yet.
 type AuthService struct {
 	config       *config.Config
+	db           *gorm.DB
 	provider     *oidc.Provider
 	verifier     *oidc.IDTokenVerifier
 	oauth2Config *oauth2.Config
@@ -55,7 +65,7 @@ type AuthService struct {
 // (its authorization/token/jwks endpoints) and builds an AuthService ready
 // to handle logins. httpClient (may be nil) is used for the discovery
 // request and all subsequent calls to the provider.
-func NewAuthService(ctx context.Context, c *config.Config, httpClient *http.Client) (*AuthService, error) {
+func NewAuthService(ctx context.Context, c *config.Config, db *gorm.DB, httpClient *http.Client) (*AuthService, error) {
 	authConfig := c.HTTP.AuthConfig
 
 	if authConfig.ProviderURL == "" {
@@ -87,6 +97,7 @@ func NewAuthService(ctx context.Context, c *config.Config, httpClient *http.Clie
 
 	return &AuthService{
 		config:   c,
+		db:       db,
 		provider: provider,
 		verifier: verifier,
 		oauth2Config: &oauth2.Config{
@@ -113,8 +124,9 @@ func (s *AuthService) AuthorizationURL(ctx context.Context, state string) (authU
 }
 
 // HandleCallback exchanges code for tokens, verifies the ID token (signature,
-// audience, expiry, and that its nonce claim matches nonce), and extracts
-// username/groups per config.OAuthFields.
+// audience, expiry, and that its nonce claim matches nonce), extracts
+// identity fields per config.OAuthFields, and upserts the corresponding
+// model.User.
 func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce string) (*Identity, error) {
 	token, err := s.oauth2Config.Exchange(ctx, code)
 	if err != nil {
@@ -147,35 +159,100 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce str
 		return nil, fmt.Errorf("OIDC ID token is missing the configured username claim %q", fields.Username)
 	}
 
-	var groups []string
-	if fields.Groups != "" {
-		groupsClaim, ok := claims[fields.Groups].([]any)
-		if !ok {
-			return nil, fmt.Errorf("OIDC ID token is missing the configured groups claim %q", fields.Groups)
-		}
-		for _, g := range groupsClaim {
-			if gs, ok := g.(string); ok {
-				groups = append(groups, gs)
-			}
-		}
+	groups, err := stringSliceClaim(claims, fields.Groups)
+	if err != nil {
+		return nil, err
+	}
+	otherAccounts, err := stringSliceClaim(claims, fields.OtherAccounts)
+	if err != nil {
+		return nil, err
+	}
+	serviceAccounts, err := stringSliceClaim(claims, fields.ServiceAccounts)
+	if err != nil {
+		return nil, err
 	}
 
-	// email is a standard OIDC claim but not one of config.OAuthFields'
-	// configurable mappings; take it opportunistically.
+	// email falls back to the standard "email" claim opportunistically if
+	// no explicit mapping is configured; either way, absence isn't an error.
+	emailField := fields.Email
+	if emailField == "" {
+		emailField = "email"
+	}
 	var email string
-	if e, ok := claims["email"].(string); ok {
+	if e, ok := claims[emailField].(string); ok {
 		email = e
 	}
 
-	// TODO: enrich from LDAP when s.config.HTTP.LDAP.Enabled, and
-	// upsert/load the corresponding model.User.
+	identity := &Identity{
+		Subject:         idToken.Subject,
+		Username:        username,
+		Email:           email,
+		Groups:          groups,
+		OtherAccounts:   otherAccounts,
+		ServiceAccounts: serviceAccounts,
+	}
 
-	return &Identity{
-		Subject:  idToken.Subject,
-		Username: username,
-		Email:    email,
-		Groups:   groups,
-	}, nil
+	if err := s.upsertUser(ctx, identity); err != nil {
+		return nil, fmt.Errorf("failed to persist user: %w", err)
+	}
+
+	return identity, nil
+}
+
+// upsertUser creates or updates the model.User row for identity, keyed by
+// Subject. Group membership is deliberately not persisted here (see root
+// CLAUDE.md Hard Constraints).
+func (s *AuthService) upsertUser(ctx context.Context, identity *Identity) error {
+	otherAccountsJSON, err := json.Marshal(identity.OtherAccounts)
+	if err != nil {
+		return err
+	}
+	serviceAccountsJSON, err := json.Marshal(identity.ServiceAccounts)
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	user := model.User{
+		ID:              uuid.NewString(),
+		Subject:         identity.Subject,
+		Username:        identity.Username,
+		Email:           identity.Email,
+		OtherAccounts:   string(otherAccountsJSON),
+		ServiceAccounts: string(serviceAccountsJSON),
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+
+	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "subject"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"username", "email", "other_accounts", "service_accounts", "updated_at",
+		}),
+	}).Create(&user).Error
+}
+
+// stringSliceClaim reads key from claims as a []string, returning nil (not
+// an error) when key is empty (the field is unconfigured). It's an error
+// for a configured key to be present-but-wrong-shaped, or absent entirely,
+// since the operator explicitly asked for it.
+func stringSliceClaim(claims map[string]any, key string) ([]string, error) {
+	if key == "" {
+		return nil, nil
+	}
+
+	raw, ok := claims[key].([]any)
+	if !ok {
+		return nil, fmt.Errorf("OIDC ID token is missing the configured claim %q", key)
+	}
+
+	values := make([]string, 0, len(raw))
+	for _, v := range raw {
+		if s, ok := v.(string); ok {
+			values = append(values, s)
+		}
+	}
+	return values, nil
 }
 
 // randomToken returns a random, URL-safe string suitable for a one-time use

@@ -9,10 +9,17 @@ import "time"
 // sessions — group membership itself is never persisted here or placed in
 // a certificate (see root CLAUDE.md Hard Constraints).
 type User struct {
-	ID        string    `gorm:"column:id;primaryKey"`
-	Subject   string    `gorm:"column:subject"` // OIDC "sub" claim, unique per provider
-	Username  string    `gorm:"column:username"`
-	Email     string    `gorm:"column:email"`
+	ID       string `gorm:"column:id;primaryKey"`
+	Subject  string `gorm:"column:subject"` // OIDC "sub" claim, unique per provider
+	Username string `gorm:"column:username"`
+	Email    string `gorm:"column:email"`
+
+	// OtherAccounts and ServiceAccounts are JSON-encoded []string, same
+	// convention as model.Certificate.Extensions. See
+	// config.OAuthFields.OtherAccounts / .ServiceAccounts.
+	OtherAccounts   string `gorm:"column:other_accounts"`
+	ServiceAccounts string `gorm:"column:service_accounts"`
+
 	CreatedAt time.Time `gorm:"column:created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at"`
 

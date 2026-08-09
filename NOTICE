@@ -1,0 +1,41 @@
+ssoossh
+Copyright (c) 2025 Mike Nestor
+
+This project is licensed under the MIT License (see LICENSE).
+
+It incorporates code adapted from the following third-party projects,
+which remain under their original licenses as noted below and in the
+source files themselves.
+
+--------------------------------------------------------------------------
+server/bootstrap/db_pocketid.go
+
+Adapted from pocket-id/pocket-id
+  https://github.com/pocket-id/pocket-id/blob/main/backend/internal/bootstrap/db_bootstrap.go
+Copyright (c) 2024, Elias Schneider
+License: BSD 2-Clause License
+Modified for use in ssoossh.
+
+--------------------------------------------------------------------------
+server/bootstrap/observability.go
+
+Adapted from pocket-id/pocket-id
+  https://github.com/pocket-id/pocket-id/blob/main/backend/internal/bootstrap/observability_boostrap.go
+Copyright (c) 2024, Elias Schneider
+License: BSD 2-Clause License
+Modified for use in ssoossh.
+
+--------------------------------------------------------------------------
+server/frontend/shared.go
+
+Adapted from pocket-id/pocket-id
+  https://github.com/pocket-id/pocket-id/tree/main/backend/frontend
+Copyright (c) 2024, Elias Schneider
+License: BSD 2-Clause License
+Modified for use in ssoossh.
+
+--------------------------------------------------------------------------
+
+This NOTICE file is provided for informational purposes only and does not
+modify the MIT License under which the original portions of this project
+are distributed.

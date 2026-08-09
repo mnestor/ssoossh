@@ -20,6 +20,7 @@ const IdentityContextKey = "ssoossh.identity"
 const (
 	sessionKeyOIDCState        = "oidc_state"
 	sessionKeyOIDCNonce        = "oidc_nonce"
+	sessionKeyReturnURL        = "return_url"
 	sessionKeyIdentitySubject  = "identity_subject"
 	sessionKeyIdentityUsername = "identity_username"
 	sessionKeyIdentityEmail    = "identity_email"
@@ -71,6 +72,26 @@ func PopOIDCNonce(c *gin.Context) (string, error) {
 	nonce := sessionString(sess, sessionKeyOIDCNonce)
 	sess.Delete(sessionKeyOIDCNonce)
 	return nonce, sess.Save()
+}
+
+// SetReturnURL stores returnURL in the session for a later PopReturnURL
+// call to redirect back to once login completes. The web UI is a JS/AJAX
+// consumer of the API (see root CLAUDE.md), so it — not this server — is
+// what decides to redirect the browser to /auth/login?return_to=<url> on a
+// 401; this just captures and replays that value.
+func SetReturnURL(c *gin.Context, returnURL string) error {
+	sess := sessions.Default(c)
+	sess.Set(sessionKeyReturnURL, returnURL)
+	return sess.Save()
+}
+
+// PopReturnURL returns the URL stored by SetReturnURL and clears it, so it
+// can only be consumed once. Returns "" if none was set.
+func PopReturnURL(c *gin.Context) (string, error) {
+	sess := sessions.Default(c)
+	returnURL := sessionString(sess, sessionKeyReturnURL)
+	sess.Delete(sessionKeyReturnURL)
+	return returnURL, sess.Save()
 }
 
 // SetIdentitySession persists identity in the session, logging the browser

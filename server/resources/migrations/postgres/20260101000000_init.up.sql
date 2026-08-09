@@ -8,6 +8,8 @@ CREATE TABLE users (
     subject TEXT NOT NULL,
     username TEXT NOT NULL,
     email TEXT NOT NULL DEFAULT '',
+    other_accounts TEXT NOT NULL DEFAULT '',
+    service_accounts TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL
 );
@@ -20,7 +22,9 @@ CREATE TABLE certificates (
     hostname TEXT NOT NULL DEFAULT '',
     public_key_fingerprint TEXT NOT NULL,
     serial_number BIGINT NOT NULL,
+    key_id TEXT NOT NULL DEFAULT '',
     principals TEXT NOT NULL DEFAULT '',
+    critical_options TEXT NOT NULL DEFAULT '',
     extensions TEXT NOT NULL DEFAULT '',
     issued_at TIMESTAMPTZ NOT NULL,
     expires_at TIMESTAMPTZ NOT NULL

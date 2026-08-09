@@ -34,11 +34,11 @@ func (a *app) initServices() (svc *services, err error) {
 
 	authCtx, cancel := context.WithTimeout(context.Background(), authDiscoveryTimeout)
 	defer cancel()
-	if svc.auth, err = service.NewAuthService(authCtx, a.config, a.httpClient); err != nil {
+	if svc.auth, err = service.NewAuthService(authCtx, a.config, a.db, a.httpClient); err != nil {
 		return nil, err
 	}
 
-	if svc.certRequest, err = service.NewCertRequestService(a.config); err != nil {
+	if svc.certRequest, err = service.NewCertRequestService(a.config, a.db); err != nil {
 		return nil, err
 	}
 

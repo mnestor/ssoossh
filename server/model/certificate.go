@@ -28,9 +28,23 @@ type Certificate struct {
 	PublicKeyFingerprint string `gorm:"column:public_key_fingerprint"`
 	SerialNumber         uint64 `gorm:"column:serial_number"`
 
+	// KeyID is the free-form audit-trail string sshd logs on every
+	// authentication, produced by executing the applicable
+	// config.CertOptions*.KeyIDTemplate (see
+	// docs/certificate-keyid-template.md).
+	KeyID string `gorm:"column:key_id"`
+
 	// Principals is a comma-separated list. TODO: move to a join table if
 	// querying by individual principal becomes necessary.
 	Principals string `gorm:"column:principals"`
+
+	// CriticalOptions is a JSON-encoded map[string]string of granted SSH
+	// certificate critical options (force-command, source-address — see
+	// docs/what-ssoossh-is.md "Certificate terms"). Unlike Extensions,
+	// sshd rejects the certificate outright if it doesn't understand one
+	// of these, so an empty map here is meaningfully different from an
+	// empty Extensions list.
+	CriticalOptions string `gorm:"column:critical_options"`
 
 	// Extensions is a JSON-encoded []string of granted SSH certificate
 	// extensions (see config.CertOptionsUser.Extensions /

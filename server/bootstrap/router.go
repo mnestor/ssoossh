@@ -18,6 +18,7 @@ import (
 	"github.com/gin-contrib/sessions"
 	gormsessions "github.com/gin-contrib/sessions/gorm"
 	"github.com/gin-gonic/gin"
+	"github.com/pires/go-proxyproto"
 	sloggin "github.com/samber/slog-gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"golang.org/x/time/rate"
@@ -42,8 +43,29 @@ type Server struct {
 }
 
 // initRouter builds the Gin engine and middleware chain using a.config and
-// a.svc, and returns a Server ready to be run.
+// a.svc, registers routes, and returns a Server ready to be run.
 func (a *app) initRouter() (*Server, error) {
+	r, err := a.initEngine()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := a.registerRoutes(r); err != nil {
+		return nil, err
+	}
+
+	return &Server{
+		router: r,
+		config: a.config,
+		// useTLS is set later, by configureAppServerTransport.
+	}, nil
+}
+
+// initEngine builds the Gin engine and its middleware chain (gin mode,
+// trusted proxies, recovery/tracing/logging/error-handling, rate limiting,
+// HSTS, health checks, sessions) using a.config and a.db. Route
+// registration is registerRoutes's job.
+func (a *app) initEngine() (*gin.Engine, error) {
 	c := a.config
 
 	switch {
@@ -56,6 +78,16 @@ func (a *app) initRouter() (*Server, error) {
 	}
 
 	r := gin.New()
+
+	// Empty TrustedProxies means gin trusts no proxy headers at all - the
+	// zero-value-safe default. Only set when non-empty since
+	// SetTrustedProxies(nil) is itself meaningful to gin (also "trust
+	// nothing"), so this is just avoiding an unnecessary call either way.
+	if len(c.HTTP.TrustedProxies) > 0 {
+		if err := r.SetTrustedProxies(c.HTTP.TrustedProxies); err != nil {
+			return nil, fmt.Errorf("failed to configure http.trusted_proxies: %w", err)
+		}
+	}
 
 	// gin.Recovery, tracing, the access log, and ErrorHandlerMiddleware all
 	// have to come before RateLimitMiddleware, not after: each works by
@@ -142,11 +174,17 @@ func (a *app) initRouter() (*Server, error) {
 	sessionStore := gormsessions.NewStore(a.db, true, sessionSecret)
 	r.Use(sessions.Sessions("ssoossh_session", sessionStore))
 
-	err = frontend.RegisterFrontend(r)
+	return r, nil
+}
+
+// registerRoutes registers the frontend static assets (if included) and
+// every controller's routes on r, using a.svc.
+func (a *app) registerRoutes(r *gin.Engine) error {
+	err := frontend.RegisterFrontend(r)
 	if errors.Is(err, frontend.ErrFrontendNotIncluded) {
 		slog.Warn("Frontend is not included in the build. Skipping frontend registration.")
 	} else if err != nil {
-		return nil, fmt.Errorf("failed to register frontend: %w", err)
+		return fmt.Errorf("failed to register frontend: %w", err)
 	}
 
 	// Browser-facing OIDC login/callback, outside /api since these are
@@ -161,11 +199,7 @@ func (a *app) initRouter() (*Server, error) {
 	controller.NewHostController(apiGroup, a.svc.host, middleware.NewHostCertAuthMiddleware().Add())
 	controller.NewEnrollmentController(apiGroup, a.svc.enrollment)
 
-	return &Server{
-		router: r,
-		config: c,
-		// useTLS is set later, by configureAppServerTransport.
-	}, nil
+	return nil
 }
 
 // resolveSessionSecret returns c.HTTP.CookieKey as raw bytes to key the
@@ -237,23 +271,26 @@ func (s *Server) Run(ctx context.Context) error {
 func (s *Server) startAppServer(ctx context.Context) error {
 	// Create the HTTP(S) server
 	s.appSrv = &http.Server{
-		Addr: net.JoinHostPort(s.config.HTTP.Address, strconv.Itoa(s.config.HTTP.Port)),
 		// MaxHeaderBytes:    maxHeaderBytes,
 		// ReadHeaderTimeout: 10 * time.Second,
 		Handler: s.router,
+	}
+	if s.config.HTTP.UnixSocket == "" {
+		s.appSrv.Addr = net.JoinHostPort(s.config.HTTP.Address, strconv.Itoa(s.config.HTTP.Port))
 	}
 
 	if err := s.configureAppServerTransport(); err != nil {
 		return err
 	}
 
-	// Create the listener if we don't have one already
+	// Create the listener if we don't have one already (tests may set
+	// s.appListener directly, e.g. to bind an ephemeral port up front).
 	if s.appListener == nil {
-		var err error
-		s.appListener, err = net.Listen("tcp", s.appSrv.Addr)
+		listener, err := buildListener(s.config)
 		if err != nil {
-			return fmt.Errorf("failed to create TCP listener: %w", err)
+			return err
 		}
+		s.appListener = listener
 	}
 
 	// Start the HTTP(S) server in a background goroutine
@@ -299,6 +336,53 @@ func (s *Server) configureAppServerTransport() error {
 	s.useTLS = true
 
 	return nil
+}
+
+// buildListener returns the listener startAppServer serves on: a Unix
+// domain socket when c.HTTP.UnixSocket is set, otherwise TCP, optionally
+// wrapped to speak PROXY protocol when c.HTTP.ProxyProtocol is configured.
+// The two are mutually exclusive (PROXY protocol is a TCP-connection
+// concept, see config.HTTPSettings.ProxyProtocol).
+func buildListener(c *config.Config) (net.Listener, error) {
+	if c.HTTP.UnixSocket != "" {
+		if len(c.HTTP.ProxyProtocol) > 0 {
+			return nil, errors.New("http.unix_socket and http.proxy_protocol cannot both be set")
+		}
+		return unixSocketListener(c.HTTP.UnixSocket)
+	}
+
+	listener, err := net.Listen("tcp", net.JoinHostPort(c.HTTP.Address, strconv.Itoa(c.HTTP.Port)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create TCP listener: %w", err)
+	}
+
+	if len(c.HTTP.ProxyProtocol) == 0 {
+		return listener, nil
+	}
+
+	policy, err := proxyproto.TrustProxyHeaderFromRanges(c.HTTP.ProxyProtocol)
+	if err != nil {
+		_ = listener.Close()
+		return nil, fmt.Errorf("invalid http.proxy_protocol range: %w", err)
+	}
+
+	return &proxyproto.Listener{Listener: listener, ConnPolicy: policy}, nil
+}
+
+// unixSocketListener listens on the Unix domain socket at path, removing a
+// stale socket file left behind by an unclean previous shutdown first (a
+// live socket file can't be bound to again).
+func unixSocketListener(path string) (net.Listener, error) {
+	if err := os.RemoveAll(path); err != nil {
+		return nil, fmt.Errorf("failed to remove stale unix socket %q: %w", path, err)
+	}
+
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create unix socket listener: %w", err)
+	}
+
+	return listener, nil
 }
 
 // serveApp runs the app server's Serve/ServeTLS loop until shutdown,

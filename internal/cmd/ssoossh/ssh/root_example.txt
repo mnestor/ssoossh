@@ -1,5 +1,0 @@
-# obtain an ssh certificate into your ssh-agent
-ssoossh ssh --server https://example.com login --use-agent
-
-# clear out any ssh keys signed by your ca
-ssoossh ssh --server https://example.com logout

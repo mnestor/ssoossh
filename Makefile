@@ -61,14 +61,41 @@ update:
 	go get -u ./...
 	go mod tidy
 
-test:
-	go test -coverprofile=coverage.out -tags=coverprofile ./...
-	
-cover:
+.PHONY: test test-server test-client test-pam cover
+
+test: test-server test-client test-pam
+
+test-server:
+	go test -coverprofile=coverage-server.out -tags=coverprofile ./server/...
+	grep -v -E -f exclude-from-coverage.txt coverage-server.out > coverage-server.filtered.out
+	go tool cover -func=coverage-server.filtered.out | tail -1
+
+test-client:
+	go test -coverprofile=coverage-client.out -tags=coverprofile ./client/...
+
+test-pam:
+	go list ./pam_ssoossh/... >/dev/null 2>&1 && \
+		go test -coverprofile=coverage-pam.out -tags=coverprofile ./pam_ssoossh/... || \
+		echo "mode: set" > coverage-pam.out
+
+cover: test
+	echo "mode: set" > coverage.out
+	tail -q -n +2 coverage-*.out >> coverage.out
 	grep -v -E -f exclude-from-coverage.txt coverage.out > coverage.filtered.out
 	mv coverage.filtered.out coverage.out
 	go tool cover -html=coverage.out -o coverage.html
 
+lint: lint-server lint-client lint-pam
+
+lint-server:
+	golangci-lint run ./server/...
+
+lint-client:
+	golangci-lint run ./client/...
+
+lint-pam:
+	golangci-lint run ./pam_ssoossh/...
+	
 version:
 	@echo "Version: $(VERSION)"
 
