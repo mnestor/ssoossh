@@ -22,7 +22,7 @@ import (
 // saveSlogDefault snapshots slog's default logger, replaces it with a
 // throwaway one writing to io.Discard, and restores the original when the
 // test finishes. Installing the throwaway logger mirrors production (where
-// logging.Setup installs a real handler before initObservability runs) and
+// logging.New installs a real handler before initObservability runs) and
 // is load-bearing: initOtelLogging fans out to whatever the default handler
 // is at call time, and capturing slog's built-in default handler there
 // deadlocks the process — that handler writes through the stdlib log

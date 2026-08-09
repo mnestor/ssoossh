@@ -3,16 +3,13 @@ package api
 import (
 	"context"
 	"fmt"
-)
 
-// caResponse mirrors server/controller/ca.go's response shape.
-type caResponse struct {
-	CA string `json:"ca"`
-}
+	"github.com/mnestor/ssoossh/internal/apitypes"
+)
 
 // GetCA implements Client.
 func (c *RestyClient) GetCA(ctx context.Context) (string, error) {
-	var result caResponse
+	var result apitypes.CAResponse
 	resp, err := c.http.R().
 		SetContext(ctx).
 		SetResult(&result).

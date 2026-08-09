@@ -7,15 +7,16 @@
       "request": "launch",
       // "envFile": "${workspaceFolder}/backend/.env",
       "env": {
-        "APP_ENV": "development"
+        "APP_ENV": "development",
+        "ISTERMINAL": "1"
       },
       "envFile": [
-        "${workspaceFolder}/app/.env",
-        "${workspaceFolder}/app/.env.local",
+        "${workspaceFolder}/.env",
+        "${workspaceFolder}/.env.local",
       ],
       "mode": "debug",
-      "program": "${workspaceFolder}/app/cmd/server/main.go",
-      "buildFlags": "-tags=exclude_web",
+      "program": "${workspaceFolder}/cmd/ssoosshd/main.go",
+      "buildFlags": "-tags=exclude_frontend,nomsgpack",
       "cwd": "${workspaceFolder}",
       "args": [
         // "version",
@@ -31,7 +32,30 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": [
         "run",
-        "dev"
+        "develop"
+      ]
+    },
+    {
+      "name": "Client",
+      "type": "go",
+      "request": "launch",
+      // "envFile": "${workspaceFolder}/backend/.env",
+      "env": {
+        "APP_ENV": "development",
+        "ISTERMINAL": "1"
+      },
+      "envFile": [
+        "${workspaceFolder}/.env",
+        "${workspaceFolder}/.env.local",
+      ],
+      "mode": "debug",
+      "program": "${workspaceFolder}/cmd/client/main.go",
+      "buildFlags": "-tags=exclude_web -tags=nomsgpack",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        // "ssh",
+        "ca"
+        // "-v"
       ]
     }
   ],

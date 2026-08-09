@@ -35,10 +35,9 @@ func TestInitServices_ShouldConstructCAService(t *testing.T) {
 	oidcSrv := newTestOIDCProvider(t)
 
 	c := &config.Config{SSHKey: testSSHKeyPEM(t)}
-	c.HTTP.AuthConfig.ClientID = "test-client"
-	c.HTTP.AuthConfig.RedirectURL = "https://ssoossh.example.com/auth/callback"
-	c.HTTP.AuthConfig.ProviderURL = oidcSrv.URL
-	c.HTTP.AuthConfig.Fields.Username = "sub"
+	c.AuthConfig.ClientID = "test-client"
+	c.AuthConfig.ProviderURL = oidcSrv.URL
+	c.AuthConfig.Fields.Username = "sub"
 	a := &app{config: c}
 
 	svc, err := a.initServices()

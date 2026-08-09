@@ -87,7 +87,7 @@ func TestGetHandler_ShouldProduceValidJSONWhenJSONTrue(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	h := GetHandler(true, &buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+	h := GetHandler(true, false, &buf, &slog.HandlerOptions{Level: slog.LevelInfo})
 	logger := slog.New(h)
 	logger.Info("hello", "key", "value")
 
@@ -104,7 +104,7 @@ func TestGetHandler_ShouldProduceTextOutputWhenJSONFalse(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	h := GetHandler(false, &buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+	h := GetHandler(false, false, &buf, &slog.HandlerOptions{Level: slog.LevelInfo})
 	logger := slog.New(h)
 	logger.Info("hello world")
 
@@ -123,7 +123,7 @@ func TestGetHandler_ShouldRespectLevelOption(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	h := GetHandler(true, &buf, &slog.HandlerOptions{Level: slog.LevelError})
+	h := GetHandler(true, false, &buf, &slog.HandlerOptions{Level: slog.LevelError})
 	logger := slog.New(h)
 	logger.Info("should be filtered out")
 
@@ -132,56 +132,11 @@ func TestGetHandler_ShouldRespectLevelOption(t *testing.T) {
 	}
 }
 
-// TestSetup_ShouldInstallDefaultLogger calls logging.Setup, which mutates
-// global state via slog.SetDefault. It must not run in parallel with other
-// tests that read/write slog's default logger, and it restores the prior
-// default logger afterward via t.Cleanup.
-func TestSetup_ShouldInstallDefaultLogger(t *testing.T) {
-	prev := slog.Default()
-	t.Cleanup(func() { slog.SetDefault(prev) })
-
-	c := &config.Config{}
-	c.Logging.Level = "info"
-
-	if err := Setup(c); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	if slog.Default() == prev {
-		t.Error("expected slog.Default() to change after Setup, but it did not")
-	}
-}
-
-// TestSetup_ShouldIncludeAppNameAndVersionWhenConfigured mutates global slog
-// state via slog.SetDefault, so it must not run in parallel with other tests
-// touching slog's default logger. The prior default is restored via
-// t.Cleanup.
-func TestSetup_ShouldIncludeAppNameAndVersionWhenConfigured(t *testing.T) {
-	prev := slog.Default()
-	t.Cleanup(func() { slog.SetDefault(prev) })
-
-	c := &config.Config{}
-	c.Logging.Level = "info"
-	c.Logging.IncludeAppName = true
-	c.Logging.IncludeAppVersion = true
-
-	if err := Setup(c); err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-
-	// Setup succeeded; nothing further to assert without capturing output,
-	// since Setup always logs to stdout/stderr rather than an injectable
-	// writer. The prior test already covers the core dispatch behavior.
-}
-
-// TestGetHandler_ShouldEmitReadableTextWhenTerminalDetected forces the
-// terminal detection via the ISTERMINAL env var, so it must not run in
-// parallel with other tests reading that variable.
-func TestGetHandler_ShouldEmitReadableTextWhenTerminalDetected(t *testing.T) {
-	t.Setenv("ISTERMINAL", "1")
+func TestGetHandler_ShouldEmitReadableTextWhenIsTerminalTrue(t *testing.T) {
+	t.Parallel()
 
 	var buf bytes.Buffer
-	h := GetHandler(false, &buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+	h := GetHandler(false, true, &buf, &slog.HandlerOptions{Level: slog.LevelInfo})
 	logger := slog.New(h)
 	logger.Info("terminal message")
 
@@ -190,10 +145,119 @@ func TestGetHandler_ShouldEmitReadableTextWhenTerminalDetected(t *testing.T) {
 	}
 }
 
-// TestSetup_ShouldRouteTypedRecordsToConfiguredFiles mutates global slog
+// TestTerminalDetector_ShouldRespectISTERMINALOverride sets/reads the
+// ISTERMINAL env var, so it must not run in parallel with other tests
+// touching it.
+func TestTerminalDetector_ShouldRespectISTERMINALOverride(t *testing.T) {
+	t.Setenv("ISTERMINAL", "1")
+
+	if !terminalDetector() {
+		t.Error("expected terminalDetector to return true with ISTERMINAL=1")
+	}
+}
+
+func TestDropAttr_ShouldOmitMatchingTopLevelKey(t *testing.T) {
+	t.Parallel()
+
+	replace := dropAttr("type")
+
+	got := replace(nil, slog.String("type", "db"))
+	if got.Key != "" {
+		t.Errorf("expected the matching attr to be omitted (zero Attr), got %+v", got)
+	}
+}
+
+func TestDropAttr_ShouldLeaveOtherKeysUntouched(t *testing.T) {
+	t.Parallel()
+
+	replace := dropAttr("type")
+
+	got := replace(nil, slog.String("other", "value"))
+	if got.Key != "other" || got.Value.String() != "value" {
+		t.Errorf("expected other keys to pass through unchanged, got %+v", got)
+	}
+}
+
+func TestDropAttr_ShouldLeaveGroupedKeysUntouched(t *testing.T) {
+	t.Parallel()
+
+	replace := dropAttr("type")
+
+	got := replace([]string{"group"}, slog.String("type", "db"))
+	if got.Key != "type" {
+		t.Errorf("expected a grouped attr not to be treated as top-level and dropped, got %+v", got)
+	}
+}
+
+// TestNew_ShouldInstallDefaultLogger calls logging.New, which mutates
+// global state via slog.SetDefault. It must not run in parallel with other
+// tests that read/write slog's default logger, and it restores the prior
+// default logger afterward via t.Cleanup.
+func TestNew_ShouldInstallDefaultLogger(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	c := &config.Config{}
+	c.Logging.Level = "info"
+
+	if _, err := New(c); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if slog.Default() == prev {
+		t.Error("expected slog.Default() to change after New, but it did not")
+	}
+}
+
+// TestNew_ShouldIncludeAppNameAndVersionWhenConfigured mutates global slog
+// state via slog.SetDefault, so it must not run in parallel with other tests
+// touching slog's default logger. The prior default is restored via
+// t.Cleanup.
+func TestNew_ShouldIncludeAppNameAndVersionWhenConfigured(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	c := &config.Config{}
+	c.Logging.Level = "info"
+	c.Logging.IncludeAppName = true
+	c.Logging.IncludeAppVersion = true
+
+	if _, err := New(c); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	// New succeeded; nothing further to assert without capturing output,
+	// since New always logs to stdout/stderr rather than an injectable
+	// writer. The prior test already covers the core dispatch behavior.
+}
+
+// TestNew_ShouldReturnACloseFuncPerRotatingLogger mutates global slog state
+// via slog.SetDefault, so it must not run in parallel.
+func TestNew_ShouldReturnACloseFuncPerRotatingLogger(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	c := &config.Config{}
+	c.Logging.Level = "info"
+
+	closeFns, err := New(c)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(closeFns) != 4 {
+		t.Fatalf("got %d close functions, want 4 (main, accesslog, db, queue)", len(closeFns))
+	}
+	for i, closeFn := range closeFns {
+		if err := closeFn(t.Context()); err != nil {
+			t.Errorf("close function %d returned an unexpected error: %v", i, err)
+		}
+	}
+}
+
+// TestNew_ShouldRouteTypedRecordsToConfiguredFiles mutates global slog
 // state via slog.SetDefault and the ISTERMINAL env var, so it must not run
 // in parallel. The prior default logger is restored via t.Cleanup.
-func TestSetup_ShouldRouteTypedRecordsToConfiguredFiles(t *testing.T) {
+func TestNew_ShouldRouteTypedRecordsToConfiguredFiles(t *testing.T) {
 	prev := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(prev) })
 	// Present as a terminal so everything also goes to stdout instead of
@@ -213,7 +277,7 @@ func TestSetup_ShouldRouteTypedRecordsToConfiguredFiles(t *testing.T) {
 	c.DB.Logging.Filename = dbLog
 	c.DB.Logging.LogJSON = true
 
-	if err := Setup(c); err != nil {
+	if _, err := New(c); err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
@@ -243,10 +307,56 @@ func TestSetup_ShouldRouteTypedRecordsToConfiguredFiles(t *testing.T) {
 	}
 }
 
-// TestSetup_ShouldSkipDevNullFilenames mutates global slog state via
+// TestNew_ShouldStripTypeAttrFromItsOwnDedicatedLogButKeepItInGeneralLog
+// verifies the redundant "type" attribute is dropped from a record's own
+// dedicated destination but preserved when a record falls through to the
+// general log (no dedicated destination configured for its type). Mutates
+// global slog state, so it must not run in parallel.
+func TestNew_ShouldStripTypeAttrFromItsOwnDedicatedLogButKeepItInGeneralLog(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	t.Setenv("ISTERMINAL", "1")
+
+	dir := t.TempDir()
+	mainLog := filepath.Join(dir, "main.log")
+	dbLog := filepath.Join(dir, "db.log")
+
+	c := &config.Config{}
+	c.Logging.Level = "info"
+	c.Logging.Filename = mainLog
+	c.DB.Logging.Filename = dbLog
+	c.DB.Logging.LogJSON = true
+
+	if _, err := New(c); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	slog.Info("db-entry", "type", "db")
+	// "queue" has no dedicated destination configured in this test, so it
+	// falls through to the general log and should keep its "type" attr.
+	slog.Info("queue-entry", "type", "queue")
+
+	dbData, err := os.ReadFile(dbLog)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", dbLog, err)
+	}
+	if strings.Contains(string(dbData), `"type"`) {
+		t.Errorf("expected the db log's own dedicated file not to contain a redundant \"type\" attr, got: %s", dbData)
+	}
+
+	mainData, err := os.ReadFile(mainLog)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", mainLog, err)
+	}
+	if !strings.Contains(string(mainData), "queue") {
+		t.Errorf("expected the general log to keep \"type\" for records without a dedicated destination, got: %s", mainData)
+	}
+}
+
+// TestNew_ShouldSkipDevNullFilenames mutates global slog state via
 // slog.SetDefault, so it must not run in parallel. The prior default logger
 // is restored via t.Cleanup.
-func TestSetup_ShouldSkipDevNullFilenames(t *testing.T) {
+func TestNew_ShouldSkipDevNullFilenames(t *testing.T) {
 	prev := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(prev) })
 	t.Setenv("ISTERMINAL", "1")
@@ -259,12 +369,12 @@ func TestSetup_ShouldSkipDevNullFilenames(t *testing.T) {
 	c.DB.Logging.Filename = "/dev/null"
 	c.DB.Logging.LogJSON = true
 
-	// Setup should succeed even with /dev/null paths; they're treated as noop
-	if err := Setup(c); err != nil {
+	// New should succeed even with /dev/null paths; they're treated as noop
+	if _, err := New(c); err != nil {
 		t.Fatalf("expected no error setting up logging with /dev/null, got %v", err)
 	}
 
 	// All logs go to stdout (because ISTERMINAL=1), not to /dev/null files
 	slog.Info("test-message")
-	// Test passes if Setup completed without error
+	// Test passes if New completed without error
 }

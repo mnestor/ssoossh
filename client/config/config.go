@@ -1,6 +1,6 @@
 // Package config defines application configuration and sets up Viper.
 //
-// This package centralizes configuration loading and access for the server.
+// This package centralizes configuration loading and access for the client.
 package config
 
 import (
@@ -36,7 +36,7 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 
 	// set defaults
 	v.SetConfigType("yaml")
-	v.ReadConfig(bytes.NewBufferString(defaultconfig))
+	_ = v.ReadConfig(bytes.NewBufferString(defaultconfig)) //nolint:errcheck // using embeded file, will never fail
 
 	configFile, err := cmd.Flags().GetString("config")
 	if err != nil {
@@ -49,7 +49,7 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 	}
 	home, err := os.UserHomeDir()
 	if err == nil {
-		configFiles = slices.Insert(configFiles, 1, filepath.Join(home, ".config"))
+		configFiles = slices.Insert(configFiles, 1, filepath.Join(home, ".config", "ssoossh.yaml"))
 	}
 
 	if configFile != "" {
@@ -57,9 +57,19 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		v.SetConfigFile(configFile)
 	}
 
-	for _, file := range configFiles {
-		v.SetConfigFile(file)
-		_ = v.MergeInConfig()
+	enforce := ""
+	for i, file := range configFiles {
+		mergeConfig(v, file)
+		if i == 0 {
+			enforce = v.GetString("enforce")
+		}
+	}
+
+	if enforce != "" {
+		if enforce[0] != '/' {
+			enforce = "/etc/ssoossh/" + enforce
+		}
+		mergeConfig(v, enforce)
 	}
 
 	var c Config
@@ -68,4 +78,9 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 	}
 
 	return &c, nil
+}
+
+func mergeConfig(v *viper.Viper, f string) {
+	v.SetConfigFile(f)
+	_ = v.MergeInConfig() //nolint:errcheck // config override is optional
 }

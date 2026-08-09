@@ -3,3 +3,4 @@ insecure_skip_verify: false
 fallback_file_agent: true
 key_filename: ssoossh
 try_open_browser: false
+# enforce: ssoossh-locked.yaml

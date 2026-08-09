@@ -21,6 +21,10 @@ type simpleCommand struct {
 	commands []simplecobra.Commander
 
 	run func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error
+
+	// InitFunc optionally overrides default Init behavior for this command.
+	// If set, it is invoked instead of the built-in Init implementation.
+	init func(cd *simplecobra.Commandeer) error
 }
 
 // Name implements simplecobra.Commander.
@@ -31,6 +35,7 @@ func (c *simpleCommand) Commands() []simplecobra.Commander { return c.commands }
 
 // Init implements simplecobra.Commander.
 func (c *simpleCommand) Init(cd *simplecobra.Commandeer) error {
+
 	cmd := cd.CobraCommand
 	cmd.Short = c.short
 	cmd.Long = c.long
@@ -41,6 +46,12 @@ func (c *simpleCommand) Init(cd *simplecobra.Commandeer) error {
 		// bare group invocation doesn't require root init to have
 		// succeeded, since Run (and its InitErr check) is never reached.
 		cmd.RunE = nil
+	}
+
+	// If the caller provided a custom InitFunc, use it to allow different
+	// versions/variants of simpleCommand to customize initialization.
+	if c.init != nil {
+		return c.init(cd)
 	}
 	return nil
 }

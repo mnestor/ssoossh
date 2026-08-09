@@ -15,7 +15,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/job"
-	"github.com/mnestor/ssoossh/server/logging"
+	"github.com/mnestor/ssoossh/server/pubsub"
 )
 
 // app holds the dependencies shared across the server's bootstrap sequence.
@@ -24,6 +24,7 @@ type app struct {
 	config     *config.Config
 	httpClient *http.Client
 	db         *gorm.DB
+	pubSub     *pubsub.PubSub
 	svc        *services
 	router     *Server
 	scheduler  *job.Scheduler
@@ -33,7 +34,7 @@ type app struct {
 // services, and the HTTP router, then runs the server until cmd's context
 // is canceled.
 func Bootstrap(cmd *cobra.Command) error {
-	serviceRunners := make([]servicerunner.Service, 0, 2)
+	serviceRunners := make([]servicerunner.Service, 0, 3)
 	shutdowns := &shutdownManager{
 		fns: make([]servicerunner.Service, 0, 4),
 	}
@@ -46,9 +47,11 @@ func Bootstrap(cmd *cobra.Command) error {
 
 	a := &app{config: c}
 
-	if err := logging.Setup(a.config); err != nil {
+	loggingShutdownFns, err := a.initLogging()
+	if err != nil {
 		return err
 	}
+	shutdowns.Add(loggingShutdownFns...)
 
 	ctx := cmd.Context()
 
@@ -65,6 +68,17 @@ func Bootstrap(cmd *cobra.Command) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
+
+	// Build the message-broker primitives (gochannel-only for now — see
+	// docs/watermill-signer-plan.md). Its Router needs to run for the
+	// duration of the server (serviceRunners) and be closed on shutdown
+	// (shutdowns), same as the other long-running components below.
+	a.pubSub, err = a.initPubSub()
+	if err != nil {
+		return fmt.Errorf("failed to initialize pub/sub: %w", err)
+	}
+	serviceRunners = append(serviceRunners, a.pubSub.Run)
+	shutdowns.Add(a.pubSub.Close)
 
 	// Create all services
 	a.svc, err = a.initServices()

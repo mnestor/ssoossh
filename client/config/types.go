@@ -17,6 +17,10 @@ type Config struct {
 	Username string `mapstructure:"username"`
 
 	TryOpenBrowser bool `mapstructure:"try_open_browser"`
+
+	// This is only settable in /etc/ssoossh/ssoossh.yaml
+	// if a setting is in this file then clients CANNOT change it
+	LockedFile string `mapstructure:"enforce"`
 }
 
 type SSHKeyOptions struct {

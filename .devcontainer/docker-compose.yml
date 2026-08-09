@@ -1,11 +1,15 @@
 services:
   server: &base
-    image: mcr.microsoft.com/devcontainers/go:dev-1.24
+    build:
+      context: .devcontainer
+    image: devcontainer:latest
 
     volumes:
       # Update this to wherever you want VS Code to mount the folder of your project
       - .:/workspace
-#:cached
+      - ${HOME}/.claude:/home/vscode/.claude
+      - ${HOME}/.claude.json:/home/vscode/.claude.json
+      - ${HOME}/.config/gh:/home/vscode/.config/gh
 
     # Uncomment the next four lines if you will use a ptrace-based debugger like C++, Go, and Rust.
     # cap_add:
@@ -16,4 +20,6 @@ services:
     # Overrides default command so things don't shut down after the process ends.
     command: /bin/sh -c "while sleep 1000; do :; done"
     entrypoint: /bin/sh -c
-  client: *base
+  client:
+    <<: *base
+    image: devcontainer:latest

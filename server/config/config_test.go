@@ -163,8 +163,8 @@ func TestNewConfig_ShouldLeaveDefaultsUntouchedWhenConfigFileEmpty(t *testing.T)
 	if err != nil {
 		t.Fatalf("expected no error for an empty (but valid) config file, got %v", err)
 	}
-	if c.HTTP.Port != 8443 {
-		t.Errorf("got HTTP.Port %d, want 8443 (default)", c.HTTP.Port)
+	if c.HTTP.Port != 8080 {
+		t.Errorf("got HTTP.Port %d, want 8080 (default)", c.HTTP.Port)
 	}
 	if c.Production != true {
 		t.Errorf("got Production %v, want true (default)", c.Production)

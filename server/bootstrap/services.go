@@ -12,6 +12,10 @@ import (
 // context: that context is canceled to signal shutdown, but discovery is a
 // one-time startup step that should run to completion (or fail) on its own
 // terms rather than being torn down by an unrelated shutdown signal.
+//
+// TODO: AuthService construction is disabled below (svc.auth stays nil) —
+// re-enable this const along with it. Until then, router.go still registers
+// auth routes against the nil svc.auth, which will panic if hit.
 const authDiscoveryTimeout = 10 * time.Second
 
 // services groups the business-logic services the router depends on.

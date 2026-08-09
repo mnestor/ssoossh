@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/server/service"
 )
 
@@ -30,7 +31,5 @@ func (c *caController) getCAHandler(g *gin.Context) {
 
 	// utils.SetCacheControlHeader(c, 5*time.Minute, 15*time.Minute)
 
-	g.JSON(http.StatusOK, gin.H{
-		"ca": cakey,
-	})
+	g.JSON(http.StatusOK, apitypes.CAResponse{CA: cakey})
 }

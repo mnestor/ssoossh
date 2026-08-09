@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/server/service"
 )
 
@@ -20,18 +21,10 @@ type enrollmentController struct {
 	enrollmentService service.EnrollmentProvider
 }
 
-// retrieveRequestBody is the POST /api/certs/service/retrieve request
-// body. Only the code is posted — never a public key, so a stolen code
-// can't be paired with an attacker's keypair (see
-// docs/ssoossh-context.md, "Service enrollment").
-type retrieveRequestBody struct {
-	Code string `json:"code" binding:"required"`
-}
-
 // retrieveHandler handles POST /api/certs/service/retrieve (`service
 // retrieve`): redeems an enrollment code for a signed service certificate.
 func (e *enrollmentController) retrieveHandler(g *gin.Context) {
-	var body retrieveRequestBody
+	var body apitypes.RetrieveRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 		return
@@ -43,5 +36,5 @@ func (e *enrollmentController) retrieveHandler(g *gin.Context) {
 		return
 	}
 
-	g.JSON(http.StatusOK, gin.H{"certificate": certificate})
+	g.JSON(http.StatusOK, apitypes.RetrieveResponse{Certificate: certificate})
 }

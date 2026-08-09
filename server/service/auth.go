@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,25 +68,28 @@ type AuthService struct {
 // to handle logins. httpClient (may be nil) is used for the discovery
 // request and all subsequent calls to the provider.
 func NewAuthService(ctx context.Context, c *config.Config, db *gorm.DB, httpClient *http.Client) (*AuthService, error) {
-	authConfig := c.HTTP.AuthConfig
+	authConfig := c.AuthConfig
 
 	if authConfig.ProviderURL == "" {
-		return nil, errors.New("http.authentication.provider_url is required")
+		return nil, errors.New("authentication.provider_url is required")
 	}
 	if authConfig.ClientID == "" {
-		return nil, errors.New("http.authentication.client_id is required")
-	}
-	if authConfig.RedirectURL == "" {
-		return nil, errors.New("http.authentication.redirect_url is required")
+		return nil, errors.New("authentication.client_id is required")
 	}
 	if authConfig.Fields.Username == "" {
-		return nil, errors.New("http.authentication.fields.username is required")
+		return nil, errors.New("authentication.fields.username is required")
+	}
+	if authConfig.Fields.Username == "" {
+		return nil, errors.New("http.server_name is required")
 	}
 
 	if httpClient != nil {
 		ctx = oidc.ClientContext(ctx, httpClient)
 	}
 
+	if strings.Contains(authConfig.ProviderURL, "/.well-known/openid-configuration") {
+		authConfig.ProviderURL = authConfig.ProviderURL[:len(authConfig.ProviderURL)-33]
+	}
 	provider, err := oidc.NewProvider(ctx, authConfig.ProviderURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover OIDC provider %q: %w", authConfig.ProviderURL, err)
@@ -95,6 +100,18 @@ func NewAuthService(ctx context.Context, c *config.Config, db *gorm.DB, httpClie
 	scopes := []string{oidc.ScopeOpenID}
 	scopes = append(scopes, strings.Fields(authConfig.Scopes)...)
 
+	serverName := c.HTTP.ServerName
+	isHTTPS := c.HTTP.TLS.HasKeyPair() || c.HTTP.IsHTTPS
+	if (isHTTPS && c.HTTP.Port != 443) || (!isHTTPS && c.HTTP.Port != 80) {
+		serverName = serverName + ":" + strconv.Itoa(c.HTTP.Port)
+	}
+	scheme := "http"
+	if isHTTPS {
+		scheme = scheme + "s"
+	}
+	redirectURL := scheme + "://" + serverName + "/auth/callback"
+	slog.Debug("oauth setting", slog.String("redirectURL", redirectURL))
+
 	return &AuthService{
 		config:   c,
 		db:       db,
@@ -103,7 +120,7 @@ func NewAuthService(ctx context.Context, c *config.Config, db *gorm.DB, httpClie
 		oauth2Config: &oauth2.Config{
 			ClientID:     authConfig.ClientID,
 			ClientSecret: authConfig.ClientSecret,
-			RedirectURL:  authConfig.RedirectURL,
+			RedirectURL:  redirectURL,
 			Scopes:       scopes,
 			Endpoint:     provider.Endpoint(),
 		},
@@ -152,7 +169,7 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce str
 		return nil, fmt.Errorf("failed to parse OIDC ID token claims: %w", err)
 	}
 
-	fields := s.config.HTTP.AuthConfig.Fields
+	fields := s.config.AuthConfig.Fields
 
 	username, ok := claims[fields.Username].(string)
 	if !ok || username == "" {

@@ -1,10 +1,15 @@
 package controller
 
 // Test methodology: same as ca_test.go — httptest.ResponseRecorder against
-// a fake service.CertRequestProvider, no real listener.
+// a fake service.CertRequestProvider, no real listener. The create
+// handlers and the events handler are tested separately since they're now
+// separate requests (see server/controller/certrequests.go's doc comment
+// on why: the events endpoint is a real SSE connection, GET-only per spec,
+// not glued onto the creating POST).
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -52,15 +57,11 @@ func (f *fakeCertRequestService) Wait(_ context.Context, _ string) (model.Certif
 	return f.waitStatus, f.waitCert, f.waitErr
 }
 
-func TestCreateUserRequestHandler_ShouldStreamApprovedOutcomeOnSameConnection(t *testing.T) {
+func TestCreateUserRequestHandler_ShouldReturnEventsAndApprovalURLs(t *testing.T) {
 	t.Parallel()
 
 	gin.SetMode(gin.TestMode)
-	svc := &fakeCertRequestService{
-		createRequestID: "req-1",
-		waitStatus:      model.CertificateRequestStatusApproved,
-		waitCert:        "ssh-ed25519-cert-v01@openssh.com AAAA...",
-	}
+	svc := &fakeCertRequestService{createRequestID: "req-1"}
 
 	r := gin.New()
 	NewCertRequestController(&r.RouterGroup, svc, func(c *gin.Context) { c.Next() })
@@ -74,14 +75,23 @@ func TestCreateUserRequestHandler_ShouldStreamApprovedOutcomeOnSameConnection(t 
 	if w.Code != http.StatusOK {
 		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
-	if got := w.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
-		t.Errorf("got Content-Type %q, want a text/event-stream prefix", got)
+
+	var got struct {
+		RequestID   string `json:"request_id"`
+		EventsURL   string `json:"events_url"`
+		ApprovalURL string `json:"approval_url"`
 	}
-	if !strings.Contains(w.Body.String(), "event:approved") {
-		t.Errorf("expected an 'approved' SSE event, got body: %s", w.Body.String())
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("failed to decode response body: %v, body: %s", err, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), svc.waitCert) {
-		t.Errorf("expected the certificate in the SSE payload, got body: %s", w.Body.String())
+	if got.RequestID != "req-1" {
+		t.Errorf("got request_id %q, want %q", got.RequestID, "req-1")
+	}
+	if got.EventsURL != "/api/certs/requests/req-1/events" {
+		t.Errorf("got events_url %q, want %q", got.EventsURL, "/api/certs/requests/req-1/events")
+	}
+	if got.ApprovalURL != "/approve/req-1" {
+		t.Errorf("got approval_url %q, want %q", got.ApprovalURL, "/approve/req-1")
 	}
 
 	if svc.gotParams.Type != model.CertificateTypeUser {
@@ -117,21 +127,56 @@ func TestCreateUserRequestHandler_ShouldRegisterErrorWhenCreateFails(t *testing.
 	}
 }
 
-func TestCreateUserRequestHandler_ShouldNotRegisterAStreamByIDRoute(t *testing.T) {
+func TestEventsHandler_ShouldStreamApprovedOutcome(t *testing.T) {
 	t.Parallel()
 
 	gin.SetMode(gin.TestMode)
-	svc := &fakeCertRequestService{}
+	svc := &fakeCertRequestService{
+		waitStatus: model.CertificateRequestStatusApproved,
+		waitCert:   "ssh-ed25519-cert-v01@openssh.com AAAA...",
+	}
 
 	r := gin.New()
 	NewCertRequestController(&r.RouterGroup, svc, func(c *gin.Context) { c.Next() })
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/certs/requests/req-1/stream", nil)
+	req := httptest.NewRequest(http.MethodGet, "/certs/requests/req-1/events", nil)
 	r.ServeHTTP(w, req)
 
-	if w.Code == http.StatusOK {
-		t.Error("expected no route to exist for GET /certs/requests/:id/stream")
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if got := w.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
+		t.Errorf("got Content-Type %q, want a text/event-stream prefix", got)
+	}
+	if !strings.Contains(w.Body.String(), "event:approved") {
+		t.Errorf("expected an 'approved' SSE event, got body: %s", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), svc.waitCert) {
+		t.Errorf("expected the certificate in the SSE payload, got body: %s", w.Body.String())
+	}
+}
+
+func TestEventsHandler_ShouldRegisterErrorOnWaitFailure(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{waitErr: errors.New("simulated failure")}
+
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	NewCertRequestController(&r.RouterGroup, svc, func(c *gin.Context) { c.Next() })
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/certs/requests/req-1/events", nil)
+	r.ServeHTTP(w, req)
+
+	if gotErrors != 1 {
+		t.Fatalf("expected exactly one error to be attached when Wait fails, got %d", gotErrors)
 	}
 }
 

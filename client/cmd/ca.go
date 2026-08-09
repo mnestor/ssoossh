@@ -2,10 +2,9 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/bep/simplecobra"
-
-	"github.com/mnestor/ssoossh/internal/errs"
 )
 
 func newCACommand() simplecobra.Commander {
@@ -13,7 +12,13 @@ func newCACommand() simplecobra.Commander {
 		name:  "ca",
 		short: "Retrieve the CA Public Key of the configured ssoossh server.",
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
-			return &errs.NotImplementedError{What: "ca"}
+			ca, err := root.api.GetCA(ctx)
+			if err != nil {
+				return err
+			}
+			fmt.Println(ca)
+
+			return nil
 		},
 	}
 }

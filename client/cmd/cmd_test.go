@@ -41,14 +41,26 @@ func TestRootCommandPreRun(t *testing.T) {
 			wantAgent: true,
 		},
 		{
-			name:         "should fall back to file agent when ssh-agent connection fails",
-			newConfig:    func(cmd *cobra.Command) (*config.Config, error) { return &config.Config{}, nil },
+			name: "should fall back to file agent when ssh-agent connection fails and fallback is enabled",
+			newConfig: func(cmd *cobra.Command) (*config.Config, error) {
+				return &config.Config{FallbackFileAgent: true, Filename: "ssoossh"}, nil
+			},
 			newAPIClient: defaultNewAPIClient,
 			newSSHAgent:  func() (agent.Agent, error) { return nil, errors.New("no ssh-agent") },
 			newFileAgent: func(path string) (agent.Agent, error) {
 				return &fakeAgent{}, nil
 			},
 			wantAgent: true,
+		},
+		{
+			name:         "should set initErr when ssh-agent connection fails and fallback is disabled",
+			newConfig:    func(cmd *cobra.Command) (*config.Config, error) { return &config.Config{}, nil },
+			newAPIClient: defaultNewAPIClient,
+			newSSHAgent:  func() (agent.Agent, error) { return nil, errors.New("no ssh-agent") },
+			newFileAgent: func(path string) (agent.Agent, error) {
+				return &fakeAgent{}, nil
+			},
+			wantErr: true,
 		},
 		{
 			name:      "should set initErr when config loading fails",
@@ -79,8 +91,10 @@ func TestRootCommandPreRun(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:         "should set initErr when both ssh-agent and file agent fail",
-			newConfig:    func(cmd *cobra.Command) (*config.Config, error) { return &config.Config{}, nil },
+			name: "should set initErr when both ssh-agent and file agent fail",
+			newConfig: func(cmd *cobra.Command) (*config.Config, error) {
+				return &config.Config{FallbackFileAgent: true, Filename: "ssoossh"}, nil
+			},
 			newAPIClient: defaultNewAPIClient,
 			newSSHAgent:  func() (agent.Agent, error) { return nil, errors.New("no ssh-agent") },
 			newFileAgent: func(path string) (agent.Agent, error) {
@@ -132,7 +146,7 @@ func (f *fakeAgent) Close() error                                    { return ni
 func (f *fakeAgent) Agent() xagent.Agent                             { return nil }
 func (f *fakeAgent) SetCA(cas ...string) error                       { return nil }
 func (f *fakeAgent) Certificates() ([]*xssh.Certificate, error)      { return nil, nil }
-func (f *fakeAgent) AddKeypair(kp *keypair.SshKeypair) error         { return nil }
+func (f *fakeAgent) AddKeypair(kp *keypair.SSHKeypair) error         { return nil }
 func (f *fakeAgent) CleanupAgent() error                             { return nil }
 
 // fakeAPIClient is a minimal api.Client stub for tests that only need a
@@ -140,14 +154,14 @@ func (f *fakeAgent) CleanupAgent() error                             { return ni
 type fakeAPIClient struct{}
 
 func (f *fakeAPIClient) GetCA(ctx context.Context) (string, error) { return "", nil }
-func (f *fakeAPIClient) RequestUserCertificate(ctx context.Context, publicKey string, opts api.RequestedOptions) (*api.CertificateResult, error) {
-	return nil, nil
+func (f *fakeAPIClient) RequestUserCertificate(ctx context.Context, publicKey string, opts api.RequestedOptions) (string, *api.CertificateResult, error) {
+	return "", nil, nil
 }
-func (f *fakeAPIClient) RequestHostCertificate(ctx context.Context, publicKey, hostname string, opts api.RequestedOptions) (*api.CertificateResult, error) {
-	return nil, nil
+func (f *fakeAPIClient) RequestHostCertificate(ctx context.Context, publicKey, hostname string, opts api.RequestedOptions) (string, *api.CertificateResult, error) {
+	return "", nil, nil
 }
-func (f *fakeAPIClient) EnrollService(ctx context.Context, publicKey string, opts api.RequestedOptions) (*api.CertificateResult, error) {
-	return nil, nil
+func (f *fakeAPIClient) EnrollService(ctx context.Context, publicKey string, opts api.RequestedOptions) (string, *api.CertificateResult, error) {
+	return "", nil, nil
 }
 func (f *fakeAPIClient) RetrieveServiceCertificate(ctx context.Context, code string) (string, error) {
 	return "", nil

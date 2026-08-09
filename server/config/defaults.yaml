@@ -1,6 +1,6 @@
 http:
   address: 127.0.0.1
-  port: 8443
+  port: 8080
   unix_socket: ""
   proxy_protocol: []
   trusted_proxies: []
@@ -38,10 +38,10 @@ http:
     scopes: "profile email"
     fields:
       username: "preferred_username"
-      groups: ""
+      groups: "groups"
       other_accounts: ""
       service_accounts: ""
-      email: ""
+      email: "email"
 
 logging:
   level: WARN
@@ -64,6 +64,7 @@ db:
     log_json: false
 
 cert_options:
+  request_ttl: 5m
   user:
     valid_duration: 30s
     extensions:

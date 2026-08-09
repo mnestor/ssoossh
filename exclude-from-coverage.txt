@@ -1,1 +1,5 @@
-github.com/mnestor/ssoossh/cmd/ssoossh/ssoossh.go
+rate_limit\.go:63\.65,67\.3
+csp_middleware\.go:60\.40,62\.3
+frontend_included\.go:71\.16,73\.3
+frontend_included\.go:81\.16,83\.3
+server/config/config\.go:40\.75,42\.3

@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
@@ -18,15 +19,24 @@ import (
 func NewCertRequestController(group *gin.RouterGroup, certRequestService service.CertRequestProvider, sessionAuthMiddleware gin.HandlerFunc) {
 	cr := &certRequestController{certRequestService: certRequestService}
 
-	// Client-facing: each of these creates a request and holds the same
-	// connection open as an SSE stream until it resolves. There's
-	// deliberately no separate GET-by-ID endpoint to fetch the outcome —
-	// that would be a resource an attacker holding a guessed or leaked
-	// request ID could hit to grab the certificate out from under the
-	// real caller.
+	// Client-facing: each of these creates a request and returns two URLs —
+	// events_url for the client's own SSE connection to wait on the
+	// outcome, approval_url for the human to open in a browser. Both are
+	// keyed by the request's own unbounded UUID (see
+	// server/service/certrequest.go's CreateRequest — the ID is already the
+	// unguessable capability token), which is also why GET .../events below
+	// doesn't need its own auth: the ID is the credential.
 	group.POST("/certs/user", cr.createUserRequestHandler)
 	group.POST("/certs/host/sign", cr.createHostSignRequestHandler)
 	group.POST("/certs/service/enroll", cr.createServiceEnrollRequestHandler)
+
+	// GET .../events is the actual SSE connection: a real long-lived
+	// text/event-stream response the client (or its HTTP client's SSE
+	// support, e.g. resty's SSESource) connects to and waits on, separate
+	// from the POST above per the SSE spec (an EventSource-style client is
+	// GET-only). It's safe to reconnect any number of times — see
+	// certRequestService.Wait's doc comment.
+	group.GET("/certs/requests/:id/events", cr.eventsHandler)
 
 	// Web-UI-facing: approve/deny pending requests.
 	approvalGroup := group.Group("/certs/requests", sessionAuthMiddleware)
@@ -39,17 +49,39 @@ type certRequestController struct {
 	certRequestService service.CertRequestProvider
 }
 
-// createUserRequestBody is the POST /api/certs/user request body.
-type createUserRequestBody struct {
-	PublicKey        string                   `json:"public_key" binding:"required"`
-	RequestedOptions service.RequestedOptions `json:"requested_options"`
+// newCreateRequestResponse builds the response for a newly created
+// requestID. See docs/README.md for the /approve/<id> URL convention, and
+// internal/apitypes.CreateRequestResponse's doc comment for why both URLs
+// are relative.
+func newCreateRequestResponse(requestID string) apitypes.CreateRequestResponse {
+	return apitypes.CreateRequestResponse{
+		RequestID:   requestID,
+		EventsURL:   "/api/certs/requests/" + requestID + "/events",
+		ApprovalURL: "/approve/" + requestID,
+	}
+}
+
+// toServiceOptions converts the wire-contract RequestedOptions
+// (internal/apitypes, shared with the client) into the server's internal
+// service.RequestedOptions. Kept as an explicit conversion rather than a
+// shared type so the two can evolve independently — see
+// service.RequestedOptions's doc comment.
+func toServiceOptions(o apitypes.RequestedOptions) service.RequestedOptions {
+	return service.RequestedOptions{
+		Extensions:      o.Extensions,
+		ForceCommand:    o.ForceCommand,
+		SourceAddresses: o.SourceAddresses,
+		NoTouchRequired: o.NoTouchRequired,
+	}
 }
 
 // createUserRequestHandler handles POST /api/certs/user (`ssh login`):
-// creates a pending request for an interactive user certificate, then
-// streams its outcome back on this same connection (see streamOutcome).
+// creates a pending request for an interactive user certificate and
+// returns its events/approval URLs (see newCreateRequestResponse) — it
+// does not itself wait for the outcome; the client does that separately
+// against EventsURL.
 func (cr *certRequestController) createUserRequestHandler(g *gin.Context) {
-	var body createUserRequestBody
+	var body apitypes.UserRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 		return
@@ -59,31 +91,24 @@ func (cr *certRequestController) createUserRequestHandler(g *gin.Context) {
 		Type:             model.CertificateTypeUser,
 		PublicKey:        body.PublicKey,
 		SourceIP:         g.ClientIP(),
-		RequestedOptions: body.RequestedOptions,
+		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})
 	if err != nil {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 		return
 	}
 
-	cr.streamOutcome(g, requestID)
-}
-
-// createHostSignRequestBody is the POST /api/certs/host/sign request body.
-type createHostSignRequestBody struct {
-	PublicKey        string                   `json:"public_key" binding:"required"`
-	Hostname         string                   `json:"hostname" binding:"required"`
-	RequestedOptions service.RequestedOptions `json:"requested_options"`
+	g.JSON(http.StatusOK, newCreateRequestResponse(requestID))
 }
 
 // createHostSignRequestHandler handles POST /api/certs/host/sign: creates a
 // pending request for first issuance of a host certificate, gated by the
 // OIDC approval chain (a human vouching for the machine — the anti-MITM
-// control, see docs/ssoossh-context.md), then streams its outcome back on
-// this same connection (see streamOutcome). Subsequent renewals go through
+// control, see docs/ssoossh-context.md), and returns its events/approval
+// URLs (see createUserRequestHandler). Subsequent renewals go through
 // HostController instead, authenticated by the existing certificate.
 func (cr *certRequestController) createHostSignRequestHandler(g *gin.Context) {
-	var body createHostSignRequestBody
+	var body apitypes.HostSignRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 		return
@@ -94,33 +119,23 @@ func (cr *certRequestController) createHostSignRequestHandler(g *gin.Context) {
 		PublicKey:        body.PublicKey,
 		Hostname:         body.Hostname,
 		SourceIP:         g.ClientIP(),
-		RequestedOptions: body.RequestedOptions,
+		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})
 	if err != nil {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 		return
 	}
 
-	cr.streamOutcome(g, requestID)
-}
-
-// createServiceEnrollRequestBody is the POST /api/certs/service/enroll
-// request body.
-type createServiceEnrollRequestBody struct {
-	// PublicKey may be operator-supplied (BYO key, possibly HSM/PKCS#11/
-	// encrypted file — the server never sees the private half) or
-	// client-generated (see docs/ssoossh-context.md, "Service enrollment").
-	PublicKey        string                   `json:"public_key" binding:"required"`
-	RequestedOptions service.RequestedOptions `json:"requested_options"`
+	g.JSON(http.StatusOK, newCreateRequestResponse(requestID))
 }
 
 // createServiceEnrollRequestHandler handles POST /api/certs/service/enroll:
 // creates a pending request that, once approved, becomes a
 // model.Enrollment (see service.EnrollmentService) rather than an
-// immediately-issued certificate, then streams the outcome back on this
-// same connection (see streamOutcome).
+// immediately-issued certificate, and returns its events/approval URLs
+// (see createUserRequestHandler).
 func (cr *certRequestController) createServiceEnrollRequestHandler(g *gin.Context) {
-	var body createServiceEnrollRequestBody
+	var body apitypes.ServiceEnrollRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 		return
@@ -130,29 +145,34 @@ func (cr *certRequestController) createServiceEnrollRequestHandler(g *gin.Contex
 		Type:             model.CertificateTypeService,
 		PublicKey:        body.PublicKey,
 		SourceIP:         g.ClientIP(),
-		RequestedOptions: body.RequestedOptions,
+		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})
 	if err != nil {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 		return
 	}
 
-	cr.streamOutcome(g, requestID)
+	g.JSON(http.StatusOK, newCreateRequestResponse(requestID))
 }
 
-// streamOutcome blocks on certRequestService.Wait for requestID, then
-// writes a single SSE event with the result. Blocking on Wait before
-// writing anything means a Wait error (rather than a resolved outcome)
-// still gets a normal JSON error response via ErrorHandlerMiddleware,
-// instead of needing to be encoded as an SSE event after the fact.
-func (cr *certRequestController) streamOutcome(g *gin.Context, requestID string) {
-	status, certificate, err := cr.certRequestService.Wait(g.Request.Context(), requestID)
+// eventsHandler handles GET /api/certs/requests/:id/events: the client's
+// (or resty SSESource's) actual SSE connection, separate from the create
+// calls above. Blocks on certRequestService.Wait for :id, then writes a
+// single terminal SSE event (approved/denied/expired) and returns, closing
+// the connection. Blocking on Wait before writing anything means a Wait
+// error (unknown ID, or the client disconnecting — see Wait's doc comment)
+// still gets a normal JSON error response via ErrorHandlerMiddleware
+// instead of needing to be encoded as an SSE event after the fact. Safe to
+// hit repeatedly for the same :id — e.g. resty's SSESource reconnecting
+// after a dropped connection — since Wait itself handles that.
+func (cr *certRequestController) eventsHandler(g *gin.Context) {
+	status, certificate, err := cr.certRequestService.Wait(g.Request.Context(), g.Param("id"))
 	if err != nil {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 		return
 	}
 
-	g.SSEvent(string(status), gin.H{"certificate": certificate})
+	g.SSEvent(string(status), apitypes.CertificateResult{Certificate: certificate})
 }
 
 // approveHandler handles POST /api/certs/requests/:id/approve (web UI,
@@ -171,7 +191,7 @@ func (cr *certRequestController) approveHandler(g *gin.Context) {
 		return
 	}
 
-	g.JSON(http.StatusOK, gin.H{"certificate": certificate})
+	g.JSON(http.StatusOK, apitypes.CertificateResult{Certificate: certificate})
 }
 
 // denyHandler handles POST /api/certs/requests/:id/deny (web UI, behind

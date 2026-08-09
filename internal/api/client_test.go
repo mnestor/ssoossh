@@ -1,17 +1,13 @@
 package api
 
-// Test methodology: unit tests for NewClient and its TLS fingerprint
-// pinning, using httptest.NewTLSServer for a real (self-signed) TLS
-// endpoint to connect to. Tests run in parallel where they don't share
-// server state.
+// Test methodology: unit tests for NewClient and its TLS verification,
+// using httptest.NewTLSServer for a real (self-signed) TLS endpoint to
+// connect to. Tests run in parallel where they don't share server state.
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -23,15 +19,7 @@ func TestNewClient_ShouldErrorWhenServerURLEmpty(t *testing.T) {
 	}
 }
 
-// fingerprintOf returns the uppercase hex SHA-256 fingerprint of ts's
-// certificate, in the same shape Config.SSLFingerprint expects.
-func fingerprintOf(t *testing.T, ts *httptest.Server) string {
-	t.Helper()
-	sum := sha256.Sum256(ts.Certificate().Raw)
-	return strings.ToUpper(hex.EncodeToString(sum[:]))
-}
-
-func TestNewClient_SSLFingerprintPinning(t *testing.T) {
+func TestNewClient_TLSVerification(t *testing.T) {
 	t.Parallel()
 
 	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -46,7 +34,7 @@ func TestNewClient_SSLFingerprintPinning(t *testing.T) {
 	// finishes instead.
 	t.Cleanup(ts.Close)
 
-	t.Run("should fail without SkipVerifySSL or a matching fingerprint (self-signed cert)", func(t *testing.T) {
+	t.Run("should fail without SkipVerifySSL against a self-signed cert", func(t *testing.T) {
 		t.Parallel()
 
 		c, err := NewClient(Config{ServerURL: ts.URL})
@@ -56,6 +44,19 @@ func TestNewClient_SSLFingerprintPinning(t *testing.T) {
 
 		if _, err := c.GetCA(context.Background()); err == nil {
 			t.Error("expected the request to fail standard TLS verification against a self-signed cert, got nil")
+		}
+	})
+
+	t.Run("should succeed with SkipVerifySSL against a self-signed cert", func(t *testing.T) {
+		t.Parallel()
+
+		c, err := NewClient(Config{ServerURL: ts.URL, SkipVerifySSL: true})
+		if err != nil {
+			t.Fatalf("unexpected error building client: %v", err)
+		}
+
+		if _, err := c.GetCA(context.Background()); err != nil {
+			t.Errorf("unexpected error with SkipVerifySSL set: %v", err)
 		}
 	})
 }

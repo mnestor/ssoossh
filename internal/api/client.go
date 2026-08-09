@@ -4,9 +4,12 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"strings"
 
 	"resty.dev/v3"
+
+	"github.com/mnestor/ssoossh/internal/version"
 )
 
 // Client is the set of ssoosshd API calls client and pam_ssoossh can make.
@@ -22,14 +25,18 @@ type Client interface {
 	GetCA(ctx context.Context) (string, error)
 
 	// RequestUserCertificate asks for an interactive user certificate for
-	// publicKey (authorized_keys format) and blocks until a human resolves
-	// it via the web UI (approved/denied) or the request expires.
-	RequestUserCertificate(ctx context.Context, publicKey string, opts RequestedOptions) (*CertificateResult, error)
+	// publicKey (authorized_keys format). ssoosshd creates the pending
+	// request and returns approvalURL immediately — the page the caller
+	// should have the user open — then this call blocks (over a separate
+	// SSE connection, per the SSE spec: POST-to-create is not itself a
+	// stream) until a human resolves the request via the web UI
+	// (approved/denied) or it expires.
+	RequestUserCertificate(ctx context.Context, publicKey string, opts RequestedOptions) (approvalURL string, result *CertificateResult, err error)
 
 	// RequestHostCertificate asks for first issuance of a host certificate
 	// for hostname, gated by the OIDC approval chain, and blocks the same
 	// way as RequestUserCertificate.
-	RequestHostCertificate(ctx context.Context, publicKey, hostname string, opts RequestedOptions) (*CertificateResult, error)
+	RequestHostCertificate(ctx context.Context, publicKey, hostname string, opts RequestedOptions) (approvalURL string, result *CertificateResult, err error)
 
 	// EnrollService asks to enroll publicKey for unattended service
 	// certificate issuance and blocks the same way as
@@ -37,7 +44,7 @@ type Client interface {
 	// not itself a usable certificate — it's empty, since approving a
 	// service enrollment issues an enrollment code
 	// (RetrieveServiceCertificate) rather than a certificate directly.
-	EnrollService(ctx context.Context, publicKey string, opts RequestedOptions) (*CertificateResult, error)
+	EnrollService(ctx context.Context, publicKey string, opts RequestedOptions) (approvalURL string, result *CertificateResult, err error)
 
 	// RetrieveServiceCertificate redeems an enrollment code (from a
 	// previously approved EnrollService call) for a signed service
@@ -55,14 +62,24 @@ type Config struct {
 	ServerURL string
 
 	// SkipVerifySSL disables TLS certificate verification entirely.
-	// Intended for development / self-signed setups that aren't also using
-	// SSLFingerprint pinning.
+	// Intended for development / self-signed setups. TLS verification is
+	// otherwise limited to standard trust-chain and hostname checks — no
+	// additional pinning.
 	SkipVerifySSL bool
 }
 
 // RestyClient is the production Client implementation, backed by resty.
 type RestyClient struct {
 	http *resty.Client
+
+	// serverURL is cfg.ServerURL with no trailing slash and no "/api"
+	// suffix (unlike http's base URL, which does have that suffix) — the
+	// events_url ssoosshd returns from a create call already includes its
+	// own "/api/..." path, so this is prepended directly to build the
+	// events endpoint's absolute URL for resty's SSESource, which (unlike
+	// http, a *resty.Client) has no base-URL concept of its own.
+	serverURL string
+	tlsConfig *tls.Config
 }
 
 var _ Client = (*RestyClient)(nil)
@@ -78,13 +95,17 @@ func NewClient(cfg Config) (*RestyClient, error) {
 		return nil, err
 	}
 
+	serverURL := strings.TrimRight(cfg.ServerURL, "/")
+
 	c := resty.New().
-		SetBaseURL(strings.TrimRight(cfg.ServerURL, "/")+"/api").
+		SetBaseURL(serverURL+"/api").
+		SetHeader("User-Agent", fmt.Sprintf("%s/%s (%s)", version.Name, version.Version, version.Github)).
 		SetHeader("Accept", "application/json").
 		SetHeader("Content-Type", "application/json").
-		SetTLSClientConfig(tlsConfig)
+		SetTLSClientConfig(tlsConfig).
+		SetResultError(&errorBody{})
 
-	return &RestyClient{http: c}, nil
+	return &RestyClient{http: c, serverURL: serverURL, tlsConfig: tlsConfig}, nil
 }
 
 func buildTLSConfig(cfg Config) (*tls.Config, error) {

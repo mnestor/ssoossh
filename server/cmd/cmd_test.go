@@ -136,7 +136,7 @@ ssh_key: |
 }
 
 // saveSlogDefault snapshots slog's default logger and restores it when the
-// test finishes; running the server rewires it via logging.Setup and the
+// test finishes; running the server rewires it via logging.New and the
 // OTel bootstrap. Tests using it must not run in parallel.
 func saveSlogDefault(t *testing.T) {
 	t.Helper()

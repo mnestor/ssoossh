@@ -91,17 +91,29 @@ func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 		return nil
 	}
 	r.api = apiClient
+	if cfg.CAPubkey == "" {
+		cfg.CAPubkey, err = apiClient.GetCA(runner.CobraCommand.Context())
+		if err != nil {
+			r.initErr = fmt.Errorf("get CA public key: %w", err)
+			return nil
+		}
+	}
 
 	a, err := r.newSSHAgent()
 	if err != nil {
+		if !cfg.FallbackFileAgent {
+			r.initErr = fmt.Errorf("connect to ssh-agent: %w", err)
+			return nil
+		}
 		slog.Warn("failed to connect to ssh-agent, falling back to file-based storage", "error", err)
-		a, err = r.newFileAgent("~/.ssh/ssoossh")
+		a, err = r.newFileAgent(cfg.Filename)
 		if err != nil {
 			r.initErr = fmt.Errorf("open ssh agent: %w", err)
 			return nil
 		}
 	}
 	r.ssh = a
+	r.initErr = r.ssh.SetCA(cfg.CAPubkey)
 
 	return nil
 }

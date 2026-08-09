@@ -1,15 +1,15 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 
 	"resty.dev/v3"
 )
 
 // errorBody mirrors server/middleware.ErrorHandlerMiddleware's response
-// shape: {"data": null, "error": "<message>"}.
+// shape: {"data": null, "error": "<message>"}. Registered client-wide via
+// resty.Client.SetResultError, so resty auto-unmarshals it into
+// resp.ResultError() for any ordinary (buffered) non-2xx response.
 type errorBody struct {
 	Error string `json:"error"`
 }
@@ -32,23 +32,17 @@ func (e *ResponseError) Error() string {
 }
 
 // decodeResponseError builds a *ResponseError from resp, whose status is
-// already known to be non-2xx. Reads resp.Body directly when the request
-// used SetResponseDoNotParse (streaming calls, where resty never buffers
-// the body), falling back to resp.Bytes() for ordinary buffered
-// responses. A body that isn't the expected {"error": "..."} shape (or is
-// empty) still produces a ResponseError, just without a Message.
+// already known to be non-2xx. resty has already unmarshalled the body into
+// resp.ResultError() via the client-wide SetResultError(&errorBody{}) — no
+// call in this package uses SetResponseDoNotParse anymore (the events
+// stream is read separately via resty's SSESource in sse.go, not off a
+// resty.Response), so that's always the case. A body that isn't the
+// expected {"error": "..."} shape (or is empty) still produces a
+// ResponseError, just without a Message.
 func decodeResponseError(resp *resty.Response) *ResponseError {
 	respErr := &ResponseError{StatusCode: resp.StatusCode()}
 
-	raw := resp.Bytes()
-	if resp.Body != nil {
-		if b, err := io.ReadAll(resp.Body); err == nil {
-			raw = b
-		}
-	}
-
-	var body errorBody
-	if err := json.Unmarshal(raw, &body); err == nil {
+	if body, ok := resp.ResultError().(*errorBody); ok && body != nil {
 		respErr.Message = body.Error
 	}
 

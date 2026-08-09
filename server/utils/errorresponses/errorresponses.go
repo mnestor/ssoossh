@@ -27,6 +27,23 @@ func (e *MisdirectedRequestError) Error() string {
 // HTTPStatusCode reports the HTTP status this error should be rendered as.
 func (e *MisdirectedRequestError) HTTPStatusCode() int { return http.StatusMisdirectedRequest }
 
+// NotFoundError indicates the requested resource does not exist.
+type NotFoundError struct {
+	// Resource describes what wasn't found, e.g. `certificate request "abc"`.
+	Resource string
+}
+
+// Error implements the error interface.
+func (e *NotFoundError) Error() string {
+	if e.Resource == "" {
+		return "not found"
+	}
+	return e.Resource + " not found"
+}
+
+// HTTPStatusCode reports the HTTP status this error should be rendered as.
+func (e *NotFoundError) HTTPStatusCode() int { return http.StatusNotFound }
+
 // NotImplementedError indicates a route or check exists as a scaffold but
 // its logic hasn't been implemented yet. Handlers/middleware that are still
 // placeholders should fail closed with this rather than silently allowing

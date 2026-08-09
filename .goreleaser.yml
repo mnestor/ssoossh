@@ -22,7 +22,8 @@ before:
 
 env:
   - CGO_ENABLED=0
-#   - GOFLAGS=-buildvcs=false
+  # - GOFLAGS=-tags=nomsgpack
+# -buildvcs=false
 
 builds:
   - id: linux-pam-build
@@ -34,6 +35,8 @@ builds:
     goarch:
       - amd64
       - arm64
+    flags: &flags
+      - -tags=nomsgpack
     env:
       - CGO_ENABLED=1
     ldflags: &build-ldflags |
@@ -57,6 +60,7 @@ builds:
   - id: server-linux-build
     binary: ssoossh-server
     dir: &dirsrv ./cmd/ssoossh-server
+    flags: *flags
     goos:
       - linux
     goarch:
@@ -81,6 +85,7 @@ builds:
   - id: windows-build
     binary: *name
     dir: *dir
+    flags: *flags
     goos:
       - windows
     goarch:
@@ -90,6 +95,7 @@ builds:
   - id: macos-build
     binary: *name
     dir: *dir
+    flags: *flags
     goos:
       - darwin
     goarch:
@@ -103,6 +109,7 @@ builds:
   - id: netbsd-build
     dir: *dir
     binary: *name
+    flags: *flags
     goos:
       - netbsd
     goarch:

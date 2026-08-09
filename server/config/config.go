@@ -7,7 +7,6 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -58,9 +57,8 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		v.AddConfigPath(".")
 		home, err := os.UserHomeDir()
 		if err == nil {
-			slog.Info(fmt.Errorf("failed to parse config: %w", err).Error())
 			v.AddConfigPath(filepath.Join(home, ".config"))
-			v.AddConfigPath(filepath.Join(home, ".config/ssoossh"))
+			v.AddConfigPath(filepath.Join(home, ".config", "ssoossh"))
 		}
 		v.AddConfigPath("/etc")
 		v.AddConfigPath("/etc/ssoossh")

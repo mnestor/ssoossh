@@ -43,12 +43,18 @@ func TestExecuteEndToEnd(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
+		// wantErr, if set, is checked with errors.Is instead of the default
+		// errs.NotImplementedError expectation — for commands that now have
+		// a real implementation with its own specific failure modes.
+		wantErr error
+		// wantNilErr marks a command that's expected to succeed end-to-end.
+		wantNilErr bool
 	}{
-		{name: "ca", args: []string{"ca"}},
+		{name: "ca", args: []string{"ca"}, wantNilErr: true},
 		{name: "ssh login", args: []string{"ssh", "login"}},
 		{name: "ssh logout", args: []string{"ssh", "logout"}},
-		{name: "ssh proxycommand", args: []string{"ssh", "proxycommand"}},
-		{name: "ssh inspect", args: []string{"ssh", "inspect"}},
+		{name: "ssh proxycommand with no command", args: []string{"ssh", "proxycommand"}, wantErr: errProxyCommandRequiresArgs},
+		{name: "ssh inspect", args: []string{"ssh", "inspect"}, wantNilErr: true},
 		{name: "ssh config", args: []string{"ssh", "config"}},
 		{name: "host sign", args: []string{"host", "sign"}},
 		{name: "host renew", args: []string{"host", "renew"}},
@@ -64,8 +70,19 @@ func TestExecuteEndToEnd(t *testing.T) {
 
 			_, err := f.exec.Execute(context.Background(), tt.args)
 
-			if !errors.Is(err, &errs.NotImplementedError{}) {
-				t.Fatalf("expected a errs.NotImplementedError, got %v", err)
+			switch {
+			case tt.wantNilErr:
+				if err != nil {
+					t.Fatalf("expected no error, got %v", err)
+				}
+			case tt.wantErr != nil:
+				if err == nil || err.Error() != tt.wantErr.Error() {
+					t.Fatalf("expected error %q, got %v", tt.wantErr, err)
+				}
+			default:
+				if !errors.Is(err, &errs.NotImplementedError{}) {
+					t.Fatalf("expected a errs.NotImplementedError, got %v", err)
+				}
 			}
 		})
 	}
