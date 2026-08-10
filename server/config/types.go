@@ -12,9 +12,9 @@ type Config struct {
 	Metrics    bool       `mapstructure:"metrics"`
 	Production bool       `mapstructure:"production"`
 
-	DB           DB             `mapstructure:"db"`
-	HTTP         HTTPSettings   `mapstructure:"http"`
-	QueueLogging GenericLogging `mapstructure:"queue_logging"`
+	DB    DB           `mapstructure:"db"`
+	HTTP  HTTPSettings `mapstructure:"http"`
+	Queue QueueConfig  `mapstructure:"queue"`
 
 	// AuthConfig configures OAuth/OIDC authentication for the server. See
 	// OAuthConfig for details on provider URL, scopes, and field mapping
@@ -27,6 +27,10 @@ type Config struct {
 
 	SSHKey      string             `mapstructure:"ssh_key"`
 	CertOptions CertificateOptions `mapstructure:"cert_options"`
+}
+
+type QueueConfig struct {
+	Logging GenericLogging `mapstructure:"logging"`
 }
 
 // Supported values for DBProvider.
@@ -73,10 +77,11 @@ type DB struct {
 // TODO: not yet consumed by service.AuthService — fields are a starting
 // guess at what a reference deployment (lldap) needs.
 type LDAPConfig struct {
-	Enabled      bool   `mapstructure:"enabled"`
-	URL          string `mapstructure:"url"`
-	BindDN       string `mapstructure:"bind_dn"`
-	BindPassword string `mapstructure:"bind_password"`
-	BaseDN       string `mapstructure:"base_dn"`
-	UserFilter   string `mapstructure:"user_filter"`
+	Enabled      bool           `mapstructure:"enabled"`
+	URL          string         `mapstructure:"url"`
+	BindDN       string         `mapstructure:"bind_dn"`
+	BindPassword string         `mapstructure:"bind_password"`
+	BaseDN       string         `mapstructure:"base_dn"`
+	UserFilter   string         `mapstructure:"user_filter"`
+	Logging      GenericLogging `mapstructure:"logging"`
 }
