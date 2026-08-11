@@ -13,11 +13,18 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
+	"github.com/ThreeDotsLabs/watermill/message/router/middleware"
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
 )
+
+// routerStartTimeout bounds how long Run's shutdown watcher waits for the
+// router to come up before closing it anyway, so a router that never starts
+// can't wedge shutdown.
+const routerStartTimeout = 5 * time.Second
 
 // PubSub holds ssoosshd's message-broker primitives: Publisher/Subscriber
 // (currently always backed by an in-process gochannel.GoChannel) and a
@@ -42,16 +49,65 @@ func New(logger *slog.Logger) (*PubSub, error) {
 	wmLogger := watermill.NewSlogLogger(logger)
 
 	channel := gochannel.NewGoChannel(gochannel.Config{
-		// Persistent so a subscriber that attaches slightly after a fast
-		// publish still sees the message — matters once real topics exist
-		// (Phase 2 onward); a no-op while nothing publishes yet.
-		Persistent: true,
+		// Persistent deliberately left false. It looks tempting for the
+		// wake topic (a subscriber attaching slightly after a fast
+		// publish would still see the message), but two things make it
+		// the wrong choice:
+		//
+		//  1. It's unnecessary there: server/service/certrequest.go's
+		//     Wait already re-reads the DB right after subscribing
+		//     (lookupRequest/reconcileStatus), and reconcileStatus's
+		//     terminal branch already re-notifies when it finds a
+		//     resolved-but-not-yet-cached status. That covers the same
+		//     race Persistent would, just via one extra loop iteration
+		//     instead of a replayed message.
+		//  2. It's actively wrong for the future sign queue
+		//     (docs/watermill-phase3-sign-queue.md): gochannel replays a
+		//     Persistent topic's *entire* history to every new
+		//     subscriber, not just messages it missed. A signer
+		//     restarting and re-subscribing to the shared sign-queue
+		//     topic would get every job ever published replayed to it,
+		//     including ones long since signed — not just unconsumed
+		//     ones. There's also no eviction: a Persistent topic's
+		//     backlog only ever grows for the life of the process (see
+		//     docs/watermill-phase2-wake-topic.md's now-resolved caveat
+		//     about this).
+		//
+		// Safe to leave off in gochannel-only (single-process) mode:
+		// Phase 4's signer registers its subscription at boot, before
+		// Approve can ever publish a job, so there's no late-subscriber
+		// gap to cover. Once Phase 6/NATS makes the signer a genuinely
+		// separate process that can restart independently, durability
+		// there is a JetStream ack/redelivery problem — a different,
+		// correct mechanism, not something this flag was ever going to
+		// solve properly anyway.
+		Persistent: false,
 	}, wmLogger)
 
-	router, err := message.NewRouter(message.RouterConfig{}, wmLogger)
+	// CloseTimeout bounds how long Close waits for in-flight handlers.
+	// Watermill's default is 30s, which overruns bootstrap's own 5s shutdown
+	// budget (see shutdownManager.Run) — so a wedged handler would blow past
+	// shutdown rather than being cut short by it.
+	router, err := message.NewRouter(message.RouterConfig{CloseTimeout: 3 * time.Second}, wmLogger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create watermill router: %w", err)
 	}
+
+	// Order matters: the first middleware added is the outermost, so this is
+	// dropAfterRetries(Retry(handler)) — retries happen inside, and whatever
+	// error survives them is swallowed outside.
+	//
+	// Both halves are needed because of how gochannel handles a Nack: it
+	// redelivers *immediately*, in a tight loop with no backoff. So a
+	// handler that keeps failing (a wedged database, say) would spin the CPU
+	// rather than retry politely, and would never stop. Retry supplies the
+	// backoff; dropAfterRetries supplies the giving up.
+	router.AddMiddleware(dropAfterRetries(wmLogger), middleware.Retry{
+		MaxRetries:      3,
+		InitialInterval: 100 * time.Millisecond,
+		Multiplier:      2,
+		Logger:          wmLogger,
+	}.Middleware)
 
 	return &PubSub{
 		Publisher:  channel,
@@ -59,6 +115,36 @@ func New(logger *slog.Logger) (*PubSub, error) {
 		Router:     router,
 		channel:    channel,
 	}, nil
+}
+
+// dropAfterRetries returns a middleware that acknowledges a message whose
+// handler still failed after the retry middleware inside it gave up, rather
+// than letting the error nack.
+//
+// Without this, an exhausted retry nacks, and gochannel immediately
+// redelivers the same message forever — turning a persistent failure into a
+// busy loop that never drains. Dropping is the lesser evil, but it *is* data
+// loss, so the discarded payload is logged: for a signed certificate that
+// log line may be the only surviving record it existed at all.
+//
+// A dead-letter topic would be the better answer; it's deliberately deferred
+// until there's a durable broker to put one on (see
+// docs/watermill-phase6-nats-deferred.md) — a poison queue nobody consumes is
+// no better than this log line.
+func dropAfterRetries(logger watermill.LoggerAdapter) message.HandlerMiddleware {
+	return func(next message.HandlerFunc) message.HandlerFunc {
+		return func(msg *message.Message) ([]*message.Message, error) {
+			produced, err := next(msg)
+			if err != nil {
+				logger.Error("dropping message after exhausting retries", err, watermill.LogFields{
+					"message_uuid": msg.UUID,
+					"payload":      string(msg.Payload),
+				})
+				return nil, nil
+			}
+			return produced, nil
+		}
+	}
 }
 
 // Run starts the Router, blocking until ctx is canceled or Close is
@@ -72,6 +158,19 @@ func New(logger *slog.Logger) (*PubSub, error) {
 func (p *PubSub) Run(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
+
+		// Wait for the router to actually be running before closing it.
+		// Closing one that hasn't started its handlers yet doesn't return
+		// early — it waits out the full CloseTimeout on handlers that will
+		// never report in. That's reachable whenever ctx is already canceled
+		// as Run is called (an immediate shutdown, or a test using a
+		// pre-canceled context), and it stayed invisible until there were
+		// handlers registered to wait for.
+		select {
+		case <-p.Router.Running():
+		case <-time.After(routerStartTimeout):
+		}
+
 		// Best-effort; Run's own return value is what servicerunner observes.
 		_ = p.Router.Close()
 	}()

@@ -343,7 +343,7 @@ func TestConnectDatabase_ShouldRespectRetryConfiguration(t *testing.T) {
 	c := &config.Config{}
 	c.DB.Provider = config.DBProviderPostgres
 	c.DB.Connection = "host=127.0.0.1 port=1 user=u password=p dbname=d sslmode=disable connect_timeout=1"
-	c.DB.RetryAttempts = 2       // Two attempts
+	c.DB.RetryAttempts = 2                     // Two attempts
 	c.DB.RetryInterval = 50 * time.Millisecond // Short interval for testing
 
 	if _, err := connectDatabase(c); err == nil {

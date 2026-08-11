@@ -9,6 +9,36 @@
 // dependencies.
 package apitypes
 
+// Terminal certificate-request statuses. These are the complete set of SSE
+// event names ssoosshd's events endpoint can send (see
+// server/controller/certrequests.go's eventsHandler, which uses the status
+// as the event name) — a client must treat every one of them as terminal
+// or it will block forever waiting for an event that never comes.
+//
+// They mirror server/model.CertificateRequestStatus, which is the source of
+// truth for the database. They're duplicated here rather than imported
+// because client/ and pam_ssoossh/ cannot import server/ (see root
+// CLAUDE.md); keeping them in this shared wire-contract package is what
+// stops the two sides from drifting apart as new statuses are added.
+const (
+	StatusApproved = "approved"
+	StatusDenied   = "denied"
+	StatusExpired  = "expired"
+	// StatusEnrolled resolves a service-enrollment request: the payload
+	// carries CertificateResult.Code (an enrollment token), not a
+	// certificate. See docs/ssoossh-context.md, "Service enrollment".
+	StatusEnrolled = "enrolled"
+	// StatusFailed means the request was approved but signing failed, or a
+	// sweep invalidated it. No certificate will ever arrive for it.
+	StatusFailed = "failed"
+)
+
+// TerminalStatuses lists every status that resolves a certificate request.
+// Clients should register for all of them.
+func TerminalStatuses() []string {
+	return []string{StatusApproved, StatusDenied, StatusExpired, StatusEnrolled, StatusFailed}
+}
+
 // RequestedOptions are the certificate options a caller may request.
 // Server config is always the outer bound on what's actually granted (see
 // root CLAUDE.md Hard Constraints) — the server narrows or rejects
@@ -40,17 +70,23 @@ type RequestedOptions struct {
 // (server/controller/certrequests.go's eventsHandler) and of the web UI's
 // approve response.
 type CertificateResult struct {
-	// Status is the resolved request status: "approved", "denied", or
-	// "expired" (see server/model.CertificateRequestStatus — mirrored here
-	// as a plain string rather than importing server/). On the events
-	// endpoint this is carried by the SSE event name, not the JSON payload
-	// — excluded from JSON encoding/decoding so a stray "status" field
-	// can't be confused with it.
+	// Status is the resolved request status: "approved", "denied",
+	// "expired", or "enrolled" (see server/model.CertificateRequestStatus —
+	// mirrored here as a plain string rather than importing server/). On
+	// the events endpoint this is carried by the SSE event name, not the
+	// JSON payload — excluded from JSON encoding/decoding so a stray
+	// "status" field can't be confused with it.
 	Status string `json:"-"`
 
 	// Certificate is the signed certificate in authorized_keys format,
 	// set only when Status is "approved".
 	Certificate string `json:"certificate,omitempty"`
+
+	// Code is the enrollment token, set only when Status is "enrolled"
+	// (CertificateTypeService — see docs/ssoossh-context.md, "Service
+	// enrollment"). `service retrieve` presents this later to redeem the
+	// actual certificate.
+	Code string `json:"code,omitempty"`
 }
 
 // CAResponse is GET /api/ca's response body.

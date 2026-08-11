@@ -53,6 +53,82 @@ func TestWaitForOutcome_ShouldDecodeDeniedEventWithNoCertificate(t *testing.T) {
 	}
 }
 
+// TestWaitForOutcome_ShouldTreatEnrolledAsTerminal is a regression test:
+// "enrolled" was emitted by the server but missing from this client's
+// terminal-status list, so a service enrollment blocked until the stream
+// closed instead of resolving. Any status the server can send must be
+// registered here — see apitypes.TerminalStatuses.
+func TestWaitForOutcome_ShouldTreatEnrolledAsTerminal(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeSSEEvent(w, "enrolled", map[string]string{"code": "token-abc"})
+	}))
+	t.Cleanup(ts.Close)
+
+	result, err := waitForOutcome(context.Background(), nil, ts.URL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != StatusEnrolled {
+		t.Errorf("got status %q, want %q", result.Status, StatusEnrolled)
+	}
+	if result.Code != "token-abc" {
+		t.Errorf("got code %q, want %q", result.Code, "token-abc")
+	}
+}
+
+func TestWaitForOutcome_ShouldTreatFailedAsTerminal(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeSSEEvent(w, "failed", map[string]string{})
+	}))
+	t.Cleanup(ts.Close)
+
+	result, err := waitForOutcome(context.Background(), nil, ts.URL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != StatusFailed {
+		t.Errorf("got status %q, want %q", result.Status, StatusFailed)
+	}
+	if result.Certificate != "" {
+		t.Errorf("expected no certificate on a failed outcome, got %q", result.Certificate)
+	}
+}
+
+// TestWaitForOutcome_ShouldSurfaceGoneWithoutRetrying covers the ephemeral
+// certificate case: the server answers 410 when a certificate is no longer
+// available. That must surface as a *ResponseError the caller can act on,
+// and must not send the client into a reconnect loop (410 is deliberately
+// outside resty's retry conditions).
+func TestWaitForOutcome_ShouldSurfaceGoneWithoutRetrying(t *testing.T) {
+	t.Parallel()
+
+	var attempts int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusGone)
+		_, _ = w.Write([]byte(`{"data":null,"error":"certificate is no longer available"}`))
+	}))
+	t.Cleanup(ts.Close)
+
+	_, err := waitForOutcome(context.Background(), nil, ts.URL)
+
+	respErr, ok := err.(*ResponseError)
+	if !ok {
+		t.Fatalf("expected a *ResponseError, got %T: %v", err, err)
+	}
+	if respErr.StatusCode != http.StatusGone {
+		t.Errorf("got status %d, want %d", respErr.StatusCode, http.StatusGone)
+	}
+	if attempts != 1 {
+		t.Errorf("expected exactly one attempt (410 must not be retried), got %d", attempts)
+	}
+}
+
 func TestWaitForOutcome_ShouldErrorOnNon2xxConnect(t *testing.T) {
 	t.Parallel()
 

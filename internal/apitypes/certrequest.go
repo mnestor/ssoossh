@@ -35,3 +35,14 @@ type CreateRequestResponse struct {
 	EventsURL   string `json:"events_url"`
 	ApprovalURL string `json:"approval_url"`
 }
+
+// ApproveResponse is POST /api/certs/requests/:id/approve's response body.
+// It does not carry the certificate — approval only queues a signing job
+// (see docs/watermill-signer-plan.md); the certificate itself is delivered
+// later over the client's own SSE connection (CreateRequestResponse's
+// EventsURL), not returned here to the approving browser.
+type ApproveResponse struct {
+	// Status is always "signing" today — included so the response shape
+	// can carry more without a breaking change later.
+	Status string `json:"status"`
+}

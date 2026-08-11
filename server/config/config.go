@@ -17,7 +17,7 @@ import (
 // defaultconfig holds the embedded contents of defaults.yaml, loaded into
 // Viper before any config file is merged in.
 //
-//go:embed defaults.yaml
+//go:embed _defaults.yaml
 var defaultconfig string
 
 // NewConfig loads the ssoosshd configuration using Viper.

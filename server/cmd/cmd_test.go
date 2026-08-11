@@ -113,15 +113,19 @@ func writeServerTestConfig(t *testing.T) string {
 
 	oidcSrv := newTestOIDCProvider(t)
 
+	// authentication: is a top-level config key (config.Config.AuthConfig),
+	// a sibling of http: — not nested under it. redirect_url isn't a
+	// config field at all: it's inferred from http.server_name/port/
+	// is_https (see service.NewAuthService's doc comment).
 	content := `http:
   address: 127.0.0.1
   port: 0
-  authentication:
-    client_id: test-client
-    redirect_url: "https://ssoossh.example.com/auth/callback"
-    provider_url: "` + oidcSrv.URL + `"
-    fields:
-      username: sub
+  server_name: ssoossh.example.com
+authentication:
+  client_id: test-client
+  provider_url: "` + oidcSrv.URL + `"
+  fields:
+    username: sub
 db:
   provider: sqlite
   connection_string: ":memory:"

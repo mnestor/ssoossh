@@ -134,12 +134,16 @@ func TestBootstrap_ShouldStartAndShutDownCleanlyWhenContextCanceled(t *testing.T
 	t.Setenv("OTEL_LOGS_EXPORTER", "none")
 
 	oidcSrv := newTestOIDCProvider(t)
-	httpExtra := fmt.Sprintf(`  authentication:
-    client_id: test-client
-    redirect_url: "https://ssoossh.example.com/auth/callback"
-    provider_url: %q
-    fields:
-      username: sub`, oidcSrv.URL)
+	// authentication: is a top-level config key (config.Config.AuthConfig),
+	// a sibling of http: — not nested under it — so this goes in opts.extra,
+	// not opts.httpExtra. redirect_url isn't a config field at all: it's
+	// inferred from http.server_name/port/is_https (see
+	// service.NewAuthService's doc comment).
+	extra := fmt.Sprintf(`authentication:
+  client_id: test-client
+  provider_url: %q
+  fields:
+    username: sub`, oidcSrv.URL)
 
 	// A pre-canceled context makes the server run its full startup and then
 	// shut down immediately, exercising the whole Bootstrap sequence
@@ -147,7 +151,10 @@ func TestBootstrap_ShouldStartAndShutDownCleanlyWhenContextCanceled(t *testing.T
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	cc := newBootstrapCommand(t, ctx, writeBootstrapConfig(t, bootstrapConfigOpts{httpExtra: httpExtra}))
+	cc := newBootstrapCommand(t, ctx, writeBootstrapConfig(t, bootstrapConfigOpts{
+		httpExtra: "  server_name: ssoossh.example.com",
+		extra:     extra,
+	}))
 
 	if err := Bootstrap(cc); err != nil {
 		t.Fatalf("expected Bootstrap to shut down cleanly, got %v", err)

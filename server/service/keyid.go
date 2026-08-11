@@ -95,8 +95,6 @@ func parseKeyIDTemplate(name, src string) (*template.Template, error) {
 }
 
 // execute renders the template for certType against data.
-//
-//nolint:unused // called from Approve once CA signing is implemented (see the TODO on CertRequestService); exercised directly by keyid_test.go for now.
 func (t *keyIDTemplates) execute(certType model.CertificateType, data keyIDTemplateData) (string, error) {
 	var tmpl *template.Template
 	switch certType {

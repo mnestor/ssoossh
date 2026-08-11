@@ -42,7 +42,7 @@ func (a *app) initServices() (svc *services, err error) {
 		return nil, err
 	}
 
-	if svc.certRequest, err = service.NewCertRequestService(a.config, a.db); err != nil {
+	if svc.certRequest, err = service.NewCertRequestService(a.config, a.db, a.pubSub.Publisher, a.pubSub.Subscriber); err != nil {
 		return nil, err
 	}
 

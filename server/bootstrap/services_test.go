@@ -8,11 +8,13 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
+	"log/slog"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
 
 	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/pubsub"
 )
 
 func testSSHKeyPEM(t *testing.T) string {
@@ -38,7 +40,18 @@ func TestInitServices_ShouldConstructCAService(t *testing.T) {
 	c.AuthConfig.ClientID = "test-client"
 	c.AuthConfig.ProviderURL = oidcSrv.URL
 	c.AuthConfig.Fields.Username = "sub"
-	a := &app{config: c}
+	c.HTTP.ServerName = "ssoossh.example.com"
+
+	ps, err := pubsub.New(slog.Default())
+	if err != nil {
+		t.Fatalf("failed to build pub/sub: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := ps.Close(t.Context()); err != nil {
+			t.Errorf("unexpected error closing pub/sub: %v", err)
+		}
+	})
+	a := &app{config: c, pubSub: ps}
 
 	svc, err := a.initServices()
 	if err != nil {

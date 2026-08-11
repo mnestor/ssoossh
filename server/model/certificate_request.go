@@ -7,10 +7,31 @@ import "time"
 type CertificateRequestStatus string
 
 const (
-	CertificateRequestStatusPending  CertificateRequestStatus = "pending"
+	CertificateRequestStatusPending CertificateRequestStatus = "pending"
+	// CertificateRequestStatusSigning means a human approved the request
+	// and a signing job was published (see
+	// docs/watermill-phase3-sign-queue.md) — not yet terminal. The signer
+	// (docs/watermill-phase4-signer-listener.md) and its listener/resolver
+	// still need to run before this becomes CertificateRequestStatusApproved.
+	// Only used for CertificateTypeUser/CertificateTypeHost — service
+	// requests go straight from Pending to CertificateRequestStatusEnrolled,
+	// no signer involved at approval time.
+	CertificateRequestStatusSigning  CertificateRequestStatus = "signing"
 	CertificateRequestStatusApproved CertificateRequestStatus = "approved"
+	// CertificateRequestStatusEnrolled is CertificateTypeService's terminal
+	// approval state: EnrollmentToken is set, and the certificate itself
+	// isn't issued until a later `service retrieve` redeems it — see
+	// docs/ssoossh-context.md, "Service enrollment".
+	CertificateRequestStatusEnrolled CertificateRequestStatus = "enrolled"
 	CertificateRequestStatusDenied   CertificateRequestStatus = "denied"
 	CertificateRequestStatusExpired  CertificateRequestStatus = "expired"
+	// CertificateRequestStatusFailed is terminal: the signer couldn't
+	// produce a certificate (see docs/watermill-phase4-signer-listener.md),
+	// or a boot-time sweep invalidated a request left stuck in Signing (see
+	// docs/watermill-phase5-invalidation-sweep.md). Distinct from Denied,
+	// which means a human said no. No migration needed — status is a
+	// free-text TEXT column.
+	CertificateRequestStatusFailed CertificateRequestStatus = "failed"
 )
 
 // CertificateRequest represents a client's in-flight ask for a user, host,
@@ -35,6 +56,7 @@ type CertificateRequest struct {
 	PublicKey string `gorm:"column:public_key"`
 
 	// Hostname is set only for CertificateTypeHost requests.
+	// TODO: i think this would just go in principals
 	Hostname string `gorm:"column:hostname"`
 
 	// RequestedOptions is JSON-encoded. Server config (config.CertificateOptions)
@@ -50,6 +72,11 @@ type CertificateRequest struct {
 	Status     CertificateRequestStatus `gorm:"column:status"`
 	CreatedAt  time.Time                `gorm:"column:created_at"`
 	ResolvedAt *time.Time               `gorm:"column:resolved_at"`
+
+	// EnrollmentToken is set when Status is CertificateRequestStatusEnrolled
+	// (CertificateTypeService only) — the code `service retrieve` presents
+	// to redeem a certificate later. Empty for user/host requests.
+	EnrollmentToken string `gorm:"column:enrollment_token"`
 }
 
 // TableName overrides GORM's default pluralization to match the migration.

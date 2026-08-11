@@ -2,7 +2,10 @@
 // code, for handlers to translate into API error responses.
 package errorresponses
 
-import "net/http"
+import (
+	"fmt"
+	"net/http"
+)
 
 // TooManyRequestsError indicates a client has exceeded a rate limit.
 type TooManyRequestsError struct{}
@@ -43,6 +46,31 @@ func (e *NotFoundError) Error() string {
 
 // HTTPStatusCode reports the HTTP status this error should be rendered as.
 func (e *NotFoundError) HTTPStatusCode() int { return http.StatusNotFound }
+
+// CertificateUnavailableError indicates a certificate request was approved
+// and signed, but the signed certificate can no longer be obtained.
+//
+// Certificates are deliberately never persisted (see
+// docs/watermill-phase4-signer-listener.md): they're delivered once, via an
+// in-memory cache and its wake message. A client reconnecting after the
+// server restarted has missed that window and must make a new request —
+// which is cheap, since the certificates are short-lived by design.
+//
+// Rendered as 410 Gone rather than 404: the request genuinely existed and
+// was approved, and 410 is also outside the client's SSE retry conditions
+// (see internal/api/sse.go), so it stops rather than reconnect-loops.
+type CertificateUnavailableError struct {
+	// RequestID is the request whose certificate is no longer available.
+	RequestID string
+}
+
+// Error implements the error interface.
+func (e *CertificateUnavailableError) Error() string {
+	return fmt.Sprintf("certificate for request %q is no longer available; please make a new request", e.RequestID)
+}
+
+// HTTPStatusCode reports the HTTP status this error should be rendered as.
+func (e *CertificateUnavailableError) HTTPStatusCode() int { return http.StatusGone }
 
 // NotImplementedError indicates a route or check exists as a scaffold but
 // its logic hasn't been implemented yet. Handlers/middleware that are still

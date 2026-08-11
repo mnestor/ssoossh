@@ -166,13 +166,13 @@ func (cr *certRequestController) createServiceEnrollRequestHandler(g *gin.Contex
 // hit repeatedly for the same :id — e.g. resty's SSESource reconnecting
 // after a dropped connection — since Wait itself handles that.
 func (cr *certRequestController) eventsHandler(g *gin.Context) {
-	status, certificate, err := cr.certRequestService.Wait(g.Request.Context(), g.Param("id"))
+	status, certificate, code, err := cr.certRequestService.Wait(g.Request.Context(), g.Param("id"))
 	if err != nil {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 		return
 	}
 
-	g.SSEvent(string(status), apitypes.CertificateResult{Certificate: certificate})
+	g.SSEvent(string(status), apitypes.CertificateResult{Certificate: certificate, Code: code})
 }
 
 // approveHandler handles POST /api/certs/requests/:id/approve (web UI,
@@ -185,13 +185,12 @@ func (cr *certRequestController) approveHandler(g *gin.Context) {
 		return
 	}
 
-	certificate, err := cr.certRequestService.Approve(g.Request.Context(), g.Param("id"), identity)
-	if err != nil {
+	if err := cr.certRequestService.Approve(g.Request.Context(), g.Param("id"), identity); err != nil {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 		return
 	}
 
-	g.JSON(http.StatusOK, apitypes.CertificateResult{Certificate: certificate})
+	g.JSON(http.StatusOK, apitypes.ApproveResponse{Status: "signing"})
 }
 
 // denyHandler handles POST /api/certs/requests/:id/deny (web UI, behind

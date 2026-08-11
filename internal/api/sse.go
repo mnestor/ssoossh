@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"resty.dev/v3"
+
+	"github.com/mnestor/ssoossh/internal/apitypes"
 )
 
 // reconnectDelay is how long waitForOutcome waits before reconnecting after
@@ -17,14 +19,18 @@ import (
 // doc comment for why that's this package's job, not SSESource's).
 const reconnectDelay = 250 * time.Millisecond
 
-// terminal certificate-request statuses — the only event names ssoosshd's
-// events endpoint ever sends (see server/controller/certrequests.go's
-// eventsHandler): it blocks until the request resolves, then sends exactly
-// one of these and closes.
+// Terminal certificate-request statuses, re-exported from the shared wire
+// contract so existing callers of api.StatusApproved keep working. The
+// canonical list lives in internal/apitypes — see apitypes.TerminalStatuses,
+// which waitForOutcome registers listeners for. Registering fewer than the
+// full set means an unlisted status arrives as an *informational* event and
+// the client blocks forever waiting for a terminal one that never comes.
 const (
-	StatusApproved = "approved"
-	StatusDenied   = "denied"
-	StatusExpired  = "expired"
+	StatusApproved = apitypes.StatusApproved
+	StatusDenied   = apitypes.StatusDenied
+	StatusExpired  = apitypes.StatusExpired
+	StatusEnrolled = apitypes.StatusEnrolled
+	StatusFailed   = apitypes.StatusFailed
 )
 
 // waitForOutcome opens a real SSE connection (via resty's SSESource, per
@@ -101,7 +107,7 @@ func newCertificateEventSource(ctx context.Context, tlsConfig *tls.Config, event
 			finish(nil, fmt.Errorf("failed to connect to certificate request events stream: %w", err))
 		})
 
-	for _, status := range []string{StatusApproved, StatusDenied, StatusExpired} {
+	for _, status := range apitypes.TerminalStatuses() {
 		status := status
 		source.AddEventListener(status, func(e any) {
 			evt, ok := e.(*resty.SSE)

@@ -63,10 +63,14 @@ type AuthService struct {
 	oauth2Config *oauth2.Config
 }
 
-// NewAuthService discovers the OIDC provider at c.HTTP.AuthConfig.ProviderURL
+// NewAuthService discovers the OIDC provider at c.AuthConfig.ProviderURL
 // (its authorization/token/jwks endpoints) and builds an AuthService ready
 // to handle logins. httpClient (may be nil) is used for the discovery
-// request and all subsequent calls to the provider.
+// request and all subsequent calls to the provider. The OAuth redirect URL
+// is not itself configured — it's inferred from c.HTTP (ServerName, Port,
+// and whether the server is HTTPS either directly or behind a
+// TLS-terminating proxy — see IsHTTPS's doc comment), since everything
+// after the domain is fixed anyway ("/auth/callback").
 func NewAuthService(ctx context.Context, c *config.Config, db *gorm.DB, httpClient *http.Client) (*AuthService, error) {
 	authConfig := c.AuthConfig
 
@@ -79,7 +83,7 @@ func NewAuthService(ctx context.Context, c *config.Config, db *gorm.DB, httpClie
 	if authConfig.Fields.Username == "" {
 		return nil, errors.New("authentication.fields.username is required")
 	}
-	if authConfig.Fields.Username == "" {
+	if c.HTTP.ServerName == "" {
 		return nil, errors.New("http.server_name is required")
 	}
 

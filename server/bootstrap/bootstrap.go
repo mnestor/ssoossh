@@ -77,6 +77,11 @@ func Bootstrap(cmd *cobra.Command) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize pub/sub: %w", err)
 	}
+	// Appending Run here only schedules it; nothing in serviceRunners starts
+	// until the servicerunner call at the bottom of this function. That's
+	// what lets initPipeline register its handlers further down and still
+	// have them live before the Router consumes anything — don't reorder
+	// these without checking that.
 	serviceRunners = append(serviceRunners, a.pubSub.Run)
 	shutdowns.Add(a.pubSub.Close)
 
@@ -84,6 +89,13 @@ func Bootstrap(cmd *cobra.Command) error {
 	a.svc, err = a.initServices()
 	if err != nil {
 		return fmt.Errorf("failed to initialize services: %w", err)
+	}
+
+	// Register the certificate pipeline's queue consumers. Must come after
+	// initServices; still well before anything in serviceRunners actually
+	// starts (see initPipeline).
+	if err := a.initPipeline(); err != nil {
+		return fmt.Errorf("failed to initialize certificate pipeline: %w", err)
 	}
 
 	// Init the job scheduler

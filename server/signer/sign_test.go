@@ -1,0 +1,352 @@
+package signer
+
+import (
+	"context"
+	"errors"
+	"math"
+	"strings"
+	"testing"
+	"time"
+
+	"golang.org/x/crypto/ssh"
+
+	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
+	"github.com/mnestor/ssoossh/server/certmsg"
+	"github.com/mnestor/ssoossh/server/model"
+)
+
+// Test methodology: unit tests for the signing logic, against real
+// throwaway ed25519 keys rather than fakes — signing is the one thing here
+// that can't be meaningfully mocked, since the assertion that matters is
+// "does the output actually verify against the CA." Tests run in parallel;
+// nothing shares state.
+
+// newTestKeySource returns a CAKeySource backed by a fresh throwaway CA key,
+// plus that CA's public key for verification.
+func newTestKeySource(t *testing.T) (CAKeySource, ssh.PublicKey) {
+	t.Helper()
+
+	ca, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("failed to generate CA keypair: %v", err)
+	}
+	caSigner, err := ssh.NewSignerFromKey(ca.Private())
+	if err != nil {
+		t.Fatalf("failed to build CA signer: %v", err)
+	}
+	return &staticKeySource{signer: caSigner}, caSigner.PublicKey()
+}
+
+// staticKeySource is a CAKeySource returning a fixed signer, or a fixed
+// error when signer is nil.
+type staticKeySource struct {
+	signer ssh.Signer
+	err    error
+}
+
+func (s *staticKeySource) Signer(context.Context) (ssh.Signer, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.signer, nil
+}
+
+// newTestPublicKey returns a fresh public key in authorized_keys format.
+func newTestPublicKey(t *testing.T) string {
+	t.Helper()
+
+	kp, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("failed to generate keypair: %v", err)
+	}
+	pub, err := kp.MarshalAuthorizedKey()
+	if err != nil {
+		t.Fatalf("failed to marshal public key: %v", err)
+	}
+	return pub
+}
+
+// newTestJob returns a valid user-certificate signing job.
+func newTestJob(t *testing.T) certmsg.SigningJob {
+	t.Helper()
+
+	now := time.Now().Truncate(time.Second)
+	return certmsg.SigningJob{
+		RequestID:   "req-1",
+		Type:        model.CertificateTypeUser,
+		PublicKey:   newTestPublicKey(t),
+		Principals:  []string{"alice"},
+		KeyID:       "alice",
+		ValidAfter:  now,
+		ValidBefore: now.Add(time.Hour),
+		RequestedOptions: certmsg.RequestedOptions{
+			Extensions: []string{"permit-pty"},
+		},
+	}
+}
+
+// parseCert parses a signed certificate out of its authorized_keys form.
+func parseCert(t *testing.T, certificate string) *ssh.Certificate {
+	t.Helper()
+
+	pub, _, _, _, err := ssh.ParseAuthorizedKey([]byte(certificate))
+	if err != nil {
+		t.Fatalf("failed to parse signed certificate: %v", err)
+	}
+	cert, ok := pub.(*ssh.Certificate)
+	if !ok {
+		t.Fatalf("expected an *ssh.Certificate, got %T", pub)
+	}
+	return cert
+}
+
+func TestSign_ShouldProduceACertificateVerifiableAgainstTheCA(t *testing.T) {
+	t.Parallel()
+
+	ks, caPub := newTestKeySource(t)
+	job := newTestJob(t)
+
+	reply, err := Sign(context.Background(), ks, job)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	cert := parseCert(t, reply.Certificate)
+	if got := string(cert.SignatureKey.Marshal()); got != string(caPub.Marshal()) {
+		t.Error("expected the certificate to be signed by the configured CA")
+	}
+
+	checker := &ssh.CertChecker{
+		IsUserAuthority: func(auth ssh.PublicKey) bool {
+			return string(auth.Marshal()) == string(caPub.Marshal())
+		},
+	}
+	if err := checker.CheckCert("alice", cert); err != nil {
+		t.Errorf("expected the certificate to validate for its principal, got %v", err)
+	}
+}
+
+func TestSign_ShouldMapJobFieldsOntoTheCertificate(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+	job := newTestJob(t)
+
+	reply, err := Sign(context.Background(), ks, job)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	cert := parseCert(t, reply.Certificate)
+
+	if cert.CertType != ssh.UserCert {
+		t.Errorf("got CertType %d, want %d (ssh.UserCert)", cert.CertType, ssh.UserCert)
+	}
+	if cert.KeyId != job.KeyID {
+		t.Errorf("got KeyId %q, want %q", cert.KeyId, job.KeyID)
+	}
+	if len(cert.ValidPrincipals) != 1 || cert.ValidPrincipals[0] != "alice" {
+		t.Errorf(`got ValidPrincipals %v, want ["alice"]`, cert.ValidPrincipals)
+	}
+	if cert.ValidAfter != uint64(job.ValidAfter.Unix()) {
+		t.Errorf("got ValidAfter %d, want %d", cert.ValidAfter, job.ValidAfter.Unix())
+	}
+	if cert.ValidBefore != uint64(job.ValidBefore.Unix()) {
+		t.Errorf("got ValidBefore %d, want %d", cert.ValidBefore, job.ValidBefore.Unix())
+	}
+	if _, ok := cert.Permissions.Extensions["permit-pty"]; !ok {
+		t.Errorf("expected permit-pty in extensions, got %v", cert.Permissions.Extensions)
+	}
+	if cert.Serial == 0 {
+		t.Error("expected a non-zero serial")
+	}
+	if reply.Serial != cert.Serial {
+		t.Errorf("reply serial %d does not match certificate serial %d", reply.Serial, cert.Serial)
+	}
+	if reply.PublicKeyFingerprint == "" {
+		t.Error("expected a public key fingerprint on the reply")
+	}
+}
+
+func TestSign_ShouldProduceUniqueSerials(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+
+	first, err := Sign(context.Background(), ks, newTestJob(t))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	second, err := Sign(context.Background(), ks, newTestJob(t))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if first.Serial == second.Serial {
+		t.Errorf("expected distinct serials, got %d twice", first.Serial)
+	}
+}
+
+// TestSign_ShouldProduceSerialsStorableByDatabaseSQL is a regression test:
+// Go's database/sql cannot bind a uint64 with the high bit set, so a
+// full-width random serial made the audit-row insert fail — and with it the
+// whole delivery — for roughly half of all issued certificates. Loops enough
+// times that an unmasked implementation is essentially certain to trip it.
+func TestSign_ShouldProduceSerialsStorableByDatabaseSQL(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+	for i := range 50 {
+		reply, err := Sign(context.Background(), ks, newTestJob(t))
+		if err != nil {
+			t.Fatalf("unexpected error on iteration %d: %v", i, err)
+		}
+		if reply.Serial > uint64(math.MaxInt64) {
+			t.Fatalf("serial %d has the high bit set; database/sql cannot store it", reply.Serial)
+		}
+	}
+}
+
+// TestSign_ShouldCarryCriticalOptionsFaithfully guards the boundary that the
+// signer is not a policy point: Approve currently strips these, so if they
+// ever do arrive the signer must issue what it was told rather than quietly
+// dropping them and producing a certificate that disagrees with what was
+// approved.
+func TestSign_ShouldCarryCriticalOptionsFaithfully(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+	job := newTestJob(t)
+	job.RequestedOptions.ForceCommand = "/usr/bin/true"
+	job.RequestedOptions.SourceAddresses = []string{"10.0.0.1/32", "192.168.1.0/24"}
+
+	reply, err := Sign(context.Background(), ks, job)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	cert := parseCert(t, reply.Certificate)
+
+	if got := cert.Permissions.CriticalOptions["force-command"]; got != "/usr/bin/true" {
+		t.Errorf("got force-command %q, want %q", got, "/usr/bin/true")
+	}
+	want := "10.0.0.1/32,192.168.1.0/24"
+	if got := cert.Permissions.CriticalOptions["source-address"]; got != want {
+		t.Errorf("got source-address %q, want %q", got, want)
+	}
+}
+
+func TestSign_ShouldGrantNoTouchRequiredWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+	job := newTestJob(t)
+	job.RequestedOptions.NoTouchRequired = true
+
+	reply, err := Sign(context.Background(), ks, job)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	cert := parseCert(t, reply.Certificate)
+
+	if _, ok := cert.Permissions.Extensions["no-touch-required"]; !ok {
+		t.Errorf("expected no-touch-required in extensions, got %v", cert.Permissions.Extensions)
+	}
+}
+
+func TestSign_ShouldRejectUnsupportedCertificateTypes(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+
+	for _, certType := range []model.CertificateType{
+		model.CertificateTypeHost,
+		model.CertificateTypeService,
+		model.CertificateTypePAM,
+	} {
+		job := newTestJob(t)
+		job.Type = certType
+
+		_, err := Sign(context.Background(), ks, job)
+		if err == nil {
+			t.Fatalf("expected an error for certificate type %q, got nil", certType)
+		}
+		if got := errorCode(err); got != certmsg.ErrCodeUnsupportedType {
+			t.Errorf("for %q: got error code %q, want %q", certType, got, certmsg.ErrCodeUnsupportedType)
+		}
+	}
+}
+
+func TestSign_ShouldRejectAnUnparseablePublicKey(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+	job := newTestJob(t)
+	job.PublicKey = "not-a-public-key"
+
+	_, err := Sign(context.Background(), ks, job)
+	if err == nil {
+		t.Fatal("expected an error for an unparseable public key, got nil")
+	}
+	if got := errorCode(err); got != certmsg.ErrCodeBadPublicKey {
+		t.Errorf("got error code %q, want %q", got, certmsg.ErrCodeBadPublicKey)
+	}
+}
+
+func TestSign_ShouldReportAnUnavailableCA(t *testing.T) {
+	t.Parallel()
+
+	ks := &staticKeySource{err: errors.New("ssh-agent unreachable")}
+
+	_, err := Sign(context.Background(), ks, newTestJob(t))
+	if err == nil {
+		t.Fatal("expected an error when the CA key is unavailable, got nil")
+	}
+	if got := errorCode(err); got != certmsg.ErrCodeCAUnavailable {
+		t.Errorf("got error code %q, want %q", got, certmsg.ErrCodeCAUnavailable)
+	}
+}
+
+func TestNewConfigKeySource_ShouldRejectEmptyAndInvalidKeys(t *testing.T) {
+	t.Parallel()
+
+	if _, err := NewConfigKeySource(""); err == nil {
+		t.Error("expected an error for an empty key, got nil")
+	}
+	if _, err := NewConfigKeySource("not a private key"); err == nil {
+		t.Error("expected an error for an invalid key, got nil")
+	}
+}
+
+func TestNewConfigKeySource_ShouldReturnTheParsedSigner(t *testing.T) {
+	t.Parallel()
+
+	kp, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("failed to generate keypair: %v", err)
+	}
+	pem, err := kp.MarshalPrivateKey()
+	if err != nil {
+		t.Fatalf("failed to marshal private key: %v", err)
+	}
+
+	ks, err := NewConfigKeySource(string(pem))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	signer, err := ks.Signer(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if signer == nil {
+		t.Fatal("expected a non-nil signer")
+	}
+
+	// The signer must correspond to the key we handed in.
+	want, err := kp.MarshalAuthorizedKey()
+	if err != nil {
+		t.Fatalf("failed to marshal public key: %v", err)
+	}
+	got := string(ssh.MarshalAuthorizedKey(signer.PublicKey()))
+	if strings.TrimSpace(got) != strings.TrimSpace(want) {
+		t.Errorf("signer public key %q does not match the configured key %q", got, want)
+	}
+}

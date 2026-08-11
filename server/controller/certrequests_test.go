@@ -31,9 +31,11 @@ type fakeCertRequestService struct {
 
 	waitStatus model.CertificateRequestStatus
 	waitCert   string
+	waitCode   string
 	waitErr    error
 
-	denyErr error
+	approveErr error
+	denyErr    error
 }
 
 func (f *fakeCertRequestService) CreateRequest(_ context.Context, p service.NewCertRequestParams) (string, error) {
@@ -45,16 +47,16 @@ func (f *fakeCertRequestService) ListPending(_ context.Context) ([]model.Certifi
 	return nil, nil
 }
 
-func (f *fakeCertRequestService) Approve(_ context.Context, _ string, _ *service.Identity) (string, error) {
-	return "", nil
+func (f *fakeCertRequestService) Approve(_ context.Context, _ string, _ *service.Identity) error {
+	return f.approveErr
 }
 
 func (f *fakeCertRequestService) Deny(_ context.Context, _ string) error {
 	return f.denyErr
 }
 
-func (f *fakeCertRequestService) Wait(_ context.Context, _ string) (model.CertificateRequestStatus, string, error) {
-	return f.waitStatus, f.waitCert, f.waitErr
+func (f *fakeCertRequestService) Wait(_ context.Context, _ string) (model.CertificateRequestStatus, string, string, error) {
+	return f.waitStatus, f.waitCert, f.waitCode, f.waitErr
 }
 
 func TestCreateUserRequestHandler_ShouldReturnEventsAndApprovalURLs(t *testing.T) {
@@ -199,6 +201,43 @@ func TestApproveHandler_ShouldReadIdentityFromContext(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var got struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("failed to decode response body: %v, body: %s", err, w.Body.String())
+	}
+	if got.Status != "signing" {
+		t.Errorf(`got status %q, want "signing"`, got.Status)
+	}
+}
+
+func TestApproveHandler_ShouldRegisterErrorWhenServiceFails(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{approveErr: errors.New("simulated failure")}
+
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	sessionAuth := func(c *gin.Context) {
+		c.Set(middleware.IdentityContextKey, &service.Identity{Username: "alice"})
+		c.Next()
+	}
+	NewCertRequestController(&r.RouterGroup, svc, sessionAuth)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/certs/requests/req-1/approve", nil)
+	r.ServeHTTP(w, req)
+
+	if gotErrors != 1 {
+		t.Fatalf("expected exactly one error to be attached when Approve fails, got %d", gotErrors)
 	}
 }
 
