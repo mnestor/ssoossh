@@ -43,7 +43,8 @@ CREATE TABLE certificate_requests (
     status TEXT NOT NULL,
     created_at DATETIME NOT NULL,
     resolved_at DATETIME,
-    enrollment_token TEXT NOT NULL DEFAULT ''
+    enrollment_token TEXT NOT NULL DEFAULT '',
+    failure_reason TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX idx_certificate_requests_status ON certificate_requests(status);
 

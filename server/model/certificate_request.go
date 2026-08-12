@@ -77,6 +77,12 @@ type CertificateRequest struct {
 	// (CertificateTypeService only) — the code `service retrieve` presents
 	// to redeem a certificate later. Empty for user/host requests.
 	EnrollmentToken string `gorm:"column:enrollment_token"`
+
+	// FailureReason explains a CertificateRequestStatusFailed row: either
+	// the signer's error, or that the invalidation sweep found it stranded
+	// (see docs/watermill-phase5-invalidation-sweep.md). For operators
+	// reading the database — it isn't returned over the API.
+	FailureReason string `gorm:"column:failure_reason"`
 }
 
 // TableName overrides GORM's default pluralization to match the migration.

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -183,6 +184,14 @@ func TestSignedReplyHandler_ShouldMarkRequestFailedOnSigningFailure(t *testing.T
 	}
 	if req.Status != model.CertificateRequestStatusFailed {
 		t.Errorf("got status %q, want %q", req.Status, model.CertificateRequestStatusFailed)
+	}
+	// The signer's error detail must survive in the row, not just in a log
+	// line, so a failure can still be explained after the fact.
+	if !strings.Contains(req.FailureReason, certmsg.ErrCodeCAUnavailable) {
+		t.Errorf("expected failure reason to mention %q, got %q", certmsg.ErrCodeCAUnavailable, req.FailureReason)
+	}
+	if !strings.Contains(req.FailureReason, "ssh-agent unreachable") {
+		t.Errorf("expected failure reason to include the signer's message, got %q", req.FailureReason)
 	}
 
 	// The waiting client must get a terminal answer rather than hang.

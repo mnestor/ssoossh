@@ -4,3 +4,29 @@ fallback_file_agent: true
 key_filename: ssoossh
 try_open_browser: false
 # enforce: ssoossh-locked.yaml
+
+# Steer key generation toward algorithms that SSH implementations running in
+# FIPS mode accept. Advisory: it changes the default key type below and warns
+# about non-approved choices, it never refuses one.
+#
+# Left unset deliberately, so that it can fall back to whether this binary is
+# itself running in Go's FIPS 140-3 mode. Set it explicitly to target a
+# FIPS-mode server from a client that isn't.
+# fips: true
+
+# Key generated for each certificate. Both settings are optional.
+#
+#   type: ed25519 | ecdsa | rsa
+#         Default is ed25519, or ecdsa when FIPS mode is in effect —
+#         ed25519 only entered FIPS 186-5 in 2023 and several FIPS policies
+#         still reject it outright.
+#   size: ignored for ed25519 (it has one size)
+#         ecdsa: the NIST curve — 256, 384, or 521 (default 256)
+#         rsa:   modulus bits, at least 2048 (default 3072)
+#
+# Note RSA generation costs hundreds of milliseconds and is highly variable,
+# paid every time a certificate is obtained; ecdsa and ed25519 are effectively
+# instant. Left unset so the default can follow FIPS mode.
+# sshkey:
+#   type: ed25519
+#   size: 0

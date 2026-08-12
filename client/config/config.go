@@ -7,6 +7,7 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -75,6 +76,18 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 	var c Config
 	if err := v.Unmarshal(&c); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	// Resolve the key settings now so a bad combination is reported at
+	// startup rather than at the first attempt to obtain a certificate.
+	// The resolved values are recomputed where they're needed; this call is
+	// for validation and for emitting the warnings exactly once.
+	_, _, warnings, err := c.ResolveSSHKey()
+	if err != nil {
+		return nil, fmt.Errorf("invalid ssh key configuration: %w", err)
+	}
+	for _, w := range warnings {
+		slog.Warn(w)
 	}
 
 	return &c, nil

@@ -15,6 +15,18 @@ type CertificateOptions struct {
 	// request get," not a per-type concept like ValidDuration (the issued
 	// certificate's own lifetime).
 	RequestTTL time.Duration `mapstructure:"request_ttl,string"`
+
+	// SigningTimeout is how long an approved request may sit awaiting
+	// signature before the sweep treats it as stranded and fails it (see
+	// docs/watermill-phase5-invalidation-sweep.md). A healthy signature
+	// takes milliseconds; this only needs to be generous enough for a slow
+	// signing backend (an HSM, say) under load.
+	//
+	// Note this is not measured from approval — nothing records when a
+	// request entered signing — but from creation, offset by RequestTTL, so
+	// the sweep can never cancel a request that might still be in flight.
+	// See the sweep's doc comment for the arithmetic.
+	SigningTimeout time.Duration `mapstructure:"signing_timeout,string"`
 }
 
 // CertOptions configures issuance of host certificates: the OIDC group

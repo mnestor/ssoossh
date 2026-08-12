@@ -93,18 +93,13 @@ func (h *SignedReplyHandler) resolveSuccess(ctx context.Context, reply certmsg.S
 		certificate: reply.Certificate,
 	})
 
-	h.markResolved(ctx, reply.RequestID, model.CertificateRequestStatusApproved)
+	h.markResolved(ctx, reply.RequestID, model.CertificateRequestStatusApproved, "")
 	return nil
 }
 
 // resolveFailure marks the request failed and tells the waiting client, so a
 // signing failure surfaces as a terminal answer instead of hanging the
 // client until its request expires.
-//
-// The failure detail is logged but not persisted — there's no column for it
-// yet (see docs/watermill-phase4-signer-listener.md's deferred items; Phase 5
-// wants the same thing for its sweep, so one shared failure_reason column
-// should cover both).
 func (h *SignedReplyHandler) resolveFailure(ctx context.Context, reply certmsg.SignedReply) error {
 	slog.Error("certificate signing failed",
 		"request_id", reply.RequestID,
@@ -116,7 +111,8 @@ func (h *SignedReplyHandler) resolveFailure(ctx context.Context, reply certmsg.S
 		status: model.CertificateRequestStatusFailed,
 	})
 
-	h.markResolved(ctx, reply.RequestID, model.CertificateRequestStatusFailed)
+	h.markResolved(ctx, reply.RequestID, model.CertificateRequestStatusFailed,
+		fmt.Sprintf("%s: %s", reply.ErrorCode, reply.Error))
 	return nil
 }
 
@@ -155,7 +151,9 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 	return nil
 }
 
-// markResolved moves a request out of Signing into its terminal status.
+// markResolved moves a request out of Signing into its terminal status,
+// recording failureReason (empty on success) for operators to read back
+// later — the signer's error detail is otherwise only a log line.
 //
 // Guarded on the current status the same way Deny and expire are, so a
 // request already resolved some other way (denied or expired in a race)
@@ -164,12 +162,13 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 // the certificate has already been delivered and audited by this point, so
 // failing here would redeliver the whole reply and duplicate the audit row
 // to fix nothing.
-func (h *SignedReplyHandler) markResolved(ctx context.Context, requestID string, status model.CertificateRequestStatus) {
+func (h *SignedReplyHandler) markResolved(ctx context.Context, requestID string, status model.CertificateRequestStatus, failureReason string) {
 	result := h.db.WithContext(ctx).Model(&model.CertificateRequest{}).
 		Where("id = ? AND status = ?", requestID, model.CertificateRequestStatusSigning).
 		Updates(map[string]any{
-			"status":      status,
-			"resolved_at": time.Now(),
+			"status":         status,
+			"failure_reason": failureReason,
+			"resolved_at":    time.Now(),
 		})
 	if result.Error != nil {
 		slog.Error("failed to mark certificate request resolved",

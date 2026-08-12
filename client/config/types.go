@@ -18,20 +18,47 @@ type Config struct {
 
 	TryOpenBrowser bool `mapstructure:"try_open_browser"`
 
+	// FIPS steers key generation toward algorithms accepted by SSH
+	// implementations running in FIPS mode. It is advisory: it changes the
+	// default key type and warns about non-approved choices, but never
+	// refuses one — the operator knows their environment better than this
+	// does. See FIPSEnabled for how it resolves, and ResolveSSHKey for what
+	// it affects.
+	//
+	// A pointer so "unset" is distinguishable from "explicitly false":
+	// unset falls back to whether the Go runtime is itself in FIPS 140-3
+	// mode.
+	FIPS *bool `mapstructure:"fips"`
+
 	// This is only settable in /etc/ssoossh/ssoossh.yaml
 	// if a setting is in this file then clients CANNOT change it
 	LockedFile string `mapstructure:"enforce"`
 }
 
+// SSHKeyOptions selects the algorithm and size for the keypair the client
+// generates. Both are optional; see ResolveSSHKey for the defaults and the
+// rules applied to them.
 type SSHKeyOptions struct {
-	KeySize int        `mapstructure:"size"`
-	Type    SSHKeyType `mapstructure:"type"`
+	// Type is the key algorithm: see the SSHKeyType constants. Empty picks
+	// a default appropriate to whether FIPS mode is in effect.
+	Type SSHKeyType `mapstructure:"type"`
+
+	// Size means different things per algorithm, and nothing at all for
+	// ed25519 (which has exactly one size):
+	//
+	//   - ecdsa: the NIST curve — 256, 384, or 521
+	//   - rsa:   the modulus size in bits, at least 2048
+	//
+	// Zero takes the default for the chosen algorithm.
+	Size int `mapstructure:"size"`
 }
 
-type SSHKeyType int
+// SSHKeyType names a key algorithm as written in configuration, e.g.
+// `type: ed25519`.
+type SSHKeyType string
 
 const (
-	SSHKeyTypeRSA SSHKeyType = iota + 1
-	SSHKeyTypeEC25519
-	SSHKeyTypeECDSA
+	SSHKeyTypeEd25519 SSHKeyType = "ed25519"
+	SSHKeyTypeECDSA   SSHKeyType = "ecdsa"
+	SSHKeyTypeRSA     SSHKeyType = "rsa"
 )

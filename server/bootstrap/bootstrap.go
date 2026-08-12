@@ -110,7 +110,7 @@ func Bootstrap(cmd *cobra.Command) error {
 	serviceRunners = append(serviceRunners, a.scheduler.Run)
 
 	// Register all scheduled jobs
-	err = a.registerJobs()
+	err = a.registerJobs(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to register scheduled jobs: %w", err)
 	}

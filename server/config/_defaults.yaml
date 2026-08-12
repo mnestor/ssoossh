@@ -65,6 +65,7 @@ db:
 
 cert_options:
   request_ttl: 5m
+  signing_timeout: 5m
   user:
     valid_duration: 30s
     extensions:
