@@ -65,7 +65,7 @@ func newSerial() (uint64, error) {
 //
 // Only user certificates are supported for now — host, service, and PAM
 // certificates are deferred until the user path is fully working (see
-// docs/watermill-phase4-signer-listener.md). Service requests never reach
+// docs/signing-pipeline.md). Service requests never reach
 // the sign queue at all: approving one creates an enrollment instead (see
 // CertRequestService.Approve).
 func certTypeFor(t model.CertificateType) (uint32, error) {

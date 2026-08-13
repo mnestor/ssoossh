@@ -1,7 +1,7 @@
 // Package certmsg holds the message shapes and topic names exchanged over
 // the certificate pipeline's queues: the sign queue (Approve → signer) and
 // the signed-reply topic (signer → listener/resolver). See
-// docs/watermill-signer-plan.md.
+// docs/signing-pipeline.md.
 //
 // It deliberately depends on nothing but the standard library and
 // server/model's type constants — no gorm, no crypto, no config. That's
@@ -33,7 +33,7 @@ const (
 
 // WaitTopic returns the per-request wake topic CertRequestService.Wait
 // subscribes to and notifyWaiter publishes to. One topic per request, not
-// shared — see docs/watermill-phase2-wake-topic.md.
+// shared — see docs/signing-pipeline.md.
 func WaitTopic(requestID string) string {
 	return "certrequest.wait." + requestID
 }
@@ -92,7 +92,7 @@ type SigningJob struct {
 // SignedReply.Error.
 const (
 	// ErrCodeUnsupportedType means the signer doesn't handle this
-	// certificate type yet (see docs/watermill-phase4-signer-listener.md —
+	// certificate type yet (see docs/signing-pipeline.md —
 	// user certificates only for now).
 	ErrCodeUnsupportedType = "unsupported_type"
 	// ErrCodeBadPublicKey means the job's PublicKey didn't parse.

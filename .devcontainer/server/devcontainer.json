@@ -1,5 +1,5 @@
 {
-  "name": "server",
+  "name": "${localWorkspaceFolderBasename}-server",
   "service": "server", // container name from docker-compose
   "dockerComposeFile": [
     "../../docker-compose.yml",

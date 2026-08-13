@@ -51,7 +51,7 @@ func (e *NotFoundError) HTTPStatusCode() int { return http.StatusNotFound }
 // and signed, but the signed certificate can no longer be obtained.
 //
 // Certificates are deliberately never persisted (see
-// docs/watermill-phase4-signer-listener.md): they're delivered once, via an
+// docs/signing-pipeline.md): they're delivered once, via an
 // in-memory cache and its wake message. A client reconnecting after the
 // server restarted has missed that window and must make a new request —
 // which is cheap, since the certificates are short-lived by design.

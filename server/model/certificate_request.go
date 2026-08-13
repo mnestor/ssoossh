@@ -10,8 +10,8 @@ const (
 	CertificateRequestStatusPending CertificateRequestStatus = "pending"
 	// CertificateRequestStatusSigning means a human approved the request
 	// and a signing job was published (see
-	// docs/watermill-phase3-sign-queue.md) — not yet terminal. The signer
-	// (docs/watermill-phase4-signer-listener.md) and its listener/resolver
+	// docs/signing-pipeline.md) — not yet terminal. The signer
+	// (docs/signing-pipeline.md) and its listener/resolver
 	// still need to run before this becomes CertificateRequestStatusApproved.
 	// Only used for CertificateTypeUser/CertificateTypeHost — service
 	// requests go straight from Pending to CertificateRequestStatusEnrolled,
@@ -26,9 +26,9 @@ const (
 	CertificateRequestStatusDenied   CertificateRequestStatus = "denied"
 	CertificateRequestStatusExpired  CertificateRequestStatus = "expired"
 	// CertificateRequestStatusFailed is terminal: the signer couldn't
-	// produce a certificate (see docs/watermill-phase4-signer-listener.md),
+	// produce a certificate (see docs/signing-pipeline.md),
 	// or a boot-time sweep invalidated a request left stuck in Signing (see
-	// docs/watermill-phase5-invalidation-sweep.md). Distinct from Denied,
+	// docs/signing-pipeline.md). Distinct from Denied,
 	// which means a human said no. No migration needed — status is a
 	// free-text TEXT column.
 	CertificateRequestStatusFailed CertificateRequestStatus = "failed"
@@ -80,7 +80,7 @@ type CertificateRequest struct {
 
 	// FailureReason explains a CertificateRequestStatusFailed row: either
 	// the signer's error, or that the invalidation sweep found it stranded
-	// (see docs/watermill-phase5-invalidation-sweep.md). For operators
+	// (see docs/signing-pipeline.md). For operators
 	// reading the database — it isn't returned over the API.
 	FailureReason string `gorm:"column:failure_reason"`
 }

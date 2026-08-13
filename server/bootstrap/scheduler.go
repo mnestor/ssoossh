@@ -23,7 +23,7 @@ func (a *app) registerJobs(ctx context.Context) error {
 // registerSweepJob schedules the stranded-request sweep, which fails
 // requests left awaiting a signature that will never arrive (see
 // service.SweepStrandedRequests and
-// docs/watermill-phase5-invalidation-sweep.md).
+// docs/signing-pipeline.md).
 //
 // Two shapes, because the sweep's bound is derived from RequestTTL:
 //

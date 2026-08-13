@@ -1,8 +1,63 @@
+# ssoossh client configuration sample.
+#
+# Every value below is the built-in default (client/config/defaults.yaml is
+# embedded in the binary), so an empty file behaves identically to this one.
+# Uncomment only what you need to change.
+#
+# Files are merged in order, last wins:
+#   /etc/ssoossh/ssoossh.yaml
+#   ~/.config/ssoossh.yaml
+#   ./ssoossh.yaml
+#   --config <file>
+#
+# See docs/ssoossh-context.md for what the client does.
 ---
-# server: https://<domain> # Env: SSOOSSH_SERVER
-# key-size: 4096 # Env: SSOOSSH_KEY_SIZE
 
-## Mutually exclusive!
-#  If both of these are set then RSA takes precedence
-# type-rsa: true # Env: SSOOSSH_TYPE_RSA
-# type-ec: false # Env: SSOOSSH_TYPE_EC
+# Base URL of the ssoossh server, e.g. https://ssh.example.com
+# server:
+
+# The server's CA public key. Left empty, the client fetches it from the
+# server on first use. Pin it here to avoid trusting a fetched key.
+# capubkey:
+
+insecure_skip_verify: false
+
+# Load the certificate into ssh-agent (the recommended mode). ProxyCommand
+# requires an agent, because ssh will not re-read changed key files.
+fallback_file_agent: true
+
+# Basename used when writing key/pubkey/certificate to disk, which only
+# happens when no agent is available and fallback_file_agent is true.
+key_filename: ssoossh
+
+try_open_browser: false
+
+# Settings in this file cannot be overridden by a user's own config. Only
+# honored when read from /etc/ssoossh/ssoossh.yaml.
+# enforce: ssoossh-locked.yaml
+
+# Steer key generation toward algorithms that SSH implementations running in
+# FIPS mode accept. Advisory: it changes the default key type below and warns
+# about non-approved choices, it never refuses one.
+#
+# Left unset deliberately, so that it can fall back to whether this binary is
+# itself running in Go's FIPS 140-3 mode. Set it explicitly to target a
+# FIPS-mode server from a client that isn't.
+# fips: true
+
+# Key generated for each certificate. Both settings are optional.
+#
+#   type: ed25519 | ecdsa | rsa
+#         Default is ed25519, or ecdsa when FIPS mode is in effect —
+#         ed25519 only entered FIPS 186-5 in 2023 and several FIPS policies
+#         still reject it outright.
+#   size: ignored for ed25519 (it has one size)
+#         ecdsa: the NIST curve — 256, 384, or 521 (default 256)
+#         rsa:   modulus bits, at least 2048 (default 3072)
+#
+# Note RSA generation costs hundreds of milliseconds and is highly variable,
+# paid every time a certificate is obtained; ecdsa and ed25519 are effectively
+# instant. Left unset so the default can follow FIPS mode.
+# sshkey:
+#   type: ed25519
+#   size: 0

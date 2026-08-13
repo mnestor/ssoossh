@@ -68,7 +68,7 @@ func (h *SignedReplyHandler) handle(msg *message.Message) error {
 //
 //  1. audit row first — it's the only durable record that a certificate was
 //     ever issued (the certificate itself is deliberately never stored; see
-//     docs/watermill-phase4-signer-listener.md)
+//     docs/signing-pipeline.md)
 //  2. deliver (cache + wake) second
 //  3. status update last
 //
@@ -80,8 +80,8 @@ func (h *SignedReplyHandler) handle(msg *message.Message) error {
 // certificate was gone.
 //
 // The cost of this ordering is that a crash between 2 and 3 leaves the row
-// in "signing" — which is precisely what Phase 5's invalidation sweep exists
-// to clean up (see docs/watermill-phase5-invalidation-sweep.md), and by then
+// in "signing" — which is precisely what the invalidation sweep exists
+// to clean up (see docs/signing-pipeline.md), and by then
 // the audit row is already durable.
 func (h *SignedReplyHandler) resolveSuccess(ctx context.Context, reply certmsg.SignedReply) error {
 	if err := h.recordCertificate(ctx, reply); err != nil {
@@ -133,7 +133,7 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 		// TODO: UserID is left unset — nothing currently resolves the
 		// approving identity to a users row, and certificate_requests.user_id
 		// is likewise never written. Populating both is its own change; see
-		// docs/watermill-phase4-signer-listener.md's deferred items.
+		// docs/signing-pipeline.md's deferred items.
 		Hostname:             reply.Hostname,
 		PublicKeyFingerprint: reply.PublicKeyFingerprint,
 		SerialNumber:         reply.Serial,

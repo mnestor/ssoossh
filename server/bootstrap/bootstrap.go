@@ -70,7 +70,7 @@ func Bootstrap(cmd *cobra.Command) error {
 	}
 
 	// Build the message-broker primitives (gochannel-only for now — see
-	// docs/watermill-signer-plan.md). Its Router needs to run for the
+	// docs/signing-pipeline.md). Its Router needs to run for the
 	// duration of the server (serviceRunners) and be closed on shutdown
 	// (shutdowns), same as the other long-running components below.
 	a.pubSub, err = a.initPubSub()

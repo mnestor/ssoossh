@@ -10,7 +10,7 @@ import (
 // initPipeline registers the certificate pipeline's queue consumers on the
 // pub/sub Router: the signer (sign queue → signed replies) and the
 // listener/resolver (signed replies → audit row, delivery, terminal status).
-// See docs/watermill-phase4-signer-listener.md.
+// See docs/signing-pipeline.md.
 //
 // Ordering: must run after initPubSub (needs the Router) and initServices
 // (the listener needs certRequest). It's safe that a.pubSub.Run was already

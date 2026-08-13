@@ -1,12 +1,10 @@
 // Package pubsub provides ssoosshd's internal message-broker primitives,
 // built on Watermill (https://github.com/ThreeDotsLabs/watermill).
 //
-// This is Phase 1 of docs/watermill-signer-plan.md: gochannel (in-process,
-// in-memory) only — no config-driven backend selection yet, and nothing in
-// the request-handling path publishes or subscribes to anything through
-// this package yet. See docs/watermill-phase1-pubsub.md for the full scope
-// of this phase, and docs/watermill-phase6-nats-deferred.md for where NATS
-// support (and the config surface to select it) eventually goes.
+// gochannel (in-process, in-memory) only — no config-driven backend
+// selection. See docs/signing-pipeline.md for how the certificate pipeline
+// uses this, and docs/signer-split-deferred.md for where NATS support (and
+// the config surface to select it) eventually goes.
 package pubsub
 
 import (
@@ -30,7 +28,7 @@ const routerStartTimeout = 5 * time.Second
 // (currently always backed by an in-process gochannel.GoChannel) and a
 // Router for the "start once, handle every message as it arrives" style
 // consumers later phases add (the signer and listener/resolver components
-// in docs/watermill-phase4-signer-listener.md). Router has no handlers
+// in docs/signing-pipeline.md). Router has no handlers
 // registered on it yet in this phase.
 type PubSub struct {
 	Publisher  message.Publisher
@@ -62,7 +60,7 @@ func New(logger *slog.Logger) (*PubSub, error) {
 		//     race Persistent would, just via one extra loop iteration
 		//     instead of a replayed message.
 		//  2. It's actively wrong for the future sign queue
-		//     (docs/watermill-phase3-sign-queue.md): gochannel replays a
+		//     (docs/signing-pipeline.md): gochannel replays a
 		//     Persistent topic's *entire* history to every new
 		//     subscriber, not just messages it missed. A signer
 		//     restarting and re-subscribing to the shared sign-queue
@@ -70,13 +68,13 @@ func New(logger *slog.Logger) (*PubSub, error) {
 		//     including ones long since signed — not just unconsumed
 		//     ones. There's also no eviction: a Persistent topic's
 		//     backlog only ever grows for the life of the process (see
-		//     docs/watermill-phase2-wake-topic.md's now-resolved caveat
+		//     docs/signing-pipeline.md's now-resolved caveat
 		//     about this).
 		//
 		// Safe to leave off in gochannel-only (single-process) mode:
-		// Phase 4's signer registers its subscription at boot, before
+		// the signer registers its subscription at boot, before
 		// Approve can ever publish a job, so there's no late-subscriber
-		// gap to cover. Once Phase 6/NATS makes the signer a genuinely
+		// gap to cover. Once NATS makes the signer a genuinely
 		// separate process that can restart independently, durability
 		// there is a JetStream ack/redelivery problem — a different,
 		// correct mechanism, not something this flag was ever going to
@@ -129,7 +127,7 @@ func New(logger *slog.Logger) (*PubSub, error) {
 //
 // A dead-letter topic would be the better answer; it's deliberately deferred
 // until there's a durable broker to put one on (see
-// docs/watermill-phase6-nats-deferred.md) — a poison queue nobody consumes is
+// docs/signer-split-deferred.md) — a poison queue nobody consumes is
 // no better than this log line.
 func dropAfterRetries(logger watermill.LoggerAdapter) message.HandlerMiddleware {
 	return func(next message.HandlerFunc) message.HandlerFunc {

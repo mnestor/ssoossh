@@ -9,7 +9,7 @@ import (
 // TestSignerHasNoDatabaseDependency enforces the constraint the package doc
 // states: the signer must never gain database access, because that's what
 // lets it become a separate, minimally-privileged process later (see
-// docs/signer-separtion.md).
+// docs/signer-split-deferred.md).
 //
 // Asserted against the real dependency graph rather than by reading imports,
 // so it also catches a database dependency arriving *transitively* — e.g. by

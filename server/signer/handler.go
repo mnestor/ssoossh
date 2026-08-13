@@ -43,12 +43,13 @@ func (h *Handler) Register(r *message.Router, subscriber message.Subscriber) {
 // only a transport failure nacks, since only that leaves the job genuinely
 // unhandled.
 //
-// This ordering is what Phase 6 needs and costs nothing to get right now. Be
+// This ordering is what a durable broker will need and costs nothing to get
+// right now. Be
 // clear-eyed about what it does *not* buy today: gochannel is in-memory and
 // non-persistent (see server/pubsub.New), so a crash loses in-flight jobs
 // outright regardless of ack timing. Real at-least-once redelivery arrives
-// with JetStream (docs/watermill-phase6-nats-deferred.md); until then, a
-// request left stranded in "signing" is Phase 5's sweep to clean up.
+// with JetStream (docs/signer-split-deferred.md); until then, a
+// request left stranded in "signing" is the sweep's job to clean up.
 func (h *Handler) handle(msg *message.Message) error {
 	var job certmsg.SigningJob
 	if err := json.Unmarshal(msg.Payload, &job); err != nil {

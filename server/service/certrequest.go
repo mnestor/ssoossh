@@ -60,7 +60,7 @@ type requestOutcome struct {
 // actual source of truth, and the message is only a low-latency signal
 // that something changed — but it's still JSON so any future consumer
 // (e.g. debugging, or a listener/resolver in a later phase — see
-// docs/watermill-signer-plan.md) can read it directly.
+// docs/signing-pipeline.md) can read it directly.
 type requestOutcomeMessage struct {
 	Status      model.CertificateRequestStatus `json:"status"`
 	Certificate string                         `json:"certificate,omitempty"`
@@ -72,16 +72,16 @@ type requestOutcomeMessage struct {
 // `host sign`, `service enroll`) and its events endpoint waits for it to
 // resolve (see server/controller/certrequests.go's eventsHandler); the web
 // UI lists/approves/denies it out-of-band, which is what unblocks that wait
-// via publisher/subscriber below (see docs/watermill-signer-plan.md).
+// via publisher/subscriber below (see docs/signing-pipeline.md).
 //
 // Approving a request behaves differently per Type:
 //   - user, host: sign and persist a model.Certificate immediately
 //   - service: create a model.Enrollment instead (see service/enrollment.go) —
 //     the certificate itself isn't issued until `service retrieve`
 //
-// publisher/subscriber are gochannel-backed (in-process, in-memory) as of
-// Phase 2 — see docs/watermill-phase6-nats-deferred.md for when that
-// becomes configurable. Either way, the wake signal alone is never the
+// publisher/subscriber are gochannel-backed (in-process, in-memory) — see
+// docs/signer-split-deferred.md for when that becomes configurable.
+// Either way, the wake signal alone is never the
 // only source of truth: resolved (below) and the DB are both checked
 // before ever relying on it, so a lost/missed wake message is a latency
 // problem (caught on reconnect), not a correctness one.
@@ -108,8 +108,8 @@ type CertRequestService struct {
 // NewCertRequestService constructs a CertRequestService, parsing
 // c.CertOptions' per-type key ID templates (see
 // docs/certificate-keyid-template.md) so a bad template fails startup.
-// publisher/subscriber back the wake-topic broker (see certmsg.WaitTopic) — Phase
-// 1's gochannel-based pair (server/pubsub) as of Phase 2.
+// publisher/subscriber back the wake-topic broker (see certmsg.WaitTopic) —
+// the gochannel-based pair from server/pubsub.
 func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publisher, subscriber message.Subscriber) (*CertRequestService, error) {
 	keyIDTmpls, err := newKeyIDTemplates(c.CertOptions)
 	if err != nil {
@@ -192,10 +192,10 @@ func (s *CertRequestService) ListPending(ctx context.Context) ([]model.Certifica
 //   - user, host: marks the request CertificateRequestStatusSigning and
 //     publishes a self-contained signingJob to certmsg.SignQueueTopic — the queue is
 //     the only entrypoint that turns an approved request into a signed
-//     certificate (see docs/watermill-phase3-sign-queue.md; actual signing
-//     is docs/watermill-phase4-signer-listener.md). The certificate is
-//     delivered later, over the client's own Wait/SSE connection, once a
-//     (Phase 4) signer and listener/resolver process the job.
+//     certificate (see docs/signing-pipeline.md; actual signing
+//     is docs/signing-pipeline.md). The certificate is
+//     delivered later, over the client's own Wait/SSE connection, once the
+//     signer and listener/resolver process the job.
 //   - service: does NOT use the queue. Marks the request
 //     CertificateRequestStatusEnrolled with a freshly generated
 //     EnrollmentToken directly, and notifies the wake topic itself, right
@@ -261,7 +261,7 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 	default:
 		// Host and PAM certificates aren't issuable yet — the signer only
 		// handles user certificates for now (see
-		// docs/watermill-phase4-signer-listener.md). Reject here rather than
+		// docs/signing-pipeline.md). Reject here rather than
 		// queueing a job the signer will refuse: the human approving it gets
 		// an immediate, comprehensible error instead of the request quietly
 		// resolving to "failed" a moment later. The signer keeps its own
@@ -347,9 +347,9 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 	}
 
 	// If this publish fails, the row is left in Signing with no queued
-	// job — a stuck row Phase 5's invalidation sweep is responsible for
+	// job — a stuck row the invalidation sweep is responsible for
 	// catching, not something recovered here (see
-	// docs/watermill-phase5-invalidation-sweep.md).
+	// docs/signing-pipeline.md).
 	if err := s.publisher.Publish(certmsg.SignQueueTopic, message.NewMessage(watermill.NewUUID(), payload)); err != nil {
 		return fmt.Errorf("failed to publish signing job: %w", err)
 	}
@@ -464,7 +464,7 @@ func (s *CertRequestService) Wait(ctx context.Context, requestID string) (status
 		// only mean seeing the wake message slightly sooner than a
 		// same-process notifyWaiter call could otherwise race, never
 		// missing it. Fresh subscription per loop iteration (not held
-		// across iterations) — see docs/watermill-phase2-wake-topic.md.
+		// across iterations) — see docs/signing-pipeline.md.
 		messages, err := s.subscriber.Subscribe(ctx, certmsg.WaitTopic(requestID))
 		if err != nil {
 			return "", "", "", fmt.Errorf("failed to subscribe to certificate request updates: %w", err)
@@ -529,7 +529,7 @@ func (s *CertRequestService) reconcileStatus(ctx context.Context, requestID stri
 
 	case model.CertificateRequestStatusSigning:
 		// Approved and queued for the signer (see
-		// docs/watermill-phase3-sign-queue.md) — not yet resolved. No TTL
+		// docs/signing-pipeline.md) — not yet resolved. No TTL
 		// applies (TTL is only for "unapproved too long," see ttlCutoff),
 		// so wait the same way as pending.
 		return true, nil
@@ -582,7 +582,7 @@ func (s *CertRequestService) expire(ctx context.Context, requestID string) {
 // after this point, including a late reconnect, reads it directly) and
 // publishes it to the request's wake topic (see certmsg.WaitTopic) so anything
 // currently blocked in Wait — in this process or, once a real shared
-// broker is configured (docs/watermill-phase6-nats-deferred.md), another
+// broker is configured (docs/signer-split-deferred.md), another
 // one — wakes up. A publish failure here is logged but not fatal to the
 // caller (Deny/expire's own DB update already succeeded, which is the
 // durable fact) — a blocked Wait call will still catch up on its own via

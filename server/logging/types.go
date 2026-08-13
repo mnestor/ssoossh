@@ -22,7 +22,7 @@ type loggerSource interface {
 // (with "type" itself stripped from the output there — see dropAttr)
 // instead of the general log. Add an entry to New's namedLoggers slice for
 // each new named logger (e.g. a future "signer" or "listener" component —
-// see docs/watermill-signer-plan.md) instead of writing another bespoke
+// see docs/signing-pipeline.md) instead of writing another bespoke
 // routing block.
 type namedLoggerConfig struct {
 	tag string

@@ -18,7 +18,7 @@ type CertificateOptions struct {
 
 	// SigningTimeout is how long an approved request may sit awaiting
 	// signature before the sweep treats it as stranded and fails it (see
-	// docs/watermill-phase5-invalidation-sweep.md). A healthy signature
+	// docs/signing-pipeline.md). A healthy signature
 	// takes milliseconds; this only needs to be generous enough for a slow
 	// signing backend (an HSM, say) under load.
 	//

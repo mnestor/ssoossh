@@ -38,7 +38,7 @@ type CreateRequestResponse struct {
 
 // ApproveResponse is POST /api/certs/requests/:id/approve's response body.
 // It does not carry the certificate — approval only queues a signing job
-// (see docs/watermill-signer-plan.md); the certificate itself is delivered
+// (see docs/signing-pipeline.md); the certificate itself is delivered
 // later over the client's own SSE connection (CreateRequestResponse's
 // EventsURL), not returned here to the approving browser.
 type ApproveResponse struct {
