@@ -74,7 +74,7 @@ func newTestKeypair(t *testing.T) *keypair.SSHKeypair {
 
 func TestCheckKeyBinding_ShouldRejectGenuineCertificateIssuedToADifferentKey(t *testing.T) {
 	ca := newTestCA(t)
-	attacker := newTestKeypair(t) // a certificate legitimately issued to this key
+	attacker := newTestKeypair(t)    // a certificate legitimately issued to this key
 	thisAttempt := newTestKeypair(t) // the key generated for the attempt under test
 
 	now := time.Now()

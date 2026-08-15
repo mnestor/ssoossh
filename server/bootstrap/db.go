@@ -15,7 +15,6 @@ import (
 	"github.com/golang-migrate/migrate/v4/database"
 	postgresMigrate "github.com/golang-migrate/migrate/v4/database/postgres"
 	sqliteMigrate "github.com/golang-migrate/migrate/v4/database/sqlite3"
-	_ "github.com/golang-migrate/migrate/v4/source/github"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	slogGorm "github.com/orandin/slog-gorm"
 	"gorm.io/driver/postgres"

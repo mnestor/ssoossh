@@ -1,3 +1,11 @@
+# cookie@0.6.0 (pinned by @sveltejs/kit's own ^0.6.0 dependency range, which
+# npm/pnpm caret semantics for a 0.x version won't let a plain update cross)
+# rejects out-of-bounds characters too loosely — GHSA-pxg6-pf52-xh8x. Pinned
+# to ^0.7.0, the first release with the fix; no newer @sveltejs/kit exists
+# yet that bumps this itself.
+overrides:
+  cookie: "^0.7.0"
+
 # Dependency postinstall scripts are blocked by default in pnpm 10+. Each one
 # has to be decided explicitly, or `pnpm install` exits non-zero with
 # ERR_PNPM_IGNORED_BUILDS. pnpm rewrites this block itself when it meets a

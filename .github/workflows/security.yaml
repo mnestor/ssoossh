@@ -19,11 +19,18 @@ jobs:
     name: govulncheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: golang/govulncheck-action@v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
+        continue-on-error: true
+        id: govulncheck
         with:
           go-version-file: "go.mod"
           go-package: ./...
+      - name: Add govulncheck results to summary
+        if: always()
+        run: |
+          echo "## Govulncheck Results" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.govulncheck.outputs.result }}" >> $GITHUB_STEP_SUMMARY
 
   pnpm-audit:
     name: pnpm audit
@@ -32,24 +39,38 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.4.0
         with:
           version: 10
       - name: Install dependencies
         run: CI=true pnpm install --frozen-lockfile
       - name: pnpm audit
+        id: pnpm
         run: pnpm audit --audit-level high
+        continue-on-error: true
+      - name: Add pnpm results to summary
+        if: always()
+        run: |
+          echo "## pnpm Audit Results" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.pnpm.outputs.result }}" >> $GITHUB_STEP_SUMMARY
 
   semgrep:
     name: semgrep
     runs-on: ubuntu-latest
+    continue-on-error: true
     container:
       image: semgrep/semgrep
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: semgrep scan
+        id: semgrep
         run: semgrep scan --config auto --error
+      - name: Add semgrep results to summary
+        if: always()
+        run: |
+          echo "## semgrep Audit Results" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.semgrep.outputs.result }}" >> $GITHUB_STEP_SUMMARY

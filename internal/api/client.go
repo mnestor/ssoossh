@@ -139,6 +139,7 @@ func normalizeServerURL(raw string) string {
 func buildTLSConfig(cfg Config) (*tls.Config, error) {
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: cfg.SkipVerifySSL,
+		MinVersion:         tls.VersionTLS13,
 	}
 
 	return tlsConfig, nil

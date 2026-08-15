@@ -3,6 +3,11 @@ package service
 import (
 	"fmt"
 	"strings"
+
+	// text/template, not html/template: this renders SSH certificate key
+	// IDs (plain metadata embedded in a cert), never HTML — HTML escaping
+	// would corrupt legitimate key ID characters instead of preventing XSS.
+	// nosemgrep: go.lang.security.audit.xss.import-text-template.import-text-template
 	"text/template"
 
 	"github.com/mnestor/ssoossh/server/config"

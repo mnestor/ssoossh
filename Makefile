@@ -199,3 +199,65 @@ lint-internal:
 version:
 	@echo "Version: $(VERSION)"
 
+.PHONY: fmt fmt-check test-race cover-ci govulncheck pnpm-audit semgrep security ci ci-required ci-advisory
+
+fmt:
+	gofmt -w .
+
+# Mirrors build-test.yaml's formatting check.
+fmt-check:
+	@unformatted=$$(gofmt -l .); \
+	if [ -n "$$unformatted" ]; then \
+		echo "These files are not gofmt-clean:"; \
+		echo "$$unformatted"; \
+		exit 1; \
+	fi
+
+# Mirrors build-test.yaml's Test step. CGO_ENABLED is explicit because
+# -race requires cgo and the devcontainer sets CGO_ENABLED=0 by default.
+test-race: $(FRONTEND_DIST)
+	CGO_ENABLED=1 go test -race ./...
+
+# Mirrors codecover.yaml's test run (minus the Codecov upload, which needs a
+# token). Unlike `cover`, this is not filtered against
+# exclude-from-coverage.txt or turned into an HTML report — it's what the
+# runner actually executes.
+cover-ci: $(FRONTEND_DIST)
+	CGO_ENABLED=0 go test -v -covermode=atomic -coverprofile=coverage.txt ./...
+
+# Mirrors security.yaml's govulncheck job. Ships with the devcontainer base
+# image; if missing: go install golang.org/x/vuln/cmd/govulncheck@latest
+govulncheck:
+	govulncheck ./...
+
+# Mirrors security.yaml's pnpm-audit job.
+pnpm-audit:
+	cd frontend && CI=true pnpm install --frozen-lockfile && pnpm audit --audit-level high
+
+# Mirrors security.yaml's semgrep job, via the same semgrep/semgrep image
+# CI uses, so no local semgrep install is required.
+semgrep:
+	docker run --rm -v $(CURDIR):/src semgrep/semgrep semgrep scan --config auto --error
+
+security: govulncheck pnpm-audit semgrep
+
+# Hard gates: what build-test.yaml (build-test + pam jobs) and
+# codecover.yaml block on. No test-e2e here — e2e.yaml's job modifies host
+# state (creates a local user account, runs sshd as root, see
+# test/e2e/README.md) on a self-hosted runner, so it stays opt-in; run it
+# explicitly with `make test-e2e`.
+ci-required: fmt-check build types-check openapi-check test-race pam test-pam lint-pam cover-ci
+
+# Advisory: lint.yaml and security.yaml's jobs all run continue-on-error in
+# CI (results posted to the job summary, not blocking). `-` keeps that
+# behavior locally — a failure here is reported but doesn't stop the run.
+ci-advisory:
+	-$(MAKE) lint
+	-$(MAKE) security
+
+# Everything the hosted/self-hosted runners check on every push/PR, run
+# locally before pushing. See ci-required and ci-advisory for what's a real
+# gate vs. advisory, and the comment on ci-required for what's deliberately
+# left out.
+ci: ci-required ci-advisory
+

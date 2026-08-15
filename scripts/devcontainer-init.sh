@@ -13,7 +13,11 @@ resolve_path() {
       *) result+=("$p") ;;
     esac
   done
-  printf '/%s\n' "$(IFS='/'; echo "${result[*]}")"
+  local joined=""
+  for p in "${result[@]}"; do
+    joined+="/$p"
+  done
+  printf '%s\n' "${joined:-/}"
 }
 export -f resolve_path
 
