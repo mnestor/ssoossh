@@ -6,6 +6,11 @@ release:
   draft: false
   disable: false
   skip_upload: false
+  include_meta: false
+  mode: "replace"
+  replace_existing_artifacts: true
+  use_existing_draft: true
+  replace_existing_draft: false
 
 before:
   hooks:
@@ -23,78 +28,6 @@ env:
   - CGO_ENABLED=0
 
 builds:
-  # The PAM module is a c-shared cgo build. libpam headers and CGO_ENABLED=1
-  # are provided by .devcontainer/Dockerfile
-  # (docs/release-phase3-pam-build-env.md). The package stays behind the
-  # `pam` build tag regardless, so `go build ./...` keeps skipping it.
-  #
-  # CC below (the devcontainer's own cross-gcc) links against this host's
-  # glibc, not an old one -- this build's own output is never what ships.
-  # The hooks.post below overwrites {{.Path}} by compiling again inside the
-  # pinned old-glibc image for that arch (scripts/build-pam-release-so.sh),
-  # so what actually reaches nfpm and the archive is linked against the
-  # floor these images define, not the build host's. See
-  # docs/release-phase3-pam-build-env.md (why the floor matters, why these
-  # images) and docs/release-phase6-artifacts.md (this hook, item 2).
-  #
-  # Pinned old-glibc images (digests captured 2026-08-15, doc's phase 3):
-  #   amd64:   centos@sha256:be65f488b7764ad3638f236b7b515b3678369a5124c47b8d32916d6487418ea4   (centos:7, glibc 2.17)
-  #   aarch64: amazonlinux@sha256:af6e7c0a7d9abb123f2d27f12b1c2aceedfd80add1cc3109b93440ab900af4d2 (amazonlinux:2, glibc 2.26)
-  #
-  # One build id per arch, not goarch: [amd64, arm64] on a single id: nfpm's
-  # `bindir` and `dependencies` fields turned out NOT to be template-rendered
-  # by goreleaser 2.17.1 (verified empirically -- a single shared id with
-  # `{{ if eq .Arch "arm64" }}` in bindir/dependencies shipped the literal,
-  # unrendered template string in both the installed path and the deb
-  # control file). Splitting per arch lets every nfpm entry below use a
-  # plain literal, which is the one thing confirmed to work.
-  - id: linux-pam-build-amd64
-    binary: pam_ssoossh
-    dir: ./pam_ssoossh/
-    buildmode: "c-shared"
-    goos:
-      - linux
-    goarch:
-      - amd64
-    flags:
-      - -tags=nomsgpack,pam
-    env:
-      - CGO_ENABLED=1
-      - CC=gcc
-      # x86_64-linux-gnu-gcc
-      - PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
-    ldflags: &build-ldflags |
-      -X github.com/mnestor/ssoossh/internal/version.Version={{.Version}}
-      -X github.com/mnestor/ssoossh/internal/version.Commit={{.Commit}}
-      -X github.com/mnestor/ssoossh/internal/version.Date={{.Date}}
-      -X github.com/mnestor/ssoossh/internal/version.BuiltBy={{- if index .Env "github" }}{{.Env.github.runner.name}}{{ else }}goreleaser{{ end }}
-    # hooks: &pam-hooks
-    #   # Requires docker (docker-outside-of-docker in the devcontainer,
-    #   # native on a GitHub-hosted runner). Runs on every build of this id,
-    #   # snapshot or release, so `goreleaser build --single-target` and
-    #   # `goreleaser release --snapshot` both produce the glibc-floor-linked
-    #   # artifact, not just a tagged release.
-    #   post:
-    #     - cmd: >-
-    #         sh -c 'scripts/build-pam-release-so.sh {{.Os}} {{.Arch}} "{{.Path}}" "{{.Version}}" "{{.Commit}}" "{{.Date}}" "{{- if index .Env "github" }}{{.Env.github.runner.name}}{{ else }}goreleaser{{ end }}"'
-
-  - id: linux-pam-build-arm64
-    binary: pam_ssoossh
-    dir: ./pam_ssoossh/
-    buildmode: "c-shared"
-    goos:
-      - linux
-    goarch:
-      - arm64
-    flags:
-      - -tags=nomsgpack,pam
-    env:
-      - CGO_ENABLED=1
-      - CC=aarch64-linux-gnu-gcc
-      - PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
-    ldflags: *build-ldflags
-    # hooks: *pam-hooks
-
   - id: server-linux-build
     binary: ssoosshd
     dir: ./cmd/ssoosshd
@@ -105,9 +38,11 @@ builds:
     goarch:
       - amd64
       - arm64
-      - ppc64le
-      - s390x
-    ldflags: *build-ldflags
+    ldflags: &build-ldflags |
+      -X github.com/mnestor/ssoossh/internal/version.Version={{.Version}}
+      -X github.com/mnestor/ssoossh/internal/version.Commit={{.Commit}}
+      -X github.com/mnestor/ssoossh/internal/version.Date={{.Date}}
+      -X github.com/mnestor/ssoossh/internal/version.BuiltBy={{- if index .Env "github" }}{{.Env.github.runner.name}}{{ else }}goreleaser{{ end }}
 
   - id: linux-build
     binary: &name "ssoossh"
@@ -118,8 +53,6 @@ builds:
     goarch:
       - amd64
       - arm64
-      - ppc64le
-      - s390x
     ldflags: *build-ldflags
 
   - id: windows-build
@@ -144,7 +77,7 @@ nfpms:
   - id: client
     package_name: ssoossh-client
     file_name_template: 'ssoossh-client_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
-    license: &license "Apache 2.0"
+    license: &license "MIT"
     maintainer: &maintainer "Mike Nestor"
     homepage: &website "https://github.com/mnestor/ssoossh"
     description: "client for ssoosshd to retrieve and manage ssh certificates"
@@ -174,108 +107,6 @@ nfpms:
       - src: docs/ssoosshd.yaml.default
         dst: /etc/ssoossh/ssoosshd.yaml
         type: "config|noreplace"
-
-  # A separate package from client/server: the client is a user-facing
-  # binary anyone might install on a laptop, the PAM module is a privileged
-  # system component installed on servers, and coupling them would drop the
-  # module into the auth stack directory on every laptop install. See
-  # docs/release-phase6-artifacts.md, "Package the PAM module".
-  #
-  # Deliberately does NOT touch /etc/pam.d -- a package that edits the auth
-  # stack on install can lock an operator out of their own machine in a
-  # postinst nobody chose. docs/pam.d-sudo.example ships as documentation
-  # only; docs/release-phase7-deploy-docs.md owns the install runbook.
-  #
-  # deb and rpm are split into separate entries here (rather than one block
-  # with `formats: [rpm, deb]` like client/server above) because the two
-  # need genuinely different install dirs -- deb's is arch-dependent
-  # (multiarch triplet), rpm's is not (glibc's dlopen search path for PAM
-  # modules is always /lib64/security on RHEL-family regardless of arch).
-  # And each of those is split again by arch (see
-  # linux-pam-build-amd64/-arm64 above): `libdirs.cshared` and
-  # `dependencies` are not template-rendered by goreleaser, so a single
-  # entry covering both arches has no way to vary either one -- confirmed
-  # by building it that way first and finding the literal unrendered
-  # template string in both.
-  #
-  # `bindir` is the wrong field for a c-shared artifact: it's what nfpm
-  # uses for a Binary, but a `buildmode: c-shared` build produces a Library
-  # artifact, and goreleaser routes libraries through libdirs.cshared
-  # instead (also confirmed by building it -- with bindir set and no
-  # libdirs, the .so landed at the unrelated default /usr/lib/pam_ssoossh.so,
-  # ignoring bindir entirely).
-  - id: pam-deb-amd64
-    package_name: ssoossh-pam
-    file_name_template: "ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    license: *license
-    maintainer: *maintainer
-    homepage: *website
-    description: &pamDescription "PAM module for sudo/su certificate approval via ssoosshd"
-    ids:
-      - linux-pam-build-amd64
-    # glibc floor matches the pinned image for this arch above
-    # linux-pam-build-amd64, so the package manager refuses an install that
-    # would fail at dlopen time.
-    dependencies:
-      - "libc6 (>= 2.17)"
-    libdirs:
-      cshared: /usr/lib/x86_64-linux-gnu/security
-    formats:
-      - deb
-    contents: &pamContents
-      - src: docs/pam.d-sudo.example
-        dst: /usr/share/doc/ssoossh-pam/examples/sudo
-
-  - id: pam-deb-arm64
-    package_name: ssoossh-pam
-    file_name_template: "ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    license: *license
-    maintainer: *maintainer
-    homepage: *website
-    description: *pamDescription
-    ids:
-      - linux-pam-build-arm64
-    dependencies:
-      - "libc6 (>= 2.26)"
-    libdirs:
-      cshared: /usr/lib/aarch64-linux-gnu/security
-    formats:
-      - deb
-    contents: *pamContents
-
-  - id: pam-rpm-amd64
-    package_name: ssoossh-pam
-    file_name_template: "ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    license: *license
-    maintainer: *maintainer
-    homepage: *website
-    description: *pamDescription
-    ids:
-      - linux-pam-build-amd64
-    dependencies:
-      - "glibc >= 2.17"
-    libdirs:
-      cshared: /usr/lib64/security
-    formats:
-      - rpm
-    contents: *pamContents
-
-  - id: pam-rpm-arm64
-    package_name: ssoossh-pam
-    file_name_template: "ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    license: *license
-    maintainer: *maintainer
-    homepage: *website
-    description: *pamDescription
-    ids:
-      - linux-pam-build-arm64
-    dependencies:
-      - "glibc >= 2.26"
-    libdirs:
-      cshared: /usr/lib64/security
-    formats:
-      - rpm
-    contents: *pamContents
 
 archives:
   - id: linux-archives

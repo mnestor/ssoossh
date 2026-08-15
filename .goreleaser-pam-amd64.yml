@@ -1,0 +1,80 @@
+---
+version: 2
+
+release:
+  prerelease: auto
+  draft: true
+  disable: false
+  skip_upload: false
+  include_meta: false
+  mode: "keep-existing"
+  replace_existing_artifacts: true
+  use_existing_draft: true
+  replace_existing_draft: false
+
+before:
+  hooks:
+    - go mod tidy
+
+env:
+  - CGO_ENABLED=1
+
+builds:
+  - id: linux-pam-build-amd64
+    binary: pam_ssoossh
+    dir: ./pam_ssoossh/
+    buildmode: "c-shared"
+    goos:
+      - linux
+    goarch:
+      - amd64
+    flags:
+      - -tags=nomsgpack,pam
+    env:
+      - CC=gcc
+      - PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
+    ldflags: |
+      -X github.com/mnestor/ssoossh/internal/version.Version={{.Version}}
+      -X github.com/mnestor/ssoossh/internal/version.Commit={{.Commit}}
+      -X github.com/mnestor/ssoossh/internal/version.Date={{.Date}}
+      -X github.com/mnestor/ssoossh/internal/version.BuiltBy={{- if index .Env "github" }}{{.Env.github.runner.name}}{{ else }}goreleaser{{ end }}
+
+nfpms:
+  - id: linux-pam-build-amd64
+    package_name: ssoossh-pam
+    file_name_template: "ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    license: &license "MIT"
+    maintainer: &maintainer "Mike Nestor"
+    homepage: &website "https://github.com/mnestor/ssoossh"
+    description: &pamDescription "PAM module for sudo/su certificate approval via ssoosshd"
+    ids:
+      - linux-pam-build-amd64
+    # glibc floor matches the pinned image for this arch above
+    # linux-pam-build-amd64, so the package manager refuses an install that
+    # would fail at dlopen time.
+    dependencies:
+      - "libc6 (>= 2.17)"
+    libdirs:
+      cshared: /usr/lib/x86_64-linux-gnu/security
+    formats:
+      - deb
+    contents: &pamContents
+      - src: docs/pam.d-sudo.example
+        dst: /usr/share/doc/ssoossh-pam/examples/sudo
+
+  - id: pam-rpm-amd64
+    package_name: ssoossh-pam
+    file_name_template: "ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    license: *license
+    maintainer: *maintainer
+    homepage: *website
+    description: *pamDescription
+    ids:
+      - linux-pam-build-amd64
+    dependencies:
+      - "glibc >= 2.17"
+    libdirs:
+      cshared: /usr/lib64/security
+    formats:
+      - rpm
+    contents: *pamContents

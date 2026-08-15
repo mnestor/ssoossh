@@ -11,14 +11,23 @@
 # sync if it is ever re-pinned.
 FROM --platform=linux/arm64 amazonlinux@sha256:af6e7c0a7d9abb123f2d27f12b1c2aceedfd80add1cc3109b93440ab900af4d2
 
-RUN yum install -y pam-devel gcc make tar gzip \
+RUN yum install -y pam-devel gcc make tar gzip git \
     && yum clean all
 
 ARG GO_VERSION
+ARG GORELEASER_VERSION
 RUN test -n "$GO_VERSION" \
     && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-arm64.tar.gz" -o /tmp/go.tar.gz \
     && tar -C /usr/local -xzf /tmp/go.tar.gz \
-    && rm /tmp/go.tar.gz
+    && rm /tmp/go.tar.gz \
+    && test -n "$GORELEASER_VERSION" \
+    && curl -fsSL "https://github.com/goreleaser/goreleaser/releases/download/${GORELEASER_VERSION}/goreleaser_Linux_arm64.tar.gz" -o /tmp/gor.tar.gz \
+    && tar -C /usr/local/bin -xzf /tmp/gor.tar.gz goreleaser \
+    && rm /tmp/gor.tar.gz
 
 ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOPATH="/go"
+
+COPY entrypoint.sh /
+ENTRYPOINT ["/entrypoint.sh"]
+WORKDIR /workspace
