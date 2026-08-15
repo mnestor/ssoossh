@@ -77,6 +77,35 @@ func TestNewCommand_ShouldRegisterConfigFlag(t *testing.T) {
 	}
 }
 
+func TestNewCommand_ShouldRegisterVersionCommand(t *testing.T) {
+	t.Parallel()
+
+	c := NewCommand()
+	found, _, err := c.Find([]string{"version"})
+	if err != nil {
+		t.Fatalf("expected to find a version subcommand, got error: %v", err)
+	}
+	if found.Use != "version" {
+		t.Errorf("got Use %q, want %q", found.Use, "version")
+	}
+}
+
+func TestNewCommand_VersionShouldRunWithoutBootstrap(t *testing.T) {
+	t.Parallel()
+
+	// version must not require --config or a reachable OIDC provider --
+	// it's the diagnostic a bug reporter runs precisely when those are
+	// broken. See docs/release-phase6-artifacts.md, "Version stamping".
+	c := NewCommand()
+	c.SetArgs([]string{"version"})
+	// c.Command.Execute(), not c.Execute(): the latter is this package's
+	// own wrapper (below) and calls os.Exit(1) on error, which would kill
+	// the test process instead of failing the test.
+	if err := c.Command.Execute(); err != nil {
+		t.Fatalf("expected version to run without error, got %v", err)
+	}
+}
+
 func TestNewCommand_ShouldReturnDistinctCommandInstances(t *testing.T) {
 	t.Parallel()
 

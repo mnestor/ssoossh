@@ -52,10 +52,11 @@ func TestRootCommandsExposeExpectedSurface(t *testing.T) {
 			newSSHCommand(),
 			newHostCommand(),
 			newServiceCommand(),
+			newVersionCommand(),
 		},
 	}
 
-	want := []string{"ca", "ssh", "host", "service"}
+	want := []string{"ca", "ssh", "host", "service", "version"}
 	got := commanderNames(root.Commands())
 	if len(got) != len(want) {
 		t.Fatalf("expected commands %v, got %v", want, got)

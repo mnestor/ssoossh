@@ -1,0 +1,17 @@
+# Example PAM stack entry for pam_ssoossh, packaged as documentation only --
+# ssoossh-pam does not write to /etc/pam.d on install (see
+# docs/release-phase6-artifacts.md, "Package the PAM module"). Copy the
+# `auth` line below into /etc/pam.d/sudo (and /etc/pam.d/su, if wanted)
+# above the existing pam_unix.so line, per the runbook in
+# docs/release-phase7-deploy-docs.md.
+#
+# `sufficient` means a successful browser approval satisfies the auth
+# stack on its own; pam_unix.so still runs and can satisfy it independently
+# (e.g. a local emergency password) unless removed.
+#
+# Module path is installed by the package:
+#   deb (x86_64): /usr/lib/x86_64-linux-gnu/security/pam_ssoossh.so
+#   deb (aarch64): /usr/lib/aarch64-linux-gnu/security/pam_ssoossh.so
+#   rpm (any arch): /usr/lib64/security/pam_ssoossh.so
+#
+# auth  sufficient  pam_ssoossh.so  server=https://ssoosshd.example.com  trusted-ca-file=/etc/ssoossh/ca.pub

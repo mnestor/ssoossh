@@ -18,9 +18,8 @@ jobs:
       pull-requests: read # for golangci/golangci-lint-action to fetch pull requests
     name: codecheck
     steps:
-      - uses: 1password/load-secrets-action@v2
-        with:
-          export-env: true
+      - uses: 1password/load-secrets-action@v5
+        id: secrets
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           CODECOV_TOKEN: op://Github Actions/CODECOV_TOKEN/credential
@@ -51,7 +50,6 @@ jobs:
       - name: Build web UI
         run: make frontend
 
-
       - name: Run tests
         run: CGO_ENABLED=0 go test -v -covermode=atomic -coverprofile=coverage.txt ./...
 
@@ -59,4 +57,4 @@ jobs:
         if: ${{ !cancelled() }}
         uses: codecov/codecov-action@v5
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ steps.secrets.outputs.CODECOV_TOKEN }}

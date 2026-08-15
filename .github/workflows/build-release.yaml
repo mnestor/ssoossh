@@ -14,7 +14,13 @@ permissions:
 
 jobs:
   build-client:
-    runs-on: ubuntu-latest
+    # Tag pushes are maintainer-only (unlike the PR-triggered gates in
+    # build-test.yaml/lint.yaml/e2e.yaml, which stay on ubuntu-latest so an
+    # untrusted PR never runs on this infra). This job also needs Docker for
+    # scripts/build-pam-release-so.sh's per-arch glibc-floor builds
+    # (docs/release-phase6-artifacts.md), which the self-hosted runner's
+    # rootless Docker + qemu binfmt setup already covers.
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       # - uses: 1password/load-secrets-action@v2
@@ -46,6 +52,16 @@ jobs:
       - name: Build web UI
         run: make frontend
 
+      - uses: 1password/load-secrets-action@v5
+        id: secrets
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          QUILL_NOTARY_ISSUER: ${{ op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_NOTARY_ISSUER }}
+          QUILL_NOTARY_KEY: ${{ op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_NOTARY_KEY }}
+          QUILL_NOTARY_KEY_ID: ${{ op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_NOTARY_KEY_ID }}
+          QUILL_SIGN_P12: ${{ op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_SIGN_P12 }}
+          QUILL_SIGN_PASSWORD: ${{ op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_SIGN_PASSWORD }}
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -58,3 +74,8 @@ jobs:
           # come back with macOS builds in phase 10
           # (docs/delivery-phase10-ga.md).
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          QUILL_NOTARY_ISSUER: ${{ env.secrets.outputs.QUILL_NOTARY_ISSUER }}
+          QUILL_NOTARY_KEY: ${{ env.secrets.outputs.QUILL_NOTARY_KEY }}
+          QUILL_NOTARY_KEY_ID: ${{ env.secrets.outputs.QUILL_NOTARY_KEY_ID }}
+          QUILL_SIGN_P12: ${{ env.secrets.outputs.QUILL_SIGN_P12 }}
+          QUILL_SIGN_PASSWORD: ${{ env.secrets.outputs.QUILL_SIGN_PASSWORD }}

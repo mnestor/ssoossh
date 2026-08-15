@@ -3,12 +3,14 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 
 	"github.com/italypaleale/go-kit/signals"
 	"github.com/spf13/cobra"
 
+	"github.com/mnestor/ssoossh/internal/version"
 	"github.com/mnestor/ssoossh/server/bootstrap"
 )
 
@@ -43,6 +45,17 @@ func NewCommand() *Command {
 	}
 
 	cc.PersistentFlags().StringP("config", "c", "", "path to the ssoosshd config file")
+
+	cc.AddCommand(&cobra.Command{
+		Use:   "version",
+		Short: "Print ssoosshd version, commit, and build info.",
+		Run: func(cmd *cobra.Command, args []string) {
+			// "ssoosshd", not version.Name ("ssoossh") -- that field is the
+			// shared project identifier used for logging/observability
+			// tags across client, server, and pam, not this binary's name.
+			fmt.Printf("ssoosshd %s (commit %s, built %s by %s)\n", version.Version, version.Commit, version.Date, version.BuiltBy)
+		},
+	})
 
 	return &Command{cc}
 }

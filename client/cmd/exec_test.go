@@ -26,7 +26,7 @@ func newTestExec(t *testing.T) *rootExecFixture {
 		newSSHAgent:  func() (agent.Agent, error) { return &fakeAgent{}, nil },
 		newFileAgent: func(path string) (agent.Agent, error) { return &fakeAgent{}, nil },
 	}
-	root.commands = []simplecobra.Commander{newCACommand(), newSSHCommand(), newHostCommand(), newServiceCommand()}
+	root.commands = []simplecobra.Commander{newCACommand(), newSSHCommand(), newHostCommand(), newServiceCommand(), newVersionCommand()}
 	x, err := simplecobra.New(root)
 	if err != nil {
 		t.Fatalf("failed to build command tree: %v", err)
@@ -65,6 +65,7 @@ func TestExecuteEndToEnd(t *testing.T) {
 		{name: "host principals", args: []string{"host", "principals"}},
 		{name: "service enroll", args: []string{"service", "enroll"}},
 		{name: "service retrieve", args: []string{"service", "retrieve"}},
+		{name: "version", args: []string{"version"}, wantNilErr: true},
 	}
 
 	for _, tt := range tests {
@@ -110,5 +111,28 @@ func TestExecuteSurfacesInitErr(t *testing.T) {
 	}
 	if errors.Is(err, &errs.NotImplementedError{}) {
 		t.Fatal("expected root InitErr to be surfaced instead of a errs.NotImplementedError")
+	}
+}
+
+// TestVersionCommandIgnoresInitErr asserts version keeps working when
+// config/API/agent setup fails -- unlike every other leaf command (see
+// TestExecuteSurfacesInitErr for the same failing config against ca), since
+// that's exactly the situation a bug reporter needs `ssoossh version` to
+// still answer in.
+func TestVersionCommandIgnoresInitErr(t *testing.T) {
+	root := &RootCommand{
+		newConfig:    func(cmd *cobra.Command) (*config.Config, error) { return nil, errors.New("bad config") },
+		newAPIClient: func(cfg *config.Config) (api.Client, error) { return &fakeAPIClient{}, nil },
+		newSSHAgent:  func() (agent.Agent, error) { return &fakeAgent{}, nil },
+		newFileAgent: func(path string) (agent.Agent, error) { return &fakeAgent{}, nil },
+	}
+	root.commands = []simplecobra.Commander{newVersionCommand()}
+	x, err := simplecobra.New(root)
+	if err != nil {
+		t.Fatalf("failed to build command tree: %v", err)
+	}
+
+	if _, err := x.Execute(context.Background(), []string{"version"}); err != nil {
+		t.Fatalf("expected version to succeed despite a failing root init, got %v", err)
 	}
 }

@@ -258,12 +258,24 @@ second half). What's left:
 
 - Run the `pam` job in `.github/workflows/build-test.yaml` in real CI (item
   6) -- this branch has not been pushed, so it has not run there yet.
-- Close the gap item 5 records: link `linux-pam-build` against the pinned
+- ~~Close the gap item 5 records: link `linux-pam-build` against the pinned
   images from item 3 instead of the build host's own glibc, then run this
   phase's Verification section (`ldd --version` in the build image,
   `objdump -T` on the artifact, a load test on an older target) against the
   result. This is real work -- a sysroot from the pinned image or a
   docker-outside-of-docker link step -- not something a rebuild resolves by
-  itself.
-- Check the `artifact already present in the list name=pam_ssoossh.so`
-  goreleaser warning before phase 6 packages the `.so`.
+  itself.~~ **Closed by phase 6**
+  ([release-phase6-artifacts.md](release-phase6-artifacts.md), item 2):
+  `scripts/build-pam-release-so.sh`, run via `hooks.post` on each
+  `linux-pam-build-amd64`/`-arm64` id (the single multi-arch id was also
+  split there, for unrelated nfpm-templating reasons). Verified: highest
+  required `GLIBC_` symbol is 2.3.2 on amd64 (floor 2.17) and 2.17 on arm64
+  (floor 2.26) -- both under floor -- plus a live load test on
+  `debian:bookworm-slim`, a different glibc (2.36) than either pinned
+  image, via `pamtest.c`.
+- ~~Check the `artifact already present in the list name=pam_ssoossh.so`
+  goreleaser warning before phase 6 packages the `.so`.~~ **Checked in
+  phase 6**: still fires (cosmetic -- both arches produce a file literally
+  named `pam_ssoossh.so`), confirmed harmless by unpacking each package and
+  checking binary size and GLIBC floor per arch rather than trusting the
+  filename.

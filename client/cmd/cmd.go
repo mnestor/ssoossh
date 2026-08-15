@@ -188,6 +188,7 @@ func newExec() (*simplecobra.Exec, error) {
 		newSSHCommand(),
 		newHostCommand(),
 		newServiceCommand(),
+		newVersionCommand(),
 	}
 	return simplecobra.New(root)
 }

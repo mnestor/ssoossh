@@ -42,6 +42,13 @@ func authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, args **C.char) 
 	w := initLogger(version.Name)
 	defer w.Close()
 
+	// Every invocation logs its own version at Info, not gated behind
+	// debug: a module that can only be asked its version with debug
+	// already enabled is a worse support problem than one extra log line
+	// per sudo/su attempt. See docs/release-phase6-artifacts.md, "Version
+	// stamping".
+	w.Infof("pam_ssoossh %s (commit %s, built %s by %s)", version.Version, version.Commit, version.Date, version.BuiltBy)
+
 	// args is a PAM-owned char*[argc]; unsafe.Slice is the standard,
 	// bounds-safe way to view it as a Go slice. C.GoString copies each
 	// string into Go-managed memory, so there's nothing here for us to

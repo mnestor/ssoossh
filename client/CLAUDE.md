@@ -20,6 +20,7 @@ ssoossh ssh login | logout | proxycommand | inspect | config
 ssoossh host sign | renew | sync | principals
 ssoossh service enroll | retrieve
 ssoossh ca
+ssoossh version
 ```
 
 - `ssh proxycommand` — ensures a valid cert, then relays TCP; requires an
