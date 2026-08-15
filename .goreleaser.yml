@@ -46,7 +46,6 @@ builds:
       -X github.com/mnestor/ssoossh/internal/version.Version={{.Version}}
       -X github.com/mnestor/ssoossh/internal/version.Commit={{.Commit}}
       -X github.com/mnestor/ssoossh/internal/version.Date={{.Date}}
-      -X github.com/mnestor/ssoossh/internal/version.ApiPath={{- if index .Env "API_PATH" }}{{ .Env.API_PATH }}{{ else }}v1{{ end }}
       -X github.com/mnestor/ssoossh/internal/version.BuiltBy={{- if index .Env "github" }}{{.Env.github.runner.name}}{{ else }}goreleaser{{ end }}
     overrides:
       - goos: linux

@@ -6,7 +6,7 @@
     "../docker-compose.yml",
     "../docker-compose.local.yml"
   ],
-  "workspaceFolder": "/workspace",
+  "workspaceFolder": "/workspace/ssoossh",
   "features": {
     "ghcr.io/devcontainers/features/node:2.1.0": {
       "version": "latest"
@@ -18,7 +18,7 @@
   "shutdownAction": "none",
   "postCreateCommand": {
     // "install-node": "bash -c '. \"$NVM_DIR/nvm.sh\" && nvm install node'",
-    "allow-git": "git config --global --add safe.directory /workspace"
+    "allow-git": "git config --global --add safe.directory /workspace/ssoossh"
   },
   // Configure tool-specific properties.
   "customizations": {

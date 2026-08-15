@@ -89,6 +89,9 @@ CLAUDE.md
 .old
 .pkg
 downloads
+devcontainer-lock.json
+.claudeignore
+.rtk/
 
 # goreleaser output
 /dist/
