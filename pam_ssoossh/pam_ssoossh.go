@@ -10,14 +10,18 @@ package main
 import "C"
 
 import (
-	"fmt"
-	"os"
 	"unsafe"
 
 	"github.com/mnestor/ssoossh/internal/version"
 )
 
 // http://www.fifi.org/doc/libpam-doc/html/pam_modules-3.html#ss3.2
+//
+// No Go unit test covers this function (test-go.md): every branch past the
+// nil check calls GetUser, which needs a live PAM handle.
+// pam_ssoossh/testing/pamtest.c is the manual harness; parseArgs and
+// Authenticate, the logic this function is otherwise a thin cgo wrapper
+// around, are unit tested directly in args_test.go and auth_test.go.
 //
 //export authenticate
 func authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, args **C.char) C.int {
@@ -31,7 +35,6 @@ func authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, args **C.char) 
 		return C.int(PamUserUnknown)
 	}
 
-	fmt.Fprintf(os.Stderr, "username: %s\n", username)
 	w := initLogger(version.Name)
 	defer w.Close()
 
@@ -52,7 +55,7 @@ func authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, args **C.char) 
 	success, err := Authenticate(&w, username, cfg)
 	if err != nil {
 		// Log the error and return PAM authentication failure
-		w.Errorf(err.Error())
+		w.Errorf("%s", err.Error())
 		return C.int(success)
 	}
 

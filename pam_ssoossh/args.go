@@ -72,7 +72,7 @@ func parseArgs(args []string) config {
 	}
 
 	if v, ok := raw["insecure-skip-verify"]; ok {
-		cfg.insecureSkipVerify, _ = strconv.ParseBool(v)
+		cfg.insecureSkipVerify, _ = strconv.ParseBool(v) //nolint:errcheck // invalid value leaves insecureSkipVerify at its safe default (false)
 	}
 
 	return cfg

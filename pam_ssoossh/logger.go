@@ -11,11 +11,11 @@ import (
 
 // Logger is a minimal logging abstraction used by the PAM module.
 type Logger interface {
-	Debugf(format string, v ...interface{})
-	Infof(format string, v ...interface{})
-	Noticef(format string, v ...interface{})
-	Warningf(format string, v ...interface{})
-	Errorf(format string, v ...interface{})
+	Debugf(format string, v ...any)
+	Infof(format string, v ...any)
+	Noticef(format string, v ...any)
+	Warningf(format string, v ...any)
+	Errorf(format string, v ...any)
 	SetDebug(d string)
 	Close() error
 }
@@ -26,25 +26,25 @@ type syslogLogger struct {
 	debug string
 }
 
-func (s *syslogLogger) Debugf(format string, v ...interface{}) {
+func (s *syslogLogger) Debugf(format string, v ...any) {
 	switch s.debug {
 	case "true":
-		_ = s.w.Debug(fmt.Sprintf(format, v...))
+		_ = s.w.Debug(fmt.Sprintf(format, v...)) //nolint:errcheck // logging sink failure has nowhere further to report to
 	case "stdout":
 		_, _ = fmt.Fprintf(os.Stdout, format, v...)
 	}
 }
-func (s *syslogLogger) Infof(format string, v ...interface{}) {
-	_ = s.w.Info(fmt.Sprintf(format, v...))
+func (s *syslogLogger) Infof(format string, v ...any) {
+	_ = s.w.Info(fmt.Sprintf(format, v...)) //nolint:errcheck // logging sink failure has nowhere further to report to
 }
-func (s *syslogLogger) Noticef(format string, v ...interface{}) {
-	_ = s.w.Notice(fmt.Sprintf(format, v...))
+func (s *syslogLogger) Noticef(format string, v ...any) {
+	_ = s.w.Notice(fmt.Sprintf(format, v...)) //nolint:errcheck // logging sink failure has nowhere further to report to
 }
-func (s *syslogLogger) Warningf(format string, v ...interface{}) {
-	_ = s.w.Warning(fmt.Sprintf(format, v...))
+func (s *syslogLogger) Warningf(format string, v ...any) {
+	_ = s.w.Warning(fmt.Sprintf(format, v...)) //nolint:errcheck // logging sink failure has nowhere further to report to
 }
-func (s *syslogLogger) Errorf(format string, v ...interface{}) {
-	_ = s.w.Err(fmt.Sprintf(format, v...))
+func (s *syslogLogger) Errorf(format string, v ...any) {
+	_ = s.w.Err(fmt.Sprintf(format, v...)) //nolint:errcheck // logging sink failure has nowhere further to report to
 }
 func (s *syslogLogger) Close() error      { return s.w.Close() }
 func (s *syslogLogger) SetDebug(d string) { s.debug = d }
@@ -56,7 +56,7 @@ type fileLogger struct {
 	debug string
 }
 
-func (f *fileLogger) Debugf(format string, v ...interface{}) {
+func (f *fileLogger) Debugf(format string, v ...any) {
 	switch f.debug {
 	case "true":
 		f.l.Printf("DEBUG: "+format, v...)
@@ -64,11 +64,11 @@ func (f *fileLogger) Debugf(format string, v ...interface{}) {
 		_, _ = fmt.Fprintf(os.Stdout, format, v...)
 	}
 }
-func (f *fileLogger) Infof(format string, v ...interface{})    { f.l.Printf("INFO: "+format, v...) }
-func (f *fileLogger) Noticef(format string, v ...interface{})  { f.l.Printf("NOTICE: "+format, v...) }
-func (f *fileLogger) Warningf(format string, v ...interface{}) { f.l.Printf("WARN: "+format, v...) }
-func (f *fileLogger) Errorf(format string, v ...interface{})   { f.l.Printf("ERROR: "+format, v...) }
-func (s *fileLogger) SetDebug(d string)                        { s.debug = d }
+func (f *fileLogger) Infof(format string, v ...any)    { f.l.Printf("INFO: "+format, v...) }
+func (f *fileLogger) Noticef(format string, v ...any)  { f.l.Printf("NOTICE: "+format, v...) }
+func (f *fileLogger) Warningf(format string, v ...any) { f.l.Printf("WARN: "+format, v...) }
+func (f *fileLogger) Errorf(format string, v ...any)   { f.l.Printf("ERROR: "+format, v...) }
+func (s *fileLogger) SetDebug(d string)                { s.debug = d }
 func (f *fileLogger) Close() error {
 	if f.f != nil {
 		return f.f.Close()
