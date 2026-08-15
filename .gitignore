@@ -99,3 +99,7 @@ devcontainer-lock.json
 
 # make pam output (pam_ssoossh.so and the cgo header goreleaser generates)
 /.build/
+
+.devcontainer/README.md
+docs/docker-setup.md
+pnpm-audit-results.json

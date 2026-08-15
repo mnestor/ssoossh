@@ -60,22 +60,23 @@ builds:
       - -tags=nomsgpack,pam
     env:
       - CGO_ENABLED=1
-      - CC=x86_64-linux-gnu-gcc
+      - CC=gcc
+      # x86_64-linux-gnu-gcc
       - PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
     ldflags: &build-ldflags |
       -X github.com/mnestor/ssoossh/internal/version.Version={{.Version}}
       -X github.com/mnestor/ssoossh/internal/version.Commit={{.Commit}}
       -X github.com/mnestor/ssoossh/internal/version.Date={{.Date}}
       -X github.com/mnestor/ssoossh/internal/version.BuiltBy={{- if index .Env "github" }}{{.Env.github.runner.name}}{{ else }}goreleaser{{ end }}
-    hooks: &pam-hooks
-      # Requires docker (docker-outside-of-docker in the devcontainer,
-      # native on a GitHub-hosted runner). Runs on every build of this id,
-      # snapshot or release, so `goreleaser build --single-target` and
-      # `goreleaser release --snapshot` both produce the glibc-floor-linked
-      # artifact, not just a tagged release.
-      post:
-        - cmd: >-
-            sh -c 'scripts/build-pam-release-so.sh {{.Os}} {{.Arch}} "{{.Path}}" "{{.Version}}" "{{.Commit}}" "{{.Date}}" "{{- if index .Env "github" }}{{.Env.github.runner.name}}{{ else }}goreleaser{{ end }}"'
+    # hooks: &pam-hooks
+    #   # Requires docker (docker-outside-of-docker in the devcontainer,
+    #   # native on a GitHub-hosted runner). Runs on every build of this id,
+    #   # snapshot or release, so `goreleaser build --single-target` and
+    #   # `goreleaser release --snapshot` both produce the glibc-floor-linked
+    #   # artifact, not just a tagged release.
+    #   post:
+    #     - cmd: >-
+    #         sh -c 'scripts/build-pam-release-so.sh {{.Os}} {{.Arch}} "{{.Path}}" "{{.Version}}" "{{.Commit}}" "{{.Date}}" "{{- if index .Env "github" }}{{.Env.github.runner.name}}{{ else }}goreleaser{{ end }}"'
 
   - id: linux-pam-build-arm64
     binary: pam_ssoossh
@@ -92,7 +93,7 @@ builds:
       - CC=aarch64-linux-gnu-gcc
       - PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig
     ldflags: *build-ldflags
-    hooks: *pam-hooks
+    # hooks: *pam-hooks
 
   - id: server-linux-build
     binary: ssoosshd
@@ -205,7 +206,7 @@ nfpms:
   # ignoring bindir entirely).
   - id: pam-deb-amd64
     package_name: ssoossh-pam
-    file_name_template: 'ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    file_name_template: "ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     license: *license
     maintainer: *maintainer
     homepage: *website
@@ -227,7 +228,7 @@ nfpms:
 
   - id: pam-deb-arm64
     package_name: ssoossh-pam
-    file_name_template: 'ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    file_name_template: "ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     license: *license
     maintainer: *maintainer
     homepage: *website
@@ -244,7 +245,7 @@ nfpms:
 
   - id: pam-rpm-amd64
     package_name: ssoossh-pam
-    file_name_template: 'ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    file_name_template: "ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     license: *license
     maintainer: *maintainer
     homepage: *website
@@ -261,7 +262,7 @@ nfpms:
 
   - id: pam-rpm-arm64
     package_name: ssoossh-pam
-    file_name_template: 'ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    file_name_template: "ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     license: *license
     maintainer: *maintainer
     homepage: *website

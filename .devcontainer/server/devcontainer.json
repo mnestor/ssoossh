@@ -20,9 +20,17 @@
     // this file's -- see that file for why (rootless docker, host-specific
     // path) and docs/docker-setup.md for this host's layout.
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
-      "moby": false
+      "moby": false,
+      "socketPath": "/var/run/docker-host.sock"
     }
   },
+  "mounts": [
+    {
+      "source": "/run/user/1000/docker.sock",
+      "target": "/var/run/docker-host.sock",
+      "type": "bind"
+    }
+  ],
   "initializeCommand": "scripts/devcontainer-init.sh",
   // Uncomment the next line if you want start specific services in your Docker Compose config.
   // "runServices": [],
