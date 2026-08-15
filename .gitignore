@@ -48,6 +48,12 @@ vite.config.ts.timestamp-*
 # Application specific
 ssoossh.db*
 test*
+# ...but not the committed e2e suite the pattern above would otherwise hide.
+!/test/
+!/test/**
+# Runtime diagnostics from a failing e2e run (docs/e2e-testing-plan.md) —
+# generated, never committed.
+/test/e2e/_artifacts/
 
 # Misc
 .DS_Store

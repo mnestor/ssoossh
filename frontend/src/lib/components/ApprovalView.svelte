@@ -62,6 +62,7 @@
 <Card
 	title="Approve a certificate request"
 	description="Review exactly what this certificate will grant before authorizing it."
+	testid="approval-view"
 >
 	<dl class="divide-y divide-border-subtle">
 		<DetailRow label="Status"><StatusBadge status={detail.status} /></DetailRow>
@@ -102,7 +103,7 @@
 		</div>
 
 		{#if narrowed}
-			<Alert variant="warning" title="Less than was requested">
+			<Alert variant="warning" title="Less than was requested" testid="narrowed-warning">
 				This server does not permit everything the client asked for. The struck-through entries
 				above will not be in the certificate.
 			</Alert>
@@ -111,16 +112,16 @@
 
 	{#snippet footer()}
 		{#if outcome === 'approved'}
-			<Alert variant="info" title="Approved">
+			<Alert variant="info" title="Approved" testid="outcome-approved">
 				The certificate is being signed and will reach the waiting client on its own connection —
 				you can close this page.
 			</Alert>
 		{:else if outcome === 'denied'}
-			<Alert variant="warning" title="Denied">
+			<Alert variant="warning" title="Denied" testid="outcome-denied">
 				The waiting client has been told, and no certificate was issued.
 			</Alert>
 		{:else if blocked}
-			<Alert variant={blocked === 'in-progress' ? 'info' : 'warning'}>
+			<Alert variant={blocked === 'in-progress' ? 'info' : 'warning'} testid="blocked-{blocked}">
 				{blockedText[blocked]}
 			</Alert>
 		{:else}
@@ -129,8 +130,12 @@
 					<Alert variant="error" title="That did not go through">{actionError}</Alert>
 				{/if}
 				<div class="flex flex-wrap gap-3">
-					<Button disabled={busy} onclick={onapprove}>{busy ? 'Working…' : 'Approve'}</Button>
-					<Button variant="danger" disabled={busy} onclick={ondeny}>Deny</Button>
+					<Button testid="approve-button" disabled={busy} onclick={onapprove}
+						>{busy ? 'Working…' : 'Approve'}</Button
+					>
+					<Button testid="deny-button" variant="danger" disabled={busy} onclick={ondeny}
+						>Deny</Button
+					>
 				</div>
 			</div>
 		{/if}

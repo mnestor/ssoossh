@@ -147,7 +147,7 @@ update:
 	go get -u ./...
 	go mod tidy
 
-.PHONY: test test-server test-client test-pam test-internal cover lint
+.PHONY: test test-server test-client test-pam test-internal test-e2e cover lint
 # server/frontend embeds server/frontend/dist and nothing there is tracked,
 # so the UI has to exist before the Go tests can compile at all.
 test: $(FRONTEND_DIST) test-server test-client test-pam test-internal
@@ -165,6 +165,14 @@ test-pam:
 
 test-internal:
 	$(call TESTCOMPONENT,internal)
+
+# The merge-gate end-to-end suite (docs/e2e-testing-plan.md): a real
+# ssoosshd and ssoossh, a harness-provided OIDC IdP, a private ssh-agent,
+# and a real sshd. Behind the `e2e` build tag, so it never runs as part of
+# `make test`. Tier 3 modifies the host (creates and unlocks a dedicated
+# local account, runs sshd as root via sudo) — see test/e2e/README.md.
+test-e2e: $(FRONTEND_DIST)
+	go test -tags=e2e -count=1 -timeout=10m ./test/e2e/...
 
 cover: $(FRONTEND_DIST)
 	go test -coverprofile=.coverage/coverage-all.out ./...

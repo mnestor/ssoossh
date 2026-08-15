@@ -4,14 +4,16 @@
 	interface Props {
 		title?: string;
 		description?: string;
+		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
+		testid?: string;
 		children: Snippet;
 		footer?: Snippet;
 	}
 
-	let { title, description, children, footer }: Props = $props();
+	let { title, description, testid, children, footer }: Props = $props();
 </script>
 
-<section class="rounded-lg border border-border-subtle bg-surface shadow-sm">
+<section data-testid={testid} class="rounded-lg border border-border-subtle bg-surface shadow-sm">
 	{#if title}
 		<header class="border-b border-border-subtle px-5 py-4">
 			<h2 class="text-base font-semibold">{title}</h2>

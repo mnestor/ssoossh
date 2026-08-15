@@ -3,3 +3,4 @@ csp_middleware\.go:60\.40,62\.3
 frontend_included\.go:111\.16,113\.3
 frontend_included\.go:130\.16,132\.3
 server/config/config\.go:40\.75,42\.3
+test/e2e/.*

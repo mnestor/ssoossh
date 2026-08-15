@@ -1,0 +1,61 @@
+name: e2e
+
+# The end-to-end merge gate (docs/e2e-testing-plan.md): a separate workflow
+# from build-test.yaml because this one has a different runtime, different
+# failure modes, and its own artifacts. It's the only job that checks the
+# product rather than the parts.
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: end to end
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+          check-latest: true
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      # The Go build cannot compile without it: server/frontend embeds dist/.
+      - name: Build web UI
+        run: make frontend
+
+      - name: Build binaries
+        run: go build -o bin/ ./cmd/...
+
+      # Present on the hosted image, but asserting it beats a confusing
+      # "no such file" three steps later.
+      - name: Ensure sshd is available
+        run: sudo apt-get install -y --no-install-recommends openssh-server
+
+      - name: Run end-to-end tests
+        run: go test -tags=e2e -count=1 -timeout=10m ./test/e2e/...
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-diagnostics
+          path: |
+            test/e2e/_artifacts/**
+          retention-days: 7

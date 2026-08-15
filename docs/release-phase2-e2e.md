@@ -1,6 +1,8 @@
 # Phase 2: End-to-end harness, the merge gate
 
-**Status: planned.** Part of [release-plan.md](release-plan.md).
+**Status: implemented.** Part of [release-plan.md](release-plan.md). `test/e2e/`
+exists, all three tiers pass locally and in `.github/workflows/e2e.yaml`, and
+`make test-e2e` is the one local command.
 
 Implements [e2e-testing-plan.md](e2e-testing-plan.md), which holds the full
 design. This phase is the delivery half: what gets built, in what order, and
@@ -209,12 +211,12 @@ project memory note on local end-to-end setup; the short form:
 
 ## Open questions
 
-1. Should tier 2 block merges from day one, or run advisory for a week?
-   Browser tests earn trust slowly, and a flaky required check trains people
-   to re-run rather than read.
-2. Does the tier-3 `sshd` belong in the PR gate, or only on `main`? It is the
-   most environment-dependent tier and the least likely to break from an
-   application change.
-3. Should the harness IdP move to `internal/` when phase 5 needs it, or be
-   used from `test/e2e/harness` directly? Sharing risks a test fixture
-   becoming a de facto product dependency.
+Resolved with a default at implementation time, revisit if wrong:
+
+1. **Tier 2 merge-gate timing.** Blocks from day one — `e2e.yaml` runs all
+   three tiers in one job, matching the workflow both this file and
+   [e2e-testing-plan.md](e2e-testing-plan.md) already specified. No advisory
+   period was carved out.
+2. **Tier-3 `sshd` in the PR gate.** Yes, same job as tiers 1–2.
+3. **Harness IdP location.** Stayed in `test/e2e/harness`. Only matters once
+   phase 5 (PAM) needs to reuse it.

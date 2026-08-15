@@ -1,10 +1,12 @@
 # End-to-end testing plan
 
-**Status: planned, and being implemented — see
+**Status: implemented — see
 [release-phase2-e2e.md](release-phase2-e2e.md) for the delivery order.**
-Nothing here is implemented yet. It is written from a full manual run of the
-loop performed during the (now-removed) web UI and client delivery phases, so
-the obstacles below are ones that were actually hit rather than anticipated.
+It is written from a full manual run of the loop performed during the
+(now-removed) web UI and client delivery phases, so the obstacles below are
+ones that were actually hit rather than anticipated; the same class of
+obstacle (privilege-dropped file reads for tier 3, the first-`Run`-must-not-
+have-a-timeout chromedp gotcha for tier 2) kept showing up during the build.
 
 ## Goal
 
@@ -288,12 +290,8 @@ gets quarantined with an issue, not `retries: 3`.
 
 ## Open questions
 
-1. Should tier 2 block merges from day one, or run advisory for a week first?
-   Browser tests earn trust slowly, and a flaky required check trains people to
-   re-run rather than read.
-2. Should the harness IdP move to `internal/` once `pam_ssoossh` needs it
-   (phase 7), or should it be duplicated? Sharing risks a test fixture becoming
-   a de facto product dependency.
-3. Does the tier-3 `sshd` belong in the PR gate at all, or only on `main`? It
-   is the most environment-dependent tier and the least likely to break from an
-   application change.
+Resolved with a default at implementation time, revisit if wrong — see
+[release-phase2-e2e.md](release-phase2-e2e.md)'s "Open questions" for the
+same three, answered the same way: tier 2 gates from day one, the harness IdP
+stayed in `test/e2e/harness`, and tier-3 `sshd` runs in the same PR-gating job
+as tiers 1–2.

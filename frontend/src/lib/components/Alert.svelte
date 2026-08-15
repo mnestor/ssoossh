@@ -4,10 +4,12 @@
 	interface Props {
 		variant?: 'info' | 'warning' | 'error';
 		title?: string;
+		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
+		testid?: string;
 		children?: Snippet;
 	}
 
-	let { variant = 'info', title, children }: Props = $props();
+	let { variant = 'info', title, testid, children }: Props = $props();
 
 	const variants = {
 		info: 'bg-surface-muted text-ink border-border-subtle',
@@ -16,7 +18,11 @@
 	};
 </script>
 
-<div class="rounded-md border px-4 py-3 text-sm {variants[variant]}" role="status">
+<div
+	class="rounded-md border px-4 py-3 text-sm {variants[variant]}"
+	role="status"
+	data-testid={testid}
+>
 	{#if title}
 		<p class="font-semibold">{title}</p>
 	{/if}

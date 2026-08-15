@@ -32,7 +32,10 @@
 	<ul class="space-y-2">
 		{#each entries as entry (entry.label)}
 			<li class="flex flex-wrap items-center gap-2 text-sm">
-				<code class="rounded px-2 py-0.5 font-mono text-xs {styles[entry.status]}">
+				<code
+					class="rounded px-2 py-0.5 font-mono text-xs {styles[entry.status]}"
+					data-testid="option-{entry.status}"
+				>
 					{entry.label}{#if entry.value}: {entry.value}{/if}
 				</code>
 				{#if notes[entry.status]}

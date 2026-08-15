@@ -9,6 +9,8 @@
 		type?: 'button' | 'submit';
 		disabled?: boolean;
 		onclick?: () => void;
+		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
+		testid?: string;
 		children: Snippet;
 	}
 
@@ -17,6 +19,7 @@
 		type = 'button',
 		disabled = false,
 		onclick,
+		testid,
 		children
 	}: Props = $props();
 
@@ -31,6 +34,7 @@
 	{type}
 	{disabled}
 	{onclick}
+	data-testid={testid}
 	class="rounded-md px-4 py-2 text-sm font-medium transition disabled:opacity-50 {variants[
 		variant
 	]}"
