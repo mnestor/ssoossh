@@ -44,6 +44,19 @@ jobs:
         with:
           version: 11
 
+      # Catches a Go wire type changing without the frontend's generated
+      # TypeScript being regenerated. The golden test in server/webtypes
+      # catches the same drift against docs/openapi.yaml and the goldens
+      # themselves; this half is what keeps the browser's types honest.
+      - name: Check generated frontend types are current
+        run: make types-check
+
+      # docs/openapi.yaml is generated from the swag annotations on the
+      # handlers. Catches a route or response shape changing without the
+      # spec following.
+      - name: Check generated OpenAPI spec is current
+        run: make openapi-check
+
       # Must run before goreleaser: the server binary embeds
       # server/frontend/dist, and only a placeholder index.html is tracked.
       # Skipping this would ship a release with no web UI.

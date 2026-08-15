@@ -17,34 +17,29 @@ permissions:
 
 jobs:
   build-test:
-    name: build and test
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, PAM-BUILDER]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
-
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Build amd64 pam_ssoossh
+        run: |
+          scripts/build-env-for-pam.sh amd64 release true
+      - name: Build arm64 pam_ssoossh
+        run: |
+          scripts/build-env-for-pam.sh arm64 release true
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v5.6.0
         with:
           check-latest: true
           go-version-file: "go.mod"
           cache: true
-
       - name: Set up Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v4.4.0
         with:
           node-version: 26
       - name: Set up pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v4.4.0
         with:
           version: 11
-
-      # server/frontend embeds server/frontend/dist and nothing there is
-      # tracked, so the Go build cannot compile until the UI exists.
-      - name: Build web UI
-        run: make frontend
-
-      - name: Go Tidy
-        run: go mod tidy
 
       # Catches a Go wire type changing without the frontend's generated
       # TypeScript being regenerated. The golden test in server/webtypes
@@ -59,51 +54,36 @@ jobs:
       - name: Check generated OpenAPI spec is current
         run: make openapi-check
 
-      - name: Build
-        run: go build ./...
+      # Must run before goreleaser: the server binary embeds
+      # server/frontend/dist, and only a placeholder index.html is tracked.
+      # Skipping this would ship a release with no web UI.
+      - name: Build web UI
+        run: make frontend
 
-      # CGO_ENABLED is explicit because -race requires cgo, and the repo's
-      # own dev container sets CGO_ENABLED=0 — without this the step would
-      # pass or fail depending on where it runs. pam_ssoossh stays excluded
-      # regardless: it is gated by the `pam` build tag, not by cgo.
-      - name: Test
-        run: CGO_ENABLED=1 go test -race ./...
+      - uses: 1password/load-secrets-action@e544b780808654ba8ceba5fb2fe2897103d92ff4 # v5.0.0
+        id: secrets
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          QUILL_NOTARY_ISSUER: op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_NOTARY_ISSUER
+          QUILL_NOTARY_KEY: op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_NOTARY_KEY
+          QUILL_NOTARY_KEY_ID: op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_NOTARY_KEY_ID
+          QUILL_SIGN_P12: op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_SIGN_P12
+          QUILL_SIGN_PASSWORD: op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_SIGN_PASSWORD
 
-      - name: Check formatting
-        run: |
-          unformatted=$(gofmt -l .)
-          if [ -n "$unformatted" ]; then
-            echo "These files are not gofmt-clean:"
-            echo "$unformatted"
-            exit 1
-          fi
-
-  # pam_ssoossh (pam_ssoossh/, `pam` build tag) needs libpam headers and
-  # cgo, neither of which build-test's own job above has or needs for the
-  # rest of the tree (see the Test step's comment). It doesn't import
-  # server/ or client/, so it needs none of that job's frontend setup
-  # either. See docs/release-phase3-pam-build-env.md.
-  pam:
-    name: pam build and test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v5.6.0
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v6.4.0
         with:
-          check-latest: true
-          go-version-file: "go.mod"
-          cache: true
-
-      - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
-
-      - name: Build
-        run: make pam
-
-      - name: Test
-        run: make test-pam
-
-      - name: Lint
-        run: make lint-pam
+          # either 'goreleaser' (default) or 'goreleaser-pro'
+          distribution: goreleaser
+          version: nightly
+          args: release --clean -f .goreleaser.yml --snapshot=true ${{ vars.DEBUG }}
+        env:
+          # Quill signing/notarization secrets and the 1Password step above
+          # come back with macOS builds in phase 10
+          # (docs/delivery-phase10-ga.md).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          QUILL_NOTARY_ISSUER: ${{ env.secrets.outputs.QUILL_NOTARY_ISSUER }}
+          QUILL_NOTARY_KEY: ${{ env.secrets.outputs.QUILL_NOTARY_KEY }}
+          QUILL_NOTARY_KEY_ID: ${{ env.secrets.outputs.QUILL_NOTARY_KEY_ID }}
+          QUILL_SIGN_P12: ${{ env.secrets.outputs.QUILL_SIGN_P12 }}
+          QUILL_SIGN_PASSWORD: ${{ env.secrets.outputs.QUILL_SIGN_PASSWORD }}
