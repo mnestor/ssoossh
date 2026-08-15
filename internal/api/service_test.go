@@ -21,7 +21,7 @@ func TestRetrieveServiceCertificate_ShouldReturnCertificate(t *testing.T) {
 		_ = json.Unmarshal(body, &gotBody) //nolint:errcheck // test assertion, failure surfaces via the nil check below
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"certificate":"ssh-ed25519-cert-v01@openssh.com AAAA... service"}`))
+		_, _ = w.Write([]byte(`{"data":{"certificate":"ssh-ed25519-cert-v01@openssh.com AAAA... service"},"error":null}`))
 	}))
 	t.Cleanup(ts.Close)
 

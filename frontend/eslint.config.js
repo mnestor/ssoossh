@@ -18,11 +18,15 @@ export default [
 		}
 	},
 	{
-		files: ['**/*.svelte'],
+		// *.svelte.ts carries runes ($state, $derived) outside a component, so
+		// it needs the Svelte parser too — the plain TS parser reads `$state<T>(…)`
+		// as a syntax error.
+		files: ['**/*.svelte', '**/*.svelte.ts'],
 		languageOptions: { parserOptions: { parser: ts.parser } }
 	},
 	{
-		ignores: ['build/', '.svelte-kit/', 'dist/']
+		// src/lib/api/generated is tygo output — see tygo.yaml.
+		ignores: ['build/', '.svelte-kit/', 'dist/', 'src/lib/api/generated/']
 	},
 	{
 		rules: { '@typescript-eslint/no-explicit-any': 'off' }

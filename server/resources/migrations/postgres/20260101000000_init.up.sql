@@ -67,4 +67,10 @@ CREATE TABLE host_mappings (
 );
 CREATE UNIQUE INDEX idx_host_mappings_hostname ON host_mappings(hostname);
 
+CREATE TABLE server_secrets (
+    name TEXT PRIMARY KEY,
+    value BYTEA NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL
+);
+
 COMMIT;

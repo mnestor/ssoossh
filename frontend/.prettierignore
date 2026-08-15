@@ -6,3 +6,8 @@ yarn.lock
 # Compiled files
 .svelte-kit/
 build/
+
+# Generated from the Go wire types by `make types` (tygo). Formatting these
+# would make `pnpm format` and `make types-check` disagree: prettier would
+# rewrite them, and the next tygo run would rewrite them back.
+src/lib/api/generated/

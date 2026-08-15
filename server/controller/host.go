@@ -1,8 +1,6 @@
 package controller
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
 	"github.com/mnestor/ssoossh/server/service"
@@ -43,6 +41,17 @@ type renewHostRequestBody struct {
 // TODO: read hostname and the presented existing certificate from
 // middleware.HostnameContextKey / wherever HostCertAuthMiddleware ends up
 // storing them, once implemented.
+//
+// @Summary     Renew a host certificate
+// @Description Not implemented (delivery phase 9). The auth transport is decided — an
+// @Description SSH-certificate signed challenge — but unbuilt, so the middleware in
+// @Description front of this fails closed.
+// @Tags        client
+// @Accept      json
+// @Produce     json
+// @Param       request body controller.renewHostRequestBody true "The new host public key"
+// @Failure     501 {object} openapidoc.ErrorEnvelope "Not implemented"
+// @Router      /api/certs/host/renew [post]
 func (h *hostController) renewHandler(g *gin.Context) {
 	var body renewHostRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
@@ -56,12 +65,20 @@ func (h *hostController) renewHandler(g *gin.Context) {
 		return
 	}
 
-	g.JSON(http.StatusOK, gin.H{"certificate": certificate})
+	respondData(g, gin.H{"certificate": certificate})
 }
 
 // syncHandler handles GET /api/hosts/:hostname/sync: returns the current
 // principal mapping for `host sync` to write locally, for sshd's
 // AuthorizedPrincipalsCommand to answer from without touching the network.
+//
+// @Summary     Pull the principal mapping for a host
+// @Description Not implemented (delivery phase 9). Fails closed.
+// @Tags        client
+// @Produce     json
+// @Param       hostname path string true "The host's name"
+// @Failure     501 {object} openapidoc.ErrorEnvelope "Not implemented"
+// @Router      /api/hosts/{hostname}/sync [get]
 func (h *hostController) syncHandler(g *gin.Context) {
 	principals, err := h.hostService.SyncPrincipals(g.Request.Context(), g.Param("hostname"))
 	if err != nil {
@@ -69,5 +86,5 @@ func (h *hostController) syncHandler(g *gin.Context) {
 		return
 	}
 
-	g.JSON(http.StatusOK, gin.H{"principals": principals})
+	respondData(g, gin.H{"principals": principals})
 }

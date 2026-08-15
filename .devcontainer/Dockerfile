@@ -42,5 +42,3 @@ RUN go install github.com/princjef/gomarkdoc/cmd/gomarkdoc@latest \
   && go install golang.org/x/lint/golint@latest \
   && go install gotest.tools/gotestsum@latest \
   && go install github.com/rhysd/actionlint/cmd/actionlint@latest
-
-

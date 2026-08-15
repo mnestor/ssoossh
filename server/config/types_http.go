@@ -1,6 +1,11 @@
 package config
 
 import (
+	"fmt"
+	"net"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/mnestor/ssoossh/server/config/tlsutils"
@@ -42,8 +47,13 @@ type HTTPSettings struct {
 
 	// TrustedProxies lists the CIDR ranges of reverse proxies trusted to
 	// set X-Forwarded-For/X-Forwarded-Proto, passed to gin's
-	// SetTrustedProxies. Empty means gin trusts no proxy headers at all
-	// (c.ClientIP() always reports the direct connection's address).
+	// SetTrustedProxies. Empty means no proxy is trusted, so c.ClientIP()
+	// always reports the direct connection's address and a client-supplied
+	// X-Forwarded-For is ignored.
+	//
+	// That only holds because the router passes this to SetTrustedProxies
+	// unconditionally — gin's own default is to trust every proxy, so
+	// skipping the call for an empty list would mean the opposite.
 	TrustedProxies []string `mapstructure:"trusted_proxies"`
 
 	// ServerName, when set, is the host name this server answers to:
@@ -55,16 +65,60 @@ type HTTPSettings struct {
 	// which is why it does not live in TLSConfig.
 	ServerName string `mapstructure:"server_name"`
 
+	// PublicURL is the scheme and host browsers actually reach this
+	// deployment at, e.g. "https://ssh.example.com". Set it whenever that
+	// differs from what Address/Port/TLS describe — which is every
+	// reverse-proxy deployment, since the proxy terminates TLS on 443 while
+	// this process listens on plain HTTP somewhere else.
+	//
+	// Two things are derived from it and cannot be got right without it: the
+	// OIDC redirect URI handed to the identity provider, and the origin
+	// CsrfMiddleware compares the browser's Origin header against. Both used
+	// to be reconstructed from ServerName plus the *listen* port, which is
+	// only the public port when nothing sits in front.
+	//
+	// Its scheme also settles IsTLS, so a deployment behind a TLS-terminating
+	// proxy needs this or IsHTTPS, not both.
+	//
+	// Origin only: a path, query, or fragment is rejected at startup. Serving
+	// the app under a sub-path would need the frontend's base to move with it,
+	// which is not supported, so accepting one here would only produce a
+	// redirect URI that silently does not work.
+	PublicURL string `mapstructure:"public_url"`
+
 	// If we don't configure TLS but instead of a reverse proxy setup
 	// that is terminating TLS then we need to set this to true
 	IsHTTPS bool `mapstructure:"is_https"`
 
 	// CookieKey is the secret used to sign and encrypt session cookies. If
-	// empty, a random key is generated at startup (suitable only for single-
-	// process servers without session persistence). For production use,
-	// configure an explicit key so all instances can validate each other's
-	// cookies.
+	// empty, a key is generated once and persisted in the server_secrets
+	// table, so sessions survive a restart and instances sharing a database
+	// share the key. Configure an explicit value to key it from outside the
+	// database.
 	CookieKey string `mapstructure:"cookie_key"`
+
+	// CookieSecure marks the session cookie Secure, so browsers only send it
+	// over HTTPS. Unset derives it from whether the deployment is HTTPS at
+	// all (see IsTLS), which keeps plain-HTTP local development working
+	// while defaulting to on everywhere else. Set it explicitly only to
+	// override that inference.
+	CookieSecure *bool `mapstructure:"cookie_secure"`
+
+	// CookieSameSite controls the session cookie's SameSite attribute:
+	// "strict" (default), "lax", or "none". Strict is right for this server
+	// because nothing legitimately navigates into it from another site — the
+	// OIDC callback is a redirect the browser follows to a URL this server
+	// issued, not a cross-site form post.
+	//
+	// This is defence in depth, not the CSRF control: SameSite does nothing
+	// against an attacker page on a different origin of the *same* site, so
+	// state-changing routes are additionally guarded by
+	// middleware.CsrfMiddleware.
+	CookieSameSite string `mapstructure:"cookie_same_site"`
+
+	// CookieMaxAge is how long a session cookie remains valid. Zero uses the
+	// store's own default.
+	CookieMaxAge time.Duration `mapstructure:"cookie_max_age"`
 
 	// RateLimit is the maximum number of requests per RateDuration allowed
 	// per client IP. Zero or negative disables rate limiting entirely.
@@ -91,4 +145,96 @@ type HTTPSettings struct {
 	// the server runs without TLS, serving plain HTTP with HTTP/2 cleartext
 	// (h2c) enabled.
 	TLS tlsutils.TLSConfig `mapstructure:"tls"`
+}
+
+// IsTLS reports whether browsers reach this deployment over HTTPS — because
+// PublicURL says so, because this process terminates TLS itself, or because a
+// reverse proxy in front of it does and the operator said so via IsHTTPS.
+//
+// Shared so everything that has to reason about the browser-visible scheme
+// agrees: the OIDC redirect URL and the session cookie's Secure attribute
+// must not be able to disagree about it.
+//
+// PublicURL wins when set. It describes what the browser sees, which is the
+// question being asked; the other two are proxies for it.
+func (h *HTTPSettings) IsTLS() bool {
+	if u, err := h.parsePublicURL(); err == nil && u != nil {
+		return u.Scheme == "https"
+	}
+	return h.TLS.HasKeyPair() || h.IsHTTPS
+}
+
+// PublicOrigin returns the scheme://host origin browsers use to reach this
+// deployment: PublicURL when configured, otherwise inferred from ServerName,
+// Port, and IsTLS.
+//
+// Returns "" when neither is available — PublicURL unset and ServerName
+// empty. Callers treat that as "the public origin is unknown": CsrfMiddleware
+// falls back to Sec-Fetch-Site alone rather than comparing against a guess.
+//
+// The inference is kept for deployments with nothing in front, where the
+// listen port really is the public port. It is wrong the moment a proxy is
+// involved, which is what PublicURL exists to fix.
+func (h *HTTPSettings) PublicOrigin() string {
+	if u, err := h.parsePublicURL(); err == nil && u != nil {
+		return u.Scheme + "://" + u.Host
+	}
+
+	if h.ServerName == "" {
+		return ""
+	}
+
+	scheme, defaultPort := "http", 80
+	if h.IsTLS() {
+		scheme, defaultPort = "https", 443
+	}
+
+	host := h.ServerName
+	if h.Port != 0 && h.Port != defaultPort {
+		host = net.JoinHostPort(h.ServerName, strconv.Itoa(h.Port))
+	}
+
+	return scheme + "://" + host
+}
+
+// parsePublicURL parses PublicURL, returning (nil, nil) when it is unset.
+// Unexported because callers want the resolved origin, not the URL.
+func (h *HTTPSettings) parsePublicURL() (*url.URL, error) {
+	raw := strings.TrimSpace(h.PublicURL)
+	if raw == "" {
+		return nil, nil
+	}
+
+	// A trailing slash is what everyone types and what url.Parse reports as
+	// Path "/", so trim it before the no-path check rather than rejecting the
+	// most natural spelling of a correct value.
+	u, err := url.Parse(strings.TrimSuffix(raw, "/"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid http.public_url %q: %w", h.PublicURL, err)
+	}
+
+	switch {
+	case u.Scheme != "http" && u.Scheme != "https":
+		return nil, fmt.Errorf(`invalid http.public_url %q: needs an http:// or https:// scheme, e.g. "https://ssh.example.com"`, h.PublicURL)
+	case u.Host == "":
+		return nil, fmt.Errorf(`invalid http.public_url %q: needs a host, e.g. "https://ssh.example.com"`, h.PublicURL)
+	case u.Path != "" || u.RawQuery != "" || u.Fragment != "":
+		return nil, fmt.Errorf("invalid http.public_url %q: must be an origin only, with no path, query, or fragment — serving under a sub-path is not supported", h.PublicURL)
+	}
+
+	return u, nil
+}
+
+// Validate reports configuration that would fail later, at a point where the
+// failure is harder to read. Called once at startup by NewConfig.
+//
+// http.public_url is the case worth catching early: a bad value does not stop
+// the server starting, it produces an OIDC redirect URI the identity provider
+// rejects, which surfaces as a login failure on the provider's side with
+// nothing in this server's logs.
+func (h *HTTPSettings) Validate() error {
+	if _, err := h.parsePublicURL(); err != nil {
+		return err
+	}
+	return nil
 }

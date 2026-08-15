@@ -1,47 +1,11 @@
-// import AppConfigService from '$lib/services/app-config-service';
-import UserService from '$lib/services/user.service';
-// import appConfigStore from '$lib/stores/application-configuration-store';
-import userStore from '$lib/stores/user.store';
-// import { setLocaleForLibraries } from '$lib/utils/locale.util';
-import { getAuthRedirectPath } from '$lib/utils/redirection.util';
-import { redirect } from '@sveltejs/kit';
-import type { LayoutLoad } from './$types';
-
+// The app ships as a single-page bundle embedded in the Go binary
+// (server/frontend), so there is no Node process to render on and nothing to
+// prerender against: every page's data comes from an authenticated API call
+// made by the browser.
+//
+// adapter-static's fallback: 'index.html' is what makes deep links like
+// /approve/<uuid> work — the Go server serves the shell for any unmatched
+// path (see server/frontend/frontend_included.go) and the client router
+// takes it from there.
 export const ssr = false;
-
-export const load: LayoutLoad = async ({ url }) => {
-	const userService = new UserService();
-	// const appConfigService = new AppConfigService();
-
-	const userPromise = userService.getCurrent().catch(() => null);
-
-	// const appConfigPromise = appConfigService.list().catch((e) => {
-	// 	console.error(
-	// 		`Failed to get application configuration: ${e.response?.data.error || e.message}`
-	// 	);
-	// 	return null;
-	// });
-
-	// const [user, appConfig] = await Promise.all([userPromise, appConfigPromise]);
-  const [user] = await Promise.all([userPromise]);
-
-	const redirectPath = getAuthRedirectPath(url.pathname, user);
-	if (redirectPath) {
-		redirect(302, redirectPath);
-	}
-
-	if (user) {
-		await userStore.setUser(user);
-	}
-
-	// if (appConfig) {
-	// 	appConfigStore.set(appConfig);
-	// }
-
-	// await setLocaleForLibraries();
-
-	return {
-		user,
-		// appConfig
-	};
-};
+export const prerender = false;

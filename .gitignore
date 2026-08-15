@@ -7,9 +7,13 @@ node_modules
 # PNPM
 .pnpm-store/
 
-# frontend/dist
-# server/frontend/dist/*
-# !.gitkeep
+# Built frontend assets, embedded by server/frontend (//go:embed all:dist/*).
+# Nothing here is tracked: the filenames are content hashes, so committing
+# them would churn on every rebuild. `make frontend` produces them, and it is
+# a prerequisite of building or testing the Go side at all.
+/server/frontend/dist/
+/frontend/.svelte-kit/
+/frontend/build/
 
 # Output
 .output
@@ -79,4 +83,6 @@ CLAUDE.md
 .old
 .pkg
 downloads
-dist
+
+# goreleaser output
+/dist/

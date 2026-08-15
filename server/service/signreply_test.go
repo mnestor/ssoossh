@@ -25,7 +25,7 @@ import (
 func newTestSignedReplyHandler(t *testing.T, svc *CertRequestService) *SignedReplyHandler {
 	t.Helper()
 
-	if err := svc.db.AutoMigrate(&model.Certificate{}); err != nil {
+	if err := svc.db.AutoMigrate(&model.Certificate{}, &model.User{}); err != nil {
 		t.Fatalf("failed to migrate certificates table: %v", err)
 	}
 	return NewSignedReplyHandler(svc.db, svc)
@@ -250,5 +250,81 @@ func TestSignedReplyHandler_ShouldAckAnUnparseableReply(t *testing.T) {
 
 	if err := h.handle(message.NewMessage(watermill.NewUUID(), []byte("not json"))); err != nil {
 		t.Fatalf("expected the message to be acked (nil error), got %v", err)
+	}
+}
+
+// TestSignedReplyHandler_ShouldRecordTheCertificateOwner pins that an issued
+// certificate is attributable to a user, which is what per-user history
+// depends on. The owner comes off the request row rather than the signing
+// job, so the signer stays database-free.
+func TestSignedReplyHandler_ShouldRecordTheCertificateOwner(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	h := newTestSignedReplyHandler(t, svc)
+
+	userID := seedUser(t, svc.db, "sub-alice")
+	requestID := mustCreateUserRequest(t, svc)
+	if err := svc.db.Model(&model.CertificateRequest{}).
+		Where("id = ?", requestID).
+		Update("user_id", userID).Error; err != nil {
+		t.Fatalf("failed to bind the request to a user: %v", err)
+	}
+
+	if err := h.recordCertificate(context.Background(), certmsg.SignedReply{
+		RequestID:            requestID,
+		Type:                 model.CertificateTypeUser,
+		PublicKeyFingerprint: "SHA256:test",
+		Serial:               42,
+		KeyID:                "alice",
+		Principals:           []string{"alice"},
+		ValidAfter:           time.Now(),
+		ValidBefore:          time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("unexpected error recording the certificate: %v", err)
+	}
+
+	var cert model.Certificate
+	if err := svc.db.First(&cert, "serial_number = ?", 42).Error; err != nil {
+		t.Fatalf("unexpected error reading the audit row: %v", err)
+	}
+	if cert.UserID == nil {
+		t.Fatal("expected the certificate audit row to record an owner")
+	}
+	if *cert.UserID != userID {
+		t.Errorf("got user_id %q, want %q", *cert.UserID, userID)
+	}
+}
+
+// TestSignedReplyHandler_ShouldStillRecordACertificateWithNoOwner keeps a
+// missing owner from failing issuance: the certificate is already signed by
+// this point, so dropping the audit row would lose it entirely. It costs
+// per-user history for that row and nothing else.
+func TestSignedReplyHandler_ShouldStillRecordACertificateWithNoOwner(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	h := newTestSignedReplyHandler(t, svc)
+
+	requestID := mustCreateUserRequest(t, svc)
+
+	if err := h.recordCertificate(context.Background(), certmsg.SignedReply{
+		RequestID:            requestID,
+		Type:                 model.CertificateTypeUser,
+		PublicKeyFingerprint: "SHA256:test",
+		Serial:               43,
+		Principals:           []string{"alice"},
+		ValidAfter:           time.Now(),
+		ValidBefore:          time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("expected an unbound request to still record a certificate, got %v", err)
+	}
+
+	var cert model.Certificate
+	if err := svc.db.First(&cert, "serial_number = ?", 43).Error; err != nil {
+		t.Fatalf("unexpected error reading the audit row: %v", err)
+	}
+	if cert.UserID != nil {
+		t.Errorf("got user_id %v, want nil for an unbound request", *cert.UserID)
 	}
 }

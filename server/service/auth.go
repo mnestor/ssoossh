@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -104,16 +103,15 @@ func NewAuthService(ctx context.Context, c *config.Config, db *gorm.DB, httpClie
 	scopes := []string{oidc.ScopeOpenID}
 	scopes = append(scopes, strings.Fields(authConfig.Scopes)...)
 
-	serverName := c.HTTP.ServerName
-	isHTTPS := c.HTTP.TLS.HasKeyPair() || c.HTTP.IsHTTPS
-	if (isHTTPS && c.HTTP.Port != 443) || (!isHTTPS && c.HTTP.Port != 80) {
-		serverName = serverName + ":" + strconv.Itoa(c.HTTP.Port)
+	// The identity provider matches this against its registered redirect URI
+	// exactly, so it has to be the origin the *browser* uses. Behind a proxy
+	// that is http.public_url; with nothing in front, PublicOrigin infers it
+	// from server_name and the listen port.
+	origin := c.HTTP.PublicOrigin()
+	if origin == "" {
+		return nil, errors.New("cannot build the OIDC redirect URI: set http.public_url to the URL browsers reach this server at, e.g. \"https://ssh.example.com\" (or http.server_name when nothing sits in front of this process)")
 	}
-	scheme := "http"
-	if isHTTPS {
-		scheme = scheme + "s"
-	}
-	redirectURL := scheme + "://" + serverName + "/auth/callback"
+	redirectURL := origin + "/auth/callback"
 	slog.Debug("oauth setting", slog.String("redirectURL", redirectURL))
 
 	return &AuthService{
@@ -180,15 +178,15 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce str
 		return nil, fmt.Errorf("OIDC ID token is missing the configured username claim %q", fields.Username)
 	}
 
-	groups, err := stringSliceClaim(claims, fields.Groups)
+	groups, err := stringSliceClaim(claims, fields.Groups, false)
 	if err != nil {
 		return nil, err
 	}
-	otherAccounts, err := stringSliceClaim(claims, fields.OtherAccounts)
+	otherAccounts, err := stringSliceClaim(claims, fields.OtherAccounts, false)
 	if err != nil {
 		return nil, err
 	}
-	serviceAccounts, err := stringSliceClaim(claims, fields.ServiceAccounts)
+	serviceAccounts, err := stringSliceClaim(claims, fields.ServiceAccounts, false)
 	if err != nil {
 		return nil, err
 	}
@@ -257,14 +255,18 @@ func (s *AuthService) upsertUser(ctx context.Context, identity *Identity) error 
 // an error) when key is empty (the field is unconfigured). It's an error
 // for a configured key to be present-but-wrong-shaped, or absent entirely,
 // since the operator explicitly asked for it.
-func stringSliceClaim(claims map[string]any, key string) ([]string, error) {
+func stringSliceClaim(claims map[string]any, key string, required bool) ([]string, error) {
 	if key == "" {
 		return nil, nil
 	}
 
 	raw, ok := claims[key].([]any)
 	if !ok {
-		return nil, fmt.Errorf("OIDC ID token is missing the configured claim %q", key)
+		if required {
+			return nil, fmt.Errorf("OIDC ID token is missing the configured claim %q", key)
+		}
+		slog.Warn("OIDC ID token is missing the configurged claim", slog.String("claim", key))
+		return nil, nil
 	}
 
 	values := make([]string, 0, len(raw))

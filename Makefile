@@ -36,15 +36,33 @@ endef
 
 define TESTCOMPONENT
 	mkdir -p .coverage
-	go test -coverprofile=.coverage/coverage-$(1).out -tags=coverprofile ./$(1)/...
+	go test -coverprofile=.coverage/coverage-$(1).out ./$(1)/...
 	grep -v -E -f exclude-from-coverage.txt .coverage/coverage-$(1).out > .coverage/coverage-$(1).filtered.out
 	go tool cover -func=.coverage/coverage-$(1).filtered.out | tail -1
 endef
 
-.PHONY: all version $(MODULES) build build-server build-client
+.PHONY: all version frontend build binaries linux pam frontend-clean
 .EXPORT_ALL_VARIABLES:
 
-all: $(MODULES)
+all: frontend binaries
+
+# Build the web UI into server/frontend/dist, which server/frontend embeds
+# via //go:embed all:dist/*. Nothing in dist/ is tracked, so this is a hard
+# prerequisite of building or testing the Go side — without it the embed
+# matches no files and the build fails. See docs/delivery-phase1-build-ci.md.
+# CI=true keeps pnpm non-interactive: without it, an install that needs to
+# purge node_modules aborts rather than prompting when there is no TTY.
+frontend:
+	cd frontend && CI=true pnpm install --frozen-lockfile && CI=true pnpm build
+
+# Rebuilds the UI only when it is missing. Use `make frontend` to force one.
+FRONTEND_DIST := server/frontend/dist/index.html
+
+$(FRONTEND_DIST):
+	$(MAKE) frontend
+
+build: $(FRONTEND_DIST)
+	go build ./...
 
 linux:
 	$(call BUILDIT,linux,amd64)
@@ -52,25 +70,87 @@ linux:
 binaries:
 	$(call BUILDALL)
 
+# pam_ssoossh needs libpam headers and an amd64 cgo toolchain, and is
+# behind the `pam` build tag. Blocked until the dev VM exists — phase 7.
 pam:
-	goreleaser build --clean --snapshot --id linux-pam-build
+	@echo "pam_ssoossh is not buildable here: needs libpam headers and an"
+	@echo "amd64 cgo toolchain. See docs/delivery-phase7-pam.md."
+	@exit 1
+
+frontend-clean:
+	rm -rf server/frontend/dist
+
+.PHONY: openapi openapi-check
+# docs/openapi.yaml is generated from the swag annotations on the handlers in
+# server/controller (plus the envelope types in server/openapidoc). Edit those,
+# not the YAML.
+#
+# The dir list matters: swag resolves types only from packages it was pointed
+# at, and the general-info file (-g) has to live in the first one. --parseInternal
+# is what lets it see internal/apitypes.
+SWAG_DIRS := server/openapidoc,server/controller,server/bootstrap,server/webtypes,internal/apitypes,server/model
+
+# swag always writes "swagger.yaml"; the rename is the only reason this is not
+# a one-liner. Keeping the canonical name is worth it — every doc, comment, and
+# rule in the repo points at docs/openapi.yaml.
+openapi:
+	go tool swag init -g openapidoc.go -d $(SWAG_DIRS) --v3.1 --parseInternal --parseDependency -o docs --ot yaml
+	@mv docs/swagger.yaml docs/openapi.yaml
+
+# Same shape as types-check: assert regenerating changes nothing. See the
+# comment there for why this hashes rather than asking git.
+openapi-check:
+	@before=$$(sha256sum docs/openapi.yaml 2>/dev/null); \
+	$(MAKE) --no-print-directory openapi >/dev/null; \
+	after=$$(sha256sum docs/openapi.yaml 2>/dev/null); \
+	if [ "$$before" != "$$after" ]; then \
+		echo "docs/openapi.yaml is stale: a handler annotation or a wire type changed"; \
+		echo "without the spec being regenerated."; \
+		echo "Run 'make openapi' and commit the result."; \
+		exit 1; \
+	fi
+
+.PHONY: types types-check
+# Regenerate the frontend's wire types from the Go structs that produce them
+# (see tygo.yaml). The output is committed so that pnpm check/test and an
+# editor work without a Go toolchain; types-check is what CI runs to catch a
+# commit that changed the Go side and forgot to regenerate.
+types:
+	go tool tygo generate
+
+# Asserts that regenerating changes nothing, by hashing the output either
+# side of a run. Deliberately not `git diff`: that ignores untracked files, so
+# a never-committed generated file would pass while reporting nothing, and it
+# reports a false failure when the correct output is merely staged rather than
+# committed. Hashes answer the question actually being asked — is what is on
+# disk what the Go source produces.
+GENERATED_TYPES := frontend/src/lib/api/generated
+
+types-check:
+	@before=$$(find $(GENERATED_TYPES) -type f -exec sha256sum {} + 2>/dev/null | sort); \
+	$(MAKE) --no-print-directory types >/dev/null; \
+	after=$$(find $(GENERATED_TYPES) -type f -exec sha256sum {} + 2>/dev/null | sort); \
+	if [ "$$before" != "$$after" ]; then \
+		echo "$(GENERATED_TYPES) is stale: a Go wire type changed without the"; \
+		echo "generated TypeScript being regenerated."; \
+		echo "Run 'make types' and commit the result."; \
+		exit 1; \
+	fi
 
 update-go-version:
 	@echo "Must update .devcontainer/Dockerfile, go.mod"
 
 act-ci:
-	act --container-architecture linux/amd64 -s GITHUB_TOKEN --secret-file .secrets -P workflow_dispatch --container-daemon-socket=- -j golangci
-
-pam:
-	goreleaser build --clean --snapshot --id linux-pam-build
+	act --container-architecture linux/amd64 -s GITHUB_TOKEN --secret-file .secrets -P workflow_dispatch --container-daemon-socket=- -j lint
 
 update:
 	go get -u ./...
 	go mod tidy
 
-.PHONY: test test-server test-client test-pam test-internal cover
-
-test: test-server test-client test-pam test-internal
+.PHONY: test test-server test-client test-pam test-internal cover lint
+# server/frontend embeds server/frontend/dist and nothing there is tracked,
+# so the UI has to exist before the Go tests can compile at all.
+test: $(FRONTEND_DIST) test-server test-client test-pam test-internal
 
 test-server:
 	$(call TESTCOMPONENT,server)
@@ -78,18 +158,20 @@ test-server:
 test-client:
 	$(call TESTCOMPONENT,client)
 
+# Skipped rather than failing: the package is behind the `pam` build tag and
+# cannot compile without libpam headers. Re-enable in phase 7.
 test-pam:
-	$(call TESTCOMPONENT,pam_ssoossh)
+	@echo "skipping pam_ssoossh tests: not buildable here (see docs/delivery-phase7-pam.md)"
 
 test-internal:
 	$(call TESTCOMPONENT,internal)
 
-cover:
-	go test -coverprofile=.coverage/coverage-all.out -tags=coverprofile ./...
+cover: $(FRONTEND_DIST)
+	go test -coverprofile=.coverage/coverage-all.out ./...
 	grep -v -E -f exclude-from-coverage.txt .coverage/coverage-all.out > .coverage/coverage.out
 	go tool cover -html=.coverage/coverage.out -o .coverage/coverage.html
 
-lint:
+lint: $(FRONTEND_DIST)
 	golangci-lint run ./...
 
 lint-server:
@@ -99,7 +181,7 @@ lint-client:
 	golangci-lint run ./client/...
 
 lint-pam:
-	golangci-lint run ./pam_ssoossh/...
+	golangci-lint run --build-tags pam ./pam_ssoossh/...
 
 lint-internal:
 	golangci-lint run ./internal/...

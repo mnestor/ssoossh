@@ -39,7 +39,7 @@ type NewCertRequestParams struct {
 // implementation.
 type CertRequestProvider interface {
 	CreateRequest(ctx context.Context, p NewCertRequestParams) (requestID string, err error)
-	ListPending(ctx context.Context) ([]model.CertificateRequest, error)
+	Detail(ctx context.Context, requestID string, identity *Identity) (*RequestDetail, error)
 	Approve(ctx context.Context, requestID string, identity *Identity) error
 	Deny(ctx context.Context, requestID string) error
 	Wait(ctx context.Context, requestID string) (status model.CertificateRequestStatus, certificate string, code string, err error)
@@ -70,9 +70,11 @@ type requestOutcomeMessage struct {
 // CertRequestService manages the pending-approval lifecycle shared by all
 // three certificate types: a client creates a request (`ssh login`,
 // `host sign`, `service enroll`) and its events endpoint waits for it to
-// resolve (see server/controller/certrequests.go's eventsHandler); the web
-// UI lists/approves/denies it out-of-band, which is what unblocks that wait
-// via publisher/subscriber below (see docs/signing-pipeline.md).
+// resolve (see server/controller/certrequests.go's eventsHandler); a human
+// opens the approval URL that client printed and approves or denies it
+// out-of-band, which is what unblocks that wait via publisher/subscriber
+// below (see docs/signing-pipeline.md). Requests are never listed — see
+// NewCertRequestController for why.
 //
 // Approving a request behaves differently per Type:
 //   - user, host: sign and persist a model.Certificate immediately
@@ -164,26 +166,73 @@ func (s *CertRequestService) ttlCutoff() time.Time {
 	return time.Now().Add(-s.config.CertOptions.RequestTTL)
 }
 
-// ListPending returns the pending, not-yet-expired requests visible to the
-// approving user in the web UI. Rows past the TTL are filtered out here but
-// not actively flipped to "expired" — Wait does that lazily for whichever
-// request a client is actually still watching; a listed-but-abandoned
-// request simply ages out of this list on its own.
+// RequestDetail is everything the approval page needs to show a human what
+// they are about to authorize.
 //
-// TODO: decide the visibility rule — all pending requests, or only ones the
-// current user is entitled to approve (see docs/ssoossh-context.md open
-// question on host-admin scope).
-func (s *CertRequestService) ListPending(ctx context.Context) ([]model.CertificateRequest, error) {
-	q := s.db.WithContext(ctx).Where("status = ?", model.CertificateRequestStatusPending)
-	if cutoff := s.ttlCutoff(); !cutoff.IsZero() {
-		q = q.Where("created_at > ?", cutoff)
+// Requested and Narrowed are both present on purpose. Server config is the
+// outer bound on every option, and options a deployment doesn't permit are
+// trimmed rather than rejected — so the UI has to be able to show what was
+// asked for alongside what would actually be granted, before anyone
+// approves anything (see root CLAUDE.md, Hard Constraints).
+type RequestDetail struct {
+	Request model.CertificateRequest
+
+	// Requested is what the client asked for, as submitted.
+	Requested RequestedOptions
+
+	// Narrowed is what would actually be granted, after server config.
+	Narrowed RequestedOptions
+
+	// Principals and ValidDuration are the other two things the certificate
+	// would carry that the requester does not choose.
+	Principals    []string
+	ValidDuration time.Duration
+}
+
+// Detail returns what identity would be approving for requestID, and binds
+// the request to them.
+//
+// The binding lives here rather than only in Approve because this is the
+// first authenticated touch: the approval page loads before anyone decides,
+// so claiming here means a request is owned from the moment its owner looks
+// at it, and a second user gets a clear refusal on load instead of after
+// clicking approve. Approve re-checks regardless — this endpoint is a
+// convenience, not the enforcement point.
+//
+// Policy is resolved against identity because the certificate's principals
+// come from the approver (see resolvePrincipals), so a different viewer
+// would legitimately see different principals. The binding is what stops
+// that being useful to anyone but the owner.
+func (s *CertRequestService) Detail(ctx context.Context, requestID string, identity *Identity) (*RequestDetail, error) {
+	var req model.CertificateRequest
+	if err := s.db.WithContext(ctx).First(&req, "id = ?", requestID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, &errorresponses.NotFoundError{Resource: fmt.Sprintf("certificate request %q", requestID)}
+		}
+		return nil, fmt.Errorf("failed to look up certificate request: %w", err)
 	}
 
-	var requests []model.CertificateRequest
-	if err := q.Order("created_at").Find(&requests).Error; err != nil {
-		return nil, fmt.Errorf("failed to list pending certificate requests: %w", err)
+	if err := s.bindRequester(ctx, &req, identity); err != nil {
+		return nil, err
 	}
-	return requests, nil
+
+	var requested RequestedOptions
+	if err := json.Unmarshal([]byte(req.RequestedOptions), &requested); err != nil {
+		return nil, fmt.Errorf("failed to decode requested options: %w", err)
+	}
+
+	narrowed, validDuration, _, err := resolveCertOptions(s.config.CertOptions, req.Type, requested)
+	if err != nil {
+		return nil, err
+	}
+
+	return &RequestDetail{
+		Request:       req,
+		Requested:     requested,
+		Narrowed:      narrowed,
+		Principals:    resolvePrincipals(req.Type, req.Hostname, identity),
+		ValidDuration: validDuration,
+	}, nil
 }
 
 // Approve resolves policy for requestID against server config and identity,
@@ -253,6 +302,10 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 		return fmt.Errorf("identity is not authorized to approve %s certificates", req.Type)
 	}
 
+	if err := s.bindRequester(ctx, &req, identity); err != nil {
+		return err
+	}
+
 	switch req.Type {
 	case model.CertificateTypeService:
 		return s.approveServiceEnrollment(ctx, requestID, narrowed)
@@ -268,6 +321,73 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 		// guard as defense in depth.
 		return fmt.Errorf("issuing %s certificates is not supported yet", req.Type)
 	}
+}
+
+// bindRequester ties req to the users row behind identity, and refuses when
+// it is already tied to a different one.
+//
+// A request is created by an unauthenticated client, so nothing knows whose
+// it is until a human authenticates and acts on it. The first such action
+// claims it; every later one must match. That is what stops one user
+// approving another's pending request — which matters because the
+// certificate carries the *approver's* principals over the *requester's*
+// public key (see resolvePrincipals), so an admin approving a stranger's
+// request would hand that stranger an admin certificate.
+//
+// It does not defend against a user being tricked into approving a request
+// an attacker created for them: that consent-phishing case needs a
+// verification code the client displays and the browser has to match, which
+// is deliberately out of scope here (see docs/security-review-2026-08-11.md
+// finding 2).
+func (s *CertRequestService) bindRequester(ctx context.Context, req *model.CertificateRequest, identity *Identity) error {
+	userID, err := s.resolveUserID(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	if req.UserID != nil {
+		if *req.UserID != userID {
+			return &errorresponses.ForbiddenError{Reason: "certificate request belongs to another user"}
+		}
+		return nil
+	}
+
+	// Guarded so two approvals racing on an unclaimed request can't both
+	// win: the second sees RowsAffected == 0 and falls through to the
+	// ownership check below rather than overwriting the first claim.
+	result := s.db.WithContext(ctx).Model(&model.CertificateRequest{}).
+		Where("id = ? AND user_id IS NULL", req.ID).
+		Update("user_id", userID)
+	if result.Error != nil {
+		return fmt.Errorf("failed to bind certificate request to user: %w", result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		var claimed model.CertificateRequest
+		if err := s.db.WithContext(ctx).First(&claimed, "id = ?", req.ID).Error; err != nil {
+			return fmt.Errorf("failed to re-read certificate request after a racing claim: %w", err)
+		}
+		if claimed.UserID == nil || *claimed.UserID != userID {
+			return &errorresponses.ForbiddenError{Reason: "certificate request belongs to another user"}
+		}
+	}
+
+	req.UserID = &userID
+	return nil
+}
+
+// resolveUserID maps identity to its users row ID, keyed on the OIDC
+// subject. The row is written at login (AuthService.upsertUser), so a miss
+// means the caller's session outlived its user record.
+func (s *CertRequestService) resolveUserID(ctx context.Context, identity *Identity) (string, error) {
+	var user model.User
+	if err := s.db.WithContext(ctx).First(&user, "subject = ?", identity.Subject).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", &errorresponses.ForbiddenError{Reason: "no user record for the authenticated identity"}
+		}
+		return "", fmt.Errorf("failed to look up the approving user: %w", err)
+	}
+	return user.ID, nil
 }
 
 // approveServiceEnrollment implements Approve's service branch — see its
@@ -365,6 +485,7 @@ func resolveCertOptions(opts config.CertificateOptions, certType model.Certifica
 	case model.CertificateTypeUser:
 		permittedExtensions = opts.User.Extensions
 		validDuration = opts.User.ValidDuration
+		requireGroup = opts.User.RequireGroup
 	case model.CertificateTypeService:
 		permittedExtensions = opts.Service.Extensions
 		validDuration = opts.Service.ValidDuration

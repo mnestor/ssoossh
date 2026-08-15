@@ -19,7 +19,7 @@ func TestGetCA_ShouldReturnTheCAPublicKey(t *testing.T) {
 			t.Errorf("got path %q, want %q", r.URL.Path, "/api/ca")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"ca":"ssh-ed25519 AAAA... ca"}`))
+		_, _ = w.Write([]byte(`{"data":{"ca":"ssh-ed25519 AAAA... ca"},"error":null}`))
 	}))
 	t.Cleanup(ts.Close)
 

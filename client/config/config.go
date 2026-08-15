@@ -8,9 +8,7 @@ import (
 	_ "embed"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
-	"slices"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -32,7 +30,18 @@ const Context ctxKey = "CONFIG"
 //   - ~/.config/ssoossh.yaml
 //   - ./ssoossh.yaml
 //   - config flag setting
+//
+// Then, if the system file names an `enforce` file, that one is merged last
+// of all and wins over everything above it. Nothing else may set `enforce`.
 func NewConfig(cmd *cobra.Command) (*Config, error) {
+	return newConfig(cmd, defaultSearchPaths())
+}
+
+// newConfig is NewConfig with the search locations as a parameter, so the
+// `enforce` mechanism can be tested without writing to a system directory
+// and so tests do not pick up the developer's own configuration. Production
+// callers go through NewConfig.
+func newConfig(cmd *cobra.Command, paths searchPaths) (*Config, error) {
 	v := viper.New()
 
 	// set defaults
@@ -44,13 +53,14 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		return nil, fmt.Errorf("failed to read config flag: %w", err)
 	}
 
-	configFiles := []string{
-		"/etc/ssoossh/ssoossh.yaml",
-		"./ssoossh.yaml",
+	// The system file first, so it is the one `enforce` is read from, then
+	// each more specific location. A missing file at any of them is normal.
+	configFiles := []string{filepath.Join(paths.systemDir, configFileName)}
+	if paths.userFile != "" {
+		configFiles = append(configFiles, paths.userFile)
 	}
-	home, err := os.UserHomeDir()
-	if err == nil {
-		configFiles = slices.Insert(configFiles, 1, filepath.Join(home, ".config", "ssoossh.yaml"))
+	if paths.localFile != "" {
+		configFiles = append(configFiles, paths.localFile)
 	}
 
 	if configFile != "" {
@@ -66,9 +76,22 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		}
 	}
 
+	// --server overrides whatever the files said. Bound rather than read
+	// directly so viper's own precedence applies: a flag that wasn't passed
+	// contributes its empty default at the lowest priority and does not
+	// clobber a configured value.
+	if serverFlag := cmd.Flags().Lookup("server"); serverFlag != nil {
+		if err := v.BindPFlag("server", serverFlag); err != nil {
+			return nil, fmt.Errorf("failed to bind the --server flag: %w", err)
+		}
+	}
+
+	// Merged last, so it wins over every user-writable location — that is the
+	// whole point of `enforce`. A relative target resolves inside the system
+	// directory, so naming one cannot reach a file the user controls.
 	if enforce != "" {
-		if enforce[0] != '/' {
-			enforce = "/etc/ssoossh/" + enforce
+		if !filepath.IsAbs(enforce) {
+			enforce = filepath.Join(paths.systemDir, enforce)
 		}
 		mergeConfig(v, enforce)
 	}

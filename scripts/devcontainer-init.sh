@@ -2,7 +2,6 @@
 
 THIS_SCRIPT=$(readlink -f "$0")
 LOCAL_SCRIPT="${THIS_SCRIPT%.sh}.local.sh"
-test -f "${LOCAL_SCRIPT}" && source "${LOCAL_SCRIPT}"
 
 resolve_path() {
   local path=$1 result=()
@@ -16,8 +15,18 @@ resolve_path() {
   done
   printf '/%s\n' "$(IFS='/'; echo "${result[*]}")"
 }
+export -f resolve_path
 
 SCRIPT_DIR=$(dirname "${THIS_SCRIPT}")
 DCL=$(resolve_path "${SCRIPT_DIR}/../.devcontainer/docker-compose.local.yml")
 DCLT=${DCL%.yml}.yml.example
 test -f "${DCL}" || cp "${DCLT}" "${DCL}"
+
+DCU=$(resolve_path "${SCRIPT_DIR}/../.devcontainer/docker-compose.user.local.yml")
+touch "${DCU}"
+
+# Sourced last: the local script fills in DCU, so it needs resolve_path and
+# SCRIPT_DIR to already exist.
+test -f "${LOCAL_SCRIPT}" && source "${LOCAL_SCRIPT}"
+
+echo "devcontainer-init: docker context=${DOCKER_CONTEXT} CONTAINER_USER=${CONTAINER_USER}"

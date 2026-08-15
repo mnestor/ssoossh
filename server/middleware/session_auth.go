@@ -112,6 +112,22 @@ func ClearIdentitySession(c *gin.Context) error {
 	return sess.Save()
 }
 
+// Identity returns the authenticated identity SessionAuthMiddleware placed
+// on the context.
+//
+// ok is false when the key is absent or holds an unexpected type — the
+// former should be impossible behind SessionAuthMiddleware, but MustGet
+// panics on a miss and a handler is the wrong place to take down the
+// process over a routing mistake.
+func Identity(c *gin.Context) (*service.Identity, bool) {
+	v, exists := c.Get(IdentityContextKey)
+	if !exists {
+		return nil, false
+	}
+	identity, ok := v.(*service.Identity)
+	return identity, ok
+}
+
 // SessionAuthMiddleware protects the web UI approval endpoints (list/
 // approve/deny pending certificate requests), which require a valid,
 // logged-in session (see SetIdentitySession, written by the OIDC callback

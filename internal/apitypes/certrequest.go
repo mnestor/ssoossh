@@ -31,9 +31,9 @@ type ServiceEnrollRequestBody struct {
 // for both, so the server doesn't need to know its own public base URL to
 // build an absolute link.
 type CreateRequestResponse struct {
-	RequestID   string `json:"request_id"`
-	EventsURL   string `json:"events_url"`
-	ApprovalURL string `json:"approval_url"`
+	RequestID   string `json:"request_id" validate:"required"`
+	EventsURL   string `json:"events_url" validate:"required"`
+	ApprovalURL string `json:"approval_url" validate:"required"`
 }
 
 // ApproveResponse is POST /api/certs/requests/:id/approve's response body.
@@ -44,5 +44,12 @@ type CreateRequestResponse struct {
 type ApproveResponse struct {
 	// Status is always "signing" today — included so the response shape
 	// can carry more without a breaking change later.
-	Status string `json:"status"`
+	Status string `json:"status" validate:"required"`
+}
+
+// DenyResponse is the body of a successful deny. It carries the resulting
+// status for symmetry with ApproveResponse, so both halves of the approval
+// decision look the same on the wire.
+type DenyResponse struct {
+	Status string `json:"status" validate:"required"`
 }

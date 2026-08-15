@@ -1,0 +1,76 @@
+name: build-test
+
+# The PR gate. codecover.yaml runs on a self-hosted runner and needs
+# 1Password secrets, so it cannot be relied on to block a merge; this job
+# runs on a hosted runner with no secrets and does.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - v*
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          check-latest: true
+          go-version-file: "go.mod"
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      # server/frontend embeds server/frontend/dist and nothing there is
+      # tracked, so the Go build cannot compile until the UI exists.
+      - name: Build web UI
+        run: make frontend
+
+      - name: Build
+        run: go build ./...
+
+      # Catches a Go wire type changing without the frontend's generated
+      # TypeScript being regenerated. The golden test in server/webtypes
+      # catches the same drift against docs/openapi.yaml and the goldens
+      # themselves; this half is what keeps the browser's types honest.
+      - name: Check generated frontend types are current
+        run: make types-check
+
+      # docs/openapi.yaml is generated from the swag annotations on the
+      # handlers. Catches a route or response shape changing without the
+      # spec following.
+      - name: Check generated OpenAPI spec is current
+        run: make openapi-check
+
+      # CGO_ENABLED is explicit because -race requires cgo, and the repo's
+      # own dev container sets CGO_ENABLED=0 — without this the step would
+      # pass or fail depending on where it runs. pam_ssoossh stays excluded
+      # regardless: it is gated by the `pam` build tag, not by cgo.
+      - name: Test
+        run: CGO_ENABLED=1 go test -race ./...
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi

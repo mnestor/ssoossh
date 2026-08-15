@@ -6,6 +6,11 @@ http:
   trusted_proxies: []
   server_name: ""
   cookie_key: ""
+  # Unset derives Secure from whether the deployment is HTTPS (tls below, or
+  # is_https when a proxy terminates it). Set only to override that.
+  cookie_secure:
+  cookie_same_site: strict
+  cookie_max_age: 300s
   rate_limit: 60
   rate_duration: 1m
   hsts: "max-age=31536000; includeSubDomains"
@@ -67,6 +72,8 @@ cert_options:
   request_ttl: 5m
   signing_timeout: 5m
   user:
+    # Empty means any authenticated user may approve their own request.
+    require_group: ""
     valid_duration: 30s
     extensions:
       - permit-pty

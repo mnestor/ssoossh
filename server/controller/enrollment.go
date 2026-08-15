@@ -1,8 +1,6 @@
 package controller
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
 	"github.com/mnestor/ssoossh/internal/apitypes"
@@ -23,6 +21,18 @@ type enrollmentController struct {
 
 // retrieveHandler handles POST /api/certs/service/retrieve (`service
 // retrieve`): redeems an enrollment code for a signed service certificate.
+//
+// @Summary     Redeem an enrollment code for a certificate
+// @Description Not implemented yet (delivery phase 8): the service behind this returns
+// @Description an error, so the route exists and answers 500 rather than issuing
+// @Description anything.
+// @Tags        client
+// @Accept      json
+// @Produce     json
+// @Param       request body apitypes.RetrieveRequestBody true "The enrollment code to redeem"
+// @Success     200 {object} openapidoc.RetrieveEnvelope "The signed service certificate"
+// @Failure     500 {object} openapidoc.ErrorEnvelope "Not implemented"
+// @Router      /api/certs/service/retrieve [post]
 func (e *enrollmentController) retrieveHandler(g *gin.Context) {
 	var body apitypes.RetrieveRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
@@ -36,5 +46,5 @@ func (e *enrollmentController) retrieveHandler(g *gin.Context) {
 		return
 	}
 
-	g.JSON(http.StatusOK, apitypes.RetrieveResponse{Certificate: certificate})
+	respondData(g, apitypes.RetrieveResponse{Certificate: certificate})
 }

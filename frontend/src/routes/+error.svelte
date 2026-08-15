@@ -1,26 +1,14 @@
-<!-- <script lang="ts">
-  import '../app.css';
-  import { page } from '$app/state';
-  import { NotFound, Maintenance, ServerError } from '$lib';
-
-  const pages = {
-    400: Maintenance,
-    404: NotFound,
-    500: ServerError
-  } as const;
-
-  type ErrorCode = keyof typeof pages;
-
-  const status = +page.status;
-  const index = Object.keys(pages)
-    .map((x) => +x)
-    .reduce((p, c) => (p < status ? c : p)) as ErrorCode;
-  const component = pages[index];
-
-  const path: string = `/errors/${index}`;
-  const description: string = `${index} - Flowbite Svelte Admin Dashboard`;
-  const title: string = `Flowbite Svelte Admin Dashboard - ${index} page`;
-  const subtitle: string = `${index} page`;
+<script lang="ts">
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import Card from '$lib/components/Card.svelte';
 </script>
 
-<svelte:component this={component} /> -->
+<Card title="{page.status} — that page isn't here">
+	<p class="text-sm text-ink-muted">
+		{page.error?.message ?? 'The link may be incomplete, or the page may have moved.'}
+	</p>
+	<p class="mt-4 text-sm">
+		<a class="text-accent hover:underline" href={resolve('/dashboard')}>Back to the dashboard</a>
+	</p>
+</Card>

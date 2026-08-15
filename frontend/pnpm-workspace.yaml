@@ -1,2 +1,10 @@
-onlyBuiltDependencies:
-  - esbuild
+# Dependency postinstall scripts are blocked by default in pnpm 10+. Each one
+# has to be decided explicitly, or `pnpm install` exits non-zero with
+# ERR_PNPM_IGNORED_BUILDS. pnpm rewrites this block itself when it meets a
+# package it has no decision for, leaving a placeholder to fill in.
+allowBuilds:
+  # Must run: its postinstall fetches the platform-specific binary vite
+  # builds with.
+  esbuild: true
+  # Prints a funding notice and nothing else.
+  core-js: false

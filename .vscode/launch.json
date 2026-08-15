@@ -6,6 +6,7 @@
       "type": "go",
       "request": "launch",
       // "envFile": "${workspaceFolder}/backend/.env",
+      "preLaunchTask": "npm: dev",
       "env": {
         "APP_ENV": "development",
         "ISTERMINAL": "1"
@@ -49,7 +50,7 @@
         "${workspaceFolder}/.env.local",
       ],
       "mode": "debug",
-      "program": "${workspaceFolder}/cmd/client/main.go",
+      "program": "${workspaceFolder}/cmd/ssoossh/main.go",
       "buildFlags": "-tags=exclude_web -tags=nomsgpack",
       "cwd": "${workspaceFolder}",
       "args": [

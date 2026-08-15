@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/mnestor/ssoossh/server/config"
@@ -62,6 +63,13 @@ func newTestApp(t *testing.T, c *config.Config) *app {
 	db, err := connectDatabase(dbConfig)
 	if err != nil {
 		t.Fatalf("failed to connect to in-memory test database: %v", err)
+	}
+
+	// Run the real embedded migrations rather than AutoMigrate: initRouter
+	// reads and writes server_secrets, and a hand-rolled test schema would
+	// let the migrations and the code drift apart without any test noticing.
+	if err := migrateDatabase(dbConfig.DB.Provider, db); err != nil {
+		t.Fatalf("failed to migrate in-memory test database: %v", err)
 	}
 
 	return &app{config: c, svc: &services{ca: caSvc}, db: db}
@@ -209,5 +217,70 @@ func TestInitRouter_ShouldRegisterHealthzRoute(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("got status %d, want %d", w.Code, http.StatusOK)
+	}
+}
+
+// TestInitEngine_ShouldIgnoreForwardedForFromAnUntrustedPeer is the
+// regression test for the trusted-proxy default. gin.New() trusts every
+// proxy unless SetTrustedProxies is called, so skipping the call for an
+// empty list — as this router once did — made ClientIP() report whatever
+// X-Forwarded-For the caller sent.
+func TestInitEngine_ShouldIgnoreForwardedForFromAnUntrustedPeer(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	a := newTestApp(t, c)
+
+	r, err := a.initEngine()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	var gotClientIP string
+	r.GET("/whoami", func(gc *gin.Context) {
+		gotClientIP = gc.ClientIP()
+		gc.Status(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)
+	req.RemoteAddr = "203.0.113.10:1234"
+	req.Header.Set("X-Forwarded-For", "1.2.3.4")
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	if gotClientIP == "1.2.3.4" {
+		t.Error("ClientIP() returned the caller-supplied X-Forwarded-For value; no proxy is configured, so it must report the peer address")
+	}
+	if gotClientIP != "203.0.113.10" {
+		t.Errorf("got ClientIP %q, want the direct peer address 203.0.113.10", gotClientIP)
+	}
+}
+
+// TestInitEngine_ShouldHonourForwardedForFromATrustedProxy is the other half:
+// the check above must not be achieved by ignoring the header entirely.
+func TestInitEngine_ShouldHonourForwardedForFromATrustedProxy(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	c.HTTP.TrustedProxies = []string{"203.0.113.0/24"}
+	a := newTestApp(t, c)
+
+	r, err := a.initEngine()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	var gotClientIP string
+	r.GET("/whoami", func(gc *gin.Context) {
+		gotClientIP = gc.ClientIP()
+		gc.Status(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)
+	req.RemoteAddr = "203.0.113.10:1234"
+	req.Header.Set("X-Forwarded-For", "1.2.3.4")
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	if gotClientIP != "1.2.3.4" {
+		t.Errorf("got ClientIP %q, want 1.2.3.4 from the trusted proxy's header", gotClientIP)
 	}
 }

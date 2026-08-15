@@ -91,5 +91,26 @@ type CertificateResult struct {
 
 // CAResponse is GET /api/ca's response body.
 type CAResponse struct {
-	CA string `json:"ca"`
+	CA string `json:"ca" validate:"required"`
+}
+
+// Envelope is the shape every JSON response from ssoosshd carries:
+// exactly one of Data or Error is meaningful.
+//
+// Uniform across the whole API on purpose. The alternative — bare payloads
+// on the endpoints the Go client uses and an envelope on the ones the web
+// UI uses — means two decode paths and two things to remember, for no gain.
+// See .claude/rules/server-api.md.
+//
+// The server writes the error half from
+// middleware.ErrorHandlerMiddleware, so a handler that fails never has to
+// construct one.
+type Envelope[T any] struct {
+	// Data is the payload. Absent (zero) on an error response.
+	Data T `json:"data"`
+
+	// Error is a human-readable message, empty on success. Callers should
+	// branch on the HTTP status rather than this string; it is for humans
+	// and logs.
+	Error string `json:"error,omitempty"`
 }

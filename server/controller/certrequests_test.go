@@ -9,7 +9,6 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +21,11 @@ import (
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
 )
+
+// passthrough stands in for a middleware under test elsewhere, so these
+// tests exercise the handlers rather than the guards in front of them.
+// middleware.CsrfMiddleware and SessionAuthMiddleware have their own tests.
+func passthrough(c *gin.Context) { c.Next() }
 
 // fakeCertRequestService is a test double for service.CertRequestProvider.
 type fakeCertRequestService struct {
@@ -36,6 +40,9 @@ type fakeCertRequestService struct {
 
 	approveErr error
 	denyErr    error
+
+	detail    *service.RequestDetail
+	detailErr error
 }
 
 func (f *fakeCertRequestService) CreateRequest(_ context.Context, p service.NewCertRequestParams) (string, error) {
@@ -43,8 +50,20 @@ func (f *fakeCertRequestService) CreateRequest(_ context.Context, p service.NewC
 	return f.createRequestID, f.createErr
 }
 
-func (f *fakeCertRequestService) ListPending(_ context.Context) ([]model.CertificateRequest, error) {
-	return nil, nil
+func (f *fakeCertRequestService) Detail(_ context.Context, requestID string, _ *service.Identity) (*service.RequestDetail, error) {
+	if f.detailErr != nil {
+		return nil, f.detailErr
+	}
+	if f.detail != nil {
+		return f.detail, nil
+	}
+	return &service.RequestDetail{
+		Request: model.CertificateRequest{
+			ID:     requestID,
+			Type:   model.CertificateTypeUser,
+			Status: model.CertificateRequestStatusPending,
+		},
+	}, nil
 }
 
 func (f *fakeCertRequestService) Approve(_ context.Context, _ string, _ *service.Identity) error {
@@ -66,7 +85,7 @@ func TestCreateUserRequestHandler_ShouldReturnEventsAndApprovalURLs(t *testing.T
 	svc := &fakeCertRequestService{createRequestID: "req-1"}
 
 	r := gin.New()
-	NewCertRequestController(&r.RouterGroup, svc, func(c *gin.Context) { c.Next() })
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
 
 	body := `{"public_key":"ssh-ed25519 AAAA... test","requested_options":{"extensions":["permit-pty"]}}`
 	w := httptest.NewRecorder()
@@ -83,9 +102,7 @@ func TestCreateUserRequestHandler_ShouldReturnEventsAndApprovalURLs(t *testing.T
 		EventsURL   string `json:"events_url"`
 		ApprovalURL string `json:"approval_url"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
-		t.Fatalf("failed to decode response body: %v, body: %s", err, w.Body.String())
-	}
+	decodeEnvelope(t, w.Body.Bytes(), &got)
 	if got.RequestID != "req-1" {
 		t.Errorf("got request_id %q, want %q", got.RequestID, "req-1")
 	}
@@ -116,7 +133,7 @@ func TestCreateUserRequestHandler_ShouldRegisterErrorWhenCreateFails(t *testing.
 		c.Next()
 		gotErrors = len(c.Errors)
 	})
-	NewCertRequestController(&r.RouterGroup, svc, func(c *gin.Context) { c.Next() })
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
 
 	body := `{"public_key":"ssh-ed25519 AAAA... test"}`
 	w := httptest.NewRecorder()
@@ -139,7 +156,7 @@ func TestEventsHandler_ShouldStreamApprovedOutcome(t *testing.T) {
 	}
 
 	r := gin.New()
-	NewCertRequestController(&r.RouterGroup, svc, func(c *gin.Context) { c.Next() })
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/certs/requests/req-1/events", nil)
@@ -171,7 +188,7 @@ func TestEventsHandler_ShouldRegisterErrorOnWaitFailure(t *testing.T) {
 		c.Next()
 		gotErrors = len(c.Errors)
 	})
-	NewCertRequestController(&r.RouterGroup, svc, func(c *gin.Context) { c.Next() })
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/certs/requests/req-1/events", nil)
@@ -193,7 +210,7 @@ func TestApproveHandler_ShouldReadIdentityFromContext(t *testing.T) {
 		c.Set(middleware.IdentityContextKey, &service.Identity{Username: "alice"})
 		c.Next()
 	}
-	NewCertRequestController(&r.RouterGroup, svc, sessionAuth)
+	NewCertRequestController(&r.RouterGroup, svc, sessionAuth, passthrough)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/certs/requests/req-1/approve", nil)
@@ -206,9 +223,7 @@ func TestApproveHandler_ShouldReadIdentityFromContext(t *testing.T) {
 	var got struct {
 		Status string `json:"status"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
-		t.Fatalf("failed to decode response body: %v, body: %s", err, w.Body.String())
-	}
+	decodeEnvelope(t, w.Body.Bytes(), &got)
 	if got.Status != "signing" {
 		t.Errorf(`got status %q, want "signing"`, got.Status)
 	}
@@ -230,7 +245,7 @@ func TestApproveHandler_ShouldRegisterErrorWhenServiceFails(t *testing.T) {
 		c.Set(middleware.IdentityContextKey, &service.Identity{Username: "alice"})
 		c.Next()
 	}
-	NewCertRequestController(&r.RouterGroup, svc, sessionAuth)
+	NewCertRequestController(&r.RouterGroup, svc, sessionAuth, passthrough)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/certs/requests/req-1/approve", nil)
@@ -253,7 +268,7 @@ func TestDenyHandler_ShouldRegisterErrorWhenServiceFails(t *testing.T) {
 		c.Next()
 		gotErrors = len(c.Errors)
 	})
-	NewCertRequestController(&r.RouterGroup, svc, func(c *gin.Context) { c.Next() })
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/certs/requests/req-1/deny", nil)

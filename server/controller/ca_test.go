@@ -10,7 +10,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"net/http"
@@ -75,9 +74,7 @@ func TestGetCAHandler_ShouldReturn200WithCAPublicKey(t *testing.T) {
 	var body struct {
 		CA string `json:"ca"`
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
-		t.Fatalf("failed to unmarshal response body: %v", err)
-	}
+	decodeEnvelope(t, w.Body.Bytes(), &body)
 	if body.CA == "" {
 		t.Error("expected non-empty ca public key in response body")
 	}

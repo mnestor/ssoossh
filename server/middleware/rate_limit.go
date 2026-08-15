@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"math"
+	"strconv"
 	"sync"
 	"time"
 
@@ -39,7 +41,9 @@ func (m *RateLimitMiddleware) Add(limit rate.Limit, burst int) gin.HandlerFunc {
 		}
 
 		limiter := getLimiter(ip, limit, burst, &mu, clients)
-		if !limiter.Allow() {
+		allowed := limiter.Allow()
+		setRateLimitHeaders(c, limiter, burst)
+		if !allowed {
 			_ = c.Error(&TooManyRequestsError{}) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 			c.Abort()
 			return
@@ -47,6 +51,36 @@ func (m *RateLimitMiddleware) Add(limit rate.Limit, burst int) gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// setRateLimitHeaders advertises the caller's remaining budget, per
+// .claude/rules/server-api.md. Field names follow the IETF RateLimit header
+// draft.
+//
+// Set after Allow() so Remaining reflects this request having been counted,
+// and on the rejected response too — a client that just got a 429 is
+// precisely the one that needs to know when to retry.
+//
+// Reset is approximate: a token bucket has no window to expire, so this
+// reports how long until at least one token is available again.
+func setRateLimitHeaders(c *gin.Context, limiter *rate.Limiter, burst int) {
+	tokens := limiter.Tokens()
+
+	remaining := int(tokens)
+	if remaining < 0 {
+		remaining = 0
+	}
+
+	var reset int
+	if tokens < 1 {
+		if perSecond := float64(limiter.Limit()); perSecond > 0 {
+			reset = int(math.Ceil((1 - tokens) / perSecond))
+		}
+	}
+
+	c.Header("RateLimit-Limit", strconv.Itoa(burst))
+	c.Header("RateLimit-Remaining", strconv.Itoa(remaining))
+	c.Header("RateLimit-Reset", strconv.Itoa(reset))
 }
 
 // client tracks a per-IP rate limiter and when it was last used, so

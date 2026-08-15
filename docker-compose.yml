@@ -1,8 +1,7 @@
 # This is just for development. Not to use in production!!!!!!!
 
 services:
-  client: &base
-    # image: mcr.microsoft.com/devcontainers/go:dev-1.24
+  client: &base # image: mcr.microsoft.com/devcontainers/go:dev-1.24
     build:
       context: .devcontainer
     tty: true
@@ -15,10 +14,10 @@ services:
     # environment:
     #   LOG: "*"
 
-  server: 
+  server:
     <<: *base
     # Set to your live site to use tinyproxy and redirect your browser
-    hostname: ssh.nanestor.us
+    # hostname: ssh.nanestor.us
     # ports:
     #   - "0.0.0.0:443:443"
 
@@ -55,13 +54,21 @@ services:
     ports:
       - 127.0.0.1:8888:8888
     environment:
-      DISABLE_VIA_HEADER: 'yes'
+      DISABLE_VIA_HEADER: "yes"
       STAT_HOST: tinyproxy.stats
       MAX_CLIENTS: 100
       LOG_LEVEL: INFO
       TIMEOUT: 900
     healthcheck:
-      test: ["CMD", "curl", "-I", "-H", "Host: tinyproxy.stats", "http://localhost:8888"]
+      test:
+        [
+          "CMD",
+          "curl",
+          "-I",
+          "-H",
+          "Host: tinyproxy.stats",
+          "http://localhost:8888",
+        ]
       interval: 5m
       timeout: 10s
       retries: 1

@@ -1,9 +1,6 @@
 package controller
 
 import (
-	"errors"
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
 	"github.com/mnestor/ssoossh/internal/apitypes"
@@ -15,8 +12,8 @@ import (
 // NewCertRequestController registers the certificate-request routes on
 // group: the client-facing create-and-wait endpoints (open to anyone — the
 // approval step is where authorization happens) and the web-UI-facing
-// approve/deny endpoints (behind sessionAuthMiddleware).
-func NewCertRequestController(group *gin.RouterGroup, certRequestService service.CertRequestProvider, sessionAuthMiddleware gin.HandlerFunc) {
+// approve/deny endpoints (behind sessionAuthMiddleware and csrfMiddleware).
+func NewCertRequestController(group *gin.RouterGroup, certRequestService service.CertRequestProvider, sessionAuthMiddleware, csrfMiddleware gin.HandlerFunc) {
 	cr := &certRequestController{certRequestService: certRequestService}
 
 	// Client-facing: each of these creates a request and returns two URLs —
@@ -38,11 +35,35 @@ func NewCertRequestController(group *gin.RouterGroup, certRequestService service
 	// certRequestService.Wait's doc comment.
 	group.GET("/certs/requests/:id/events", cr.eventsHandler)
 
-	// Web-UI-facing: approve/deny pending requests.
-	approvalGroup := group.Group("/certs/requests", sessionAuthMiddleware)
+	// Web-UI-facing: approve/deny pending requests. These are authorized by
+	// the session cookie alone and carry no body, which is exactly the shape
+	// a cross-site form post can forge — hence csrfMiddleware alongside the
+	// session check. See middleware.CsrfMiddleware.
+	approvalGroup := group.Group("/certs/requests", sessionAuthMiddleware, csrfMiddleware)
 	approvalGroup.POST("/:id/approve", cr.approveHandler)
 	approvalGroup.POST("/:id/deny", cr.denyHandler)
+
+	// Web-UI-facing reads. Session-authed but not CSRF-guarded: they change
+	// nothing, and CsrfMiddleware exempts safe methods anyway.
+	//
+	// There is deliberately no "list pending requests" endpoint. A request is
+	// created by an unauthenticated call, so at that moment it belongs to
+	// nobody and there is no owner to scope a list to. Listing them would
+	// hand every signed-in user the IDs of everyone else's requests — and the
+	// ID is the capability, so that is both an approval-hijacking primitive
+	// and the raw material for a screen inviting people to approve requests
+	// they did not start. Since a certificate takes the *approver's*
+	// principals, being talked into approving a stranger's request is how
+	// someone else's key ends up with your access. An approval reaches a
+	// human exactly one way: they open the URL their own client printed.
+	readGroup := group.Group("/certs/requests", sessionAuthMiddleware)
+	readGroup.GET("/:id", cr.detailHandler)
 }
+
+// approvalURL is the browser path a human opens to approve a request. One
+// definition so the create response and the detail response cannot drift
+// apart — the frontend routes on this exact shape.
+func approvalURL(requestID string) string { return "/approve/" + requestID }
 
 // certRequestController handles the certificate-request HTTP routes.
 type certRequestController struct {
@@ -57,7 +78,7 @@ func newCreateRequestResponse(requestID string) apitypes.CreateRequestResponse {
 	return apitypes.CreateRequestResponse{
 		RequestID:   requestID,
 		EventsURL:   "/api/certs/requests/" + requestID + "/events",
-		ApprovalURL: "/approve/" + requestID,
+		ApprovalURL: approvalURL(requestID),
 	}
 }
 
@@ -80,6 +101,19 @@ func toServiceOptions(o apitypes.RequestedOptions) service.RequestedOptions {
 // returns its events/approval URLs (see newCreateRequestResponse) — it
 // does not itself wait for the outcome; the client does that separately
 // against EventsURL.
+//
+// @Summary     Create a user certificate request
+// @Description Unauthenticated. Returns two relative URLs: `events_url` to wait on, and
+// @Description `approval_url` for a human to open. The request ID is the capability —
+// @Description it is an unguessable UUID, and holding it is what authorizes waiting on
+// @Description the outcome.
+// @Tags        client
+// @Accept      json
+// @Produce     json
+// @Param       request body apitypes.UserRequestBody true "The public key to sign, and the options being asked for"
+// @Success     200 {object} openapidoc.CreateRequestEnvelope "Request created"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Malformed body, or a public key that will not parse"
+// @Router      /api/certs/user [post]
 func (cr *certRequestController) createUserRequestHandler(g *gin.Context) {
 	var body apitypes.UserRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
@@ -98,7 +132,7 @@ func (cr *certRequestController) createUserRequestHandler(g *gin.Context) {
 		return
 	}
 
-	g.JSON(http.StatusOK, newCreateRequestResponse(requestID))
+	respondData(g, newCreateRequestResponse(requestID))
 }
 
 // createHostSignRequestHandler handles POST /api/certs/host/sign: creates a
@@ -107,6 +141,17 @@ func (cr *certRequestController) createUserRequestHandler(g *gin.Context) {
 // control, see docs/ssoossh-context.md), and returns its events/approval
 // URLs (see createUserRequestHandler). Subsequent renewals go through
 // HostController instead, authenticated by the existing certificate.
+//
+// @Summary     Create a host certificate request
+// @Description Accepted, but approving one currently fails — host certificates are not
+// @Description issuable yet (delivery phase 9).
+// @Tags        client
+// @Accept      json
+// @Produce     json
+// @Param       request body apitypes.HostSignRequestBody true "The host public key, its hostname, and the options being asked for"
+// @Success     200 {object} openapidoc.CreateRequestEnvelope "Request created"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Malformed body, or a public key that will not parse"
+// @Router      /api/certs/host/sign [post]
 func (cr *certRequestController) createHostSignRequestHandler(g *gin.Context) {
 	var body apitypes.HostSignRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
@@ -126,7 +171,7 @@ func (cr *certRequestController) createHostSignRequestHandler(g *gin.Context) {
 		return
 	}
 
-	g.JSON(http.StatusOK, newCreateRequestResponse(requestID))
+	respondData(g, newCreateRequestResponse(requestID))
 }
 
 // createServiceEnrollRequestHandler handles POST /api/certs/service/enroll:
@@ -134,6 +179,18 @@ func (cr *certRequestController) createHostSignRequestHandler(g *gin.Context) {
 // model.Enrollment (see service.EnrollmentService) rather than an
 // immediately-issued certificate, and returns its events/approval URLs
 // (see createUserRequestHandler).
+//
+// @Summary     Create a service enrollment request
+// @Description Approving one yields an enrollment code rather than a certificate; the
+// @Description certificate comes later from `/api/certs/service/retrieve`. This is the
+// @Description one path where an approval does not queue a signing job.
+// @Tags        client
+// @Accept      json
+// @Produce     json
+// @Param       request body apitypes.ServiceEnrollRequestBody true "The service public key and the options being asked for"
+// @Success     200 {object} openapidoc.CreateRequestEnvelope "Request created"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Malformed body, or a public key that will not parse"
+// @Router      /api/certs/service/enroll [post]
 func (cr *certRequestController) createServiceEnrollRequestHandler(g *gin.Context) {
 	var body apitypes.ServiceEnrollRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
@@ -152,7 +209,7 @@ func (cr *certRequestController) createServiceEnrollRequestHandler(g *gin.Contex
 		return
 	}
 
-	g.JSON(http.StatusOK, newCreateRequestResponse(requestID))
+	respondData(g, newCreateRequestResponse(requestID))
 }
 
 // eventsHandler handles GET /api/certs/requests/:id/events: the client's
@@ -165,6 +222,26 @@ func (cr *certRequestController) createServiceEnrollRequestHandler(g *gin.Contex
 // instead of needing to be encoded as an SSE event after the fact. Safe to
 // hit repeatedly for the same :id — e.g. resty's SSESource reconnecting
 // after a dropped connection — since Wait itself handles that.
+//
+// @Summary     Wait for a request's outcome (SSE)
+// @Description A real `text/event-stream`, separate from the creating POST because an
+// @Description EventSource-style client is GET-only. Safe to reconnect any number of
+// @Description times.
+// @Description
+// @Description The SSE event *name* carries the terminal status (`approved`, `denied`,
+// @Description `expired`, `enrolled`, `failed`); each event's data is an envelope whose
+// @Description `data` half carries the certificate or enrollment code. That shape is
+// @Description not in this document: the response body is a stream rather than JSON, so
+// @Description there is nowhere to declare a schema for what individual events carry.
+// @Description
+// @Description Unauthenticated: the request ID is the credential.
+// @Tags        client
+// @Produce     text/event-stream
+// @Param       id path string true "The certificate request's UUID"
+// @Success     200 {string} string "The stream, closed after one terminal event"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "No such request"
+// @Failure     410 {object} openapidoc.ErrorEnvelope "The certificate was issued but is no longer available. They are never persisted, so a client that missed delivery must re-request."
+// @Router      /api/certs/requests/{id}/events [get]
 func (cr *certRequestController) eventsHandler(g *gin.Context) {
 	status, certificate, code, err := cr.certRequestService.Wait(g.Request.Context(), g.Param("id"))
 	if err != nil {
@@ -172,16 +249,35 @@ func (cr *certRequestController) eventsHandler(g *gin.Context) {
 		return
 	}
 
-	g.SSEvent(string(status), apitypes.CertificateResult{Certificate: certificate, Code: code})
+	// Enveloped like every other JSON body this API emits, so a consumer
+	// has one decode path rather than a special case for the stream. It
+	// also leaves somewhere for a per-event error to go: the "failed"
+	// status currently carries no detail.
+	g.SSEvent(string(status), apitypes.Envelope[apitypes.CertificateResult]{
+		Data: apitypes.CertificateResult{Certificate: certificate, Code: code},
+	})
 }
 
 // approveHandler handles POST /api/certs/requests/:id/approve (web UI,
 // behind sessionAuthMiddleware, which guarantees middleware.IdentityContextKey
 // is set by the time this handler runs).
+//
+// @Summary     Approve a request
+// @Description Session-authed and CSRF-guarded. Publishes a signing job; the certificate
+// @Description reaches the client over its own SSE stream, not in this response.
+// @Tags        web
+// @Produce     json
+// @Param       id path string true "The certificate request's UUID"
+// @Success     200 {object} openapidoc.ApproveEnvelope "Queued for signing"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Bound to another user, or a cross-origin call"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "No such request"
+// @Security    sessionCookie
+// @Router      /api/certs/requests/{id}/approve [post]
 func (cr *certRequestController) approveHandler(g *gin.Context) {
-	identity, ok := g.MustGet(middleware.IdentityContextKey).(*service.Identity)
+	identity, ok := middleware.Identity(g)
 	if !ok {
-		_ = g.Error(errors.New("unexpected identity type in session context")) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		_ = g.Error(&middleware.UnauthorizedError{}) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 		return
 	}
 
@@ -190,16 +286,71 @@ func (cr *certRequestController) approveHandler(g *gin.Context) {
 		return
 	}
 
-	g.JSON(http.StatusOK, apitypes.ApproveResponse{Status: "signing"})
+	respondData(g, apitypes.ApproveResponse{Status: "signing"})
 }
 
 // denyHandler handles POST /api/certs/requests/:id/deny (web UI, behind
 // sessionAuthMiddleware).
+//
+// @Summary     Deny a request
+// @Description Session-authed and CSRF-guarded. The waiting client is told over its own
+// @Description SSE stream.
+// @Tags        web
+// @Produce     json
+// @Param       id path string true "The certificate request's UUID"
+// @Success     200 {object} openapidoc.DenyEnvelope "Denied"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Bound to another user, or a cross-origin call"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "No such request"
+// @Security    sessionCookie
+// @Router      /api/certs/requests/{id}/deny [post]
 func (cr *certRequestController) denyHandler(g *gin.Context) {
 	if err := cr.certRequestService.Deny(g.Request.Context(), g.Param("id")); err != nil {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 		return
 	}
 
-	g.Status(http.StatusOK)
+	// A body rather than a bare 200, so this response is shaped like every
+	// other one — a caller that always decodes an envelope should not have
+	// to special-case deny.
+	respondData(g, apitypes.DenyResponse{Status: string(model.CertificateRequestStatusDenied)})
+}
+
+// detailHandler returns what the caller would be approving, and binds the
+// request to them — this is the approval page's data source, and the first
+// authenticated touch a request gets. See service.CertRequestService.Detail.
+//
+// @Summary     What the caller would be approving
+// @Description The approval page's data source.
+// @Description
+// @Description Returns `requested` and `granted` separately on purpose: server config is
+// @Description the outer bound on every option and trims rather than rejects, so a human
+// @Description has to be able to see what is being dropped before they approve.
+// @Description
+// @Description **This binds the request to the caller.** It is the first authenticated
+// @Description touch a request gets, so opening the page claims it; a different user gets
+// @Description 403 here rather than after clicking approve.
+// @Tags        web
+// @Produce     json
+// @Param       id path string true "The certificate request's UUID"
+// @Success     200 {object} openapidoc.RequestDetailEnvelope "Request detail"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Already bound to another user"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "No such request"
+// @Security    sessionCookie
+// @Router      /api/certs/requests/{id} [get]
+func (cr *certRequestController) detailHandler(g *gin.Context) {
+	identity, ok := middleware.Identity(g)
+	if !ok {
+		_ = g.Error(&middleware.UnauthorizedError{}) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		return
+	}
+
+	detail, err := cr.certRequestService.Detail(g.Request.Context(), g.Param("id"), identity)
+	if err != nil {
+		_ = g.Error(err) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		return
+	}
+
+	respondData(g, newRequestDetailResponse(detail))
 }

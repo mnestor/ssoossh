@@ -24,27 +24,33 @@ type Client interface {
 	// GetCA returns the CA's public key in authorized_keys format.
 	GetCA(ctx context.Context) (string, error)
 
-	// RequestUserCertificate asks for an interactive user certificate for
-	// publicKey (authorized_keys format). ssoosshd creates the pending
-	// request and returns approvalURL immediately — the page the caller
-	// should have the user open — then this call blocks (over a separate
-	// SSE connection, per the SSE spec: POST-to-create is not itself a
-	// stream) until a human resolves the request via the web UI
-	// (approved/denied) or it expires.
-	RequestUserCertificate(ctx context.Context, publicKey string, opts RequestedOptions) (approvalURL string, result *CertificateResult, err error)
+	// CreateUserRequest asks for an interactive user certificate for
+	// publicKey (authorized_keys format). It returns as soon as ssoosshd has
+	// created the request, so the caller can show PendingRequest.ApprovalURL
+	// to a human before blocking on AwaitCertificate.
+	CreateUserRequest(ctx context.Context, publicKey string, opts RequestedOptions) (*PendingRequest, error)
 
-	// RequestHostCertificate asks for first issuance of a host certificate
-	// for hostname, gated by the OIDC approval chain, and blocks the same
-	// way as RequestUserCertificate.
-	RequestHostCertificate(ctx context.Context, publicKey, hostname string, opts RequestedOptions) (approvalURL string, result *CertificateResult, err error)
+	// CreateHostRequest asks for first issuance of a host certificate for
+	// hostname, gated by the OIDC approval chain. Returns without waiting,
+	// like CreateUserRequest.
+	CreateHostRequest(ctx context.Context, publicKey, hostname string, opts RequestedOptions) (*PendingRequest, error)
 
-	// EnrollService asks to enroll publicKey for unattended service
-	// certificate issuance and blocks the same way as
-	// RequestUserCertificate. On approval, CertificateResult.Certificate is
-	// not itself a usable certificate — it's empty, since approving a
-	// service enrollment issues an enrollment code
-	// (RetrieveServiceCertificate) rather than a certificate directly.
-	EnrollService(ctx context.Context, publicKey string, opts RequestedOptions) (approvalURL string, result *CertificateResult, err error)
+	// CreateServiceEnrollment asks to enroll publicKey for unattended
+	// service certificate issuance. Returns without waiting, like
+	// CreateUserRequest. Note that approving one of these yields
+	// CertificateResult.Code (an enrollment token to redeem later via
+	// RetrieveServiceCertificate) rather than a certificate.
+	CreateServiceEnrollment(ctx context.Context, publicKey string, opts RequestedOptions) (*PendingRequest, error)
+
+	// AwaitCertificate blocks until req is resolved — approved, denied,
+	// expired, enrolled, or failed — over a separate SSE connection, per the
+	// SSE spec: the POST that created the request is not itself a stream.
+	// req must have come from one of the Create* calls on this same client.
+	//
+	// Safe to call again after a failure: ssoosshd's wait is idempotent per
+	// request, so a fresh connection picks up wherever the request actually
+	// is.
+	AwaitCertificate(ctx context.Context, req *PendingRequest) (*CertificateResult, error)
 
 	// RetrieveServiceCertificate redeems an enrollment code (from a
 	// previously approved EnrollService call) for a signed service
@@ -95,7 +101,7 @@ func NewClient(cfg Config) (*RestyClient, error) {
 		return nil, err
 	}
 
-	serverURL := strings.TrimRight(cfg.ServerURL, "/")
+	serverURL := normalizeServerURL(cfg.ServerURL)
 
 	c := resty.New().
 		SetBaseURL(serverURL+"/api").
@@ -106,6 +112,22 @@ func NewClient(cfg Config) (*RestyClient, error) {
 		SetResultError(&errorBody{})
 
 	return &RestyClient{http: c, serverURL: serverURL, tlsConfig: tlsConfig}, nil
+}
+
+// normalizeServerURL trims any trailing slash and supplies the scheme when
+// the configured value has none, which is what the --server flag has always
+// promised ("assumes https if omitted"). Without this a bare "example.com"
+// produces requests resty cannot send and an approval URL no browser can
+// open.
+func normalizeServerURL(raw string) string {
+	trimmed := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		return trimmed
+	}
+	return "https://" + trimmed
 }
 
 func buildTLSConfig(cfg Config) (*tls.Config, error) {

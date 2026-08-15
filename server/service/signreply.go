@@ -127,13 +127,31 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 		return fmt.Errorf("failed to encode extensions: %w", err)
 	}
 
+	// Read the owner off the request rather than carrying it through the
+	// signing job. The signer has no database and no business knowing who a
+	// certificate is for; the listener does, and Approve has already bound
+	// the request to a users row (see CertRequestService.bindRequester).
+	//
+	// Best effort: a missing owner must not fail issuance for a certificate
+	// that is already signed. It only costs per-user history for that row,
+	// which is why it is logged rather than returned.
+	var userID *string
+	var req model.CertificateRequest
+	switch err := h.db.WithContext(ctx).Select("user_id").First(&req, "id = ?", reply.RequestID).Error; {
+	case err != nil:
+		slog.Warn("could not resolve the owner of an issued certificate",
+			"request_id", reply.RequestID, "error", err)
+	case req.UserID == nil:
+		slog.Warn("issued certificate has no owner: its request was never bound to a user",
+			"request_id", reply.RequestID)
+	default:
+		userID = req.UserID
+	}
+
 	cert := model.Certificate{
-		ID:   uuid.NewString(),
-		Type: reply.Type,
-		// TODO: UserID is left unset — nothing currently resolves the
-		// approving identity to a users row, and certificate_requests.user_id
-		// is likewise never written. Populating both is its own change; see
-		// docs/signing-pipeline.md's deferred items.
+		ID:                   uuid.NewString(),
+		Type:                 reply.Type,
+		UserID:               userID,
 		Hostname:             reply.Hostname,
 		PublicKeyFingerprint: reply.PublicKeyFingerprint,
 		SerialNumber:         reply.Serial,

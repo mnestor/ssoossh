@@ -1,0 +1,82 @@
+import { describe, expect, it } from 'vitest';
+
+import { expiryLabel, formatDateTime, formatDuration, isExpired } from './format';
+
+describe('formatDuration', () => {
+	const cases: { name: string; seconds: number; want: string }[] = [
+		{ name: 'should render whole hours without a minutes part', seconds: 8 * 3600, want: '8h' },
+		{
+			name: 'should render hours and minutes when both are present',
+			seconds: 5400,
+			want: '1h 30m'
+		},
+		{
+			name: 'should drop sub-minute remainders once hours are involved',
+			seconds: 3661,
+			want: '1h 1m'
+		},
+		{ name: 'should render whole minutes without a seconds part', seconds: 120, want: '2m' },
+		{ name: 'should render minutes and seconds below an hour', seconds: 90, want: '1m 30s' },
+		{ name: 'should render seconds below a minute', seconds: 45, want: '45s' },
+		{ name: 'should render zero as 0s', seconds: 0, want: '0s' },
+		{ name: 'should render a negative duration as 0s', seconds: -60, want: '0s' },
+		{ name: 'should render a non-finite duration as 0s', seconds: Number.NaN, want: '0s' }
+	];
+
+	for (const { name, seconds, want } of cases) {
+		it(name, () => {
+			expect(formatDuration(seconds)).toBe(want);
+		});
+	}
+});
+
+describe('formatDateTime', () => {
+	it('should render an em dash when the timestamp cannot be parsed', () => {
+		expect(formatDateTime('not-a-timestamp')).toBe('—');
+	});
+
+	it('should render an em dash when the timestamp is empty', () => {
+		expect(formatDateTime('')).toBe('—');
+	});
+
+	it('should render something other than an em dash for a valid timestamp', () => {
+		expect(formatDateTime('2026-08-14T09:00:00Z')).not.toBe('—');
+	});
+});
+
+describe('expiryLabel', () => {
+	const now = new Date('2026-08-14T12:00:00Z');
+
+	it('should describe the remaining time when the certificate is still valid', () => {
+		expect(expiryLabel('2026-08-14T15:30:00Z', now)).toBe('expires in 3h 30m');
+	});
+
+	it('should report expired when the validity window has passed', () => {
+		expect(expiryLabel('2026-08-14T11:59:59Z', now)).toBe('expired');
+	});
+
+	it('should report expired at the exact expiry instant', () => {
+		expect(expiryLabel('2026-08-14T12:00:00Z', now)).toBe('expired');
+	});
+
+	it('should render an em dash for an unparseable expiry', () => {
+		expect(expiryLabel('whenever', now)).toBe('—');
+	});
+});
+
+describe('isExpired', () => {
+	const now = new Date('2026-08-14T12:00:00Z');
+
+	it('should report false for a certificate still inside its window', () => {
+		expect(isExpired('2026-08-14T12:00:01Z', now)).toBe(false);
+	});
+
+	it('should report true for a certificate past its window', () => {
+		expect(isExpired('2026-08-14T11:00:00Z', now)).toBe(true);
+	});
+
+	// Fails closed: an expiry that cannot be read is not evidence of validity.
+	it('should report true for an unparseable expiry', () => {
+		expect(isExpired('whenever', now)).toBe(true);
+	});
+});

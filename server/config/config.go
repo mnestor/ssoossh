@@ -73,5 +73,12 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
+	// Fail at startup rather than at first login: a bad public_url does not
+	// stop anything booting, it just produces a redirect URI the identity
+	// provider refuses.
+	if err := c.HTTP.Validate(); err != nil {
+		return nil, err
+	}
+
 	return &c, nil
 }

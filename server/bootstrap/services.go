@@ -23,6 +23,7 @@ type services struct {
 	ca          *service.CAService
 	auth        *service.AuthService
 	certRequest *service.CertRequestService
+	certificate *service.CertificateService
 	host        *service.HostService
 	enrollment  *service.EnrollmentService
 }
@@ -49,6 +50,8 @@ func (a *app) initServices() (svc *services, err error) {
 	if svc.host, err = service.NewHostService(a.config); err != nil {
 		return nil, err
 	}
+
+	svc.certificate = service.NewCertificateService(a.db)
 
 	if svc.enrollment, err = service.NewEnrollmentService(a.config); err != nil {
 		return nil, err

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -22,12 +23,15 @@ import (
 	sloggin "github.com/samber/slog-gin"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"golang.org/x/time/rate"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/mnestor/ssoossh/internal/version"
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/controller"
 	"github.com/mnestor/ssoossh/server/frontend"
 	"github.com/mnestor/ssoossh/server/middleware"
+	"github.com/mnestor/ssoossh/server/model"
 )
 
 // Server wraps the Gin router and the HTTP(S) server that serves it.
@@ -79,14 +83,16 @@ func (a *app) initEngine() (*gin.Engine, error) {
 
 	r := gin.New()
 
-	// Empty TrustedProxies means gin trusts no proxy headers at all - the
-	// zero-value-safe default. Only set when non-empty since
-	// SetTrustedProxies(nil) is itself meaningful to gin (also "trust
-	// nothing"), so this is just avoiding an unnecessary call either way.
-	if len(c.HTTP.TrustedProxies) > 0 {
-		if err := r.SetTrustedProxies(c.HTTP.TrustedProxies); err != nil {
-			return nil, fmt.Errorf("failed to configure http.trusted_proxies: %w", err)
-		}
+	// Always call this, including with an empty list. gin.New() does NOT
+	// default to trusting nothing — it defaults to trusting 0.0.0.0/0 and
+	// ::/0 with ForwardedByClientIP on, so ClientIP() returns the leftmost,
+	// caller-supplied X-Forwarded-For value from any peer. SetTrustedProxies
+	// with a nil/empty slice is the only way to get "trust no proxy".
+	//
+	// gin warns about this itself, but only from Run(), and this server calls
+	// http.Server.Serve directly — so nothing would have printed.
+	if err := r.SetTrustedProxies(c.HTTP.TrustedProxies); err != nil {
+		return nil, fmt.Errorf("failed to configure http.trusted_proxies: %w", err)
 	}
 
 	// gin.Recovery, tracing, the access log, and ErrorHandlerMiddleware all
@@ -142,13 +148,8 @@ func (a *app) initEngine() (*gin.Engine, error) {
 	}
 
 	// basic health checks
-	r.GET("/healthz", func(gc *gin.Context) {
-		gc.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
-
-	r.GET("/ping", func(gc *gin.Context) {
-		gc.String(http.StatusOK, "pong")
-	})
+	r.GET("/healthz", healthzHandler)
+	r.GET("/ping", pingHandler)
 
 	// Setup global middleware
 	// The healthz and ping routes above predate these Use calls, so health
@@ -158,7 +159,7 @@ func (a *app) initEngine() (*gin.Engine, error) {
 	r.Use(middleware.NewCorsMiddleware().Add())
 	r.Use(middleware.NewCspMiddleware().Add())
 
-	sessionSecret, err := resolveSessionSecret(c)
+	sessionSecret, err := resolveSessionSecret(c, a.db)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve session secret: %w", err)
 	}
@@ -172,9 +173,116 @@ func (a *app) initEngine() (*gin.Engine, error) {
 	// model/ or migrations, so there's no schema this project's migrations
 	// need to track for it.
 	sessionStore := gormsessions.NewStore(a.db, true, sessionSecret)
+
+	// The store's own defaults set only Path and MaxAge, which leaves
+	// HttpOnly and Secure false and omits SameSite from the wire entirely.
+	// For a cookie that authorizes certificate issuance, all three matter.
+	opts, err := sessionCookieOptions(c)
+	if err != nil {
+		return nil, err
+	}
+	sessionStore.Options(opts)
+
 	r.Use(sessions.Sessions("ssoossh_session", sessionStore))
 
 	return r, nil
+}
+
+// healthzHandler answers the liveness probe.
+//
+// Named rather than inline so it can carry an OpenAPI annotation; registered
+// ahead of the server-name check so probes addressing the server by IP still
+// reach it.
+//
+// @Summary     Liveness probe
+// @Description Registered ahead of the server-name check, so a probe addressing the
+// @Description server by IP rather than by its configured name still reaches it.
+// @Description
+// @Description Note this is one of the two endpoints that does not use the {data, error}
+// @Description envelope: it predates the convention and is consumed by orchestrators
+// @Description rather than by this project's own clients.
+// @Produce     json
+// @Success     200 {object} openapidoc.HealthPayload "The server is up"
+// @Router      /healthz [get]
+func healthzHandler(gc *gin.Context) {
+	gc.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+// pingHandler answers the plain-text liveness probe.
+//
+// @Summary     Liveness probe, plain text
+// @Description For probes that want a body they can string-match without parsing JSON.
+// @Produce     plain
+// @Success     200 {string} string "pong"
+// @Router      /ping [get]
+func pingHandler(gc *gin.Context) {
+	gc.String(http.StatusOK, "pong")
+}
+
+// sessionCookieOptions builds the session cookie's attributes from config.
+//
+// HttpOnly is not configurable: the session cookie is never read by client
+// script, so exposing it to JavaScript would only widen what an XSS can do.
+func sessionCookieOptions(c *config.Config) (sessions.Options, error) {
+	sameSite, err := parseSameSite(c.HTTP.CookieSameSite)
+	if err != nil {
+		return sessions.Options{}, err
+	}
+
+	// Secure follows the browser-visible scheme unless overridden. Marking a
+	// cookie Secure over plain HTTP means the browser silently drops it, so
+	// this cannot simply default to true without breaking local development.
+	secure := c.HTTP.IsTLS()
+	if c.HTTP.CookieSecure != nil {
+		secure = *c.HTTP.CookieSecure
+	}
+	if !secure {
+		slog.Warn("session cookie is not marked Secure, so browsers will send it over plain HTTP; set http.is_https (or http.cookie_secure) once TLS terminates in front of this server")
+	}
+
+	// MaxAge must always be set to something positive. Leaving it zero does
+	// not fall back to the store's default: Store.Options replaces the whole
+	// options struct, wiping the 30 days gormstore set at construction, and
+	// the store then writes each session row with
+	// expires_at = now + MaxAge seconds — that is, already expired — while
+	// reads filter on `expires_at > now`. A zero here means every request
+	// after login is unauthenticated.
+	maxAge := defaultCookieMaxAge
+	if c.HTTP.CookieMaxAge > 0 {
+		maxAge = c.HTTP.CookieMaxAge
+	}
+
+	opts := sessions.Options{
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: sameSite,
+		MaxAge:   int(maxAge.Seconds()),
+	}
+
+	return opts, nil
+}
+
+// defaultCookieMaxAge is how long a session lasts when http.cookie_max_age
+// is unset. A workday: long enough that nobody re-authenticates to read the
+// dashboard, short enough to bound how long a removed group membership keeps
+// working, since group claims live in the session rather than the database.
+const defaultCookieMaxAge = 12 * time.Hour
+
+// parseSameSite maps the configured name to its http.SameSite value. Empty
+// means strict — see config.HTTPSettings.CookieSameSite for why that is the
+// right default here.
+func parseSameSite(name string) (http.SameSite, error) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "", "strict":
+		return http.SameSiteStrictMode, nil
+	case "lax":
+		return http.SameSiteLaxMode, nil
+	case "none":
+		return http.SameSiteNoneMode, nil
+	default:
+		return 0, fmt.Errorf("invalid http.cookie_same_site %q, expected one of strict, lax, none", name)
+	}
 }
 
 // registerRoutes registers the frontend static assets (if included) and
@@ -187,28 +295,36 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 		return fmt.Errorf("failed to register frontend: %w", err)
 	}
 
+	sessionAuth := middleware.NewSessionAuthMiddleware().Add()
+	csrf := middleware.NewCsrfMiddleware(a.config.HTTP.PublicOrigin()).Add()
+
 	// Browser-facing OIDC login/callback, outside /api since these are
 	// redirects rather than JSON API calls.
 	authGroup := r.Group("/auth")
-	controller.NewAuthController(authGroup, a.svc.auth)
+	controller.NewAuthController(authGroup, a.svc.auth, csrf)
 
 	// Set up API routes
 	apiGroup := r.Group("/api")
 	controller.NewCaController(apiGroup, a.svc.ca)
-	controller.NewCertRequestController(apiGroup, a.svc.certRequest, middleware.NewSessionAuthMiddleware().Add())
+	controller.NewCertRequestController(apiGroup, a.svc.certRequest, sessionAuth, csrf)
+	controller.NewUserController(apiGroup, sessionAuth)
+	controller.NewCertificateController(apiGroup, a.svc.certificate, sessionAuth)
 	controller.NewHostController(apiGroup, a.svc.host, middleware.NewHostCertAuthMiddleware().Add())
 	controller.NewEnrollmentController(apiGroup, a.svc.enrollment)
 
 	return nil
 }
 
-// resolveSessionSecret returns c.HTTP.CookieKey as raw bytes to key the
-// session store's encryption/signing, or a freshly generated one if none is
-// configured. A generated key is process-local only (see
-// config.HTTPSettings.CookieKey's doc comment): every existing session
-// becomes unreadable on restart, and it can't be shared across multiple
-// server instances, so production deployments should set an explicit key.
-func resolveSessionSecret(c *config.Config) ([]byte, error) {
+// resolveSessionSecret returns the key that signs and encrypts session
+// cookies: c.HTTP.CookieKey when configured, otherwise one generated once
+// and persisted in server_secrets.
+//
+// Persisting rather than regenerating per process is what makes sessions
+// survive a restart. It also means instances sharing a database share the
+// key, so a session stays valid whichever instance a request lands on —
+// though an explicit cookie_key is still the clearer choice there, since it
+// does not depend on which instance won the race to generate it.
+func resolveSessionSecret(c *config.Config, db *gorm.DB) ([]byte, error) {
 	if c.HTTP.CookieKey != "" {
 		return []byte(c.HTTP.CookieKey), nil
 	}
@@ -218,9 +334,27 @@ func resolveSessionSecret(c *config.Config) ([]byte, error) {
 		return nil, fmt.Errorf("failed to generate a random session secret: %w", err)
 	}
 
-	slog.Warn("http.cookie_key is not configured; using a random session secret for this process only - existing sessions will not survive a restart, and this won't work across multiple server instances")
+	// Insert-or-ignore, then read back what is actually stored. Two
+	// instances starting together both generate a key and both try to
+	// insert; DoNothing means the loser keeps the winner's key rather than
+	// overwriting it and invalidating every session the winner just issued.
+	secret := model.ServerSecret{
+		Name:      model.ServerSecretSessionKey,
+		Value:     key,
+		CreatedAt: time.Now(),
+	}
+	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&secret).Error; err != nil {
+		return nil, fmt.Errorf("failed to persist the generated session secret: %w", err)
+	}
 
-	return key, nil
+	var stored model.ServerSecret
+	if err := db.First(&stored, "name = ?", model.ServerSecretSessionKey).Error; err != nil {
+		return nil, fmt.Errorf("failed to read back the session secret: %w", err)
+	}
+
+	slog.Info("http.cookie_key is not configured; using a generated session secret persisted in the database")
+
+	return stored.Value, nil
 }
 
 // Run the web server

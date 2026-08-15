@@ -15,11 +15,6 @@
     "ghcr.io/devcontainers/features/git:1": {}
   },
   "initializeCommand": "scripts/devcontainer-init.sh",
-  "containerEnv": {
-    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
-  },
-  // Use 'forwardPorts' to make a list of ports inside the container available locally.
-  // "forwardPorts": [],
   // Uncomment the next line if you want start specific services in your Docker Compose config.
   // "runServices": [],
   "shutdownAction": "none",
@@ -53,6 +48,10 @@
       ]
     }
   },
+  // Use 'forwardPorts' to make a list of ports inside the container available locally.
+  // "forwardPorts": [
+  //   3001
+  // ],
   "otherPortsAttributes": {
     // Default behavior for unlisted ports
     "onAutoForward": "silent"
@@ -62,11 +61,11 @@
       "label": "SSOOSSH with tls",
       "protocol": "https"
     },
-    "8000": {
+    "3001": {
       "label": "Svelte",
       "protocol": "http"
     },
-    "80": {
+    "8080": {
       "label": "SSOOSSH without tls",
       "protocol": "http"
     }

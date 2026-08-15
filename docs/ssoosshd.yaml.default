@@ -1,0 +1,392 @@
+# ssoosshd example configuration
+#
+# This file documents every option ssoosshd's config struct accepts
+# (see server/config/types.go). Everything is commented out; ssoosshd
+# merges this against its built-in defaults (server/config/defaults.yaml)
+# and whatever real config file it loads, in that order, so you only need
+# to uncomment and set the values you want to override.
+#
+# To use this file, copy it to one of the search locations below and
+# uncomment the settings you want to override, or pass its path via
+# the --config flag.
+#
+# Config file search order (first found wins):
+#   1. The file specified by the --config flag (if set)
+#   2. ./ssoosshd.yaml (current directory — useful for development)
+#   3. /etc/ssoosshd.yaml (system-wide configuration)
+#   4. /etc/ssoossh/ssoosshd.yaml (ssoossh-specific directory)
+#
+# If no config file is found, ssoosshd runs with only the built-in
+# defaults (server/config/defaults.yaml).
+#
+# Durations (anything with a "duration" name below) use Go's
+# time.Duration string syntax, e.g. "30s", "10m", "8760h". There is no
+# unit larger than "h" (hours) — for multi-day/year durations, do the
+# multiplication yourself (e.g. 1 year = 8760h).
+
+# ----------------------------------------------------------------------
+# logging - configures the application's main structured log output.
+# Backed by log/slog, with file rotation via timberjack.
+# Default: WARN level, include app name and version, human-readable text.
+# ----------------------------------------------------------------------
+# logging:
+  ## Minimum level to emit. One of: DEBUG, INFO, WARN, ERROR.
+  # level: WARN
+
+  ## Also copy log output to stdout, in addition to any Filename below.
+  ## Useful when running under a supervisor (systemd, docker) that
+  ## captures stdout, or when Filename is left empty.
+  # enable_stdout: false
+
+  ## Prefix every log line with the application name.
+  # include_app_name: true
+
+  ## Prefix every log line with the running application version.
+  # include_app_version: true
+
+  ## Emit logs as JSON (structured) instead of human-readable text.
+  ## Recommended true in production so logs are machine-parseable.
+  # log_json: false
+
+  ## --- The following fields come from the embedded timberjack.Logger
+  ## --- and control log file rotation. All are optional; if Filename
+  ## --- is empty, no file is written (only enable_stdout applies).
+
+  ## Path to the log file. Rotated backups are written alongside it in
+  ## the same directory. If empty, defaults to a temp-dir file named
+  ## after the process.
+  # filename: /var/log/ssoossh/ssoosshd.log
+
+  ## Maximum size in megabytes a log file may reach before it is
+  ## rotated. Defaults to 100 if unset.
+  # maxsize: 100
+
+  ## Maximum number of days to retain rotated log files, based on the
+  ## timestamp encoded in their filename. A "day" here is exactly 24h.
+  ## 0 (default) means files are never removed based on age alone.
+  # maxage: 0
+
+  ## Maximum number of old rotated log files to keep. 0 (default) keeps
+  ## all of them (subject to maxage still deleting old ones).
+  # maxbackups: 0
+
+  ## Use local time (instead of UTC, the default) when formatting the
+  ## timestamp embedded in rotated backup filenames.
+  # localtime: false
+
+  ## Compression algorithm applied to rotated backups. One of:
+  ## "none", "gzip", "zstd". If empty, falls back to the deprecated
+  ## "compress" boolean below.
+  # compression: gzip
+
+  ## Deprecated: use "compression" above instead. true is equivalent to
+  ## compression: gzip.
+  # compress: false
+
+  ## Maximum duration between rotations, independent of file size. E.g.
+  ## 24h rotates the log daily even if it never reaches maxsize. 0
+  ## (default) disables time-based rotation.
+  # rotationinterval: 24h
+
+  ## Go time-layout string used for the timestamp appended to rotated
+  ## backup filenames. Falls back to "2006-01-02T15-04-05.000" if
+  ## invalid.
+  # backuptimeformat: "2006-01-02-15-04-05"
+
+  ## Specific minutes within every hour (0-59) at which to force a
+  ## rotation, e.g. [0] for the top of the hour, [0, 30] for top and
+  ## half-past. Applies in addition to rotationinterval/maxsize.
+  # rotateAtMinutes: []
+
+  ## Specific times of day ("HH:MM") at which to force a rotation, e.g.
+  ## ["00:00"] for midnight. Applies in addition to
+  ## rotationinterval/maxsize.
+  # rotateAt: []
+
+  ## Controls where the rotation timestamp/reason are placed in the
+  ## backup filename. false (default): name-timestamp-reason.log.
+  ## true: name.log-timestamp-reason.
+  # appendTimeAfterExt: false
+
+  ## Unix file permissions used when creating new/rotated log files
+  ## (octal). Defaults to 0640 if unset. Subject to the process umask.
+  # filemode: 0640
+
+# ----------------------------------------------------------------------
+# ssh_key - the SSH CA private key ssoosshd uses to sign issued
+# certificates. Inline PEM, not a file path.
+# ----------------------------------------------------------------------
+# ssh_key: |
+#   -----BEGIN OPENSSH PRIVATE KEY-----
+#   -----END OPENSSH PRIVATE KEY-----
+
+# ----------------------------------------------------------------------
+# production - toggles production-mode behavior (e.g. stricter
+# defaults/validation). Set true when actually deploying.
+# ----------------------------------------------------------------------
+# production: true
+
+# ----------------------------------------------------------------------
+# traces / metrics - enable OpenTelemetry traces and metrics export.
+# Further configuration is done via environment variables per the OpenTelemetry
+# SDK specification: https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/
+#
+# PROMETHEUS METRICS ENDPOINT:
+# To enable a Prometheus-compatible metrics scraping endpoint, set:
+#   OTEL_METRICS_EXPORTER=prometheus
+# This starts a second HTTP server on a separate port. Configure it with:
+#   OTEL_EXPORTER_PROMETHEUS_HOST=localhost  (default: 0.0.0.0)
+#   OTEL_EXPORTER_PROMETHEUS_PORT=9464       (default: 9464)
+#
+# ----------------------------------------------------------------------
+# traces: false
+# metrics: false
+
+# ----------------------------------------------------------------------
+# db - database connection, query logging, and connection retry behavior.
+# ----------------------------------------------------------------------
+# db:
+  ## Which backend to use. One of: sqlite, postgres.
+  # provider: sqlite
+
+  ## Connection string / DSN. For sqlite this is a file path (or
+  ## ":memory:"); for postgres a standard postgres:// URL or keyword
+  ## string.
+  # connection_string: "ssoossh.db"
+
+  ## Maximum number of connection attempts before giving up. 0 or negative
+  ## disables retries (fails immediately on the first error). Typical values
+  ## range from 1-5 depending on tolerance for startup delays.
+  # retry_attempts: 3
+
+  ## Time to wait between connection retry attempts. Only used when
+  ## retry_attempts > 1. Typical values range from milliseconds to seconds
+  ## depending on expected transient failure duration.
+  # retry_interval: 3s
+
+  ## Database operation logging. Same shape/rotation options as top-level
+  ## "logging" above (embeds timberjack.Logger), plus:
+  ## To disable database logging entirely, set filename to /dev/null.
+  # logging:
+    ## Minimum level to emit for DB operation logs: DEBUG, INFO, WARN, ERROR.
+    # level: WARN
+
+    ## Include the source file:line that issued the operation in each log
+    ## entry. Useful for tracking down slow/unexpected queries.
+    # add_source: false
+
+    ## Emit DB logs as JSON instead of human-readable text.
+    # log_json: false
+    # filename: /dev/null  # Uncomment to disable database logging
+
+    ## filename / maxsize / maxage / maxbackups / localtime / compress /
+    ## compression / rotationinterval / backuptimeformat /
+    ## rotateAtMinutes / rotateAt / appendTimeAfterExt / filemode: see
+    ## the top-level "logging" section above — identical fields,
+    ## applied to the database operation log instead.
+
+# ----------------------------------------------------------------------
+# http - the HTTP(S) server: bind address, TLS, rate limiting, access
+# logging, and OIDC authentication.
+# ----------------------------------------------------------------------
+# http:
+  ## Interface address and port to listen on.
+  # address: 127.0.0.1
+  # port: 8443
+
+  ## Cookie signing/encryption key for session cookies. Keep secret;
+  ## rotating it invalidates existing sessions. Empty generates random key at startup.
+  # cookie_key: ""
+
+  ## Rate limiting: max requests per rate_duration window, per client.
+  # rate_limit: 60
+  # rate_duration: 1m
+
+  ## HTTP Strict-Transport-Security header value to send. Only sent when
+  ## server terminates TLS. Empty disables the header.
+  # hsts: "max-age=31536000; includeSubDomains"
+
+  ## The scheme and host browsers actually reach this deployment at, e.g.
+  ## "https://ssh.example.com". Set it whenever that differs from what
+  ## address/port/tls describe — which is every reverse-proxy deployment,
+  ## since the proxy terminates TLS on 443 while this process listens on
+  ## plain HTTP somewhere else. Two things are derived from it and cannot
+  ## be got right without it: the OIDC redirect URI handed to the identity
+  ## provider, and the origin the CSRF check compares against. Origin only
+  ## — a path, query, or fragment is rejected at startup.
+  # public_url: ""
+
+  ## Set true when a reverse proxy terminates TLS and this process serves
+  ## plain HTTP. Redundant if public_url is set — its scheme settles the
+  ## same question, so configure one or the other, not both.
+  # is_https: false
+
+  ## Server name to validate incoming requests against. When set, requests
+  ## addressed to a different Host (or SNI on TLS connections) are rejected
+  ## with 421 Misdirected Request. Empty disables the check. Health endpoints
+  ## (/healthz, /ping) are registered before this check so they always work
+  ## regardless of Host, which is useful for load balancer probes.
+  # server_name: ""
+
+  ## --- access_logging: which fields to record for each HTTP request. All
+  ## --- default to false except the three marked below, so turning on
+  ## --- body logging is opt-in (request/response bodies may contain
+  ## --- sensitive data — see server/CLAUDE.md's "never log sensitive
+  ## --- data" rule before enabling those).
+  ## To disable access logging entirely, set filename to /dev/null.
+  # access_logging:
+    # log_user_agent: true
+    # log_request_header: true
+    # log_client_ip: true
+    # log_request_id: false
+    # log_request_body: false
+    # log_response_body: false
+    # log_response_header: false
+    # log_span_id: false
+    # log_trace_id: false
+    # log_json: false
+    # filename: /dev/null  # Uncomment to disable access logging
+
+    ## filename / maxsize / maxage / maxbackups / localtime / compress /
+    ## compression / rotationinterval / backuptimeformat /
+    ## rotateAtMinutes / rotateAt / appendTimeAfterExt / filemode: see
+    ## the top-level "logging" section above — identical fields,
+    ## applied to the access log instead.
+
+  ## --- tls: certificate material can be provided inline (certificate /
+  ## --- private_key) or as file paths (certificate_file /
+  ## --- private_key_file). If none of the four are set, the server
+  ## --- runs without TLS — do not do this outside of local dev.
+  # tls:
+    # certificate: |
+    #   -----BEGIN CERTIFICATE-----
+    #   -----END CERTIFICATE-----
+    # private_key: |
+    #   -----BEGIN PRIVATE KEY-----
+    #   -----END PRIVATE KEY-----
+
+    # certificate_file: /etc/ssoossh/tls/server.crt
+    # private_key_file: /etc/ssoossh/tls/server.key
+
+    ## Minimum negotiated TLS version. Accepts loose forms: "TLS1.2",
+    ## "tls12", "VersionTLS12", "TLS-1-2" all resolve the same way.
+    ## One of: TLS1.0, TLS1.1 (both deprecated per RFC 8996 and will log
+    ## a warning if selected), TLS1.2, TLS1.3.
+    # min_version: TLS1.2
+
+    ## Cipher suites allowed, by crypto/tls name, most-preferred first.
+    ## Only meaningful for TLS 1.2 and below — TLS 1.3 suite selection
+    ## is not configurable in Go's stdlib. Duplicate names are silently
+    ## deduplicated, keeping the first occurrence's order.
+    # cipher_suites:
+    #   - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+    #   - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+    #   - TLS_RSA_WITH_AES_256_GCM_SHA384
+    #   - TLS_RSA_WITH_AES_256_CBC_SHA
+
+    ## Elliptic curves offered during the TLS handshake, most-preferred
+    ## first. Accepts loose forms: "P256", "p256", "CurveP256", "P-256"
+    ## all resolve the same way. Duplicates are silently deduplicated,
+    ## keeping the first occurrence's order.
+    # curves:
+    #   - CurveP256
+    #   - CurveP384
+    #   - CurveP521
+
+    ## Prefer the server's cipher_suites order over the client's during
+    ## negotiation, instead of letting the client pick. Only affects
+    ## TLS 1.2 and below.
+    # prefer_server_cipher_suites: true
+
+# ----------------------------------------------------------------------
+# authentication - the OIDC provider used to authenticate users. This is a
+# top-level section, not a subsection of "http" above.
+# ----------------------------------------------------------------------
+# authentication:
+  # client_id: ""
+  # client_secret: ""
+
+  ## Base URL of the OIDC provider. Do not include the trailing
+  ## "/.well-known/openid-configuration" — that's appended for you.
+  # provider_url: ""
+
+  ## Space-separated OAuth scopes to request. "openid" is added
+  ## automatically and does not need to be listed here.
+  # scopes: "profile email"
+
+  ## --- fields: maps ssoossh's own identity concepts to claim names
+  ## --- in the OIDC provider's ID token, in case your provider uses
+  ## --- non-standard claim names.
+  # fields:
+    ## Claim to use as the SSH username. Required — ssoosshd cannot
+    ## issue a certificate without one.
+    # username: preferred_username
+
+    ## Claim to use for group membership, consulted against the
+    ## require_group settings under cert_options below. Groups feed the
+    ## lifetime/authorization decision only — they never appear in a
+    ## certificate.
+    # groups: groups
+
+    ## Claim to read the user's email from. Empty falls back to the
+    ## standard "email" claim; absence is not an error either way.
+    # email: email
+
+    ## Claims holding JSON arrays of alternate account identifiers this
+    ## identity is known by, and service accounts it may enroll
+    ## certificates for. Both default to unset ("not populated from OIDC").
+    # other_accounts: ""
+    # service_accounts: ""
+
+# ----------------------------------------------------------------------
+# cert_options - issuance rules for each SSH certificate type ssoosshd
+# can sign: user, service, and host.
+# ----------------------------------------------------------------------
+# cert_options:
+  ## --- user: certificates issued to an interactively-authenticated
+  ## --- person, for their own SSH sessions.
+  # user:
+    ## How long an issued user certificate remains valid. Kept short —
+    ## these function as a short-lived auth token, not a long-lived key.
+    # valid_duration: 30s
+
+    ## SSH certificate extensions (capabilities) granted to the holder.
+    # extensions:
+    #   - "permit-X11-forwarding"
+    #   - "permit-agent-forwarding"
+    #   - "permit-port-forwarding"
+    #   - "permit-pty"
+    #   - "permit-user-rc"
+
+  ## --- service: certificates for non-interactive accounts/processes
+  ## --- (e.g. CI runners, service accounts), rather than a human
+  ## --- session.
+  # service:
+    ## OIDC group (via authentication.fields.groups) required before
+    ## ssoosshd will issue a service certificate to the caller.
+    # require_group: "SSH Service Signers"
+
+    ## How long an issued service certificate remains valid.
+    # valid_duration: 8760h
+
+    ## SSH certificate extensions granted to the holder.
+    # extensions:
+    #   - "permit-X11-forwarding"
+    #   - "permit-agent-forwarding"
+    #   - "permit-port-forwarding"
+    #   - "permit-pty"
+    #   - "permit-user-rc"
+
+  ## --- host: certificates issued so that clients with a
+  ## --- "@cert-authority" line in their known_hosts can implicitly
+  ## --- trust this server (and others signed by the same CA), instead
+  ## --- of trust-on-first-use.
+  # host:
+    ## OIDC group required before ssoosshd will issue a host
+    ## certificate to the caller.
+    # require_group: "SSH Host Signers"
+
+    ## How long an issued host certificate remains valid. Host keys are
+    ## long-lived by nature, so this is typically set to the largest
+    ## practical value (largest unit supported is hours: 8760h = 1 year).
+    # valid_duration: 8760h

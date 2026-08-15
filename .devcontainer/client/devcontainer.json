@@ -15,9 +15,6 @@
     "ghcr.io/devcontainers/features/git:1": {}
   },
   "initializeCommand": "scripts/devcontainer-init.sh",
-  "containerEnv": {
-    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
-  },
   "shutdownAction": "none",
   "postCreateCommand": {
     // "install-node": "bash -c '. \"$NVM_DIR/nvm.sh\" && nvm install node'",

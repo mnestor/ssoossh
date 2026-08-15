@@ -1,3 +1,5 @@
+//go:build !exclude_frontend
+
 package frontend
 
 // Test methodology: Tests verify frontend asset serving and handler behavior.
@@ -183,7 +185,7 @@ func TestRegisterFrontend_ShouldRegisterErrorWhenWritingIndexFails(t *testing.T)
 		gotErrors = len(c.Errors)
 	})
 
-	if err := RegisterFrontend(r); err != nil {
+	if err := registerFrontendFS(r, testBundle()); err != nil {
 		t.Fatalf("expected no error registering the frontend, got %v", err)
 	}
 
@@ -211,14 +213,57 @@ func TestRegisterFrontend_ShouldReturnErrFrontendNotIncludedConstant(t *testing.
 	}
 }
 
-// newTestFrontendRouter builds a gin.Engine with the real embedded frontend
-// registered, exercising the default (!exclude_frontend) build variant
-// against the actual server/frontend/dist bundle checked into this repo.
-func newTestFrontendRouter(t *testing.T) *gin.Engine {
-	t.Helper()
+// TestRegisterFrontend_ShouldRegisterAgainstTheEmbeddedBundle exercises the
+// real //go:embed path — fs.Sub over frontendFS and on into
+// registerFrontendFS — which the synthetic-bundle tests below deliberately
+// bypass. It asserts only that the embedded dist/ is registerable and serves
+// its index, never what that index contains: dist/ is an untracked build
+// artifact produced by `make frontend`.
+func TestRegisterFrontend_ShouldRegisterAgainstTheEmbeddedBundle(t *testing.T) {
+	t.Parallel()
 
 	r := gin.New()
 	if err := RegisterFrontend(r); err != nil {
+		t.Fatalf("expected no error registering the embedded frontend, got %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	if w.Code != http.StatusOK {
+		t.Errorf("got status %d serving the embedded index, want %d", w.Code, http.StatusOK)
+	}
+}
+
+// testBundle is a stand-in for a built frontend: an index.html carrying
+// script tags both with and without attributes (so nonce injection is
+// exercised in both shapes) plus one static asset. Registering against this
+// rather than the embedded dist/ keeps these tests independent of a build
+// artifact that is gitignored — see registerFrontendFS.
+func testBundle() fstest.MapFS {
+	return fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte(
+			`<html><head><script src="/app.js" defer></script><script>console.log(1)</script></head><body></body></html>`,
+		)},
+		"404.html": &fstest.MapFile{Data: []byte(`<html><body>not found</body></html>`)},
+		// Content-hashed, mirroring what SvelteKit emits — the asset that
+		// should get the immutable treatment.
+		"_app/immutable/chunks/abc123.js": &fstest.MapFile{Data: []byte(`export const x = 1;`)},
+		// Stable filename, so it must stay revalidatable.
+		"robots.txt": &fstest.MapFile{Data: []byte("User-agent: *\n")},
+	}
+}
+
+// newTestFrontendRouter builds a gin.Engine serving testBundle, exercising
+// the default (!exclude_frontend) build variant.
+func newTestFrontendRouter(t *testing.T, middlewares ...gin.HandlerFunc) *gin.Engine {
+	t.Helper()
+
+	r := gin.New()
+	for _, m := range middlewares {
+		r.Use(m)
+	}
+	if err := registerFrontendFS(r, testBundle()); err != nil {
 		t.Fatalf("expected no error registering the frontend, got %v", err)
 	}
 	return r
@@ -244,20 +289,48 @@ func TestRegisterFrontend_ShouldServeIndexHtmlForUnknownPath(t *testing.T) {
 	}
 }
 
-func TestRegisterFrontend_ShouldReturn404JSONForUnknownAPIPath(t *testing.T) {
+// TestRegisterFrontend_ShouldReturn404JSONForBackendOwnedPrefixes keeps every
+// prefix the server owns out of the SPA fallback. Serving index.html there
+// answers a caller expecting JSON with 200 and an HTML body, so a mistyped
+// API path or a wrong OIDC redirect_uri looks like it succeeded.
+//
+// Driven off backendOwnedPrefixes so a newly reserved prefix cannot be added
+// without a case here.
+func TestRegisterFrontend_ShouldReturn404JSONForBackendOwnedPrefixes(t *testing.T) {
 	t.Parallel()
 
-	r := newTestFrontendRouter(t)
+	for _, p := range backendOwnedPrefixes {
+		t.Run(p.prefix, func(t *testing.T) {
+			t.Parallel()
 
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/this-does-not-exist", nil)
-	r.ServeHTTP(w, req)
+			r := newTestFrontendRouter(t)
 
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("got status %d, want %d", w.Code, http.StatusNotFound)
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/"+p.prefix+"this-does-not-exist", nil)
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusNotFound {
+				t.Fatalf("got status %d, want %d", w.Code, http.StatusNotFound)
+			}
+			if got := w.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+				t.Errorf("got Content-Type %q, want JSON", got)
+			}
+			if strings.Contains(w.Body.String(), "<html") {
+				t.Error("expected a JSON error body, got the SPA index.html")
+			}
+		})
 	}
-	if !strings.Contains(w.Body.String(), "error") {
-		t.Errorf("expected JSON error body, got %q", w.Body.String())
+}
+
+// TestRegisterFrontend_ShouldNotReserveOAuthPrefix pins a deliberate absence.
+// The server serves /auth; /oauth appears only in frontend code inherited
+// from pocket-id. Reserving it here would turn a client-side routing bug into
+// a 404 that looks like a server decision.
+func TestRegisterFrontend_ShouldNotReserveOAuthPrefix(t *testing.T) {
+	t.Parallel()
+
+	if _, owned := backendOwnedPrefix("oauth/login"); owned {
+		t.Error("oauth/ is reserved as backend-owned, but the server serves /auth")
 	}
 }
 
@@ -295,6 +368,44 @@ func TestRegisterFrontend_ShouldServeExistingStaticAssetWithCaching(t *testing.T
 	}
 }
 
+func TestRegisterFrontend_ShouldCacheContentHashedAssetsAsImmutable(t *testing.T) {
+	t.Parallel()
+
+	r := newTestFrontendRouter(t)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/_app/immutable/chunks/abc123.js", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d", w.Code, http.StatusOK)
+	}
+	if got := w.Header().Get("Cache-Control"); !strings.Contains(got, "immutable") {
+		t.Errorf("got Cache-Control %q, want the immutable directive for a content-hashed asset", got)
+	}
+}
+
+// TestRegisterFrontend_ShouldNotCacheStableFilenamesAsImmutable is the guard
+// that matters: an immutable response is effectively irrevocable, because
+// browsers will not revalidate it even on reload. An asset whose filename
+// stays the same across builds must never get one.
+func TestRegisterFrontend_ShouldNotCacheStableFilenamesAsImmutable(t *testing.T) {
+	t.Parallel()
+
+	r := newTestFrontendRouter(t)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/robots.txt", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d", w.Code, http.StatusOK)
+	}
+	if got := w.Header().Get("Cache-Control"); strings.Contains(got, "immutable") {
+		t.Errorf("got Cache-Control %q, want no immutable directive for a stable filename", got)
+	}
+}
+
 func TestRegisterFrontend_ShouldServeIndexHtmlAtRootPath(t *testing.T) {
 	t.Parallel()
 
@@ -318,11 +429,7 @@ func TestRegisterFrontend_ShouldInjectCSPNonceIntoScriptTags(t *testing.T) {
 	// With the CSP middleware in front (as initRouter arranges in
 	// production), index.html must be served with the per-request nonce
 	// injected into its <script> tags.
-	r := gin.New()
-	r.Use(middleware.NewCspMiddleware().Add())
-	if err := RegisterFrontend(r); err != nil {
-		t.Fatalf("expected no error registering the frontend, got %v", err)
-	}
+	r := newTestFrontendRouter(t, middleware.NewCspMiddleware().Add())
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -355,11 +462,7 @@ func TestRegisterFrontend_ShouldInjectNonceIntoScriptTagsWithAttributes(t *testi
 	// The nonce injection must work for script tags with various attributes
 	// like async, defer, type, src, etc. — the regex should handle any
 	// <script...> tags, not just bare <script>.
-	r := gin.New()
-	r.Use(middleware.NewCspMiddleware().Add())
-	if err := RegisterFrontend(r); err != nil {
-		t.Fatalf("expected no error registering the frontend, got %v", err)
-	}
+	r := newTestFrontendRouter(t, middleware.NewCspMiddleware().Add())
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

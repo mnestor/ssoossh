@@ -99,23 +99,48 @@ func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 		}
 	}
 
-	a, err := r.newSSHAgent()
+	a, err := r.resolveAgent(cfg)
 	if err != nil {
-		if !cfg.FallbackFileAgent {
-			r.initErr = fmt.Errorf("connect to ssh-agent: %w", err)
-			return nil
-		}
-		slog.Warn("failed to connect to ssh-agent, falling back to file-based storage", "error", err)
-		a, err = r.newFileAgent(cfg.Filename)
-		if err != nil {
-			r.initErr = fmt.Errorf("open ssh agent: %w", err)
-			return nil
-		}
+		r.initErr = err
+		return nil
 	}
 	r.ssh = a
 	r.initErr = r.ssh.SetCA(cfg.CAPubkey)
 
 	return nil
+}
+
+// resolveAgent decides where keys and certificates are kept, honoring the
+// two settings that describe it:
+//
+//   - use_agent states the preference. Turning it off means "do not touch my
+//     ssh-agent", so a running agent is not consulted at all — quietly using
+//     one anyway would be exactly the thing the setting exists to prevent.
+//   - fallback_file_agent decides what happens when an agent was wanted but
+//     is unreachable: key files, or fail closed.
+func (r *RootCommand) resolveAgent(cfg *config.Config) (agent.Agent, error) {
+	if !cfg.UseAgent {
+		a, err := r.newFileAgent(cfg.Filename)
+		if err != nil {
+			return nil, fmt.Errorf("open key file storage: %w", err)
+		}
+		return a, nil
+	}
+
+	a, err := r.newSSHAgent()
+	if err == nil {
+		return a, nil
+	}
+	if !cfg.FallbackFileAgent {
+		return nil, fmt.Errorf("connect to ssh-agent: %w", err)
+	}
+
+	slog.Warn("failed to connect to ssh-agent, falling back to file-based storage", "error", err)
+	a, err = r.newFileAgent(cfg.Filename)
+	if err != nil {
+		return nil, fmt.Errorf("open ssh agent: %w", err)
+	}
+	return a, nil
 }
 
 // Run implements simplecobra.Commander. The root command has no action of

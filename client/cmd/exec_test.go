@@ -51,11 +51,14 @@ func TestExecuteEndToEnd(t *testing.T) {
 		wantNilErr bool
 	}{
 		{name: "ca", args: []string{"ca"}, wantNilErr: true},
-		{name: "ssh login", args: []string{"ssh", "login"}},
-		{name: "ssh logout", args: []string{"ssh", "logout"}},
+		// login reaches its real implementation and fails at the outcome:
+		// the stub client resolves the request with nothing in it. What is
+		// being asserted here is that the tree runs it, not what it says.
+		{name: "ssh login", args: []string{"ssh", "login"}, wantErr: errors.New("the certificate request resolved with no outcome")},
+		{name: "ssh logout", args: []string{"ssh", "logout"}, wantNilErr: true},
 		{name: "ssh proxycommand with no command", args: []string{"ssh", "proxycommand"}, wantErr: errProxyCommandRequiresArgs},
 		{name: "ssh inspect", args: []string{"ssh", "inspect"}, wantNilErr: true},
-		{name: "ssh config", args: []string{"ssh", "config"}},
+		{name: "ssh config", args: []string{"ssh", "config"}, wantNilErr: true},
 		{name: "host sign", args: []string{"host", "sign"}},
 		{name: "host renew", args: []string{"host", "renew"}},
 		{name: "host sync", args: []string{"host", "sync"}},

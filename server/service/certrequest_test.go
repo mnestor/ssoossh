@@ -17,6 +17,7 @@ import (
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
 	"github.com/glebarez/sqlite"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/certmsg"
@@ -45,8 +46,8 @@ func newTestCertRequestServiceWithOptions(t *testing.T, opts config.CertificateO
 	if err != nil {
 		t.Fatalf("failed to open in-memory sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.CertificateRequest{}); err != nil {
-		t.Fatalf("failed to migrate certificate_requests table: %v", err)
+	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.User{}); err != nil {
+		t.Fatalf("failed to migrate test tables: %v", err)
 	}
 
 	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
@@ -61,6 +62,25 @@ func newTestCertRequestServiceWithOptions(t *testing.T, opts config.CertificateO
 		t.Fatalf("failed to construct CertRequestService: %v", err)
 	}
 	return svc
+}
+
+// seedUser inserts the users row Approve resolves the approving identity
+// against, returning its ID. Approve binds a request to a user (see
+// bindRequester), so every approval path needs one to exist.
+func seedUser(t *testing.T, db *gorm.DB, subject string) string {
+	t.Helper()
+
+	user := model.User{
+		ID:        uuid.NewString(),
+		Subject:   subject,
+		Username:  "seeded-" + subject,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("failed to seed user %q: %v", subject, err)
+	}
+	return user.ID
 }
 
 func TestCertRequestService_Wait_ShouldReturnErrorForUnknownID(t *testing.T) {
@@ -356,6 +376,7 @@ func TestCertRequestService_Approve_ShouldNarrowExtensionsAndPublishSigningJob(t
 	}
 
 	identity := &Identity{Username: "alice", Subject: "sub-1", Email: "alice@example.com"}
+	seedUser(t, svc.db, identity.Subject)
 	if err := svc.Approve(context.Background(), requestID, identity); err != nil {
 		t.Fatalf("unexpected error approving request: %v", err)
 	}
@@ -411,7 +432,8 @@ func TestCertRequestService_Approve_ShouldRejectWhenIdentityLacksRequiredGroup(t
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
 
-	identity := &Identity{Username: "alice", Groups: []string{"engineers"}}
+	identity := &Identity{Username: "alice", Subject: "sub-1", Groups: []string{"engineers"}}
+	seedUser(t, svc.db, identity.Subject)
 	if err := svc.Approve(context.Background(), requestID, identity); err == nil {
 		t.Fatal("expected an error approving without the required group, got nil")
 	}
@@ -461,7 +483,8 @@ func TestCertRequestService_Approve_ShouldEnrollServiceRequestsInsteadOfQueueing
 	}()
 	time.Sleep(50 * time.Millisecond)
 
-	identity := &Identity{Username: "alice"}
+	identity := &Identity{Username: "alice", Subject: "sub-1"}
+	seedUser(t, svc.db, identity.Subject)
 	if err := svc.Approve(context.Background(), requestID, identity); err != nil {
 		t.Fatalf("unexpected error approving request: %v", err)
 	}
@@ -516,7 +539,8 @@ func TestCertRequestService_Approve_ShouldErrorWhenNotPending(t *testing.T) {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
 
-	identity := &Identity{Username: "alice"}
+	identity := &Identity{Username: "alice", Subject: "sub-1"}
+	seedUser(t, svc.db, identity.Subject)
 	if err := svc.Approve(context.Background(), requestID, identity); err != nil {
 		t.Fatalf("unexpected error on first approve: %v", err)
 	}
@@ -611,21 +635,288 @@ func TestCertRequestService_Deny_ShouldErrorWhenNotPending(t *testing.T) {
 	}
 }
 
-func TestCertRequestService_ListPending_ShouldExcludeExpiredRequests(t *testing.T) {
+// TestCertRequestService_Approve_ShouldRefuseARequestPastTTL keeps the
+// TTL-expiry assertion that used to run through ListPending, repointed at
+// Approve now that requests are never listed. This is the half that matters:
+// an expired request must not be approvable, whatever route reaches it.
+func TestCertRequestService_Approve_ShouldRefuseARequestPastTTL(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, time.Millisecond)
-	if _, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."}); err != nil {
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
 
 	time.Sleep(10 * time.Millisecond)
 
-	requests, err := svc.ListPending(context.Background())
+	if err := svc.Approve(context.Background(), requestID, &Identity{Username: "alice", Subject: "sub-alice"}); err == nil {
+		t.Error("expected a TTL-expired request to be refused by Approve")
+	}
+}
+
+// TestCertRequestService_Approve_ShouldBindTheRequestToTheApprovingUser pins
+// the claim half of the binding: an unclaimed request becomes the approver's.
+func TestCertRequestService_Approve_ShouldBindTheRequestToTheApprovingUser(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	identity := &Identity{Username: "alice", Subject: "sub-alice"}
+	wantUserID := seedUser(t, svc.db, identity.Subject)
+
+	requestID := mustCreateUserRequest(t, svc)
+
+	if err := svc.Approve(context.Background(), requestID, identity); err != nil {
+		t.Fatalf("unexpected error approving: %v", err)
+	}
+
+	var req model.CertificateRequest
+	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+		t.Fatalf("unexpected error reading the request back: %v", err)
+	}
+	if req.UserID == nil {
+		t.Fatal("expected the request to be bound to a user")
+	}
+	if *req.UserID != wantUserID {
+		t.Errorf("got user_id %q, want %q", *req.UserID, wantUserID)
+	}
+}
+
+// TestCertRequestService_Approve_ShouldRejectAnApproverWhoIsNotTheRequester
+// is the reason the binding exists. The certificate carries the *approver's*
+// principals over the *requester's* public key, so letting a second user
+// approve someone else's pending request would hand that requester a
+// certificate impersonating the approver.
+func TestCertRequestService_Approve_ShouldRejectAnApproverWhoIsNotTheRequester(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	alice := &Identity{Username: "alice", Subject: "sub-alice"}
+	bob := &Identity{Username: "bob", Subject: "sub-bob"}
+	seedUser(t, svc.db, alice.Subject)
+	seedUser(t, svc.db, bob.Subject)
+
+	requestID := mustCreateUserRequest(t, svc)
+
+	// Bind it to alice while leaving it pending — the state a request is in
+	// once alice has opened the approval page but not yet decided.
+	if err := svc.bindRequester(context.Background(), &model.CertificateRequest{ID: requestID}, alice); err != nil {
+		t.Fatalf("unexpected error binding the request to alice: %v", err)
+	}
+
+	// Bob must not be able to act on it, even though he is authenticated.
+	err := svc.Approve(context.Background(), requestID, bob)
+	if err == nil {
+		t.Fatal("expected bob's approve to fail on a request bound to alice")
+	}
+
+	var forbidden *errorresponses.ForbiddenError
+	if !errors.As(err, &forbidden) {
+		t.Errorf("got error %v, want a ForbiddenError", err)
+	}
+}
+
+// TestCertRequestService_Approve_ShouldRejectAnIdentityWithNoUserRecord
+// fails closed: without a users row there is nothing to bind to, so the
+// request must not be approved rather than silently left unbound.
+func TestCertRequestService_Approve_ShouldRejectAnIdentityWithNoUserRecord(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	requestID := mustCreateUserRequest(t, svc)
+
+	err := svc.Approve(context.Background(), requestID, &Identity{Username: "ghost", Subject: "sub-ghost"})
+	if err == nil {
+		t.Fatal("expected approve to fail for an identity with no users row")
+	}
+
+	var forbidden *errorresponses.ForbiddenError
+	if !errors.As(err, &forbidden) {
+		t.Errorf("got error %v, want a ForbiddenError", err)
+	}
+}
+
+// TestCertRequestService_Approve_ShouldEnforceRequireGroupOnUserCertificates
+// covers both directions of the newly reachable gate, including the
+// backward-compatible case where an empty value restricts nobody.
+func TestCertRequestService_Approve_ShouldEnforceRequireGroupOnUserCertificates(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		requireGroup string
+		groups       []string
+		wantErr      bool
+	}{
+		{
+			name:         "should allow anyone when require_group is unset",
+			requireGroup: "",
+			groups:       nil,
+			wantErr:      false,
+		},
+		{
+			name:         "should allow a member of the required group",
+			requireGroup: "ssh-users",
+			groups:       []string{"other", "ssh-users"},
+			wantErr:      false,
+		},
+		{
+			name:         "should reject a non-member",
+			requireGroup: "ssh-users",
+			groups:       []string{"other"},
+			wantErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			opts := config.CertificateOptions{}
+			opts.User.ValidDuration = time.Hour
+			opts.User.RequireGroup = tt.requireGroup
+
+			svc := newTestCertRequestServiceWithOptions(t, opts)
+			identity := &Identity{Username: "alice", Subject: "sub-alice", Groups: tt.groups}
+			seedUser(t, svc.db, identity.Subject)
+
+			requestID := mustCreateUserRequest(t, svc)
+
+			err := svc.Approve(context.Background(), requestID, identity)
+			if tt.wantErr && err == nil {
+				t.Error("expected approve to be rejected by require_group")
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// mustCreateUserRequest creates a pending user certificate request and
+// returns its ID.
+func mustCreateUserRequest(t *testing.T, svc *CertRequestService) string {
+	t.Helper()
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypeUser,
+		PublicKey: "ssh-ed25519 AAAA test",
+	})
+	if err != nil {
+		t.Fatalf("failed to create certificate request: %v", err)
+	}
+	return requestID
+}
+
+// TestCertRequestService_Detail_ShouldBindOnFirstView is the reason Detail
+// binds at all: the approval page loads before anyone decides, so a request
+// should be owned from the moment its owner opens it rather than only once
+// they click approve.
+func TestCertRequestService_Detail_ShouldBindOnFirstView(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	identity := &Identity{Username: "alice", Subject: "sub-alice"}
+	wantUserID := seedUser(t, svc.db, identity.Subject)
+
+	requestID := mustCreateUserRequest(t, svc)
+
+	if _, err := svc.Detail(context.Background(), requestID, identity); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var req model.CertificateRequest
+	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+		t.Fatalf("unexpected error reading the request back: %v", err)
+	}
+	if req.UserID == nil || *req.UserID != wantUserID {
+		t.Errorf("expected viewing the request to bind it to alice, got %v", req.UserID)
+	}
+}
+
+// TestCertRequestService_Detail_ShouldRejectAViewerWhoIsNotTheOwner means a
+// second user finds out on page load rather than after clicking approve.
+func TestCertRequestService_Detail_ShouldRejectAViewerWhoIsNotTheOwner(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	alice := &Identity{Username: "alice", Subject: "sub-alice"}
+	bob := &Identity{Username: "bob", Subject: "sub-bob"}
+	seedUser(t, svc.db, alice.Subject)
+	seedUser(t, svc.db, bob.Subject)
+
+	requestID := mustCreateUserRequest(t, svc)
+
+	if _, err := svc.Detail(context.Background(), requestID, alice); err != nil {
+		t.Fatalf("unexpected error on alice's view: %v", err)
+	}
+
+	_, err := svc.Detail(context.Background(), requestID, bob)
+	if err == nil {
+		t.Fatal("expected bob's view of alice's request to be refused")
+	}
+
+	var forbidden *errorresponses.ForbiddenError
+	if !errors.As(err, &forbidden) {
+		t.Errorf("got error %v, want a ForbiddenError", err)
+	}
+}
+
+// TestCertRequestService_Detail_ShouldReportRequestedAndNarrowedSeparately
+// is what lets the approval page show a human that an option they asked for
+// is being trimmed — the hard constraint is that this is visible *before*
+// approval, not discovered afterwards.
+func TestCertRequestService_Detail_ShouldReportRequestedAndNarrowedSeparately(t *testing.T) {
+	t.Parallel()
+
+	opts := config.CertificateOptions{}
+	opts.User.ValidDuration = 10 * time.Hour
+	opts.User.Extensions = []string{"permit-pty"}
+
+	svc := newTestCertRequestServiceWithOptions(t, opts)
+	identity := &Identity{Username: "alice", Subject: "sub-alice"}
+	seedUser(t, svc.db, identity.Subject)
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypeUser,
+		PublicKey: "ssh-ed25519 AAAA test",
+		RequestedOptions: RequestedOptions{
+			Extensions: []string{"permit-pty", "permit-port-forwarding"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	detail, err := svc.Detail(context.Background(), requestID, identity)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(requests) != 0 {
-		t.Errorf("expected the TTL-expired request to be excluded from ListPending, got %d results", len(requests))
+
+	if len(detail.Requested.Extensions) != 2 {
+		t.Errorf("got requested extensions %v, want both as submitted", detail.Requested.Extensions)
+	}
+	if len(detail.Narrowed.Extensions) != 1 || detail.Narrowed.Extensions[0] != "permit-pty" {
+		t.Errorf("got narrowed extensions %v, want only the configured-permitted one", detail.Narrowed.Extensions)
+	}
+	if detail.ValidDuration != 10*time.Hour {
+		t.Errorf("got valid duration %v, want 10h", detail.ValidDuration)
+	}
+	if len(detail.Principals) != 1 || detail.Principals[0] != "alice" {
+		t.Errorf("got principals %v, want [alice]", detail.Principals)
+	}
+}
+
+func TestCertRequestService_Detail_ShouldReturnNotFoundForAnUnknownID(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	seedUser(t, svc.db, "sub-alice")
+
+	_, err := svc.Detail(context.Background(), "does-not-exist", &Identity{Subject: "sub-alice"})
+
+	var notFound *errorresponses.NotFoundError
+	if !errors.As(err, &notFound) {
+		t.Errorf("got error %v, want a NotFoundError", err)
 	}
 }

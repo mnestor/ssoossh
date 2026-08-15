@@ -116,12 +116,22 @@ func newCertificateEventSource(ctx context.Context, tlsConfig *tls.Config, event
 				return
 			}
 
+			// The event data is enveloped like every other JSON body the
+			// API emits, so the status comes from the event name and the
+			// payload from the envelope's data half.
 			out := &CertificateResult{Status: status}
 			if evt.Data != "" {
-				if err := json.Unmarshal([]byte(evt.Data), out); err != nil {
+				var envelope apitypes.Envelope[CertificateResult]
+				if err := json.Unmarshal([]byte(evt.Data), &envelope); err != nil {
 					finish(nil, fmt.Errorf("failed to decode certificate request event %q: %w", status, err))
 					return
 				}
+				if envelope.Error != "" {
+					finish(nil, fmt.Errorf("certificate request %s: %s", status, envelope.Error))
+					return
+				}
+				out.Certificate = envelope.Data.Certificate
+				out.Code = envelope.Data.Code
 			}
 			finish(out, nil)
 		}, nil)

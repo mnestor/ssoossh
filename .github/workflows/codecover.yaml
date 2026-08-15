@@ -1,4 +1,4 @@
-name: golangci-lint
+name: codecover
 on:
   workflow_dispatch:
   push:
@@ -37,8 +37,23 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      # server/frontend embeds server/frontend/dist and nothing there is
+      # tracked, so the Go build cannot compile until the UI exists.
+      - name: Build web UI
+        run: make frontend
+
+
       - name: Run tests
-        run: CGO_ENBALED=0 go test -v -tags=coverprofile -covermode=atomic -coverprofile=coverage.txt ./...
+        run: CGO_ENABLED=0 go test -v -covermode=atomic -coverprofile=coverage.txt ./...
 
       - name: Upload coverage reports to Codecov
         if: ${{ !cancelled() }}

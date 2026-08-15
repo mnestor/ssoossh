@@ -1,43 +1,63 @@
 @import 'tailwindcss';
 
-@plugin 'flowbite/plugin';
-
+/* Dark mode follows the OS unless an explicit class overrides it, so the
+   default matches what the user already asked their system for. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-@source './src/**/*.{html,js,svelte,ts,md}';
-@source '../node_modules/flowbite-svelte/**/*.{html,js,svelte,ts}';
-@source '../node_modules/flowbite-svelte-icons/**/*.{html,js,svelte,ts}';
-@source '../node_modules/@flowbite-svelte-plugins/chart/dist';
-
 @theme {
-  --z-index-100: 100;
+	--color-surface: #ffffff;
+	--color-surface-muted: #f6f7f9;
+	--color-border-subtle: #e3e6ea;
+	--color-ink: #16191d;
+	--color-ink-muted: #5c6570;
 
-  --color-primary-50: #fff5f2;
-  --color-primary-100: #fff1ee;
-  --color-primary-200: #ffe4de;
-  --color-primary-300: #ffd5cc;
-  --color-primary-400: #ffbcad;
-  --color-primary-500: #fe795d;
-  --color-primary-600: #ef562f;
-  --color-primary-700: #eb4f27;
-  --color-primary-800: #cc4522;
-  --color-primary-900: #a5371b;
+	--color-accent: #2f6df6;
+	--color-accent-hover: #1f56d0;
 
-  --color-secondary-50: #f0f9ff;
-  --color-secondary-100: #e0f2fe;
-  --color-secondary-200: #bae6fd;
-  --color-secondary-300: #7dd3fc;
-  --color-secondary-400: #38bdf8;
-  --color-secondary-500: #0ea5e9;
-  --color-secondary-600: #0284c7;
-  --color-secondary-700: #0369a1;
-  --color-secondary-800: #075985;
-  --color-secondary-900: #0c4a6e;
+	/* Granted and trimmed are the approval page's whole point, so they get
+	   named colors rather than ad-hoc utility classes at each use site. */
+	--color-granted: #157347;
+	--color-granted-surface: #e7f5ed;
+	--color-trimmed: #8a6100;
+	--color-trimmed-surface: #fdf3e0;
+	--color-danger: #b42318;
+	--color-danger-surface: #fdeceb;
 }
 
 @layer base {
-  button,
-  [role='button'] {
-    cursor: pointer;
-  }
+	:root {
+		color-scheme: light dark;
+	}
+
+	.dark {
+		--color-surface: #16191d;
+		--color-surface-muted: #1f242a;
+		--color-border-subtle: #2d343c;
+		--color-ink: #eef1f4;
+		--color-ink-muted: #9aa4b0;
+
+		--color-accent: #6f9bff;
+		--color-accent-hover: #8bafff;
+
+		--color-granted: #6ede9f;
+		--color-granted-surface: #14301f;
+		--color-trimmed: #f2c66a;
+		--color-trimmed-surface: #2f2712;
+		--color-danger: #ff9c93;
+		--color-danger-surface: #3a1a17;
+	}
+
+	body {
+		background-color: var(--color-surface-muted);
+		color: var(--color-ink);
+	}
+
+	button,
+	[role='button'] {
+		cursor: pointer;
+	}
+
+	button:disabled {
+		cursor: not-allowed;
+	}
 }

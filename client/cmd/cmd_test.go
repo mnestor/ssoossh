@@ -31,7 +31,7 @@ func TestRootCommandPreRun(t *testing.T) {
 		{
 			name: "should populate config and agent when ssh-agent connects successfully",
 			newConfig: func(cmd *cobra.Command) (*config.Config, error) {
-				return &config.Config{Server: "https://example.com"}, nil
+				return &config.Config{Server: "https://example.com", UseAgent: true}, nil
 			},
 			newAPIClient: defaultNewAPIClient,
 			newSSHAgent:  func() (agent.Agent, error) { return &fakeAgent{}, nil },
@@ -43,7 +43,7 @@ func TestRootCommandPreRun(t *testing.T) {
 		{
 			name: "should fall back to file agent when ssh-agent connection fails and fallback is enabled",
 			newConfig: func(cmd *cobra.Command) (*config.Config, error) {
-				return &config.Config{FallbackFileAgent: true, Filename: "ssoossh"}, nil
+				return &config.Config{UseAgent: true, FallbackFileAgent: true, Filename: "ssoossh"}, nil
 			},
 			newAPIClient: defaultNewAPIClient,
 			newSSHAgent:  func() (agent.Agent, error) { return nil, errors.New("no ssh-agent") },
@@ -54,11 +54,39 @@ func TestRootCommandPreRun(t *testing.T) {
 		},
 		{
 			name:         "should set initErr when ssh-agent connection fails and fallback is disabled",
-			newConfig:    func(cmd *cobra.Command) (*config.Config, error) { return &config.Config{}, nil },
+			newConfig:    func(cmd *cobra.Command) (*config.Config, error) { return &config.Config{UseAgent: true}, nil },
 			newAPIClient: defaultNewAPIClient,
 			newSSHAgent:  func() (agent.Agent, error) { return nil, errors.New("no ssh-agent") },
 			newFileAgent: func(path string) (agent.Agent, error) {
 				return &fakeAgent{}, nil
+			},
+			wantErr: true,
+		},
+		{
+			// use_agent off means "do not touch my ssh-agent", so a reachable
+			// agent must not be consulted — that is the whole setting.
+			name: "should use file storage without consulting the agent when use_agent is off",
+			newConfig: func(cmd *cobra.Command) (*config.Config, error) {
+				return &config.Config{UseAgent: false, Filename: "ssoossh"}, nil
+			},
+			newAPIClient: defaultNewAPIClient,
+			newSSHAgent: func() (agent.Agent, error) {
+				return nil, errors.New("should not be called")
+			},
+			newFileAgent: func(path string) (agent.Agent, error) { return &fakeAgent{}, nil },
+			wantAgent:    true,
+		},
+		{
+			name: "should set initErr when use_agent is off and file storage fails",
+			newConfig: func(cmd *cobra.Command) (*config.Config, error) {
+				return &config.Config{UseAgent: false, Filename: "ssoossh"}, nil
+			},
+			newAPIClient: defaultNewAPIClient,
+			newSSHAgent: func() (agent.Agent, error) {
+				return nil, errors.New("should not be called")
+			},
+			newFileAgent: func(path string) (agent.Agent, error) {
+				return nil, errors.New("no file agent")
 			},
 			wantErr: true,
 		},
@@ -93,7 +121,7 @@ func TestRootCommandPreRun(t *testing.T) {
 		{
 			name: "should set initErr when both ssh-agent and file agent fail",
 			newConfig: func(cmd *cobra.Command) (*config.Config, error) {
-				return &config.Config{FallbackFileAgent: true, Filename: "ssoossh"}, nil
+				return &config.Config{UseAgent: true, FallbackFileAgent: true, Filename: "ssoossh"}, nil
 			},
 			newAPIClient: defaultNewAPIClient,
 			newSSHAgent:  func() (agent.Agent, error) { return nil, errors.New("no ssh-agent") },
@@ -149,19 +177,46 @@ func (f *fakeAgent) Certificates() ([]*xssh.Certificate, error)      { return ni
 func (f *fakeAgent) AddKeypair(kp *keypair.SSHKeypair) error         { return nil }
 func (f *fakeAgent) CleanupAgent() error                             { return nil }
 
-// fakeAPIClient is a minimal api.Client stub for tests that only need a
-// non-nil value, not real server calls.
-type fakeAPIClient struct{}
+// fakeAPIClient is an api.Client stub. Its zero value satisfies tests that
+// only need a non-nil client; the function fields let a test drive a
+// specific create/wait outcome without a server.
+type fakeAPIClient struct {
+	pending     *api.PendingRequest
+	createErr   error
+	result      *api.CertificateResult
+	awaitErr    error
+	createdWith []string
+	// awaitCalled records whether the wait was reached, so a test can assert
+	// a reused certificate short-circuited before any server call.
+	awaitCalled bool
+	// onAwait runs at the moment the wait begins, which is how a test
+	// observes what had already been printed by then.
+	onAwait func()
+}
 
 func (f *fakeAPIClient) GetCA(ctx context.Context) (string, error) { return "", nil }
-func (f *fakeAPIClient) RequestUserCertificate(ctx context.Context, publicKey string, opts api.RequestedOptions) (string, *api.CertificateResult, error) {
-	return "", nil, nil
+func (f *fakeAPIClient) CreateUserRequest(ctx context.Context, publicKey string, opts api.RequestedOptions) (*api.PendingRequest, error) {
+	f.createdWith = append(f.createdWith, publicKey)
+	if f.createErr != nil {
+		return nil, f.createErr
+	}
+	if f.pending == nil {
+		return &api.PendingRequest{RequestID: "fake", ApprovalURL: "https://ssh.example.test/approve/fake"}, nil
+	}
+	return f.pending, nil
 }
-func (f *fakeAPIClient) RequestHostCertificate(ctx context.Context, publicKey, hostname string, opts api.RequestedOptions) (string, *api.CertificateResult, error) {
-	return "", nil, nil
+func (f *fakeAPIClient) CreateHostRequest(ctx context.Context, publicKey, hostname string, opts api.RequestedOptions) (*api.PendingRequest, error) {
+	return f.CreateUserRequest(ctx, publicKey, opts)
 }
-func (f *fakeAPIClient) EnrollService(ctx context.Context, publicKey string, opts api.RequestedOptions) (string, *api.CertificateResult, error) {
-	return "", nil, nil
+func (f *fakeAPIClient) CreateServiceEnrollment(ctx context.Context, publicKey string, opts api.RequestedOptions) (*api.PendingRequest, error) {
+	return f.CreateUserRequest(ctx, publicKey, opts)
+}
+func (f *fakeAPIClient) AwaitCertificate(ctx context.Context, req *api.PendingRequest) (*api.CertificateResult, error) {
+	f.awaitCalled = true
+	if f.onAwait != nil {
+		f.onAwait()
+	}
+	return f.result, f.awaitErr
 }
 func (f *fakeAPIClient) RetrieveServiceCertificate(ctx context.Context, code string) (string, error) {
 	return "", nil

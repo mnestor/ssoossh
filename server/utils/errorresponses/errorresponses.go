@@ -85,3 +85,24 @@ func (e *NotImplementedError) Error() string {
 
 // HTTPStatusCode reports the HTTP status this error should be rendered as.
 func (e *NotImplementedError) HTTPStatusCode() int { return http.StatusNotImplemented }
+
+// ForbiddenError indicates the caller is authenticated but not permitted to
+// act on this resource — as opposed to NotFoundError, which says the
+// resource isn't there at all.
+//
+// Reason is returned to the caller, so keep it about authorization and free
+// of anything that would confirm details about a resource they don't own.
+type ForbiddenError struct {
+	Reason string
+}
+
+// Error implements the error interface.
+func (e *ForbiddenError) Error() string {
+	if e.Reason == "" {
+		return "forbidden"
+	}
+	return e.Reason
+}
+
+// HTTPStatusCode reports the HTTP status this error should be rendered as.
+func (e *ForbiddenError) HTTPStatusCode() int { return http.StatusForbidden }

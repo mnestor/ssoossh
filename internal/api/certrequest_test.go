@@ -18,10 +18,11 @@ import (
 )
 
 // writeSSEEvent writes name/data in gin's c.SSEvent wire format:
-// "event:<name>\ndata:<json>\n\n".
+// "event:<name>\ndata:<json>\n\n", with data wrapped in the {data, error}
+// envelope every JSON body this API emits.
 func writeSSEEvent(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/event-stream")
-	encoded, _ := json.Marshal(data) //nolint:errcheck // test helper, inputs are always marshalable
+	encoded, _ := json.Marshal(map[string]any{"data": data, "error": nil}) //nolint:errcheck // test helper, inputs are always marshalable
 	_, _ = w.Write([]byte("event:" + name + "\n"))
 	_, _ = w.Write([]byte("data:" + string(encoded) + "\n\n"))
 	if f, ok := w.(http.Flusher); ok {
@@ -29,20 +30,27 @@ func writeSSEEvent(w http.ResponseWriter, name string, data any) {
 	}
 }
 
-// writeCreateResponse writes the (unwrapped, per this codebase's success-
-// response convention — see server/controller/certrequests.go's
-// createRequestResponse) JSON body a create call returns, with events_url
-// pointing back at eventsPath on the same server.
+// writeCreateResponse writes the enveloped JSON body a create call
+// returns, with events_url pointing back at eventsPath on the same server.
 func writeCreateResponse(w http.ResponseWriter, requestID, eventsPath string) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{ //nolint:errcheck // test helper, encoding a static map never fails
+	writeEnvelope(w, map[string]string{
 		"request_id":   requestID,
 		"events_url":   eventsPath,
 		"approval_url": "/approve/" + requestID,
 	})
 }
 
-func TestRequestUserCertificate_ShouldReturnApprovedOutcome(t *testing.T) {
+// writeEnvelope writes payload in the {data, error} envelope every JSON
+// response from ssoosshd uses (see apitypes.Envelope).
+func writeEnvelope(w http.ResponseWriter, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck // test helper, encoding a static map never fails
+		"data":  payload,
+		"error": nil,
+	})
+}
+
+func TestCreateUserRequest_ShouldReturnApprovedOutcome(t *testing.T) {
 	t.Parallel()
 
 	var gotBody map[string]any
@@ -66,12 +74,17 @@ func TestRequestUserCertificate_ShouldReturnApprovedOutcome(t *testing.T) {
 		t.Fatalf("unexpected error building client: %v", err)
 	}
 
-	approvalURL, result, err := c.RequestUserCertificate(context.Background(), "ssh-ed25519 AAAA... test", RequestedOptions{Extensions: []string{"permit-pty"}})
+	pending, err := c.CreateUserRequest(context.Background(), "ssh-ed25519 AAAA... test", RequestedOptions{Extensions: []string{"permit-pty"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if approvalURL != "/approve/req-1" {
-		t.Errorf("got approvalURL %q, want %q", approvalURL, "/approve/req-1")
+	if pending.ApprovalURL != ts.URL+"/approve/req-1" {
+		t.Errorf("got approvalURL %q, want %q", pending.ApprovalURL, ts.URL+"/approve/req-1")
+	}
+
+	result, err := c.AwaitCertificate(context.Background(), pending)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if result.Status != StatusApproved {
 		t.Errorf("got status %q, want %q", result.Status, StatusApproved)
@@ -96,7 +109,7 @@ func TestRequestUserCertificate_ShouldReturnApprovedOutcome(t *testing.T) {
 	}
 }
 
-func TestRequestHostCertificate_ShouldSendHostname(t *testing.T) {
+func TestCreateHostRequest_ShouldSendHostname(t *testing.T) {
 	t.Parallel()
 
 	var gotBody map[string]any
@@ -120,7 +133,11 @@ func TestRequestHostCertificate_ShouldSendHostname(t *testing.T) {
 		t.Fatalf("unexpected error building client: %v", err)
 	}
 
-	_, result, err := c.RequestHostCertificate(context.Background(), "ssh-ed25519 AAAA... host", "db01.internal", RequestedOptions{})
+	pending, err := c.CreateHostRequest(context.Background(), "ssh-ed25519 AAAA... host", "db01.internal", RequestedOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	result, err := c.AwaitCertificate(context.Background(), pending)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -132,7 +149,7 @@ func TestRequestHostCertificate_ShouldSendHostname(t *testing.T) {
 	}
 }
 
-func TestEnrollService_ShouldHitEnrollEndpoint(t *testing.T) {
+func TestCreateServiceEnrollment_ShouldHitEnrollEndpoint(t *testing.T) {
 	t.Parallel()
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -153,7 +170,11 @@ func TestEnrollService_ShouldHitEnrollEndpoint(t *testing.T) {
 		t.Fatalf("unexpected error building client: %v", err)
 	}
 
-	_, result, err := c.EnrollService(context.Background(), "ssh-ed25519 AAAA... service", RequestedOptions{})
+	pending, err := c.CreateServiceEnrollment(context.Background(), "ssh-ed25519 AAAA... service", RequestedOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	result, err := c.AwaitCertificate(context.Background(), pending)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -162,7 +183,7 @@ func TestEnrollService_ShouldHitEnrollEndpoint(t *testing.T) {
 	}
 }
 
-func TestRequestUserCertificate_ShouldReturnResponseErrorWhenCreateFails(t *testing.T) {
+func TestCreateUserRequest_ShouldReturnResponseErrorWhenCreateFails(t *testing.T) {
 	t.Parallel()
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -177,7 +198,7 @@ func TestRequestUserCertificate_ShouldReturnResponseErrorWhenCreateFails(t *test
 		t.Fatalf("unexpected error building client: %v", err)
 	}
 
-	_, _, err = c.RequestUserCertificate(context.Background(), "", RequestedOptions{})
+	_, err = c.CreateUserRequest(context.Background(), "", RequestedOptions{})
 	respErr, ok := err.(*ResponseError)
 	if !ok {
 		t.Fatalf("expected a *ResponseError, got %T: %v", err, err)
@@ -190,7 +211,7 @@ func TestRequestUserCertificate_ShouldReturnResponseErrorWhenCreateFails(t *test
 	}
 }
 
-func TestRequestUserCertificate_ShouldReturnResponseErrorWhenEventsConnectionFails(t *testing.T) {
+func TestAwaitCertificate_ShouldReturnResponseErrorWhenEventsConnectionFails(t *testing.T) {
 	t.Parallel()
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -213,24 +234,29 @@ func TestRequestUserCertificate_ShouldReturnResponseErrorWhenEventsConnectionFai
 		t.Fatalf("unexpected error building client: %v", err)
 	}
 
-	approvalURL, result, err := c.RequestUserCertificate(context.Background(), "ssh-ed25519 AAAA... test", RequestedOptions{})
+	pending, err := c.CreateUserRequest(context.Background(), "ssh-ed25519 AAAA... test", RequestedOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error creating the request: %v", err)
+	}
+	if pending.ApprovalURL != ts.URL+"/approve/gone" {
+		t.Errorf("got approvalURL %q, want it available before the wait is attempted", pending.ApprovalURL)
+	}
+
+	result, err := c.AwaitCertificate(context.Background(), pending)
 	if err == nil {
 		t.Fatal("expected an error, got nil")
-	}
-	if approvalURL != "/approve/gone" {
-		t.Errorf("got approvalURL %q, want it returned even though the wait failed", approvalURL)
 	}
 	if result != nil {
 		t.Errorf("expected a nil result on failure, got %+v", result)
 	}
 }
 
-// TestRequestUserCertificate_ShouldReconnectAfterDroppedEventsConnection
+// TestAwaitCertificate_ShouldReconnectAfterDroppedEventsConnection
 // simulates the events connection dropping once (server closes without a
 // terminal event) before eventually resolving — resty's SSESource should
 // reconnect on its own per the SSE spec, without any retry logic in this
 // package.
-func TestRequestUserCertificate_ShouldReconnectAfterDroppedEventsConnection(t *testing.T) {
+func TestAwaitCertificate_ShouldReconnectAfterDroppedEventsConnection(t *testing.T) {
 	t.Parallel()
 
 	var eventsHits int64
@@ -264,7 +290,11 @@ func TestRequestUserCertificate_ShouldReconnectAfterDroppedEventsConnection(t *t
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, result, err := c.RequestUserCertificate(ctx, "ssh-ed25519 AAAA... test", RequestedOptions{})
+	pending, err := c.CreateUserRequest(ctx, "ssh-ed25519 AAAA... test", RequestedOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	result, err := c.AwaitCertificate(ctx, pending)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -273,5 +303,121 @@ func TestRequestUserCertificate_ShouldReconnectAfterDroppedEventsConnection(t *t
 	}
 	if hits := atomic.LoadInt64(&eventsHits); hits < 2 {
 		t.Errorf("expected at least 2 events connections (initial + reconnect), got %d", hits)
+	}
+}
+
+// TestCreateUserRequest_ShouldReturnApprovalURLBeforeAnyoneApproves is the
+// regression test for the shape this API used to have: create and wait were
+// one call, so the approval URL only came back once approval had already
+// happened. `ssh login` cannot work that way — it has to print the URL while
+// the request is still pending.
+func TestCreateUserRequest_ShouldReturnApprovalURLBeforeAnyoneApproves(t *testing.T) {
+	t.Parallel()
+
+	approved := make(chan struct{})
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/certs/user":
+			writeCreateResponse(w, "req-slow", "/api/certs/requests/req-slow/events")
+		case r.Method == http.MethodGet && r.URL.Path == "/api/certs/requests/req-slow/events":
+			// Stands in for a human taking their time: no terminal event
+			// until the test says so.
+			<-approved
+			writeSSEEvent(w, "approved", map[string]string{"certificate": "ssh-ed25519-cert-v01@openssh.com AAAA..."})
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(ts.Close)
+	t.Cleanup(func() {
+		select {
+		case <-approved:
+		default:
+			close(approved)
+		}
+	})
+
+	c, err := NewClient(Config{ServerURL: ts.URL})
+	if err != nil {
+		t.Fatalf("unexpected error building client: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// The point of the test: this returns while the request is unresolved.
+	pending, err := c.CreateUserRequest(ctx, "ssh-ed25519 AAAA... test", RequestedOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pending.ApprovalURL == "" {
+		t.Fatal("expected an approval URL while the request was still pending")
+	}
+
+	waited := make(chan *CertificateResult, 1)
+	go func() {
+		result, _ := c.AwaitCertificate(ctx, pending) //nolint:errcheck // the assertion below covers the outcome
+		waited <- result
+	}()
+
+	select {
+	case <-waited:
+		t.Fatal("the wait resolved before anything approved the request")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(approved)
+	select {
+	case result := <-waited:
+		if result == nil || result.Status != StatusApproved {
+			t.Errorf("got %+v, want an approved result once the request resolved", result)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for the outcome")
+	}
+}
+
+// TestAwaitCertificate_ShouldRejectRequestItDidNotCreate covers the zero
+// value a caller could hand-build: without the events URL there is nothing
+// to connect to, and a confusing URL-parse failure is worse than saying so.
+func TestAwaitCertificate_ShouldRejectRequestItDidNotCreate(t *testing.T) {
+	t.Parallel()
+
+	c, err := NewClient(Config{ServerURL: "https://ssh.example.com"})
+	if err != nil {
+		t.Fatalf("unexpected error building client: %v", err)
+	}
+
+	if _, err := c.AwaitCertificate(context.Background(), &PendingRequest{RequestID: "made-up"}); err == nil {
+		t.Error("expected an error for a request this client did not create")
+	}
+}
+
+func TestNewClient_ShouldAssumeHTTPSWhenTheServerURLHasNoScheme(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "bare host", in: "ssh.example.com", want: "https://ssh.example.com"},
+		{name: "trailing slash", in: "https://ssh.example.com/", want: "https://ssh.example.com"},
+		{name: "explicit http is kept", in: "http://127.0.0.1:8080", want: "http://127.0.0.1:8080"},
+		{name: "surrounding space", in: "  ssh.example.com  ", want: "https://ssh.example.com"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c, err := NewClient(Config{ServerURL: tt.in})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if c.serverURL != tt.want {
+				t.Errorf("got serverURL %q, want %q", c.serverURL, tt.want)
+			}
+		})
 	}
 }

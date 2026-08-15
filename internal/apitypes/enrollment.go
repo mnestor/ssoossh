@@ -10,5 +10,5 @@ type RetrieveRequestBody struct {
 
 // RetrieveResponse is POST /api/certs/service/retrieve's response body.
 type RetrieveResponse struct {
-	Certificate string `json:"certificate"`
+	Certificate string `json:"certificate" validate:"required"`
 }

@@ -2,38 +2,6 @@ package model
 
 import "time"
 
-// CertificateRequestStatus tracks a pending web UI approval that the client
-// is waiting on over SSE.
-type CertificateRequestStatus string
-
-const (
-	CertificateRequestStatusPending CertificateRequestStatus = "pending"
-	// CertificateRequestStatusSigning means a human approved the request
-	// and a signing job was published (see
-	// docs/signing-pipeline.md) — not yet terminal. The signer
-	// (docs/signing-pipeline.md) and its listener/resolver
-	// still need to run before this becomes CertificateRequestStatusApproved.
-	// Only used for CertificateTypeUser/CertificateTypeHost — service
-	// requests go straight from Pending to CertificateRequestStatusEnrolled,
-	// no signer involved at approval time.
-	CertificateRequestStatusSigning  CertificateRequestStatus = "signing"
-	CertificateRequestStatusApproved CertificateRequestStatus = "approved"
-	// CertificateRequestStatusEnrolled is CertificateTypeService's terminal
-	// approval state: EnrollmentToken is set, and the certificate itself
-	// isn't issued until a later `service retrieve` redeems it — see
-	// docs/ssoossh-context.md, "Service enrollment".
-	CertificateRequestStatusEnrolled CertificateRequestStatus = "enrolled"
-	CertificateRequestStatusDenied   CertificateRequestStatus = "denied"
-	CertificateRequestStatusExpired  CertificateRequestStatus = "expired"
-	// CertificateRequestStatusFailed is terminal: the signer couldn't
-	// produce a certificate (see docs/signing-pipeline.md),
-	// or a boot-time sweep invalidated a request left stuck in Signing (see
-	// docs/signing-pipeline.md). Distinct from Denied,
-	// which means a human said no. No migration needed — status is a
-	// free-text TEXT column.
-	CertificateRequestStatusFailed CertificateRequestStatus = "failed"
-)
-
 // CertificateRequest represents a client's in-flight ask for a user, host,
 // or service certificate: created when the client asks (`ssh login`,
 // `host sign`, `service enroll`), resolved when a user approves/denies in

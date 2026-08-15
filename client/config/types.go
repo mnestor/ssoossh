@@ -9,11 +9,19 @@ type Config struct {
 
 	// this is the default and recommended way to use ssoossh
 	UseAgent bool `mapstructure:"use_agent"`
+
 	// use files if agent is not available
 	FallbackFileAgent bool   `mapstructure:"fallback_file_agent"`
 	Filename          string `mapstructure:"key_filename"`
 
-	// default is user.Current().Username
+	// Username is reserved and currently read by nothing. It was meant to
+	// name a service account, but that is chosen by the approver in the web
+	// UI: enrollment requests are unauthenticated, so the client has no
+	// session against which to validate one. The local ambiguity it was
+	// meant to settle — a keypair created under the service's own account
+	// versus under a person's — is about where the key file lives, which
+	// Filename already answers, not about the certificate's principal. See
+	// docs/delivery-phase8-service.md.
 	Username string `mapstructure:"username"`
 
 	TryOpenBrowser bool `mapstructure:"try_open_browser"`

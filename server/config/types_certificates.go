@@ -43,9 +43,18 @@ type CertOptions struct {
 	KeyIDTemplate string `mapstructure:"key_id_template"`
 }
 
-// CertOptionsUser configures issuance of user certificates: how long
-// they're valid for, and which SSH certificate extensions to grant.
+// CertOptionsUser configures issuance of user certificates: who may approve
+// one, how long they're valid for, and which SSH certificate extensions to
+// grant.
 type CertOptionsUser struct {
+	// RequireGroup is the OIDC group an approver must belong to. Empty — the
+	// default — means any authenticated user may approve, which is the
+	// behavior every deployment has had so far.
+	//
+	// Worth setting even though approval is already bound to the requester
+	// (see CertRequestService.Approve): the binding answers "is this your
+	// request", this answers "are you allowed certificates at all".
+	RequireGroup  string        `mapstructure:"require_group"`
 	ValidDuration time.Duration `mapstructure:"valid_duration,string"`
 	Extensions    []string      `mapstructure:"extensions"`
 

@@ -9,7 +9,7 @@ import (
 
 // GetCA implements Client.
 func (c *RestyClient) GetCA(ctx context.Context) (string, error) {
-	var result apitypes.CAResponse
+	var result apitypes.Envelope[apitypes.CAResponse]
 	resp, err := c.http.R().
 		SetContext(ctx).
 		SetResult(&result).
@@ -21,5 +21,5 @@ func (c *RestyClient) GetCA(ctx context.Context) (string, error) {
 		return "", decodeResponseError(resp)
 	}
 
-	return result.CA, nil
+	return result.Data.CA, nil
 }

@@ -2,17 +2,6 @@ package model
 
 import "time"
 
-// CertificateType identifies which of the three certificate types
-// (docs/ssoossh-context.md — "Certificate types") a row represents.
-type CertificateType string
-
-const (
-	CertificateTypeUser    CertificateType = "user"
-	CertificateTypeHost    CertificateType = "host"
-	CertificateTypeService CertificateType = "service"
-	CertificateTypePAM     CertificateType = "pam"
-)
-
 // Certificate records an issued SSH certificate for audit / per-user
 // history purposes. The private key is never generated or stored by the
 // server (see root CLAUDE.md Hard Constraints) — only public key

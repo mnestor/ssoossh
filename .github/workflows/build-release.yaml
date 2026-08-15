@@ -32,26 +32,29 @@ jobs:
           check-latest: true
           go-version-file: "go.mod"
           cache: true
-      - uses: robinraju/release-downloader@v1
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          repository: "anchore/quill"
-          latest: true
-          fileName: "quill_*_linux_amd64.tar.gz"
-          out-file-path: "downloads"
-          extract: true
-      - name: Install build deps
-        run: bash scripts/build-config.sh
+          node-version: 22
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      # Must run before goreleaser: the server binary embeds
+      # server/frontend/dist, and only a placeholder index.html is tracked.
+      # Skipping this would ship a release with no web UI.
+      - name: Build web UI
+        run: make frontend
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           # either 'goreleaser' (default) or 'goreleaser-pro'
           distribution: goreleaser
           version: nightly
-          args: release --clean -f .goreleaser.yaml --snapshot=${{github.event_name == 'workflow_dispatch'}} ${{ vars.DEBUG }}
+          args: release --clean -f .goreleaser.yml --snapshot=${{github.event_name == 'workflow_dispatch'}} ${{ vars.DEBUG }}
         env:
-          QUILL_SIGN_P12: ${{ secrets.QUILL_SIGN_P12 }}
-          QUILL_SIGN_PASSWORD: ${{ secrets.QUILL_SIGN_PASSWORD }}
-          QUILL_NOTARY_ISSUER: ${{ secrets.QUILL_NOTARY_ISSUER }}
-          QUILL_NOTARY_KEY_ID: ${{ secrets.QUILL_NOTARY_KEY_ID }}
-          QUILL_NOTARY_KEY: ${{ secrets.QUILL_NOTARY_KEY }}
+          # Quill signing/notarization secrets and the 1Password step above
+          # come back with macOS builds in phase 10
+          # (docs/delivery-phase10-ga.md).
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

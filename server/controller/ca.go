@@ -2,8 +2,6 @@
 package controller
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
 	"github.com/mnestor/ssoossh/internal/apitypes"
@@ -22,6 +20,14 @@ type caController struct {
 }
 
 // getCAHandler handles GET /ca, returning the CA's public key.
+//
+// @Summary     The CA public key
+// @Description For `TrustedUserCAKeys` and `@cert-authority` lines. Public by design —
+// @Description it is a public key.
+// @Tags        client
+// @Produce     json
+// @Success     200 {object} openapidoc.CAEnvelope "The CA public key in authorized_keys form"
+// @Router      /api/ca [get]
 func (c *caController) getCAHandler(g *gin.Context) {
 	cakey, err := c.caService.GetCAPublicKey(g.Request.Context())
 	if err != nil {
@@ -31,5 +37,5 @@ func (c *caController) getCAHandler(g *gin.Context) {
 
 	// utils.SetCacheControlHeader(c, 5*time.Minute, 15*time.Minute)
 
-	g.JSON(http.StatusOK, apitypes.CAResponse{CA: cakey})
+	respondData(g, apitypes.CAResponse{CA: cakey})
 }

@@ -139,3 +139,41 @@ func TestEvictStaleClients_ShouldNoOpOnEmptyMap(t *testing.T) {
 		t.Errorf("expected empty map to remain empty, got %d entries", len(clients))
 	}
 }
+
+// TestRateLimitMiddleware_ShouldAdvertiseTheRemainingBudget covers the
+// rate-limit headers .claude/rules/server-api.md requires on every route.
+// They are set on the rejected response too, since a client that just got a
+// 429 is the one that most needs to know when to retry.
+func TestRateLimitMiddleware_ShouldAdvertiseTheRemainingBudget(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	r.Use(NewRateLimitMiddleware().Add(rate.Every(time.Minute), 1))
+	r.GET("/x", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	send := func() *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/x", nil)
+		req.RemoteAddr = "203.0.113.77:1234"
+		r.ServeHTTP(w, req)
+		return w
+	}
+
+	first := send()
+	if got := first.Header().Get("RateLimit-Limit"); got != "1" {
+		t.Errorf("got RateLimit-Limit %q, want %q", got, "1")
+	}
+	if got := first.Header().Get("RateLimit-Remaining"); got != "0" {
+		t.Errorf("got RateLimit-Remaining %q, want %q after consuming the burst", got, "0")
+	}
+
+	second := send()
+	if second.Code != http.StatusTooManyRequests && len(second.Header().Get("RateLimit-Reset")) == 0 {
+		t.Error("expected the rejected response to still advertise RateLimit-Reset")
+	}
+	if got := second.Header().Get("RateLimit-Reset"); got == "" || got == "0" {
+		t.Errorf("got RateLimit-Reset %q, want a positive retry hint once the budget is exhausted", got)
+	}
+}

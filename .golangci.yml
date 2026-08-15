@@ -1,0 +1,83 @@
+version: "2"
+run:
+  concurrency: 4
+  relative-path-mode: gomod
+  build-tags:
+    - codeanalysis
+  modules-download-mode: readonly
+  issues-exit-code: 2
+  tests: false
+  allow-parallel-runners: true
+  allow-serial-runners: true
+linters:
+  enable:
+    - cyclop
+    - dogsled
+    - dupl
+    - dupword
+    - errorlint
+    - gocognit
+    - godot
+    - gosec
+    - nolintlint
+  settings:
+    cyclop:
+      max-complexity: 20
+    godot:
+      # swag annotations are directives, not prose — "@Router /api/ca [get]"
+      # has no business ending in a period.
+      exclude:
+        - '^\s*@'
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+    gocognit:
+      min-complexity: 20
+    gosec:
+      severity: medium
+      confidence: medium
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - errcheck
+          - ineffassign
+        path: _test\.go$
+      - linters:
+          - gosec
+        text: 'G402: TLS MinVersion too low'
+      - path: (.+)\.go$
+        text: 'G101: Potential hardcoded credentials'
+    paths:
+      - .*\.pb\.go$
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      rewrite-rules:
+        - pattern: interface{}
+          replacement: any
+    goimports:
+      local-prefixes:
+        - github.com/mnestor/ssoossh
+  exclusions:
+    generated: lax
+    paths:
+      - .*\.pb\.go$
+      - third_party$
+      - builtin$
+      - examples$

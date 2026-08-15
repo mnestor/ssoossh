@@ -1,5 +1,11 @@
 ---
 insecure_skip_verify: false
+
+# Keep keys and certificates in a running ssh-agent. This is the recommended
+# mode and the only one `ssh proxycommand` supports, since ssh reads key files
+# once at startup and never sees a certificate written after that. Turning it
+# off means the agent is not consulted at all, not merely not preferred.
+use_agent: true
 fallback_file_agent: true
 key_filename: ssoossh
 try_open_browser: false

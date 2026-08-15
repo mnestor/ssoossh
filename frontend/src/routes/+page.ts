@@ -1,6 +1,8 @@
 import { redirect } from '@sveltejs/kit';
-import type { PageLoad } from './$types';
 
-export const load: PageLoad = async () => {
-	return redirect(302, '/login');
-};
+// There is no content at the root. Signed-in users want the dashboard; the
+// dashboard bounces to /login itself when there is no session, so this does
+// not need to know which case it is in.
+export function load() {
+	redirect(307, '/dashboard');
+}

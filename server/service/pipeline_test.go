@@ -35,7 +35,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 			ValidDuration: time.Hour,
 		},
 	})
-	if err := svc.db.AutoMigrate(&model.Certificate{}); err != nil {
+	if err := svc.db.AutoMigrate(&model.Certificate{}, &model.User{}); err != nil {
 		t.Fatalf("failed to migrate certificates table: %v", err)
 	}
 
@@ -118,6 +118,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	}()
 	time.Sleep(50 * time.Millisecond)
 
+	seedUser(t, svc.db, "sub-1")
 	if err := svc.Approve(context.Background(), requestID, &Identity{Username: "alice", Subject: "sub-1"}); err != nil {
 		t.Fatalf("unexpected error approving request: %v", err)
 	}

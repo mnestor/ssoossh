@@ -21,11 +21,12 @@ func TestStringSliceClaim(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		claims  map[string]any
-		key     string
-		want    []string
-		wantErr bool
+		name     string
+		claims   map[string]any
+		key      string
+		required bool
+		want     []string
+		wantErr  bool
 	}{
 		{
 			name:   "should return nil when key is unconfigured",
@@ -46,16 +47,32 @@ func TestStringSliceClaim(t *testing.T) {
 			want:   []string{"admins", "devs"},
 		},
 		{
-			name:    "should error when the configured claim is absent",
-			claims:  map[string]any{},
-			key:     "groups",
-			wantErr: true,
+			name:     "should error when a required claim is absent",
+			claims:   map[string]any{},
+			key:      "groups",
+			required: true,
+			wantErr:  true,
 		},
 		{
-			name:    "should error when the configured claim isn't an array",
-			claims:  map[string]any{"groups": "not-an-array"},
-			key:     "groups",
-			wantErr: true,
+			name:     "should error when a required claim isn't an array",
+			claims:   map[string]any{"groups": "not-an-array"},
+			key:      "groups",
+			required: true,
+			wantErr:  true,
+		},
+		{
+			// An optional claim the provider does not send is the common
+			// case, not a misconfiguration: it warns and yields nothing.
+			name:   "should return nil when an optional claim is absent",
+			claims: map[string]any{},
+			key:    "groups",
+			want:   nil,
+		},
+		{
+			name:   "should return nil when an optional claim isn't an array",
+			claims: map[string]any{"groups": "not-an-array"},
+			key:    "groups",
+			want:   nil,
 		},
 	}
 
@@ -63,7 +80,7 @@ func TestStringSliceClaim(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := stringSliceClaim(tt.claims, tt.key)
+			got, err := stringSliceClaim(tt.claims, tt.key, tt.required)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected an error, got nil")
