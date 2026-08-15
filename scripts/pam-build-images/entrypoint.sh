@@ -5,4 +5,4 @@ ACTION=${2}
 SNAPSHOT=${3}
 
 cd /workspace
-GOARCH=amd64 goreleaser ${ACTION} --config .goreleaser-pam-${ARCH}.yml --clean --snapshot=${SNAPSHOT}
+GOARCH=amd64 goreleaser ${ACTION} --config .goreleaser-pam-${ARCH}.yml --clean --snapshot=${SNAPSHOT} --verbose

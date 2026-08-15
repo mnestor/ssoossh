@@ -32,19 +32,19 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: 26
       - name: Set up pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v4.4.0
         with:
-          version: 10
+          version: 11
 
       # server/frontend embeds server/frontend/dist and nothing there is
       # tracked, so the Go build cannot compile until the UI exists.
       - name: Build web UI
         run: make frontend
 
-      - name: Build
-        run: go build ./...
+      - name: Go Tidy
+        run: go mod tidy
 
       # Catches a Go wire type changing without the frontend's generated
       # TypeScript being regenerated. The golden test in server/webtypes
@@ -58,6 +58,9 @@ jobs:
       # spec following.
       - name: Check generated OpenAPI spec is current
         run: make openapi-check
+
+      - name: Build
+        run: go build ./...
 
       # CGO_ENABLED is explicit because -race requires cgo, and the repo's
       # own dev container sets CGO_ENABLED=0 — without this the step would
@@ -93,14 +96,6 @@ jobs:
           go-version-file: "go.mod"
           cache: true
 
-      - name: Install PAM build dependencies
-        run: scripts/build-env-for-pam.sh
-
-      # Same install this Makefile step needs everywhere else (see
-      # .devcontainer/Dockerfile); this runner doesn't have it. Pinned to
-      # the same v2.12 line as lint.yaml's golangci-lint-action, since
-      # .golangci.yml is a `version: "2"` config golangci-lint v1 can't
-      # parse.
       - name: Install golangci-lint
         run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
 
