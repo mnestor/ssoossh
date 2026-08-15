@@ -21,6 +21,8 @@ jobs:
     # (docs/release-phase6-artifacts.md), which the self-hosted runner's
     # rootless Docker + qemu binfmt setup already covers.
     runs-on: self-hosted
+    container:
+      image: ubuntu:24.04
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Set up Go

@@ -12,7 +12,9 @@ permissions:
 
 jobs:
   coverage:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:24.04
     permissions:
       contents: read # for actions/checkout to fetch code
       pull-requests: read # for golangci/golangci-lint-action to fetch pull requests
