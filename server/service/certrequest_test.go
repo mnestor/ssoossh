@@ -447,6 +447,101 @@ func TestCertRequestService_Approve_ShouldRejectWhenIdentityLacksRequiredGroup(t
 	}
 }
 
+// TestCertRequestService_Approve_ShouldDenyPAMWhenRequireGroupUnconfigured
+// pins the one deliberate divergence from every other certificate type: an
+// unset cert_options.pam.require_group denies rather than opens, because
+// "who may sudo" has to fail closed (see CertOptionsPAM.RequireGroup). The
+// identity here has no groups at all, so this also proves the rejection
+// isn't just an ordinary group-membership failure in disguise.
+func TestCertRequestService_Approve_ShouldDenyPAMWhenRequireGroupUnconfigured(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+		PAM: config.CertOptionsPAM{ValidDuration: 30 * time.Second},
+	})
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypePAM,
+		PublicKey: "ssh-ed25519 AAAA...",
+		Username:  "mnestor",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	identity := &Identity{Username: "mike.nestor", Subject: "sub-1"}
+	seedUser(t, svc.db, identity.Subject)
+	if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+		t.Fatal("expected an error approving a PAM request with no configured require_group, got nil")
+	}
+}
+
+// TestCertRequestService_Approve_ShouldQueuePAMRequestWithLocalUsernameAsPrincipal
+// is the assertion the phase 4 plan calls out by name: the issued
+// certificate must name the local account the module authenticated
+// (req.Username), not the approver's OIDC username, with the two set to
+// different values. Also checks the PAM-only defaults: extensions dropped
+// (nothing configured-permitted) and the PAM key ID template rather than
+// the user one.
+func TestCertRequestService_Approve_ShouldQueuePAMRequestWithLocalUsernameAsPrincipal(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+		PAM: config.CertOptionsPAM{RequireGroup: "sudoers", ValidDuration: 30 * time.Second},
+	})
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypePAM,
+		PublicKey: "ssh-ed25519 AAAA...",
+		Username:  "mnestor",
+		RequestedOptions: RequestedOptions{
+			Extensions: []string{"permit-pty"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	messages, err := svc.subscriber.Subscribe(ctx, certmsg.SignQueueTopic)
+	if err != nil {
+		t.Fatalf("unexpected error subscribing to the sign queue: %v", err)
+	}
+
+	identity := &Identity{Username: "mike.nestor", Subject: "sub-1", Groups: []string{"sudoers"}}
+	seedUser(t, svc.db, identity.Subject)
+	if err := svc.Approve(context.Background(), requestID, identity); err != nil {
+		t.Fatalf("unexpected error approving request: %v", err)
+	}
+
+	select {
+	case msg := <-messages:
+		var job certmsg.SigningJob
+		if err := json.Unmarshal(msg.Payload, &job); err != nil {
+			t.Fatalf("failed to decode signing job: %v", err)
+		}
+		msg.Ack()
+
+		if len(job.Principals) != 1 || job.Principals[0] != "mnestor" {
+			t.Errorf("expected principals to be [\"mnestor\"] (the local username), got %v", job.Principals)
+		}
+		// KeyID is the audit-log label and stays keyed on the approver's
+		// identity, same as every other type — it's the *principal* that
+		// must diverge to the local username (checked above). This is what
+		// makes "pam:mike.nestor" distinguishable from a login by the same
+		// person in an sshd/sudo audit log (see CertOptionsPAM.KeyIDTemplate).
+		if job.KeyID != "pam:mike.nestor" {
+			t.Errorf("got KeyID %q, want %q (PAM's own default template, keyed on the approver)", job.KeyID, "pam:mike.nestor")
+		}
+		if len(job.RequestedOptions.Extensions) != 0 {
+			t.Errorf("expected no extensions (none configured-permitted), got %v", job.RequestedOptions.Extensions)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for the signing job to be published")
+	}
+}
+
 func TestCertRequestService_Approve_ShouldEnrollServiceRequestsInsteadOfQueueing(t *testing.T) {
 	t.Parallel()
 
@@ -550,6 +645,32 @@ func TestCertRequestService_Approve_ShouldErrorWhenNotPending(t *testing.T) {
 	}
 }
 
+// TestResolveCertOptions_ShouldNarrowPAMExtensionsAndUsePAMDuration confirms
+// PAM reads from its own config section — cert_options.pam.extensions being
+// empty (the documented default) drops a requested extension entirely
+// rather than granting it, and PAM's ValidDuration is used rather than
+// User's.
+func TestResolveCertOptions_ShouldNarrowPAMExtensionsAndUsePAMDuration(t *testing.T) {
+	t.Parallel()
+
+	narrowed, validDuration, requireGroup, err := resolveCertOptions(config.CertificateOptions{
+		User: config.CertOptionsUser{Extensions: []string{"permit-pty"}, ValidDuration: time.Hour},
+		PAM:  config.CertOptionsPAM{RequireGroup: "sudoers", ValidDuration: 30 * time.Second},
+	}, model.CertificateTypePAM, RequestedOptions{Extensions: []string{"permit-pty"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if narrowed.Extensions != nil {
+		t.Errorf("expected no PAM extensions to survive narrowing, got %v", narrowed.Extensions)
+	}
+	if validDuration != 30*time.Second {
+		t.Errorf("got ValidDuration %v, want PAM's own 30s, not User's", validDuration)
+	}
+	if requireGroup != "sudoers" {
+		t.Errorf("got RequireGroup %q, want %q", requireGroup, "sudoers")
+	}
+}
+
 func TestResolveCertOptions_ShouldDropForceCommandAndSourceAddresses(t *testing.T) {
 	t.Parallel()
 
@@ -601,7 +722,7 @@ func TestResolveCertOptions_ShouldOnlyGrantNoTouchRequiredForService(t *testing.
 func TestResolvePrincipals_ShouldUseHostnameForHostCertificates(t *testing.T) {
 	t.Parallel()
 
-	got := resolvePrincipals(model.CertificateTypeHost, "db01.internal", &Identity{Username: "alice"})
+	got := resolvePrincipals(model.CertificateTypeHost, "db01.internal", "", &Identity{Username: "alice"})
 	if len(got) != 1 || got[0] != "db01.internal" {
 		t.Errorf("got %v, want [\"db01.internal\"]", got)
 	}
@@ -611,10 +732,24 @@ func TestResolvePrincipals_ShouldUseUsernameForUserAndServiceCertificates(t *tes
 	t.Parallel()
 
 	for _, certType := range []model.CertificateType{model.CertificateTypeUser, model.CertificateTypeService} {
-		got := resolvePrincipals(certType, "db01.internal", &Identity{Username: "alice"})
+		got := resolvePrincipals(certType, "db01.internal", "", &Identity{Username: "alice"})
 		if len(got) != 1 || got[0] != "alice" {
 			t.Errorf("for %s: got %v, want [\"alice\"]", certType, got)
 		}
+	}
+}
+
+// TestResolvePrincipals_ShouldUsePAMUsernameNotIdentity is the assertion
+// that catches the wrong reading of docs/release-phase4-pam-server.md's
+// "Principal resolution" section: PAM certificates must name the local
+// account the module authenticated, not the approver's OIDC identity, even
+// when those two names differ.
+func TestResolvePrincipals_ShouldUsePAMUsernameNotIdentity(t *testing.T) {
+	t.Parallel()
+
+	got := resolvePrincipals(model.CertificateTypePAM, "", "mnestor", &Identity{Username: "mike.nestor"})
+	if len(got) != 1 || got[0] != "mnestor" {
+		t.Errorf("got %v, want [\"mnestor\"]", got)
 	}
 }
 

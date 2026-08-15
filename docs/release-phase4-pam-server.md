@@ -68,6 +68,13 @@ Update `server/config/_defaults.yaml`, `ssoossh.default.yaml`, and
 `docs/ssoosshd.yaml.default` together. The end-to-end plan records that a
 config sample disagreeing with the code cost real debugging time.
 
+**Implemented**, with one correction to the file list above: the root
+`ssoossh.default.yaml` is the *client's* connection config (server URL,
+CA pin) — unrelated to `cert_options`, and nothing in the repo reads it
+(verified with a repo-wide grep). It is not touched. The two files that
+actually carry `cert_options` — `server/config/_defaults.yaml` and
+`docs/ssoosshd.yaml.default` — were updated together.
+
 ### 2. `Approve` does not handle the type
 
 `server/service/certrequest.go`, in `Approve`'s switch: PAM falls through to
@@ -84,7 +91,11 @@ handling:
 - Extensions narrowed to the intersection of requested and configured.
 - `ForceCommand` and `SourceAddresses` dropped unconditionally, as today.
 - `NoTouchRequired` granted only for service. Not PAM.
-- `RequireGroup` enforced.
+- `RequireGroup` enforced — and mandatory for PAM specifically, see "Open
+  question" below.
+
+**Implemented** as `case model.CertificateTypeUser, model.CertificateTypePAM`
+sharing `approveForSigning`.
 
 ### 3. Principal resolution
 
@@ -104,8 +115,21 @@ by `RequireGroup` and by the host's own `sudoers`, not by the principal.
 Phase 5's check 3 verifies the returned certificate names the user the module
 is authenticating, which is what closes the loop.
 
-Write down the chosen rule in this file when it is implemented. It is the one
-piece of PAM policy that is not obvious from the user path.
+**Implemented.** `POST /api/certs/pam` takes a `username` field
+(`apitypes.PAMRequestBody`) alongside the public key, distinct from the
+approving identity. It is persisted on the request row
+(`model.CertificateRequest.Username`, set only for `CertificateTypePAM`) so
+`Approve` — which runs against the stored row, not the create-time
+params — can read it back regardless of how much later approval happens.
+`resolvePrincipals` branches on type: host uses the hostname, PAM uses this
+stored username, every other type uses the approver's identity. The key ID
+(an audit-log label, not a security boundary) stays keyed on the *approver's*
+identity through the `pam:{{.Username}}` default template — that is what
+makes a sudo and a login by the same person distinguishable in an audit log,
+per the config section above. Verified end-to-end by
+`TestPipeline_EndToEnd_PAM` and `TestCertRequestService_Approve_ShouldQueuePAMRequestWithLocalUsernameAsPrincipal`
+(`server/service/`), both of which set the local username and the OIDC
+username to different values.
 
 ### 4. `certTypeFor` rejects everything but user
 
@@ -132,6 +156,9 @@ by accident.
 The signer stays database-free. Nothing here needs a lookup, which is why
 this type is cheap.
 
+**Implemented.** `sign_test.go`'s rejection table now covers only host and
+service; `TestSign_ShouldIssueUserCertForPAM` covers the new mapping.
+
 ## Work
 
 ### 5. The endpoint
@@ -147,12 +174,25 @@ exists.
 The response carries the approval URL and `events_url`, exactly as the user
 path does, because phase 5's module consumes them the same way.
 
+**Implemented** as `createPAMRequestHandler` (`server/controller/certrequests.go`),
+registered at `POST /certs/pam`, taking `apitypes.PAMRequestBody{PublicKey,
+Username, RequestedOptions}`. `internal/api` (the Go client used by `ssh
+login`/`host sign`/`service enroll`) is deliberately untouched — phase 5's
+client module is what will call this endpoint, per the goal above ("no client
+module involved yet").
+
 ### 6. Regenerate the wire artifacts
 
 Not follow-up tidying. A new endpoint means `make openapi`, `make types`, and
 `go test ./server/webtypes/ -update`, all in the same change. CI runs
 `openapi-check` and `types-check` and will fail the PR otherwise. See
 [wire-types.md](wire-types.md).
+
+**Implemented.** `make types` regenerated `apitypes.ts` (new `PAMRequestBody`);
+`make openapi` regenerated `docs/openapi.yaml` (new `/api/certs/pam` path).
+`webtypes` itself didn't change — `RequestDetailResponse.Type`/`.Principals`
+already carry everything a PAM row needs — so `go test ./server/webtypes/
+-update` produced no diff; `openapi-check`/`types-check` both pass clean.
 
 ### 7. The approval page
 
@@ -168,15 +208,32 @@ request; use it. This is a copy change, not a feature.
 If tier 2 of the end-to-end suite matches on that copy, this is why phase 2
 adds `data-testid` attributes.
 
+**Implemented.** No new UI, as expected — `ApprovalView.svelte` already
+showed `detail.type` and rendered granted-vs-requested generically. Only the
+card heading/description changed: PAM gets "Approve a PAM authentication" /
+wording that names a local `sudo`-style operation instead of "an SSH
+certificate", switched on `detail.type === 'pam'`. Covered by two new cases
+in `ApprovalView.test.ts`. Left the "become root on `web01`" specificity out
+of the copy itself: PAM requests don't carry a hostname (unlike host
+requests — see `model.CertificateRequest.Hostname`'s doc comment), so the
+wording stays generic to "a local operation" rather than naming a machine it
+doesn't know.
+
 ### 8. Migrations
 
-Probably none. `certificate_requests` stores the type as a string and the
-option set as JSON, so a new type needs no schema change.
+None for the type itself: `certificate_requests` stores it as a string and
+the option set as JSON. Verified — no check constraint or enum type
+enumerates certificate types anywhere in `server/resources`.
 
-Verify rather than assume, on both dialects. If a check constraint or an enum
-type enumerates the certificate types anywhere in `server/resources`, PAM
-needs adding to both the sqlite and postgres migrations, which currently
-agree exactly and should stay that way.
+One column was needed for a different reason: item 3's local username has to
+survive from request creation to (possibly much later) approval, and nothing
+existing carries it — `Hostname` is documented as host-only. Added a
+`username` column to `certificate_requests` (`model.CertificateRequest.Username`,
+set only for `CertificateTypePAM`) in both dialects' `20260101000000_init`
+migration directly, matching that file's own header comment ("a column added
+here must also be added to postgres/... and model/") rather than creating a
+second migration file — there is still only ever the one, and nothing has
+shipped yet.
 
 ## Exit criteria
 
@@ -204,7 +261,7 @@ agree exactly and should stay that way.
 - The phase 2 end-to-end suite still green. This phase edits the user path's
   own code.
 
-## Open question
+## Open question — decided
 
 Whether `require_group` for PAM should default to empty (anyone who can log
 in can `sudo`, subject to `sudoers`) or be mandatory (no group configured
@@ -217,5 +274,17 @@ denies. Against it: the host's `sudoers` is already an authorization
 decision, and requiring two lists that must agree is the pattern phase 8 of
 the delivery plan explicitly rejected for service accounts.
 
-Decide before the endpoint ships. Changing it later is a breaking config
-change that silently grants access in one direction.
+**Decided: mandatory.** Empty `cert_options.pam.require_group` means no PAM
+certificates are ever issued — `CertRequestService.Approve` rejects the
+request outright rather than treating an unconfigured group as "anyone."
+This is the fail-closed match to `admin.require_group`'s precedent, and the
+counter-argument is weaker here than it was for phase 8's service accounts:
+`sudoers` is host-local and narrow, not a second broad-access list that has
+to be kept in sync with a server-side one — `require_group` is answering "may
+this identity request PAM certificates on any host at all," a coarser
+question than what `sudoers` decides per host. Implemented in
+`CertOptionsPAM.RequireGroup`'s doc comment, `server/config/_defaults.yaml`,
+`docs/ssoosshd.yaml.default`, and enforced in `CertRequestService.Approve`
+(see `TestCertRequestService_Approve_ShouldDenyPAMWhenRequireGroupUnconfigured`).
+Decided before the endpoint shipped, per the instruction above — changing it
+later is a breaking config change that would silently grant access.

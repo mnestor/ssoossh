@@ -26,6 +26,13 @@ type keyIDTemplateData struct {
 const (
 	defaultUserServiceKeyIDTemplate = "{{.Username}}"
 	defaultHostKeyIDTemplate        = "{{.Hostname}}"
+
+	// defaultPAMKeyIDTemplate is PAM's own default — deliberately not a
+	// fallback to defaultUserServiceKeyIDTemplate. A sudo and a login by
+	// the same person must stay distinguishable in an sshd or sudo audit
+	// log, so an unset PAM template identifies the type rather than
+	// silently reading like a user certificate.
+	defaultPAMKeyIDTemplate = "pam:{{.Username}}"
 )
 
 // keyIDTemplates holds the parsed per-type key ID templates, built once at
@@ -36,6 +43,7 @@ type keyIDTemplates struct {
 	user    *template.Template
 	service *template.Template
 	host    *template.Template
+	pam     *template.Template
 }
 
 // newKeyIDTemplates parses opts' per-type templates. User certificates are
@@ -74,7 +82,18 @@ func newKeyIDTemplates(opts config.CertificateOptions) (*keyIDTemplates, error) 
 		return nil, err
 	}
 
-	return &keyIDTemplates{user: userTmpl, service: serviceTmpl, host: hostTmpl}, nil
+	// PAM deliberately does not fall back to userSrc the way service and
+	// host do — see defaultPAMKeyIDTemplate.
+	pamSrc := opts.PAM.KeyIDTemplate
+	if pamSrc == "" {
+		pamSrc = defaultPAMKeyIDTemplate
+	}
+	pamTmpl, err := parseKeyIDTemplate("pam", pamSrc)
+	if err != nil {
+		return nil, err
+	}
+
+	return &keyIDTemplates{user: userTmpl, service: serviceTmpl, host: hostTmpl, pam: pamTmpl}, nil
 }
 
 // parseKeyIDTemplate parses src and immediately executes it once against a
@@ -104,6 +123,8 @@ func (t *keyIDTemplates) execute(certType model.CertificateType, data keyIDTempl
 		tmpl = t.service
 	case model.CertificateTypeHost:
 		tmpl = t.host
+	case model.CertificateTypePAM:
+		tmpl = t.pam
 	default:
 		return "", fmt.Errorf("no key ID template configured for certificate type %q", certType)
 	}

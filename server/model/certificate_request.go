@@ -27,6 +27,13 @@ type CertificateRequest struct {
 	// TODO: i think this would just go in principals
 	Hostname string `gorm:"column:hostname"`
 
+	// Username is set only for CertificateTypePAM requests: the local
+	// account the PAM module is authenticating (e.g. who is running
+	// `sudo`). This, not the approver's OIDC identity, is what becomes the
+	// issued certificate's principal — see service.resolvePrincipals. The
+	// two are usually but not necessarily the same string.
+	Username string `gorm:"column:username"`
+
 	// RequestedOptions is JSON-encoded. Server config (config.CertificateOptions)
 	// is the outer bound — the web UI narrows or adjusts, never widens (see
 	// root CLAUDE.md Hard Constraints).

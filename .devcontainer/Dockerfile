@@ -23,7 +23,11 @@ COPY --from=claude-builder /usr/local/bin/claude /usr/local/bin/claude
 
 RUN install -d -m 0755 /etc/apt/keyrings \
   && echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sources.list.d/goreleaser.list \
-  
+
+  # arm64 is a foreign architecture on this amd64 base image; it must be
+  # registered before any :arm64 package resolves, which is what the
+  # cross libpam headers below need.
+  && dpkg --add-architecture arm64 \
   && apt-get update \
   && apt-get -y install \
   dnsutils \
@@ -32,6 +36,14 @@ RUN install -d -m 0755 /etc/apt/keyrings \
   ripgrep \
   git-crypt \
   yamllint \
+  # pam_ssoossh (pam_ssoossh/, `pam` build tag): native libpam headers for
+  # the amd64 build, plus arm64 cross headers, cross libc, and cross gcc
+  # for `goreleaser build` and `make pam`'s arm64 target. See
+  # docs/release-phase3-pam-build-env.md.
+  libpam0g-dev \
+  libpam0g-dev:arm64 \
+  libc6-dev-arm64-cross \
+  gcc-aarch64-linux-gnu \
 
   && curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(go env GOPATH)/bin
 

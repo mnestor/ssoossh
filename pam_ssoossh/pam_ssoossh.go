@@ -10,6 +10,10 @@ package main
 import "C"
 
 import (
+	"context"
+	"os"
+	"os/signal"
+	"syscall"
 	"unsafe"
 
 	"github.com/mnestor/ssoossh/internal/version"
@@ -52,17 +56,33 @@ func authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, args **C.char) 
 	w.SetDebug(cfg.debug)
 	w.Debugf("args: %+v", cfg)
 
-	success, err := Authenticate(&w, username, cfg)
+	// A human has to open a browser and approve — signal.NotifyContext lets
+	// Ctrl-C at the sudo prompt abandon the request instead of leaving this
+	// blocked on SSE, and the timeout bounds how long a human with no
+	// browser can hang a sudo prompt. See docs/release-phase5-pam-client.md,
+	// "Timeouts and cancellation".
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, cfg.waitTimeout)
+	defer cancel()
+
+	conv := &pamConversation{pamh: pamh}
+
+	success, err := Authenticate(ctx, w, conv, username, cfg)
 	if err != nil {
-		// Log the error and return PAM authentication failure
 		w.Errorf("%s", err.Error())
-		return C.int(success)
 	}
 
-	w.Infof("successful authentication: %s", username)
+	// Logging success is gated on the return code, not on err being nil —
+	// the two are tracked separately so a failure path that returns a
+	// non-success code is never reported as a successful authentication
+	// merely because it forgot to attach an error. See
+	// docs/release-phase5-pam-client.md, "Fix the nil-error success
+	// logging".
+	if success == PamSuccess {
+		w.Infof("successful authentication: %s", username)
+	}
 
-	// Add your logic to authenticate the user
-	// If everything went well
 	return C.int(success)
 }
 

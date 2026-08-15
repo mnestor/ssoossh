@@ -1,6 +1,16 @@
 # Phase 3: PAM build environment
 
-**Status: planned.** Part of [release-plan.md](release-plan.md).
+**Status: implemented.** Part of [release-plan.md](release-plan.md).
+`make pam`, `make test-pam`, and `make lint-pam` all pass in this
+devcontainer (with `libpam0g-dev` installed, matching the Dockerfile
+change), and both the amd64 and arm64 `linux-pam-build` targets build
+through `goreleaser build --single-target` and through a full
+`goreleaser release --snapshot --clean`. `docker run hello-world` succeeds
+in the rebuilt devcontainer, confirming `docker-outside-of-docker` actually
+starts a container. Verified 2026-08-15 after a devcontainer rebuild. The
+`pam` job in `.github/workflows/build-test.yaml` runs all three on every
+pull request but has not yet run in real CI (nothing in this branch has
+been pushed). See "What's still open" at the end of this document.
 
 ## Goal
 
@@ -75,6 +85,19 @@ Mount the host socket into the devcontainer and confirm a container can be
 started from inside it. This is the standard devcontainer feature, so the
 work is configuration rather than invention.
 
+**Done:** `ghcr.io/devcontainers/features/docker-outside-of-docker:1` added
+to `.devcontainer/server/devcontainer.json` and
+`.devcontainer/client/devcontainer.json`. The host socket forward stays in
+`.devcontainer/docker-compose.local.yml` (gitignored, host-specific, the
+same mechanism already used there for other host paths) targeting
+`/var/run/docker-host.sock` -- the feature's `socketPath` default, whose
+entrypoint does the gid fix-up a plain `/var/run/docker.sock` mount skips.
+`docs/docker-setup.md` records this host's socket as rootless docker; see
+`.devcontainer/docker-compose.local.yml.example` for the pattern.
+**Verified** after the 2026-08-15 devcontainer rebuild: `docker version`
+shows a working client and server, and `docker run --rm hello-world`
+completes, confirming a container starts from inside the devcontainer.
+
 ### 3. Choose and pin the old-glibc images
 
 `.github/workflows/TODO.md` already names candidates:
@@ -91,6 +114,12 @@ Record the resulting glibc floor in the release notes. "Requires glibc 2.17
 or newer" is a supportable statement; "built on whatever the runner had" is
 not.
 
+**Done:** `centos:7` for amd64 (glibc 2.17) and `amazonlinux:2` for aarch64
+(glibc 2.26), both pinned by digest next to `linux-pam-build` in
+`.goreleaser.yml`. Digests were resolved live against the Docker Hub
+registry API on 2026-08-15, not recalled. Neither image's toolchain is
+actually used by the build yet -- see item 5's note on the gap this leaves.
+
 ### 4. Rewrite `scripts/build-env-for-pam.sh`
 
 Currently malformed: loose package-name fragments, a stray `yum install`
@@ -100,6 +129,12 @@ invalid, with the following line already doing `amd64` correctly.
 It is untracked, so this is closer to writing it than fixing it. Decide what
 it is for first. If the container images carry their own toolchain, a script
 that installs cross-compilers on the host may not need to exist at all.
+
+**Done:** rewritten. Its job is bootstrapping a bare host that isn't the
+devcontainer -- GitHub-hosted CI runners and an amd64 dev VM/checkout --
+since the devcontainer gets the same packages baked into
+`.devcontainer/Dockerfile` directly. `.github/workflows/build-test.yaml`'s
+new `pam` job (item 6) calls it.
 
 ### 5. Re-enable the goreleaser build
 
@@ -113,6 +148,42 @@ Remove `skip: true` and confirm the cross settings work. Note that phase 6
 owns whether the `.so` reaches the nfpm packages; this item is only about it
 building.
 
+**Done, with a gap worth stating plainly:** `skip: true` is removed, and
+`GOOS=linux GOARCH=amd64 goreleaser build --single-target --id
+linux-pam-build --clean --snapshot` succeeds in this devcontainer, producing
+`pam_ssoossh.so` and `pam_ssoossh.h`. `objdump -T` on that binary shows
+`GLIBC_2.34` as its highest required symbol version -- because `CC:
+x86_64-linux-gnu-gcc` on this Debian host is the *native* compiler under its
+multiarch name, linking against this host's own glibc (2.41 in the
+devcontainer, whatever a CI runner has otherwise), not against item 3's
+pinned images. The cross settings were never wired to those images at all:
+doing so needs either a sysroot extracted from the pinned image or the link
+step run inside it via docker-outside-of-docker (item 2), and neither is
+implemented here. This item's own exit criterion ("builds ... for amd64 and
+arm64") is satisfied as written; the glibc-2.17-floor claim in item 3 is
+not, yet. Recorded here so it isn't silently assumed done -- see this
+phase's Verification section, and phase 6
+([release-phase6-artifacts.md](release-phase6-artifacts.md)), which owns
+whether the released `.so` is correct.
+
+**arm64, verified 2026-08-15 after the devcontainer rebuild:** with
+`libpam0g-dev:arm64`, `libc6-dev-arm64-cross`, and `gcc-aarch64-linux-gnu`
+now installed, `GOOS=linux GOARCH=arm64 goreleaser build --single-target
+--id linux-pam-build --clean --snapshot` succeeds, producing an arm64
+`pam_ssoossh.so`. `aarch64-linux-gnu-objdump -T` on it shows `GLIBC_2.34`
+as its highest required symbol version -- the same gap as amd64, and for
+the same reason (`CC: aarch64-linux-gnu-gcc` is this host's cross
+compiler, linking against the cross libc package's glibc, not against
+item 3's pinned `amazonlinux:2` image). A full `goreleaser release
+--snapshot --clean` also succeeds end-to-end for both architectures,
+producing `.deb`/`.rpm` packages for the rest of the tree; it printed one
+warning worth carrying forward -- `artifact already present in the list
+name=pam_ssoossh.so` -- because the amd64 and arm64 `.so` outputs share a
+bare filename disambiguated only by directory. Nothing in this repo's
+nfpm config packages `linux-pam-build` yet, so it is not observed to cause
+a problem today, but phase 6 should check it before wiring the `.so` into
+a package.
+
 ### 6. Add the CI job
 
 A dedicated amd64 job that builds and tests the package. It cannot be folded
@@ -121,6 +192,10 @@ everything else, and the `pam` build tag means `go build ./...` does not
 cover the package regardless.
 
 The job runs: `make pam`, `make test-pam`, `make lint-pam`.
+
+**Done:** the `pam` job in `.github/workflows/build-test.yaml`, alongside
+the existing `build-test` job. `actionlint` passes against it. Not run in
+real CI as part of this work.
 
 ### 7. Decide the build-tag question
 
@@ -140,6 +215,11 @@ Recommendation: **keep the tag.** The exclusion was introduced as a
 workaround and has turned out to be the right structure. What must change is
 that the tagged targets stop being stubs, which is items 1 and 6. Record the
 decision either way so it stops being revisited.
+
+**Decided: kept**, per the recommendation above. `//go:build pam` stays on
+all six files in `pam_ssoossh/`; `go build ./...` and `go test ./...` keep
+excluding the package everywhere except the dedicated targets and CI job
+from items 1 and 6.
 
 ## Exit criteria
 
@@ -169,3 +249,21 @@ decision either way so it stops being revisited.
 - `pam_ssoossh/` must not import `server/` or `client/`, only `internal/`
   (`.claude/rules/go.md`). Currently respected.
 - The module runs in the `auth` group, `sudo` and `su` only.
+
+## What's still open
+
+Confirmed by the 2026-08-15 devcontainer rebuild: `docker-outside-of-docker`
+starts a container (item 2), and the arm64 cross build succeeds (item 5's
+second half). What's left:
+
+- Run the `pam` job in `.github/workflows/build-test.yaml` in real CI (item
+  6) -- this branch has not been pushed, so it has not run there yet.
+- Close the gap item 5 records: link `linux-pam-build` against the pinned
+  images from item 3 instead of the build host's own glibc, then run this
+  phase's Verification section (`ldd --version` in the build image,
+  `objdump -T` on the artifact, a load test on an older target) against the
+  result. This is real work -- a sysroot from the pinned image or a
+  docker-outside-of-docker link step -- not something a rebuild resolves by
+  itself.
+- Check the `artifact already present in the list name=pam_ssoossh.so`
+  goreleaser warning before phase 6 packages the `.so`.

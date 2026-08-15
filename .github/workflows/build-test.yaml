@@ -74,3 +74,38 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
+
+  # pam_ssoossh (pam_ssoossh/, `pam` build tag) needs libpam headers and
+  # cgo, neither of which build-test's own job above has or needs for the
+  # rest of the tree (see the Test step's comment). It doesn't import
+  # server/ or client/, so it needs none of that job's frontend setup
+  # either. See docs/release-phase3-pam-build-env.md.
+  pam:
+    name: pam build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          check-latest: true
+          go-version-file: "go.mod"
+          cache: true
+
+      - name: Install PAM build dependencies
+        run: scripts/build-env-for-pam.sh
+
+      # Same install this Makefile step needs everywhere else (see
+      # .devcontainer/Dockerfile); this runner doesn't have it.
+      - name: Install golangci-lint
+        run: curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(go env GOPATH)/bin
+
+      - name: Build
+        run: make pam
+
+      - name: Test
+        run: make test-pam
+
+      - name: Lint
+        run: make lint-pam

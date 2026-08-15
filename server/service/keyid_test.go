@@ -80,6 +80,32 @@ func TestNewKeyIDTemplates_FallbackChain(t *testing.T) {
 			certType:  model.CertificateTypeHost,
 			wantKeyID: "h:db01",
 		},
+		{
+			name:      "should use PAM's own default template when nothing is configured",
+			opts:      config.CertificateOptions{},
+			certType:  model.CertificateTypePAM,
+			wantKeyID: "pam:alice",
+		},
+		{
+			// The one deliberate divergence from every other type: PAM must
+			// NOT inherit the configured user template, so a sudo and a
+			// login by the same person stay distinguishable in an audit
+			// log even when an operator has customized the user template.
+			name: "should NOT fall back PAM to the configured user template",
+			opts: config.CertificateOptions{
+				User: config.CertOptionsUser{KeyIDTemplate: "u:{{.Username}}"},
+			},
+			certType:  model.CertificateTypePAM,
+			wantKeyID: "pam:alice",
+		},
+		{
+			name: "should use PAM's own configured template when set",
+			opts: config.CertificateOptions{
+				PAM: config.CertOptionsPAM{KeyIDTemplate: "p:{{.Username}}"},
+			},
+			certType:  model.CertificateTypePAM,
+			wantKeyID: "p:alice",
+		},
 	}
 
 	for _, tt := range tests {

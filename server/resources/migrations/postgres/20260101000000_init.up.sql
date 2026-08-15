@@ -37,6 +37,7 @@ CREATE TABLE certificate_requests (
     user_id TEXT REFERENCES users(id),
     public_key TEXT NOT NULL,
     hostname TEXT NOT NULL DEFAULT '',
+    username TEXT NOT NULL DEFAULT '',
     requested_options TEXT NOT NULL DEFAULT '',
     source_ip TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL,

@@ -29,4 +29,4 @@ touch "${DCU}"
 # SCRIPT_DIR to already exist.
 test -f "${LOCAL_SCRIPT}" && source "${LOCAL_SCRIPT}"
 
-echo "devcontainer-init: docker context=${DOCKER_CONTEXT} CONTAINER_USER=${CONTAINER_USER}"
+echo "devcontainer-init: docker context=${DOCKER_CONTEXT}"

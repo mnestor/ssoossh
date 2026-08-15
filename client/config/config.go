@@ -80,6 +80,7 @@ func newConfig(cmd *cobra.Command, paths searchPaths) (*Config, error) {
 	// directly so viper's own precedence applies: a flag that wasn't passed
 	// contributes its empty default at the lowest priority and does not
 	// clobber a configured value.
+	// TODO: cmd bind flags
 	if serverFlag := cmd.Flags().Lookup("server"); serverFlag != nil {
 		if err := v.BindPFlag("server", serverFlag); err != nil {
 			return nil, fmt.Errorf("failed to bind the --server flag: %w", err)

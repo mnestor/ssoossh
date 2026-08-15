@@ -23,13 +23,26 @@ env:
   - CGO_ENABLED=0
 
 builds:
-  # The PAM module is a c-shared cgo build and needs libpam headers plus an
-  # amd64 toolchain, neither of which the current build environment has, so
-  # it is disabled rather than failing every release. Re-enable in phase 7
-  # (docs/delivery-phase7-pam.md) alongside a dedicated amd64 CI job. The
-  # package is behind the `pam` build tag, so `go build ./...` skips it too.
+  # The PAM module is a c-shared cgo build. libpam headers and CGO_ENABLED=1
+  # are provided by .devcontainer/Dockerfile
+  # (docs/release-phase3-pam-build-env.md). The package stays behind the
+  # `pam` build tag regardless, so `go build ./...` keeps skipping it.
+  #
+  # KNOWN GAP: CC below is the devcontainer's own cross-gcc, which links
+  # against its glibc (2.41), not an old one. Distributing against a floor
+  # old enough to matter (glibc 2.17, the RHEL7 family) needs the actual
+  # link step to happen against one of the pinned images below -- a sysroot
+  # extracted from the image, or the build run inside it via
+  # docker-outside-of-docker -- which is not wired up here. Until it is, a
+  # snapshot build from this block proves the goreleaser plumbing works, not
+  # that the artifact is glibc-2.17-safe; see this phase's Verification
+  # section (objdump -T ... | grep GLIBC_) and phase 6
+  # (docs/release-phase6-artifacts.md), which owns the released artifact.
+  #
+  # Pinned old-glibc images (digests captured 2026-08-15, doc's phase 3):
+  #   amd64:   centos@sha256:be65f488b7764ad3638f236b7b515b3678369a5124c47b8d32916d6487418ea4   (centos:7, glibc 2.17)
+  #   aarch64: amazonlinux@sha256:af6e7c0a7d9abb123f2d27f12b1c2aceedfd80add1cc3109b93440ab900af4d2 (amazonlinux:2, glibc 2.26)
   - id: linux-pam-build
-    skip: true
     binary: pam_ssoossh
     dir: ./pam_ssoossh/
     buildmode: "c-shared"

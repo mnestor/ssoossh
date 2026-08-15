@@ -56,6 +56,15 @@ func (c *RestyClient) CreateServiceEnrollment(ctx context.Context, publicKey str
 	})
 }
 
+// CreatePAMRequest implements Client.
+func (c *RestyClient) CreatePAMRequest(ctx context.Context, publicKey, username string, opts RequestedOptions) (*PendingRequest, error) {
+	return c.create(ctx, "/certs/pam", apitypes.PAMRequestBody{
+		PublicKey:        publicKey,
+		Username:         username,
+		RequestedOptions: opts,
+	})
+}
+
 // AwaitCertificate implements Client.
 func (c *RestyClient) AwaitCertificate(ctx context.Context, req *PendingRequest) (*CertificateResult, error) {
 	if req == nil || req.eventsURL == "" {

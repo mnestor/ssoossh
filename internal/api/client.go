@@ -42,6 +42,12 @@ type Client interface {
 	// RetrieveServiceCertificate) rather than a certificate.
 	CreateServiceEnrollment(ctx context.Context, publicKey string, opts RequestedOptions) (*PendingRequest, error)
 
+	// CreatePAMRequest asks for a short-lived PAM certificate authenticating
+	// username (the local account being authenticated, e.g. by `sudo` —
+	// distinct from whatever identity approves in the browser). Returns
+	// without waiting, like CreateUserRequest.
+	CreatePAMRequest(ctx context.Context, publicKey, username string, opts RequestedOptions) (*PendingRequest, error)
+
 	// AwaitCertificate blocks until req is resolved — approved, denied,
 	// expired, enrolled, or failed — over a separate SSE connection, per the
 	// SSE spec: the POST that created the request is not itself a stream.

@@ -146,6 +146,43 @@ func TestCreateUserRequestHandler_ShouldRegisterErrorWhenCreateFails(t *testing.
 	}
 }
 
+func TestCreatePAMRequestHandler_ShouldReturnURLsAndRoundTripUsername(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{createRequestID: "req-1"}
+
+	r := gin.New()
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
+
+	body := `{"public_key":"ssh-ed25519 AAAA... test","username":"mnestor"}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/certs/pam", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var got struct {
+		RequestID   string `json:"request_id"`
+		EventsURL   string `json:"events_url"`
+		ApprovalURL string `json:"approval_url"`
+	}
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+	if got.RequestID != "req-1" {
+		t.Errorf("got request_id %q, want %q", got.RequestID, "req-1")
+	}
+
+	if svc.gotParams.Type != model.CertificateTypePAM {
+		t.Errorf("got request type %q, want %q", svc.gotParams.Type, model.CertificateTypePAM)
+	}
+	if svc.gotParams.Username != "mnestor" {
+		t.Errorf("got Username %q, want %q", svc.gotParams.Username, "mnestor")
+	}
+}
+
 func TestEventsHandler_ShouldStreamApprovedOutcome(t *testing.T) {
 	t.Parallel()
 

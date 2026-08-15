@@ -51,6 +51,7 @@ test*
 # ...but not the committed e2e suite the pattern above would otherwise hide.
 !/test/
 !/test/**
+!/pam_ssoossh/testing/
 # Runtime diagnostics from a failing e2e run (docs/e2e-testing-plan.md) —
 # generated, never committed.
 /test/e2e/_artifacts/
@@ -95,3 +96,6 @@ devcontainer-lock.json
 
 # goreleaser output
 /dist/
+
+# make pam output (pam_ssoossh.so and the cgo header goreleaser generates)
+/.build/

@@ -47,6 +47,24 @@
 	const narrowed = $derived(anyTrimmed(extensions) || anyTrimmed(criticalOptions));
 	const blocked = $derived(approvalBlockedReason(detail));
 
+	// PAM authenticates a single local operation (e.g. `sudo`) to
+	// pam_ssoossh, not an interactive SSH session — "requesting an SSH
+	// certificate" would misdescribe what's actually being authorized, so
+	// the heading says what this type of certificate is for instead (see
+	// docs/release-phase4-pam-server.md, item 7).
+	const cardCopy = $derived(
+		detail.type === 'pam'
+			? {
+					title: 'Approve a PAM authentication',
+					description:
+						"Review before authorizing this local operation. This certificate is for a single sudo (or other PAM) call on the client's machine, not an interactive SSH session."
+				}
+			: {
+					title: 'Approve a certificate request',
+					description: 'Review exactly what this certificate will grant before authorizing it.'
+				}
+	);
+
 	// Wording per blocked reason, so the page explains why there is no
 	// button rather than just not having one.
 	const blockedText: Record<BlockedReason, string> = {
@@ -59,11 +77,7 @@
 	};
 </script>
 
-<Card
-	title="Approve a certificate request"
-	description="Review exactly what this certificate will grant before authorizing it."
-	testid="approval-view"
->
+<Card title={cardCopy.title} description={cardCopy.description} testid="approval-view">
 	<dl class="divide-y divide-border-subtle">
 		<DetailRow label="Status"><StatusBadge status={detail.status} /></DetailRow>
 		<DetailRow label="Certificate type">{detail.type}</DetailRow>

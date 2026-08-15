@@ -86,8 +86,7 @@ try_open_browser: false
 
 # Reserved, and currently unused. It was intended to name a service account,
 # but that is chosen in the approval web UI instead — the client cannot
-# validate one, since enrollment requests are unauthenticated. See
-# docs/delivery-phase8-service.md.
+# validate one, since enrollment requests are unauthenticated.
 # username:
 
 # Settings in the named file cannot be overridden by a user's own config: it

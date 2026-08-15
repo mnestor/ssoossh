@@ -184,3 +184,146 @@ func TestPipeline_EndToEnd(t *testing.T) {
 		t.Errorf("got final request status %q, want %q", req.Status, model.CertificateRequestStatusApproved)
 	}
 }
+
+// TestPipeline_EndToEnd_PAM is TestPipeline_EndToEnd's PAM counterpart, and
+// the assertion docs/release-phase4-pam-server.md calls out by name: the
+// approver's OIDC username ("mike.nestor") and the local account the PAM
+// module is authenticating ("mnestor") are deliberately different, so a
+// certificate that ends up naming the wrong one is caught here rather than
+// only by the narrower resolvePrincipals unit test.
+func TestPipeline_EndToEnd_PAM(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+		PAM: config.CertOptionsPAM{
+			RequireGroup:  "sudoers",
+			ValidDuration: 30 * time.Second,
+		},
+	})
+	if err := svc.db.AutoMigrate(&model.Certificate{}, &model.User{}); err != nil {
+		t.Fatalf("failed to migrate certificates table: %v", err)
+	}
+
+	caKeypair, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("failed to generate CA keypair: %v", err)
+	}
+	caPEM, err := caKeypair.MarshalPrivateKey()
+	if err != nil {
+		t.Fatalf("failed to marshal CA private key: %v", err)
+	}
+	keys, err := signer.NewConfigKeySource(string(caPEM))
+	if err != nil {
+		t.Fatalf("failed to build key source: %v", err)
+	}
+
+	router, err := message.NewRouter(message.RouterConfig{CloseTimeout: time.Second},
+		watermill.NewSlogLogger(slog.Default()))
+	if err != nil {
+		t.Fatalf("failed to create router: %v", err)
+	}
+	signer.NewHandler(keys, svc.publisher).Register(router, svc.subscriber)
+	NewSignedReplyHandler(svc.db, svc).Register(router, svc.subscriber)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		if err := router.Run(ctx); err != nil {
+			t.Errorf("router stopped with an error: %v", err)
+		}
+	}()
+	t.Cleanup(func() {
+		if err := router.Close(); err != nil {
+			t.Errorf("unexpected error closing router: %v", err)
+		}
+	})
+
+	select {
+	case <-router.Running():
+	case <-time.After(5 * time.Second):
+		t.Fatal("router did not start")
+	}
+
+	clientKeypair, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("failed to generate client keypair: %v", err)
+	}
+	clientPub, err := clientKeypair.MarshalAuthorizedKey()
+	if err != nil {
+		t.Fatalf("failed to marshal client public key: %v", err)
+	}
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypePAM,
+		PublicKey: clientPub,
+		Username:  "mnestor",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	type waitResult struct {
+		status model.CertificateRequestStatus
+		cert   string
+		err    error
+	}
+	done := make(chan waitResult, 1)
+	go func() {
+		status, cert, _, err := svc.Wait(context.Background(), requestID)
+		done <- waitResult{status, cert, err}
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	seedUser(t, svc.db, "sub-1")
+	// The approver's OIDC username deliberately differs from the local
+	// account named on the request.
+	if err := svc.Approve(context.Background(), requestID, &Identity{
+		Username: "mike.nestor",
+		Subject:  "sub-1",
+		Groups:   []string{"sudoers"},
+	}); err != nil {
+		t.Fatalf("unexpected error approving request: %v", err)
+	}
+
+	var res waitResult
+	select {
+	case res = <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the pipeline never delivered a certificate to the waiting client")
+	}
+	if res.err != nil {
+		t.Fatalf("unexpected error from Wait: %v", res.err)
+	}
+	if res.status != model.CertificateRequestStatusApproved {
+		t.Fatalf("got status %q, want %q", res.status, model.CertificateRequestStatusApproved)
+	}
+
+	pub, _, _, _, err := ssh.ParseAuthorizedKey([]byte(res.cert))
+	if err != nil {
+		t.Fatalf("failed to parse the delivered certificate: %v", err)
+	}
+	cert, ok := pub.(*ssh.Certificate)
+	if !ok {
+		t.Fatalf("expected an *ssh.Certificate, got %T", pub)
+	}
+
+	if cert.CertType != ssh.UserCert {
+		t.Errorf("got CertType %d, want %d (ssh.UserCert)", cert.CertType, ssh.UserCert)
+	}
+	if len(cert.ValidPrincipals) != 1 || cert.ValidPrincipals[0] != "mnestor" {
+		t.Errorf(`got ValidPrincipals %v, want ["mnestor"] (the local account, not the approver's OIDC username)`, cert.ValidPrincipals)
+	}
+	if len(cert.Permissions.Extensions) != 0 {
+		t.Errorf("expected no extensions on a PAM certificate, got %v", cert.Permissions.Extensions)
+	}
+
+	caPub := caKeypair.Public()
+	checker := &ssh.CertChecker{
+		IsUserAuthority: func(auth ssh.PublicKey) bool {
+			return string(auth.Marshal()) == string(caPub.Marshal())
+		},
+	}
+	if err := checker.CheckCert("mnestor", cert); err != nil {
+		t.Errorf("delivered certificate did not validate: %v", err)
+	}
+}

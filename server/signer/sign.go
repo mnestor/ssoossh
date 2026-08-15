@@ -63,13 +63,16 @@ func newSerial() (uint64, error) {
 
 // certTypeFor maps a ssoossh certificate type onto an SSH certificate type.
 //
-// Only user certificates are supported for now — host, service, and PAM
-// certificates are deferred until the user path is fully working (see
+// User and PAM both map to ssh.UserCert: a PAM certificate authenticates a
+// person to a local operation (e.g. `sudo`), same as a user certificate
+// authenticates a person to an SSH session — the difference is entirely in
+// lifetime, options, and who validates it, not in certificate type. Host and
+// service are deferred until the user path is fully working (see
 // docs/signing-pipeline.md). Service requests never reach
 // the sign queue at all: approving one creates an enrollment instead (see
 // CertRequestService.Approve).
 func certTypeFor(t model.CertificateType) (uint32, error) {
-	if t == model.CertificateTypeUser {
+	if t == model.CertificateTypeUser || t == model.CertificateTypePAM {
 		return ssh.UserCert, nil
 	}
 	return 0, newSignError(certmsg.ErrCodeUnsupportedType, "certificate type %q is not supported yet", t)

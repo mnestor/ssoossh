@@ -390,3 +390,28 @@
     ## long-lived by nature, so this is typically set to the largest
     ## practical value (largest unit supported is hours: 8760h = 1 year).
     # valid_duration: 8760h
+
+  ## --- pam: certificates that authenticate a single local operation
+  ## --- (e.g. a `sudo` call) to pam_ssoossh, validated once in-process
+  ## --- and then discarded. Never enters an agent, never reused.
+  # pam:
+    ## OIDC group required before ssoosshd will issue a PAM certificate to
+    ## the caller. Unlike every other require_group above, empty here
+    ## means PAM certificates are NEVER issued rather than "anyone may" —
+    ## this must be set explicitly to enable the feature at all.
+    # require_group: "SSH Sudoers"
+
+    ## How long an issued PAM certificate remains valid. Seconds, not
+    ## hours or days: the certificate is validated once and thrown away.
+    # valid_duration: 30s
+
+    ## SSH certificate extensions granted to the holder. Left empty by
+    ## default — permit-pty and friends are meaningless for a certificate
+    ## that authenticates one local operation rather than an SSH session.
+    # extensions: []
+
+    ## Key ID template for this certificate. Does NOT fall back to the
+    ## user template above if left unset (every other type does) — PAM
+    ## gets its own default of "pam:{{.Username}}" so a sudo and a login
+    ## by the same person stay distinguishable in audit logs.
+    # key_id_template: "pam:{{.Username}}"

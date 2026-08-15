@@ -88,3 +88,10 @@ cert_options:
     require_group: ""
     valid_duration: 8760h
     key_id_template: ""
+  pam:
+    # Empty denies: unlike user/service/host, an unset require_group means
+    # no PAM certificates are ever issued, not "any authenticated user."
+    require_group: ""
+    valid_duration: 30s
+    extensions: []
+    key_id_template: ""

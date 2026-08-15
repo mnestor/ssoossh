@@ -183,6 +183,46 @@ func TestCreateServiceEnrollment_ShouldHitEnrollEndpoint(t *testing.T) {
 	}
 }
 
+func TestCreatePAMRequest_ShouldSendUsername(t *testing.T) {
+	t.Parallel()
+
+	var gotBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/certs/pam":
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &gotBody) //nolint:errcheck // test assertion, failure surfaces via the nil check below
+			writeCreateResponse(w, "req-4", "/api/certs/requests/req-4/events")
+		case r.Method == http.MethodGet && r.URL.Path == "/api/certs/requests/req-4/events":
+			writeSSEEvent(w, "approved", map[string]string{"certificate": "ssh-ed25519-cert-v01@openssh.com AAAA..."})
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(ts.Close)
+
+	c, err := NewClient(Config{ServerURL: ts.URL})
+	if err != nil {
+		t.Fatalf("unexpected error building client: %v", err)
+	}
+
+	pending, err := c.CreatePAMRequest(context.Background(), "ssh-ed25519 AAAA... test", "alice", RequestedOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	result, err := c.AwaitCertificate(context.Background(), pending)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Status != StatusApproved {
+		t.Errorf("got status %q, want %q", result.Status, StatusApproved)
+	}
+	if gotBody["username"] != "alice" {
+		t.Errorf("got username %v, want %q", gotBody["username"], "alice")
+	}
+}
+
 func TestCreateUserRequest_ShouldReturnResponseErrorWhenCreateFails(t *testing.T) {
 	t.Parallel()
 

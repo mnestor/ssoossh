@@ -12,7 +12,16 @@
       "version": "latest"
     },
     "ghcr.io/devcontainers/features/github-cli:1": {},
-    "ghcr.io/devcontainers/features/git:1": {}
+    "ghcr.io/devcontainers/features/git:1": {},
+    // Lets the devcontainer start containers on the host's docker daemon.
+    // Used for the old-glibc pam_ssoossh release build
+    // (docs/release-phase3-pam-build-env.md) and local release rehearsals.
+    // The forwarded host socket is a docker-compose.local.yml concern, not
+    // this file's -- see that file for why (rootless docker, host-specific
+    // path) and docs/docker-setup.md for this host's layout.
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "moby": false
+    }
   },
   "initializeCommand": "scripts/devcontainer-init.sh",
   // Uncomment the next line if you want start specific services in your Docker Compose config.

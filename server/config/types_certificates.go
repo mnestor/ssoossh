@@ -8,6 +8,7 @@ type CertificateOptions struct {
 	User    CertOptionsUser    `mapstructure:"user"`
 	Service CertOptionsService `mapstructure:"service"`
 	Host    CertOptions        `mapstructure:"host"`
+	PAM     CertOptionsPAM     `mapstructure:"pam"`
 
 	// RequestTTL is how long a pending certificate request (user, host, or
 	// service) stays valid for approval before it's treated as expired.
@@ -76,5 +77,41 @@ type CertOptionsService struct {
 	// KeyIDTemplate; see CertOptions.KeyIDTemplate and
 	// docs/certificate-keyid-template.md. Empty falls back to
 	// CertificateOptions.User.KeyIDTemplate.
+	KeyIDTemplate string `mapstructure:"key_id_template"`
+}
+
+// CertOptionsPAM configures issuance of PAM certificates: short-lived
+// certificates a pam_ssoossh-authenticated local operation (e.g. `sudo`)
+// validates once and discards. Structurally identical to CertOptionsUser,
+// but its defaults and fallback behavior deliberately diverge — see each
+// field's comment.
+type CertOptionsPAM struct {
+	// RequireGroup is the OIDC group an approver must belong to for a PAM
+	// certificate to be issued. Unlike CertOptionsUser.RequireGroup, empty
+	// here means no PAM certificates are ever issued rather than "any
+	// authenticated user may approve" — "who may sudo on this host" is a
+	// narrower question than "who may log in", and this option has to fail
+	// closed rather than default open (see docs/admin-authorization-plan.md's
+	// identical empty-denies rule for admin.require_group). An operator must
+	// set this explicitly to enable PAM issuance at all.
+	RequireGroup string `mapstructure:"require_group"`
+
+	// ValidDuration should be seconds, not hours: a PAM certificate is
+	// validated once, in-process, and discarded — it never enters an agent
+	// and is never reused. Pick this together with the client's skew
+	// tolerance (see docs/release-phase5-pam-client.md).
+	ValidDuration time.Duration `mapstructure:"valid_duration,string"`
+
+	// Extensions should default to empty. permit-pty and friends are
+	// meaningless for a certificate that authenticates a single local
+	// operation and is then thrown away.
+	Extensions []string `mapstructure:"extensions"`
+
+	// KeyIDTemplate does NOT fall back to CertificateOptions.User's the way
+	// CertOptionsService's and CertOptions' (host) do — see
+	// newKeyIDTemplates. A sudo and a login by the same person must stay
+	// distinguishable in an sshd or sudo audit log, so PAM gets its own
+	// hardcoded default (defaultPAMKeyIDTemplate) rather than silently
+	// inheriting the user template.
 	KeyIDTemplate string `mapstructure:"key_id_template"`
 }

@@ -26,6 +26,7 @@ func NewCertRequestController(group *gin.RouterGroup, certRequestService service
 	group.POST("/certs/user", cr.createUserRequestHandler)
 	group.POST("/certs/host/sign", cr.createHostSignRequestHandler)
 	group.POST("/certs/service/enroll", cr.createServiceEnrollRequestHandler)
+	group.POST("/certs/pam", cr.createPAMRequestHandler)
 
 	// GET .../events is the actual SSE connection: a real long-lived
 	// text/event-stream response the client (or its HTTP client's SSE
@@ -201,6 +202,48 @@ func (cr *certRequestController) createServiceEnrollRequestHandler(g *gin.Contex
 	requestID, err := cr.certRequestService.CreateRequest(g.Request.Context(), service.NewCertRequestParams{
 		Type:             model.CertificateTypeService,
 		PublicKey:        body.PublicKey,
+		SourceIP:         g.ClientIP(),
+		RequestedOptions: toServiceOptions(body.RequestedOptions),
+	})
+	if err != nil {
+		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		return
+	}
+
+	respondData(g, newCreateRequestResponse(requestID))
+}
+
+// createPAMRequestHandler handles POST /api/certs/pam: creates a pending
+// request for a short-lived PAM certificate — one that authenticates a
+// single local operation (e.g. `sudo`) to pam_ssoossh rather than an
+// interactive SSH session — and returns its events/approval URLs (see
+// createUserRequestHandler). Username is the local account being
+// authenticated; it becomes the issued certificate's principal (see
+// service.resolvePrincipals), not whatever the approving browser identity
+// is called.
+//
+// @Summary     Create a PAM certificate request
+// @Description Unauthenticated. Username is the local account pam_ssoossh is authenticating —
+// @Description that, not the approver's identity, becomes the certificate's principal. Approving
+// @Description one fails unless `cert_options.pam.require_group` is configured.
+// @Tags        client
+// @Accept      json
+// @Produce     json
+// @Param       request body apitypes.PAMRequestBody true "The public key to sign, the local username being authenticated, and the options being asked for"
+// @Success     200 {object} openapidoc.CreateRequestEnvelope "Request created"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Malformed body, or a public key that will not parse"
+// @Router      /api/certs/pam [post]
+func (cr *certRequestController) createPAMRequestHandler(g *gin.Context) {
+	var body apitypes.PAMRequestBody
+	if err := g.ShouldBindJSON(&body); err != nil {
+		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		return
+	}
+
+	requestID, err := cr.certRequestService.CreateRequest(g.Request.Context(), service.NewCertRequestParams{
+		Type:             model.CertificateTypePAM,
+		PublicKey:        body.PublicKey,
+		Username:         body.Username,
 		SourceIP:         g.ClientIP(),
 		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})

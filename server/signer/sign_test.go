@@ -260,7 +260,6 @@ func TestSign_ShouldRejectUnsupportedCertificateTypes(t *testing.T) {
 	for _, certType := range []model.CertificateType{
 		model.CertificateTypeHost,
 		model.CertificateTypeService,
-		model.CertificateTypePAM,
 	} {
 		job := newTestJob(t)
 		job.Type = certType
@@ -272,6 +271,34 @@ func TestSign_ShouldRejectUnsupportedCertificateTypes(t *testing.T) {
 		if got := errorCode(err); got != certmsg.ErrCodeUnsupportedType {
 			t.Errorf("for %q: got error code %q, want %q", certType, got, certmsg.ErrCodeUnsupportedType)
 		}
+	}
+}
+
+// TestSign_ShouldIssueUserCertForPAM guards the mapping added for PAM
+// certificates: they authenticate a person to a local operation (e.g.
+// `sudo`), the same relationship a user certificate has to an SSH session,
+// so they must produce an ssh.UserCert rather than being rejected the way
+// host and service still are.
+func TestSign_ShouldIssueUserCertForPAM(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+	job := newTestJob(t)
+	job.Type = model.CertificateTypePAM
+	job.KeyID = "pam:alice"
+	job.RequestedOptions = certmsg.RequestedOptions{}
+
+	reply, err := Sign(context.Background(), ks, job)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	cert := parseCert(t, reply.Certificate)
+
+	if cert.CertType != ssh.UserCert {
+		t.Errorf("got CertType %d, want %d (ssh.UserCert)", cert.CertType, ssh.UserCert)
+	}
+	if len(cert.Permissions.Extensions) != 0 {
+		t.Errorf("expected no extensions on a PAM certificate, got %v", cert.Permissions.Extensions)
 	}
 }
 

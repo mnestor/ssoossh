@@ -30,6 +30,7 @@ type NewCertRequestParams struct {
 	Type             model.CertificateType
 	PublicKey        string
 	Hostname         string // set for CertificateTypeHost only
+	Username         string // set for CertificateTypePAM only — see model.CertificateRequest.Username
 	SourceIP         string
 	RequestedOptions RequestedOptions
 }
@@ -142,6 +143,7 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 		Type:             p.Type,
 		PublicKey:        p.PublicKey,
 		Hostname:         p.Hostname,
+		Username:         p.Username,
 		RequestedOptions: string(optionsJSON),
 		SourceIP:         p.SourceIP,
 		Status:           model.CertificateRequestStatusPending,
@@ -230,7 +232,7 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 		Request:       req,
 		Requested:     requested,
 		Narrowed:      narrowed,
-		Principals:    resolvePrincipals(req.Type, req.Hostname, identity),
+		Principals:    resolvePrincipals(req.Type, req.Hostname, req.Username, identity),
 		ValidDuration: validDuration,
 	}, nil
 }
@@ -238,13 +240,14 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 // Approve resolves policy for requestID against server config and identity,
 // then branches by type:
 //
-//   - user, host: marks the request CertificateRequestStatusSigning and
+//   - user, PAM: marks the request CertificateRequestStatusSigning and
 //     publishes a self-contained signingJob to certmsg.SignQueueTopic — the queue is
 //     the only entrypoint that turns an approved request into a signed
 //     certificate (see docs/signing-pipeline.md; actual signing
 //     is docs/signing-pipeline.md). The certificate is
 //     delivered later, over the client's own Wait/SSE connection, once the
-//     signer and listener/resolver process the job.
+//     signer and listener/resolver process the job. Host is not — it falls
+//     through to Approve's default case below.
 //   - service: does NOT use the queue. Marks the request
 //     CertificateRequestStatusEnrolled with a freshly generated
 //     EnrollmentToken directly, and notifies the wake topic itself, right
@@ -266,13 +269,17 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 //     that policy exists.
 //   - NoTouchRequired is only ever granted for CertificateTypeService, per
 //     root CLAUDE.md.
-//   - RequireGroup (service/host config) is enforced: identity must be a
-//     member, or Approve fails without publishing/enrolling anything.
+//   - RequireGroup (service/host/PAM config) is enforced: identity must be
+//     a member, or Approve fails without publishing/enrolling anything. PAM
+//     is the one type where an unset RequireGroup denies rather than opens
+//     — see CertOptionsPAM.RequireGroup.
 //   - Principals are a conservative provisional default — just the
 //     identity's username for user/service, just the hostname for host —
 //     pending the still-undecided "which LDAP attributes become
-//     principals" question (docs/ssoossh-context.md). Safe to extend
-//     later without narrowing what's already granted.
+//     principals" question (docs/ssoossh-context.md). PAM is the deliberate
+//     exception: its principal is the local account named on the request
+//     (req.Username), not the approver's identity — see resolvePrincipals.
+//     Safe to extend later without narrowing what's already granted.
 func (s *CertRequestService) Approve(ctx context.Context, requestID string, identity *Identity) error {
 	var req model.CertificateRequest
 	if err := s.db.WithContext(ctx).First(&req, "id = ?", requestID).Error; err != nil {
@@ -298,6 +305,13 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 	if err != nil {
 		return err
 	}
+	// PAM is the one type where an unset requireGroup denies rather than
+	// opens: "who may sudo" is deliberately narrower than "who may log in",
+	// so a deployment that hasn't configured cert_options.pam.require_group
+	// issues no PAM certificates at all (see CertOptionsPAM.RequireGroup).
+	if req.Type == model.CertificateTypePAM && requireGroup == "" {
+		return fmt.Errorf("pam certificate issuance requires cert_options.pam.require_group to be configured")
+	}
 	if requireGroup != "" && !slices.Contains(identity.Groups, requireGroup) {
 		return fmt.Errorf("identity is not authorized to approve %s certificates", req.Type)
 	}
@@ -309,11 +323,11 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 	switch req.Type {
 	case model.CertificateTypeService:
 		return s.approveServiceEnrollment(ctx, requestID, narrowed)
-	case model.CertificateTypeUser:
+	case model.CertificateTypeUser, model.CertificateTypePAM:
 		return s.approveForSigning(ctx, req, identity, narrowed, validDuration)
 	default:
-		// Host and PAM certificates aren't issuable yet — the signer only
-		// handles user certificates for now (see
+		// Host certificates aren't issuable yet — the signer only handles
+		// user and PAM certificates for now (see
 		// docs/signing-pipeline.md). Reject here rather than
 		// queueing a job the signer will refuse: the human approving it gets
 		// an immediate, comprehensible error instead of the request quietly
@@ -455,7 +469,7 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 		Type:             req.Type,
 		PublicKey:        req.PublicKey,
 		Hostname:         req.Hostname,
-		Principals:       resolvePrincipals(req.Type, req.Hostname, identity),
+		Principals:       resolvePrincipals(req.Type, req.Hostname, req.Username, identity),
 		KeyID:            keyID,
 		RequestedOptions: narrowed,
 		ValidAfter:       now,
@@ -493,6 +507,10 @@ func resolveCertOptions(opts config.CertificateOptions, certType model.Certifica
 	case model.CertificateTypeHost:
 		validDuration = opts.Host.ValidDuration
 		requireGroup = opts.Host.RequireGroup
+	case model.CertificateTypePAM:
+		permittedExtensions = opts.PAM.Extensions
+		validDuration = opts.PAM.ValidDuration
+		requireGroup = opts.PAM.RequireGroup
 	default:
 		return RequestedOptions{}, 0, "", fmt.Errorf("unsupported certificate type %q", certType)
 	}
@@ -526,11 +544,22 @@ func intersectStrings(requested, permitted []string) []string {
 // resolvePrincipals is a conservative, provisional default — see this
 // package's Approve doc comment and docs/ssoossh-context.md's "Which LDAP
 // attributes become principals" open question.
-func resolvePrincipals(certType model.CertificateType, hostname string, identity *Identity) []string {
-	if certType == model.CertificateTypeHost {
+//
+// PAM is the one deliberate exception to "the principal is the approver":
+// the certificate names the local account pam_ssoossh is authenticating
+// (username, carried on the request since creation — see
+// model.CertificateRequest.Username), not the approver's OIDC identity.
+// Those are the same string in the common case and are not guaranteed to
+// be — see docs/release-phase4-pam-server.md, "Principal resolution".
+func resolvePrincipals(certType model.CertificateType, hostname, pamUsername string, identity *Identity) []string {
+	switch certType {
+	case model.CertificateTypeHost:
 		return []string{hostname}
+	case model.CertificateTypePAM:
+		return []string{pamUsername}
+	default:
+		return []string{identity.Username}
 	}
-	return []string{identity.Username}
 }
 
 // Deny marks requestID denied and notifies anything waiting in Wait. Denying

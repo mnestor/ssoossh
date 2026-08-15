@@ -211,6 +211,9 @@ func (f *fakeAPIClient) CreateHostRequest(ctx context.Context, publicKey, hostna
 func (f *fakeAPIClient) CreateServiceEnrollment(ctx context.Context, publicKey string, opts api.RequestedOptions) (*api.PendingRequest, error) {
 	return f.CreateUserRequest(ctx, publicKey, opts)
 }
+func (f *fakeAPIClient) CreatePAMRequest(ctx context.Context, publicKey, username string, opts api.RequestedOptions) (*api.PendingRequest, error) {
+	return f.CreateUserRequest(ctx, publicKey, opts)
+}
 func (f *fakeAPIClient) AwaitCertificate(ctx context.Context, req *api.PendingRequest) (*api.CertificateResult, error) {
 	f.awaitCalled = true
 	if f.onAwait != nil {

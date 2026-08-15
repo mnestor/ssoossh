@@ -70,12 +70,13 @@ linux:
 binaries:
 	$(call BUILDALL)
 
-# pam_ssoossh needs libpam headers and an amd64 cgo toolchain, and is
-# behind the `pam` build tag. Blocked until the dev VM exists — phase 7.
+# pam_ssoossh needs libpam headers and cgo, both installed by
+# .devcontainer/Dockerfile (see docs/release-phase3-pam-build-env.md).
+# CGO_ENABLED is set here rather than globally so the rest of the tree keeps
+# building cgo-free.
 pam:
-	@echo "pam_ssoossh is not buildable here: needs libpam headers and an"
-	@echo "amd64 cgo toolchain. See docs/delivery-phase7-pam.md."
-	@exit 1
+	mkdir -p .build
+	CGO_ENABLED=1 go build -tags=pam -buildmode=c-shared -o .build/pam_ssoossh.so ./pam_ssoossh/
 
 frontend-clean:
 	rm -rf server/frontend/dist
@@ -158,10 +159,8 @@ test-server:
 test-client:
 	$(call TESTCOMPONENT,client)
 
-# Skipped rather than failing: the package is behind the `pam` build tag and
-# cannot compile without libpam headers. Re-enable in phase 7.
 test-pam:
-	@echo "skipping pam_ssoossh tests: not buildable here (see docs/delivery-phase7-pam.md)"
+	CGO_ENABLED=1 go test -tags=pam ./pam_ssoossh/...
 
 test-internal:
 	$(call TESTCOMPONENT,internal)
@@ -188,8 +187,11 @@ lint-server:
 lint-client:
 	golangci-lint run ./client/...
 
+# CGO_ENABLED=1 is required here: golangci-lint's type-checker cannot see
+# into a cgo file (pam.go, pam_ssoossh.go) without it, and with those files
+# invisible every symbol only referenced from them reports as unused.
 lint-pam:
-	golangci-lint run --build-tags pam ./pam_ssoossh/...
+	CGO_ENABLED=1 golangci-lint run --build-tags pam ./pam_ssoossh/...
 
 lint-internal:
 	golangci-lint run ./internal/...

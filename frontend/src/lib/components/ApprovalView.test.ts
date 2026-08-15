@@ -81,6 +81,20 @@ describe('ApprovalView', () => {
 		expect(screen.getByText('request already resolved')).toBeInTheDocument();
 	});
 
+	describe('when the request is a PAM certificate', () => {
+		const pam = detail({ type: 'pam', principals: ['mnestor'] });
+
+		it('should not describe it as an SSH certificate request', () => {
+			mount({ detail: pam });
+			expect(screen.queryByText('Approve a certificate request')).not.toBeInTheDocument();
+		});
+
+		it('should explain that this authorizes a local operation, not an SSH session', () => {
+			mount({ detail: pam });
+			expect(screen.getByText(/not an interactive SSH session/)).toBeInTheDocument();
+		});
+	});
+
 	describe('when the granted options differ from the requested ones', () => {
 		const narrowed = detail({
 			requested: options({

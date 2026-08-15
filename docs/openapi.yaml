@@ -49,6 +49,18 @@ components:
       - hostname
       - public_key
       type: object
+    apitypes.PAMRequestBody:
+      properties:
+        public_key:
+          type: string
+        requested_options:
+          $ref: '#/components/schemas/apitypes.RequestedOptions'
+        username:
+          type: string
+      required:
+      - public_key
+      - username
+      type: object
     apitypes.RequestedOptions:
       properties:
         extensions:
@@ -503,6 +515,41 @@ paths:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
           description: Malformed body, or a public key that will not parse
       summary: Create a host certificate request
+      tags:
+      - client
+  /api/certs/pam:
+    post:
+      description: |-
+        Unauthenticated. Username is the local account pam_ssoossh is authenticating —
+        that, not the approver's identity, becomes the certificate's principal. Approving
+        one fails unless `cert_options.pam.require_group` is configured.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/apitypes.PAMRequestBody'
+                description: The public key to sign, the local username being authenticated,
+                  and the options being asked for
+                summary: request
+        description: The public key to sign, the local username being authenticated,
+          and the options being asked for
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.CreateRequestEnvelope'
+          description: Request created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Malformed body, or a public key that will not parse
+      summary: Create a PAM certificate request
       tags:
       - client
   /api/certs/requests/{id}:

@@ -22,8 +22,20 @@ type ServiceEnrollRequestBody struct {
 	RequestedOptions RequestedOptions `json:"requested_options,omitempty"`
 }
 
+// PAMRequestBody is the POST /api/certs/pam request body. Username is the
+// local account pam_ssoossh is authenticating (e.g. who is running `sudo`)
+// — the certificate's principal is this, not whatever the browser identity
+// that later approves the request happens to be called (see
+// docs/release-phase4-pam-server.md, "Principal resolution").
+type PAMRequestBody struct {
+	PublicKey        string           `json:"public_key" binding:"required"`
+	Username         string           `json:"username" binding:"required"`
+	RequestedOptions RequestedOptions `json:"requested_options,omitempty"`
+}
+
 // CreateRequestResponse is what every create-request endpoint
-// (UserRequestBody/HostSignRequestBody/ServiceEnrollRequestBody's handlers)
+// (UserRequestBody/HostSignRequestBody/ServiceEnrollRequestBody/
+// PAMRequestBody's handlers)
 // returns: the created request's ID plus two URLs — EventsURL for the
 // client's own SSE connection to wait on the outcome, ApprovalURL for the
 // human to open in a browser. Both are relative — the client already knows
