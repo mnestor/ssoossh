@@ -1,0 +1,103 @@
+http:
+  address: 127.0.0.1
+  port: 8080
+  unix_socket: ""
+  proxy_protocol: []
+  trusted_proxies: []
+  server_name: ""
+  cookie_key: ""
+  # Unset derives Secure from whether the deployment is HTTPS (tls below, or
+  # is_https when a proxy terminates it). Set only to override that.
+  cookie_secure:
+  cookie_same_site: strict
+  cookie_max_age: 300s
+  rate_limit: 60
+  rate_duration: 1m
+  hsts: "max-age=31536000; includeSubDomains"
+  tls:
+    min_version: TLS1.3
+    cipher_suites: []
+    curves: []
+  access_logging:
+    log_user_agent: true
+    log_request_header: true
+    log_client_ip: true
+    log_request_id: false
+    log_request_body: false
+    log_response_body: false
+    log_response_header: false
+    log_span_id: false
+    log_trace_id: false
+
+# ldap and authentication are top-level, not nested under http: -- Config's
+# mapstructure tags for LDAP and AuthConfig are on Config itself, not on
+# HTTPSettings. Nesting them under http: here previously meant every default
+# below was silently dropped by viper's unmarshal.
+ldap:
+  enabled: false
+  url: ""
+  bind_dn: ""
+  bind_password: ""
+  base_dn: ""
+  user_filter: ""
+
+authentication:
+  client_id: ""
+  client_secret: ""
+  provider_url: ""
+  redirect_url: ""
+  scopes: "profile email"
+  fields:
+    username: "preferred_username"
+    groups: "groups"
+    other_accounts: ""
+    service_accounts: ""
+    email: "email"
+
+logging:
+  level: WARN
+  include_app_name: true
+  include_app_version: true
+  log_json: false
+
+production: true
+traces: false
+metrics: false
+
+db:
+  provider: sqlite
+  connection_string: "ssoossh.db"
+  retry_attempts: 3
+  retry_interval: 3s
+  logging:
+    level: WARN
+    add_source: false
+    log_json: false
+
+cert_options:
+  request_ttl: 5m
+  signing_timeout: 5m
+  user:
+    # Empty means any authenticated user may approve their own request.
+    require_group: ""
+    valid_duration: 30s
+    extensions:
+      - permit-pty
+      - permit-user-rc
+    key_id_template: ""
+  service:
+    require_group: ""
+    valid_duration: 8760h
+    extensions: []
+    key_id_template: ""
+  host:
+    require_group: ""
+    valid_duration: 8760h
+    key_id_template: ""
+  pam:
+    # Empty denies: unlike user/service/host, an unset require_group means
+    # no PAM certificates are ever issued, not "any authenticated user."
+    require_group: ""
+    valid_duration: 30s
+    extensions: []
+    key_id_template: ""

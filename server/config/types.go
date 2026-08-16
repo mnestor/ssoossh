@@ -1,0 +1,87 @@
+package config
+
+import (
+	"time"
+)
+
+// Config is the root ssoosshd configuration, populated from defaults.yaml
+// and the user's config file via NewConfig.
+type Config struct {
+	Logging    AppLogging `mapstructure:"logging"`
+	Traces     bool       `mapstructure:"traces"`
+	Metrics    bool       `mapstructure:"metrics"`
+	Production bool       `mapstructure:"production"`
+
+	DB    DB           `mapstructure:"db"`
+	HTTP  HTTPSettings `mapstructure:"http"`
+	Queue QueueConfig  `mapstructure:"queue"`
+
+	// AuthConfig configures OAuth/OIDC authentication for the server. See
+	// OAuthConfig for details on provider URL, scopes, and field mapping
+	// from OIDC claims to ssoossh identity fields (username, groups).
+	AuthConfig OAuthConfig `mapstructure:"authentication"`
+
+	// LDAP optionally enriches the identity resolved from OIDC with
+	// attributes looked up by username. See LDAPConfig.
+	LDAP LDAPConfig `mapstructure:"ldap"`
+
+	SSHKey      string             `mapstructure:"ssh_key"`
+	CertOptions CertificateOptions `mapstructure:"cert_options"`
+}
+
+type QueueConfig struct {
+	Logging GenericLogging `mapstructure:"logging"`
+}
+
+// Supported values for DBProvider.
+const (
+	DBProviderSqlite   = "sqlite"
+	DBProviderPostgres = "postgres"
+)
+
+// DBProvider identifies which database backend to use. See DBProviderSqlite
+// and DBProviderPostgres.
+type DBProvider string
+
+// DB configures the database connection, query logging, and connection retry behavior.
+type DB struct {
+	// Provider identifies which database backend to use. See DBProviderSqlite
+	// and DBProviderPostgres.
+	Provider DBProvider `mapstructure:"provider"`
+
+	// Connection is the connection string / DSN. For SQLite this is a file
+	// path (or ":memory:" for in-memory); for PostgreSQL a standard postgres://
+	// URL or keyword string.
+	Connection string `mapstructure:"connection_string"`
+
+	// Logging configures which database queries are logged and where they
+	// are written. See DBLogging for detailed options.
+	Logging GenericLogging `mapstructure:"logging"`
+
+	// RetryAttempts is the maximum number of connection attempts before giving up.
+	// Zero or negative disables retries (will fail immediately on the first error).
+	// Applies to both SQLite (typically succeeds immediately) and PostgreSQL
+	// (may retry on transient network failures).
+	RetryAttempts int `mapstructure:"retry_attempts"`
+
+	// RetryInterval is the time to wait between connection retry attempts.
+	// Only used if RetryAttempts > 1. Applies to both SQLite and PostgreSQL.
+	RetryInterval time.Duration `mapstructure:"retry_interval"`
+}
+
+// LDAPConfig configures optional LDAP identity enrichment, looked up by the
+// username resolved from OIDC (see docs/ssoossh-context.md — "Which LDAP
+// attributes become principals" is still an open question). Enabled false
+// (the default) skips LDAP entirely; OIDC claims alone are sufficient.
+//
+// TODO: not yet consumed by service.AuthService — fields are a starting
+// guess at what a reference deployment (lldap) needs.
+type LDAPConfig struct {
+	Enabled      bool           `mapstructure:"enabled"`
+	URL          string         `mapstructure:"url"`
+	BindDN       string         `mapstructure:"bind_dn"`
+	BindPassword string         `mapstructure:"bind_password"`
+	BaseDN       string         `mapstructure:"base_dn"`
+	UserFilter   string         `mapstructure:"user_filter"`
+	Logging      GenericLogging `mapstructure:"logging"`
+}

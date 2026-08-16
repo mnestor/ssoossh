@@ -1,0 +1,222 @@
+.TH SSOOSSH.YAML 5 "2026-08-16" "ssoossh" "File Formats"
+.SH NAME
+ssoossh.yaml \- configuration file for the ssoossh client
+.SH DESCRIPTION
+.B ssoossh.yaml
+is a YAML file configuring the
+.BR ssoossh (1)
+client: which server to talk to, how to store keys and certificates, and
+which key algorithm to generate.
+.SH LOCATION AND MERGING
+Unless
+.BR "ssoossh --config " \fIfile\fR
+is given, up to four files are merged, each layered on top of the last so
+later ones override earlier ones on any key both set:
+.IP 1. 4
+Built-in defaults (compiled into the binary; not a file on disk).
+.IP 2. 4
+.I /etc/ssoossh/ssoossh.yaml
+\(em the system-wide file. This is also the only location the
+.B enforce
+key (below) is read from.
+.IP 3. 4
+The per-user file:
+.I ~/.config/ssoossh.yaml
+on Linux and macOS, or
+.I %AppData%\essoossh\essoossh.yaml
+(the roaming profile) on Windows. Skipped if no home directory can be
+determined.
+.IP 4. 4
+.I ./ssoossh.yaml
+in the current working directory, for development.
+.PP
+If
+.B --config
+.I file
+is given, that file is merged last, on top of all of the above (except
+.BR enforce ,
+which still wins over everything \(em see below).
+.PP
+Command-line flags override every file: currently
+.B --server
+(overrides
+.BR server )
+and, for
+.B "ssoossh ssh login"
+only,
+.B --key-type
+/
+.B --key-size
+(override
+.B sshkey.type
+/
+.BR sshkey.size ).
+.SS enforce
+If the system file
+.RI ( /etc/ssoossh/ssoossh.yaml )
+sets
+.BR enforce ,
+naming another YAML file, that file is merged last of all \(em after the
+per-user file, the local file, and
+.B --config
+\(em so it wins over every location a non-administrator can write to. A
+relative
+.B enforce
+path resolves inside the system directory, so it cannot be redirected to a
+file the user controls. No file other than the system file may set
+.BR enforce ;
+setting it anywhere else has no special effect (it is just an ordinary,
+unrecognized-by-anything-else key).
+.PP
+The only setting that currently behaves differently when it arrives via
+.B enforce
+is
+.BR fips :
+see below.
+.SH OPTIONS
+.TP
+.BI server: " url"
+Base URL of the ssoosshd server, including scheme, e.g.
+.IR https://ssoosshd.example.com .
+Overridable per-invocation with
+.BR --server .
+No default; required for any command that talks to the server.
+.TP
+.BI capubkey: " string"
+The server's CA public key, in
+.BR authorized_keys (5)
+format. When set, the client skips fetching the CA key from the server at
+startup. When empty (the default), it is fetched from the server once per
+invocation via
+.BR "ssoossh ca" 's
+underlying call.
+.TP
+.BI insecure_skip_verify: " bool"
+Skip TLS certificate verification when talking to
+.BR server .
+Default:
+.BR false .
+Intended for testing only.
+.TP
+.B sshkey:
+Selects the algorithm and size of the keypair generated for each new
+certificate (a fresh keypair is generated every time one is needed, so this
+is not a long-lived identity file). Both sub-keys are optional.
+.RS
+.TP
+.BI "  type: " ed25519 | ecdsa | rsa
+Key algorithm. Default: \fBed25519\fR normally, or \fBecdsa\fR when FIPS
+steering is in effect (see
+.B fips
+below) \(em ed25519 only entered FIPS 186-5 in 2023 and several FIPS
+policies still reject it outright.
+.IP
+Choosing a non-FIPS-approved type while FIPS steering is in effect produces
+a warning, not a refusal, unless FIPS was locked on specifically via
+.B enforce
+(see
+.BR fips ),
+in which case it is a hard error at config-load time.
+.TP
+.BI "  size: " int
+Meaning depends on
+.BR type :
+ignored for \fBed25519\fR (which has exactly one size, and a nonzero value
+here only produces a warning); the NIST curve \(em 256, 384, or 521 \(em
+for \fBecdsa\fR (default 256); the RSA modulus in bits, minimum 2048, for
+.B rsa
+(default 3072). RSA key generation costs on the order of hundreds of
+milliseconds and is highly variable; ecdsa and ed25519 are effectively
+instant. Since a fresh key is generated on every certificate request, this
+cost is paid every time, not once.
+.RE
+.TP
+.BI use_agent: " bool"
+Keep keys and certificates in a running
+.BR ssh-agent (1)
+rather than in files. Default:
+.BR true ,
+and the recommended mode \(em it is also the only mode
+.B "ssh proxycommand"
+supports, since
+.BR ssh (1)
+reads key files once at startup and never sees a certificate written after
+that. Setting this to false means the agent is not consulted at all, not
+merely deprioritized.
+.TP
+.BI fallback_file_agent: " bool"
+When
+.B use_agent
+is true but no agent is reachable, fall back to file-based storage instead
+of failing. Default:
+.BR true .
+Has no effect when
+.B use_agent
+is false, since file storage is already in use in that case.
+.TP
+.BI key_filename: " string"
+Base filename (or path) for key/certificate files when file-based storage
+is in use, either because
+.B use_agent
+is false or because it fell back per
+.BR fallback_file_agent .
+Default:
+.BR ssoossh .
+.TP
+.BI try_open_browser: " bool"
+Best-effort automatic launch of the system browser to the approval URL
+during
+.BR "ssh login" .
+The URL is always printed regardless of this setting, so a headless machine
+with no browser can still complete a login by hand; a launch failure is
+reported and otherwise ignored. Default:
+.BR false .
+.TP
+.BI fips: " bool"
+Steers key generation toward algorithms SSH implementations running in
+FIPS mode generally accept. Advisory only: it changes the default
+.B sshkey.type
+and warns about non-approved explicit choices, but never refuses one \(em
+except when set specifically via the system
+.B enforce
+mechanism (see
+.BR "LOCATION AND MERGING" ),
+in which case an unapproved
+.B sshkey.type
+becomes a hard error instead of a warning.
+.IP
+Left unset (the default), this follows whether the running binary itself
+was built and is running in Go's FIPS 140-3 mode \(em set it explicitly to
+target a FIPS-mode server from a client that is not itself running in FIPS
+mode.
+.TP
+.BI enforce: " filename"
+Only meaningful in the system file,
+.IR /etc/ssoossh/ssoossh.yaml ;
+see
+.B "LOCATION AND MERGING"
+above.
+.TP
+.BI username: " string"
+Present in the schema but currently read by nothing in the client. Reserved
+for naming a service account; not yet wired to any behavior.
+.SH EXAMPLE
+.nf
+insecure_skip_verify: false
+
+use_agent: true
+fallback_file_agent: true
+key_filename: ssoossh
+try_open_browser: false
+# enforce: ssoossh-locked.yaml
+
+# fips: true
+
+sshkey:
+  type: ed25519
+  size: 0
+.fi
+.SH SEE ALSO
+.BR ssoossh (1),
+.BR ssh-agent (1),
+.BR authorized_keys (5)

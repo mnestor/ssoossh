@@ -1,0 +1,52 @@
+{
+  "chat.agent.enabled": true,
+  "files.eol": "\n",
+  "files.exclude": {
+    "**/.git": true,
+    "**/.svn": true,
+    "**/.hg": true,
+    "**/.DS_Store": true,
+    "**.pnpm-store": true,
+    "**/Thumbs.db": true
+  },
+  "remote.extensionKind": {
+    "ms-azuretools.vscode-docker": "workspace"
+  },
+  "go.useLanguageServer": true,
+  "[go]": {
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "[go.mod]": {
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "gopls": {
+    "build.buildFlags": [
+      "-tags",
+      ""
+    ],
+    "usePlaceholders": false,
+    "staticcheck": true
+  },
+  "go.lintTool": "golangci-lint",
+  "go.lintOnSave": "package",
+  "editor.formatOnSave": true,
+  "go.toolsEnvVars": {
+    "CGO_ENABLED": "0"
+  },
+  "go.testEnvVars": {
+    "": ""
+  },
+  "go.testFlags": [
+    "-v",
+    "-race"
+  ],
+  "go.testTimeout": "10s",
+  "go.coverOnSingleTest": true,
+  "go.coverOnSingleTestFile": true,
+  "go.coverOnTestPackage": true,
+  "remote.localPortHost": "allInterfaces"
+}

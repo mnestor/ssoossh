@@ -1,0 +1,63 @@
+@import 'tailwindcss';
+
+/* Dark mode follows the OS unless an explicit class overrides it, so the
+   default matches what the user already asked their system for. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+	--color-surface: #ffffff;
+	--color-surface-muted: #f6f7f9;
+	--color-border-subtle: #e3e6ea;
+	--color-ink: #16191d;
+	--color-ink-muted: #5c6570;
+
+	--color-accent: #2f6df6;
+	--color-accent-hover: #1f56d0;
+
+	/* Granted and trimmed are the approval page's whole point, so they get
+	   named colors rather than ad-hoc utility classes at each use site. */
+	--color-granted: #157347;
+	--color-granted-surface: #e7f5ed;
+	--color-trimmed: #8a6100;
+	--color-trimmed-surface: #fdf3e0;
+	--color-danger: #b42318;
+	--color-danger-surface: #fdeceb;
+}
+
+@layer base {
+	:root {
+		color-scheme: light dark;
+	}
+
+	.dark {
+		--color-surface: #16191d;
+		--color-surface-muted: #1f242a;
+		--color-border-subtle: #2d343c;
+		--color-ink: #eef1f4;
+		--color-ink-muted: #9aa4b0;
+
+		--color-accent: #6f9bff;
+		--color-accent-hover: #8bafff;
+
+		--color-granted: #6ede9f;
+		--color-granted-surface: #14301f;
+		--color-trimmed: #f2c66a;
+		--color-trimmed-surface: #2f2712;
+		--color-danger: #ff9c93;
+		--color-danger-surface: #3a1a17;
+	}
+
+	body {
+		background-color: var(--color-surface-muted);
+		color: var(--color-ink);
+	}
+
+	button,
+	[role='button'] {
+		cursor: pointer;
+	}
+
+	button:disabled {
+		cursor: not-allowed;
+	}
+}

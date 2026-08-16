@@ -1,0 +1,678 @@
+package agent
+
+import (
+	"crypto/rand"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
+	"golang.org/x/crypto/ssh"
+)
+
+// should report file as the backend and agent type for a FileAgent
+func TestFileAgent_TypeAndBackend(t *testing.T) {
+	t.Parallel()
+
+	f := &FileAgent{}
+
+	if got := f.Type(); got != AgentTypeFile {
+		t.Errorf("Type() = %q, want %q", got, AgentTypeFile)
+	}
+	if got := f.Backend(); got != BackendFile {
+		t.Errorf("Backend() = %q, want %q", got, BackendFile)
+	}
+}
+
+// should create a FileAgent for a path with no existing key material
+func TestNewFileAgent_WhenNoFilesExist(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "id_ssoossh")
+
+	ag, err := NewFileAgent(path)
+	if err != nil {
+		t.Fatalf("NewFileAgent() error = %v, want nil", err)
+	}
+
+	fa, ok := ag.(*FileAgent)
+	if !ok {
+		t.Fatalf("NewFileAgent() returned %T, want *FileAgent", ag)
+	}
+	if fa.HasPrivKey || fa.HasPubKey || fa.HasCert {
+		t.Errorf("expected no existing key material, got HasPrivKey=%v HasPubKey=%v HasCert=%v", fa.HasPrivKey, fa.HasPubKey, fa.HasCert)
+	}
+}
+
+// should expand a leading ~/ to the user's home directory
+func TestNewFileAgent_TildeExpansion(t *testing.T) {
+	t.Parallel()
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("no home directory available: %v", err)
+	}
+
+	ag, err := NewFileAgent("~/nonexistent-ssoossh-test-key")
+	if err != nil {
+		t.Fatalf("NewFileAgent() error = %v", err)
+	}
+	fa, ok := ag.(*FileAgent)
+	if !ok {
+		t.Fatalf("NewFileAgent() returned %T, want *FileAgent", ag)
+	}
+	want := filepath.Join(home, "nonexistent-ssoossh-test-key")
+	if fa.privKey != want {
+		t.Errorf("privKey = %q, want %q", fa.privKey, want)
+	}
+}
+
+// should detect and load existing private key, public key, and certificate files
+func TestNewFileAgent_LoadsExistingKeyMaterial(t *testing.T) {
+	t.Parallel()
+
+	ca, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	caSigner, err := ssh.NewSignerFromKey(ca.Private())
+	if err != nil {
+		t.Fatalf("NewSignerFromKey() error = %v", err)
+	}
+	kp, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	cert := newFileAgentCert(t, kp.Public(), caSigner)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "id_ssoossh")
+	privPEM, err := kp.MarshalPrivateKey()
+	if err != nil {
+		t.Fatalf("MarshalPrivateKey() error = %v", err)
+	}
+	if err := os.WriteFile(path, privPEM, 0600); err != nil {
+		t.Fatalf("WriteFile(priv) error = %v", err)
+	}
+	pubStr, err := kp.MarshalAuthorizedKey()
+	if err != nil {
+		t.Fatalf("MarshalAuthorizedKey() error = %v", err)
+	}
+	if err := os.WriteFile(path+".pub", []byte(pubStr), 0644); err != nil { //nolint:gosec // test fixture, not secret material
+		t.Fatalf("WriteFile(pub) error = %v", err)
+	}
+	if err := os.WriteFile(path+"-cert.pub", ssh.MarshalAuthorizedKey(cert), 0644); err != nil { //nolint:gosec // test fixture, not secret material
+		t.Fatalf("WriteFile(cert) error = %v", err)
+	}
+
+	ag, err := NewFileAgent(path)
+	if err != nil {
+		t.Fatalf("NewFileAgent() error = %v", err)
+	}
+	fa, ok := ag.(*FileAgent)
+	if !ok {
+		t.Fatalf("NewFileAgent() returned %T, want *FileAgent", ag)
+	}
+	if !fa.HasPrivKey || !fa.HasPubKey || !fa.HasCert {
+		t.Errorf("HasPrivKey=%v HasPubKey=%v HasCert=%v, want all true", fa.HasPrivKey, fa.HasPubKey, fa.HasCert)
+	}
+	if fa.keypair == nil {
+		t.Fatal("expected keypair to be loaded")
+	}
+	if fa.keypair.Certificate() == nil {
+		t.Error("expected certificate to be loaded onto the keypair")
+	}
+}
+
+// should still record HasCert when the certificate file exists but cannot be parsed, leaving the keypair's certificate unset
+func TestNewFileAgent_UnparseableCertFile(t *testing.T) {
+	t.Parallel()
+
+	kp, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "id_ssoossh")
+	privPEM, err := kp.MarshalPrivateKey()
+	if err != nil {
+		t.Fatalf("MarshalPrivateKey() error = %v", err)
+	}
+	if err := os.WriteFile(path, privPEM, 0600); err != nil {
+		t.Fatalf("WriteFile(priv) error = %v", err)
+	}
+	if err := os.WriteFile(path+"-cert.pub", []byte("not a certificate"), 0644); err != nil { //nolint:gosec // test fixture, not secret material
+		t.Fatalf("WriteFile(cert) error = %v", err)
+	}
+
+	ag, err := NewFileAgent(path)
+	if err != nil {
+		t.Fatalf("NewFileAgent() error = %v", err)
+	}
+	fa, ok := ag.(*FileAgent)
+	if !ok {
+		t.Fatalf("NewFileAgent() returned %T, want *FileAgent", ag)
+	}
+	if !fa.HasCert {
+		t.Error("expected HasCert to be true since the file exists, even though it is unparseable")
+	}
+	if fa.keypair.Certificate() != nil {
+		t.Error("expected no certificate to be loaded from an unparseable cert file")
+	}
+}
+
+// should write private key, public key, and certificate files when adding a keypair
+func TestFileAgent_AddKeypair_WritesFiles(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "id_ssoossh")
+
+	ag, err := NewFileAgent(path)
+	if err != nil {
+		t.Fatalf("NewFileAgent() error = %v", err)
+	}
+
+	kp, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+
+	if err := ag.AddKeypair(kp); err != nil {
+		t.Fatalf("AddKeypair() error = %v", err)
+	}
+
+	for _, suffix := range []string{"", ".pub", "-cert.pub"} {
+		if _, err := os.Stat(path + suffix); err != nil {
+			t.Errorf("expected file %s to exist, got error: %v", path+suffix, err)
+		}
+	}
+}
+
+// should refuse to add or remove keys directly, since FileAgent is not a live agent
+func TestFileAgent_AddAndRemove_Unsupported(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	f := &FileAgent{privKey: filepath.Join(dir, "id_ssoossh")}
+
+	if err := f.Add(nil); err == nil {
+		t.Error("Add() error = nil, want error for unsupported operation")
+	}
+}
+
+// newFileAgentCert signs pub as a time-valid ssh.Certificate using caSigner.
+func newFileAgentCert(t *testing.T, pub ssh.PublicKey, caSigner ssh.Signer) *ssh.Certificate {
+	t.Helper()
+	cert := &ssh.Certificate{
+		Key:         pub,
+		CertType:    ssh.UserCert,
+		ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()),
+		ValidBefore: uint64(time.Now().Add(time.Hour).Unix()),
+	}
+	if err := cert.SignCert(rand.Reader, caSigner); err != nil {
+		t.Fatalf("SignCert() error = %v", err)
+	}
+	return cert
+}
+
+// should return no identities when no keypair is loaded, and the keypair filtered by CA trust otherwise
+func TestFileAgent_List(t *testing.T) {
+	t.Parallel()
+
+	ca, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	caSigner, err := ssh.NewSignerFromKey(ca.Private())
+	if err != nil {
+		t.Fatalf("NewSignerFromKey() error = %v", err)
+	}
+	other, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	leaf, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	leaf.SetCertificate(newFileAgentCert(t, leaf.Public(), caSigner))
+
+	t.Run("should return no identities when no keypair is loaded", func(t *testing.T) {
+		t.Parallel()
+		f := &FileAgent{}
+		got, err := f.List(false)
+		if err != nil {
+			t.Fatalf("List(false) error = %v", err)
+		}
+		if len(got) != 0 {
+			t.Errorf("List(false) returned %d identities, want 0", len(got))
+		}
+	})
+
+	t.Run("should return the loaded keypair unfiltered", func(t *testing.T) {
+		t.Parallel()
+		f := &FileAgent{keypair: leaf}
+		got, err := f.List(false)
+		if err != nil {
+			t.Fatalf("List(false) error = %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("List(false) returned %d identities, want 1", len(got))
+		}
+	})
+
+	t.Run("should return the keypair when filtering by a CA that signed it", func(t *testing.T) {
+		t.Parallel()
+		f := &FileAgent{keypair: leaf, cas: []ssh.PublicKey{ca.Public()}}
+		got, err := f.List(true)
+		if err != nil {
+			t.Fatalf("List(true) error = %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("List(true) returned %d identities, want 1", len(got))
+		}
+	})
+
+	t.Run("should return nothing when filtering by a CA that did not sign it", func(t *testing.T) {
+		t.Parallel()
+		f := &FileAgent{keypair: leaf, cas: []ssh.PublicKey{other.Public()}}
+		got, err := f.List(true)
+		if err != nil {
+			t.Fatalf("List(true) error = %v", err)
+		}
+		if len(got) != 0 {
+			t.Errorf("List(true) returned %d identities, want 0", len(got))
+		}
+	})
+}
+
+// should delegate to RemoveAll regardless of which key is passed, since a FileAgent manages a single identity
+func TestFileAgent_Remove(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "id_ssoossh")
+	if err := os.WriteFile(path, []byte("dummy"), 0600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	f := &FileAgent{privKey: path}
+
+	if err := f.Remove(nil); err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("expected %s to be removed, stat error = %v", path, err)
+	}
+}
+
+// should report nothing removed when there is no private key file on disk
+func TestFileAgent_RemoveAll_NoFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	f := &FileAgent{privKey: filepath.Join(dir, "id_ssoossh")}
+
+	n, err := f.RemoveAll()
+	if err != nil {
+		t.Fatalf("RemoveAll() error = %v", err)
+	}
+	if n != 0 {
+		t.Errorf("RemoveAll() = %d, want 0", n)
+	}
+}
+
+// should remove an untrusted or expired certificate identity, and leave a valid one in place
+func TestFileAgent_CleanupAgent(t *testing.T) {
+	t.Parallel()
+
+	ca, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	caSigner, err := ssh.NewSignerFromKey(ca.Private())
+	if err != nil {
+		t.Fatalf("NewSignerFromKey() error = %v", err)
+	}
+	untrustedCA, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	untrustedSigner, err := ssh.NewSignerFromKey(untrustedCA.Private())
+	if err != nil {
+		t.Fatalf("NewSignerFromKey() error = %v", err)
+	}
+
+	t.Run("should be a no-op when no keypair is loaded", func(t *testing.T) {
+		t.Parallel()
+		f := &FileAgent{}
+		if err := f.CleanupAgent(); err != nil {
+			t.Errorf("CleanupAgent() error = %v, want nil", err)
+		}
+	})
+
+	t.Run("should be a no-op when the loaded keypair has no certificate", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path := filepath.Join(dir, "id_ssoossh")
+		kp, err := keypair.NewEd25519KeyPair()
+		if err != nil {
+			t.Fatalf("NewEd25519KeyPair() error = %v", err)
+		}
+		f := &FileAgent{keypair: kp, privKey: path, cas: []ssh.PublicKey{ca.Public()}}
+		if err := os.WriteFile(path, []byte("dummy"), 0600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		if err := f.CleanupAgent(); err != nil {
+			t.Fatalf("CleanupAgent() error = %v", err)
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected %s to still exist, stat error = %v", path, err)
+		}
+	})
+
+	t.Run("should remove key files for a certificate signed by an untrusted CA", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path := filepath.Join(dir, "id_ssoossh")
+		leaf, err := keypair.NewEd25519KeyPair()
+		if err != nil {
+			t.Fatalf("NewEd25519KeyPair() error = %v", err)
+		}
+		leaf.SetCertificate(newFileAgentCert(t, leaf.Public(), untrustedSigner))
+		f := &FileAgent{keypair: leaf, privKey: path, cas: []ssh.PublicKey{ca.Public()}}
+		if err := os.WriteFile(path, []byte("dummy"), 0600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		if err := f.CleanupAgent(); err != nil {
+			t.Fatalf("CleanupAgent() error = %v", err)
+		}
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("expected %s to be removed, stat error = %v", path, err)
+		}
+	})
+
+	t.Run("should leave key files for a certificate signed by a trusted CA", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path := filepath.Join(dir, "id_ssoossh")
+		leaf, err := keypair.NewEd25519KeyPair()
+		if err != nil {
+			t.Fatalf("NewEd25519KeyPair() error = %v", err)
+		}
+		leaf.SetCertificate(newFileAgentCert(t, leaf.Public(), caSigner))
+		f := &FileAgent{keypair: leaf, privKey: path, cas: []ssh.PublicKey{ca.Public()}}
+		if err := os.WriteFile(path, []byte("dummy"), 0600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		if err := f.CleanupAgent(); err != nil {
+			t.Fatalf("CleanupAgent() error = %v", err)
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected %s to still exist, stat error = %v", path, err)
+		}
+	})
+}
+
+// should build one signer from the loaded keypair, or error when none is loaded
+func TestFileAgent_Signers(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should error when no keypair is loaded", func(t *testing.T) {
+		t.Parallel()
+		f := &FileAgent{}
+		if _, err := f.Signers(); err == nil {
+			t.Error("Signers() error = nil, want error")
+		}
+	})
+
+	t.Run("should return one signer for the loaded keypair", func(t *testing.T) {
+		t.Parallel()
+		kp, err := keypair.NewEd25519KeyPair()
+		if err != nil {
+			t.Fatalf("NewEd25519KeyPair() error = %v", err)
+		}
+		f := &FileAgent{keypair: kp}
+		signers, err := f.Signers()
+		if err != nil {
+			t.Fatalf("Signers() error = %v", err)
+		}
+		if len(signers) != 1 {
+			t.Errorf("Signers() returned %d signers, want 1", len(signers))
+		}
+	})
+}
+
+// should be a no-op, since FileAgent holds no persistent connection
+func TestFileAgent_Close(t *testing.T) {
+	t.Parallel()
+
+	f := &FileAgent{}
+	if err := f.Close(); err != nil {
+		t.Errorf("Close() error = %v, want nil", err)
+	}
+}
+
+// should always report no underlying live-agent connection
+func TestFileAgent_Agent(t *testing.T) {
+	t.Parallel()
+
+	f := &FileAgent{}
+	if got := f.Agent(); got != nil {
+		t.Errorf("Agent() = %v, want nil", got)
+	}
+}
+
+// should require at least one CA and reject an unparseable CA string, otherwise accumulating registered CAs
+func TestFileAgent_SetCA(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should reject a call with no CAs", func(t *testing.T) {
+		t.Parallel()
+		f := &FileAgent{}
+		if err := f.SetCA(); err == nil {
+			t.Error("SetCA() error = nil, want error")
+		}
+	})
+
+	t.Run("should reject an unparseable CA string", func(t *testing.T) {
+		t.Parallel()
+		f := &FileAgent{}
+		if err := f.SetCA("not a key"); err == nil {
+			t.Error("SetCA() error = nil, want error")
+		}
+	})
+
+	t.Run("should accumulate CAs across calls", func(t *testing.T) {
+		t.Parallel()
+		ca1, err := keypair.NewEd25519KeyPair()
+		if err != nil {
+			t.Fatalf("NewEd25519KeyPair() error = %v", err)
+		}
+		ca2, err := keypair.NewEd25519KeyPair()
+		if err != nil {
+			t.Fatalf("NewEd25519KeyPair() error = %v", err)
+		}
+		ca1Str, err := ca1.MarshalAuthorizedKey()
+		if err != nil {
+			t.Fatalf("MarshalAuthorizedKey() error = %v", err)
+		}
+		ca2Str, err := ca2.MarshalAuthorizedKey()
+		if err != nil {
+			t.Fatalf("MarshalAuthorizedKey() error = %v", err)
+		}
+		f := &FileAgent{}
+		if err := f.SetCA(ca1Str); err != nil {
+			t.Fatalf("SetCA(ca1) error = %v", err)
+		}
+		if err := f.SetCA(ca2Str); err != nil {
+			t.Fatalf("SetCA(ca2) error = %v", err)
+		}
+		if len(f.cas) != 2 {
+			t.Errorf("expected 2 registered CAs, got %d", len(f.cas))
+		}
+	})
+}
+
+// should read and validate the on-disk certificate file against registered CAs
+func TestFileAgent_Certificates(t *testing.T) {
+	t.Parallel()
+
+	ca, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	caSigner, err := ssh.NewSignerFromKey(ca.Private())
+	if err != nil {
+		t.Fatalf("NewSignerFromKey() error = %v", err)
+	}
+	untrustedCA, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	untrustedSigner, err := ssh.NewSignerFromKey(untrustedCA.Private())
+	if err != nil {
+		t.Fatalf("NewSignerFromKey() error = %v", err)
+	}
+	leaf, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+
+	t.Run("should error when no CA is registered", func(t *testing.T) {
+		t.Parallel()
+		f := &FileAgent{privKey: filepath.Join(t.TempDir(), "id_ssoossh")}
+		if _, err := f.Certificates(); err == nil {
+			t.Error("Certificates() error = nil, want error")
+		}
+	})
+
+	t.Run("should error when the certificate file does not exist", func(t *testing.T) {
+		t.Parallel()
+		f := &FileAgent{privKey: filepath.Join(t.TempDir(), "id_ssoossh"), cas: []ssh.PublicKey{ca.Public()}}
+		if _, err := f.Certificates(); err == nil {
+			t.Error("Certificates() error = nil, want error")
+		}
+	})
+
+	t.Run("should error when the certificate file is unparseable", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path := filepath.Join(dir, "id_ssoossh")
+		if err := os.WriteFile(path+"-cert.pub", []byte("not a certificate"), 0644); err != nil { //nolint:gosec // test fixture, not secret material
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+		f := &FileAgent{privKey: path, cas: []ssh.PublicKey{ca.Public()}}
+		if _, err := f.Certificates(); err == nil {
+			t.Error("Certificates() error = nil, want error")
+		}
+	})
+
+	t.Run("should error when the file holds a plain public key, not a certificate", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path := filepath.Join(dir, "id_ssoossh")
+		authKey, err := leaf.MarshalAuthorizedKey()
+		if err != nil {
+			t.Fatalf("MarshalAuthorizedKey() error = %v", err)
+		}
+		if err := os.WriteFile(path+"-cert.pub", []byte(authKey), 0644); err != nil { //nolint:gosec // test fixture, not secret material
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+		f := &FileAgent{privKey: path, cas: []ssh.PublicKey{ca.Public()}}
+		if _, err := f.Certificates(); err == nil {
+			t.Error("Certificates() error = nil, want error")
+		}
+	})
+
+	t.Run("should error when the certificate is not signed by a trusted CA", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path := filepath.Join(dir, "id_ssoossh")
+		cert := newFileAgentCert(t, leaf.Public(), untrustedSigner)
+		if err := os.WriteFile(path+"-cert.pub", ssh.MarshalAuthorizedKey(cert), 0644); err != nil { //nolint:gosec // test fixture, not secret material
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+		f := &FileAgent{privKey: path, cas: []ssh.PublicKey{ca.Public()}}
+		if _, err := f.Certificates(); err == nil {
+			t.Error("Certificates() error = nil, want error")
+		}
+	})
+
+	t.Run("should return the certificate when signed by a trusted CA", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path := filepath.Join(dir, "id_ssoossh")
+		cert := newFileAgentCert(t, leaf.Public(), caSigner)
+		if err := os.WriteFile(path+"-cert.pub", ssh.MarshalAuthorizedKey(cert), 0644); err != nil { //nolint:gosec // test fixture, not secret material
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+		f := &FileAgent{privKey: path, cas: []ssh.PublicKey{ca.Public()}}
+		got, err := f.Certificates()
+		if err != nil {
+			t.Fatalf("Certificates() error = %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("Certificates() returned %d certs, want 1", len(got))
+		}
+	})
+}
+
+// should surface the underlying write error when the private key cannot be written to disk
+func TestFileAgent_AddKeypair_WriteError(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	// A path under a nonexistent parent directory: os.WriteFile will fail.
+	f := &FileAgent{privKey: filepath.Join(dir, "nonexistent", "id_ssoossh")}
+
+	kp, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+
+	if err := f.AddKeypair(kp); err == nil {
+		t.Error("AddKeypair() error = nil, want error")
+	}
+}
+
+// should compare two public keys by their marshaled bytes, treating nil as never equal
+func TestPublicKeysEqual(t *testing.T) {
+	t.Parallel()
+
+	a, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	b, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+
+	tests := []struct {
+		name string
+		a, b ssh.PublicKey
+		want bool
+	}{
+		{name: "should treat a nil left side as unequal", a: nil, b: a.Public(), want: false},
+		{name: "should treat a nil right side as unequal", a: a.Public(), b: nil, want: false},
+		{name: "should treat both nil as unequal", a: nil, b: nil, want: false},
+		{name: "should treat the same key as equal", a: a.Public(), b: a.Public(), want: true},
+		{name: "should treat different keys as unequal", a: a.Public(), b: b.Public(), want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := publicKeysEqual(tt.a, tt.b); got != tt.want {
+				t.Errorf("publicKeysEqual() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

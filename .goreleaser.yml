@@ -1,0 +1,181 @@
+---
+version: 2
+
+release:
+  prerelease: auto
+  draft: false
+  disable: false
+  skip_upload: false
+  include_meta: false
+  mode: "replace"
+  replace_existing_artifacts: true
+  use_existing_draft: true
+  replace_existing_draft: false
+
+before:
+  hooks:
+    - go mod tidy
+    - ./scripts/gen-third-party-licenses.sh
+
+# Note: the server embeds server/frontend/dist, and only a placeholder
+# index.html is tracked. Building the real web UI is deliberately NOT a
+# before-hook here — that would make every local `goreleaser build
+# --snapshot` require a working node/pnpm environment. The release workflow
+# runs `make frontend` as an explicit step before invoking goreleaser
+# (.github/workflows/build-release.yaml); a snapshot built without it ships
+# the placeholder, which is the intended behavior for a local build.
+
+env:
+  - CGO_ENABLED=0
+  - GOFLAGS=-buildvcs=false
+
+builds:
+  - id: server-linux-build
+    binary: ssoosshd
+    dir: ./cmd/ssoosshd
+    flags: &flags
+      - -tags=nomsgpack
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags: &build-ldflags |
+      -X github.com/mnestor/ssoossh/internal/version.Version={{.Version}}
+      -X github.com/mnestor/ssoossh/internal/version.Commit={{.Commit}}
+      -X github.com/mnestor/ssoossh/internal/version.Date={{.Date}}
+      -X github.com/mnestor/ssoossh/internal/version.BuiltBy={{- if index .Env "github" }}{{.Env.github.runner.name}}{{ else }}goreleaser{{ end }}
+
+  - id: linux-build
+    binary: &name "ssoossh"
+    dir: &dir ./cmd/ssoossh
+    flags: *flags
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags: *build-ldflags
+
+  - id: windows-build
+    binary: *name
+    dir: *dir
+    flags: *flags
+    goos:
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags: *build-ldflags
+
+  - id: macos-build
+    binary: *name
+    dir: *dir
+    flags: *flags
+    goos:
+      - darwin
+    goarm:
+      - "7"
+    goarch:
+      - amd64
+      - arm64
+    ldflags: *build-ldflags
+    env:
+      # complex, templated envs (v1.14+):
+      - >-
+        {{- if eq .Arch "amd64"}}CC=o64-clang{{- end }}
+        {{- if eq .Arch "arm64"}}CC=aarch64-apple-darwin20.2-clang{{- end }}
+    hooks:
+      # amd64/arm64 ship as separate binaries (no universal_binaries/lipo
+      # merge), so each is quill-signed and packaged into its own DMG as
+      # soon as it's built.
+      post:
+        - cmd: quill sign-and-notarize "{{ .Path }}"
+
+nfpms:
+  - id: client
+    package_name: ssoossh-client
+    file_name_template: 'ssoossh-client_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
+    license: &license "MIT"
+    maintainer: &maintainer "Mike Nestor"
+    homepage: &website "https://github.com/mnestor/ssoossh"
+    description: "client for ssoosshd to retrieve and manage ssh certificates"
+    ids:
+      - linux-build
+    bindir: /usr/local/bin
+    formats: &nfpmFormats
+      - rpm
+      - deb
+    rpm:
+      signature:
+        key_file: private.pgp
+    deb:
+      signature:
+        key_file: private.pgp
+    contents:
+      - src: docs/ssoossh.yaml.default
+        dst: /etc/ssoossh/ssoossh.yaml
+        type: "config|noreplace"
+      - src: LICENSE
+        dst: /usr/share/doc/ssoossh-client/LICENSE
+      - src: NOTICE
+        dst: /usr/share/doc/ssoossh-client/NOTICE
+      - src: THIRD-PARTY-LICENSES.md
+        dst: /usr/share/doc/ssoossh-client/THIRD-PARTY-LICENSES.md
+      - src: docs/man/ssoossh.1
+        dst: /usr/share/man/man1/ssoossh.1
+      - src: docs/man/ssoossh.yaml.5
+        dst: /usr/share/man/man5/ssoossh.yaml.5
+
+  - id: server
+    package_name: ssoosshd
+    file_name_template: 'ssoossh-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
+    license: *license
+    maintainer: *maintainer
+    homepage: *website
+    description: "server to authorize and sign ssh public keys with a certificate"
+    ids:
+      - server-linux-build
+    bindir: /usr/local/sbin
+    formats: *nfpmFormats
+    rpm:
+      signature:
+        key_file: private.pgp
+    deb:
+      signature:
+        key_file: private.pgp
+    contents:
+      - src: docs/ssoosshd.yaml.default
+        dst: /etc/ssoossh/ssoosshd.yaml
+        type: "config|noreplace"
+      - src: LICENSE
+        dst: /usr/share/doc/ssoosshd/LICENSE
+      - src: NOTICE
+        dst: /usr/share/doc/ssoosshd/NOTICE
+      - src: THIRD-PARTY-LICENSES.md
+        dst: /usr/share/doc/ssoosshd/THIRD-PARTY-LICENSES.md
+      - src: docs/man/ssoosshd.8
+        dst: /usr/share/man/man8/ssoosshd.8
+      - src: docs/man/ssoosshd.yaml.5
+        dst: /usr/share/man/man5/ssoosshd.yaml.5
+
+archives:
+  - id: linux-archives
+    ids:
+      - linux-build
+    name_template: &archive_name "ssoossh-client_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: &archiveFiles
+      - docs/ssoossh.yaml.default
+      - LICENSE
+      - NOTICE
+      - THIRD-PARTY-LICENSES.md
+      - docs/man/ssoossh.1
+      - docs/man/ssoossh.yaml.5
+
+  - formats: ["zip"]
+    id: windows-archives
+    ids:
+      - windows-build
+      - macos-build
+    files: *archiveFiles
+    name_template: *archive_name

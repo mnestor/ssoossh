@@ -1,0 +1,135 @@
+# ssoossh client configuration sample.
+#
+# Every value below is the built-in default (client/config/defaults.yaml is
+# embedded in the binary), so an empty file behaves identically to this one.
+# Uncomment only what you need to change.
+#
+# Files are merged in order, last wins.
+#
+# Linux and macOS:
+#   /etc/ssoossh/ssoossh.yaml
+#   ~/.config/ssoossh.yaml
+#   ./ssoossh.yaml
+#   --config <file>
+#
+# Windows:
+#   %ProgramData%\ssoossh\ssoossh.yaml
+#   %AppData%\ssoossh\ssoossh.yaml        (the roaming profile)
+#   .\ssoossh.yaml
+#   --config <file>
+#
+# A missing file at any location is normal, not an error.
+#
+# WSL: what decides which build you need is not the operating system, it is
+# which ssh-agent your ssh reads. The client's job is to put a certificate
+# into that agent, so it has to be a build that can reach it.
+#
+# Unbridged — an agent on each side, which is the default:
+#
+#   - `ssh` inside a WSL distro is a Linux process reading a Linux agent, so
+#     it needs the Linux build installed inside that distro. It reads the
+#     Linux paths above; the Windows-side configuration is invisible to it.
+#   - `ssh.exe` on the Windows side needs the Windows build.
+#   - Using both means installing both, each with its own configuration.
+#
+# Bridged — one agent, reachable from both sides. Then a single client
+# installation covers both ssh clients, because there is only one agent to
+# load a certificate into. Either direction works:
+#
+#   - Agent inside WSL, exposed to Windows as a named pipe
+#     (wsl-ssh-agent-relay, npiperelay). The Windows build finds it on its
+#     own — see internal/crypto/ssh/agent, which tries Pageant, then the
+#     native OpenSSH pipe, then the WSL relay pipe.
+#   - Agent on Windows, exposed inside WSL as a Unix socket (npiperelay plus
+#     socat, with SSH_AUTH_SOCK pointed at it). The Linux build then loads
+#     into the Windows agent with no special support needed.
+#
+# Two things do not cross the boundary regardless. Key *files* (use_agent
+# false) are per-filesystem, so in that mode the build must be on the same
+# side as ssh — and `ssh proxycommand` requires an agent anyway. And note
+# that WSL can execute Windows .exe files directly: invoking the Windows
+# build from a WSL shell talks to the Windows agents, not the distro's.
+#
+# See docs/ssoossh-context.md for what the client does.
+---
+
+# Base URL of the ssoossh server, e.g. https://ssh.example.com. Overridden by
+# --server. If the scheme is omitted, https is assumed.
+# server:
+
+# The server's CA public key. Left empty, the client fetches it from the
+# server on first use. Pin it here to avoid trusting a fetched key.
+# capubkey:
+
+insecure_skip_verify: false
+
+# Load the certificate into ssh-agent (the recommended mode). ProxyCommand
+# requires an agent, because ssh will not re-read changed key files.
+#
+# Turning this off means the agent is not consulted at all — not merely not
+# preferred — so keys and certificates always go to the files named by
+# key_filename below.
+use_agent: true
+
+# What to do when an agent was wanted but none could be reached: fall back to
+# key files (true), or fail (false).
+fallback_file_agent: true
+
+# Basename used when writing key/pubkey/certificate to disk, which happens
+# when use_agent is false, or when no agent is available and
+# fallback_file_agent is true.
+key_filename: ssoossh
+
+# Try to open the approval URL in a browser. Strictly best-effort: the URL is
+# always printed first, and a launch failure never fails the login.
+try_open_browser: false
+
+# Reserved, and currently unused. It was intended to name a service account,
+# but that is chosen in the approval web UI instead — the client cannot
+# validate one, since enrollment requests are unauthenticated.
+# username:
+
+# Settings in the named file cannot be overridden by a user's own config: it
+# is merged last of all. Only honored when read from the machine-wide file
+# (/etc/ssoossh/ssoossh.yaml, or %ProgramData%\ssoossh\ssoossh.yaml on
+# Windows), and a bare filename resolves next to it — naming one cannot reach
+# a file the user controls.
+#
+# A guardrail, not a security boundary. The client runs as the user, who can
+# always supply their own binary, and on Windows a WSL distro is a second
+# installation they fully control. Anything that must actually be enforced
+# belongs in the server's configuration, where the client cannot reach it —
+# cert_options.*.valid_duration in particular is the real limit on how long
+# an issued certificate is usable.
+#
+# On Windows, the directory must be created by the installer running as
+# administrator. ProgramData's default permissions let any user create a
+# subdirectory, and whoever creates it owns it — so a non-administrator who
+# gets there first would own the file that is supposed to constrain them.
+# enforce: ssoossh-locked.yaml
+
+# Steer key generation toward algorithms that SSH implementations running in
+# FIPS mode accept. Advisory: it changes the default key type below and warns
+# about non-approved choices, it never refuses one.
+#
+# Left unset deliberately, so that it can fall back to whether this binary is
+# itself running in Go's FIPS 140-3 mode. Set it explicitly to target a
+# FIPS-mode server from a client that isn't.
+# fips: true
+
+# Key generated for each certificate. Both settings are optional.
+#
+#   type: ed25519 | ecdsa | rsa
+#         Default is ed25519, or ecdsa when FIPS mode is in effect —
+#         ed25519 only entered FIPS 186-5 in 2023 and several FIPS policies
+#         still reject it outright.
+#   size: ignored for ed25519 (it has one size)
+#         ecdsa: the NIST curve — 256, 384, or 521 (default 256)
+#         rsa:   modulus bits, at least 2048 (default 3072)
+#
+# Note RSA generation costs hundreds of milliseconds and is highly variable,
+# paid every time a certificate is obtained; ecdsa and ed25519 are effectively
+# instant. Left unset so the default can follow FIPS mode.
+# sshkey:
+#   type: ed25519
+#   size: 0

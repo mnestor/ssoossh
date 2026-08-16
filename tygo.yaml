@@ -1,0 +1,52 @@
+# tygo generates the frontend's TypeScript wire types from the Go structs
+# that produce them, so the two cannot drift silently. Run `make types`;
+# `make types-check` fails when the checked-in output is stale, which is what
+# CI runs.
+#
+# Nothing here is hand-edited on the TypeScript side. The generated files are
+# committed rather than built on demand so that `pnpm check`, `pnpm test`, and
+# an editor all work without a Go toolchain present.
+#
+# frontend/src/lib/api/types.ts is the only hand-written file left on the
+# TypeScript side, and it holds no shapes — just the aliases that give these
+# generated names their app-facing spelling.
+
+# Applied to every package below.
+type_mappings:
+  # Marshalled by encoding/json as an RFC 3339 string. TypeScript has no
+  # date type of its own, and parsing at the boundary would mean the
+  # generated types no longer describe what is actually on the wire.
+  time.Time: "string"
+
+packages:
+  # The enum types the API exposes. Generated from server/model/enums.go
+  # only — the GORM models in the same package describe database rows, not
+  # wire shapes, and emitting them would advertise columns (UserID,
+  # FailureReason) the API never returns.
+  - path: "github.com/mnestor/ssoossh/server/model"
+    output_path: "frontend/src/lib/api/generated/enums.ts"
+    include_files: ["enums.go"]
+    indent: "\t"
+    # Unions rather than TS enums: the values arrive as plain JSON strings,
+    # and a union compares directly against one. A TS enum would need every
+    # comparison to go through the enum object.
+    enum_style: "union"
+
+  # The types the Go client and the server already share. The web UI needs
+  # the envelope every response is wrapped in, and the approve/deny result
+  # bodies; generating them means the browser, the CLI, and the server all
+  # describe the wire from one definition. The client-facing request bodies
+  # come along — they cost nothing and document the rest of the contract.
+  - path: "github.com/mnestor/ssoossh/internal/apitypes"
+    output_path: "frontend/src/lib/api/generated/apitypes.ts"
+    indent: "\t"
+
+  # The response shapes themselves.
+  - path: "github.com/mnestor/ssoossh/server/webtypes"
+    output_path: "frontend/src/lib/api/generated/webtypes.ts"
+    indent: "\t"
+    frontmatter: |
+      import type { CertificateType, CertificateRequestStatus } from './enums';
+    type_mappings:
+      model.CertificateType: "CertificateType"
+      model.CertificateRequestStatus: "CertificateRequestStatus"

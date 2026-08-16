@@ -1,0 +1,996 @@
+components:
+  schemas:
+    apitypes.ApproveResponse:
+      properties:
+        status:
+          description: |-
+            Status is always "signing" today — included so the response shape
+            can carry more without a breaking change later.
+          type: string
+      required:
+      - status
+      type: object
+    apitypes.CAResponse:
+      properties:
+        ca:
+          type: string
+      required:
+      - ca
+      type: object
+    apitypes.CreateRequestResponse:
+      properties:
+        approval_url:
+          type: string
+        events_url:
+          type: string
+        request_id:
+          type: string
+      required:
+      - approval_url
+      - events_url
+      - request_id
+      type: object
+    apitypes.DenyResponse:
+      properties:
+        status:
+          type: string
+      required:
+      - status
+      type: object
+    apitypes.HostSignRequestBody:
+      properties:
+        hostname:
+          type: string
+        public_key:
+          type: string
+        requested_options:
+          $ref: '#/components/schemas/apitypes.RequestedOptions'
+      required:
+      - hostname
+      - public_key
+      type: object
+    apitypes.PAMRequestBody:
+      properties:
+        public_key:
+          type: string
+        requested_options:
+          $ref: '#/components/schemas/apitypes.RequestedOptions'
+        username:
+          type: string
+      required:
+      - public_key
+      - username
+      type: object
+    apitypes.RequestedOptions:
+      properties:
+        extensions:
+          description: |-
+            Extensions are the SSH certificate extensions requested (e.g.
+            "permit-pty", "permit-agent-forwarding").
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        force_command:
+          description: ForceCommand is the SSH "force-command" critical option request.
+          type: string
+        no_touch_required:
+          description: |-
+            NoTouchRequired requests the OpenSSH "no-touch-required" extension.
+            Only meaningful for service enrollment of a hardware-backed sk- key.
+          type: boolean
+        source_addresses:
+          description: |-
+            SourceAddresses are the caller's own interface addresses, unioned
+            server-side with the address the request was observed from.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+      type: object
+    apitypes.RetrieveRequestBody:
+      properties:
+        code:
+          type: string
+      required:
+      - code
+      type: object
+    apitypes.RetrieveResponse:
+      properties:
+        certificate:
+          type: string
+      required:
+      - certificate
+      type: object
+    apitypes.ServiceEnrollRequestBody:
+      properties:
+        public_key:
+          type: string
+        requested_options:
+          $ref: '#/components/schemas/apitypes.RequestedOptions'
+      required:
+      - public_key
+      type: object
+    apitypes.UserRequestBody:
+      properties:
+        public_key:
+          type: string
+        requested_options:
+          $ref: '#/components/schemas/apitypes.RequestedOptions'
+      required:
+      - public_key
+      type: object
+    controller.renewHostRequestBody:
+      properties:
+        public_key:
+          type: string
+      required:
+      - public_key
+      type: object
+    model.CertificateRequestStatus:
+      enum:
+      - pending
+      - signing
+      - approved
+      - enrolled
+      - denied
+      - expired
+      - failed
+      type: string
+      x-enum-varnames:
+      - CertificateRequestStatusPending
+      - CertificateRequestStatusSigning
+      - CertificateRequestStatusApproved
+      - CertificateRequestStatusEnrolled
+      - CertificateRequestStatusDenied
+      - CertificateRequestStatusExpired
+      - CertificateRequestStatusFailed
+    model.CertificateType:
+      enum:
+      - user
+      - host
+      - service
+      - pam
+      type: string
+      x-enum-varnames:
+      - CertificateTypeUser
+      - CertificateTypeHost
+      - CertificateTypeService
+      - CertificateTypePAM
+    openapidoc.ApproveEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/apitypes.ApproveResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.CAEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/apitypes.CAResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.CertificateListEnvelope:
+      properties:
+        data:
+          items:
+            $ref: '#/components/schemas/webtypes.CertificateResponse'
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.CreateRequestEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/apitypes.CreateRequestResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.CurrentUserEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.CurrentUserResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.DenyEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/apitypes.DenyResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.ErrorEnvelope:
+      properties:
+        data:
+          description: Data is always null on an error response.
+        error:
+          description: |-
+            Error is a human-readable message. Branch on the HTTP status rather
+            than this string; it is for humans and logs.
+          example: certificate request "9f1c…" not found
+          type: string
+      required:
+      - error
+      type: object
+    openapidoc.HealthPayload:
+      properties:
+        status:
+          example: ok
+          type: string
+      required:
+      - status
+      type: object
+    openapidoc.LogoutEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/openapidoc.LogoutPayload'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.LogoutPayload:
+      properties:
+        logged_out:
+          type: boolean
+      required:
+      - logged_out
+      type: object
+    openapidoc.RequestDetailEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.RequestDetailResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.RetrieveEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/apitypes.RetrieveResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    webtypes.CertificateOptionsResponse:
+      properties:
+        extensions:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        force_command:
+          type: string
+        no_touch_required:
+          type: boolean
+        source_addresses:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+      required:
+      - extensions
+      - no_touch_required
+      type: object
+    webtypes.CertificateResponse:
+      properties:
+        expires_at:
+          type: string
+        hostname:
+          type: string
+        id:
+          type: string
+        issued_at:
+          type: string
+        key_id:
+          type: string
+        principals:
+          type: string
+        public_key_fingerprint:
+          type: string
+        serial_number:
+          type: integer
+        type:
+          $ref: '#/components/schemas/model.CertificateType'
+      required:
+      - expires_at
+      - id
+      - issued_at
+      - key_id
+      - principals
+      - public_key_fingerprint
+      - serial_number
+      - type
+      type: object
+    webtypes.CurrentUserResponse:
+      properties:
+        email:
+          type: string
+        groups:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        subject:
+          type: string
+        username:
+          type: string
+      required:
+      - email
+      - groups
+      - subject
+      - username
+      type: object
+    webtypes.RequestDetailResponse:
+      properties:
+        already_closed:
+          type: boolean
+        approval_url:
+          type: string
+        created_at:
+          type: string
+        granted:
+          $ref: '#/components/schemas/webtypes.CertificateOptionsResponse'
+        hostname:
+          type: string
+        id:
+          type: string
+        is_owned_by_you:
+          type: boolean
+        principals:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        public_key:
+          type: string
+        requested:
+          $ref: '#/components/schemas/webtypes.CertificateOptionsResponse'
+        source_ip:
+          type: string
+        status:
+          $ref: '#/components/schemas/model.CertificateRequestStatus'
+        type:
+          $ref: '#/components/schemas/model.CertificateType'
+        valid_seconds:
+          type: integer
+      required:
+      - already_closed
+      - approval_url
+      - created_at
+      - granted
+      - id
+      - is_owned_by_you
+      - principals
+      - public_key
+      - requested
+      - source_ip
+      - status
+      - type
+      - valid_seconds
+      type: object
+  securitySchemes:
+    sessionCookie:
+      description: The session established by /auth/callback. Sent by the browser
+        automatically; the ssoossh client never has one, and the endpoints it calls
+        do not require one.
+      in: cookie
+      name: ssoossh_session
+      type: apiKey
+externalDocs:
+  description: ""
+  url: ""
+info:
+  contact:
+    name: ssoossh
+    url: https://github.com/mnestor/ssoossh
+  description: |-
+    SSO for SSH. Two audiences share this surface:
+
+    - **The client** (`ssoossh`, and `pam_ssoossh`) creates certificate requests and waits on the result over SSE. These endpoints are unauthenticated: a request's ID is an unguessable UUID and is itself the capability, and authorization happens at the approval step.
+    - **The web UI** reads and approves. Everything under a session cookie.
+
+    **Every** JSON body this API emits is the `{data, error}` envelope from `.claude/rules/server-api.md` — success and error, client-facing and web-UI-facing, including the data of each server-sent event. One decode path, no exceptions to remember.
+
+    This file is generated from Go annotations by `make openapi`. Edit the handlers, not the YAML.
+  license:
+    name: MIT
+  title: ssoosshd API
+  version: "0.1"
+openapi: 3.1.0
+paths:
+  /api/ca:
+    get:
+      description: |-
+        For `TrustedUserCAKeys` and `@cert-authority` lines. Public by design —
+        it is a public key.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.CAEnvelope'
+          description: The CA public key in authorized_keys form
+      summary: The CA public key
+      tags:
+      - client
+  /api/certs:
+    get:
+      description: |-
+        Metadata only. Certificates themselves are ephemeral and never persisted,
+        so this is an audit trail rather than somewhere to re-download one.
+
+        Scoped by the caller's users row, with no parameter to widen it.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.CertificateListEnvelope'
+          description: Issued certificates, newest first
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+      security:
+      - sessionCookie: []
+      summary: The caller's issued-certificate history
+      tags:
+      - web
+  /api/certs/host/renew:
+    post:
+      description: |-
+        Not implemented (delivery phase 9). The auth transport is decided — an
+        SSH-certificate signed challenge — but unbuilt, so the middleware in
+        front of this fails closed.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/controller.renewHostRequestBody'
+                description: The new host public key
+                summary: request
+        description: The new host public key
+        required: true
+      responses:
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not implemented
+      summary: Renew a host certificate
+      tags:
+      - client
+  /api/certs/host/sign:
+    post:
+      description: |-
+        Accepted, but approving one currently fails — host certificates are not
+        issuable yet (delivery phase 9).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/apitypes.HostSignRequestBody'
+                description: The host public key, its hostname, and the options being
+                  asked for
+                summary: request
+        description: The host public key, its hostname, and the options being asked
+          for
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.CreateRequestEnvelope'
+          description: Request created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Malformed body, or a public key that will not parse
+      summary: Create a host certificate request
+      tags:
+      - client
+  /api/certs/pam:
+    post:
+      description: |-
+        Unauthenticated. Username is the local account pam_ssoossh is authenticating —
+        that, not the approver's identity, becomes the certificate's principal. Approving
+        one fails unless `cert_options.pam.require_group` is configured.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/apitypes.PAMRequestBody'
+                description: The public key to sign, the local username being authenticated,
+                  and the options being asked for
+                summary: request
+        description: The public key to sign, the local username being authenticated,
+          and the options being asked for
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.CreateRequestEnvelope'
+          description: Request created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Malformed body, or a public key that will not parse
+      summary: Create a PAM certificate request
+      tags:
+      - client
+  /api/certs/requests/{id}:
+    get:
+      description: |-
+        The approval page's data source.
+
+        Returns `requested` and `granted` separately on purpose: server config is
+        the outer bound on every option and trims rather than rejects, so a human
+        has to be able to see what is being dropped before they approve.
+
+        **This binds the request to the caller.** It is the first authenticated
+        touch a request gets, so opening the page claims it; a different user gets
+        403 here rather than after clicking approve.
+      parameters:
+      - description: The certificate request's UUID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.RequestDetailEnvelope'
+          description: Request detail
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Already bound to another user
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No such request
+      security:
+      - sessionCookie: []
+      summary: What the caller would be approving
+      tags:
+      - web
+  /api/certs/requests/{id}/approve:
+    post:
+      description: |-
+        Session-authed and CSRF-guarded. Publishes a signing job; the certificate
+        reaches the client over its own SSE stream, not in this response.
+      parameters:
+      - description: The certificate request's UUID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ApproveEnvelope'
+          description: Queued for signing
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Bound to another user, or a cross-origin call
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No such request
+      security:
+      - sessionCookie: []
+      summary: Approve a request
+      tags:
+      - web
+  /api/certs/requests/{id}/deny:
+    post:
+      description: |-
+        Session-authed and CSRF-guarded. The waiting client is told over its own
+        SSE stream.
+      parameters:
+      - description: The certificate request's UUID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.DenyEnvelope'
+          description: Denied
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Bound to another user, or a cross-origin call
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No such request
+      security:
+      - sessionCookie: []
+      summary: Deny a request
+      tags:
+      - web
+  /api/certs/requests/{id}/events:
+    get:
+      description: |-
+        A real `text/event-stream`, separate from the creating POST because an
+        EventSource-style client is GET-only. Safe to reconnect any number of
+        times.
+
+        The SSE event *name* carries the terminal status (`approved`, `denied`,
+        `expired`, `enrolled`, `failed`); each event's data is an envelope whose
+        `data` half carries the certificate or enrollment code. That shape is
+        not in this document: the response body is a stream rather than JSON, so
+        there is nowhere to declare a schema for what individual events carry.
+
+        Unauthenticated: the request ID is the credential.
+      parameters:
+      - description: The certificate request's UUID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            text/event-stream:
+              schema:
+                type: string
+          description: The stream, closed after one terminal event
+        "404":
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No such request
+        "410":
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The certificate was issued but is no longer available. They
+            are never persisted, so a client that missed delivery must re-request.
+      summary: Wait for a request's outcome (SSE)
+      tags:
+      - client
+  /api/certs/service/enroll:
+    post:
+      description: |-
+        Approving one yields an enrollment code rather than a certificate; the
+        certificate comes later from `/api/certs/service/retrieve`. This is the
+        one path where an approval does not queue a signing job.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/apitypes.ServiceEnrollRequestBody'
+                description: The service public key and the options being asked for
+                summary: request
+        description: The service public key and the options being asked for
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.CreateRequestEnvelope'
+          description: Request created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Malformed body, or a public key that will not parse
+      summary: Create a service enrollment request
+      tags:
+      - client
+  /api/certs/service/retrieve:
+    post:
+      description: |-
+        Not implemented yet (delivery phase 8): the service behind this returns
+        an error, so the route exists and answers 500 rather than issuing
+        anything.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/apitypes.RetrieveRequestBody'
+                description: The enrollment code to redeem
+                summary: request
+        description: The enrollment code to redeem
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.RetrieveEnvelope'
+          description: The signed service certificate
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not implemented
+      summary: Redeem an enrollment code for a certificate
+      tags:
+      - client
+  /api/certs/user:
+    post:
+      description: |-
+        Unauthenticated. Returns two relative URLs: `events_url` to wait on, and
+        `approval_url` for a human to open. The request ID is the capability —
+        it is an unguessable UUID, and holding it is what authorizes waiting on
+        the outcome.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/apitypes.UserRequestBody'
+                description: The public key to sign, and the options being asked for
+                summary: request
+        description: The public key to sign, and the options being asked for
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.CreateRequestEnvelope'
+          description: Request created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Malformed body, or a public key that will not parse
+      summary: Create a user certificate request
+      tags:
+      - client
+  /api/hosts/{hostname}/sync:
+    get:
+      description: Not implemented (delivery phase 9). Fails closed.
+      parameters:
+      - description: The host's name
+        in: path
+        name: hostname
+        required: true
+        schema:
+          type: string
+      responses:
+        "501":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not implemented
+      summary: Pull the principal mapping for a host
+      tags:
+      - client
+  /api/users/me:
+    get:
+      description: |-
+        Sourced from the session, not the users table — the session is what
+        authorizes requests, so reporting anything else would let the UI display
+        an identity the server would not act on.
+
+        There is deliberately no endpoint to read other users.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.CurrentUserEnvelope'
+          description: The session identity
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+      security:
+      - sessionCookie: []
+      summary: The caller's own identity
+      tags:
+      - web
+  /auth/callback:
+    get:
+      description: |-
+        Checks `state` against the value stored at login, exchanges the code,
+        establishes the session, and redirects to the captured `return_to` (or
+        `/`).
+      parameters:
+      - description: Authorization code from the identity provider
+        in: query
+        name: code
+        required: true
+        schema:
+          type: string
+      - description: CSRF state value stored at login
+        in: query
+        name: state
+        required: true
+        schema:
+          type: string
+      responses:
+        "302":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: Redirect back into the app
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: State mismatch, or the provider rejected the exchange
+      summary: OIDC callback
+      tags:
+      - auth
+  /auth/login:
+    get:
+      description: |-
+        Redirects the browser to the identity provider. `return_to` is validated
+        as a same-site, path-only relative URL; anything else is ignored rather
+        than followed.
+      parameters:
+      - description: Where to land after login
+        example: /approve/9f1c0b2a-...
+        in: query
+        name: return_to
+        schema:
+          type: string
+      responses:
+        "302":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: Redirect to the identity provider
+      summary: Start the OIDC login flow
+      tags:
+      - auth
+  /auth/logout:
+    post:
+      description: |-
+        Clears the server-side session, which is what actually revokes the cookie
+        — `SessionAuthMiddleware` fails closed without an identity, so a stale
+        cookie left in the browser grants nothing.
+
+        CSRF-guarded. No session required: logging out an already-logged-out
+        caller is a no-op.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.LogoutEnvelope'
+          description: Logged out
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Cross-origin call
+      summary: End the session
+      tags:
+      - auth
+  /healthz:
+    get:
+      description: |-
+        Registered ahead of the server-name check, so a probe addressing the
+        server by IP rather than by its configured name still reaches it.
+
+        Note this is one of the two endpoints that does not use the {data, error}
+        envelope: it predates the convention and is consumed by orchestrators
+        rather than by this project's own clients.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.HealthPayload'
+          description: The server is up
+      summary: Liveness probe
+  /ping:
+    get:
+      description: For probes that want a body they can string-match without parsing
+        JSON.
+      responses:
+        "200":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: pong
+      summary: Liveness probe, plain text
+tags:
+- description: Called by the ssoossh client, unauthenticated
+  name: client
+- description: Called by the web UI, session-authenticated
+  name: web
+- description: Browser-facing OIDC redirects
+  name: auth

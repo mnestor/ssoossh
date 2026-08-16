@@ -1,0 +1,252 @@
+.TH SSOOSSH 1 "2026-08-16" "ssoossh" "User Commands"
+.SH NAME
+ssoossh \- turn an OIDC login into a short-lived SSH certificate
+.SH SYNOPSIS
+.B ssoossh
+.RI [ --config
+.IR file ]
+.RI [ --server
+.IR url ]
+.I command
+.RI [ subcommand ]
+.RI [ flags ]
+.RI [ args ... ]
+.SH DESCRIPTION
+.B ssoossh
+is the client for an ssoosshd server. Invoked from
+.IR ssh_config (5)
+as a
+.B ProxyCommand
+or
+.B "Match exec"
+target, it generates a fresh keypair, hands the public key to the ssoosshd
+server, opens a browser for OIDC authentication, and loads the signed
+certificate into a running
+.BR ssh-agent (1)
+\(em or writes key and certificate files when no agent is available. Private
+keys never leave the machine.
+.PP
+A certificate that is already loaded and still has meaningful validity left
+is reused rather than replaced, so one browser approval can cover a whole
+working session instead of every connection.
+.PP
+Runs on Linux, macOS, and Windows. Besides interactive login, the command
+tree also has (currently unimplemented, see
+.B COMMANDS
+below) placeholders for host certificate enrollment/renewal, per-host
+principal mapping for
+.BR sshd_config (5)'s
+.BR AuthorizedPrincipalsCommand ,
+and service-account certificates for unattended jobs.
+.SH GLOBAL OPTIONS
+These flags are accepted before or after the command name and apply to every
+subcommand.
+.TP
+.BI "-c, --config " file
+Path to the ssoossh client config file to use instead of the normal search
+path. See
+.BR ssoossh.yaml (5).
+.TP
+.BI "--server " url
+Overrides the configured server address for this invocation. Include the
+scheme (e.g.
+.IR https://ssh.example.com );
+https is assumed if the scheme is omitted.
+.SH COMMANDS
+.SS "ssoossh ssh login"
+Authenticate via OIDC and load a signed SSH certificate into the agent (or
+key files). Generates a fresh keypair, sends the public key to the server,
+opens the browser for OIDC approval, and waits over server-sent events for
+the signed certificate. This is what
+.B "Match exec"
+runs before a connection.
+.PP
+A certificate that is already loaded and still valid is reused; the request
+that would otherwise be made is skipped and the command exits 0 immediately.
+.TP
+.B --force
+Request a new certificate even if a valid one is already loaded. Replaces
+the certificate this login supersedes in the agent (or on disk) after the
+new one is loaded, subject to best-effort removal.
+.TP
+.BI "--key-type " type
+SSH key algorithm to generate for this login only:
+.IR ed25519 ", " ecdsa ", " or " rsa ".
+Overrides
+.B sshkey.type
+in the config file for this invocation. Default depends on FIPS mode; see
+.BR ssoossh.yaml (5).
+.TP
+.BI "--key-size " bits
+Key size for this login only: bits for rsa, curve for ecdsa (256, 384, or
+521), ignored for ed25519. Overrides
+.B sshkey.size
+in the config file for this invocation.
+.PP
+Everything this command prints for a human \(em the approval URL, wait
+status, and result \(em goes to stderr; stdout is left free because
+.B "Match exec"
+and interactive use both treat this command's exit status, not its stdout,
+as the result.
+.SS "ssoossh ssh logout"
+Removes the certificates ssoossh put in the agent \(em those signed by the
+configured CA \(em and nothing else; the user's own keys and certificates
+from other CAs are left alone. When key files are used instead of an agent,
+the files ssoossh wrote are deleted.
+.SS "ssoossh ssh proxycommand \fIcommand\fR [args...]"
+For use as
+.IR ssh_config (5)'s
+.BR ProxyCommand .
+Ensures a valid certificate is loaded (equivalent to
+.B "ssh login"
+without
+.BR --force ),
+then
+.BR exec (2)s
+.I command
+with
+.I args
+exactly as configured, relaying stdio to it. Requires a running SSH agent:
+key files are not supported here, because
+.BR ssh (1)
+reads key files once at startup and never sees a certificate written after
+that.
+.PP
+Everything after
+.B proxycommand
+on the command line is treated as the command to exec, not as flags of
+.BR ssoossh 's
+own.
+.PP
+Example, adapting an
+.IR ssh_config (5)
+.B ProxyCommand
+line:
+.RS
+.nf
+Before: ProxyCommand /usr/bin/nc -X connect -x 192.0.2.0:8080 %h %p
+After : ProxyCommand ssoossh ssh proxycommand /usr/bin/nc -X connect -x 192.0.2.0:8080 %h %p
+.fi
+.RE
+.SS "ssoossh ssh inspect"
+Prints the certificates ssoossh currently holds in the agent (or key files):
+principals, key ID, type, expiry, serial number, extensions, and critical
+options, in a layout deliberately close to
+.BR "ssh-keygen -L" .
+Writes to stdout.
+.SS "ssoossh ssh config"
+Prints the effective client configuration as actually resolved \(em after
+merging every config file, applying defaults, and deciding the key
+algorithm \(em rather than the contents of any one file. Loading the
+configuration is itself the validation: an unusable combination is reported
+as an error before this prints anything. Writes to stdout.
+.SS "ssoossh host sign, ssoossh host renew, ssoossh host sync, ssoossh host principals"
+Host certificate management. These subcommands exist in the command tree
+with their documented names, descriptions, and
+.B --help
+text, but every one of them currently returns a
+.RB \(dq "not implemented" \(dq
+error when run \(em none has an implementation yet. The intended design, for
+reference:
+.RS
+.TP
+.B sign
+First-time issuance of a host certificate, vouched for by a human through
+the OIDC approval chain (the anti-MITM control for host certificates).
+.TP
+.B renew
+Subsequent issuance once a valid host certificate already exists,
+authenticated by that certificate rather than a fresh OIDC approval.
+.TP
+.B sync
+Pull the principal mapping from the server and write it locally, for
+.B "host principals"
+to answer from.
+.TP
+.B principals
+Implements
+.BR sshd_config (5)'s
+.BR AuthorizedPrincipalsCommand :
+intended to run as root, be called on every login attempt, and never touch
+the network \(em answering only from whatever
+.B "host sync"
+last wrote locally.
+.RE
+.SS "ssoossh service enroll, ssoossh service retrieve"
+Service-account (non-interactive) certificate enrollment. Also present in
+the command tree but not yet implemented; each currently returns a
+.RB \(dq "not implemented" \(dq
+error. Intended design:
+.RS
+.TP
+.B enroll
+Enroll a service keypair (operator-supplied, or client-generated) for
+unattended certificate issuance. After OIDC approval the server is meant to
+return an enrollment code bound to both the public key and the authorized
+option set.
+.TP
+.B retrieve
+Retrieve a service certificate using a previously issued enrollment code,
+posting only the code \(em never resubmitting the public key.
+.RE
+.SS "ssoossh ca"
+Retrieves and prints the CA public key of the configured server, for use in
+.BR sshd_config (5)'s
+.B TrustedUserCAKeys
+or an
+.B @cert-authority
+line in
+.BR known_hosts (5).
+Writes to stdout.
+.SS "ssoossh version"
+Prints the client's version, commit, build date, and builder. Works even
+when the configuration failed to load or the server is unreachable, since
+it does none of the normal startup work the other commands do.
+.SH EXIT STATUS
+0 on success. Non-zero on any failure, including configuration errors, a
+denied or expired certificate request, and (for the unimplemented
+.B host
+and
+.B service
+subcommands) always, since they return an error unconditionally.
+.SH FILES
+.TP
+.I /etc/ssoossh/ssoossh.yaml
+System-wide configuration; also the only location the
+.B enforce
+setting is read from. See
+.BR ssoossh.yaml (5).
+.TP
+.I ~/.config/ssoossh.yaml
+Per-user configuration (roaming
+.IR %AppData%\essoossh\essoossh.yaml
+on Windows).
+.TP
+.I ./ssoossh.yaml
+Working-directory configuration, for development.
+.SH EXAMPLES
+Typical
+.IR ssh_config (5)
+setup, matching a host pattern and running
+.B "ssh login"
+before letting the normal SSH connection proceed:
+.RS
+.nf
+Match host *.internal.example.com exec "ssoossh ssh login"
+    User myusername
+.fi
+.RE
+Or as a ProxyCommand that also handles the relay:
+.RS
+.nf
+Host *.internal.example.com
+    ProxyCommand ssoossh ssh proxycommand /usr/bin/nc %h %p
+.fi
+.RE
+.SH SEE ALSO
+.BR ssoossh.yaml (5),
+.BR ssoosshd (8),
+.BR pam_ssoossh (8),
+.BR ssh (1),
+.BR ssh_config (5),
+.BR ssh-agent (1)

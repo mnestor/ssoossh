@@ -1,0 +1,11 @@
+{
+  "id": "6d5c4b3a-2f1e-4d0c-9b8a-7f6e5d4c3b2a",
+  "type": "host",
+  "serial_number": 7346115228134082560,
+  "key_id": "alice@example.org/0b4f2b1a",
+  "principals": "alice,alice@example.org",
+  "public_key_fingerprint": "SHA256:2Fd4rIWZ8kQnGx0mJvKp1YhLcTzXbA3sNeR5uW7oPqM",
+  "hostname": "db1.example.org",
+  "issued_at": "2026-08-14T09:30:00+02:00",
+  "expires_at": "2026-08-14T17:30:00+02:00"
+}

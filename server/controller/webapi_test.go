@@ -1,0 +1,420 @@
+package controller
+
+// Test methodology: httptest.ResponseRecorder against fake services, no
+// real listener. These cover the web-UI read endpoints added for the
+// approval page — the envelope shape they return, the scoping they apply,
+// and that they fail closed without a session.
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
+	"github.com/gin-gonic/gin"
+
+	"github.com/mnestor/ssoossh/server/middleware"
+	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
+	"github.com/mnestor/ssoossh/server/webtypes"
+)
+
+// fakeCertificateService is a test double for service.CertificateProvider.
+type fakeCertificateService struct {
+	certs      []model.Certificate
+	err        error
+	gotSubject string
+}
+
+func (f *fakeCertificateService) ListForIdentity(_ context.Context, identity *service.Identity) ([]model.Certificate, error) {
+	f.gotSubject = identity.Subject
+	return f.certs, f.err
+}
+
+// identityMiddleware stands in for SessionAuthMiddleware, putting identity
+// on the context the way a logged-in session would.
+func identityMiddleware(identity *service.Identity) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set(middleware.IdentityContextKey, identity)
+		c.Next()
+	}
+}
+
+// decodeEnvelope pulls the data half out of the {data, error} envelope.
+func decodeEnvelope(t *testing.T, body []byte, into any) {
+	t.Helper()
+
+	var envelope struct {
+		Data  json.RawMessage `json:"data"`
+		Error *string         `json:"error"`
+	}
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatalf("failed to decode envelope: %v, body: %s", err, body)
+	}
+	if envelope.Error != nil {
+		t.Fatalf("expected no error in the envelope, got %q", *envelope.Error)
+	}
+	if err := json.Unmarshal(envelope.Data, into); err != nil {
+		t.Fatalf("failed to decode envelope data: %v, data: %s", err, envelope.Data)
+	}
+}
+
+func TestCurrentUserHandler_ShouldReturnTheSessionIdentity(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	identity := &service.Identity{
+		Subject:  "sub-alice",
+		Username: "alice",
+		Email:    "alice@example.com",
+		Groups:   []string{"ssh-users"},
+	}
+
+	r := gin.New()
+	NewUserController(&r.RouterGroup, identityMiddleware(identity))
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var got webtypes.CurrentUserResponse
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+
+	if got.Username != "alice" {
+		t.Errorf("got username %q, want %q", got.Username, "alice")
+	}
+	if got.Subject != "sub-alice" {
+		t.Errorf("got subject %q, want %q", got.Subject, "sub-alice")
+	}
+	if len(got.Groups) != 1 || got.Groups[0] != "ssh-users" {
+		t.Errorf("got groups %v, want [ssh-users]", got.Groups)
+	}
+}
+
+// TestCurrentUserHandler_ShouldRenderGroupsAsAnEmptyArray keeps the UI from
+// having to handle null: a user in no groups gets [], not null.
+func TestCurrentUserHandler_ShouldRenderGroupsAsAnEmptyArray(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	NewUserController(&r.RouterGroup, identityMiddleware(&service.Identity{Subject: "sub-alice"}))
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
+
+	if !json.Valid(w.Body.Bytes()) {
+		t.Fatalf("response is not valid JSON: %s", w.Body.String())
+	}
+	if got := w.Body.String(); !strings.Contains(got, `"groups":[]`) {
+		t.Errorf("expected groups to render as [], got %s", got)
+	}
+}
+
+// TestCurrentUserHandler_ShouldRejectWithoutAnIdentityOnContext covers
+// currentUserHandler's own guard, bypassing SessionAuthMiddleware (which
+// would otherwise abort the request before this handler ever runs) with a
+// passthrough that never sets IdentityContextKey — the handler must not
+// assume its middleware already caught this.
+func TestCurrentUserHandler_ShouldRejectWithoutAnIdentityOnContext(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	NewUserController(&r.RouterGroup, passthrough)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
+
+	if gotErrors != 1 {
+		t.Fatalf("expected exactly one error when no identity is on the context, got %d", gotErrors)
+	}
+}
+
+func TestCertificateListHandler_ShouldReturnTheCallersCertificates(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	issued := time.Now().Add(-time.Hour)
+	svc := &fakeCertificateService{certs: []model.Certificate{{
+		ID:           "cert-1",
+		Type:         model.CertificateTypeUser,
+		SerialNumber: 42,
+		KeyID:        "alice",
+		Principals:   "alice",
+		IssuedAt:     issued,
+		ExpiresAt:    issued.Add(10 * time.Hour),
+	}}}
+
+	r := gin.New()
+	NewCertificateController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}))
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var got []webtypes.CertificateResponse
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+
+	if len(got) != 1 {
+		t.Fatalf("got %d certificates, want 1", len(got))
+	}
+	if got[0].SerialNumber != 42 {
+		t.Errorf("got serial %d, want 42", got[0].SerialNumber)
+	}
+
+	// The scoping subject must come from the session, not from anything the
+	// caller can influence.
+	if svc.gotSubject != "sub-alice" {
+		t.Errorf("got scoping subject %q, want %q", svc.gotSubject, "sub-alice")
+	}
+}
+
+// TestCertificateListHandler_ShouldRenderNoCertificatesAsAnEmptyArray keeps
+// the UI from having to handle null for a user who has never had one issued.
+func TestCertificateListHandler_ShouldRenderNoCertificatesAsAnEmptyArray(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	NewCertificateController(&r.RouterGroup, &fakeCertificateService{}, identityMiddleware(&service.Identity{Subject: "sub-alice"}))
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs", nil))
+
+	if got := w.Body.String(); !strings.Contains(got, `"data":[]`) {
+		t.Errorf("expected data to render as [], got %s", got)
+	}
+}
+
+// TestCertificateListHandler_ShouldRejectWithoutAnIdentityOnContext covers
+// listHandler's own guard; see the currentUserHandler test above for why
+// this needs a passthrough rather than the real SessionAuthMiddleware.
+func TestCertificateListHandler_ShouldRejectWithoutAnIdentityOnContext(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	NewCertificateController(&r.RouterGroup, &fakeCertificateService{}, passthrough)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs", nil))
+
+	if gotErrors != 1 {
+		t.Fatalf("expected exactly one error when no identity is on the context, got %d", gotErrors)
+	}
+}
+
+func TestCertificateListHandler_ShouldRegisterErrorWhenTheServiceFails(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	NewCertificateController(&r.RouterGroup,
+		&fakeCertificateService{err: errors.New("simulated failure")},
+		identityMiddleware(&service.Identity{Subject: "sub-alice"}))
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs", nil))
+
+	if gotErrors != 1 {
+		t.Errorf("expected exactly one error to be attached, got %d", gotErrors)
+	}
+}
+
+// TestDetailHandler_ShouldSurfaceRequestedAndGrantedSeparately is the point
+// of the detail endpoint: server config trims what a client asked for, and
+// the human approving has to see both sides before deciding.
+func TestDetailHandler_ShouldSurfaceRequestedAndGrantedSeparately(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{detail: &service.RequestDetail{
+		Request: model.CertificateRequest{
+			ID:        "req-1",
+			Type:      model.CertificateTypeUser,
+			Status:    model.CertificateRequestStatusPending,
+			PublicKey: "ssh-ed25519 AAAA test",
+			CreatedAt: time.Now(),
+		},
+		Requested:     service.RequestedOptions{Extensions: []string{"permit-pty", "permit-port-forwarding"}},
+		Narrowed:      service.RequestedOptions{Extensions: []string{"permit-pty"}},
+		Principals:    []string{"alice"},
+		ValidDuration: 10 * time.Hour,
+	}}
+
+	r := gin.New()
+	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), passthrough)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/requests/req-1", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var got webtypes.RequestDetailResponse
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+
+	if len(got.Requested.Extensions) != 2 {
+		t.Errorf("got requested extensions %v, want both", got.Requested.Extensions)
+	}
+	if len(got.Granted.Extensions) != 1 || got.Granted.Extensions[0] != "permit-pty" {
+		t.Errorf("got granted extensions %v, want [permit-pty] — the trimmed set must be visible before approval", got.Granted.Extensions)
+	}
+	if got.ValidSeconds != 36000 {
+		t.Errorf("got valid_seconds %d, want 36000", got.ValidSeconds)
+	}
+	if got.ApprovalURL != "/approve/req-1" {
+		t.Errorf("got approval_url %q, want %q", got.ApprovalURL, "/approve/req-1")
+	}
+	if got.AlreadyClosed {
+		t.Error("expected already_closed to be false for a pending request")
+	}
+}
+
+// TestDetailHandler_ShouldRejectWithoutAnIdentityOnContext covers
+// detailHandler's own guard; see TestCurrentUserHandler_ShouldRejectWithoutAnIdentityOnContext
+// for why this needs a passthrough rather than the real SessionAuthMiddleware.
+func TestDetailHandler_ShouldRejectWithoutAnIdentityOnContext(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	NewCertRequestController(&r.RouterGroup, &fakeCertRequestService{}, passthrough, passthrough)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/requests/req-1", nil))
+
+	if gotErrors != 1 {
+		t.Fatalf("expected exactly one error when no identity is on the context, got %d", gotErrors)
+	}
+}
+
+// TestDetailHandler_ShouldNormalizeNilSlicesToEmpty guards the UI contract:
+// a request with no principals resolved yet, or options with no extensions,
+// must render as [] rather than null (see newRequestDetailResponse and
+// newCertificateOptionsResponse).
+func TestDetailHandler_ShouldNormalizeNilSlicesToEmpty(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{detail: &service.RequestDetail{
+		Request: model.CertificateRequest{ID: "req-1", Type: model.CertificateTypeUser, Status: model.CertificateRequestStatusPending},
+		// Principals, Requested.Extensions, and Narrowed.Extensions all left
+		// nil on purpose.
+	}}
+
+	r := gin.New()
+	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), passthrough)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/requests/req-1", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if got := w.Body.String(); !strings.Contains(got, `"principals":[]`) {
+		t.Errorf("expected principals to render as [], got %s", got)
+	}
+	if got := w.Body.String(); strings.Count(got, `"extensions":[]`) != 2 {
+		t.Errorf("expected both requested and granted extensions to render as [], got %s", got)
+	}
+}
+
+// TestDetailHandler_ShouldPropagateAForbiddenFromTheBinding covers a second
+// user opening someone else's approval page: they get a refusal on load
+// rather than after clicking approve.
+func TestDetailHandler_ShouldPropagateAForbiddenFromTheBinding(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{detailErr: &errorresponses.ForbiddenError{Reason: "certificate request belongs to another user"}}
+
+	r := gin.New()
+	r.Use(middleware.NewErrorHandlerMiddleware().Add())
+	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-bob"}), passthrough)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/requests/req-1", nil))
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("got status %d, want %d, body: %s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+}
+
+// TestWebReadEndpoints_ShouldFailClosedWithoutASession pins that every new
+// read endpoint refuses an unauthenticated caller, rather than any of them
+// being registered outside the session group by mistake.
+func TestWebReadEndpoints_ShouldFailClosedWithoutASession(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	paths := []string{
+		"/users/me",
+		"/certs",
+		"/certs/requests/req-1",
+	}
+
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+
+			r := gin.New()
+			r.Use(middleware.NewErrorHandlerMiddleware().Add())
+			// SessionAuthMiddleware reads the session, which panics if the
+			// store middleware isn't registered — initEngine always does, so
+			// mirror that here rather than working around it.
+			r.Use(sessions.Sessions("ssoossh_session", cookie.NewStore([]byte("test-secret"))))
+			sessionAuth := middleware.NewSessionAuthMiddleware().Add()
+
+			NewUserController(&r.RouterGroup, sessionAuth)
+			NewCertificateController(&r.RouterGroup, &fakeCertificateService{}, sessionAuth)
+			NewCertRequestController(&r.RouterGroup, &fakeCertRequestService{}, sessionAuth, passthrough)
+
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+
+			if w.Code != http.StatusUnauthorized {
+				t.Errorf("got status %d, want %d for an unauthenticated request", w.Code, http.StatusUnauthorized)
+			}
+		})
+	}
+}

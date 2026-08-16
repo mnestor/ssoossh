@@ -1,0 +1,83 @@
+.TH SSOOSSHD 8 "2026-08-16" "ssoossh" "System Administration Commands"
+.SH NAME
+ssoosshd \- SSH certificate authority that issues against an OIDC identity provider
+.SH SYNOPSIS
+.B ssoosshd
+.RI [ --config
+.IR file ]
+.br
+.B ssoosshd version
+.SH DESCRIPTION
+.B ssoosshd
+is the trust anchor and policy decision point for SSH access. It
+authenticates users through OIDC, optionally enriches identity from LDAP,
+and signs SSH public keys into certificates carrying the principals,
+critical options, extensions, and validity window that its configuration
+allows. Certificate lifetime is derived from issuance context (which
+group the requester belongs to, which of the user/host/service/PAM paths
+issued it) rather than one global setting, and the server's own
+configuration is the outer bound on every option a client or user can
+request \(em a client cannot ask for more than the server permits.
+.PP
+A web UI, served by the same process, handles approval, shows the requester
+what was issued and what was trimmed from what they asked for, and gives
+users a history of their own certificates.
+.PP
+.B ssoosshd
+issues three kinds of certificate: user (interactive SSH), host (server
+identity), and service (non-interactive, structurally a user certificate).
+It never receives a private key: keypairs are generated on the client (or,
+for enrolled service accounts, supplied by the operator) and only the
+public half is ever sent to the server for signing.
+.PP
+Running
+.B ssoosshd
+with no arguments starts the server: it loads configuration, connects to
+its database, and listens for HTTP(S) or Unix-socket connections per
+.BR http. * " in " ssoosshd.yaml (5).
+It runs until it receives SIGINT or SIGTERM, at which point it shuts down
+gracefully.
+.SH OPTIONS
+.TP
+.BI "-c, --config " file
+Path to the ssoosshd config file to use instead of the normal search path.
+See
+.BR ssoosshd.yaml (5).
+.SH COMMANDS
+.SS "ssoosshd version"
+Prints the server's version, commit, build date, and builder, then exits.
+Does not load configuration or start the server.
+.SH CONFIGURATION
+.B ssoosshd
+is configured entirely through a YAML file; there are no other flags to set
+policy. See
+.BR ssoosshd.yaml (5)
+for the full schema, defaults, and the file's search order.
+.SH SIGNALS
+.TP
+.B SIGINT, SIGTERM
+Begin graceful shutdown: stop accepting new connections, let in-flight
+requests finish, then exit.
+.SH EXIT STATUS
+0 on a clean shutdown. Non-zero if configuration fails to load or validate,
+if the database or HTTP listener cannot be started, or if the process
+receives an error during graceful shutdown.
+.SH FILES
+Searched in this order; the first file found is used in its entirety (files
+are not merged across locations) unless
+.B --config
+names one explicitly:
+.TP
+.I ./ssoosshd.yaml
+.TP
+.I ~/.config/ssoosshd.yaml
+.TP
+.I ~/.config/ssoossh/ssoosshd.yaml
+.TP
+.I /etc/ssoosshd.yaml
+.TP
+.I /etc/ssoossh/ssoosshd.yaml
+.SH SEE ALSO
+.BR ssoosshd.yaml (5),
+.BR ssoossh (1),
+.BR pam_ssoossh (8)

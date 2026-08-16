@@ -1,0 +1,9 @@
+{
+  "subject": "9c1f0f8e-1d0a-4a37-9d1e-2f6a1b4c5d6e",
+  "username": "alice",
+  "email": "alice@example.org",
+  "groups": [
+    "engineering",
+    "sre"
+  ]
+}
