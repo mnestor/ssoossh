@@ -65,5 +65,5 @@ docker build --platform "${PLATFORM}" -f "${DOCKERFILE}" \
 
 docker run --rm --platform "${PLATFORM}" \
   -v "${REPO_ROOT}:/workspace" \
-  -v "ssoossh-pam-gomodcache-${ARCH}:/go/pkg/mod" "${IMAGE_TAG}" "${ARCH}" "${ACTION}" "${SNAPSHOT}"
+  "${IMAGE_TAG}" "${ARCH}" "${ACTION}" "${SNAPSHOT}"
 

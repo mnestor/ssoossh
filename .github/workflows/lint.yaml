@@ -31,7 +31,7 @@ jobs:
         # lint: server/frontend/frontend_included.go#L29
         # pattern all:dist/*: no matching files found (typecheck)
         run: |
-          touch server/frontend/dist/index.html
+          go generate ./...
       - name: golangci-lint
         id: golangcilint
         continue-on-error: true

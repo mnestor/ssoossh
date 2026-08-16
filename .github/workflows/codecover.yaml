@@ -18,16 +18,12 @@ jobs:
   coverage:
     runs-on: [self-hosted]
     container:
-      image: ubuntu:24.04
+      image: ghcr.io/mnestor/ubuntu-build:latest
     permissions:
       contents: read # for actions/checkout to fetch code
       pull-requests: read # for golangci/golangci-lint-action to fetch pull requests
     name: codecheck
     steps:
-      - name: add required stuff
-        run: |
-          apt-get update && apt-get install -y libatomic1 build-essential unzip ca-certificates git curl
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
 
       - name: Set up Go
