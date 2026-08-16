@@ -157,24 +157,14 @@ func (f *FileAgent) RemoveAll() (int, error) {
 }
 
 // CleanupAgent removes the on-disk key files if the loaded certificate is
-// not time-valid or not signed by a trusted CA (see SetCA).
+// not time-valid or not signed by a trusted CA (see SetCA). A keypair with
+// no certificate loaded is left untouched.
 func (a *FileAgent) CleanupAgent() error {
-	keys, err := a.List(false)
-	if err != nil {
-		return err
-	}
-	if len(keys) == 0 {
-		return nil // No keys to check
-	}
-
-	key := keys[0]
-
-	parsed, err := ssh.ParsePublicKey((*key).Marshal())
-	if err != nil {
+	if a.keypair == nil {
 		return nil
 	}
-	cert, ok := parsed.(*ssh.Certificate)
-	if !ok {
+	cert := a.keypair.Certificate()
+	if cert == nil {
 		return nil
 	}
 	if !CertificateValid(cert, a.cas) {
@@ -189,7 +179,7 @@ func (f *FileAgent) Signers() ([]ssh.Signer, error) {
 	if f.keypair == nil {
 		return nil, errors.New("no keypair loaded")
 	}
-	signer, err := ssh.NewSignerFromKey(f.keypair)
+	signer, err := ssh.NewSignerFromKey(f.keypair.Private())
 	if err != nil {
 		return nil, err
 	}
