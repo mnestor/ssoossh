@@ -22,13 +22,7 @@ jobs:
     steps:
       - name: add required stuff
         run: |
-          apt-get update && apt-get install -y unzip
-      - uses: 1password/load-secrets-action@e544b780808654ba8ceba5fb2fe2897103d92ff4 # v5.0.0
-        id: secrets
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          CODECOV_TOKEN: op://Github Actions/CODECOV_TOKEN/credential
-
+          apt-get update && apt-get install -y unzip ca-certificates
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
 
       - name: Set up Go
@@ -45,6 +39,7 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v4.4.0
         with:
           node-version: 26
+
       - name: Set up pnpm
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v4.4.0
         with:
@@ -57,6 +52,12 @@ jobs:
 
       - name: Run tests
         run: CGO_ENABLED=0 go test -v -covermode=atomic -coverprofile=coverage.txt ./...
+
+      - uses: 1password/load-secrets-action@e544b780808654ba8ceba5fb2fe2897103d92ff4 # v5.0.0
+        id: secrets
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          CODECOV_TOKEN: op://Github Actions/CODECOV_TOKEN/credential
 
       - name: Upload coverage reports to Codecov
         if: ${{ !cancelled() }}
