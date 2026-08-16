@@ -18,6 +18,7 @@ before:
 
 env:
   - CGO_ENABLED=1
+  - GOFLAGS=-buildvcs=false
 
 builds:
   - id: linux-pam-build-amd64
