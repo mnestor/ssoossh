@@ -49,7 +49,7 @@ jobs:
       # "no such file" three steps later.
       - name: Ensure sshd is available
         run: |
-          apt-get install -y --no-install-recommends openssh-server
+          apt-get update && apt-get install -y --no-install-recommends openssh-server
           # On a real host this directory is created by a systemd tmpfiles
           # rule at boot; this container never boots an init system, so sshd
           # fails with "Missing privilege separation directory" without it.

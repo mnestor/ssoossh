@@ -24,7 +24,7 @@ jobs:
     runs-on: [self-hosted, PAM-BUILDER]
     steps:
       - name: Set owner of working dir recurively (Linux)
-        run: sudo chown -R $(whoami) /home/$(whoami)/*
+        run: sudo chown -R $(whoami):$(whoami) /home/$(whoami)
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
