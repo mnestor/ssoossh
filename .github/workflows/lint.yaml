@@ -32,7 +32,7 @@ jobs:
         with:
           version: v2.12
       - name: Add golangci-lint results to summary
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           echo "## golangci-lint Audit Results" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.golangcilint.outputs.result }}" >> $GITHUB_STEP_SUMMARY

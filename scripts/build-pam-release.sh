@@ -26,6 +26,8 @@ fi
 ARCH="${1}"
 ACTION="${2}"
 SNAPSHOT="${3}"
+UID=$(id -u)
+GID=$(id -g)
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGES_DIR="${REPO_ROOT}/scripts/pam-build-images"
@@ -57,6 +59,8 @@ IMAGE_TAG="ssoossh-pam-build:$ARCH"
 docker build --platform "${PLATFORM}" -f "${DOCKERFILE}" \
   --build-arg "GO_VERSION=${GO_VERSION}" \
   --build-arg "GORELEASER_VERSION=${GORELEASER_VERSION}" \
+  --build-arg "UID=${UID}" \
+  --build-arg "GID=${GID}" \
   -t "${IMAGE_TAG}" "${IMAGES_DIR}"
 
 docker run --rm --platform "${PLATFORM}" \

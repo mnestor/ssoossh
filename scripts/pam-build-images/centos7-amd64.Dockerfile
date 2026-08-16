@@ -35,6 +35,14 @@ RUN test -n "$GO_VERSION" \
 ENV PATH="/usr/local/go/bin:${PATH}"
 ENV GOPATH="/go"
 
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g ${GID} runner \
+  && useradd -l -r -u ${UID} -g runner runner \
+  && mkdir -p /go && chown runner:runner /go
+
 COPY entrypoint.sh /
+
+USER runner
 ENTRYPOINT ["/entrypoint.sh"]
 WORKDIR /workspace

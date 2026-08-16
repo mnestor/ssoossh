@@ -27,7 +27,7 @@ jobs:
           go-version-file: "go.mod"
           go-package: ./...
       - name: Add govulncheck results to summary
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           echo "## Govulncheck Results" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.govulncheck.outputs.result }}" >> $GITHUB_STEP_SUMMARY
@@ -53,7 +53,7 @@ jobs:
         run: pnpm audit --audit-level high
         continue-on-error: true
       - name: Add pnpm results to summary
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           echo "## pnpm Audit Results" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.pnpm.outputs.result }}" >> $GITHUB_STEP_SUMMARY
@@ -70,7 +70,7 @@ jobs:
         id: semgrep
         run: semgrep scan --config auto --error
       - name: Add semgrep results to summary
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           echo "## semgrep Audit Results" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.semgrep.outputs.result }}" >> $GITHUB_STEP_SUMMARY
