@@ -73,3 +73,67 @@ func TestNotFoundError_ShouldReturn404FromHttpStatusCode(t *testing.T) {
 		t.Errorf("got %d, want %d", got, http.StatusNotFound)
 	}
 }
+
+func TestCertificateUnavailableError_ShouldIncludeRequestIDInMessage(t *testing.T) {
+	t.Parallel()
+
+	err := &CertificateUnavailableError{RequestID: "req-123"}
+	want := `certificate for request "req-123" is no longer available; please make a new request`
+	if got := err.Error(); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestCertificateUnavailableError_ShouldReturn410FromHttpStatusCode(t *testing.T) {
+	t.Parallel()
+
+	err := &CertificateUnavailableError{}
+	if got := err.HTTPStatusCode(); got != http.StatusGone {
+		t.Errorf("got %d, want %d", got, http.StatusGone)
+	}
+}
+
+func TestNotImplementedError_ShouldReturnMessageFromError(t *testing.T) {
+	t.Parallel()
+
+	err := &NotImplementedError{}
+	if got := err.Error(); got != "Not implemented" {
+		t.Errorf("got %q, want %q", got, "Not implemented")
+	}
+}
+
+func TestNotImplementedError_ShouldReturn501FromHttpStatusCode(t *testing.T) {
+	t.Parallel()
+
+	err := &NotImplementedError{}
+	if got := err.HTTPStatusCode(); got != http.StatusNotImplemented {
+		t.Errorf("got %d, want %d", got, http.StatusNotImplemented)
+	}
+}
+
+func TestForbiddenError_ShouldReturnReasonWhenSet(t *testing.T) {
+	t.Parallel()
+
+	err := &ForbiddenError{Reason: "not the owner of this resource"}
+	if got := err.Error(); got != "not the owner of this resource" {
+		t.Errorf("got %q, want %q", got, "not the owner of this resource")
+	}
+}
+
+func TestForbiddenError_ShouldReturnGenericMessageWhenReasonEmpty(t *testing.T) {
+	t.Parallel()
+
+	err := &ForbiddenError{}
+	if got := err.Error(); got != "forbidden" {
+		t.Errorf("got %q, want %q", got, "forbidden")
+	}
+}
+
+func TestForbiddenError_ShouldReturn403FromHttpStatusCode(t *testing.T) {
+	t.Parallel()
+
+	err := &ForbiddenError{}
+	if got := err.HTTPStatusCode(); got != http.StatusForbidden {
+		t.Errorf("got %d, want %d", got, http.StatusForbidden)
+	}
+}
