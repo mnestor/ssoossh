@@ -97,6 +97,7 @@ devcontainer-lock.json
 
 # goreleaser output
 /dist/
+!server/frontend/dist/
 
 # make pam output (pam_ssoossh.so and the cgo header goreleaser generates)
 /.build/
