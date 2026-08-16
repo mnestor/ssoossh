@@ -29,6 +29,17 @@ jobs:
         run: |
           scripts/build-pam-release.sh arm64 release true
 
+  build-test-non-pam:
+    runs-on: [self-hosted]
+    container:
+      image: ubuntu:24.04
+    steps:
+      - name: add required stuff
+        run: |
+          apt-get update && apt-get install -y libatomic1 build-essential unzip ca-certificates git curl
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v5.6.0
         with:
