@@ -296,6 +296,83 @@ func TestSignedReplyHandler_ShouldRecordTheCertificateOwner(t *testing.T) {
 	}
 }
 
+// TestSignedReplyHandler_ShouldWarnAndProceedForAnUnknownRequestID covers
+// recordCertificate's owner-lookup err!=nil branch specifically — distinct
+// from TestSignedReplyHandler_ShouldStillRecordACertificateWithNoOwner
+// below, which uses a request that exists but was never bound (a different
+// case in the same switch). Here the request row doesn't exist at all.
+func TestSignedReplyHandler_ShouldWarnAndProceedForAnUnknownRequestID(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	h := newTestSignedReplyHandler(t, svc)
+
+	if err := h.recordCertificate(context.Background(), certmsg.SignedReply{
+		RequestID:            "does-not-exist",
+		Type:                 model.CertificateTypeUser,
+		PublicKeyFingerprint: "SHA256:test",
+		Serial:               44,
+		Principals:           []string{"alice"},
+		ValidAfter:           time.Now(),
+		ValidBefore:          time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("expected an unknown request ID to still record a certificate, got %v", err)
+	}
+
+	var cert model.Certificate
+	if err := svc.db.First(&cert, "serial_number = ?", 44).Error; err != nil {
+		t.Fatalf("unexpected error reading the audit row: %v", err)
+	}
+	if cert.UserID != nil {
+		t.Errorf("got user_id %v, want nil when the owning request can't be resolved", *cert.UserID)
+	}
+}
+
+// TestSignedReplyHandler_ShouldSurfaceACreateFailure covers
+// recordCertificate's own Create error, and resolveSuccess's passthrough of
+// it — a closed connection fails both the owner lookup (already covered by
+// the unknown-request-ID case above) and the Create that follows it.
+func TestSignedReplyHandler_ShouldSurfaceACreateFailure(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	h := newTestSignedReplyHandler(t, svc)
+	requestID := signingRequest(t, svc)
+	closeUnderlyingDB(t, svc.db)
+
+	reply := certmsg.SignedReply{
+		RequestID:   requestID,
+		Type:        model.CertificateTypeUser,
+		Serial:      45,
+		Certificate: "ssh-ed25519-cert-v01@openssh.com AAAA...",
+		Principals:  []string{"alice"},
+		ValidAfter:  time.Now(),
+		ValidBefore: time.Now().Add(time.Hour),
+	}
+
+	if err := h.recordCertificate(context.Background(), reply); err == nil {
+		t.Error("recordCertificate() error = nil, want error")
+	}
+	if err := h.resolveSuccess(context.Background(), reply); err == nil {
+		t.Error("resolveSuccess() error = nil, want error passed through from recordCertificate")
+	}
+}
+
+// TestMarkResolved_ShouldLogAndReturnOnADBError covers markResolved's own
+// error branch. markResolved has no return value to assert on — Deny/expire
+// already prove the guarded-update semantics — so this only confirms it
+// doesn't panic when the update itself fails.
+func TestMarkResolved_ShouldLogAndReturnOnADBError(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	h := newTestSignedReplyHandler(t, svc)
+	requestID := signingRequest(t, svc)
+	closeUnderlyingDB(t, svc.db)
+
+	h.markResolved(context.Background(), requestID, model.CertificateRequestStatusApproved, "")
+}
+
 // TestSignedReplyHandler_ShouldStillRecordACertificateWithNoOwner keeps a
 // missing owner from failing issuance: the certificate is already signed by
 // this point, so dropping the audit row would lose it entirely. It costs

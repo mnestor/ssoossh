@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
+	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
 	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
@@ -64,6 +65,22 @@ func newTestCertRequestServiceWithOptions(t *testing.T, opts config.CertificateO
 	return svc
 }
 
+// closeUnderlyingDB closes db's connection, so any subsequent query fails
+// with a real "sql: database is closed" error — the most direct way to
+// exercise this package's generic-DB-error branches without a mock: every
+// call still goes through the real *gorm.DB and the real sqlite driver,
+// just against a connection that's genuinely gone.
+func closeUnderlyingDB(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get underlying sql.DB: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("failed to close the database: %v", err)
+	}
+}
+
 // seedUser inserts the users row Approve resolves the approving identity
 // against, returning its ID. Approve binds a request to a user (see
 // bindRequester), so every approval path needs one to exist.
@@ -81,6 +98,146 @@ func seedUser(t *testing.T, db *gorm.DB, subject string) string {
 		t.Fatalf("failed to seed user %q: %v", subject, err)
 	}
 	return user.ID
+}
+
+// TestCertRequestService_ShouldSurfaceGenericDBErrors covers the
+// generic-database-error branch in CreateRequest, Detail, Approve,
+// bindRequester (both its guarded UPDATE and its racing-claim re-read),
+// resolveUserID, approveServiceEnrollment, approveForSigning, and Deny —
+// each distinct from that same method's not-found/not-pending handling,
+// which is tested elsewhere. Closing the underlying connection (see
+// closeUnderlyingDB) makes every one of these fail the same real way, so
+// one table covers all of them without a mock for each.
+func TestCertRequestService_ShouldSurfaceGenericDBErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("CreateRequest", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, 0)
+		closeUnderlyingDB(t, svc.db)
+
+		if _, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."}); err == nil {
+			t.Error("CreateRequest() error = nil, want error")
+		}
+	})
+
+	t.Run("Detail", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Hour)
+		identity := &Identity{Username: "alice", Subject: "sub-alice"}
+		seedUser(t, svc.db, identity.Subject)
+		requestID := mustCreateUserRequest(t, svc)
+		closeUnderlyingDB(t, svc.db)
+
+		if _, err := svc.Detail(context.Background(), requestID, identity); err == nil {
+			t.Error("Detail() error = nil, want error")
+		}
+	})
+
+	t.Run("Approve", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Hour)
+		identity := &Identity{Username: "alice", Subject: "sub-alice"}
+		seedUser(t, svc.db, identity.Subject)
+		requestID := mustCreateUserRequest(t, svc)
+		closeUnderlyingDB(t, svc.db)
+
+		if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+			t.Error("Approve() error = nil, want error")
+		}
+	})
+
+	t.Run("bindRequester's guarded UPDATE", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Hour)
+		identity := &Identity{Username: "alice", Subject: "sub-alice"}
+		seedUser(t, svc.db, identity.Subject)
+		requestID := mustCreateUserRequest(t, svc)
+		closeUnderlyingDB(t, svc.db)
+
+		req := &model.CertificateRequest{ID: requestID, UserID: nil}
+		if err := svc.bindRequester(context.Background(), req, identity); err == nil {
+			t.Error("bindRequester() error = nil, want error")
+		}
+	})
+
+	t.Run("resolveUserID", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, 0)
+		closeUnderlyingDB(t, svc.db)
+
+		if _, err := svc.resolveUserID(context.Background(), &Identity{Subject: "sub-alice"}); err == nil {
+			t.Error("resolveUserID() error = nil, want error")
+		}
+	})
+
+	t.Run("approveServiceEnrollment", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Hour)
+		requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeService, PublicKey: "ssh-ed25519 AAAA... svc"})
+		if err != nil {
+			t.Fatalf("unexpected error creating request: %v", err)
+		}
+		closeUnderlyingDB(t, svc.db)
+
+		if err := svc.approveServiceEnrollment(context.Background(), requestID, RequestedOptions{}); err == nil {
+			t.Error("approveServiceEnrollment() error = nil, want error")
+		}
+	})
+
+	t.Run("approveForSigning", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Hour)
+		identity := &Identity{Username: "alice", Subject: "sub-alice"}
+		requestID := mustCreateUserRequest(t, svc)
+		var req model.CertificateRequest
+		if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+			t.Fatalf("failed to reload request: %v", err)
+		}
+		closeUnderlyingDB(t, svc.db)
+
+		if err := svc.approveForSigning(context.Background(), req, identity, RequestedOptions{}, time.Hour); err == nil {
+			t.Error("approveForSigning() error = nil, want error")
+		}
+	})
+
+	t.Run("Deny", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, 0)
+		requestID := mustCreateUserRequest(t, svc)
+		closeUnderlyingDB(t, svc.db)
+
+		if err := svc.Deny(context.Background(), requestID); err == nil {
+			t.Error("Deny() error = nil, want error")
+		}
+	})
+}
+
+// TestNewCertRequestService_ShouldRejectAMalformedKeyIDTemplate covers the
+// newKeyIDTemplates error propagating out of the constructor: a bad
+// template (unparseable syntax, or referencing a field
+// keyIDTemplateData doesn't have) must fail startup rather than the first
+// approval.
+func TestNewCertRequestService_ShouldRejectAMalformedKeyIDTemplate(t *testing.T) {
+	t.Parallel()
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open in-memory sqlite: %v", err)
+	}
+	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
+	t.Cleanup(func() {
+		if err := channel.Close(); err != nil {
+			t.Errorf("unexpected error closing gochannel: %v", err)
+		}
+	})
+
+	opts := config.CertificateOptions{}
+	opts.User.KeyIDTemplate = "{{.NoSuchField}}"
+
+	if _, err := NewCertRequestService(&config.Config{CertOptions: opts}, db, channel, channel); err == nil {
+		t.Error("NewCertRequestService() error = nil, want error for a key ID template referencing an unknown field")
+	}
 }
 
 func TestCertRequestService_Wait_ShouldReturnErrorForUnknownID(t *testing.T) {
@@ -344,6 +501,74 @@ func TestCertRequestService_Wait_ShouldReceiveWakeMessageViaPubSub(t *testing.T)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Wait did not unblock via the pub/sub wake message")
+	}
+}
+
+// TestCertRequestService_Wait_ShouldReturnCtxErrOnGenuineCancellation covers
+// the blocking select's ctx.Done() arm specifically — distinct from
+// TestCertRequestService_Wait_ShouldResumeAfterContextCancellation, which
+// cancels ctx *before* calling Wait and so never reaches the select at all
+// (lookupRequest's own DB query fails first, on the already-canceled
+// context). This cancels concurrently, after Wait is genuinely blocked.
+func TestCertRequestService_Wait_ShouldReturnCtxErrOnGenuineCancellation(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, 0)
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	_, _, _, err = svc.Wait(ctx, requestID)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
+// failingSubscriber is a message.Subscriber whose Subscribe call always
+// fails, standing in for a broker that's unreachable.
+type failingSubscriber struct{}
+
+func (failingSubscriber) Subscribe(_ context.Context, _ string) (<-chan *message.Message, error) {
+	return nil, errors.New("subscription unavailable")
+}
+func (failingSubscriber) Close() error { return nil }
+
+func TestCertRequestService_Wait_ShouldSurfaceASubscribeFailure(t *testing.T) {
+	t.Parallel()
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open in-memory sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.User{}); err != nil {
+		t.Fatalf("failed to migrate test tables: %v", err)
+	}
+	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
+	t.Cleanup(func() {
+		if err := channel.Close(); err != nil {
+			t.Errorf("unexpected error closing gochannel: %v", err)
+		}
+	})
+
+	svc, err := NewCertRequestService(&config.Config{}, db, channel, failingSubscriber{})
+	if err != nil {
+		t.Fatalf("failed to construct CertRequestService: %v", err)
+	}
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	if _, _, _, err := svc.Wait(context.Background(), requestID); err == nil {
+		t.Error("Wait() error = nil, want error when the subscriber is unreachable")
 	}
 }
 
@@ -623,6 +848,67 @@ func TestCertRequestService_Approve_ShouldEnrollServiceRequestsInsteadOfQueueing
 	}
 }
 
+func TestCertRequestService_Approve_ShouldReturnNotFoundForAnUnknownID(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, 0)
+
+	err := svc.Approve(context.Background(), "does-not-exist", &Identity{Username: "alice", Subject: "sub-alice"})
+
+	var notFound *errorresponses.NotFoundError
+	if !errors.As(err, &notFound) {
+		t.Fatalf("expected a *errorresponses.NotFoundError, got %T: %v", err, err)
+	}
+}
+
+// TestCertRequestService_Approve_ShouldRejectHostCertificates covers
+// Approve's default switch case: host certificates aren't issuable yet (the
+// signer only handles user and PAM), so approving one must fail immediately
+// rather than queuing a job the signer would refuse.
+func TestCertRequestService_Approve_ShouldRejectHostCertificates(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	identity := &Identity{Username: "alice", Subject: "sub-alice"}
+	seedUser(t, svc.db, identity.Subject)
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypeHost,
+		PublicKey: "ssh-ed25519 AAAA... host",
+		Hostname:  "web-01.example.com",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+		t.Fatal("expected approving a host certificate request to fail: host issuance isn't supported yet")
+	}
+}
+
+// TestCertRequestService_Approve_ShouldSurfaceACorruptOptionsColumn is
+// Approve's counterpart to the same Detail test: a request row whose
+// requested_options is somehow unparseable must fail approval rather than
+// silently treat the requester as having asked for nothing.
+func TestCertRequestService_Approve_ShouldSurfaceACorruptOptionsColumn(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	identity := &Identity{Username: "alice", Subject: "sub-alice"}
+	seedUser(t, svc.db, identity.Subject)
+	requestID := mustCreateUserRequest(t, svc)
+
+	if err := svc.db.Model(&model.CertificateRequest{}).
+		Where("id = ?", requestID).
+		Update("requested_options", "not json").Error; err != nil {
+		t.Fatalf("failed to corrupt requested_options: %v", err)
+	}
+
+	if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+		t.Error("Approve() error = nil, want error for an unparseable requested_options column")
+	}
+}
+
 func TestCertRequestService_Approve_ShouldErrorWhenNotPending(t *testing.T) {
 	t.Parallel()
 
@@ -716,6 +1002,15 @@ func TestResolveCertOptions_ShouldOnlyGrantNoTouchRequiredForService(t *testing.
 				t.Errorf("got NoTouchRequired %v, want %v", narrowed.NoTouchRequired, tt.want)
 			}
 		})
+	}
+}
+
+func TestResolveCertOptions_ShouldRejectAnUnsupportedCertificateType(t *testing.T) {
+	t.Parallel()
+
+	_, _, _, err := resolveCertOptions(config.CertificateOptions{}, model.CertificateType("bogus"), RequestedOptions{})
+	if err == nil {
+		t.Error("resolveCertOptions() error = nil, want error for an unsupported certificate type")
 	}
 }
 
@@ -1053,5 +1348,347 @@ func TestCertRequestService_Detail_ShouldReturnNotFoundForAnUnknownID(t *testing
 	var notFound *errorresponses.NotFoundError
 	if !errors.As(err, &notFound) {
 		t.Errorf("got error %v, want a NotFoundError", err)
+	}
+}
+
+// TestCertRequestService_Detail_ShouldSurfaceACorruptOptionsColumn covers
+// the requested_options decode failure: the column is free-form JSON with
+// no DB-level schema behind it, so a row that somehow ended up with
+// unparseable content must surface as an error rather than panic or
+// silently zero out the requester's options.
+func TestCertRequestService_Detail_ShouldSurfaceACorruptOptionsColumn(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	identity := &Identity{Username: "alice", Subject: "sub-alice"}
+	seedUser(t, svc.db, identity.Subject)
+	requestID := mustCreateUserRequest(t, svc)
+
+	if err := svc.db.Model(&model.CertificateRequest{}).
+		Where("id = ?", requestID).
+		Update("requested_options", "not json").Error; err != nil {
+		t.Fatalf("failed to corrupt requested_options: %v", err)
+	}
+
+	if _, err := svc.Detail(context.Background(), requestID, identity); err == nil {
+		t.Error("Detail() error = nil, want error for an unparseable requested_options column")
+	}
+}
+
+// TestCertRequestService_Detail_ShouldSurfaceAnUnsupportedStoredType covers
+// Detail's own resolveCertOptions error path: CreateRequest stores
+// whatever Type string it's given with no enum validation, so a row that
+// somehow ended up with an unrecognized type must surface as an error
+// rather than a zero-value policy.
+func TestCertRequestService_Detail_ShouldSurfaceAnUnsupportedStoredType(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	identity := &Identity{Username: "alice", Subject: "sub-alice"}
+	seedUser(t, svc.db, identity.Subject)
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateType("bogus"), PublicKey: "ssh-ed25519 AAAA..."})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	if _, err := svc.Detail(context.Background(), requestID, identity); err == nil {
+		t.Error("Detail() error = nil, want error for an unsupported stored certificate type")
+	}
+}
+
+// TestCertRequestService_Approve_ShouldSurfaceAnUnsupportedStoredType is
+// Approve's counterpart to the Detail test above.
+func TestCertRequestService_Approve_ShouldSurfaceAnUnsupportedStoredType(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	identity := &Identity{Username: "alice", Subject: "sub-alice"}
+	seedUser(t, svc.db, identity.Subject)
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateType("bogus"), PublicKey: "ssh-ed25519 AAAA..."})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+		t.Error("Approve() error = nil, want error for an unsupported stored certificate type")
+	}
+}
+
+// TestBindRequester_ShouldNoOpForARepeatViewByTheSameOwner covers the
+// already-bound-to-this-user early return: Detail's binding is idempotent
+// for the owner (a second page load isn't a second claim attempt).
+func TestBindRequester_ShouldNoOpForARepeatViewByTheSameOwner(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	identity := &Identity{Username: "alice", Subject: "sub-alice"}
+	seedUser(t, svc.db, identity.Subject)
+	requestID := mustCreateUserRequest(t, svc)
+
+	if _, err := svc.Detail(context.Background(), requestID, identity); err != nil {
+		t.Fatalf("unexpected error on first view: %v", err)
+	}
+	// Second view by the same owner must succeed too, not just the first.
+	if _, err := svc.Detail(context.Background(), requestID, identity); err != nil {
+		t.Fatalf("unexpected error on repeat view by the owner: %v", err)
+	}
+}
+
+// TestBindRequester_ShouldDetectARacingClaim covers the guarded-UPDATE's
+// RowsAffected==0 path deterministically: rather than racing two real
+// goroutines (inherently timing-dependent), it seeds the DB row as already
+// claimed by a different user before calling bindRequester with an in-memory
+// req that still thinks the row is unclaimed — exactly the state a second
+// caller would observe if it lost a real race between reading the row and
+// issuing its own guarded UPDATE.
+func TestBindRequester_ShouldDetectARacingClaim(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	winnerID := seedUser(t, svc.db, "sub-winner")
+	loser := &Identity{Username: "loser", Subject: "sub-loser"}
+	seedUser(t, svc.db, loser.Subject)
+	requestID := mustCreateUserRequest(t, svc)
+
+	if err := svc.db.Model(&model.CertificateRequest{}).
+		Where("id = ?", requestID).
+		Update("user_id", winnerID).Error; err != nil {
+		t.Fatalf("failed to seed the winning claim: %v", err)
+	}
+
+	req := &model.CertificateRequest{ID: requestID, UserID: nil}
+	err := svc.bindRequester(context.Background(), req, loser)
+
+	var forbidden *errorresponses.ForbiddenError
+	if !errors.As(err, &forbidden) {
+		t.Fatalf("got error %v (%T), want a ForbiddenError for a request claimed by someone else", err, err)
+	}
+}
+
+// TestApproveServiceEnrollment_ShouldRefuseARequestThatIsNoLongerPending
+// covers approveServiceEnrollment's own guarded-UPDATE RowsAffected==0
+// branch directly. Approve's own top-level pending check (line ~291) always
+// catches a non-pending row first when called through Approve — including
+// with a genuine second Approve call — so this branch is only reachable via
+// a real race between two concurrent Approve calls both passing that check
+// before either commits. Calling approveServiceEnrollment directly (an
+// unexported, in-package-testable method) after flipping the row's status
+// out from under it reproduces exactly that race deterministically.
+func TestApproveServiceEnrollment_ShouldRefuseARequestThatIsNoLongerPending(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeService, PublicKey: "ssh-ed25519 AAAA... svc"})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+	if err := svc.db.Model(&model.CertificateRequest{}).
+		Where("id = ?", requestID).
+		Update("status", model.CertificateRequestStatusDenied).Error; err != nil {
+		t.Fatalf("failed to flip the request's status: %v", err)
+	}
+
+	if err := svc.approveServiceEnrollment(context.Background(), requestID, RequestedOptions{}); err == nil {
+		t.Error("approveServiceEnrollment() error = nil, want error for a request that lost the pending race")
+	}
+}
+
+// TestApproveForSigning_ShouldRefuseARequestThatIsNoLongerPending is
+// approveForSigning's counterpart to
+// TestApproveServiceEnrollment_ShouldRefuseARequestThatIsNoLongerPending —
+// same reasoning, same technique: Approve's own top-level check makes this
+// guard only reachable via a genuine race, reproduced deterministically by
+// calling approveForSigning directly after flipping the row's status.
+func TestApproveForSigning_ShouldRefuseARequestThatIsNoLongerPending(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	identity := &Identity{Username: "alice", Subject: "sub-alice"}
+	requestID := mustCreateUserRequest(t, svc)
+	if err := svc.db.Model(&model.CertificateRequest{}).
+		Where("id = ?", requestID).
+		Update("status", model.CertificateRequestStatusDenied).Error; err != nil {
+		t.Fatalf("failed to flip the request's status: %v", err)
+	}
+
+	var req model.CertificateRequest
+	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+		t.Fatalf("failed to reload request: %v", err)
+	}
+
+	if err := svc.approveForSigning(context.Background(), req, identity, RequestedOptions{}, time.Hour); err == nil {
+		t.Error("approveForSigning() error = nil, want error for a request that lost the pending race")
+	}
+}
+
+// failingPublisher is a message.Publisher whose Publish call always fails,
+// standing in for a broker that's unreachable at approval time.
+type failingPublisher struct{}
+
+func (failingPublisher) Publish(_ string, _ ...*message.Message) error {
+	return errors.New("publish unavailable")
+}
+func (failingPublisher) Close() error { return nil }
+
+// TestCertRequestService_Approve_ShouldSurfaceAPublishFailure covers
+// approveForSigning's own publish error: the row is already marked Signing
+// by this point (left for the invalidation sweep to catch, per the doc
+// comment on the call site) — Approve itself must still report the failure
+// to its caller rather than claim success.
+func TestCertRequestService_Approve_ShouldSurfaceAPublishFailure(t *testing.T) {
+	t.Parallel()
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open in-memory sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.User{}); err != nil {
+		t.Fatalf("failed to migrate test tables: %v", err)
+	}
+	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
+	t.Cleanup(func() {
+		if err := channel.Close(); err != nil {
+			t.Errorf("unexpected error closing gochannel: %v", err)
+		}
+	})
+
+	svc, err := NewCertRequestService(&config.Config{CertOptions: config.CertificateOptions{
+		User: config.CertOptionsUser{ValidDuration: time.Hour},
+	}}, db, failingPublisher{}, channel)
+	if err != nil {
+		t.Fatalf("failed to construct CertRequestService: %v", err)
+	}
+
+	identity := &Identity{Username: "alice", Subject: "sub-alice"}
+	seedUser(t, svc.db, identity.Subject)
+	requestID := mustCreateUserRequest(t, svc)
+
+	if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+		t.Error("Approve() error = nil, want error when publishing the signing job fails")
+	}
+}
+
+// TestCertRequestService_Deny_ShouldApplyTheTTLFilterWhenConfigured covers
+// Deny's ttlCutoff branch: with RequestTTL set, a pending-but-expired
+// request must not be denied by this path — Wait's own lazy expiry owns
+// that transition (see reconcileStatus) — so Deny reports it as already
+// non-pending, same as any other terminal request.
+func TestCertRequestService_Deny_ShouldApplyTheTTLFilterWhenConfigured(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Minute)
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	// Back-date CreatedAt past the TTL directly in the DB — mirrors how
+	// TestCertRequestService_Wait_ShouldExpireRequestPastTTL ages a row.
+	if err := svc.db.Model(&model.CertificateRequest{}).
+		Where("id = ?", requestID).
+		Update("created_at", time.Now().Add(-time.Hour)).Error; err != nil {
+		t.Fatalf("failed to back-date created_at: %v", err)
+	}
+
+	if err := svc.Deny(context.Background(), requestID); err == nil {
+		t.Fatal("expected Deny to refuse a request past its TTL, got nil")
+	}
+}
+
+// TestCertRequestService_Wait_ShouldReportATerminalStatusFoundColdInTheDB
+// covers reconcileStatus's default case (denied/expired/failed) — reachable
+// whenever a Wait call finds a request already resolved in the DB but not
+// yet in the in-memory resolved cache, e.g. a reconnect after a process
+// restart. Constructed directly here (bypassing Deny/expire, which already
+// populate the cache themselves) so the cache is guaranteed cold.
+func TestCertRequestService_Wait_ShouldReportATerminalStatusFoundColdInTheDB(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, 0)
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	if err := svc.db.Model(&model.CertificateRequest{}).
+		Where("id = ?", requestID).
+		Updates(map[string]any{"status": model.CertificateRequestStatusFailed, "resolved_at": time.Now()}).Error; err != nil {
+		t.Fatalf("failed to mark the request failed directly in the DB: %v", err)
+	}
+
+	status, _, _, err := svc.Wait(context.Background(), requestID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status != model.CertificateRequestStatusFailed {
+		t.Errorf("got status %q, want %q", status, model.CertificateRequestStatusFailed)
+	}
+}
+
+// TestExpire_ShouldBeANoOpTheSecondTime covers expire's own
+// RowsAffected==0 early return: called again on a request it (or a Deny/
+// Approve racing it) already resolved, it must do nothing rather than
+// double-notify — expire is unexported and called from multiple sites
+// (Approve's TTL check, reconcileStatus), so this exercises it directly
+// rather than threading the call through one specific caller.
+func TestExpire_ShouldBeANoOpTheSecondTime(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, 0)
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	svc.expire(context.Background(), requestID)
+
+	var req model.CertificateRequest
+	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+		t.Fatalf("failed to reload request: %v", err)
+	}
+	if req.Status != model.CertificateRequestStatusExpired {
+		t.Fatalf("got status %q after first expire(), want %q", req.Status, model.CertificateRequestStatusExpired)
+	}
+
+	// Second call: RowsAffected must be 0 (already expired), and this must
+	// not panic or otherwise misbehave.
+	svc.expire(context.Background(), requestID)
+}
+
+// TestNotifyWaiter_ShouldNotPanicWhenPublishingFails covers notifyWaiter's
+// own Publish error branch: a publish failure here is logged, not fatal to
+// the caller (Deny/expire's own DB update already succeeded — see the
+// function's doc comment), so this only asserts it doesn't panic.
+func TestNotifyWaiter_ShouldNotPanicWhenPublishingFails(t *testing.T) {
+	t.Parallel()
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open in-memory sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.User{}); err != nil {
+		t.Fatalf("failed to migrate test tables: %v", err)
+	}
+	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
+	t.Cleanup(func() {
+		if err := channel.Close(); err != nil {
+			t.Errorf("unexpected error closing gochannel: %v", err)
+		}
+	})
+
+	svc, err := NewCertRequestService(&config.Config{}, db, failingPublisher{}, channel)
+	if err != nil {
+		t.Fatalf("failed to construct CertRequestService: %v", err)
+	}
+
+	svc.notifyWaiter("req-1", requestOutcome{status: model.CertificateRequestStatusDenied})
+
+	svc.mu.Lock()
+	_, cached := svc.resolved["req-1"]
+	svc.mu.Unlock()
+	if !cached {
+		t.Error("expected the outcome to be cached even though publishing failed")
 	}
 }

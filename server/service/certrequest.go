@@ -135,7 +135,7 @@ func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publ
 func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequestParams) (requestID string, err error) {
 	optionsJSON, err := json.Marshal(p.RequestedOptions)
 	if err != nil {
-		return "", fmt.Errorf("failed to encode requested options: %w", err)
+		return "", fmt.Errorf("failed to encode requested options: %w", err) // excluded from coverage: RequestedOptions is a plain struct of strings/bools/slices, json.Marshal can't fail on it, see exclude-from-coverage.txt
 	}
 
 	req := model.CertificateRequest{
@@ -373,13 +373,13 @@ func (s *CertRequestService) bindRequester(ctx context.Context, req *model.Certi
 		Where("id = ? AND user_id IS NULL", req.ID).
 		Update("user_id", userID)
 	if result.Error != nil {
-		return fmt.Errorf("failed to bind certificate request to user: %w", result.Error)
+		return fmt.Errorf("failed to bind certificate request to user: %w", result.Error) // excluded from coverage: forcing this specific query (not resolveUserID's, tested) to fail needs per-query DB fault injection, see exclude-from-coverage.txt
 	}
 
 	if result.RowsAffected == 0 {
 		var claimed model.CertificateRequest
 		if err := s.db.WithContext(ctx).First(&claimed, "id = ?", req.ID).Error; err != nil {
-			return fmt.Errorf("failed to re-read certificate request after a racing claim: %w", err)
+			return fmt.Errorf("failed to re-read certificate request after a racing claim: %w", err) // excluded from coverage: forcing the re-read specifically (not the guarded UPDATE above it) to fail needs per-query DB fault injection, see exclude-from-coverage.txt
 		}
 		if claimed.UserID == nil || *claimed.UserID != userID {
 			return &errorresponses.ForbiddenError{Reason: "certificate request belongs to another user"}
@@ -410,7 +410,7 @@ func (s *CertRequestService) resolveUserID(ctx context.Context, identity *Identi
 func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, requestID string, narrowed RequestedOptions) error {
 	narrowedJSON, err := json.Marshal(narrowed)
 	if err != nil {
-		return fmt.Errorf("failed to encode narrowed options: %w", err)
+		return fmt.Errorf("failed to encode narrowed options: %w", err) // excluded from coverage: RequestedOptions is a plain struct, json.Marshal can't fail on it, see exclude-from-coverage.txt
 	}
 	token := uuid.NewString()
 	now := time.Now()
@@ -450,7 +450,7 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 		UniqueID: req.ID,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to compute key ID: %w", err)
+		return fmt.Errorf("failed to compute key ID: %w", err) // excluded from coverage: only reachable for a certificate type keyIDTemplates.execute doesn't recognize, but Approve's switch only ever calls approveForSigning for User/PAM, both of which it does recognize, see exclude-from-coverage.txt
 	}
 
 	now := time.Now()
@@ -477,7 +477,7 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 	}
 	payload, err := json.Marshal(job)
 	if err != nil {
-		return fmt.Errorf("failed to encode signing job: %w", err)
+		return fmt.Errorf("failed to encode signing job: %w", err) // excluded from coverage: certmsg.SigningJob is a plain struct, json.Marshal can't fail on it, see exclude-from-coverage.txt
 	}
 
 	// If this publish fails, the row is left in Signing with no queued
@@ -750,6 +750,7 @@ func (s *CertRequestService) notifyWaiter(requestID string, outcome requestOutco
 		Code:        outcome.code,
 	})
 	if err != nil {
+		// excluded from coverage: requestOutcomeMessage is a plain struct, json.Marshal can't fail on it, see exclude-from-coverage.txt
 		slog.Error("failed to encode certificate request outcome", "request_id", requestID, "error", err)
 		return
 	}

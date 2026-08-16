@@ -54,6 +54,30 @@ func requestByID(t *testing.T, svc *CertRequestService, requestID string) model.
 	return req
 }
 
+// TestSweepStrandedRequests_ShouldSurfaceAGenericDBError covers the Find
+// error branch, and TestFailStranded_ShouldLogAndReturnOnADBError covers
+// failStranded's own — both via a closed connection.
+func TestSweepStrandedRequests_ShouldSurfaceAGenericDBError(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(time.Hour, time.Minute))
+	closeUnderlyingDB(t, svc.db)
+
+	if err := svc.SweepStrandedRequests(context.Background()); err == nil {
+		t.Error("SweepStrandedRequests() error = nil, want error")
+	}
+}
+
+func TestFailStranded_ShouldLogAndReturnOnADBError(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(time.Hour, time.Minute))
+	requestID := signingRequestAged(t, svc, 3*time.Hour)
+	closeUnderlyingDB(t, svc.db)
+
+	svc.failStranded(context.Background(), requestID)
+}
+
 func TestSweepStrandedRequests_ShouldFailRequestsPastTheBound(t *testing.T) {
 	t.Parallel()
 

@@ -81,6 +81,42 @@ func TestCertificateService_ShouldReturnOnlyTheCallersCertificates(t *testing.T)
 	}
 }
 
+// TestCertificateService_ShouldSurfaceAGenericDBErrorOnUserLookup covers
+// the non-not-found error branch in the user lookup, distinct from the
+// no-user-record test below (which expects an empty list, not an error).
+func TestCertificateService_ShouldSurfaceAGenericDBErrorOnUserLookup(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+	closeUnderlyingDB(t, reqSvc.db)
+
+	if _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}); err == nil {
+		t.Error("ListForIdentity() error = nil, want error")
+	}
+}
+
+// TestCertificateService_ShouldSurfaceAGenericDBErrorListingCertificates
+// covers the Find error specifically — distinct from the user-lookup error
+// above, since it needs the user lookup to succeed first. Dropping just the
+// certificates table (rather than closing the whole connection) makes only
+// the second query fail.
+func TestCertificateService_ShouldSurfaceAGenericDBErrorListingCertificates(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+	seedUser(t, reqSvc.db, "sub-alice")
+
+	if err := reqSvc.db.Migrator().DropTable(&model.Certificate{}); err != nil {
+		t.Fatalf("failed to drop the certificates table: %v", err)
+	}
+
+	if _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}); err == nil {
+		t.Error("ListForIdentity() error = nil, want error")
+	}
+}
+
 // TestCertificateService_ShouldReturnNothingForAnIdentityWithNoUserRecord
 // keeps a session that outlived its user row from erroring the history page:
 // no user means no certificates, which is an empty list.

@@ -120,11 +120,11 @@ func (h *SignedReplyHandler) resolveFailure(ctx context.Context, reply certmsg.S
 func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certmsg.SignedReply) error {
 	criticalOptions, err := json.Marshal(reply.CriticalOptions)
 	if err != nil {
-		return fmt.Errorf("failed to encode critical options: %w", err)
+		return fmt.Errorf("failed to encode critical options: %w", err) // excluded from coverage: map[string]string, json.Marshal can't fail on it, see exclude-from-coverage.txt
 	}
 	extensions, err := json.Marshal(reply.Extensions)
 	if err != nil {
-		return fmt.Errorf("failed to encode extensions: %w", err)
+		return fmt.Errorf("failed to encode extensions: %w", err) // excluded from coverage: []string, json.Marshal can't fail on it, see exclude-from-coverage.txt
 	}
 
 	// Read the owner off the request rather than carrying it through the

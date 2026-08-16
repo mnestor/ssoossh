@@ -34,6 +34,41 @@ func TestNewKeyIDTemplates_ShouldErrorOnUnknownField(t *testing.T) {
 	}
 }
 
+// TestNewKeyIDTemplates_ShouldErrorOnEachPerTypeTemplate covers the
+// Service/Host/PAM error branches specifically — each needs every template
+// validated before it (User, then Service, then Host) to be well-formed, or
+// the earlier one's error would mask this one's.
+func TestNewKeyIDTemplates_ShouldErrorOnEachPerTypeTemplate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		opts config.CertificateOptions
+	}{
+		{
+			name: "should error on a malformed Service template",
+			opts: config.CertificateOptions{Service: config.CertOptionsService{KeyIDTemplate: "{{.Bogus}}"}},
+		},
+		{
+			name: "should error on a malformed Host template",
+			opts: config.CertificateOptions{Host: config.CertOptions{KeyIDTemplate: "{{.Bogus}}"}},
+		},
+		{
+			name: "should error on a malformed PAM template",
+			opts: config.CertificateOptions{PAM: config.CertOptionsPAM{KeyIDTemplate: "{{.Bogus}}"}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := newKeyIDTemplates(tt.opts); err == nil {
+				t.Fatal("expected an error for an unrecognized template field, got nil")
+			}
+		})
+	}
+}
+
 func TestNewKeyIDTemplates_FallbackChain(t *testing.T) {
 	t.Parallel()
 
