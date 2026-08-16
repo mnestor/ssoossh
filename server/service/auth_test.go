@@ -11,7 +11,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/model"
@@ -107,12 +106,9 @@ func TestStringSliceClaim(t *testing.T) {
 func newTestUserDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("failed to open in-memory sqlite: %v", err)
-	}
+	db := newTestDB(t)
 
-	err = db.Exec(`CREATE TABLE users (
+	err := db.Exec(`CREATE TABLE users (
 		id TEXT PRIMARY KEY,
 		subject TEXT NOT NULL UNIQUE,
 		username TEXT NOT NULL,

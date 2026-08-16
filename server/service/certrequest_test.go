@@ -37,16 +37,35 @@ func newTestCertRequestService(t *testing.T, ttl time.Duration) *CertRequestServ
 	return newTestCertRequestServiceWithOptions(t, config.CertificateOptions{RequestTTL: ttl})
 }
 
-// newTestCertRequestServiceWithOptions is newTestCertRequestService but
-// lets Approve tests control the full per-type policy (Extensions,
-// ValidDuration, RequireGroup), not just RequestTTL.
-func newTestCertRequestServiceWithOptions(t *testing.T, opts config.CertificateOptions) *CertRequestService {
+// newTestDB opens a fresh in-memory sqlite *gorm.DB. Constrained to a
+// single open connection, matching server/bootstrap/db.go's onConnFn for
+// in-memory SQLite: a pool that opens more than one physical connection to
+// ":memory:" hands out a genuinely separate, unmigrated database on the
+// second connection (each connection is its own in-memory instance), which
+// surfaces as sporadic "no such table" failures under concurrent access —
+// exactly what this avoids.
+func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("failed to open in-memory sqlite: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get underlying sql.DB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	return db
+}
+
+// newTestCertRequestServiceWithOptions is newTestCertRequestService but
+// lets Approve tests control the full per-type policy (Extensions,
+// ValidDuration, RequireGroup), not just RequestTTL.
+func newTestCertRequestServiceWithOptions(t *testing.T, opts config.CertificateOptions) *CertRequestService {
+	t.Helper()
+
+	db := newTestDB(t)
 	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.User{}); err != nil {
 		t.Fatalf("failed to migrate test tables: %v", err)
 	}
@@ -221,10 +240,7 @@ func TestCertRequestService_ShouldSurfaceGenericDBErrors(t *testing.T) {
 func TestNewCertRequestService_ShouldRejectAMalformedKeyIDTemplate(t *testing.T) {
 	t.Parallel()
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("failed to open in-memory sqlite: %v", err)
-	}
+	db := newTestDB(t)
 	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
 	t.Cleanup(func() {
 		if err := channel.Close(); err != nil {
@@ -543,10 +559,7 @@ func (failingSubscriber) Close() error { return nil }
 func TestCertRequestService_Wait_ShouldSurfaceASubscribeFailure(t *testing.T) {
 	t.Parallel()
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("failed to open in-memory sqlite: %v", err)
-	}
+	db := newTestDB(t)
 	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.User{}); err != nil {
 		t.Fatalf("failed to migrate test tables: %v", err)
 	}
@@ -1540,10 +1553,7 @@ func (failingPublisher) Close() error { return nil }
 func TestCertRequestService_Approve_ShouldSurfaceAPublishFailure(t *testing.T) {
 	t.Parallel()
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("failed to open in-memory sqlite: %v", err)
-	}
+	db := newTestDB(t)
 	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.User{}); err != nil {
 		t.Fatalf("failed to migrate test tables: %v", err)
 	}
@@ -1664,10 +1674,7 @@ func TestExpire_ShouldBeANoOpTheSecondTime(t *testing.T) {
 func TestNotifyWaiter_ShouldNotPanicWhenPublishingFails(t *testing.T) {
 	t.Parallel()
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("failed to open in-memory sqlite: %v", err)
-	}
+	db := newTestDB(t)
 	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.User{}); err != nil {
 		t.Fatalf("failed to migrate test tables: %v", err)
 	}
