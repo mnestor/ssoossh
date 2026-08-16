@@ -87,7 +87,7 @@ func Authenticate(ctx context.Context, log Logger, conv Conversation, user strin
 	if err := checkKeyBinding(cert, kp); err != nil {
 		return PamAuthErr, err
 	}
-	if err := checkPrincipal(cert, user); err != nil {
+	if err := checkPrincipal(cert, user, cfg.principalsMapPath); err != nil {
 		return PamAuthErr, err
 	}
 	if err := checkValidityWindow(cert, time.Now(), cfg.skewTolerance); err != nil {

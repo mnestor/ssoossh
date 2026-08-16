@@ -56,10 +56,13 @@ func (c *Config) FIPSEnabled() bool {
 // Defaults follow FIPS mode: ECDSA P-256 when it's in effect (approved,
 // widely supported, and effectively free to generate), ed25519 otherwise.
 //
-// FIPS mode is advisory. Configuring an algorithm it doesn't approve of
-// produces a warning, not an error — the operator may well know their
-// server accepts it. What it will not do is silently pick something other
-// than what was asked for.
+// FIPS mode is advisory by default. Configuring an algorithm it doesn't
+// approve of produces a warning, not an error — the operator may well know
+// their server accepts it. What it will not do is silently pick something
+// other than what was asked for. When `fips: true` comes from the system
+// enforce file specifically (Config.FIPSEnforced), the same situation is a
+// hard error instead: an operator locking FIPS mode down via enforce is
+// asking for it to actually be enforced, not merely advised.
 //
 // Warnings are returned rather than logged so this stays free of side
 // effects: NewConfig emits them once at startup, and later callers can
@@ -75,9 +78,13 @@ func (c *Config) ResolveSSHKey() (algorithm string, size int, warnings []string,
 			keyType = SSHKeyTypeEd25519
 		}
 	} else if fips && !slices.Contains(fipsApprovedKeyTypes, keyType) {
-		warnings = append(warnings, fmt.Sprintf(
+		msg := fmt.Sprintf(
 			"sshkey.type %q is not FIPS-approved and a server in FIPS mode may reject it; approved types are %q and %q",
-			keyType, SSHKeyTypeECDSA, SSHKeyTypeRSA))
+			keyType, SSHKeyTypeECDSA, SSHKeyTypeRSA)
+		if c.FIPSEnforced {
+			return "", 0, warnings, fmt.Errorf("%s (rejected: fips is enforced by the system config)", msg)
+		}
+		warnings = append(warnings, msg)
 	}
 
 	size = c.SSHKey.Size

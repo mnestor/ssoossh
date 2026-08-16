@@ -78,7 +78,13 @@ func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
 // instead of the root's; leaf commands check InitErr() before doing
 // anything that needs Config/API/Agent.
 func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
-	cfg, err := r.newConfig(this.CobraCommand)
+	// runner, not this: PreRun is called once per ancestor while walking
+	// root -> leaf (see bep/simplecobra's Commandeer.init), and `this` is
+	// always root's own Commandeer here — it never carries a leaf's local
+	// flags (e.g. ssh login's --key-type). `runner` is the actually-invoked
+	// command, with every inherited persistent flag and its own local flags
+	// already merged, so it's the one newConfig must read.
+	cfg, err := r.newConfig(runner.CobraCommand)
 	if err != nil {
 		r.initErr = fmt.Errorf("load config: %w", err)
 		return nil

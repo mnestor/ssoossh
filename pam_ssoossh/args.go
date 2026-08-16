@@ -30,6 +30,7 @@ type config struct {
 	trustedCAFile      string        // trusted-ca-file
 	skewTolerance      time.Duration // skew-tolerance
 	waitTimeout        time.Duration // timeout
+	principalsMapPath  string        // principals-map
 }
 
 // parseArgs converts PAM module arguments into a config. Each element of
@@ -58,8 +59,9 @@ func parseArgs(args []string) config {
 	}
 
 	cfg := config{
-		server:        raw["server"],
-		trustedCAFile: raw["trusted-ca-file"],
+		server:            raw["server"],
+		trustedCAFile:     raw["trusted-ca-file"],
+		principalsMapPath: raw["principals-map"],
 	}
 
 	// debug is a three-state string, not a bool — see the field comment on

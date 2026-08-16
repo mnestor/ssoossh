@@ -13,6 +13,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
+	"github.com/mnestor/ssoossh/internal/principalsmap"
 )
 
 // parseTrustedCAs reads path and parses it as authorized_keys format, one CA
@@ -69,10 +70,27 @@ func checkKeyBinding(cert *ssh.Certificate, kp *keypair.SSHKeypair) error {
 	return nil
 }
 
-// checkPrincipal is check 3: the certificate's principals must include the
+// checkPrincipal is check 3: the certificate's principals must authorize the
 // local account PAM is authenticating (the value GetUser returned), not an
 // OIDC identity the module never sees.
-func checkPrincipal(cert *ssh.Certificate, username string) error {
+//
+// With no principals-map configured (mapPath == ""), this is an exact
+// match: cert.ValidPrincipals must literally contain username. With one
+// configured, a certificate principal mapped to username in the file is
+// also accepted. A map that is configured but fails to load (missing file,
+// malformed YAML) falls back to the exact-match check rather than failing
+// the login — a typo'd path or a corrupted file degrades to today's
+// behavior instead of locking out every login on the host.
+func checkPrincipal(cert *ssh.Certificate, username, mapPath string) error {
+	if mapPath != "" {
+		if m, err := principalsmap.LoadFromFile(mapPath); err == nil {
+			if !m.Allowed(username, cert.ValidPrincipals) {
+				return fmt.Errorf("certificate principals %v are not authorized for account %q per %s", cert.ValidPrincipals, username, mapPath)
+			}
+			return nil
+		}
+	}
+
 	if !slices.Contains(cert.ValidPrincipals, username) {
 		return fmt.Errorf("certificate principals %v do not include %q", cert.ValidPrincipals, username)
 	}

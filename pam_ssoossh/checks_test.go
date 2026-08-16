@@ -130,7 +130,7 @@ func TestCheckCASignature_ShouldRejectACertificateSignedByAnUntrustedCA(t *testi
 func TestCheckPrincipal_ShouldRejectWhenPrincipalsOmitTheAuthenticatingUser(t *testing.T) {
 	cert := &ssh.Certificate{ValidPrincipals: []string{"bob", "carol"}}
 
-	if err := checkPrincipal(cert, "alice"); err == nil {
+	if err := checkPrincipal(cert, "alice", ""); err == nil {
 		t.Fatal("expected rejection: alice is not among the certificate's principals")
 	}
 }
@@ -138,9 +138,65 @@ func TestCheckPrincipal_ShouldRejectWhenPrincipalsOmitTheAuthenticatingUser(t *t
 func TestCheckPrincipal_ShouldAcceptWhenPrincipalsIncludeTheAuthenticatingUser(t *testing.T) {
 	cert := &ssh.Certificate{ValidPrincipals: []string{"bob", "alice"}}
 
-	if err := checkPrincipal(cert, "alice"); err != nil {
+	if err := checkPrincipal(cert, "alice", ""); err != nil {
 		t.Errorf("expected acceptance, got %v", err)
 	}
+}
+
+func TestCheckPrincipal_WithMapConfigured_ShouldAcceptAMappedPrincipal(t *testing.T) {
+	path := writeMapFile(t, "alice:\n  - admin\n")
+	cert := &ssh.Certificate{ValidPrincipals: []string{"admin"}}
+
+	if err := checkPrincipal(cert, "alice", path); err != nil {
+		t.Errorf("expected acceptance: admin is mapped to alice, got %v", err)
+	}
+}
+
+func TestCheckPrincipal_WithMapConfigured_ShouldRejectAnUnmappedPrincipal(t *testing.T) {
+	path := writeMapFile(t, "alice:\n  - admin\n")
+	cert := &ssh.Certificate{ValidPrincipals: []string{"bob"}}
+
+	if err := checkPrincipal(cert, "alice", path); err == nil {
+		t.Fatal("expected rejection: bob is not mapped to alice")
+	}
+}
+
+func TestCheckPrincipal_WithMapConfigured_ShouldRejectAnAccountAbsentFromTheMap(t *testing.T) {
+	path := writeMapFile(t, "alice:\n  - admin\n")
+	cert := &ssh.Certificate{ValidPrincipals: []string{"admin"}}
+
+	if err := checkPrincipal(cert, "carol", path); err == nil {
+		t.Fatal("expected rejection: carol has no entry in the map")
+	}
+}
+
+func TestCheckPrincipal_WithMapMissingOrMalformed_ShouldFallBackToExactMatch(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing.yaml")
+	malformed := writeMapFile(t, "alice: [not: valid\n")
+
+	for _, path := range []string{missing, malformed} {
+		cert := &ssh.Certificate{ValidPrincipals: []string{"alice"}}
+		if err := checkPrincipal(cert, "alice", path); err != nil {
+			t.Errorf("expected exact-match fallback to accept alice for %q, got %v", path, err)
+		}
+
+		cert = &ssh.Certificate{ValidPrincipals: []string{"bob"}}
+		if err := checkPrincipal(cert, "alice", path); err == nil {
+			t.Errorf("expected exact-match fallback to reject bob for %q", path)
+		}
+	}
+}
+
+// writeMapFile writes a principals-map YAML file to a temp file and returns
+// its path.
+func writeMapFile(t *testing.T, contents string) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "principals.yaml")
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+	return path
 }
 
 func TestCheckValidityWindow(t *testing.T) {

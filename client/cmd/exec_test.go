@@ -92,6 +92,50 @@ func TestExecuteEndToEnd(t *testing.T) {
 	}
 }
 
+// TestExecuteBindsLeafLocalFlagsThroughToNewConfig is the regression guard
+// for PreRun passing runner.CobraCommand rather than this.CobraCommand:
+// --key-type/--key-size are local to `ssh login`, registered on that leaf's
+// own cobra.Command, not root's. If PreRun ever went back to reading
+// this.CobraCommand (root's own), cmd.Flags().Lookup below would find
+// nothing and this test would fail.
+func TestExecuteBindsLeafLocalFlagsThroughToNewConfig(t *testing.T) {
+	var gotCmd *cobra.Command
+	root := &RootCommand{
+		newConfig: func(cmd *cobra.Command) (*config.Config, error) {
+			gotCmd = cmd
+			return &config.Config{}, nil
+		},
+		newAPIClient: func(cfg *config.Config) (api.Client, error) { return &fakeAPIClient{}, nil },
+		newSSHAgent:  func() (agent.Agent, error) { return &fakeAgent{}, nil },
+		newFileAgent: func(path string) (agent.Agent, error) { return &fakeAgent{}, nil },
+	}
+	root.commands = []simplecobra.Commander{newCACommand(), newSSHCommand(), newHostCommand(), newServiceCommand(), newVersionCommand()}
+	x, err := simplecobra.New(root)
+	if err != nil {
+		t.Fatalf("failed to build command tree: %v", err)
+	}
+
+	_, _ = x.Execute(context.Background(), []string{"ssh", "login", "--key-type", "ecdsa", "--key-size", "384"})
+
+	if gotCmd == nil {
+		t.Fatal("newConfig was never called")
+	}
+	keyType := gotCmd.Flags().Lookup("key-type")
+	if keyType == nil {
+		t.Fatal("expected the cmd passed to newConfig to carry ssh login's local --key-type flag")
+	}
+	if keyType.Value.String() != "ecdsa" {
+		t.Errorf("got --key-type %q, want %q", keyType.Value.String(), "ecdsa")
+	}
+	keySize := gotCmd.Flags().Lookup("key-size")
+	if keySize == nil {
+		t.Fatal("expected the cmd passed to newConfig to carry ssh login's local --key-size flag")
+	}
+	if keySize.Value.String() != "384" {
+		t.Errorf("got --key-size %q, want %q", keySize.Value.String(), "384")
+	}
+}
+
 func TestExecuteSurfacesInitErr(t *testing.T) {
 	root := &RootCommand{
 		newConfig:    func(cmd *cobra.Command) (*config.Config, error) { return nil, errors.New("bad config") },

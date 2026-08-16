@@ -50,6 +50,69 @@ func TestNewConfig_ShouldLetTheServerFlagOverrideTheConfigFile(t *testing.T) {
 	}
 }
 
+// newLoginConfigCommand builds a cobra command carrying --config/--server
+// plus the local --key-type/--key-size flags ssh login registers, since
+// NewConfig binds those the same way it binds --server.
+func newLoginConfigCommand(t *testing.T, args ...string) *cobra.Command {
+	t.Helper()
+
+	cmd := &cobra.Command{Use: "ssoossh", RunE: func(*cobra.Command, []string) error { return nil }}
+	cmd.PersistentFlags().StringP("config", "c", "", "path to the ssoossh config file")
+	cmd.PersistentFlags().String("server", "", "server address including scheme")
+	cmd.Flags().String("key-type", "", "ssh key algorithm")
+	cmd.Flags().Int("key-size", 0, "ssh key size")
+	cmd.SetArgs(args)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	return cmd
+}
+
+// TestNewConfig_ShouldLetTheKeyTypeFlagOverrideTheConfigFile and its size
+// counterpart are the --server tests' pattern, generalized to the two
+// flags item 3 adds.
+func TestNewConfig_ShouldLetTheKeyTypeFlagOverrideTheConfigFile(t *testing.T) {
+	path := writeConfig(t, "sshkey:\n  type: rsa\n")
+	cmd := newLoginConfigCommand(t, "--config", path, "--key-type", "ecdsa")
+
+	cfg, err := NewConfig(cmd)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SSHKey.Type != SSHKeyTypeECDSA {
+		t.Errorf("got sshkey.type %q, want the flag to win over the file", cfg.SSHKey.Type)
+	}
+}
+
+func TestNewConfig_ShouldKeepTheConfiguredKeyTypeWhenTheFlagIsAbsent(t *testing.T) {
+	path := writeConfig(t, "sshkey:\n  type: rsa\n  size: 3072\n")
+	cmd := newLoginConfigCommand(t, "--config", path)
+
+	cfg, err := NewConfig(cmd)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SSHKey.Type != SSHKeyTypeRSA {
+		t.Errorf("got sshkey.type %q, want the configured value preserved", cfg.SSHKey.Type)
+	}
+	if cfg.SSHKey.Size != 3072 {
+		t.Errorf("got sshkey.size %d, want the configured value preserved", cfg.SSHKey.Size)
+	}
+}
+
+func TestNewConfig_ShouldLetTheKeySizeFlagOverrideTheConfigFile(t *testing.T) {
+	path := writeConfig(t, "sshkey:\n  type: ecdsa\n  size: 256\n")
+	cmd := newLoginConfigCommand(t, "--config", path, "--key-size", "384")
+
+	cfg, err := NewConfig(cmd)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SSHKey.Size != 384 {
+		t.Errorf("got sshkey.size %d, want the flag to win over the file", cfg.SSHKey.Size)
+	}
+}
+
 // TestNewConfig_ShouldKeepTheConfiguredServerWhenTheFlagIsAbsent is the other
 // half, and the reason the flag is bound rather than read directly: an unset
 // flag must not overwrite a configured value with its empty default.
@@ -190,5 +253,59 @@ func TestNewConfig_ShouldResolveARelativeEnforceInsideTheSystemDirectory(t *test
 	}
 	if cfg.SkipVerifySSL {
 		t.Error("expected a bare enforce filename to resolve inside the system directory")
+	}
+}
+
+// TestNewConfig_ShouldRejectAnUnapprovedKeyTypeWhenFIPSIsEnforced is the
+// point of splitting FIPS in two: an administrator who locks fips: true via
+// the enforce file expects it actually enforced, not merely advised.
+func TestNewConfig_ShouldRejectAnUnapprovedKeyTypeWhenFIPSIsEnforced(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml": "enforce: locked.yaml\n",
+		"locked.yaml":  "fips: true\n",
+	})
+	userConfig := writeConfig(t, "sshkey:\n  type: ed25519\n")
+	cmd := newConfigCommand(t, "--config", userConfig)
+
+	if _, err := newConfig(cmd, testPaths(sysDir)); err == nil {
+		t.Fatal("expected an enforced fips: true to reject a non-FIPS-approved key type")
+	}
+}
+
+// TestNewConfig_ShouldAcceptAnApprovedKeyTypeWhenFIPSIsEnforced pins that
+// FIPSEnforced only rejects the unapproved case, not FIPS mode itself.
+func TestNewConfig_ShouldAcceptAnApprovedKeyTypeWhenFIPSIsEnforced(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml": "enforce: locked.yaml\n",
+		"locked.yaml":  "fips: true\n",
+	})
+	userConfig := writeConfig(t, "sshkey:\n  type: ecdsa\n  size: 256\n")
+	cmd := newConfigCommand(t, "--config", userConfig)
+
+	cfg, err := newConfig(cmd, testPaths(sysDir))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.FIPSEnforced {
+		t.Error("expected FIPSEnforced to be true when the enforce file sets fips: true")
+	}
+}
+
+// TestNewConfig_ShouldOnlyWarnWhenFIPSComesFromUserConfig is the regression
+// guard: fips: true set by the user (not the enforce file) must keep
+// today's advisory behavior, never start hard-erroring.
+func TestNewConfig_ShouldOnlyWarnWhenFIPSComesFromUserConfig(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml": "server: https://ssh.example.com\n",
+	})
+	userConfig := writeConfig(t, "fips: true\nsshkey:\n  type: ed25519\n")
+	cmd := newConfigCommand(t, "--config", userConfig)
+
+	cfg, err := newConfig(cmd, testPaths(sysDir))
+	if err != nil {
+		t.Fatalf("expected user-set fips: true to warn rather than error, got: %v", err)
+	}
+	if cfg.FIPSEnforced {
+		t.Error("expected FIPSEnforced to be false when fips came from the user's own config")
 	}
 }

@@ -174,6 +174,50 @@ func TestResolveSSHKey_ShouldProduceArgumentsKeypairAccepts(t *testing.T) {
 	}
 }
 
+// TestResolveSSHKey_FIPSEnforced covers the split: the same non-approved
+// key type must warn when FIPS is merely advisory but error when it's
+// enforced by the system config.
+func TestResolveSSHKey_FIPSEnforced(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should error on a non-FIPS-approved key type when enforced", func(t *testing.T) {
+		t.Parallel()
+
+		c := &Config{FIPS: boolPtr(true), FIPSEnforced: true}
+		c.SSHKey.Type = SSHKeyTypeEd25519
+
+		if _, _, _, err := c.ResolveSSHKey(); err == nil {
+			t.Fatal("expected an error when fips is enforced and the key type is not approved")
+		}
+	})
+
+	t.Run("should only warn on the same key type when fips is merely advisory", func(t *testing.T) {
+		t.Parallel()
+
+		c := &Config{FIPS: boolPtr(true), FIPSEnforced: false}
+		c.SSHKey.Type = SSHKeyTypeEd25519
+
+		_, _, warnings, err := c.ResolveSSHKey()
+		if err != nil {
+			t.Fatalf("expected advisory fips to warn, not error: %v", err)
+		}
+		if len(warnings) == 0 {
+			t.Fatal("expected a warning for a non-FIPS-approved key type")
+		}
+	})
+
+	t.Run("should not error when the key type is FIPS-approved, even enforced", func(t *testing.T) {
+		t.Parallel()
+
+		c := &Config{FIPS: boolPtr(true), FIPSEnforced: true}
+		c.SSHKey.Type = SSHKeyTypeECDSA
+
+		if _, _, _, err := c.ResolveSSHKey(); err != nil {
+			t.Errorf("unexpected error for an approved key type: %v", err)
+		}
+	})
+}
+
 func TestFIPSEnabled_ShouldPreferTheExplicitSetting(t *testing.T) {
 	t.Parallel()
 
