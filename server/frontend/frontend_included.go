@@ -29,6 +29,8 @@ import (
 //go:embed all:dist/*
 var frontendFS embed.FS
 
+//go:generate touch dist/index.html
+
 // scriptTagRe matches <script with optional attributes and closing >.
 // Captures the opening tag and attributes, preserving them in group 1.
 var scriptTagRe = regexp.MustCompile(`<script([^>]*)>`)

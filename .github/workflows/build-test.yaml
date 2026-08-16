@@ -22,6 +22,9 @@ concurrency:
 jobs:
   build-test-pam:
     runs-on: [self-hosted, PAM-BUILDER]
+    defaults:
+      run:
+        working-directory: ./pam
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
@@ -32,18 +35,6 @@ jobs:
       - name: Build arm64 pam_ssoossh
         run: |
           scripts/build-pam-release.sh arm64 release true
-
-      # This job's container runs as root (GitHub's Dockerfile-support docs
-      # say not to fight that with USER/--user, since it breaks
-      # GITHUB_WORKSPACE access). Root-owned files left in the shared
-      # self-hosted _work dir otherwise block the next job's checkout
-      # (actions/checkout can't unlink them as the runner's own user).
-      # The parent of GITHUB_WORKSPACE is created by the runner host
-      # process and never written to by this container, so its ownership
-      # is a safe reference to chown back to.
-      - name: Reset workspace ownership
-        if: always()
-        run: chown -R --reference="${GITHUB_WORKSPACE}/.." "$GITHUB_WORKSPACE"
 
   build-test-non-pam:
     runs-on: [self-hosted]
