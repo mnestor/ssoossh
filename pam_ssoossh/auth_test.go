@@ -28,6 +28,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/mnestor/ssoossh/internal/api"
 )
 
 // stubLogger is a no-op Logger for tests that don't care about log output.
@@ -90,6 +92,72 @@ func TestAuthenticate_ConfigValidation(t *testing.T) {
 			}
 			if gotErr == nil {
 				t.Error("Authenticate() err = nil, want non-nil for a failure code")
+			}
+		})
+	}
+}
+
+// should turn every terminal status ssoosshd can send into the right PAM
+// code, certificate, and error — including a nil result and an unrecognized
+// status, neither of which the end-to-end Authenticate tests exercise.
+func TestOutcomeCertificate(t *testing.T) {
+	tests := []struct {
+		name       string
+		result     *api.CertificateResult
+		wantCode   int
+		wantCert   string
+		wantErrNil bool
+	}{
+		{
+			name:     "should error when the result is nil",
+			result:   nil,
+			wantCode: PamAuthErr,
+		},
+		{
+			name:       "should return the certificate when approved",
+			result:     &api.CertificateResult{Status: api.StatusApproved, Certificate: "cert-data"},
+			wantCode:   PamSuccess,
+			wantCert:   "cert-data",
+			wantErrNil: true,
+		},
+		{
+			name:     "should error when approved but no certificate was delivered",
+			result:   &api.CertificateResult{Status: api.StatusApproved, Certificate: ""},
+			wantCode: PamAuthErr,
+		},
+		{
+			name:     "should error when denied",
+			result:   &api.CertificateResult{Status: api.StatusDenied},
+			wantCode: PamAuthErr,
+		},
+		{
+			name:     "should error when expired",
+			result:   &api.CertificateResult{Status: api.StatusExpired},
+			wantCode: PamAuthErr,
+		},
+		{
+			name:     "should error when signing failed server-side",
+			result:   &api.CertificateResult{Status: api.StatusFailed},
+			wantCode: PamAuthErr,
+		},
+		{
+			name:     "should error on an unrecognized status",
+			result:   &api.CertificateResult{Status: "something-new"},
+			wantCode: PamAuthErr,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code, cert, err := outcomeCertificate(tt.result)
+			if code != tt.wantCode {
+				t.Errorf("outcomeCertificate() code = %d, want %d", code, tt.wantCode)
+			}
+			if cert != tt.wantCert {
+				t.Errorf("outcomeCertificate() cert = %q, want %q", cert, tt.wantCert)
+			}
+			if (err == nil) != tt.wantErrNil {
+				t.Errorf("outcomeCertificate() err = %v, want nil: %v", err, tt.wantErrNil)
 			}
 		})
 	}
@@ -190,6 +258,84 @@ func TestAuthenticate_ShouldSucceedAgainstAFakeServer(t *testing.T) {
 	}
 	if len(conv.shown) == 0 {
 		t.Error("expected the approval URL to be displayed through the PAM conversation")
+	}
+}
+
+// erroringConversation always fails to display the approval URL, standing
+// in for a PAM conversation function that can't reach the terminal.
+type erroringConversation struct{}
+
+func (erroringConversation) Info(msg string) error {
+	return errors.New("conversation function unavailable")
+}
+
+// TestAuthenticate_ShouldSucceedEvenWhenTheConversationFails covers the
+// non-fatal Warningf branch in Authenticate: the human never sees the
+// approval URL through this channel, but the request still resolves.
+func TestAuthenticate_ShouldSucceedEvenWhenTheConversationFails(t *testing.T) {
+	ca := newTestCA(t)
+	caFile := writeAuthorizedKeysFile(t, ca.publicKey())
+
+	ts := newPAMTestServerResolving(t, func(pub ssh.PublicKey, username string) (string, string) {
+		now := time.Now()
+		cert := ca.sign(t, pub, []string{username}, now.Add(-time.Second), now.Add(time.Minute))
+		return "approved", string(ssh.MarshalAuthorizedKey(cert))
+	})
+
+	cfg := config{server: ts.URL, trustedCAFile: caFile, waitTimeout: 5 * time.Second, skewTolerance: 2 * time.Second}
+
+	code, err := Authenticate(context.Background(), stubLogger{}, erroringConversation{}, "alice", cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if code != PamSuccess {
+		t.Errorf("got code %d, want PamSuccess", code)
+	}
+}
+
+// TestAuthenticate_ShouldRejectAnUnparseableCertificate covers a server that
+// reports "approved" but sends back something that isn't a valid
+// authorized_keys-format certificate string.
+func TestAuthenticate_ShouldRejectAnUnparseableCertificate(t *testing.T) {
+	caFile := writeAuthorizedKeysFile(t, newTestCA(t).publicKey())
+
+	ts := newPAMTestServerResolving(t, func(_ ssh.PublicKey, _ string) (string, string) {
+		return "approved", "not a certificate"
+	})
+
+	cfg := config{server: ts.URL, trustedCAFile: caFile, waitTimeout: 5 * time.Second, skewTolerance: 2 * time.Second}
+
+	code, err := Authenticate(context.Background(), stubLogger{}, &fakeConversation{}, "alice", cfg)
+	if err == nil {
+		t.Fatal("expected an error: the certificate string is unparseable")
+	}
+	if code != PamAuthErr {
+		t.Errorf("got code %d, want PamAuthErr", code)
+	}
+}
+
+// TestAuthenticate_ShouldRejectWhenPrincipalsExcludeTheAuthenticatingUser
+// covers check 3 wired through the full flow: a CA-signed certificate,
+// issued to the right key, but naming a principal other than the account
+// PAM is authenticating.
+func TestAuthenticate_ShouldRejectWhenPrincipalsExcludeTheAuthenticatingUser(t *testing.T) {
+	ca := newTestCA(t)
+	caFile := writeAuthorizedKeysFile(t, ca.publicKey())
+
+	ts := newPAMTestServerResolving(t, func(pub ssh.PublicKey, _ string) (string, string) {
+		now := time.Now()
+		cert := ca.sign(t, pub, []string{"somebody-else"}, now.Add(-time.Second), now.Add(time.Minute))
+		return "approved", string(ssh.MarshalAuthorizedKey(cert))
+	})
+
+	cfg := config{server: ts.URL, trustedCAFile: caFile, waitTimeout: 5 * time.Second, skewTolerance: 2 * time.Second}
+
+	code, err := Authenticate(context.Background(), stubLogger{}, &fakeConversation{}, "alice", cfg)
+	if err == nil {
+		t.Fatal("expected an error: the certificate's principals do not include the authenticating user")
+	}
+	if code != PamAuthErr {
+		t.Errorf("got code %d, want PamAuthErr", code)
 	}
 }
 

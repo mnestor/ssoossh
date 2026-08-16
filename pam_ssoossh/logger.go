@@ -80,6 +80,7 @@ func (f *fileLogger) Close() error {
 // debug toggles verbosity but is only advisory here.
 func initLogger(tag string) Logger {
 	if w, err := syslog.New(syslog.LOG_AUTHPRIV, tag); err == nil {
+		// excluded from coverage: no syslog daemon (/dev/log) is reachable in the test environment, so this branch is only reachable on a real host, see exclude-from-coverage.txt
 		return &syslogLogger{w: w, debug: ""}
 	}
 

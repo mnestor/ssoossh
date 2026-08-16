@@ -87,6 +87,15 @@ func TestCheckKeyBinding_ShouldRejectGenuineCertificateIssuedToADifferentKey(t *
 	}
 }
 
+func TestCheckKeyBinding_ShouldRejectACertificateWithNoKey(t *testing.T) {
+	kp := newTestKeypair(t)
+	cert := &ssh.Certificate{}
+
+	if err := checkKeyBinding(cert, kp); err == nil {
+		t.Fatal("expected the certificate to be rejected: it carries no public key")
+	}
+}
+
 func TestCheckKeyBinding_ShouldAcceptCertificateIssuedToTheSameKey(t *testing.T) {
 	ca := newTestCA(t)
 	kp := newTestKeypair(t)

@@ -40,16 +40,17 @@ func Authenticate(ctx context.Context, log Logger, conv Conversation, user strin
 		SkipVerifySSL: cfg.insecureSkipVerify,
 	})
 	if err != nil {
+		// excluded from coverage: cfg.server was just validated non-empty above and this config carries no client-cert fields, so buildTLSConfig can't fail, see exclude-from-coverage.txt
 		return PamAbort, fmt.Errorf("build API client: %w", err)
 	}
 
 	kp, err := keypair.NewSSHKeypair("ed25519", 0)
 	if err != nil {
-		return PamAbort, err
+		return PamAbort, err // excluded from coverage: crypto/rand.Reader failure isn't reproducible in tests, see exclude-from-coverage.txt
 	}
 	pub, err := kp.MarshalAuthorizedKey()
 	if err != nil {
-		return PamAbort, err
+		return PamAbort, err // excluded from coverage: kp.publicKey is always a type ssh.NewPublicKey accepts, see exclude-from-coverage.txt
 	}
 	log.Debugf("generated ephemeral keypair for %s: %s", user, pub)
 
