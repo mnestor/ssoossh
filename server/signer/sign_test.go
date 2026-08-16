@@ -3,6 +3,7 @@ package signer
 import (
 	"context"
 	"errors"
+	"io"
 	"math"
 	"strings"
 	"testing"
@@ -329,6 +330,72 @@ func TestSign_ShouldReportAnUnavailableCA(t *testing.T) {
 	}
 	if got := errorCode(err); got != certmsg.ErrCodeCAUnavailable {
 		t.Errorf("got error code %q, want %q", got, certmsg.ErrCodeCAUnavailable)
+	}
+}
+
+// should classify a signError by its code, defaulting to ErrCodeSignFailed for anything else, and unwrap to the wrapped error
+func TestSignError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("errorCode should return the signError's code", func(t *testing.T) {
+		t.Parallel()
+		err := newSignError(certmsg.ErrCodeBadPublicKey, "boom")
+		if got := errorCode(err); got != certmsg.ErrCodeBadPublicKey {
+			t.Errorf("errorCode() = %q, want %q", got, certmsg.ErrCodeBadPublicKey)
+		}
+	})
+
+	t.Run("errorCode should default to ErrCodeSignFailed for an unclassified error", func(t *testing.T) {
+		t.Parallel()
+		if got := errorCode(errors.New("plain error")); got != certmsg.ErrCodeSignFailed {
+			t.Errorf("errorCode() = %q, want %q", got, certmsg.ErrCodeSignFailed)
+		}
+	})
+
+	t.Run("Unwrap should return the wrapped error", func(t *testing.T) {
+		t.Parallel()
+		wrapped := errors.New("underlying")
+		se := &signError{code: certmsg.ErrCodeSignFailed, err: wrapped}
+		if got := se.Unwrap(); got != wrapped {
+			t.Errorf("Unwrap() = %v, want %v", got, wrapped)
+		}
+		if !errors.Is(se, wrapped) {
+			t.Error("expected errors.Is to see through Unwrap to the wrapped error")
+		}
+	})
+}
+
+// brokenSigner is an ssh.Signer whose Sign method always fails, used to
+// exercise Sign's cert.SignCert failure branch without a broken key.
+type brokenSigner struct {
+	pub ssh.PublicKey
+}
+
+func (b *brokenSigner) PublicKey() ssh.PublicKey { return b.pub }
+func (b *brokenSigner) Sign(rand io.Reader, data []byte) (*ssh.Signature, error) {
+	return nil, errors.New("signing hardware unavailable")
+}
+
+// should classify a signing failure from the CA itself, not just from the key source
+func TestSign_ShouldReportASigningFailure(t *testing.T) {
+	t.Parallel()
+
+	kp, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("failed to generate keypair: %v", err)
+	}
+	caSigner, err := ssh.NewSignerFromKey(kp.Private())
+	if err != nil {
+		t.Fatalf("failed to build CA signer: %v", err)
+	}
+	ks := &staticKeySource{signer: &brokenSigner{pub: caSigner.PublicKey()}}
+
+	_, err = Sign(context.Background(), ks, newTestJob(t))
+	if err == nil {
+		t.Fatal("expected an error when the CA signer fails to sign, got nil")
+	}
+	if got := errorCode(err); got != certmsg.ErrCodeSignFailed {
+		t.Errorf("got error code %q, want %q", got, certmsg.ErrCodeSignFailed)
 	}
 }
 

@@ -35,3 +35,6 @@ pam_ssoossh\.go:89\.2,89\.27
 pam_ssoossh\.go:89\.27,91\.3
 pam_ssoossh\.go:93\.2,93\.23
 pam_ssoossh\.go:96\.14,96\.15
+handler\.go:81\.16,86\.3
+sign\.go:58\.43,60\.3
+sign\.go:147\.16,149\.3
