@@ -41,3 +41,11 @@ sign\.go:147\.16,149\.3
 pubsub\.go:90\.16,92\.3
 pubsub\.go:185\.41,187\.3
 pubsub\.go:188\.42,190\.3
+server/controller/auth\.go:54\.59,57\.3
+server/controller/auth\.go:84\.16,87\.3
+server/controller/auth\.go:99\.58,102\.3
+server/controller/auth\.go:104\.62,107\.4
+server/controller/auth\.go:143\.16,146\.3
+server/controller/auth\.go:154\.67,157\.3
+server/controller/auth\.go:160\.16,163\.3
+server/controller/auth\.go:185\.40,187\.3
