@@ -12,7 +12,7 @@ import (
 func NewEd25519KeyPair() (*SSHKeypair, error) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		return nil, err
+		return nil, err // excluded from coverage: crypto/rand.Reader failure isn't reproducible in tests, see exclude-from-coverage.txt
 	}
 	return &SSHKeypair{
 		privateKey: priv,
@@ -30,6 +30,7 @@ func LoadEd25519KeyPair(privBytes []byte) (*SSHKeypair, error) {
 	priv := ed25519.NewKeyFromSeed(privBytes)
 	pub, ok := priv.Public().(ed25519.PublicKey)
 	if !ok {
+		// excluded from coverage: ed25519.PrivateKey.Public() always returns ed25519.PublicKey, see exclude-from-coverage.txt
 		return nil, errors.New("ed25519 private key returned an unexpected public key type")
 	}
 	return &SSHKeypair{

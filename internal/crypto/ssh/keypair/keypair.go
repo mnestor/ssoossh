@@ -114,6 +114,7 @@ func keypairFromPKCS8(priv any) (*SSHKeypair, error) {
 	case ed25519.PrivateKey:
 		pub, ok := k.Public().(ed25519.PublicKey)
 		if !ok {
+			// excluded from coverage: ed25519.PrivateKey.Public() always returns ed25519.PublicKey, see exclude-from-coverage.txt
 			return nil, errors.New("ed25519 private key returned an unexpected public key type")
 		}
 		return &SSHKeypair{privateKey: k, publicKey: pub}, nil
@@ -132,6 +133,7 @@ func keypairFromOpenSSHRaw(priv any) (*SSHKeypair, error) {
 	case *ed25519.PrivateKey:
 		pub, ok := k.Public().(ed25519.PublicKey)
 		if !ok {
+			// excluded from coverage: ed25519.PrivateKey.Public() always returns ed25519.PublicKey, see exclude-from-coverage.txt
 			return nil, errors.New("ed25519 private key returned an unexpected public key type")
 		}
 		return &SSHKeypair{privateKey: *k, publicKey: pub}, nil
@@ -179,7 +181,7 @@ func (k *SSHKeypair) Public() ssh.PublicKey {
 func (k *SSHKeypair) MarshalAuthorizedKey() (string, error) {
 	pub, err := ssh.NewPublicKey(k.publicKey)
 	if err != nil {
-		return "", err
+		return "", err // excluded from coverage: k.publicKey is always a type ssh.NewPublicKey accepts, every constructor validates this, see exclude-from-coverage.txt
 	}
 	return string(ssh.MarshalAuthorizedKey(pub)), nil
 }
@@ -255,7 +257,7 @@ func (k *SSHKeypair) MarshalPrivateKey() ([]byte, error) {
 	case *ecdsa.PrivateKey:
 		privBytes, err := x509.MarshalECPrivateKey(priv)
 		if err != nil {
-			return nil, err
+			return nil, err // excluded from coverage: priv was just generated or parsed by this package, marshaling it back can't fail, see exclude-from-coverage.txt
 		}
 		block = &pem.Block{
 			Type:  "EC PRIVATE KEY",
@@ -267,7 +269,7 @@ func (k *SSHKeypair) MarshalPrivateKey() ([]byte, error) {
 		var err error
 		block, err = ssh.MarshalPrivateKey(crypto.PrivateKey(k.privateKey), "ssoossh")
 		if err != nil {
-			return nil, err
+			return nil, err // excluded from coverage: k.privateKey was just generated or parsed by this package, marshaling it back can't fail, see exclude-from-coverage.txt
 		}
 	default:
 		return nil, errors.New("unsupported private key type for PEM encoding")

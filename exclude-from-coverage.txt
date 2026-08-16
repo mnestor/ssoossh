@@ -4,3 +4,12 @@ frontend_included\.go:111\.16,113\.3
 frontend_included\.go:130\.16,132\.3
 server/config/config\.go:40\.75,42\.3
 test/e2e/.*
+ecdsa\.go:20\.16,22\.3
+ed25519\.go:14\.16,16\.3
+ed25519\.go:32\.9,35\.3
+keypair\.go:116\.10,119\.4
+keypair\.go:135\.10,138\.4
+keypair\.go:183\.16,185\.3
+keypair\.go:259\.17,261\.4
+keypair\.go:271\.17,273\.4
+rsa\.go:17\.16,19\.3
