@@ -20,7 +20,7 @@ concurrency:
 jobs:
   e2e:
     name: end to end
-    runs-on: [self-hosted, rootless]
+    runs-on: [self-hosted]
     container:
       image: ubuntu:24.04
     timeout-minutes: 15
@@ -52,7 +52,7 @@ jobs:
       # Present on the hosted image, but asserting it beats a confusing
       # "no such file" three steps later.
       - name: Ensure sshd is available
-        run: sudo apt-get install -y --no-install-recommends openssh-server
+        run: apt-get install -y --no-install-recommends openssh-server
 
       - name: Run end-to-end tests
         run: go test -tags=e2e -count=1 -timeout=10m ./test/e2e/...
