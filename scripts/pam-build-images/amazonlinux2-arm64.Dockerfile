@@ -31,7 +31,7 @@ ENV GOPATH="/go"
 ARG UID=1000
 ARG GID=1000
 RUN groupadd -g ${GID} runner \
-  && useradd -l -r -u ${UID} -g runner runner \
+  && useradd -m -l -r -u ${UID} -g runner runner \
   && mkdir -p /go && chown runner:runner /go
 
 COPY entrypoint.sh /

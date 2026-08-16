@@ -22,7 +22,7 @@ jobs:
     steps:
       - name: add required stuff
         run: |
-          apt install -y unzip
+          apt-get update && apt-get install -y unzip
       - uses: 1password/load-secrets-action@e544b780808654ba8ceba5fb2fe2897103d92ff4 # v5.0.0
         id: secrets
         env:
