@@ -38,6 +38,13 @@ type Config struct {
 	// mode.
 	FIPS *bool `mapstructure:"fips"`
 
+	// FIPSEnforced is true when `fips: true` was set specifically by the
+	// system enforce file (LockedFile below), as opposed to a user or local
+	// config file. It is computed by NewConfig, not read from any file
+	// directly — see the mapstructure tag. ResolveSSHKey treats it as the
+	// difference between advisory (warn) and hard (error) FIPS steering.
+	FIPSEnforced bool `mapstructure:"-"`
+
 	// This is only settable in /etc/ssoossh/ssoossh.yaml
 	// if a setting is in this file then clients CANNOT change it
 	LockedFile string `mapstructure:"enforce"`

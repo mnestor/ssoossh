@@ -15,7 +15,7 @@ func NewRSAKeyPair(bits int) (*SSHKeypair, error) {
 	}
 	priv, err := rsa.GenerateKey(rand.Reader, bits)
 	if err != nil {
-		return nil, err
+		return nil, err // excluded from coverage: crypto/rand.Reader failure isn't reproducible in tests, see exclude-from-coverage.txt
 	}
 	return &SSHKeypair{
 		privateKey: priv,

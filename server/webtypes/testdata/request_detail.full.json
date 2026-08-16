@@ -1,0 +1,41 @@
+{
+  "id": "0b4f2b1a-7c3d-4e5f-8a9b-0c1d2e3f4a5b",
+  "type": "user",
+  "status": "pending",
+  "source_ip": "198.51.100.7",
+  "hostname": "db1.example.org",
+  "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample alice@laptop",
+  "principals": [
+    "alice",
+    "alice@example.org"
+  ],
+  "valid_seconds": 28800,
+  "requested": {
+    "extensions": [
+      "permit-pty",
+      "permit-agent-forwarding"
+    ],
+    "force_command": "/usr/local/bin/audit-shell",
+    "source_addresses": [
+      "198.51.100.0/24",
+      "203.0.113.7/32"
+    ],
+    "no_touch_required": true
+  },
+  "granted": {
+    "extensions": [
+      "permit-pty",
+      "permit-agent-forwarding"
+    ],
+    "force_command": "/usr/local/bin/audit-shell",
+    "source_addresses": [
+      "198.51.100.0/24",
+      "203.0.113.7/32"
+    ],
+    "no_touch_required": true
+  },
+  "created_at": "2026-08-14T09:30:00+02:00",
+  "approval_url": "/approve/0b4f2b1a-7c3d-4e5f-8a9b-0c1d2e3f4a5b",
+  "is_owned_by_you": true,
+  "already_closed": true
+}

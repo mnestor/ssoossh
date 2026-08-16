@@ -121,6 +121,30 @@ func TestCreateUserRequestHandler_ShouldReturnEventsAndApprovalURLs(t *testing.T
 	}
 }
 
+func TestCreateUserRequestHandler_ShouldRejectMalformedJSON(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{}
+
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/certs/user", strings.NewReader("not json"))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if gotErrors != 1 {
+		t.Fatalf("expected exactly one binding error, got %d", gotErrors)
+	}
+}
+
 func TestCreateUserRequestHandler_ShouldRegisterErrorWhenCreateFails(t *testing.T) {
 	t.Parallel()
 
@@ -180,6 +204,218 @@ func TestCreatePAMRequestHandler_ShouldReturnURLsAndRoundTripUsername(t *testing
 	}
 	if svc.gotParams.Username != "mnestor" {
 		t.Errorf("got Username %q, want %q", svc.gotParams.Username, "mnestor")
+	}
+}
+
+func TestCreatePAMRequestHandler_ShouldRejectMalformedJSON(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{}
+
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/certs/pam", strings.NewReader("not json"))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if gotErrors != 1 {
+		t.Fatalf("expected exactly one binding error, got %d", gotErrors)
+	}
+}
+
+func TestCreatePAMRequestHandler_ShouldRegisterErrorWhenCreateFails(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{createErr: errors.New("simulated failure")}
+
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
+
+	body := `{"public_key":"ssh-ed25519 AAAA... test","username":"mnestor"}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/certs/pam", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if gotErrors != 1 {
+		t.Fatalf("expected exactly one error to be attached when CreateRequest fails, got %d", gotErrors)
+	}
+}
+
+func TestCreateHostSignRequestHandler_ShouldReturnURLsAndRoundTripHostname(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{createRequestID: "req-1"}
+
+	r := gin.New()
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
+
+	body := `{"public_key":"ssh-ed25519 AAAA... test","hostname":"web-01.example.com"}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/certs/host/sign", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var got struct {
+		RequestID string `json:"request_id"`
+	}
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+	if got.RequestID != "req-1" {
+		t.Errorf("got request_id %q, want %q", got.RequestID, "req-1")
+	}
+	if svc.gotParams.Type != model.CertificateTypeHost {
+		t.Errorf("got request type %q, want %q", svc.gotParams.Type, model.CertificateTypeHost)
+	}
+	if svc.gotParams.Hostname != "web-01.example.com" {
+		t.Errorf("got Hostname %q, want %q", svc.gotParams.Hostname, "web-01.example.com")
+	}
+}
+
+func TestCreateHostSignRequestHandler_ShouldRejectMalformedJSON(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{}
+
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/certs/host/sign", strings.NewReader("not json"))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if gotErrors != 1 {
+		t.Fatalf("expected exactly one binding error, got %d", gotErrors)
+	}
+}
+
+func TestCreateHostSignRequestHandler_ShouldRegisterErrorWhenCreateFails(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{createErr: errors.New("simulated failure")}
+
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
+
+	body := `{"public_key":"ssh-ed25519 AAAA... test","hostname":"web-01.example.com"}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/certs/host/sign", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if gotErrors != 1 {
+		t.Fatalf("expected exactly one error to be attached when CreateRequest fails, got %d", gotErrors)
+	}
+}
+
+func TestCreateServiceEnrollRequestHandler_ShouldReturnURLs(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{createRequestID: "req-1"}
+
+	r := gin.New()
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
+
+	body := `{"public_key":"ssh-ed25519 AAAA... test"}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/certs/service/enroll", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var got struct {
+		RequestID string `json:"request_id"`
+	}
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+	if got.RequestID != "req-1" {
+		t.Errorf("got request_id %q, want %q", got.RequestID, "req-1")
+	}
+	if svc.gotParams.Type != model.CertificateTypeService {
+		t.Errorf("got request type %q, want %q", svc.gotParams.Type, model.CertificateTypeService)
+	}
+}
+
+func TestCreateServiceEnrollRequestHandler_ShouldRejectMalformedJSON(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{}
+
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/certs/service/enroll", strings.NewReader("not json"))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if gotErrors != 1 {
+		t.Fatalf("expected exactly one binding error, got %d", gotErrors)
+	}
+}
+
+func TestCreateServiceEnrollRequestHandler_ShouldRegisterErrorWhenCreateFails(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{createErr: errors.New("simulated failure")}
+
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
+
+	body := `{"public_key":"ssh-ed25519 AAAA... test"}`
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/certs/service/enroll", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if gotErrors != 1 {
+		t.Fatalf("expected exactly one error to be attached when CreateRequest fails, got %d", gotErrors)
 	}
 }
 
@@ -290,6 +526,57 @@ func TestApproveHandler_ShouldRegisterErrorWhenServiceFails(t *testing.T) {
 
 	if gotErrors != 1 {
 		t.Fatalf("expected exactly one error to be attached when Approve fails, got %d", gotErrors)
+	}
+}
+
+func TestApproveHandler_ShouldRejectWithoutAnIdentityOnContext(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{}
+
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	// sessionAuthMiddleware is a passthrough that never sets IdentityContextKey
+	// — approveHandler must fail closed rather than assume it's there.
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/certs/requests/req-1/approve", nil)
+	r.ServeHTTP(w, req)
+
+	if gotErrors != 1 {
+		t.Fatalf("expected exactly one error to be attached when no identity is on the context, got %d", gotErrors)
+	}
+}
+
+func TestDenyHandler_ShouldReturnDeniedStatus(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{}
+
+	r := gin.New()
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/certs/requests/req-1/deny", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var got struct {
+		Status string `json:"status"`
+	}
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+	if got.Status != string(model.CertificateRequestStatusDenied) {
+		t.Errorf("got status %q, want %q", got.Status, model.CertificateRequestStatusDenied)
 	}
 }
 

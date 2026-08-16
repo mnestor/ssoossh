@@ -18,7 +18,7 @@ func NewECDSAKeyPair(bits int) (*SSHKeypair, error) {
 	}
 	priv, err := ecdsa.GenerateKey(curve, rand.Reader)
 	if err != nil {
-		return nil, err
+		return nil, err // excluded from coverage: crypto/rand.Reader failure isn't reproducible in tests, see exclude-from-coverage.txt
 	}
 	return &SSHKeypair{
 		privateKey: priv,

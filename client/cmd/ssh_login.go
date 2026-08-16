@@ -68,6 +68,13 @@ func newSSHLoginCommand() simplecobra.Commander {
 		init: func(cd *simplecobra.Commandeer) error {
 			cd.CobraCommand.Flags().BoolVar(&force, "force", false,
 				"request a new certificate even if a valid one is already loaded")
+			// --key-type/--key-size are local to ssh login: it's the only
+			// command that generates a keypair. Bound to sshkey.type/size
+			// in config.go's newConfig, same mechanism as --server.
+			cd.CobraCommand.Flags().String("key-type", "",
+				"ssh key algorithm to generate: ed25519, ecdsa, or rsa (default depends on FIPS mode)")
+			cd.CobraCommand.Flags().Int("key-size", 0,
+				"ssh key size (bits for rsa, curve for ecdsa; ignored for ed25519)")
 			return nil
 		},
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {

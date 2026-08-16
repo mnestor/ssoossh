@@ -132,6 +132,16 @@ func TestParseArgs(t *testing.T) {
 			args: nil,
 			want: withDefaults(config{}),
 		},
+		{
+			name: "should set principals-map when given",
+			args: []string{"principals-map=/etc/ssoossh/principals.yaml"},
+			want: withDefaults(config{principalsMapPath: "/etc/ssoossh/principals.yaml"}),
+		},
+		{
+			name: "should leave principalsMapPath empty when absent",
+			args: []string{"server=https://example.com"},
+			want: withDefaults(config{server: "https://example.com"}),
+		},
 	}
 
 	for _, tt := range tests {

@@ -26,6 +26,12 @@ DCL=$(resolve_path "${SCRIPT_DIR}/../.devcontainer/docker-compose.local.yml")
 DCLT=${DCL%.yml}.yml.example
 test -f "${DCL}" || cp "${DCLT}" "${DCL}"
 
+# docker-compose.local.yml bind-mounts ${HOME}/.local/bin into the
+# container. If it doesn't exist on the host yet, Docker auto-creates it as
+# root:root before the container starts, leaving it unwritable to vscode.
+# Creating it here (on the host, before the container starts) avoids that.
+mkdir -p "${HOME}/.local/bin"
+
 DCU=$(resolve_path "${SCRIPT_DIR}/../.devcontainer/docker-compose.user.local.yml")
 touch "${DCU}"
 

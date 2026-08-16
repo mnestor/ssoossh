@@ -53,7 +53,7 @@ func NewAuthController(group *gin.RouterGroup, authService service.AuthProvider,
 func (a *authController) logoutHandler(g *gin.Context) {
 	if err := middleware.ClearIdentitySession(g); err != nil {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
-		return
+		return           // excluded from coverage: session.Clear() removes any oversized value used to force Save() to fail before Save() runs, see exclude-from-coverage.txt
 	}
 
 	respondData(g, gin.H{"logged_out": true})
@@ -83,7 +83,7 @@ func (a *authController) loginHandler(g *gin.Context) {
 	state, err := randomState()
 	if err != nil {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
-		return
+		return           // excluded from coverage: crypto/rand.Read failure isn't reproducible in tests, see exclude-from-coverage.txt
 	}
 
 	authURL, nonce, err := a.authService.AuthorizationURL(g.Request.Context(), state)
@@ -98,12 +98,12 @@ func (a *authController) loginHandler(g *gin.Context) {
 	}
 	if err := middleware.SetOIDCNonce(g, nonce); err != nil {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
-		return
+		return           // excluded from coverage: reaching this specific Save() failure (not SetOIDCState's, tested) needs byte-precise session-size engineering, see exclude-from-coverage.txt
 	}
 	if returnTo := g.Query("return_to"); isSafeReturnURL(returnTo) {
 		if err := middleware.SetReturnURL(g, returnTo); err != nil {
 			_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
-			return
+			return           // excluded from coverage: same as SetOIDCNonce above, one Save() call further down the chain
 		}
 	}
 
@@ -142,7 +142,7 @@ func (a *authController) callbackHandler(g *gin.Context) {
 	nonce, err := middleware.PopOIDCNonce(g)
 	if err != nil {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
-		return
+		return           // excluded from coverage: reaching this specific Save() failure (not PopOIDCState's, tested) needs byte-precise session-size engineering, see exclude-from-coverage.txt
 	}
 
 	identity, err := a.authService.HandleCallback(g.Request.Context(), code, nonce)
@@ -153,13 +153,13 @@ func (a *authController) callbackHandler(g *gin.Context) {
 
 	if err := middleware.SetIdentitySession(g, identity); err != nil {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
-		return
+		return           // excluded from coverage: same category as PopOIDCNonce above, further down the chain
 	}
 
 	returnURL, err := middleware.PopReturnURL(g)
 	if err != nil {
 		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
-		return
+		return           // excluded from coverage: same category as PopOIDCNonce above, further down the chain
 	}
 	if !isSafeReturnURL(returnURL) {
 		returnURL = "/"
@@ -183,7 +183,7 @@ func isSafeReturnURL(url string) bool {
 func randomState() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate OIDC state: %w", err)
+		return "", fmt.Errorf("failed to generate OIDC state: %w", err) // excluded from coverage: crypto/rand.Read failure isn't reproducible in tests, see exclude-from-coverage.txt
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }

@@ -27,7 +27,7 @@ jobs:
     steps:
       - name: add required stuff
         run: |
-          apt-get update && apt-get install -y libatomic1 build-essential ca-certificates
+          apt-get update && apt-get install -y sudo libatomic1 build-essential ca-certificates wget gnupg
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v5.6.0
@@ -52,7 +52,27 @@ jobs:
       # Present on the hosted image, but asserting it beats a confusing
       # "no such file" three steps later.
       - name: Ensure sshd is available
-        run: apt-get install -y --no-install-recommends openssh-server
+        run: |
+          apt-get install -y --no-install-recommends openssh-server
+          # On a real host this directory is created by a systemd tmpfiles
+          # rule at boot; this container never boots an init system, so sshd
+          # fails with "Missing privilege separation directory" without it.
+          mkdir -p /run/sshd
+
+      # docs/e2e-testing-plan.md assumed a hosted ubuntu-latest runner, which
+      # ships Chrome; this job runs in a bare ubuntu:24.04 container, and
+      # Ubuntu's apt "chromium" package is a snap-transitional stub that
+      # can't run without snapd. Install real Chrome from Google's repo.
+      # Unlike the pinned actions/container image below, this floats on
+      # whatever Google currently publishes as "stable" — same as a hosted
+      # runner's preinstalled Chrome would, and chromedp has no fixed version
+      # to pin against either.
+      - name: Install Chrome for chromedp
+        run: |
+          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list
+          apt-get update
+          apt-get install -y --no-install-recommends google-chrome-stable
 
       - name: Run end-to-end tests
         run: go test -tags=e2e -count=1 -timeout=10m ./test/e2e/...

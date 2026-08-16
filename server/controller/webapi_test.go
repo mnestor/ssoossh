@@ -122,6 +122,31 @@ func TestCurrentUserHandler_ShouldRenderGroupsAsAnEmptyArray(t *testing.T) {
 	}
 }
 
+// TestCurrentUserHandler_ShouldRejectWithoutAnIdentityOnContext covers
+// currentUserHandler's own guard, bypassing SessionAuthMiddleware (which
+// would otherwise abort the request before this handler ever runs) with a
+// passthrough that never sets IdentityContextKey — the handler must not
+// assume its middleware already caught this.
+func TestCurrentUserHandler_ShouldRejectWithoutAnIdentityOnContext(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	NewUserController(&r.RouterGroup, passthrough)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
+
+	if gotErrors != 1 {
+		t.Fatalf("expected exactly one error when no identity is on the context, got %d", gotErrors)
+	}
+}
+
 func TestCertificateListHandler_ShouldReturnTheCallersCertificates(t *testing.T) {
 	t.Parallel()
 
@@ -179,6 +204,29 @@ func TestCertificateListHandler_ShouldRenderNoCertificatesAsAnEmptyArray(t *test
 
 	if got := w.Body.String(); !strings.Contains(got, `"data":[]`) {
 		t.Errorf("expected data to render as [], got %s", got)
+	}
+}
+
+// TestCertificateListHandler_ShouldRejectWithoutAnIdentityOnContext covers
+// listHandler's own guard; see the currentUserHandler test above for why
+// this needs a passthrough rather than the real SessionAuthMiddleware.
+func TestCertificateListHandler_ShouldRejectWithoutAnIdentityOnContext(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	NewCertificateController(&r.RouterGroup, &fakeCertificateService{}, passthrough)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs", nil))
+
+	if gotErrors != 1 {
+		t.Fatalf("expected exactly one error when no identity is on the context, got %d", gotErrors)
 	}
 }
 
@@ -253,6 +301,60 @@ func TestDetailHandler_ShouldSurfaceRequestedAndGrantedSeparately(t *testing.T) 
 	}
 	if got.AlreadyClosed {
 		t.Error("expected already_closed to be false for a pending request")
+	}
+}
+
+// TestDetailHandler_ShouldRejectWithoutAnIdentityOnContext covers
+// detailHandler's own guard; see TestCurrentUserHandler_ShouldRejectWithoutAnIdentityOnContext
+// for why this needs a passthrough rather than the real SessionAuthMiddleware.
+func TestDetailHandler_ShouldRejectWithoutAnIdentityOnContext(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	NewCertRequestController(&r.RouterGroup, &fakeCertRequestService{}, passthrough, passthrough)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/requests/req-1", nil))
+
+	if gotErrors != 1 {
+		t.Fatalf("expected exactly one error when no identity is on the context, got %d", gotErrors)
+	}
+}
+
+// TestDetailHandler_ShouldNormalizeNilSlicesToEmpty guards the UI contract:
+// a request with no principals resolved yet, or options with no extensions,
+// must render as [] rather than null (see newRequestDetailResponse and
+// newCertificateOptionsResponse).
+func TestDetailHandler_ShouldNormalizeNilSlicesToEmpty(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{detail: &service.RequestDetail{
+		Request: model.CertificateRequest{ID: "req-1", Type: model.CertificateTypeUser, Status: model.CertificateRequestStatusPending},
+		// Principals, Requested.Extensions, and Narrowed.Extensions all left
+		// nil on purpose.
+	}}
+
+	r := gin.New()
+	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), passthrough)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/requests/req-1", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if got := w.Body.String(); !strings.Contains(got, `"principals":[]`) {
+		t.Errorf("expected principals to render as [], got %s", got)
+	}
+	if got := w.Body.String(); strings.Count(got, `"extensions":[]`) != 2 {
+		t.Errorf("expected both requested and granted extensions to render as [], got %s", got)
 	}
 }
 

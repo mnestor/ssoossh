@@ -76,24 +76,29 @@ func newConfig(cmd *cobra.Command, paths searchPaths) (*Config, error) {
 		}
 	}
 
-	// --server overrides whatever the files said. Bound rather than read
+	// Flags override whatever the files said. Bound rather than read
 	// directly so viper's own precedence applies: a flag that wasn't passed
 	// contributes its empty default at the lowest priority and does not
-	// clobber a configured value.
-	// TODO: cmd bind flags
-	if serverFlag := cmd.Flags().Lookup("server"); serverFlag != nil {
-		if err := v.BindPFlag("server", serverFlag); err != nil {
-			return nil, fmt.Errorf("failed to bind the --server flag: %w", err)
-		}
+	// clobber a configured value. --key-type/--key-size are local to `ssh
+	// login` (the only command that generates a keypair), so Lookup returns
+	// nil and binding them no-ops for every other command's cmd.
+	if err := bindFlags(v, cmd, map[string]string{
+		"server":   "server",
+		"key-type": "sshkey.type",
+		"key-size": "sshkey.size",
+	}); err != nil {
+		return nil, err
 	}
 
 	// Merged last, so it wins over every user-writable location — that is the
 	// whole point of `enforce`. A relative target resolves inside the system
 	// directory, so naming one cannot reach a file the user controls.
+	enforceSetsFIPS := false
 	if enforce != "" {
 		if !filepath.IsAbs(enforce) {
 			enforce = filepath.Join(paths.systemDir, enforce)
 		}
+		enforceSetsFIPS = enforceFileSets(enforce, "fips")
 		mergeConfig(v, enforce)
 	}
 
@@ -101,6 +106,7 @@ func newConfig(cmd *cobra.Command, paths searchPaths) (*Config, error) {
 	if err := v.Unmarshal(&c); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
+	c.FIPSEnforced = enforceSetsFIPS && c.FIPS != nil && *c.FIPS
 
 	// Resolve the key settings now so a bad combination is reported at
 	// startup rather than at the first attempt to obtain a certificate.
@@ -120,4 +126,34 @@ func newConfig(cmd *cobra.Command, paths searchPaths) (*Config, error) {
 func mergeConfig(v *viper.Viper, f string) {
 	v.SetConfigFile(f)
 	_ = v.MergeInConfig() //nolint:errcheck // config override is optional
+}
+
+// bindFlags binds each cmd flag named in flagToKey to the viper key it maps
+// to, skipping any flag cmd does not have registered (a leaf-local flag on
+// a command other than the one invoked).
+func bindFlags(v *viper.Viper, cmd *cobra.Command, flagToKey map[string]string) error {
+	for flag, key := range flagToKey {
+		f := cmd.Flags().Lookup(flag)
+		if f == nil {
+			continue
+		}
+		if err := v.BindPFlag(key, f); err != nil {
+			return fmt.Errorf("failed to bind the --%s flag: %w", flag, err)
+		}
+	}
+	return nil
+}
+
+// enforceFileSets reports whether the enforce file at path explicitly sets
+// key, read in isolation from the main viper instance so the origin of a
+// merged value isn't lost by the time it's unmarshaled. A read failure
+// (missing/malformed file) is not reported here: mergeConfig re-reads the
+// same file right after this call and is where a genuine problem surfaces.
+func enforceFileSets(path, key string) bool {
+	v := viper.New()
+	v.SetConfigFile(path)
+	if err := v.MergeInConfig(); err != nil {
+		return false
+	}
+	return v.IsSet(key)
 }

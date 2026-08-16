@@ -56,7 +56,7 @@ const serialMask = 1<<63 - 1
 func newSerial() (uint64, error) {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return 0, fmt.Errorf("failed to generate certificate serial: %w", err)
+		return 0, fmt.Errorf("failed to generate certificate serial: %w", err) // excluded from coverage: crypto/rand.Read failure isn't reproducible in tests, see exclude-from-coverage.txt
 	}
 	return binary.BigEndian.Uint64(b[:]) & serialMask, nil
 }
@@ -145,7 +145,7 @@ func Sign(ctx context.Context, ks CAKeySource, job certmsg.SigningJob) (certmsg.
 
 	serial, err := newSerial()
 	if err != nil {
-		return certmsg.SignedReply{}, newSignError(certmsg.ErrCodeSignFailed, "%w", err)
+		return certmsg.SignedReply{}, newSignError(certmsg.ErrCodeSignFailed, "%w", err) // excluded from coverage: only reachable if newSerial's own crypto/rand.Read fails, see exclude-from-coverage.txt
 	}
 
 	permissions := permissionsFor(job.RequestedOptions)

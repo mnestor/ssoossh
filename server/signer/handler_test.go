@@ -124,6 +124,98 @@ func TestHandler_ShouldPublishAFailureReplyAndAck(t *testing.T) {
 	}
 }
 
+// failingPublisher is a message.Publisher that always fails, standing in for
+// a transport failure — the one case handle must nack rather than ack.
+type failingPublisher struct{}
+
+func (failingPublisher) Publish(topic string, messages ...*message.Message) error {
+	return errors.New("transport unavailable")
+}
+func (failingPublisher) Close() error { return nil }
+
+// TestHandler_ShouldNackWhenPublishingTheReplyFails covers the one case
+// handle must nack: the job itself was handled (signed or not), but the
+// reply never made it out, so the job is genuinely still unhandled.
+func TestHandler_ShouldNackWhenPublishingTheReplyFails(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+	h := NewHandler(ks, failingPublisher{})
+	job := newTestJob(t)
+
+	payload, err := json.Marshal(job)
+	if err != nil {
+		t.Fatalf("failed to encode job: %v", err)
+	}
+
+	if err := h.handle(message.NewMessage(watermill.NewUUID(), payload)); err == nil {
+		t.Error("handle() error = nil, want a non-nil error to nack the message")
+	}
+}
+
+// TestHandler_Register wires a Handler into a real Router against an
+// in-memory channel end to end: publish a job on SignQueueTopic, and confirm
+// the registered consumer signs it and replies on SignedTopic — proof
+// Register actually connects the handler to the right topic and subscriber,
+// not just that AddConsumerHandler was called with plausible-looking
+// arguments.
+func TestHandler_Register(t *testing.T) {
+	t.Parallel()
+
+	channel := newTestChannel(t)
+	ks, _ := newTestKeySource(t)
+	h := NewHandler(ks, channel)
+
+	router, err := message.NewRouter(message.RouterConfig{}, watermill.NewSlogLogger(slog.Default()))
+	if err != nil {
+		t.Fatalf("NewRouter() error = %v", err)
+	}
+	h.Register(router, channel)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	replies, err := channel.Subscribe(ctx, certmsg.SignedTopic)
+	if err != nil {
+		t.Fatalf("failed to subscribe to replies: %v", err)
+	}
+
+	routerDone := make(chan error, 1)
+	go func() { routerDone <- router.Run(ctx) }()
+	select {
+	case <-router.Running():
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for the router to start")
+	}
+	t.Cleanup(func() {
+		cancel()
+		<-routerDone
+	})
+
+	job := newTestJob(t)
+	payload, err := json.Marshal(job)
+	if err != nil {
+		t.Fatalf("failed to encode job: %v", err)
+	}
+	if err := channel.Publish(certmsg.SignQueueTopic, message.NewMessage(watermill.NewUUID(), payload)); err != nil {
+		t.Fatalf("failed to publish job: %v", err)
+	}
+
+	select {
+	case msg := <-replies:
+		var reply certmsg.SignedReply
+		if err := json.Unmarshal(msg.Payload, &reply); err != nil {
+			t.Fatalf("failed to decode reply: %v", err)
+		}
+		msg.Ack()
+		if reply.RequestID != job.RequestID {
+			t.Errorf("got RequestID %q, want %q", reply.RequestID, job.RequestID)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for a signed reply via the registered router")
+	}
+}
+
 func TestHandler_ShouldAckAnUnparseableJobWithoutPublishing(t *testing.T) {
 	t.Parallel()
 
