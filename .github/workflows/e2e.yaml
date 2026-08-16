@@ -43,7 +43,7 @@ jobs:
         run: make frontend
 
       - name: Build binaries
-        run: go build -o bin/ ./cmd/...
+        run: go build -buildvcs=false -o bin/ ./cmd/...
 
       # Present on the hosted image, but asserting it beats a confusing
       # "no such file" three steps later.
