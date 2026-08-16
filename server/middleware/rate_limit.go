@@ -68,7 +68,7 @@ func setRateLimitHeaders(c *gin.Context, limiter *rate.Limiter, burst int) {
 
 	remaining := int(tokens)
 	if remaining < 0 {
-		remaining = 0
+		remaining = 0 // excluded from coverage: rate.Limiter.Tokens() never goes negative after Allow() (verified empirically); only Reserve()/ReserveN(), unused here, can drive it negative, see exclude-from-coverage.txt
 	}
 
 	var reset int

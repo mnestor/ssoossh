@@ -144,3 +144,27 @@ func TestCsrfMiddleware_ShouldFallBackToFetchMetadataWithoutAConfiguredOrigin(t 
 		t.Errorf("got status %d, want %d", w.Code, http.StatusForbidden)
 	}
 }
+
+// TestCsrfMiddleware_ShouldAllowAnyOriginWithoutAConfiguredOrigin covers
+// originAllowed's own empty-allowedOrigin branch specifically: unlike the
+// test above (which never reaches originAllowed at all, since Sec-Fetch-Site
+// short-circuits first), this omits Sec-Fetch-Site so the Origin check
+// actually runs, with nothing configured to compare it against.
+func TestCsrfMiddleware_ShouldAllowAnyOriginWithoutAConfiguredOrigin(t *testing.T) {
+	t.Parallel()
+
+	r, reached := newCsrfRouter(t, "")
+
+	req := httptest.NewRequest(http.MethodPost, "/approve", nil)
+	req.Header.Set("Origin", "https://anything.example.com")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("got status %d, want %d", w.Code, http.StatusOK)
+	}
+	if !*reached {
+		t.Error("expected the handler to run: with no configured origin, originAllowed has nothing to judge and defers")
+	}
+}
