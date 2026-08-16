@@ -6,6 +6,7 @@ package pubsub
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
@@ -97,6 +98,48 @@ func TestRun_ShouldReturnWhenContextIsCanceled(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Run did not return after context cancellation")
 	}
+}
+
+// should drop (ack, not propagate) a message whose handler still fails after retries, and pass through a handler's success
+func TestDropAfterRetries(t *testing.T) {
+	t.Parallel()
+
+	logger := watermill.NewSlogLogger(slog.Default())
+
+	t.Run("should drop the error and return no produced messages when next fails", func(t *testing.T) {
+		t.Parallel()
+
+		next := func(msg *message.Message) ([]*message.Message, error) {
+			return nil, errors.New("handler exhausted its retries")
+		}
+		wrapped := dropAfterRetries(logger)(next)
+
+		produced, err := wrapped(message.NewMessage(watermill.NewUUID(), []byte("payload")))
+		if err != nil {
+			t.Errorf("dropAfterRetries() error = %v, want nil (dropped, not propagated)", err)
+		}
+		if produced != nil {
+			t.Errorf("dropAfterRetries() produced = %v, want nil", produced)
+		}
+	})
+
+	t.Run("should pass through a handler's success unchanged", func(t *testing.T) {
+		t.Parallel()
+
+		want := []*message.Message{message.NewMessage(watermill.NewUUID(), []byte("out"))}
+		next := func(msg *message.Message) ([]*message.Message, error) {
+			return want, nil
+		}
+		wrapped := dropAfterRetries(logger)(next)
+
+		produced, err := wrapped(message.NewMessage(watermill.NewUUID(), []byte("payload")))
+		if err != nil {
+			t.Fatalf("dropAfterRetries() error = %v, want nil", err)
+		}
+		if len(produced) != 1 || produced[0] != want[0] {
+			t.Errorf("dropAfterRetries() produced = %v, want %v", produced, want)
+		}
+	})
 }
 
 func TestClose_ShouldBeSafeToCallOnAnUnstartedRouter(t *testing.T) {

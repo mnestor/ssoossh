@@ -38,3 +38,6 @@ pam_ssoossh\.go:96\.14,96\.15
 handler\.go:81\.16,86\.3
 sign\.go:58\.43,60\.3
 sign\.go:147\.16,149\.3
+pubsub\.go:90\.16,92\.3
+pubsub\.go:185\.41,187\.3
+pubsub\.go:188\.42,190\.3

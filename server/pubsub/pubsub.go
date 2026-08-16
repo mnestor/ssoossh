@@ -88,7 +88,7 @@ func New(logger *slog.Logger) (*PubSub, error) {
 	// shutdown rather than being cut short by it.
 	router, err := message.NewRouter(message.RouterConfig{CloseTimeout: 3 * time.Second}, wmLogger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create watermill router: %w", err)
+		return nil, fmt.Errorf("failed to create watermill router: %w", err) // excluded from coverage: RouterConfig is a hardcoded valid value, Validate() can't fail on it, see exclude-from-coverage.txt
 	}
 
 	// Order matters: the first middleware added is the outermost, so this is
@@ -164,6 +164,7 @@ func (p *PubSub) Run(ctx context.Context) error {
 		// as Run is called (an immediate shutdown, or a test using a
 		// pre-canceled context), and it stayed invisible until there were
 		// handlers registered to wait for.
+		// excluded from coverage: deterministically forcing the timeout arm requires a pre-canceled context racing an unstarted Router, which in practice leaves Router.Run blocked rather than honoring ctx — a real hang risk, not a reliable unit test, see exclude-from-coverage.txt
 		select {
 		case <-p.Router.Running():
 		case <-time.After(routerStartTimeout):
@@ -182,10 +183,10 @@ func (p *PubSub) Run(ctx context.Context) error {
 // bootstrap's shutdownManager.
 func (p *PubSub) Close(context.Context) error {
 	if err := p.Router.Close(); err != nil {
-		return fmt.Errorf("failed to close watermill router: %w", err)
+		return fmt.Errorf("failed to close watermill router: %w", err) // excluded from coverage: Router and channel are concrete types (not interfaces), so a failure can't be injected black-box; verified a double Close returns no error, see exclude-from-coverage.txt
 	}
 	if err := p.channel.Close(); err != nil {
-		return fmt.Errorf("failed to close gochannel pub/sub: %w", err)
+		return fmt.Errorf("failed to close gochannel pub/sub: %w", err) // excluded from coverage: same as above
 	}
 	return nil
 }
