@@ -22,6 +22,12 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: "go.mod"
+      - name: create a dummy file so the frontend/dist isn't empty
+        # Fixes:
+        # lint: server/frontend/frontend_included.go#L29
+        # pattern all:dist/*: no matching files found (typecheck)
+        run: |
+          touch server/frontend/dist/index.html
       - name: golangci-lint
         id: golangcilint
         continue-on-error: true

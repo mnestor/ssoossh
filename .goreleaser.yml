@@ -26,6 +26,7 @@ before:
 
 env:
   - CGO_ENABLED=0
+  - GOFLAGS=-buildvcs=false
 
 builds:
   - id: server-linux-build
