@@ -22,10 +22,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Build amd64 pam_ssoossh
         run: |
-          scripts/build-env-for-pam.sh amd64 release true
+          scripts/build-pam-release.sh amd64 release true
       - name: Build arm64 pam_ssoossh
         run: |
-          scripts/build-env-for-pam.sh arm64 release true
+          scripts/build-pam-release.sh arm64 release true
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v5.6.0
         with:
@@ -60,15 +61,15 @@ jobs:
       - name: Build web UI
         run: make frontend
 
-      - uses: 1password/load-secrets-action@e544b780808654ba8ceba5fb2fe2897103d92ff4 # v5.0.0
-        id: secrets
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          QUILL_NOTARY_ISSUER: op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_NOTARY_ISSUER
-          QUILL_NOTARY_KEY: op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_NOTARY_KEY
-          QUILL_NOTARY_KEY_ID: op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_NOTARY_KEY_ID
-          QUILL_SIGN_P12: op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_SIGN_P12
-          QUILL_SIGN_PASSWORD: op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_SIGN_PASSWORD
+      # - uses: 1password/load-secrets-action@e544b780808654ba8ceba5fb2fe2897103d92ff4 # v5.0.0
+      #   id: secrets
+      #   env:
+      #     OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+      #     QUILL_NOTARY_ISSUER: op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_NOTARY_ISSUER
+      #     QUILL_NOTARY_KEY: op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_NOTARY_KEY
+      #     QUILL_NOTARY_KEY_ID: op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_NOTARY_KEY_ID
+      #     QUILL_SIGN_P12: op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_SIGN_P12
+      #     QUILL_SIGN_PASSWORD: op://Github Actions/oqwo32gbo3ktrgutdcvzsr6msy/QUILL_SIGN_PASSWORD
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v6.4.0
@@ -82,8 +83,8 @@ jobs:
           # come back with macOS builds in phase 10
           # (docs/delivery-phase10-ga.md).
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          QUILL_NOTARY_ISSUER: ${{ env.secrets.outputs.QUILL_NOTARY_ISSUER }}
-          QUILL_NOTARY_KEY: ${{ env.secrets.outputs.QUILL_NOTARY_KEY }}
-          QUILL_NOTARY_KEY_ID: ${{ env.secrets.outputs.QUILL_NOTARY_KEY_ID }}
-          QUILL_SIGN_P12: ${{ env.secrets.outputs.QUILL_SIGN_P12 }}
-          QUILL_SIGN_PASSWORD: ${{ env.secrets.outputs.QUILL_SIGN_PASSWORD }}
+          # QUILL_NOTARY_ISSUER: ${{ env.secrets.outputs.QUILL_NOTARY_ISSUER }}
+          # QUILL_NOTARY_KEY: ${{ env.secrets.outputs.QUILL_NOTARY_KEY }}
+          # QUILL_NOTARY_KEY_ID: ${{ env.secrets.outputs.QUILL_NOTARY_KEY_ID }}
+          # QUILL_SIGN_P12: ${{ env.secrets.outputs.QUILL_SIGN_P12 }}
+          # QUILL_SIGN_PASSWORD: ${{ env.secrets.outputs.QUILL_SIGN_PASSWORD }}

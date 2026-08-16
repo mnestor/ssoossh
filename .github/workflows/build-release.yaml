@@ -25,10 +25,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Build amd64 pam_ssoossh
         run: |
-          scripts/build-env-for-pam.sh amd64 release ${{github.event_name == 'workflow_dispatch'}}
+          scripts/build-pam-release.sh amd64 release ${{github.event_name == 'workflow_dispatch'}}
       - name: Build arm64 pam_ssoossh
         run: |
-          scripts/build-env-for-pam.sh arm64 release ${{github.event_name == 'workflow_dispatch'}}
+          scripts/build-pam-release.sh arm64 release ${{github.event_name == 'workflow_dispatch'}}
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v5.6.0
         with:
