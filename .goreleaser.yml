@@ -160,7 +160,7 @@ nfpms:
         dst: /usr/share/man/man5/ssoosshd.yaml.5
 
 archives:
-  - id: linux-archives
+  - id: linux-clients-archives
     ids:
       - linux-build
     name_template: &archive_name "ssoossh-client_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
@@ -171,6 +171,18 @@ archives:
       - THIRD-PARTY-LICENSES.md
       - docs/man/ssoossh.1
       - docs/man/ssoossh.yaml.5
+
+  - id: linux-server-archives
+    ids:
+      - server-linux-build
+    name_template: &archive_name "ssoossh-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: &archiveFiles
+      - docs/ssoosshd.yaml.default
+      - LICENSE
+      - NOTICE
+      - THIRD-PARTY-LICENSES.md
+      - docs/man/ssoosshd.8
+      - docs/man/ssoosshd.yaml.5
 
   - formats: ["zip"]
     id: windows-archives

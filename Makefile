@@ -71,7 +71,8 @@ binaries:
 	$(call BUILDALL)
 
 # pam_ssoossh needs libpam headers and cgo, both installed by
-# .devcontainer/Dockerfile (see docs/release-phase3-pam-build-env.md).
+# github.com/mnestor/ubuntu-build's Dockerfile.devcontainer (see
+# docs/release-phase3-pam-build-env.md).
 # CGO_ENABLED is set here rather than globally so the rest of the tree keeps
 # building cgo-free.
 pam:
@@ -139,7 +140,7 @@ types-check:
 	fi
 
 update-go-version:
-	@echo "Must update .devcontainer/Dockerfile, go.mod"
+	@echo "Must update go.mod and github.com/mnestor/ubuntu-build's Dockerfile.devcontainer"
 
 .PHONY: third-party-licenses
 # Regenerates THIRD-PARTY-LICENSES.md from the Go module cache. Not committed

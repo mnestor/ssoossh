@@ -1,0 +1,42 @@
+{
+  "name": "ssoossh-minimal",
+  "image": "mcr.microsoft.com/devcontainers/go:1.26-bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/node:2.1.0": {
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "postCreateCommand": {
+    "allow-git": "git config --global --add safe.directory ${containerWorkspaceFolder}",
+    "setup-frontend": "corepack enable && pnpm install --dir frontend"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "davidanson.vscode-markdownlint",
+        "golang.go",
+        "redhat.vscode-yaml",
+        "EditorConfig.EditorConfig"
+      ]
+    }
+  },
+  "otherPortsAttributes": {
+    "onAutoForward": "silent"
+  },
+  "portsAttributes": {
+    "443": {
+      "label": "SSOOSSH with tls",
+      "protocol": "https"
+    },
+    "3001": {
+      "label": "Svelte",
+      "protocol": "http"
+    },
+    "8080": {
+      "label": "SSOOSSH without tls",
+      "protocol": "http"
+    }
+  }
+}
