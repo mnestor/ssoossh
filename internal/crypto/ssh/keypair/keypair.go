@@ -106,6 +106,25 @@ func LoadSSHKeypair(data []byte) (*SSHKeypair, error) {
 // keypairFromPKCS8 builds an SSHKeypair from a key parsed by
 // x509.ParsePKCS8PrivateKey (used by LoadSSHKeypair's "PRIVATE KEY" case).
 func keypairFromPKCS8(priv any) (*SSHKeypair, error) {
+	return keypairFromParsedKey(priv, "PKCS8")
+}
+
+// keypairFromOpenSSHRaw builds an SSHKeypair from a key parsed by
+// ssh.ParseRawPrivateKey (used by LoadSSHKeypair's "OPENSSH PRIVATE KEY"
+// case). ssh.ParseRawPrivateKey returns Ed25519 keys as *ed25519.PrivateKey,
+// unlike x509.ParsePKCS8PrivateKey's value type, so that case is normalized
+// before reaching the shared switch.
+func keypairFromOpenSSHRaw(priv any) (*SSHKeypair, error) {
+	if edPriv, ok := priv.(*ed25519.PrivateKey); ok {
+		priv = *edPriv
+	}
+	return keypairFromParsedKey(priv, "OpenSSH")
+}
+
+// keypairFromParsedKey builds an SSHKeypair from an already-parsed private
+// key of any supported type. source names the parser that produced priv,
+// used only in the unsupported-type error message.
+func keypairFromParsedKey(priv any, source string) (*SSHKeypair, error) {
 	switch k := priv.(type) {
 	case *rsa.PrivateKey:
 		return &SSHKeypair{privateKey: k, publicKey: &k.PublicKey}, nil
@@ -119,28 +138,7 @@ func keypairFromPKCS8(priv any) (*SSHKeypair, error) {
 	case *ecdsa.PrivateKey:
 		return &SSHKeypair{privateKey: k, publicKey: &k.PublicKey}, nil
 	default:
-		return nil, errors.Errorf("unsupported PKCS8 private key type: %T", k)
-	}
-}
-
-// keypairFromOpenSSHRaw builds an SSHKeypair from a key parsed by
-// ssh.ParseRawPrivateKey (used by LoadSSHKeypair's "OPENSSH PRIVATE KEY"
-// case).
-func keypairFromOpenSSHRaw(priv any) (*SSHKeypair, error) {
-	switch k := priv.(type) {
-	case *ed25519.PrivateKey:
-		pub, ok := k.Public().(ed25519.PublicKey)
-		if !ok {
-			// excluded from coverage: ed25519.PrivateKey.Public() always returns ed25519.PublicKey, see exclude-from-coverage.txt
-			return nil, errors.New("ed25519 private key returned an unexpected public key type")
-		}
-		return &SSHKeypair{privateKey: *k, publicKey: pub}, nil
-	case *rsa.PrivateKey:
-		return &SSHKeypair{privateKey: k, publicKey: &k.PublicKey}, nil
-	case *ecdsa.PrivateKey:
-		return &SSHKeypair{privateKey: k, publicKey: &k.PublicKey}, nil
-	default:
-		return nil, errors.Errorf("unsupported OpenSSH private key type: %T", k)
+		return nil, errors.Errorf("unsupported %s private key type: %T", source, k)
 	}
 }
 

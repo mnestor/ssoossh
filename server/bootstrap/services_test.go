@@ -15,6 +15,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/pubsub"
+	"github.com/mnestor/ssoossh/server/testutil"
 )
 
 func testSSHKeyPEM(t *testing.T) string {
@@ -34,7 +35,7 @@ func testSSHKeyPEM(t *testing.T) string {
 func TestInitServices_ShouldConstructCAService(t *testing.T) {
 	t.Parallel()
 
-	oidcSrv := newTestOIDCProvider(t)
+	oidcSrv := testutil.NewTestOIDCProvider(t)
 
 	c := &config.Config{SSHKey: testSSHKeyPEM(t)}
 	c.AuthConfig.ClientID = "test-client"

@@ -6,8 +6,6 @@ import (
 	"crypto/rand"
 	"encoding/pem"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -16,6 +14,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/mnestor/ssoossh/server/testutil"
 )
 
 // Test methodology: Tests verify the full startup sequence and system
@@ -85,35 +85,6 @@ db:
 	return path
 }
 
-// newTestOIDCProvider starts a fake OIDC provider serving just enough of
-// the discovery document (github.com/coreos/go-oidc/v3/oidc.NewProvider
-// only needs this to succeed synchronously; the jwks endpoint is fetched
-// lazily on first token verification, which these bootstrap tests never
-// reach) for service.NewAuthService's discovery call to succeed.
-func newTestOIDCProvider(t *testing.T) *httptest.Server {
-	t.Helper()
-
-	var srv *httptest.Server
-	mux := http.NewServeMux()
-	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{
-			"issuer": %q,
-			"authorization_endpoint": %q,
-			"token_endpoint": %q,
-			"jwks_uri": %q
-		}`, srv.URL, srv.URL+"/auth", srv.URL+"/token", srv.URL+"/keys")
-	})
-	mux.HandleFunc("/keys", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"keys":[]}`)
-	})
-
-	srv = httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	return srv
-}
-
 // newBootstrapCommand builds a cobra command carrying the --config flag
 // (pointing at configPath) and ctx, mirroring what server/cmd sets up before
 // calling Bootstrap.
@@ -133,7 +104,7 @@ func TestBootstrap_ShouldStartAndShutDownCleanlyWhenContextCanceled(t *testing.T
 	saveSlogDefault(t)
 	t.Setenv("OTEL_LOGS_EXPORTER", "none")
 
-	oidcSrv := newTestOIDCProvider(t)
+	oidcSrv := testutil.NewTestOIDCProvider(t)
 	// authentication: is a top-level config key (config.Config.AuthConfig),
 	// a sibling of http: — not nested under it — so this goes in opts.extra,
 	// not opts.httpExtra. redirect_url isn't a config field at all: it's

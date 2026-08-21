@@ -53,6 +53,7 @@ test*
 !/test/**
 !/pam_ssoossh/testing/
 !testdata/
+!/server/testutil/
 # Runtime diagnostics from a failing e2e run (docs/e2e-testing-plan.md) —
 # generated, never committed.
 /test/e2e/_artifacts/

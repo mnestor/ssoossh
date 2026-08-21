@@ -82,19 +82,22 @@ func parseArgs(args []string) config {
 		cfg.insecureSkipVerify, _ = strconv.ParseBool(v) //nolint:errcheck // invalid value leaves insecureSkipVerify at its safe default (false)
 	}
 
-	cfg.skewTolerance = defaultSkewTolerance
-	if v, ok := raw["skew-tolerance"]; ok {
-		if d, err := time.ParseDuration(v); err == nil {
-			cfg.skewTolerance = d
-		}
-	}
-
-	cfg.waitTimeout = defaultWaitTimeout
-	if v, ok := raw["timeout"]; ok {
-		if d, err := time.ParseDuration(v); err == nil {
-			cfg.waitTimeout = d
-		}
-	}
+	cfg.skewTolerance = parseDurationOrDefault(raw, "skew-tolerance", defaultSkewTolerance)
+	cfg.waitTimeout = parseDurationOrDefault(raw, "timeout", defaultWaitTimeout)
 
 	return cfg
+}
+
+// parseDurationOrDefault returns raw[key] parsed as a duration, or def if
+// the key is absent or its value doesn't parse.
+func parseDurationOrDefault(raw map[string]string, key string, def time.Duration) time.Duration {
+	v, ok := raw[key]
+	if !ok {
+		return def
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return def
+	}
+	return d
 }

@@ -7,11 +7,10 @@ test/e2e/.*
 ecdsa\.go:20\.16,22\.3
 ed25519\.go:14\.16,16\.3
 ed25519\.go:32\.9,35\.3
-keypair\.go:116\.10,119\.4
-keypair\.go:135\.10,138\.4
-keypair\.go:183\.16,185\.3
-keypair\.go:259\.17,261\.4
-keypair\.go:271\.17,273\.4
+keypair\.go:133\.10,136\.4
+keypair\.go:179\.16,181\.3
+keypair\.go:255\.17,257\.4
+keypair\.go:267\.17,269\.4
 rsa\.go:17\.16,19\.3
 pam_ssoossh/auth\.go:42\.16,45\.3
 pam_ssoossh/auth\.go:48\.16,50\.3

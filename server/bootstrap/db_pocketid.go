@@ -322,6 +322,15 @@ func registerSqliteFunctions() {
 	registerSqliteFunctionsOnce.Do(registerSqliteFunctionsUnsafe)
 }
 
+// normalizationForms maps the `normalize(text, form)` SQL function's form
+// argument (case-insensitive) to its unicode/norm constant.
+var normalizationForms = map[string]norm.Form{
+	"nfc":  norm.NFC,
+	"nfd":  norm.NFD,
+	"nfkc": norm.NFKC,
+	"nfkd": norm.NFKD,
+}
+
 // registerSqliteFunctionsUnsafe performs the actual registration; call it
 // only through registerSqliteFunctions.
 func registerSqliteFunctionsUnsafe() {
@@ -342,17 +351,8 @@ func registerSqliteFunctionsUnsafe() {
 			return nil, fmt.Errorf("second argument for normalize is not a string: %T", args[1])
 		}
 
-		var form norm.Form
-		switch strings.ToLower(arg1) {
-		case "nfc":
-			form = norm.NFC
-		case "nfd":
-			form = norm.NFD
-		case "nfkc":
-			form = norm.NFKC
-		case "nfkd":
-			form = norm.NFKD
-		default:
+		form, ok := normalizationForms[strings.ToLower(arg1)]
+		if !ok {
 			return nil, fmt.Errorf("unsupported form: %s", arg1)
 		}
 
