@@ -63,14 +63,35 @@ func TestInitServices_ShouldConstructCAService(t *testing.T) {
 	}
 }
 
+// TestInitServices_ShouldErrorOnInvalidSSHKey exercises initServices with a
+// fixture matching what Bootstrap actually passes it — a fully populated
+// app, same as TestInitServices_ShouldConstructCAService — because
+// initServices now builds every service concurrently: an app missing
+// dependencies the other constructors need (db, pubSub) would fail before
+// ever reaching the invalid SSH key this test means to exercise.
 func TestInitServices_ShouldErrorOnInvalidSSHKey(t *testing.T) {
 	t.Parallel()
 
-	c := &config.Config{SSHKey: "not a valid key"}
-	a := &app{config: c}
+	oidcSrv := testutil.NewTestOIDCProvider(t)
 
-	_, err := a.initServices()
-	if err == nil {
+	c := &config.Config{SSHKey: "not a valid key"}
+	c.AuthConfig.ClientID = "test-client"
+	c.AuthConfig.ProviderURL = oidcSrv.URL
+	c.AuthConfig.Fields.Username = "sub"
+	c.HTTP.ServerName = "ssoossh.example.com"
+
+	ps, err := pubsub.New(slog.Default())
+	if err != nil {
+		t.Fatalf("failed to build pub/sub: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := ps.Close(t.Context()); err != nil {
+			t.Errorf("unexpected error closing pub/sub: %v", err)
+		}
+	})
+	a := &app{config: c, pubSub: ps}
+
+	if _, err := a.initServices(); err == nil {
 		t.Fatal("expected an error for an invalid SSH key, got nil")
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/mnestor/ssoossh/server/service"
 )
 
@@ -30,30 +32,46 @@ type services struct {
 
 // initServices constructs the services using a.config and a.httpClient,
 // which must already be populated (see initObservability).
-func (a *app) initServices() (svc *services, err error) {
-	svc = &services{}
-
-	if svc.ca, err = service.NewCAService(a.config, a.httpClient); err != nil {
-		return nil, err
-	}
-
-	authCtx, cancel := context.WithTimeout(context.Background(), authDiscoveryTimeout)
-	defer cancel()
-	if svc.auth, err = service.NewAuthService(authCtx, a.config, a.db, a.httpClient); err != nil {
-		return nil, err
-	}
-
-	if svc.certRequest, err = service.NewCertRequestService(a.config, a.db, a.pubSub.Publisher, a.pubSub.Subscriber); err != nil {
-		return nil, err
-	}
-
-	if svc.host, err = service.NewHostService(a.config); err != nil {
-		return nil, err
-	}
-
+//
+// Auth is the only constructor here that does network I/O (OIDC provider
+// discovery, bounded by authDiscoveryTimeout); the rest are local and have
+// no data dependency on it or on each other. Building all six concurrently
+// means a slow discovery call no longer adds its own latency on top of the
+// others' — cold start is bounded by the slowest one, not the sum.
+func (a *app) initServices() (*services, error) {
+	svc := &services{}
 	svc.certificate = service.NewCertificateService(a.db)
 
-	if svc.enrollment, err = service.NewEnrollmentService(a.config); err != nil {
+	g := new(errgroup.Group)
+
+	g.Go(func() (err error) {
+		svc.ca, err = service.NewCAService(a.config, a.httpClient)
+		return err
+	})
+
+	g.Go(func() (err error) {
+		authCtx, cancel := context.WithTimeout(context.Background(), authDiscoveryTimeout)
+		defer cancel()
+		svc.auth, err = service.NewAuthService(authCtx, a.config, a.db, a.httpClient)
+		return err
+	})
+
+	g.Go(func() (err error) {
+		svc.certRequest, err = service.NewCertRequestService(a.config, a.db, a.pubSub.Publisher, a.pubSub.Subscriber)
+		return err
+	})
+
+	g.Go(func() (err error) {
+		svc.host, err = service.NewHostService(a.config)
+		return err
+	})
+
+	g.Go(func() (err error) {
+		svc.enrollment, err = service.NewEnrollmentService(a.config)
+		return err
+	})
+
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 
