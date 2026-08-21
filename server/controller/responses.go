@@ -29,28 +29,36 @@ func respondData(c *gin.Context, payload any) {
 	c.JSON(http.StatusOK, gin.H{"data": payload, "error": nil})
 }
 
+// handleError registers err on g for middleware.ErrorHandlerMiddleware to
+// write into the error half of the {data, error} envelope. Callers still
+// need their own `return` immediately after — this only registers the
+// error, it doesn't stop the handler.
+func handleError(g *gin.Context, err error) {
+	_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+}
+
+// orEmpty returns s, or a non-nil empty slice if s is nil — for wire-shape
+// fields that must serialize as [] rather than null.
+func orEmpty[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}
+
 // newCurrentUserResponse converts the session identity to its wire shape.
 func newCurrentUserResponse(identity *service.Identity) webtypes.CurrentUserResponse {
-	groups := identity.Groups
-	if groups == nil {
-		groups = []string{}
-	}
 	return webtypes.CurrentUserResponse{
 		Subject:  identity.Subject,
 		Username: identity.Username,
 		Email:    identity.Email,
-		Groups:   groups,
+		Groups:   orEmpty(identity.Groups),
 	}
 }
 
 // newRequestDetailResponse converts a service.RequestDetail to its wire
 // shape.
 func newRequestDetailResponse(d *service.RequestDetail) webtypes.RequestDetailResponse {
-	principals := d.Principals
-	if principals == nil {
-		principals = []string{}
-	}
-
 	return webtypes.RequestDetailResponse{
 		ID:           d.Request.ID,
 		Type:         d.Request.Type,
@@ -58,7 +66,7 @@ func newRequestDetailResponse(d *service.RequestDetail) webtypes.RequestDetailRe
 		SourceIP:     d.Request.SourceIP,
 		Hostname:     d.Request.Hostname,
 		PublicKey:    d.Request.PublicKey,
-		Principals:   principals,
+		Principals:   orEmpty(d.Principals),
 		ValidSeconds: int(d.ValidDuration.Seconds()),
 		Requested:    newCertificateOptionsResponse(d.Requested),
 		Granted:      newCertificateOptionsResponse(d.Narrowed),
@@ -75,12 +83,8 @@ func newRequestDetailResponse(d *service.RequestDetail) webtypes.RequestDetailRe
 // newCertificateOptionsResponse converts resolved options to their wire
 // shape, normalizing nil slices to empty ones.
 func newCertificateOptionsResponse(o service.RequestedOptions) webtypes.CertificateOptionsResponse {
-	extensions := o.Extensions
-	if extensions == nil {
-		extensions = []string{}
-	}
 	return webtypes.CertificateOptionsResponse{
-		Extensions:      extensions,
+		Extensions:      orEmpty(o.Extensions),
 		ForceCommand:    o.ForceCommand,
 		SourceAddresses: o.SourceAddresses,
 		NoTouchRequired: o.NoTouchRequired,

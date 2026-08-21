@@ -31,7 +31,7 @@ type caController struct {
 func (c *caController) getCAHandler(g *gin.Context) {
 	cakey, err := c.caService.GetCAPublicKey(g.Request.Context())
 	if err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 

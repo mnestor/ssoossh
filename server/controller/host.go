@@ -55,13 +55,13 @@ type renewHostRequestBody struct {
 func (h *hostController) renewHandler(g *gin.Context) {
 	var body renewHostRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 
 	certificate, err := h.hostService.Renew(g.Request.Context(), "" /* TODO: hostname from context */, "" /* TODO: existing cert from context */, body.PublicKey)
 	if err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 
@@ -82,7 +82,7 @@ func (h *hostController) renewHandler(g *gin.Context) {
 func (h *hostController) syncHandler(g *gin.Context) {
 	principals, err := h.hostService.SyncPrincipals(g.Request.Context(), g.Param("hostname"))
 	if err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 

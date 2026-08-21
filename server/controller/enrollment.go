@@ -36,13 +36,13 @@ type enrollmentController struct {
 func (e *enrollmentController) retrieveHandler(g *gin.Context) {
 	var body apitypes.RetrieveRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 
 	certificate, err := e.enrollmentService.Retrieve(g.Request.Context(), body.Code)
 	if err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 

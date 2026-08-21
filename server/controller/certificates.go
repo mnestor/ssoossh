@@ -40,13 +40,13 @@ type certificateController struct {
 func (cc *certificateController) listHandler(g *gin.Context) {
 	identity, ok := middleware.Identity(g)
 	if !ok {
-		_ = g.Error(&middleware.UnauthorizedError{}) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, &middleware.UnauthorizedError{})
 		return
 	}
 
 	certs, err := cc.certificateService.ListForIdentity(g.Request.Context(), identity)
 	if err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 

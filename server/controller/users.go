@@ -44,7 +44,7 @@ type userController struct{}
 func (uc *userController) currentUserHandler(g *gin.Context) {
 	identity, ok := middleware.Identity(g)
 	if !ok {
-		_ = g.Error(&middleware.UnauthorizedError{}) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, &middleware.UnauthorizedError{})
 		return
 	}
 

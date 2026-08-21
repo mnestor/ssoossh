@@ -118,7 +118,7 @@ func toServiceOptions(o apitypes.RequestedOptions) service.RequestedOptions {
 func (cr *certRequestController) createUserRequestHandler(g *gin.Context) {
 	var body apitypes.UserRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 
@@ -129,7 +129,7 @@ func (cr *certRequestController) createUserRequestHandler(g *gin.Context) {
 		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})
 	if err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 
@@ -156,7 +156,7 @@ func (cr *certRequestController) createUserRequestHandler(g *gin.Context) {
 func (cr *certRequestController) createHostSignRequestHandler(g *gin.Context) {
 	var body apitypes.HostSignRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 
@@ -168,7 +168,7 @@ func (cr *certRequestController) createHostSignRequestHandler(g *gin.Context) {
 		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})
 	if err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 
@@ -195,7 +195,7 @@ func (cr *certRequestController) createHostSignRequestHandler(g *gin.Context) {
 func (cr *certRequestController) createServiceEnrollRequestHandler(g *gin.Context) {
 	var body apitypes.ServiceEnrollRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 
@@ -206,7 +206,7 @@ func (cr *certRequestController) createServiceEnrollRequestHandler(g *gin.Contex
 		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})
 	if err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 
@@ -236,7 +236,7 @@ func (cr *certRequestController) createServiceEnrollRequestHandler(g *gin.Contex
 func (cr *certRequestController) createPAMRequestHandler(g *gin.Context) {
 	var body apitypes.PAMRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 
@@ -248,7 +248,7 @@ func (cr *certRequestController) createPAMRequestHandler(g *gin.Context) {
 		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})
 	if err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 
@@ -288,7 +288,7 @@ func (cr *certRequestController) createPAMRequestHandler(g *gin.Context) {
 func (cr *certRequestController) eventsHandler(g *gin.Context) {
 	status, certificate, code, err := cr.certRequestService.Wait(g.Request.Context(), g.Param("id"))
 	if err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 
@@ -320,12 +320,12 @@ func (cr *certRequestController) eventsHandler(g *gin.Context) {
 func (cr *certRequestController) approveHandler(g *gin.Context) {
 	identity, ok := middleware.Identity(g)
 	if !ok {
-		_ = g.Error(&middleware.UnauthorizedError{}) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, &middleware.UnauthorizedError{})
 		return
 	}
 
 	if err := cr.certRequestService.Approve(g.Request.Context(), g.Param("id"), identity); err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 
@@ -349,7 +349,7 @@ func (cr *certRequestController) approveHandler(g *gin.Context) {
 // @Router      /api/certs/requests/{id}/deny [post]
 func (cr *certRequestController) denyHandler(g *gin.Context) {
 	if err := cr.certRequestService.Deny(g.Request.Context(), g.Param("id")); err != nil {
-		_ = g.Error(err) //nolint:errcheck // g.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 
@@ -385,13 +385,13 @@ func (cr *certRequestController) denyHandler(g *gin.Context) {
 func (cr *certRequestController) detailHandler(g *gin.Context) {
 	identity, ok := middleware.Identity(g)
 	if !ok {
-		_ = g.Error(&middleware.UnauthorizedError{}) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, &middleware.UnauthorizedError{})
 		return
 	}
 
 	detail, err := cr.certRequestService.Detail(g.Request.Context(), g.Param("id"), identity)
 	if err != nil {
-		_ = g.Error(err) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+		handleError(g, err)
 		return
 	}
 
