@@ -75,7 +75,7 @@ func TestFailStranded_ShouldLogAndReturnOnADBError(t *testing.T) {
 	requestID := signingRequestAged(t, svc, 3*time.Hour)
 	closeUnderlyingDB(t, svc.db)
 
-	svc.failStranded(context.Background(), requestID)
+	svc.failStranded(context.Background(), []string{requestID})
 }
 
 func TestSweepStrandedRequests_ShouldFailRequestsPastTheBound(t *testing.T) {
@@ -156,11 +156,11 @@ func TestSweepStrandedRequests_ShouldIgnoreRequestsInOtherStatuses(t *testing.T)
 	}
 }
 
-// TestSweepStrandedRequests_ShouldWakeAWaitingClient covers the reason the
-// sweep updates rows one at a time and notifies, rather than issuing a
-// single bulk UPDATE: Wait only re-reads the database when a message lands
-// on the request's wake topic, so a bulk update alone would leave a
-// connected client blocked forever against a row that already reads failed.
+// TestSweepStrandedRequests_ShouldWakeAWaitingClient covers why failStranded
+// notifies per row instead of relying on its bulk UPDATE alone: Wait only
+// re-reads the database when a message lands on the request's wake topic, so
+// a connected client would otherwise block forever against a row that
+// already reads failed.
 func TestSweepStrandedRequests_ShouldWakeAWaitingClient(t *testing.T) {
 	t.Parallel()
 
@@ -214,10 +214,62 @@ func TestSweepStrandedRequests_ShouldNotOverwriteAConcurrentResolution(t *testin
 		t.Fatalf("failed to resolve request: %v", err)
 	}
 
-	svc.failStranded(context.Background(), requestID)
+	svc.failStranded(context.Background(), []string{requestID})
 
 	if got := requestByID(t, svc, requestID).Status; got != model.CertificateRequestStatusApproved {
 		t.Errorf("sweep overwrote a concurrently resolved request: got %q", got)
+	}
+}
+
+// TestSweepStrandedRequests_ShouldFailMultipleRequestsInOneSweep covers
+// failStranded's batch UPDATE across more than one row: every stranded
+// request in the sweep, not just the first, must come back Failed.
+func TestSweepStrandedRequests_ShouldFailMultipleRequestsInOneSweep(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(5*time.Minute, 5*time.Minute))
+	first := signingRequestAged(t, svc, 30*time.Minute)
+	second := signingRequestAged(t, svc, 45*time.Minute)
+
+	if err := svc.SweepStrandedRequests(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, requestID := range []string{first, second} {
+		if got := requestByID(t, svc, requestID).Status; got != model.CertificateRequestStatusFailed {
+			t.Errorf("request %s: got status %q, want %q", requestID, got, model.CertificateRequestStatusFailed)
+		}
+	}
+}
+
+// TestSweepStrandedRequests_ShouldOnlyOverwriteTheRequestsItActuallyUpdated
+// covers the RETURNING-based filtering in failStranded: when a batch mixes
+// a request that's still legitimately stranded with one that resolved
+// concurrently, only the still-stranded one should end up Failed — the
+// concurrently resolved one must be left alone, exactly as it would be if
+// it were the only row in the batch.
+func TestSweepStrandedRequests_ShouldOnlyOverwriteTheRequestsItActuallyUpdated(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(5*time.Minute, 5*time.Minute))
+	stillStranded := signingRequestAged(t, svc, 30*time.Minute)
+	racedAway := signingRequestAged(t, svc, 45*time.Minute)
+
+	// Stand in for the listener winning the race on one of the two rows the
+	// sweep is about to act on.
+	if err := svc.db.Model(&model.CertificateRequest{}).
+		Where("id = ?", racedAway).
+		Update("status", model.CertificateRequestStatusApproved).Error; err != nil {
+		t.Fatalf("failed to resolve request: %v", err)
+	}
+
+	svc.failStranded(context.Background(), []string{stillStranded, racedAway})
+
+	if got := requestByID(t, svc, stillStranded).Status; got != model.CertificateRequestStatusFailed {
+		t.Errorf("still-stranded request: got status %q, want %q", got, model.CertificateRequestStatusFailed)
+	}
+	if got := requestByID(t, svc, racedAway).Status; got != model.CertificateRequestStatusApproved {
+		t.Errorf("concurrently resolved request was overwritten: got %q", got)
 	}
 }
 

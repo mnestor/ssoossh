@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"time"
 
+	"gorm.io/gorm/clause"
+
 	"github.com/mnestor/ssoossh/server/model"
 )
 
@@ -54,10 +56,15 @@ func (s *CertRequestService) SweepStrandedRequests(ctx context.Context) error {
 	if err := q.Find(&stranded).Error; err != nil {
 		return fmt.Errorf("failed to list stranded certificate requests: %w", err)
 	}
-
-	for _, req := range stranded {
-		s.failStranded(ctx, req.ID)
+	if len(stranded) == 0 {
+		return nil
 	}
+
+	ids := make([]string, len(stranded))
+	for i, req := range stranded {
+		ids[i] = req.ID
+	}
+	s.failStranded(ctx, ids)
 	return nil
 }
 
@@ -71,37 +78,43 @@ func (s *CertRequestService) strandedCutoff() time.Time {
 	return time.Now().Add(-(s.config.CertOptions.RequestTTL + s.config.CertOptions.SigningTimeout))
 }
 
-// failStranded marks one request failed and wakes anything waiting on it.
+// failStranded marks every request in ids failed, with a single UPDATE, and
+// wakes anything waiting on each one it actually changed.
 //
 // Guarded on the current status the same way Deny, expire, and the
 // listener's markResolved are, so a request that resolved between the
-// select above and this update isn't overwritten — zero rows affected is an
-// expected outcome, not an error.
-//
-// Notifying matters as much as the update: Wait only re-reads the database
-// when a message lands on the request's wake topic, so a client blocked on
-// a swept request would keep blocking against a row that already reads
-// failed.
-func (s *CertRequestService) failStranded(ctx context.Context, requestID string) {
-	result := s.db.WithContext(ctx).Model(&model.CertificateRequest{}).
-		Where("id = ? AND status = ?", requestID, model.CertificateRequestStatusSigning).
+// select above and this update isn't overwritten — the WHERE clause simply
+// excludes it, which is an expected outcome, not an error. RETURNING id
+// reports exactly which of ids this call actually updated, so notifyWaiter
+// — which caches its outcome for Wait to trust without a DB read — is only
+// called for those, never for a request some other path already resolved.
+func (s *CertRequestService) failStranded(ctx context.Context, ids []string) {
+	var updated []model.CertificateRequest
+	result := s.db.WithContext(ctx).
+		Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
+		Model(&updated).
+		Where("id IN ? AND status = ?", ids, model.CertificateRequestStatusSigning).
 		Updates(map[string]any{
 			"status":         model.CertificateRequestStatusFailed,
 			"failure_reason": FailureReasonStranded,
 			"resolved_at":    time.Now(),
 		})
 	if result.Error != nil {
-		slog.Error("failed to invalidate stranded certificate request",
-			"request_id", requestID, "error", result.Error)
-		return
-	}
-	if result.RowsAffected == 0 {
-		slog.Debug("stranded certificate request was already resolved", "request_id", requestID)
+		slog.Error("failed to invalidate stranded certificate requests",
+			"request_ids", ids, "error", result.Error)
 		return
 	}
 
-	slog.Warn("invalidated stranded certificate request",
-		"request_id", requestID, "reason", FailureReasonStranded)
-
-	s.notifyWaiter(requestID, requestOutcome{status: model.CertificateRequestStatusFailed})
+	updatedIDs := make(map[string]bool, len(updated))
+	for _, req := range updated {
+		updatedIDs[req.ID] = true
+		slog.Warn("invalidated stranded certificate request",
+			"request_id", req.ID, "reason", FailureReasonStranded)
+		s.notifyWaiter(req.ID, requestOutcome{status: model.CertificateRequestStatusFailed})
+	}
+	for _, id := range ids {
+		if !updatedIDs[id] {
+			slog.Debug("stranded certificate request was already resolved", "request_id", id)
+		}
+	}
 }

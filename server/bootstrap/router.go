@@ -334,27 +334,30 @@ func resolveSessionSecret(c *config.Config, db *gorm.DB) ([]byte, error) {
 		return nil, fmt.Errorf("failed to generate a random session secret: %w", err)
 	}
 
-	// Insert-or-ignore, then read back what is actually stored. Two
-	// instances starting together both generate a key and both try to
-	// insert; DoNothing means the loser keeps the winner's key rather than
-	// overwriting it and invalidating every session the winner just issued.
+	// Upsert with a no-op conflict update (reassigning name to itself) so
+	// RETURNING always yields a row, whether this call won or lost the
+	// insert race: two instances starting together both generate a key and
+	// both try to insert, and the no-op update means the loser's RETURNING
+	// reports the winner's already-stored row rather than overwriting it
+	// and invalidating every session the winner just issued.
 	secret := model.ServerSecret{
 		Name:      model.ServerSecretSessionKey,
 		Value:     key,
 		CreatedAt: time.Now(),
 	}
-	if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&secret).Error; err != nil {
+	if err := db.Clauses(
+		clause.OnConflict{
+			Columns:   []clause.Column{{Name: "name"}},
+			DoUpdates: clause.AssignmentColumns([]string{"name"}),
+		},
+		clause.Returning{},
+	).Create(&secret).Error; err != nil {
 		return nil, fmt.Errorf("failed to persist the generated session secret: %w", err)
-	}
-
-	var stored model.ServerSecret
-	if err := db.First(&stored, "name = ?", model.ServerSecretSessionKey).Error; err != nil {
-		return nil, fmt.Errorf("failed to read back the session secret: %w", err)
 	}
 
 	slog.Info("http.cookie_key is not configured; using a generated session secret persisted in the database")
 
-	return stored.Value, nil
+	return secret.Value, nil
 }
 
 // Run the web server
