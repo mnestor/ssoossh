@@ -97,6 +97,23 @@ func toServiceOptions(o apitypes.RequestedOptions) service.RequestedOptions {
 	}
 }
 
+// createRequest is the part every create-request handler shares once it has
+// bound its own wire-body type and built params: it fills in SourceIP,
+// creates the request, and writes the response or registers the error. Each
+// handler stays its own function (rather than folding into this one) so its
+// own @Router/@Success/etc swag annotations keep generating make openapi's
+// per-route spec — see .claude/rules/server-api.md.
+func (cr *certRequestController) createRequest(g *gin.Context, params service.NewCertRequestParams) {
+	params.SourceIP = g.ClientIP()
+	requestID, err := cr.certRequestService.CreateRequest(g.Request.Context(), params)
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	respondData(g, newCreateRequestResponse(requestID))
+}
+
 // createUserRequestHandler handles POST /api/certs/user (`ssh login`):
 // creates a pending request for an interactive user certificate and
 // returns its events/approval URLs (see newCreateRequestResponse) — it
@@ -122,18 +139,11 @@ func (cr *certRequestController) createUserRequestHandler(g *gin.Context) {
 		return
 	}
 
-	requestID, err := cr.certRequestService.CreateRequest(g.Request.Context(), service.NewCertRequestParams{
+	cr.createRequest(g, service.NewCertRequestParams{
 		Type:             model.CertificateTypeUser,
 		PublicKey:        body.PublicKey,
-		SourceIP:         g.ClientIP(),
 		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})
-	if err != nil {
-		handleError(g, err)
-		return
-	}
-
-	respondData(g, newCreateRequestResponse(requestID))
 }
 
 // createHostSignRequestHandler handles POST /api/certs/host/sign: creates a
@@ -160,19 +170,12 @@ func (cr *certRequestController) createHostSignRequestHandler(g *gin.Context) {
 		return
 	}
 
-	requestID, err := cr.certRequestService.CreateRequest(g.Request.Context(), service.NewCertRequestParams{
+	cr.createRequest(g, service.NewCertRequestParams{
 		Type:             model.CertificateTypeHost,
 		PublicKey:        body.PublicKey,
 		Hostname:         body.Hostname,
-		SourceIP:         g.ClientIP(),
 		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})
-	if err != nil {
-		handleError(g, err)
-		return
-	}
-
-	respondData(g, newCreateRequestResponse(requestID))
 }
 
 // createServiceEnrollRequestHandler handles POST /api/certs/service/enroll:
@@ -199,18 +202,11 @@ func (cr *certRequestController) createServiceEnrollRequestHandler(g *gin.Contex
 		return
 	}
 
-	requestID, err := cr.certRequestService.CreateRequest(g.Request.Context(), service.NewCertRequestParams{
+	cr.createRequest(g, service.NewCertRequestParams{
 		Type:             model.CertificateTypeService,
 		PublicKey:        body.PublicKey,
-		SourceIP:         g.ClientIP(),
 		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})
-	if err != nil {
-		handleError(g, err)
-		return
-	}
-
-	respondData(g, newCreateRequestResponse(requestID))
 }
 
 // createPAMRequestHandler handles POST /api/certs/pam: creates a pending
@@ -240,19 +236,12 @@ func (cr *certRequestController) createPAMRequestHandler(g *gin.Context) {
 		return
 	}
 
-	requestID, err := cr.certRequestService.CreateRequest(g.Request.Context(), service.NewCertRequestParams{
+	cr.createRequest(g, service.NewCertRequestParams{
 		Type:             model.CertificateTypePAM,
 		PublicKey:        body.PublicKey,
 		Username:         body.Username,
-		SourceIP:         g.ClientIP(),
 		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})
-	if err != nil {
-		handleError(g, err)
-		return
-	}
-
-	respondData(g, newCreateRequestResponse(requestID))
 }
 
 // eventsHandler handles GET /api/certs/requests/:id/events: the client's
