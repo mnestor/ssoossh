@@ -45,7 +45,20 @@ export default defineConfig(({ mode }) => {
 			environment: 'jsdom',
 			globals: true,
 			setupFiles: ['./vitest-setup.ts'],
-			include: ['src/**/*.{test,spec}.{js,ts}']
+			include: ['src/**/*.{test,spec}.{js,ts}'],
+			coverage: {
+				provider: 'v8',
+				// Report coverage on all source files, even untested ones
+				all: true,
+				// Only report on actual source, not generated types
+				include: ['src/**/*.{ts,svelte}'],
+				exclude: [
+					'src/lib/api/generated/**',
+					'**/*.spec.ts',
+					'**/*.test.ts'
+				],
+				reporter: ['text', 'json', 'html']
+			}
 		},
 
 		// Vitest resolves the "node" export condition by default, which for
