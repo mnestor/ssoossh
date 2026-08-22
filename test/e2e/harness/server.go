@@ -251,9 +251,20 @@ func renderServerConfig(d serverConfigData) string {
 	fmt.Fprintf(&b, "    groups: \"groups\"\n")
 	fmt.Fprintf(&b, "    email: \"email\"\n")
 
+	// Default backend is throwaway in-memory sqlite. With
+	// SSOOSSH_E2E_POSTGRES_DSN set, the whole suite runs the server against
+	// that live Postgres instead — the same flows on real dialect
+	// semantics. The instance must be disposable: each server start
+	// migrates into whatever schema the DSN points at, and tests assume
+	// they own it.
 	fmt.Fprintf(&b, "db:\n")
-	fmt.Fprintf(&b, "  provider: sqlite\n")
-	fmt.Fprintf(&b, "  connection_string: \":memory:\"\n")
+	if dsn := os.Getenv("SSOOSSH_E2E_POSTGRES_DSN"); dsn != "" {
+		fmt.Fprintf(&b, "  provider: postgres\n")
+		fmt.Fprintf(&b, "  connection_string: %q\n", dsn)
+	} else {
+		fmt.Fprintf(&b, "  provider: sqlite\n")
+		fmt.Fprintf(&b, "  connection_string: \":memory:\"\n")
+	}
 
 	fmt.Fprintf(&b, "production: false\n")
 	fmt.Fprintf(&b, "logging:\n")

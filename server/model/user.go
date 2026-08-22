@@ -10,7 +10,7 @@ import "time"
 // a certificate (see root CLAUDE.md Hard Constraints).
 type User struct {
 	ID       string `gorm:"column:id;primaryKey"`
-	Subject  string `gorm:"column:subject"` // OIDC "sub" claim, unique per provider
+	Subject  string `gorm:"column:subject;uniqueIndex:idx_users_subject"` // OIDC "sub" claim, unique per provider
 	Username string `gorm:"column:username"`
 	Email    string `gorm:"column:email"`
 

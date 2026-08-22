@@ -13,8 +13,13 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
+	"net/url"
+	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,6 +29,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/certmsg"
@@ -43,6 +49,131 @@ func newTestCertRequestService(t *testing.T, ttl time.Duration) *CertRequestServ
 	return newTestCertRequestServiceWithOptions(t, config.CertificateOptions{RequestTTL: ttl})
 }
 
+// pgAdminOnce guards creation of the single admin handle used to create
+// and drop per-test schemas. The per-test pools cannot do it themselves:
+// their own search_path points at a schema that does not exist yet.
+var (
+	pgAdminOnce sync.Once
+	pgAdminDB   *gorm.DB
+	pgAdminErr  error
+	pgSchemaSeq atomic.Uint64
+)
+
+// pgAdmin returns the shared admin connection to the live Postgres named by
+// dsn, opening it once per process.
+func pgAdmin(dsn string) (*gorm.DB, error) {
+	pgAdminOnce.Do(func() {
+		pgAdminDB, pgAdminErr = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+		if pgAdminErr != nil {
+			return
+		}
+		sqlDB, err := pgAdminDB.DB()
+		if err != nil {
+			pgAdminErr = err
+			return
+		}
+		// Schema create/drop only; a couple of connections is plenty and
+		// leaves the server's slots for the per-test pools.
+		sqlDB.SetMaxOpenConns(4)
+	})
+	return pgAdminDB, pgAdminErr
+}
+
+// pgSchemaName derives a unique, valid Postgres identifier for t. Postgres
+// truncates identifiers at 63 bytes, so the test name is trimmed and a
+// process-unique counter appended to keep it collision-free even when two
+// subtests sanitize to the same string.
+func pgSchemaName(t *testing.T) string {
+	t.Helper()
+	sanitized := strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r + ('a' - 'A')
+		default:
+			return '_'
+		}
+	}, t.Name())
+
+	const maxLen = 40
+	if len(sanitized) > maxLen {
+		sanitized = sanitized[:maxLen]
+	}
+	return fmt.Sprintf("t_%s_%d", sanitized, pgSchemaSeq.Add(1))
+}
+
+// dsnWithSearchPath returns dsn with search_path pinned to schema. It has to
+// travel on the DSN rather than a `SET search_path` statement: the pool opens
+// several physical connections and a SET only affects the one it ran on, so
+// a later query on a sibling connection would silently resolve against the
+// wrong schema.
+func dsnWithSearchPath(dsn, schema string) (string, error) {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return "", fmt.Errorf("parse dsn: %w", err)
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
+// newTestPostgresDB gives t its own schema on the live Postgres named by
+// SSOOSSH_TEST_POSTGRES_DSN, so the package's t.Parallel() tests run
+// concurrently against one server without seeing each other's rows. The
+// schema is dropped on cleanup.
+//
+// The instance must be disposable: these tests create and drop schemas
+// freely.
+func newTestPostgresDB(t *testing.T, dsn string) *gorm.DB {
+	t.Helper()
+
+	admin, err := pgAdmin(dsn)
+	if err != nil {
+		t.Fatalf("failed to open the admin connection to live postgres: %v", err)
+	}
+
+	schema := pgSchemaName(t)
+	if err := admin.Exec("CREATE SCHEMA " + schema).Error; err != nil {
+		t.Fatalf("failed to create schema %s: %v", schema, err)
+	}
+	t.Cleanup(func() {
+		if err := admin.Exec("DROP SCHEMA IF EXISTS " + schema + " CASCADE").Error; err != nil {
+			t.Errorf("failed to drop schema %s: %v", schema, err)
+		}
+	})
+
+	scopedDSN, err := dsnWithSearchPath(dsn, schema)
+	if err != nil {
+		t.Fatalf("failed to scope the dsn to schema %s: %v", schema, err)
+	}
+
+	db, err := gorm.Open(postgres.Open(scopedDSN), &gorm.Config{NowFunc: dbtime.NowFunc})
+	if err != nil {
+		t.Fatalf("failed to open live postgres: %v", err)
+	}
+	if err := db.Use(dbtime.Plugin{}); err != nil {
+		t.Fatalf("failed to register the UTC timestamp plugin: %v", err)
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get underlying sql.DB: %v", err)
+	}
+	// Small per-test pools: with tests running in parallel these multiply,
+	// and Postgres defaults to 100 connection slots.
+	sqlDB.SetMaxOpenConns(4)
+	sqlDB.SetMaxIdleConns(1)
+
+	// Registered after the DROP cleanup so it runs first (cleanups are
+	// last-in-first-out): the schema cannot be dropped while this pool
+	// still holds connections inside it.
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	return db
+}
+
 // newTestDB opens a fresh in-memory sqlite *gorm.DB. Constrained to a
 // single open connection, matching server/bootstrap/db.go's onConnFn for
 // in-memory SQLite: a pool that opens more than one physical connection to
@@ -52,6 +183,14 @@ func newTestCertRequestService(t *testing.T, ttl time.Duration) *CertRequestServ
 // exactly what this avoids.
 func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
+
+	// With SSOOSSH_TEST_POSTGRES_DSN set, the whole package runs against a
+	// live Postgres instead — same tests, real dialect semantics (row
+	// locking instead of SQLite's serialized writes, native TIMESTAMPTZ,
+	// enforced FKs under concurrency). Used with a disposable container.
+	if dsn := os.Getenv("SSOOSSH_TEST_POSTGRES_DSN"); dsn != "" {
+		return newTestPostgresDB(t, dsn)
+	}
 
 	// Mirrors bootstrap.openWithRetry: the UTC timestamp normalization is
 	// part of how this project talks to SQLite, not an optional extra, so
@@ -1555,14 +1694,25 @@ func TestCertRequestService_Detail_ShouldSurfaceACorruptOptionsColumn(t *testing
 func seedRequestWithUnsupportedType(t *testing.T, db *gorm.DB) string {
 	t.Helper()
 
-	if err := db.Exec(`PRAGMA ignore_check_constraints = ON`).Error; err != nil {
-		t.Fatalf("failed to suspend check constraints: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := db.Exec(`PRAGMA ignore_check_constraints = OFF`).Error; err != nil {
-			t.Errorf("failed to restore check constraints: %v", err)
+	// Suspending the CHECK is dialect-specific. SQLite has a pragma for it;
+	// Postgres has no equivalent session switch, so drop the constraint for
+	// the life of the test instead. Each Postgres test owns its own schema
+	// (see newTestPostgresDB), so dropping it here cannot affect anything
+	// running in parallel.
+	if db.Dialector.Name() == "postgres" {
+		if err := db.Exec(`ALTER TABLE certificate_requests DROP CONSTRAINT IF EXISTS chk_certificate_requests_type`).Error; err != nil {
+			t.Fatalf("failed to drop the type check constraint: %v", err)
 		}
-	})
+	} else {
+		if err := db.Exec(`PRAGMA ignore_check_constraints = ON`).Error; err != nil {
+			t.Fatalf("failed to suspend check constraints: %v", err)
+		}
+		t.Cleanup(func() {
+			if err := db.Exec(`PRAGMA ignore_check_constraints = OFF`).Error; err != nil {
+				t.Errorf("failed to restore check constraints: %v", err)
+			}
+		})
+	}
 
 	req := model.CertificateRequest{
 		ID:        uuid.NewString(),

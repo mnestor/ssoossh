@@ -108,17 +108,10 @@ func newTestUserDB(t *testing.T) *gorm.DB {
 
 	db := newTestDB(t)
 
-	err := db.Exec(`CREATE TABLE users (
-		id TEXT PRIMARY KEY,
-		subject TEXT NOT NULL UNIQUE,
-		username TEXT NOT NULL,
-		email TEXT NOT NULL DEFAULT '',
-		other_accounts TEXT NOT NULL DEFAULT '',
-		service_accounts TEXT NOT NULL DEFAULT '',
-		created_at DATETIME NOT NULL,
-		updated_at DATETIME NOT NULL
-	)`).Error
-	if err != nil {
+	// AutoMigrate rather than raw DDL: newTestDB can hand back either
+	// sqlite or a live Postgres (SSOOSSH_TEST_POSTGRES_DSN), and hand-written
+	// column types like DATETIME only exist on one of them.
+	if err := db.AutoMigrate(&model.User{}); err != nil {
 		t.Fatalf("failed to create users table: %v", err)
 	}
 
