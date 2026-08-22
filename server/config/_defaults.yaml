@@ -133,3 +133,11 @@ cert_options:
     valid_duration: 30s
     extensions: []
     key_id_template: ""
+
+branding:
+  # Optional branding for the login page and web UI. All fields are optional;
+  # empty values mean no branding is configured. This endpoint is
+  # unauthenticated, so only include values that are safe for public display.
+  org_name: ""
+  logo_url: ""
+  login_notice: ""

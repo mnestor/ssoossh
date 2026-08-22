@@ -131,6 +131,9 @@ components:
       required:
       - public_key
       type: object
+    gin.H:
+      additionalProperties: {}
+      type: object
     model.CertificateRequestStatus:
       enum:
       - pending
@@ -165,6 +168,15 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/apitypes.ApproveResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.BrandingEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.BrandingResponse'
         error:
           type: string
       required:
@@ -277,6 +289,24 @@ components:
           type: string
       required:
       - data
+      type: object
+    webtypes.BrandingResponse:
+      properties:
+        login_notice:
+          description: |-
+            LoginNotice is a plain-text message shown on the login page before authentication.
+            Empty disables the notice. Supports newlines for multi-line text.
+          type: string
+        logo_url:
+          description: |-
+            LogoURL is the URL to the organization's logo image.
+            Empty disables the logo. Must be a valid HTTP(S) URL.
+          type: string
+        org_name:
+          description: |-
+            OrgName is the organization name displayed in the web UI (e.g., "Acme Corp").
+            Empty disables organization-specific branding.
+          type: string
       type: object
     webtypes.CertificateListResponse:
       properties:
@@ -391,6 +421,78 @@ components:
       - groups
       - subject
       - username
+      type: object
+    webtypes.EffectiveConfigResponse:
+      properties:
+        admin_auditor_group:
+          type: string
+        admin_require_group:
+          description: Admin authorization
+          type: string
+        admin_ssh_server_admin_group:
+          type: string
+        cert_host_require_group:
+          type: string
+        cert_host_valid_duration:
+          type: string
+        cert_pam_require_group:
+          type: string
+        cert_pam_valid_duration:
+          type: string
+        cert_request_ttl:
+          type: string
+        cert_service_extensions:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        cert_service_require_group:
+          type: string
+        cert_service_valid_duration:
+          type: string
+        cert_signing_timeout:
+          type: string
+        cert_user_extensions:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        cert_user_require_group:
+          type: string
+        cert_user_valid_duration:
+          description: Certificate options
+          type: string
+        db_provider:
+          description: Database
+          type: string
+        is_https:
+          type: boolean
+        logging_level:
+          description: Logging configuration
+          type: string
+        port:
+          type: integer
+        provider_url:
+          description: OAuth/OIDC
+          type: string
+        server_name:
+          description: Server connection and TLS settings
+          type: string
+      required:
+      - cert_host_valid_duration
+      - cert_pam_valid_duration
+      - cert_request_ttl
+      - cert_service_extensions
+      - cert_service_valid_duration
+      - cert_signing_timeout
+      - cert_user_extensions
+      - cert_user_valid_duration
+      - db_provider
+      - is_https
+      - logging_level
+      - port
+      - provider_url
+      - server_name
       type: object
     webtypes.RequestDetailResponse:
       properties:
@@ -507,6 +609,180 @@ info:
   version: "0.1"
 openapi: 3.1.0
 paths:
+  /api/admin/certificates/history:
+    get:
+      description: |-
+        Returns issued certificates across all users, useful for audits,
+        incident review, and tracking "who issued this?". Supports
+        filtering and pagination.
+      parameters:
+      - description: Number of results (default 50)
+        example: 50
+        in: query
+        name: limit
+        schema:
+          type: integer
+      - description: Number of results to skip (default 0)
+        example: 0
+        in: query
+        name: offset
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/gin.H'
+          description: Certificate history
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as auditor
+      security:
+      - sessionCookie: []
+      summary: View certificate history across all users (auditor-only)
+      tags:
+      - admin
+  /api/admin/config:
+    get:
+      description: |-
+        Returns the server's effective configuration with sensitive
+        fields redacted (CA key, client secret, cookie signing key,
+        database password). Useful for debugging and audit trails.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/webtypes.EffectiveConfigResponse'
+          description: Current effective configuration
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as auditor
+      security:
+      - sessionCookie: []
+      summary: View effective server configuration (auditor-only)
+      tags:
+      - admin
+  /api/admin/enrollments/{id}/expire:
+    patch:
+      description: |-
+        Immediately marks an enrollment as expired, preventing future
+        service certificate retrievals. The operation is idempotent.
+      parameters:
+      - description: Enrollment ID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/gin.H'
+          description: Enrollment expired
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as admin
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Enrollment not found
+      security:
+      - sessionCookie: []
+      summary: Expire an enrollment (admin-only)
+      tags:
+      - admin
+  /api/admin/users/{id}/disable:
+    patch:
+      description: |-
+        Marks a user as disabled, preventing authentication and
+        eventually expiring their enrollments after the configured
+        grace period. The operation is idempotent.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/gin.H'
+          description: User disabled
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as admin
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: User not found
+      security:
+      - sessionCookie: []
+      summary: Disable a user (admin-only)
+      tags:
+      - admin
+  /api/branding:
+    get:
+      description: |-
+        Unauthenticated endpoint that returns optional branding for the login page
+        and web UI. All fields are optional; empty values mean no branding is
+        configured. Returns an empty object if no branding is configured.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.BrandingEnvelope'
+          description: Branding configuration (may be empty)
+      summary: Get branding configuration
+      tags:
+      - public
   /api/ca:
     get:
       description: |-

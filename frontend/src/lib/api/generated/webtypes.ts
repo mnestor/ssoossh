@@ -138,6 +138,29 @@ export interface CertificateListResponse {
 	next_cursor?: string;
 }
 /**
+ * BrandingResponse is optional branding for the login page and web UI.
+ * All fields are optional; empty values mean no branding is configured.
+ * This endpoint is unauthenticated, so only values safe for public display
+ * should be included.
+ */
+export interface BrandingResponse {
+	/**
+	 * OrgName is the organization name displayed in the web UI (e.g., "Acme Corp").
+	 * Empty disables organization-specific branding.
+	 */
+	org_name?: string;
+	/**
+	 * LogoURL is the URL to the organization's logo image.
+	 * Empty disables the logo. Must be a valid HTTP(S) URL.
+	 */
+	logo_url?: string;
+	/**
+	 * LoginNotice is a plain-text message shown on the login page before authentication.
+	 * Empty disables the notice. Supports newlines for multi-line text.
+	 */
+	login_notice?: string;
+}
+/**
  * EffectiveConfigResponse is the auditor view of the server's effective
  * configuration, with sensitive fields redacted. It shows what policy is
  * actually in effect, useful for debugging and audit trails. The CA private

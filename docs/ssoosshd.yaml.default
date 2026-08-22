@@ -544,3 +544,22 @@
     ## gets its own default of "pam:{{.Username}}" so a sudo and a login
     ## by the same person stay distinguishable in audit logs.
     # key_id_template: "pam:{{.Username}}"
+
+# ----------------------------------------------------------------------
+# branding - optional customization of the login page and web UI with
+# organization-specific information. All fields are optional; empty values
+# mean no branding is configured. This endpoint is unauthenticated, so only
+# include values that are safe for public display.
+# ----------------------------------------------------------------------
+# branding:
+  ## Organization name displayed in the web UI (e.g., "Acme Corp").
+  ## Empty disables organization-specific branding.
+  # org_name: ""
+
+  ## URL to the organization's logo image. Must be a valid HTTP(S) URL.
+  ## Empty disables the logo.
+  # logo_url: ""
+
+  ## Plain-text message shown on the login page before authentication.
+  ## Supports newlines for multi-line text. Empty disables the notice.
+  # login_notice: ""

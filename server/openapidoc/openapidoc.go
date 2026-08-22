@@ -147,3 +147,9 @@ type CertificateListEnvelope struct {
 	Data  webtypes.CertificateListResponse `json:"data" validate:"required"`
 	Error *string                          `json:"error"`
 }
+
+// BrandingEnvelope is GET /api/branding's body.
+type BrandingEnvelope struct {
+	Data  webtypes.BrandingResponse `json:"data" validate:"required"`
+	Error *string                   `json:"error"`
+}

@@ -313,6 +313,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	// Set up API routes
 	apiGroup := r.Group("/api")
 	controller.NewCaController(apiGroup, a.svc.ca)
+	controller.NewBrandingController(apiGroup, a.config)
 
 	// Build per-endpoint rate limit middleware for certificate request creation.
 	// Each endpoint gets its own rate limiter (per-IP, independent of each other).

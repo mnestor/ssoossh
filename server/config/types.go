@@ -37,6 +37,11 @@ type Config struct {
 	SSHKey      string             `mapstructure:"ssh_key"`
 	CertOptions CertificateOptions `mapstructure:"cert_options"`
 
+	// Branding optionally customizes the login page and web UI with
+	// organization-specific information. All fields are optional; empty values
+	// are treated as "no branding configured". See BrandingSettings.
+	Branding BrandingSettings `mapstructure:"branding"`
+
 	// FIPS steers the server toward FIPS 140-3 approved algorithms: the CA
 	// key (checked at startup), client-submitted public keys (checked in
 	// CertRequestService.Approve and again in server/signer), and the TLS
@@ -56,6 +61,24 @@ type Config struct {
 	// message delivery (e.g., CertRequestService.Wait decodes wake-message
 	// payloads). See docs/multi-instance-safety-plan.md.
 	MultiInstance bool `mapstructure:"multi_instance"`
+}
+
+// BrandingSettings configures optional branding for the login page and web UI.
+// All fields are optional; empty values mean no branding is configured.
+// This endpoint is unauthenticated, so only include values that are safe for
+// public display.
+type BrandingSettings struct {
+	// OrgName is the organization name displayed in the web UI (e.g., "Acme Corp").
+	// Empty disables organization-specific branding.
+	OrgName string `mapstructure:"org_name"`
+
+	// LogoURL is the URL to the organization's logo image.
+	// Empty disables the logo. Must be a valid HTTP(S) URL.
+	LogoURL string `mapstructure:"logo_url"`
+
+	// LoginNotice is a plain-text message shown on the login page before authentication.
+	// Empty disables the notice. Supports newlines for multi-line text.
+	LoginNotice string `mapstructure:"login_notice"`
 }
 
 // FIPSEnabled reports whether FIPS steering is in effect. See

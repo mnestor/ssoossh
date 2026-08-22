@@ -52,8 +52,8 @@ type adminController struct {
 // @Tags        admin
 // @Produce     json
 // @Success     200 {object} webtypes.EffectiveConfigResponse "Current effective configuration"
-// @Failure     401 {object} webtypes.ErrorResponse "Not authenticated"
-// @Failure     403 {object} webtypes.ErrorResponse "Not authorized as auditor"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
 // @Security    sessionCookie
 // @Router      /api/admin/config [get]
 func (a *adminController) effectiveConfigHandler(g *gin.Context) {
@@ -99,9 +99,9 @@ func (a *adminController) effectiveConfigHandler(g *gin.Context) {
 // @Produce     json
 // @Param       id path string true "Enrollment ID"
 // @Success     200 {object} gin.H "Enrollment expired"
-// @Failure     401 {object} webtypes.ErrorResponse "Not authenticated"
-// @Failure     403 {object} webtypes.ErrorResponse "Not authorized as admin"
-// @Failure     404 {object} webtypes.ErrorResponse "Enrollment not found"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "Enrollment not found"
 // @Security    sessionCookie
 // @Router      /api/admin/enrollments/{id}/expire [patch]
 func (a *adminController) expireEnrollmentHandler(g *gin.Context) {
@@ -136,9 +136,9 @@ func (a *adminController) expireEnrollmentHandler(g *gin.Context) {
 // @Produce     json
 // @Param       id path string true "User ID"
 // @Success     200 {object} gin.H "User disabled"
-// @Failure     401 {object} webtypes.ErrorResponse "Not authenticated"
-// @Failure     403 {object} webtypes.ErrorResponse "Not authorized as admin"
-// @Failure     404 {object} webtypes.ErrorResponse "User not found"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "User not found"
 // @Security    sessionCookie
 // @Router      /api/admin/users/{id}/disable [patch]
 func (a *adminController) disableUserHandler(g *gin.Context) {
@@ -165,8 +165,8 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 // @Param       limit query int false "Number of results (default 50)" example(50)
 // @Param       offset query int false "Number of results to skip (default 0)" example(0)
 // @Success     200 {object} gin.H "Certificate history"
-// @Failure     401 {object} webtypes.ErrorResponse "Not authenticated"
-// @Failure     403 {object} webtypes.ErrorResponse "Not authorized as auditor"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
 // @Security    sessionCookie
 // @Router      /api/admin/certificates/history [get]
 func (a *adminController) certificateHistoryHandler(g *gin.Context) {

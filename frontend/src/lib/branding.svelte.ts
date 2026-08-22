@@ -1,19 +1,6 @@
-/**
- * Branding configuration fetched at app startup from an unauthenticated
- * API endpoint. When the backend endpoint lands, this should be reconciled
- * with the real webtypes.BrandingResponse type.
- *
- * All fields are optional: if the endpoint does not exist or returns empty
- * values, the UI renders without branding, matching the "off unless deployed
- * explicitly" requirement.
- */
-interface BrandingConfig {
-	org_name?: string;
-	logo_url?: string;
-	login_notice?: string;
-}
+import type { BrandingResponse } from '$lib/api/generated/webtypes';
 
-let branding = $state<BrandingConfig | null>(null);
+let branding = $state<BrandingResponse | null>(null);
 
 /**
  * load fetches branding config from the unauthenticated /api/branding endpoint.
@@ -33,7 +20,7 @@ export async function loadBranding(): Promise<void> {
 			branding = {};
 			return;
 		}
-		const json = (await response.json()) as { data?: BrandingConfig };
+		const json = (await response.json()) as { data?: BrandingResponse };
 		branding = json.data ?? {};
 	} catch {
 		// Network error or parse failure: fail closed.
@@ -41,6 +28,6 @@ export async function loadBranding(): Promise<void> {
 	}
 }
 
-export function getBranding(): BrandingConfig {
+export function getBranding(): BrandingResponse {
 	return branding ?? {};
 }

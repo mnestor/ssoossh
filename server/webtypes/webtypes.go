@@ -139,6 +139,24 @@ type CertificateListResponse struct {
 	NextCursor   *string               `json:"next_cursor,omitempty"`
 }
 
+// BrandingResponse is optional branding for the login page and web UI.
+// All fields are optional; empty values mean no branding is configured.
+// This endpoint is unauthenticated, so only values safe for public display
+// should be included.
+type BrandingResponse struct {
+	// OrgName is the organization name displayed in the web UI (e.g., "Acme Corp").
+	// Empty disables organization-specific branding.
+	OrgName string `json:"org_name,omitempty"`
+
+	// LogoURL is the URL to the organization's logo image.
+	// Empty disables the logo. Must be a valid HTTP(S) URL.
+	LogoURL string `json:"logo_url,omitempty"`
+
+	// LoginNotice is a plain-text message shown on the login page before authentication.
+	// Empty disables the notice. Supports newlines for multi-line text.
+	LoginNotice string `json:"login_notice,omitempty"`
+}
+
 // EffectiveConfigResponse is the auditor view of the server's effective
 // configuration, with sensitive fields redacted. It shows what policy is
 // actually in effect, useful for debugging and audit trails. The CA private
