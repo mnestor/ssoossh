@@ -4,7 +4,9 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/testcontainers/testcontainers-go"
@@ -24,27 +26,22 @@ type Container struct {
 func New(t *testing.T, ctx context.Context) *Container {
 	t.Helper()
 
-	// Start the container.
-	req := testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "postgres:17-alpine",
-			ExposedPorts: []string{"5432/tcp"},
-			Env: map[string]string{
-				"POSTGRES_USER":     "ssoossh",
-				"POSTGRES_PASSWORD": "testpassword",
-				"POSTGRES_DB":       "ssoossh",
-			},
-			WaitingFor: wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(testcontainers.DefaultStartupTimeout),
-		},
-		Started: true,
-	}
-
-	pgContainer, err := postgres.RunContainer(ctx, req)
+	// Start the container using the postgres module's simplified API.
+	pgContainer, err := postgres.RunContainer(
+		ctx,
+		postgres.WithImage("postgres:17-alpine"),
+		postgres.WithDatabase("ssoossh"),
+		postgres.WithUsername("ssoossh"),
+		postgres.WithPassword("testpassword"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2),
+		),
+	)
 	if err != nil {
-		if testcontainers.IsContainerNotFoundError(err) || testcontainers.IsDockerUnavailableError(err) {
-			t.Skip("Docker unavailable or Postgres image not found; skipping live Postgres test")
+		// Check if Docker is unavailable by looking at the error message.
+		if strings.Contains(err.Error(), "Docker") || strings.Contains(err.Error(), "docker") {
+			t.Skip("Docker unavailable; skipping live Postgres test")
 		}
 		t.Fatalf("failed to start Postgres container: %v", err)
 	}
@@ -62,7 +59,7 @@ func New(t *testing.T, ctx context.Context) *Container {
 		t.Fatalf("failed to get Postgres connection string: %v", err)
 	}
 
-	// Append SSL mode.
+	// Append SSL mode if not already present.
 	if !containsSSLMode(dsn) {
 		dsn += "?sslmode=disable"
 	}
@@ -86,15 +83,4 @@ func containsSSLMode(dsn string) bool {
 	}
 	query := parsed.Query()
 	return query.Get("sslmode") != ""
-}
-
-// IP returns the container's IP address on the network. Useful for
-// container-to-container networking.
-func (c *Container) IP(ctx context.Context) (string, error) {
-	return c.container.ContainerIP(ctx)
-}
-
-// Port returns the mapped host port for the given container port.
-func (c *Container) Port(ctx context.Context, port string) (string, error) {
-	return c.container.MappedPort(ctx, port)
 }
