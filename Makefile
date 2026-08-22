@@ -342,3 +342,41 @@ mutation-test-go:
 # Combined mutation testing (frontend + go analysis documentation)
 mutation-test: mutation-test-frontend mutation-test-go
 
+# --- pam e2e and client matrix ---
+# PAM module end-to-end testing (requires Docker)
+# Builds the PAM module, creates a containerized test environment,
+# and runs e2e tests against a real PAM stack.
+.PHONY: test-pam-e2e pam-e2e-container
+
+test-pam-e2e: pam pam-e2e-container
+	@echo "Running PAM e2e tests in container..."
+	docker run --rm \
+		-v $(CURDIR):/workspace \
+		-w /workspace \
+		-e CGO_ENABLED=1 \
+		pam-test:latest \
+		go test -tags=pam_e2e -v -count=1 -timeout=10m ./test/pam/...
+
+pam-e2e-container:
+	@echo "Building PAM e2e test container..."
+	docker build -t pam-test:latest test/pam/
+
+# Cross-platform client compilation and testing
+.PHONY: cross-compile-verify
+
+cross-compile-verify:
+	@echo "Verifying cross-platform compilation..."
+	@echo "  linux/amd64..."
+	@GOOS=linux GOARCH=amd64 go build -v ./cmd/ssoossh/
+	@echo "  linux/arm64..."
+	@GOOS=linux GOARCH=arm64 go build -v ./cmd/ssoossh/
+	@echo "  darwin/amd64..."
+	@GOOS=darwin GOARCH=amd64 go build -v ./cmd/ssoossh/
+	@echo "  darwin/arm64..."
+	@GOOS=darwin GOARCH=arm64 go build -v ./cmd/ssoossh/
+	@echo "  windows/amd64..."
+	@GOOS=windows GOARCH=amd64 go build -v ./cmd/ssoossh/
+	@echo "  windows/arm64..."
+	@GOOS=windows GOARCH=arm64 go build -v ./cmd/ssoossh/
+	@echo "All platforms verified"
+

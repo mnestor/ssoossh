@@ -1,0 +1,51 @@
+name: pam-e2e
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pam-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pam-e2e:
+    name: PAM e2e tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+          check-latest: true
+          cache: true
+
+      - name: Build pam_ssoossh.so
+        run: make pam
+
+      - name: Build Docker image for PAM testing
+        run: docker build -t pam-test:latest test/pam/
+
+      - name: Run PAM e2e tests
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            -e CGO_ENABLED=1 \
+            pam-test:latest \
+            go test -tags=pam_e2e -v -count=1 -timeout=10m ./test/pam/...
+
+      - name: Upload PAM test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pam-e2e-artifacts
+          path: test/pam/_artifacts/
+          retention-days: 7
