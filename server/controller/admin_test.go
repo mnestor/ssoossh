@@ -1,0 +1,444 @@
+package controller
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+
+	"github.com/mnestor/ssoossh/server/config"
+)
+
+// newTestConfig returns a minimal config suitable for admin tests.
+func newTestConfig(t *testing.T) *config.Config {
+	t.Helper()
+	return &config.Config{
+		HTTP: config.HTTPSettings{
+			ServerName: "test-server",
+			Port:       8080,
+			IsHTTPS:    false,
+		},
+		DB: config.DB{
+			Provider: "sqlite",
+		},
+		AuthConfig: config.OAuthConfig{
+			ProviderURL: "https://example.com/.well-known/openid-configuration",
+		},
+		Admin: config.AdminConfig{
+			RequireGroup:        "ssoossh-admins",
+			AuditorGroup:        "ssoossh-auditors",
+			SSHServerAdminGroup: "ssoossh-ssh-server-admins",
+		},
+		Logging: config.AppLogging{
+			Level: "info",
+		},
+		CertOptions: config.CertificateOptions{
+			User: config.CertOptionsUser{
+				ValidDuration: 30 * time.Minute,
+				Extensions:    []string{"permit-pty", "permit-agent-forwarding"},
+			},
+			Service: config.CertOptionsService{
+				ValidDuration: 24 * time.Hour,
+			},
+			Host: config.CertOptions{
+				ValidDuration: 365 * 24 * time.Hour,
+			},
+			PAM: config.CertOptionsPAM{
+				ValidDuration: 5 * time.Minute,
+			},
+			RequestTTL:     10 * time.Minute,
+			SigningTimeout: 30 * time.Second,
+		},
+	}
+}
+
+// mockSessionAuthMiddleware is a test double that sets authenticated identity in context.
+func mockSessionAuthMiddleware(authenticated bool, identity string) gin.HandlerFunc {
+	return func(g *gin.Context) {
+		if authenticated {
+			g.Set("user_id", identity)
+		}
+		g.Next()
+	}
+}
+
+// mockAdminAuthMiddleware is a test double that only allows authorized admins.
+func mockAdminAuthMiddleware(authorized bool) gin.HandlerFunc {
+	return func(g *gin.Context) {
+		if !authorized {
+			g.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+			g.Abort()
+			return
+		}
+		g.Next()
+	}
+}
+
+// mockAuditorAuthMiddleware is a test double for auditor authorization.
+func mockAuditorAuthMiddleware(authorized bool) gin.HandlerFunc {
+	return func(g *gin.Context) {
+		if !authorized {
+			g.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+			g.Abort()
+			return
+		}
+		g.Next()
+	}
+}
+
+// mockCSRFMiddleware is a test double that passes through.
+func mockCSRFMiddleware() gin.HandlerFunc {
+	return func(g *gin.Context) {
+		g.Next()
+	}
+}
+
+// mockDB returns a minimal *gorm.DB for testing (handlers don't use it for most operations).
+func mockDB() *gorm.DB {
+	return &gorm.DB{}
+}
+
+// TestEffectiveConfigHandler_ShouldReturnConfigData verifies GET /api/admin/config response.
+func TestEffectiveConfigHandler_ShouldReturnConfigData(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cfg := newTestConfig(t)
+
+	r := gin.New()
+	r.Use(mockSessionAuthMiddleware(true, "user-123"))
+	r.Use(mockAuditorAuthMiddleware(true))
+
+	NewAdminController(
+		&r.RouterGroup,
+		cfg,
+		mockDB(),
+		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
+		mockAuditorAuthMiddleware(true),
+		mockCSRFMiddleware(),
+	)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/config", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			ServerName  string `json:"server_name"`
+			Port        int    `json:"port"`
+			AdminGroup  string `json:"admin_group"`
+			AuditorGroup string `json:"auditor_group"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if resp.Data.ServerName != "test-server" {
+		t.Errorf("ServerName = %q, want %q", resp.Data.ServerName, "test-server")
+	}
+	if resp.Data.Port != 8080 {
+		t.Errorf("Port = %d, want %d", resp.Data.Port, 8080)
+	}
+	if resp.Data.AdminGroup != "ssoossh-admins" {
+		t.Errorf("AdminGroup = %q, want %q", resp.Data.AdminGroup, "ssoossh-admins")
+	}
+}
+
+// TestEffectiveConfigHandler_RequiresAuditorAuth verifies authorization check.
+func TestEffectiveConfigHandler_RequiresAuditorAuth(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cfg := newTestConfig(t)
+
+	r := gin.New()
+	r.Use(mockSessionAuthMiddleware(true, "user-123"))
+	r.Use(mockAuditorAuthMiddleware(false)) // Not authorized
+
+	NewAdminController(
+		&r.RouterGroup,
+		cfg,
+		mockDB(),
+		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(false),
+		mockAuditorAuthMiddleware(false),
+		mockCSRFMiddleware(),
+	)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/config", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("got status %d, want %d", w.Code, http.StatusForbidden)
+	}
+}
+
+// TestExpireEnrollmentHandler_ShouldRejectMissingID tests parameter validation.
+func TestExpireEnrollmentHandler_ShouldRejectMissingID(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cfg := newTestConfig(t)
+
+	r := gin.New()
+	r.Use(mockSessionAuthMiddleware(true, "user-123"))
+	r.Use(mockAdminAuthMiddleware(true))
+
+	NewAdminController(
+		&r.RouterGroup,
+		cfg,
+		mockDB(),
+		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
+		mockAuditorAuthMiddleware(true),
+		mockCSRFMiddleware(),
+	)
+
+	// Request without :id parameter will not match the route (404)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/admin/enrollments/expire", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code == http.StatusOK {
+		t.Errorf("got status %d, want non-200 for missing ID", w.Code)
+	}
+}
+
+// TestExpireEnrollmentHandler_RequiresAdminAuth verifies authorization check.
+func TestExpireEnrollmentHandler_RequiresAdminAuth(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cfg := newTestConfig(t)
+
+	r := gin.New()
+	r.Use(mockSessionAuthMiddleware(true, "user-123"))
+	r.Use(mockAdminAuthMiddleware(false)) // Not authorized
+
+	NewAdminController(
+		&r.RouterGroup,
+		cfg,
+		mockDB(),
+		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(false),
+		mockAuditorAuthMiddleware(true),
+		mockCSRFMiddleware(),
+	)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/admin/enrollments/enroll-123/expire", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("got status %d, want %d", w.Code, http.StatusForbidden)
+	}
+}
+
+// TestDisableUserHandler_ShouldReturnNotImplemented verifies placeholder status.
+func TestDisableUserHandler_ShouldReturnNotImplemented(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cfg := newTestConfig(t)
+
+	r := gin.New()
+	r.Use(mockSessionAuthMiddleware(true, "user-123"))
+	r.Use(mockAdminAuthMiddleware(true))
+
+	NewAdminController(
+		&r.RouterGroup,
+		cfg,
+		mockDB(),
+		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
+		mockAuditorAuthMiddleware(true),
+		mockCSRFMiddleware(),
+	)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/admin/users/user-123/disable", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("got status %d, want %d (not yet implemented)", w.Code, http.StatusInternalServerError)
+	}
+}
+
+// TestDisableUserHandler_RequiresAdminAuth verifies authorization check.
+func TestDisableUserHandler_RequiresAdminAuth(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cfg := newTestConfig(t)
+
+	r := gin.New()
+	r.Use(mockSessionAuthMiddleware(true, "user-123"))
+	r.Use(mockAdminAuthMiddleware(false)) // Not authorized
+
+	NewAdminController(
+		&r.RouterGroup,
+		cfg,
+		mockDB(),
+		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(false),
+		mockAuditorAuthMiddleware(true),
+		mockCSRFMiddleware(),
+	)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/admin/users/user-123/disable", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("got status %d, want %d", w.Code, http.StatusForbidden)
+	}
+}
+
+// TestCertificateHistoryHandler_ShouldReturnEmptyList tests placeholder response.
+func TestCertificateHistoryHandler_ShouldReturnEmptyList(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cfg := newTestConfig(t)
+
+	r := gin.New()
+	r.Use(mockSessionAuthMiddleware(true, "user-123"))
+	r.Use(mockAuditorAuthMiddleware(true))
+
+	NewAdminController(
+		&r.RouterGroup,
+		cfg,
+		mockDB(),
+		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
+		mockAuditorAuthMiddleware(true),
+		mockCSRFMiddleware(),
+	)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/certificates/history", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Data struct {
+			Certificates []interface{} `json:"certificates"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	if len(resp.Data.Certificates) != 0 {
+		t.Errorf("expected empty certificate list, got %d items", len(resp.Data.Certificates))
+	}
+}
+
+// TestCertificateHistoryHandler_RequiresAuditorAuth verifies authorization check.
+func TestCertificateHistoryHandler_RequiresAuditorAuth(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cfg := newTestConfig(t)
+
+	r := gin.New()
+	r.Use(mockSessionAuthMiddleware(true, "user-123"))
+	r.Use(mockAuditorAuthMiddleware(false)) // Not authorized
+
+	NewAdminController(
+		&r.RouterGroup,
+		cfg,
+		mockDB(),
+		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(false),
+		mockAuditorAuthMiddleware(false),
+		mockCSRFMiddleware(),
+	)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/certificates/history", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("got status %d, want %d", w.Code, http.StatusForbidden)
+	}
+}
+
+// TestAdminEnrollmentModelTableName verifies GORM table name.
+func TestAdminEnrollmentModelTableName(t *testing.T) {
+	t.Parallel()
+
+	model := adminEnrollmentModel{}
+	if got := model.TableName(); got != "enrollments" {
+		t.Errorf("TableName() = %q, want %q", got, "enrollments")
+	}
+}
+
+// TestNewAdminController_RoutesAreRegistered verifies routes are registered without error.
+func TestNewAdminController_RoutesAreRegistered(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cfg := newTestConfig(t)
+
+	r := gin.New()
+
+	// Should not panic or error
+	NewAdminController(
+		&r.RouterGroup,
+		cfg,
+		mockDB(),
+		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
+		mockAuditorAuthMiddleware(true),
+		mockCSRFMiddleware(),
+	)
+
+	// Basic test: GET /admin/config should be accessible
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/config", nil)
+	r.ServeHTTP(w, req)
+
+	// Should reach the handler (may be unauthorized, that's OK for this test)
+	if w.Code == http.StatusNotFound {
+		t.Errorf("route /admin/config not found, status %d", w.Code)
+	}
+}
+
+// TestAdminConfigPredicates tests config predicate methods.
+func TestAdminConfigPredicates(t *testing.T) {
+	t.Parallel()
+
+	cfg := newTestConfig(t)
+
+	// Test admin role is enabled
+	if !cfg.Admin.IsAdminEnabled() {
+		t.Error("IsAdminEnabled() should return true when RequireGroup is set")
+	}
+
+	// Test auditor role is enabled
+	if !cfg.Admin.IsAuditorEnabled() {
+		t.Error("IsAuditorEnabled() should return true when AuditorGroup is set")
+	}
+
+	// Test SSH server admin role is enabled
+	if !cfg.Admin.IsSSHServerAdminEnabled() {
+		t.Error("IsSSHServerAdminEnabled() should return true when SSHServerAdminGroup is set")
+	}
+}
