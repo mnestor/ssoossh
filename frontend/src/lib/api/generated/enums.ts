@@ -43,8 +43,7 @@ export const CertificateRequestStatusExpired = "expired";
  * produce a certificate (see docs/signing-pipeline.md),
  * or a boot-time sweep invalidated a request left stuck in Signing (see
  * docs/signing-pipeline.md). Distinct from Denied,
- * which means a human said no. No migration needed — status is a
- * free-text TEXT column.
+ * which means a human said no.
  */
 export const CertificateRequestStatusFailed = "failed";
 export type CertificateRequestStatus = typeof CertificateRequestStatusPending | typeof CertificateRequestStatusSigning | typeof CertificateRequestStatusApproved | typeof CertificateRequestStatusEnrolled | typeof CertificateRequestStatusDenied | typeof CertificateRequestStatusExpired | typeof CertificateRequestStatusFailed;
