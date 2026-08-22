@@ -19,6 +19,7 @@
 	let nextCursor = $state<string | null>(null);
 	let loadError = $state<string | null>(null);
 	let isLoading = $state(false);
+	let hasLoaded = $state(false);
 
 	// Filter and pagination state
 	let selectedType = $state<CertificateType | 'all'>('all');
@@ -102,12 +103,14 @@
 			.then((result: CertificateListResponse) => {
 				allCertificates = result.certificates;
 				nextCursor = result.next_cursor ?? null;
+				hasLoaded = true;
 			})
 			.catch((cause) => {
 				if (controller.signal.aborted || redirectIfUnauthenticated(cause)) {
 					return;
 				}
 				loadError = errorMessage(cause);
+				hasLoaded = true;
 			});
 
 		return () => controller.abort();
@@ -122,7 +125,7 @@
 >
 	{#if loadError}
 		<Alert variant="error" title="Could not load your history">{loadError}</Alert>
-	{:else if allCertificates.length === 0}
+	{:else if !hasLoaded}
 		<p class="text-sm text-ink-muted">Loading…</p>
 	{:else if sorted.length === 0}
 		<p class="text-sm text-ink-muted">No certificates have been issued to you yet.</p>

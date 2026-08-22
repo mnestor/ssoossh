@@ -20,6 +20,7 @@
 	let nextCursor = $state<string | null>(null);
 	let loadError = $state<string | null>(null);
 	let isLoading = $state(false);
+	let hasLoaded = $state(false);
 
 	// Recomputed against a clock that ticks, not against load time: this page
 	// is the sort of thing that stays open in a tab, and a certificate that
@@ -88,12 +89,14 @@
 			.then((result: CertificateListResponse) => {
 				allCertificates = result.certificates;
 				nextCursor = result.next_cursor ?? null;
+				hasLoaded = true;
 			})
 			.catch((cause) => {
 				if (controller.signal.aborted || redirectIfUnauthenticated(cause)) {
 					return;
 				}
 				loadError = errorMessage(cause);
+				hasLoaded = true;
 			});
 
 		return () => controller.abort();
@@ -108,7 +111,7 @@
 	{/if}
 
 	<Card title="Active certificates" description="Issued to you and not yet expired.">
-		{#if allCertificates.length === 0}
+		{#if !hasLoaded}
 			<p class="text-sm text-ink-muted">Loading…</p>
 		{:else if active.length === 0}
 			<p class="text-sm text-ink-muted">
