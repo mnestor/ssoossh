@@ -1,9 +1,12 @@
-# Release notes (draft)
+# Release Notes
 
-Draft content for the first tagged release's notes; update the version/date
-once cut.
+For detailed commit history and changes, see [CHANGELOG.md](../CHANGELOG.md).
 
-## What's in this release
+## Overview
+
+This document provides a high-level summary of what was accomplished and what was deliberately deferred. For a complete list of changes, commits, and authors, see the [CHANGELOG](../CHANGELOG.md).
+
+## What's in the Current Release
 
 **User certificates and PAM.** A person authenticates to a machine with
 their identity provider, twice: once to open a shell (`ssh`), once to
@@ -18,52 +21,30 @@ afterwards.
 - Client packages for Linux (`.deb`/`.rpm`), Windows (`.zip`), and macOS
   (`.zip`, quill-signed and notarized).
 
-## What this release deliberately does not contain
+## Deliberately Deferred (Not Oversights)
 
-Not oversights — each has a written plan (see `docs/README.md`'s "Planned"
-and "Designed but deferred" tables). The service and host client commands
-fail with a clear message rather than hanging or producing a stack trace.
+Each has a written plan in `docs/README.md`'s "Planned" and "Designed but deferred" tables. The service and host client commands fail with a clear message rather than hanging.
 
-- [ ] **Service certificates** — a certificate for a non-interactive
-      account (a scheduled job, a file transfer, an automated process)
-      rather than a person at a keyboard. Enrolled once against a
-      persistent keypair, then reissued unattended on every run with no
-      browser and no human in the loop. See
-      [what-ssoossh-is.md](what-ssoossh-is.md#certificate-types).
-- [ ] **Host certificates** and principal mapping.
-- [ ] **LDAP enrichment and account status.**
-- [ ] **Admin and auditor roles.**
-- [ ] **Certificate lifetime and source-network policy** beyond the flat
-      per-type `valid_duration` already in place.
-- [ ] **Multi-instance safety** and the signer process split.
-- [ ] **Client-side TLS pinning.**
-- [ ] **Console-login PAM module** and QR-code approval.
+- **Service certificates** — non-interactive account certificates
+- **Host certificates** and principal mapping
+- **LDAP enrichment** and account status
+- **Admin and auditor roles**
+- **Certificate lifetime and source-network policy**
+- **Multi-instance safety** and signer process split
+- **Client-side TLS pinning**
+- **Console-login PAM** and QR-code approval
 
 ## Revocation
 
-There isn't any, and that's a deliberate trade rather than a gap. Every
-certificate type in this release is short-lived — user and PAM
-certificates measured in seconds, not the year-long lifetimes a service or
-host certificate would carry. They expire faster than a revocation list
-could realistically be distributed, so the usual argument against skipping
-revocation doesn't apply here.
+Deliberately not included. All certificates in this release are short-lived (seconds, not years), expiring faster than revocation lists could reasonably be distributed.
 
-## PAM module: glibc floor
+## PAM Module: glibc Floor
 
-`pam_ssoossh.so` is built against old-glibc containers specifically so it
-loads on older distributions than the build host runs:
+- **amd64**: built against `centos:7`, floor glibc **2.17**
+- **arm64**: built against `amazonlinux:2`, floor glibc **2.26**
 
-- **amd64**: built against `centos:7`, floor glibc **2.17** (highest
-  required `GLIBC_` symbol verified at 2.3.2, well under the pinned
-  image's floor).
-- **arm64**: built against `amazonlinux:2`, floor glibc **2.26**.
+## Known Gaps
 
-Both were load-tested on `debian:bookworm-slim` (glibc 2.36) as a
-different-glibc sanity check, via `pam_ssoossh/testing/pamtest.c`. If your
-target's `ldd --version` reports older than the floor for its
-architecture, the module will not load.
+- macOS ships as signed, notarized `.zip` only (no `.dmg` yet)
 
-## Known gap
-
-macOS ships as a signed, notarized `.zip` only — no `.dmg`. See
-[getting-started.md](getting-started.md) for the install path.
+For details, see [CHANGELOG.md](../CHANGELOG.md).
