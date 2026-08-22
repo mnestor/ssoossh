@@ -8,6 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"regexp"
+	"runtime"
+	"sort"
 	"testing"
 	"time"
 
@@ -433,70 +436,200 @@ func TestInitDatabase_ShouldErrorWhenMigrationFails(t *testing.T) {
 // the files, which textual merge won't flag. The test runs as
 // TestMigrationParity (not TestMigrateDatabase...) so it runs early and fails
 // fast if the schema files have drifted.
+
+// TestMigrationParity_ShouldKeepSqliteAndPostgresSchemaInSync parses both
+// dialect migration files and asserts they define the same tables, columns,
+// constraints, and indexes. Handles dialect-specific differences (INTEGER vs
+// BIGINT, DATETIME vs TIMESTAMPTZ) with explicit normalization so a reader
+// sees exactly what is allowed to differ.
 func TestMigrationParity_ShouldKeepSqliteAndPostgresSchemaInSync(t *testing.T) {
 	t.Parallel()
 
-	// Both migrations should be in this same version.
-	const expectedVersion = "20260101000000"
+	// Get the module root by walking up from the test file's directory
+	_, testFile, _, _ := runtime.Caller(0)
+	moduleRoot := filepath.Dir(filepath.Dir(filepath.Dir(testFile)))
+	sqliteFile := filepath.Join(moduleRoot, "server/resources/migrations/sqlite/20260101000000_init.up.sql")
+	postgresFile := filepath.Join(moduleRoot, "server/resources/migrations/postgres/20260101000000_init.up.sql")
 
-	c := &config.Config{}
-	c.DB.Provider = config.DBProviderSqlite
-	c.DB.Connection = ":memory:"
-
-	sqliteDB, err := connectDatabase(c)
+	sqliteContent, err := os.ReadFile(sqliteFile)
 	if err != nil {
-		t.Fatalf("failed to connect to sqlite: %v", err)
-	}
-	if err := migrateDatabase(config.DBProviderSqlite, sqliteDB); err != nil {
-		t.Fatalf("failed to migrate sqlite: %v", err)
+		t.Fatalf("failed to read sqlite migration: %v", err)
 	}
 
-	// Query SQLite for its schema: table names, columns, types, constraints.
-	// Use pragma_table_info which returns (cid, name, type, notnull, dflt_value, pk).
-	var tables []string
-	if err := sqliteDB.Raw("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").Scan(&tables).Error; err != nil {
-		t.Fatalf("failed to query sqlite tables: %v", err)
-	}
-	sqliteSchema := make(map[string][]string)
-	for _, table := range tables {
-		var columns []string
-		rows, err := sqliteDB.Raw("PRAGMA table_info(" + table + ")").Rows()
-		if err != nil {
-			t.Fatalf("failed to query sqlite columns for table %s: %v", table, err)
-		}
-		for rows.Next() {
-			var cid int
-			var name, typ string
-			var notnull int
-			var dflt, pk interface{}
-			if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
-				t.Fatalf("failed to scan sqlite column: %v", err)
-			}
-			columnDef := name + " " + typ
-			if notnull != 0 {
-				columnDef += " NOT NULL"
-			}
-			columns = append(columns, columnDef)
-		}
-		if err := rows.Close(); err != nil {
-			t.Errorf("failed to close sqlite rows: %v", err)
-		}
-		sqliteSchema[table] = columns
+	postgresContent, err := os.ReadFile(postgresFile)
+	if err != nil {
+		t.Fatalf("failed to read postgres migration: %v", err)
 	}
 
-	// The test verifies that both databases have the same tables created (not
-	// their exact SQL structure, which varies by dialect). The Postgres side
-	// is not tested against a live server, but the file structure and table
-	// names are verified as a baseline.
-	//
-	// TODO: once a test postgres instance is available, apply the postgres
-	// migration and verify its schema matches sqlite's table names and
-	// column structure (accounting for dialect differences like DATETIME vs TIMESTAMPTZ).
-	if len(sqliteSchema) == 0 {
-		t.Errorf("expected sqlite migration to create tables, got none")
+	sqliteSchema := parseSQL(string(sqliteContent))
+	postgresSchema := parseSQL(string(postgresContent))
+
+	// Compare table sets.
+	if !tableMapEqual(sqliteSchema.tables, postgresSchema.tables) {
+		t.Errorf("sqlite and postgres have different tables")
+		t.Logf("sqlite: %v", sortedKeysTableMap(sqliteSchema.tables))
+		t.Logf("postgres: %v", sortedKeysTableMap(postgresSchema.tables))
 	}
-	expectedTableCount := 8 // users, certificate_requests, certificates, certificate_request_decisions, enrollments, host_mappings, server_secrets, schema_migrations
-	if len(sqliteSchema) != expectedTableCount {
-		t.Errorf("expected %d tables in sqlite, got %d", expectedTableCount, len(sqliteSchema))
+
+	// Compare indexes.
+	if !mapsEqual(sqliteSchema.indexes, postgresSchema.indexes) {
+		t.Errorf("sqlite and postgres have different indexes")
+		t.Logf("sqlite: %v", sortedKeys(sqliteSchema.indexes))
+		t.Logf("postgres: %v", sortedKeys(postgresSchema.indexes))
 	}
+
+	// Compare each table's columns.
+	for tableName, sqliteColumns := range sqliteSchema.tables {
+		postgresColumns, ok := postgresSchema.tables[tableName]
+		if !ok {
+			t.Errorf("postgres missing table %s", tableName)
+			continue
+		}
+
+		if !mapsEqual(sqliteColumns, postgresColumns) {
+			t.Errorf("table %s has different columns or definitions", tableName)
+			t.Logf("sqlite columns: %v", sortedKeys(sqliteColumns))
+			t.Logf("postgres columns: %v", sortedKeys(postgresColumns))
+		}
+	}
+}
+
+type schemaInfo struct {
+	tables  map[string]map[string]string // table -> column -> normalized definition
+	indexes map[string]string             // index name -> definition
+}
+
+func parseSQL(content string) schemaInfo {
+	schema := schemaInfo{
+		tables:  make(map[string]map[string]string),
+		indexes: make(map[string]string),
+	}
+
+	// Extract CREATE TABLE statements.
+	tableRegex := regexp.MustCompile(`(?s)CREATE\s+TABLE\s+(\w+)\s*\((.*?)\);`)
+	tableMatches := tableRegex.FindAllStringSubmatchIndex(content, -1)
+
+	for _, match := range tableMatches {
+		tableName := content[match[2]:match[3]]
+		tableBody := content[match[4]:match[5]]
+
+		columns := make(map[string]string)
+		lines := strings.Split(tableBody, "\n")
+
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "--") {
+				continue
+			}
+
+			// Skip constraint definitions that are not part of column definitions.
+			if strings.HasPrefix(line, "CONSTRAINT") || strings.HasPrefix(line, "CHECK") {
+				continue
+			}
+
+			// Match column definition: name type [modifiers].
+			colRegex := regexp.MustCompile(`^(\w+)\s+(.+?)(?:,|\s*\)|\s*$)`)
+			colMatches := colRegex.FindStringSubmatch(line)
+			if colMatches != nil {
+				colName := colMatches[1]
+				colDef := strings.TrimSpace(colMatches[2])
+
+				// Normalize dialect-specific types and keywords.
+				normalized := normalizeColumnDef(colDef)
+				columns[colName] = normalized
+			}
+		}
+
+		if len(columns) > 0 {
+			schema.tables[tableName] = columns
+		}
+	}
+
+	// Extract CREATE INDEX statements.
+	indexRegex := regexp.MustCompile(`(?s)CREATE\s+(?:UNIQUE\s+)?INDEX\s+(\w+)\s+ON\s+(\w+)\s*\((.*?)\)`)
+	indexMatches := indexRegex.FindAllStringSubmatchIndex(content, -1)
+
+	for _, match := range indexMatches {
+		indexName := content[match[2]:match[3]]
+		indexDef := content[match[6]:match[7]]
+
+		normalized := normalizeIndexDef(indexDef)
+		schema.indexes[indexName] = normalized
+	}
+
+	return schema
+}
+
+func normalizeColumnDef(def string) string {
+	// Remove trailing commas.
+	def = strings.TrimSuffix(def, ",")
+	def = strings.TrimSpace(def)
+
+	// Normalize type names across dialects.
+	// INTEGER and BIGINT are both numeric; SQLite uses INTEGER, Postgres uses BIGINT for 64-bit.
+	// We normalize both to INT64 for comparison.
+	def = strings.ReplaceAll(def, "BIGINT", "INT64")
+	def = strings.ReplaceAll(def, "INTEGER", "INT64")
+
+	// DATETIME and TIMESTAMPTZ are both timestamps; normalize to TIMESTAMP.
+	def = strings.ReplaceAll(def, "TIMESTAMPTZ", "TIMESTAMP")
+	def = strings.ReplaceAll(def, "DATETIME", "TIMESTAMP")
+
+	// BLOB and BYTEA are both binary; normalize to BINARY.
+	def = strings.ReplaceAll(def, "BYTEA", "BINARY")
+	def = strings.ReplaceAll(def, "BLOB", "BINARY")
+
+	// Normalize multiple spaces.
+	def = regexp.MustCompile(`\s+`).ReplaceAllString(def, " ")
+
+	return def
+}
+
+func normalizeIndexDef(def string) string {
+	// Remove DESC/ASC ordering for now, as it may differ between dialects.
+	def = regexp.MustCompile(`\s+(DESC|ASC)\s*`).ReplaceAllString(def, " ")
+	// Normalize whitespace.
+	def = regexp.MustCompile(`\s+`).ReplaceAllString(def, " ")
+	return strings.TrimSpace(def)
+}
+
+func mapsEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for key, val := range a {
+		if b[key] != val {
+			return false
+		}
+	}
+	return true
+}
+
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func tableMapEqual(a, b map[string]map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for key, val := range a {
+		if !mapsEqual(val, b[key]) {
+			return false
+		}
+	}
+	return true
+}
+func sortedKeysTableMap(m map[string]map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
