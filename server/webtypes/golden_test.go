@@ -22,7 +22,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/server/openapidoc"
 	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
@@ -113,6 +115,54 @@ func zeroFixtures() map[string]any {
 	}
 }
 
+// errorFixtures are fully-populated error response envelopes, one for each
+// error code. The envelope shape is part of the wire contract: changes to
+// error_code or error require regenerating the spec and updating the frontend.
+func errorFixtures() map[string]any {
+	return map[string]any{
+		"error_invalid_request": openapidoc.ErrorEnvelope{
+			Data:      nil,
+			Error:     "request body was malformed or a validation check failed",
+			ErrorCode: apitypes.ErrorCodeInvalidRequest,
+		},
+		"error_unauthenticated": openapidoc.ErrorEnvelope{
+			Data:      nil,
+			Error:     "no valid session",
+			ErrorCode: apitypes.ErrorCodeUnauthenticated,
+		},
+		"error_forbidden": openapidoc.ErrorEnvelope{
+			Data:      nil,
+			Error:     "access denied to this resource",
+			ErrorCode: apitypes.ErrorCodeForbidden,
+		},
+		"error_not_found": openapidoc.ErrorEnvelope{
+			Data:      nil,
+			Error:     "certificate request \"9f1c0b2a-...\" not found",
+			ErrorCode: apitypes.ErrorCodeNotFound,
+		},
+		"error_unavailable": openapidoc.ErrorEnvelope{
+			Data:      nil,
+			Error:     "certificate for request \"9f1c0b2a-...\" is no longer available",
+			ErrorCode: apitypes.ErrorCodeUnavailable,
+		},
+		"error_rate_limited": openapidoc.ErrorEnvelope{
+			Data:      nil,
+			Error:     "too many requests",
+			ErrorCode: apitypes.ErrorCodeRateLimited,
+		},
+		"error_not_implemented": openapidoc.ErrorEnvelope{
+			Data:      nil,
+			Error:     "not implemented",
+			ErrorCode: apitypes.ErrorCodeNotImplemented,
+		},
+		"error_internal_error": openapidoc.ErrorEnvelope{
+			Data:      nil,
+			Error:     "internal server error",
+			ErrorCode: apitypes.ErrorCodeInternalError,
+		},
+	}
+}
+
 func TestFullFixturesShouldMatchTheirGoldenJSON(t *testing.T) {
 	for name, fixture := range fullFixtures() {
 		t.Run(name, func(t *testing.T) {
@@ -126,6 +176,16 @@ func TestZeroFixturesShouldMatchTheirGoldenJSON(t *testing.T) {
 	for name, fixture := range zeroFixtures() {
 		t.Run(name, func(t *testing.T) {
 			assertGolden(t, filepath.Join("testdata", name+".zero.json"), fixture)
+		})
+	}
+}
+
+func TestErrorFixturesShouldMatchTheirGoldenJSON(t *testing.T) {
+	for name, fixture := range errorFixtures() {
+		t.Run(name, func(t *testing.T) {
+			// Error responses intentionally have Data=nil, so skip assertAllFieldsSet.
+			// The important part is that error_code doesn't drift from the spec.
+			assertGolden(t, filepath.Join("testdata", name+".json"), fixture)
 		})
 	}
 }

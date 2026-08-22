@@ -72,6 +72,11 @@ type ErrorEnvelope struct {
 	// Error is a human-readable message. Branch on the HTTP status rather
 	// than this string; it is for humans and logs.
 	Error string `json:"error" validate:"required" example:"certificate request \"9f1c…\" not found"`
+
+	// ErrorCode is a machine-readable error classifier. One of the error_code
+	// constants from internal/apitypes; use this to decide whether to retry
+	// or branch on the failure mode.
+	ErrorCode string `json:"error_code" validate:"required" example:"not_found"`
 }
 
 // HealthPayload is GET /healthz's body. Note it is not wrapped in an

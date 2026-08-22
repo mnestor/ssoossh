@@ -1,10 +1,12 @@
 // Package errorresponses defines error types that carry an HTTP status
-// code, for handlers to translate into API error responses.
+// code and machine-readable error code, for handlers to translate into API error responses.
 package errorresponses
 
 import (
 	"fmt"
 	"net/http"
+
+	"github.com/mnestor/ssoossh/internal/apitypes"
 )
 
 // TooManyRequestsError indicates a client has exceeded a rate limit.
@@ -18,6 +20,9 @@ func (e *TooManyRequestsError) Error() string {
 // HTTPStatusCode reports the HTTP status this error should be rendered as.
 func (e *TooManyRequestsError) HTTPStatusCode() int { return http.StatusTooManyRequests }
 
+// ErrorCode reports the machine-readable error code.
+func (e *TooManyRequestsError) ErrorCode() string { return apitypes.ErrorCodeRateLimited }
+
 // MisdirectedRequestError indicates a request addressed to a server name
 // this server is not configured to answer for.
 type MisdirectedRequestError struct{}
@@ -29,6 +34,9 @@ func (e *MisdirectedRequestError) Error() string {
 
 // HTTPStatusCode reports the HTTP status this error should be rendered as.
 func (e *MisdirectedRequestError) HTTPStatusCode() int { return http.StatusMisdirectedRequest }
+
+// ErrorCode reports the machine-readable error code.
+func (e *MisdirectedRequestError) ErrorCode() string { return apitypes.ErrorCodeForbidden }
 
 // NotFoundError indicates the requested resource does not exist.
 type NotFoundError struct {
@@ -46,6 +54,9 @@ func (e *NotFoundError) Error() string {
 
 // HTTPStatusCode reports the HTTP status this error should be rendered as.
 func (e *NotFoundError) HTTPStatusCode() int { return http.StatusNotFound }
+
+// ErrorCode reports the machine-readable error code.
+func (e *NotFoundError) ErrorCode() string { return apitypes.ErrorCodeNotFound }
 
 // CertificateUnavailableError indicates a certificate request was approved
 // and signed, but the signed certificate can no longer be obtained.
@@ -72,6 +83,9 @@ func (e *CertificateUnavailableError) Error() string {
 // HTTPStatusCode reports the HTTP status this error should be rendered as.
 func (e *CertificateUnavailableError) HTTPStatusCode() int { return http.StatusGone }
 
+// ErrorCode reports the machine-readable error code.
+func (e *CertificateUnavailableError) ErrorCode() string { return apitypes.ErrorCodeUnavailable }
+
 // NotImplementedError indicates a route or check exists as a scaffold but
 // its logic hasn't been implemented yet. Handlers/middleware that are still
 // placeholders should fail closed with this rather than silently allowing
@@ -85,6 +99,9 @@ func (e *NotImplementedError) Error() string {
 
 // HTTPStatusCode reports the HTTP status this error should be rendered as.
 func (e *NotImplementedError) HTTPStatusCode() int { return http.StatusNotImplemented }
+
+// ErrorCode reports the machine-readable error code.
+func (e *NotImplementedError) ErrorCode() string { return apitypes.ErrorCodeNotImplemented }
 
 // ForbiddenError indicates the caller is authenticated but not permitted to
 // act on this resource — as opposed to NotFoundError, which says the
@@ -106,3 +123,6 @@ func (e *ForbiddenError) Error() string {
 
 // HTTPStatusCode reports the HTTP status this error should be rendered as.
 func (e *ForbiddenError) HTTPStatusCode() int { return http.StatusForbidden }
+
+// ErrorCode reports the machine-readable error code.
+func (e *ForbiddenError) ErrorCode() string { return apitypes.ErrorCodeForbidden }

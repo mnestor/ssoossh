@@ -228,8 +228,16 @@ components:
             than this string; it is for humans and logs.
           example: certificate request "9f1c…" not found
           type: string
+        error_code:
+          description: |-
+            ErrorCode is a machine-readable error classifier. One of the error_code
+            constants from internal/apitypes; use this to decide whether to retry
+            or branch on the failure mode.
+          example: not_found
+          type: string
       required:
       - error
+      - error_code
       type: object
     openapidoc.HealthPayload:
       properties:

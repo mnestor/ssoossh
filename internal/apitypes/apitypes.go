@@ -39,6 +39,39 @@ func TerminalStatuses() []string {
 	return []string{StatusApproved, StatusDenied, StatusExpired, StatusEnrolled, StatusFailed}
 }
 
+// Error codes carried on Envelope.ErrorCode when a request fails. These are
+// the machine-readable classification a client branches on; the human-readable
+// message is in Envelope.Error. Adding a code here is a breaking change to
+// callers that do not yet handle it — bump the API version and leave these
+// stable once defined.
+const (
+	// ErrorCodeInvalidRequest means the request body was malformed or a
+	// validation check failed (400 Bad Request).
+	ErrorCodeInvalidRequest = "invalid_request"
+	// ErrorCodeUnauthenticated means the request lacked a valid session
+	// (401 Unauthorized).
+	ErrorCodeUnauthenticated = "unauthenticated"
+	// ErrorCodeForbidden means the authenticated caller cannot act on this
+	// resource (403 Forbidden).
+	ErrorCodeForbidden = "forbidden"
+	// ErrorCodeNotFound means the requested resource does not exist
+	// (404 Not Found).
+	ErrorCodeNotFound = "not_found"
+	// ErrorCodeUnavailable means the resource once existed but can no longer
+	// be delivered (410 Gone).
+	ErrorCodeUnavailable = "unavailable"
+	// ErrorCodeRateLimited means the caller has exceeded a rate limit
+	// (429 Too Many Requests).
+	ErrorCodeRateLimited = "rate_limited"
+	// ErrorCodeNotImplemented means the endpoint exists but the handler is not
+	// yet implemented (501 Not Implemented).
+	ErrorCodeNotImplemented = "not_implemented"
+	// ErrorCodeInternalError is a catch-all for server-side failures
+	// (500 Internal Server Error). Callers should treat this as transient
+	// and retry; the server will have logged details.
+	ErrorCodeInternalError = "internal_error"
+)
+
 // RequestedOptions are the certificate options a caller may request.
 // Server config is always the outer bound on what's actually granted (see
 // root CLAUDE.md Hard Constraints) — the server narrows or rejects
@@ -113,4 +146,10 @@ type Envelope[T any] struct {
 	// branch on the HTTP status rather than this string; it is for humans
 	// and logs.
 	Error string `json:"error,omitempty"`
+
+	// ErrorCode is a machine-readable error classifier, empty on success.
+	// One of the ErrorCode* constants when an error occurred; use this to
+	// decide whether to retry or branch on the failure mode. It is stable
+	// within a major API version.
+	ErrorCode string `json:"error_code,omitempty"`
 }

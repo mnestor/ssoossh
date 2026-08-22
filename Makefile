@@ -82,7 +82,7 @@ pam:
 frontend-clean:
 	rm -rf server/frontend/dist
 
-.PHONY: openapi openapi-check
+.PHONY: openapi openapi-check openapi-lint
 # docs/openapi.yaml is generated from the swag annotations on the handlers in
 # server/controller (plus the envelope types in server/openapidoc). Edit those,
 # not the YAML.
@@ -111,6 +111,12 @@ openapi-check:
 		echo "Run 'make openapi' and commit the result."; \
 		exit 1; \
 	fi
+
+# Validate docs/openapi.yaml against the OpenAPI 3.1 specification using redocly.
+# This catches structural errors, missing required fields, and other spec violations.
+# Uses a pinned version and configuration file (.redoclyrc.yaml) for known exceptions.
+openapi-lint:
+	npx @redocly/cli@1.28.1 lint docs/openapi.yaml --config .redoclyrc.yaml
 
 .PHONY: types types-check
 # Regenerate the frontend's wire types from the Go structs that produce them

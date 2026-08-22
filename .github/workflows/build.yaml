@@ -106,6 +106,10 @@ jobs:
       - name: Check generated OpenAPI spec is current
         run: make openapi-check
 
+      # Validate the OpenAPI spec against the OpenAPI 3.1 specification.
+      - name: Lint OpenAPI spec
+        run: make openapi-lint
+
       # Must run before goreleaser: the server binary embeds
       # server/frontend/dist, and only a placeholder index.html is tracked.
       # Skipping this would ship a release with no web UI.

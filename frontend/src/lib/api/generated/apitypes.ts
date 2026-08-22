@@ -65,6 +65,47 @@ export const StatusEnrolled = "enrolled";
  */
 export const StatusFailed = "failed";
 /**
+ * ErrorCodeInvalidRequest means the request body was malformed or a
+ * validation check failed (400 Bad Request).
+ */
+export const ErrorCodeInvalidRequest = "invalid_request";
+/**
+ * ErrorCodeUnauthenticated means the request lacked a valid session
+ * (401 Unauthorized).
+ */
+export const ErrorCodeUnauthenticated = "unauthenticated";
+/**
+ * ErrorCodeForbidden means the authenticated caller cannot act on this
+ * resource (403 Forbidden).
+ */
+export const ErrorCodeForbidden = "forbidden";
+/**
+ * ErrorCodeNotFound means the requested resource does not exist
+ * (404 Not Found).
+ */
+export const ErrorCodeNotFound = "not_found";
+/**
+ * ErrorCodeUnavailable means the resource once existed but can no longer
+ * be delivered (410 Gone).
+ */
+export const ErrorCodeUnavailable = "unavailable";
+/**
+ * ErrorCodeRateLimited means the caller has exceeded a rate limit
+ * (429 Too Many Requests).
+ */
+export const ErrorCodeRateLimited = "rate_limited";
+/**
+ * ErrorCodeNotImplemented means the endpoint exists but the handler is not
+ * yet implemented (501 Not Implemented).
+ */
+export const ErrorCodeNotImplemented = "not_implemented";
+/**
+ * ErrorCodeInternalError is a catch-all for server-side failures
+ * (500 Internal Server Error). Callers should treat this as transient
+ * and retry; the server will have logged details.
+ */
+export const ErrorCodeInternalError = "internal_error";
+/**
  * RequestedOptions are the certificate options a caller may request.
  * Server config is always the outer bound on what's actually granted (see
  * root CLAUDE.md Hard Constraints) — the server narrows or rejects
@@ -143,6 +184,13 @@ export interface Envelope<T extends any> {
 	 * and logs.
 	 */
 	error?: string;
+	/**
+	 * ErrorCode is a machine-readable error classifier, empty on success.
+	 * One of the ErrorCode* constants when an error occurred; use this to
+	 * decide whether to retry or branch on the failure mode. It is stable
+	 * within a major API version.
+	 */
+	error_code?: string;
 }
 
 //////////

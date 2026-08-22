@@ -4,12 +4,20 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/mnestor/ssoossh/internal/apitypes"
 )
 
 // httpStatusCoder is implemented by errors that know which HTTP status they
 // should be rendered as (e.g. errorresponses.TooManyRequestsError).
 type httpStatusCoder interface {
 	HTTPStatusCode() int
+}
+
+// errorCoder is implemented by errors that know their machine-readable error
+// code (e.g. errorresponses.NotFoundError).
+type errorCoder interface {
+	ErrorCode() string
 }
 
 // ErrorHandlerMiddleware translates errors registered on the gin context via
@@ -27,8 +35,9 @@ func NewErrorHandlerMiddleware() *ErrorHandlerMiddleware {
 // Add returns a gin.HandlerFunc that, once the rest of the chain has run,
 // checks for a registered error and writes the corresponding HTTP status
 // and a JSON error body. Errors implementing httpStatusCoder use that
-// status; anything else defaults to 500 Internal Server Error. If a handler
-// already wrote a response, this is a no-op.
+// status; anything else defaults to 500 Internal Server Error. Errors
+// implementing errorCoder are assigned that code; others default to internal_error.
+// If a handler already wrote a response, this is a no-op.
 func (m *ErrorHandlerMiddleware) Add() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Next()
@@ -44,7 +53,38 @@ func (m *ErrorHandlerMiddleware) Add() gin.HandlerFunc {
 			status = coder.HTTPStatusCode()
 		}
 
-		c.JSON(status, gin.H{"data": nil, "error": err.Error()})
+		var code string
+		if coder, ok := err.(errorCoder); ok {
+			code = coder.ErrorCode()
+		} else {
+			// Map HTTP status to error code for errors that don't implement errorCoder.
+			code = statusToErrorCode(status)
+		}
+
+		c.JSON(status, gin.H{"data": nil, "error": err.Error(), "error_code": code})
+	}
+}
+
+// statusToErrorCode maps an HTTP status code to an error code constant for
+// errors that don't implement the errorCoder interface.
+func statusToErrorCode(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return apitypes.ErrorCodeInvalidRequest
+	case http.StatusUnauthorized:
+		return apitypes.ErrorCodeUnauthenticated
+	case http.StatusForbidden:
+		return apitypes.ErrorCodeForbidden
+	case http.StatusNotFound:
+		return apitypes.ErrorCodeNotFound
+	case http.StatusGone:
+		return apitypes.ErrorCodeUnavailable
+	case http.StatusTooManyRequests:
+		return apitypes.ErrorCodeRateLimited
+	case http.StatusNotImplemented:
+		return apitypes.ErrorCodeNotImplemented
+	default:
+		return apitypes.ErrorCodeInternalError
 	}
 }
 
@@ -59,6 +99,9 @@ func (e *TooManyRequestsError) Error() string {
 // HTTPStatusCode reports the HTTP status this error should be rendered as.
 func (e *TooManyRequestsError) HTTPStatusCode() int { return http.StatusTooManyRequests }
 
+// ErrorCode reports the machine-readable error code.
+func (e *TooManyRequestsError) ErrorCode() string { return apitypes.ErrorCodeRateLimited }
+
 // MisdirectedRequestError indicates a request addressed to a server name
 // this server is not configured to answer for.
 type MisdirectedRequestError struct{}
@@ -70,6 +113,9 @@ func (e *MisdirectedRequestError) Error() string {
 
 // HTTPStatusCode reports the HTTP status this error should be rendered as.
 func (e *MisdirectedRequestError) HTTPStatusCode() int { return http.StatusMisdirectedRequest }
+
+// ErrorCode reports the machine-readable error code.
+func (e *MisdirectedRequestError) ErrorCode() string { return apitypes.ErrorCodeForbidden }
 
 // UnauthorizedError indicates a request is missing, or presented an
 // incorrect, API key.
@@ -94,3 +140,9 @@ func (e *ForbiddenError) Error() string {
 
 // HTTPStatusCode reports the HTTP status this error should be rendered as.
 func (e *ForbiddenError) HTTPStatusCode() int { return http.StatusForbidden }
+
+// ErrorCode reports the machine-readable error code.
+func (e *ForbiddenError) ErrorCode() string { return apitypes.ErrorCodeForbidden }
+
+// ErrorCode reports the machine-readable error code.
+func (e *UnauthorizedError) ErrorCode() string { return apitypes.ErrorCodeUnauthenticated }
