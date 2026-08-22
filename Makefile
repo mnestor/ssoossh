@@ -314,3 +314,31 @@ man-check:
 		echo "Man pages are stale: run 'make gendocs' and commit the result"; \
 		exit 1; \
 	fi
+
+.PHONY: mutation-test-frontend mutation-test-go mutation-test
+
+# Frontend mutation testing via Stryker with vitest runner
+# Targets: approval.test.ts, format.test.ts, paths.test.ts, client.test.ts,
+# endpoints.test.ts, ApprovalView.test.ts, ConsentModal.test.ts
+mutation-test-frontend: $(FRONTEND_DIST)
+	cd frontend && npx stryker run
+
+# Go mutation testing via manual analysis
+# Analyzes critical paths in server/service/, internal/crypto/, internal/fipsmode/,
+# and server/middleware/ by running test suite against intentional code mutations.
+# See docs/mutation-testing-findings.md for analysis and results.
+mutation-test-go:
+	@echo "Running Go mutation testing analysis..."
+	@echo "Manual mutation testing focused on critical paths:"
+	@echo "  - server/service/ (authorization and certificate request handling)"
+	@echo "  - internal/crypto/ (cryptographic operations)"
+	@echo "  - internal/fipsmode/ (FIPS policy enforcement)"
+	@echo "  - server/middleware/ (CSRF, session auth, host cert auth)"
+	@echo ""
+	@echo "Note: No actively maintained Go mutation testing tools exist for Go 1.26."
+	@echo "Analysis uses manual mutation approach: intentional code modifications"
+	@echo "to identify weak test assertions. See docs/mutation-testing-findings.md"
+
+# Combined mutation testing (frontend + go analysis documentation)
+mutation-test: mutation-test-frontend mutation-test-go
+

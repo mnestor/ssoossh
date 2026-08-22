@@ -18,6 +18,8 @@
 	"devDependencies": {
 		"@eslint/compat": "^2.1.0",
 		"@eslint/js": "^9.39.5",
+		"@stryker-mutator/core": "^8.7.1",
+		"@stryker-mutator/vitest-runner": "^8.7.1",
 		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/kit": "^2.70.2",
 		"@sveltejs/vite-plugin-svelte": "^6.2.4",

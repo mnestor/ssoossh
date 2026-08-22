@@ -1065,6 +1065,13 @@ func TestCertRequestService_Approve_ShouldRefuseARequestPastTTL(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, time.Millisecond)
+	identity := &Identity{Username: "alice", Subject: "sub-alice"}
+	// Seed the user upfront so that bindRequester succeeds — this ensures the
+	// TTL check is the actual rejection reason, not user lookup failure.
+	// Without this, TTL check removal is masked by bindRequester's "user not
+	// found" error, and the test passes even when TTL enforcement is broken.
+	seedUser(t, svc.db, identity.Subject)
+
 	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
@@ -1072,8 +1079,14 @@ func TestCertRequestService_Approve_ShouldRefuseARequestPastTTL(t *testing.T) {
 
 	time.Sleep(10 * time.Millisecond)
 
-	if err := svc.Approve(context.Background(), requestID, &Identity{Username: "alice", Subject: "sub-alice"}, DecisionContext{}); err == nil {
+	err = svc.Approve(context.Background(), requestID, identity, DecisionContext{})
+	if err == nil {
 		t.Error("expected a TTL-expired request to be refused by Approve")
+	}
+	// Strengthen assertion: verify the rejection is TTL-related, not due to
+	// missing user or other pre-TTL-check failures
+	if !strings.Contains(err.Error(), "not pending") {
+		t.Errorf("expected TTL expiry to reject with 'not pending' message, got: %v", err)
 	}
 }
 
