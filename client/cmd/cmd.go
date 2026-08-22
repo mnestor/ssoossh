@@ -214,3 +214,39 @@ func Execute() {
 		os.Exit(1)
 	}
 }
+
+// CobraCommandForManpage returns the root cobra.Command tree for man page generation.
+// This is for documentation tools only; it bypasses the normal initialization flow.
+func CobraCommandForManpage() (*cobra.Command, error) {
+	root := &RootCommand{
+		newConfig:    config.NewConfig,
+		newAPIClient: newAPIClientFromConfig,
+		newSSHAgent:  agent.NewSSHAgent,
+		newFileAgent: agent.NewFileAgent,
+		commands: []simplecobra.Commander{
+			newCACommand(),
+			newSSHCommand(),
+			newHostCommand(),
+			newServiceCommand(),
+			newVersionCommand(),
+		},
+	}
+
+	// Execute with help to initialize the cobra tree without running anything
+	exec, err := simplecobra.New(root)
+	if err != nil {
+		return nil, fmt.Errorf("initialize command tree: %w", err)
+	}
+
+	// Try to get the cobra command by executing with help
+	// This triggers Init() on all commands, building the tree
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // immediately cancel to avoid blocking
+
+	rootCD, _ := exec.Execute(ctx, []string{})
+	if rootCD == nil {
+		return nil, fmt.Errorf("failed to initialize cobra command tree")
+	}
+
+	return rootCD.CobraCommand, nil
+}

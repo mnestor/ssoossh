@@ -54,6 +54,19 @@ func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
 
 	cmd.PersistentFlags().StringP("config", "c", "", "path to the ssoosshd config file")
 
+	// Register flag completion functions. Config flag completion uses directory/file globbing.
+	if cfgFlag := cmd.PersistentFlags().Lookup("config"); cfgFlag != nil {
+		_ = cmd.RegisterFlagCompletionFunc("config",
+			func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+				// Suggest common config file locations for bash completion
+				return []string{
+					"~/.config/ssoosshd.yaml",
+					"/etc/ssoosshd.yaml",
+					"/etc/ssoossh/ssoosshd.yaml",
+				}, cobra.ShellCompDirectiveNoSpace
+			})
+	}
+
 	return nil
 }
 
