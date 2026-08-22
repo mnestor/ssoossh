@@ -520,8 +520,13 @@ func TestCertRequestService_Wait_ShouldWakeOnTTLTimerFiring(t *testing.T) {
 	// since there are no pending approvals or pub/sub messages.
 	startTime := time.Now()
 
-	// Use a bounded context so Wait doesn't block forever if the timer doesn't fire
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	// Bounded only so a broken timer cannot hang the suite forever. The
+	// ceiling is deliberately generous rather than tight to the TTL: under
+	// CPU contention a 200ms deadline beat the 50ms timer's own work and
+	// Wait returned ctx.Err(), failing the test for load rather than for
+	// behaviour. The real assertions are the returned status and the lower
+	// bound on elapsed; Go's own test timeout catches a genuine hang.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	status, _, _, err := svc.Wait(ctx, requestID)
