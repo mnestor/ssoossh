@@ -1,13 +1,11 @@
-//go:build resilience
+//go:build resilience || e2e
 
 package resilience
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/mnestor/ssoossh/test/e2e/harness"
 )

@@ -1,4 +1,4 @@
-//go:build load
+//go:build load || e2e
 
 package load
 
@@ -33,7 +33,7 @@ func testConcurrentLogins(t *testing.T, n int) {
 	idp := harness.NewIdentityProvider(t)
 	server := harness.StartServer(t, idp, harness.ServerOptions{})
 	agent := harness.StartAgent(t)
-	ssoosshd, ssoossh := harness.Binaries(t)
+	_, ssoossh := harness.Binaries(t)
 
 	// Record baseline goroutines.
 	baselineGoroutines := runtime.NumGoroutine()
@@ -99,7 +99,7 @@ func testSSEFanOut(t *testing.T, nSubscribers int) {
 	t.Helper()
 
 	idp := harness.NewIdentityProvider(t)
-	server := harness.StartServer(t, idp, harness.ServerOptions{})
+	_ = harness.StartServer(t, idp, harness.ServerOptions{})
 
 	baselineGoroutines := runtime.NumGoroutine()
 
@@ -129,7 +129,7 @@ func TestSerialNumberAllocation_Concurrent(t *testing.T) {
 	idp := harness.NewIdentityProvider(t)
 	server := harness.StartServer(t, idp, harness.ServerOptions{})
 	agent := harness.StartAgent(t)
-	ssoosshd, ssoossh := harness.Binaries(t)
+	_, ssoossh := harness.Binaries(t)
 
 	n := 20 // Issue 20 certs concurrently.
 	var wg sync.WaitGroup

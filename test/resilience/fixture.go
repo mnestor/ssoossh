@@ -1,4 +1,4 @@
-//go:build resilience
+//go:build resilience || e2e
 
 package resilience
 
