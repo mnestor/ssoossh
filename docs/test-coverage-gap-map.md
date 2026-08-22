@@ -8,23 +8,27 @@
 
 Coverage varies by package, from 100% (well-tested packages) to 0% (no tests). This map identifies specific untested functions and paths that will be addressed in Phase 1-4.
 
-**Current status:**
+**Current status (after Phase 0):**
 - E2E tests: 11 tests passing in ~38s (tier-1 wire, tier-2 browser, tier-3 ssh)
-- Unit tests: 1406 passing across 36 packages
-- Zero-coverage packages: 8 (cmd/ssoossh, cmd/ssoosshd, server/certmsg, server/model, server/testutil, internal/apitypes)
+- Unit tests: 1462 passing across 36 packages (56 new tests added)
+- Zero-coverage packages: 5 remaining (cmd/ssoossh, cmd/ssoosshd, server/testutil, + 2 untestable)
+- **Phase 0 completion**: 9 functions at 100% coverage
+  - ✓ server/certmsg: 2/2 functions (WaitTopic, SignedReply.Failed)
+  - ✓ server/model: 7/7 functions (all TableName methods)
+  - ✓ internal/apitypes: 1/1 function (TerminalStatuses)
 
 ### Packages at 0% Coverage (No Tests)
 
 These packages have no test coverage at all and need comprehensive test suites:
 
-| Package | Functions | Issue | Priority | Notes |
-| --- | --- | --- | --- | --- |
-| `cmd/ssoossh` | 1 | main entry point | P2 | Extract testable logic per go.md; main() itself may be excluded if it's a 3-line wiring shim. |
-| `cmd/ssoosshd` | 1 | main entry point | P2 | Extract testable logic per go.md; main() itself may be excluded if it's a 3-line wiring shim. |
-| `internal/apitypes` | 1 | Type definitions | P2 | `TerminalStatuses()` needs test + integration coverage of status lifecycle. |
-| `server/certmsg` | 2 | Certificate message channel | P1 | `WaitTopic()`, `Failed()` - critical path for approval flow; drives SSE delivery. |
-| `server/model` | 7 | Data models | P1 | ORM models for users, certificates, requests, enrollments, approvals. |
-| `server/testutil` | 1 | Test utilities | Skip | Utilities for other tests, not production code. |
+| Package | Functions | Issue | Priority | Notes | Phase 0 Status |
+| --- | --- | --- | --- | --- | --- |
+| `cmd/ssoossh` | 1 | main entry point | P2 | Extract testable logic per go.md; main() itself may be excluded if it's a 3-line wiring shim. | Pending P2 |
+| `cmd/ssoosshd` | 1 | main entry point | P2 | Extract testable logic per go.md; main() itself may be excluded if it's a 3-line wiring shim. | Pending P2 |
+| `server/testutil` | 1 | Test utilities | Skip | Utilities for other tests, not production code. | N/A (Skip) |
+| ~~`internal/apitypes`~~ | ~~1~~ | ~~Type definitions~~ | ~~P2~~ | ~~`TerminalStatuses()`~~ | **✓ 100% (33 tests)** |
+| ~~`server/certmsg`~~ | ~~2~~ | ~~Certificate message channel~~ | ~~P1~~ | ~~`WaitTopic()`, `Failed()`~~ | **✓ 100% (26 tests)** |
+| ~~`server/model`~~ | ~~7~~ | ~~Data models~~ | ~~P1~~ | ~~ORM models~~ | **✓ 100% (27 tests)** |
 
 ### Packages Under 90% Coverage (Partial Tests)
 
