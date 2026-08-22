@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"slices"
 	"sync"
 	"time"
@@ -185,6 +186,43 @@ func (s *CertRequestService) policyFor(certType model.CertificateType) (*certTyp
 // CreateRequest persists a new pending model.CertificateRequest for p and
 // returns its ID, which the client then waits on via Wait and the web UI
 // resolves via Approve/Deny.
+// normalizeSourceAddresses returns addrs with link-local addresses and
+// repeats removed, preserving first-seen order.
+//
+// Link-local (fe80::/10, 169.254.0.0/16) is dropped because it is meaningful
+// only within a single link: it cannot support a source-address restriction,
+// and it identifies nothing to a host the certificate is presented to. It is
+// also the main source of repeats, since net.IP.String() drops the IPv6 zone
+// and one address derived from a single MAC then arrives identically from
+// every interface carrying it.
+//
+// A value that does not parse as an IP is kept rather than discarded: it
+// says something about the client that sent it, and this is an audit record
+// before it is a policy input. Only what is positively identified as
+// link-local is removed.
+//
+// Linear scan rather than a map: this is one machine's interface addresses,
+// so a handful of entries at most, and keeping the caller's order keeps the
+// persisted value readable.
+func normalizeSourceAddresses(addrs []string) []string {
+	if len(addrs) == 0 {
+		return addrs
+	}
+	out := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		if ip := net.ParseIP(a); ip != nil && ip.IsLinkLocalUnicast() {
+			continue
+		}
+		if !slices.Contains(out, a) {
+			out = append(out, a)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequestParams) (requestID string, err error) {
 	// Union the server-observed source address into the caller's own
 	// reported SourceAddresses before persisting, so the stored value is
@@ -198,6 +236,18 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 	// string-equality dedup is enough here; netip-normalized matching
 	// belongs to the deferred source-address policy engine in
 	// docs/certificate-lifetime-policy-plan.md, not this capture step.
+	//
+	// The caller's own list is normalized here rather than trusted to arrive
+	// clean: any client at all — an older release, pam_ssoossh, something
+	// third-party — decides what it sends. This value is persisted, rendered
+	// on the approval screen, and matched against later, so it is cleaned on
+	// the way in rather than at each of those.
+	//
+	// The server-observed SourceIP below is not put through the same filter.
+	// It is a fact the server established about this connection rather than a
+	// claim the client made, and it is worth recording even when the client
+	// reached ssoosshd over a link-local address.
+	p.RequestedOptions.SourceAddresses = normalizeSourceAddresses(p.RequestedOptions.SourceAddresses)
 	if p.SourceIP != "" && !slices.Contains(p.RequestedOptions.SourceAddresses, p.SourceIP) {
 		p.RequestedOptions.SourceAddresses = append(p.RequestedOptions.SourceAddresses, p.SourceIP)
 	}

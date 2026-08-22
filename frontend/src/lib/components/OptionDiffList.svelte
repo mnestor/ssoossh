@@ -30,7 +30,7 @@
 	<p class="text-sm text-ink-muted">{emptyLabel}</p>
 {:else}
 	<ul class="space-y-2">
-		{#each entries as entry (entry.label)}
+		{#each entries as entry, index (index)}
 			<li class="flex flex-wrap items-center gap-2 text-sm">
 				<code
 					class="rounded px-2 py-0.5 font-mono text-xs {styles[entry.status]}"

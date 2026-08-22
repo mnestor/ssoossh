@@ -188,9 +188,11 @@ type AdminConfig struct {
 
 	// AuditorGroup is the OIDC group a caller must belong to in order to
 	// access auditor-scoped operations (viewing effective configuration,
-	// cross-user certificate history). Empty disables auditor operations
-	// entirely. Fails closed: no identity, no group, or no configured group
-	// all deny.
+	// cross-user certificate history). Auditor is a child role of admin, so
+	// RequireGroup members hold auditor access regardless of this setting;
+	// empty therefore narrows auditor operations to admins rather than
+	// disabling them. Fails closed: no identity, or membership in neither
+	// group, denies.
 	AuditorGroup string `mapstructure:"auditor_group"`
 
 	// SSHServerAdminGroup is the OIDC group a caller must belong to in order

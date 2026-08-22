@@ -73,3 +73,35 @@ export function isExpired(expiresAt: string, now: Date = new Date()): boolean {
 	}
 	return expiry.getTime() <= now.getTime();
 }
+
+/**
+ * relativeTime renders how long ago a timestamp was, in the coarse units a
+ * list row wants — "2h ago", "3d ago", "just now".
+ *
+ * Deliberately coarser than expiryLabel: a history row is scanned, not read,
+ * and "requested 2h 14m ago" carries no more meaning than "2h ago". `now` is
+ * a parameter so tests can pin it instead of depending on the wall clock.
+ */
+export function relativeTime(value: string, now: Date = new Date()): string {
+	const then = new Date(value);
+	if (Number.isNaN(then.getTime())) {
+		return '—';
+	}
+
+	const seconds = Math.floor((now.getTime() - then.getTime()) / 1000);
+	if (seconds < 60) {
+		return 'just now';
+	}
+
+	const minutes = Math.floor(seconds / 60);
+	if (minutes < 60) {
+		return `${minutes}m ago`;
+	}
+
+	const hours = Math.floor(minutes / 60);
+	if (hours < 24) {
+		return `${hours}h ago`;
+	}
+
+	return `${Math.floor(hours / 24)}d ago`;
+}

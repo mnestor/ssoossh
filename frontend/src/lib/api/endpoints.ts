@@ -4,7 +4,6 @@ import { ApiError, request } from './client';
 import type {
 	ApproveResult,
 	CertificateListResponse,
-	CertificateRecord,
 	CurrentUser,
 	DenyResult,
 	RequestDetail

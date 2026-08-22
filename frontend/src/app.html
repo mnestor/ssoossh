@@ -4,6 +4,24 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />
+		<script>
+			// Applied before first paint, so the page never shows a light flash
+			// on the way to dark. Mirrors src/lib/theme.svelte.ts — the storage
+			// key and the resolution rule have to stay in step with it.
+			//
+			// ssoosshd injects a nonce into every script tag it serves
+			// (server/frontend/frontend_included.go), so this satisfies the CSP.
+			try {
+				var stored = localStorage.getItem('ssoossh:theme');
+				var followsSystem = stored === null || stored === 'system';
+				var dark =
+					stored === 'dark' ||
+					(followsSystem && window.matchMedia('(prefers-color-scheme: dark)').matches);
+				if (dark) document.documentElement.classList.add('dark');
+			} catch (e) {
+				// Site data blocked, or no matchMedia. Light is the default.
+			}
+		</script>
 		<title>ssoossh</title>
 		%sveltekit.head%
 	</head>

@@ -1,6 +1,9 @@
 package api
 
-import "net"
+import (
+	"net"
+	"slices"
+)
 
 // LocalInterfaceAddresses returns the caller's own non-loopback IP
 // addresses, gathered from every up network interface. Used to populate
@@ -10,6 +13,18 @@ import "net"
 // is not the address ssoosshd sees when it mints the certificate. See
 // docs/ssoossh-context.md's "Certificate lifetime policy" and
 // docs/certificate-audit-metadata-plan.md.
+//
+// Link-local addresses (fe80::/10, 169.254.0.0/16) are left out along with
+// loopback. They are meaningful only within a single link, so they can
+// neither support a source-address restriction nor identify this machine to
+// anything a certificate would be presented to — and because net.IP.String()
+// drops the IPv6 zone, one link-local address derived from a single MAC
+// arrives identically from every interface carrying it (a bridge and its
+// member, docker0 and its veths).
+//
+// The result is a set: the server treats SourceAddresses as a union when it
+// folds in the observed source IP, and a repeat would be stored, displayed,
+// and matched against for no gain.
 //
 // Best-effort: any error enumerating interfaces or addresses is swallowed
 // and yields however much of the list was gathered before the failure
@@ -35,7 +50,13 @@ func LocalInterfaceAddresses() []string {
 			if !ok || ipNet.IP.IsLoopback() {
 				continue // excluded from coverage: every real interface address is a *net.IPNet, and a loopback address surviving the FlagLoopback filter above isn't reproducible on a real test machine, see exclude-from-coverage.txt
 			}
-			addrs = append(addrs, ipNet.IP.String())
+			if ipNet.IP.IsLinkLocalUnicast() {
+				continue
+			}
+			addr := ipNet.IP.String()
+			if !slices.Contains(addrs, addr) {
+				addrs = append(addrs, addr)
+			}
 		}
 	}
 	return addrs

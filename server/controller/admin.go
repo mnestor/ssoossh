@@ -12,8 +12,9 @@ import (
 )
 
 // NewAdminController registers admin-scoped authorization and auditor-scoped
-// read-only routes on group. Admin routes require admin group membership;
-// auditor routes require auditor group membership.
+// read-only routes on group. Admin routes require admin group membership.
+// Auditor routes require auditor-level access, which admin group membership
+// also satisfies since auditor is a child role of admin.
 func NewAdminController(
 	group *gin.RouterGroup,
 	c *config.Config,

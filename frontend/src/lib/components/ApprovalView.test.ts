@@ -54,6 +54,36 @@ describe('ApprovalView', () => {
 		expect(screen.getByText('198.51.100.7')).toBeInTheDocument();
 	});
 
+	// Regression: these lists used to be keyed by their own values, and a
+	// keyed each block throws on a duplicate key rather than rendering it.
+	// net.IP.String() drops an IPv6 zone, so one link-local address reported
+	// by two interfaces arrives as the same string twice — which took the
+	// whole approval page down mid-approval.
+	it('should render a repeated registered IP rather than throwing', () => {
+		const link = 'fe80::e8a7:34ff:fe9f:c7a9';
+		mount({
+			detail: detail({
+				requested: options({ extensions: ['permit-pty'], source_addresses: [link, link] })
+			})
+		});
+		expect(screen.getAllByText(link)).toHaveLength(2);
+	});
+
+	it('should render a repeated principal rather than throwing', () => {
+		mount({ detail: detail({ principals: ['alice', 'alice'] }) });
+		expect(screen.getAllByText('alice')).toHaveLength(2);
+	});
+
+	it('should render a repeated requested extension rather than throwing', () => {
+		mount({
+			detail: detail({
+				requested: options({ extensions: ['permit-pty', 'permit-pty'] }),
+				granted: options({ extensions: ['permit-pty'] })
+			})
+		});
+		expect(screen.getAllByText('permit-pty')).toHaveLength(2);
+	});
+
 	it('should offer an approve action on a pending request the caller owns', () => {
 		mount();
 		expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
@@ -153,7 +183,10 @@ describe('ApprovalView', () => {
 
 	describe('when the request reports registered IPs', () => {
 		const withAddresses = detail({
-			requested: options({ extensions: ['permit-pty'], source_addresses: ['10.0.0.5', '203.0.113.9'] })
+			requested: options({
+				extensions: ['permit-pty'],
+				source_addresses: ['10.0.0.5', '203.0.113.9']
+			})
 		});
 
 		it('should list the addresses the client registered', () => {
@@ -308,7 +341,7 @@ describe('ApprovalView', () => {
 
 	describe('accessibility', () => {
 		it('should have a live region for announcing action outcomes', () => {
-			const { onapprove } = mount();
+			mount();
 			const liveRegion = document.querySelector('[aria-live="polite"]');
 			expect(liveRegion).toBeInTheDocument();
 		});

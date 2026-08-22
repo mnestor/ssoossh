@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { expiryLabel, formatDateTime, formatDuration, isExpired } from './format';
+import { expiryLabel, formatDateTime, formatDuration, isExpired, relativeTime } from './format';
 
 describe('formatDuration', () => {
 	const cases: { name: string; seconds: number; want: string }[] = [
@@ -78,5 +78,37 @@ describe('isExpired', () => {
 	// Fails closed: an expiry that cannot be read is not evidence of validity.
 	it('should report true for an unparseable expiry', () => {
 		expect(isExpired('whenever', now)).toBe(true);
+	});
+});
+
+describe('relativeTime', () => {
+	const now = new Date('2026-08-22T12:00:00Z');
+
+	it('should say just now when the moment is under a minute old', () => {
+		expect(relativeTime('2026-08-22T11:59:30Z', now)).toBe('just now');
+	});
+
+	it('should render minutes when under an hour old', () => {
+		expect(relativeTime('2026-08-22T11:15:00Z', now)).toBe('45m ago');
+	});
+
+	it('should render hours when under a day old', () => {
+		expect(relativeTime('2026-08-22T10:00:00Z', now)).toBe('2h ago');
+	});
+
+	it('should render days once past twenty-four hours', () => {
+		expect(relativeTime('2026-08-19T12:00:00Z', now)).toBe('3d ago');
+	});
+
+	it('should render an em dash for an unparseable timestamp', () => {
+		expect(relativeTime('not a date', now)).toBe('—');
+	});
+
+	it('should treat the exact minute boundary as minutes, not just now', () => {
+		expect(relativeTime('2026-08-22T11:59:00Z', now)).toBe('1m ago');
+	});
+
+	it('should say just now for a timestamp in the future', () => {
+		expect(relativeTime('2026-08-22T12:05:00Z', now)).toBe('just now');
 	});
 });

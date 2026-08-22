@@ -25,7 +25,9 @@ The app uses a curated set of CSS custom properties defined in `src/app.css`. Al
 
 ### Dark Mode
 
-The `.dark` class (applied when `color-scheme: dark` is active or the OS prefers dark mode) inverts all tokens while keeping the semantic meaning intact. See `src/app.css` lines 59–77 for the exact dark-mode overrides.
+The `.dark` class on `<html>` inverts all tokens while keeping the semantic meaning intact, and flips `color-scheme` with them. See the `.dark` block in `src/app.css`.
+
+`color-scheme` is stated per theme (`light` on `:root`, `dark` on `.dark`) rather than as `light dark`, because exactly one theme is active at a time and the class is what selects it. Advertising both would let the browser paint its own defaults — a `<dialog>`'s `CanvasText`, form controls — from the OS preference while the tokens said otherwise.
 
 ## Typography
 
@@ -78,6 +80,10 @@ The `iconComponents` map in `src/lib/components/Icon.svelte` includes:
 
 - `menu` — navigation menu trigger
 - `chevron-down`, `chevron-left`, `chevron-right` — directional indicators
+- `arrow-right` — forward movement in a primary action (the login button)
+- `layout-grid` — the "All" option in a type filter
+- `link` — a shareable link to the thing on screen
+- `sun`, `moon`, `monitor` — the light, dark, and follow-the-system theme states
 
 **Certificate Types:**
 
@@ -126,28 +132,69 @@ When adding a new variant:
 
 All classes should reference CSS custom properties (e.g., `bg-accent`) rather than hardcoded colors or sizes.
 
+### Page Structure
+
+Every screen is a single centred column inside the layout's `main`, and owns
+its own width — the layout imposes none. The widths are chosen for what the
+screen is for, not for consistency's sake:
+
+| Screen                       | Width             | Why                                                       |
+| ---------------------------- | ----------------- | --------------------------------------------------------- |
+| Login                        | `380px`           | one action; a wider column makes it look unfinished       |
+| Approval, error, cert detail | `560px` / `600px` | a field list read top to bottom                           |
+| Dashboard, history           | `680px`           | rows with a subject on the left and a status on the right |
+
+Each column opens with a `PageHeading`: an accent eyebrow naming the area
+("Activity", "History", "Certificate request") above the page's `h1`. The
+eyebrow is what makes a screen identifiable at a glance without reading the
+title, so it is required rather than optional, and there is exactly one `h1`
+per page.
+
+Lists are stacks of standalone cards — 1px border, 10px radius, `surface`
+background, `2.5` gap — not divided rows inside one panel. A list of
+certificates is a list of things that happened, and each one should read as
+discrete.
+
 ### Common Components
 
-- **Button**: Variants: `primary` (accent blue), `danger` (red), `ghost` (outline). Always includes `disabled` state via `opacity-50`.
+- **Button**: Variants: `primary` (accent blue), `danger` (red), `ghost` (outline). Always includes `disabled` state via `opacity-50`. Lays its children out as a centered `inline-flex` row with a gap, so a label plus a trailing icon needs no wrapper. `full` stretches it to the container width, for a screen whose single primary action should span the column (the login button).
+- **BrandMark**: The deployment logo slot — the mark left of the "ssoossh" wordmark in the header and above the login heading. Renders `branding.logo_url` when a deployment sets one (height-constrained, width free, since most organisation logos are wide wordmarks) and ssoossh's own check-in-circle mark otherwise, so the slot is never empty. Takes `size` in pixels; corner rounding follows the size.
 - **Card**: Wraps content in a bordered, shadowed box with optional title/description header and footer slot.
 - **Alert**: Variants: `error`, `warning`, `info`. Each includes an icon and a color from the token set.
-- **StatusBadge**: Maps request/certificate statuses (pending, approved, denied, etc.) to colored pills with status-appropriate icons.
-- **DetailRow**: A label–value pair for metadata lists, with optional icon and monospace rendering.
+- **StatusBadge**: Maps request/certificate statuses (pending, approved, denied, etc.) to colored pills with status-appropriate icons. Rendered capitalised — the wire value is lowercase, the label is not.
+- **DetailRow**: A label–value pair for metadata lists, with optional icon and monospace rendering. A 140px label column at 13px, stacking on narrow viewports.
+- **PageHeading**: The eyebrow + `h1` pair every screen opens with, with an optional right-aligned action (the dashboard's "View all history →").
+- **SectionLabel**: The small muted uppercase label that opens a group of fields inside a card. Quieter than `PageHeading`'s eyebrow, which takes the accent.
+- **CertRow**: One certificate as a standalone, clickable card — type badge, subject, what happened and when, principals, and the decision badge.
+- **TypeBadge**: The certificate type as a fixed 26×26 square. Fixed rather than content-sized so rows align vertically whatever the type is called, and always shown: on a row the type is the primary identifier, not decoration.
+- **TypeChip**: The labelled form of `TypeBadge`, for detail views with room to name the type.
+- **MonoChip**: One monospace value as a bordered chip — a principal, an IP. Chips rather than a comma-separated string so set boundaries are unambiguous.
+- **ThemeToggle**: The header's theme control — one button cycling system → light → dark. See Dark Mode.
+- **UserMenu**: The header's identity control — who you are acting as, with sign-out behind it. Closes on outside click and on Escape, which returns focus to the trigger.
 - **OptionDiffList**: Shows granted vs. trimmed options (extensions, critical options) with strike-through for trimmed items.
 - **ApprovalView**: Composite component rendering a full certificate-request approval form.
-- **CertDetailModal**: Read-only certificate details in a modal, triggered by clicking a row in Dashboard or History.
+- **CertDetailModal**: Read-only certificate details in a modal, triggered by clicking a row in Dashboard or History. The open certificate lives in `page.state` via shallow routing, with a matching `?modal=<id>` in the address bar so a specific certificate is linkable without leaving the list behind it. It has to be both: SvelteKit's `pushState` updates `page.state` and the address bar but never reassigns `page.url`, so state drives the open modal and the search parameter is only the fallback a pasted link arrives with. Every close path — the button, Escape, the backdrop — goes through the dialog's own `close` event, which is what keeps that parameter in step with what is on screen.
 - **ConsentModal**: Blocking login consent notice, shown above the login form until accepted.
 
 ## Dark Mode
 
-Dark mode follows the OS preference by default (`color-scheme: light dark` in `app.css:55`). Users can override via a toggle if one is implemented.
+Three states, not two: **system** (the default, follows the OS live), **light**, and **dark**. "Follow my OS" is a real choice rather than the absence of one — someone who has never picked should track their OS when it changes, and someone who picked light on a dark machine should stay on light.
 
-Dark-mode tokens are defined in the `.dark` class selector (lines 59–77 of `app.css`). When the `.dark` class is applied or `prefers-color-scheme: dark` is active, CSS swaps all `--color-*` variables to darker values. The hue and semantic meaning stay the same; only the lightness inverts.
+`src/lib/theme.svelte.ts` owns the preference, persists it to `localStorage` under `ssoossh:theme`, and tracks `prefers-color-scheme` with a live `matchMedia` listener so a system theme change takes effect without a reload. The root layout starts it and applies the resolved theme to `<html>`.
 
-All components automatically respond to dark mode — no per-component dark-mode logic is needed because colors are tokenized. Test both modes by:
+`ThemeToggle` in the header steps system → light → dark → system. One cycling button rather than a switch, because a switch has nowhere to put the third state. Its accessible name states both where it is and where pressing it goes.
 
-1. Opening the browser DevTools and toggling `color-scheme` or the `.dark` class on `:root`.
-2. Changing the OS theme and reloading.
+**Avoiding the flash:** an inline script in `src/app.html` resolves the theme and sets the class _before first paint_, so the page never shows light on its way to dark. It duplicates the resolution rule deliberately — it cannot import the store, because it has to run before any module does. If you change the storage key or the resolution rule in `theme.svelte.ts`, change it there too. ssoosshd injects a CSP nonce into every script tag it serves (`server/frontend/frontend_included.go`), so the inline script is allowed.
+
+Storage access is wrapped everywhere: a browser with site data blocked throws on read rather than returning null, and a theme preference is not worth failing a page load over. That case follows the OS, same as a first visit.
+
+All components respond automatically — no per-component dark-mode logic, because colors are tokenized. Test by switching your OS theme with the toggle on "system", and by picking each explicit state.
+
+One caveat tokenization does not cover: a `<dialog>` is given `color: CanvasText` by the UA stylesheet, which **beats inheritance** from `body`. The shared `.modal-dialog` class sets `color` from a token for exactly this reason; any new dialog should use that class rather than assembling its box from utilities.
+
+### The `.modal-dialog` class
+
+Dialogs get their box from a single component class in `app.css`, not from utilities. The UA stylesheet gives `<dialog>` `width: fit-content`, `height: fit-content` and `margin: auto`, which `inset-0` does not undo — the box sizes to its content and lands wherever the over-constrained position resolves rather than centred. `.modal-dialog` overrides every one of those explicitly, along with the border, background, text color, and backdrop.
 
 ## Branding & Configuration
 
@@ -181,8 +228,9 @@ interface BrandingConfig {
 **Login Consent** (`src/routes/login/+page.svelte`):
 
 - If `login_notice` is set, a `ConsentModal` overlays the login form with a backdrop.
-- The form stays inert (pointer-events-none, reduced opacity) until the user clicks "I Accept".
-- This is a blocking modal, not a dismissible banner.
+- The form stays inert — blurred, dimmed, and `pointer-events-none` — until the user clicks "I Accept", and the sign-in button is `disabled` for as long as it is.
+- This is a blocking modal, not a dismissible banner. Escape is blocked so it cannot be dismissed unaccepted.
+- The modal carries no visible title: the notice is each deployment's own approved wording, shown in full and never summarized, so a generic "Notice" heading would only compete with it. The heading stays in the accessibility tree (`sr-only` + `aria-labelledby`) to name the dialog, and a long notice scrolls inside a keyboard-reachable region rather than pushing "I Accept" off screen.
 
 ### Environment Variables
 

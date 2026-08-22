@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -2746,6 +2747,113 @@ func TestCertRequestService_CreateRequest_ShouldPersistLocalIdentity(t *testing.
 // stored SourceAddresses list rather than left as a second, disconnected
 // value — the union docs/ssoossh-context.md describes for a client behind
 // NAT.
+// TestCertRequestService_CreateRequest_ShouldNormalizeSourceAddresses covers
+// the case that took the approval page down: net.IP.String() drops an IPv6
+// zone, so one link-local address carried by several interfaces arrives as
+// the same string twice. Link-local is dropped outright — it says nothing
+// about reaching this machine from anywhere else — and the rest is deduped.
+// The server does not trust the client to send a clean list, because any
+// client version decides what it sends.
+func TestCertRequestService_CreateRequest_ShouldNormalizeSourceAddresses(t *testing.T) {
+	t.Parallel()
+
+	const linkLocal = "fe80::e8a7:34ff:fe9f:c7a9"
+
+	tests := []struct {
+		name     string
+		sourceIP string
+		reported []string
+		want     []string
+	}{
+		{
+			name:     "should drop an IPv6 link-local address",
+			reported: []string{"10.0.0.5", linkLocal, linkLocal},
+			want:     []string{"10.0.0.5"},
+		},
+		{
+			name:     "should drop an IPv4 link-local address",
+			reported: []string{"10.0.0.5", "169.254.10.20"},
+			want:     []string{"10.0.0.5"},
+		},
+		{
+			name:     "should keep a value that does not parse as an IP",
+			reported: []string{"not-an-ip", "10.0.0.5"},
+			want:     []string{"not-an-ip", "10.0.0.5"},
+		},
+		{
+			name:     "should yield nothing when every reported address is link-local",
+			reported: []string{linkLocal, "169.254.10.20"},
+			want:     nil,
+		},
+		{
+			name:     "should keep the first occurrence of each address in order",
+			reported: []string{"10.0.0.5", "192.168.1.20", "10.0.0.5"},
+			want:     []string{"10.0.0.5", "192.168.1.20"},
+		},
+		{
+			name:     "should leave an already-unique list untouched",
+			reported: []string{"10.0.0.5", "192.168.1.20"},
+			want:     []string{"10.0.0.5", "192.168.1.20"},
+		},
+		{
+			name:     "should handle an empty list",
+			reported: nil,
+			want:     nil,
+		},
+		{
+			name:     "should union the observed source IP after dropping link-local",
+			sourceIP: "203.0.113.9",
+			reported: []string{linkLocal, linkLocal},
+			want:     []string{"203.0.113.9"},
+		},
+		{
+			// The observed address is a fact the server established, not a
+			// claim the client made, so it is recorded even when link-local.
+			name:     "should keep a link-local address the server itself observed",
+			sourceIP: linkLocal,
+			reported: []string{"10.0.0.5"},
+			want:     []string{"10.0.0.5", linkLocal},
+		},
+		{
+			name:     "should not re-add an observed source IP the client already reported twice",
+			sourceIP: "10.0.0.5",
+			reported: []string{"10.0.0.5", "10.0.0.5"},
+			want:     []string{"10.0.0.5"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := newTestCertRequestService(t, 0)
+			requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+				Type:      model.CertificateTypeUser,
+				PublicKey: "ssh-ed25519 AAAA...",
+				SourceIP:  tt.sourceIP,
+				RequestedOptions: RequestedOptions{
+					SourceAddresses: tt.reported,
+				},
+			})
+			if err != nil {
+				t.Fatalf("unexpected error creating request: %v", err)
+			}
+
+			var req model.CertificateRequest
+			if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+				t.Fatalf("unexpected error reading back the request: %v", err)
+			}
+			var opts RequestedOptions
+			if err := json.Unmarshal([]byte(req.RequestedOptions), &opts); err != nil {
+				t.Fatalf("failed to decode persisted requested options: %v", err)
+			}
+			if !slices.Equal(opts.SourceAddresses, tt.want) {
+				t.Errorf("got SourceAddresses %v, want %v", opts.SourceAddresses, tt.want)
+			}
+		})
+	}
+}
+
 func TestCertRequestService_CreateRequest_ShouldUnionSourceIPIntoSourceAddresses(t *testing.T) {
 	t.Parallel()
 

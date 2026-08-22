@@ -8,6 +8,8 @@
 		variant?: 'primary' | 'danger' | 'ghost';
 		type?: 'button' | 'submit';
 		disabled?: boolean;
+		/** Stretches the button to its container's width, for a page's single primary action. */
+		full?: boolean;
 		/** Indicates the button is processing an action. Disables the button and sets aria-busy. */
 		busy?: boolean;
 		onclick?: () => void;
@@ -20,6 +22,7 @@
 		variant = 'primary',
 		type = 'button',
 		disabled = false,
+		full = false,
 		busy = false,
 		onclick,
 		testid,
@@ -39,9 +42,9 @@
 	{onclick}
 	aria-busy={busy}
 	data-testid={testid}
-	class="rounded-md px-4 py-2 text-sm font-medium transition disabled:opacity-50 {variants[
-		variant
-	]}"
+	class="inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition disabled:opacity-50 {full
+		? 'w-full'
+		: ''} {variants[variant]}"
 >
 	{@render children()}
 </button>

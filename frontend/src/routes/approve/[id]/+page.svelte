@@ -83,16 +83,18 @@
 <svelte:head><title>Approve a certificate request · ssoossh</title></svelte:head>
 
 {#if failure}
-	<Card title={failure.title} testid="load-failure-{failure.kind}">
-		<p class="text-sm text-ink-muted">{failure.message}</p>
-		{#if failure.signIn}
-			<div class="mt-5">
-				<Button testid="sign-in-button" onclick={() => startLogin(`/approve/${id}`)}
-					>Sign in to continue</Button
-				>
-			</div>
-		{/if}
-	</Card>
+	<div class="w-full max-w-[560px]">
+		<Card title={failure.title} testid="load-failure-{failure.kind}">
+			<p class="text-sm text-ink-muted">{failure.message}</p>
+			{#if failure.signIn}
+				<div class="mt-5">
+					<Button testid="sign-in-button" onclick={() => startLogin(`/approve/${id}`)}
+						>Sign in to continue</Button
+					>
+				</div>
+			{/if}
+		</Card>
+	</div>
 {:else if detail}
 	<ApprovalView
 		{detail}
@@ -103,5 +105,7 @@
 		ondeny={() => decide('denied')}
 	/>
 {:else}
-	<Alert testid="loading-request">Loading request…</Alert>
+	<div class="w-full max-w-[560px]">
+		<Alert testid="loading-request">Loading request…</Alert>
+	</div>
 {/if}

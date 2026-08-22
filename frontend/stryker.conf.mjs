@@ -6,7 +6,7 @@ export default {
 		// Frontend source files under test (TypeScript only due to Svelte 5.x compatibility)
 		'src/lib/**/*.ts',
 		// Exclude test files themselves
-		'!**/*.test.ts',
+		'!**/*.test.ts'
 	],
 	testRunner: 'vitest',
 	reporters: ['html', 'clear-text'],
@@ -14,9 +14,5 @@ export default {
 	timeoutMs: 5000,
 	timeoutFactor: 1.25,
 	// Exclude node_modules and build outputs
-	ignorePatterns: [
-		'node_modules',
-		'dist',
-		'.svelte-kit'
-	],
-}
+	ignorePatterns: ['node_modules', 'dist', '.svelte-kit']
+};

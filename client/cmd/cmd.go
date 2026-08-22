@@ -91,6 +91,19 @@ func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 	}
 	r.cfg = cfg
 
+	// An offline command stops here. Config is already loaded, since even a
+	// command that never talks to the server has to know where its own
+	// local files live, but everything below either reaches the network
+	// (the CA fetch) or exists only to serve something that does. Skipping
+	// it is the point rather than an optimization: `host principals` runs
+	// as root on every sshd login attempt and must answer from local state
+	// alone, and printing a version string is nobody's business but this
+	// machine's.
+	if isOffline(runner.Command) {
+		r.api = &offlineAPIClient{command: runner.CobraCommand.CommandPath()}
+		return nil
+	}
+
 	apiClient, err := r.newAPIClient(cfg)
 	if err != nil {
 		r.initErr = fmt.Errorf("build API client: %w", err)
@@ -161,10 +174,14 @@ func (r *RootCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 func (r *RootCommand) Config() *config.Config { return r.cfg }
 
 // API returns the configured API client. Only valid once InitErr() is nil.
+// For an offline command it is an offlineAPIClient, which refuses every
+// call rather than reaching the server.
 func (r *RootCommand) API() api.Client { return r.api }
 
 // Agent returns the configured SSH agent (live agent or file-backed
-// fallback). Only valid once InitErr() is nil.
+// fallback). Only valid once InitErr() is nil, and nil for an offline
+// command: those get no key storage at all, since deciding where keys live
+// is only meaningful for a command that obtains one.
 func (r *RootCommand) Agent() agent.Agent { return r.ssh }
 
 // InitErr reports whether PreRun failed. Subcommand Run functions must

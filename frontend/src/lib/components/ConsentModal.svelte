@@ -34,35 +34,38 @@
 </script>
 
 {#if open}
+	<!-- No visible title: the notice is each deployment's own approved
+	     wording, shown in full and unsummarized, so a generic "Notice"
+	     header above it only competes with the text that matters. The
+	     heading stays in the accessibility tree to name the dialog. -->
 	<dialog
 		bind:this={dialogEl}
 		oncancel={blockEscape}
-		class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
+		aria-labelledby="consent-notice-heading"
+		class="modal-dialog z-50"
 	>
-		<div class="w-full max-w-md rounded-lg border border-border-subtle bg-surface shadow-lg">
-			<div class="border-b border-border-subtle px-6 py-4">
-				<h2 class="text-base font-semibold">Notice</h2>
+		<div
+			class="flex w-full max-w-[520px] flex-col gap-4 rounded-xl border border-border-subtle bg-surface p-7 shadow-lg"
+		>
+			<h2 id="consent-notice-heading" class="sr-only">Notice</h2>
+
+			<!-- A long notice scrolls inside the dialog rather than pushing the
+			     Accept button off screen. tabindex makes that scroll reachable
+			     from the keyboard in browsers that don't focus overflow
+			     containers on their own. -->
+			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+			<div
+				role="region"
+				aria-labelledby="consent-notice-heading"
+				tabindex="0"
+				class="max-h-[280px] overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap text-ink"
+			>
+				{notice}
 			</div>
 
-			<div class="px-6 py-4">
-				<p class="text-sm whitespace-pre-wrap text-ink">{notice}</p>
-			</div>
-
-			<div class="border-t border-border-subtle bg-surface-muted px-6 py-4">
+			<div class="flex justify-end">
 				<Button onclick={handleAccept}>I Accept</Button>
 			</div>
 		</div>
 	</dialog>
-
-	<style>
-		dialog::backdrop {
-			background-color: rgba(0, 0, 0, 0.5);
-		}
-
-		dialog {
-			border: none;
-			padding: 0;
-			background: transparent;
-		}
-	</style>
 {/if}

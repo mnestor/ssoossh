@@ -127,7 +127,9 @@ cached copy of the claim.
 - **admin** — expiring enrollments and disabling users. Not narrowing policy:
   that belongs to host owners.
 - **auditor** — read-only: certificate history across users, effective
-  configuration.
+  configuration. A child role of admin: every admin holds auditor access
+  without being listed in the auditor group, so `auditor_group` names the
+  people who get the read-only view *and nothing else*.
 
 Two rather than one because the read-only view is what people actually want
 day to day — support, incident review, "who issued this?" — and handing out
@@ -203,7 +205,9 @@ This plan has been implemented on branch `feat/auth-roles`. Key decisions and di
 
 1. **Three roles, config-driven**: admin, auditor, and ssh-server-admin, all fail-closed on empty groups
    - Config location: `config.Admin` (AdminConfig struct) with fields `RequireGroup`, `AuditorGroup`, `SSHServerAdminGroup`
-   - All three group names optional; empty disables that role
+   - All three group names optional; empty disables that role, except that
+     auditor is a child role of admin — an empty `AuditorGroup` narrows the
+     auditor routes to admins rather than closing them off entirely
    
 2. **Session TTL**: Changed from 12 hours to **15 minutes** default
    - File: `server/bootstrap/router.go`, constant `defaultCookieMaxAge`

@@ -20,6 +20,11 @@ type simpleCommand struct {
 
 	commands []simplecobra.Commander
 
+	// offline marks a command that must complete without contacting the
+	// server, so root's PreRun skips the CA fetch and everything built to
+	// serve it. See offlineCommander in offline.go.
+	offline bool
+
 	run func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error
 
 	// InitFunc optionally overrides default Init behavior for this command.
@@ -32,6 +37,9 @@ func (c *simpleCommand) Name() string { return c.name }
 
 // Commands implements simplecobra.Commander.
 func (c *simpleCommand) Commands() []simplecobra.Commander { return c.commands }
+
+// Offline implements offlineCommander.
+func (c *simpleCommand) Offline() bool { return c.offline }
 
 // Init implements simplecobra.Commander.
 func (c *simpleCommand) Init(cd *simplecobra.Commandeer) error {

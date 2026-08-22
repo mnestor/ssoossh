@@ -26,6 +26,14 @@ func (c *versionCommand) Name() string { return "version" }
 // Commands implements simplecobra.Commander.
 func (c *versionCommand) Commands() []simplecobra.Commander { return nil }
 
+// Offline implements offlineCommander. Every value printed below is baked
+// in at build time, so this is the clearest case there is of a command with
+// no reason to reach the server. Without it, root's PreRun still fetched
+// the CA on the way here, meaning `ssoossh version` opened a connection to
+// the configured server on every run purely as a side effect of shared
+// init.
+func (c *versionCommand) Offline() bool { return true }
+
 // Init implements simplecobra.Commander.
 func (c *versionCommand) Init(cd *simplecobra.Commandeer) error {
 	cd.CobraCommand.Short = "Print ssoossh version, commit, and build info."

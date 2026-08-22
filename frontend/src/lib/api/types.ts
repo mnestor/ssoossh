@@ -13,6 +13,7 @@
 export type { CertificateType, CertificateRequestStatus as RequestStatus } from './generated/enums';
 
 export type {
+	CertificateListResponse,
 	CertificateOptionsResponse as CertificateOptions,
 	CertificateResponse as CertificateRecord,
 	CurrentUserResponse as CurrentUser,
