@@ -23,6 +23,8 @@ inserts a line above 133.
 5. Never hand-resolve a generated file. Take one side, then regenerate.
 6. Merge one branch at a time, rebasing each on the new `main` before its turn.
 7. Run the post-merge ritual after every branch lands, not once at the end.
+8. Verify every agent report against the tree before acting on it. An agent's
+   summary is a claim, not evidence.
 
 ## Setup
 
@@ -37,6 +39,25 @@ Worktrees share one `.git` object store but have independent checkouts and
 indexes, so two agents cannot see or clobber each other's files. Claude Code
 drives this natively: the `Agent` tool accepts `isolation: "worktree"`, and
 `/EnterWorktree` moves an interactive session into one.
+
+**Confirm the worktree path is writable before dispatching.** In the
+devcontainer, `/workspace` itself is not writable — only the bind-mounted
+`/workspace/ssoossh` is — so the `../ssoossh-<feature>` layout above fails
+with "could not create leading directories". Put them under
+`/workspace/ssoossh/.claude/wt/<feature>` instead: `.claude` is gitignored,
+so the worktrees stay invisible to git, and it is on the host mount, so they
+survive a container rebuild. Verify with `git worktree list` after creating
+them.
+
+**Never let two agents share a checkout, including the main one.** This is
+rule 1 and it is easy to break by accident when worktree creation fails and
+the convenient fallback is to give every agent the same directory with its
+own `git switch -c`. That does not isolate anything: branch `HEAD` is a
+property of the checkout, not of the agent, so all of them end up on
+whichever branch switched last, writing into one tree. The first agent to
+commit sweeps up everyone else's half-finished work onto its branch. The
+failure is silent while it happens and only visible afterwards in a diff
+nobody can attribute.
 
 Before creating worktrees, commit or stash anything untracked on `main`.
 Untracked files do not propagate into a new worktree, so an agent that starts
@@ -167,6 +188,52 @@ appends to the same list. These conflicts are mechanical: keep both sides.
 | [server/bootstrap/router.go](../server/bootstrap/router.go) | Route registration in `initRouter` |
 | [server/bootstrap/bootstrap.go](../server/bootstrap/bootstrap.go) | Service construction |
 | [server/model/model.go](../server/model/model.go) | Model list (already single-owner) |
+
+## Verifying agent reports
+
+Agent summaries describe the plan the agent formed, which is not always the
+diff it produced. Both failure directions have been observed here, in the same
+round:
+
+- Reporting a gate that was never run, or run partially. "All tests pass"
+  after running one package. "Lint is clean" against a stale
+  `golangci-lint` cache.
+- Reporting a feature in confident, specific detail — which mechanism, what
+  reads from it, why that design was chosen — that is absent from the code.
+  One branch described wiring `host_mappings` in `signreply.go`, including
+  its rationale for populating it as output rather than input, and had
+  written none of it.
+
+Neither is deliberate, and neither is caught by reading the summary more
+carefully. Check the tree instead. Per branch, before it merges:
+
+```sh
+git -C <worktree> status --porcelain     # anything uncommitted is not landing
+git -C <worktree> log --oneline main..HEAD
+git -C <worktree> diff main...HEAD --stat
+cd <worktree> && go build ./... && golangci-lint run ./... && make test
+```
+
+Then check the specific claims:
+
+- **Uncommitted work.** Three agents in one round reported a green gate and
+  exited with the work still in the working tree. In a container whose
+  worktrees sit on overlay, that work dies with the next rebuild.
+- **The named artifact exists.** If the report says it wired a table, added an
+  endpoint, or created a seam, grep for it. A one-line `grep -rn` settles it.
+- **The test proves what it claims.** A passing test is not evidence on its
+  own. For a test written to catch a specific defect, reintroduce the defect
+  and confirm the test fails, then restore. That is the only way to know a
+  regression test regresses. Applied to the request-binding guard, this turned
+  "29 tests pass" into the discovery that all 29 passed with the guard
+  removed.
+- **Coverage exclusions still match.** Line-range regexes silently stop
+  matching after a merge shifts lines. See hazard 2.
+
+None of this is expensive; it is minutes per branch against hours of
+untangling. Treat a report's claims as the list of things to check, and take
+an honest "I did not get to this" at face value — it is more useful than a
+confident inaccuracy, and worth saying so in the dispatch brief.
 
 ## Merge order
 
