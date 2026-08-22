@@ -1,6 +1,9 @@
 package config
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // CertificateOptions groups the certificate-issuance options for each
 // SSH certificate type ssoosshd can sign.
@@ -28,6 +31,23 @@ type CertificateOptions struct {
 	// the sweep can never cancel a request that might still be in flight.
 	// See the sweep's doc comment for the arithmetic.
 	SigningTimeout time.Duration `mapstructure:"signing_timeout,string"`
+}
+
+// Validate rejects certificate options the rest of the server cannot derive
+// a bound from. Called at startup so a bad value stops the process, rather
+// than surfacing much later as a sweep that fails live requests or a cache
+// that grows without limit.
+func (c *CertificateOptions) Validate() error {
+	// RequestTTL = 0 used to mean "expiry disabled", and every consumer
+	// carried a fallback for it. Each fallback was a hazard rather than a
+	// feature: the stranded-request sweep has no cutoff to work from and
+	// treats every signing row as stranded, and the resolved-outcome cache
+	// has no age at which an entry is safe to evict. Requiring a positive
+	// value removes both special cases at the source.
+	if c.RequestTTL <= 0 {
+		return fmt.Errorf("cert_options.request_ttl must be greater than zero (the default is 5m): a disabled TTL leaves pending requests unbounded and gives the stranded-request sweep no cutoff")
+	}
+	return nil
 }
 
 // CertOptions configures issuance of host certificates: the OIDC group

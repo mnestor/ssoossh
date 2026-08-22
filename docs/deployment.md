@@ -157,7 +157,69 @@ Also set `http.trusted_proxies` to the proxy's address (e.g.
 request is attributed to the proxy's own IP, including in the approver
 client-IP key ID field.
 
-## 7. PAM: `sudo` and `su`
+## 7. Running more than one instance
+
+**Multi-instance is supported, and it requires NATS.** Until the NATS
+transport lands, run exactly one `ssoosshd` process. Do not put two behind a
+load balancer, sticky or otherwise. If you only run one process, skip this
+section.
+
+### Why a second instance breaks
+
+The whole issuance pipeline runs over `server/pubsub`, which is gochannel —
+in-process only. One approval crosses that pub/sub three times:
+
+1. Approving publishes a signing job to `certrequest.sign`.
+2. A signer consumes it and publishes the result to `certrequest.signed`.
+3. The listener publishes the outcome to `certrequest.wait.<id>`, which is
+   what the waiting client's SSE stream is subscribed to.
+
+Every one of those hops is in-process, so the entire chain completes inside
+whichever instance received the approval. The instance holding the client's
+SSE stream is subscribed to a wake that is published on a different process
+and never arrives. Certificates are never persisted — deliberately — so
+when that client's `Wait` eventually reads `status=approved` from the shared
+database there is nothing left to hand it, and it gets **410 Gone**.
+
+The client is told to re-request, so nothing is silently wrong, but logins
+fail until one happens to land correctly.
+
+### Why sticky sessions are not offered as a workaround
+
+Routing by request ID would technically collapse the pipeline onto one
+instance, because all three routes carry the ID in the path and today's
+signer runs in-process. It is still not a supported configuration, because
+delivery is not the only thing that breaks with two instances:
+
+- **The sweep.** With `RequestTTL = 0` there is no derivable bound, so the
+  sweep treats every `signing` row as stranded. Harmless as a single-process
+  boot pass; with two instances a restarting instance invalidates the
+  other's live in-flight requests. Sticky routing does not touch this.
+- **Sessions.** `http.cookie_key` defaults to a per-process random key, so
+  sessions break on any request that lands elsewhere. Browsers reach plenty
+  of routes that carry no request ID to hash on.
+- **Scheduled work.** Every instance runs the sweep. That is currently safe
+  because it is idempotent, but it is N× the queries and a trap for the next
+  job that isn't.
+
+A configuration that fixes one of three failure modes is worse than a clear
+"not yet" — it looks like it works until the sweep or a session says
+otherwise.
+
+### What NATS changes
+
+The application logic is already written for it. `tryHandleWakeMessage`
+decodes the certificate from the wake payload and re-verifies the status
+against the database before trusting it; the `Wait` loop comment names the
+case directly — "this is what lets an SSE client on instance B receive a
+certificate issued on instance A." What is missing is the transport, its
+configuration, and queue-group semantics so the sign queue and signed-reply
+topic are consumed once rather than by every instance.
+
+See [multi-instance-safety-plan.md](multi-instance-safety-plan.md) for the
+remaining work and the order to do it in.
+
+## 8. PAM: `sudo` and `su`
 
 New for this release. `docs/pam.d-sudo.example` documents every module
 argument in detail (`server`, `trusted-ca-file`, `debug`,

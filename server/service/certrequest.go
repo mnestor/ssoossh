@@ -76,6 +76,12 @@ type requestOutcome struct {
 	status      model.CertificateRequestStatus
 	certificate string
 	code        string
+
+	// resolvedAt is when this outcome was cached, and exists only so
+	// EvictResolved can age entries out. Stamped centrally in notifyWaiter
+	// and tryHandleWakeMessage rather than by callers, so no construction
+	// site can forget it and leave an entry that looks infinitely old.
+	resolvedAt time.Time
 }
 
 // requestOutcomeMessage is requestOutcome's wire shape, published to a
@@ -292,6 +298,37 @@ func (s *CertRequestService) ttlCutoff() time.Time {
 		return time.Time{}
 	}
 	return time.Now().Add(-s.config.CertOptions.RequestTTL).UTC()
+}
+
+// EvictResolved drops cached outcomes older than the request TTL. Without
+// it the resolved map grows one entry per request for the life of the
+// process — and each entry holds a signed certificate, which this design
+// otherwise takes care never to persist anywhere.
+//
+// RequestTTL is the right bound and needs no grace period: resolvedAt is
+// never earlier than the request's created_at, so an entry older than the
+// TTL belongs to a request that has itself expired. Wait's expiry timer is
+// measured from created_at, so no client can still be waiting on it, and a
+// late reconnect gets the same 410 it would have got anyway.
+//
+// Config guarantees RequestTTL > 0 (CertificateOptions.Validate), so there
+// is no disabled-TTL case to fall back on here.
+//
+// This must run on EVERY instance. The map is process-local memory, so
+// unlike the database sweep it can never be gated behind leader election —
+// electing one leader would leave every other instance leaking. See
+// docs/multi-instance-safety-plan.md item 3.
+func (s *CertRequestService) EvictResolved(_ context.Context) error {
+	cutoff := time.Now().Add(-s.config.CertOptions.RequestTTL)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, outcome := range s.resolved {
+		if outcome.resolvedAt.Before(cutoff) {
+			delete(s.resolved, id)
+		}
+	}
+	return nil
 }
 
 // RequestDetail is everything the approval page needs to show a human what
@@ -1141,6 +1178,7 @@ func (s *CertRequestService) tryHandleWakeMessage(ctx context.Context, requestID
 				status:      outcome.Status,
 				certificate: outcome.Certificate,
 				code:        outcome.Code,
+				resolvedAt:  time.Now(),
 			}
 			s.mu.Unlock()
 			return outcome.Status, outcome.Certificate, outcome.Code, true
@@ -1171,6 +1209,8 @@ func (s *CertRequestService) tryHandleWakeMessage(ctx context.Context, requestID
 // future poll), same as if the process restarted between the DB write and
 // this publish.
 func (s *CertRequestService) notifyWaiter(requestID string, outcome requestOutcome) {
+	outcome.resolvedAt = time.Now()
+
 	s.mu.Lock()
 	s.resolved[requestID] = outcome
 	s.mu.Unlock()
