@@ -556,11 +556,38 @@
   ## Empty disables organization-specific branding.
   # org_name: ""
 
-  ## Filesystem path to the organization's logo image (PNG, JPEG, GIF, or WebP).
-  ## The server reads this file at startup and validates that it is a real image.
-  ## Empty disables the logo. The logo is served via /api/branding/logo as
-  ## same-origin, avoiding third-party dependencies and DNS leakage on the
-  ## unauthenticated login page.
+  ## Filesystem path to the organization's logo image. Empty disables the logo,
+  ## and the UI renders unchanged.
+  ##
+  ##   Formats:  PNG, JPEG, GIF, WebP, SVG
+  ##   Max size: 1 MB
+  ##   Rendered: 22px tall in the site header, width scales with the image's
+  ##             aspect ratio up to 160px, then letterboxes. The header shows
+  ##             on every page, including the pre-login page. A wide wordmark
+  ##             works well. Supply roughly 2-3x the display height (44-66px)
+  ##             so it stays sharp on high-DPI screens, or an SVG, which
+  ##             scales at any density. The 1 MB cap is a safety limit rather
+  ##             than a target: a file anywhere near it is far larger than
+  ##             this needs.
+  ##
+  ## The file is read ONCE AT STARTUP and validated by content rather than by
+  ## file extension. A path that is missing, unreadable, larger than the cap,
+  ## or not actually an image is a startup failure, not a silently broken
+  ## image later. Replacing the file on disk therefore requires a restart.
+  ##
+  ## It is served from /api/branding/logo on this server, same-origin. The
+  ## config takes a path and never a URL: the login page is unauthenticated,
+  ## so an external image would disclose every visitor's IP address and
+  ## user-agent to a third-party host before they log in, and would make the
+  ## login page depend on that host staying up. Serving it ourselves also lets
+  ## the Content-Security-Policy keep img-src at 'self'.
+  ##
+  ## SVG is accepted, but note that an SVG is a document and can carry script.
+  ## Inside the page it is loaded in an <img> tag, where script never runs.
+  ## Fetching /api/branding/logo directly would render it as a document, so
+  ## that response carries Content-Security-Policy: default-src 'none' to
+  ## block script there too. Supply an SVG you trust: it is served to every
+  ## visitor, authenticated or not.
   # logo_path: ""
 
   ## Plain-text message shown on the login page before authentication.

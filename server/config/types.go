@@ -73,9 +73,16 @@ type BrandingSettings struct {
 	OrgName string `mapstructure:"org_name"`
 
 	// LogoPath is the filesystem path to the organization's logo image.
-	// The server reads this file at startup and validates that it is a real image.
-	// Empty disables the logo. The logo is served via /api/branding/logo and is
-	// always same-origin, avoiding DNS leakage or third-party image dependencies.
+	// Empty disables the logo.
+	//
+	// Accepted types: PNG, JPEG, GIF, WebP, SVG. Maximum size: 1 MB
+	// (maxLogoSize in server/controller/logo_image.go). The type is
+	// determined from the file's own bytes, not its extension.
+	//
+	// Read once at startup and validated then, so a bad path fails the
+	// server rather than producing a broken image later; replacing the file
+	// needs a restart. Served from /api/branding/logo, always same-origin,
+	// so no third-party host sees the unauthenticated login page's traffic.
 	LogoPath string `mapstructure:"logo_path"`
 
 	// LoginNotice is a plain-text message shown on the login page before authentication.
