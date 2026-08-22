@@ -116,6 +116,7 @@ type CertRequestService struct {
 	publisher    message.Publisher
 	subscriber   message.Subscriber
 	adminChecker SSHServerAdminChecker
+	engine       *lifetimePolicyEngine
 
 	mu sync.Mutex
 	// resolved caches the outcome for any requestID notifyWaiter has fired
@@ -141,6 +142,11 @@ func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publ
 		return nil, err
 	}
 
+	engine, err := newLifetimePolicyEngine(c.CertOptions)
+	if err != nil {
+		return nil, err
+	}
+
 	return &CertRequestService{
 		config:       c,
 		db:           db,
@@ -148,8 +154,17 @@ func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publ
 		publisher:    publisher,
 		subscriber:   subscriber,
 		adminChecker: NewConfigSSHServerAdminChecker(c),
+		engine:       engine,
 		resolved:     make(map[string]requestOutcome),
 	}, nil
+}
+
+// ValidateStartupConfig checks the lifetime policy configuration against the
+// server's reverse-proxy configuration, logging warnings if a footgun is
+// detected. Called once at startup after services are initialized, before
+// Approve uses the policies to evaluate requests.
+func (s *CertRequestService) ValidateStartupConfig() {
+	s.engine.validateStartupConfig(s.config.HTTP.TrustedProxies)
 }
 
 // policyFor returns certType's certTypePolicy, or an error naming it when
@@ -429,7 +444,7 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 
 	switch policy.flow {
 	case flowEnrollment:
-		return s.approveServiceEnrollment(ctx, requestID, narrowed, identity, dc)
+		return s.approveServiceEnrollment(ctx, req, narrowed, identity, policy, dc)
 	case flowSigning:
 		return s.approveForSigning(ctx, req, identity, policy, narrowed, dc)
 	default:
@@ -527,29 +542,40 @@ func (s *CertRequestService) resolveUserID(ctx context.Context, identity *Identi
 
 // approveServiceEnrollment implements Approve's service branch — see its
 // doc comment. narrowed is req's already-resolved, server-config-bounded
-// RequestedOptions.
-func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, requestID string, narrowed RequestedOptions, identity *Identity, dc DecisionContext) error {
+// RequestedOptions. policy is req.Type's certTypePolicy.
+func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req model.CertificateRequest, narrowed RequestedOptions, identity *Identity, policy *certTypePolicy, dc DecisionContext) error {
+	// Compute certificate lifetime using the policy engine, and narrow options
+	// based on the matching source policy rule.
+	effectiveDuration, _, err := s.engine.evaluateDuration(req.Type, identity, req.SourceIP, policy.validDuration)
+	if err != nil {
+		return fmt.Errorf("failed to evaluate certificate lifetime: %w", err)
+	}
+
+	// Further narrow requested options based on the source policy rule (if any).
+	narrowed = s.engine.narrowRequestedOptionsWithPolicy(req.Type, identity, req.SourceIP, narrowed)
+
 	narrowedJSON, err := json.Marshal(narrowed)
 	if err != nil {
 		return fmt.Errorf("failed to encode narrowed options: %w", err) // excluded from coverage: RequestedOptions is a plain struct, json.Marshal can't fail on it, see exclude-from-coverage.txt
 	}
 	token := uuid.NewString()
 	now := time.Now()
+	expiresAt := now.Add(effectiveDuration)
 
-	decision, err := newDecision(requestID, model.CertificateRequestDecisionApproved, identity, dc, now)
+	decision, err := newDecision(req.ID, model.CertificateRequestDecisionApproved, identity, dc, now)
 	if err != nil {
 		return err // excluded from coverage: newDecision can only fail via its own json.Marshal calls on []string, already unreachable at their own definition, see exclude-from-coverage.txt
 	}
 
-	// The status update and the decision-audit insert are introduced
-	// together by this change, so they're wrapped in one transaction
+	// The status update, enrollment creation, and decision-audit insert are
+	// introduced together by this change, so they're wrapped in one transaction
 	// rather than adding a new inconsistency window while already touching
 	// this path. This is narrower than the pre-existing, separately
 	// tracked lack of a transaction across Approve's bind/resolve/queue
 	// writes (2026-08-21 security audit) — that finding stays open.
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&model.CertificateRequest{}).
-			Where("id = ? AND status = ?", requestID, model.CertificateRequestStatusPending).
+			Where("id = ? AND status = ?", req.ID, model.CertificateRequestStatusPending).
 			Updates(map[string]any{
 				"status":            model.CertificateRequestStatusEnrolled,
 				"requested_options": string(narrowedJSON),
@@ -560,8 +586,23 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, reque
 			return fmt.Errorf("failed to mark certificate request as enrolled: %w", result.Error) // excluded from coverage: forcing this specific query to fail while leaving the enclosing Transaction() able to begin needs per-query DB fault injection this codebase doesn't have, see exclude-from-coverage.txt
 		}
 		if result.RowsAffected == 0 {
-			return fmt.Errorf("certificate request %q is not pending", requestID)
+			return fmt.Errorf("certificate request %q is not pending", req.ID)
 		}
+
+		// Create the enrollment record with the computed lifetime.
+		enrollment := &model.Enrollment{
+			ID:        uuid.NewString(),
+			Code:      token,
+			PublicKey: req.PublicKey,
+			OptionSet: string(narrowedJSON),
+			UserID:    *req.UserID, // req.UserID was bound in Approve
+			CreatedAt: now,
+			ExpiresAt: expiresAt,
+		}
+		if err := tx.Create(enrollment).Error; err != nil {
+			return fmt.Errorf("failed to create enrollment: %w", err)
+		}
+
 		if err := tx.Create(decision).Error; err != nil {
 			return fmt.Errorf("failed to record approval decision: %w", err)
 		}
@@ -573,7 +614,7 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, reque
 
 	// No signer round trip for enrollment — notify the wake topic directly
 	// from here, unlike the user/host queue-and-wait path.
-	s.notifyWaiter(requestID, requestOutcome{status: model.CertificateRequestStatusEnrolled, code: token})
+	s.notifyWaiter(req.ID, requestOutcome{status: model.CertificateRequestStatusEnrolled, code: token})
 
 	return nil
 }
@@ -640,6 +681,17 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 
 	now := time.Now()
 
+	// Compute certificate lifetime using the policy engine, which evaluates
+	// tiers and source network rules, and narrows options based on the matching
+	// source policy rule.
+	effectiveDuration, _, err := s.engine.evaluateDuration(req.Type, identity, req.SourceIP, policy.validDuration)
+	if err != nil {
+		return fmt.Errorf("failed to evaluate certificate lifetime: %w", err)
+	}
+
+	// Further narrow requested options based on the source policy rule (if any).
+	narrowed = s.engine.narrowRequestedOptionsWithPolicy(req.Type, identity, req.SourceIP, narrowed)
+
 	decision, err := newDecision(req.ID, model.CertificateRequestDecisionApproved, identity, dc, now)
 	if err != nil {
 		return err // excluded from coverage: newDecision can only fail via its own json.Marshal calls on []string, already unreachable at their own definition, see exclude-from-coverage.txt
@@ -682,7 +734,7 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 		KeyID:            keyID,
 		RequestedOptions: narrowed,
 		ValidAfter:       now,
-		ValidBefore:      now.Add(policy.validDuration),
+		ValidBefore:      now.Add(effectiveDuration),
 		Serial:           serialNum,
 	}
 	payload, err := json.Marshal(job)

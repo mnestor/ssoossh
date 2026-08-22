@@ -75,5 +75,9 @@ func (a *app) initServices() (*services, error) {
 		return nil, err
 	}
 
+	// Validate lifetime policy configuration against reverse-proxy settings.
+	// This is a startup check with logging only; bad config here is not an error.
+	svc.certRequest.ValidateStartupConfig()
+
 	return svc, nil
 }
