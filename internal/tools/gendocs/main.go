@@ -14,23 +14,21 @@ import (
 	servercmd "github.com/mnestor/ssoossh/server/cmd"
 )
 
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: gendocs <output-dir>\n")
-		os.Exit(1)
-	}
-
-	outDir := os.Args[1]
+// run performs the actual man page generation. It is extracted from main()
+// to enable testing. It returns an error instead of calling os.Exit or log.Fatalf.
+func run(outDir string) error {
 	//nolint:gosec // G703: path traversal is intentional - outDir is from command-line argument
 	if err := os.MkdirAll(outDir, 0755); err != nil {
-		log.Fatalf("Failed to create output directory: %v", err)
+		return fmt.Errorf("create output directory: %w", err)
 	}
 
 	// Generate server (ssoosshd) man page from the Command wrapper
 	serverCmd := servercmd.NewCommand()
 	cobraCmd := serverCmd.Command()
+	// cobraCmd == nil is a defensive check that shouldn't occur in practice; servercmd.NewCommand
+	// always returns a valid Command wrapper with a non-nil cobra.Command, so this is excluded from coverage.
 	if cobraCmd == nil {
-		log.Fatal("Failed to get cobra command from server Command wrapper")
+		return fmt.Errorf("get cobra command from server Command wrapper")
 	}
 
 	err := doc.GenManTree(cobraCmd, &doc.GenManHeader{
@@ -39,16 +37,32 @@ func main() {
 		Source:  "ssoosshd",
 	}, outDir)
 	if err != nil {
-		log.Fatalf("Failed to generate server man page: %v", err)
+		return fmt.Errorf("generate server man page: %w", err)
 	}
 	fmt.Printf("Generated %s\n", filepath.Join(outDir, "ssoosshd.8"))
 
 	// Generate client (ssoossh) man page - create a minimal cobra tree just for docs
 	err = generateClientManpage(outDir)
 	if err != nil {
-		log.Fatalf("Failed to generate client man page: %v", err)
+		return fmt.Errorf("generate client man page: %w", err)
 	}
 	fmt.Printf("Generated %s\n", filepath.Join(outDir, "ssoossh.1"))
+
+	return nil
+}
+
+// main() parses command-line arguments and calls run(). It is excluded from coverage because
+// it calls os.Exit(1) and log.Fatal(err), which terminate the process and cannot be tested
+// from Go tests without specialized tools like os/exec. The testable logic is in run().
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Fprintf(os.Stderr, "Usage: gendocs <output-dir>\n")
+		os.Exit(1)
+	}
+
+	if err := run(os.Args[1]); err != nil {
+		log.Fatal(err)
+	}
 }
 
 // generateClientManpage creates a minimal client command tree for man page generation.

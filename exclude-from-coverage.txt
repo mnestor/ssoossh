@@ -81,3 +81,9 @@ server/service/auth\.go:232\.16,234\.3
 server/service/auth\.go:287\.40,289\.3
 signreply\.go:122\.16,124\.3
 signreply\.go:126\.16,128\.3
+internal/tools/gendocs/main\.go:30\.21,32\.3
+internal/tools/gendocs/main\.go:46\.16,48\.3
+internal/tools/gendocs/main\.go:57\.13,58\.22
+internal/tools/gendocs/main\.go:58\.22,61\.3
+internal/tools/gendocs/main\.go:63\.2,63\.40
+internal/tools/gendocs/main\.go:63\.40,65\.3
