@@ -130,24 +130,24 @@ type EffectiveConfigResponse struct {
 	ProviderURL string `json:"provider_url" validate:"required"`
 
 	// Admin authorization
-	AdminRequireGroup       string `json:"admin_require_group,omitempty"`
-	AdminAuditorGroup       string `json:"admin_auditor_group,omitempty"`
+	AdminRequireGroup        string `json:"admin_require_group,omitempty"`
+	AdminAuditorGroup        string `json:"admin_auditor_group,omitempty"`
 	AdminSSHServerAdminGroup string `json:"admin_ssh_server_admin_group,omitempty"`
 
 	// Logging configuration
-	LoggingLevel       string `json:"logging_level" validate:"required"`
+	LoggingLevel string `json:"logging_level" validate:"required"`
 
 	// Certificate options
-	CertUserValidDuration      string   `json:"cert_user_valid_duration" validate:"required"`
-	CertUserRequireGroup       string   `json:"cert_user_require_group,omitempty"`
-	CertUserExtensions         []string `json:"cert_user_extensions" validate:"required"`
-	CertServiceValidDuration   string   `json:"cert_service_valid_duration" validate:"required"`
-	CertServiceRequireGroup    string   `json:"cert_service_require_group,omitempty"`
-	CertServiceExtensions      []string `json:"cert_service_extensions" validate:"required"`
-	CertHostValidDuration      string   `json:"cert_host_valid_duration" validate:"required"`
-	CertHostRequireGroup       string   `json:"cert_host_require_group,omitempty"`
-	CertPAMValidDuration       string   `json:"cert_pam_valid_duration" validate:"required"`
-	CertPAMRequireGroup        string   `json:"cert_pam_require_group,omitempty"`
-	CertRequestTTL             string   `json:"cert_request_ttl" validate:"required"`
-	CertSigningTimeout         string   `json:"cert_signing_timeout" validate:"required"`
+	CertUserValidDuration    string   `json:"cert_user_valid_duration" validate:"required"`
+	CertUserRequireGroup     string   `json:"cert_user_require_group,omitempty"`
+	CertUserExtensions       []string `json:"cert_user_extensions" validate:"required"`
+	CertServiceValidDuration string   `json:"cert_service_valid_duration" validate:"required"`
+	CertServiceRequireGroup  string   `json:"cert_service_require_group,omitempty"`
+	CertServiceExtensions    []string `json:"cert_service_extensions" validate:"required"`
+	CertHostValidDuration    string   `json:"cert_host_valid_duration" validate:"required"`
+	CertHostRequireGroup     string   `json:"cert_host_require_group,omitempty"`
+	CertPAMValidDuration     string   `json:"cert_pam_valid_duration" validate:"required"`
+	CertPAMRequireGroup      string   `json:"cert_pam_require_group,omitempty"`
+	CertRequestTTL           string   `json:"cert_request_ttl" validate:"required"`
+	CertSigningTimeout       string   `json:"cert_signing_timeout" validate:"required"`
 }

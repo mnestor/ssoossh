@@ -7,9 +7,8 @@ import (
 )
 
 // SSHServerAdminChecker verifies if an identity has SSH server admin
-// privileges. This interface is defined here to match feat/auth-roles'
-// contract before that feature lands; the implementation will be replaced
-// when feat/auth-roles merges.
+// privileges. Host certificate issuance is gated on it; the group name
+// comes from config.Admin so all three role-to-group mappings live together.
 type SSHServerAdminChecker interface {
 	// IsSSHServerAdmin returns true if identity has SSH server admin
 	// privileges, false otherwise. Returns false when the configured group
@@ -27,7 +26,7 @@ type configSSHServerAdminChecker struct {
 // checks membership in the configured SSH server admin group.
 func NewConfigSSHServerAdminChecker(c *config.Config) SSHServerAdminChecker {
 	return &configSSHServerAdminChecker{
-		requiredGroup: c.SSHServerAdminGroup,
+		requiredGroup: c.Admin.SSHServerAdminGroup,
 	}
 }
 

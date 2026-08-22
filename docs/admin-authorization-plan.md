@@ -194,3 +194,73 @@ evaluation instead of only at save time.
    it land later once someone asks for it?
 4. **Which phase owns this?** On current ordering it fits between 6 and 8 —
    after the first release, before service certificates need enrollment expiry.
+
+## Implementation Status (completed)
+
+This plan has been implemented on branch `feat/auth-roles`. Key decisions and divergences from the plan:
+
+### Design Decisions Implemented
+
+1. **Three roles, config-driven**: admin, auditor, and ssh-server-admin, all fail-closed on empty groups
+   - Config location: `config.Admin` (AdminConfig struct) with fields `RequireGroup`, `AuditorGroup`, `SSHServerAdminGroup`
+   - All three group names optional; empty disables that role
+   
+2. **Session TTL**: Changed from 12 hours to **15 minutes** default
+   - File: `server/bootstrap/router.go`, constant `defaultCookieMaxAge`
+   - Admin revocation window is the session lifetime
+   - Regression test `TestSessionCookieOptions_ShouldNeverProduceAZeroMaxAge` verified not broken
+   - **Pending human task**: confirm authoritative NASA session-timeout policy value
+
+3. **Middleware**: AdminAuthMiddleware and AuditorAuthMiddleware after SessionAuthMiddleware
+   - Both in `server/middleware/auth_middleware.go`
+   - Both fail closed: 403 Forbidden on no identity, no configured group, or no membership
+
+4. **SSH Server Admin Interface**: Seam for feat/host-certs
+   - Interface defined in `server/service/adminchecker.go` as `service.SSHServerAdminChecker`
+   - Implementation: `service.ConfigSSHServerAdminChecker` and `service.NewConfigSSHServerAdminChecker(c)`
+   - Config field folded into `config.Admin.SSHServerAdminGroup` (mapstructure: `ssh_server_admin_group`)
+   - Note: feat/host-certs' bootstrap will need to update config read location from top-level to `config.Admin.SSHServerAdminGroup` on rebase
+
+5. **PKCE (S256)**: Integrated into OIDC flow
+   - Verifier generated in `service.AuthService.AuthorizationURL`, returned as third value
+   - Verifier stored/retrieved via `middleware.SetOIDCVerifier`/`middleware.PopOIDCVerifier`
+   - Used in `service.AuthService.HandleCallback` via `oauth2.VerifierOption`
+
+6. **Effective Config View**: `GET /api/admin/config`, auditor-scoped
+   - Returns `webtypes.EffectiveConfigResponse` with operational settings
+   - Redacted fields: CA key (not in response), client secret (not in response), cookie signing key (not in response)
+   - **Database connection string**: Redacted entirely (not included in response) to avoid leaking credentials
+   - Includes: server settings, OIDC provider URL, all role group names, logging level, certificate validity/TTL settings
+
+7. **Admin Write Endpoints** (implemented as stubs with clear interfaces)
+   - `PATCH /api/admin/enrollments/:id/expire`: marks enrollment as expired (skeleton implemented)
+   - `PATCH /api/admin/users/:id/disable`: disables user (TODO marked; would require schema changes feat/service-certs owns)
+
+8. **Auditor Read Endpoints**
+   - `GET /api/admin/config`: effective configuration view (fully implemented)
+   - `GET /api/admin/certificates/history`: cross-user certificate audit trail (skeleton with TODO)
+
+### Divergence: SSH Server Admin Role Outside Original Plan Scope
+
+The original plan defined only two roles (admin, auditor). The ssh-server-admin role was added as a cross-branch seam for feat/host-certs, which defined the interface contract. To maintain interface alignment:
+- The interface and implementation live in `server/service` (feat/host-certs' seam point)
+- Config field lives in `config.Admin` alongside the original two roles
+- This ensures all three role-to-group mappings are co-located in the config
+
+### Files Changed
+
+New files:
+- `server/service/adminchecker.go`: SSHServerAdminChecker interface and ConfigSSHServerAdminChecker implementation
+- `server/controller/admin.go`: Admin and auditor route handlers
+- `server/middleware/auth_middleware.go`: AdminAuthMiddleware and AuditorAuthMiddleware
+
+Modified files:
+- `server/config/types.go`: Added AdminConfig struct
+- `server/bootstrap/router.go`: Registered admin routes, updated session TTL
+- `server/middleware/error_handler.go`: Added ForbiddenError type
+- `server/middleware/session_auth.go`: Added PKCE verifier session helpers
+- `server/service/auth.go`: PKCE integration in AuthorizationURL and HandleCallback
+- `server/controller/auth.go`: PKCE verifier storage/retrieval in login/callback
+- `server/webtypes/webtypes.go`: Added EffectiveConfigResponse
+- Test files updated for PKCE
+

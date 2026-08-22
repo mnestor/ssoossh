@@ -62,14 +62,14 @@ func (a *adminController) effectiveConfigHandler(g *gin.Context) {
 		Port:       a.config.HTTP.Port,
 		IsHTTPS:    a.config.HTTP.IsHTTPS,
 
-		DBProvider: string(a.config.DB.Provider),
+		DBProvider:  string(a.config.DB.Provider),
 		ProviderURL: a.config.AuthConfig.ProviderURL,
 
 		AdminRequireGroup:        a.config.Admin.RequireGroup,
 		AdminAuditorGroup:        a.config.Admin.AuditorGroup,
 		AdminSSHServerAdminGroup: a.config.Admin.SSHServerAdminGroup,
 
-		LoggingLevel:       a.config.Logging.Level,
+		LoggingLevel: a.config.Logging.Level,
 
 		CertUserValidDuration:    a.config.CertOptions.User.ValidDuration.String(),
 		CertUserRequireGroup:     a.config.CertOptions.User.RequireGroup,
@@ -172,7 +172,7 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 func (a *adminController) certificateHistoryHandler(g *gin.Context) {
 	// TODO: implement certificate history query with filtering and pagination.
 	// This is a placeholder that documents the interface.
-	respondData(g, gin.H{"certificates": []interface{}{}})
+	respondData(g, gin.H{"certificates": []any{}})
 }
 
 // adminEnrollmentModel is a minimal GORM model used for admin operations on enrollments.

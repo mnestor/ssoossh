@@ -25,6 +25,8 @@ import (
 
 	josejwt "github.com/go-jose/go-jose/v4"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
 )
@@ -232,12 +234,15 @@ func TestAuthorizationURL_ShouldEmbedStateAndAFreshNonce(t *testing.T) {
 		t.Fatalf("NewAuthService() error = %v", err)
 	}
 
-	authURL, nonce1, pkceVerifier, err := svc.AuthorizationURL(context.Background(), "state-1")
+	authURL, nonce1, pkceVerifier1, err := svc.AuthorizationURL(context.Background(), "state-1")
 	if err != nil {
 		t.Fatalf("AuthorizationURL() error = %v", err)
 	}
 	if nonce1 == "" {
 		t.Fatal("AuthorizationURL() returned an empty nonce")
+	}
+	if pkceVerifier1 == "" {
+		t.Fatal("AuthorizationURL() returned an empty PKCE verifier")
 	}
 	if !strings.Contains(authURL, "state=state-1") {
 		t.Errorf("authURL = %q, want it to contain state=state-1", authURL)
@@ -246,15 +251,17 @@ func TestAuthorizationURL_ShouldEmbedStateAndAFreshNonce(t *testing.T) {
 		t.Errorf("authURL = %q, want it to contain the generated nonce", authURL)
 	}
 
-	_, nonce2, pkceVerifier, err := svc.AuthorizationURL(context.Background(), "state-2")
+	_, nonce2, pkceVerifier2, err := svc.AuthorizationURL(context.Background(), "state-2")
 	if err != nil {
 		t.Fatalf("AuthorizationURL() error = %v", err)
 	}
 	if nonce1 == nonce2 {
 		t.Error("expected two calls to AuthorizationURL to generate distinct nonces")
 	}
+	if pkceVerifier1 == pkceVerifier2 {
+		t.Error("expected two calls to AuthorizationURL to generate distinct PKCE verifiers")
+	}
 }
-
 func TestHandleCallback_ShouldExchangeAndUpsertTheUser(t *testing.T) {
 	t.Parallel()
 
@@ -271,7 +278,7 @@ func TestHandleCallback_ShouldExchangeAndUpsertTheUser(t *testing.T) {
 		"groups":             []string{"admins", "devs"},
 	})
 
-	identity, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1")
+	identity, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1", oauth2.GenerateVerifier())
 	if err != nil {
 		t.Fatalf("HandleCallback() error = %v", err)
 	}
@@ -307,7 +314,7 @@ func TestHandleCallback_ShouldSurfaceATokenExchangeFailure(t *testing.T) {
 		t.Fatalf("NewAuthService() error = %v", err)
 	}
 
-	if _, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1"); err == nil {
+	if _, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1", oauth2.GenerateVerifier()); err == nil {
 		t.Error("HandleCallback() error = nil, want error when the token exchange fails")
 	}
 }
@@ -322,7 +329,7 @@ func TestHandleCallback_ShouldRejectATokenResponseMissingIDToken(t *testing.T) {
 		t.Fatalf("NewAuthService() error = %v", err)
 	}
 
-	if _, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1"); err == nil {
+	if _, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1", oauth2.GenerateVerifier()); err == nil {
 		t.Error("HandleCallback() error = nil, want error when the token response has no id_token")
 	}
 }
@@ -347,7 +354,7 @@ func TestHandleCallback_ShouldRejectAnUnverifiableIDToken(t *testing.T) {
 	rogue := &fakeOIDCProvider{srv: provider.srv, priv: untrustedKey}
 	provider.nextID = rogue.signIDToken(t, "sub-alice", "client-1", "nonce-1", map[string]any{"preferred_username": "alice"})
 
-	if _, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1"); err == nil {
+	if _, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1", oauth2.GenerateVerifier()); err == nil {
 		t.Error("HandleCallback() error = nil, want error for an ID token signed by an untrusted key")
 	}
 }
@@ -376,7 +383,7 @@ func TestHandleCallback_ShouldSurfaceAnUpsertFailure(t *testing.T) {
 		t.Fatalf("failed to close the database: %v", err)
 	}
 
-	if _, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1"); err == nil {
+	if _, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1", oauth2.GenerateVerifier()); err == nil {
 		t.Error("HandleCallback() error = nil, want error when persisting the user fails")
 	}
 }
@@ -394,7 +401,7 @@ func TestHandleCallback_ShouldRejectANonceMismatch(t *testing.T) {
 		"preferred_username": "alice",
 	})
 
-	if _, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-expected"); err == nil {
+	if _, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-expected", oauth2.GenerateVerifier()); err == nil {
 		t.Error("HandleCallback() error = nil, want an error for a nonce mismatch")
 	}
 }
@@ -411,7 +418,7 @@ func TestHandleCallback_ShouldRejectATokenMissingTheUsernameClaim(t *testing.T) 
 	// No preferred_username claim at all.
 	provider.nextID = provider.signIDToken(t, "sub-alice", "client-1", "nonce-1", nil)
 
-	if _, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1"); err == nil {
+	if _, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1", oauth2.GenerateVerifier()); err == nil {
 		t.Error("HandleCallback() error = nil, want an error for a missing username claim")
 	}
 }
@@ -432,7 +439,7 @@ func TestHandleCallback_ShouldFallBackToTheStandardEmailClaim(t *testing.T) {
 		"email":              "bob@example.com",
 	})
 
-	identity, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1")
+	identity, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1", oauth2.GenerateVerifier())
 	if err != nil {
 		t.Fatalf("HandleCallback() error = %v", err)
 	}
