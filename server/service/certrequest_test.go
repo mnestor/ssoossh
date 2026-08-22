@@ -28,6 +28,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/certmsg"
 	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/dbtime"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
@@ -52,9 +53,17 @@ func newTestCertRequestService(t *testing.T, ttl time.Duration) *CertRequestServ
 func newTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	// Mirrors bootstrap.openWithRetry: the UTC timestamp normalization is
+	// part of how this project talks to SQLite, not an optional extra, so
+	// tests exercise the same configuration production runs. See package
+	// dbtime for why comparing local-offset timestamps against SQLite's
+	// string-compared DATETIME columns is wrong.
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{NowFunc: dbtime.NowFunc})
 	if err != nil {
 		t.Fatalf("failed to open in-memory sqlite: %v", err)
+	}
+	if err := db.Use(dbtime.Plugin{}); err != nil {
+		t.Fatalf("failed to register the UTC timestamp plugin: %v", err)
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -1299,11 +1308,47 @@ func TestCertRequestService_Detail_ShouldSurfaceACorruptOptionsColumn(t *testing
 	}
 }
 
+// seedRequestWithUnsupportedType stores a pending request whose type is not
+// one the enum defines, and returns its ID.
+//
+// The schema's chk_certificate_requests_type CHECK constraint now refuses
+// such a row, so it cannot be produced through CreateRequest — which is the
+// point of the constraint. The Go-side guard in resolveCertOptions is
+// defence in depth behind it and still needs its own coverage: a database
+// created before the constraint existed, a direct SQL write, or a
+// CertificateType added to enums.go without the matching migration can all
+// still put an unrecognized type in front of that code. SQLite's
+// ignore_check_constraints pragma is what lets the test build that row
+// without weakening the schema everything else in the file runs against.
+func seedRequestWithUnsupportedType(t *testing.T, db *gorm.DB) string {
+	t.Helper()
+
+	if err := db.Exec(`PRAGMA ignore_check_constraints = ON`).Error; err != nil {
+		t.Fatalf("failed to suspend check constraints: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Exec(`PRAGMA ignore_check_constraints = OFF`).Error; err != nil {
+			t.Errorf("failed to restore check constraints: %v", err)
+		}
+	})
+
+	req := model.CertificateRequest{
+		ID:        uuid.NewString(),
+		Type:      model.CertificateType("bogus"),
+		PublicKey: "ssh-ed25519 AAAA...",
+		Status:    model.CertificateRequestStatusPending,
+		CreatedAt: time.Now(),
+	}
+	if err := db.Create(&req).Error; err != nil {
+		t.Fatalf("failed to seed a request with an unsupported type: %v", err)
+	}
+	return req.ID
+}
+
 // TestCertRequestService_Detail_ShouldSurfaceAnUnsupportedStoredType covers
-// Detail's own resolveCertOptions error path: CreateRequest stores
-// whatever Type string it's given with no enum validation, so a row that
-// somehow ended up with an unrecognized type must surface as an error
-// rather than a zero-value policy.
+// Detail's own resolveCertOptions error path: a row that somehow ended up
+// with an unrecognized type must surface as an error rather than a
+// zero-value policy.
 func TestCertRequestService_Detail_ShouldSurfaceAnUnsupportedStoredType(t *testing.T) {
 	t.Parallel()
 
@@ -1311,10 +1356,7 @@ func TestCertRequestService_Detail_ShouldSurfaceAnUnsupportedStoredType(t *testi
 	identity := &Identity{Username: "alice", Subject: "sub-alice"}
 	seedUser(t, svc.db, identity.Subject)
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateType("bogus"), PublicKey: "ssh-ed25519 AAAA..."})
-	if err != nil {
-		t.Fatalf("unexpected error creating request: %v", err)
-	}
+	requestID := seedRequestWithUnsupportedType(t, svc.db)
 
 	if _, err := svc.Detail(context.Background(), requestID, identity); err == nil {
 		t.Error("Detail() error = nil, want error for an unsupported stored certificate type")
@@ -1330,13 +1372,27 @@ func TestCertRequestService_Approve_ShouldSurfaceAnUnsupportedStoredType(t *test
 	identity := &Identity{Username: "alice", Subject: "sub-alice"}
 	seedUser(t, svc.db, identity.Subject)
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateType("bogus"), PublicKey: "ssh-ed25519 AAAA..."})
-	if err != nil {
-		t.Fatalf("unexpected error creating request: %v", err)
-	}
+	requestID := seedRequestWithUnsupportedType(t, svc.db)
 
 	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err == nil {
 		t.Error("Approve() error = nil, want error for an unsupported stored certificate type")
+	}
+}
+
+// TestCreateRequest_ShouldRejectATypeTheSchemaDoesNotAllow is the other side
+// of the pair above: through the normal path, the CHECK constraint is what
+// stops an unrecognized type from ever reaching the table.
+func TestCreateRequest_ShouldRejectATypeTheSchemaDoesNotAllow(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+
+	_, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateType("bogus"),
+		PublicKey: "ssh-ed25519 AAAA...",
+	})
+	if err == nil {
+		t.Error("CreateRequest() error = nil, want a CHECK constraint violation for an undefined certificate type")
 	}
 }
 
@@ -2257,4 +2313,17 @@ func TestCertRequestService_CreateRequest_ShouldUnionSourceIPIntoSourceAddresses
 			t.Errorf("got SourceAddresses %v, want exactly [\"203.0.113.9\"] with no duplicate", opts.SourceAddresses)
 		}
 	})
+}
+
+// TestTTLCutoff_ShouldBeExpressedInUTC is strandedCutoff's counterpart —
+// see TestStrandedCutoff_ShouldBeExpressedInUTC in sweep_test.go and
+// package dbtime for why the zone matters.
+func TestTTLCutoff_ShouldBeExpressedInUTC(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+
+	if got := svc.ttlCutoff().Location(); got != time.UTC {
+		t.Errorf("ttlCutoff() location = %v, want %v", got, time.UTC)
+	}
 }

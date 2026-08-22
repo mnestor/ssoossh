@@ -370,7 +370,7 @@
 # ldap - optional identity enrichment, looked up by the username OIDC
 # resolved. Accepted by the config loader but not yet consumed by the
 # authentication service — setting "enabled: true" today has no effect.
-# Deferred to release 2 (see release-plan.md). Documented here only so the
+# Not yet built (see docs/changes-next.md). Documented here only so the
 # gap between "the config parser accepts this" and "the server acts on it"
 # is not a surprise.
 # ----------------------------------------------------------------------

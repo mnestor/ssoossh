@@ -213,11 +213,16 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 // request is treated as expired: created before this instant, no longer
 // approvable. A zero RequestTTL disables expiry (returns the zero Time, so
 // no request's CreatedAt is ever before it).
+//
+// UTC, and it has to be: this value is compared against created_at, which
+// SQLite compares as a string. A local-offset cutoff against UTC-stored
+// rows compares by literal digits rather than by instant. See package
+// dbtime.
 func (s *CertRequestService) ttlCutoff() time.Time {
 	if s.config.CertOptions.RequestTTL <= 0 {
 		return time.Time{}
 	}
-	return time.Now().Add(-s.config.CertOptions.RequestTTL)
+	return time.Now().Add(-s.config.CertOptions.RequestTTL).UTC()
 }
 
 // RequestDetail is everything the approval page needs to show a human what

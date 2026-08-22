@@ -405,3 +405,111 @@ func TestSignedReplyHandler_ShouldStillRecordACertificateWithNoOwner(t *testing.
 		t.Errorf("got user_id %v, want nil for an unbound request", *cert.UserID)
 	}
 }
+
+// TestSignedReplyHandler_ShouldLinkTheCertificateToItsRequest pins the audit
+// chain certificate_request -> decision -> certificate. Without this link
+// there is no way to ask which approval produced a given certificate, or
+// the reverse, short of matching on unindexed heuristics.
+func TestSignedReplyHandler_ShouldLinkTheCertificateToItsRequest(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	h := newTestSignedReplyHandler(t, svc)
+
+	userID := seedUser(t, svc.db, "sub-alice")
+	requestID := mustCreateUserRequest(t, svc)
+	if err := svc.db.Model(&model.CertificateRequest{}).
+		Where("id = ?", requestID).
+		Update("user_id", userID).Error; err != nil {
+		t.Fatalf("failed to bind the request to a user: %v", err)
+	}
+
+	if err := h.recordCertificate(context.Background(), certmsg.SignedReply{
+		RequestID:            requestID,
+		Type:                 model.CertificateTypeUser,
+		PublicKeyFingerprint: "SHA256:test",
+		Serial:               46,
+		Principals:           []string{"alice"},
+		ValidAfter:           time.Now(),
+		ValidBefore:          time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("unexpected error recording the certificate: %v", err)
+	}
+
+	cert := certBySerial(t, svc, 46)
+	if cert.CertificateRequestID == nil {
+		t.Fatal("expected the certificate audit row to record its originating request")
+	}
+	if *cert.CertificateRequestID != requestID {
+		t.Errorf("got certificate_request_id %q, want %q", *cert.CertificateRequestID, requestID)
+	}
+}
+
+// TestSignedReplyHandler_ShouldLinkAnOwnerlessCertificateToItsRequest is the
+// case the link exists for: the request was never bound to a user, so
+// user_id is nil and the row is invisible to per-user history. Recording the
+// request ID is what keeps it reattachable rather than permanently orphaned.
+func TestSignedReplyHandler_ShouldLinkAnOwnerlessCertificateToItsRequest(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	h := newTestSignedReplyHandler(t, svc)
+
+	requestID := mustCreateUserRequest(t, svc)
+
+	if err := h.recordCertificate(context.Background(), certmsg.SignedReply{
+		RequestID:            requestID,
+		Type:                 model.CertificateTypeUser,
+		PublicKeyFingerprint: "SHA256:test",
+		Serial:               47,
+		Principals:           []string{"alice"},
+		ValidAfter:           time.Now(),
+		ValidBefore:          time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("unexpected error recording the certificate: %v", err)
+	}
+
+	cert := certBySerial(t, svc, 47)
+	if cert.CertificateRequestID == nil || *cert.CertificateRequestID != requestID {
+		t.Errorf("got certificate_request_id %v, want %q", cert.CertificateRequestID, requestID)
+	}
+}
+
+// TestSignedReplyHandler_ShouldLeaveTheRequestLinkNilForAnUnknownRequest
+// pins the foreign-key safety valve: the column REFERENCEs
+// certificate_requests, so pointing it at a row that doesn't exist would
+// fail the insert and lose the audit record — the exact outcome the
+// best-effort handling in recordCertificate exists to prevent.
+func TestSignedReplyHandler_ShouldLeaveTheRequestLinkNilForAnUnknownRequest(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	h := newTestSignedReplyHandler(t, svc)
+
+	if err := h.recordCertificate(context.Background(), certmsg.SignedReply{
+		RequestID:            "does-not-exist",
+		Type:                 model.CertificateTypeUser,
+		PublicKeyFingerprint: "SHA256:test",
+		Serial:               48,
+		Principals:           []string{"alice"},
+		ValidAfter:           time.Now(),
+		ValidBefore:          time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("expected an unknown request ID to still record a certificate, got %v", err)
+	}
+
+	if got := certBySerial(t, svc, 48).CertificateRequestID; got != nil {
+		t.Errorf("got certificate_request_id %q, want nil for a request that doesn't exist", *got)
+	}
+}
+
+// certBySerial reads back the certificate audit row a test just wrote.
+func certBySerial(t *testing.T, svc *CertRequestService, serial uint64) model.Certificate {
+	t.Helper()
+
+	var cert model.Certificate
+	if err := svc.db.First(&cert, "serial_number = ?", serial).Error; err != nil {
+		t.Fatalf("unexpected error reading the audit row: %v", err)
+	}
+	return cert
+}

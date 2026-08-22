@@ -13,8 +13,11 @@ import "time"
 // TODO: the pub/sub or channel-based broker backing that watch is not yet
 // designed — see server/controller/certrequests.go's SSE handler stub.
 type CertificateRequest struct {
-	ID   string          `gorm:"column:id;primaryKey"`
-	Type CertificateType `gorm:"column:type"`
+	ID string `gorm:"column:id;primaryKey"`
+
+	// Type carries a CHECK constraint mirroring the migration's — see
+	// model.Certificate.Type for why the tag is duplicated there.
+	Type CertificateType `gorm:"column:type;check:chk_certificate_requests_type,type IN ('user','host','service','pam')"`
 
 	// UserID is set once the requester authenticates via OIDC. Absent for
 	// an unauthenticated initial "host sign" ask, TODO: confirm host sign
@@ -53,7 +56,12 @@ type CertificateRequest struct {
 	LocalUsername string `gorm:"column:local_username"`
 	LocalHostname string `gorm:"column:local_hostname"`
 
-	Status     CertificateRequestStatus `gorm:"column:status"`
+	// Status carries a CHECK constraint mirroring the migration's. Every
+	// transition is a guarded UPDATE ... WHERE status = ?, so a value
+	// outside the set would strand the row: no guarded update would match
+	// it again and the sweep would never see it. The constraint makes that
+	// a failed write rather than a silently unreachable request.
+	Status     CertificateRequestStatus `gorm:"column:status;check:chk_certificate_requests_status,status IN ('pending','signing','approved','enrolled','denied','expired','failed')"`
 	CreatedAt  time.Time                `gorm:"column:created_at"`
 	ResolvedAt *time.Time               `gorm:"column:resolved_at"`
 

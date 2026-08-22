@@ -44,10 +44,16 @@ const (
 	// produce a certificate (see docs/signing-pipeline.md),
 	// or a boot-time sweep invalidated a request left stuck in Signing (see
 	// docs/signing-pipeline.md). Distinct from Denied,
-	// which means a human said no. No migration needed — status is a
-	// free-text TEXT column.
+	// which means a human said no.
 	CertificateRequestStatusFailed CertificateRequestStatus = "failed"
 )
+
+// Adding a value to CertificateType, CertificateRequestStatus, or
+// CertificateRequestDecisionOutcome is no longer a Go-only change: each is
+// backed by a CHECK constraint in both migration files and by a matching
+// `check:` tag on the model struct, so a new value needs all three updated
+// together. That is the point — the constraint is what stops a typo'd
+// status from producing a row no guarded UPDATE can ever match again.
 
 // CertificateRequestDecisionOutcome is the decision recorded on a
 // CertificateRequestDecision row — see

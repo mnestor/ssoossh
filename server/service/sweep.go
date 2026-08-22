@@ -71,11 +71,17 @@ func (s *CertRequestService) SweepStrandedRequests(ctx context.Context) error {
 // strandedCutoff returns the created_at threshold before which a signing
 // request is considered stranded, or the zero Time when RequestTTL is
 // disabled and no bound can be derived (see SweepStrandedRequests).
+//
+// UTC, and it has to be: this value is compared against created_at, which
+// SQLite compares as a string, so a local-offset cutoff against UTC-stored
+// rows compares by literal digits rather than by instant — the sweep would
+// then skip stranded requests, or fail live ones, whenever the two offsets
+// differ. See package dbtime.
 func (s *CertRequestService) strandedCutoff() time.Time {
 	if s.config.CertOptions.RequestTTL <= 0 {
 		return time.Time{}
 	}
-	return time.Now().Add(-(s.config.CertOptions.RequestTTL + s.config.CertOptions.SigningTimeout))
+	return time.Now().Add(-(s.config.CertOptions.RequestTTL + s.config.CertOptions.SigningTimeout)).UTC()
 }
 
 // failStranded marks every request in ids failed, with a single UPDATE, and

@@ -1,9 +1,8 @@
 # Example PAM stack entry for pam_ssoossh, packaged as documentation only --
-# ssoossh-pam does not write to /etc/pam.d on install (see
-# docs/release-phase6-artifacts.md, "Package the PAM module"). Copy the
+# ssoossh-pam does not write to /etc/pam.d on install. Copy the
 # `auth` line below into /etc/pam.d/sudo (and /etc/pam.d/su, if wanted)
 # above the existing pam_unix.so line, per the runbook in
-# docs/release-phase7-deploy-docs.md.
+# docs/deployment.md.
 #
 # `sufficient` means a successful browser approval satisfies the auth
 # stack on its own; pam_unix.so still runs and can satisfy it independently

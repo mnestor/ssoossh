@@ -135,23 +135,34 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 	// Best effort: a missing owner must not fail issuance for a certificate
 	// that is already signed. It only costs per-user history for that row,
 	// which is why it is logged rather than returned.
-	var userID *string
+	// requestID is the audit-chain link back to the approval. It is set only
+	// when the lookup below confirms the request row exists, because it is a
+	// foreign key: pointing it at a missing row would fail this insert and
+	// lose the audit record entirely, which is the very outcome the
+	// best-effort handling here exists to avoid.
+	var userID, requestID *string
 	var req model.CertificateRequest
 	switch err := h.db.WithContext(ctx).Select("user_id").First(&req, "id = ?", reply.RequestID).Error; {
 	case err != nil:
 		slog.Warn("could not resolve the owner of an issued certificate",
 			"request_id", reply.RequestID, "error", err)
 	case req.UserID == nil:
+		// The request exists but was never bound to a user. Recording the
+		// request ID is what keeps this row reattachable later rather than
+		// permanently orphaned.
+		requestID = &reply.RequestID
 		slog.Warn("issued certificate has no owner: its request was never bound to a user",
 			"request_id", reply.RequestID)
 	default:
 		userID = req.UserID
+		requestID = &reply.RequestID
 	}
 
 	cert := model.Certificate{
 		ID:                   uuid.NewString(),
 		Type:                 reply.Type,
 		UserID:               userID,
+		CertificateRequestID: requestID,
 		Hostname:             reply.Hostname,
 		PublicKeyFingerprint: reply.PublicKeyFingerprint,
 		SerialNumber:         reply.Serial,

@@ -23,6 +23,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/dbtime"
 	"github.com/mnestor/ssoossh/server/logging"
 	"github.com/mnestor/ssoossh/server/resources"
 )
@@ -226,8 +227,18 @@ func openWithRetry(dialector gorm.Dialector, glogger logger.Interface, onConnFn 
 		db, err = gorm.Open(dialector, &gorm.Config{
 			TranslateError: true,
 			Logger:         glogger,
+			// Timestamps must reach the database in UTC, or SQLite's
+			// string comparison of DATETIME columns stops agreeing with
+			// chronological order — see package dbtime. NowFunc covers the
+			// timestamps GORM generates itself; the plugin below covers the
+			// ones callers supply.
+			NowFunc: dbtime.NowFunc,
 		})
 		if err == nil {
+			if err = db.Use(dbtime.Plugin{}); err != nil {
+				return nil, fmt.Errorf("failed to register the UTC timestamp plugin: %w", err)
+			}
+
 			slog.Info("Connected to database", slog.String("provider", string(provider)))
 
 			if onConnFn != nil {

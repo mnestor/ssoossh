@@ -32,8 +32,11 @@ type CertificateRequestDecision struct {
 	CertificateRequestID string `gorm:"column:certificate_request_id;unique"`
 
 	// Outcome is "approved" or "denied" — see
-	// model.CertificateRequestDecisionOutcome* in enums.go.
-	Outcome CertificateRequestDecisionOutcome `gorm:"column:outcome"`
+	// model.CertificateRequestDecisionOutcome* in enums.go. The CHECK
+	// constraint mirrors the migration's, for the same reason the `unique`
+	// tag above is present: so AutoMigrate-backed tests build the real
+	// constraint.
+	Outcome CertificateRequestDecisionOutcome `gorm:"column:outcome;check:chk_certificate_request_decisions_outcome,outcome IN ('approved','denied')"`
 
 	// Subject, Username, Email, Groups, OtherAccounts, and ServiceAccounts
 	// are a full snapshot of service.Identity as it stood at decision

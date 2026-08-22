@@ -7,9 +7,28 @@ import "time"
 // server (see root CLAUDE.md Hard Constraints) — only public key
 // fingerprint and certificate metadata.
 type Certificate struct {
-	ID     string          `gorm:"column:id;primaryKey"`
-	Type   CertificateType `gorm:"column:type"`
+	ID string `gorm:"column:id;primaryKey"`
+
+	// Type carries a CHECK constraint mirroring the migration's, so the
+	// AutoMigrate-backed unit tests build the same constraint the real
+	// schema has (same reasoning as CertificateRequestDecision's `unique`
+	// tag). Adding a CertificateType means updating this tag and both
+	// migrations alongside enums.go.
+	Type   CertificateType `gorm:"column:type;check:chk_certificates_type,type IN ('user','host','service','pam')"`
 	UserID *string         `gorm:"column:user_id"` // nil for host certs, which identify a machine, not a user
+
+	// CertificateRequestID is the request whose approval authorized this
+	// certificate, closing the audit chain certificate_request -> decision
+	// -> certificate. Without it a certificate row whose owner could not be
+	// resolved (see SignedReplyHandler, which treats that as non-fatal
+	// because the certificate is already signed and delivered) would be
+	// permanently orphaned, with nothing to reattach it by.
+	//
+	// A pointer, and nullable in the schema, deliberately: the signer's
+	// reply always carries the request ID so this is always populated in
+	// practice, but a NOT NULL column would add a second way for the
+	// audit-record write to fail and lose the record entirely.
+	CertificateRequestID *string `gorm:"column:certificate_request_id"`
 
 	// Hostname is set only for CertificateTypeHost.
 	Hostname string `gorm:"column:hostname"`

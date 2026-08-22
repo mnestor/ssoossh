@@ -293,3 +293,20 @@ func TestSweepStrandedRequests_ShouldSweepEverythingWhenTTLDisabled(t *testing.T
 		t.Errorf("got status %q, want %q", got, model.CertificateRequestStatusFailed)
 	}
 }
+
+// TestStrandedCutoff_ShouldBeExpressedInUTC guards the query-parameter half
+// of the invariant in package dbtime. This value is compared against
+// created_at, which SQLite compares as text, so a local-offset cutoff
+// against UTC-stored rows compares by literal digits rather than by
+// instant — the sweep would then skip stranded requests, or fail live ones,
+// whenever the two offsets differ. The plugin cannot cover this: GORM
+// builds bound parameters inside the query callback, with no hook before it.
+func TestStrandedCutoff_ShouldBeExpressedInUTC(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(time.Hour, 5*time.Minute))
+
+	if got := svc.strandedCutoff().Location(); got != time.UTC {
+		t.Errorf("strandedCutoff() location = %v, want %v", got, time.UTC)
+	}
+}
