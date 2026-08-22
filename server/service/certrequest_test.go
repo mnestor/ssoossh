@@ -1809,6 +1809,112 @@ func TestNotifyWaiter_ShouldNotPanicWhenPublishingFails(t *testing.T) {
 	}
 }
 
+// TestCertRequestService_Wait_MultiInstance_ShouldDecodeWakeMessageCertificate
+// is the regression test for the multi-instance safety fix: a client waiting
+// on instance B should receive a certificate issued on instance A via the
+// wake message, without needing to round-trip to the database. This exercises
+// the payload decoding path in Wait added by docs/multi-instance-safety-plan.md.
+//
+// The test constructs two CertRequestService instances over the same database
+// and transport, creates a request on one, and has the other's Wait decode the
+// certificate from the wake message. This is the decisive regression test
+// named in the safety plan: it fails before the fix and passes after.
+func TestCertRequestService_Wait_MultiInstance_ShouldDecodeWakeMessageCertificate(t *testing.T) {
+	t.Parallel()
+
+	// Shared database and transport for two "instances" (really just two
+	// service objects). In a real multi-instance setup, these would be
+	// separate processes; here they're in-process but isolated.
+	db := newTestDB(t)
+	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}); err != nil {
+		t.Fatalf("failed to migrate test tables: %v", err)
+	}
+
+	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
+	t.Cleanup(func() {
+		if err := channel.Close(); err != nil {
+			t.Errorf("unexpected error closing gochannel: %v", err)
+		}
+	})
+
+	// Instance A: creates the request and issues the certificate.
+	instanceA, err := NewCertRequestService(&config.Config{}, db, channel, channel)
+	if err != nil {
+		t.Fatalf("failed to construct instance A: %v", err)
+	}
+
+	// Instance B: waits for the request to resolve. In multi-instance, the
+	// client's SSE connection lands on a different instance than the one
+	// handling approval.
+	instanceB, err := NewCertRequestService(&config.Config{}, db, channel, channel)
+	if err != nil {
+		t.Fatalf("failed to construct instance B: %v", err)
+	}
+
+	// Create request on instance A.
+	requestID, err := instanceA.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypeUser,
+		PublicKey: "ssh-ed25519 AAAA...",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request on instance A: %v", err)
+	}
+
+	// Instance B starts waiting before instance A publishes the certificate.
+	// This captures the multi-instance scenario: the waiting client and the
+	// issuing instance are separate.
+	type waitResult struct {
+		status      model.CertificateRequestStatus
+		certificate string
+		code        string
+		err         error
+	}
+	done := make(chan waitResult, 1)
+	go func() {
+		status, certificate, code, err := instanceB.Wait(context.Background(), requestID)
+		done <- waitResult{status, certificate, code, err}
+	}()
+
+	// Long enough for instance B's Wait to have subscribed and reached its
+	// blocking select before instance A publishes.
+	time.Sleep(50 * time.Millisecond)
+
+	// Instance A publishes a wake message with a certificate payload. This
+	// simulates what the signer and listener would do after signing a user
+	// certificate (see notifyWaiter in certrequest.go). The certificate is a
+	// minimal test value — what matters is that it's non-empty and reaches
+	// instance B via the wake message.
+	testCertificate := "ssh-cert-v01@openssh.com AAAAg..."
+	instanceA.notifyWaiter(requestID, requestOutcome{
+		status:      model.CertificateRequestStatusApproved,
+		certificate: testCertificate,
+	})
+
+	// Instance B's Wait should unblock and return the certificate from the
+	// wake message, without needing to read the database (which still shows
+	// the request as pending — the message is the sole carrier of the
+	// resolved outcome in this cross-instance scenario).
+	var res waitResult
+	select {
+	case res = <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("instance B's Wait did not unblock after instance A published the wake message")
+	}
+
+	if res.err != nil {
+		t.Fatalf("unexpected error from instance B's Wait: %v", res.err)
+	}
+	if res.status != model.CertificateRequestStatusApproved {
+		t.Errorf("got status %q, want %q", res.status, model.CertificateRequestStatusApproved)
+	}
+	if res.certificate != testCertificate {
+		t.Errorf("got certificate %q, want %q", res.certificate, testCertificate)
+	}
+	if res.code != "" {
+		t.Errorf("got code %q, want empty string", res.code)
+	}
+}
+
 // boolPtr returns a pointer to b, for the tri-state FIPS setting.
 func boolPtr(b bool) *bool { return &b }
 

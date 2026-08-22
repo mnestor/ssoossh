@@ -128,10 +128,18 @@ func migrateDatabase(provider config.DBProvider, db *gorm.DB) error {
 	return nil
 }
 
+// poolConfig holds pool configuration values to apply to a database connection.
+type poolConfig struct {
+	maxOpenConns    int
+	maxIdleConns    int
+	connMaxLifetime time.Duration
+}
+
 // connectDatabase opens a GORM connection for the configured database provider
 // (SQLite or PostgreSQL), retrying according to RetryAttempts and RetryInterval.
 // Both providers use the same retry loop; SQLite typically succeeds immediately
 // since it's file-backed, while PostgreSQL may retry on transient network issues.
+// Connection pool settings are applied after opening the connection.
 func connectDatabase(c *config.Config) (db *gorm.DB, err error) {
 	if c.DB.Connection == "" {
 		return nil, errors.New("missing required db.connection_string")
@@ -151,7 +159,13 @@ func connectDatabase(c *config.Config) (db *gorm.DB, err error) {
 		retryInterval = 1 * time.Second // Default fallback
 	}
 
-	return openWithRetry(dialector, dbLogger(c), onConnFn, c.DB.Provider, maxAttempts, retryInterval)
+	poolCfg := poolConfig{
+		maxOpenConns:    c.DB.MaxOpenConns,
+		maxIdleConns:    c.DB.MaxIdleConns,
+		connMaxLifetime: c.DB.ConnMaxLifetime,
+	}
+
+	return openWithRetry(dialector, dbLogger(c), onConnFn, c.DB.Provider, maxAttempts, retryInterval, poolCfg)
 }
 
 // dbDialector builds the GORM dialector for c.DB.Provider, along with an
@@ -221,8 +235,11 @@ func dbLogger(c *config.Config) logger.Interface {
 // openWithRetry attempts to open a GORM connection via dialector up to
 // maxAttempts times, sleeping retryInterval between attempts. On success,
 // onConnFn (if non-nil) is run against the underlying *sql.DB before the
-// connection is returned.
-func openWithRetry(dialector gorm.Dialector, glogger logger.Interface, onConnFn func(conn *sql.DB), provider config.DBProvider, maxAttempts int, retryInterval time.Duration) (db *gorm.DB, err error) {
+// connection is returned, followed by pool configuration (MaxOpenConns,
+// MaxIdleConns, ConnMaxLifetime) from c.DB. If onConnFn is provided (which
+// happens for in-memory SQLite to force MaxOpenConns(1)), pool configuration
+// respects that special case and only applies non-conflicting settings.
+func openWithRetry(dialector gorm.Dialector, glogger logger.Interface, onConnFn func(conn *sql.DB), provider config.DBProvider, maxAttempts int, retryInterval time.Duration, poolCfg poolConfig) (db *gorm.DB, err error) {
 	for i := 1; i <= maxAttempts; i++ {
 		db, err = gorm.Open(dialector, &gorm.Config{
 			TranslateError: true,
@@ -241,13 +258,21 @@ func openWithRetry(dialector gorm.Dialector, glogger logger.Interface, onConnFn 
 
 			slog.Info("Connected to database", slog.String("provider", string(provider)))
 
+			conn, connErr := db.DB()
+			if connErr != nil {
+				return nil, fmt.Errorf("failed to get underlying sql.DB: %w", connErr)
+			}
+
+			// Run the on-connection callback first (e.g., in-memory SQLite's
+			// SetMaxOpenConns(1) special case). Pass a flag to applyPoolConfig
+			// so it knows to preserve MaxOpenConns if onConnFn already set it.
 			if onConnFn != nil {
-				conn, connErr := db.DB()
-				if connErr != nil {
-					return nil, fmt.Errorf("failed to get underlying sql.DB: %w", connErr)
-				}
 				onConnFn(conn)
 			}
+
+			// Apply pooled-database configuration, respecting any MaxOpenConns
+			// set by onConnFn (which only happens for in-memory SQLite).
+			applyPoolConfig(conn, poolCfg, onConnFn != nil)
 
 			return db, nil
 		}
@@ -296,4 +321,25 @@ func getRequiredMigrationVersion(path string) (uint, error) {
 	}
 
 	return maxVersion, nil
+}
+
+// applyPoolConfig applies connection pool settings to a database connection.
+// If wasPreConfigured is true (onConnFn was called, e.g., for in-memory
+// SQLite), MaxOpenConns is left alone; otherwise it's set from cfg if > 0.
+// MaxIdleConns and ConnMaxLifetime are always applied if configured.
+func applyPoolConfig(conn *sql.DB, cfg poolConfig, wasPreConfigured bool) {
+	// If onConnFn already configured MaxOpenConns (in-memory SQLite case),
+	// don't override it. Otherwise apply the configured value, or leave
+	// Go's default if none is specified (0).
+	if !wasPreConfigured && cfg.maxOpenConns > 0 {
+		conn.SetMaxOpenConns(cfg.maxOpenConns)
+	}
+
+	if cfg.maxIdleConns >= 0 {
+		conn.SetMaxIdleConns(cfg.maxIdleConns)
+	}
+
+	if cfg.connMaxLifetime > 0 {
+		conn.SetConnMaxLifetime(cfg.connMaxLifetime)
+	}
 }

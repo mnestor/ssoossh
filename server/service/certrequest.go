@@ -827,6 +827,19 @@ func (s *CertRequestService) waitForUpdate(ctx context.Context, messages <-chan 
 		case msg, ok := <-messages:
 			if ok {
 				msg.Ack()
+
+				// Try to decode and use the wake message payload. If it carries
+				// a terminal outcome, return it directly without re-reading the
+				// DB. This optimizes multi-instance delivery: an SSE client on
+				// instance B gets a certificate issued on instance A via the
+				// message instead of a DB round trip.
+				if status, certificate, code, handled := s.tryHandleWakeMessage(requestID, msg); handled {
+					return status, certificate, code, nil
+				}
+
+				// Malformed payload or non-terminal status — fall through and
+				// re-read the DB. The message is just a signal that something
+				// may have changed; the DB is the authority.
 			}
 		case <-ctx.Done():
 			return ctx.Err()
@@ -927,6 +940,49 @@ func (s *CertRequestService) expire(ctx context.Context, requestID string) {
 	}
 
 	s.notifyWaiter(requestID, requestOutcome{status: model.CertificateRequestStatusExpired})
+}
+
+// tryHandleWakeMessage attempts to decode and use a wake message payload.
+// Returns the resolved outcome and true if the message carried a terminal
+// status (and was successfully decoded); otherwise returns false. A
+// malformed payload or non-terminal status falls through to the DB path.
+// This method optimizes multi-instance delivery: an SSE client on one
+// instance can receive outcomes issued on another via the message,
+// without needing a DB round trip.
+func (s *CertRequestService) tryHandleWakeMessage(requestID string, msg *message.Message) (status model.CertificateRequestStatus, certificate string, code string, handled bool) {
+	var outcome requestOutcomeMessage
+	if err := json.Unmarshal(msg.Payload, &outcome); err != nil {
+		// Malformed payload — fall back to DB.
+		return "", "", "", false
+	}
+
+	// Only trust terminal statuses from the message. Signing is not
+	// terminal — the signer hasn't finished yet, and the message is just
+	// a race signal.
+	switch outcome.Status {
+	case model.CertificateRequestStatusApproved,
+		model.CertificateRequestStatusEnrolled,
+		model.CertificateRequestStatusDenied,
+		model.CertificateRequestStatusExpired,
+		model.CertificateRequestStatusFailed:
+		// Cache the outcome and return it directly, completing the wait
+		// without another round trip to the DB. This optimizes both
+		// same-instance (typical) and cross-instance (multi-instance) cases.
+		s.mu.Lock()
+		s.resolved[requestID] = requestOutcome{
+			status:      outcome.Status,
+			certificate: outcome.Certificate,
+			code:        outcome.Code,
+		}
+		s.mu.Unlock()
+		return outcome.Status, outcome.Certificate, outcome.Code, true
+
+	default:
+		// Non-terminal status (only Signing) — fall through and re-read
+		// the DB. The message is just a signal that something may have
+		// changed; the DB is the authority.
+		return "", "", "", false
+	}
 }
 
 // notifyWaiter caches outcome for requestID (so any Wait call arriving

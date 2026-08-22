@@ -41,6 +41,14 @@ type Config struct {
 	// mode. Nil is the correct default, so no entry is needed in
 	// _defaults.yaml.
 	FIPS *bool `mapstructure:"fips"`
+
+	// MultiInstance declares that the server is part of a multi-instance
+	// deployment (multiple ssoosshd processes sharing a database). When
+	// enabled, certain checks are enforced (e.g., cookie_key must be
+	// explicitly set) and behaviors adapt to account for cross-instance
+	// message delivery (e.g., CertRequestService.Wait decodes wake-message
+	// payloads). See docs/multi-instance-safety-plan.md.
+	MultiInstance bool `mapstructure:"multi_instance"`
 }
 
 // FIPSEnabled reports whether FIPS steering is in effect. See
@@ -87,6 +95,26 @@ type DB struct {
 	// RetryInterval is the time to wait between connection retry attempts.
 	// Only used if RetryAttempts > 1. Applies to both SQLite and PostgreSQL.
 	RetryInterval time.Duration `mapstructure:"retry_interval"`
+
+	// MaxOpenConns sets the maximum number of open connections to the database.
+	// Zero means Go's default (typically 2). For file-backed SQLite, keep this
+	// modest: writes serialize on the write lock regardless, so high counts
+	// just queue without benefit. For PostgreSQL, scale with expected
+	// concurrency. This is ignored for in-memory SQLite, which is always
+	// forced to 1 (see bootstrap/db.go's onConnFn).
+	MaxOpenConns int `mapstructure:"max_open_conns"`
+
+	// MaxIdleConns sets the maximum number of idle connections held open.
+	// Zero means Go's default (typically 2, same as MaxOpenConns). Keep this
+	// proportionate to MaxOpenConns — they are not independent; a high
+	// MaxOpenConns with a low MaxIdleConns causes expensive churn.
+	MaxIdleConns int `mapstructure:"max_idle_conns"`
+
+	// ConnMaxLifetime sets the maximum amount of time a connection can be
+	// reused. Zero disables the limit (connections are reused indefinitely).
+	// Useful for breaking stale connections in long-running deployments, but
+	// typically not necessary with a well-behaved database server.
+	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
 }
 
 // LDAPConfig configures optional LDAP identity enrichment, looked up by the

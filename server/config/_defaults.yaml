@@ -63,12 +63,25 @@ logging:
 production: true
 traces: false
 metrics: false
+# Multi-instance declares that the server is part of a multi-instance
+# deployment (multiple ssoosshd processes sharing a database and transport).
+# When enabled, certain checks are enforced (e.g., cookie_key must be
+# explicitly set) and behaviors adapt (e.g., Wait decodes wake messages).
+multi_instance: false
 
 db:
   provider: sqlite
   connection_string: "ssoossh.db"
   retry_attempts: 3
   retry_interval: 3s
+  # Connection pool tuning. In-memory SQLite is always forced to 1 open
+  # connection (no configuration needed). For file-backed SQLite, writes
+  # serialize on the write lock regardless of pool size, so modest open
+  # counts avoid queue buildup. For PostgreSQL, scale with expected
+  # concurrency. MaxOpenConns=0 uses Go's default (typically 2).
+  max_open_conns: 10
+  max_idle_conns: 5
+  conn_max_lifetime: 0
   logging:
     level: WARN
     add_source: false
