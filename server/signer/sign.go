@@ -9,6 +9,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	sshcrypto "github.com/mnestor/ssoossh/internal/crypto/ssh"
 	"github.com/mnestor/ssoossh/internal/fipsmode"
 	"github.com/mnestor/ssoossh/server/certmsg"
 	"github.com/mnestor/ssoossh/server/model"
@@ -128,6 +129,15 @@ func Sign(ctx context.Context, ks CAKeySource, job certmsg.SigningJob, fipsEnabl
 		if !ok || !fipsmode.IsApprovedInFIPS(keyType) {
 			return certmsg.SignedReply{}, newSignError(certmsg.ErrCodeFIPSNotApproved,
 				"public key algorithm %q is not FIPS-approved", publicKey.Type())
+		}
+	}
+
+	// Validate principals as a backstop: these should already be validated in
+	// the approval path, but checking here provides defense in depth.
+	for _, p := range job.Principals {
+		if err := sshcrypto.ValidatePrincipal(p); err != nil {
+			return certmsg.SignedReply{}, newSignError(certmsg.ErrCodeSignFailed,
+				"invalid principal: %w", err)
 		}
 	}
 

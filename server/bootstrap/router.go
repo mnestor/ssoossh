@@ -158,6 +158,9 @@ func (a *app) initEngine() (*gin.Engine, error) {
 	r.Use(middleware.NewCacheControlMiddleware().Add())
 	r.Use(middleware.NewCorsMiddleware().Add())
 	r.Use(middleware.NewCspMiddleware().Add())
+	r.Use(middleware.NewXFrameOptionsMiddleware().Add())
+	r.Use(middleware.NewXContentTypeOptionsMiddleware().Add())
+	r.Use(middleware.NewReferrerPolicyMiddleware().Add())
 
 	sessionSecret, err := resolveSessionSecret(c, a.db)
 	if err != nil {

@@ -16,6 +16,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"gorm.io/gorm"
 
+	sshcrypto "github.com/mnestor/ssoossh/internal/crypto/ssh"
 	"github.com/mnestor/ssoossh/internal/fipsmode"
 	"github.com/mnestor/ssoossh/internal/serial"
 	"github.com/mnestor/ssoossh/server/certmsg"
@@ -313,11 +314,18 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 		return nil, err // excluded from coverage: forcing this specific query to fail while leaving Detail's earlier lookup and bindRequester's query intact needs per-query DB fault injection this codebase doesn't have — TestLookupDecision_ShouldSurfaceAGenericDBError covers lookupDecision's own error branch directly instead, see exclude-from-coverage.txt
 	}
 
+	principals := policy.principals(req.Hostname, req.Username, identity)
+	for _, p := range principals {
+		if err := sshcrypto.ValidatePrincipal(p); err != nil {
+			return nil, fmt.Errorf("invalid principal: %w", err)
+		}
+	}
+
 	return &RequestDetail{
 		Request:       req,
 		Requested:     requested,
 		Narrowed:      narrowRequestedOptions(policy, requested),
-		Principals:    policy.principals(req.Hostname, req.Username, identity),
+		Principals:    principals,
 		ValidDuration: policy.validDuration,
 		Decision:      decision,
 	}, nil
@@ -721,9 +729,14 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 
 	// Principals are derived per-type: user and service use the approver's
 	// username, PAM and host use context-specific values (PAM's local account
-	// name, host's hostname). TODO: use internal/crypto/ssh.ValidatePrincipal
-	// once chore/hardening lands (currently in salvage/chore-hardening).
+	// name, host's hostname). Validate every one before it can be persisted or
+	// signed into a certificate; the signer re-checks as a backstop.
 	principals := policy.principals(req.Hostname, req.Username, identity)
+	for _, p := range principals {
+		if err := sshcrypto.ValidatePrincipal(p); err != nil {
+			return fmt.Errorf("invalid principal: %w", err)
+		}
+	}
 
 	job := certmsg.SigningJob{
 		RequestID:        req.ID,
