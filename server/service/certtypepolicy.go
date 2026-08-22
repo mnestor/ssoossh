@@ -13,8 +13,13 @@ import (
 type certApprovalFlow int
 
 const (
-	// flowUnsupported types are rejected by Approve's flow switch — no
-	// branch issues them yet (see docs/signing-pipeline.md).
+	// flowEnrollment types create a model.Enrollment instead of queueing a
+	// signing job — see CertRequestService.approveServiceEnrollment.
+	flowEnrollment certApprovalFlow = iota
+	// flowSigning types are queued to certmsg.SignQueueTopic — see
+	// CertRequestService.approveForSigning.
+	flowSigning
+)
 	flowUnsupported certApprovalFlow = iota
 	// flowEnrollment types create a model.Enrollment instead of queueing a
 	// signing job — see CertRequestService.approveServiceEnrollment.
@@ -87,11 +92,12 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates) map
 		model.CertificateTypeHost: {
 			requireGroup:  opts.Host.RequireGroup,
 			validDuration: opts.Host.ValidDuration,
+
 			keyIDTemplate: kt.host,
 			principals: func(hostname, _ string, _ *Identity) []string {
 				return []string{hostname}
 			},
-			flow: flowUnsupported,
+			flow: flowSigning,
 		},
 		model.CertificateTypePAM: {
 			requireGroup:  opts.PAM.RequireGroup,

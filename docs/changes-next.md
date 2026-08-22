@@ -145,27 +145,30 @@ split.
 Open question: how does "multi-instance mode" get declared — inferred from
 NATS being configured, or an explicit setting?
 
-### 4. Host certificate issuance — needs a scope call before it is planned
+### 4. Host certificate issuance — completed
 
-Partially built, and the gap between the CLI surface and the server is the
-problem. The client CLI is complete (`host sign/renew/sync/principals`), as
-are `HostService.Renew`, `HostService.SyncPrincipals`,
-`server/controller/host.go`, and `server/middleware/host_cert_auth.go`.
+Host certificate first issuance is now implemented and complete. The client CLI
+is complete (`host sign/renew/sync/principals`), `HostService.Renew` and
+`HostService.SyncPrincipals` exist for authenticated renewal and principal
+syncing, and `certtypepolicy.go` now routes `CertificateTypeHost` through
+`flowSigning` like user and PAM certificates, with authorization gated on the
+SSH server admin role.
 
-But `certtypepolicy.go` sets `flow: flowUnsupported` for
-`CertificateTypeHost`, so `Approve` rejects every host request outright, and
-there is no `HostService.Sign`.
+The implementation includes:
 
-Related, and the reason this is more than a feature-completeness question:
-the `host` and `service` subcommands ship full, well-written `--help` text
-describing behavior that returns `NotImplementedError`. The comparative audit
-flagged this as a CLI-quality issue in its own right — help text that
-describes functionality a user cannot invoke erodes trust in `--help` output.
+- Real approval flow via `CertRequestService.Approve` (not a separate
+  `HostService.Sign`, which was a misunderstanding in the design notes)
+- Authorization check gating issuance on `middleware.SSHServerAdminChecker`
+  before request binding to prevent claiming requests
+- Principal derivation from the request's hostname (validated against the regex
+  pattern in `internal/crypto/ssh`)
+- Empty `host_mappings` table (output-only: written by signreply after signing,
+  consumed by `host sync` — not validated as input since the approver vouches
+  for the hostname and allowlisting would duplicate
+  `cert_options.host.require_group`)
 
-**This needs an explicit finish-now-or-stay-parked decision.** Release scope
-was never formally settled: the release-plan document that would have made
-that call was retired rather than written. If it stays parked, the honest
-minimum is making the CLI help say so.
+The `host` subcommand's `--help` text describes functionality that is now
+implemented and working.
 
 ### 5. Service certificate enrollment — two gaps
 

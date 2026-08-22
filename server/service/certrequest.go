@@ -110,11 +110,12 @@ type requestOutcomeMessage struct {
 // before ever relying on it, so a lost/missed wake message is a latency
 // problem (caught on reconnect), not a correctness one.
 type CertRequestService struct {
-	config     *config.Config
-	db         *gorm.DB
-	policies   map[model.CertificateType]*certTypePolicy
-	publisher  message.Publisher
-	subscriber message.Subscriber
+	config       *config.Config
+	db           *gorm.DB
+	policies     map[model.CertificateType]*certTypePolicy
+	publisher    message.Publisher
+	subscriber   message.Subscriber
+	adminChecker SSHServerAdminChecker
 
 	mu sync.Mutex
 	// resolved caches the outcome for any requestID notifyWaiter has fired
@@ -141,12 +142,13 @@ func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publ
 	}
 
 	return &CertRequestService{
-		config:     c,
-		db:         db,
-		policies:   newCertTypePolicies(c.CertOptions, keyIDTmpls),
-		publisher:  publisher,
-		subscriber: subscriber,
-		resolved:   make(map[string]requestOutcome),
+		config:       c,
+		db:           db,
+		policies:     newCertTypePolicies(c.CertOptions, keyIDTmpls),
+		publisher:    publisher,
+		subscriber:   subscriber,
+		adminChecker: NewConfigSSHServerAdminChecker(c),
+		resolved:     make(map[string]requestOutcome),
 	}, nil
 }
 
@@ -402,6 +404,19 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 		return fmt.Errorf("identity is not authorized to approve %s certificates", req.Type)
 	}
 
+	// Host certificates require the SSH server admin role, checked before
+	// bindRequester so an unauthorized caller cannot claim the request and
+	// see it in their history. The principal (hostname) is not validated
+	// against an allowlist — it is surfaced prominently in the approval UI
+	// for the approver to validate by inspection, and the approver's
+	// authorization to issue host certificates is the trust boundary. This
+	// trades per-hostname allowlisting for simpler operations (no pre-registration
+	// required) while keeping the SSH server admin gate as the authorization
+	// mechanism. See docs/changes-next.md section 4 for the principal invariant.
+	if req.Type == model.CertificateTypeHost && !s.adminChecker.IsSSHServerAdmin(identity) {
+		return fmt.Errorf("identity is not authorized to approve host certificates")
+	}
+
 	if err := s.bindRequester(ctx, &req, identity); err != nil {
 		return err
 	}
@@ -418,14 +433,10 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 	case flowSigning:
 		return s.approveForSigning(ctx, req, identity, policy, narrowed, dc)
 	default:
-		// Host certificates aren't issuable yet — the signer only handles
-		// user and PAM certificates for now (see
-		// docs/signing-pipeline.md). Reject here rather than
-		// queueing a job the signer will refuse: the human approving it gets
-		// an immediate, comprehensible error instead of the request quietly
-		// resolving to "failed" a moment later. The signer keeps its own
-		// guard as defense in depth.
-		return fmt.Errorf("issuing %s certificates is not supported yet", req.Type)
+		// This should never happen — every certificate type in
+		// newCertTypePolicies maps to either flowEnrollment or flowSigning.
+		// This guard exists only to catch bugs in policy initialization.
+		return fmt.Errorf("unsupported certificate approval flow for %s", req.Type)
 	}
 }
 
@@ -656,12 +667,18 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 		return err
 	}
 
+	// Principals are derived per-type: user and service use the approver's
+	// username, PAM and host use context-specific values (PAM's local account
+	// name, host's hostname). TODO: use internal/crypto/ssh.ValidatePrincipal
+	// once chore/hardening lands (currently in salvage/chore-hardening).
+	principals := policy.principals(req.Hostname, req.Username, identity)
+
 	job := certmsg.SigningJob{
 		RequestID:        req.ID,
 		Type:             req.Type,
 		PublicKey:        req.PublicKey,
 		Hostname:         req.Hostname,
-		Principals:       policy.principals(req.Hostname, req.Username, identity),
+		Principals:       principals,
 		KeyID:            keyID,
 		RequestedOptions: narrowed,
 		ValidAfter:       now,

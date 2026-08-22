@@ -27,8 +27,9 @@ type Config struct {
 	// attributes looked up by username. See LDAPConfig.
 	LDAP LDAPConfig `mapstructure:"ldap"`
 
-	SSHKey      string             `mapstructure:"ssh_key"`
-	CertOptions CertificateOptions `mapstructure:"cert_options"`
+	SSHKey              string             `mapstructure:"ssh_key"`
+	CertOptions         CertificateOptions `mapstructure:"cert_options"`
+	SSHServerAdminGroup string             `mapstructure:"ssh_server_admin_group"`
 
 	// FIPS steers the server toward FIPS 140-3 approved algorithms: the CA
 	// key (checked at startup), client-submitted public keys (checked in

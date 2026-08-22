@@ -146,7 +146,7 @@ func TestNewCertTypePolicies_ShouldSetFlowPerType(t *testing.T) {
 		{model.CertificateTypeUser, flowSigning},
 		{model.CertificateTypePAM, flowSigning},
 		{model.CertificateTypeService, flowEnrollment},
-		{model.CertificateTypeHost, flowUnsupported},
+		{model.CertificateTypeHost, flowSigning},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.certType), func(t *testing.T) {
