@@ -288,3 +288,23 @@ changelog-check:
 		echo "CHANGELOG.md is stale: run 'make changelog' and commit the result"; \
 		exit 1; \
 	fi
+
+.PHONY: gendocs
+# Generate man pages (ssoossh.1 and ssoosshd.8) from cobra commands.
+# Config format pages (ssoossh.yaml.5, ssoosshd.yaml.5) are hand-written and not regenerated.
+gendocs:
+	go run ./internal/tools/gendocs docs/man
+	@echo "Man pages regenerated (ssoossh.1, ssoosshd.8)"
+
+.PHONY: man-check
+# Verify man pages are up to date (for CI).
+man-check:
+	@before_ssoossh=$$(sha256sum docs/man/ssoossh.1 2>/dev/null); \
+	before_ssoosshd=$$(sha256sum docs/man/ssoosshd.8 2>/dev/null); \
+	$(MAKE) --no-print-directory gendocs >/dev/null; \
+	after_ssoossh=$$(sha256sum docs/man/ssoossh.1 2>/dev/null); \
+	after_ssoosshd=$$(sha256sum docs/man/ssoosshd.8 2>/dev/null); \
+	if [ "$$before_ssoossh" != "$$after_ssoossh" ] || [ "$$before_ssoosshd" != "$$after_ssoosshd" ]; then \
+		echo "Man pages are stale: run 'make gendocs' and commit the result"; \
+		exit 1; \
+	fi
