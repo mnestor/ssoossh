@@ -110,3 +110,14 @@ export interface CertificateResponse {
 	issued_at: string;
 	expires_at: string;
 }
+/**
+ * CertificateListResponse is the data payload for the cursor-paginated
+ * certificate list endpoint. Certificates are ordered newest first.
+ * NextCursor is the ID of the last certificate in this page, to be passed
+ * as the "after" parameter for the next page; it is nil when no more pages
+ * exist.
+ */
+export interface CertificateListResponse {
+	certificates: CertificateResponse[];
+	next_cursor?: string;
+}

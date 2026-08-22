@@ -37,8 +37,8 @@ type certificateController struct {
 // @Description Uses cursor-based pagination (not offset).
 // @Tags        web
 // @Produce     json
-// @Param       after   query    string "Certificate ID to start after (cursor)"
-// @Param       limit   query    int    "Maximum certificates to return (default 25, max 100)"
+// @Param       after   query    string false   "Certificate ID to start after (cursor)"
+// @Param       limit   query    int    false   "Maximum certificates to return (default 25, max 100)"
 // @Success     200 {object} openapidoc.CertificateListEnvelope "Issued certificates, newest first, with cursor for next page"
 // @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid limit or cursor"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"

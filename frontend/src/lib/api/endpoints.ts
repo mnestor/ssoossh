@@ -3,6 +3,7 @@ import { isInternalPath } from '$lib/paths';
 import { ApiError, request } from './client';
 import type {
 	ApproveResult,
+	CertificateListResponse,
 	CertificateRecord,
 	CurrentUser,
 	DenyResult,
@@ -38,9 +39,21 @@ export function denyRequest(id: string): Promise<DenyResult> {
 	return request<DenyResult>(`/certs/requests/${encodeURIComponent(id)}/deny`, { method: 'POST' });
 }
 
-/** GET /api/certs — the caller's own issued-certificate history. */
-export function listCertificates(signal?: AbortSignal): Promise<CertificateRecord[]> {
-	return request<CertificateRecord[]>('/certs', { signal });
+/** GET /api/certs — the caller's own issued-certificate history. Supports cursor-based pagination. */
+export function listCertificates(
+	signal?: AbortSignal,
+	after?: string | null,
+	limit?: number
+): Promise<CertificateListResponse> {
+	const params = new URLSearchParams();
+	if (after) {
+		params.append('after', after);
+	}
+	if (limit) {
+		params.append('limit', limit.toString());
+	}
+	const url = params.toString() ? `/certs?${params.toString()}` : '/certs';
+	return request<CertificateListResponse>(url, { signal });
 }
 
 /**

@@ -182,10 +182,7 @@ components:
     openapidoc.CertificateListEnvelope:
       properties:
         data:
-          items:
-            $ref: '#/components/schemas/webtypes.CertificateResponse'
-          type: array
-          uniqueItems: false
+          $ref: '#/components/schemas/webtypes.CertificateListResponse'
         error:
           type: string
       required:
@@ -280,6 +277,18 @@ components:
           type: string
       required:
       - data
+      type: object
+    webtypes.CertificateListResponse:
+      properties:
+        certificates:
+          items:
+            $ref: '#/components/schemas/webtypes.CertificateResponse'
+          type: array
+          uniqueItems: false
+        next_cursor:
+          type: string
+      required:
+      - certificates
       type: object
     webtypes.CertificateOptionsResponse:
       properties:
@@ -487,13 +496,31 @@ paths:
         so this is an audit trail rather than somewhere to re-download one.
 
         Scoped by the caller's users row, with no parameter to widen it.
+        Uses cursor-based pagination (not offset).
+      parameters:
+      - description: Certificate ID to start after (cursor)
+        in: query
+        name: after
+        schema:
+          type: string
+      - description: Maximum certificates to return (default 25, max 100)
+        in: query
+        name: limit
+        schema:
+          type: integer
       responses:
         "200":
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.CertificateListEnvelope'
-          description: Issued certificates, newest first
+          description: Issued certificates, newest first, with cursor for next page
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Invalid limit or cursor
         "401":
           content:
             application/json:

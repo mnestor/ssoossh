@@ -2,7 +2,7 @@
 	import { pushState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { listCertificates } from '$lib/api/endpoints';
-	import type { CertificateRecord, CertificateType } from '$lib/api/types';
+	import type { CertificateListResponse, CertificateRecord, CertificateType } from '$lib/api/types';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
 	import Card from '$lib/components/Card.svelte';
@@ -10,12 +10,15 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import { formatDateTime, isExpired } from '$lib/format';
 
-	// Every certificate ever issued to this identity, newest first. This is
-	// the audit trail: GET /api/certs is scoped to the caller by the service
-	// (CertificateService.ListForIdentity) with no parameter to widen it, so
-	// there is nothing here to filter by user.
-	let certificates = $state<CertificateRecord[] | null>(null);
+	// Cursor-paginated certificate history. The type filter and client-side
+	// pagination apply only to loaded results — if the user filters to "host"
+	// and all the currently-loaded certificates are "user" type, they'll see no
+	// results until they load more pages. This is the accepted tradeoff of
+	// load-more pagination over offset pagination.
+	let allCertificates = $state<CertificateRecord[]>([]);
+	let nextCursor = $state<string | null>(null);
 	let loadError = $state<string | null>(null);
+	let isLoading = $state(false);
 
 	// Filter and pagination state
 	let selectedType = $state<CertificateType | 'all'>('all');
@@ -34,7 +37,7 @@
 	const modalCertId = $derived(page.url.searchParams.get('modal'));
 
 	const sorted = $derived(
-		[...(certificates ?? [])].sort(
+		[...allCertificates].sort(
 			(a, b) => new Date(b.issued_at).getTime() - new Date(a.issued_at).getTime()
 		)
 	);
@@ -73,12 +76,32 @@
 		pushState(url, {});
 	}
 
+	async function loadMoreCertificates() {
+		if (isLoading || !nextCursor) {
+			return;
+		}
+		isLoading = true;
+		const controller = new AbortController();
+		try {
+			const result = await listCertificates(controller.signal, nextCursor, 25);
+			allCertificates = [...allCertificates, ...result.certificates];
+			nextCursor = result.next_cursor ?? null;
+		} catch (cause) {
+			if (!controller.signal.aborted && !redirectIfUnauthenticated(cause)) {
+				loadError = errorMessage(cause);
+			}
+		} finally {
+			isLoading = false;
+		}
+	}
+
 	$effect(() => {
 		const controller = new AbortController();
 
-		listCertificates(controller.signal)
-			.then((certs) => {
-				certificates = certs;
+		listCertificates(controller.signal, null, 25)
+			.then((result: CertificateListResponse) => {
+				allCertificates = result.certificates;
+				nextCursor = result.next_cursor ?? null;
 			})
 			.catch((cause) => {
 				if (controller.signal.aborted || redirectIfUnauthenticated(cause)) {
@@ -99,7 +122,7 @@
 >
 	{#if loadError}
 		<Alert variant="error" title="Could not load your history">{loadError}</Alert>
-	{:else if certificates === null}
+	{:else if allCertificates.length === 0}
 		<p class="text-sm text-ink-muted">Loading…</p>
 	{:else if sorted.length === 0}
 		<p class="text-sm text-ink-muted">No certificates have been issued to you yet.</p>
@@ -178,10 +201,10 @@
 			</ul>
 
 			<!-- Pagination controls -->
-			{#if totalPages > 1}
+			{#if totalPages > 1 || nextCursor}
 				<div class="mt-4 flex items-center justify-between border-t border-border-subtle pt-3">
 					<div class="text-xs text-ink-muted">
-						Page {currentPage} of {totalPages} ({filtered.length} total)
+						Page {currentPage} of {totalPages} ({filtered.length} loaded)
 					</div>
 					<div class="flex gap-2">
 						<button
@@ -202,11 +225,23 @@
 						</button>
 					</div>
 				</div>
+
+				{#if nextCursor}
+					<div class="mt-3 flex justify-center">
+						<button
+							onclick={loadMoreCertificates}
+							disabled={isLoading}
+							class="rounded-md border border-border-subtle px-4 py-2 transition hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-50"
+						>
+							{isLoading ? 'Loading…' : 'Load more results'}
+						</button>
+					</div>
+				{/if}
 			{/if}
 		{/if}
 	{/if}
-</Card>
 
-{#if modalCert}
-	<CertDetailModal cert={modalCert} onclosed={closeCertDetail} />
-{/if}
+	{#if modalCert}
+		<CertDetailModal cert={modalCert} onclosed={closeCertDetail} />
+	{/if}
+</Card>

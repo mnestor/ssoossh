@@ -2,7 +2,7 @@
 	import { pushState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { listCertificates } from '$lib/api/endpoints';
-	import type { CertificateRecord } from '$lib/api/types';
+	import type { CertificateListResponse, CertificateRecord } from '$lib/api/types';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
 	import Card from '$lib/components/Card.svelte';
@@ -16,8 +16,10 @@
 	// such a list could only ever show everyone's, and approving a stranger's
 	// request issues a certificate carrying *your* principals to *their* key.
 	// The approval URL reaches a human one way: their own client prints it.
-	let certificates = $state<CertificateRecord[] | null>(null);
+	let allCertificates = $state<CertificateRecord[]>([]);
+	let nextCursor = $state<string | null>(null);
 	let loadError = $state<string | null>(null);
+	let isLoading = $state(false);
 
 	// Recomputed against a clock that ticks, not against load time: this page
 	// is the sort of thing that stays open in a tab, and a certificate that
@@ -28,7 +30,7 @@
 		return () => clearInterval(timer);
 	});
 
-	const active = $derived((certificates ?? []).filter((c) => !isExpired(c.expires_at, now)));
+	const active = $derived(allCertificates.filter((c) => !isExpired(c.expires_at, now)));
 
 	// Shallow routing for cert detail modal
 	const modalCertId = $derived(page.url.searchParams.get('modal'));
@@ -60,12 +62,32 @@
 		pushState(url, {});
 	}
 
+	async function loadMoreCertificates() {
+		if (isLoading || !nextCursor) {
+			return;
+		}
+		isLoading = true;
+		const controller = new AbortController();
+		try {
+			const result = await listCertificates(controller.signal, nextCursor, 25);
+			allCertificates = [...allCertificates, ...result.certificates];
+			nextCursor = result.next_cursor ?? null;
+		} catch (cause) {
+			if (!controller.signal.aborted && !redirectIfUnauthenticated(cause)) {
+				loadError = errorMessage(cause);
+			}
+		} finally {
+			isLoading = false;
+		}
+	}
+
 	$effect(() => {
 		const controller = new AbortController();
 
-		listCertificates(controller.signal)
-			.then((certs) => {
-				certificates = certs;
+		listCertificates(controller.signal, null, 25)
+			.then((result: CertificateListResponse) => {
+				allCertificates = result.certificates;
+				nextCursor = result.next_cursor ?? null;
 			})
 			.catch((cause) => {
 				if (controller.signal.aborted || redirectIfUnauthenticated(cause)) {
@@ -86,7 +108,7 @@
 	{/if}
 
 	<Card title="Active certificates" description="Issued to you and not yet expired.">
-		{#if certificates === null}
+		{#if allCertificates.length === 0}
 			<p class="text-sm text-ink-muted">Loading…</p>
 		{:else if active.length === 0}
 			<p class="text-sm text-ink-muted">
@@ -140,6 +162,18 @@
 			</ul>
 		{/if}
 	</Card>
+
+	{#if nextCursor}
+		<div class="flex justify-center">
+			<button
+				onclick={loadMoreCertificates}
+				disabled={isLoading}
+				class="rounded-md border border-border-subtle px-4 py-2 transition hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-50"
+			>
+				{isLoading ? 'Loading…' : 'Load more'}
+			</button>
+		</div>
+	{/if}
 
 	{#if modalCert}
 		<CertDetailModal cert={modalCert} onclosed={closeCertDetail} />
