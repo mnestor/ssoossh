@@ -270,3 +270,21 @@ ci-advisory:
 # left out.
 ci: ci-required ci-advisory
 
+
+.PHONY: changelog
+# Generate CHANGELOG.md from git-cliff using conventional commits.
+# Requires git-cliff to be installed: cargo install git-cliff
+changelog:
+	git-cliff --output CHANGELOG.md
+	@echo "CHANGELOG.md generated"
+
+.PHONY: changelog-check
+# Verify CHANGELOG.md is up to date (for CI).
+changelog-check:
+	@before=$$(sha256sum CHANGELOG.md 2>/dev/null); \
+	$(MAKE) --no-print-directory changelog >/dev/null; \
+	after=$$(sha256sum CHANGELOG.md 2>/dev/null); \
+	if [ "$$before" != "$$after" ]; then \
+		echo "CHANGELOG.md is stale: run 'make changelog' and commit the result"; \
+		exit 1; \
+	fi

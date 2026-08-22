@@ -1,0 +1,53 @@
+# git-cliff configuration for ssoossh
+# Generates CHANGELOG.md from Conventional Commits
+# Reference: https://github.com/orhun/git-cliff
+
+[changelog]
+# Template for the entire changelog
+body = """
+{% if version %}\
+    ## [{{ version }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+    ## [Unreleased]
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+    ### {{ group | upper_first }}
+    {% for commit in commits %}
+    - {% if commit.breaking %}[BREAKING] {% endif %}{{ commit.message | upper_first }} ([`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/mnestor/ssoossh/commit/{{ commit.id }}))
+    {%- endfor %}
+{% endfor %}\
+"""
+# Trim whitespace
+trim = true
+# Commit parser configuration
+[git]
+# Parse commits that match these conventional commit types
+conventional_commits = true
+# Filter out commits that don't match the pattern below (optional)
+filter_unconventional = true
+# Map commit types to changelog groups
+commit_parsers = [
+    { message = "^feat", group = "features" },
+    { message = "^fix", group = "bug fixes" },
+    { message = "^doc", group = "documentation" },
+    { message = "^perf", group = "performance" },
+    { message = "^refactor", group = "refactoring" },
+    { message = "^test", group = "testing" },
+    { message = "^build", group = "build" },
+    { message = "^chore", skip = true },
+    { message = "^ci", skip = true },
+    { message = "^style", skip = true },
+]
+# How to handle commits with multiple types
+commit_preprocessors = [
+    # Remove issue numbers from commit messages
+    { pattern = '\(#\d+\)$', replace = "" },
+]
+
+[git.conventional_commits]
+# Conventional commit format
+commit_style = "conventional"
+
+[changelog.sections]
+# Exclude certain groups from the changelog
+exclude_authors = ["dependabot", "bots"]
