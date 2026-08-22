@@ -109,49 +109,57 @@ func sniffImageType(data []byte) string {
 	return ""
 }
 
-// isSVG reports whether data's first XML element is <svg>. Leading
-// whitespace, an XML declaration, a DOCTYPE, and comments are skipped, since
-// all are legal before the root element.
-func isSVG(data []byte) bool {
-	rest := data
-	for {
-		rest = bytes.TrimLeft(rest, " \t\r\n")
+// skipXMLPrologue returns data with any leading whitespace, XML declaration,
+// DOCTYPE, and comments removed, so the caller sees the root element. It
+// returns nil if a prologue construct is left unterminated, which means the
+// file is malformed and cannot be trusted as an image either way.
+func skipXMLPrologue(data []byte) []byte {
+	// Bounded rather than `for {}`: a malformed file should fail, not spin.
+	for range 64 {
+		data = bytes.TrimLeft(data, " \t\r\n")
+
+		var closer []byte
 		switch {
-		case bytes.HasPrefix(rest, []byte("<?")):
-			end := bytes.Index(rest, []byte("?>"))
-			if end < 0 {
-				return false
-			}
-			rest = rest[end+2:]
-		case bytes.HasPrefix(rest, []byte("<!--")):
-			end := bytes.Index(rest, []byte("-->"))
-			if end < 0 {
-				return false
-			}
-			rest = rest[end+3:]
-		case bytes.HasPrefix(rest, []byte("<!")):
-			end := bytes.IndexByte(rest, '>')
-			if end < 0 {
-				return false
-			}
-			rest = rest[end+1:]
+		case bytes.HasPrefix(data, []byte("<?")):
+			closer = []byte("?>")
+		case bytes.HasPrefix(data, []byte("<!--")):
+			closer = []byte("-->")
+		case bytes.HasPrefix(data, []byte("<!")):
+			closer = []byte(">")
 		default:
-			// The root element. Accept only <svg followed by a delimiter, so
-			// that an element merely starting with those letters is rejected.
-			if !bytes.HasPrefix(rest, []byte("<svg")) {
-				return false
-			}
-			after := rest[len("<svg"):]
-			if len(after) == 0 {
-				return false
-			}
-			switch after[0] {
-			case ' ', '\t', '\r', '\n', '>', '/':
-				return true
-			default:
-				return false
-			}
+			return data
 		}
+
+		end := bytes.Index(data, closer)
+		if end < 0 {
+			return nil
+		}
+		data = data[end+len(closer):]
+	}
+	return nil
+}
+
+// isSVG reports whether data's first XML element is <svg>. SVG has no magic
+// number, being XML text, so this is the structural equivalent: merely
+// containing the string "svg" is not enough, since an HTML page mentioning
+// it would pass and the operator would get a silently broken image instead
+// of a startup error.
+func isSVG(data []byte) bool {
+	root := skipXMLPrologue(data)
+	if !bytes.HasPrefix(root, []byte("<svg")) {
+		return false
+	}
+
+	// Require a delimiter after the name so <svgfoo> is not mistaken for it.
+	after := root[len("<svg"):]
+	if len(after) == 0 {
+		return false
+	}
+	switch after[0] {
+	case ' ', '\t', '\r', '\n', '>', '/':
+		return true
+	default:
+		return false
 	}
 }
 

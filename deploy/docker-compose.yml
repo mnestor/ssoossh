@@ -1,0 +1,90 @@
+# Operator-facing deployment of ssoosshd. Two services, deliberately not a
+# full stack: no pocket-id, no target sshd, no sudo target, no lldap slot —
+# those belong to a QA rehearsal harness, a separate thing (see
+# docs/release-phase7-deploy-docs.md). This still needs a real OIDC
+# provider and a real machine to `ssh` into; it only runs the server.
+#
+# The dev docker-compose.yml at the repo root is unrelated — it sleep-loops
+# the devcontainer image and is not meant to run ssoosshd at all.
+#
+# Usage — this pulls a published image; nothing on this host needs to be
+# built. The image is built by the build-image job in
+# .github/workflows/build.yaml from the Dockerfile at the repo root, and
+# pushed to ghcr.io/mnestor/ssoosshd only on a v* release tag — there is no
+# `latest` and no branch/sha tag published, deliberately: a floating tag
+# means `docker compose pull` can silently change what's running on a
+# restart, so every image here is meant to be pinned by an explicit
+# version instead. Set SSOOSSHD_VERSION to one before starting:
+#   mkdir -p config
+#   cp ../docs/ssoosshd.yaml.default config/ssoosshd.yaml   # then edit it
+#   echo SSOOSSHD_VERSION=v0.2.0 > .env   # a real tag; see the packages
+#                                         # page below for what's published
+#   docker compose up -d                                    # sqlite (default)
+#   docker compose --profile postgres up -d                 # with postgres
+#
+# ghcr.io/mnestor/ssoosshd is a GitHub Container Registry package, which
+# defaults to private on its first push regardless of the repo's own
+# visibility — `docker compose pull` gets a 401/denied until someone with
+# admin on the package sets its visibility to public (Package settings on
+# GitHub), or until you `docker login ghcr.io` with a token that has read
+# access to it. What versions exist:
+# https://github.com/mnestor/ssoossh/pkgs/container/ssoosshd
+#
+# Developing the Dockerfile itself: `docker compose build` still works
+# here (image: and build: can coexist) and tags the result the same as
+# whatever SSOOSSHD_VERSION resolves to, so `docker compose up`
+# immediately after uses your build instead of pulling.
+#
+# In config/ssoosshd.yaml, http.address must be 0.0.0.0 (not the default
+# 127.0.0.1): the port mapping below publishes from the container's
+# external interface, which a process bound to its own loopback is not
+# reachable on. See docs/deployment.md.
+#
+# database.provider defaults to sqlite, which needs nothing else and is
+# fine for a single instance. postgres is opt-in via the "postgres" profile
+# below for operators who want it — set db.provider: postgres and
+# db.connection_string to match the POSTGRES_* values below.
+
+services:
+  ssoosshd:
+    image: ghcr.io/mnestor/ssoosshd:${SSOOSSHD_VERSION:?set SSOOSSHD_VERSION to a released tag, e.g. v0.2.0 -- see this file's header comment}
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # ssoosshd.yaml holds the CA private key (ssh_key) inline — keep this
+      # directory's permissions tight on the host. Mounted read-only: the
+      # server never writes to its own config.
+      - ./config:/etc/ssoossh:ro
+      # Only used with the default sqlite provider; harmless (and unused)
+      # when the postgres profile is active instead.
+      - ssoosshd-data:/var/lib/ssoossh
+    # No container HEALTHCHECK: the runtime image is distroless/static,
+    # which has no shell and no curl/wget to run one with. Verify
+    # liveness from the host instead: curl -f http://localhost:8080/healthz
+
+  postgres:
+    image: postgres:17-alpine
+    profiles:
+      - postgres
+    restart: unless-stopped
+    environment:
+      # Change before first startup — postgres only reads these on an empty
+      # data directory. Match db.connection_string in ssoosshd.yaml.
+      POSTGRES_DB: ssoossh
+      POSTGRES_USER: ssoossh
+      POSTGRES_PASSWORD: change-me
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ssoossh"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ssoosshd-data:
+  postgres-data:

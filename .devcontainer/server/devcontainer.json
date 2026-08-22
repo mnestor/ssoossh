@@ -17,10 +17,27 @@
     "source=${localEnv:HOME}/.local/bin/rtk,target=/home/vscode/.local/bin/rtk,type=bind",
     "source=${localEnv:HOME}/.local/share/rtk,target=/home/vscode/.local/share/rtk,type=bind",
     "source=${localEnv:HOME}/.config/gh,target=/home/vscode/.config/gh,type=bind",
-    "source=${localEnv:HOME}/.config/rtk,target=/home/vscode/.config/rtk,type=bind"
+    "source=${localEnv:HOME}/.config/rtk,target=/home/vscode/.config/rtk,type=bind",
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
+    // SoftHSM2 from the host (source build under /usr/local, tokens in
+    // /var/lib/softhsm). SoftHSM is a PKCS#11 *library*, not a daemon, so
+    // there is nothing to connect to -- the module and its token store have
+    // to be visible in this container's filesystem. Host and container are
+    // both Debian 13 / amd64, so the host-built libsofthsm2.so loads here
+    // as-is. Tokens are read-write and shared with the host; don't drive the
+    // same token from host and container at the same time.
+    "source=/usr/local/lib/softhsm,target=/usr/local/lib/softhsm,type=bind,readonly",
+    "source=/usr/local/bin/softhsm2-util,target=/usr/local/bin/softhsm2-util,type=bind,readonly",
+    "source=/etc/softhsm2.conf,target=/etc/softhsm2.conf,type=bind,readonly",
+    "source=/var/lib/softhsm/tokens,target=/var/lib/softhsm/tokens,type=bind"
   ],
   "containerEnv": {
-    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude"
+    "CLAUDE_CONFIG_DIR": "/home/vscode/.claude",
+    // Default lookup for the host build is sysconfdir/softhsm2.conf, which is
+    // this path; set explicitly so it doesn't depend on that default.
+    "SOFTHSM2_CONF": "/etc/softhsm2.conf",
+    // Convenience for pkcs11-tool --module and, later, the signer's config.
+    "PKCS11_MODULE": "/usr/local/lib/softhsm/libsofthsm2.so"
   },
   // Bound to 0.0.0.0, not just localhost, so the server is reachable from
   // another machine while developing.

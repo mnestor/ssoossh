@@ -1,0 +1,65 @@
+[Unit]
+Description=ssoossh server — SSH certificate authority issuing against an OIDC identity provider
+Documentation=https://github.com/mnestor/ssoossh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# The ssoossh-server package installs the binary at /usr/local/sbin/ssoosshd
+# (see .goreleaser.yml's "server" nfpm) and the annotated config sample at
+# /etc/ssoossh/ssoosshd.yaml. -c is redundant with that default search path
+# but kept explicit so this unit does not depend on it.
+ExecStart=/usr/local/sbin/ssoosshd -c /etc/ssoossh/ssoosshd.yaml
+Restart=on-failure
+RestartSec=5s
+
+# Uncomment for FIPS 140-3 runtime enforcement beneath the application-level
+# checks that ssoosshd.yaml's `fips: true` already turns on: this makes Go's
+# own crypto layer reject non-approved algorithms outright, rather than only
+# the CA key, client keys, and TLS profile that ssoosshd checks itself.
+# `only` (not `on`) matches the hard-error posture `fips: true` uses
+# elsewhere -- see crypto/fips140.Enforced(). Left commented by default:
+# this unit is installed for every server, most of which don't set
+# `fips: true`, and this would reject non-FIPS crypto unconditionally
+# regardless of that setting.
+#Environment=GODEBUG=fips140=only
+
+# Runs as a dedicated, unprivileged system account rather than root or
+# DynamicUser: the account needs a stable, predictable identity so the
+# operator can chown the config directory (which holds the CA private key)
+# and the sqlite data directory to it ahead of time.
+#   useradd --system --no-create-home --shell /usr/sbin/nologin ssoossh
+User=ssoossh
+Group=ssoossh
+
+# db.connection_string in ssoosshd.yaml should point inside this directory
+# for the default sqlite provider, e.g. /var/lib/ssoossh/ssoossh.db.
+# Unused (but harmless to leave writable) when db.provider is postgres.
+StateDirectory=ssoossh
+StateDirectoryMode=0750
+
+# logging.filename / access_logging.filename, if set to a file path rather
+# than left to journald via enable_stdout, should live under here.
+LogsDirectory=ssoossh
+LogsDirectoryMode=0750
+
+# --- sandboxing -----------------------------------------------------------
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+# The config directory holds the CA private key (ssh_key, inline PEM) and
+# must be readable by the ssoossh user but is not written by this unit —
+# ReadOnlyPaths is deliberate, not just a hardening default.
+ReadOnlyPaths=/etc/ssoossh
+
+[Install]
+WantedBy=multi-user.target
