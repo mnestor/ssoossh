@@ -13,13 +13,9 @@ import (
 type certApprovalFlow int
 
 const (
-	// flowEnrollment types create a model.Enrollment instead of queueing a
-	// signing job — see CertRequestService.approveServiceEnrollment.
-	flowEnrollment certApprovalFlow = iota
-	// flowSigning types are queued to certmsg.SignQueueTopic — see
-	// CertRequestService.approveForSigning.
-	flowSigning
-)
+	// flowUnsupported is the zero value on purpose: a policy that never sets
+	// an explicit flow fails closed here rather than silently falling into a
+	// real issuance path.
 	flowUnsupported certApprovalFlow = iota
 	// flowEnrollment types create a model.Enrollment instead of queueing a
 	// signing job — see CertRequestService.approveServiceEnrollment.
