@@ -77,15 +77,6 @@ func (r *RootCommand) CobraCommand() *cobra.Command {
 	return r.cobraCmd
 }
 
-func newExec() (*simplecobra.Exec, error) {
-	root := &RootCommand{
-		commands: []simplecobra.Commander{
-			newVersionCommand(),
-		},
-	}
-	return simplecobra.New(root)
-}
-
 // Command wraps the ssoosshd root simplecobra.Exec to maintain backward-compatible
 // test interfaces while using simplecobra for the actual command execution.
 type Command struct {
@@ -96,8 +87,6 @@ type Command struct {
 
 // NewCommand builds the ssoosshd root command using simplecobra.
 func NewCommand() *Command {
-	// The root's Init method will be called during New(), which stores a reference
-	// to the cobra.Command in the root itself.
 	root := &RootCommand{
 		commands: []simplecobra.Commander{
 			newVersionCommand(),
