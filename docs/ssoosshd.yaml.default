@@ -556,9 +556,12 @@
   ## Empty disables organization-specific branding.
   # org_name: ""
 
-  ## URL to the organization's logo image. Must be a valid HTTP(S) URL.
-  ## Empty disables the logo.
-  # logo_url: ""
+  ## Filesystem path to the organization's logo image (PNG, JPEG, GIF, or WebP).
+  ## The server reads this file at startup and validates that it is a real image.
+  ## Empty disables the logo. The logo is served via /api/branding/logo as
+  ## same-origin, avoiding third-party dependencies and DNS leakage on the
+  ## unauthenticated login page.
+  # logo_path: ""
 
   ## Plain-text message shown on the login page before authentication.
   ## Supports newlines for multi-line text. Empty disables the notice.

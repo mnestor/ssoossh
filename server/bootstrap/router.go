@@ -313,7 +313,13 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	// Set up API routes
 	apiGroup := r.Group("/api")
 	controller.NewCaController(apiGroup, a.svc.ca)
-	controller.NewBrandingController(apiGroup, a.config)
+
+	// Load and validate logo image at startup
+	logoImg, err := controller.LoadLogoImage(a.config.Branding.LogoPath)
+	if err != nil {
+		return fmt.Errorf("failed to load logo image: %w", err)
+	}
+	controller.NewBrandingController(apiGroup, a.config, logoImg)
 
 	// Build per-endpoint rate limit middleware for certificate request creation.
 	// Each endpoint gets its own rate limiter (per-IP, independent of each other).

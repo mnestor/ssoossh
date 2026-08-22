@@ -72,9 +72,11 @@ type BrandingSettings struct {
 	// Empty disables organization-specific branding.
 	OrgName string `mapstructure:"org_name"`
 
-	// LogoURL is the URL to the organization's logo image.
-	// Empty disables the logo. Must be a valid HTTP(S) URL.
-	LogoURL string `mapstructure:"logo_url"`
+	// LogoPath is the filesystem path to the organization's logo image.
+	// The server reads this file at startup and validates that it is a real image.
+	// Empty disables the logo. The logo is served via /api/branding/logo and is
+	// always same-origin, avoiding DNS leakage or third-party image dependencies.
+	LogoPath string `mapstructure:"logo_path"`
 
 	// LoginNotice is a plain-text message shown on the login page before authentication.
 	// Empty disables the notice. Supports newlines for multi-line text.

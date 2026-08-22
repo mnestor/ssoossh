@@ -139,5 +139,5 @@ branding:
   # empty values mean no branding is configured. This endpoint is
   # unauthenticated, so only include values that are safe for public display.
   org_name: ""
-  logo_url: ""
+  logo_path: ""
   login_notice: ""
