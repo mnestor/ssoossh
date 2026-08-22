@@ -8,79 +8,6 @@ import (
 	"github.com/mnestor/ssoossh/test/e2e/harness"
 )
 
-// TestResourceLimits_RequestBodySize validates that the server rejects
-// requests with excessively large bodies (e.g., crafted payloads) without
-// panicking or consuming unbounded memory.
-func TestResourceLimits_RequestBodySize(t *testing.T) {
-	// This test requires injecting an oversized request.
-	// Documents the scenario to be implemented: server should reject
-	// with 413 Payload Too Large or similar, not panic.
-
-	t.Skip("requires HTTP client with configurable body size")
-}
-
-// TestResourceLimits_TooManyHeaders validates that a request with thousands
-// of headers doesn't cause the server to hang or panic when parsing.
-func TestResourceLimits_TooManyHeaders(t *testing.T) {
-	// Similar to body size, this documents the scenario of parsing limits.
-
-	t.Skip("requires HTTP client with header manipulation")
-}
-
-// TestResourceLimits_FileDescriptorExhaustion validates behavior when the
-// system is out of file descriptors. The server should handle the error
-// gracefully (refuse new connections cleanly, not panic).
-func TestResourceLimits_FileDescriptorExhaustion(t *testing.T) {
-	// This scenario requires simulating FD exhaustion at the OS level.
-	// Documents the requirement: server should handle EMFILE/ENFILE errors
-	// without crashing.
-
-	t.Skip("requires FD limit injection at OS level")
-}
-
-// TestResourceLimits_MemoryPressure validates that when the system is under
-// memory pressure (e.g., allocation fails), the server degrades gracefully
-// rather than panicking.
-func TestResourceLimits_MemoryPressure(t *testing.T) {
-	// Requires injecting allocation failures or reducing GOMAXPROCS/memory.
-
-	t.Skip("requires memory pressure injection capability")
-}
-
-// TestRateLimit_ApprovalsPerUser validates that if a rate limit is configured
-// per user (e.g., 10 approvals per hour), exceeding it is rejected cleanly
-// with a clear error message (not a generic 500).
-func TestRateLimit_ApprovalsPerUser(t *testing.T) {
-	_ = newFixture(t)
-
-	// Attempt to issue multiple approvals as the same user in rapid succession.
-	// If rate limits are enforced, we should see rejection or throttling.
-
-	// This test documents the scenario; implementation depends on whether
-	// rate limiting is exposed via the harness.
-
-	t.Logf("Rate limit test placeholder: would attempt %d rapid approvals", 5)
-}
-
-// TestRateLimit_LoginsPerIP validates that if rate limiting is configured
-// per client IP, exceeding it is handled cleanly (not a generic 500 or hang).
-func TestRateLimit_LoginsPerIP(t *testing.T) {
-	_ = newFixture(t)
-
-	// Similar to per-user, this would test IP-based rate limiting.
-
-	t.Logf("Rate limit test placeholder: would test IP-based throttling")
-}
-
-// TestEdgeCase_EmptyUserIDInApproval validates that an approval without a
-// user ID (malformed request) is rejected with a clear 400-level error, not
-// a panic or 500.
-func TestEdgeCase_EmptyUserIDInApproval(t *testing.T) {
-	// Requires crafting a malformed request via HTTP client.
-
-	t.Skip("requires direct HTTP crafting capability")
-}
-
 // TestEdgeCase_DuplicateApprovalClick validates that clicking approve twice
 // (network retry, accidental double-click) doesn't issue two certificates or
 // cause state corruption. The second click should be a no-op or rejected.
@@ -111,15 +38,6 @@ func TestEdgeCase_DuplicateApprovalClick(t *testing.T) {
 		// Multiple certs may exist if the test issued multiple logins, so just document
 		t.Logf("Certificate count: %d (expected exactly 1 per distinct login)", len(certs))
 	}
-}
-
-// TestEdgeCase_ApprovalBeforeLogin validates that attempting to approve a
-// login before the user has authenticated fails cleanly (e.g., 401 or
-// "approval not found").
-func TestEdgeCase_ApprovalBeforeLogin(t *testing.T) {
-	// Requires a crafted HTTP request to approve without prior authentication.
-
-	t.Skip("requires direct HTTP request capability")
 }
 
 // TestEdgeCase_CertificateWithExpiredToken validates that when a certificate
@@ -188,18 +106,4 @@ func TestEdgeCase_ConcurrentApprovalsOfSameLogin(t *testing.T) {
 	if err := login.Wait(t, waitFor); err != nil {
 		t.Logf("login resolution: %v", err)
 	}
-}
-
-// TestEdgeCase_LoginTimeoutNeverReceivesApproval validates that if a login
-// times out before approval (e.g., 1 minute waiting for approval), the
-// request is cleaned up properly and reusing the approval ID is rejected.
-func TestEdgeCase_LoginTimeoutNeverReceivesApproval(t *testing.T) {
-	_ = newFixture(t)
-
-	// Start a login, get the approval URL, but never approve.
-	// Let it wait beyond any configured timeout (typically 1-5 minutes).
-
-	// This scenario is documented; implementation depends on test timeout config.
-
-	t.Skip("requires extended timeout for login expiry")
 }

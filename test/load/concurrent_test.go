@@ -87,8 +87,8 @@ func testConcurrentLogins(t *testing.T, n int) {
 	// Check goroutine cleanup.
 	finalGoroutines := runtime.NumGoroutine()
 	leaked := finalGoroutines - baselineGoroutines
-	if leaked > 10 { // Allow some headroom for timing.
-		t.Logf("WARNING: possible goroutine leak: baseline %d, final %d, leaked ~%d",
+	if leaked > 5 {
+		t.Errorf("goroutine leak: baseline %d, final %d, leaked %d (threshold 5)",
 			baselineGoroutines, finalGoroutines, leaked)
 	}
 
@@ -99,41 +99,6 @@ func testConcurrentLogins(t *testing.T, n int) {
 	if allocDelta > 100_000_000 { // 100 MB threshold
 		t.Logf("WARNING: large memory growth: %d bytes allocated", allocDelta)
 	}
-}
-
-// TestSSEFanOut_100Subscribers measures how many concurrent SSE subscribers
-// the server can handle before degradation. Each subscriber waits for an
-// approval event. Tests server's ability to maintain many long-lived streams.
-func TestSSEFanOut_100Subscribers(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping heavy load test in short mode")
-	}
-	testSSEFanOut(t, 100)
-}
-
-func testSSEFanOut(t *testing.T, nSubscribers int) {
-	t.Helper()
-
-	idp := harness.NewIdentityProvider(t)
-	_ = harness.StartServer(t, idp, harness.ServerOptions{})
-
-	baselineGoroutines := runtime.NumGoroutine()
-
-	// Start N concurrent SSE subscribers (approval waits).
-	// In a real test, we'd open N concurrent /api/events?approvalID=X streams
-	// and verify they all receive an event when an approval happens.
-	// This is a placeholder documenting the scenario.
-
-	t.Logf("SSE fan-out test with %d subscribers: baseline %d goroutines",
-		nSubscribers, baselineGoroutines)
-
-	// TODO: Implement once SSE streaming is understood.
-	// The test would:
-	// 1. Start nSubscribers concurrent SSE clients
-	// 2. Trigger an approval
-	// 3. Verify all subscribers receive the event
-	// 4. Check goroutine and memory delta
-	// 5. Verify cleanup after subscribers close
 }
 
 // TestSerialNumberAllocation_Concurrent validates that each issued certificate
@@ -199,23 +164,8 @@ func TestSerialNumberAllocation_Concurrent(t *testing.T) {
 	}
 
 	if len(seen) != n {
-		t.Logf("expected %d unique serials, got %d", n, len(seen))
+		t.Errorf("expected %d unique serials, got %d", n, len(seen))
 	}
-}
-
-// TestApprovalRateLimiting_ConcurrentRequests validates that rate limiting
-// is enforced accurately when many users approve simultaneously, and that
-// rate limits don't leak requests or cause cascading failures.
-func TestApprovalRateLimiting_ConcurrentRequests(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping heavy load test in short mode")
-	}
-
-	// This test would verify that if rate limits are configured,
-	// concurrent approvals are throttled correctly and no requests are lost.
-	// Documents the scenario to be implemented.
-
-	t.Skip("requires rate limit configuration exposure")
 }
 
 // TestCertificateSigningThroughput_HighLoad measures the rate at which

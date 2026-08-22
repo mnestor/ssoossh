@@ -66,7 +66,7 @@ func testSoakLoad(t *testing.T, duration time.Duration, concurrency int) {
 				atomic.AddInt64(&totalRequests, 1)
 
 				login := harness.StartLogin(t, ssoossh, server.BaseURL, agent.Socket)
-				url := login.ApprovalURL(t, waitFor)
+				url := login.ApprovalURL(t, 10*time.Second)
 
 				browser := harness.StartBrowser(t)
 				browser.Navigate(t, url, `[data-testid="sign-in-button"]`)
@@ -75,7 +75,7 @@ func testSoakLoad(t *testing.T, duration time.Duration, concurrency int) {
 				browser.WaitVisible(t, `[data-testid="approval-view"]`)
 				browser.Click(t, `[data-testid="approve-button"]`)
 
-				if err := login.Wait(t, waitFor); err != nil {
+				if err := login.Wait(t, 10*time.Second); err != nil {
 					atomic.AddInt64(&totalFailures, 1)
 				} else {
 					atomic.AddInt64(&totalSuccesses, 1)
@@ -106,7 +106,9 @@ func testSoakLoad(t *testing.T, duration time.Duration, concurrency int) {
 	t.Logf("Soak test completed:")
 	t.Logf("  Total requests: %d", totalRequests)
 	t.Logf("  Successes: %d, Failures: %d", totalSuccesses, totalFailures)
-	t.Logf("  Success rate: %.2f%%", 100.0*float64(totalSuccesses)/float64(totalRequests))
+	if totalRequests > 0 {
+		t.Logf("  Success rate: %.2f%%", 100.0*float64(totalSuccesses)/float64(totalRequests))
+	}
 	t.Logf("  Goroutines: baseline %d, max %d, final %d",
 		baselineGoroutines, maxGoroutines, finalGoroutines)
 	t.Logf("  Memory: baseline %d MB, max %d MB, final %d MB",
@@ -122,19 +124,18 @@ func testSoakLoad(t *testing.T, duration time.Duration, concurrency int) {
 		t.Errorf("success rate too low: %.2f%%", 100.0*successRate)
 	}
 
-	// Verify goroutine cleanup.
+	// Verify goroutine cleanup (tighter than concurrent tests).
 	goroutineLeaked := finalGoroutines - baselineGoroutines
-	if goroutineLeaked > 20 { // Allow some headroom
-		t.Errorf("possible goroutine leak: %d goroutines not cleaned up",
-			goroutineLeaked)
+	if goroutineLeaked > 5 {
+		t.Errorf("goroutine leak in soak: baseline %d, final %d, leaked %d (threshold 5)",
+			baselineGoroutines, finalGoroutines, goroutineLeaked)
 	}
 
 	// Verify memory didn't grow unbounded.
 	// Allow up to 200 MB growth over baseline.
 	memoryGrowth := int64(finalMemStats.Alloc) - int64(baselineMemStats.Alloc)
 	if memoryGrowth > 200_000_000 {
-		t.Errorf("excessive memory growth: %d MB",
-			memoryGrowth/1_000_000)
+		t.Errorf("excessive memory growth: %d MB", memoryGrowth/1_000_000)
 	}
 }
 
@@ -166,7 +167,7 @@ func TestStress_BurstApprovals(t *testing.T) {
 			defer wg.Done()
 
 			login := harness.StartLogin(t, ssoossh, server.BaseURL, agent.Socket)
-			url := login.ApprovalURL(t, waitFor)
+			url := login.ApprovalURL(t, 10*time.Second)
 
 			urlMu.Lock()
 			approvalURLs[idx] = url
@@ -205,20 +206,4 @@ func TestStress_BurstApprovals(t *testing.T) {
 	}
 
 	t.Logf("Burst approval test: %d/%d approvals succeeded", successCount, n)
-}
-
-// TestIdleness_LongLivedSSEStream validates that the server can hold open
-// an idle SSE stream for extended periods without hanging or consuming
-// excessive resources.
-func TestIdleness_LongLivedSSEStream(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping idleness test in short mode")
-	}
-
-	// Scenario: Open an SSE stream and hold it open for 5 minutes without activity.
-	// Verify server doesn't crash, doesn't consume growing memory/goroutines,
-	// and can resume sending events when they appear.
-
-	// This requires SSE streaming implementation details.
-	t.Skip("requires SSE streaming implementation")
 }

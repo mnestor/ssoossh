@@ -27,17 +27,6 @@ func TestShutdown_SIGTERMWithInFlightRequests(t *testing.T) {
 	// The shutdown should complete within a timeout (no hanging).
 }
 
-// TestShutdown_SIGTERMWithOpenSSEStreams validates that when a SIGTERM is
-// received with open SSE streams, the server closes all streams cleanly and
-// notifies clients appropriately, rather than hanging or leaving streams open.
-func TestShutdown_SIGTERMWithOpenSSEStreams(t *testing.T) {
-	// This scenario requires SSE streaming to be implemented.
-	// Documents the requirement: when shutting down, all SSE streams must
-	// be closed and cleanup'd without goroutine leaks.
-
-	t.Skip("requires SSE streaming implementation")
-}
-
 // TestShutdown_SIGTERMDuringCertificateSigning validates that if a SIGTERM
 // arrives while a certificate signing operation is in progress, the operation
 // either completes or is aborted cleanly (not left in a half-signed state).
@@ -73,21 +62,6 @@ func TestShutdown_GracefulWithDatabaseConnections(t *testing.T) {
 	// This test documents that the fixture exercises this requirement.
 
 	// Exiting the test will trigger cleanup of database connections.
-}
-
-// TestShutdown_TimeoutPreventingHang validates that if graceful shutdown
-// hangs (e.g., a goroutine won't exit), the server has a timeout mechanism
-// that forces shutdown to prevent indefinite hanging.
-func TestShutdown_TimeoutPreventingHang(t *testing.T) {
-	_ = newFixture(t)
-
-	// In a real test, we'd inject a goroutine that never exits and verify
-	// that the server's shutdown timeout forces termination.
-
-	// This test documents the requirement; implementation depends on the
-	// server's shutdown mechanism.
-
-	t.Skip("requires goroutine hang injection capability")
 }
 
 // TestRecovery_AfterShutdown validates that after the server is shut down
