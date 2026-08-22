@@ -793,16 +793,57 @@ func (s *CertRequestService) Wait(ctx context.Context, requestID string) (status
 			continue
 		}
 
+		// Calculate when this request expires based on its creation time and TTL.
+		// Create a timer to wake the loop at expiration so reconcileStatus can mark
+		// it expired, rather than leaving the client blocked indefinitely. A per-Wait-call
+		// timer (computed from req.CreatedAt) ensures a reconnecting client doesn't get
+		// an infinite extension by calling Wait every 4 minutes on a 5-minute TTL.
+		var expireC <-chan time.Time
+		if ttl := s.config.CertOptions.RequestTTL; ttl > 0 {
+			expireTime := req.CreatedAt.Add(ttl)
+			timeUntilExpire := time.Until(expireTime)
+			if timeUntilExpire > 0 {
+				expireTimer := time.NewTimer(timeUntilExpire)
+				defer expireTimer.Stop()
+				expireC = expireTimer.C
+			}
+		}
+
+		// Block until an incoming message, context cancellation, or request expiration.
+		if err := s.waitForUpdate(ctx, messages, expireC); err != nil {
+			return "", "", "", err
+		}
+	}
+}
+
+// waitForUpdate blocks until an incoming message, context cancellation, or
+// request expiration. expireC may be nil (no TTL configured), in which case
+// the expiration case is not selected. Returns nil if a message arrived or
+// the timer fired (allowing Wait's loop to continue), or ctx.Err() if the
+// context was cancelled.
+func (s *CertRequestService) waitForUpdate(ctx context.Context, messages <-chan *message.Message, expireC <-chan time.Time) error {
+	if expireC == nil {
 		select {
 		case msg, ok := <-messages:
 			if ok {
 				msg.Ack()
 			}
-			continue
 		case <-ctx.Done():
-			return "", "", "", ctx.Err()
+			return ctx.Err()
+		}
+	} else {
+		select {
+		case msg, ok := <-messages:
+			if ok {
+				msg.Ack()
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-expireC:
+			// Request may have expired; loop continues to reconcileStatus
 		}
 	}
+	return nil
 }
 
 // lookupRequest fetches requestID, translating a not-found row into

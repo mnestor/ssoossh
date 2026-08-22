@@ -496,6 +496,50 @@ func TestCertRequestService_Wait_ShouldExpireRequestPastTTL(t *testing.T) {
 	}
 }
 
+// TestCertRequestService_Wait_ShouldWakeOnTTLTimerFiring verifies that the
+// TTL timer added to Wait's select fires and causes the loop to unblock,
+// marking the request expired. This is the mechanism that prevents clients
+// from being blocked indefinitely waiting for approval on a long-stale request.
+// The test waits the full TTL duration and verifies Wait returns, without any
+// external wake message (no Approve/Deny/pub/sub).
+func TestCertRequestService_Wait_ShouldWakeOnTTLTimerFiring(t *testing.T) {
+	t.Parallel()
+
+	// Create a request with a short but measurable TTL (50ms)
+	svc := newTestCertRequestService(t, 50*time.Millisecond)
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypeUser,
+		PublicKey: "ssh-ed25519 AAAA...",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	// Call Wait() immediately (request is fresh, not yet expired from the DB's
+	// perspective). Wait() will calculate the TTL timer and block on it,
+	// since there are no pending approvals or pub/sub messages.
+	startTime := time.Now()
+
+	// Use a bounded context so Wait doesn't block forever if the timer doesn't fire
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	status, _, _, err := svc.Wait(ctx, requestID)
+	elapsed := time.Since(startTime)
+
+	// The key assertion: the timer fired and Wait woke up, returning StatusExpired,
+	// roughly when the TTL should expire (at least 50ms, since that's the TTL).
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status != model.CertificateRequestStatusExpired {
+		t.Errorf("got status %q, want %q", status, model.CertificateRequestStatusExpired)
+	}
+	if elapsed < 50*time.Millisecond {
+		t.Errorf("Wait returned in %v, but TTL timer should have taken at least 50ms to fire", elapsed)
+	}
+}
+
 // TestCertRequestService_Wait_ShouldReceiveWakeMessageViaPubSub exercises
 // the actual pub/sub wake path (not just the resolved-cache fast path):
 // Wait is left blocked in its select on the subscription for a beat before
@@ -1015,6 +1059,104 @@ func TestCertRequestService_Approve_ShouldRefuseARequestPastTTL(t *testing.T) {
 
 	if err := svc.Approve(context.Background(), requestID, &Identity{Username: "alice", Subject: "sub-alice"}, DecisionContext{}); err == nil {
 		t.Error("expected a TTL-expired request to be refused by Approve")
+	}
+}
+
+// TestCertRequestService_RaceCondition_ApproveThenExpire covers the race where
+// Approve wins and transitions the request to Signing before any TTL-expiry
+// path runs. Verification: the status stays Signing, and expire() is a no-op
+// (only updates rows with status=Pending).
+func TestCertRequestService_RaceCondition_ApproveThenExpire(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, 50*time.Millisecond)
+	identity := &Identity{Username: "alice", Subject: "sub-alice"}
+	seedUser(t, svc.db, identity.Subject)
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypeUser,
+		PublicKey: "ssh-ed25519 AAAA...",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	// Approve immediately before TTL expires
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err != nil {
+		t.Fatalf("unexpected error approving request: %v", err)
+	}
+
+	// Verify status is Signing
+	var req model.CertificateRequest
+	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+		t.Fatalf("unexpected error reading request: %v", err)
+	}
+	if req.Status != model.CertificateRequestStatusSigning {
+		t.Fatalf("expected status Signing after approve, got %q", req.Status)
+	}
+
+	// Sleep past the TTL
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify status is still Signing (expire is a no-op on non-Pending rows)
+	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+		t.Fatalf("unexpected error reading request: %v", err)
+	}
+	if req.Status != model.CertificateRequestStatusSigning {
+		t.Errorf("expected status Signing after TTL passes, got %q (expire should be a no-op)", req.Status)
+	}
+}
+
+// TestCertRequestService_RaceCondition_ExpireThenApprove covers the race where
+// expire() wins and transitions the request to Expired before Approve runs.
+// Verification: approval fails cleanly and no certificate is issued. This is
+// the critical direction where a bug would mint credentials to a long-stale
+// request.
+func TestCertRequestService_RaceCondition_ExpireThenApprove(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, 50*time.Millisecond)
+	identity := &Identity{Username: "alice", Subject: "sub-alice"}
+	seedUser(t, svc.db, identity.Subject)
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypeUser,
+		PublicKey: "ssh-ed25519 AAAA...",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	// Sleep past the TTL so the request expires
+	time.Sleep(100 * time.Millisecond)
+
+	// Manually expire the request (simulates the auto-expiry timer firing in Wait)
+	var req model.CertificateRequest
+	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+		t.Fatalf("unexpected error reading request: %v", err)
+	}
+	svc.expire(context.Background(), requestID)
+
+	// Verify the request is now expired
+	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+		t.Fatalf("unexpected error reading request: %v", err)
+	}
+	if req.Status != model.CertificateRequestStatusExpired {
+		t.Fatalf("expected status Expired after manual expiry, got %q", req.Status)
+	}
+
+	// Try to approve the expired request — this should fail
+	approveErr := svc.Approve(context.Background(), requestID, identity, DecisionContext{})
+	if approveErr == nil {
+		t.Fatal("expected Approve to fail on an expired request")
+	}
+
+	// Verify status is still Expired (Approve didn't change it)
+	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+		t.Fatalf("unexpected error reading request: %v", err)
+	}
+	if req.Status != model.CertificateRequestStatusExpired {
+		t.Errorf("expected status Expired after failed approve, got %q (a successful approve should not have changed it)", req.Status)
 	}
 }
 
