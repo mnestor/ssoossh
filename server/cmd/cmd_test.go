@@ -56,8 +56,8 @@ func TestNewCommand_ShouldRegisterVersionCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected to find a version subcommand, got error: %v", err)
 	}
-	if found.Use != "version" {
-		t.Errorf("got Use %q, want %q", found.Use, "version")
+	if found.Name() != "version" {
+		t.Errorf("got name %q, want %q", found.Name(), "version")
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"sync"
 
 	"github.com/bep/simplecobra"
 	"github.com/italypaleale/go-kit/signals"
@@ -20,6 +21,11 @@ var _ simplecobra.Commander = (*RootCommand)(nil)
 // RootCommand is the root `ssoosshd` command. The bootstrap process runs here.
 type RootCommand struct {
 	commands []simplecobra.Commander
+
+	// cobraCmd is populated during Init and accessed by tests to get the
+	// underlying cobra.Command without executing anything.
+	cobraCmd *cobra.Command
+	mu       sync.Mutex
 }
 
 // Name implements simplecobra.Commander.
@@ -30,6 +36,10 @@ func (r *RootCommand) Commands() []simplecobra.Commander { return r.commands }
 
 // Init implements simplecobra.Commander.
 func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cobraCmd = cd.CobraCommand
+
 	cmd := cd.CobraCommand
 	cmd.Short = "The ssoossh server — an SSH certificate authority that issues against your OIDC identity provider."
 	cmd.Long = "The ssoossh server is the trust anchor and policy decision point for SSH access. " +
@@ -59,6 +69,14 @@ func (r *RootCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args 
 	return bootstrap.Bootstrap(cd.CobraCommand)
 }
 
+// CobraCommand returns the underlying cobra.Command. Only available after Init
+// has been called. For testing and introspection.
+func (r *RootCommand) CobraCommand() *cobra.Command {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.cobraCmd
+}
+
 func newExec() (*simplecobra.Exec, error) {
 	root := &RootCommand{
 		commands: []simplecobra.Commander{
@@ -72,17 +90,27 @@ func newExec() (*simplecobra.Exec, error) {
 // test interfaces while using simplecobra for the actual command execution.
 type Command struct {
 	exec *simplecobra.Exec
+	root *RootCommand
 	args []string
 }
 
 // NewCommand builds the ssoosshd root command using simplecobra.
 func NewCommand() *Command {
-	exec, err := newExec()
+	// The root's Init method will be called during New(), which stores a reference
+	// to the cobra.Command in the root itself.
+	root := &RootCommand{
+		commands: []simplecobra.Commander{
+			newVersionCommand(),
+		},
+	}
+
+	exec, err := simplecobra.New(root)
 	if err != nil {
 		slog.Error("failed to initialize command tree", "error", err)
 		os.Exit(1)
 	}
-	return &Command{exec: exec, args: []string{}}
+
+	return &Command{exec: exec, root: root, args: nil}
 }
 
 // Use returns the command's usage line. For testing and introspection.
@@ -90,27 +118,42 @@ func (c *Command) Use() string {
 	return "ssoosshd"
 }
 
-// PersistentFlags returns the root command's persistent flags. Reconstructs
-// the cobra command tree to provide the interface tests expect.
+// PersistentFlags returns the root command's persistent flags.
 func (c *Command) PersistentFlags() *pflag.FlagSet {
-	_, rootCD, _ := c.commandeer()
-	return rootCD.CobraCommand.PersistentFlags()
+	cmd := c.root.CobraCommand()
+	if cmd == nil {
+		return nil
+	}
+	return cmd.PersistentFlags()
 }
 
 // Flags returns the root command's local flags.
 func (c *Command) Flags() *pflag.FlagSet {
-	_, rootCD, _ := c.commandeer()
-	return rootCD.CobraCommand.Flags()
+	cmd := c.root.CobraCommand()
+	if cmd == nil {
+		return nil
+	}
+	return cmd.Flags()
 }
 
-// SetArgs sets the arguments to parse.
+// SetArgs sets the arguments to parse. Used by tests. This sets both the
+// internal args for ExecuteContext and the cobra.Command's args.
 func (c *Command) SetArgs(args []string) {
 	c.args = args
+	cmd := c.root.CobraCommand()
+	if cmd != nil {
+		cmd.SetArgs(args)
+	}
 }
 
-// ExecuteContext executes the command with the given context.
+// ExecuteContext executes the command with the given context and the args
+// previously set via SetArgs, or os.Args[1:] if none were set.
 func (c *Command) ExecuteContext(ctx context.Context) error {
-	_, err := c.exec.Execute(ctx, c.args)
+	args := c.args
+	if args == nil {
+		args = os.Args[1:]
+	}
+	_, err := c.exec.Execute(ctx, args)
 	return err
 }
 
@@ -127,27 +170,14 @@ func (c *Command) Execute() {
 
 // Find locates a subcommand by name. For testing.
 func (c *Command) Find(args []string) (*cobra.Command, []string, error) {
-	_, rootCD, _ := c.commandeer()
-	return rootCD.CobraCommand.Find(args)
+	cmd := c.root.CobraCommand()
+	if cmd == nil {
+		return nil, nil, nil
+	}
+	return cmd.Find(args)
 }
 
 // Command returns the underlying cobra command. For testing.
 func (c *Command) Command() *cobra.Command {
-	_, rootCD, _ := c.commandeer()
-	return rootCD.CobraCommand
-}
-
-// commandeer initializes the command tree and returns the root commandeer.
-// This is called lazily the first time an interface method needs it.
-func (c *Command) commandeer() (*simplecobra.Exec, *simplecobra.Commandeer, error) {
-	// Create a new Exec instance to initialize the command tree.
-	// We need a fresh one to get the properly initialized Commandeer.
-	exec, err := newExec()
-	if err != nil {
-		return nil, nil, err
-	}
-	// Initialize the command tree by executing a help command.
-	// This triggers the Init methods without actually running anything.
-	rootCD, _ := exec.Execute(context.Background(), []string{"--help"})
-	return exec, rootCD, nil
+	return c.root.CobraCommand()
 }
