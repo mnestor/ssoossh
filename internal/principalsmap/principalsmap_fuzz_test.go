@@ -42,7 +42,7 @@ func FuzzPrincipalsMapYAML(f *testing.F) {
 		}
 
 		// If we got a map, structure should be sound
-		for account, principals := range m {
+		for _, principals := range m {
 			if principals != nil {
 				for _, p := range principals {
 					_ = p // verify no panic on each principal
@@ -54,18 +54,20 @@ func FuzzPrincipalsMapYAML(f *testing.F) {
 
 // FuzzPrincipalsMapAllowed tests the Allowed method.
 func FuzzPrincipalsMapAllowed(f *testing.F) {
-	f.Add("alice", []string{"alice"})
-	f.Add("alice", []string{})
-	f.Add("", []string{})
-	f.Add("bob", []string{"admin", "alice"})
+	f.Add("alice")
+	f.Add("bob")
+	f.Add("")
+	f.Add("unknown")
 
-	f.Fuzz(func(t *testing.T, account string, certPrincipals []string) {
+	f.Fuzz(func(t *testing.T, account string) {
 		m := PrincipalsMap{
 			"alice": []string{"alice", "admin"},
 			"bob":   []string{"bob"},
 		}
 
-		// Allowed should never panic
-		_ = m.Allowed(account, certPrincipals)
+		// Allowed should never panic with any account name
+		_ = m.Allowed(account, []string{})
+		_ = m.Allowed(account, []string{"alice"})
+		_ = m.Allowed(account, []string{"admin"})
 	})
 }
