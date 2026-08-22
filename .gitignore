@@ -117,3 +117,5 @@ pnpm-audit-results.json
 
 # ignore the gpg private key
 private.pgp
+# Compiled Go test binaries (go test -c, or an interrupted run)
+*.test
