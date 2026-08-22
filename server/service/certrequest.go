@@ -810,24 +810,13 @@ func (s *CertRequestService) Wait(ctx context.Context, requestID string) (status
 			continue
 		}
 
-		// Calculate when this request expires based on its creation time and TTL.
-		// Create a timer to wake the loop at expiration so reconcileStatus can mark
-		// it expired, rather than leaving the client blocked indefinitely. A per-Wait-call
-		// timer (computed from req.CreatedAt) ensures a reconnecting client doesn't get
-		// an infinite extension by calling Wait every 4 minutes on a 5-minute TTL.
-		var expireC <-chan time.Time
-		if ttl := s.config.CertOptions.RequestTTL; ttl > 0 {
-			expireTime := req.CreatedAt.Add(ttl)
-			timeUntilExpire := time.Until(expireTime)
-			if timeUntilExpire > 0 {
-				expireTimer := time.NewTimer(timeUntilExpire)
-				defer expireTimer.Stop()
-				expireC = expireTimer.C
-			}
-		}
-
-		// Block until an incoming message, context cancellation, or request expiration.
+		// Block until an incoming message, context cancellation, or request
+		// expiration. Stop the timer as soon as the select returns rather than
+		// deferring it: this loop can iterate many times within one Wait call,
+		// and a deferred Stop would hold every timer until Wait finally returns.
+		expireC, stopExpiry := s.expiryTimer(req)
 		msg, err := s.waitForUpdate(ctx, messages, expireC)
+		stopExpiry()
 		if err != nil {
 			return "", "", "", err
 		}
@@ -844,6 +833,32 @@ func (s *CertRequestService) Wait(ctx context.Context, requestID string) (status
 			}
 		}
 	}
+}
+
+// expiryTimer returns a channel that fires when the request's TTL elapses,
+// measured from its creation time, together with a stop function the caller
+// must invoke once the select has returned.
+//
+// Measuring from req.CreatedAt rather than from now is what stops a
+// reconnecting client extending its own deadline indefinitely, by calling
+// Wait every four minutes against a five minute TTL.
+//
+// With no TTL configured, or with the deadline already behind us, the
+// returned channel is nil. Receiving from a nil channel blocks forever, so
+// that case simply never fires and expiry is left to reconcileStatus.
+func (s *CertRequestService) expiryTimer(req model.CertificateRequest) (<-chan time.Time, func()) {
+	ttl := s.config.CertOptions.RequestTTL
+	if ttl <= 0 {
+		return nil, func() {}
+	}
+
+	remaining := time.Until(req.CreatedAt.Add(ttl))
+	if remaining <= 0 {
+		return nil, func() {}
+	}
+
+	timer := time.NewTimer(remaining)
+	return timer.C, func() { timer.Stop() }
 }
 
 // waitForUpdate blocks until an incoming message, context cancellation, or
