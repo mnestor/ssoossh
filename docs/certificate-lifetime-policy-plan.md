@@ -350,7 +350,7 @@ Notes on this draft:
    service account is chosen by the approver in the web UI from their
    entitled set, not named by the client, so there is no new request-body
    field. The approve handler validates the choice against
-   `identity.ServiceAccounts`. A column on the request (or the enrollment)
+   `identity.ServiceAccounts`. A column on the request (or the enrollment) (feat/service-certs has added certificate_requests.service_account). STEP 1 note: This policy engine computes duration at approval time; the service enrollment contract is evaluate-at-enrollment-time, never re-derive-at-retrieve-time.
    is still needed to record which account was chosen.
 2. ~~**Reverse-DNS lookup mechanics**~~ — moot. Reverse-DNS scoring is
    dropped; see "This supersedes the scoring draft below".
@@ -391,6 +391,20 @@ Notes on this draft:
    the same engine from step 1.
 
 Steps 1 and 2 are worth doing regardless of whether the UI is ever built.
+
+## STEP 1 Complete: Config-File-Only Policy Engine
+
+**Status:** Implemented and verified.
+
+### Settled decisions:
+
+- **SourceAddresses:** UN-DROPPED for service certificates only. Narrowed through `pinSourceAddress` config field in source policy rules. User certificates do not support source-address pinning (per plan line 62-65: "Not for user certificates"). This is the narrowing-only invariant: the policy can only restrict what addresses are allowed (to just the source IP), never expand them.
+
+- **ForceCommand:** STAYS DROPPED (fail-closed). The plan explicitly states line 64: "stays out of subnet policy entirely — 'which command' is not a property of a network.'" No narrowing mechanism for it. This is an intentional design decision, not missing functionality. Waiting for this feature to exist is complete.
+
+- **Certificate on the wire in multi-instance wake message:** Accepted, fine. Already published as public data. (Marked resolved in docs/multi-instance-safety-plan.md.)
+
+- **Service-account linkage:** Evaluated at enrollment time, never re-derived at retrieve time. feat/service-certs has added `certificate_requests.service_account` schema column.
 
 ## To resume this
 

@@ -175,11 +175,7 @@ Beyond that:
   explicit setting. Inferring is fewer knobs but conflates transport choice
   with deployment topology — a single instance might reasonably use NATS to
   isolate the signer.
-- **Is the certificate acceptable on the wire in the wake message?** It's
-  already published that way today, and a certificate is public data, but
-  multi-instance means it now crosses the network to reach the waiting
-  instance. That's a mTLS/authorization question for the NATS subject layout
-  (`docs/signer-split-deferred.md` covers the model), not a new exposure in kind.
+- ~~**Is the certificate acceptable on the wire in the wake message?**~~ **Resolved:** Yes, certificate on the wire is fine. It is already published that way and is public data. Multi-instance crosses the network but that is mTLS/authorization (NATS subject layout per `docs/signer-split-deferred.md`), not a new exposure in kind.
 - **Does the 410 path get noisier?** With instances restarting behind a load
   balancer, in-flight deliveries are lost more often than in a single-process
   deployment. If that proves common, persisting certificates (the option
