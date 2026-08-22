@@ -24,7 +24,7 @@ const Mask = 1<<63 - 1
 //
 // The returned serial is guaranteed to have the high bit clear (Mask applied),
 // but may be zero. Code treating zero as a sentinel must check explicitly;
-// the allocation does not reserve zero as "unset."
+// the allocation does not reserve zero as a sentinel value.
 func New() (uint64, error) {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {

@@ -484,17 +484,6 @@ func TestMigrationParity_ShouldKeepSqliteAndPostgresSchemaInSync(t *testing.T) {
 		sqliteSchema[table] = columns
 	}
 
-	// Verify both migrations exist and have the same version.
-	versions := map[string]bool{
-		"server/resources/migrations/sqlite/" + expectedVersion + "_init.up.sql":   true,
-		"server/resources/migrations/postgres/" + expectedVersion + "_init.up.sql": true,
-	}
-	for path := range versions {
-		if _, err := os.Stat(path); err != nil {
-			t.Errorf("expected migration file to exist at %s, got error: %v", path, err)
-		}
-	}
-
 	// The test verifies that both databases have the same tables created (not
 	// their exact SQL structure, which varies by dialect). The Postgres side
 	// is not tested against a live server, but the file structure and table

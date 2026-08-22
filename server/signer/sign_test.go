@@ -80,6 +80,7 @@ func newTestJob(t *testing.T) certmsg.SigningJob {
 		KeyID:       "alice",
 		ValidAfter:  now,
 		ValidBefore: now.Add(time.Hour),
+		Serial:      12345, // Pre-allocated serial
 		RequestedOptions: certmsg.RequestedOptions{
 			Extensions: []string{"permit-pty"},
 		},
@@ -168,22 +169,22 @@ func TestSign_ShouldMapJobFieldsOntoTheCertificate(t *testing.T) {
 	}
 }
 
-func TestSign_ShouldProduceUniqueSerials(t *testing.T) {
+func TestSign_ShouldUsePreAllocatedSerial(t *testing.T) {
 	t.Parallel()
 
 	ks, _ := newTestKeySource(t)
+	const expectedSerial = uint64(67890)
 
-	first, err := Sign(context.Background(), ks, newTestJob(t), false)
+	job := newTestJob(t)
+	job.Serial = expectedSerial
+	reply, err := Sign(context.Background(), ks, job, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	second, err := Sign(context.Background(), ks, newTestJob(t), false)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
 
-	if first.Serial == second.Serial {
-		t.Errorf("expected distinct serials, got %d twice", first.Serial)
+	// The signer should use the serial from the job, not generate a new one.
+	if reply.Serial != expectedSerial {
+		t.Errorf("expected reply serial %d, got %d", expectedSerial, reply.Serial)
 	}
 }
 
