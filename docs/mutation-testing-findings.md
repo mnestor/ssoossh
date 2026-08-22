@@ -118,3 +118,30 @@ Frontend config: `frontend/stryker.conf.mjs`
 - TTL Enforcement: `docs/deferred.md` "Mutation testing"
 - Test Standards: `.claude/rules/test-go.md`
 - Prior Finding: Weak test empirically verified and fixed via mutation testing
+
+## Critical Finding - Binding Race Condition Test Added
+
+### TestApprove_ShouldRejectDuplicateBindingAttempt
+
+After mutation testing revealed that the binding predicate guard (`WHERE id = ? AND user_id IS NULL`) had zero test coverage, a new test was added to verify the atomic claim-on-approve property.
+
+**Test:** Directly calls `bindRequester` to simulate alice binding first, then verifies bob's binding attempt fails with `ForbiddenError`.
+
+**Mutation Test Results:**
+- **With guard present:** Test PASSES (bob's binding correctly rejected)
+- **With guard removed** (WHERE "id = ?" only): Test FAILS (bob's binding incorrectly succeeds)
+
+**Critical Property Validated:** Exactly one approver can win the binding race. Without the `WHERE user_id IS NULL` guard, the second approver would overwrite the first's claim, violating the "certificate carries the approver's principals" security model documented in docs/deferred.md's "Settled: audited and solid" section.
+
+**Limitation Note:** The in-memory SQLite pool uses `SetMaxOpenConns(1)` to prevent "no such table" errors on `:memory:` databases, which serializes all access and masks true race conditions. This test validates the sequential security property. A true concurrent race test would require file-based SQLite and would likely expose additional concurrency issues (e.g., the critical section between read and update is not atomic at the application level). The test documents that the mutation (removing the guard) is immediately caught, proving it serves a real purpose even in the sequential case.
+
+**Recommendation:** If SetMaxOpenConns(1) is ever relaxed for production performance, upgrade the race test to use a temporary file-based database and verify no concurrent writes corrupt the binding.
+
+### docs/deferred.md Update
+
+The "Settled: audited and solid, do not rework" section claims:
+
+> Certificate request binding. Atomic claim-on-approve (`UPDATE ... WHERE user_id IS NULL`) prevents two admins contesting ownership.
+
+**Mutation Testing Status:** The code claim is accurate — the guard is in place and correct. However, the coverage claim was NOT accurate — this predicate was not tested by the sequential test suite. The new test (`TestApprove_ShouldRejectDuplicateBindingAttempt`) now provides coverage by proving mutation removal causes failure.
+

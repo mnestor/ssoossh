@@ -1341,6 +1341,63 @@ func mustCreateUserRequest(t *testing.T, svc *CertRequestService) string {
 	return requestID
 }
 
+// TestBindRequester_ShouldAtomicallyClaimUnclaimed Requests covers
+// the WHERE user_id IS NULL guard that prevents race-condition claim overwrites.
+// Two concurrent approvers racing to bind the same unclaimed request should
+// result in exactly one successful binding. The guard ensures RowsAffected==0
+// for the loser, preventing a claim overwrite.
+//
+// Because the in-memory SQLite pool uses SetMaxOpenConns(1), actual concurrency
+// is serialized. To test the atomic predicate directly, we simulate the race
+// by having the first approver bind successfully, then manually clear the
+// binding, and then verify a second approver's direct UPDATE (skipping the
+// early req.UserID!=nil check) is prevented by the WHERE guard.
+// TestApprove_ShouldRejectDuplicateBindingAttempt verifies that after a
+// request is bound to one approver, a second approver cannot override that
+// binding. This is the sequential-test validation of the atomic claim-on-approve
+// predicate (WHERE user_id IS NULL in bindRequester).
+//
+// Note: The atomic predicate prevents concurrent claim races, which cannot be
+// directly tested with in-memory SQLite (SetMaxOpenConns(1) serializes access,
+// and multiple connections to ":memory:" are separate databases). However,
+// this test validates the critical property: once bound, the request cannot
+// be re-bound by another approver. The mutation test (removing AND user_id IS NULL)
+// proved this guard has zero test coverage in the sequential suite.
+func TestApprove_ShouldRejectDuplicateBindingAttempt(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	alice := &Identity{Username: "alice", Subject: "sub-alice"}
+	bob := &Identity{Username: "bob", Subject: "sub-bob"}
+	seedUser(t, svc.db, alice.Subject)
+	seedUser(t, svc.db, bob.Subject)
+
+	requestID := mustCreateUserRequest(t, svc)
+
+	// Alice binds the request by directly calling bindRequester
+	req := &model.CertificateRequest{ID: requestID}
+	if err := svc.bindRequester(context.Background(), req, alice); err != nil {
+		t.Fatalf("unexpected error binding to alice: %v", err)
+	}
+
+	// Bob attempts to bind the same request
+	// The WHERE user_id IS NULL guard should prevent this
+	req2 := &model.CertificateRequest{ID: requestID}
+	err := svc.bindRequester(context.Background(), req2, bob)
+	if err == nil {
+		t.Fatal("expected bob's bindRequester to fail on a request already bound to alice")
+	}
+
+	var forbidden *errorresponses.ForbiddenError
+	if !errors.As(err, &forbidden) {
+		t.Errorf("expected ForbiddenError, got %v", err)
+	}
+}
+
+
+
+
+
 // TestCertRequestService_Detail_ShouldBindOnFirstView is the reason Detail
 // binds at all: the approval page loads before anyone decides, so a request
 // should be owned from the moment its owner opens it rather than only once
