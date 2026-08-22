@@ -21,6 +21,7 @@ func main() {
 	}
 
 	outDir := os.Args[1]
+	//nolint:gosec // G703: path traversal is intentional - outDir is from command-line argument
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		log.Fatalf("Failed to create output directory: %v", err)
 	}

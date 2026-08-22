@@ -243,7 +243,10 @@ func CobraCommandForManpage() (*cobra.Command, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // immediately cancel to avoid blocking
 
-	rootCD, _ := exec.Execute(ctx, []string{})
+	rootCD, execErr := exec.Execute(ctx, []string{})
+	if execErr != nil {
+		return nil, fmt.Errorf("execute for initialization: %w", execErr)
+	}
 	if rootCD == nil {
 		return nil, fmt.Errorf("failed to initialize cobra command tree")
 	}

@@ -56,7 +56,7 @@ func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
 
 	// Register flag completion functions. Config flag completion uses directory/file globbing.
 	if cfgFlag := cmd.PersistentFlags().Lookup("config"); cfgFlag != nil {
-		_ = cmd.RegisterFlagCompletionFunc("config",
+		if err := cmd.RegisterFlagCompletionFunc("config",
 			func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 				// Suggest common config file locations for bash completion
 				return []string{
@@ -64,7 +64,10 @@ func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
 					"/etc/ssoosshd.yaml",
 					"/etc/ssoossh/ssoosshd.yaml",
 				}, cobra.ShellCompDirectiveNoSpace
-			})
+			}); err != nil {
+			// Completion registration failure is non-fatal
+			slog.Warn("failed to register config flag completion", "error", err)
+		}
 	}
 
 	return nil
