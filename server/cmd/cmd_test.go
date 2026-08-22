@@ -27,8 +27,8 @@ func TestNewCommand_ShouldSetUseToSsoosshd(t *testing.T) {
 	t.Parallel()
 
 	c := NewCommand()
-	if c.Use != "ssoosshd" {
-		t.Errorf("got Use %q, want %q", c.Use, "ssoosshd")
+	if c.Use() != "ssoosshd" {
+		t.Errorf("got Use %q, want %q", c.Use(), "ssoosshd")
 	}
 }
 
@@ -69,10 +69,10 @@ func TestNewCommand_VersionShouldRunWithoutBootstrap(t *testing.T) {
 	// broken. See docs/release-phase6-artifacts.md, "Version stamping".
 	c := NewCommand()
 	c.SetArgs([]string{"version"})
-	// c.Command.Execute(), not c.Execute(): the latter is this package's
+	// c.Command().Execute(), not c.Execute(): the latter is this package's
 	// own wrapper (below) and calls os.Exit(1) on error, which would kill
 	// the test process instead of failing the test.
-	if err := c.Command.Execute(); err != nil {
+	if err := c.Command().Execute(); err != nil {
 		t.Fatalf("expected version to run without error, got %v", err)
 	}
 }
