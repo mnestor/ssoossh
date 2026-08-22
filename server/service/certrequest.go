@@ -17,11 +17,11 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/internal/fipsmode"
+	"github.com/mnestor/ssoossh/internal/serial"
 	"github.com/mnestor/ssoossh/server/certmsg"
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
-
-	"github.com/mnestor/ssoossh/internal/serial"	"github.com/mnestor/ssoossh/server/utils/errorresponses"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // NewCertRequestParams are the client-supplied inputs to CreateRequest.
@@ -619,6 +619,14 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 		return fmt.Errorf("failed to compute key ID: %w", err) // excluded from coverage: parseKeyIDTemplate already executed policy.keyIDTemplate once against a zero-value keyIDTemplateData at construction to catch unresolvable fields; keyIDTemplateData is a flat struct of strings, so executing it again against real request data cannot newly fail, see exclude-from-coverage.txt
 	}
 
+	// Allocate certificate serial now, before queuing the signing job,
+	// so it's available to persist at resolution without waiting for the
+	// signer. This avoids burning serials on signing failures.
+	serialNum, err := serial.New()
+	if err != nil {
+		return fmt.Errorf("failed to allocate certificate serial: %w", err)
+	}
+
 	now := time.Now()
 
 	decision, err := newDecision(req.ID, model.CertificateRequestDecisionApproved, identity, dc, now)
@@ -632,7 +640,7 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&model.CertificateRequest{}).
 			Where("id = ? AND status = ?", req.ID, model.CertificateRequestStatusPending).
-			Updates(map[string]any{"status": model.CertificateRequestStatusSigning})
+			Updates(map[string]any{"status": model.CertificateRequestStatusSigning, "serial_number": serialNum})
 		if result.Error != nil {
 			return fmt.Errorf("failed to mark certificate request as signing: %w", result.Error) // excluded from coverage: forcing this specific query to fail while leaving the enclosing Transaction() able to begin needs per-query DB fault injection this codebase doesn't have, see exclude-from-coverage.txt
 		}
@@ -658,6 +666,7 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 		RequestedOptions: narrowed,
 		ValidAfter:       now,
 		ValidBefore:      now.Add(policy.validDuration),
+		Serial:           serialNum,
 	}
 	payload, err := json.Marshal(job)
 	if err != nil {

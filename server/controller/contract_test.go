@@ -49,7 +49,9 @@ func (s *stubCertRequestService) Detail(_ context.Context, _ string, _ *service.
 func (s *stubCertRequestService) Approve(_ context.Context, _ string, _ *service.Identity, _ service.DecisionContext) error {
 	return nil
 }
-func (s *stubCertRequestService) Deny(_ context.Context, _ string, _ *service.Identity, _ service.DecisionContext) error { return nil }
+func (s *stubCertRequestService) Deny(_ context.Context, _ string, _ *service.Identity, _ service.DecisionContext) error {
+	return nil
+}
 
 func (s *stubCertRequestService) Wait(_ context.Context, _ string) (model.CertificateRequestStatus, string, string, error) {
 	return model.CertificateRequestStatusApproved, s.cert, "", nil

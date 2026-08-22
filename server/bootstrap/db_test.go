@@ -486,7 +486,7 @@ func TestMigrationParity_ShouldKeepSqliteAndPostgresSchemaInSync(t *testing.T) {
 
 	// Verify both migrations exist and have the same version.
 	versions := map[string]bool{
-		"server/resources/migrations/sqlite/" + expectedVersion + "_init.up.sql":  true,
+		"server/resources/migrations/sqlite/" + expectedVersion + "_init.up.sql":   true,
 		"server/resources/migrations/postgres/" + expectedVersion + "_init.up.sql": true,
 	}
 	for path := range versions {

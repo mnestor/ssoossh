@@ -90,7 +90,7 @@ type SigningJob struct {
 	// persist at request resolution without waiting for the signer, avoiding
 	// burned serials on signing failures. See docs/changes-next.md items 5
 	// and 11.
-	Serial               uint64            `json:"serial"`
+	Serial uint64 `json:"serial"`
 }
 
 // Signing failure codes carried on SignedReply.ErrorCode. These classify

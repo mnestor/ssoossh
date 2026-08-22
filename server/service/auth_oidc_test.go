@@ -267,8 +267,8 @@ func TestHandleCallback_ShouldExchangeAndUpsertTheUser(t *testing.T) {
 
 	provider.nextID = provider.signIDToken(t, "sub-alice", "client-1", "nonce-1", map[string]any{
 		"preferred_username": "alice",
-		"email":               "alice@example.com",
-		"groups":              []string{"admins", "devs"},
+		"email":              "alice@example.com",
+		"groups":             []string{"admins", "devs"},
 	})
 
 	identity, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1")
@@ -429,7 +429,7 @@ func TestHandleCallback_ShouldFallBackToTheStandardEmailClaim(t *testing.T) {
 
 	provider.nextID = provider.signIDToken(t, "sub-bob", "client-1", "nonce-1", map[string]any{
 		"preferred_username": "bob",
-		"email":               "bob@example.com",
+		"email":              "bob@example.com",
 	})
 
 	identity, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1")

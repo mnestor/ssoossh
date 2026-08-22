@@ -3,7 +3,6 @@ package signer
 import (
 	"context"
 	"crypto/rand"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"strings"
@@ -38,28 +37,6 @@ func errorCode(err error) string {
 		return se.code
 	}
 	return certmsg.ErrCodeSignFailed
-}
-
-// serialMask clears the high bit of a generated serial. Go's database/sql
-// refuses to bind a uint64 with the high bit set ("uint64 values with high
-// bit set are not supported") because it has no lossless signed
-// equivalent — so a full-width random serial would fail to persist as an
-// audit row roughly half the time, and the certificate would never reach
-// the client. 63 bits of randomness is still far more than enough to keep
-// collisions negligible.
-const serialMask = 1<<63 - 1
-
-// newSerial returns a random certificate serial. Random rather than a
-// counter so it needs no coordination — the signer has no database, and
-// there may eventually be several signers with independent hardware-backed
-// keys (see docs/certificate-lifetime-policy-plan.md's note on multiple
-// signers). Serials matter for revocation lists (KRLs).
-func newSerial() (uint64, error) {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return 0, fmt.Errorf("failed to generate certificate serial: %w", err) // excluded from coverage: crypto/rand.Read failure isn't reproducible in tests, see exclude-from-coverage.txt
-	}
-	return binary.BigEndian.Uint64(b[:]) & serialMask, nil
 }
 
 // certTypeFor maps a ssoossh certificate type onto an SSH certificate type.
@@ -159,10 +136,9 @@ func Sign(ctx context.Context, ks CAKeySource, job certmsg.SigningJob, fipsEnabl
 		return certmsg.SignedReply{}, newSignError(certmsg.ErrCodeCAUnavailable, "failed to obtain CA signing key: %w", err)
 	}
 
-	serial, err := newSerial()
-	if err != nil {
-		return certmsg.SignedReply{}, newSignError(certmsg.ErrCodeSignFailed, "%w", err) // excluded from coverage: only reachable if newSerial's own crypto/rand.Read fails, see exclude-from-coverage.txt
-	}
+	// Use the pre-allocated serial from the job. Pre-allocation at
+	// approval time avoids burning serials on signing failures.
+	serial := job.Serial
 
 	permissions := permissionsFor(job.RequestedOptions)
 	cert := &ssh.Certificate{
