@@ -252,12 +252,17 @@ balancer can route requests to any instance:
   NATS
 - Sessions persist across instances (shared database, shared cookie key)
 
-No sticky sessions required. If an instance crashes:
+No sticky sessions required. If an instance crashes or NATS is unreachable:
 
-- In-flight certificate approvals from that instance may be lost (if NATS
-  message was not yet persisted). Clients reconnect and re-approve.
-- In-progress certificate deliveries are lost. Clients see 410 Gone, re-request,
-  and proceed. This is not an error mode — it's by design.
+- **Pending approvals**: Clients waiting in `Wait()` keep waiting on the database
+  status. If the database status is still `pending` or `signing`, the wait loop
+  continues. If it moves to `approved` and the wake message is lost, the client
+  sees 410 Gone (certificate never persisted, by design) and must re-request.
+- **NATS messages**: "Sign now" messages on the sign queue might be lost if a
+  signer crashes mid-processing. Clients see the status stayed `signing` and
+  keep waiting. After `request_ttl` elapses, the status expires and they re-request.
+- **Session cookies**: Persist as long as the shared database is available and
+  the `cookie_key` is consistent across instances. Instance restart doesn't affect sessions.
 
 Clients never notice which instance they reached.
 
