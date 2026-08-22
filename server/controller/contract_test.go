@@ -84,7 +84,7 @@ func newContractServer(t *testing.T, certRequests service.CertRequestProvider) (
 	controller.NewCaController(apiGroup, caSvc)
 
 	passthrough := func(gc *gin.Context) { gc.Next() }
-	controller.NewCertRequestController(apiGroup, certRequests, passthrough, passthrough)
+	controller.NewCertRequestController(apiGroup, certRequests, passthrough, passthrough, nil)
 
 	srv := httptest.NewServer(r)
 	t.Cleanup(srv.Close)

@@ -131,6 +131,21 @@ type HTTPSettings struct {
 	// minute. Typical values are in seconds to minutes.
 	RateDuration time.Duration `mapstructure:"rate_duration"`
 
+	// RateLimitDisableForDev disables all rate limiting (global and per-endpoint)
+	// when true. Only effective when Production=false, so it cannot be silently
+	// enabled in production. Used for local development to avoid throttling
+	// during testing.
+	RateLimitDisableForDev bool `mapstructure:"rate_limit_disable_for_dev"`
+
+	// CertRequestRateLimit holds per-endpoint rate limits for certificate
+	// request creation endpoints. Zero or negative disables the specific limit.
+	CertRequestRateLimit CertRequestRateLimitSettings `mapstructure:"cert_request_rate_limit"`
+
+	// ServiceCodeRateLimit holds the rate limit configuration for service
+	// enrollment code redemption, keyed on the enrollment code to protect
+	// against brute-forcing. Zero or negative disables the specific limit.
+	ServiceCodeRateLimit ServiceCodeRateLimitSettings `mapstructure:"service_code_rate_limit"`
+
 	// Hsts (HTTP Strict-Transport-Security) is sent in the Strict-Transport-Security
 	// header on every response, but only when the server terminates TLS itself
 	// (i.e., TLS.Certificate or TLS.CertificateFile is configured). Browsers
@@ -223,6 +238,36 @@ func (h *HTTPSettings) parsePublicURL() (*url.URL, error) {
 	}
 
 	return u, nil
+}
+
+// CertRequestRateLimitSettings holds per-endpoint rate limits for certificate
+// request creation. Each value is requests per second per client IP. Zero or
+// negative disables that endpoint's limit (not recommended; use global limit
+// instead). These are independent of the global per-IP rate limit — both apply.
+type CertRequestRateLimitSettings struct {
+	// User is the limit for POST /api/certs/user (interactive user cert).
+	User float64 `mapstructure:"user"`
+
+	// HostSign is the limit for POST /api/certs/host/sign (first host cert
+	// issuance, requires human approval).
+	HostSign float64 `mapstructure:"host_sign"`
+
+	// ServiceEnroll is the limit for POST /api/certs/service/enroll (service
+	// enrollment, unattended).
+	ServiceEnroll float64 `mapstructure:"service_enroll"`
+
+	// PAM is the limit for POST /api/certs/pam (short-lived PAM cert, gated on
+	// local interaction).
+	PAM float64 `mapstructure:"pam"`
+}
+
+// ServiceCodeRateLimitSettings holds the rate limit configuration for service
+// enrollment code redemption (POST /api/certs/service/retrieve). The limit is
+// applied per code to protect against brute-forcing across multiple IPs.
+type ServiceCodeRateLimitSettings struct {
+	// Limit is requests per second per enrollment code. Zero or negative
+	// disables this limit.
+	Limit float64 `mapstructure:"limit"`
 }
 
 // Validate reports configuration that would fail later, at a point where the

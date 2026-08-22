@@ -37,7 +37,7 @@ func newEnrollmentTestRouter(svc *fakeEnrollmentService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
-	NewEnrollmentController(&r.RouterGroup, svc)
+	NewEnrollmentController(&r.RouterGroup, svc, nil)
 	return r
 }
 

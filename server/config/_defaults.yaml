@@ -13,6 +13,25 @@ http:
   cookie_max_age: 300s
   rate_limit: 60
   rate_duration: 1m
+  rate_limit_disable_for_dev: false
+  cert_request_rate_limit:
+    # Per-endpoint rate limits (requests per second per client IP).
+    # Each creates an independent per-IP bucket. These apply in addition to
+    # the global rate_limit above (both must be satisfied).
+    # User cert request: interactive end-user, human-driven.
+    user: 10
+    # Host sign request: first host cert issuance, requires approval.
+    host_sign: 5
+    # Service enrollment: can be called by unattended service.
+    service_enroll: 5
+    # PAM certificate: gated on local interaction.
+    pam: 10
+  service_code_rate_limit:
+    # Rate limit on POST /api/certs/service/retrieve, keyed on the
+    # enrollment code to protect against brute-forcing across multiple IPs.
+    # Requests per second per code. Disable with 0 or negative (not
+    # recommended; code brute-forcing is a real threat).
+    limit: 1
   hsts: "max-age=31536000; includeSubDomains"
   tls:
     min_version: TLS1.3

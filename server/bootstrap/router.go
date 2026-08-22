@@ -310,11 +310,49 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	// Set up API routes
 	apiGroup := r.Group("/api")
 	controller.NewCaController(apiGroup, a.svc.ca)
-	controller.NewCertRequestController(apiGroup, a.svc.certRequest, sessionAuth, csrf)
+
+	// Build per-endpoint rate limit middleware for certificate request creation.
+	// Each endpoint gets its own rate limiter (per-IP, independent of each other).
+	// These apply in addition to the global rate limit.
+	var certRequestRateLimit *controller.CertRequestRateLimitMiddleware
+	if !a.config.Production && a.config.HTTP.RateLimitDisableForDev {
+		// Rate limiting disabled for dev when production=false
+	} else {
+		limiter := middleware.NewEndpointRateLimiter()
+		certRequestRateLimit = &controller.CertRequestRateLimitMiddleware{}
+		if a.config.HTTP.CertRequestRateLimit.User > 0 {
+			certRequestRateLimit.User = limiter.PerIP(rate.Limit(a.config.HTTP.CertRequestRateLimit.User), 1)
+		}
+		if a.config.HTTP.CertRequestRateLimit.HostSign > 0 {
+			certRequestRateLimit.HostSign = limiter.PerIP(rate.Limit(a.config.HTTP.CertRequestRateLimit.HostSign), 1)
+		}
+		if a.config.HTTP.CertRequestRateLimit.ServiceEnroll > 0 {
+			certRequestRateLimit.ServiceEnroll = limiter.PerIP(rate.Limit(a.config.HTTP.CertRequestRateLimit.ServiceEnroll), 1)
+		}
+		if a.config.HTTP.CertRequestRateLimit.PAM > 0 {
+			certRequestRateLimit.PAM = limiter.PerIP(rate.Limit(a.config.HTTP.CertRequestRateLimit.PAM), 1)
+		}
+	}
+	controller.NewCertRequestController(apiGroup, a.svc.certRequest, sessionAuth, csrf, certRequestRateLimit)
+
 	controller.NewUserController(apiGroup, sessionAuth)
 	controller.NewCertificateController(apiGroup, a.svc.certificate, sessionAuth)
 	controller.NewHostController(apiGroup, a.svc.host, middleware.NewHostCertAuthMiddleware().Add())
-	controller.NewEnrollmentController(apiGroup, a.svc.enrollment)
+
+	// Build per-code rate limit middleware for service certificate redemption.
+	// The limit is keyed on the enrollment code to protect against brute-forcing.
+	var enrollmentRateLimit gin.HandlerFunc
+	if !a.config.Production && a.config.HTTP.RateLimitDisableForDev {
+		// Rate limiting disabled for dev when production=false
+	} else if a.config.HTTP.ServiceCodeRateLimit.Limit > 0 {
+		codeLimiter := middleware.NewEndpointRateLimiter()
+		enrollmentRateLimit = codeLimiter.CodeBucket(
+			rate.Limit(a.config.HTTP.ServiceCodeRateLimit.Limit),
+			1,
+			controller.ExtractEnrollmentCodeForRateLimit,
+		)
+	}
+	controller.NewEnrollmentController(apiGroup, a.svc.enrollment, enrollmentRateLimit)
 	controller.NewAdminController(apiGroup, a.config, a.db, sessionAuth, adminAuth, auditorAuth, csrf)
 
 	return nil

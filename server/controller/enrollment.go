@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"encoding/json"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/mnestor/ssoossh/internal/apitypes"
@@ -8,10 +10,17 @@ import (
 )
 
 // NewEnrollmentController registers the service-certificate retrieval
-// route on group.
-func NewEnrollmentController(group *gin.RouterGroup, enrollmentService service.EnrollmentProvider) {
+// route on group. When retrieveRateLimitMiddleware is provided, it is
+// applied to the /certs/service/retrieve endpoint to protect against
+// code brute-forcing.
+func NewEnrollmentController(group *gin.RouterGroup, enrollmentService service.EnrollmentProvider, retrieveRateLimitMiddleware gin.HandlerFunc) {
 	e := &enrollmentController{enrollmentService: enrollmentService}
-	group.POST("/certs/service/retrieve", e.retrieveHandler)
+
+	if retrieveRateLimitMiddleware != nil {
+		group.POST("/certs/service/retrieve", retrieveRateLimitMiddleware, e.retrieveHandler)
+	} else {
+		group.POST("/certs/service/retrieve", e.retrieveHandler)
+	}
 }
 
 // enrollmentController handles the service-enrollment HTTP routes.
@@ -47,4 +56,21 @@ func (e *enrollmentController) retrieveHandler(g *gin.Context) {
 	}
 
 	respondData(g, apitypes.RetrieveResponse{Certificate: certificate})
+}
+
+// ExtractEnrollmentCodeForRateLimit reads the enrollment code from the request
+// body without consuming it, for use in the CodeBucket rate limiter. Returns
+// an empty string if the body is malformed or the field is missing. Safe to
+// call multiple times on the same context; gin buffers the raw body so each
+// call can re-read it.
+func ExtractEnrollmentCodeForRateLimit(c *gin.Context) string {
+	var body apitypes.RetrieveRequestBody
+	rawData, err := c.GetRawData()
+	if err != nil {
+		return ""
+	}
+	if err := json.Unmarshal(rawData, &body); err != nil {
+		return ""
+	}
+	return body.Code
 }

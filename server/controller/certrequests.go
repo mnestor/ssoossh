@@ -9,11 +9,23 @@ import (
 	"github.com/mnestor/ssoossh/server/service"
 )
 
+// CertRequestRateLimitMiddleware holds optional per-endpoint rate limit
+// middleware for certificate request creation endpoints. When the corresponding
+// field is not nil, that middleware is applied to that endpoint's handler.
+type CertRequestRateLimitMiddleware struct {
+	User          gin.HandlerFunc
+	HostSign      gin.HandlerFunc
+	ServiceEnroll gin.HandlerFunc
+	PAM           gin.HandlerFunc
+}
+
 // NewCertRequestController registers the certificate-request routes on
 // group: the client-facing create-and-wait endpoints (open to anyone — the
 // approval step is where authorization happens) and the web-UI-facing
 // approve/deny endpoints (behind sessionAuthMiddleware and csrfMiddleware).
-func NewCertRequestController(group *gin.RouterGroup, certRequestService service.CertRequestProvider, sessionAuthMiddleware, csrfMiddleware gin.HandlerFunc) {
+// When rateLimitMiddleware is provided, any non-nil fields apply per-endpoint
+// rate limits to the create-request routes.
+func NewCertRequestController(group *gin.RouterGroup, certRequestService service.CertRequestProvider, sessionAuthMiddleware, csrfMiddleware gin.HandlerFunc, rateLimitMiddleware *CertRequestRateLimitMiddleware) {
 	cr := &certRequestController{certRequestService: certRequestService}
 
 	// Client-facing: each of these creates a request and returns two URLs —
@@ -23,10 +35,34 @@ func NewCertRequestController(group *gin.RouterGroup, certRequestService service
 	// server/service/certrequest.go's CreateRequest — the ID is already the
 	// unguessable capability token), which is also why GET .../events below
 	// doesn't need its own auth: the ID is the credential.
-	group.POST("/certs/user", cr.createUserRequestHandler)
-	group.POST("/certs/host/sign", cr.createHostSignRequestHandler)
-	group.POST("/certs/service/enroll", cr.createServiceEnrollRequestHandler)
-	group.POST("/certs/pam", cr.createPAMRequestHandler)
+
+	// Register /certs/user with optional rate limit middleware
+	if rateLimitMiddleware != nil && rateLimitMiddleware.User != nil {
+		group.POST("/certs/user", rateLimitMiddleware.User, cr.createUserRequestHandler)
+	} else {
+		group.POST("/certs/user", cr.createUserRequestHandler)
+	}
+
+	// Register /certs/host/sign with optional rate limit middleware
+	if rateLimitMiddleware != nil && rateLimitMiddleware.HostSign != nil {
+		group.POST("/certs/host/sign", rateLimitMiddleware.HostSign, cr.createHostSignRequestHandler)
+	} else {
+		group.POST("/certs/host/sign", cr.createHostSignRequestHandler)
+	}
+
+	// Register /certs/service/enroll with optional rate limit middleware
+	if rateLimitMiddleware != nil && rateLimitMiddleware.ServiceEnroll != nil {
+		group.POST("/certs/service/enroll", rateLimitMiddleware.ServiceEnroll, cr.createServiceEnrollRequestHandler)
+	} else {
+		group.POST("/certs/service/enroll", cr.createServiceEnrollRequestHandler)
+	}
+
+	// Register /certs/pam with optional rate limit middleware
+	if rateLimitMiddleware != nil && rateLimitMiddleware.PAM != nil {
+		group.POST("/certs/pam", rateLimitMiddleware.PAM, cr.createPAMRequestHandler)
+	} else {
+		group.POST("/certs/pam", cr.createPAMRequestHandler)
+	}
 
 	// GET .../events is the actual SSE connection: a real long-lived
 	// text/event-stream response the client (or its HTTP client's SSE

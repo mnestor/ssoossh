@@ -275,7 +275,7 @@ func TestDetailHandler_ShouldSurfaceRequestedAndGrantedSeparately(t *testing.T) 
 	}}
 
 	r := gin.New()
-	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), passthrough)
+	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), passthrough, nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/requests/req-1", nil))
@@ -338,7 +338,7 @@ func TestDetailHandler_ShouldSurfaceDecisionAudit(t *testing.T) {
 	}}
 
 	r := gin.New()
-	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), passthrough)
+	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), passthrough, nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/requests/req-1", nil))
@@ -386,7 +386,7 @@ func TestDetailHandler_ShouldOmitDecisionFieldsForAPendingRequest(t *testing.T) 
 	}}
 
 	r := gin.New()
-	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), passthrough)
+	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), passthrough, nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/requests/req-1", nil))
@@ -425,7 +425,7 @@ func TestDetailHandler_ShouldRejectWithoutAnIdentityOnContext(t *testing.T) {
 		c.Next()
 		gotErrors = len(c.Errors)
 	})
-	NewCertRequestController(&r.RouterGroup, &fakeCertRequestService{}, passthrough, passthrough)
+	NewCertRequestController(&r.RouterGroup, &fakeCertRequestService{}, passthrough, passthrough, nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/requests/req-1", nil))
@@ -450,7 +450,7 @@ func TestDetailHandler_ShouldNormalizeNilSlicesToEmpty(t *testing.T) {
 	}}
 
 	r := gin.New()
-	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), passthrough)
+	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), passthrough, nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/requests/req-1", nil))
@@ -477,7 +477,7 @@ func TestDetailHandler_ShouldPropagateAForbiddenFromTheBinding(t *testing.T) {
 
 	r := gin.New()
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
-	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-bob"}), passthrough)
+	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-bob"}), passthrough, nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/requests/req-1", nil))
@@ -515,7 +515,7 @@ func TestWebReadEndpoints_ShouldFailClosedWithoutASession(t *testing.T) {
 
 			NewUserController(&r.RouterGroup, sessionAuth)
 			NewCertificateController(&r.RouterGroup, &fakeCertificateService{}, sessionAuth)
-			NewCertRequestController(&r.RouterGroup, &fakeCertRequestService{}, sessionAuth, passthrough)
+			NewCertRequestController(&r.RouterGroup, &fakeCertRequestService{}, sessionAuth, passthrough, nil)
 
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))

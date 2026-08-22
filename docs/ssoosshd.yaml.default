@@ -258,6 +258,27 @@
   ## Rate limiting: max requests per rate_duration window, per client.
   # rate_limit: 60
   # rate_duration: 1m
+  ## Disable all rate limiting (global and per-endpoint) for local development.
+  ## Only effective when production=false, so it cannot be enabled in production.
+  # rate_limit_disable_for_dev: false
+
+  ## Per-endpoint rate limits for certificate request creation (requests per
+  ## second per client IP). These apply in addition to the global rate_limit
+  ## above — both must be satisfied. Zero or negative disables that endpoint's
+  ## limit. A request exceeding any limit gets a 429 Too Many Requests response.
+  # cert_request_rate_limit:
+    # user: 10              # POST /api/certs/user (interactive user)
+    # host_sign: 5          # POST /api/certs/host/sign (first host cert)
+    # service_enroll: 5     # POST /api/certs/service/enroll (service enrollment)
+    # pam: 10               # POST /api/certs/pam (short-lived PAM cert)
+
+  ## Rate limit for service enrollment code redemption (POST
+  ## /api/certs/service/retrieve), keyed on the enrollment code to protect
+  ## against brute-forcing. Applies per code, independent of IP. Zero or
+  ## negative disables this limit. A request exceeding the limit gets a 429
+  ## Too Many Requests response.
+  # service_code_rate_limit:
+    # limit: 1              # Requests per second per enrollment code
 
   ## HTTP Strict-Transport-Security header value to send. Only sent when
   ## server terminates TLS. Empty disables the header.
