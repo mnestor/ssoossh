@@ -505,8 +505,14 @@ func TestCertRequestService_Wait_ShouldExpireRequestPastTTL(t *testing.T) {
 func TestCertRequestService_Wait_ShouldWakeOnTTLTimerFiring(t *testing.T) {
 	t.Parallel()
 
-	// Create a request with a short but measurable TTL (50ms)
-	svc := newTestCertRequestService(t, 50*time.Millisecond)
+	// The TTL has to be short enough to keep the test quick but long enough
+	// that scheduler jitter cannot eat it. At 50ms this test was flaky: under
+	// parallel load more than 50ms could elapse between CreateRequest and the
+	// Wait call below, so the request was already past its TTL on the first
+	// reconcileStatus pass, Wait returned without ever blocking on the timer,
+	// and the elapsed assertion failed for load rather than for behaviour.
+	const ttl = 500 * time.Millisecond
+	svc := newTestCertRequestService(t, ttl)
 	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA...",
@@ -540,8 +546,8 @@ func TestCertRequestService_Wait_ShouldWakeOnTTLTimerFiring(t *testing.T) {
 	if status != model.CertificateRequestStatusExpired {
 		t.Errorf("got status %q, want %q", status, model.CertificateRequestStatusExpired)
 	}
-	if elapsed < 50*time.Millisecond {
-		t.Errorf("Wait returned in %v, but TTL timer should have taken at least 50ms to fire", elapsed)
+	if elapsed < ttl {
+		t.Errorf("Wait returned in %v, but the TTL timer should have taken at least %v to fire", elapsed, ttl)
 	}
 }
 
