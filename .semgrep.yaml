@@ -1,0 +1,39 @@
+# Semgrep configuration for ssoossh
+# Runs with: make security (which calls: semgrep scan --config auto --error)
+# Scans for security issues, common mistakes, and code quality problems
+
+rules:
+  - id: security-check
+    patterns:
+      - pattern-either:
+          # Hardcoded secrets (basic patterns)
+          - pattern: "password = \"...\""
+          - pattern: "token = \"...\""
+          - pattern: "secret = \"...\""
+          - pattern: "api_key = \"...\""
+    message: "Possible hardcoded secret detected"
+    languages: [go, js, python]
+    severity: ERROR
+
+  - id: insecure-http
+    patterns:
+      - pattern-either:
+          - pattern: "http.Client{...}"
+          - pattern: "tls.Config{InsecureSkipVerify: true}"
+    message: "Possible insecure TLS configuration"
+    languages: [go]
+    severity: WARNING
+
+  - id: sql-injection-basic
+    patterns:
+      - pattern-either:
+          - pattern: "db.Query(... + ...)"
+          - pattern: "database.Query(... + ...)"
+    message: "Possible SQL injection via string concatenation"
+    languages: [go]
+    severity: WARNING
+
+# Extended rules from semgrep registry
+extends:
+  - rules:
+      - owasp-top-ten
