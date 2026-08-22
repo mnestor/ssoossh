@@ -192,11 +192,51 @@
 # http:
   ## Interface address and port to listen on.
   # address: 127.0.0.1
-  # port: 8443
+  # port: 8080
+
+  ## Listen on a Unix domain socket instead of TCP. When set, address/port
+  ## above are ignored. Mutually exclusive with proxy_protocol (PROXY
+  ## protocol is a TCP-connection concept).
+  # unix_socket: ""
+
+  ## CIDR ranges of reverse proxies trusted to prefix TCP connections with a
+  ## PROXY protocol v1/v2 header, so the real client address survives a
+  ## TCP-level proxy. Different from trusted_proxies below, which is for
+  ## HTTP-level proxies setting X-Forwarded-For. Empty disables PROXY
+  ## protocol entirely and rejects connections from anywhere else once set.
+  ## Ignored (must be empty) when unix_socket is set.
+  # proxy_protocol: []
+
+  ## CIDR ranges of reverse proxies trusted to set
+  ## X-Forwarded-For/X-Forwarded-Proto. Empty (default) means no proxy is
+  ## trusted, so the client IP is always the direct TCP peer and a
+  ## client-supplied X-Forwarded-For is ignored — gin's own default is to
+  ## trust every proxy, so this has to be set explicitly behind a reverse
+  ## proxy for approver client-IP logging (see keyid template fields) to be
+  ## accurate.
+  # trusted_proxies: []
 
   ## Cookie signing/encryption key for session cookies. Keep secret;
   ## rotating it invalidates existing sessions. Empty generates random key at startup.
   # cookie_key: ""
+
+  ## Marks the session cookie Secure, so browsers only send it over HTTPS.
+  ## Unset (the default) derives it from whether the deployment is HTTPS at
+  ## all — see is_https/public_url below. Set explicitly only to override
+  ## that inference.
+  # cookie_secure:
+
+  ## Session cookie SameSite attribute: "strict" (default), "lax", or
+  ## "none". Strict is correct for this server — nothing legitimately
+  ## navigates into it from another site. Defence in depth, not the CSRF
+  ## control; state-changing routes are additionally guarded by CSRF
+  ## middleware regardless of this setting.
+  # cookie_same_site: strict
+
+  ## How long a session cookie remains valid. Note: 0 does not mean "no
+  ## expiry" — it falls back to a 12h default applied in code. Set an
+  ## explicit positive duration to mean what it says.
+  # cookie_max_age: 300s
 
   ## Rate limiting: max requests per rate_duration window, per client.
   # rate_limit: 60
@@ -272,7 +312,7 @@
     ## "tls12", "VersionTLS12", "TLS-1-2" all resolve the same way.
     ## One of: TLS1.0, TLS1.1 (both deprecated per RFC 8996 and will log
     ## a warning if selected), TLS1.2, TLS1.3.
-    # min_version: TLS1.2
+    # min_version: TLS1.3
 
     ## Cipher suites allowed, by crypto/tls name, most-preferred first.
     ## Only meaningful for TLS 1.2 and below — TLS 1.3 suite selection
@@ -297,6 +337,22 @@
     ## negotiation, instead of letting the client pick. Only affects
     ## TLS 1.2 and below.
     # prefer_server_cipher_suites: true
+
+# ----------------------------------------------------------------------
+# ldap - optional identity enrichment, looked up by the username OIDC
+# resolved. Accepted by the config loader but not yet consumed by the
+# authentication service — setting "enabled: true" today has no effect.
+# Deferred to release 2 (see release-plan.md). Documented here only so the
+# gap between "the config parser accepts this" and "the server acts on it"
+# is not a surprise.
+# ----------------------------------------------------------------------
+# ldap:
+  # enabled: false
+  # url: ""
+  # bind_dn: ""
+  # bind_password: ""
+  # base_dn: ""
+  # user_filter: ""
 
 # ----------------------------------------------------------------------
 # authentication - the OIDC provider used to authenticate users. This is a
@@ -343,6 +399,19 @@
 # can sign: user, service, and host.
 # ----------------------------------------------------------------------
 # cert_options:
+  ## How long a pending certificate request (user, host, or service) stays
+  ## valid for approval before it's treated as expired. Shared across all
+  ## three types — this is "how stale can an unapproved request get," not
+  ## a per-type concept like valid_duration below.
+  # request_ttl: 5m
+
+  ## How long an approved request may sit awaiting signature before a
+  ## background sweep treats it as stranded and fails it (see
+  ## docs/signing-pipeline.md). A healthy signature takes milliseconds;
+  ## this only needs to be generous enough for a slow signing backend
+  ## under load.
+  # signing_timeout: 5m
+
   ## --- user: certificates issued to an interactively-authenticated
   ## --- person, for their own SSH sessions.
   # user:
@@ -357,6 +426,11 @@
     #   - "permit-port-forwarding"
     #   - "permit-pty"
     #   - "permit-user-rc"
+
+    ## Key ID template (Go text/template, see docs/certificate-keyid-template.md).
+    ## Empty uses the built-in default. This is also the fallback used by
+    ## service and host below when their own key_id_template is empty.
+    # key_id_template: ""
 
   ## --- service: certificates for non-interactive accounts/processes
   ## --- (e.g. CI runners, service accounts), rather than a human
@@ -377,6 +451,9 @@
     #   - "permit-pty"
     #   - "permit-user-rc"
 
+    ## Key ID template. Empty falls back to cert_options.user.key_id_template.
+    # key_id_template: ""
+
   ## --- host: certificates issued so that clients with a
   ## --- "@cert-authority" line in their known_hosts can implicitly
   ## --- trust this server (and others signed by the same CA), instead
@@ -390,6 +467,9 @@
     ## long-lived by nature, so this is typically set to the largest
     ## practical value (largest unit supported is hours: 8760h = 1 year).
     # valid_duration: 8760h
+
+    ## Key ID template. Empty falls back to cert_options.user.key_id_template.
+    # key_id_template: ""
 
   ## --- pam: certificates that authenticate a single local operation
   ## --- (e.g. a `sudo` call) to pam_ssoossh, validated once in-process

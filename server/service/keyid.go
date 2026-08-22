@@ -11,7 +11,6 @@ import (
 	"text/template"
 
 	"github.com/mnestor/ssoossh/server/config"
-	"github.com/mnestor/ssoossh/server/model"
 )
 
 // keyIDTemplateData is the set of fields available for substitution in a
@@ -118,24 +117,9 @@ func parseKeyIDTemplate(name, src string) (*template.Template, error) {
 	return tmpl, nil
 }
 
-// execute renders the template for certType against data.
-func (t *keyIDTemplates) execute(certType model.CertificateType, data keyIDTemplateData) (string, error) {
-	var tmpl *template.Template
-	switch certType {
-	case model.CertificateTypeUser:
-		tmpl = t.user
-	case model.CertificateTypeService:
-		tmpl = t.service
-	case model.CertificateTypeHost:
-		tmpl = t.host
-	case model.CertificateTypePAM:
-		tmpl = t.pam
-	default:
-		return "", fmt.Errorf("no key ID template configured for certificate type %q", certType)
-	}
-	return executeKeyIDTemplate(tmpl, data)
-}
-
+// executeKeyIDTemplate renders tmpl against data. Per-type template
+// selection lives in certTypePolicy.keyIDTemplate (see certtypepolicy.go)
+// instead of a switch here.
 func executeKeyIDTemplate(tmpl *template.Template, data keyIDTemplateData) (string, error) {
 	var buf strings.Builder
 	if err := tmpl.Execute(&buf, data); err != nil {

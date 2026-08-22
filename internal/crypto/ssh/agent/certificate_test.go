@@ -142,6 +142,34 @@ func TestCertificateValid(t *testing.T) {
 			cas:  []ssh.PublicKey{untrustedCA.Public(), trustedCA.Public()},
 			want: true,
 		},
+		{
+			// Regression test: SignatureKey alone is not proof of trust — it
+			// is a field on the certificate an attacker fully controls, not
+			// something the CA vouches for. A certificate genuinely signed
+			// by untrustedCA, with SignatureKey then overwritten to claim
+			// trustedCA, must still be rejected: Signature was never
+			// produced by trustedCA's private key.
+			name: "should reject a certificate whose SignatureKey was swapped to a trusted CA without re-signing",
+			cert: func() *ssh.Certificate {
+				untrustedSigner, err := ssh.NewSignerFromKey(untrustedCA.Private())
+				if err != nil {
+					t.Fatalf("NewSignerFromKey() error = %v", err)
+				}
+				cert := &ssh.Certificate{
+					Key:         leaf.Public(),
+					CertType:    ssh.UserCert,
+					ValidAfter:  now - 3600,
+					ValidBefore: now + 3600,
+				}
+				if err := cert.SignCert(rand.Reader, untrustedSigner); err != nil {
+					t.Fatalf("SignCert() error = %v", err)
+				}
+				cert.SignatureKey = trustedCA.Public()
+				return cert
+			}(),
+			cas:  []ssh.PublicKey{trustedCA.Public()},
+			want: false,
+		},
 	}
 
 	for _, tt := range tests {

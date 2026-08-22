@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -52,7 +53,21 @@ func migrateDatabase(provider config.DBProvider, db *gorm.DB) error {
 		return fmt.Errorf("failed to get sql.DB: %w", err)
 	}
 
-	// Choose the correct driver for the database provider
+	// Choose the correct driver for the database provider.
+	//
+	// Neither driver's Close() is safe to call here without care: both are
+	// built from sqlDB, the app's own connection pool (required, not just
+	// convenient, for in-memory SQLite: the app restricts it to exactly one
+	// open connection so every caller shares the same in-memory data — a
+	// second, independently-opened *sql.DB would migrate an empty database
+	// nobody else ever reads from). sqlite3.WithInstance stores sqlDB
+	// directly, so its Close() would close the app's entire pool — never
+	// call it. postgres.WithInstance also stores sqlDB (same hazard), but
+	// additionally checks out one dedicated *sql.Conn from the pool for
+	// locking, and only that dedicated conn needs to be released back to
+	// the pool afterward. Building the Postgres driver via WithConnection
+	// on a conn we check out and close ourselves, instead of WithInstance,
+	// leaves its internal db reference nil, so releasing it is safe.
 	var driver database.Driver
 	switch provider {
 	case config.DBProviderSqlite:
@@ -60,7 +75,16 @@ func migrateDatabase(provider config.DBProvider, db *gorm.DB) error {
 			NoTxWrap: true,
 		})
 	case config.DBProviderPostgres:
-		driver, err = postgresMigrate.WithInstance(sqlDB, &postgresMigrate.Config{})
+		conn, connErr := sqlDB.Conn(context.Background())
+		if connErr != nil {
+			return fmt.Errorf("failed to check out a connection for migrations: %w", connErr)
+		}
+		defer func() {
+			if releaseErr := conn.Close(); releaseErr != nil {
+				slog.Warn("failed to release migration database connection", slog.Any("error", releaseErr))
+			}
+		}()
+		driver, err = postgresMigrate.WithConnection(context.Background(), conn, &postgresMigrate.Config{})
 	default:
 		// Should never happen at this point
 		return fmt.Errorf("unsupported database provider: %s", provider)

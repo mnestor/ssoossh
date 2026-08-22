@@ -14,6 +14,7 @@ Always run `go` commands from the root project
 ## Key Conventions
 - **Interface-based design**: prefer interfaces for testability
 - **Table-driven tests** with `bytes.Buffer` for capturing stdout/stderr; test files are colocated with source
+- **Test driven development**: write the tests to requirements
 - Coverage exclusions are listed in `exclude-from-coverage.txt`
 - Follow standard Go project layout — `cmd/` for entrypoints, `internal/` for
   private packages shared in this repo

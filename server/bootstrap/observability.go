@@ -51,7 +51,7 @@ func (a *app) initObservability(ctx context.Context) (shutdownFns []servicerunne
 		return nil, fmt.Errorf("failed to create OpenTelemetry resource: %w", err)
 	}
 
-	shutdownFns = make([]servicerunner.Service, 0, 2)
+	shutdownFns = make([]servicerunner.Service, 0, 3)
 
 	httpClient := &http.Client{}
 	defaultTransport, ok := http.DefaultTransport.(*http.Transport)
@@ -62,9 +62,11 @@ func (a *app) initObservability(ctx context.Context) (shutdownFns []servicerunne
 	httpClient.Transport = defaultTransport.Clone()
 
 	// Logging
-	err = initOtelLogging(ctx, resource)
+	loggingShutdownFn, err := initOtelLogging(ctx, resource)
 	if err != nil {
 		return nil, err
+	} else if loggingShutdownFn != nil {
+		shutdownFns = append(shutdownFns, loggingShutdownFn)
 	}
 
 	// Tracing
@@ -90,15 +92,16 @@ func (a *app) initObservability(ctx context.Context) (shutdownFns []servicerunne
 
 // initOtelLogging fans slog output out to both the process's existing
 // handler and an OpenTelemetry log exporter, then installs it as the
-// default slog logger.
-func initOtelLogging(ctx context.Context, resource *resource.Resource) error {
+// default slog logger. The returned shutdown function must be run on exit
+// so the batch processor flushes any buffered log entries.
+func initOtelLogging(ctx context.Context, resource *resource.Resource) (shutdownFn servicerunner.Service, err error) {
 	// autoexport wants this set in ENV
 	if os.Getenv("OTEL_LOGS_EXPORTER") == "" {
 		os.Setenv("OTEL_LOGS_EXPORTER", "none")
 	}
 	exp, err := autoexport.NewLogExporter(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to initialize OpenTelemetry log exporter: %w", err)
+		return nil, fmt.Errorf("failed to initialize OpenTelemetry log exporter: %w", err)
 	}
 
 	// Create the logger provider
@@ -120,7 +123,16 @@ func initOtelLogging(ctx context.Context, resource *resource.Resource) error {
 	// Set the default slog to send logs to OTel and add the app name
 	slog.SetDefault(slog.New(handler))
 
-	return nil
+	shutdownFn = func(shutdownCtx context.Context) error { //nolint:contextcheck
+		providerCtx, providerCancel := context.WithTimeout(shutdownCtx, 10*time.Second)
+		defer providerCancel()
+		if shutdownErr := provider.Shutdown(providerCtx); shutdownErr != nil {
+			return fmt.Errorf("failed to gracefully shut down logging exporter: %w", shutdownErr)
+		}
+		return nil
+	}
+
+	return shutdownFn, nil
 }
 
 // initOtelTracing installs an OpenTelemetry tracer provider and wraps

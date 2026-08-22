@@ -38,6 +38,12 @@
 
 		getRequestDetail(requestID, controller.signal)
 			.then((loaded) => {
+				// Guard against a stale response: if id has moved on to a
+				// different request since this fetch started, a slow
+				// response here must not overwrite what's now current.
+				if (requestID !== id) {
+					return;
+				}
 				detail = loaded;
 			})
 			.catch((cause) => {

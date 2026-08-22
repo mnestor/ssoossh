@@ -5,11 +5,10 @@ package service
 // run in parallel (t.Parallel()).
 
 import (
-	"strings"
 	"testing"
+	"text/template"
 
 	"github.com/mnestor/ssoossh/server/config"
-	"github.com/mnestor/ssoossh/server/model"
 )
 
 func TestNewKeyIDTemplates_ShouldErrorOnInvalidSyntax(t *testing.T) {
@@ -75,19 +74,19 @@ func TestNewKeyIDTemplates_FallbackChain(t *testing.T) {
 	tests := []struct {
 		name      string
 		opts      config.CertificateOptions
-		certType  model.CertificateType
+		field     func(*keyIDTemplates) *template.Template
 		wantKeyID string
 	}{
 		{
 			name:      "should use the default username template when nothing is configured",
 			opts:      config.CertificateOptions{},
-			certType:  model.CertificateTypeUser,
+			field:     func(t *keyIDTemplates) *template.Template { return t.user },
 			wantKeyID: "alice",
 		},
 		{
 			name:      "should use the default hostname template for host when nothing is configured",
 			opts:      config.CertificateOptions{},
-			certType:  model.CertificateTypeHost,
+			field:     func(t *keyIDTemplates) *template.Template { return t.host },
 			wantKeyID: "db01",
 		},
 		{
@@ -95,7 +94,7 @@ func TestNewKeyIDTemplates_FallbackChain(t *testing.T) {
 			opts: config.CertificateOptions{
 				User: config.CertOptionsUser{KeyIDTemplate: "u:{{.Username}}"},
 			},
-			certType:  model.CertificateTypeService,
+			field:     func(t *keyIDTemplates) *template.Template { return t.service },
 			wantKeyID: "u:alice",
 		},
 		{
@@ -103,7 +102,7 @@ func TestNewKeyIDTemplates_FallbackChain(t *testing.T) {
 			opts: config.CertificateOptions{
 				User: config.CertOptionsUser{KeyIDTemplate: "u:{{.Username}}"},
 			},
-			certType:  model.CertificateTypeHost,
+			field:     func(t *keyIDTemplates) *template.Template { return t.host },
 			wantKeyID: "u:alice",
 		},
 		{
@@ -112,13 +111,13 @@ func TestNewKeyIDTemplates_FallbackChain(t *testing.T) {
 				User: config.CertOptionsUser{KeyIDTemplate: "u:{{.Username}}"},
 				Host: config.CertOptions{KeyIDTemplate: "h:{{.Hostname}}"},
 			},
-			certType:  model.CertificateTypeHost,
+			field:     func(t *keyIDTemplates) *template.Template { return t.host },
 			wantKeyID: "h:db01",
 		},
 		{
 			name:      "should use PAM's own default template when nothing is configured",
 			opts:      config.CertificateOptions{},
-			certType:  model.CertificateTypePAM,
+			field:     func(t *keyIDTemplates) *template.Template { return t.pam },
 			wantKeyID: "pam:alice",
 		},
 		{
@@ -130,7 +129,7 @@ func TestNewKeyIDTemplates_FallbackChain(t *testing.T) {
 			opts: config.CertificateOptions{
 				User: config.CertOptionsUser{KeyIDTemplate: "u:{{.Username}}"},
 			},
-			certType:  model.CertificateTypePAM,
+			field:     func(t *keyIDTemplates) *template.Template { return t.pam },
 			wantKeyID: "pam:alice",
 		},
 		{
@@ -138,7 +137,7 @@ func TestNewKeyIDTemplates_FallbackChain(t *testing.T) {
 			opts: config.CertificateOptions{
 				PAM: config.CertOptionsPAM{KeyIDTemplate: "p:{{.Username}}"},
 			},
-			certType:  model.CertificateTypePAM,
+			field:     func(t *keyIDTemplates) *template.Template { return t.pam },
 			wantKeyID: "p:alice",
 		},
 	}
@@ -152,7 +151,7 @@ func TestNewKeyIDTemplates_FallbackChain(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			got, err := tmpls.execute(tt.certType, keyIDTemplateData{Username: "alice", Hostname: "db01"})
+			got, err := executeKeyIDTemplate(tt.field(tmpls), keyIDTemplateData{Username: "alice", Hostname: "db01"})
 			if err != nil {
 				t.Fatalf("unexpected error executing template: %v", err)
 			}
@@ -160,19 +159,5 @@ func TestNewKeyIDTemplates_FallbackChain(t *testing.T) {
 				t.Errorf("got key ID %q, want %q", got, tt.wantKeyID)
 			}
 		})
-	}
-}
-
-func TestKeyIDTemplates_Execute_ShouldErrorForUnknownCertificateType(t *testing.T) {
-	t.Parallel()
-
-	tmpls, err := newKeyIDTemplates(config.CertificateOptions{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	_, err = tmpls.execute(model.CertificateType("bogus"), keyIDTemplateData{})
-	if err == nil || !strings.Contains(err.Error(), "bogus") {
-		t.Fatalf("expected an error naming the unknown certificate type, got %v", err)
 	}
 }

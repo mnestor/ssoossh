@@ -322,6 +322,107 @@ func TestSSHKeypair_SignedBy(t *testing.T) {
 			t.Error("SignedBy() = true, want false for an unrelated CA")
 		}
 	})
+
+	t.Run("should reject a forged certificate whose SignatureKey claims the CA but whose Signature was not produced by it", func(t *testing.T) {
+		t.Parallel()
+		forged := &SSHKeypair{privateKey: leaf.Private(), publicKey: leaf.publicKey}
+		// Sign with an unrelated key, then swap in the real CA's public key
+		// as SignatureKey without re-signing — the Signature bytes were
+		// never produced by ca's private key.
+		cert := &ssh.Certificate{
+			Key:         leaf.Public(),
+			CertType:    ssh.UserCert,
+			ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()),
+			ValidBefore: uint64(time.Now().Add(time.Hour).Unix()),
+		}
+		otherSigner, err := ssh.NewSignerFromKey(other.Private())
+		if err != nil {
+			t.Fatalf("NewSignerFromKey() error = %v", err)
+		}
+		if err := cert.SignCert(rand.Reader, otherSigner); err != nil {
+			t.Fatalf("SignCert() error = %v", err)
+		}
+		cert.SignatureKey = ca.Public()
+		forged.SetCertificate(cert)
+
+		if forged.SignedBy(ca.Public()) {
+			t.Error("SignedBy() = true, want false: SignatureKey matches ca but Signature was not produced by ca's private key")
+		}
+	})
+}
+
+// should reject a certificate whose SignatureKey matches but whose Signature bytes were tampered with after signing
+func TestVerifyCertSignature_RejectsTamperedSignature(t *testing.T) {
+	t.Parallel()
+
+	ca, err := NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	caSigner, err := ssh.NewSignerFromKey(ca.Private())
+	if err != nil {
+		t.Fatalf("NewSignerFromKey() error = %v", err)
+	}
+	leaf, err := NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+
+	cert := &ssh.Certificate{
+		Key:         leaf.Public(),
+		CertType:    ssh.UserCert,
+		ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()),
+		ValidBefore: uint64(time.Now().Add(time.Hour).Unix()),
+	}
+	if err := cert.SignCert(rand.Reader, caSigner); err != nil {
+		t.Fatalf("SignCert() error = %v", err)
+	}
+
+	if !VerifyCertSignature(cert, ca.Public()) {
+		t.Fatal("VerifyCertSignature() = false, want true for a genuinely CA-signed certificate")
+	}
+
+	tampered := *cert.Signature
+	tampered.Blob = append([]byte(nil), tampered.Blob...)
+	tampered.Blob[0] ^= 0xFF
+	cert.Signature = &tampered
+
+	if VerifyCertSignature(cert, ca.Public()) {
+		t.Error("VerifyCertSignature() = true, want false for a certificate with a tampered signature blob")
+	}
+}
+
+// should reject nil inputs and a certificate with no signature or SignatureKey
+func TestVerifyCertSignature_RejectsIncompleteInput(t *testing.T) {
+	t.Parallel()
+
+	ca, err := NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	leaf, err := NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+
+	tests := []struct {
+		name string
+		cert *ssh.Certificate
+		ca   ssh.PublicKey
+	}{
+		{name: "should reject a nil certificate", cert: nil, ca: ca.Public()},
+		{name: "should reject a nil ca", cert: &ssh.Certificate{Key: leaf.Public()}, ca: nil},
+		{name: "should reject a certificate with no SignatureKey", cert: &ssh.Certificate{Key: leaf.Public()}, ca: ca.Public()},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if VerifyCertSignature(tt.cert, tt.ca) {
+				t.Error("VerifyCertSignature() = true, want false")
+			}
+		})
+	}
 }
 
 // should marshal a set certificate to authorized_keys format and error when none is set

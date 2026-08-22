@@ -71,12 +71,40 @@ func TestInitOtelLogging_ShouldDefaultExporterEnvToNoneAndInstallLogger(t *testi
 	}
 
 	prev := slog.Default()
-	if err := initOtelLogging(context.Background(), res); err != nil {
+	shutdownFn, err := initOtelLogging(context.Background(), res)
+	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
+	}
+	if shutdownFn == nil {
+		t.Fatal("expected a non-nil shutdown function")
 	}
 
 	if slog.Default() == prev {
 		t.Error("expected initOtelLogging to install a new default slog logger")
+	}
+	if err := shutdownFn(context.Background()); err != nil {
+		t.Errorf("expected the shutdown function to succeed, got %v", err)
+	}
+}
+
+func TestInitOtelLogging_ShouldReportShutdownErrorWhenContextCanceled(t *testing.T) {
+	saveSlogDefault(t)
+	t.Setenv("OTEL_LOGS_EXPORTER", "")
+
+	res, err := defaultResource()
+	if err != nil {
+		t.Fatalf("failed to build resource: %v", err)
+	}
+
+	shutdownFn, err := initOtelLogging(context.Background(), res)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := shutdownFn(ctx); err == nil {
+		t.Fatal("expected a shutdown error with a canceled context, got nil")
 	}
 }
 
@@ -200,7 +228,7 @@ func TestInitOtelMetrics_ShouldErrorWhenExporterUnknown(t *testing.T) {
 	}
 }
 
-func TestInitObservability_ShouldSetHTTPClientAndNoShutdownFnsWhenAllDisabled(t *testing.T) {
+func TestInitObservability_ShouldSetHTTPClientAndOnlyLoggingShutdownFnWhenTracesAndMetricsDisabled(t *testing.T) {
 	saveSlogDefault(t)
 	t.Setenv("OTEL_LOGS_EXPORTER", "none")
 
@@ -210,8 +238,8 @@ func TestInitObservability_ShouldSetHTTPClientAndNoShutdownFnsWhenAllDisabled(t 
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if len(shutdownFns) != 0 {
-		t.Errorf("expected no shutdown functions when traces and metrics are disabled, got %d", len(shutdownFns))
+	if len(shutdownFns) != 1 {
+		t.Errorf("expected only the logging shutdown function when traces and metrics are disabled, got %d", len(shutdownFns))
 	}
 	if a.httpClient == nil {
 		t.Error("expected initObservability to set the app's HTTP client")
@@ -230,8 +258,8 @@ func TestInitObservability_ShouldCollectShutdownFnsWhenTracesAndMetricsEnabled(t
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if len(shutdownFns) != 2 {
-		t.Fatalf("expected one shutdown function each for traces and metrics, got %d", len(shutdownFns))
+	if len(shutdownFns) != 3 {
+		t.Fatalf("expected one shutdown function each for logging, traces, and metrics, got %d", len(shutdownFns))
 	}
 	for i, fn := range shutdownFns {
 		if err := fn(context.Background()); err != nil {
@@ -262,7 +290,7 @@ func TestInitOtelLogging_ShouldErrorWhenExporterUnknown(t *testing.T) {
 		t.Fatalf("failed to build resource: %v", err)
 	}
 
-	if err := initOtelLogging(context.Background(), res); err == nil {
+	if _, err := initOtelLogging(context.Background(), res); err == nil {
 		t.Fatal("expected an error for an unknown log exporter, got nil")
 	}
 }

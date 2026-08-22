@@ -193,8 +193,9 @@ func (k *SSHKeypair) SetCertificate(cert *ssh.Certificate) {
 	k.certificate = cert
 }
 
-// SignedBy reports whether this keypair's certificate exists and was signed
-// by ca. It returns false if there is no certificate.
+// SignedBy reports whether this keypair's certificate exists and was
+// cryptographically signed by ca. It returns false if there is no
+// certificate.
 func (k SSHKeypair) SignedBy(ca ssh.PublicKey) bool {
 	if k.certificate == nil {
 		return false
@@ -202,7 +203,38 @@ func (k SSHKeypair) SignedBy(ca ssh.PublicKey) bool {
 	if k.certificate.SignatureKey == nil {
 		return false
 	}
-	return bytes.Equal(k.certificate.SignatureKey.Marshal(), ca.Marshal())
+	if !bytes.Equal(k.certificate.SignatureKey.Marshal(), ca.Marshal()) {
+		return false
+	}
+	return VerifyCertSignature(k.certificate, ca)
+}
+
+// VerifyCertSignature reports whether cert.Signature is a valid signature
+// by ca over the certificate's signed content. It does NOT check that ca is
+// the CA cert claims to be signed by (cert.SignatureKey) — callers that
+// need that must check it separately (e.g. via a byte comparison against a
+// trusted CA list) before trusting this result, since Verify only proves ca
+// signed these bytes, not that ca is the specific key the caller trusts.
+//
+// This exists because golang.org/x/crypto/ssh only exposes real certificate
+// signature verification bundled inside (*ssh.CertChecker).CheckCert, which
+// also enforces principal/time/critical-option constraints unrelated to
+// signature validity. It replicates the unexported
+// (*ssh.Certificate).bytesForSigning via the exported Marshal method: strip
+// the signature, marshal, and drop the trailing signature-length prefix
+// that Marshal appends when Signature is nil.
+func VerifyCertSignature(cert *ssh.Certificate, ca ssh.PublicKey) bool {
+	if cert == nil || ca == nil || cert.SignatureKey == nil || cert.Signature == nil {
+		return false
+	}
+	unsigned := *cert
+	unsigned.Signature = nil
+	marshaled := unsigned.Marshal()
+	if len(marshaled) < 4 {
+		return false // excluded from coverage: a marshaled certificate is always far longer than 4 bytes, see exclude-from-coverage.txt
+	}
+	signedBytes := marshaled[:len(marshaled)-4]
+	return ca.Verify(signedBytes, cert.Signature) == nil
 }
 
 // CertificateString returns the SSH certificate in authorized_keys format, if present.

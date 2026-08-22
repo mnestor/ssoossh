@@ -100,6 +100,42 @@ func TestMigrateDatabase_ShouldApplyEmbeddedSqliteMigrations(t *testing.T) {
 	}
 }
 
+// Regression test: migrateDatabase's SQLite driver is built with
+// sqliteMigrate.WithInstance, which stores the app's own *sql.DB directly
+// rather than a dedicated connection — closing that driver (e.g. via a
+// naive `defer m.Close()` after migrate.NewWithInstance) would close the
+// app's entire connection pool, not just release a migration-owned
+// resource. This is especially fatal for in-memory SQLite, which the app
+// restricts to exactly one open connection so every caller shares the same
+// data. Confirm db is still connected and usable after migrating.
+func TestMigrateDatabase_ShouldLeaveSqliteConnectionPoolUsableAfterMigrating(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	c.DB.Provider = config.DBProviderSqlite
+	c.DB.Connection = ":memory:"
+
+	db, err := connectDatabase(c)
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+
+	if err := migrateDatabase(config.DBProviderSqlite, db); err != nil {
+		t.Fatalf("unexpected error migrating database: %v", err)
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB: %v", err)
+	}
+	if err := sqlDB.Ping(); err != nil {
+		t.Fatalf("expected the database connection to still be usable after migrating, got: %v", err)
+	}
+	if err := db.Exec("SELECT 1").Error; err != nil {
+		t.Errorf("expected to still be able to query the database after migrating, got: %v", err)
+	}
+}
+
 func TestMigrateDatabase_ShouldErrorForUnsupportedProvider(t *testing.T) {
 	t.Parallel()
 

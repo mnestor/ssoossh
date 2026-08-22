@@ -54,8 +54,8 @@
       "buildFlags": "-tags=exclude_web -tags=nomsgpack",
       "cwd": "${workspaceFolder}",
       "args": [
-        // "ssh",
-        "ca"
+        "ssh",
+        "login"
         // "-v"
       ]
     }

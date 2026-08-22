@@ -91,7 +91,7 @@ type requestOutcomeMessage struct {
 type CertRequestService struct {
 	config     *config.Config
 	db         *gorm.DB
-	keyIDTmpls *keyIDTemplates
+	policies   map[model.CertificateType]*certTypePolicy
 	publisher  message.Publisher
 	subscriber message.Subscriber
 
@@ -122,11 +122,25 @@ func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publ
 	return &CertRequestService{
 		config:     c,
 		db:         db,
-		keyIDTmpls: keyIDTmpls,
+		policies:   newCertTypePolicies(c.CertOptions, keyIDTmpls),
 		publisher:  publisher,
 		subscriber: subscriber,
 		resolved:   make(map[string]requestOutcome),
 	}, nil
+}
+
+// policyFor returns certType's certTypePolicy, or an error naming it when
+// none exists — the same defense-in-depth guard resolveCertOptions and
+// resolvePrincipals used to each reimplement in their own switch's default
+// case. In practice every route into CreateRequest hardcodes a known
+// model.CertificateType (see server/controller/certrequests.go), so this
+// only fires for a corrupted or hand-edited database row.
+func (s *CertRequestService) policyFor(certType model.CertificateType) (*certTypePolicy, error) {
+	policy, ok := s.policies[certType]
+	if !ok {
+		return nil, fmt.Errorf("unsupported certificate type %q", certType)
+	}
+	return policy, nil
 }
 
 // CreateRequest persists a new pending model.CertificateRequest for p and
@@ -223,7 +237,7 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 		return nil, fmt.Errorf("failed to decode requested options: %w", err)
 	}
 
-	narrowed, validDuration, _, err := resolveCertOptions(s.config.CertOptions, req.Type, requested)
+	policy, err := s.policyFor(req.Type)
 	if err != nil {
 		return nil, err
 	}
@@ -231,9 +245,9 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 	return &RequestDetail{
 		Request:       req,
 		Requested:     requested,
-		Narrowed:      narrowed,
-		Principals:    resolvePrincipals(req.Type, req.Hostname, req.Username, identity),
-		ValidDuration: validDuration,
+		Narrowed:      narrowRequestedOptions(policy, requested),
+		Principals:    policy.principals(req.Hostname, req.Username, identity),
+		ValidDuration: policy.validDuration,
 	}, nil
 }
 
@@ -301,18 +315,19 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 		return fmt.Errorf("failed to decode requested options: %w", err)
 	}
 
-	narrowed, validDuration, requireGroup, err := resolveCertOptions(s.config.CertOptions, req.Type, requested)
+	policy, err := s.policyFor(req.Type)
 	if err != nil {
 		return err
 	}
+	narrowed := narrowRequestedOptions(policy, requested)
 	// PAM is the one type where an unset requireGroup denies rather than
 	// opens: "who may sudo" is deliberately narrower than "who may log in",
 	// so a deployment that hasn't configured cert_options.pam.require_group
 	// issues no PAM certificates at all (see CertOptionsPAM.RequireGroup).
-	if req.Type == model.CertificateTypePAM && requireGroup == "" {
+	if req.Type == model.CertificateTypePAM && policy.requireGroup == "" {
 		return fmt.Errorf("pam certificate issuance requires cert_options.pam.require_group to be configured")
 	}
-	if requireGroup != "" && !slices.Contains(identity.Groups, requireGroup) {
+	if policy.requireGroup != "" && !slices.Contains(identity.Groups, policy.requireGroup) {
 		return fmt.Errorf("identity is not authorized to approve %s certificates", req.Type)
 	}
 
@@ -320,11 +335,11 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 		return err
 	}
 
-	switch req.Type {
-	case model.CertificateTypeService:
+	switch policy.flow {
+	case flowEnrollment:
 		return s.approveServiceEnrollment(ctx, requestID, narrowed)
-	case model.CertificateTypeUser, model.CertificateTypePAM:
-		return s.approveForSigning(ctx, req, identity, narrowed, validDuration)
+	case flowSigning:
+		return s.approveForSigning(ctx, req, identity, policy, narrowed)
 	default:
 		// Host certificates aren't issuable yet — the signer only handles
 		// user and PAM certificates for now (see
@@ -437,11 +452,11 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, reque
 	return nil
 }
 
-// approveForSigning implements Approve's user/host branch — see its doc
-// comment. narrowed/validDuration are req.Type's already-resolved,
+// approveForSigning implements Approve's user/PAM branch — see its doc
+// comment. policy/narrowed are req.Type's already-resolved,
 // server-config-bounded policy.
-func (s *CertRequestService) approveForSigning(ctx context.Context, req model.CertificateRequest, identity *Identity, narrowed RequestedOptions, validDuration time.Duration) error {
-	keyID, err := s.keyIDTmpls.execute(req.Type, keyIDTemplateData{
+func (s *CertRequestService) approveForSigning(ctx context.Context, req model.CertificateRequest, identity *Identity, policy *certTypePolicy, narrowed RequestedOptions) error {
+	keyID, err := executeKeyIDTemplate(policy.keyIDTemplate, keyIDTemplateData{
 		Username: identity.Username,
 		Subject:  identity.Subject,
 		Email:    identity.Email,
@@ -450,7 +465,7 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 		UniqueID: req.ID,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to compute key ID: %w", err) // excluded from coverage: only reachable for a certificate type keyIDTemplates.execute doesn't recognize, but Approve's switch only ever calls approveForSigning for User/PAM, both of which it does recognize, see exclude-from-coverage.txt
+		return fmt.Errorf("failed to compute key ID: %w", err) // excluded from coverage: parseKeyIDTemplate already executed policy.keyIDTemplate once against a zero-value keyIDTemplateData at construction to catch unresolvable fields; keyIDTemplateData is a flat struct of strings, so executing it again against real request data cannot newly fail, see exclude-from-coverage.txt
 	}
 
 	now := time.Now()
@@ -469,11 +484,11 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 		Type:             req.Type,
 		PublicKey:        req.PublicKey,
 		Hostname:         req.Hostname,
-		Principals:       resolvePrincipals(req.Type, req.Hostname, req.Username, identity),
+		Principals:       policy.principals(req.Hostname, req.Username, identity),
 		KeyID:            keyID,
 		RequestedOptions: narrowed,
 		ValidAfter:       now,
-		ValidBefore:      now.Add(validDuration),
+		ValidBefore:      now.Add(policy.validDuration),
 	}
 	payload, err := json.Marshal(job)
 	if err != nil {
@@ -489,36 +504,6 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 	}
 
 	return nil
-}
-
-// resolveCertOptions narrows requested against certType's server config.
-// See Approve's doc comment for the policy this implements.
-func resolveCertOptions(opts config.CertificateOptions, certType model.CertificateType, requested RequestedOptions) (narrowed RequestedOptions, validDuration time.Duration, requireGroup string, err error) {
-	var permittedExtensions []string
-	switch certType {
-	case model.CertificateTypeUser:
-		permittedExtensions = opts.User.Extensions
-		validDuration = opts.User.ValidDuration
-		requireGroup = opts.User.RequireGroup
-	case model.CertificateTypeService:
-		permittedExtensions = opts.Service.Extensions
-		validDuration = opts.Service.ValidDuration
-		requireGroup = opts.Service.RequireGroup
-	case model.CertificateTypeHost:
-		validDuration = opts.Host.ValidDuration
-		requireGroup = opts.Host.RequireGroup
-	case model.CertificateTypePAM:
-		permittedExtensions = opts.PAM.Extensions
-		validDuration = opts.PAM.ValidDuration
-		requireGroup = opts.PAM.RequireGroup
-	default:
-		return RequestedOptions{}, 0, "", fmt.Errorf("unsupported certificate type %q", certType)
-	}
-
-	narrowed.Extensions = intersectStrings(requested.Extensions, permittedExtensions)
-	narrowed.NoTouchRequired = requested.NoTouchRequired && certType == model.CertificateTypeService
-
-	return narrowed, validDuration, requireGroup, nil
 }
 
 // intersectStrings returns the elements of requested that also appear in
@@ -539,27 +524,6 @@ func intersectStrings(requested, permitted []string) []string {
 		}
 	}
 	return out
-}
-
-// resolvePrincipals is a conservative, provisional default — see this
-// package's Approve doc comment and docs/ssoossh-context.md's "Which LDAP
-// attributes become principals" open question.
-//
-// PAM is the one deliberate exception to "the principal is the approver":
-// the certificate names the local account pam_ssoossh is authenticating
-// (username, carried on the request since creation — see
-// model.CertificateRequest.Username), not the approver's OIDC identity.
-// Those are the same string in the common case and are not guaranteed to
-// be — see docs/release-phase4-pam-server.md, "Principal resolution".
-func resolvePrincipals(certType model.CertificateType, hostname, pamUsername string, identity *Identity) []string {
-	switch certType {
-	case model.CertificateTypeHost:
-		return []string{hostname}
-	case model.CertificateTypePAM:
-		return []string{pamUsername}
-	default:
-		return []string{identity.Username}
-	}
 }
 
 // Deny marks requestID denied and notifies anything waiting in Wait. Denying

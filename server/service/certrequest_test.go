@@ -215,7 +215,7 @@ func TestCertRequestService_ShouldSurfaceGenericDBErrors(t *testing.T) {
 		}
 		closeUnderlyingDB(t, svc.db)
 
-		if err := svc.approveForSigning(context.Background(), req, identity, RequestedOptions{}, time.Hour); err == nil {
+		if err := svc.approveForSigning(context.Background(), req, identity, svc.policies[model.CertificateTypeUser], RequestedOptions{}); err == nil {
 			t.Error("approveForSigning() error = nil, want error")
 		}
 	})
@@ -944,120 +944,18 @@ func TestCertRequestService_Approve_ShouldErrorWhenNotPending(t *testing.T) {
 	}
 }
 
-// TestResolveCertOptions_ShouldNarrowPAMExtensionsAndUsePAMDuration confirms
-// PAM reads from its own config section — cert_options.pam.extensions being
-// empty (the documented default) drops a requested extension entirely
-// rather than granting it, and PAM's ValidDuration is used rather than
-// User's.
-func TestResolveCertOptions_ShouldNarrowPAMExtensionsAndUsePAMDuration(t *testing.T) {
+// TestCertRequestService_PolicyFor_ShouldRejectAnUnsupportedCertificateType
+// covers policyFor's defense-in-depth guard: every route into CreateRequest
+// hardcodes a known model.CertificateType (see
+// server/controller/certrequests.go), so this only fires for a corrupted or
+// hand-edited database row.
+func TestCertRequestService_PolicyFor_ShouldRejectAnUnsupportedCertificateType(t *testing.T) {
 	t.Parallel()
 
-	narrowed, validDuration, requireGroup, err := resolveCertOptions(config.CertificateOptions{
-		User: config.CertOptionsUser{Extensions: []string{"permit-pty"}, ValidDuration: time.Hour},
-		PAM:  config.CertOptionsPAM{RequireGroup: "sudoers", ValidDuration: 30 * time.Second},
-	}, model.CertificateTypePAM, RequestedOptions{Extensions: []string{"permit-pty"}})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if narrowed.Extensions != nil {
-		t.Errorf("expected no PAM extensions to survive narrowing, got %v", narrowed.Extensions)
-	}
-	if validDuration != 30*time.Second {
-		t.Errorf("got ValidDuration %v, want PAM's own 30s, not User's", validDuration)
-	}
-	if requireGroup != "sudoers" {
-		t.Errorf("got RequireGroup %q, want %q", requireGroup, "sudoers")
-	}
-}
+	svc := newTestCertRequestService(t, 0)
 
-func TestResolveCertOptions_ShouldDropForceCommandAndSourceAddresses(t *testing.T) {
-	t.Parallel()
-
-	narrowed, _, _, err := resolveCertOptions(config.CertificateOptions{
-		User: config.CertOptionsUser{Extensions: []string{"permit-pty"}},
-	}, model.CertificateTypeUser, RequestedOptions{
-		Extensions:      []string{"permit-pty"},
-		ForceCommand:    "/bin/true",
-		SourceAddresses: []string{"10.0.0.1"},
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if narrowed.ForceCommand != "" {
-		t.Errorf("expected ForceCommand to be dropped, got %q", narrowed.ForceCommand)
-	}
-	if narrowed.SourceAddresses != nil {
-		t.Errorf("expected SourceAddresses to be dropped, got %v", narrowed.SourceAddresses)
-	}
-}
-
-func TestResolveCertOptions_ShouldOnlyGrantNoTouchRequiredForService(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		certType model.CertificateType
-		want     bool
-	}{
-		{"should grant for service", model.CertificateTypeService, true},
-		{"should not grant for user", model.CertificateTypeUser, false},
-		{"should not grant for host", model.CertificateTypeHost, false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			narrowed, _, _, err := resolveCertOptions(config.CertificateOptions{}, tt.certType, RequestedOptions{NoTouchRequired: true})
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if narrowed.NoTouchRequired != tt.want {
-				t.Errorf("got NoTouchRequired %v, want %v", narrowed.NoTouchRequired, tt.want)
-			}
-		})
-	}
-}
-
-func TestResolveCertOptions_ShouldRejectAnUnsupportedCertificateType(t *testing.T) {
-	t.Parallel()
-
-	_, _, _, err := resolveCertOptions(config.CertificateOptions{}, model.CertificateType("bogus"), RequestedOptions{})
-	if err == nil {
-		t.Error("resolveCertOptions() error = nil, want error for an unsupported certificate type")
-	}
-}
-
-func TestResolvePrincipals_ShouldUseHostnameForHostCertificates(t *testing.T) {
-	t.Parallel()
-
-	got := resolvePrincipals(model.CertificateTypeHost, "db01.internal", "", &Identity{Username: "alice"})
-	if len(got) != 1 || got[0] != "db01.internal" {
-		t.Errorf("got %v, want [\"db01.internal\"]", got)
-	}
-}
-
-func TestResolvePrincipals_ShouldUseUsernameForUserAndServiceCertificates(t *testing.T) {
-	t.Parallel()
-
-	for _, certType := range []model.CertificateType{model.CertificateTypeUser, model.CertificateTypeService} {
-		got := resolvePrincipals(certType, "db01.internal", "", &Identity{Username: "alice"})
-		if len(got) != 1 || got[0] != "alice" {
-			t.Errorf("for %s: got %v, want [\"alice\"]", certType, got)
-		}
-	}
-}
-
-// TestResolvePrincipals_ShouldUsePAMUsernameNotIdentity is the assertion
-// that catches the wrong reading of docs/release-phase4-pam-server.md's
-// "Principal resolution" section: PAM certificates must name the local
-// account the module authenticated, not the approver's OIDC identity, even
-// when those two names differ.
-func TestResolvePrincipals_ShouldUsePAMUsernameNotIdentity(t *testing.T) {
-	t.Parallel()
-
-	got := resolvePrincipals(model.CertificateTypePAM, "", "mnestor", &Identity{Username: "mike.nestor"})
-	if len(got) != 1 || got[0] != "mnestor" {
-		t.Errorf("got %v, want [\"mnestor\"]", got)
+	if _, err := svc.policyFor(model.CertificateType("bogus")); err == nil {
+		t.Error("policyFor() error = nil, want error for an unsupported certificate type")
 	}
 }
 
@@ -1531,7 +1429,7 @@ func TestApproveForSigning_ShouldRefuseARequestThatIsNoLongerPending(t *testing.
 		t.Fatalf("failed to reload request: %v", err)
 	}
 
-	if err := svc.approveForSigning(context.Background(), req, identity, RequestedOptions{}, time.Hour); err == nil {
+	if err := svc.approveForSigning(context.Background(), req, identity, svc.policies[model.CertificateTypeUser], RequestedOptions{}); err == nil {
 		t.Error("approveForSigning() error = nil, want error for a request that lost the pending race")
 	}
 }

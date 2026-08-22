@@ -1,12 +1,15 @@
 package agent
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 )
 
 // parseCAPublicKey parses a CA public key from an authorized_keys-format
@@ -31,8 +34,31 @@ func parseCAPublicKey(caStr string) (ssh.PublicKey, error) {
 	return pub, nil
 }
 
-// CertificateValid reports whether c is time-valid and signed by any of the
-// given trusted CAs.
+// parseCAPublicKeys parses each of cas (authorized_keys format or raw
+// base64) via parseCAPublicKey, used by both SshAgent.SetCA and
+// FileAgent.SetCA.
+func parseCAPublicKeys(cas []string) ([]ssh.PublicKey, error) {
+	parsed := make([]ssh.PublicKey, 0, len(cas))
+	for _, caStr := range cas {
+		pub, err := parseCAPublicKey(caStr)
+		if err != nil {
+			return nil, err
+		}
+		parsed = append(parsed, pub)
+	}
+	return parsed, nil
+}
+
+// publicKeysEqual compares two ssh.PublicKey values for equality.
+func publicKeysEqual(a, b ssh.PublicKey) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return bytes.Equal(a.Marshal(), b.Marshal())
+}
+
+// CertificateValid reports whether c is time-valid and cryptographically
+// signed by any of the given trusted CAs.
 func CertificateValid(c *ssh.Certificate, cas []ssh.PublicKey) bool {
 	if c == nil {
 		return false
@@ -50,7 +76,7 @@ func CertificateValid(c *ssh.Certificate, cas []ssh.PublicKey) bool {
 		return false
 	}
 	for _, ca := range cas {
-		if publicKeysEqual(c.SignatureKey, ca) {
+		if publicKeysEqual(c.SignatureKey, ca) && keypair.VerifyCertSignature(c, ca) {
 			return true
 		}
 	}

@@ -1,9 +1,10 @@
 package agent
 
 import (
-	"bytes"
 	"errors"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -29,13 +30,21 @@ type FileAgent struct {
 
 // NewFileAgent creates a FileAgent for the given private key path.
 // It does not require files to be present, but will check and record their existence.
+// A relative path (including a bare filename, or "~"/"~/...") is resolved
+// against the user's ~/.ssh directory; os.UserHomeDir handles Windows and
+// WSL, so no platform-specific logic is needed here.
 func NewFileAgent(path string) (Agent, error) {
-	if path[:2] == "~/" {
+	if !filepath.IsAbs(path) {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
 			return nil, err
 		}
-		path = homeDir + path[1:]
+		switch {
+		case path == "~" || strings.HasPrefix(path, "~/"):
+			path = filepath.Join(homeDir, strings.TrimPrefix(path, "~"))
+		default:
+			path = filepath.Join(homeDir, ".ssh", path)
+		}
 	}
 
 	ag := &FileAgent{
@@ -203,13 +212,9 @@ func (a *FileAgent) SetCA(cas ...string) error {
 	if len(cas) == 0 {
 		return errors.New("at least one CA public key string is required")
 	}
-	parsed := make([]ssh.PublicKey, 0, len(cas))
-	for _, caStr := range cas {
-		pub, err := parseCAPublicKey(caStr)
-		if err != nil {
-			return err
-		}
-		parsed = append(parsed, pub)
+	parsed, err := parseCAPublicKeys(cas)
+	if err != nil {
+		return err
 	}
 	a.cas = append(a.cas, parsed...)
 	return nil
@@ -271,18 +276,5 @@ func (f *FileAgent) AddKeypair(keypair *keypair.SSHKeypair) error {
 
 	// Add to in-memory keypair and certificate
 	f.keypair = keypair
-	// if ed, ok := keypair.(*keypair.Ed25519KeyPair); ok {
-	// 	_ = ed.ParseCertificateFromString(cert)
-	// 	f.cert = ed.Certificate
-	// }
-	// Add support for other keypair types if needed
 	return nil
-}
-
-// publicKeysEqual compares two ssh.PublicKey values for equality.
-func publicKeysEqual(a, b ssh.PublicKey) bool {
-	if a == nil || b == nil {
-		return false
-	}
-	return bytes.Equal(a.Marshal(), b.Marshal())
 }

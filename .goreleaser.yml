@@ -74,17 +74,17 @@ builds:
     flags: *flags
     goos:
       - darwin
-    goarm:
-      - "7"
+    # goarm:
+    #   - "7"
     goarch:
       - amd64
       - arm64
     ldflags: *build-ldflags
-    env:
-      # complex, templated envs (v1.14+):
-      - >-
-        {{- if eq .Arch "amd64"}}CC=o64-clang{{- end }}
-        {{- if eq .Arch "arm64"}}CC=aarch64-apple-darwin20.2-clang{{- end }}
+    # env:
+    #   # complex, templated envs (v1.14+):
+    #   - >-
+    #     {{- if eq .Arch "amd64"}}CC=o64-clang{{- end }}
+    #     {{- if eq .Arch "arm64"}}CC=aarch64-apple-darwin20.2-clang{{- end }}
     hooks:
       # amd64/arm64 ship as separate binaries (no universal_binaries/lipo
       # merge), so each is quill-signed and packaged into its own DMG as
@@ -163,8 +163,8 @@ archives:
   - id: linux-clients-archives
     ids:
       - linux-build
-    name_template: &archive_name "ssoossh-client_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    files: &archiveFiles
+    name_template: &client_archive_name "ssoossh-client_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: &client_archive_files
       - docs/ssoossh.yaml.default
       - LICENSE
       - NOTICE
@@ -175,8 +175,8 @@ archives:
   - id: linux-server-archives
     ids:
       - server-linux-build
-    name_template: &archive_name "ssoossh-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    files: &archiveFiles
+    name_template: "ssoossh-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
       - docs/ssoosshd.yaml.default
       - LICENSE
       - NOTICE
@@ -189,5 +189,5 @@ archives:
     ids:
       - windows-build
       - macos-build
-    files: *archiveFiles
-    name_template: *archive_name
+    files: *client_archive_files
+    name_template: *client_archive_name

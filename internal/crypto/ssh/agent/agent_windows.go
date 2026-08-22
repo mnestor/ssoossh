@@ -4,7 +4,6 @@
 package agent
 
 import (
-	"net"
 	"os"
 
 	"github.com/kbolino/pageant"
@@ -49,16 +48,7 @@ func NewPageantAgent() (Agent, error) {
 
 // NewOpenSSHAgent connects to the OpenSSH agent named pipe on Windows.
 func NewOpenSSHAgent() (Agent, error) {
-	sock := `\\.\pipe\openssh-ssh-agent`
-	conn, err := net.Dial("unix", sock)
-	if err != nil {
-		return nil, err
-	}
-	return &SshAgent{
-		agent:   agent.NewClient(conn),
-		conn:    conn,
-		backend: BackendOpenSSHAgent,
-	}, nil
+	return dialAgent(`\\.\pipe\openssh-ssh-agent`, BackendOpenSSHAgent)
 }
 
 // NewWSLAgent connects to a WSL ssh-agent relay named pipe, letting a native
@@ -70,13 +60,5 @@ func NewWSLAgent() (Agent, error) {
 	if sock == "" {
 		sock = defaultWSLAgentPipe
 	}
-	conn, err := net.Dial("unix", sock)
-	if err != nil {
-		return nil, err
-	}
-	return &SshAgent{
-		agent:   agent.NewClient(conn),
-		conn:    conn,
-		backend: BackendWSLAgent,
-	}, nil
+	return dialAgent(sock, BackendWSLAgent)
 }

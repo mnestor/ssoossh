@@ -1,14 +1,13 @@
 package agent
 
 import (
-	"crypto/rand"
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
+
+	"golang.org/x/crypto/ssh"
 
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
-	"golang.org/x/crypto/ssh"
 )
 
 // should report file as the backend and agent type for a FileAgent
@@ -46,8 +45,8 @@ func TestNewFileAgent_WhenNoFilesExist(t *testing.T) {
 	}
 }
 
-// should expand a leading ~/ to the user's home directory
-func TestNewFileAgent_TildeExpansion(t *testing.T) {
+// should resolve a non-absolute path to an absolute one under the user's home directory
+func TestNewFileAgent_ResolvesToAbsolutePath(t *testing.T) {
 	t.Parallel()
 
 	home, err := os.UserHomeDir()
@@ -55,7 +54,46 @@ func TestNewFileAgent_TildeExpansion(t *testing.T) {
 		t.Skipf("no home directory available: %v", err)
 	}
 
-	ag, err := NewFileAgent("~/nonexistent-ssoossh-test-key")
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "should expand a leading ~/ to the home directory", path: "~/nonexistent-ssoossh-test-key", want: filepath.Join(home, "nonexistent-ssoossh-test-key")},
+		{name: "should expand a bare ~ to the home directory", path: "~", want: home},
+		{name: "should resolve a bare filename under ~/.ssh", path: "nonexistent-ssoossh-test-key", want: filepath.Join(home, ".ssh", "nonexistent-ssoossh-test-key")},
+		{name: "should resolve a relative path under ~/.ssh", path: filepath.Join("sub", "nonexistent-ssoossh-test-key"), want: filepath.Join(home, ".ssh", "sub", "nonexistent-ssoossh-test-key")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ag, err := NewFileAgent(tt.path)
+			if err != nil {
+				t.Fatalf("NewFileAgent() error = %v", err)
+			}
+			fa, ok := ag.(*FileAgent)
+			if !ok {
+				t.Fatalf("NewFileAgent() returned %T, want *FileAgent", ag)
+			}
+			if !filepath.IsAbs(fa.privKey) {
+				t.Errorf("privKey = %q, want an absolute path", fa.privKey)
+			}
+			if fa.privKey != tt.want {
+				t.Errorf("privKey = %q, want %q", fa.privKey, tt.want)
+			}
+		})
+	}
+}
+
+// should leave an already-absolute path untouched
+func TestNewFileAgent_AbsolutePathUnchanged(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "id_ssoossh")
+
+	ag, err := NewFileAgent(path)
 	if err != nil {
 		t.Fatalf("NewFileAgent() error = %v", err)
 	}
@@ -63,7 +101,29 @@ func TestNewFileAgent_TildeExpansion(t *testing.T) {
 	if !ok {
 		t.Fatalf("NewFileAgent() returned %T, want *FileAgent", ag)
 	}
-	want := filepath.Join(home, "nonexistent-ssoossh-test-key")
+	if fa.privKey != path {
+		t.Errorf("privKey = %q, want %q", fa.privKey, path)
+	}
+}
+
+// should not panic on an empty path, resolving it under ~/.ssh like any other bare relative path
+func TestNewFileAgent_EmptyPath(t *testing.T) {
+	t.Parallel()
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("no home directory available: %v", err)
+	}
+
+	ag, err := NewFileAgent("")
+	if err != nil {
+		t.Fatalf("NewFileAgent() error = %v", err)
+	}
+	fa, ok := ag.(*FileAgent)
+	if !ok {
+		t.Fatalf("NewFileAgent() returned %T, want *FileAgent", ag)
+	}
+	want := filepath.Join(home, ".ssh")
 	if fa.privKey != want {
 		t.Errorf("privKey = %q, want %q", fa.privKey, want)
 	}
@@ -85,7 +145,7 @@ func TestNewFileAgent_LoadsExistingKeyMaterial(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEd25519KeyPair() error = %v", err)
 	}
-	cert := newFileAgentCert(t, kp.Public(), caSigner)
+	cert := newTestCert(t, kp.Public(), caSigner)
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "id_ssoossh")
@@ -204,21 +264,6 @@ func TestFileAgent_AddAndRemove_Unsupported(t *testing.T) {
 	}
 }
 
-// newFileAgentCert signs pub as a time-valid ssh.Certificate using caSigner.
-func newFileAgentCert(t *testing.T, pub ssh.PublicKey, caSigner ssh.Signer) *ssh.Certificate {
-	t.Helper()
-	cert := &ssh.Certificate{
-		Key:         pub,
-		CertType:    ssh.UserCert,
-		ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()),
-		ValidBefore: uint64(time.Now().Add(time.Hour).Unix()),
-	}
-	if err := cert.SignCert(rand.Reader, caSigner); err != nil {
-		t.Fatalf("SignCert() error = %v", err)
-	}
-	return cert
-}
-
 // should return no identities when no keypair is loaded, and the keypair filtered by CA trust otherwise
 func TestFileAgent_List(t *testing.T) {
 	t.Parallel()
@@ -239,7 +284,7 @@ func TestFileAgent_List(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEd25519KeyPair() error = %v", err)
 	}
-	leaf.SetCertificate(newFileAgentCert(t, leaf.Public(), caSigner))
+	leaf.SetCertificate(newTestCert(t, leaf.Public(), caSigner))
 
 	t.Run("should return no identities when no keypair is loaded", func(t *testing.T) {
 		t.Parallel()
@@ -383,7 +428,7 @@ func TestFileAgent_CleanupAgent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewEd25519KeyPair() error = %v", err)
 		}
-		leaf.SetCertificate(newFileAgentCert(t, leaf.Public(), untrustedSigner))
+		leaf.SetCertificate(newTestCert(t, leaf.Public(), untrustedSigner))
 		f := &FileAgent{keypair: leaf, privKey: path, cas: []ssh.PublicKey{ca.Public()}}
 		if err := os.WriteFile(path, []byte("dummy"), 0600); err != nil {
 			t.Fatalf("WriteFile() error = %v", err)
@@ -405,7 +450,7 @@ func TestFileAgent_CleanupAgent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewEd25519KeyPair() error = %v", err)
 		}
-		leaf.SetCertificate(newFileAgentCert(t, leaf.Public(), caSigner))
+		leaf.SetCertificate(newTestCert(t, leaf.Public(), caSigner))
 		f := &FileAgent{keypair: leaf, privKey: path, cas: []ssh.PublicKey{ca.Public()}}
 		if err := os.WriteFile(path, []byte("dummy"), 0600); err != nil {
 			t.Fatalf("WriteFile() error = %v", err)
@@ -595,7 +640,7 @@ func TestFileAgent_Certificates(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		path := filepath.Join(dir, "id_ssoossh")
-		cert := newFileAgentCert(t, leaf.Public(), untrustedSigner)
+		cert := newTestCert(t, leaf.Public(), untrustedSigner)
 		if err := os.WriteFile(path+"-cert.pub", ssh.MarshalAuthorizedKey(cert), 0644); err != nil { //nolint:gosec // test fixture, not secret material
 			t.Fatalf("WriteFile() error = %v", err)
 		}
@@ -609,7 +654,7 @@ func TestFileAgent_Certificates(t *testing.T) {
 		t.Parallel()
 		dir := t.TempDir()
 		path := filepath.Join(dir, "id_ssoossh")
-		cert := newFileAgentCert(t, leaf.Public(), caSigner)
+		cert := newTestCert(t, leaf.Public(), caSigner)
 		if err := os.WriteFile(path+"-cert.pub", ssh.MarshalAuthorizedKey(cert), 0644); err != nil { //nolint:gosec // test fixture, not secret material
 			t.Fatalf("WriteFile() error = %v", err)
 		}

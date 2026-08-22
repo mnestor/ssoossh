@@ -213,13 +213,9 @@ func (a *SshAgent) SetCA(cas ...string) error {
 	if len(cas) == 0 {
 		return errors.New("at least one CA public key string is required")
 	}
-	parsed := make([]ssh.PublicKey, 0, len(cas))
-	for _, caStr := range cas {
-		pub, err := parseCAPublicKey(caStr)
-		if err != nil {
-			return err
-		}
-		parsed = append(parsed, pub)
+	parsed, err := parseCAPublicKeys(cas)
+	if err != nil {
+		return err
 	}
 	a.cas = append(a.cas, parsed...)
 	return nil
@@ -254,6 +250,23 @@ func (a *SshAgent) Certificates() ([]*ssh.Certificate, error) {
 		return nil, errors.New("no valid certificates found signed by the CA")
 	}
 	return certs, nil
+}
+
+// dialAgent connects to sock — a Unix domain socket path or, on Windows, a
+// named pipe path — and wraps the connection as an SshAgent reporting the
+// given backend. Shared by the OpenSSH-agent and WSL-relay constructors on
+// both Unix (agent_unix.go) and Windows (agent_windows.go); Pageant is
+// dialed differently and does not use this helper.
+func dialAgent(sock, backend string) (Agent, error) {
+	conn, err := net.Dial("unix", sock) //nolint:gosec // local ssh-agent socket/named-pipe path, not attacker-influenced network input
+	if err != nil {
+		return nil, err
+	}
+	return &SshAgent{
+		agent:   agent.NewClient(conn),
+		conn:    conn,
+		backend: backend,
+	}, nil
 }
 
 // AddKeypair adds an SSHKeypair to the agent.
