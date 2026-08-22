@@ -4,42 +4,36 @@ package harness
 
 import (
 	"context"
-	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	postgresModule "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
-
-// PostgresContainer wraps a running Postgres testcontainer and provides
-// test infrastructure for E2E tests against a live Postgres backend.
-// Tests can use StartPostgres to get a container and run tests against it.
-type PostgresContainer struct {
-	container *postgres.PostgresContainer
-	dsn       string
-}
 
 // StartPostgres starts a fresh Postgres container for E2E testing. If Docker
 // is unavailable, the test is skipped. The container is automatically
 // stopped via t.Cleanup when the test ends. The DSN is set in
 // SSOOSSH_E2E_POSTGRES_DSN so the harness server picks it up automatically.
-func StartPostgres(t *testing.T) *PostgresContainer {
+//
+// Note: The container setup is minimal to keep the harness fast. For detailed
+// container management, see test/postgres package.
+func StartPostgres(t *testing.T) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Start the Postgres container using the module's high-level API.
-	pgContainer, err := postgres.RunContainer(
-		ctx,
-		postgres.WithImage("postgres:17-alpine"),
-		postgres.WithDatabase("ssoossh"),
-		postgres.WithUsername("ssoossh"),
-		postgres.WithPassword("testpassword"),
+	// Use the postgres module which provides a simplified setup for Postgres.
+	// Documentation: github.com/testcontainers/testcontainers-go/modules/postgres
+	pgContainer, err := postgresModule.RunContainer(ctx,
+		postgresModule.WithDatabase("ssoossh"),
+		postgresModule.WithUsername("ssoossh"),
+		postgresModule.WithPassword("testpassword"),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
 				WithOccurrence(2),
@@ -74,15 +68,8 @@ func StartPostgres(t *testing.T) *PostgresContainer {
 		dsn += "?sslmode=disable"
 	}
 
-	return &PostgresContainer{
-		container: pgContainer,
-		dsn:       dsn,
-	}
-}
-
-// DSN returns the connection string for the Postgres container.
-func (c *PostgresContainer) DSN() string {
-	return c.dsn
+	// Set the environment variable so the harness server picks it up.
+	os.Setenv("SSOOSSH_E2E_POSTGRES_DSN", dsn)
 }
 
 // containsSSLMode checks if the DSN already contains a sslmode parameter.
