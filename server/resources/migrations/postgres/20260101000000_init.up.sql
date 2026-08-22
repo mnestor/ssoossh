@@ -54,7 +54,17 @@ CREATE TABLE certificate_requests (
     -- only; empty for every other type. See
     -- docs/certificate-audit-metadata-plan.md.
     local_username TEXT NOT NULL DEFAULT '',
-    local_hostname TEXT NOT NULL DEFAULT ''
+    local_hostname TEXT NOT NULL DEFAULT '',
+    -- ServiceAccount is set only for CertificateTypeService requests: the
+    -- service account the certificate is for, selected during approval.
+    service_account TEXT NOT NULL DEFAULT '',
+    -- SerialNumber is the pre-allocated certificate serial for user/PAM
+    -- requests, set at approval time before signing. Null for service
+    -- enrollments (they don't produce certificates at approval time).
+    -- Pre-allocation ensures the serial is available to persist at
+    -- resolution without waiting for the signer, avoiding burned serials
+    -- on signing failures (see docs/changes-next.md items 5 and 11).
+    serial_number BIGINT
 );
 
 -- The sweep is the only query that filters on status alone, and it pairs it
@@ -86,7 +96,12 @@ CREATE TABLE certificates (
     certificate_request_id TEXT REFERENCES certificate_requests(id),
     hostname TEXT NOT NULL DEFAULT '',
     public_key_fingerprint TEXT NOT NULL,
-    serial_number BIGINT NOT NULL,
+    -- SerialNumber is pre-allocated at approval time (before signing is
+    -- queued), ensuring it's available to persist at request resolution
+    -- without waiting for the signer. The UNIQUE constraint converts
+    -- collisions into failed inserts rather than silently revoking
+    -- unrelated certificates (see docs/changes-next.md item 11).
+    serial_number BIGINT NOT NULL UNIQUE,
     key_id TEXT NOT NULL DEFAULT '',
     principals TEXT NOT NULL DEFAULT '',
     critical_options TEXT NOT NULL DEFAULT '',
@@ -124,7 +139,14 @@ CREATE INDEX idx_certificates_certificate_request_id ON certificates(certificate
 -- normal operation.
 CREATE TABLE certificate_request_decisions (
     id TEXT PRIMARY KEY,
-    certificate_request_id TEXT NOT NULL UNIQUE REFERENCES certificate_requests(id),
+    -- certificate_request_id is a plain copied ID, not a foreign key. The
+    -- decisions table is permanent and append-only (see docs/changes-next.md
+    -- section "First: decide the retention story"). Pruning certificate_requests
+    -- is blocked by the FK or silently deletes the audit record via CASCADE, both
+    -- unacceptable. Keeping copied values (like decider identity) avoids this:
+    -- the audit record outlives the request it describes, and retention policy
+    -- can be applied per-table independently (see docs/changes-next.md).
+    certificate_request_id TEXT NOT NULL UNIQUE,
     outcome TEXT NOT NULL
         CONSTRAINT chk_certificate_request_decisions_outcome
         CHECK (outcome IN ('approved', 'denied')),

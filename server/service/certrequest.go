@@ -20,7 +20,8 @@ import (
 	"github.com/mnestor/ssoossh/server/certmsg"
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
-	"github.com/mnestor/ssoossh/server/utils/errorresponses"
+
+	"github.com/mnestor/ssoossh/internal/serial"	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // NewCertRequestParams are the client-supplied inputs to CreateRequest.

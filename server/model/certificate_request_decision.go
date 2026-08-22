@@ -29,7 +29,19 @@ type CertificateRequestDecision struct {
 	// codebase, which rely on the migration alone) so AutoMigrate-backed
 	// unit tests can exercise this invariant directly, not only the
 	// slower migration-parity tests.
-	CertificateRequestID string `gorm:"column:certificate_request_id;unique"`
+	CertificateRequestID string `gorm:"column:certificate_request_id;uniqueIndex"`
+
+	// The UNIQUE constraint enforces "at most one decision per request" at
+	// the database level, as defense in depth: the guarded UPDATE ...
+	// WHERE status = 'pending' in CertRequestService.Approve/Deny already
+	// ensures only one caller ever wins the race to resolve a given request.
+	// This column is a plain copied ID (not a foreign key) for retention
+	// consistency — the decisions table is permanent and append-only, while
+	// certificate_requests may be pruned someday. An FK would block pruning
+	// or silently delete audit records via CASCADE, both unacceptable. By
+	// keeping a copied ID (like decider identity), the audit record outlives
+	// the request, and retention can be applied per-table (see
+	// docs/changes-next.md section "First: decide the retention story").
 
 	// Outcome is "approved" or "denied" — see
 	// model.CertificateRequestDecisionOutcome* in enums.go. The CHECK

@@ -34,7 +34,12 @@ type Certificate struct {
 	Hostname string `gorm:"column:hostname"`
 
 	PublicKeyFingerprint string `gorm:"column:public_key_fingerprint"`
-	SerialNumber         uint64 `gorm:"column:serial_number"`
+	// SerialNumber is pre-allocated at approval time (before signing is queued),
+	// ensuring it's available to persist at request resolution without waiting
+	// for the signer. The UNIQUE constraint converts collisions into failed
+	// inserts rather than silently revoking unrelated certificates — see
+	// docs/changes-next.md item 11.
+	SerialNumber uint64 `gorm:"column:serial_number;uniqueIndex:idx_certificates_serial_number"`
 
 	// KeyID is the free-form audit-trail string sshd logs on every
 	// authentication, produced by executing the applicable

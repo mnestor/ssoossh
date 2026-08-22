@@ -56,6 +56,21 @@ type CertificateRequest struct {
 	LocalUsername string `gorm:"column:local_username"`
 	LocalHostname string `gorm:"column:local_hostname"`
 
+	// ServiceAccount is set only for CertificateTypeService requests: the
+	// service account the certificate is for, selected during approval.
+	// This closes the schema gap where a service enrollment request had no
+	// link to which specific account was being enrolled.
+	ServiceAccount string `gorm:"column:service_account"`
+
+	// SerialNumber is the pre-allocated certificate serial for user/PAM
+	// requests, set at approval time before signing. Null for service
+	// enrollments (they don't produce certificates at approval time) and
+	// host requests (not yet supported). Pre-allocation ensures the serial
+	// is available to persist at resolution without waiting for the signer.
+	// This avoids burning serials on signing failures. See
+	// docs/changes-next.md items 5 and 11 for the rationale.
+	SerialNumber *uint64 `gorm:"column:serial_number"`
+
 	// Status carries a CHECK constraint mirroring the migration's. Every
 	// transition is a guarded UPDATE ... WHERE status = ?, so a value
 	// outside the set would strand the row: no guarded update would match

@@ -85,6 +85,12 @@ type SigningJob struct {
 	RequestedOptions RequestedOptions      `json:"requested_options"`
 	ValidAfter       time.Time             `json:"valid_after"`
 	ValidBefore      time.Time             `json:"valid_before"`
+	// Serial is the pre-allocated certificate serial, reserved at approval
+	// time before the signer runs. This ensures the serial is available to
+	// persist at request resolution without waiting for the signer, avoiding
+	// burned serials on signing failures. See docs/changes-next.md items 5
+	// and 11.
+	Serial               uint64            `json:"serial"`
 }
 
 // Signing failure codes carried on SignedReply.ErrorCode. These classify
