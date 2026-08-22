@@ -1,0 +1,1 @@
+* client waiting for approval timeout. need server to kick clients that have been waiting for X amount of time, default 5 minutes.
