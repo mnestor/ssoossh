@@ -1,47 +1,50 @@
 # Test Coverage Gap Map
 
-**Measured**: 2026-08-22
-**Baseline coverage**: Run `go test -cover ./...` on main branch
+**Measured**: 2026-08-22 (re-measured on current main after rebase)
+**Overall coverage**: 88.9% (1406 tests passing)
+**Baseline**: Run `go test -cover ./...` on main branch
 
 ## Summary
 
 Coverage varies by package, from 100% (well-tested packages) to 0% (no tests). This map identifies specific untested functions and paths that will be addressed in Phase 1-4.
 
+**Current status:**
+- E2E tests: 11 tests passing in ~38s (tier-1 wire, tier-2 browser, tier-3 ssh)
+- Unit tests: 1406 passing across 36 packages
+- Zero-coverage packages: 8 (cmd/ssoossh, cmd/ssoosshd, server/certmsg, server/model, server/testutil, internal/apitypes)
+
 ### Packages at 0% Coverage (No Tests)
 
 These packages have no test coverage at all and need comprehensive test suites:
 
-| Package | Issue | Priority | Notes |
-| --- | --- | --- | --- |
-| `cmd/ssoossh` | main entry point | P2 | Extract testable logic per go.md; main() itself may be excluded if it's a 3-line wiring shim. |
-| `cmd/ssoosshd` | main entry point | P2 | Extract testable logic per go.md; main() itself may be excluded if it's a 3-line wiring shim. |
-| `internal/apitypes` | Type definitions | P2 | `TerminalStatuses()` needs test + integration coverage of status lifecycle. |
-| `server/certmsg` | Certificate message channel | P1 | `WaitTopic()`, `Failed()` - critical path for approval flow; drives SSE delivery. |
-| `server/model` | Data models | P1 | ORM models for users, certificates, requests, enrollments, approvals. |
-| `server/openapidoc` | No test files | P2 | OpenAPI spec generation/validation. |
-| `server/resources` | No test files | P2 | Static asset handling for frontend. |
-| `server/testutil` | Test utilities | Skip | Utilities for other tests, not production code. |
-| `internal/version` | No test files | P2 | Version string or constant; likely untestable or 1-line. |
+| Package | Functions | Issue | Priority | Notes |
+| --- | --- | --- | --- | --- |
+| `cmd/ssoossh` | 1 | main entry point | P2 | Extract testable logic per go.md; main() itself may be excluded if it's a 3-line wiring shim. |
+| `cmd/ssoosshd` | 1 | main entry point | P2 | Extract testable logic per go.md; main() itself may be excluded if it's a 3-line wiring shim. |
+| `internal/apitypes` | 1 | Type definitions | P2 | `TerminalStatuses()` needs test + integration coverage of status lifecycle. |
+| `server/certmsg` | 2 | Certificate message channel | P1 | `WaitTopic()`, `Failed()` - critical path for approval flow; drives SSE delivery. |
+| `server/model` | 7 | Data models | P1 | ORM models for users, certificates, requests, enrollments, approvals. |
+| `server/testutil` | 1 | Test utilities | Skip | Utilities for other tests, not production code. |
 
 ### Packages Under 90% Coverage (Partial Tests)
 
-| Package | Coverage | Key Gaps |
-| --- | --- | --- |
-| `client/cmd` | 84.4% | `RootCommand.Run()` (0%), `newAPIClientFromConfig()` (0%), `newExec()` (0%), `Execute()` (0%), `CobraCommandForManpage()` (0%); `openBrowser()` (0%, likely test-skipped); `ssh_inspect.certTypeName()` (50%), `ssh_logout.report()` (75%), `ssh_config.storageDescription()` (75%) |
-| `client/config` | 92.2% | `homeDir()` (75%), `plist.readDictEntry()` (77.8%), `config.newConfig()` (90.0%), `config.mergePlatformPolicy()` (90.0%), error paths in plist parsing |
-| `internal/api` | 82.9% | `api/errors.Error()` (0% - error stringer); SSE error handling paths: `newCertificateEventSource()` (72%), `waitForOutcome()` (88.9%); request creation edge cases |
-| `server/bootstrap` | 91.0% | DB pool config edge cases: `applyPoolConfig()` (62.5%), migration error paths: `migrateDatabase()` (83.3%), `Bootstrap()` (84.4%), logging init: `initLogging()` (85.7%), observability: `initObservability()` (88.5%), router: `initRouter()` (66.7%), scheduler: `registerSweepJob()` (57.1%) |
-| `server/cmd` | 80.0% | `NewCommand()` (66.7%), `Flags()` (0%), `Execute()` (75%), `Find()` (75%), command construction paths |
-| `server/config` | 77.3% | Config loading error paths; `config/types.go` methods all 0% (FIPSEnabled, IsAdminEnabled, IsAuditorEnabled, IsSSHServerAdminEnabled); logging config types all 0%; HTTP config `parsePublicURL()` (90.9%) |
-| `server/controller` | 79.1% | **CRITICAL**: Admin routes all 0% (`NewAdminController`, `effectiveConfigHandler`, `expireEnrollmentHandler`, `disableUserHandler`, `certificateHistoryHandler`, `admin.TableName()` for all model types); auth paths: `loginHandler()` (77.8%), `callbackHandler()` (74.2%), `randomState()` (75%); other gaps: `enrollment.ExtractEnrollmentCodeForRateLimit()` (0%), `responses.setDecisionFieldsOnCertificate()` (0%), `responses.newCertificateResponsesWithDecisions()` (85.7%), `certificates.listHandler()` (75%), `logo_image.skipXMLPrologue()` (84.6%), `logo_image.isSVG()` (88.9%), `certrequests.NewCertRequestController()` (78.9%), `enrollment.NewEnrollmentController()` (75%), `frontend.RegisterFrontend()` (75%) |
-| `server/dbtime` | 82.4% | `Initialize()` (66.7%), `normalizeStatement()` (63.6%),`setUTC()` (83.3%) — time normalization for database |
-| `server/job` | 93.5% | `NewScheduler()` (75%), `RemoveJob()` (87.5%), `Run()` (87.5%) — job scheduling |
-| `server/middleware` | 94.9% | `session_auth.SetOIDCVerifier()` (0%), `session_auth.PopOIDCVerifier()` (0%), `error_handler.statusToErrorCode()` (22.2%) — rate limiting and auth edge cases |
-| `server/pubsub` | 87.5% | Pub/sub connection and subscription failure paths |
-| `server/service` | 90.2% | `ValidateStartupConfig()` (0%), `newDecision()` (70%), `tryHandleWakeMessage()` (71.4%), `newLifetimePolicies.validateStartupConfig()` (0%), `narrowRequestedOptionsWithPolicy()` (71.4%), `lifetimepolicy.matchedTier()` (75%), `certrequest.Detail()` (85.7%), `certrequest.CreateRequest()` (90%), `certrequest.Deny()` (90%), `certrequest.approveServiceEnrollment()` (85.7%), `certrequest.approveForSigning()` (80.6%), `bindRequester()` (88.9%), `waitForUpdate()` (85.7%), `service.host.SyncPrincipals()` (66.7%), `adminchecker.IsSSHServerAdmin()` (66.7%), `service.auth.AuthorizationURL()` (80%), `service.auth.upsertUser()` (87.5%), `service.auth.randomToken()` (75%), `service.certificate.ListForIdentity()` (96.9%), `enrollment.NewEnrollmentController()` (75%) |
-| `server/signer` | 95.8% | `sign.Sign()` (95.5%), `signreply.recordCertificate()` (84.0%) — signature generation edge cases |
-| `server/utils/errorresponses` | 72.7% | `ErrorCode()` methods (0%) across all error response types (UnauthenticatedError, ForbiddenError, RequestValidationError, InternalError, etc.) |
-| `server/webtypes` | [no statements] | No testable code; data structure definitions |
+| Package | Coverage | Functions | Key Gaps |
+| --- | --- | --- | --- |
+| `client/cmd` | 88.7% | 74 | Command execution, API client initialization, browser opening, certificate type display. |
+| `client/config` | 92.9% | 22 | Home directory lookup, plist dictionary parsing, config merging. |
+| `internal/api` | 86.6% | 17 | Error stringer; SSE connection error paths; request creation edge cases. |
+| `internal/serial` | 80.0% | 1 | Single function needs testing. |
+| `internal/tools` | 62.2% | 3 | Build tool utilities. |
+| `server/bootstrap` | 92.5% | 50 | DB pool config, migrations, logging init, router setup, scheduler registration. |
+| `server/cmd` | 88.3% | 21 | Command construction and execution. |
+| `server/config` | 54.8% | 27 | Config type methods (FIPSEnabled, IsAdminEnabled, IsAuditorEnabled, IsSSHServerAdminEnabled), logging config, HTTP config parsing. |
+| `server/controller` | 81.6% | 57 | **CRITICAL**: Admin routes (0% - admin controller, handlers); auth paths (loginHandler 77.8%, callbackHandler 74.2%); approval UI (responses, certificates list); enrollment. |
+| `server/dbtime` | 85.6% | 6 | Time normalization for databases. |
+| `server/middleware` | 95.5% | 69 | OIDC verifier setup/teardown (0%), error code mapping (22.2%). |
+| `server/pubsub` | 86.4% | 4 | Pub/sub connection/subscription failures. |
+| `server/service` | 90.8% | 68 | Startup config validation (0%), decision creation (70%), wake messages (71.4%), request approval paths, lifetime policies, SSH admin checks. |
+| `server/signer` | 98.6% | 13 | Certificate recording edge cases. |
+| `server/utils` | 73.9% | 23 | Error response type methods (ErrorCode methods 0%); logging utilities. |
 
 ### Packages Near 100% (Minor Gaps)
 
