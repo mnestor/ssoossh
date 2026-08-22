@@ -1879,11 +1879,18 @@ func TestCertRequestService_Wait_MultiInstance_ShouldDecodeWakeMessageCertificat
 	// blocking select before instance A publishes.
 	time.Sleep(50 * time.Millisecond)
 
-	// Instance A publishes a wake message with a certificate payload. This
-	// simulates what the signer and listener would do after signing a user
-	// certificate (see notifyWaiter in certrequest.go). The certificate is a
-	// minimal test value — what matters is that it's non-empty and reaches
-	// instance B via the wake message.
+	// Instance A marks the request as Approved in the database (simulating
+	// what the approval handler does), then publishes a wake message with
+	// the certificate payload. The wake message is optimized delivery of
+	// the certificate bytes, but the DB status is what authorizes the
+	// delivery (see tryHandleWakeMessage — it verifies the DB before
+	// trusting the message payload).
+	if err := instanceA.db.Model(&model.CertificateRequest{}).
+		Where("id = ?", requestID).
+		Update("status", model.CertificateRequestStatusApproved).Error; err != nil {
+		t.Fatalf("failed to mark request approved in database: %v", err)
+	}
+
 	testCertificate := "ssh-cert-v01@openssh.com AAAAg..."
 	instanceA.notifyWaiter(requestID, requestOutcome{
 		status:      model.CertificateRequestStatusApproved,
@@ -1891,9 +1898,10 @@ func TestCertRequestService_Wait_MultiInstance_ShouldDecodeWakeMessageCertificat
 	})
 
 	// Instance B's Wait should unblock and return the certificate from the
-	// wake message, without needing to read the database (which still shows
-	// the request as pending — the message is the sole carrier of the
-	// resolved outcome in this cross-instance scenario).
+	// wake message, with the DB serving as the authority for the approval
+	// decision. This tests multi-instance delivery: instance B receives a
+	// certificate issued on instance A, with authorization verified through
+	// the shared database.
 	var res waitResult
 	select {
 	case res = <-done:

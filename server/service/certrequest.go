@@ -828,18 +828,22 @@ func (s *CertRequestService) waitForUpdate(ctx context.Context, messages <-chan 
 			if ok {
 				msg.Ack()
 
-				// Try to decode and use the wake message payload. If it carries
-				// a terminal outcome, return it directly without re-reading the
-				// DB. This optimizes multi-instance delivery: an SSE client on
-				// instance B gets a certificate issued on instance A via the
-				// message instead of a DB round trip.
-				if status, certificate, code, handled := s.tryHandleWakeMessage(requestID, msg); handled {
+				// Try to decode and use the wake message payload, subject to
+				// DB verification (see tryHandleWakeMessage). If it carries a
+				// terminal outcome verified in the database, return it directly
+				// without another DB round-trip. This optimizes multi-instance
+				// delivery: an SSE client on instance B gets a certificate
+				// issued on instance A via the message, but authorization is
+				// confirmed through the database (the authority) before the
+				// certificate is handed over.
+				if status, certificate, code, handled := s.tryHandleWakeMessage(ctx, requestID, msg); handled {
 					return status, certificate, code, nil
 				}
 
-				// Malformed payload or non-terminal status — fall through and
-				// re-read the DB. The message is just a signal that something
-				// may have changed; the DB is the authority.
+				// Malformed payload, non-terminal status, or DB verification
+				// failed — fall through and re-read the DB. The message is a
+				// signal that something may have changed; the DB is the
+				// authority for approval decisions.
 			}
 		case <-ctx.Done():
 			return ctx.Err()
@@ -942,14 +946,24 @@ func (s *CertRequestService) expire(ctx context.Context, requestID string) {
 	s.notifyWaiter(requestID, requestOutcome{status: model.CertificateRequestStatusExpired})
 }
 
-// tryHandleWakeMessage attempts to decode and use a wake message payload.
+// tryHandleWakeMessage attempts to decode and use a wake message payload,
+// subject to database verification of the approval decision. It decodes the
+// message, verifies the status against the database, and only if both match
+// and represent a terminal decision, returns the certificate from the message
+// (optimization) without another DB round-trip. This approach keeps the
+// database as the authority for the critical approval decision while using
+// the wake message as an optimization for the certificate bytes.
+//
+// Authorization: gochannel (in-process) is in a trusted boundary. NATS
+// requires mTLS peer authentication (documented as an operational
+// prerequisite in docs/multi-instance-safety-plan.md); this method
+// documents but does not enforce that requirement, as NATS configuration
+// is outside ssoosshd's scope.
+//
 // Returns the resolved outcome and true if the message carried a terminal
-// status (and was successfully decoded); otherwise returns false. A
-// malformed payload or non-terminal status falls through to the DB path.
-// This method optimizes multi-instance delivery: an SSE client on one
-// instance can receive outcomes issued on another via the message,
-// without needing a DB round trip.
-func (s *CertRequestService) tryHandleWakeMessage(requestID string, msg *message.Message) (status model.CertificateRequestStatus, certificate string, code string, handled bool) {
+// status and was verified by the database; otherwise returns false to
+// trigger a fresh DB read in the caller's next loop iteration.
+func (s *CertRequestService) tryHandleWakeMessage(ctx context.Context, requestID string, msg *message.Message) (status model.CertificateRequestStatus, certificate string, code string, handled bool) {
 	var outcome requestOutcomeMessage
 	if err := json.Unmarshal(msg.Payload, &outcome); err != nil {
 		// Malformed payload — fall back to DB.
@@ -965,17 +979,39 @@ func (s *CertRequestService) tryHandleWakeMessage(requestID string, msg *message
 		model.CertificateRequestStatusDenied,
 		model.CertificateRequestStatusExpired,
 		model.CertificateRequestStatusFailed:
-		// Cache the outcome and return it directly, completing the wait
-		// without another round trip to the DB. This optimizes both
-		// same-instance (typical) and cross-instance (multi-instance) cases.
-		s.mu.Lock()
-		s.resolved[requestID] = requestOutcome{
-			status:      outcome.Status,
-			certificate: outcome.Certificate,
-			code:        outcome.Code,
+		// Verify the status in the database before trusting the message.
+		// This ensures that only legitimately approved requests result in
+		// certificate delivery. gochannel is trusted (in-process); NATS
+		// relies on mTLS peer auth (documented prerequisite).
+		req, err := s.lookupRequest(ctx, requestID)
+		if err != nil {
+			// DB lookup failed or request not found — fall back to
+			// reconcileStatus to handle it through the normal path.
+			return "", "", "", false
 		}
-		s.mu.Unlock()
-		return outcome.Status, outcome.Certificate, outcome.Code, true
+
+		// Verify the DB status matches the message status. Accept the
+		// certificate from the message only if the DB confirms the decision.
+		// This is a cheap check — the common case succeeds immediately.
+		if req.Status == outcome.Status {
+			// Status verified. Cache the outcome and return it directly,
+			// completing the wait without another DB round-trip. This
+			// optimizes both same-instance (typical) and cross-instance
+			// (multi-instance) cases.
+			s.mu.Lock()
+			s.resolved[requestID] = requestOutcome{
+				status:      outcome.Status,
+				certificate: outcome.Certificate,
+				code:        outcome.Code,
+			}
+			s.mu.Unlock()
+			return outcome.Status, outcome.Certificate, outcome.Code, true
+		}
+
+		// Status mismatch — the message status doesn't match the DB status.
+		// This shouldn't happen in normal operation, but could indicate a
+		// stale message or concurrent state change. Fall back to the DB.
+		return "", "", "", false
 
 	default:
 		// Non-terminal status (only Signing) — fall through and re-read
