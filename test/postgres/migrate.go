@@ -14,7 +14,7 @@ import (
 )
 
 // RunUp applies all pending up migrations to the database.
-func RunUp(t *testing.T, ctx context.Context, pgc *Container, db *gorm.DB) error {
+func RunUp(t *testing.T, ctx context.Context, db *gorm.DB) error {
 	t.Helper()
 	return doMigrate(ctx, db, func(m *migrate.Migrate) error {
 		return m.Up()
@@ -22,7 +22,7 @@ func RunUp(t *testing.T, ctx context.Context, pgc *Container, db *gorm.DB) error
 }
 
 // RunDown applies all down migrations to the database.
-func RunDown(t *testing.T, ctx context.Context, pgc *Container, db *gorm.DB) error {
+func RunDown(t *testing.T, ctx context.Context, db *gorm.DB) error {
 	t.Helper()
 	return doMigrate(ctx, db, func(m *migrate.Migrate) error {
 		return m.Down()

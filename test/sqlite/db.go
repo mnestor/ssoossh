@@ -3,9 +3,7 @@
 package sqlite
 
 import (
-	"database/sql"
 	"fmt"
-	"sort"
 	"strings"
 	"testing"
 

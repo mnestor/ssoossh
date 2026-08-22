@@ -2,53 +2,19 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"testing"
 
 	"github.com/golang-migrate/migrate/v4"
 	postgresMigrate "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/resources"
 )
 
-// ConnectAndMigrate starts a Postgres container, connects to it, drops and
-// recreates the public schema, and runs the migration. It returns a ready-to-use
-// *gorm.DB for testing. The database is reset via t.Cleanup.
-func ConnectAndMigrate(t *testing.T, ctx context.Context) (*gorm.DB, *Container) {
-	t.Helper()
-
-	pgc := New(t, ctx)
-
-	// Connect to the database.
-	db, err := gorm.Open(postgres.Open(pgc.DSN()))
-	if err != nil {
-		t.Fatalf("failed to connect to Postgres: %v", err)
-	}
-
-	// Reset the schema to ensure a clean state.
-	if err := db.Exec("DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public").Error; err != nil {
-		t.Fatalf("failed to reset schema: %v", err)
-	}
-
-	// Run migrations using golang-migrate.
-	if err := migratePostgres(t, ctx, db); err != nil {
-		t.Fatalf("migration failed: %v", err)
-	}
-
-	// Register cleanup to close the connection.
-	t.Cleanup(func() {
-		sqlDB, _ := db.DB()
-		if sqlDB != nil {
-			_ = sqlDB.Close()
-		}
-	})
-
-	return db, pgc
-}
+// Note: Postgres container setup for E2E tests is in test/e2e/harness/postgres.go.
+// This package provides schema utilities and query helpers for testing.
 
 // migratePostgres applies the embedded postgres migrations to the database.
 func migratePostgres(t *testing.T, ctx context.Context, db *gorm.DB) error {
