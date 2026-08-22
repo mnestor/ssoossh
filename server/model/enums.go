@@ -48,3 +48,13 @@ const (
 	// free-text TEXT column.
 	CertificateRequestStatusFailed CertificateRequestStatus = "failed"
 )
+
+// CertificateRequestDecisionOutcome is the decision recorded on a
+// CertificateRequestDecision row — see
+// docs/certificate-audit-metadata-plan.md.
+type CertificateRequestDecisionOutcome string
+
+const (
+	CertificateRequestDecisionApproved CertificateRequestDecisionOutcome = "approved"
+	CertificateRequestDecisionDenied   CertificateRequestDecisionOutcome = "denied"
+)

@@ -132,6 +132,44 @@ describe('ApprovalView', () => {
 		});
 	});
 
+	describe('when the request carries user-type client identity', () => {
+		const withClient = detail({
+			local_username: 'alice',
+			local_hostname: 'alices-laptop'
+		});
+
+		it('should show the local user and hostname the client reported', () => {
+			mount({ detail: withClient });
+			expect(screen.getByText('alice@alices-laptop')).toBeInTheDocument();
+		});
+	});
+
+	describe('when the request has no client identity', () => {
+		it('should not show a client row', () => {
+			mount();
+			expect(screen.queryByText('Client')).not.toBeInTheDocument();
+		});
+	});
+
+	describe('when the request reports registered IPs', () => {
+		const withAddresses = detail({
+			requested: options({ extensions: ['permit-pty'], source_addresses: ['10.0.0.5', '203.0.113.9'] })
+		});
+
+		it('should list the addresses the client registered', () => {
+			mount({ detail: withAddresses });
+			expect(screen.getByText('10.0.0.5')).toBeInTheDocument();
+			expect(screen.getByText('203.0.113.9')).toBeInTheDocument();
+		});
+	});
+
+	describe('when the request has no registered IPs', () => {
+		it('should not show a registered IPs row', () => {
+			mount();
+			expect(screen.queryByText('Registered IPs')).not.toBeInTheDocument();
+		});
+	});
+
 	describe('when the request belongs to another user', () => {
 		const foreign = detail({ is_owned_by_you: false });
 

@@ -34,7 +34,25 @@ type NewCertRequestParams struct {
 	Hostname         string // set for CertificateTypeHost only
 	Username         string // set for CertificateTypePAM only — see model.CertificateRequest.Username
 	SourceIP         string
+	LocalUsername    string // set for CertificateTypeUser only — see model.CertificateRequest.LocalUsername
+	LocalHostname    string // set for CertificateTypeUser only — see model.CertificateRequest.LocalHostname
 	RequestedOptions RequestedOptions
+}
+
+// DecisionContext is the connection the approving/denying request arrived
+// on — captured in the controller, where the *gin.Context is reachable, and
+// passed down to Approve/Deny alongside the deciding identity. ForwardedFor
+// is the raw X-Forwarded-For header, kept separately from SourceIP because
+// g.ClientIP() already resolves that header down to one trusted address;
+// the raw chain preserves forensic detail resolution throws away. This is a
+// deliberate allowlist of headers, not "every header minus a denylist" —
+// see model.CertificateRequestDecision's doc comment for why Cookie and
+// Authorization are never captured.
+type DecisionContext struct {
+	SourceIP       string
+	UserAgent      string
+	AcceptLanguage string
+	ForwardedFor   string
 }
 
 // CertRequestProvider manages the pending-approval lifecycle for
@@ -43,8 +61,8 @@ type NewCertRequestParams struct {
 type CertRequestProvider interface {
 	CreateRequest(ctx context.Context, p NewCertRequestParams) (requestID string, err error)
 	Detail(ctx context.Context, requestID string, identity *Identity) (*RequestDetail, error)
-	Approve(ctx context.Context, requestID string, identity *Identity) error
-	Deny(ctx context.Context, requestID string) error
+	Approve(ctx context.Context, requestID string, identity *Identity, dc DecisionContext) error
+	Deny(ctx context.Context, requestID string, identity *Identity, dc DecisionContext) error
 	Wait(ctx context.Context, requestID string) (status model.CertificateRequestStatus, certificate string, code string, err error)
 }
 
@@ -149,6 +167,22 @@ func (s *CertRequestService) policyFor(certType model.CertificateType) (*certTyp
 // returns its ID, which the client then waits on via Wait and the web UI
 // resolves via Approve/Deny.
 func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequestParams) (requestID string, err error) {
+	// Union the server-observed source address into the caller's own
+	// reported SourceAddresses before persisting, so the stored value is
+	// the complete set docs/ssoossh-context.md's lifetime-policy section
+	// describes: the client's own interfaces plus the address the server
+	// observed the request coming from. This matters for a client behind
+	// NAT — the address ssoosshd sees when it mints the certificate is not
+	// the address downstream hosts see when the client connects to them,
+	// so a source-address restriction built from the observed address
+	// alone would wrongly reject the client's real connections. Plain
+	// string-equality dedup is enough here; netip-normalized matching
+	// belongs to the deferred source-address policy engine in
+	// docs/certificate-lifetime-policy-plan.md, not this capture step.
+	if p.SourceIP != "" && !slices.Contains(p.RequestedOptions.SourceAddresses, p.SourceIP) {
+		p.RequestedOptions.SourceAddresses = append(p.RequestedOptions.SourceAddresses, p.SourceIP)
+	}
+
 	optionsJSON, err := json.Marshal(p.RequestedOptions)
 	if err != nil {
 		return "", fmt.Errorf("failed to encode requested options: %w", err) // excluded from coverage: RequestedOptions is a plain struct of strings/bools/slices, json.Marshal can't fail on it, see exclude-from-coverage.txt
@@ -162,6 +196,8 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 		Username:         p.Username,
 		RequestedOptions: string(optionsJSON),
 		SourceIP:         p.SourceIP,
+		LocalUsername:    p.LocalUsername,
+		LocalHostname:    p.LocalHostname,
 		Status:           model.CertificateRequestStatusPending,
 		CreatedAt:        time.Now(),
 	}
@@ -205,6 +241,11 @@ type RequestDetail struct {
 	// would carry that the requester does not choose.
 	Principals    []string
 	ValidDuration time.Duration
+
+	// Decision is the request's audit record — nil for a still-pending
+	// request, since most requests being viewed haven't been decided yet.
+	// See model.CertificateRequestDecision.
+	Decision *model.CertificateRequestDecision
 }
 
 // Detail returns what identity would be approving for requestID, and binds
@@ -244,13 +285,35 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 		return nil, err
 	}
 
+	decision, err := s.lookupDecision(ctx, req.ID)
+	if err != nil {
+		return nil, err // excluded from coverage: forcing this specific query to fail while leaving Detail's earlier lookup and bindRequester's query intact needs per-query DB fault injection this codebase doesn't have — TestLookupDecision_ShouldSurfaceAGenericDBError covers lookupDecision's own error branch directly instead, see exclude-from-coverage.txt
+	}
+
 	return &RequestDetail{
 		Request:       req,
 		Requested:     requested,
 		Narrowed:      narrowRequestedOptions(policy, requested),
 		Principals:    policy.principals(req.Hostname, req.Username, identity),
 		ValidDuration: policy.validDuration,
+		Decision:      decision,
 	}, nil
+}
+
+// lookupDecision returns requestID's decision record, or nil if it hasn't
+// been decided yet — "not found" is the expected, common case here (most
+// requests being viewed are still pending), not an error.
+func (s *CertRequestService) lookupDecision(ctx context.Context, requestID string) (*model.CertificateRequestDecision, error) {
+	var decision model.CertificateRequestDecision
+	err := s.db.WithContext(ctx).First(&decision, "certificate_request_id = ?", requestID).Error
+	switch {
+	case err == nil:
+		return &decision, nil
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("failed to look up certificate request decision: %w", err)
+	}
 }
 
 // Approve resolves policy for requestID against server config and identity,
@@ -296,7 +359,7 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 //     exception: its principal is the local account named on the request
 //     (req.Username), not the approver's identity — see resolvePrincipals.
 //     Safe to extend later without narrowing what's already granted.
-func (s *CertRequestService) Approve(ctx context.Context, requestID string, identity *Identity) error {
+func (s *CertRequestService) Approve(ctx context.Context, requestID string, identity *Identity, dc DecisionContext) error {
 	var req model.CertificateRequest
 	if err := s.db.WithContext(ctx).First(&req, "id = ?", requestID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -345,9 +408,9 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 
 	switch policy.flow {
 	case flowEnrollment:
-		return s.approveServiceEnrollment(ctx, requestID, narrowed)
+		return s.approveServiceEnrollment(ctx, requestID, narrowed, identity, dc)
 	case flowSigning:
-		return s.approveForSigning(ctx, req, identity, policy, narrowed)
+		return s.approveForSigning(ctx, req, identity, policy, narrowed, dc)
 	default:
 		// Host certificates aren't issuable yet — the signer only handles
 		// user and PAM certificates for now (see
@@ -448,7 +511,7 @@ func (s *CertRequestService) resolveUserID(ctx context.Context, identity *Identi
 // approveServiceEnrollment implements Approve's service branch — see its
 // doc comment. narrowed is req's already-resolved, server-config-bounded
 // RequestedOptions.
-func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, requestID string, narrowed RequestedOptions) error {
+func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, requestID string, narrowed RequestedOptions, identity *Identity, dc DecisionContext) error {
 	narrowedJSON, err := json.Marshal(narrowed)
 	if err != nil {
 		return fmt.Errorf("failed to encode narrowed options: %w", err) // excluded from coverage: RequestedOptions is a plain struct, json.Marshal can't fail on it, see exclude-from-coverage.txt
@@ -456,19 +519,39 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, reque
 	token := uuid.NewString()
 	now := time.Now()
 
-	result := s.db.WithContext(ctx).Model(&model.CertificateRequest{}).
-		Where("id = ? AND status = ?", requestID, model.CertificateRequestStatusPending).
-		Updates(map[string]any{
-			"status":            model.CertificateRequestStatusEnrolled,
-			"requested_options": string(narrowedJSON),
-			"enrollment_token":  token,
-			"resolved_at":       now,
-		})
-	if result.Error != nil {
-		return fmt.Errorf("failed to mark certificate request as enrolled: %w", result.Error)
+	decision, err := newDecision(requestID, model.CertificateRequestDecisionApproved, identity, dc, now)
+	if err != nil {
+		return err // excluded from coverage: newDecision can only fail via its own json.Marshal calls on []string, already unreachable at their own definition, see exclude-from-coverage.txt
 	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("certificate request %q is not pending", requestID)
+
+	// The status update and the decision-audit insert are introduced
+	// together by this change, so they're wrapped in one transaction
+	// rather than adding a new inconsistency window while already touching
+	// this path. This is narrower than the pre-existing, separately
+	// tracked lack of a transaction across Approve's bind/resolve/queue
+	// writes (2026-08-21 security audit) — that finding stays open.
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.CertificateRequest{}).
+			Where("id = ? AND status = ?", requestID, model.CertificateRequestStatusPending).
+			Updates(map[string]any{
+				"status":            model.CertificateRequestStatusEnrolled,
+				"requested_options": string(narrowedJSON),
+				"enrollment_token":  token,
+				"resolved_at":       now,
+			})
+		if result.Error != nil {
+			return fmt.Errorf("failed to mark certificate request as enrolled: %w", result.Error) // excluded from coverage: forcing this specific query to fail while leaving the enclosing Transaction() able to begin needs per-query DB fault injection this codebase doesn't have, see exclude-from-coverage.txt
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("certificate request %q is not pending", requestID)
+		}
+		if err := tx.Create(decision).Error; err != nil {
+			return fmt.Errorf("failed to record approval decision: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	// No signer round trip for enrollment — notify the wake topic directly
@@ -478,10 +561,46 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, reque
 	return nil
 }
 
+// newDecision builds the immutable audit record for a single Approve/Deny
+// resolution of requestID, snapshotting identity's full six fields and dc's
+// connection context. Plain copied values, not a reference to the users
+// table — see model.CertificateRequestDecision's doc comment for why.
+func newDecision(requestID string, outcome model.CertificateRequestDecisionOutcome, identity *Identity, dc DecisionContext, decidedAt time.Time) (*model.CertificateRequestDecision, error) {
+	groupsJSON, err := json.Marshal(identity.Groups)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode decision groups: %w", err) // excluded from coverage: []string, json.Marshal can't fail on it, see exclude-from-coverage.txt
+	}
+	otherAccountsJSON, err := json.Marshal(identity.OtherAccounts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode decision other accounts: %w", err) // excluded from coverage: []string, json.Marshal can't fail on it, see exclude-from-coverage.txt
+	}
+	serviceAccountsJSON, err := json.Marshal(identity.ServiceAccounts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode decision service accounts: %w", err) // excluded from coverage: []string, json.Marshal can't fail on it, see exclude-from-coverage.txt
+	}
+
+	return &model.CertificateRequestDecision{
+		ID:                   uuid.NewString(),
+		CertificateRequestID: requestID,
+		Outcome:              outcome,
+		Subject:              identity.Subject,
+		Username:             identity.Username,
+		Email:                identity.Email,
+		Groups:               string(groupsJSON),
+		OtherAccounts:        string(otherAccountsJSON),
+		ServiceAccounts:      string(serviceAccountsJSON),
+		SourceIP:             dc.SourceIP,
+		UserAgent:            dc.UserAgent,
+		AcceptLanguage:       dc.AcceptLanguage,
+		ForwardedFor:         dc.ForwardedFor,
+		DecidedAt:            decidedAt,
+	}, nil
+}
+
 // approveForSigning implements Approve's user/PAM branch — see its doc
 // comment. policy/narrowed are req.Type's already-resolved,
 // server-config-bounded policy.
-func (s *CertRequestService) approveForSigning(ctx context.Context, req model.CertificateRequest, identity *Identity, policy *certTypePolicy, narrowed RequestedOptions) error {
+func (s *CertRequestService) approveForSigning(ctx context.Context, req model.CertificateRequest, identity *Identity, policy *certTypePolicy, narrowed RequestedOptions, dc DecisionContext) error {
 	keyID, err := executeKeyIDTemplate(policy.keyIDTemplate, keyIDTemplateData{
 		Username: identity.Username,
 		Subject:  identity.Subject,
@@ -495,14 +614,32 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 	}
 
 	now := time.Now()
-	result := s.db.WithContext(ctx).Model(&model.CertificateRequest{}).
-		Where("id = ? AND status = ?", req.ID, model.CertificateRequestStatusPending).
-		Updates(map[string]any{"status": model.CertificateRequestStatusSigning})
-	if result.Error != nil {
-		return fmt.Errorf("failed to mark certificate request as signing: %w", result.Error)
+
+	decision, err := newDecision(req.ID, model.CertificateRequestDecisionApproved, identity, dc, now)
+	if err != nil {
+		return err // excluded from coverage: newDecision can only fail via its own json.Marshal calls on []string, already unreachable at their own definition, see exclude-from-coverage.txt
 	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("certificate request %q is not pending", req.ID)
+
+	// See approveServiceEnrollment's comment on why this pair is
+	// transactional but the wider bind/resolve/queue sequence stays out of
+	// scope here.
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.CertificateRequest{}).
+			Where("id = ? AND status = ?", req.ID, model.CertificateRequestStatusPending).
+			Updates(map[string]any{"status": model.CertificateRequestStatusSigning})
+		if result.Error != nil {
+			return fmt.Errorf("failed to mark certificate request as signing: %w", result.Error) // excluded from coverage: forcing this specific query to fail while leaving the enclosing Transaction() able to begin needs per-query DB fault injection this codebase doesn't have, see exclude-from-coverage.txt
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("certificate request %q is not pending", req.ID)
+		}
+		if err := tx.Create(decision).Error; err != nil {
+			return fmt.Errorf("failed to record approval decision: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 
 	job := certmsg.SigningJob{
@@ -556,22 +693,40 @@ func intersectStrings(requested, permitted []string) []string {
 // a request that's already past the TTL (but not yet lazily flipped to
 // "expired" by Wait) fails the same as denying any other non-pending
 // request — the row's actual state is Wait's responsibility to reconcile.
-func (s *CertRequestService) Deny(ctx context.Context, requestID string) error {
+func (s *CertRequestService) Deny(ctx context.Context, requestID string, identity *Identity, dc DecisionContext) error {
 	now := time.Now()
-	q := s.db.WithContext(ctx).Model(&model.CertificateRequest{}).
-		Where("id = ? AND status = ?", requestID, model.CertificateRequestStatusPending)
-	if cutoff := s.ttlCutoff(); !cutoff.IsZero() {
-		q = q.Where("created_at > ?", cutoff)
+
+	decision, err := newDecision(requestID, model.CertificateRequestDecisionDenied, identity, dc, now)
+	if err != nil {
+		return err // excluded from coverage: newDecision can only fail via its own json.Marshal calls on []string, already unreachable at their own definition, see exclude-from-coverage.txt
 	}
-	result := q.Updates(map[string]any{
-		"status":      model.CertificateRequestStatusDenied,
-		"resolved_at": now,
+
+	// See approveServiceEnrollment's comment on why this pair is
+	// transactional but the wider bind/resolve/queue sequence stays out of
+	// scope here.
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		q := tx.Model(&model.CertificateRequest{}).
+			Where("id = ? AND status = ?", requestID, model.CertificateRequestStatusPending)
+		if cutoff := s.ttlCutoff(); !cutoff.IsZero() {
+			q = q.Where("created_at > ?", cutoff)
+		}
+		result := q.Updates(map[string]any{
+			"status":      model.CertificateRequestStatusDenied,
+			"resolved_at": now,
+		})
+		if result.Error != nil {
+			return fmt.Errorf("failed to deny certificate request: %w", result.Error) // excluded from coverage: forcing this specific query to fail while leaving the enclosing Transaction() able to begin needs per-query DB fault injection this codebase doesn't have, see exclude-from-coverage.txt
+		}
+		if result.RowsAffected == 0 {
+			return fmt.Errorf("certificate request %q is not pending", requestID)
+		}
+		if err := tx.Create(decision).Error; err != nil {
+			return fmt.Errorf("failed to record denial decision: %w", err)
+		}
+		return nil
 	})
-	if result.Error != nil {
-		return fmt.Errorf("failed to deny certificate request: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("certificate request %q is not pending", requestID)
+	if err != nil {
+		return err
 	}
 
 	s.notifyWaiter(requestID, requestOutcome{status: model.CertificateRequestStatusDenied})

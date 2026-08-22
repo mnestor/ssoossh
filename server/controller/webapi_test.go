@@ -304,6 +304,114 @@ func TestDetailHandler_ShouldSurfaceRequestedAndGrantedSeparately(t *testing.T) 
 	}
 }
 
+// TestDetailHandler_ShouldSurfaceDecisionAudit covers newRequestDetailResponse's
+// setDecisionFields: once a request has been decided, every Decided* field
+// on the response must reflect the decision row, including the JSON-decoded
+// list fields (Groups/OtherAccounts/ServiceAccounts).
+func TestDetailHandler_ShouldSurfaceDecisionAudit(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	decidedAt := time.Now()
+	svc := &fakeCertRequestService{detail: &service.RequestDetail{
+		Request: model.CertificateRequest{
+			ID:        "req-1",
+			Type:      model.CertificateTypeUser,
+			Status:    model.CertificateRequestStatusApproved,
+			PublicKey: "ssh-ed25519 AAAA test",
+			CreatedAt: time.Now(),
+		},
+		Decision: &model.CertificateRequestDecision{
+			Outcome:         model.CertificateRequestDecisionApproved,
+			Subject:         "sub-alice",
+			Username:        "alice",
+			Email:           "alice@example.org",
+			Groups:          `["engineering","sre"]`,
+			OtherAccounts:   `["alice.other"]`,
+			ServiceAccounts: `["svc-backup"]`,
+			SourceIP:        "198.51.100.7",
+			UserAgent:       "curl/8.0.0",
+			AcceptLanguage:  "en-US",
+			ForwardedFor:    "198.51.100.7, 10.0.0.1",
+			DecidedAt:       decidedAt,
+		},
+	}}
+
+	r := gin.New()
+	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), passthrough)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/requests/req-1", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var got webtypes.RequestDetailResponse
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+
+	if got.DecidedByOutcome != "approved" {
+		t.Errorf("got DecidedByOutcome %q, want %q", got.DecidedByOutcome, "approved")
+	}
+	if got.DecidedBySubject != "sub-alice" || got.DecidedByUsername != "alice" || got.DecidedByEmail != "alice@example.org" {
+		t.Errorf("got decider identity %q/%q/%q, want %q/%q/%q", got.DecidedBySubject, got.DecidedByUsername, got.DecidedByEmail, "sub-alice", "alice", "alice@example.org")
+	}
+	if len(got.DecidedByGroups) != 2 || got.DecidedByGroups[0] != "engineering" || got.DecidedByGroups[1] != "sre" {
+		t.Errorf("got DecidedByGroups %v, want [engineering sre]", got.DecidedByGroups)
+	}
+	if len(got.DecidedByOtherAccounts) != 1 || got.DecidedByOtherAccounts[0] != "alice.other" {
+		t.Errorf("got DecidedByOtherAccounts %v, want [alice.other]", got.DecidedByOtherAccounts)
+	}
+	if len(got.DecidedByServiceAccounts) != 1 || got.DecidedByServiceAccounts[0] != "svc-backup" {
+		t.Errorf("got DecidedByServiceAccounts %v, want [svc-backup]", got.DecidedByServiceAccounts)
+	}
+	if got.DecidedSourceIP != "198.51.100.7" || got.DecidedUserAgent != "curl/8.0.0" {
+		t.Errorf("got connection context %q/%q, want %q/%q", got.DecidedSourceIP, got.DecidedUserAgent, "198.51.100.7", "curl/8.0.0")
+	}
+	if got.DecidedAt == nil {
+		t.Fatal("expected a non-nil DecidedAt")
+	}
+}
+
+// TestDetailHandler_ShouldOmitDecisionFieldsForAPendingRequest is the
+// counterpart: a request with no Decision yet must not carry any Decided*
+// noise on the wire.
+func TestDetailHandler_ShouldOmitDecisionFieldsForAPendingRequest(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{detail: &service.RequestDetail{
+		Request: model.CertificateRequest{ID: "req-1", Type: model.CertificateTypeUser, Status: model.CertificateRequestStatusPending},
+		// Decision left nil.
+	}}
+
+	r := gin.New()
+	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), passthrough)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/requests/req-1", nil))
+
+	if got := w.Body.String(); strings.Contains(got, "decided_by") {
+		t.Errorf("expected no decided_by* fields for a pending request, got %s", got)
+	}
+}
+
+// TestDecodeDecisionStringList_ShouldReturnNilOnMalformedJSON covers the
+// parse-failure branch directly: malformed JSON in a decision's list column
+// (which should never happen, since it's only ever written by newDecision's
+// own json.Marshal) must degrade to an empty field, not panic or fail the
+// whole response.
+func TestDecodeDecisionStringList_ShouldReturnNilOnMalformedJSON(t *testing.T) {
+	t.Parallel()
+
+	if got := decodeDecisionStringList("groups", "not valid json"); got != nil {
+		t.Errorf("got %v, want nil for malformed JSON", got)
+	}
+	if got := decodeDecisionStringList("groups", ""); got != nil {
+		t.Errorf("got %v, want nil for an empty string", got)
+	}
+}
+
 // TestDetailHandler_ShouldRejectWithoutAnIdentityOnContext covers
 // detailHandler's own guard; see TestCurrentUserHandler_ShouldRejectWithoutAnIdentityOnContext
 // for why this needs a passthrough rather than the real SessionAuthMiddleware.

@@ -44,6 +44,15 @@ type CertificateRequest struct {
 	// source addresses are unverified input and need a policy ceiling).
 	SourceIP string `gorm:"column:source_ip"`
 
+	// LocalUsername and LocalHostname are set only for CertificateTypeUser
+	// requests: the OS user and hostname of the client that made the
+	// request. For a user cert there is no way to request one except via
+	// the local client, so local_user@host is the requester identity, not
+	// optional extra context — see
+	// docs/certificate-audit-metadata-plan.md.
+	LocalUsername string `gorm:"column:local_username"`
+	LocalHostname string `gorm:"column:local_hostname"`
+
 	Status     CertificateRequestStatus `gorm:"column:status"`
 	CreatedAt  time.Time                `gorm:"column:created_at"`
 	ResolvedAt *time.Time               `gorm:"column:resolved_at"`

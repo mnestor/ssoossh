@@ -4,6 +4,7 @@
 	import '../app.css';
 	import { logout } from '$lib/api/endpoints';
 	import { errorMessage, startLogin } from '$lib/auth';
+	import { loadBranding, getBranding } from '$lib/branding.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import { session } from '$lib/session.svelte';
 	import type { Snippet } from 'svelte';
@@ -15,6 +16,12 @@
 	// the nav renders signed-out until it resolves, and pages that actually
 	// need an identity get their own 401 from their own call.
 	session.load();
+
+	// Load branding config from the unauthenticated /api/branding endpoint.
+	// Fails closed — any error treats it as "no branding configured".
+	loadBranding();
+
+	const branding = $derived(getBranding());
 
 	let signingOut = $state(false);
 
@@ -45,7 +52,17 @@
 <div class="flex min-h-screen flex-col">
 	<header class="border-b border-border-subtle bg-surface">
 		<div class="mx-auto flex max-w-4xl flex-wrap items-center gap-4 px-4 py-3">
-			<a href={resolve('/')} class="font-semibold">ssoossh</a>
+			<a href={resolve('/')} class="flex items-center gap-2 font-semibold">
+				{#if branding.logo_url}
+					<img src={branding.logo_url} alt="Organization logo" class="h-6 w-6 object-contain" />
+				{/if}
+				<span>ssoossh</span>
+				{#if branding.org_name}
+					<span class="rounded bg-surface-muted px-2 py-0.5 text-xs font-medium text-ink-muted">
+						{branding.org_name}
+					</span>
+				{/if}
+			</a>
 
 			{#if session.signedIn}
 				<nav class="flex gap-4 text-sm">

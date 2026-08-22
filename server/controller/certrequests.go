@@ -97,6 +97,20 @@ func toServiceOptions(o apitypes.RequestedOptions) service.RequestedOptions {
 	}
 }
 
+// decisionContext builds the connection context for an Approve/Deny call
+// from g — the deliberate header allowlist described on
+// service.DecisionContext. ForwardedFor captures the raw X-Forwarded-For
+// header, distinct from g.ClientIP() (used for SourceIP), which already
+// resolves that header down to one trusted address via SetTrustedProxies.
+func decisionContext(g *gin.Context) service.DecisionContext {
+	return service.DecisionContext{
+		SourceIP:       g.ClientIP(),
+		UserAgent:      g.Request.UserAgent(),
+		AcceptLanguage: g.GetHeader("Accept-Language"),
+		ForwardedFor:   g.GetHeader("X-Forwarded-For"),
+	}
+}
+
 // createRequest is the part every create-request handler shares once it has
 // bound its own wire-body type and built params: it fills in SourceIP,
 // creates the request, and writes the response or registers the error. Each
@@ -142,6 +156,8 @@ func (cr *certRequestController) createUserRequestHandler(g *gin.Context) {
 	cr.createRequest(g, service.NewCertRequestParams{
 		Type:             model.CertificateTypeUser,
 		PublicKey:        body.PublicKey,
+		LocalUsername:    body.LocalUsername,
+		LocalHostname:    body.LocalHostname,
 		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})
 }
@@ -313,7 +329,7 @@ func (cr *certRequestController) approveHandler(g *gin.Context) {
 		return
 	}
 
-	if err := cr.certRequestService.Approve(g.Request.Context(), g.Param("id"), identity); err != nil {
+	if err := cr.certRequestService.Approve(g.Request.Context(), g.Param("id"), identity, decisionContext(g)); err != nil {
 		handleError(g, err)
 		return
 	}
@@ -337,7 +353,13 @@ func (cr *certRequestController) approveHandler(g *gin.Context) {
 // @Security    sessionCookie
 // @Router      /api/certs/requests/{id}/deny [post]
 func (cr *certRequestController) denyHandler(g *gin.Context) {
-	if err := cr.certRequestService.Deny(g.Request.Context(), g.Param("id")); err != nil {
+	identity, ok := middleware.Identity(g)
+	if !ok {
+		handleError(g, &middleware.UnauthorizedError{})
+		return
+	}
+
+	if err := cr.certRequestService.Deny(g.Request.Context(), g.Param("id"), identity, decisionContext(g)); err != nil {
 		handleError(g, err)
 		return
 	}

@@ -3,14 +3,12 @@
 **Status:** starting set, not finalized — expect fields to be added as other work
 (LDAP enrichment, `OtherAccounts`/`ServiceAccounts`, group-based policy) lands.
 
-Four service-only fields are already designed and waiting on phase 8:
+Four service-only fields are already designed and not yet implemented:
 `{{.ServiceAccount}}`, `{{.ApprovedBy}}`, `{{.ApproverSubject}}`, and
 `{{.ApprovedAt}}`, so a long-lived service certificate records the human who
-authorized it. See release-plan.md's deferred-items table (service
-certificates and enrollment) for why these are new fields rather than a
-redefinition of `{{.Username}}`; the phase document that originally worked
-this out, "Service key IDs record who approved them", has since been
-removed.
+authorized it. These are new fields rather than a redefinition of
+`{{.Username}}` because a service certificate's key ID needs to name both
+the service account and the human approver, not just one identity.
 
 The SSH certificate key ID is a free-form string the CA stamps into every certificate
 it signs. `sshd` logs it on every authentication, so it's the audit trail — see

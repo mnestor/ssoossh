@@ -1,0 +1,243 @@
+# Frontend Design System
+
+This document describes the design tokens, typography, iconography, and component patterns that maintain visual and interaction consistency across the ssoossh frontend.
+
+## Color Tokens
+
+The app uses a curated set of CSS custom properties defined in `src/app.css`. All colors are specified in [OKLch color space](https://oklch.com/) for perceptually uniform results. The palette is the same in light and dark modes; the mode switch inverts lightness while preserving hue and chroma.
+
+### Light Mode (default)
+
+- `--color-surface`: `#ffffff` — main background
+- `--color-surface-muted`: `oklch(97% 0.002 200)` — secondary surfaces, cards, light hover states
+- `--color-border-subtle`: `oklch(88% 0.003 200)` — borders, dividers
+- `--color-ink`: `oklch(20% 0.005 200)` — primary text
+- `--color-ink-muted`: `oklch(45% 0.005 200)` — secondary text, placeholders, hints
+- `--color-accent`: `oklch(45% 0.06 200)` — primary interactive element (teal)
+- `--color-accent-hover`: `oklch(38% 0.07 200)` — accent pressed state
+- `--color-accent-ink`: `#ffffff` — text on accent backgrounds
+- `--color-granted`: `oklch(46% 0.08 155)` — success/approved status (green)
+- `--color-granted-surface`: `oklch(95% 0.02 155)` — granted/success backgrounds
+- `--color-trimmed`: `oklch(52% 0.08 75)` — warning/restricted status (yellow)
+- `--color-trimmed-surface`: `oklch(95% 0.02 75)` — trimmed/warning backgrounds
+- `--color-danger`: `oklch(48% 0.13 25)` — error/denied status (red)
+- `--color-danger-surface`: `oklch(95% 0.03 25)` — danger/error backgrounds
+
+### Dark Mode
+
+The `.dark` class (applied when `color-scheme: dark` is active or the OS prefers dark mode) inverts all tokens while keeping the semantic meaning intact. See `src/app.css` lines 59–77 for the exact dark-mode overrides.
+
+## Typography
+
+### Typefaces
+
+- **UI (sans-serif)**: Public Sans 400, 500, 600, 700 weights (self-hosted via `@fontsource/public-sans`)
+- **Monospace**: Fira Code 400, 500 weights (self-hosted via `@fontsource/fira-code`)
+
+Both fonts are imported in `src/app.css` and serve the entire app; no fallback to Google Fonts or CDNs. Public Sans is a highly legible, geometric UI typeface suitable for a security product. Fira Code is used for SSH keys, fingerprints, principal names, and other cryptographic data where monospace clarity is essential.
+
+### Font Sizes
+
+All sizes use CSS custom properties (lines 36–40 in `app.css`):
+
+- `--font-size-xs`: `0.75rem` (12px) — auxiliary labels, helper text
+- `--font-size-sm`: `0.875rem` (14px) — body text, table data, secondary text
+- `--font-size-base`: `1rem` (16px) — default base size
+- `--font-size-lg`: `1.125rem` (18px) — subheadings, prominent labels
+- `--font-size-xl`: `1.25rem` (20px) — main headings
+
+### Line Heights & Weights
+
+- `--line-height-tight`: `1.25` — headings, dense content
+- `--line-height-snug`: `1.375` — small text blocks
+- `--line-height-normal`: `1.5` — body text (default)
+- `--line-height-relaxed`: `1.625` — spacious, accessible reading
+- `--font-weight-normal`: `400`
+- `--font-weight-medium`: `500`
+- `--font-weight-semibold`: `600`
+- `--font-weight-bold`: `700`
+
+## Iconography
+
+Icons come from [@lucide/svelte](https://lucide.dev/), wrapped in the `Icon.svelte` component for consistent sizing and labeling. The component accepts a size token and an optional `aria-label` for semantic/meaningful icons (decorative icons hide from screen readers via `aria-hidden`).
+
+### Supported Icons
+
+The `iconComponents` map in `src/lib/components/Icon.svelte` includes:
+
+**Semantic / Status:**
+
+- `alert-circle` — information or notice
+- `alert-triangle` — warning or caution
+- `check`, `check-circle` — success or approved
+- `x`, `x-circle` — error or denied
+- `clock` — pending or waiting
+- `loader` — in-progress or loading
+
+**Navigation & UI:**
+
+- `menu` — navigation menu trigger
+- `chevron-down`, `chevron-left`, `chevron-right` — directional indicators
+
+**Certificate Types:**
+
+- `user` — user certificates
+- `terminal` — PAM certificates
+- `cog` — service certificates
+- `server` — host certificates
+
+**Utility:**
+
+- `zap` — generic or all-category indicator
+
+### Size Scale
+
+The `sizeMap` in `Icon.svelte` defines pixel dimensions:
+
+- `xs`: 12px
+- `sm`: 16px
+- `md`: 20px
+- `lg`: 24px
+- `xl`: 32px
+
+Icon utilities (`.icon-xs` through `.icon-xl`) are defined in `src/app.css` lines 95–115 for manual sizing if needed outside the `Icon` component.
+
+## Component Patterns
+
+### Variant Objects
+
+Variant-bearing components (`Button`, `Alert`, `StatusBadge`, `OptionDiffList`) encode their variant→Tailwind-class mapping as a local `const variants` object literal inside the component file. This is deliberately not abstracted into a shared helper to avoid creating a dependency on a component library; the pattern is readable, self-contained, and requires no wrapper.
+
+Example from `Button.svelte`:
+
+```ts
+const variants = {
+	primary: 'bg-accent text-accent-ink hover:bg-accent-hover',
+	danger: 'bg-danger-surface text-danger brightness-95',
+	ghost: 'border border-border-subtle text-ink hover:bg-surface-muted'
+};
+```
+
+When adding a new variant:
+
+1. Add the variant name to the `variant?: ...` union in Props.
+2. Add the `variant: { className: ... }` entry to the `variants` object.
+3. Include the Tailwind classes in the element using `{variants[variant]}`.
+
+All classes should reference CSS custom properties (e.g., `bg-accent`) rather than hardcoded colors or sizes.
+
+### Common Components
+
+- **Button**: Variants: `primary` (accent blue), `danger` (red), `ghost` (outline). Always includes `disabled` state via `opacity-50`.
+- **Card**: Wraps content in a bordered, shadowed box with optional title/description header and footer slot.
+- **Alert**: Variants: `error`, `warning`, `info`. Each includes an icon and a color from the token set.
+- **StatusBadge**: Maps request/certificate statuses (pending, approved, denied, etc.) to colored pills with status-appropriate icons.
+- **DetailRow**: A label–value pair for metadata lists, with optional icon and monospace rendering.
+- **OptionDiffList**: Shows granted vs. trimmed options (extensions, critical options) with strike-through for trimmed items.
+- **ApprovalView**: Composite component rendering a full certificate-request approval form.
+- **CertDetailModal**: Read-only certificate details in a modal, triggered by clicking a row in Dashboard or History.
+- **ConsentModal**: Blocking login consent notice, shown above the login form until accepted.
+
+## Dark Mode
+
+Dark mode follows the OS preference by default (`color-scheme: light dark` in `app.css:55`). Users can override via a toggle if one is implemented.
+
+Dark-mode tokens are defined in the `.dark` class selector (lines 59–77 of `app.css`). When the `.dark` class is applied or `prefers-color-scheme: dark` is active, CSS swaps all `--color-*` variables to darker values. The hue and semantic meaning stay the same; only the lightness inverts.
+
+All components automatically respond to dark mode — no per-component dark-mode logic is needed because colors are tokenized. Test both modes by:
+
+1. Opening the browser DevTools and toggling `color-scheme` or the `.dark` class on `:root`.
+2. Changing the OS theme and reloading.
+
+## Branding & Configuration
+
+### Runtime Branding Endpoint
+
+Deployment branding (org name, logo URL, login consent notice) is fetched at app startup via an unauthenticated API call to `/api/branding`. The fetch is non-blocking and fails closed — any error (404, network failure, timeout) treats it as "no branding configured," allowing the UI to work standalone and auto-enable branding once the backend endpoint exists.
+
+The `branding.svelte.ts` store handles this:
+
+```ts
+export async function loadBranding(): Promise<void>;
+export function getBranding(): BrandingConfig;
+```
+
+The expected response shape (to be reconciled with real backend webtypes once implemented):
+
+```ts
+interface BrandingConfig {
+	org_name?: string; // Shown in header as a tag next to "ssoossh"
+	logo_url?: string; // Image URL, rendered as <img> before "ssoossh"
+	login_notice?: string; // Full-text consent notice, blocks login form
+}
+```
+
+**Header Branding** (`src/routes/+layout.svelte`):
+
+- Logo image (if `logo_url` is set) appears before the "ssoossh" wordmark.
+- Org name (if `org_name` is set) appears as a small tag to the right of "ssoossh".
+- Both elements are absent by default, keeping the header minimal when not deployed with branding.
+
+**Login Consent** (`src/routes/login/+page.svelte`):
+
+- If `login_notice` is set, a `ConsentModal` overlays the login form with a backdrop.
+- The form stays inert (pointer-events-none, reduced opacity) until the user clicks "I Accept".
+- This is a blocking modal, not a dismissible banner.
+
+### Environment Variables
+
+The frontend build accepts only a few Vite build-time env vars (for development server settings). These do NOT include branding; branding is always runtime-fetched. See `.env.tpl` for the dev-server vars.
+
+## Accessibility (WCAG 2.0 Level AA / Section 508)
+
+The design and components are built for WCAG 2.0 Level AA compliance as a hard requirement:
+
+- **Contrast**: All text meets AA contrast ratios (4.5:1 for body text, 3:1 for large text). Light text on light accent is avoided.
+- **Focus Visibility**: Interactive elements have visible `:focus` or `:focus-visible` states via browser defaults or explicit outline/background changes.
+- **Keyboard Navigation**: All buttons and interactive elements are keyboard-accessible via semantic HTML (`<button>`, `<a>`) and logical tab order.
+- **Icon Usage**: Meaningful icons always carry an `aria-label`. Decorative icons have `aria-hidden="true"`.
+- **Color Alone**: Status is never conveyed by color alone; icons, text, or other markers supplement it.
+- **Modals**: The native `<dialog>` element with `.showModal()` provides focus management and an inert background.
+
+Run a contrast checker against the light and dark palettes before deploying new colors.
+
+## Testing
+
+Tests for components use `@testing-library/svelte` and `vitest`. Pattern:
+
+```ts
+import { render, screen } from '@testing-library/svelte';
+import MyComponent from './MyComponent.svelte';
+
+describe('MyComponent', () => {
+	it('should [action] when [condition]', () => {
+		render(MyComponent, { prop: 'value' });
+		expect(screen.getByText('expected text')).toBeInTheDocument();
+	});
+});
+```
+
+- One assertion per test when possible.
+- Use descriptive test names: "should [action] when [condition]".
+- Mock external dependencies; never call real APIs.
+
+## Contributing
+
+When adding or modifying styles:
+
+1. **Check tokens first**: Before hardcoding a color, spacing, or size, check if a token already exists in `app.css`. Reuse it.
+2. **Follow the variant pattern**: For variant-bearing components, use the local `const variants` object, not a centralized helper or Tailwind arbitrary values.
+3. **Test both modes**: Verify your changes in light and dark mode.
+4. **Verify keyboard access**: Tab through interactive elements; ensure focus is always visible.
+5. **Run the test suite**: `corepack pnpm run test`.
+6. **Run the build**: `corepack pnpm run build` — ensures fonts and tokens are prerendered correctly.
+7. **Run type check**: `corepack pnpm run check` — catches TypeScript errors.
+
+## References
+
+- [OKLch Color Space](https://oklch.com/) — perceptual color uniformity
+- [Public Sans](https://www.opensans.com/about) — UI typeface (OFL license)
+- [Fira Code](https://github.com/tonsky/FiraCode) — monospace typeface (OFL license)
+- [Lucide Icons](https://lucide.dev/) — icon library (@lucide/svelte)
+- [WCAG 2.0 Level AA](https://www.w3.org/WAI/WCAG21/quickref/?currentsetting=level%20aa) — accessibility guidelines
+- [Svelte Documentation](https://svelte.dev/docs) — framework reference

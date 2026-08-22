@@ -4,6 +4,8 @@
   "status": "pending",
   "source_ip": "198.51.100.7",
   "hostname": "db1.example.org",
+  "local_username": "alice",
+  "local_hostname": "alice-laptop",
   "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample alice@laptop",
   "principals": [
     "alice",
@@ -37,5 +39,24 @@
   "created_at": "2026-08-14T09:30:00+02:00",
   "approval_url": "/approve/0b4f2b1a-7c3d-4e5f-8a9b-0c1d2e3f4a5b",
   "is_owned_by_you": true,
-  "already_closed": true
+  "already_closed": true,
+  "decided_by_outcome": "approved",
+  "decided_by_subject": "9c1f0f8e-1d0a-4a37-9d1e-2f6a1b4c5d6e",
+  "decided_by_username": "alice",
+  "decided_by_email": "alice@example.org",
+  "decided_by_groups": [
+    "engineering",
+    "sre"
+  ],
+  "decided_by_other_accounts": [
+    "alice.other"
+  ],
+  "decided_by_service_accounts": [
+    "svc-backup"
+  ],
+  "decided_source_ip": "198.51.100.7",
+  "decided_user_agent": "curl/8.0.0",
+  "decided_accept_language": "en-US",
+  "decided_forwarded_for": "198.51.100.7, 10.0.0.1",
+  "decided_at": "2026-08-14T09:30:00+02:00"
 }

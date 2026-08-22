@@ -41,6 +41,11 @@ type fakeCertRequestService struct {
 	approveErr error
 	denyErr    error
 
+	gotApproveIdentity *service.Identity
+	gotApproveDC       service.DecisionContext
+	gotDenyIdentity    *service.Identity
+	gotDenyDC          service.DecisionContext
+
 	detail    *service.RequestDetail
 	detailErr error
 }
@@ -66,11 +71,15 @@ func (f *fakeCertRequestService) Detail(_ context.Context, requestID string, _ *
 	}, nil
 }
 
-func (f *fakeCertRequestService) Approve(_ context.Context, _ string, _ *service.Identity) error {
+func (f *fakeCertRequestService) Approve(_ context.Context, _ string, identity *service.Identity, dc service.DecisionContext) error {
+	f.gotApproveIdentity = identity
+	f.gotApproveDC = dc
 	return f.approveErr
 }
 
-func (f *fakeCertRequestService) Deny(_ context.Context, _ string) error {
+func (f *fakeCertRequestService) Deny(_ context.Context, _ string, identity *service.Identity, dc service.DecisionContext) error {
+	f.gotDenyIdentity = identity
+	f.gotDenyDC = dc
 	return f.denyErr
 }
 
@@ -561,7 +570,11 @@ func TestDenyHandler_ShouldReturnDeniedStatus(t *testing.T) {
 	svc := &fakeCertRequestService{}
 
 	r := gin.New()
-	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
+	sessionAuth := func(c *gin.Context) {
+		c.Set(middleware.IdentityContextKey, &service.Identity{Username: "alice"})
+		c.Next()
+	}
+	NewCertRequestController(&r.RouterGroup, svc, sessionAuth, passthrough)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/certs/requests/req-1/deny", nil)
@@ -580,6 +593,32 @@ func TestDenyHandler_ShouldReturnDeniedStatus(t *testing.T) {
 	}
 }
 
+func TestDenyHandler_ShouldRejectWithoutAnIdentityOnContext(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{}
+
+	r := gin.New()
+	var gotErrors int
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		gotErrors = len(c.Errors)
+	})
+	// sessionAuthMiddleware is a passthrough that never sets IdentityContextKey
+	// — denyHandler must fail closed rather than assume it's there, the same
+	// as approveHandler.
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/certs/requests/req-1/deny", nil)
+	r.ServeHTTP(w, req)
+
+	if gotErrors != 1 {
+		t.Fatalf("expected exactly one error to be attached when no identity is on the context, got %d", gotErrors)
+	}
+}
+
 func TestDenyHandler_ShouldRegisterErrorWhenServiceFails(t *testing.T) {
 	t.Parallel()
 
@@ -592,7 +631,11 @@ func TestDenyHandler_ShouldRegisterErrorWhenServiceFails(t *testing.T) {
 		c.Next()
 		gotErrors = len(c.Errors)
 	})
-	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough)
+	sessionAuth := func(c *gin.Context) {
+		c.Set(middleware.IdentityContextKey, &service.Identity{Username: "alice"})
+		c.Next()
+	}
+	NewCertRequestController(&r.RouterGroup, svc, sessionAuth, passthrough)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/certs/requests/req-1/deny", nil)
@@ -600,5 +643,114 @@ func TestDenyHandler_ShouldRegisterErrorWhenServiceFails(t *testing.T) {
 
 	if gotErrors != 1 {
 		t.Fatalf("expected exactly one error to be attached when Deny fails, got %d", gotErrors)
+	}
+}
+
+// TestDecisionContext_ShouldCaptureExactlyTheAllowlistedHeaders is the
+// regression test for the deliberate header allowlist on
+// service.DecisionContext: it must capture User-Agent/Accept-Language/
+// X-Forwarded-For and SourceIP, and nothing else — a Cookie header on the
+// same request (which would carry the live session token) must never
+// appear anywhere in the result. DecisionContext has no field a Cookie
+// value could even be assigned to, so this also guards against someone
+// later adding one without updating this test.
+func TestDecisionContext_ShouldCaptureExactlyTheAllowlistedHeaders(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/certs/requests/req-1/approve", nil)
+	c.Request.RemoteAddr = "203.0.113.9:54321"
+	c.Request.Header.Set("User-Agent", "curl/8.0.0")
+	c.Request.Header.Set("Accept-Language", "en-US")
+	c.Request.Header.Set("X-Forwarded-For", "203.0.113.9, 10.0.0.1")
+	c.Request.Header.Set("Cookie", "session=super-secret-session-token")
+
+	got := decisionContext(c)
+
+	want := service.DecisionContext{
+		SourceIP:       "203.0.113.9",
+		UserAgent:      "curl/8.0.0",
+		AcceptLanguage: "en-US",
+		ForwardedFor:   "203.0.113.9, 10.0.0.1",
+	}
+	if got != want {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
+// TestApproveHandler_ShouldForwardIdentityAndConnectionContext asserts the
+// controller wiring: approveHandler must pass the session identity and a
+// DecisionContext built from the real request (client IP, headers) through
+// to Approve, not a zero value.
+func TestApproveHandler_ShouldForwardIdentityAndConnectionContext(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{}
+
+	r := gin.New()
+	wantIdentity := &service.Identity{Username: "alice", Subject: "sub-1"}
+	sessionAuth := func(c *gin.Context) {
+		c.Set(middleware.IdentityContextKey, wantIdentity)
+		c.Next()
+	}
+	NewCertRequestController(&r.RouterGroup, svc, sessionAuth, passthrough)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/certs/requests/req-1/approve", nil)
+	req.RemoteAddr = "203.0.113.9:54321"
+	req.Header.Set("User-Agent", "curl/8.0.0")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if svc.gotApproveIdentity != wantIdentity {
+		t.Errorf("got identity %+v, want the session identity %+v", svc.gotApproveIdentity, wantIdentity)
+	}
+	if svc.gotApproveDC.SourceIP != "203.0.113.9" {
+		t.Errorf("got DecisionContext.SourceIP %q, want %q", svc.gotApproveDC.SourceIP, "203.0.113.9")
+	}
+	if svc.gotApproveDC.UserAgent != "curl/8.0.0" {
+		t.Errorf("got DecisionContext.UserAgent %q, want %q", svc.gotApproveDC.UserAgent, "curl/8.0.0")
+	}
+}
+
+// TestDenyHandler_ShouldForwardIdentityAndConnectionContext mirrors
+// TestApproveHandler_ShouldForwardIdentityAndConnectionContext for the deny
+// path.
+func TestDenyHandler_ShouldForwardIdentityAndConnectionContext(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{}
+
+	r := gin.New()
+	wantIdentity := &service.Identity{Username: "bob", Subject: "sub-2"}
+	sessionAuth := func(c *gin.Context) {
+		c.Set(middleware.IdentityContextKey, wantIdentity)
+		c.Next()
+	}
+	NewCertRequestController(&r.RouterGroup, svc, sessionAuth, passthrough)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/certs/requests/req-1/deny", nil)
+	req.RemoteAddr = "198.51.100.4:1234"
+	req.Header.Set("User-Agent", "Mozilla/5.0")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if svc.gotDenyIdentity != wantIdentity {
+		t.Errorf("got identity %+v, want the session identity %+v", svc.gotDenyIdentity, wantIdentity)
+	}
+	if svc.gotDenyDC.SourceIP != "198.51.100.4" {
+		t.Errorf("got DecisionContext.SourceIP %q, want %q", svc.gotDenyDC.SourceIP, "198.51.100.4")
+	}
+	if svc.gotDenyDC.UserAgent != "Mozilla/5.0" {
+		t.Errorf("got DecisionContext.UserAgent %q, want %q", svc.gotDenyDC.UserAgent, "Mozilla/5.0")
 	}
 }

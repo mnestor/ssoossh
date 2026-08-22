@@ -119,7 +119,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	seedUser(t, svc.db, "sub-1")
-	if err := svc.Approve(context.Background(), requestID, &Identity{Username: "alice", Subject: "sub-1"}); err != nil {
+	if err := svc.Approve(context.Background(), requestID, &Identity{Username: "alice", Subject: "sub-1"}, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error approving request: %v", err)
 	}
 
@@ -281,7 +281,7 @@ func TestPipeline_EndToEnd_PAM(t *testing.T) {
 		Username: "mike.nestor",
 		Subject:  "sub-1",
 		Groups:   []string{"sudoers"},
-	}); err != nil {
+	}, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error approving request: %v", err)
 	}
 

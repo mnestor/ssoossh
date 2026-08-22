@@ -59,7 +59,9 @@ func Authenticate(ctx context.Context, log Logger, conv Conversation, user strin
 	}
 	log.Debugf("generated ephemeral keypair for %s: %s", user, pub)
 
-	pending, err := apiClient.CreatePAMRequest(ctx, pub, user, api.RequestedOptions{})
+	pending, err := apiClient.CreatePAMRequest(ctx, pub, user, api.RequestedOptions{
+		SourceAddresses: api.LocalInterfaceAddresses(),
+	})
 	if err != nil {
 		return classifyRequestError(err)
 	}

@@ -53,12 +53,23 @@ type CertificateOptionsResponse struct {
 // client asks for rather than rejecting it, and the UI has to surface that
 // difference before approval — a client asking for an extension the
 // deployment forbids should be visibly not getting it, not silently.
+//
+// The Decided* fields are the request's decision-audit record (see
+// model.CertificateRequestDecision) — all omitted (zero) for a request
+// that hasn't been decided yet, which is the common case for a request
+// being viewed. Who sees a populated one: this endpoint binds a request to
+// the single identity that requested/is deciding it (see
+// service.CertRequestService.Detail's bindRequester call), so a full
+// snapshot of the decider's identity and connection context is never shown
+// to anyone but that same person.
 type RequestDetailResponse struct {
 	ID            string                         `json:"id" validate:"required"`
 	Type          model.CertificateType          `json:"type" validate:"required"`
 	Status        model.CertificateRequestStatus `json:"status" validate:"required"`
 	SourceIP      string                         `json:"source_ip" validate:"required"`
 	Hostname      string                         `json:"hostname,omitempty"`
+	LocalUsername string                         `json:"local_username,omitempty"`
+	LocalHostname string                         `json:"local_hostname,omitempty"`
 	PublicKey     string                         `json:"public_key" validate:"required"`
 	Principals    []string                       `json:"principals" validate:"required"`
 	ValidSeconds  int                            `json:"valid_seconds" validate:"required"`
@@ -68,6 +79,19 @@ type RequestDetailResponse struct {
 	ApprovalURL   string                         `json:"approval_url" validate:"required"`
 	IsOwnedByYou  bool                           `json:"is_owned_by_you" validate:"required"`
 	AlreadyClosed bool                           `json:"already_closed" validate:"required"`
+
+	DecidedByOutcome         string     `json:"decided_by_outcome,omitempty"`
+	DecidedBySubject         string     `json:"decided_by_subject,omitempty"`
+	DecidedByUsername        string     `json:"decided_by_username,omitempty"`
+	DecidedByEmail           string     `json:"decided_by_email,omitempty"`
+	DecidedByGroups          []string   `json:"decided_by_groups,omitempty"`
+	DecidedByOtherAccounts   []string   `json:"decided_by_other_accounts,omitempty"`
+	DecidedByServiceAccounts []string   `json:"decided_by_service_accounts,omitempty"`
+	DecidedSourceIP          string     `json:"decided_source_ip,omitempty"`
+	DecidedUserAgent         string     `json:"decided_user_agent,omitempty"`
+	DecidedAcceptLanguage    string     `json:"decided_accept_language,omitempty"`
+	DecidedForwardedFor      string     `json:"decided_forwarded_for,omitempty"`
+	DecidedAt                *time.Time `json:"decided_at,omitempty"`
 }
 
 // CertificateResponse is one row of a user's issued-certificate history.

@@ -4,7 +4,7 @@
 # to ^0.7.0, the first release with the fix; no newer @sveltejs/kit exists
 # yet that bumps this itself.
 overrides:
-  cookie: "^0.7.0"
+  cookie: '^0.7.0'
 
 # Dependency postinstall scripts are blocked by default in pnpm 10+. Each one
 # has to be decided explicitly, or `pnpm install` exits non-zero with

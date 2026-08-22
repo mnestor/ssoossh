@@ -1,8 +1,14 @@
 package apitypes
 
-// UserRequestBody is the POST /api/certs/user request body.
+// UserRequestBody is the POST /api/certs/user request body. LocalUsername
+// and LocalHostname are the requesting client's own OS identity — for a
+// user cert there is no way to request one except via the local client, so
+// this is who/where the request actually came from, not optional extra
+// context (see docs/certificate-audit-metadata-plan.md).
 type UserRequestBody struct {
 	PublicKey        string           `json:"public_key" binding:"required"`
+	LocalUsername    string           `json:"local_username,omitempty"`
+	LocalHostname    string           `json:"local_hostname,omitempty"`
 	RequestedOptions RequestedOptions `json:"requested_options,omitempty"`
 }
 

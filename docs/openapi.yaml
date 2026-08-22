@@ -113,6 +113,10 @@ components:
       type: object
     apitypes.UserRequestBody:
       properties:
+        local_hostname:
+          type: string
+        local_username:
+          type: string
         public_key:
           type: string
         requested_options:
@@ -346,6 +350,39 @@ components:
           type: string
         created_at:
           type: string
+        decided_accept_language:
+          type: string
+        decided_at:
+          type: string
+        decided_by_email:
+          type: string
+        decided_by_groups:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        decided_by_other_accounts:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        decided_by_outcome:
+          type: string
+        decided_by_service_accounts:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        decided_by_subject:
+          type: string
+        decided_by_username:
+          type: string
+        decided_forwarded_for:
+          type: string
+        decided_source_ip:
+          type: string
+        decided_user_agent:
+          type: string
         granted:
           $ref: '#/components/schemas/webtypes.CertificateOptionsResponse'
         hostname:
@@ -354,6 +391,10 @@ components:
           type: string
         is_owned_by_you:
           type: boolean
+        local_hostname:
+          type: string
+        local_username:
+          type: string
         principals:
           items:
             type: string

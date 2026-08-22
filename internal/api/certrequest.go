@@ -32,9 +32,11 @@ type PendingRequest struct {
 }
 
 // CreateUserRequest implements Client.
-func (c *RestyClient) CreateUserRequest(ctx context.Context, publicKey string, opts RequestedOptions) (*PendingRequest, error) {
+func (c *RestyClient) CreateUserRequest(ctx context.Context, publicKey, localUsername, localHostname string, opts RequestedOptions) (*PendingRequest, error) {
 	return c.create(ctx, "/certs/user", apitypes.UserRequestBody{
 		PublicKey:        publicKey,
+		LocalUsername:    localUsername,
+		LocalHostname:    localHostname,
 		RequestedOptions: opts,
 	})
 }

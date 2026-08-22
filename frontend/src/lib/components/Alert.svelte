@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import Icon from './Icon.svelte';
 
 	interface Props {
 		variant?: 'info' | 'warning' | 'error';
@@ -16,17 +17,26 @@
 		warning: 'bg-trimmed-surface text-trimmed border-trimmed/30',
 		error: 'bg-danger-surface text-danger border-danger/30'
 	};
+
+	const iconMap = {
+		info: 'alert-circle',
+		warning: 'alert-triangle',
+		error: 'alert-circle'
+	};
 </script>
 
 <div
-	class="rounded-md border px-4 py-3 text-sm {variants[variant]}"
+	class="rounded-md border px-4 py-3 text-sm {variants[variant]} flex items-start gap-3"
 	role="status"
 	data-testid={testid}
 >
-	{#if title}
-		<p class="font-semibold">{title}</p>
-	{/if}
-	{#if children}
-		<div class:mt-1={!!title}>{@render children()}</div>
-	{/if}
+	<Icon name={iconMap[variant]} size="sm" class="mt-0.5 flex-shrink-0" />
+	<div class="flex-1">
+		{#if title}
+			<p class="font-semibold">{title}</p>
+		{/if}
+		{#if children}
+			<div class:mt-1={!!title}>{@render children()}</div>
+		{/if}
+	</div>
 </div>

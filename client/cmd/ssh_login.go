@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
+	"os/user"
 	"runtime"
 	"time"
 
@@ -119,8 +121,11 @@ func runLogin(ctx context.Context, root *RootCommand, out io.Writer, force bool)
 		return fmt.Errorf("encode public key: %w", err)
 	}
 
-	pending, err := root.API().CreateUserRequest(ctx, publicKey, api.RequestedOptions{
-		Extensions: loginExtensions,
+	localUsername, localHostname := localIdentity()
+
+	pending, err := root.API().CreateUserRequest(ctx, publicKey, localUsername, localHostname, api.RequestedOptions{
+		Extensions:      loginExtensions,
+		SourceAddresses: api.LocalInterfaceAddresses(),
 	})
 	if err != nil {
 		return fmt.Errorf("request a certificate: %w", err)
@@ -160,6 +165,21 @@ func runLogin(ctx context.Context, root *RootCommand, out io.Writer, force bool)
 	fmt.Fprintf(out, "Certificate loaded into %s for %s, %s.\n",
 		root.Agent().Backend(), principalList(kp.Certificate()), expiryPhrase(kp.Certificate()))
 	return nil
+}
+
+// localIdentity returns this machine's local OS username and hostname, for
+// a user-type request's LocalUsername/LocalHostname — the local client is
+// the requester for this certificate type, so this is who/where the
+// request actually came from (see
+// docs/certificate-audit-metadata-plan.md). Best-effort: either value is
+// left empty on a lookup failure rather than failing the login over
+// metadata that isn't a precondition for issuance.
+func localIdentity() (username, hostname string) {
+	if u, err := user.Current(); err == nil {
+		username = u.Username
+	}
+	hostname, _ = os.Hostname() //nolint:errcheck // best-effort audit metadata, not a login precondition — see the doc comment above
+	return username, hostname
 }
 
 // pruneSuperseded removes the certificates this login replaces: everything

@@ -54,6 +54,14 @@ export interface CertificateOptionsResponse {
  * client asks for rather than rejecting it, and the UI has to surface that
  * difference before approval — a client asking for an extension the
  * deployment forbids should be visibly not getting it, not silently.
+ * The Decided* fields are the request's decision-audit record (see
+ * model.CertificateRequestDecision) — all omitted (zero) for a request
+ * that hasn't been decided yet, which is the common case for a request
+ * being viewed. Who sees a populated one: this endpoint binds a request to
+ * the single identity that requested/is deciding it (see
+ * service.CertRequestService.Detail's bindRequester call), so a full
+ * snapshot of the decider's identity and connection context is never shown
+ * to anyone but that same person.
  */
 export interface RequestDetailResponse {
 	id: string;
@@ -61,6 +69,8 @@ export interface RequestDetailResponse {
 	status: CertificateRequestStatus;
 	source_ip: string;
 	hostname?: string;
+	local_username?: string;
+	local_hostname?: string;
 	public_key: string;
 	principals: string[];
 	valid_seconds: number /* int */;
@@ -70,6 +80,18 @@ export interface RequestDetailResponse {
 	approval_url: string;
 	is_owned_by_you: boolean;
 	already_closed: boolean;
+	decided_by_outcome?: string;
+	decided_by_subject?: string;
+	decided_by_username?: string;
+	decided_by_email?: string;
+	decided_by_groups?: string[];
+	decided_by_other_accounts?: string[];
+	decided_by_service_accounts?: string[];
+	decided_source_ip?: string;
+	decided_user_agent?: string;
+	decided_accept_language?: string;
+	decided_forwarded_for?: string;
+	decided_at?: string;
 }
 /**
  * CertificateResponse is one row of a user's issued-certificate history.

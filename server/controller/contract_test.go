@@ -46,10 +46,10 @@ func (s *stubCertRequestService) Detail(_ context.Context, _ string, _ *service.
 	return &service.RequestDetail{}, nil
 }
 
-func (s *stubCertRequestService) Approve(_ context.Context, _ string, _ *service.Identity) error {
+func (s *stubCertRequestService) Approve(_ context.Context, _ string, _ *service.Identity, _ service.DecisionContext) error {
 	return nil
 }
-func (s *stubCertRequestService) Deny(_ context.Context, _ string) error { return nil }
+func (s *stubCertRequestService) Deny(_ context.Context, _ string, _ *service.Identity, _ service.DecisionContext) error { return nil }
 
 func (s *stubCertRequestService) Wait(_ context.Context, _ string) (model.CertificateRequestStatus, string, string, error) {
 	return model.CertificateRequestStatusApproved, s.cert, "", nil
@@ -127,7 +127,7 @@ func TestContract_RequestUserCertificate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	pending, err := client.CreateUserRequest(ctx, "ssh-ed25519 AAAA test", api.RequestedOptions{
+	pending, err := client.CreateUserRequest(ctx, "ssh-ed25519 AAAA test", "alice", "alice-laptop", api.RequestedOptions{
 		Extensions: []string{"permit-pty"},
 	})
 	if err != nil {

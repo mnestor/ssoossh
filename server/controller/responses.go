@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -59,25 +61,71 @@ func newCurrentUserResponse(identity *service.Identity) webtypes.CurrentUserResp
 // newRequestDetailResponse converts a service.RequestDetail to its wire
 // shape.
 func newRequestDetailResponse(d *service.RequestDetail) webtypes.RequestDetailResponse {
-	return webtypes.RequestDetailResponse{
-		ID:           d.Request.ID,
-		Type:         d.Request.Type,
-		Status:       d.Request.Status,
-		SourceIP:     d.Request.SourceIP,
-		Hostname:     d.Request.Hostname,
-		PublicKey:    d.Request.PublicKey,
-		Principals:   orEmpty(d.Principals),
-		ValidSeconds: int(d.ValidDuration.Seconds()),
-		Requested:    newCertificateOptionsResponse(d.Requested),
-		Granted:      newCertificateOptionsResponse(d.Narrowed),
-		CreatedAt:    d.Request.CreatedAt,
-		ApprovalURL:  approvalURL(d.Request.ID),
+	resp := webtypes.RequestDetailResponse{
+		ID:            d.Request.ID,
+		Type:          d.Request.Type,
+		Status:        d.Request.Status,
+		SourceIP:      d.Request.SourceIP,
+		Hostname:      d.Request.Hostname,
+		LocalUsername: d.Request.LocalUsername,
+		LocalHostname: d.Request.LocalHostname,
+		PublicKey:     d.Request.PublicKey,
+		Principals:    orEmpty(d.Principals),
+		ValidSeconds:  int(d.ValidDuration.Seconds()),
+		Requested:     newCertificateOptionsResponse(d.Requested),
+		Granted:       newCertificateOptionsResponse(d.Narrowed),
+		CreatedAt:     d.Request.CreatedAt,
+		ApprovalURL:   approvalURL(d.Request.ID),
 		// Detail binds the request to the caller, so reaching this point at
 		// all means they own it. Present as a field anyway so the UI does
 		// not have to infer ownership from the absence of an error.
 		IsOwnedByYou:  true,
 		AlreadyClosed: d.Request.Status != model.CertificateRequestStatusPending,
 	}
+
+	if d.Decision != nil {
+		setDecisionFields(&resp, d.Decision)
+	}
+
+	return resp
+}
+
+// setDecisionFields maps decision's fields onto resp's Decided* fields. Who
+// ever sees a populated response is documented on
+// webtypes.RequestDetailResponse's doc comment — the request-detail
+// endpoint only ever shows this to the single identity bound to the
+// request.
+func setDecisionFields(resp *webtypes.RequestDetailResponse, decision *model.CertificateRequestDecision) {
+	resp.DecidedByOutcome = string(decision.Outcome)
+	resp.DecidedBySubject = decision.Subject
+	resp.DecidedByUsername = decision.Username
+	resp.DecidedByEmail = decision.Email
+	resp.DecidedSourceIP = decision.SourceIP
+	resp.DecidedUserAgent = decision.UserAgent
+	resp.DecidedAcceptLanguage = decision.AcceptLanguage
+	resp.DecidedForwardedFor = decision.ForwardedFor
+	decidedAt := decision.DecidedAt
+	resp.DecidedAt = &decidedAt
+
+	resp.DecidedByGroups = decodeDecisionStringList("groups", decision.Groups)
+	resp.DecidedByOtherAccounts = decodeDecisionStringList("other_accounts", decision.OtherAccounts)
+	resp.DecidedByServiceAccounts = decodeDecisionStringList("service_accounts", decision.ServiceAccounts)
+}
+
+// decodeDecisionStringList decodes a JSON-encoded []string column from
+// model.CertificateRequestDecision. A parse failure logs and returns nil
+// rather than failing the whole response — this is audit data, not a
+// security decision on the read path.
+func decodeDecisionStringList(field, raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		slog.Error("failed to decode certificate request decision field", "field", field, "error", err)
+		return nil
+	}
+	return out
 }
 
 // newCertificateOptionsResponse converts resolved options to their wire

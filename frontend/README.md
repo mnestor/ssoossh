@@ -1,38 +1,47 @@
-# sv
+# ssoossh frontend
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+Web UI for the ssoossh SSH certificate authority, built with SvelteKit 5 and Tailwind CSS.
 
-## Creating a project
+## Design System
 
-If you're seeing this, you've probably already done this step. Congrats!
+See [`DESIGN.md`](./DESIGN.md) for documentation on color tokens, typography, icons, component patterns, and accessibility guidelines.
 
-```sh
-# create a new project in the current directory
-npx sv create
+## Development
 
-# create a new project in my-app
-npx sv create my-app
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+Start the development server:
 
 ```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+corepack pnpm install
+corepack pnpm run dev
 ```
+
+The frontend proxies API calls to the backend (default: `http://localhost:8080`). Configure this via the `DEVELOPMENT_BACKEND_URL` env var in `.env.local`.
 
 ## Building
 
-To create a production version of your app:
+To create a production build:
 
 ```sh
-npm run build
+corepack pnpm run build
 ```
 
-You can preview the production build with `npm run preview`.
+The static output is prerendered into `/server/frontend/dist`, which is embedded into the `ssoosshd` server binary via Go's `//go:embed` directive.
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+## Testing & Validation
+
+```sh
+# Run unit tests
+corepack pnpm run test
+
+# Type check
+corepack pnpm run check
+
+# Lint
+corepack pnpm run lint
+```
+
+## Architecture Notes
+
+- **Static prerendering**: The `@sveltejs/adapter-static` adapter precompiles all routes to static HTML at build time, with a fallback page for dynamic routes.
+- **Self-hosted fonts**: Both sans and monospace typefaces are bundled locally via `@fontsource` packages; no external font requests.
+- **Branding**: Org name, logo URL, and login consent notices are fetched at runtime from an unauthenticated `/api/branding` endpoint, allowing the same prerendered build to serve different deployments.

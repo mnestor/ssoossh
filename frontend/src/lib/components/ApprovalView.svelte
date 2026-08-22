@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { RequestDetail } from '$lib/api/types';
+	import type { CertificateType, RequestDetail } from '$lib/api/types';
 	import {
 		anyTrimmed,
 		approvalBlockedReason,
@@ -11,6 +11,7 @@
 	import Button from '$lib/components/Button.svelte';
 	import Card from '$lib/components/Card.svelte';
 	import DetailRow from '$lib/components/DetailRow.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import OptionDiffList from '$lib/components/OptionDiffList.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import { formatDateTime, formatDuration } from '$lib/format';
@@ -47,6 +48,14 @@
 	const narrowed = $derived(anyTrimmed(extensions) || anyTrimmed(criticalOptions));
 	const blocked = $derived(approvalBlockedReason(detail));
 
+	// Icon mapping for certificate types
+	const certTypeIcons: Record<CertificateType, string> = {
+		user: 'user',
+		pam: 'terminal',
+		service: 'cog',
+		host: 'server'
+	};
+
 	// PAM authenticates a single local operation (e.g. `sudo`) to
 	// pam_ssoossh, not an interactive SSH session — "requesting an SSH
 	// certificate" would misdescribe what's actually being authorized, so
@@ -80,16 +89,56 @@
 <Card title={cardCopy.title} description={cardCopy.description} testid="approval-view">
 	<dl class="divide-y divide-border-subtle">
 		<DetailRow label="Status"><StatusBadge status={detail.status} /></DetailRow>
-		<DetailRow label="Certificate type">{detail.type}</DetailRow>
-		<DetailRow label="Principals" mono>
+		<DetailRow label="Certificate type">
+			<div class="inline-flex items-center justify-center rounded bg-surface-muted px-2 py-1.5">
+				<Icon
+					name={certTypeIcons[detail.type]}
+					size="md"
+					ariaLabel="Certificate type: {detail.type}"
+				/>
+			</div>
+		</DetailRow>
+		<DetailRow label="Principals">
 			{#if detail.principals.length > 0}
-				{detail.principals.join(', ')}
+				<div class="flex flex-wrap gap-2">
+					{#each detail.principals as principal (principal)}
+						<code
+							class="rounded border border-border-subtle bg-surface px-2 py-0.5 font-mono text-xs text-ink"
+						>
+							{principal}
+						</code>
+					{/each}
+				</div>
 			{:else}
 				<span class="font-sans text-ink-muted">none</span>
 			{/if}
 		</DetailRow>
 		<DetailRow label="Valid for">{formatDuration(detail.valid_seconds)}</DetailRow>
-		<DetailRow label="Requested from" mono>{detail.source_ip}</DetailRow>
+		<DetailRow label="Requested from">
+			<code
+				class="rounded border border-border-subtle bg-surface px-2 py-0.5 font-mono text-xs text-ink"
+			>
+				{detail.source_ip}
+			</code>
+		</DetailRow>
+		{#if detail.local_username || detail.local_hostname}
+			<DetailRow label="Client" mono>
+				{detail.local_username}{detail.local_username && detail.local_hostname ? '@' : ''}{detail.local_hostname}
+			</DetailRow>
+		{/if}
+		{#if (detail.requested.source_addresses ?? []).length > 0}
+			<DetailRow label="Registered IPs">
+				<div class="flex flex-wrap gap-2">
+					{#each detail.requested.source_addresses ?? [] as address (address)}
+						<code
+							class="rounded border border-border-subtle bg-surface px-2 py-0.5 font-mono text-xs text-ink"
+						>
+							{address}
+						</code>
+					{/each}
+				</div>
+			</DetailRow>
+		{/if}
 		{#if detail.hostname}
 			<DetailRow label="Hostname" mono>{detail.hostname}</DetailRow>
 		{/if}

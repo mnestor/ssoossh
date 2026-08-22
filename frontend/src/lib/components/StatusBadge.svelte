@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { RequestStatus } from '$lib/api/types';
+	import Icon from './Icon.svelte';
 
 	interface Props {
 		status: RequestStatus;
@@ -19,11 +20,23 @@
 		expired: 'bg-surface-muted text-ink-muted',
 		failed: 'bg-danger-surface text-danger'
 	};
+
+	const iconMap: Record<RequestStatus, string> = {
+		pending: 'clock',
+		signing: 'loader',
+		approved: 'check-circle',
+		enrolled: 'check-circle',
+		denied: 'x-circle',
+		expired: 'alert-triangle',
+		failed: 'x-circle'
+	};
 </script>
 
 <span
-	class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium {styles[status] ??
-		'bg-surface-muted text-ink-muted'}"
+	class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium {styles[
+		status
+	] ?? 'bg-surface-muted text-ink-muted'}"
 >
+	<Icon name={iconMap[status]} size="xs" />
 	{status}
 </span>

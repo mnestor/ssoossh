@@ -74,7 +74,7 @@ func TestCreateUserRequest_ShouldReturnApprovedOutcome(t *testing.T) {
 		t.Fatalf("unexpected error building client: %v", err)
 	}
 
-	pending, err := c.CreateUserRequest(context.Background(), "ssh-ed25519 AAAA... test", RequestedOptions{Extensions: []string{"permit-pty"}})
+	pending, err := c.CreateUserRequest(context.Background(), "ssh-ed25519 AAAA... test", "alice", "alice-laptop", RequestedOptions{Extensions: []string{"permit-pty"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestCreateUserRequest_ShouldReturnResponseErrorWhenCreateFails(t *testing.T
 		t.Fatalf("unexpected error building client: %v", err)
 	}
 
-	_, err = c.CreateUserRequest(context.Background(), "", RequestedOptions{})
+	_, err = c.CreateUserRequest(context.Background(), "", "", "", RequestedOptions{})
 	respErr, ok := err.(*ResponseError)
 	if !ok {
 		t.Fatalf("expected a *ResponseError, got %T: %v", err, err)
@@ -274,7 +274,7 @@ func TestAwaitCertificate_ShouldReturnResponseErrorWhenEventsConnectionFails(t *
 		t.Fatalf("unexpected error building client: %v", err)
 	}
 
-	pending, err := c.CreateUserRequest(context.Background(), "ssh-ed25519 AAAA... test", RequestedOptions{})
+	pending, err := c.CreateUserRequest(context.Background(), "ssh-ed25519 AAAA... test", "", "", RequestedOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error creating the request: %v", err)
 	}
@@ -330,7 +330,7 @@ func TestAwaitCertificate_ShouldReconnectAfterDroppedEventsConnection(t *testing
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	pending, err := c.CreateUserRequest(ctx, "ssh-ed25519 AAAA... test", RequestedOptions{})
+	pending, err := c.CreateUserRequest(ctx, "ssh-ed25519 AAAA... test", "", "", RequestedOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -387,7 +387,7 @@ func TestCreateUserRequest_ShouldReturnApprovalURLBeforeAnyoneApproves(t *testin
 	defer cancel()
 
 	// The point of the test: this returns while the request is unresolved.
-	pending, err := c.CreateUserRequest(ctx, "ssh-ed25519 AAAA... test", RequestedOptions{})
+	pending, err := c.CreateUserRequest(ctx, "ssh-ed25519 AAAA... test", "", "", RequestedOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

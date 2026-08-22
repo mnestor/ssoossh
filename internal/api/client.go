@@ -25,10 +25,15 @@ type Client interface {
 	GetCA(ctx context.Context) (string, error)
 
 	// CreateUserRequest asks for an interactive user certificate for
-	// publicKey (authorized_keys format). It returns as soon as ssoosshd has
-	// created the request, so the caller can show PendingRequest.ApprovalURL
-	// to a human before blocking on AwaitCertificate.
-	CreateUserRequest(ctx context.Context, publicKey string, opts RequestedOptions) (*PendingRequest, error)
+	// publicKey (authorized_keys format). localUsername/localHostname are
+	// the requesting client's own OS identity — for a user cert there is no
+	// way to request one except via the local client, so this is who/where
+	// the request actually came from (see
+	// docs/certificate-audit-metadata-plan.md). It returns as soon as
+	// ssoosshd has created the request, so the caller can show
+	// PendingRequest.ApprovalURL to a human before blocking on
+	// AwaitCertificate.
+	CreateUserRequest(ctx context.Context, publicKey, localUsername, localHostname string, opts RequestedOptions) (*PendingRequest, error)
 
 	// CreateHostRequest asks for first issuance of a host certificate for
 	// hostname, gated by the OIDC approval chain. Returns without waiting,

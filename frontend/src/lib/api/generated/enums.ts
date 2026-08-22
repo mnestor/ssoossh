@@ -48,3 +48,11 @@ export const CertificateRequestStatusExpired = "expired";
  */
 export const CertificateRequestStatusFailed = "failed";
 export type CertificateRequestStatus = typeof CertificateRequestStatusPending | typeof CertificateRequestStatusSigning | typeof CertificateRequestStatusApproved | typeof CertificateRequestStatusEnrolled | typeof CertificateRequestStatusDenied | typeof CertificateRequestStatusExpired | typeof CertificateRequestStatusFailed;
+/**
+ * CertificateRequestDecisionOutcome is the decision recorded on a
+ * CertificateRequestDecision row — see
+ * docs/certificate-audit-metadata-plan.md.
+ */
+export type CertificateRequestDecisionOutcome = string;
+export const CertificateRequestDecisionApproved: CertificateRequestDecisionOutcome = "approved";
+export const CertificateRequestDecisionDenied: CertificateRequestDecisionOutcome = "denied";

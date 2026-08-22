@@ -79,7 +79,7 @@ func newTestCertRequestServiceWithConfig(t *testing.T, cfg *config.Config) *Cert
 	t.Helper()
 
 	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.User{}); err != nil {
+	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}); err != nil {
 		t.Fatalf("failed to migrate test tables: %v", err)
 	}
 
@@ -174,7 +174,7 @@ func TestCertRequestService_ShouldSurfaceGenericDBErrors(t *testing.T) {
 		requestID := mustCreateUserRequest(t, svc)
 		closeUnderlyingDB(t, svc.db)
 
-		if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+		if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err == nil {
 			t.Error("Approve() error = nil, want error")
 		}
 	})
@@ -212,7 +212,7 @@ func TestCertRequestService_ShouldSurfaceGenericDBErrors(t *testing.T) {
 		}
 		closeUnderlyingDB(t, svc.db)
 
-		if err := svc.approveServiceEnrollment(context.Background(), requestID, RequestedOptions{}); err == nil {
+		if err := svc.approveServiceEnrollment(context.Background(), requestID, RequestedOptions{}, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err == nil {
 			t.Error("approveServiceEnrollment() error = nil, want error")
 		}
 	})
@@ -228,7 +228,7 @@ func TestCertRequestService_ShouldSurfaceGenericDBErrors(t *testing.T) {
 		}
 		closeUnderlyingDB(t, svc.db)
 
-		if err := svc.approveForSigning(context.Background(), req, identity, svc.policies[model.CertificateTypeUser], RequestedOptions{}); err == nil {
+		if err := svc.approveForSigning(context.Background(), req, identity, svc.policies[model.CertificateTypeUser], RequestedOptions{}, DecisionContext{}); err == nil {
 			t.Error("approveForSigning() error = nil, want error")
 		}
 	})
@@ -239,7 +239,7 @@ func TestCertRequestService_ShouldSurfaceGenericDBErrors(t *testing.T) {
 		requestID := mustCreateUserRequest(t, svc)
 		closeUnderlyingDB(t, svc.db)
 
-		if err := svc.Deny(context.Background(), requestID); err == nil {
+		if err := svc.Deny(context.Background(), requestID, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err == nil {
 			t.Error("Deny() error = nil, want error")
 		}
 	})
@@ -305,7 +305,7 @@ func TestCertRequestService_Wait_ShouldUnblockOnDeny(t *testing.T) {
 	// exercises the "already blocked" path rather than racing CreateRequest.
 	time.Sleep(10 * time.Millisecond)
 
-	if err := svc.Deny(context.Background(), requestID); err != nil {
+	if err := svc.Deny(context.Background(), requestID, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error denying request: %v", err)
 	}
 
@@ -333,7 +333,7 @@ func TestCertRequestService_Wait_ShouldReturnCachedOutcomeOnLateReconnect(t *tes
 
 	// Resolve it with nobody blocked in Wait yet — simulates the web UI
 	// approving/denying before the client's SSE connection ever attaches.
-	if err := svc.Deny(context.Background(), requestID); err != nil {
+	if err := svc.Deny(context.Background(), requestID, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error denying request: %v", err)
 	}
 
@@ -376,7 +376,7 @@ func TestCertRequestService_Wait_ShouldResumeAfterContextCancellation(t *testing
 	}()
 
 	time.Sleep(10 * time.Millisecond)
-	if err := svc.Deny(context.Background(), requestID); err != nil {
+	if err := svc.Deny(context.Background(), requestID, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error denying request: %v", err)
 	}
 
@@ -516,7 +516,7 @@ func TestCertRequestService_Wait_ShouldReceiveWakeMessageViaPubSub(t *testing.T)
 	// select before Deny (and therefore notifyWaiter's publish) runs.
 	time.Sleep(50 * time.Millisecond)
 
-	if err := svc.Deny(context.Background(), requestID); err != nil {
+	if err := svc.Deny(context.Background(), requestID, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error denying request: %v", err)
 	}
 
@@ -573,7 +573,7 @@ func TestCertRequestService_Wait_ShouldSurfaceASubscribeFailure(t *testing.T) {
 	t.Parallel()
 
 	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.User{}); err != nil {
+	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}); err != nil {
 		t.Fatalf("failed to migrate test tables: %v", err)
 	}
 	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
@@ -628,7 +628,7 @@ func TestCertRequestService_Approve_ShouldNarrowExtensionsAndPublishSigningJob(t
 
 	identity := &Identity{Username: "alice", Subject: "sub-1", Email: "alice@example.com"}
 	seedUser(t, svc.db, identity.Subject)
-	if err := svc.Approve(context.Background(), requestID, identity); err != nil {
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error approving request: %v", err)
 	}
 
@@ -685,7 +685,7 @@ func TestCertRequestService_Approve_ShouldRejectWhenIdentityLacksRequiredGroup(t
 
 	identity := &Identity{Username: "alice", Subject: "sub-1", Groups: []string{"engineers"}}
 	seedUser(t, svc.db, identity.Subject)
-	if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err == nil {
 		t.Fatal("expected an error approving without the required group, got nil")
 	}
 
@@ -722,7 +722,7 @@ func TestCertRequestService_Approve_ShouldDenyPAMWhenRequireGroupUnconfigured(t 
 
 	identity := &Identity{Username: "mike.nestor", Subject: "sub-1"}
 	seedUser(t, svc.db, identity.Subject)
-	if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err == nil {
 		t.Fatal("expected an error approving a PAM request with no configured require_group, got nil")
 	}
 }
@@ -762,7 +762,7 @@ func TestCertRequestService_Approve_ShouldQueuePAMRequestWithLocalUsernameAsPrin
 
 	identity := &Identity{Username: "mike.nestor", Subject: "sub-1", Groups: []string{"sudoers"}}
 	seedUser(t, svc.db, identity.Subject)
-	if err := svc.Approve(context.Background(), requestID, identity); err != nil {
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error approving request: %v", err)
 	}
 
@@ -831,7 +831,7 @@ func TestCertRequestService_Approve_ShouldEnrollServiceRequestsInsteadOfQueueing
 
 	identity := &Identity{Username: "alice", Subject: "sub-1"}
 	seedUser(t, svc.db, identity.Subject)
-	if err := svc.Approve(context.Background(), requestID, identity); err != nil {
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error approving request: %v", err)
 	}
 
@@ -879,7 +879,7 @@ func TestCertRequestService_Approve_ShouldReturnNotFoundForAnUnknownID(t *testin
 
 	svc := newTestCertRequestService(t, 0)
 
-	err := svc.Approve(context.Background(), "does-not-exist", &Identity{Username: "alice", Subject: "sub-alice"})
+	err := svc.Approve(context.Background(), "does-not-exist", &Identity{Username: "alice", Subject: "sub-alice"}, DecisionContext{})
 
 	var notFound *errorresponses.NotFoundError
 	if !errors.As(err, &notFound) {
@@ -907,7 +907,7 @@ func TestCertRequestService_Approve_ShouldRejectHostCertificates(t *testing.T) {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
 
-	if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err == nil {
 		t.Fatal("expected approving a host certificate request to fail: host issuance isn't supported yet")
 	}
 }
@@ -930,7 +930,7 @@ func TestCertRequestService_Approve_ShouldSurfaceACorruptOptionsColumn(t *testin
 		t.Fatalf("failed to corrupt requested_options: %v", err)
 	}
 
-	if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err == nil {
 		t.Error("Approve() error = nil, want error for an unparseable requested_options column")
 	}
 }
@@ -948,11 +948,11 @@ func TestCertRequestService_Approve_ShouldErrorWhenNotPending(t *testing.T) {
 
 	identity := &Identity{Username: "alice", Subject: "sub-1"}
 	seedUser(t, svc.db, identity.Subject)
-	if err := svc.Approve(context.Background(), requestID, identity); err != nil {
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error on first approve: %v", err)
 	}
 
-	if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err == nil {
 		t.Fatal("expected an error approving an already-signing request, got nil")
 	}
 }
@@ -980,11 +980,11 @@ func TestCertRequestService_Deny_ShouldErrorWhenNotPending(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
-	if err := svc.Deny(context.Background(), requestID); err != nil {
+	if err := svc.Deny(context.Background(), requestID, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error on first deny: %v", err)
 	}
 
-	if err := svc.Deny(context.Background(), requestID); err == nil {
+	if err := svc.Deny(context.Background(), requestID, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err == nil {
 		t.Fatal("expected an error denying an already-denied request, got nil")
 	}
 }
@@ -1004,7 +1004,7 @@ func TestCertRequestService_Approve_ShouldRefuseARequestPastTTL(t *testing.T) {
 
 	time.Sleep(10 * time.Millisecond)
 
-	if err := svc.Approve(context.Background(), requestID, &Identity{Username: "alice", Subject: "sub-alice"}); err == nil {
+	if err := svc.Approve(context.Background(), requestID, &Identity{Username: "alice", Subject: "sub-alice"}, DecisionContext{}); err == nil {
 		t.Error("expected a TTL-expired request to be refused by Approve")
 	}
 }
@@ -1020,7 +1020,7 @@ func TestCertRequestService_Approve_ShouldBindTheRequestToTheApprovingUser(t *te
 
 	requestID := mustCreateUserRequest(t, svc)
 
-	if err := svc.Approve(context.Background(), requestID, identity); err != nil {
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err != nil {
 		t.Fatalf("unexpected error approving: %v", err)
 	}
 
@@ -1059,7 +1059,7 @@ func TestCertRequestService_Approve_ShouldRejectAnApproverWhoIsNotTheRequester(t
 	}
 
 	// Bob must not be able to act on it, even though he is authenticated.
-	err := svc.Approve(context.Background(), requestID, bob)
+	err := svc.Approve(context.Background(), requestID, bob, DecisionContext{})
 	if err == nil {
 		t.Fatal("expected bob's approve to fail on a request bound to alice")
 	}
@@ -1079,7 +1079,7 @@ func TestCertRequestService_Approve_ShouldRejectAnIdentityWithNoUserRecord(t *te
 	svc := newTestCertRequestService(t, time.Hour)
 	requestID := mustCreateUserRequest(t, svc)
 
-	err := svc.Approve(context.Background(), requestID, &Identity{Username: "ghost", Subject: "sub-ghost"})
+	err := svc.Approve(context.Background(), requestID, &Identity{Username: "ghost", Subject: "sub-ghost"}, DecisionContext{})
 	if err == nil {
 		t.Fatal("expected approve to fail for an identity with no users row")
 	}
@@ -1136,7 +1136,7 @@ func TestCertRequestService_Approve_ShouldEnforceRequireGroupOnUserCertificates(
 
 			requestID := mustCreateUserRequest(t, svc)
 
-			err := svc.Approve(context.Background(), requestID, identity)
+			err := svc.Approve(context.Background(), requestID, identity, DecisionContext{})
 			if tt.wantErr && err == nil {
 				t.Error("expected approve to be rejected by require_group")
 			}
@@ -1335,7 +1335,7 @@ func TestCertRequestService_Approve_ShouldSurfaceAnUnsupportedStoredType(t *test
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
 
-	if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err == nil {
 		t.Error("Approve() error = nil, want error for an unsupported stored certificate type")
 	}
 }
@@ -1414,7 +1414,7 @@ func TestApproveServiceEnrollment_ShouldRefuseARequestThatIsNoLongerPending(t *t
 		t.Fatalf("failed to flip the request's status: %v", err)
 	}
 
-	if err := svc.approveServiceEnrollment(context.Background(), requestID, RequestedOptions{}); err == nil {
+	if err := svc.approveServiceEnrollment(context.Background(), requestID, RequestedOptions{}, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err == nil {
 		t.Error("approveServiceEnrollment() error = nil, want error for a request that lost the pending race")
 	}
 }
@@ -1442,7 +1442,7 @@ func TestApproveForSigning_ShouldRefuseARequestThatIsNoLongerPending(t *testing.
 		t.Fatalf("failed to reload request: %v", err)
 	}
 
-	if err := svc.approveForSigning(context.Background(), req, identity, svc.policies[model.CertificateTypeUser], RequestedOptions{}); err == nil {
+	if err := svc.approveForSigning(context.Background(), req, identity, svc.policies[model.CertificateTypeUser], RequestedOptions{}, DecisionContext{}); err == nil {
 		t.Error("approveForSigning() error = nil, want error for a request that lost the pending race")
 	}
 }
@@ -1465,7 +1465,7 @@ func TestCertRequestService_Approve_ShouldSurfaceAPublishFailure(t *testing.T) {
 	t.Parallel()
 
 	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.User{}); err != nil {
+	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}); err != nil {
 		t.Fatalf("failed to migrate test tables: %v", err)
 	}
 	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
@@ -1486,7 +1486,7 @@ func TestCertRequestService_Approve_ShouldSurfaceAPublishFailure(t *testing.T) {
 	seedUser(t, svc.db, identity.Subject)
 	requestID := mustCreateUserRequest(t, svc)
 
-	if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err == nil {
 		t.Error("Approve() error = nil, want error when publishing the signing job fails")
 	}
 }
@@ -1513,7 +1513,7 @@ func TestCertRequestService_Deny_ShouldApplyTheTTLFilterWhenConfigured(t *testin
 		t.Fatalf("failed to back-date created_at: %v", err)
 	}
 
-	if err := svc.Deny(context.Background(), requestID); err == nil {
+	if err := svc.Deny(context.Background(), requestID, &Identity{Username: "approver", Subject: "sub-approver"}, DecisionContext{}); err == nil {
 		t.Fatal("expected Deny to refuse a request past its TTL, got nil")
 	}
 }
@@ -1586,7 +1586,7 @@ func TestNotifyWaiter_ShouldNotPanicWhenPublishingFails(t *testing.T) {
 	t.Parallel()
 
 	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.User{}); err != nil {
+	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}); err != nil {
 		t.Fatalf("failed to migrate test tables: %v", err)
 	}
 	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
@@ -1655,7 +1655,7 @@ func TestCertRequestService_Approve_FIPS(t *testing.T) {
 		identity := &Identity{Username: "alice", Subject: "sub-fips-reject"}
 		seedUser(t, svc.db, identity.Subject)
 
-		if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+		if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err == nil {
 			t.Fatal("expected Approve to reject a non-FIPS-approved key when FIPS is enabled")
 		}
 	})
@@ -1676,7 +1676,7 @@ func TestCertRequestService_Approve_FIPS(t *testing.T) {
 		identity := &Identity{Username: "bob", Subject: "sub-fips-accept"}
 		seedUser(t, svc.db, identity.Subject)
 
-		if err := svc.Approve(context.Background(), requestID, identity); err != nil {
+		if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err != nil {
 			t.Errorf("unexpected error approving a FIPS-approved key: %v", err)
 		}
 	})
@@ -1697,7 +1697,7 @@ func TestCertRequestService_Approve_FIPS(t *testing.T) {
 		identity := &Identity{Username: "dave", Subject: "sub-fips-unparseable"}
 		seedUser(t, svc.db, identity.Subject)
 
-		if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+		if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err == nil {
 			t.Fatal("expected Approve to reject an unparseable public key when FIPS is enabled")
 		}
 	})
@@ -1719,8 +1719,542 @@ func TestCertRequestService_Approve_FIPS(t *testing.T) {
 		identity := &Identity{Username: "carol", Subject: "sub-fips-off"}
 		seedUser(t, svc.db, identity.Subject)
 
-		if err := svc.Approve(context.Background(), requestID, identity); err != nil {
+		if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err != nil {
 			t.Errorf("unexpected error approving a non-approved key with FIPS disabled: %v", err)
+		}
+	})
+}
+
+// decisionFor reads back requestID's certificate_request_decisions row,
+// failing the test if it's missing — the shared assertion helper for every
+// test below that expects Approve/Deny to have recorded one.
+func decisionFor(t *testing.T, db *gorm.DB, requestID string) model.CertificateRequestDecision {
+	t.Helper()
+	var decision model.CertificateRequestDecision
+	if err := db.First(&decision, "certificate_request_id = ?", requestID).Error; err != nil {
+		t.Fatalf("expected a decision row for request %q: %v", requestID, err)
+	}
+	return decision
+}
+
+// TestCertRequestService_Approve_ShouldPersistFullDecisionAudit is the core
+// assertion behind docs/certificate-audit-metadata-plan.md's "keep the
+// entire set of data about a user that approves/rejects a request": every
+// field on Identity — not just Subject/Username — plus the full connection
+// context, lands in the decision row Approve's signing branch writes.
+func TestCertRequestService_Approve_ShouldPersistFullDecisionAudit(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+		User: config.CertOptionsUser{ValidDuration: time.Hour},
+	})
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypeUser,
+		PublicKey: "ssh-ed25519 AAAA...",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	identity := &Identity{
+		Username:        "alice",
+		Subject:         "sub-1",
+		Email:           "alice@example.com",
+		Groups:          []string{"engineering", "sre"},
+		OtherAccounts:   []string{"alice.other"},
+		ServiceAccounts: []string{"svc-backup"},
+	}
+	seedUser(t, svc.db, identity.Subject)
+
+	dc := DecisionContext{
+		SourceIP:       "198.51.100.7",
+		UserAgent:      "curl/8.0.0",
+		AcceptLanguage: "en-US",
+		ForwardedFor:   "198.51.100.7, 10.0.0.1",
+	}
+	before := time.Now()
+	if err := svc.Approve(context.Background(), requestID, identity, dc); err != nil {
+		t.Fatalf("unexpected error approving request: %v", err)
+	}
+
+	decision := decisionFor(t, svc.db, requestID)
+	if decision.Outcome != model.CertificateRequestDecisionApproved {
+		t.Errorf("got outcome %q, want %q", decision.Outcome, model.CertificateRequestDecisionApproved)
+	}
+	if decision.Subject != identity.Subject {
+		t.Errorf("got Subject %q, want %q", decision.Subject, identity.Subject)
+	}
+	if decision.Username != identity.Username {
+		t.Errorf("got Username %q, want %q", decision.Username, identity.Username)
+	}
+	if decision.Email != identity.Email {
+		t.Errorf("got Email %q, want %q", decision.Email, identity.Email)
+	}
+	assertJSONStringSlice(t, "Groups", decision.Groups, identity.Groups)
+	assertJSONStringSlice(t, "OtherAccounts", decision.OtherAccounts, identity.OtherAccounts)
+	assertJSONStringSlice(t, "ServiceAccounts", decision.ServiceAccounts, identity.ServiceAccounts)
+	if decision.SourceIP != dc.SourceIP {
+		t.Errorf("got SourceIP %q, want %q", decision.SourceIP, dc.SourceIP)
+	}
+	if decision.UserAgent != dc.UserAgent {
+		t.Errorf("got UserAgent %q, want %q", decision.UserAgent, dc.UserAgent)
+	}
+	if decision.AcceptLanguage != dc.AcceptLanguage {
+		t.Errorf("got AcceptLanguage %q, want %q", decision.AcceptLanguage, dc.AcceptLanguage)
+	}
+	if decision.ForwardedFor != dc.ForwardedFor {
+		t.Errorf("got ForwardedFor %q, want %q", decision.ForwardedFor, dc.ForwardedFor)
+	}
+	if decision.DecidedAt.Before(before) {
+		t.Errorf("got DecidedAt %v, want it no earlier than %v", decision.DecidedAt, before)
+	}
+
+	// decided_by_subject is a denormalized copy for indexed search (see
+	// the migration's comment) — it must never drift from the source of
+	// truth inside the row it's copied from.
+	if decision.Subject != identity.Subject {
+		t.Errorf("decision.Subject %q does not match identity.Subject %q", decision.Subject, identity.Subject)
+	}
+	var viaColumn model.CertificateRequestDecision
+	if err := svc.db.First(&viaColumn, "certificate_request_id = ? AND subject = ?", requestID, identity.Subject).Error; err != nil {
+		t.Errorf("expected the row to be findable by its denormalized subject column: %v", err)
+	}
+}
+
+// assertJSONStringSlice decodes raw (a JSON-encoded []string column) and
+// compares it against want.
+func assertJSONStringSlice(t *testing.T, field, raw string, want []string) {
+	t.Helper()
+	var got []string
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("failed to decode %s: %v", field, err)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %s %v, want %v", field, got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("got %s %v, want %v", field, got, want)
+			break
+		}
+	}
+}
+
+// TestCertRequestService_Approve_ShouldPersistDecisionAuditOnEnrollment
+// covers the service-enrollment branch (approveServiceEnrollment), which
+// writes its decision row through a different code path than the signing
+// branch above.
+func TestCertRequestService_Approve_ShouldPersistDecisionAuditOnEnrollment(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+		Service: config.CertOptionsService{ValidDuration: time.Hour},
+	})
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypeService,
+		PublicKey: "ssh-ed25519 AAAA...",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	identity := &Identity{Username: "alice", Subject: "sub-1", Email: "alice@example.com"}
+	seedUser(t, svc.db, identity.Subject)
+	dc := DecisionContext{SourceIP: "198.51.100.7", UserAgent: "curl/8.0.0"}
+	if err := svc.Approve(context.Background(), requestID, identity, dc); err != nil {
+		t.Fatalf("unexpected error approving request: %v", err)
+	}
+
+	decision := decisionFor(t, svc.db, requestID)
+	if decision.Outcome != model.CertificateRequestDecisionApproved {
+		t.Errorf("got outcome %q, want %q", decision.Outcome, model.CertificateRequestDecisionApproved)
+	}
+	if decision.Subject != identity.Subject || decision.SourceIP != dc.SourceIP {
+		t.Errorf("decision row does not match: %+v", decision)
+	}
+}
+
+// TestCertRequestService_Deny_ShouldPersistDecisionAudit mirrors the
+// Approve assertions above for the deny path.
+func TestCertRequestService_Deny_ShouldPersistDecisionAudit(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, 0)
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA...",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	// Deny never calls bindRequester (see Deny's doc comment), so no
+	// seedUser call is needed here — unlike every Approve test above.
+	identity := &Identity{Username: "bob", Subject: "sub-denier", Email: "bob@example.com"}
+	dc := DecisionContext{SourceIP: "203.0.113.9", UserAgent: "Mozilla/5.0"}
+	if err := svc.Deny(context.Background(), requestID, identity, dc); err != nil {
+		t.Fatalf("unexpected error denying request: %v", err)
+	}
+
+	decision := decisionFor(t, svc.db, requestID)
+	if decision.Outcome != model.CertificateRequestDecisionDenied {
+		t.Errorf("got outcome %q, want %q", decision.Outcome, model.CertificateRequestDecisionDenied)
+	}
+	if decision.Subject != identity.Subject {
+		t.Errorf("got Subject %q, want %q", decision.Subject, identity.Subject)
+	}
+	if decision.SourceIP != dc.SourceIP {
+		t.Errorf("got SourceIP %q, want %q", decision.SourceIP, dc.SourceIP)
+	}
+}
+
+// TestCertRequestService_Approve_ShouldRollBackStatusWhenDecisionInsertFails
+// is the regression test for the transaction wrapping approveForSigning
+// added around its status update and decision insert: forcing the insert
+// to fail (a duplicate certificate_request_id, via the UNIQUE constraint)
+// must leave the status update rolled back too, not half-applied.
+func TestCertRequestService_Approve_ShouldRollBackStatusWhenDecisionInsertFails(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+		User: config.CertOptionsUser{ValidDuration: time.Hour},
+	})
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypeUser,
+		PublicKey: "ssh-ed25519 AAAA...",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	identity := &Identity{Username: "alice", Subject: "sub-1"}
+	seedUser(t, svc.db, identity.Subject)
+
+	// Pre-seed a decision row for this exact request so Approve's own
+	// insert collides with the UNIQUE constraint on certificate_request_id
+	// and fails.
+	if err := svc.db.Create(&model.CertificateRequestDecision{
+		ID:                   uuid.NewString(),
+		CertificateRequestID: requestID,
+		Outcome:              model.CertificateRequestDecisionApproved,
+		DecidedAt:            time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("failed to seed a colliding decision row: %v", err)
+	}
+
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err == nil {
+		t.Fatal("expected Approve to fail when the decision insert collides, got nil")
+	}
+
+	var req model.CertificateRequest
+	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+		t.Fatalf("unexpected error reading back the request: %v", err)
+	}
+	if req.Status != model.CertificateRequestStatusPending {
+		t.Errorf("got status %q after a rolled-back approval, want %q — the status update was not rolled back with the failed insert", req.Status, model.CertificateRequestStatusPending)
+	}
+}
+
+// TestCertRequestService_ApproveServiceEnrollment_ShouldRollBackWhenDecisionInsertFails
+// is TestCertRequestService_Approve_ShouldRollBackStatusWhenDecisionInsertFails's
+// counterpart for the enrollment branch, which writes its decision through
+// a separate transaction in approveServiceEnrollment.
+func TestCertRequestService_ApproveServiceEnrollment_ShouldRollBackWhenDecisionInsertFails(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+		Service: config.CertOptionsService{ValidDuration: time.Hour},
+	})
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypeService,
+		PublicKey: "ssh-ed25519 AAAA...",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	identity := &Identity{Username: "alice", Subject: "sub-1"}
+	seedUser(t, svc.db, identity.Subject)
+
+	if err := svc.db.Create(&model.CertificateRequestDecision{
+		ID:                   uuid.NewString(),
+		CertificateRequestID: requestID,
+		Outcome:              model.CertificateRequestDecisionApproved,
+		DecidedAt:            time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("failed to seed a colliding decision row: %v", err)
+	}
+
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err == nil {
+		t.Fatal("expected Approve to fail when the decision insert collides, got nil")
+	}
+
+	var req model.CertificateRequest
+	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+		t.Fatalf("unexpected error reading back the request: %v", err)
+	}
+	if req.Status != model.CertificateRequestStatusPending {
+		t.Errorf("got status %q after a rolled-back enrollment, want %q — the status update was not rolled back with the failed insert", req.Status, model.CertificateRequestStatusPending)
+	}
+	if req.EnrollmentToken != "" {
+		t.Errorf("got a non-empty EnrollmentToken %q after a rolled-back enrollment, want it unset", req.EnrollmentToken)
+	}
+}
+
+// TestCertRequestService_Deny_ShouldRollBackStatusWhenDecisionInsertFails
+// mirrors the same regression test for Deny's own transaction.
+func TestCertRequestService_Deny_ShouldRollBackStatusWhenDecisionInsertFails(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, 0)
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA...",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	if err := svc.db.Create(&model.CertificateRequestDecision{
+		ID:                   uuid.NewString(),
+		CertificateRequestID: requestID,
+		Outcome:              model.CertificateRequestDecisionDenied,
+		DecidedAt:            time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("failed to seed a colliding decision row: %v", err)
+	}
+
+	identity := &Identity{Username: "bob", Subject: "sub-denier"}
+	if err := svc.Deny(context.Background(), requestID, identity, DecisionContext{}); err == nil {
+		t.Fatal("expected Deny to fail when the decision insert collides, got nil")
+	}
+
+	var req model.CertificateRequest
+	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+		t.Fatalf("unexpected error reading back the request: %v", err)
+	}
+	if req.Status != model.CertificateRequestStatusPending {
+		t.Errorf("got status %q after a rolled-back denial, want %q — the status update was not rolled back with the failed insert", req.Status, model.CertificateRequestStatusPending)
+	}
+}
+
+// TestLookupDecision_ShouldSurfaceAGenericDBError covers lookupDecision's
+// own error branch directly (as opposed to Detail's propagation of it,
+// which needs per-query fault injection this codebase doesn't have — see
+// exclude-from-coverage.txt). Called in isolation, lookupDecision is a
+// single query, so closing the connection first reaches it directly.
+func TestLookupDecision_ShouldSurfaceAGenericDBError(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, 0)
+	closeUnderlyingDB(t, svc.db)
+
+	if _, err := svc.lookupDecision(context.Background(), "some-id"); err == nil {
+		t.Error("lookupDecision() error = nil, want error")
+	}
+}
+
+// TestCertRequestService_Approve_DecisionAuditShouldBeImmutableToLaterUserChanges
+// is the regression test for the immutability requirement itself: a
+// decision row is built entirely from the *Identity passed into
+// Approve/Deny, never re-derived from the users table, so a later change to
+// that table's row must never be reflected in a decision already recorded.
+func TestCertRequestService_Approve_DecisionAuditShouldBeImmutableToLaterUserChanges(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+		User: config.CertOptionsUser{ValidDuration: time.Hour},
+	})
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypeUser,
+		PublicKey: "ssh-ed25519 AAAA...",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	identity := &Identity{Username: "alice", Subject: "sub-1", Email: "alice@example.com"}
+	userID := seedUser(t, svc.db, identity.Subject)
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err != nil {
+		t.Fatalf("unexpected error approving request: %v", err)
+	}
+
+	// Simulate the user's account being renamed after the fact — e.g. a
+	// later OIDC login under a changed preferred_username.
+	if err := svc.db.Model(&model.User{}).Where("id = ?", userID).
+		Updates(map[string]any{"username": "alice-renamed", "email": "alice-new@example.com"}).Error; err != nil {
+		t.Fatalf("failed to simulate a user record update: %v", err)
+	}
+
+	decision := decisionFor(t, svc.db, requestID)
+	if decision.Username != "alice" {
+		t.Errorf("got decision Username %q after a later user rename, want it frozen at %q", decision.Username, "alice")
+	}
+	if decision.Email != "alice@example.com" {
+		t.Errorf("got decision Email %q after a later user update, want it frozen at %q", decision.Email, "alice@example.com")
+	}
+}
+
+// TestCertRequestService_Detail_ShouldReturnNilDecisionForAPendingRequest
+// covers lookupDecision's "not found is not an error" case directly: most
+// requests being viewed haven't been decided yet.
+func TestCertRequestService_Detail_ShouldReturnNilDecisionForAPendingRequest(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, 0)
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA...",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	identity := &Identity{Username: "alice", Subject: "sub-1"}
+	seedUser(t, svc.db, identity.Subject)
+	detail, err := svc.Detail(context.Background(), requestID, identity)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if detail.Decision != nil {
+		t.Errorf("expected a nil Decision for a pending request, got %+v", detail.Decision)
+	}
+}
+
+// TestCertRequestService_Detail_ShouldReturnTheDecisionAfterApproval closes
+// the loop on the read path: once Approve has recorded a decision, Detail
+// must surface it.
+func TestCertRequestService_Detail_ShouldReturnTheDecisionAfterApproval(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+		User: config.CertOptionsUser{ValidDuration: time.Hour},
+	})
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypeUser,
+		PublicKey: "ssh-ed25519 AAAA...",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	identity := &Identity{Username: "alice", Subject: "sub-1"}
+	seedUser(t, svc.db, identity.Subject)
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err != nil {
+		t.Fatalf("unexpected error approving request: %v", err)
+	}
+
+	detail, err := svc.Detail(context.Background(), requestID, identity)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if detail.Decision == nil {
+		t.Fatal("expected a non-nil Decision after approval")
+	}
+	if detail.Decision.Outcome != model.CertificateRequestDecisionApproved {
+		t.Errorf("got outcome %q, want %q", detail.Decision.Outcome, model.CertificateRequestDecisionApproved)
+	}
+}
+
+// TestCertRequestService_CreateRequest_ShouldPersistLocalIdentity covers
+// Phase 2 problem 1: a user-type request's local OS identity is stored
+// as-submitted.
+func TestCertRequestService_CreateRequest_ShouldPersistLocalIdentity(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, 0)
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:          model.CertificateTypeUser,
+		PublicKey:     "ssh-ed25519 AAAA...",
+		LocalUsername: "alice",
+		LocalHostname: "alice-laptop",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	var req model.CertificateRequest
+	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+		t.Fatalf("unexpected error reading back the request: %v", err)
+	}
+	if req.LocalUsername != "alice" || req.LocalHostname != "alice-laptop" {
+		t.Errorf("got LocalUsername/LocalHostname %q/%q, want %q/%q", req.LocalUsername, req.LocalHostname, "alice", "alice-laptop")
+	}
+}
+
+// TestCertRequestService_CreateRequest_ShouldUnionSourceIPIntoSourceAddresses
+// covers Phase 2 problem 2: the server-observed SourceIP is folded into the
+// stored SourceAddresses list rather than left as a second, disconnected
+// value — the union docs/ssoossh-context.md describes for a client behind
+// NAT.
+func TestCertRequestService_CreateRequest_ShouldUnionSourceIPIntoSourceAddresses(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should append SourceIP when not already reported", func(t *testing.T) {
+		t.Parallel()
+
+		svc := newTestCertRequestService(t, 0)
+		requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+			Type:      model.CertificateTypeUser,
+			PublicKey: "ssh-ed25519 AAAA...",
+			SourceIP:  "203.0.113.9",
+			RequestedOptions: RequestedOptions{
+				SourceAddresses: []string{"10.0.0.5"},
+			},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error creating request: %v", err)
+		}
+
+		var req model.CertificateRequest
+		if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+			t.Fatalf("unexpected error reading back the request: %v", err)
+		}
+		var opts RequestedOptions
+		if err := json.Unmarshal([]byte(req.RequestedOptions), &opts); err != nil {
+			t.Fatalf("failed to decode persisted requested options: %v", err)
+		}
+		want := []string{"10.0.0.5", "203.0.113.9"}
+		if len(opts.SourceAddresses) != len(want) {
+			t.Fatalf("got SourceAddresses %v, want %v", opts.SourceAddresses, want)
+		}
+		for i := range want {
+			if opts.SourceAddresses[i] != want[i] {
+				t.Errorf("got SourceAddresses %v, want %v", opts.SourceAddresses, want)
+				break
+			}
+		}
+	})
+
+	t.Run("should not duplicate SourceIP when already reported", func(t *testing.T) {
+		t.Parallel()
+
+		svc := newTestCertRequestService(t, 0)
+		requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+			Type:      model.CertificateTypeUser,
+			PublicKey: "ssh-ed25519 AAAA...",
+			SourceIP:  "203.0.113.9",
+			RequestedOptions: RequestedOptions{
+				SourceAddresses: []string{"203.0.113.9"},
+			},
+		})
+		if err != nil {
+			t.Fatalf("unexpected error creating request: %v", err)
+		}
+
+		var req model.CertificateRequest
+		if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+			t.Fatalf("unexpected error reading back the request: %v", err)
+		}
+		var opts RequestedOptions
+		if err := json.Unmarshal([]byte(req.RequestedOptions), &opts); err != nil {
+			t.Fatalf("failed to decode persisted requested options: %v", err)
+		}
+		if len(opts.SourceAddresses) != 1 || opts.SourceAddresses[0] != "203.0.113.9" {
+			t.Errorf("got SourceAddresses %v, want exactly [\"203.0.113.9\"] with no duplicate", opts.SourceAddresses)
 		}
 	})
 }
