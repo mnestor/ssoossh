@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
@@ -181,7 +182,7 @@ func TestSetIdentitySessionAndSessionAuthMiddleware(t *testing.T) {
 	r := newSessionTestRouter()
 	var gotIdentity *service.Identity
 	var gotOK bool
-	r.GET("/whoami", NewSessionAuthMiddleware().Add(), func(c *gin.Context) {
+	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute).Add(), func(c *gin.Context) {
 		gotIdentity, gotOK = Identity(c)
 		c.String(http.StatusOK, "ok")
 	})
@@ -212,6 +213,57 @@ func TestSetIdentitySessionAndSessionAuthMiddleware(t *testing.T) {
 	}
 }
 
+// slidingExpiryRequest logs an identity in, then replays the session cookie
+// against a route guarded by a middleware built with maxAge, returning
+// whether that second response reissued the session cookie.
+func slidingExpiryRequest(t *testing.T, maxAge time.Duration) bool {
+	t.Helper()
+
+	setResp := doSessionRequest(t, func(c *gin.Context) {
+		if err := SetIdentitySession(c, &service.Identity{Subject: "sub-alice"}); err != nil {
+			t.Fatalf("SetIdentitySession() error = %v", err)
+		}
+	}, nil)
+
+	r := newSessionTestRouter()
+	r.GET("/whoami", NewSessionAuthMiddleware(maxAge).Add(), func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)
+	for _, c := range setResp.Result().Cookies() {
+		req.AddCookie(c)
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d", w.Code, http.StatusOK)
+	}
+	return len(w.Result().Cookies()) > 0
+}
+
+func TestSessionAuthMiddleware_ShouldReissueCookieWhenPastHalfLife(t *testing.T) {
+	t.Parallel()
+
+	// A negative maxAge makes the half-life threshold negative, so a
+	// freshly-issued session is already "past" it — the refresh must fire
+	// without the test having to manipulate clocks.
+	if !slidingExpiryRequest(t, -time.Minute) {
+		t.Fatal("expected a session past its half-life to be re-saved with a fresh cookie")
+	}
+}
+
+func TestSessionAuthMiddleware_ShouldNotReissueCookieWhenFresh(t *testing.T) {
+	t.Parallel()
+
+	// A generous maxAge keeps the just-issued session well inside its
+	// half-life, so the middleware must leave the cookie alone — refreshing
+	// every request is exactly what the half-life check exists to avoid.
+	if slidingExpiryRequest(t, time.Hour) {
+		t.Fatal("expected a fresh session to not be re-saved on every request")
+	}
+}
+
 // TestSessionAuthMiddleware_ShouldFailClosedWithoutASession covers the
 // no-subject guard directly, independent of server/controller's own
 // end-to-end coverage of the same behavior.
@@ -221,7 +273,7 @@ func TestSessionAuthMiddleware_ShouldFailClosedWithoutASession(t *testing.T) {
 	r := newSessionTestRouter()
 	r.Use(NewErrorHandlerMiddleware().Add())
 	var reached bool
-	r.GET("/whoami", NewSessionAuthMiddleware().Add(), func(c *gin.Context) {
+	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute).Add(), func(c *gin.Context) {
 		reached = true
 	})
 
@@ -250,7 +302,7 @@ func TestSessionAuthMiddleware_ShouldHandleNoGroups(t *testing.T) {
 
 	r := newSessionTestRouter()
 	var gotIdentity *service.Identity
-	r.GET("/whoami", NewSessionAuthMiddleware().Add(), func(c *gin.Context) {
+	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute).Add(), func(c *gin.Context) {
 		gotIdentity, _ = Identity(c)
 	})
 	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)
@@ -283,7 +335,7 @@ func TestClearIdentitySession(t *testing.T) {
 
 	r := newSessionTestRouter()
 	r.Use(NewErrorHandlerMiddleware().Add())
-	r.GET("/whoami", NewSessionAuthMiddleware().Add(), func(c *gin.Context) {
+	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute).Add(), func(c *gin.Context) {
 		c.String(http.StatusOK, "should not reach here")
 	})
 	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)

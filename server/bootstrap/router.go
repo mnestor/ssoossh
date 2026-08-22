@@ -250,10 +250,7 @@ func sessionCookieOptions(c *config.Config) (sessions.Options, error) {
 	// expires_at = now + MaxAge seconds — that is, already expired — while
 	// reads filter on `expires_at > now`. A zero here means every request
 	// after login is unauthenticated.
-	maxAge := defaultCookieMaxAge
-	if c.HTTP.CookieMaxAge > 0 {
-		maxAge = c.HTTP.CookieMaxAge
-	}
+	maxAge := resolvedCookieMaxAge(c)
 
 	opts := sessions.Options{
 		Path:     "/",
@@ -264,6 +261,18 @@ func sessionCookieOptions(c *config.Config) (sessions.Options, error) {
 	}
 
 	return opts, nil
+}
+
+// resolvedCookieMaxAge is the session lifetime actually in force: the
+// configured cookie_max_age, or the fallback when it is unset. Split out of
+// sessionCookieOptions because the sliding-expiry middleware needs the same
+// number — the refresh must reissue the cookie with the lifetime the store
+// was configured with, not a second constant that can drift.
+func resolvedCookieMaxAge(c *config.Config) time.Duration {
+	if c.HTTP.CookieMaxAge > 0 {
+		return c.HTTP.CookieMaxAge
+	}
+	return defaultCookieMaxAge
 }
 
 // defaultCookieMaxAge is how long a session lasts when http.cookie_max_age
@@ -300,7 +309,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 		return fmt.Errorf("failed to register frontend: %w", err)
 	}
 
-	sessionAuth := middleware.NewSessionAuthMiddleware().Add()
+	sessionAuth := middleware.NewSessionAuthMiddleware(resolvedCookieMaxAge(a.config)).Add()
 	csrf := middleware.NewCsrfMiddleware(a.config.HTTP.PublicOrigin()).Add()
 	adminAuth := middleware.NewAdminAuthMiddleware(a.config).Add()
 	auditorAuth := middleware.NewAuditorAuthMiddleware(a.config).Add()
