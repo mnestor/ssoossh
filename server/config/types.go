@@ -27,9 +27,15 @@ type Config struct {
 	// attributes looked up by username. See LDAPConfig.
 	LDAP LDAPConfig `mapstructure:"ldap"`
 
-	SSHKey              string             `mapstructure:"ssh_key"`
-	CertOptions         CertificateOptions `mapstructure:"cert_options"`
-	SSHServerAdminGroup string             `mapstructure:"ssh_server_admin_group"`
+	// Admin configures role-based authorization for administrative and
+	// auditor-scoped operations. All admin group names are optional; empty
+	// disables the corresponding role. The ssh_server_admin_group key lives
+	// here rather than at top level so all three role-to-group mappings sit
+	// together; feat/host-certs originally declared it at the root.
+	Admin AdminConfig `mapstructure:"admin"`
+
+	SSHKey      string             `mapstructure:"ssh_key"`
+	CertOptions CertificateOptions `mapstructure:"cert_options"`
 
 	// FIPS steers the server toward FIPS 140-3 approved algorithms: the CA
 	// key (checked at startup), client-submitted public keys (checked in
@@ -133,4 +139,49 @@ type LDAPConfig struct {
 	BaseDN       string         `mapstructure:"base_dn"`
 	UserFilter   string         `mapstructure:"user_filter"`
 	Logging      GenericLogging `mapstructure:"logging"`
+}
+
+// AdminConfig configures role-based authorization for administrative and
+// auditor-scoped operations. All group names are optional OIDC group
+// identifiers; empty disables the corresponding role. Authorization is
+// evaluated from the session identity (Identity.Groups), which means the
+// session lifetime is the admin revocation window: removing someone from an
+// admin group in the identity provider takes effect at their next login.
+type AdminConfig struct {
+	// RequireGroup is the OIDC group a caller must belong to in order to
+	// access admin-scoped operations (expiring enrollments, disabling users).
+	// Empty disables admin operations entirely. Fails closed: no identity, no
+	// group, or no configured group all deny.
+	RequireGroup string `mapstructure:"require_group"`
+
+	// AuditorGroup is the OIDC group a caller must belong to in order to
+	// access auditor-scoped operations (viewing effective configuration,
+	// cross-user certificate history). Empty disables auditor operations
+	// entirely. Fails closed: no identity, no group, or no configured group
+	// all deny.
+	AuditorGroup string `mapstructure:"auditor_group"`
+
+	// SSHServerAdminGroup is the OIDC group a caller must belong to in order
+	// to manage SSH host certificates. This is consumed by feat/host-certs
+	// via the middleware.SSHServerAdminChecker interface. Empty disables SSH
+	// server admin operations entirely.
+	SSHServerAdminGroup string `mapstructure:"ssh_server_admin_group"`
+}
+
+// IsAdminEnabled reports whether admin authorization is configured
+// (RequireGroup is non-empty).
+func (a *AdminConfig) IsAdminEnabled() bool {
+	return a.RequireGroup != ""
+}
+
+// IsAuditorEnabled reports whether auditor authorization is configured
+// (AuditorGroup is non-empty).
+func (a *AdminConfig) IsAuditorEnabled() bool {
+	return a.AuditorGroup != ""
+}
+
+// IsSSHServerAdminEnabled reports whether SSH server admin authorization is
+// configured (SSHServerAdminGroup is non-empty).
+func (a *AdminConfig) IsSSHServerAdminEnabled() bool {
+	return a.SSHServerAdminGroup != ""
 }

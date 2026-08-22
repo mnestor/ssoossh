@@ -264,10 +264,12 @@ func sessionCookieOptions(c *config.Config) (sessions.Options, error) {
 }
 
 // defaultCookieMaxAge is how long a session lasts when http.cookie_max_age
-// is unset. A workday: long enough that nobody re-authenticates to read the
-// dashboard, short enough to bound how long a removed group membership keeps
-// working, since group claims live in the session rather than the database.
-const defaultCookieMaxAge = 12 * time.Hour
+// is unset. Also the admin revocation window: how long a removed group
+// membership keeps working, since group claims live in the session rather
+// than the database. Changes to group membership in the identity provider
+// take effect at the next login. The NASA session-timeout value should be
+// confirmed against policy, but 15 minutes is a reasonable default.
+const defaultCookieMaxAge = 15 * time.Minute
 
 // parseSameSite maps the configured name to its http.SameSite value. Empty
 // means strict — see config.HTTPSettings.CookieSameSite for why that is the
@@ -297,6 +299,8 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 
 	sessionAuth := middleware.NewSessionAuthMiddleware().Add()
 	csrf := middleware.NewCsrfMiddleware(a.config.HTTP.PublicOrigin()).Add()
+	adminAuth := middleware.NewAdminAuthMiddleware(a.config).Add()
+	auditorAuth := middleware.NewAuditorAuthMiddleware(a.config).Add()
 
 	// Browser-facing OIDC login/callback, outside /api since these are
 	// redirects rather than JSON API calls.
@@ -311,6 +315,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	controller.NewCertificateController(apiGroup, a.svc.certificate, sessionAuth)
 	controller.NewHostController(apiGroup, a.svc.host, middleware.NewHostCertAuthMiddleware().Add())
 	controller.NewEnrollmentController(apiGroup, a.svc.enrollment)
+	controller.NewAdminController(apiGroup, a.config, a.db, sessionAuth, adminAuth, auditorAuth, csrf)
 
 	return nil
 }

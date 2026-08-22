@@ -40,12 +40,13 @@ type Identity struct {
 // implementation.
 type AuthProvider interface {
 	// AuthorizationURL returns the URL to redirect the browser to for OIDC
-	// login, and the nonce embedded in it. Both state and nonce must be
-	// stored (e.g. in the session) and re-checked by HandleCallback.
-	AuthorizationURL(ctx context.Context, state string) (authURL string, nonce string, err error)
-	// HandleCallback exchanges code for tokens and verifies the ID token,
-	// including that its nonce claim matches nonce.
-	HandleCallback(ctx context.Context, code string, nonce string) (*Identity, error)
+	// login, and the nonce and PKCE verifier embedded in it. State, nonce,
+	// and pkceVerifier must all be stored (e.g. in the session) and
+	// re-checked by HandleCallback.
+	AuthorizationURL(ctx context.Context, state string) (authURL string, nonce string, pkceVerifier string, err error)
+	// HandleCallback exchanges code for tokens using the PKCE verifier and
+	// verifies the ID token, including that its nonce claim matches nonce.
+	HandleCallback(ctx context.Context, code string, nonce string, pkceVerifier string) (*Identity, error)
 }
 
 // AuthService handles OIDC authentication: building the authorization URL,
@@ -132,23 +133,26 @@ func NewAuthService(ctx context.Context, c *config.Config, db *gorm.DB, httpClie
 
 // AuthorizationURL returns the URL to redirect the browser to for OIDC
 // login, embedding state (CSRF protection for the redirect, checked by the
-// caller) and a freshly generated nonce (replay protection for the ID
-// token, checked by HandleCallback).
-func (s *AuthService) AuthorizationURL(ctx context.Context, state string) (authURL string, nonce string, err error) {
+// caller), a freshly generated nonce (replay protection for the ID token,
+// checked by HandleCallback), and a PKCE code challenge (checked by
+// HandleCallback during code exchange).
+func (s *AuthService) AuthorizationURL(ctx context.Context, state string) (authURL string, nonce string, pkceVerifier string, err error) {
 	nonce, err = randomToken()
 	if err != nil {
-		return "", "", fmt.Errorf("failed to generate OIDC nonce: %w", err) // excluded from coverage: crypto/rand.Read failure isn't reproducible in tests, see exclude-from-coverage.txt
+		return "", "", "", fmt.Errorf("failed to generate OIDC nonce: %w", err) // excluded from coverage: crypto/rand.Read failure isn't reproducible in tests, see exclude-from-coverage.txt
 	}
 
-	return s.oauth2Config.AuthCodeURL(state, oidc.Nonce(nonce)), nonce, nil
+	pkceVerifier = oauth2.GenerateVerifier()
+
+	return s.oauth2Config.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(pkceVerifier)), nonce, pkceVerifier, nil
 }
 
-// HandleCallback exchanges code for tokens, verifies the ID token (signature,
-// audience, expiry, and that its nonce claim matches nonce), extracts
-// identity fields per config.OAuthFields, and upserts the corresponding
-// model.User.
-func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce string) (*Identity, error) {
-	token, err := s.oauth2Config.Exchange(ctx, code)
+// HandleCallback exchanges code for tokens using the PKCE verifier, verifies
+// the ID token (signature, audience, expiry, and that its nonce claim matches
+// nonce), extracts identity fields per config.OAuthFields, and upserts the
+// corresponding model.User.
+func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce string, pkceVerifier string) (*Identity, error) {
+	token, err := s.oauth2Config.Exchange(ctx, code, oauth2.VerifierOption(pkceVerifier))
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange OIDC authorization code: %w", err)
 	}

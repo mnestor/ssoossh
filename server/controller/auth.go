@@ -86,7 +86,7 @@ func (a *authController) loginHandler(g *gin.Context) {
 		return // excluded from coverage: crypto/rand.Read failure isn't reproducible in tests, see exclude-from-coverage.txt
 	}
 
-	authURL, nonce, err := a.authService.AuthorizationURL(g.Request.Context(), state)
+	authURL, nonce, pkceVerifier, err := a.authService.AuthorizationURL(g.Request.Context(), state)
 	if err != nil {
 		handleError(g, err)
 		return
@@ -97,6 +97,10 @@ func (a *authController) loginHandler(g *gin.Context) {
 		return
 	}
 	if err := middleware.SetOIDCNonce(g, nonce); err != nil {
+		handleError(g, err)
+		return // excluded from coverage: reaching this specific Save() failure (not SetOIDCState's, tested) needs byte-precise session-size engineering, see exclude-from-coverage.txt
+	}
+	if err := middleware.SetOIDCVerifier(g, pkceVerifier); err != nil {
 		handleError(g, err)
 		return // excluded from coverage: reaching this specific Save() failure (not SetOIDCState's, tested) needs byte-precise session-size engineering, see exclude-from-coverage.txt
 	}
@@ -145,7 +149,13 @@ func (a *authController) callbackHandler(g *gin.Context) {
 		return // excluded from coverage: reaching this specific Save() failure (not PopOIDCState's, tested) needs byte-precise session-size engineering, see exclude-from-coverage.txt
 	}
 
-	identity, err := a.authService.HandleCallback(g.Request.Context(), code, nonce)
+	pkceVerifier, err := middleware.PopOIDCVerifier(g)
+	if err != nil {
+		handleError(g, err)
+		return // excluded from coverage: reaching this specific Save() failure (not PopOIDCState's, tested) needs byte-precise session-size engineering, see exclude-from-coverage.txt
+	}
+
+	identity, err := a.authService.HandleCallback(g.Request.Context(), code, nonce, pkceVerifier)
 	if err != nil {
 		handleError(g, err)
 		return

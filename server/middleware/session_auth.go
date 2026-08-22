@@ -20,6 +20,7 @@ const IdentityContextKey = "ssoossh.identity"
 const (
 	sessionKeyOIDCState        = "oidc_state"
 	sessionKeyOIDCNonce        = "oidc_nonce"
+	sessionKeyOIDCVerifier     = "oidc_verifier"
 	sessionKeyReturnURL        = "return_url"
 	sessionKeyIdentitySubject  = "identity_subject"
 	sessionKeyIdentityUsername = "identity_username"
@@ -72,6 +73,23 @@ func PopOIDCNonce(c *gin.Context) (string, error) {
 	nonce := sessionString(sess, sessionKeyOIDCNonce)
 	sess.Delete(sessionKeyOIDCNonce)
 	return nonce, sess.Save()
+}
+
+// SetOIDCVerifier stores verifier in the session for a later PopOIDCVerifier
+// call to exchange an authorization code with PKCE (S256) protection.
+func SetOIDCVerifier(c *gin.Context, verifier string) error {
+	sess := sessions.Default(c)
+	sess.Set(sessionKeyOIDCVerifier, verifier)
+	return sess.Save()
+}
+
+// PopOIDCVerifier returns the verifier stored by SetOIDCVerifier and clears
+// it, so each login attempt's verifier value can only be consumed once.
+func PopOIDCVerifier(c *gin.Context) (string, error) {
+	sess := sessions.Default(c)
+	verifier := sessionString(sess, sessionKeyOIDCVerifier)
+	sess.Delete(sessionKeyOIDCVerifier)
+	return verifier, sess.Save()
 }
 
 // SetReturnURL stores returnURL in the session for a later PopReturnURL

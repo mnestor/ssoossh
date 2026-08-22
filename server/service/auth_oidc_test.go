@@ -232,7 +232,7 @@ func TestAuthorizationURL_ShouldEmbedStateAndAFreshNonce(t *testing.T) {
 		t.Fatalf("NewAuthService() error = %v", err)
 	}
 
-	authURL, nonce1, err := svc.AuthorizationURL(context.Background(), "state-1")
+	authURL, nonce1, pkceVerifier, err := svc.AuthorizationURL(context.Background(), "state-1")
 	if err != nil {
 		t.Fatalf("AuthorizationURL() error = %v", err)
 	}
@@ -246,7 +246,7 @@ func TestAuthorizationURL_ShouldEmbedStateAndAFreshNonce(t *testing.T) {
 		t.Errorf("authURL = %q, want it to contain the generated nonce", authURL)
 	}
 
-	_, nonce2, err := svc.AuthorizationURL(context.Background(), "state-2")
+	_, nonce2, pkceVerifier, err := svc.AuthorizationURL(context.Background(), "state-2")
 	if err != nil {
 		t.Fatalf("AuthorizationURL() error = %v", err)
 	}

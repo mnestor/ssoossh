@@ -82,3 +82,15 @@ func (e *UnauthorizedError) Error() string {
 
 // HTTPStatusCode reports the HTTP status this error should be rendered as.
 func (e *UnauthorizedError) HTTPStatusCode() int { return http.StatusUnauthorized }
+
+// ForbiddenError indicates a request is authenticated but not authorized to
+// access the requested resource (e.g., missing required group membership).
+type ForbiddenError struct{}
+
+// Error implements the error interface.
+func (e *ForbiddenError) Error() string {
+	return "Forbidden"
+}
+
+// HTTPStatusCode reports the HTTP status this error should be rendered as.
+func (e *ForbiddenError) HTTPStatusCode() int { return http.StatusForbidden }

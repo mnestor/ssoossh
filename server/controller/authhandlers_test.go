@@ -26,24 +26,27 @@ import (
 // fakeAuthService is a test double for service.AuthProvider.
 type fakeAuthService struct {
 	authURL         string
+	pkceVerifier    string
 	nonce           string
 	authURLErr      error
 	identity        *service.Identity
 	handleCbErr     error
 	gotCode         string
 	gotCallbackNonc string
+	gotPKCEVerifier string
 }
 
-func (f *fakeAuthService) AuthorizationURL(_ context.Context, _ string) (string, string, error) {
+func (f *fakeAuthService) AuthorizationURL(_ context.Context, _ string) (string, string, string, error) {
 	if f.authURLErr != nil {
-		return "", "", f.authURLErr
+		return "", "", "", f.authURLErr
 	}
-	return f.authURL, f.nonce, nil
+	return f.authURL, f.nonce, f.pkceVerifier, nil
 }
 
-func (f *fakeAuthService) HandleCallback(_ context.Context, code, nonce string) (*service.Identity, error) {
+func (f *fakeAuthService) HandleCallback(_ context.Context, code, nonce, pkceVerifier string) (*service.Identity, error) {
 	f.gotCode = code
 	f.gotCallbackNonc = nonce
+	f.gotPKCEVerifier = pkceVerifier
 	if f.handleCbErr != nil {
 		return nil, f.handleCbErr
 	}

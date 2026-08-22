@@ -110,3 +110,44 @@ type CertificateResponse struct {
 	IssuedAt     time.Time             `json:"issued_at" validate:"required"`
 	ExpiresAt    time.Time             `json:"expires_at" validate:"required"`
 }
+
+// EffectiveConfigResponse is the auditor view of the server's effective
+// configuration, with sensitive fields redacted. It shows what policy is
+// actually in effect, useful for debugging and audit trails. The CA private
+// key, client secret, cookie signing key, and database connection string
+// (which may contain credentials) are redacted; other fields are included to
+// give a complete operational picture.
+type EffectiveConfigResponse struct {
+	// Server connection and TLS settings
+	ServerName string `json:"server_name" validate:"required"`
+	Port       int    `json:"port" validate:"required"`
+	IsHTTPS    bool   `json:"is_https" validate:"required"`
+
+	// Database
+	DBProvider string `json:"db_provider" validate:"required"`
+
+	// OAuth/OIDC
+	ProviderURL string `json:"provider_url" validate:"required"`
+
+	// Admin authorization
+	AdminRequireGroup       string `json:"admin_require_group,omitempty"`
+	AdminAuditorGroup       string `json:"admin_auditor_group,omitempty"`
+	AdminSSHServerAdminGroup string `json:"admin_ssh_server_admin_group,omitempty"`
+
+	// Logging configuration
+	LoggingLevel       string `json:"logging_level" validate:"required"`
+
+	// Certificate options
+	CertUserValidDuration      string   `json:"cert_user_valid_duration" validate:"required"`
+	CertUserRequireGroup       string   `json:"cert_user_require_group,omitempty"`
+	CertUserExtensions         []string `json:"cert_user_extensions" validate:"required"`
+	CertServiceValidDuration   string   `json:"cert_service_valid_duration" validate:"required"`
+	CertServiceRequireGroup    string   `json:"cert_service_require_group,omitempty"`
+	CertServiceExtensions      []string `json:"cert_service_extensions" validate:"required"`
+	CertHostValidDuration      string   `json:"cert_host_valid_duration" validate:"required"`
+	CertHostRequireGroup       string   `json:"cert_host_require_group,omitempty"`
+	CertPAMValidDuration       string   `json:"cert_pam_valid_duration" validate:"required"`
+	CertPAMRequireGroup        string   `json:"cert_pam_require_group,omitempty"`
+	CertRequestTTL             string   `json:"cert_request_ttl" validate:"required"`
+	CertSigningTimeout         string   `json:"cert_signing_timeout" validate:"required"`
+}
