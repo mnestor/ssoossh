@@ -15,8 +15,8 @@ func TestLoadLogoImage(t *testing.T) {
 		expectedError string
 	}{
 		{
-			name:     "should return nil when path is empty",
-			filePath: "",
+			name:       "should return nil when path is empty",
+			filePath:   "",
 			shouldFail: false,
 		},
 		{
@@ -190,23 +190,23 @@ func TestSniffImageType(t *testing.T) {
 
 func TestComputeSimpleETag(t *testing.T) {
 	tests := []struct {
-		name     string
-		data     []byte
+		name       string
+		data       []byte
 		shouldFail bool
 	}{
 		{
-			name:   "should compute etag for data",
-			data:   []byte("test data"),
+			name:       "should compute etag for data",
+			data:       []byte("test data"),
 			shouldFail: false,
 		},
 		{
-			name:   "should compute etag for single byte",
-			data:   []byte("x"),
+			name:       "should compute etag for single byte",
+			data:       []byte("x"),
 			shouldFail: false,
 		},
 		{
-			name:   "should compute etag for empty",
-			data:   []byte{},
+			name:       "should compute etag for empty",
+			data:       []byte{},
 			shouldFail: false,
 		},
 	}
@@ -251,4 +251,47 @@ func contains(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// TestLoadLogoImage_ShouldRejectNonSVGThatMentionsSVG guards the structural
+// SVG check. The original heuristic accepted anything starting with "<" that
+// contained the string "svg" anywhere, so an HTML page mentioning it loaded
+// as a logo and was then served as image/svg+xml — a broken image rather
+// than the startup error this validation exists to produce.
+func TestLoadLogoImage_ShouldRejectNonSVGThatMentionsSVG(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content string
+		wantOK  bool
+	}{
+		{name: "html mentioning svg", content: "<html><body>svg</body></html>", wantOK: false},
+		{name: "element merely prefixed svg", content: "<svgnot/>", wantOK: false},
+		{name: "unrelated xml", content: "<config><note>svg</note></config>", wantOK: false},
+		{name: "bare svg element", content: `<svg xmlns="http://www.w3.org/2000/svg"></svg>`, wantOK: true},
+		{name: "svg after xml declaration", content: `<?xml version="1.0"?><svg></svg>`, wantOK: true},
+		{name: "svg after comment", content: "<!-- a logo --><svg></svg>", wantOK: true},
+		{name: "svg after doctype", content: "<!DOCTYPE svg><svg></svg>", wantOK: true},
+		{name: "self closing svg", content: "<svg/>", wantOK: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), "logo.svg")
+			if err := os.WriteFile(path, []byte(tt.content), 0o600); err != nil {
+				t.Fatalf("failed to write the test logo: %v", err)
+			}
+
+			_, err := LoadLogoImage(path)
+			if tt.wantOK && err != nil {
+				t.Errorf("LoadLogoImage() error = %v, want it accepted", err)
+			}
+			if !tt.wantOK && err == nil {
+				t.Error("LoadLogoImage() error = nil, want the file rejected as not an image")
+			}
+		})
+	}
 }

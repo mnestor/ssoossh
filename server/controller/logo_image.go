@@ -97,16 +97,62 @@ func sniffImageType(data []byte) string {
 		return "image/webp"
 	}
 
-	// SVG: starts with < and contains "svg" in opening tag
-	if bytes.HasPrefix(data, []byte{0x3C}) { // '<'
-		// Simple heuristic: if it starts with < and contains "svg",
-		// it's likely an SVG. This catches <?xml...?><svg> and <svg>.
-		if bytes.Contains(data, []byte("svg")) {
-			return "image/svg+xml"
-		}
+	// SVG has no magic number, being XML text, so the check is structural:
+	// the first element must actually be <svg>. Merely containing the string
+	// "svg" is not enough — an HTML page mentioning it would pass, and the
+	// operator would get a silently broken image instead of the startup
+	// error this validation exists to produce.
+	if isSVG(data) {
+		return "image/svg+xml"
 	}
 
 	return ""
+}
+
+// isSVG reports whether data's first XML element is <svg>. Leading
+// whitespace, an XML declaration, a DOCTYPE, and comments are skipped, since
+// all are legal before the root element.
+func isSVG(data []byte) bool {
+	rest := data
+	for {
+		rest = bytes.TrimLeft(rest, " \t\r\n")
+		switch {
+		case bytes.HasPrefix(rest, []byte("<?")):
+			end := bytes.Index(rest, []byte("?>"))
+			if end < 0 {
+				return false
+			}
+			rest = rest[end+2:]
+		case bytes.HasPrefix(rest, []byte("<!--")):
+			end := bytes.Index(rest, []byte("-->"))
+			if end < 0 {
+				return false
+			}
+			rest = rest[end+3:]
+		case bytes.HasPrefix(rest, []byte("<!")):
+			end := bytes.IndexByte(rest, '>')
+			if end < 0 {
+				return false
+			}
+			rest = rest[end+1:]
+		default:
+			// The root element. Accept only <svg followed by a delimiter, so
+			// that an element merely starting with those letters is rejected.
+			if !bytes.HasPrefix(rest, []byte("<svg")) {
+				return false
+			}
+			after := rest[len("<svg"):]
+			if len(after) == 0 {
+				return false
+			}
+			switch after[0] {
+			case ' ', '\t', '\r', '\n', '>', '/':
+				return true
+			default:
+				return false
+			}
+		}
+	}
 }
 
 // computeSimpleETag generates a weak ETag for the logo. Since the logo is
