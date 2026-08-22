@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
@@ -163,7 +164,7 @@ func TestLoginThenCallback_ShouldEstablishASessionAndRedirectToReturnTo(t *testi
 	// request should see it.
 	meRouter := gin.New()
 	meRouter.Use(sessions.Sessions("ssoossh_session", cookie.NewStore([]byte("test-secret"))))
-	meRouter.GET("/whoami", middleware.NewSessionAuthMiddleware().Add(), func(c *gin.Context) {
+	meRouter.GET("/whoami", middleware.NewSessionAuthMiddleware(5*time.Minute).Add(), func(c *gin.Context) {
 		id, ok := middleware.Identity(c)
 		if !ok {
 			t.Fatal("expected an identity on the context")
@@ -323,7 +324,7 @@ func TestLogoutHandler_ShouldClearTheSessionAndReturnLoggedOut(t *testing.T) {
 	meRouter := gin.New()
 	meRouter.Use(middleware.NewErrorHandlerMiddleware().Add())
 	meRouter.Use(sessions.Sessions("ssoossh_session", cookie.NewStore([]byte("test-secret"))))
-	meRouter.GET("/whoami", middleware.NewSessionAuthMiddleware().Add(), func(c *gin.Context) {
+	meRouter.GET("/whoami", middleware.NewSessionAuthMiddleware(5*time.Minute).Add(), func(c *gin.Context) {
 		c.String(http.StatusOK, "should not reach here")
 	})
 	meResp := doRequest(meRouter, httptest.NewRequest(http.MethodGet, "/whoami", nil), logoutResp)

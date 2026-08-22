@@ -38,24 +38,28 @@ certificate is gone when it was successfully issued a moment ago on another
 instance. That's the single biggest blocker, and it would present as
 intermittent, load-balancer-dependent failures.
 
-### The fix is small, because the wake message already carries the certificate
+### The fix is small — and as of 2026-08-22 it is already done
 
-`requestOutcomeMessage` already includes `Certificate` and `Code`, and
-`notifyWaiter` already populates them. `Wait` simply throws the payload away:
+**Status: implemented.** This section described `Wait` discarding the wake
+payload and re-reading the database instead. That is no longer the code.
+`Wait` now calls `tryHandleWakeMessage` (`server/service/certrequest.go`),
+which decodes `requestOutcomeMessage`, accepts only terminal statuses,
+re-reads the request, and returns the message's certificate **only** once
+the database confirms the same status. The `Wait` loop comment states the
+intent directly: "This is what lets an SSE client on instance B receive a
+certificate issued on instance A."
 
-```go
-case msg, ok := <-messages:
-    if ok {
-        msg.Ack()
-    }
-    continue        // ← re-reads the DB and the local cache instead
-```
+So delivery already follows the transport rather than process memory: the
+listener publishes to `certrequest.wait.<id>`, and whichever instance holds
+that subscription answers its client. **The only thing still missing is a
+transport that crosses processes.** `server/pubsub` is hardcoded to
+gochannel, which routes in-process only, so the wake never leaves the
+instance that published it.
 
-Change `Wait` to decode that payload and, when it carries a terminal
-outcome, return it directly (populating `resolved` on the way through).
-Then delivery follows the transport rather than process memory: the listener
-publishes to `certrequest.wait.<id>`, NATS routes it to whichever instance
-holds that subscription, and that instance answers its client.
+This is why the remaining NATS lift is smaller than this plan originally
+assumed — the application-layer change it called for has landed, and what
+is left is transport, configuration, and the consumer-semantics work in
+item 1 below.
 
 This keeps certificates ephemeral — no schema change, no reversal of the
 Phase 4 decision — and it degrades exactly as designed: a client that
@@ -129,26 +133,82 @@ logouts.
 Once (the central fix) lands, `resolved` is a same-instance fast path rather
 than a source of truth. Two consequences worth handling deliberately:
 
-- It grows unbounded — one entry per request, for process lifetime. Fine as
-  a short-lived cache; needs eviction (TTL or size cap) if it's now expected
-  to be long-lived. Same class of problem as the gochannel persisted-message
-  growth found in Phase 2.
+- ~~It grows unbounded — one entry per request, for process lifetime.~~
+  **Fixed 2026-08-22.** `EvictResolved` ages entries out at `RequestTTL`,
+  scheduled as its own job. `resolvedAt` is never earlier than the
+  request's `created_at`, so an entry that old belongs to a request that
+  has itself expired and no client can still be waiting on it. Worth noting
+  it was a security wrinkle as well as a memory one: each entry held a
+  signed certificate, resident for the life of a process that otherwise
+  takes care never to write one to disk.
 - Its absence must never be treated as "no such request" anywhere. `Wait` is
   already written this way; worth an explicit test so it stays that way.
 
 ## Suggested order
 
-1. `Wait` decodes the wake payload (the central fix) — self-contained, and
-   testable *today* against gochannel with two `CertRequestService`
-   instances sharing one database and transport, before NATS exists.
-2. `signing_started_at` column and sweep rework — also independent of NATS.
-3. NATS transport with queue groups (this is Phase 6's core).
-4. Startup validation: require `cookie_key`; document job idempotency.
-5. `resolved` eviction.
+Revised 2026-08-22. Three of the original five steps are done, which is why
+what remains is mostly transport.
 
-Steps 1 and 2 are worth doing regardless of whether multi-instance ever
-ships: 1 makes delivery robust to *which* component resolved a request, and
-2 removes an accepted imprecision plus a config special case.
+- ~~1. `Wait` decodes the wake payload (the central fix).~~ **Done.**
+  `tryHandleWakeMessage` decodes it and re-verifies the status against the
+  database before trusting the certificate.
+- ~~2. `signing_started_at` column and sweep rework.~~ **Superseded, and the
+  hazard is gone.** Rather than add a column to make the disabled-TTL case
+  safe, `request_ttl` may no longer be zero:
+  `config.CertificateOptions.Validate` rejects it at startup, and the
+  sweep's disabled-TTL branch has been deleted. That removes the
+  multi-instance hazard in item 2 at the source — there is no longer a
+  configuration in which the sweep lacks a bound. `signing_started_at`
+  remains worth having for precision (the sweep still derives its cutoff
+  rather than reading an absolute timestamp), but it is no longer a
+  blocker.
+- ~~5. `resolved` eviction.~~ **Done.** `CertRequestService.EvictResolved`
+  runs on its own schedule, deliberately not folded into the database sweep
+  so it can never inherit leader gating — see item 3 and the function's
+  doc comment.
+
+Remaining, in order:
+
+1. **NATS transport with queue groups.** The core of the work. See below.
+2. **Startup validation:** require an explicit `http.cookie_key` when
+   multi-instance is declared, and document idempotency as a requirement
+   for every scheduled job.
+
+### The NATS step, broken down
+
+`server/pubsub.New` hardcodes `gochannel.NewGoChannel` and returns a
+publisher/subscriber pair plus a router. Everything downstream is written
+against watermill's `message.Publisher` / `message.Subscriber` interfaces,
+so the blast radius is that constructor and its configuration.
+
+1. **Config.** A `pubsub:` section selecting the backend (`gochannel`
+   default, `nats`), the server URL, and mTLS material. Validate at startup
+   the same way `http` and `cert_options` now are: a NATS backend without
+   credentials should fail to boot, not fail on first approval.
+2. **The constructor.** `watermill-nats/v2` (v2.2.0, 2026-05-15) provides
+   the adapter. Keep `New`'s signature and return type; branch inside it.
+   The router, its middleware, and `CloseTimeout` are transport-independent
+   and should not be duplicated per backend.
+3. **Queue groups — the part that is easy to get wrong.** `certrequest.sign`
+   and `certrequest.signed` must be consumed *once* across the fleet, not
+   once per instance: N instances each running a signer and a listener
+   would otherwise produce N certificates and N audit rows from one
+   approval. That is a property of how the subscription is created, so it
+   belongs in the NATS constructor, not in the handlers. `certrequest.wait.<id>`
+   is the opposite case and wants ordinary delivery — the per-request
+   subject already scopes it to the one instance that cares.
+4. **Durability for the sign queue.** `gochannel.Config.Persistent` is
+   deliberately false today, and its comment explains why that is safe *in
+   a single process*: the signer subscribes at boot, before anything can
+   publish. Once the signer can restart independently, that guarantee is
+   gone and redelivery becomes a JetStream ack/redelivery concern. Decide
+   this deliberately rather than inheriting the gochannel default.
+5. **Declare multi-instance explicitly.** See Open questions — inferring it
+   from NATS being configured conflates transport with topology, since a
+   single instance might use NATS purely to isolate the signer.
+
+Step 3 is the one to write a test for first: it is silent when wrong, and
+what it produces is duplicate certificates.
 
 ## Verification
 

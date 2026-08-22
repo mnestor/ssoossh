@@ -80,5 +80,11 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		return nil, err
 	}
 
+	// Same reasoning: a zero request_ttl boots fine and then misbehaves in
+	// the sweep and the resolved-outcome cache, both far from the config.
+	if err := c.CertOptions.Validate(); err != nil {
+		return nil, err
+	}
+
 	return &c, nil
 }
