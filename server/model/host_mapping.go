@@ -9,7 +9,7 @@ import "time"
 // files on the host remain supported independent of this table.
 type HostMapping struct {
 	ID       string `gorm:"column:id;primaryKey"`
-	Hostname string `gorm:"column:hostname"`
+	Hostname string `gorm:"column:hostname;uniqueIndex:idx_host_mappings_hostname"`
 
 	// Principals is JSON-encoded; exact shape TODO (map of local account ->
 	// certificate principals, or a flat list — depends on how `host sync`

@@ -62,7 +62,7 @@ func (a *app) initServices() (*services, error) {
 	})
 
 	g.Go(func() (err error) {
-		svc.host, err = service.NewHostService(a.config)
+		svc.host, err = service.NewHostService(a.config, a.db)
 		return err
 	})
 

@@ -11,7 +11,8 @@ import (
 func TestHostService(t *testing.T) {
 	t.Parallel()
 
-	svc, err := NewHostService(&config.Config{})
+	db := newTestDB(t)
+	svc, err := NewHostService(&config.Config{}, db)
 	if err != nil {
 		t.Fatalf("NewHostService() error = %v", err)
 	}

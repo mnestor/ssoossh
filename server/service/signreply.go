@@ -11,6 +11,7 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/mnestor/ssoossh/server/certmsg"
 	"github.com/mnestor/ssoossh/server/model"
@@ -177,6 +178,35 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 	if err := h.db.WithContext(ctx).Create(&cert).Error; err != nil {
 		return fmt.Errorf("failed to persist certificate audit record: %w", err)
 	}
+
+	// For host certificates, populate the host_mappings table with the
+	// principal mapping. This is the source of truth for what principals
+	// `host sync` will pull down and sshd's AuthorizedPrincipalsCommand will
+	// consult.
+	if reply.Type == model.CertificateTypeHost && reply.Hostname != "" {
+		principalsJSON, err := json.Marshal(reply.Principals)
+		if err != nil {
+			return fmt.Errorf("failed to encode host principals: %w", err) // excluded from coverage: []string, json.Marshal can't fail on it, see exclude-from-coverage.txt
+		}
+
+		mapping := model.HostMapping{
+			ID:         uuid.NewString(),
+			Hostname:   reply.Hostname,
+			Principals: string(principalsJSON),
+			UpdatedAt:  time.Now(),
+		}
+
+		// Upsert: create or update the mapping for this hostname.
+		if err := h.db.WithContext(ctx).
+			Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "hostname"}},
+				UpdateAll: true,
+			}).
+			Create(&mapping).Error; err != nil {
+			return fmt.Errorf("failed to update host mapping for %q: %w", reply.Hostname, err)
+		}
+	}
+
 	return nil
 }
 

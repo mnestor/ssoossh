@@ -3,8 +3,12 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
+
+	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/model"
 )
 
 // HostProvider handles host-certificate renewal and principal-mapping
@@ -28,12 +32,13 @@ type HostProvider interface {
 // "Certificate types").
 type HostService struct {
 	config *config.Config
-	// TODO: db *gorm.DB, ca signing dependency.
+	db     *gorm.DB
+	// TODO: ca signing dependency.
 }
 
 // NewHostService constructs a HostService.
-func NewHostService(c *config.Config) (*HostService, error) {
-	return &HostService{config: c}, nil
+func NewHostService(c *config.Config, db *gorm.DB) (*HostService, error) {
+	return &HostService{config: c, db: db}, nil
 }
 
 // Renew reissues a host certificate for hostname, authenticated by the
@@ -51,6 +56,12 @@ func (s *HostService) Renew(ctx context.Context, hostname string, existingCert s
 // itself — that's the host admin's call via file mtime or `host sync` exit
 // status.
 func (s *HostService) SyncPrincipals(ctx context.Context, hostname string) (principals string, err error) {
-	// TODO: load model.HostMapping for hostname.
-	return "", errors.New("not implemented")
+	var mapping model.HostMapping
+	if err := s.db.WithContext(ctx).First(&mapping, "hostname = ?", hostname).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", fmt.Errorf("principal mapping for %q not found", hostname)
+		}
+		return "", fmt.Errorf("failed to load principal mapping for %q: %w", hostname, err)
+	}
+	return mapping.Principals, nil
 }
