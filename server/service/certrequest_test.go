@@ -88,7 +88,7 @@ func newTestCertRequestServiceWithConfig(t *testing.T, cfg *config.Config) *Cert
 	t.Helper()
 
 	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}); err != nil {
+	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}, &model.Enrollment{}); err != nil {
 		t.Fatalf("failed to migrate test tables: %v", err)
 	}
 
@@ -219,12 +219,11 @@ func TestCertRequestService_ShouldSurfaceGenericDBErrors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error creating request: %v", err)
 		}
-		closeUnderlyingDB(t, svc.db)
-
 		var req model.CertificateRequest
 		if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
 			t.Fatalf("failed to load request: %v", err)
 		}
+		closeUnderlyingDB(t, svc.db)
 		policy, _ := svc.policyFor(model.CertificateTypeService)
 		if err := svc.approveServiceEnrollment(context.Background(), req, RequestedOptions{}, &Identity{Username: "approver", Subject: "sub-approver"}, policy, DecisionContext{}); err == nil {
 			t.Error("approveServiceEnrollment() error = nil, want error")
@@ -642,7 +641,7 @@ func TestCertRequestService_Wait_ShouldSurfaceASubscribeFailure(t *testing.T) {
 	t.Parallel()
 
 	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}); err != nil {
+	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}, &model.Enrollment{}); err != nil {
 		t.Fatalf("failed to migrate test tables: %v", err)
 	}
 	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
@@ -1683,7 +1682,7 @@ func TestCertRequestService_Approve_ShouldSurfaceAPublishFailure(t *testing.T) {
 	t.Parallel()
 
 	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}); err != nil {
+	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}, &model.Enrollment{}); err != nil {
 		t.Fatalf("failed to migrate test tables: %v", err)
 	}
 	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
@@ -1804,7 +1803,7 @@ func TestNotifyWaiter_ShouldNotPanicWhenPublishingFails(t *testing.T) {
 	t.Parallel()
 
 	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}); err != nil {
+	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.CertificateRequestDecision{}, &model.User{}, &model.Enrollment{}); err != nil {
 		t.Fatalf("failed to migrate test tables: %v", err)
 	}
 	channel := gochannel.NewGoChannel(gochannel.Config{Persistent: false}, watermill.NewSlogLogger(slog.Default()))
