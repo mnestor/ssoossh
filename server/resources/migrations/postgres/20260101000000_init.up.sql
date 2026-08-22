@@ -14,7 +14,7 @@ BEGIN;
 -- server/model/enums.go, the model's `check:` tag, and both migrations.
 
 CREATE TABLE users (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY NOT NULL,
     subject TEXT NOT NULL,
     username TEXT NOT NULL,
     email TEXT NOT NULL DEFAULT '',
@@ -26,7 +26,7 @@ CREATE TABLE users (
 CREATE UNIQUE INDEX idx_users_subject ON users(subject);
 
 CREATE TABLE certificate_requests (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY NOT NULL,
     type TEXT NOT NULL
         CONSTRAINT chk_certificate_requests_type
         CHECK (type IN ('user', 'host', 'service', 'pam')),
@@ -78,7 +78,7 @@ CREATE INDEX idx_certificate_requests_status_created_at ON certificate_requests(
 CREATE INDEX idx_certificate_requests_user_id ON certificate_requests(user_id);
 
 CREATE TABLE certificates (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY NOT NULL,
     type TEXT NOT NULL
         CONSTRAINT chk_certificates_type
         CHECK (type IN ('user', 'host', 'service', 'pam')),
@@ -138,7 +138,7 @@ CREATE INDEX idx_certificates_certificate_request_id ON certificates(certificate
 -- the race to resolve a given request, so this should never be exercised in
 -- normal operation.
 CREATE TABLE certificate_request_decisions (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY NOT NULL,
     -- certificate_request_id is a plain copied ID, not a foreign key. The
     -- decisions table is permanent and append-only (see docs/changes-next.md
     -- section "First: decide the retention story"). Pruning certificate_requests
@@ -176,7 +176,7 @@ CREATE INDEX idx_certificate_request_decisions_source_ip ON certificate_request_
 CREATE INDEX idx_certificate_request_decisions_decided_at ON certificate_request_decisions(decided_at);
 
 CREATE TABLE enrollments (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY NOT NULL,
     code TEXT NOT NULL,
     public_key TEXT NOT NULL,
     option_set TEXT NOT NULL DEFAULT '',
@@ -189,7 +189,7 @@ CREATE UNIQUE INDEX idx_enrollments_code ON enrollments(code);
 CREATE INDEX idx_enrollments_user_id ON enrollments(user_id);
 
 CREATE TABLE host_mappings (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY NOT NULL,
     hostname TEXT NOT NULL,
     principals TEXT NOT NULL DEFAULT '',
     updated_at TIMESTAMPTZ NOT NULL
@@ -197,7 +197,7 @@ CREATE TABLE host_mappings (
 CREATE UNIQUE INDEX idx_host_mappings_hostname ON host_mappings(hostname);
 
 CREATE TABLE server_secrets (
-    name TEXT PRIMARY KEY,
+    name TEXT PRIMARY KEY NOT NULL,
     value BYTEA NOT NULL,
     created_at TIMESTAMPTZ NOT NULL
 );
