@@ -312,6 +312,39 @@ components:
       type: object
     webtypes.CertificateResponse:
       properties:
+        decided_accept_language:
+          type: string
+        decided_at:
+          type: string
+        decided_by_email:
+          type: string
+        decided_by_groups:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        decided_by_other_accounts:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        decided_by_outcome:
+          type: string
+        decided_by_service_accounts:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        decided_by_subject:
+          type: string
+        decided_by_username:
+          type: string
+        decided_forwarded_for:
+          type: string
+        decided_source_ip:
+          type: string
+        decided_user_agent:
+          type: string
         expires_at:
           type: string
         hostname:

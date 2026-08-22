@@ -99,6 +99,11 @@ type RequestDetailResponse struct {
 // The certificate itself is absent because it is never persisted — these
 // are ephemeral by design (see docs/signing-pipeline.md). This is the audit
 // trail, not a place to re-download one.
+//
+// The Decided* fields are populated from the request's decision-audit record
+// (see model.CertificateRequestDecision) if the certificate was issued as a
+// result of an approval decision. They are omitted (zero) for certificates
+// whose originating request could not be found.
 type CertificateResponse struct {
 	ID           string                `json:"id" validate:"required"`
 	Type         model.CertificateType `json:"type" validate:"required"`
@@ -109,6 +114,29 @@ type CertificateResponse struct {
 	Hostname     string                `json:"hostname,omitempty"`
 	IssuedAt     time.Time             `json:"issued_at" validate:"required"`
 	ExpiresAt    time.Time             `json:"expires_at" validate:"required"`
+
+	DecidedByOutcome         string     `json:"decided_by_outcome,omitempty"`
+	DecidedBySubject         string     `json:"decided_by_subject,omitempty"`
+	DecidedByUsername        string     `json:"decided_by_username,omitempty"`
+	DecidedByEmail           string     `json:"decided_by_email,omitempty"`
+	DecidedByGroups          []string   `json:"decided_by_groups,omitempty"`
+	DecidedByOtherAccounts   []string   `json:"decided_by_other_accounts,omitempty"`
+	DecidedByServiceAccounts []string   `json:"decided_by_service_accounts,omitempty"`
+	DecidedSourceIP          string     `json:"decided_source_ip,omitempty"`
+	DecidedUserAgent         string     `json:"decided_user_agent,omitempty"`
+	DecidedAcceptLanguage    string     `json:"decided_accept_language,omitempty"`
+	DecidedForwardedFor      string     `json:"decided_forwarded_for,omitempty"`
+	DecidedAt                *time.Time `json:"decided_at,omitempty"`
+}
+
+// CertificateListResponse is the data payload for the cursor-paginated
+// certificate list endpoint. Certificates are ordered newest first.
+// NextCursor is the ID of the last certificate in this page, to be passed
+// as the "after" parameter for the next page; it is nil when no more pages
+// exist.
+type CertificateListResponse struct {
+	Certificates []CertificateResponse `json:"certificates" validate:"required"`
+	NextCursor   *string               `json:"next_cursor,omitempty"`
 }
 
 // EffectiveConfigResponse is the auditor view of the server's effective

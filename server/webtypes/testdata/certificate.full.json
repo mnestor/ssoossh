@@ -7,5 +7,24 @@
   "public_key_fingerprint": "SHA256:2Fd4rIWZ8kQnGx0mJvKp1YhLcTzXbA3sNeR5uW7oPqM",
   "hostname": "db1.example.org",
   "issued_at": "2026-08-14T09:30:00+02:00",
-  "expires_at": "2026-08-14T17:30:00+02:00"
+  "expires_at": "2026-08-14T17:30:00+02:00",
+  "decided_by_outcome": "approved",
+  "decided_by_subject": "9c1f0f8e-1d0a-4a37-9d1e-2f6a1b4c5d6e",
+  "decided_by_username": "alice",
+  "decided_by_email": "alice@example.org",
+  "decided_by_groups": [
+    "engineering",
+    "sre"
+  ],
+  "decided_by_other_accounts": [
+    "alice.other"
+  ],
+  "decided_by_service_accounts": [
+    "svc-backup"
+  ],
+  "decided_source_ip": "198.51.100.7",
+  "decided_user_agent": "curl/8.0.0",
+  "decided_accept_language": "en-US",
+  "decided_forwarded_for": "198.51.100.7, 10.0.0.1",
+  "decided_at": "2026-08-14T09:30:00+02:00"
 }

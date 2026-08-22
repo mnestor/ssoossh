@@ -97,6 +97,19 @@ func fullFixtures() map[string]any {
 			Hostname:     "db1.example.org",
 			IssuedAt:     issuedAt,
 			ExpiresAt:    issuedAt.Add(8 * time.Hour),
+
+			DecidedByOutcome:         "approved",
+			DecidedBySubject:         "9c1f0f8e-1d0a-4a37-9d1e-2f6a1b4c5d6e",
+			DecidedByUsername:        "alice",
+			DecidedByEmail:           "alice@example.org",
+			DecidedByGroups:          []string{"engineering", "sre"},
+			DecidedByOtherAccounts:   []string{"alice.other"},
+			DecidedByServiceAccounts: []string{"svc-backup"},
+			DecidedSourceIP:          "198.51.100.7",
+			DecidedUserAgent:         "curl/8.0.0",
+			DecidedAcceptLanguage:    "en-US",
+			DecidedForwardedFor:      "198.51.100.7, 10.0.0.1",
+			DecidedAt:                &issuedAt,
 		},
 	}
 }

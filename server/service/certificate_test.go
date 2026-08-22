@@ -4,6 +4,7 @@ package service
 // same as certrequest_test.go. These cover the scoping rule, which is the
 // only interesting behavior here — a user must see their own certificates
 // and nobody else's. Pagination tests cover the cursor-based seek logic.
+// Decision join tests ensure no ambiguous column selection.
 
 import (
 	"context"
@@ -20,14 +21,14 @@ import (
 func newTestCertificateService(t *testing.T, svc *CertRequestService) *CertificateService {
 	t.Helper()
 
-	if err := svc.db.AutoMigrate(&model.Certificate{}); err != nil {
-		t.Fatalf("failed to migrate certificates table: %v", err)
+	if err := svc.db.AutoMigrate(&model.Certificate{}, &model.CertificateRequest{}, &model.CertificateRequestDecision{}); err != nil {
+		t.Fatalf("failed to migrate certificate tables: %v", err)
 	}
 	return NewCertificateService(svc.db)
 }
 
 // seedCertificate inserts an issued-certificate audit row owned by userID
-// (nil for none).
+// (nil for none) and returns a pointer to the created certificate.
 func seedCertificate(t *testing.T, svc *CertRequestService, userID *string, serial uint64, issuedAt time.Time) *model.Certificate {
 	t.Helper()
 
@@ -41,6 +42,48 @@ func seedCertificate(t *testing.T, svc *CertRequestService, userID *string, seri
 	}
 	if err := svc.db.Create(&cert).Error; err != nil {
 		t.Fatalf("failed to seed certificate: %v", err)
+	}
+	return &cert
+}
+
+// seedCertificateWithRequest inserts a certificate and links it to a request and decision.
+func seedCertificateWithRequest(t *testing.T, svc *CertRequestService, userID *string, serial uint64, issuedAt time.Time, decision *model.CertificateRequestDecision) *model.Certificate {
+	t.Helper()
+
+	// Create a request first.
+	req := model.CertificateRequest{
+		ID:       uuid.NewString(),
+		UserID:   userID,
+		Type:     model.CertificateTypeUser,
+		Status:   model.CertificateRequestStatusApproved,
+		PublicKey: "test-key",
+		SourceIP: "127.0.0.1",
+	}
+	if err := svc.db.Create(&req).Error; err != nil {
+		t.Fatalf("failed to seed certificate request: %v", err)
+	}
+
+	// Create the decision if provided.
+	if decision != nil {
+		decision.ID = uuid.NewString()
+		decision.CertificateRequestID = req.ID
+		if err := svc.db.Create(&decision).Error; err != nil {
+			t.Fatalf("failed to seed decision: %v", err)
+		}
+	}
+
+	// Create the certificate linked to the request.
+	cert := model.Certificate{
+		ID:                     uuid.NewString(),
+		Type:                   model.CertificateTypeUser,
+		UserID:                 userID,
+		SerialNumber:           serial,
+		IssuedAt:               issuedAt,
+		ExpiresAt:              issuedAt.Add(time.Hour),
+		CertificateRequestID:   &req.ID,
+	}
+	if err := svc.db.Create(&cert).Error; err != nil {
+		t.Fatalf("failed to seed certificate with request: %v", err)
 	}
 	return &cert
 }
@@ -71,14 +114,14 @@ func TestCertificateService_ShouldReturnOnlyTheCallersCertificates(t *testing.T)
 	if len(got) != 2 {
 		t.Fatalf("got %d certificates, want alice's 2", len(got))
 	}
-	for _, c := range got {
-		if c.SerialNumber == 3 || c.SerialNumber == 4 {
-			t.Errorf("got certificate with serial %d, which does not belong to alice", c.SerialNumber)
+	for _, cd := range got {
+		if cd.Certificate.SerialNumber == 3 || cd.Certificate.SerialNumber == 4 {
+			t.Errorf("got certificate with serial %d, which does not belong to alice", cd.Certificate.SerialNumber)
 		}
 	}
 	// Newest first, so the UI can render a history without re-sorting.
-	if got[0].SerialNumber != 2 {
-		t.Errorf("got serial %d first, want the newest (2)", got[0].SerialNumber)
+	if got[0].Certificate.SerialNumber != 2 {
+		t.Errorf("got serial %d first, want the newest (2)", got[0].Certificate.SerialNumber)
 	}
 	// No next page with limit=100 and only 2 results.
 	if nextCursor != nil {
@@ -244,9 +287,9 @@ func TestCertificateService_CursorPagination(t *testing.T) {
 	}
 
 	// Verify page 1 is ordered newest first (serials 0-4, which have issued_at from most recent to least).
-	for i, cert := range page1 {
-		if cert.SerialNumber != uint64(i) {
-			t.Errorf("page 1 result %d has serial %d, want %d", i, cert.SerialNumber, i)
+	for i, cd := range page1 {
+		if cd.Certificate.SerialNumber != uint64(i) {
+			t.Errorf("page 1 result %d has serial %d, want %d", i, cd.Certificate.SerialNumber, i)
 		}
 	}
 
@@ -263,21 +306,21 @@ func TestCertificateService_CursorPagination(t *testing.T) {
 	}
 
 	// Verify page 2 is ordered newest first (serials 5-9).
-	for i, cert := range page2 {
+	for i, cd := range page2 {
 		expectedSerial := uint64(5 + i)
-		if cert.SerialNumber != expectedSerial {
-			t.Errorf("page 2 result %d has serial %d, want %d", i, cert.SerialNumber, expectedSerial)
+		if cd.Certificate.SerialNumber != expectedSerial {
+			t.Errorf("page 2 result %d has serial %d, want %d", i, cd.Certificate.SerialNumber, expectedSerial)
 		}
 	}
 
 	// Verify no overlap between pages.
 	page1Serials := make(map[uint64]bool)
-	for _, cert := range page1 {
-		page1Serials[cert.SerialNumber] = true
+	for _, cd := range page1 {
+		page1Serials[cd.Certificate.SerialNumber] = true
 	}
-	for _, cert := range page2 {
-		if page1Serials[cert.SerialNumber] {
-			t.Errorf("certificate with serial %d appears on both pages", cert.SerialNumber)
+	for _, cd := range page2 {
+		if page1Serials[cd.Certificate.SerialNumber] {
+			t.Errorf("certificate with serial %d appears on both pages", cd.Certificate.SerialNumber)
 		}
 	}
 }
@@ -316,9 +359,9 @@ func TestCertificateService_CursorWithConcurrentIssuance(t *testing.T) {
 	}
 
 	// Verify page 1 contains the newer certs (1, 2, 3).
-	for _, cert := range page1 {
-		if cert.SerialNumber > 3 {
-			t.Errorf("page 1 contains cert with serial %d, want only 1-3", cert.SerialNumber)
+	for _, cd := range page1 {
+		if cd.Certificate.SerialNumber > 3 {
+			t.Errorf("page 1 contains cert with serial %d, want only 1-3", cd.Certificate.SerialNumber)
 		}
 	}
 
@@ -339,9 +382,9 @@ func TestCertificateService_CursorWithConcurrentIssuance(t *testing.T) {
 	}
 
 	// Verify page 2 contains the older certs (4, 5, 6).
-	for _, cert := range page2 {
-		if cert.SerialNumber < 4 {
-			t.Errorf("page 2 contains cert with serial %d, want only 4-6", cert.SerialNumber)
+	for _, cd := range page2 {
+		if cd.Certificate.SerialNumber < 4 {
+			t.Errorf("page 2 contains cert with serial %d, want only 4-6", cd.Certificate.SerialNumber)
 		}
 	}
 }
@@ -394,5 +437,85 @@ func TestCertificateService_InvalidCursor(t *testing.T) {
 	_, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, &aliceCert.ID, 25)
 	if err != nil {
 		t.Errorf("got error with alice's own certificate as cursor: %v", err)
+	}
+}
+
+// TestCertificateService_CertificateWithDecision tests that certificates
+// with associated decision records are properly retrieved and the certificate
+// ID is not clobbered by the decision ID (testing the SELECT column ambiguity trap).
+func TestCertificateService_CertificateWithDecision(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+
+	userID := seedUser(t, reqSvc.db, "sub-alice")
+
+	now := time.Now()
+	decision := &model.CertificateRequestDecision{
+		Outcome:  model.CertificateRequestDecisionApproved,
+		Subject:  "sub-approver",
+		Username: "approver",
+		Email:    "approver@example.com",
+		DecidedAt: now,
+	}
+	cert := seedCertificateWithRequest(t, reqSvc, &userID, 1, now, decision)
+
+	got, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 25)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(got) != 1 {
+		t.Fatalf("got %d certificates, want 1", len(got))
+	}
+
+	// Verify the certificate ID is the certificate's ID, not the decision's.
+	if got[0].Certificate.ID != cert.ID {
+		t.Errorf("got certificate ID %s, want %s (decision ID clobbered it)", got[0].Certificate.ID, cert.ID)
+	}
+
+	// Verify decision is populated.
+	if got[0].Decision == nil {
+		t.Error("got Decision = nil, want populated decision")
+	} else {
+		if got[0].Decision.Subject != "sub-approver" {
+			t.Errorf("got decision subject %s, want sub-approver", got[0].Decision.Subject)
+		}
+	}
+}
+
+// TestCertificateService_CertificateWithoutDecision tests that certificates
+// without associated decision records (orphaned requests) are properly handled
+// with nil decision pointer.
+func TestCertificateService_CertificateWithoutDecision(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+
+	userID := seedUser(t, reqSvc.db, "sub-alice")
+
+	now := time.Now()
+	// Seed certificate without a request.
+	cert := seedCertificate(t, reqSvc, &userID, 1, now)
+
+	got, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 25)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(got) != 1 {
+		t.Fatalf("got %d certificates, want 1", len(got))
+	}
+
+	// Verify the certificate is present with its own ID intact.
+	if got[0].Certificate.ID != cert.ID {
+		t.Errorf("got certificate ID %s, want %s", got[0].Certificate.ID, cert.ID)
+	}
+
+	// Verify decision is nil.
+	if got[0].Decision != nil {
+		t.Errorf("got Decision = %+v, want nil", got[0].Decision)
 	}
 }

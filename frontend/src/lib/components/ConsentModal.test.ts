@@ -33,4 +33,10 @@ describe('ConsentModal', () => {
 		dialog.dispatchEvent(cancelEvent);
 		expect(cancelEvent.defaultPrevented).toBe(true);
 	});
+
+	it('should provide a focus trap and inert background with showModal()', () => {
+		const showModalSpy = vi.spyOn(HTMLDialogElement.prototype, 'showModal');
+		render(ConsentModal, { notice: 'Notice text', onaccepted: vi.fn() });
+		expect(showModalSpy).toHaveBeenCalled();
+	});
 });

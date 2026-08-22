@@ -11,6 +11,18 @@
 	}
 
 	let { cert, onclosed }: Props = $props();
+	let dialogEl = $state<HTMLDialogElement | undefined>(undefined);
+
+	// Call showModal() to get native modal behavior (top-layer stacking,
+	// backdrop, focus trap) and prevent closing with Escape.
+	$effect(() => {
+		dialogEl?.showModal();
+	});
+
+	function handleClose() {
+		dialogEl?.close();
+		onclosed();
+	}
 
 	// Icon mapping for certificate types
 	const certTypeIcons: Record<string, string> = {
@@ -29,13 +41,13 @@
 	);
 </script>
 
-<dialog open class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+<dialog bind:this={dialogEl} class="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
 	<div class="max-h-[90vh] w-full max-w-2xl overflow-y-auto">
 		<Card title="Certificate Details" description="Issued certificate audit record">
 			{#snippet footer()}
 				<div class="flex gap-3">
 					<button
-						onclick={onclosed}
+						onclick={handleClose}
 						class="rounded-md border border-border-subtle px-4 py-2 text-sm font-medium transition hover:bg-surface-muted"
 					>
 						Close

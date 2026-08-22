@@ -43,10 +43,24 @@
 		ondeny
 	}: Props = $props();
 
+	// Live region for announcing action outcomes to screen readers.
+	let liveMessage = $state('');
+
 	const extensions = $derived(extensionDiff(detail.requested, detail.granted));
 	const criticalOptions = $derived(criticalOptionDiff(detail.requested, detail.granted));
 	const narrowed = $derived(anyTrimmed(extensions) || anyTrimmed(criticalOptions));
 	const blocked = $derived(approvalBlockedReason(detail));
+
+	// Announce outcomes to screen readers.
+	$effect(() => {
+		if (outcome === 'approved') {
+			liveMessage = 'Certificate approved and is being signed';
+		} else if (outcome === 'denied') {
+			liveMessage = 'Certificate request denied';
+		}
+	});
+
+	const hasDecisionRecord = $derived(!!detail.decided_at);
 
 	// Icon mapping for certificate types
 	const certTypeIcons: Record<CertificateType, string> = {
@@ -87,6 +101,9 @@
 </script>
 
 <Card title={cardCopy.title} description={cardCopy.description} testid="approval-view">
+	<!-- Live region for screen reader announcements of action outcomes. -->
+	<div aria-live="polite" aria-atomic="true" class="sr-only">{liveMessage}</div>
+
 	<dl class="divide-y divide-border-subtle">
 		<DetailRow label="Status"><StatusBadge status={detail.status} /></DetailRow>
 		<DetailRow label="Certificate type">
@@ -171,6 +188,27 @@
 				above will not be in the certificate.
 			</Alert>
 		{/if}
+
+		{#if hasDecisionRecord}
+			<div>
+				<h3 class="text-sm font-semibold">Decision record</h3>
+				<dl class="mt-2 divide-y divide-border-subtle">
+					<DetailRow label="Decision">{detail.decided_by_outcome}</DetailRow>
+					<DetailRow label="Decided by">
+						{detail.decided_by_username || detail.decided_by_subject || 'Unknown'}
+					</DetailRow>
+					{#if detail.decided_by_email}
+						<DetailRow label="Email">{detail.decided_by_email}</DetailRow>
+					{/if}
+					{#if detail.decided_source_ip}
+						<DetailRow label="From IP" mono>{detail.decided_source_ip}</DetailRow>
+					{/if}
+					{#if detail.decided_at}
+						<DetailRow label="Decided at">{formatDateTime(detail.decided_at)}</DetailRow>
+					{/if}
+				</dl>
+			</div>
+		{/if}
 	</div>
 
 	{#snippet footer()}
@@ -193,10 +231,10 @@
 					<Alert variant="error" title="That did not go through">{actionError}</Alert>
 				{/if}
 				<div class="flex flex-wrap gap-3">
-					<Button testid="approve-button" disabled={busy} onclick={onapprove}
+					<Button testid="approve-button" busy={busy} onclick={onapprove}
 						>{busy ? 'Working…' : 'Approve'}</Button
 					>
-					<Button testid="deny-button" variant="danger" disabled={busy} onclick={ondeny}
+					<Button testid="deny-button" variant="danger" busy={busy} onclick={ondeny}
 						>Deny</Button
 					>
 				</div>

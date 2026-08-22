@@ -155,6 +155,9 @@
 							</div>
 							<p class="mt-2 text-xs text-ink-muted">
 								issued {formatDateTime(cert.issued_at)}
+							{#if cert.decided_at}
+								— approved by {cert.decided_by_username || cert.decided_by_subject || "system"}
+							{/if}
 							</p>
 						</button>
 					</li>

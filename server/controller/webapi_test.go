@@ -33,9 +33,13 @@ type fakeCertificateService struct {
 	gotSubject string
 }
 
-func (f *fakeCertificateService) ListForIdentity(_ context.Context, identity *service.Identity, after *string, limit int) ([]model.Certificate, *string, error) {
+func (f *fakeCertificateService) ListForIdentity(_ context.Context, identity *service.Identity, _ *string, _ int) ([]service.CertificateWithDecision, *string, error) {
 	f.gotSubject = identity.Subject
-	return f.certs, nil, f.err
+	out := make([]service.CertificateWithDecision, 0, len(f.certs))
+	for _, c := range f.certs {
+		out = append(out, service.CertificateWithDecision{Certificate: c, Decision: nil})
+	}
+	return out, nil, f.err
 }
 
 // identityMiddleware stands in for SessionAuthMiddleware, putting identity
@@ -181,6 +185,9 @@ func TestCertificateListHandler_ShouldReturnTheCallersCertificates(t *testing.T)
 	if got.Certificates[0].SerialNumber != 42 {
 		t.Errorf("got serial %d, want 42", got.Certificates[0].SerialNumber)
 	}
+	if got.NextCursor != nil {
+		t.Errorf("got next cursor %v, want nil (only one result)", got.NextCursor)
+	}
 
 	// The scoping subject must come from the session, not from anything the
 	// caller can influence.
@@ -202,8 +209,14 @@ func TestCertificateListHandler_ShouldRenderNoCertificatesAsAnEmptyArray(t *test
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs", nil))
 
-	if got := w.Body.String(); !strings.Contains(got, `"certificates":[]`) {
-		t.Errorf("expected data to render with empty certificates array, got %s", got)
+	var got webtypes.CertificateListResponse
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+
+	if len(got.Certificates) != 0 {
+		t.Errorf("expected 0 certificates, got %d", len(got.Certificates))
+	}
+	if got.NextCursor != nil {
+		t.Errorf("expected next cursor nil, got %v", got.NextCursor)
 	}
 }
 

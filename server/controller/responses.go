@@ -112,6 +112,25 @@ func setDecisionFields(resp *webtypes.RequestDetailResponse, decision *model.Cer
 	resp.DecidedByServiceAccounts = decodeDecisionStringList("service_accounts", decision.ServiceAccounts)
 }
 
+// setDecisionFieldsOnCertificate maps decision's fields onto a certificate
+// response's Decided* fields.
+func setDecisionFieldsOnCertificate(resp *webtypes.CertificateResponse, decision *model.CertificateRequestDecision) {
+	resp.DecidedByOutcome = string(decision.Outcome)
+	resp.DecidedBySubject = decision.Subject
+	resp.DecidedByUsername = decision.Username
+	resp.DecidedByEmail = decision.Email
+	resp.DecidedSourceIP = decision.SourceIP
+	resp.DecidedUserAgent = decision.UserAgent
+	resp.DecidedAcceptLanguage = decision.AcceptLanguage
+	resp.DecidedForwardedFor = decision.ForwardedFor
+	decidedAt := decision.DecidedAt
+	resp.DecidedAt = &decidedAt
+
+	resp.DecidedByGroups = decodeDecisionStringList("groups", decision.Groups)
+	resp.DecidedByOtherAccounts = decodeDecisionStringList("other_accounts", decision.OtherAccounts)
+	resp.DecidedByServiceAccounts = decodeDecisionStringList("service_accounts", decision.ServiceAccounts)
+}
+
 // decodeDecisionStringList decodes a JSON-encoded []string column from
 // model.CertificateRequestDecision. A parse failure logs and returns nil
 // rather than failing the whole response — this is audit data, not a
@@ -139,31 +158,38 @@ func newCertificateOptionsResponse(o service.RequestedOptions) webtypes.Certific
 	}
 }
 
-// newCertificateResponses converts rows to their wire shape, always
-// returning a non-nil slice so the UI receives [] rather than null.
-func newCertificateResponses(certs []model.Certificate) []webtypes.CertificateResponse {
-	out := make([]webtypes.CertificateResponse, 0, len(certs))
-	for _, c := range certs {
-		out = append(out, webtypes.CertificateResponse{
-			ID:           c.ID,
-			Type:         c.Type,
-			SerialNumber: c.SerialNumber,
-			KeyID:        c.KeyID,
-			Principals:   c.Principals,
-			Fingerprint:  c.PublicKeyFingerprint,
-			Hostname:     c.Hostname,
-			IssuedAt:     c.IssuedAt,
-			ExpiresAt:    c.ExpiresAt,
-		})
+// newCertificateResponsesWithDecisions converts certificate+decision pairs to
+// their wire shape, including decision-audit data when available.
+func newCertificateResponsesWithDecisions(certsWithDecisions []service.CertificateWithDecision) []webtypes.CertificateResponse {
+	out := make([]webtypes.CertificateResponse, 0, len(certsWithDecisions))
+	for _, cd := range certsWithDecisions {
+		resp := webtypes.CertificateResponse{
+			ID:           cd.Certificate.ID,
+			Type:         cd.Certificate.Type,
+			SerialNumber: cd.Certificate.SerialNumber,
+			KeyID:        cd.Certificate.KeyID,
+			Principals:   cd.Certificate.Principals,
+			Fingerprint:  cd.Certificate.PublicKeyFingerprint,
+			Hostname:     cd.Certificate.Hostname,
+			IssuedAt:     cd.Certificate.IssuedAt,
+			ExpiresAt:    cd.Certificate.ExpiresAt,
+		}
+
+		// Populate decision fields if a decision record exists.
+		if cd.Decision != nil {
+			setDecisionFieldsOnCertificate(&resp, cd.Decision)
+		}
+
+		out = append(out, resp)
 	}
 	return out
 }
 
-// newCertificateListResponse converts rows and cursor to the paginated
-// wire shape.
-func newCertificateListResponse(certs []model.Certificate, nextCursor *string) webtypes.CertificateListResponse {
+// newCertificateListResponse converts paginated certificate+decision pairs to
+// their wire shape, wrapped in a CertificateListResponse with cursor.
+func newCertificateListResponse(certsWithDecisions []service.CertificateWithDecision, nextCursor *string) webtypes.CertificateListResponse {
 	return webtypes.CertificateListResponse{
-		Certificates: newCertificateResponses(certs),
+		Certificates: newCertificateResponsesWithDecisions(certsWithDecisions),
 		NextCursor:   nextCursor,
 	}
 }

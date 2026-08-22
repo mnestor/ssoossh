@@ -194,6 +194,9 @@
 							>
 								<span>issued {formatDateTime(cert.issued_at)}</span>
 								<span class="font-mono text-ink-muted">{cert.key_id}</span>
+								{#if cert.decided_at}
+									— approved by {cert.decided_by_username || cert.decided_by_subject || "system"}
+								{/if}
 							</div>
 						</button>
 					</li>

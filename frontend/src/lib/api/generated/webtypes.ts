@@ -98,6 +98,10 @@ export interface RequestDetailResponse {
  * The certificate itself is absent because it is never persisted — these
  * are ephemeral by design (see docs/signing-pipeline.md). This is the audit
  * trail, not a place to re-download one.
+ * The Decided* fields are populated from the request's decision-audit record
+ * (see model.CertificateRequestDecision) if the certificate was issued as a
+ * result of an approval decision. They are omitted (zero) for certificates
+ * whose originating request could not be found.
  */
 export interface CertificateResponse {
 	id: string;
@@ -109,6 +113,29 @@ export interface CertificateResponse {
 	hostname?: string;
 	issued_at: string;
 	expires_at: string;
+	decided_by_outcome?: string;
+	decided_by_subject?: string;
+	decided_by_username?: string;
+	decided_by_email?: string;
+	decided_by_groups?: string[];
+	decided_by_other_accounts?: string[];
+	decided_by_service_accounts?: string[];
+	decided_source_ip?: string;
+	decided_user_agent?: string;
+	decided_accept_language?: string;
+	decided_forwarded_for?: string;
+	decided_at?: string;
+}
+/**
+ * CertificateListResponse is the data payload for the cursor-paginated
+ * certificate list endpoint. Certificates are ordered newest first.
+ * NextCursor is the ID of the last certificate in this page, to be passed
+ * as the "after" parameter for the next page; it is nil when no more pages
+ * exist.
+ */
+export interface CertificateListResponse {
+	certificates: CertificateResponse[];
+	next_cursor?: string;
 }
 /**
  * EffectiveConfigResponse is the auditor view of the server's effective

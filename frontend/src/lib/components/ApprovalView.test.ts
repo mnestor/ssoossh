@@ -252,4 +252,77 @@ describe('ApprovalView', () => {
 			expect(screen.getByText('Denied')).toBeInTheDocument();
 		});
 	});
+
+	describe('decision record display', () => {
+		it('should not show a decision record when decided_at is missing', () => {
+			mount();
+			expect(screen.queryByText('Decision record')).not.toBeInTheDocument();
+		});
+
+		it('should show a decision record when decided_at is present', () => {
+			const withDecision = detail({
+				decided_at: '2026-08-14T10:00:00Z',
+				decided_by_outcome: 'approved',
+				decided_by_username: 'alice'
+			});
+			mount({ detail: withDecision });
+			expect(screen.getByText('Decision record')).toBeInTheDocument();
+		});
+
+		it('should show the decision outcome when available', () => {
+			const withDecision = detail({
+				decided_at: '2026-08-14T10:00:00Z',
+				decided_by_outcome: 'approved'
+			});
+			mount({ detail: withDecision });
+			expect(screen.getByText('approved')).toBeInTheDocument();
+		});
+
+		it('should show the decider username when available', () => {
+			const withDecision = detail({
+				decided_at: '2026-08-14T10:00:00Z',
+				decided_by_username: 'bob'
+			});
+			mount({ detail: withDecision });
+			expect(screen.getByText('bob')).toBeInTheDocument();
+		});
+
+		it('should show the decider email when available', () => {
+			const withDecision = detail({
+				decided_at: '2026-08-14T10:00:00Z',
+				decided_by_email: 'alice@example.com'
+			});
+			mount({ detail: withDecision });
+			expect(screen.getByText('alice@example.com')).toBeInTheDocument();
+		});
+
+		it('should show the decision source IP when available', () => {
+			const withDecision = detail({
+				decided_at: '2026-08-14T10:00:00Z',
+				decided_source_ip: '203.0.113.42'
+			});
+			mount({ detail: withDecision });
+			expect(screen.getByText('203.0.113.42')).toBeInTheDocument();
+		});
+	});
+
+	describe('accessibility', () => {
+		it('should have a live region for announcing action outcomes', () => {
+			const { onapprove } = mount();
+			const liveRegion = document.querySelector('[aria-live="polite"]');
+			expect(liveRegion).toBeInTheDocument();
+		});
+
+		it('should announce approval to screen readers', () => {
+			mount({ outcome: 'approved' });
+			const liveRegion = document.querySelector('[aria-live="polite"]');
+			expect(liveRegion?.textContent).toContain('approved');
+		});
+
+		it('should announce denial to screen readers', () => {
+			mount({ outcome: 'denied' });
+			const liveRegion = document.querySelector('[aria-live="polite"]');
+			expect(liveRegion?.textContent).toContain('denied');
+		});
+	});
 });
