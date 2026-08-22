@@ -1,6 +1,14 @@
 # Cross-Platform Client Testing
 
-This document describes how the ssoossh client is tested across macOS, Windows, and Linux platforms, accounting for platform-specific code that cannot run on all systems.
+This document describes testing strategy for ssoossh client across macOS, Windows, and Linux platforms.
+
+**Currently Implemented:**
+- ✅ Compilation verification for all 6 platform/arch combinations (via `make cross-compile-verify`)
+- ✅ Fixture-based tests for macOS plist and Windows registry logic (runs on Linux)
+- ✅ Agent socket path validation and SSH_AUTH_SOCK parsing (runs on Linux)
+- ✅ CI workflows defined for native hardware testing
+
+**Status:** Unit tests execute and pass. CI workflows are defined and ready to run on real hardware.
 
 ## Platforms Supported
 

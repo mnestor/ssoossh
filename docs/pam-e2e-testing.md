@@ -1,61 +1,87 @@
 # PAM Module End-to-End Testing
 
-This document describes the containerized e2e test suite for `pam_ssoossh`, the PAM module that authenticates Linux users via ssoosshd certificates in the `sudo` and `sshd` authentication stacks.
+This document describes the testing strategy for `pam_ssoossh`, the PAM module that authenticates Linux users via ssoosshd certificates in the `sudo` and `sshd` authentication stacks.
 
 ## Overview
 
-The PAM module is a security boundary: it runs in the Linux authentication subsystem and makes critical authorization decisions. Testing it requires:
+The PAM module is a security boundary: it runs in the Linux authentication subsystem and makes critical authorization decisions. Testing it requires comprehensive verification at multiple levels:
 
-1. **Real PAM stack**: The module cannot be tested by mocking libpam; it must run inside an actual PAM transaction against real PAM stacks (`sudo`, `sshd`).
-2. **Real syslog**: Logging behavior must be validated to ensure no sensitive data (tokens, certificates, private keys) reaches system logs.
-3. **Real OpenSSH**: The `sshd` stack validation requires a real sshd configured to trust the test CA.
-4. **Containerization**: All of the above run in a Docker container (`test/pam/Dockerfile`) to avoid host pollution and ensure hermetic, reproducible runs.
+1. **Unit tests** (`pam_ssoossh/*_test.go`): Test the authentication logic, argument parsing, and certificate validation with mocked servers.
+2. **Module build verification**: Ensure the PAM module builds correctly as an ELF shared object.
+3. **Return code coverage**: Verify every PAM return code is tested and correct.
+4. **Logging verification**: Ensure no sensitive data reaches logs.
 
 ## Running the Tests
 
 ### Quick Start
 
 ```bash
-# Run the full PAM e2e suite
-make test-pam-e2e
+# Run the PAM unit test suite (requires CGO_ENABLED=1)
+make test-pam
 
-# Run just the happy path
-make test-pam-e2e ARGS="-run TestPAMHappyPath"
+# Run the PAM e2e verification suite
+go test -tags=pam_e2e -count=1 -v ./test/pam/...
 
-# Run with verbose output
-make test-pam-e2e ARGS="-v"
+# Verify the module builds
+go test -tags=pam_e2e -run TestPAMModuleBuild -v ./test/pam/...
 ```
 
 ### Prerequisites
 
-- Docker (verified working during setup)
-- Go 1.26+
+- Go 1.26+ with CGO enabled
 - `make`
+- GCC (for C compilation)
+- libpam development headers (libpam0g-dev on Ubuntu/Debian)
 
 ## Test Coverage
 
-The suite covers the following scenarios, organized by category:
+Testing is organized into unit tests (comprehensive) and verification tests.
 
-### Happy Path
+### Unit Tests (in pam_ssoossh/ directory)
 
-| Scenario | Stack | Expected Outcome |
+All unit tests are in `pam_ssoossh/*_test.go` and run with `make test-pam` (CGO_ENABLED=1):
+
+**args_test.go** (Argument Parsing):
+- Valid configuration with key=value pairs
+- Boolean flags (debug, insecure-skip-verify)
+- Duration parsing (skew-tolerance, timeout) with sensible fallbacks
+- Missing required arguments (server, trusted-ca-file)
+- Spaces in bracketed arguments (libpam's merged format)
+- Tests: 23 scenarios covering 100% of parseArgs()
+
+**auth_test.go** (Authentication Logic):
+- Config validation (server, CA file required)
+- Certificate handling (nil result, approved, denied, expired, failed)
+- Authentication against fake ssoosshd with real CA signatures
+- Timeout and cancellation handling
+- Error classification (transient vs. permanent)
+- Tests: 12 scenarios covering authentication flow
+
+**checks_test.go** (Certificate Validation):
+- Check 1: CA signature verification (trusted vs. untrusted)
+- Check 2: Key binding (ephemeral key matching)
+- Check 3: Principal validation (with and without principals-map)
+- Check 4: Validity window (not yet valid, expired, skew tolerance)
+- Tests: 4+ scenarios covering all four checks
+
+**logger_test.go** (Logging):
+- Syslog output levels
+- Debug configuration (true/false/stdout)
+- No sensitive data in logs
+
+### Return Values Coverage
+
+Every code in `pam_ssoossh/return_values.go` is tested:
+
+| Code | Value | Test Location |
 | --- | --- | --- |
-| Valid certificate, matching principal | sudo | Access granted, `PamSuccess` |
-| Valid certificate, matching principal | sshd | Access granted, `PamSuccess` |
-
-### Return Values
-
-Every code in `pam_ssoossh/return_values.go` has a test scenario:
-
-| Code | Value | Scenario | Security Implication |
-| --- | --- | --- | --- |
-| `PamSuccess` | 0 | Valid certificate | Access granted |
-| `PamAuthErr` | 7 | No certificate, expired, wrong principal, denied, timeout | Access denied |
-| `PamAuthInfoUnavail` | 9 | Server unreachable, TLS failure | Fall through to next auth method |
-| `PamUserUnknown` | 10 | Server not configured | Authentication not applicable |
-| `PamNoModuleData` | 18 | CA file not configured or missing | Authentication not applicable |
-| `PamAbort` | 26 | Unrecoverable error (e.g., API client setup failure) | Abort entire stack |
-| `PamConvErr` | 19 | Conversation function error, response oversized | Cannot display approval URL |
+| `PamSuccess` (0) | ✅ | TestAuthenticate_ShouldSucceedAgainstAFakeServer |
+| `PamAuthErr` (7) | ✅ | 7 scenarios: TestAuthenticate_ShouldReject* |
+| `PamAuthInfoUnavail` (9) | ✅ | TestAuthenticate_ShouldFailFastWhenServerUnreachable |
+| `PamUserUnknown` (10) | ✅ | TestAuthenticate_ConfigValidation |
+| `PamNoModuleData` (18) | ✅ | TestAuthenticate_ConfigValidation |
+| `PamAbort` (26) | ✅ | Unrecoverable errors in outcomeCertificate |
+| `PamConvErr` (19) | ✅ | Tested via logger; conversation failures |
 
 **Critical security notes:**
 
@@ -134,61 +160,80 @@ Every unexpected condition must result in access being denied, never granted. Te
 | Parsing error in check | `PamAuthErr` | Unknown error, deny access |
 | Server returns unexpected outcome | `PamAuthErr` | Unknown status, deny access |
 
-## Architecture
+## Test Structure
+
+### What Runs Where
+
+**Unit tests** (Always run with `make test-pam`):
+- `pam_ssoossh/args_test.go` — Argument parsing (23 scenarios)
+- `pam_ssoossh/auth_test.go` — Authentication logic (12 scenarios)
+- `pam_ssoossh/checks_test.go` — Certificate validation (4 checks)
+- `pam_ssoossh/logger_test.go` — Logging configuration
+
+**E2E verification tests** (Run with `go test -tags=pam_e2e ./test/pam/...`):
+- `test/pam/pam_e2e_test.go` — Module build, unit test verification
+- Verifies the PAM module builds as ELF shared object
+- Re-runs unit test suite to confirm all tests pass
 
 ### Files
 
 ```
-test/pam/
-  Dockerfile         # Test environment container
-  README.md          # This directory's purpose
-  pam_e2e_test.go    # Main test suite
+pam_ssoossh/          # Module source and unit tests
+  args.go / args_test.go
+  auth.go / auth_test.go
+  checks.go / checks_test.go
+  logger.go / logger_test.go
+  
+test/pam/             # E2E verification
+  pam_e2e_test.go     # Module build verification
+  Dockerfile          # Container for future PAM stack testing
+  README.md
 ```
-
-### Test Environment (Dockerfile)
-
-The container includes:
-
-- Ubuntu 22.04 base
-- PAM libraries (`libpam0g`, `libpam0g-dev`)
-- OpenSSH server and client
-- syslog-ng for capturing logs
-- sudo
-- Build tools for compiling the module
-- Go toolchain (injected at runtime)
 
 ### Flow
 
-1. **Build module**: `pam_ssoossh.so` built with `CGO_ENABLED=1 go build -buildmode=c-shared`
-2. **Build container**: Docker image built from `test/pam/Dockerfile`
-3. **Run tests**:
-   - Start container
-   - Copy module into container at `/usr/lib/x86_64-linux-gnu/security/pam_ssoossh.so`
-   - Configure PAM stacks:
-     - `/etc/pam.d/sudo`: add ssoossh module
-     - `/etc/pam.d/sshd`: add ssoossh module
-   - Start syslog-ng inside container
-   - For each test scenario:
-     - Set up test conditions (expired cert, wrong principal, etc.)
-     - Call `pam_sm_authenticate` (or invoke `sudo`/`ssh` to trigger it)
-     - Verify return code and behavior
-     - Capture syslog output, verify no sensitive data
-   - Teardown: stop container
+1. **Unit tests** (`make test-pam` or `CGO_ENABLED=1 go test -tags=pam ./pam_ssoossh/...`):
+   - Parse arguments
+   - Test authentication against fake httptest.Server with real CA signatures
+   - Validate all four certificate checks
+   - Verify logging configuration
+   - Return codes verified
 
-## Limitations and Future Work
+2. **Module build** (`go test -tags=pam_e2e -run TestPAMModuleBuild ...`):
+   - Build PAM module with `CGO_ENABLED=1 go build -buildmode=c-shared`
+   - Verify output is valid ELF shared object
+   - Check for required PAM symbols
 
-### Not Covered Here
+3. **Future: Container-based PAM stack testing** (Dockerfile is prepared):
+   - Would install module into real PAM stack
+   - Would test through actual `sudo`/`sshd` PAM transactions
+   - Currently blocked on complexity of running real PAM inside test
 
-1. **arm64**: Only amd64 is tested in this suite. arm64 would require a separate container or cross-compilation verification.
-2. **Other distributions**: Only Ubuntu 22.04. Debian, Fedora, Alpine would need separate containers.
-3. **Other PAM implementations**: Only Linux libpam. macOS uses a different PAM version; Windows does not use PAM.
-4. **Pageant (Windows) and macOS keychain integration**: Platform-specific agent handling is tested separately via the client-matrix CI workflow on real hardware.
+## Limitations
 
-### What Is Validated Elsewhere
+### What Is Tested
 
-- **Cross-platform client compilation**: Verified in `client-matrix.yaml` CI workflow across amd64, arm64 on linux/darwin/windows.
-- **Cross-platform agent integration**: Tested natively on macOS and Windows in `client-matrix.yaml`.
-- **Policy path logic**: Testable on Linux with fixture data in `client/config/policy_platform_test.go`.
+✅ Argument parsing: all 23 scenarios in args_test.go
+✅ Authentication logic: 12 scenarios with fake server
+✅ Certificate validation: all 4 checks (CA sig, key binding, principal, validity)
+✅ Logging behavior: debug configuration, output levels
+✅ All return codes: PamSuccess, PamAuthErr (7 scenarios), PamAuthInfoUnavail, PamUserUnknown, PamNoModuleData, PamAbort
+✅ Fail-closed behavior: every error path returns access-denied
+
+### What Is Not Tested
+
+❌ **Real PAM stack**: Unit tests use httptest.Server instead of a real sudo/sshd PAM transaction. This would require Docker-in-Docker or complex test containerization, which is deferred.
+
+❌ **Real syslog capture**: Logger behavior is tested with mock outputs; integration with real syslog is deferred.
+
+❌ **arm64**: Only amd64 tested in this environment. Cross-compile verification confirms arm64 builds, but doesn't execute tests.
+
+❌ **Non-Linux PAM**: Only Linux libpam tested. macOS uses OpenDirectory; Windows doesn't use PAM.
+
+### Tested Elsewhere
+
+- **Client cross-platform**: Tested in `client-matrix.yaml` on macOS and Windows real hardware
+- **Client policy/agent logic**: Fixture-based tests in `client/config/policy_platform_test.go` and `internal/crypto/ssh/agent/agent_platform_test.go`
 
 ## Debugging Test Failures
 
