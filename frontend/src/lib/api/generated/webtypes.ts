@@ -111,6 +111,55 @@ export interface CertificateResponse {
 	expires_at: string;
 }
 /**
+ * EffectiveConfigResponse is the auditor view of the server's effective
+ * configuration, with sensitive fields redacted. It shows what policy is
+ * actually in effect, useful for debugging and audit trails. The CA private
+ * key, client secret, cookie signing key, and database connection string
+ * (which may contain credentials) are redacted; other fields are included to
+ * give a complete operational picture.
+ */
+export interface EffectiveConfigResponse {
+	/**
+	 * Server connection and TLS settings
+	 */
+	server_name: string;
+	port: number /* int */;
+	is_https: boolean;
+	/**
+	 * Database
+	 */
+	db_provider: string;
+	/**
+	 * OAuth/OIDC
+	 */
+	provider_url: string;
+	/**
+	 * Admin authorization
+	 */
+	admin_require_group?: string;
+	admin_auditor_group?: string;
+	admin_ssh_server_admin_group?: string;
+	/**
+	 * Logging configuration
+	 */
+	logging_level: string;
+	/**
+	 * Certificate options
+	 */
+	cert_user_valid_duration: string;
+	cert_user_require_group?: string;
+	cert_user_extensions: string[];
+	cert_service_valid_duration: string;
+	cert_service_require_group?: string;
+	cert_service_extensions: string[];
+	cert_host_valid_duration: string;
+	cert_host_require_group?: string;
+	cert_pam_valid_duration: string;
+	cert_pam_require_group?: string;
+	cert_request_ttl: string;
+	cert_signing_timeout: string;
+}
+/**
  * CertificateListResponse is the data payload for the cursor-paginated
  * certificate list endpoint. Certificates are ordered newest first.
  * NextCursor is the ID of the last certificate in this page, to be passed
