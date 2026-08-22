@@ -169,46 +169,37 @@ what remains is mostly transport.
 
 Remaining, in order:
 
-1. **NATS transport with queue groups.** The core of the work. See below.
-2. **Startup validation:** require an explicit `http.cookie_key` when
-   multi-instance is declared, and document idempotency as a requirement
-   for every scheduled job.
+~~1. **NATS transport with queue groups.**~~ **Done (2026-08-22).**
+   `server/pubsub.New` branches on `config.Backend` and uses either gochannel
+   or watermill-nats with queue groups. See below for details.
+~~2. **Startup validation.**~~ **Done.** `NewConfig` validates that
+   `MultiInstance=true` requires an explicit `http.cookie_key`, and
+   `PubSubConfig.Validate()` requires mTLS credentials when `Backend=nats`.
 
-### The NATS step, broken down
+### The NATS implementation (completed 2026-08-22)
 
-`server/pubsub.New` hardcodes `gochannel.NewGoChannel` and returns a
-publisher/subscriber pair plus a router. Everything downstream is written
-against watermill's `message.Publisher` / `message.Subscriber` interfaces,
-so the blast radius is that constructor and its configuration.
+`server/pubsub.New` now accepts a `*config.PubSubConfig` and branches on
+`Backend`. Watermill's `message.Publisher`/`message.Subscriber` interfaces
+let both transports coexist without changing handlers.
 
-1. **Config.** A `pubsub:` section selecting the backend (`gochannel`
-   default, `nats`), the server URL, and mTLS material. Validate at startup
-   the same way `http` and `cert_options` now are: a NATS backend without
-   credentials should fail to boot, not fail on first approval.
-2. **The constructor.** `watermill-nats/v2` (v2.2.0, 2026-05-15) provides
-   the adapter. Keep `New`'s signature and return type; branch inside it.
-   The router, its middleware, and `CloseTimeout` are transport-independent
-   and should not be duplicated per backend.
-3. **Queue groups — the part that is easy to get wrong.** `certrequest.sign`
-   and `certrequest.signed` must be consumed *once* across the fleet, not
-   once per instance: N instances each running a signer and a listener
-   would otherwise produce N certificates and N audit rows from one
-   approval. That is a property of how the subscription is created, so it
-   belongs in the NATS constructor, not in the handlers. `certrequest.wait.<id>`
-   is the opposite case and wants ordinary delivery — the per-request
-   subject already scopes it to the one instance that cares.
-4. **Durability for the sign queue.** `gochannel.Config.Persistent` is
-   deliberately false today, and its comment explains why that is safe *in
-   a single process*: the signer subscribes at boot, before anything can
-   publish. Once the signer can restart independently, that guarantee is
-   gone and redelivery becomes a JetStream ack/redelivery concern. Decide
-   this deliberately rather than inheriting the gochannel default.
-5. **Declare multi-instance explicitly.** See Open questions — inferring it
-   from NATS being configured conflates transport with topology, since a
-   single instance might use NATS purely to isolate the signer.
-
-Step 3 is the one to write a test for first: it is silent when wrong, and
-what it produces is duplicate certificates.
+1. ~~**Config.**~~ **Done.** `server/config/types_pubsub.go` defines
+   `PubSubConfig` with backend selection and mTLS material. `Validate()`
+   enforces credentials at startup. Defaults are in `server/config/_defaults.yaml`.
+2. ~~**The constructor.**~~ **Done.** `server/pubsub.New()` branches on
+   `Backend` and calls either `newGoChannel()` or `newNATS()`. Both build a
+   shared `message.Router` with the same middleware and `CloseTimeout`.
+3. ~~**Queue groups.**~~ **Done.** `subjectCalculator()` derives queue groups
+   from topic names: `certrequest.sign` → "signer", `certrequest.signed` →
+   "signed-listeners", and `certrequest.wait.*` → empty (fan-out).
+4. ~~**Durability for the sign queue.**~~ **Done.** `JetStream.Disabled = true`
+   for NATS core (at-most-once). A dropped job costs a full `RequestTTL` wait,
+   acceptable for interactive approval. See `server/pubsub/pubsub.go` for
+   documentation of this choice.
+5. ~~**Declare multi-instance explicitly.**~~ **Done.** Added explicit
+   `multi_instance` config field. Checked in `NewConfig`: if true, requires
+   explicit `http.cookie_key`. Avoids conflating transport (NATS) with
+   topology (multi-instance); a single instance may use NATS to isolate the
+   signer into a separate process (see docs/signer-split-deferred.md).
 
 ## Verification
 
@@ -229,12 +220,13 @@ Beyond that:
 
 ## Open questions
 
-- **How is "multi-instance" declared?** Several checks above want to behave
-  differently when it's expected (fail on missing `cookie_key`, require a
-  bounded sweep). Options: infer it from NATS being configured, or an
-  explicit setting. Inferring is fewer knobs but conflates transport choice
-  with deployment topology — a single instance might reasonably use NATS to
-  isolate the signer.
+- ~~**How is "multi-instance" declared?**~~ **Resolved (2026-08-22):** Explicit
+  `multi_instance` config field. Avoids conflating transport choice (NATS can
+  be used by a single instance to isolate the signer, per docs/signer-split-deferred.md)
+  with deployment topology. When `multi_instance=true`, `http.cookie_key` must
+  be explicitly set (see startup validation above). This separation lets
+  operators choose NATS for signer isolation without declaring multi-instance
+  topology.
 - ~~**Is the certificate acceptable on the wire in the wake message?**~~ **Resolved:** Yes, certificate on the wire is fine. It is already published that way and is public data. Multi-instance crosses the network but that is mTLS/authorization (NATS subject layout per `docs/signer-split-deferred.md`), not a new exposure in kind.
 - **Does the 410 path get noisier?** With instances restarting behind a load
   balancer, in-flight deliveries are lost more often than in a single-process

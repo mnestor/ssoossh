@@ -159,6 +159,37 @@
 # traces: false
 # metrics: false
 
+# multi_instance - declares this is a multi-instance deployment. Required to
+# enable the following startup checks: http.cookie_key must be explicitly set
+# (not per-process random), and certain features adapt for cross-instance
+# message delivery. See deployment.md section 7 for multi-instance setup.
+# Default: false (single instance, gochannel in-process broker).
+#
+# multi_instance: false
+
+# ----------------------------------------------------------------------
+# pubsub - message broker configuration (certificate pipeline, approval flow).
+# Default: gochannel (in-process). Set backend: nats for multi-instance.
+# See deployment.md section 7 for NATS setup and mTLS requirements.
+# ----------------------------------------------------------------------
+# pubsub:
+  ## Backend broker: "gochannel" (default, in-process) or "nats" (multi-instance)
+  # backend: gochannel
+
+  ## NATS configuration (only used when backend: nats)
+  # nats:
+    ## NATS server URL, e.g. "nats://nats.example.com:4222"
+    # url: ""
+
+    ## mTLS client certificate (PEM format). Required when url is set.
+    # cert_file: "/path/to/client-cert.pem"
+
+    ## mTLS client certificate key (PEM format). Required when url is set.
+    # key_file: "/path/to/client-key.pem"
+
+    ## CA certificate to verify NATS server (PEM format). Required when url is set.
+    # ca_file: "/path/to/ca-cert.pem"
+
 # ----------------------------------------------------------------------
 # db - database connection, query logging, and connection retry behavior.
 # ----------------------------------------------------------------------
