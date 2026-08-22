@@ -33,9 +33,9 @@ type fakeCertificateService struct {
 	gotSubject string
 }
 
-func (f *fakeCertificateService) ListForIdentity(_ context.Context, identity *service.Identity) ([]model.Certificate, error) {
+func (f *fakeCertificateService) ListForIdentity(_ context.Context, identity *service.Identity, after *string, limit int) ([]model.Certificate, *string, error) {
 	f.gotSubject = identity.Subject
-	return f.certs, f.err
+	return f.certs, nil, f.err
 }
 
 // identityMiddleware stands in for SessionAuthMiddleware, putting identity
@@ -172,14 +172,14 @@ func TestCertificateListHandler_ShouldReturnTheCallersCertificates(t *testing.T)
 		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 
-	var got []webtypes.CertificateResponse
+	var got webtypes.CertificateListResponse
 	decodeEnvelope(t, w.Body.Bytes(), &got)
 
-	if len(got) != 1 {
-		t.Fatalf("got %d certificates, want 1", len(got))
+	if len(got.Certificates) != 1 {
+		t.Fatalf("got %d certificates, want 1", len(got.Certificates))
 	}
-	if got[0].SerialNumber != 42 {
-		t.Errorf("got serial %d, want 42", got[0].SerialNumber)
+	if got.Certificates[0].SerialNumber != 42 {
+		t.Errorf("got serial %d, want 42", got.Certificates[0].SerialNumber)
 	}
 
 	// The scoping subject must come from the session, not from anything the
@@ -202,8 +202,8 @@ func TestCertificateListHandler_ShouldRenderNoCertificatesAsAnEmptyArray(t *test
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs", nil))
 
-	if got := w.Body.String(); !strings.Contains(got, `"data":[]`) {
-		t.Errorf("expected data to render as [], got %s", got)
+	if got := w.Body.String(); !strings.Contains(got, `"certificates":[]`) {
+		t.Errorf("expected data to render with empty certificates array, got %s", got)
 	}
 }
 

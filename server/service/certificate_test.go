@@ -3,7 +3,7 @@ package service
 // Test methodology: unit tests against a real in-memory sqlite *gorm.DB,
 // same as certrequest_test.go. These cover the scoping rule, which is the
 // only interesting behavior here — a user must see their own certificates
-// and nobody else's.
+// and nobody else's. Pagination tests cover the cursor-based seek logic.
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func newTestCertificateService(t *testing.T, svc *CertRequestService) *Certifica
 
 // seedCertificate inserts an issued-certificate audit row owned by userID
 // (nil for none).
-func seedCertificate(t *testing.T, svc *CertRequestService, userID *string, serial uint64, issuedAt time.Time) {
+func seedCertificate(t *testing.T, svc *CertRequestService, userID *string, serial uint64, issuedAt time.Time) *model.Certificate {
 	t.Helper()
 
 	cert := model.Certificate{
@@ -42,6 +42,7 @@ func seedCertificate(t *testing.T, svc *CertRequestService, userID *string, seri
 	if err := svc.db.Create(&cert).Error; err != nil {
 		t.Fatalf("failed to seed certificate: %v", err)
 	}
+	return &cert
 }
 
 // TestCertificateService_ShouldReturnOnlyTheCallersCertificates is the
@@ -62,7 +63,7 @@ func TestCertificateService_ShouldReturnOnlyTheCallersCertificates(t *testing.T)
 	seedCertificate(t, reqSvc, &bobID, 3, now)
 	seedCertificate(t, reqSvc, nil, 4, now)
 
-	got, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"})
+	got, nextCursor, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 100)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -79,6 +80,10 @@ func TestCertificateService_ShouldReturnOnlyTheCallersCertificates(t *testing.T)
 	if got[0].SerialNumber != 2 {
 		t.Errorf("got serial %d first, want the newest (2)", got[0].SerialNumber)
 	}
+	// No next page with limit=100 and only 2 results.
+	if nextCursor != nil {
+		t.Errorf("got nextCursor = %v, want nil", nextCursor)
+	}
 }
 
 // TestCertificateService_ShouldSurfaceAGenericDBErrorOnUserLookup covers
@@ -91,7 +96,7 @@ func TestCertificateService_ShouldSurfaceAGenericDBErrorOnUserLookup(t *testing.
 	svc := newTestCertificateService(t, reqSvc)
 	closeUnderlyingDB(t, reqSvc.db)
 
-	if _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}); err == nil {
+	if _, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 25); err == nil {
 		t.Error("ListForIdentity() error = nil, want error")
 	}
 }
@@ -112,7 +117,7 @@ func TestCertificateService_ShouldSurfaceAGenericDBErrorListingCertificates(t *t
 		t.Fatalf("failed to drop the certificates table: %v", err)
 	}
 
-	if _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}); err == nil {
+	if _, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 25); err == nil {
 		t.Error("ListForIdentity() error = nil, want error")
 	}
 }
@@ -126,11 +131,268 @@ func TestCertificateService_ShouldReturnNothingForAnIdentityWithNoUserRecord(t *
 	reqSvc := newTestCertRequestService(t, time.Hour)
 	svc := newTestCertificateService(t, reqSvc)
 
-	got, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-ghost"})
+	got, nextCursor, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-ghost"}, nil, 25)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(got) != 0 {
 		t.Errorf("got %d certificates, want none", len(got))
+	}
+	if nextCursor != nil {
+		t.Errorf("got nextCursor = %v, want nil", nextCursor)
+	}
+}
+
+// TestCertificateService_PaginationBasics tests basic cursor pagination:
+// empty result, single page (no next cursor), and exact page boundary.
+func TestCertificateService_PaginationBasics(t *testing.T) {
+	tests := []struct {
+		name           string
+		totalCerts     int
+		pageSize       int
+		wantFirstPage  int
+		wantNextCursor bool
+	}{
+		{
+			name:           "empty result",
+			totalCerts:     0,
+			pageSize:       25,
+			wantFirstPage:  0,
+			wantNextCursor: false,
+		},
+		{
+			name:           "single page (limit larger than results)",
+			totalCerts:     10,
+			pageSize:       25,
+			wantFirstPage:  10,
+			wantNextCursor: false,
+		},
+		{
+			name:           "exact page boundary (results exactly equal to page size)",
+			totalCerts:     25,
+			pageSize:       25,
+			wantFirstPage:  25,
+			wantNextCursor: false,
+		},
+		{
+			name:           "more results than first page",
+			totalCerts:     26,
+			pageSize:       25,
+			wantFirstPage:  25,
+			wantNextCursor: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			reqSvc := newTestCertRequestService(t, time.Hour)
+			svc := newTestCertificateService(t, reqSvc)
+
+			userID := seedUser(t, reqSvc.db, "sub-alice")
+
+			// Seed certificates with slightly different issued_at times to ensure stable ordering.
+			now := time.Now()
+			for i := 0; i < tt.totalCerts; i++ {
+				seedCertificate(t, reqSvc, &userID, uint64(i), now.Add(-time.Duration(i)*time.Second))
+			}
+
+			got, nextCursor, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, tt.pageSize)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if len(got) != tt.wantFirstPage {
+				t.Errorf("got %d certificates, want %d", len(got), tt.wantFirstPage)
+			}
+
+			hasNext := nextCursor != nil
+			if hasNext != tt.wantNextCursor {
+				t.Errorf("got nextCursor = %v, want nextCursor present = %v", nextCursor, tt.wantNextCursor)
+			}
+		})
+	}
+}
+
+// TestCertificateService_CursorPagination tests that cursor-based pagination
+// correctly returns the next page of results and maintains stable ordering.
+func TestCertificateService_CursorPagination(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+
+	userID := seedUser(t, reqSvc.db, "sub-alice")
+
+	// Seed 10 certificates with slightly different issued_at times.
+	now := time.Now()
+	for i := 0; i < 10; i++ {
+		seedCertificate(t, reqSvc, &userID, uint64(i), now.Add(-time.Duration(i)*time.Second))
+	}
+
+	// Get first page (5 results).
+	page1, cursor1, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 5)
+	if err != nil {
+		t.Fatalf("unexpected error on page 1: %v", err)
+	}
+	if len(page1) != 5 {
+		t.Fatalf("got %d results on page 1, want 5", len(page1))
+	}
+	if cursor1 == nil {
+		t.Errorf("got nextCursor = nil on page 1, want a cursor")
+	}
+
+	// Verify page 1 is ordered newest first (serials 0-4, which have issued_at from most recent to least).
+	for i, cert := range page1 {
+		if cert.SerialNumber != uint64(i) {
+			t.Errorf("page 1 result %d has serial %d, want %d", i, cert.SerialNumber, i)
+		}
+	}
+
+	// Get second page using cursor.
+	page2, cursor2, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, cursor1, 5)
+	if err != nil {
+		t.Fatalf("unexpected error on page 2: %v", err)
+	}
+	if len(page2) != 5 {
+		t.Fatalf("got %d results on page 2, want 5", len(page2))
+	}
+	if cursor2 != nil {
+		t.Errorf("got nextCursor = %v on page 2, want nil (last page)", cursor2)
+	}
+
+	// Verify page 2 is ordered newest first (serials 5-9).
+	for i, cert := range page2 {
+		expectedSerial := uint64(5 + i)
+		if cert.SerialNumber != expectedSerial {
+			t.Errorf("page 2 result %d has serial %d, want %d", i, cert.SerialNumber, expectedSerial)
+		}
+	}
+
+	// Verify no overlap between pages.
+	page1Serials := make(map[uint64]bool)
+	for _, cert := range page1 {
+		page1Serials[cert.SerialNumber] = true
+	}
+	for _, cert := range page2 {
+		if page1Serials[cert.SerialNumber] {
+			t.Errorf("certificate with serial %d appears on both pages", cert.SerialNumber)
+		}
+	}
+}
+
+// TestCertificateService_CursorWithConcurrentIssuance tests that the seek
+// predicate correctly handles multiple certificates with the same issued_at.
+func TestCertificateService_CursorWithConcurrentIssuance(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+
+	userID := seedUser(t, reqSvc.db, "sub-alice")
+
+	// Seed 6 certificates: 3 with time T, 3 with time T-1.
+	// This tests the (issued_at, id DESC) ordering when multiple certs share issued_at.
+	now := time.Now()
+	sharedTime1 := now
+	sharedTime2 := now.Add(-time.Second)
+
+	var certs []*model.Certificate
+	certs = append(certs, seedCertificate(t, reqSvc, &userID, 1, sharedTime1))
+	certs = append(certs, seedCertificate(t, reqSvc, &userID, 2, sharedTime1))
+	certs = append(certs, seedCertificate(t, reqSvc, &userID, 3, sharedTime1))
+	certs = append(certs, seedCertificate(t, reqSvc, &userID, 4, sharedTime2))
+	certs = append(certs, seedCertificate(t, reqSvc, &userID, 5, sharedTime2))
+	certs = append(certs, seedCertificate(t, reqSvc, &userID, 6, sharedTime2))
+
+	// Get first page (3 results) — should be certs at sharedTime1.
+	page1, cursor1, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 3)
+	if err != nil {
+		t.Fatalf("unexpected error on page 1: %v", err)
+	}
+	if len(page1) != 3 {
+		t.Fatalf("got %d results on page 1, want 3", len(page1))
+	}
+
+	// Verify page 1 contains the newer certs (1, 2, 3).
+	for _, cert := range page1 {
+		if cert.SerialNumber > 3 {
+			t.Errorf("page 1 contains cert with serial %d, want only 1-3", cert.SerialNumber)
+		}
+	}
+
+	if cursor1 == nil {
+		t.Errorf("got nextCursor = nil on page 1, want a cursor")
+	}
+
+	// Get second page using cursor — should be certs 4, 5, 6.
+	page2, cursor2, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, cursor1, 3)
+	if err != nil {
+		t.Fatalf("unexpected error on page 2: %v", err)
+	}
+	if len(page2) != 3 {
+		t.Fatalf("got %d results on page 2, want 3", len(page2))
+	}
+	if cursor2 != nil {
+		t.Errorf("got nextCursor = %v on page 2, want nil (last page)", cursor2)
+	}
+
+	// Verify page 2 contains the older certs (4, 5, 6).
+	for _, cert := range page2 {
+		if cert.SerialNumber < 4 {
+			t.Errorf("page 2 contains cert with serial %d, want only 4-6", cert.SerialNumber)
+		}
+	}
+}
+
+// TestCertificateService_InvalidCursor tests that a nonexistent or
+// wrong-user cursor returns an error.
+func TestCertificateService_InvalidCursor(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+
+	userID := seedUser(t, reqSvc.db, "sub-alice")
+	bobID := seedUser(t, reqSvc.db, "sub-bob")
+
+	now := time.Now()
+	aliceCert := seedCertificate(t, reqSvc, &userID, 1, now)
+	bobCert := seedCertificate(t, reqSvc, &bobID, 2, now)
+
+	tests := []struct {
+		name    string
+		cursor  string
+		user    string
+		wantErr bool
+	}{
+		{
+			name:    "nonexistent cursor",
+			cursor:  uuid.New().String(),
+			user:    "sub-alice",
+			wantErr: true,
+		},
+		{
+			name:    "cursor belongs to different user",
+			cursor:  bobCert.ID,
+			user:    "sub-alice",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: tt.user}, &tt.cursor, 25)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("got error = %v, want error = %v", err, tt.wantErr)
+			}
+		})
+	}
+
+	// Sanity check: alice's own certificate as cursor should work.
+	_, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, &aliceCert.ID, 25)
+	if err != nil {
+		t.Errorf("got error with alice's own certificate as cursor: %v", err)
 	}
 }

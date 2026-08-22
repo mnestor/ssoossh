@@ -141,8 +141,9 @@ type RequestDetailEnvelope struct {
 	Error *string                        `json:"error"`
 }
 
-// CertificateListEnvelope is GET /api/certs's body.
+// CertificateListEnvelope is GET /api/certs's body. Uses cursor-based
+// pagination with the optional "after" and "limit" query parameters.
 type CertificateListEnvelope struct {
-	Data  []webtypes.CertificateResponse `json:"data" validate:"required"`
-	Error *string                        `json:"error"`
+	Data  webtypes.CertificateListResponse `json:"data" validate:"required"`
+	Error *string                          `json:"error"`
 }

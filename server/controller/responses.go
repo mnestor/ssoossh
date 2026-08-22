@@ -158,3 +158,12 @@ func newCertificateResponses(certs []model.Certificate) []webtypes.CertificateRe
 	}
 	return out
 }
+
+// newCertificateListResponse converts rows and cursor to the paginated
+// wire shape.
+func newCertificateListResponse(certs []model.Certificate, nextCursor *string) webtypes.CertificateListResponse {
+	return webtypes.CertificateListResponse{
+		Certificates: newCertificateResponses(certs),
+		NextCursor:   nextCursor,
+	}
+}
