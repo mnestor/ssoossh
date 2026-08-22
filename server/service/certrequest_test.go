@@ -525,10 +525,18 @@ func TestCertRequestService_Wait_ShouldWakeOnTTLTimerFiring(t *testing.T) {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
 
-	// Call Wait() immediately (request is fresh, not yet expired from the DB's
-	// perspective). Wait() will calculate the TTL timer and block on it,
-	// since there are no pending approvals or pub/sub messages.
-	startTime := time.Now()
+	// The TTL deadline is measured from the request's CreatedAt AS STORED,
+	// not from this test's own clock. The database truncates sub-millisecond
+	// precision, so the timer legitimately fires up to ~1ms before
+	// wall-clock-creation + ttl. Asserting elapsed against time.Now() taken
+	// here failed on a fast machine for exactly that reason (observed:
+	// 499.4ms elapsed against a 500ms TTL). Read the stored CreatedAt back
+	// and assert against the deadline the system actually computes.
+	var stored model.CertificateRequest
+	if err := svc.db.First(&stored, "id = ?", requestID).Error; err != nil {
+		t.Fatalf("failed to read back the created request: %v", err)
+	}
+	deadline := stored.CreatedAt.Add(ttl)
 
 	// Bounded only so a broken timer cannot hang the suite forever. The
 	// ceiling is deliberately generous rather than tight to the TTL: under
@@ -540,7 +548,7 @@ func TestCertRequestService_Wait_ShouldWakeOnTTLTimerFiring(t *testing.T) {
 	defer cancel()
 
 	status, _, _, err := svc.Wait(ctx, requestID)
-	elapsed := time.Since(startTime)
+	returnedAt := time.Now()
 
 	// The key assertion: the timer fired and Wait woke up, returning StatusExpired,
 	// roughly when the TTL should expire (at least 50ms, since that's the TTL).
@@ -550,8 +558,9 @@ func TestCertRequestService_Wait_ShouldWakeOnTTLTimerFiring(t *testing.T) {
 	if status != model.CertificateRequestStatusExpired {
 		t.Errorf("got status %q, want %q", status, model.CertificateRequestStatusExpired)
 	}
-	if elapsed < ttl {
-		t.Errorf("Wait returned in %v, but the TTL timer should have taken at least %v to fire", elapsed, ttl)
+	if returnedAt.Before(deadline) {
+		t.Errorf("Wait returned at %v, before the TTL deadline %v (stored CreatedAt %v + %v)",
+			returnedAt, deadline, stored.CreatedAt, ttl)
 	}
 }
 
@@ -1393,10 +1402,6 @@ func TestApprove_ShouldRejectDuplicateBindingAttempt(t *testing.T) {
 		t.Errorf("expected ForbiddenError, got %v", err)
 	}
 }
-
-
-
-
 
 // TestCertRequestService_Detail_ShouldBindOnFirstView is the reason Detail
 // binds at all: the approval page loads before anyone decides, so a request
