@@ -810,57 +810,48 @@ func (s *CertRequestService) Wait(ctx context.Context, requestID string) (status
 		}
 
 		// Block until an incoming message, context cancellation, or request expiration.
-		if err := s.waitForUpdate(ctx, messages, expireC); err != nil {
+		msg, err := s.waitForUpdate(ctx, messages, expireC)
+		if err != nil {
 			return "", "", "", err
+		}
+
+		// A wake message may carry the outcome directly. Trust it only after
+		// tryHandleWakeMessage confirms the status against the database, which
+		// stays the authority for the approval decision; the message is a
+		// wakeup plus an optimization that saves a second round-trip. This is
+		// what lets an SSE client on instance B receive a certificate issued
+		// on instance A. Anything unverified falls through and re-reads the DB.
+		if msg != nil {
+			if status, certificate, code, handled := s.tryHandleWakeMessage(ctx, requestID, msg); handled {
+				return status, certificate, code, nil
+			}
 		}
 	}
 }
 
 // waitForUpdate blocks until an incoming message, context cancellation, or
-// request expiration. expireC may be nil (no TTL configured), in which case
-// the expiration case is not selected. Returns nil if a message arrived or
-// the timer fired (allowing Wait's loop to continue), or ctx.Err() if the
-// context was cancelled.
-func (s *CertRequestService) waitForUpdate(ctx context.Context, messages <-chan *message.Message, expireC <-chan time.Time) error {
-	if expireC == nil {
-		select {
-		case msg, ok := <-messages:
-			if ok {
-				msg.Ack()
-
-				// Try to decode and use the wake message payload, subject to
-				// DB verification (see tryHandleWakeMessage). If it carries a
-				// terminal outcome verified in the database, return it directly
-				// without another DB round-trip. This optimizes multi-instance
-				// delivery: an SSE client on instance B gets a certificate
-				// issued on instance A via the message, but authorization is
-				// confirmed through the database (the authority) before the
-				// certificate is handed over.
-				if status, certificate, code, handled := s.tryHandleWakeMessage(ctx, requestID, msg); handled {
-					return status, certificate, code, nil
-				}
-
-				// Malformed payload, non-terminal status, or DB verification
-				// failed — fall through and re-read the DB. The message is a
-				// signal that something may have changed; the DB is the
-				// authority for approval decisions.
-			}
-		case <-ctx.Done():
-			return ctx.Err()
+// request expiration. expireC may be nil (no TTL configured); receiving from
+// a nil channel blocks forever, so that case simply never fires and no
+// separate code path is needed for it.
+//
+// It returns the received message so the caller can inspect its payload with
+// requestID in scope, nil when the expiry timer fired or the subscription
+// closed, or ctx.Err() if the context was cancelled.
+func (s *CertRequestService) waitForUpdate(ctx context.Context, messages <-chan *message.Message, expireC <-chan time.Time) (*message.Message, error) {
+	select {
+	case msg, ok := <-messages:
+		if !ok {
+			return nil, nil
 		}
-	} else {
-		select {
-		case msg, ok := <-messages:
-			if ok {
-				msg.Ack()
-			}
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-expireC:
-			// Request may have expired; loop continues to reconcileStatus
-		}
+		msg.Ack()
+		return msg, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-expireC:
+		// Request may have expired; the caller loops back to reconcileStatus,
+		// which applies the TTL cutoff and marks it expired.
+		return nil, nil
 	}
-	return nil
 }
 
 // lookupRequest fetches requestID, translating a not-found row into

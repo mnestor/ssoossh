@@ -331,11 +331,23 @@ func applyPoolConfig(conn *sql.DB, cfg poolConfig, wasPreConfigured bool) {
 	// If onConnFn already configured MaxOpenConns (in-memory SQLite case),
 	// don't override it. Otherwise apply the configured value, or leave
 	// Go's default if none is specified (0).
-	if !wasPreConfigured && cfg.maxOpenConns > 0 {
+	// In-memory SQLite is the one case where the pool is not a performance
+	// knob: the single live connection IS the database. Letting the pool
+	// close it discards every table, and the next query silently opens a
+	// fresh empty database. onConnFn has already pinned MaxOpenConns(1) for
+	// that case, so leave the whole pool alone here.
+	if wasPreConfigured {
+		return
+	}
+
+	if cfg.maxOpenConns > 0 {
 		conn.SetMaxOpenConns(cfg.maxOpenConns)
 	}
 
-	if cfg.maxIdleConns >= 0 {
+	// Guard on > 0, not >= 0: an unset config is zero, and SetMaxIdleConns(0)
+	// means "retain no idle connections", which is a behaviour change rather
+	// than the intended "leave Go's default alone".
+	if cfg.maxIdleConns > 0 {
 		conn.SetMaxIdleConns(cfg.maxIdleConns)
 	}
 
