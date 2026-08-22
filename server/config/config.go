@@ -86,5 +86,17 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		return nil, err
 	}
 
+	// Validate message-broker configuration before first use.
+	if err := c.PubSub.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Require an explicit cookie_key when multi-instance is enabled, so
+	// sessions don't break between instances. The default per-process
+	// random key would leave users logging out unexpectedly.
+	if c.MultiInstance && c.HTTP.CookieKey == "" {
+		return nil, fmt.Errorf("multi_instance is enabled but http.cookie_key is not set: set an explicit key or disable multi_instance")
+	}
+
 	return &c, nil
 }

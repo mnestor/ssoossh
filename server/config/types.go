@@ -18,6 +18,10 @@ type Config struct {
 	HTTP  HTTPSettings `mapstructure:"http"`
 	Queue QueueConfig  `mapstructure:"queue"`
 
+	// PubSub configures the message broker (gochannel in-process, or NATS
+	// for multi-instance deployments). See PubSubConfig for details.
+	PubSub PubSubConfig `mapstructure:"pubsub"`
+
 	// AuthConfig configures OAuth/OIDC authentication for the server. See
 	// OAuthConfig for details on provider URL, scopes, and field mapping
 	// from OIDC claims to ssoossh identity fields (username, groups).

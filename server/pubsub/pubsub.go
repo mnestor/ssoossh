@@ -1,10 +1,9 @@
 // Package pubsub provides ssoosshd's internal message-broker primitives,
 // built on Watermill (https://github.com/ThreeDotsLabs/watermill).
 //
-// gochannel (in-process, in-memory) only — no config-driven backend
-// selection. See docs/signing-pipeline.md for how the certificate pipeline
-// uses this, and docs/signer-split-deferred.md for where NATS support (and
-// the config surface to select it) eventually goes.
+// Supports two backends: gochannel (in-process, single instance) and NATS
+// (required for multi-instance deployments). See docs/signing-pipeline.md
+// for how the certificate pipeline uses this.
 package pubsub
 
 import (
@@ -17,6 +16,10 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/message/router/middleware"
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
+	natslib "github.com/ThreeDotsLabs/watermill-nats/v2/pkg/nats"
+	natsgo "github.com/nats-io/nats.go"
+
+	"github.com/mnestor/ssoossh/server/config"
 )
 
 // routerStartTimeout bounds how long Run's shutdown watcher waits for the
@@ -25,27 +28,54 @@ import (
 const routerStartTimeout = 5 * time.Second
 
 // PubSub holds ssoosshd's message-broker primitives: Publisher/Subscriber
-// (currently always backed by an in-process gochannel.GoChannel) and a
-// Router for the "start once, handle every message as it arrives" style
-// consumers later phases add (the signer and listener/resolver components
-// in docs/signing-pipeline.md). Router has no handlers
-// registered on it yet in this phase.
+// (backed by either gochannel for single-instance or NATS for multi-instance)
+// and a Router for the "start once, handle every message as it arrives" style
+// consumers (the signer and listener/resolver in docs/signing-pipeline.md).
 type PubSub struct {
 	Publisher  message.Publisher
 	Subscriber message.Subscriber
 	Router     *message.Router
 
-	channel *gochannel.GoChannel
+	// Backend-specific: only one of these is populated depending on config
+	channel         *gochannel.GoChannel
+	natsPublisher   *natslib.Publisher
+	natsSubscriber  *natslib.Subscriber
 }
 
-// New builds the gochannel-backed pub/sub pair and a Router ready for
-// handlers to be registered on it by later phases. It does not start the
-// Router — call Run for that, matching this codebase's existing
-// servicerunner.Service pattern (see server/bootstrap/bootstrap.go) for
-// long-running components.
-func New(logger *slog.Logger) (*PubSub, error) {
+// New builds a pub/sub pair and Router ready for handlers to be registered.
+// Branches on config.PubSub.Backend: "gochannel" (default, in-process) or
+// "nats" (multi-instance). Does not start the Router — call Run for that,
+// matching this codebase's servicerunner.Service pattern.
+func New(cfg *config.PubSubConfig, logger *slog.Logger) (*PubSub, error) {
 	wmLogger := watermill.NewSlogLogger(logger)
 
+	var pubsub *PubSub
+	var err error
+
+	backend := cfg.Backend
+	if backend == "" {
+		backend = config.PubSubBackendGoChannel
+	}
+
+	if backend == config.PubSubBackendNATS {
+		pubsub, err = newNATS(cfg, wmLogger, logger)
+	} else {
+		pubsub, err = newGoChannel(wmLogger)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// Router configuration is backend-independent
+	if err := pubsub.buildRouter(wmLogger); err != nil {
+		return nil, err
+	}
+
+	return pubsub, nil
+}
+
+// newGoChannel builds a gochannel-backed pub/sub pair.
+func newGoChannel(wmLogger watermill.LoggerAdapter) (*PubSub, error) {
 	channel := gochannel.NewGoChannel(gochannel.Config{
 		// Persistent deliberately left false. It looks tempting for the
 		// wake topic (a subscriber attaching slightly after a fast
@@ -82,13 +112,23 @@ func New(logger *slog.Logger) (*PubSub, error) {
 		Persistent: false,
 	}, wmLogger)
 
+	return &PubSub{
+		Publisher:  channel,
+		Subscriber: channel,
+		channel:    channel,
+	}, nil
+}
+
+// buildRouter creates and configures the message router with middleware.
+// This is transport-independent, used by both gochannel and NATS backends.
+func (p *PubSub) buildRouter(wmLogger watermill.LoggerAdapter) error {
 	// CloseTimeout bounds how long Close waits for in-flight handlers.
 	// Watermill's default is 30s, which overruns bootstrap's own 5s shutdown
 	// budget (see shutdownManager.Run) — so a wedged handler would blow past
 	// shutdown rather than being cut short by it.
 	router, err := message.NewRouter(message.RouterConfig{CloseTimeout: 3 * time.Second}, wmLogger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create watermill router: %w", err) // excluded from coverage: RouterConfig is a hardcoded valid value, Validate() can't fail on it, see exclude-from-coverage.txt
+		return fmt.Errorf("failed to create watermill router: %w", err) // excluded from coverage: RouterConfig is a hardcoded valid value, Validate() can't fail on it, see exclude-from-coverage.txt
 	}
 
 	// Order matters: the first middleware added is the outermost, so this is
@@ -107,12 +147,99 @@ func New(logger *slog.Logger) (*PubSub, error) {
 		Logger:          wmLogger,
 	}.Middleware)
 
+	p.Router = router
+	return nil
+}
+
+// newNATS builds NATS-backed publisher and subscriber with queue-group
+// semantics for competing consumers. Topics are mapped via a custom
+// SubjectCalculator that derives queue groups from topic names:
+// - "certrequest.sign" and "certrequest.signed" use queue groups to ensure
+//   only one instance processes each (competing consumer pattern)
+// - "certrequest.wait.*" topics use empty queue groups for fan-out to the
+//   one instance holding that request's SSE connection
+//
+// JetStream is disabled (Disabled: true) — only NATS core is used with
+// at-most-once delivery. A dropped job costs the client a full RequestTTL
+// wait before retrying, which is acceptable for the interactive approval
+// flow. See docs/multi-instance-safety-plan.md for durability reasoning.
+func newNATS(cfg *config.PubSubConfig, wmLogger watermill.LoggerAdapter, sLogger *slog.Logger) (*PubSub, error) {
+	// Create the publisher
+	pub, err := natslib.NewPublisher(
+		natslib.PublisherConfig{
+			URL: cfg.NATS.URL,
+			NatsOptions: []natsgo.Option{
+				natsgo.ClientCert(cfg.NATS.CertFile, cfg.NATS.KeyFile),
+				natsgo.RootCAs(cfg.NATS.CAFile),
+			},
+			Marshaler:        natslib.JSONMarshaler{},
+			SubjectCalculator: subjectCalculator,
+			JetStream: natslib.JetStreamConfig{
+				Disabled: true,
+			},
+		},
+		wmLogger,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create NATS publisher: %w", err)
+	}
+
+	// Create the subscriber with queue groups
+	sub, err := natslib.NewSubscriber(
+		natslib.SubscriberConfig{
+			URL: cfg.NATS.URL,
+			NatsOptions: []natsgo.Option{
+				natsgo.ClientCert(cfg.NATS.CertFile, cfg.NATS.KeyFile),
+				natsgo.RootCAs(cfg.NATS.CAFile),
+			},
+			QueueGroupPrefix: "ssoossh", // Prefix for deriving queue group names
+			Unmarshaler:      natslib.JSONMarshaler{},
+			SubjectCalculator: subjectCalculator,
+			SubscribersCount:  1,
+			CloseTimeout:     3 * time.Second,
+			AckWaitTimeout:   30 * time.Second,
+			SubscribeTimeout: 5 * time.Second,
+			JetStream: natslib.JetStreamConfig{
+				Disabled: true,
+			},
+		},
+		wmLogger,
+	)
+	if err != nil {
+		_ = pub.Close()
+		return nil, fmt.Errorf("failed to create NATS subscriber: %w", err)
+	}
+
+	sLogger.Info("NATS transport initialized", "url", cfg.NATS.URL)
+
 	return &PubSub{
-		Publisher:  channel,
-		Subscriber: channel,
-		Router:     router,
-		channel:    channel,
+		Publisher:      pub,
+		Subscriber:     sub,
+		natsPublisher:  pub,
+		natsSubscriber: sub,
 	}, nil
+}
+
+// subjectCalculator derives queue groups from topic names to implement
+// competing-consumer semantics for sign and signed-reply topics, and
+// fan-out semantics for per-request wake topics.
+func subjectCalculator(queueGroupPrefix, topic string) *natslib.SubjectDetail {
+	detail := &natslib.SubjectDetail{
+		Primary: topic,
+	}
+
+	// Certrequest.sign and certrequest.signed use queue groups so only one
+	// instance processes each job. Derive a stable queue group name from the
+	// topic. Certrequest.wait.* topics get no queue group (empty string),
+	// giving them ordinary fan-out semantics scoped to one instance.
+	switch topic {
+	case "certrequest.sign":
+		detail.QueueGroup = "signer"
+	case "certrequest.signed":
+		detail.QueueGroup = "signed-listeners"
+	}
+
+	return detail
 }
 
 // dropAfterRetries returns a middleware that acknowledges a message whose
@@ -177,16 +304,32 @@ func (p *PubSub) Run(ctx context.Context) error {
 	return p.Router.Run(ctx)
 }
 
-// Close shuts down the Router before the underlying gochannel, so any
-// in-flight handler gets a chance to finish before its transport goes
-// away. Matches servicerunner.Service's signature, for use with
-// bootstrap's shutdownManager.
+// Close shuts down the Router before the underlying transport (gochannel or
+// NATS), so any in-flight handler gets a chance to finish before its
+// transport goes away. Matches servicerunner.Service's signature, for use
+// with bootstrap's shutdownManager.
 func (p *PubSub) Close(context.Context) error {
 	if err := p.Router.Close(); err != nil {
-		return fmt.Errorf("failed to close watermill router: %w", err) // excluded from coverage: Router and channel are concrete types (not interfaces), so a failure can't be injected black-box; verified a double Close returns no error, see exclude-from-coverage.txt
+		return fmt.Errorf("failed to close watermill router: %w", err) // excluded from coverage: Router is a concrete type (not interfaces), so a failure can't be injected black-box; verified a double Close returns no error, see exclude-from-coverage.txt
 	}
-	if err := p.channel.Close(); err != nil {
-		return fmt.Errorf("failed to close gochannel pub/sub: %w", err) // excluded from coverage: same as above
+
+	if p.natsPublisher != nil {
+		if err := p.natsPublisher.Close(); err != nil {
+			return fmt.Errorf("failed to close NATS publisher: %w", err)
+		}
 	}
+
+	if p.natsSubscriber != nil {
+		if err := p.natsSubscriber.Close(); err != nil {
+			return fmt.Errorf("failed to close NATS subscriber: %w", err)
+		}
+	}
+
+	if p.channel != nil {
+		if err := p.channel.Close(); err != nil {
+			return fmt.Errorf("failed to close gochannel pub/sub: %w", err) // excluded from coverage: channel is a concrete type (not interfaces), so a failure can't be injected black-box; verified a double Close returns no error, see exclude-from-coverage.txt
+		}
+	}
+
 	return nil
 }

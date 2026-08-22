@@ -5,6 +5,7 @@ go 1.26.6
 require (
 	github.com/DeRuina/timberjack v1.4.6
 	github.com/ThreeDotsLabs/watermill v1.5.2
+	github.com/ThreeDotsLabs/watermill-nats/v2 v2.2.0
 	github.com/bep/simplecobra v0.7.0
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/chromedp/chromedp v0.16.0
@@ -111,6 +112,9 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/nats-io/nats.go v1.52.0 // indirect
+	github.com/nats-io/nkeys v0.4.15 // indirect
+	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
