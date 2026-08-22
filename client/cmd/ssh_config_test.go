@@ -21,7 +21,7 @@ func TestRunConfig_ShouldPrintTheResolvedValuesNotTheConfiguredOnes(t *testing.T
 		{
 			name: "should resolve an unset key type to its default",
 			cfg:  &config.Config{Server: "https://ssh.example.com"},
-			want: "ed25519",
+			want: "ecdsa (384)",
 		},
 		{
 			name: "should report the curve alongside an ecdsa key",

@@ -1,8 +1,10 @@
 package bootstrap
 
 import (
+	"context"
 	"fmt"
 
+	"github.com/mnestor/ssoossh/internal/fipsmode"
 	"github.com/mnestor/ssoossh/server/service"
 	"github.com/mnestor/ssoossh/server/signer"
 )
@@ -28,7 +30,19 @@ func (a *app) initPipeline() error {
 		return fmt.Errorf("failed to load CA signing key: %w", err)
 	}
 
-	signer.NewHandler(keys, a.pubSub.Publisher).Register(a.pubSub.Router, a.pubSub.Subscriber)
+	fipsEnabled := a.config.FIPSEnabled()
+	if fipsEnabled {
+		caSigner, err := keys.Signer(context.Background())
+		if err != nil {
+			return fmt.Errorf("failed to load CA signing key: %w", err) // excluded from coverage: keys is a *signer.ConfigKeySource constructed just above, whose Signer always returns the already-parsed key with a nil error, see exclude-from-coverage.txt
+		}
+		keyType, ok := fipsmode.FromSSHAlgorithm(caSigner.PublicKey().Type())
+		if !ok || !fipsmode.IsApprovedInFIPS(keyType) {
+			return fmt.Errorf("CA key algorithm %q is not FIPS-approved", caSigner.PublicKey().Type())
+		}
+	}
+
+	signer.NewHandler(keys, a.pubSub.Publisher, fipsEnabled).Register(a.pubSub.Router, a.pubSub.Subscriber)
 	service.NewSignedReplyHandler(a.db, a.svc.certRequest).Register(a.pubSub.Router, a.pubSub.Subscriber)
 
 	return nil

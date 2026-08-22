@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/mnestor/ssoossh/internal/fipsmode"
 	"github.com/mnestor/ssoossh/server/certmsg"
 	"github.com/mnestor/ssoossh/server/model"
 )
@@ -123,11 +124,18 @@ func permissionsFor(opts certmsg.RequestedOptions) ssh.Permissions {
 
 // Sign produces a signed certificate for job using the CA key from ks.
 //
-// It's a pure function of (job, ks): no database, no configuration, no
-// policy re-derivation. The returned reply carries what was *actually*
-// signed, so the listener/resolver can write the audit row straight from it
-// without re-reading and re-interpreting the original request.
-func Sign(ctx context.Context, ks CAKeySource, job certmsg.SigningJob) (certmsg.SignedReply, error) {
+// It's a pure function of (job, ks, fipsEnabled): no database, no
+// server-config re-derivation. The returned reply carries what was
+// *actually* signed, so the listener/resolver can write the audit row
+// straight from it without re-reading and re-interpreting the original
+// request.
+//
+// fipsEnabled repeats the same FIPS-approval check CertRequestService.Approve
+// already made, as defense in depth: if the main server process were ever
+// compromised, an attacker able to publish directly to the sign queue would
+// otherwise bypass that check entirely. It's a plain value, not policy
+// re-derivation — see this package's doc comment.
+func Sign(ctx context.Context, ks CAKeySource, job certmsg.SigningJob, fipsEnabled bool) (certmsg.SignedReply, error) {
 	certType, err := certTypeFor(job.Type)
 	if err != nil {
 		return certmsg.SignedReply{}, err
@@ -136,6 +144,14 @@ func Sign(ctx context.Context, ks CAKeySource, job certmsg.SigningJob) (certmsg.
 	publicKey, err := parsePublicKey(job.PublicKey)
 	if err != nil {
 		return certmsg.SignedReply{}, err
+	}
+
+	if fipsEnabled {
+		keyType, ok := fipsmode.FromSSHAlgorithm(publicKey.Type())
+		if !ok || !fipsmode.IsApprovedInFIPS(keyType) {
+			return certmsg.SignedReply{}, newSignError(certmsg.ErrCodeFIPSNotApproved,
+				"public key algorithm %q is not FIPS-approved", publicKey.Type())
+		}
 	}
 
 	caSigner, err := ks.Signer(ctx)

@@ -14,14 +14,19 @@ import (
 // Handler consumes signing jobs off certmsg.SignQueueTopic and publishes
 // results to certmsg.SignedTopic.
 type Handler struct {
-	keys      CAKeySource
-	publisher message.Publisher
+	keys        CAKeySource
+	publisher   message.Publisher
+	fipsEnabled bool
 }
 
 // NewHandler constructs a Handler signing with keys and replying via
-// publisher.
-func NewHandler(keys CAKeySource, publisher message.Publisher) *Handler {
-	return &Handler{keys: keys, publisher: publisher}
+// publisher. fipsEnabled is passed through to Sign as a second,
+// independent FIPS-approval check on every job — defense in depth in case
+// the main server process (which already checks this in
+// CertRequestService.Approve) is ever compromised and jobs reach the sign
+// queue directly.
+func NewHandler(keys CAKeySource, publisher message.Publisher, fipsEnabled bool) *Handler {
+	return &Handler{keys: keys, publisher: publisher, fipsEnabled: fipsEnabled}
 }
 
 // Register adds the sign-queue consumer to r.
@@ -61,7 +66,7 @@ func (h *Handler) handle(msg *message.Message) error {
 		return nil
 	}
 
-	reply, err := Sign(msg.Context(), h.keys, job)
+	reply, err := Sign(msg.Context(), h.keys, job, h.fipsEnabled)
 	if err != nil {
 		slog.Error("failed to sign certificate",
 			"request_id", job.RequestID,

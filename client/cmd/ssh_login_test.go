@@ -291,9 +291,9 @@ func TestRunLogin_ShouldGenerateTheConfiguredKeyType(t *testing.T) {
 		wantPrefix string
 	}{
 		{
-			name:       "should default to ed25519",
+			name:       "should default to ecdsa P-384",
 			cfg:        &config.Config{},
-			wantPrefix: "ssh-ed25519 ",
+			wantPrefix: "ecdsa-sha2-nistp384 ",
 		},
 		{
 			name:       "should honor an explicit ecdsa configuration",

@@ -8,9 +8,13 @@ package service
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +23,7 @@ import (
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
 	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/ssh"
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/certmsg"
@@ -64,6 +69,14 @@ func newTestDB(t *testing.T) *gorm.DB {
 // ValidDuration, RequireGroup), not just RequestTTL.
 func newTestCertRequestServiceWithOptions(t *testing.T, opts config.CertificateOptions) *CertRequestService {
 	t.Helper()
+	return newTestCertRequestServiceWithConfig(t, &config.Config{CertOptions: opts})
+}
+
+// newTestCertRequestServiceWithConfig is newTestCertRequestServiceWithOptions
+// but takes the full *config.Config, for tests (like FIPS) that need to
+// control fields beyond CertOptions.
+func newTestCertRequestServiceWithConfig(t *testing.T, cfg *config.Config) *CertRequestService {
+	t.Helper()
 
 	db := newTestDB(t)
 	if err := db.AutoMigrate(&model.CertificateRequest{}, &model.User{}); err != nil {
@@ -77,7 +90,7 @@ func newTestCertRequestServiceWithOptions(t *testing.T, opts config.CertificateO
 		}
 	})
 
-	svc, err := NewCertRequestService(&config.Config{CertOptions: opts}, db, channel, channel)
+	svc, err := NewCertRequestService(cfg, db, channel, channel)
 	if err != nil {
 		t.Fatalf("failed to construct CertRequestService: %v", err)
 	}
@@ -1596,4 +1609,118 @@ func TestNotifyWaiter_ShouldNotPanicWhenPublishingFails(t *testing.T) {
 	if !cached {
 		t.Error("expected the outcome to be cached even though publishing failed")
 	}
+}
+
+// boolPtr returns a pointer to b, for the tri-state FIPS setting.
+func boolPtr(b bool) *bool { return &b }
+
+// generateTestECDSAAuthorizedKey returns a throwaway P-384 ECDSA public key
+// in authorized_keys format: FIPS-approved, unlike
+// generateTestSSHPrivateKey's ed25519 output.
+func generateTestECDSAAuthorizedKey(t *testing.T) string {
+	t.Helper()
+
+	priv, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate ecdsa key: %v", err)
+	}
+	sshPub, err := ssh.NewPublicKey(&priv.PublicKey)
+	if err != nil {
+		t.Fatalf("failed to derive public key: %v", err)
+	}
+	return strings.TrimRight(string(ssh.MarshalAuthorizedKey(sshPub)), "\n")
+}
+
+func TestCertRequestService_Approve_FIPS(t *testing.T) {
+	t.Parallel()
+
+	certOpts := config.CertificateOptions{
+		User: config.CertOptionsUser{ValidDuration: time.Hour},
+	}
+
+	t.Run("should reject a non-FIPS-approved client key when FIPS is enabled", func(t *testing.T) {
+		t.Parallel()
+
+		svc := newTestCertRequestServiceWithConfig(t, &config.Config{CertOptions: certOpts, FIPS: boolPtr(true)})
+
+		_, edKey := generateTestSSHPrivateKey(t)
+		requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+			Type:      model.CertificateTypeUser,
+			PublicKey: edKey,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error creating request: %v", err)
+		}
+
+		identity := &Identity{Username: "alice", Subject: "sub-fips-reject"}
+		seedUser(t, svc.db, identity.Subject)
+
+		if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+			t.Fatal("expected Approve to reject a non-FIPS-approved key when FIPS is enabled")
+		}
+	})
+
+	t.Run("should accept a FIPS-approved client key when FIPS is enabled", func(t *testing.T) {
+		t.Parallel()
+
+		svc := newTestCertRequestServiceWithConfig(t, &config.Config{CertOptions: certOpts, FIPS: boolPtr(true)})
+
+		requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+			Type:      model.CertificateTypeUser,
+			PublicKey: generateTestECDSAAuthorizedKey(t),
+		})
+		if err != nil {
+			t.Fatalf("unexpected error creating request: %v", err)
+		}
+
+		identity := &Identity{Username: "bob", Subject: "sub-fips-accept"}
+		seedUser(t, svc.db, identity.Subject)
+
+		if err := svc.Approve(context.Background(), requestID, identity); err != nil {
+			t.Errorf("unexpected error approving a FIPS-approved key: %v", err)
+		}
+	})
+
+	t.Run("should reject an unparseable client public key when FIPS is enabled", func(t *testing.T) {
+		t.Parallel()
+
+		svc := newTestCertRequestServiceWithConfig(t, &config.Config{CertOptions: certOpts, FIPS: boolPtr(true)})
+
+		requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+			Type:      model.CertificateTypeUser,
+			PublicKey: "not a valid public key",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error creating request: %v", err)
+		}
+
+		identity := &Identity{Username: "dave", Subject: "sub-fips-unparseable"}
+		seedUser(t, svc.db, identity.Subject)
+
+		if err := svc.Approve(context.Background(), requestID, identity); err == nil {
+			t.Fatal("expected Approve to reject an unparseable public key when FIPS is enabled")
+		}
+	})
+
+	t.Run("should not restrict the client key type when FIPS is disabled", func(t *testing.T) {
+		t.Parallel()
+
+		svc := newTestCertRequestServiceWithConfig(t, &config.Config{CertOptions: certOpts, FIPS: boolPtr(false)})
+
+		_, edKey := generateTestSSHPrivateKey(t)
+		requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+			Type:      model.CertificateTypeUser,
+			PublicKey: edKey,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error creating request: %v", err)
+		}
+
+		identity := &Identity{Username: "carol", Subject: "sub-fips-off"}
+		seedUser(t, svc.db, identity.Subject)
+
+		if err := svc.Approve(context.Background(), requestID, identity); err != nil {
+			t.Errorf("unexpected error approving a non-approved key with FIPS disabled: %v", err)
+		}
+	})
 }

@@ -28,23 +28,30 @@ func TestResolveSSHKey(t *testing.T) {
 		wantErr       bool
 	}{
 		{
-			name:          "should default to ed25519 when nothing is configured",
+			name:          "should default to ecdsa P-384 when nothing is configured and fips is off",
 			fips:          boolPtr(false),
-			wantAlgorithm: "ed25519",
-			wantSize:      0,
+			wantAlgorithm: "ecdsa",
+			wantSize:      384,
 		},
 		{
-			name:          "should default to ecdsa P-256 in FIPS mode",
+			name:          "should default to ecdsa P-384 when nothing is configured and fips is on",
 			fips:          boolPtr(true),
 			wantAlgorithm: "ecdsa",
-			wantSize:      256,
+			wantSize:      384,
 		},
 		{
-			name:          "should default ecdsa to P-256 when size is unset",
+			name:          "should default ecdsa to P-384 when size is unset",
 			fips:          boolPtr(false),
 			keyType:       SSHKeyTypeECDSA,
 			wantAlgorithm: "ecdsa",
-			wantSize:      256,
+			wantSize:      384,
+		},
+		{
+			name:          "should allow ed25519 when explicitly requested and fips is off",
+			fips:          boolPtr(false),
+			keyType:       SSHKeyTypeEd25519,
+			wantAlgorithm: "ed25519",
+			wantSize:      0,
 		},
 		{
 			name:          "should honour an explicit ecdsa curve",
@@ -82,22 +89,20 @@ func TestResolveSSHKey(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:          "should warn but still allow ed25519 in FIPS mode",
-			fips:          boolPtr(true),
-			keyType:       SSHKeyTypeEd25519,
-			wantAlgorithm: "ed25519",
-			wantSize:      0,
-			wantWarning:   "not FIPS-approved",
+			name:    "should reject a non-FIPS-approved key type in FIPS mode",
+			fips:    boolPtr(true),
+			keyType: SSHKeyTypeEd25519,
+			wantErr: true,
 		},
 		{
-			name:          "should not warn about ecdsa in FIPS mode",
+			name:          "should not error about ecdsa in FIPS mode",
 			fips:          boolPtr(true),
 			keyType:       SSHKeyTypeECDSA,
 			wantAlgorithm: "ecdsa",
-			wantSize:      256,
+			wantSize:      384,
 		},
 		{
-			name:          "should not warn about rsa in FIPS mode",
+			name:          "should not error about rsa in FIPS mode",
 			fips:          boolPtr(true),
 			keyType:       SSHKeyTypeRSA,
 			wantAlgorithm: "rsa",
@@ -174,9 +179,11 @@ func TestResolveSSHKey_ShouldProduceArgumentsKeypairAccepts(t *testing.T) {
 	}
 }
 
-// TestResolveSSHKey_FIPSEnforced covers the split: the same non-approved
-// key type must warn when FIPS is merely advisory but error when it's
-// enforced by the system config.
+// TestResolveSSHKey_FIPSEnforced covers FIPS enforcement: a non-approved
+// key type is now a hard error whenever FIPS is enabled, regardless of
+// whether it came from the system enforce file (FIPSEnforced) or a user
+// config's own `fips: true`. The only escape hatch is an explicit
+// `fips: false`.
 func TestResolveSSHKey_FIPSEnforced(t *testing.T) {
 	t.Parallel()
 
@@ -191,18 +198,14 @@ func TestResolveSSHKey_FIPSEnforced(t *testing.T) {
 		}
 	})
 
-	t.Run("should only warn on the same key type when fips is merely advisory", func(t *testing.T) {
+	t.Run("should error on the same key type even when fips came from the user's own config", func(t *testing.T) {
 		t.Parallel()
 
 		c := &Config{FIPS: boolPtr(true), FIPSEnforced: false}
 		c.SSHKey.Type = SSHKeyTypeEd25519
 
-		_, _, warnings, err := c.ResolveSSHKey()
-		if err != nil {
-			t.Fatalf("expected advisory fips to warn, not error: %v", err)
-		}
-		if len(warnings) == 0 {
-			t.Fatal("expected a warning for a non-FIPS-approved key type")
+		if _, _, _, err := c.ResolveSSHKey(); err == nil {
+			t.Fatal("expected an error for a non-FIPS-approved key type whenever fips is on, enforced or not")
 		}
 	})
 
@@ -214,6 +217,17 @@ func TestResolveSSHKey_FIPSEnforced(t *testing.T) {
 
 		if _, _, _, err := c.ResolveSSHKey(); err != nil {
 			t.Errorf("unexpected error for an approved key type: %v", err)
+		}
+	})
+
+	t.Run("should allow a non-FIPS-approved key type when fips is explicitly false", func(t *testing.T) {
+		t.Parallel()
+
+		c := &Config{FIPS: boolPtr(false)}
+		c.SSHKey.Type = SSHKeyTypeEd25519
+
+		if _, _, _, err := c.ResolveSSHKey(); err != nil {
+			t.Errorf("expected fips: false to be an escape hatch, got error: %v", err)
 		}
 	})
 }

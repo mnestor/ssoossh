@@ -28,6 +28,9 @@ before:
 env:
   - CGO_ENABLED=0
   - GOFLAGS=-buildvcs=false
+  # v1.0.0 is the NIST CMVP certified module for this toolchain; "latest"
+  # would pick up a newer, uncertified one (see internal/fipsmode).
+  - GOFIPS140=v1.0.0
 
 builds:
   - id: server-linux-build

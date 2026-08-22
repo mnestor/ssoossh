@@ -97,7 +97,8 @@ func TestPublicOriginShouldResolveTheBrowserVisibleOrigin(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
+	for i := range tests {
+		tt := &tests[i]
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -130,7 +131,8 @@ func TestIsTLSShouldReportTheBrowserVisibleScheme(t *testing.T) {
 		{name: "should report false with nothing configured", http: HTTPSettings{}, want: false},
 	}
 
-	for _, tt := range tests {
+	for i := range tests {
+		tt := &tests[i]
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 

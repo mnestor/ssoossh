@@ -15,6 +15,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -203,7 +204,7 @@ func TestTLSConfig_Build_ShouldResolveEveryFieldIntoTheStdConfig(t *testing.T) {
 		CurveNames:      []string{"X25519"},
 	}
 
-	got, err := cfg.Build()
+	got, err := cfg.Build(false)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -233,7 +234,7 @@ func TestTLSConfig_Build_ShouldLeaveCipherSuitesAndCurvesNilWhenEmpty(t *testing
 	got, err := TLSConfig{
 		CertificateInfo: CertificateInfo{Certificate: string(certPEM), PrivateKey: string(keyPEM)},
 		TLSMinVersion:   "TLS1.3",
-	}.Build()
+	}.Build(false)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -278,7 +279,7 @@ func TestTLSConfig_Build_ShouldError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := tt.cfg.Build(); err == nil {
+			if _, err := tt.cfg.Build(false); err == nil {
 				t.Error("expected an error, got nil")
 			}
 		})
@@ -290,11 +291,97 @@ func TestTLSConfig_Build_ShouldReturnNilConfigAndNilErrorWhenNoCertificateConfig
 
 	cfg := TLSConfig{TLSMinVersion: "TLS1.3"}
 
-	tlsConfig, err := cfg.Build()
+	tlsConfig, err := cfg.Build(false)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if tlsConfig != nil {
 		t.Errorf("expected a nil *tls.Config when no certificate/key pair is configured, got %+v", tlsConfig)
 	}
+}
+
+func TestTLSConfig_Build_FIPS(t *testing.T) {
+	t.Parallel()
+
+	certPEM, keyPEM, _ := generateTestCert(t)
+	validCert := CertificateInfo{Certificate: string(certPEM), PrivateKey: string(keyPEM)}
+
+	t.Run("should default cipher suites and curves to the FIPS-approved sets when unset", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := TLSConfig{CertificateInfo: validCert, TLSMinVersion: "TLS1.3"}.Build(true)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if len(got.CipherSuites) == 0 {
+			t.Error("expected FIPS mode to default cipher suites rather than leave them nil")
+		}
+		for _, id := range got.CipherSuites {
+			if !slices.Contains(fipsApprovedCipherSuites, id) {
+				t.Errorf("default cipher suite %q is not FIPS-approved", tls.CipherSuiteName(id))
+			}
+		}
+		if len(got.CurvePreferences) == 0 {
+			t.Error("expected FIPS mode to default curves rather than leave them nil")
+		}
+		for _, id := range got.CurvePreferences {
+			if !slices.Contains(fipsApprovedCurves, id) {
+				t.Errorf("default curve %q is not FIPS-approved", id)
+			}
+		}
+	})
+
+	t.Run("should accept an explicitly configured FIPS-approved cipher suite and curve", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := TLSConfig{
+			CertificateInfo: validCert,
+			TLSMinVersion:   "TLS1.3",
+			CipherSuites:    []string{"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"},
+			CurveNames:      []string{"CurveP384"},
+		}
+		if _, err := cfg.Build(true); err != nil {
+			t.Errorf("expected no error for an approved cipher suite and curve, got %v", err)
+		}
+	})
+
+	t.Run("should reject an explicitly configured non-FIPS-approved cipher suite", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := TLSConfig{
+			CertificateInfo: validCert,
+			TLSMinVersion:   "TLS1.3",
+			CipherSuites:    []string{"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"},
+		}
+		if _, err := cfg.Build(true); err == nil {
+			t.Error("expected ChaCha20-Poly1305 to be rejected under FIPS")
+		}
+	})
+
+	t.Run("should reject an explicitly configured non-FIPS-approved curve", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := TLSConfig{
+			CertificateInfo: validCert,
+			TLSMinVersion:   "TLS1.3",
+			CurveNames:      []string{"X25519"},
+		}
+		if _, err := cfg.Build(true); err == nil {
+			t.Error("expected X25519 to be rejected under FIPS")
+		}
+	})
+
+	t.Run("should not restrict cipher suites or curves when fipsEnabled is false", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := TLSConfig{
+			CertificateInfo: validCert,
+			TLSMinVersion:   "TLS1.3",
+			CipherSuites:    []string{"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"},
+			CurveNames:      []string{"X25519"},
+		}
+		if _, err := cfg.Build(false); err != nil {
+			t.Errorf("expected no FIPS restriction when fipsEnabled is false, got %v", err)
+		}
+	})
 }

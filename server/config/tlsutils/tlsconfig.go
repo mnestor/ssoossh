@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"slices"
 )
 
 // CertificateInfo holds a certificate/private-key pair, either inline as
@@ -97,6 +98,55 @@ type TLSConfig struct {
 	CurveNames []string `mapstructure:"curves"`
 }
 
+// fipsApprovedCipherSuites are the AES-GCM suites FIPS 140-3 approves:
+// ChaCha20-Poly1305 and the CBC-mode suites aren't included, deliberately
+// narrower than the "secure" set CipherSuites otherwise accepts. Includes
+// the TLS 1.3 AES-GCM suites too, even though Go doesn't let CipherSuites
+// configure TLS 1.3 negotiation (see TLSConfig.CipherSuites) -- listing
+// them keeps an operator who names one explicitly from hitting a spurious
+// FIPS rejection.
+//
+// This list intentionally includes TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+// and TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, satisfying net/http's HTTP/2
+// requirement (see TLSConfig.CipherSuites) so defaulting to this set under
+// FIPS never breaks HTTP/2.
+var fipsApprovedCipherSuites = []uint16{
+	tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+	tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+	tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+	tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+	tls.TLS_AES_128_GCM_SHA256,
+	tls.TLS_AES_256_GCM_SHA384,
+}
+
+// fipsApprovedCurves are the NIST curves FIPS 140-3 approves for TLS key
+// exchange. X25519 and X25519MLKEM768 aren't included.
+var fipsApprovedCurves = []tls.CurveID{tls.CurveP256, tls.CurveP384, tls.CurveP521}
+
+// requireFIPSApprovedCipherSuites errors on the first id not in
+// fipsApprovedCipherSuites, failing closed the same way an unrecognized
+// name does in CipherSuites.
+func requireFIPSApprovedCipherSuites(ids []uint16) error {
+	for _, id := range ids {
+		if !slices.Contains(fipsApprovedCipherSuites, id) {
+			return fmt.Errorf("tlsconfig: cipher suite %q is not FIPS-approved", tls.CipherSuiteName(id))
+		}
+	}
+	return nil
+}
+
+// requireFIPSApprovedCurves errors on the first id not in
+// fipsApprovedCurves, failing closed the same way an unrecognized name does
+// in Curve.
+func requireFIPSApprovedCurves(ids []tls.CurveID) error {
+	for _, id := range ids {
+		if !slices.Contains(fipsApprovedCurves, id) {
+			return fmt.Errorf("tlsconfig: curve %q is not FIPS-approved", id)
+		}
+	}
+	return nil
+}
+
 // Build resolves this TLSConfig into a usable *tls.Config: it loads the
 // certificate/key pair and resolves CipherSuites, TLSMinVersion, and
 // CurveNames via this package's CipherSuites, MinVersion, and Curve
@@ -107,10 +157,15 @@ type TLSConfig struct {
 // but invalid, or if any of the three fields above name something
 // unrecognized.
 //
+// When fipsEnabled is true, an explicitly configured CipherSuites or
+// CurveNames must resolve entirely within the FIPS-approved sets above
+// (fail closed on the first one that doesn't); left empty, they default to
+// those sets instead of Go's own defaults.
+//
 // tls.Config.ServerName is deliberately left unset: it's a client-side
 // field servers ignore, so enforcing a specific server name is a caller
 // concern, not this package's.
-func (t TLSConfig) Build() (*tls.Config, error) {
+func (t TLSConfig) Build(fipsEnabled bool) (*tls.Config, error) {
 	if !t.HasKeyPair() {
 		return nil, nil
 	}
@@ -131,6 +186,19 @@ func (t TLSConfig) Build() (*tls.Config, error) {
 	curves, err := Curve(t.CurveNames)
 	if err != nil {
 		return nil, err
+	}
+
+	if fipsEnabled {
+		if cipherSuites == nil {
+			cipherSuites = fipsApprovedCipherSuites
+		} else if err := requireFIPSApprovedCipherSuites(cipherSuites); err != nil {
+			return nil, err
+		}
+		if curves == nil {
+			curves = fipsApprovedCurves
+		} else if err := requireFIPSApprovedCurves(curves); err != nil {
+			return nil, err
+		}
 	}
 
 	return &tls.Config{

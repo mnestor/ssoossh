@@ -13,8 +13,10 @@ import (
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/ssh"
 	"gorm.io/gorm"
 
+	"github.com/mnestor/ssoossh/internal/fipsmode"
 	"github.com/mnestor/ssoossh/server/certmsg"
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
@@ -335,6 +337,12 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 		return err
 	}
 
+	if s.config.FIPSEnabled() {
+		if err := s.checkFIPSApproved(req.PublicKey); err != nil {
+			return err
+		}
+	}
+
 	switch policy.flow {
 	case flowEnrollment:
 		return s.approveServiceEnrollment(ctx, requestID, narrowed)
@@ -350,6 +358,24 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 		// guard as defense in depth.
 		return fmt.Errorf("issuing %s certificates is not supported yet", req.Type)
 	}
+}
+
+// checkFIPSApproved rejects authorizedKey if its algorithm isn't
+// FIPS-approved. Called from Approve, not CreateRequest: a client can
+// submit whatever key it likes, but a FIPS-enabled server refuses to act on
+// (sign or enroll) one that isn't approved. server/signer independently
+// repeats this check on the signing path as defense in depth against a
+// compromised main process that could publish directly to the sign queue.
+func (s *CertRequestService) checkFIPSApproved(authorizedKey string) error {
+	publicKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(authorizedKey)) //nolint:dogsled // ParseAuthorizedKey's comment/options/rest returns are irrelevant here.
+	if err != nil {
+		return fmt.Errorf("failed to parse public key: %w", err)
+	}
+	keyType, ok := fipsmode.FromSSHAlgorithm(publicKey.Type())
+	if !ok || !fipsmode.IsApprovedInFIPS(keyType) {
+		return fmt.Errorf("public key algorithm %q is not FIPS-approved", publicKey.Type())
+	}
+	return nil
 }
 
 // bindRequester ties req to the users row behind identity, and refuses when

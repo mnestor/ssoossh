@@ -2,6 +2,8 @@ package config
 
 import (
 	"time"
+
+	"github.com/mnestor/ssoossh/internal/fipsmode"
 )
 
 // Config is the root ssoosshd configuration, populated from defaults.yaml
@@ -27,6 +29,24 @@ type Config struct {
 
 	SSHKey      string             `mapstructure:"ssh_key"`
 	CertOptions CertificateOptions `mapstructure:"cert_options"`
+
+	// FIPS steers the server toward FIPS 140-3 approved algorithms: the CA
+	// key (checked at startup), client-submitted public keys (checked in
+	// CertRequestService.Approve and again in server/signer), and the TLS
+	// cipher/curve profile. A non-approved algorithm is a hard error when
+	// this is in effect.
+	//
+	// A pointer so "unset" is distinguishable from "explicitly false":
+	// unset falls back to whether the Go runtime is itself in FIPS 140-3
+	// mode. Nil is the correct default, so no entry is needed in
+	// _defaults.yaml.
+	FIPS *bool `mapstructure:"fips"`
+}
+
+// FIPSEnabled reports whether FIPS steering is in effect. See
+// fipsmode.Enabled.
+func (c *Config) FIPSEnabled() bool {
+	return fipsmode.Enabled(c.FIPS)
 }
 
 type QueueConfig struct {

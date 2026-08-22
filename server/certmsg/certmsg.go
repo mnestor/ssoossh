@@ -101,6 +101,10 @@ const (
 	ErrCodeCAUnavailable = "ca_unavailable"
 	// ErrCodeSignFailed means the signing operation itself failed.
 	ErrCodeSignFailed = "sign_failed"
+	// ErrCodeFIPSNotApproved means the job's PublicKey parsed fine but its
+	// algorithm isn't FIPS-approved, and the signer is running with FIPS
+	// enabled.
+	ErrCodeFIPSNotApproved = "fips_not_approved"
 )
 
 // SignedReply is the signer's result, consumed by the listener/resolver.

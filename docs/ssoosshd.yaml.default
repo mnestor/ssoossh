@@ -121,6 +121,23 @@
 #   -----END OPENSSH PRIVATE KEY-----
 
 # ----------------------------------------------------------------------
+# fips - steers the server toward FIPS 140-3 approved algorithms. Null
+# (unset, the default) follows the Go runtime's own FIPS 140-3 mode
+# (crypto/fips140.Enabled()); true/false overrides that detection.
+#
+# When in effect, a non-FIPS-approved algorithm is a hard error, not a
+# warning:
+#   - a client-submitted public key that isn't ECDSA or RSA, rejected both
+#     when a request is approved and again by the signer itself
+#   - the CA key itself, checked at startup (ed25519 fails to start)
+#   - http.tls.curves/cipher_suites: an explicit list must resolve
+#     entirely within the FIPS-approved sets (P-256/384/521 curves;
+#     AES-GCM cipher suites, not ChaCha20-Poly1305); left unset, they
+#     default to those sets instead of Go's own defaults
+# ----------------------------------------------------------------------
+# fips:
+
+# ----------------------------------------------------------------------
 # production - toggles production-mode behavior (e.g. stricter
 # defaults/validation). Set true when actually deploying.
 # ----------------------------------------------------------------------
@@ -318,6 +335,12 @@
     ## Only meaningful for TLS 1.2 and below — TLS 1.3 suite selection
     ## is not configurable in Go's stdlib. Duplicate names are silently
     ## deduplicated, keeping the first occurrence's order.
+    ##
+    ## When the top-level fips setting is in effect, an explicit list here
+    ## must resolve entirely to FIPS-approved AES-GCM suites (not
+    ## ChaCha20-Poly1305, not CBC-mode) or the server fails to start; left
+    ## unset, it defaults to the FIPS-approved suites instead of Go's own
+    ## defaults.
     # cipher_suites:
     #   - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
     #   - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
@@ -328,6 +351,11 @@
     ## first. Accepts loose forms: "P256", "p256", "CurveP256", "P-256"
     ## all resolve the same way. Duplicates are silently deduplicated,
     ## keeping the first occurrence's order.
+    ##
+    ## Under fips (see above), an explicit list here must resolve entirely
+    ## to P-256/384/521 (not X25519, not X25519MLKEM768) or the server
+    ## fails to start; left unset, it defaults to those curves instead of
+    ## Go's own defaults.
     # curves:
     #   - CurveP256
     #   - CurveP384

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -167,6 +168,15 @@ func TestNewConfig_ShouldRejectAnUnusableKeyConfiguration(t *testing.T) {
 	}
 }
 
+// noPolicy stands in for loadPlatformPolicy in tests that aren't exercising
+// platform-native policy, so they run identically regardless of the CI
+// machine's GOOS.
+func noPolicy() (map[string]any, error) { return nil, nil }
+
+// errPlatformPolicyTest is a sentinel for
+// TestNewConfig_ShouldSurfaceAPlatformPolicyLoadError.
+var errPlatformPolicyTest = errors.New("test: platform policy load failure")
+
 // writeSystemConfig lays out a system configuration directory the way
 // /etc/ssoossh would look, and returns its path.
 func testPaths(sysDir string) searchPaths {
@@ -199,7 +209,7 @@ func TestNewConfig_ShouldLetAnEnforcedFileOverrideTheUsersOwnConfig(t *testing.T
 	userConfig := writeConfig(t, "server: https://ssh.example.com\ninsecure_skip_verify: true\n")
 	cmd := newConfigCommand(t, "--config", userConfig)
 
-	cfg, err := newConfig(cmd, testPaths(sysDir))
+	cfg, err := newConfig(cmd, testPaths(sysDir), noPolicy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -228,7 +238,7 @@ func TestNewConfig_ShouldIgnoreEnforceOutsideTheSystemFile(t *testing.T) {
 	userConfig := writeConfig(t, "enforce: "+filepath.Join(userDir, "mine.yaml")+"\n")
 	cmd := newConfigCommand(t, "--config", userConfig)
 
-	cfg, err := newConfig(cmd, testPaths(sysDir))
+	cfg, err := newConfig(cmd, testPaths(sysDir), noPolicy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -247,7 +257,7 @@ func TestNewConfig_ShouldResolveARelativeEnforceInsideTheSystemDirectory(t *test
 	})
 	cmd := newConfigCommand(t, "--config", writeConfig(t, "insecure_skip_verify: true\n"))
 
-	cfg, err := newConfig(cmd, testPaths(sysDir))
+	cfg, err := newConfig(cmd, testPaths(sysDir), noPolicy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -267,7 +277,7 @@ func TestNewConfig_ShouldRejectAnUnapprovedKeyTypeWhenFIPSIsEnforced(t *testing.
 	userConfig := writeConfig(t, "sshkey:\n  type: ed25519\n")
 	cmd := newConfigCommand(t, "--config", userConfig)
 
-	if _, err := newConfig(cmd, testPaths(sysDir)); err == nil {
+	if _, err := newConfig(cmd, testPaths(sysDir), noPolicy); err == nil {
 		t.Fatal("expected an enforced fips: true to reject a non-FIPS-approved key type")
 	}
 }
@@ -282,7 +292,7 @@ func TestNewConfig_ShouldAcceptAnApprovedKeyTypeWhenFIPSIsEnforced(t *testing.T)
 	userConfig := writeConfig(t, "sshkey:\n  type: ecdsa\n  size: 256\n")
 	cmd := newConfigCommand(t, "--config", userConfig)
 
-	cfg, err := newConfig(cmd, testPaths(sysDir))
+	cfg, err := newConfig(cmd, testPaths(sysDir), noPolicy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -291,21 +301,144 @@ func TestNewConfig_ShouldAcceptAnApprovedKeyTypeWhenFIPSIsEnforced(t *testing.T)
 	}
 }
 
-// TestNewConfig_ShouldOnlyWarnWhenFIPSComesFromUserConfig is the regression
-// guard: fips: true set by the user (not the enforce file) must keep
-// today's advisory behavior, never start hard-erroring.
-func TestNewConfig_ShouldOnlyWarnWhenFIPSComesFromUserConfig(t *testing.T) {
+// TestNewConfig_ShouldRejectAnUnapprovedKeyTypeWhenFIPSComesFromUserConfig
+// confirms FIPS enforcement no longer distinguishes where `fips: true` came
+// from: a non-approved key type is a hard error whether it's the system
+// enforce file or the user's own config that turned FIPS on. Only an
+// explicit `fips: false` is an escape hatch — see
+// TestNewConfig_ShouldAcceptANonFIPSKeyTypeWhenFIPSIsExplicitlyDisabled.
+func TestNewConfig_ShouldRejectAnUnapprovedKeyTypeWhenFIPSComesFromUserConfig(t *testing.T) {
 	sysDir := writeSystemConfig(t, map[string]string{
 		"ssoossh.yaml": "server: https://ssh.example.com\n",
 	})
 	userConfig := writeConfig(t, "fips: true\nsshkey:\n  type: ed25519\n")
 	cmd := newConfigCommand(t, "--config", userConfig)
 
-	cfg, err := newConfig(cmd, testPaths(sysDir))
+	if _, err := newConfig(cmd, testPaths(sysDir), noPolicy); err == nil {
+		t.Fatal("expected user-set fips: true to reject a non-FIPS-approved key type")
+	}
+}
+
+// TestNewConfig_ShouldAcceptANonFIPSKeyTypeWhenFIPSIsExplicitlyDisabled pins
+// the one remaining escape hatch: `fips: false` in a user-writable config
+// still allows a non-approved key type.
+func TestNewConfig_ShouldAcceptANonFIPSKeyTypeWhenFIPSIsExplicitlyDisabled(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml": "server: https://ssh.example.com\n",
+	})
+	userConfig := writeConfig(t, "fips: false\nsshkey:\n  type: ed25519\n")
+	cmd := newConfigCommand(t, "--config", userConfig)
+
+	cfg, err := newConfig(cmd, testPaths(sysDir), noPolicy)
 	if err != nil {
-		t.Fatalf("expected user-set fips: true to warn rather than error, got: %v", err)
+		t.Fatalf("expected fips: false to allow a non-FIPS-approved key type, got: %v", err)
 	}
 	if cfg.FIPSEnforced {
 		t.Error("expected FIPSEnforced to be false when fips came from the user's own config")
+	}
+}
+
+// TestNewConfig_ShouldLetPlatformPolicyOverrideTheEnforcedFile is the
+// mechanism an administrator managing the fleet via GPO/MDM relies on: a
+// platform-native policy value must beat even the enforce file, exactly as
+// the enforce file beats the user's own config.
+func TestNewConfig_ShouldLetPlatformPolicyOverrideTheEnforcedFile(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml": "enforce: locked.yaml\n",
+		"locked.yaml":  "server: https://from-enforce-file.example.com\n",
+	})
+	cmd := newConfigCommand(t, "--config", writeConfig(t, "server: https://from-user.example.com\n"))
+	policy := func() (map[string]any, error) {
+		return map[string]any{"server": "https://from-platform-policy.example.com"}, nil
+	}
+
+	cfg, err := newConfig(cmd, testPaths(sysDir), policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Server != "https://from-platform-policy.example.com" {
+		t.Errorf("got server %q, want the platform policy value to win over the enforce file", cfg.Server)
+	}
+}
+
+// TestNewConfig_ShouldLeaveUnsetPolicyKeysToTheEnforcedFile confirms a
+// platform policy that only sets some keys doesn't clobber the rest —
+// matching how the enforce file already behaves for a partial override.
+func TestNewConfig_ShouldLeaveUnsetPolicyKeysToTheEnforcedFile(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml": "enforce: locked.yaml\n",
+		"locked.yaml":  "server: https://from-enforce-file.example.com\ninsecure_skip_verify: true\n",
+	})
+	cmd := newConfigCommand(t, "--config", writeConfig(t, ""))
+	policy := func() (map[string]any, error) {
+		return map[string]any{"insecure_skip_verify": false}, nil
+	}
+
+	cfg, err := newConfig(cmd, testPaths(sysDir), policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SkipVerifySSL {
+		t.Error("expected the platform policy's insecure_skip_verify: false to win")
+	}
+	if cfg.Server != "https://from-enforce-file.example.com" {
+		t.Errorf("got server %q, want the enforce file's value preserved", cfg.Server)
+	}
+}
+
+// TestNewConfig_ShouldSetFIPSEnforcedWhenPlatformPolicySetsFIPS mirrors
+// TestNewConfig_ShouldAcceptAnApprovedKeyTypeWhenFIPSIsEnforced for the
+// platform-policy source: an org locking fips via GPO/MDM expects the same
+// hard enforcement as the enforce file.
+func TestNewConfig_ShouldSetFIPSEnforcedWhenPlatformPolicySetsFIPS(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml": "server: https://ssh.example.com\n",
+	})
+	userConfig := writeConfig(t, "sshkey:\n  type: ecdsa\n  size: 256\n")
+	cmd := newConfigCommand(t, "--config", userConfig)
+	policy := func() (map[string]any, error) {
+		return map[string]any{"fips": true}, nil
+	}
+
+	cfg, err := newConfig(cmd, testPaths(sysDir), policy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.FIPSEnforced {
+		t.Error("expected FIPSEnforced to be true when platform policy sets fips: true")
+	}
+}
+
+// TestNewConfig_ShouldRejectAnUnapprovedKeyTypeWhenPlatformPolicySetsFIPS is
+// the platform-policy counterpart of the enforce-file FIPS hard-error test.
+func TestNewConfig_ShouldRejectAnUnapprovedKeyTypeWhenPlatformPolicySetsFIPS(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml": "server: https://ssh.example.com\n",
+	})
+	userConfig := writeConfig(t, "sshkey:\n  type: ed25519\n")
+	cmd := newConfigCommand(t, "--config", userConfig)
+	policy := func() (map[string]any, error) {
+		return map[string]any{"fips": true}, nil
+	}
+
+	if _, err := newConfig(cmd, testPaths(sysDir), policy); err == nil {
+		t.Fatal("expected a platform-policy fips: true to reject a non-FIPS-approved key type")
+	}
+}
+
+// TestNewConfig_ShouldSurfaceAPlatformPolicyLoadError confirms a failure
+// reading the platform policy source (e.g. a malformed registry value or
+// plist) fails config loading rather than silently proceeding unlocked.
+func TestNewConfig_ShouldSurfaceAPlatformPolicyLoadError(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml": "server: https://ssh.example.com\n",
+	})
+	cmd := newConfigCommand(t, "--config", writeConfig(t, ""))
+	policy := func() (map[string]any, error) {
+		return nil, errPlatformPolicyTest
+	}
+
+	if _, err := newConfig(cmd, testPaths(sysDir), policy); err == nil {
+		t.Fatal("expected a platform policy load error to fail config loading")
 	}
 }

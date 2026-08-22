@@ -106,30 +106,47 @@ try_open_browser: false
 # administrator. ProgramData's default permissions let any user create a
 # subdirectory, and whoever creates it owns it — so a non-administrator who
 # gets there first would own the file that is supposed to constrain them.
+#
+# Windows and macOS also support locking these same settings through their
+# own native fleet-management mechanisms (a Group Policy-managed registry
+# key, or macOS managed preferences pushed by MDM) instead of this file —
+# see docs/client-settings-enforcement.md for the full mapping.
 # enforce: ssoossh-locked.yaml
 
 # Steer key generation toward algorithms that SSH implementations running in
-# FIPS mode accept. Advisory: it changes the default key type below and warns
-# about non-approved choices, it never refuses one.
+# FIPS mode accept. When in effect, configuring a non-approved sshkey.type
+# below (ed25519) is a hard error, not a warning — the only way around it is
+# to disable fips itself, not to pick a different key type while it stays on.
 #
 # Left unset deliberately, so that it can fall back to whether this binary is
 # itself running in Go's FIPS 140-3 mode. Set it explicitly to target a
-# FIPS-mode server from a client that isn't.
+# FIPS-mode server from a client that isn't, or set it to false as the one
+# escape hatch when a system enforce file hasn't locked fips: true (which
+# always wins regardless of this setting).
+#
+# This setting only affects the application-level checks above. Unlike
+# ssoosshd (which has a systemd unit that can set it), there's no per-install
+# hook here to also set GODEBUG=fips140=only in this binary's own
+# environment for runtime-layer enforcement beneath these checks — an
+# operator wanting that sets it themselves (e.g. in the shell profile or
+# wrapper script that invokes ssoossh).
 # fips: true
 
 # Key generated for each certificate. Both settings are optional.
 #
 #   type: ed25519 | ecdsa | rsa
-#         Default is ed25519, or ecdsa when FIPS mode is in effect —
-#         ed25519 only entered FIPS 186-5 in 2023 and several FIPS policies
-#         still reject it outright.
+#         Default is ecdsa P-384, unconditionally — not ed25519, and not
+#         dependent on FIPS mode. ed25519 stays selectable, just not
+#         default: it only entered FIPS 186-5 in 2023 and several FIPS
+#         policies still reject it outright, so it's rejected under fips
+#         (see above) unless explicitly requested with fips disabled.
 #   size: ignored for ed25519 (it has one size)
-#         ecdsa: the NIST curve — 256, 384, or 521 (default 256)
+#         ecdsa: the NIST curve — 256, 384, or 521 (default 384)
 #         rsa:   modulus bits, at least 2048 (default 3072)
 #
 # Note RSA generation costs hundreds of milliseconds and is highly variable,
 # paid every time a certificate is obtained; ecdsa and ed25519 are effectively
-# instant. Left unset so the default can follow FIPS mode.
+# instant. Left unset so the default (ecdsa P-384) applies.
 # sshkey:
-#   type: ed25519
-#   size: 0
+#   type: ecdsa
+#   size: 384

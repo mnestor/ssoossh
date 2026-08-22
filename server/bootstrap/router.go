@@ -456,7 +456,7 @@ func (s *Server) startAppServer(ctx context.Context) error {
 // a usable certificate was found.
 func (s *Server) configureAppServerTransport() error {
 	var err error
-	s.appSrv.TLSConfig, err = s.config.HTTP.TLS.Build()
+	s.appSrv.TLSConfig, err = s.config.HTTP.TLS.Build(s.config.FIPSEnabled())
 	if err != nil {
 		return err
 	}

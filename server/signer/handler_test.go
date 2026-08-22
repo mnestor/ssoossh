@@ -74,7 +74,7 @@ func TestHandler_ShouldPublishASignedReplyOnSuccess(t *testing.T) {
 
 	ks, _ := newTestKeySource(t)
 	channel := newTestChannel(t)
-	h := NewHandler(ks, channel)
+	h := NewHandler(ks, channel, false)
 	job := newTestJob(t)
 
 	reply, err := handleJob(t, h, channel, job)
@@ -102,7 +102,7 @@ func TestHandler_ShouldPublishAFailureReplyAndAck(t *testing.T) {
 
 	ks := &staticKeySource{err: errors.New("ssh-agent unreachable")}
 	channel := newTestChannel(t)
-	h := NewHandler(ks, channel)
+	h := NewHandler(ks, channel, false)
 	job := newTestJob(t)
 
 	reply, err := handleJob(t, h, channel, job)
@@ -140,7 +140,7 @@ func TestHandler_ShouldNackWhenPublishingTheReplyFails(t *testing.T) {
 	t.Parallel()
 
 	ks, _ := newTestKeySource(t)
-	h := NewHandler(ks, failingPublisher{})
+	h := NewHandler(ks, failingPublisher{}, false)
 	job := newTestJob(t)
 
 	payload, err := json.Marshal(job)
@@ -164,7 +164,7 @@ func TestHandler_Register(t *testing.T) {
 
 	channel := newTestChannel(t)
 	ks, _ := newTestKeySource(t)
-	h := NewHandler(ks, channel)
+	h := NewHandler(ks, channel, false)
 
 	router, err := message.NewRouter(message.RouterConfig{}, watermill.NewSlogLogger(slog.Default()))
 	if err != nil {
@@ -221,7 +221,7 @@ func TestHandler_ShouldAckAnUnparseableJobWithoutPublishing(t *testing.T) {
 
 	ks, _ := newTestKeySource(t)
 	channel := newTestChannel(t)
-	h := NewHandler(ks, channel)
+	h := NewHandler(ks, channel, false)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()

@@ -107,7 +107,7 @@ func TestSign_ShouldProduceACertificateVerifiableAgainstTheCA(t *testing.T) {
 	ks, caPub := newTestKeySource(t)
 	job := newTestJob(t)
 
-	reply, err := Sign(context.Background(), ks, job)
+	reply, err := Sign(context.Background(), ks, job, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestSign_ShouldMapJobFieldsOntoTheCertificate(t *testing.T) {
 	ks, _ := newTestKeySource(t)
 	job := newTestJob(t)
 
-	reply, err := Sign(context.Background(), ks, job)
+	reply, err := Sign(context.Background(), ks, job, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -173,11 +173,11 @@ func TestSign_ShouldProduceUniqueSerials(t *testing.T) {
 
 	ks, _ := newTestKeySource(t)
 
-	first, err := Sign(context.Background(), ks, newTestJob(t))
+	first, err := Sign(context.Background(), ks, newTestJob(t), false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	second, err := Sign(context.Background(), ks, newTestJob(t))
+	second, err := Sign(context.Background(), ks, newTestJob(t), false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestSign_ShouldProduceSerialsStorableByDatabaseSQL(t *testing.T) {
 
 	ks, _ := newTestKeySource(t)
 	for i := range 50 {
-		reply, err := Sign(context.Background(), ks, newTestJob(t))
+		reply, err := Sign(context.Background(), ks, newTestJob(t), false)
 		if err != nil {
 			t.Fatalf("unexpected error on iteration %d: %v", i, err)
 		}
@@ -220,7 +220,7 @@ func TestSign_ShouldCarryCriticalOptionsFaithfully(t *testing.T) {
 	job.RequestedOptions.ForceCommand = "/usr/bin/true"
 	job.RequestedOptions.SourceAddresses = []string{"10.0.0.1/32", "192.168.1.0/24"}
 
-	reply, err := Sign(context.Background(), ks, job)
+	reply, err := Sign(context.Background(), ks, job, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestSign_ShouldGrantNoTouchRequiredWhenRequested(t *testing.T) {
 	job := newTestJob(t)
 	job.RequestedOptions.NoTouchRequired = true
 
-	reply, err := Sign(context.Background(), ks, job)
+	reply, err := Sign(context.Background(), ks, job, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -265,7 +265,7 @@ func TestSign_ShouldRejectUnsupportedCertificateTypes(t *testing.T) {
 		job := newTestJob(t)
 		job.Type = certType
 
-		_, err := Sign(context.Background(), ks, job)
+		_, err := Sign(context.Background(), ks, job, false)
 		if err == nil {
 			t.Fatalf("expected an error for certificate type %q, got nil", certType)
 		}
@@ -289,7 +289,7 @@ func TestSign_ShouldIssueUserCertForPAM(t *testing.T) {
 	job.KeyID = "pam:alice"
 	job.RequestedOptions = certmsg.RequestedOptions{}
 
-	reply, err := Sign(context.Background(), ks, job)
+	reply, err := Sign(context.Background(), ks, job, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -310,7 +310,7 @@ func TestSign_ShouldRejectAnUnparseablePublicKey(t *testing.T) {
 	job := newTestJob(t)
 	job.PublicKey = "not-a-public-key"
 
-	_, err := Sign(context.Background(), ks, job)
+	_, err := Sign(context.Background(), ks, job, false)
 	if err == nil {
 		t.Fatal("expected an error for an unparseable public key, got nil")
 	}
@@ -324,7 +324,7 @@ func TestSign_ShouldReportAnUnavailableCA(t *testing.T) {
 
 	ks := &staticKeySource{err: errors.New("ssh-agent unreachable")}
 
-	_, err := Sign(context.Background(), ks, newTestJob(t))
+	_, err := Sign(context.Background(), ks, newTestJob(t), false)
 	if err == nil {
 		t.Fatal("expected an error when the CA key is unavailable, got nil")
 	}
@@ -390,13 +390,68 @@ func TestSign_ShouldReportASigningFailure(t *testing.T) {
 	}
 	ks := &staticKeySource{signer: &brokenSigner{pub: caSigner.PublicKey()}}
 
-	_, err = Sign(context.Background(), ks, newTestJob(t))
+	_, err = Sign(context.Background(), ks, newTestJob(t), false)
 	if err == nil {
 		t.Fatal("expected an error when the CA signer fails to sign, got nil")
 	}
 	if got := errorCode(err); got != certmsg.ErrCodeSignFailed {
 		t.Errorf("got error code %q, want %q", got, certmsg.ErrCodeSignFailed)
 	}
+}
+
+// newTestECDSAPublicKey returns a fresh P-384 ECDSA public key in
+// authorized_keys format: FIPS-approved, unlike newTestPublicKey's ed25519
+// output.
+func newTestECDSAPublicKey(t *testing.T) string {
+	t.Helper()
+
+	kp, err := keypair.NewECDSAKeyPair(384)
+	if err != nil {
+		t.Fatalf("failed to generate ecdsa keypair: %v", err)
+	}
+	pub, err := kp.MarshalAuthorizedKey()
+	if err != nil {
+		t.Fatalf("failed to marshal public key: %v", err)
+	}
+	return pub
+}
+
+func TestSign_FIPS(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should reject a non-FIPS-approved public key when fipsEnabled is true", func(t *testing.T) {
+		t.Parallel()
+
+		ks, _ := newTestKeySource(t)
+		_, err := Sign(context.Background(), ks, newTestJob(t), true)
+		if err == nil {
+			t.Fatal("expected an error for a non-FIPS-approved (ed25519) key under fipsEnabled")
+		}
+		if got := errorCode(err); got != certmsg.ErrCodeFIPSNotApproved {
+			t.Errorf("got error code %q, want %q", got, certmsg.ErrCodeFIPSNotApproved)
+		}
+	})
+
+	t.Run("should accept a FIPS-approved public key when fipsEnabled is true", func(t *testing.T) {
+		t.Parallel()
+
+		ks, _ := newTestKeySource(t)
+		job := newTestJob(t)
+		job.PublicKey = newTestECDSAPublicKey(t)
+
+		if _, err := Sign(context.Background(), ks, job, true); err != nil {
+			t.Errorf("unexpected error for a FIPS-approved (ecdsa) key under fipsEnabled: %v", err)
+		}
+	})
+
+	t.Run("should not restrict the key algorithm when fipsEnabled is false", func(t *testing.T) {
+		t.Parallel()
+
+		ks, _ := newTestKeySource(t)
+		if _, err := Sign(context.Background(), ks, newTestJob(t), false); err != nil {
+			t.Errorf("unexpected error for an ed25519 key when fipsEnabled is false: %v", err)
+		}
+	})
 }
 
 func TestNewConfigKeySource_ShouldRejectEmptyAndInvalidKeys(t *testing.T) {

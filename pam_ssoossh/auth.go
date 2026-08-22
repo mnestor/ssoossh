@@ -10,6 +10,7 @@ import (
 
 	"github.com/mnestor/ssoossh/internal/api"
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
+	"github.com/mnestor/ssoossh/internal/fipsmode"
 )
 
 // Authenticate generates a per-attempt keypair, asks the server to certify
@@ -44,7 +45,11 @@ func Authenticate(ctx context.Context, log Logger, conv Conversation, user strin
 		return PamAbort, fmt.Errorf("build API client: %w", err)
 	}
 
-	kp, err := keypair.NewSSHKeypair("ed25519", 0)
+	// The per-attempt keypair always uses the shared FIPS-approved default
+	// (ECDSA P-384): PAM has no config surface for key type, so there's no
+	// operator setting to honor here.
+	keyType := fipsmode.DefaultSSHKeyType()
+	kp, err := keypair.NewSSHKeypair(string(keyType), fipsmode.DefaultSizeForAlgorithm(keyType))
 	if err != nil {
 		return PamAbort, err // excluded from coverage: crypto/rand.Reader failure isn't reproducible in tests, see exclude-from-coverage.txt
 	}

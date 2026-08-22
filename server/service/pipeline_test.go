@@ -59,7 +59,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create router: %v", err)
 	}
-	signer.NewHandler(keys, svc.publisher).Register(router, svc.subscriber)
+	signer.NewHandler(keys, svc.publisher, false).Register(router, svc.subscriber)
 	NewSignedReplyHandler(svc.db, svc).Register(router, svc.subscriber)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -222,7 +222,7 @@ func TestPipeline_EndToEnd_PAM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create router: %v", err)
 	}
-	signer.NewHandler(keys, svc.publisher).Register(router, svc.subscriber)
+	signer.NewHandler(keys, svc.publisher, false).Register(router, svc.subscriber)
 	NewSignedReplyHandler(svc.db, svc).Register(router, svc.subscriber)
 
 	ctx, cancel := context.WithCancel(context.Background())

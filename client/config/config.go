@@ -33,15 +33,22 @@ const Context ctxKey = "CONFIG"
 //
 // Then, if the system file names an `enforce` file, that one is merged last
 // of all and wins over everything above it. Nothing else may set `enforce`.
+//
+// Finally, a platform-native policy source is merged on top of even that:
+// a Windows registry key managed via Group Policy, or macOS managed
+// preferences pushed by MDM. See policy_windows.go / policy_darwin.go /
+// policy_other.go and docs/client-settings-enforcement.md.
 func NewConfig(cmd *cobra.Command) (*Config, error) {
-	return newConfig(cmd, defaultSearchPaths())
+	return newConfig(cmd, defaultSearchPaths(), loadPlatformPolicy)
 }
 
-// newConfig is NewConfig with the search locations as a parameter, so the
-// `enforce` mechanism can be tested without writing to a system directory
-// and so tests do not pick up the developer's own configuration. Production
-// callers go through NewConfig.
-func newConfig(cmd *cobra.Command, paths searchPaths) (*Config, error) {
+// newConfig is NewConfig with the search locations and the platform policy
+// loader as parameters, so the `enforce` mechanism and platform-native
+// policy precedence can both be tested without writing to a system
+// directory or the real registry/managed-preferences locations, and so
+// tests do not pick up the developer's own configuration or the CI
+// machine's GOOS. Production callers go through NewConfig.
+func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[string]any, error)) (*Config, error) {
 	v := viper.New()
 
 	// set defaults
@@ -102,11 +109,20 @@ func newConfig(cmd *cobra.Command, paths searchPaths) (*Config, error) {
 		mergeConfig(v, enforce)
 	}
 
+	// Merged after `enforce`, so a platform-native policy source (Windows
+	// GPO registry, macOS managed preferences) wins over even the enforce
+	// file. See policy_windows.go / policy_darwin.go / policy_other.go —
+	// each key it sets is treated exactly like an enforce-file key.
+	policySetsFIPS, err := mergePlatformPolicy(v, loadPolicy)
+	if err != nil {
+		return nil, err
+	}
+
 	var c Config
 	if err := v.Unmarshal(&c); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
-	c.FIPSEnforced = enforceSetsFIPS && c.FIPS != nil && *c.FIPS
+	c.FIPSEnforced = (enforceSetsFIPS || policySetsFIPS) && c.FIPS != nil && *c.FIPS
 
 	// Resolve the key settings now so a bad combination is reported at
 	// startup rather than at the first attempt to obtain a certificate.
@@ -121,6 +137,29 @@ func newConfig(cmd *cobra.Command, paths searchPaths) (*Config, error) {
 	}
 
 	return &c, nil
+}
+
+// mergePlatformPolicy loads and merges the platform-native policy source
+// (see loadPlatformPolicy and its per-GOOS implementations) into v, and
+// reports whether it set fips: true — the platform-policy counterpart of
+// enforceFileSets, used the same way by newConfig's FIPSEnforced
+// computation.
+func mergePlatformPolicy(v *viper.Viper, loadPolicy func() (map[string]any, error)) (fipsSet bool, err error) {
+	policy, err := loadPolicy()
+	if err != nil {
+		return false, fmt.Errorf("failed to load platform policy: %w", err)
+	}
+	if len(policy) == 0 {
+		return false, nil
+	}
+
+	if fips, ok := policy["fips"].(bool); ok {
+		fipsSet = fips
+	}
+	if err := v.MergeConfigMap(policy); err != nil {
+		return false, fmt.Errorf("failed to merge platform policy: %w", err)
+	}
+	return fipsSet, nil
 }
 
 func mergeConfig(v *viper.Viper, f string) {
