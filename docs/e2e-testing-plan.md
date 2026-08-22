@@ -272,11 +272,15 @@ gets quarantined with an issue, not `retries: 3`.
 - A short `test/e2e/README.md`: how to run one tier, how to keep the browser
   visible, where artifacts land.
 
+## Database dialect support
+
+The E2E harness tests both SQLite (default) and Postgres to ensure schema
+equivalence and migration correctness across dialects. This is now first-class:
+Postgres gates PRs alongside SQLite, proving the product works regardless of
+backend. The harness is responsible for setup; see `test/e2e/harness/postgres.go`.
+
 ## Explicitly out of scope
 
-- **Postgres.** The matrix doubles runtime to cover a layer the E2E is not
-  aimed at. Worth a nightly run once `multi-instance-safety-plan.md` is acted
-  on.
 - **macOS and Windows runners.** The client is cross-platform and its agent
   handling genuinely differs (Pageant, the WSL relay), so this will matter —
   but not before the Linux path is trustworthy.
