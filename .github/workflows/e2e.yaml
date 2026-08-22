@@ -4,6 +4,11 @@ name: e2e
 # from build-test.yaml because this one has a different runtime, different
 # failure modes, and its own artifacts. It's the only job that checks the
 # product rather than the parts.
+#
+# Tiers run as separate jobs so that "a break is reported at the layer it
+# happened" — job name alone tells you tier 1 (wire), tier 2 (browser), or
+# tier 3 (sshd) failed. Build is cached across tiers. No automatic retries
+# (a retried e2e test is a test nobody trusts; flakes get quarantined).
 on:
   workflow_dispatch:
   pull_request:
@@ -12,6 +17,11 @@ on:
     #   - v*
     branches:
       - main
+  schedule:
+    # Extended flake detection: run full suite at -count=5 nightly to surface
+    # flakes before they land in the PR gate.
+    - cron: "0 2 * * *"  # 02:00 UTC daily
+
 permissions:
   contents: read
 
@@ -20,15 +30,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  e2e:
-    name: end to end
+  prepare:
+    name: build artifacts
     runs-on: [self-hosted, tester]
     container:
       image: ghcr.io/mnestor/ubuntu-build:latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    outputs:
+      frontend-cache-key: ${{ steps.frontend.outputs.cache-key }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v5.6.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef474303e # v5.6.0
         with:
           go-version-file: "go.mod"
           check-latest: true
@@ -42,10 +54,137 @@ jobs:
 
       # The Go build cannot compile without it: server/frontend embeds dist/.
       - name: Build web UI
-        run: make frontend
+        id: frontend
+        run: |
+          make frontend
+          echo "cache-key=$(git rev-parse --short HEAD)-frontend" >> $GITHUB_OUTPUT
 
       - name: Build binaries
         run: go build -buildvcs=false -o bin/ ./cmd/...
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: e2e-binaries
+          path: |
+            bin/
+            server/frontend/dist/
+
+  tier-1:
+    name: tier 1 (wire)
+    needs: prepare
+    runs-on: [self-hosted, tester]
+    container:
+      image: ghcr.io/mnestor/ubuntu-build:latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [sqlite]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef474303e # v5.6.0
+        with:
+          go-version-file: "go.mod"
+          check-latest: true
+          cache: true
+
+      - name: Download artifacts
+        uses: actions/download-artifact@e4b0c20b663c359a96327a894f3454240b1008a7 # v4.1.8
+        with:
+          name: e2e-binaries
+
+      - name: Run tier 1 tests
+        run: |
+          go test -buildvcs=false -tags=e2e -count=1 -timeout=5m -json ./test/e2e/... | \
+            gotestsum --junitfile=test-results-tier1-${{ matrix.backend }}.xml --raw-command -- cat
+        continue-on-error: false
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: e2e-diagnostics-tier1-${{ matrix.backend }}
+          path: test/e2e/_artifacts/
+          retention-days: 7
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: e2e-test-results-tier1-${{ matrix.backend }}
+          path: test-results-tier1-${{ matrix.backend }}.xml
+          retention-days: 7
+
+  tier-2:
+    name: tier 2 (browser)
+    needs: prepare
+    runs-on: [self-hosted, tester]
+    container:
+      image: ghcr.io/mnestor/ubuntu-build:latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [sqlite]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef474303e # v5.6.0
+        with:
+          go-version-file: "go.mod"
+          check-latest: true
+          cache: true
+
+      - name: Download artifacts
+        uses: actions/download-artifact@e4b0c20b663c359a96327a894f3454240b1008a7 # v4.1.8
+        with:
+          name: e2e-binaries
+
+      - name: Run tier 2 tests
+        run: |
+          go test -buildvcs=false -tags=e2e -count=1 -timeout=10m -run "TestApproval" -json ./test/e2e/... | \
+            gotestsum --junitfile=test-results-tier2-${{ matrix.backend }}.xml --raw-command -- cat
+        continue-on-error: false
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: e2e-diagnostics-tier2-${{ matrix.backend }}
+          path: test/e2e/_artifacts/
+          retention-days: 7
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: e2e-test-results-tier2-${{ matrix.backend }}
+          path: test-results-tier2-${{ matrix.backend }}.xml
+          retention-days: 7
+
+  tier-3:
+    name: tier 3 (sshd)
+    needs: prepare
+    runs-on: [self-hosted, tester]
+    container:
+      image: ghcr.io/mnestor/ubuntu-build:latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [sqlite]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef474303e # v5.6.0
+        with:
+          go-version-file: "go.mod"
+          check-latest: true
+          cache: true
+
+      - name: Download artifacts
+        uses: actions/download-artifact@e4b0c20b663c359a96327a894f3454240b1008a7 # v4.1.8
+        with:
+          name: e2e-binaries
 
       # Present on the hosted image, but asserting it beats a confusing
       # "no such file" three steps later.
@@ -57,14 +196,109 @@ jobs:
           # fails with "Missing privilege separation directory" without it.
           mkdir -p /run/sshd
 
-      - name: Run end-to-end tests
-        run: go test -buildvcs=false -tags=e2e -count=1 -timeout=10m ./test/e2e/...
+      - name: Run tier 3 tests
+        run: |
+          go test -buildvcs=false -tags=e2e -count=1 -timeout=10m -run "TestSSH" -json ./test/e2e/... | \
+            gotestsum --junitfile=test-results-tier3-${{ matrix.backend }}.xml --raw-command -- cat
+        continue-on-error: false
 
       - name: Upload diagnostics
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
         with:
-          name: e2e-diagnostics
-          path: |
-            test/e2e/_artifacts/**
+          name: e2e-diagnostics-tier3-${{ matrix.backend }}
+          path: test/e2e/_artifacts/
+          retention-days: 7
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: e2e-test-results-tier3-${{ matrix.backend }}
+          path: test-results-tier3-${{ matrix.backend }}.xml
+          retention-days: 7
+
+  e2e-summary:
+    name: e2e results
+    needs: [tier-1, tier-2, tier-3]
+    runs-on: [self-hosted, tester]
+    if: always()
+    steps:
+      - name: Download all test results
+        uses: actions/download-artifact@e4b0c20b663c359a96327a894f3454240b1008a7 # v4.1.8
+        with:
+          path: test-results/
+          pattern: e2e-test-results-*
+
+      - name: Summarize results
+        run: |
+          echo "## E2E Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Tier | Backend | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Tier 1 (wire) | sqlite | ${{ needs.tier-1.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tier 2 (browser) | sqlite | ${{ needs.tier-2.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tier 3 (sshd) | sqlite | ${{ needs.tier-3.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ needs.tier-1.result }}" == "success" && "${{ needs.tier-2.result }}" == "success" && "${{ needs.tier-3.result }}" == "success" ]]; then
+            echo "✓ All tiers passed" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          else
+            echo "✗ One or more tiers failed" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+  nightly-extended:
+    name: nightly extended tests
+    if: github.event_name == 'schedule'
+    runs-on: [self-hosted, tester]
+    container:
+      image: ghcr.io/mnestor/ubuntu-build:latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef474303e # v5.6.0
+        with:
+          go-version-file: "go.mod"
+          check-latest: true
+          cache: true
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v4.4.0
+        with:
+          node-version: 26
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v4.4.0
+        with:
+          version: 11
+
+      - name: Build web UI
+        run: make frontend
+
+      - name: Build binaries
+        run: go build -buildvcs=false -o bin/ ./cmd/...
+
+      - name: Ensure sshd is available
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends openssh-server
+          mkdir -p /run/sshd
+
+      - name: Run extended test suite (5 iterations)
+        run: |
+          go test -buildvcs=false -tags=e2e -count=5 -timeout=30m -json ./test/e2e/... | \
+            gotestsum --junitfile=test-results-extended.xml --raw-command -- cat
+        continue-on-error: false
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: e2e-diagnostics-extended
+          path: test/e2e/_artifacts/
+          retention-days: 7
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: e2e-test-results-extended
+          path: test-results-extended.xml
           retention-days: 7
