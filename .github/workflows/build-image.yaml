@@ -1,0 +1,46 @@
+# Builds and publishes the CI runner and devcontainer images from
+# .github/docker/. Migrated from github.com/mnestor/ubuntu-build once the
+# images became ssoossh-specific (Go toolchain pin, PAM headers, softhsm2,
+# zig); publishing from this repo keeps the Dockerfiles next to the
+# workflows and Makefile targets that depend on their contents.
+name: build-image
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/docker/**"
+      - ".github/workflows/build-image.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  push-image:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image:
+          - type: runner
+            name: ssoossh-build
+          - type: devcontainer
+            name: ssoossh-devcontainer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.image.name }}
+        env:
+          IMAGE: ${{ matrix.image.type }}
+          NAME: ${{ matrix.image.name }}
+        run: |
+          docker build .github/docker -f .github/docker/Dockerfile.${IMAGE} --tag ghcr.io/mnestor/${NAME}:latest
+          docker push ghcr.io/mnestor/${NAME}:latest

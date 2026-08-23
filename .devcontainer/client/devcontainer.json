@@ -1,6 +1,6 @@
 {
   "name": "ssoossh-client",
-  "image": "ghcr.io/mnestor/ubuntu-build-devcontainer:latest",
+  "image": "ghcr.io/mnestor/ssoossh-devcontainer:latest",
   "workspaceFolder": "/workspace/${localWorkspaceFolderBasename}",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/${localWorkspaceFolderBasename},type=bind",
   // Personal tooling config, not part of the app -- mounted from the host
