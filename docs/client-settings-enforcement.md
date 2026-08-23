@@ -61,7 +61,10 @@ see `client/config/sshkey.go`.
 
 ## Windows: Group Policy
 
-The client reads `HKLM\SOFTWARE\Policies\ssoossh`. `SOFTWARE\Policies` is
+The client reads `HKLM\SOFTWARE\Policies\com.github.mnestor\ssoossh`,
+following the conventional `Policies\<Vendor>\<Product>` layout with
+`com.github.mnestor` as the vendor key — the same identifier the macOS
+preference domain is built from. `SOFTWARE\Policies` is
 the conventional location for Group Policy-delivered settings, and HKLM is
 writable only by administrators/SYSTEM — the same trust boundary
 `%ProgramData%` gives the `enforce` file.
@@ -76,10 +79,10 @@ A value simply absent from the key is unset, same as an absent YAML key.
 
 The client reads two plist locations that macOS materializes for an
 installed configuration profile targeting the preference domain
-`com.mnestor.ssoossh`:
+`com.github.mnestor.ssoossh`:
 
-- **Device-scoped** profile: `/Library/Managed Preferences/com.mnestor.ssoossh.plist`
-- **User-scoped** profile: `/Library/Managed Preferences/<username>/com.mnestor.ssoossh.plist`
+- **Device-scoped** profile: `/Library/Managed Preferences/com.github.mnestor.ssoossh.plist`
+- **User-scoped** profile: `/Library/Managed Preferences/<username>/com.github.mnestor.ssoossh.plist`
 
 When both exist, the user-scoped file wins for any key it sets, matching
 the user channel outranking the device channel for managed preferences

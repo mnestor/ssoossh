@@ -14,7 +14,7 @@ import (
 // Group Policy (as opposed to a vendor's own non-policy HKLM key), and only
 // writable by administrators/SYSTEM — the same trust boundary
 // systemConfigDir relies on for /etc and %ProgramData%.
-const policyRegistryPath = `SOFTWARE\Policies\ssoossh`
+const policyRegistryPath = `SOFTWARE\Policies\com.github.mnestor\ssoossh`
 
 // policyStringValues names the REG_SZ values under policyRegistryPath and
 // the canonical setting name (matching the YAML config keys, with the two
