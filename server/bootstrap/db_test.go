@@ -103,6 +103,30 @@ func TestMigrateDatabase_ShouldApplyEmbeddedSqliteMigrations(t *testing.T) {
 	}
 }
 
+// TestMigrateDatabase_ShouldAddUsersExtraFieldsColumn pins the migration
+// that adds users.extra_fields (see config.OAuthFields.Extra): a migrated
+// schema must accept a read of the column.
+func TestMigrateDatabase_ShouldAddUsersExtraFieldsColumn(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	c.DB.Provider = config.DBProviderSqlite
+	c.DB.Connection = ":memory:"
+
+	db, err := connectDatabase(c)
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	if err := migrateDatabase(config.DBProviderSqlite, db); err != nil {
+		t.Fatalf("unexpected error migrating database: %v", err)
+	}
+
+	var count int64
+	if err := db.Table("users").Select("extra_fields").Where("extra_fields != ''").Count(&count).Error; err != nil {
+		t.Fatalf("expected users.extra_fields to exist after migration, got %v", err)
+	}
+}
+
 // Regression test: migrateDatabase's SQLite driver is built with
 // sqliteMigrate.WithInstance, which stores the app's own *sql.DB directly
 // rather than a dedicated connection — closing that driver (e.g. via a

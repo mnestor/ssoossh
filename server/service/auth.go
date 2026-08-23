@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +38,13 @@ type Identity struct {
 	Groups          []string
 	OtherAccounts   []string
 	ServiceAccounts []string
+
+	// Extra holds the operator-configured extra claim fields (see
+	// config.OAuthFields.Extra), keyed by template name. Populated from ID
+	// token claims at login and persisted on model.User.ExtraFields; the
+	// approval path re-hydrates it from that row (the session does not
+	// carry it). Consumed by key ID templates as {{.Extra.name}}.
+	Extra map[string]extraValue
 }
 
 // AuthProvider handles OIDC login. AuthService is the production
@@ -226,6 +234,7 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce str
 		Groups:          groups,
 		OtherAccounts:   otherAccounts,
 		ServiceAccounts: serviceAccounts,
+		Extra:           extraClaims(claims, fields.Extra),
 	}
 
 	if err := s.upsertUser(ctx, identity); err != nil {
@@ -249,6 +258,18 @@ func (s *AuthService) upsertUser(ctx context.Context, identity *Identity) error 
 	if err != nil {
 		return err
 	}
+	// A nil map (no extras configured) marshals to "null"; store "{}" so
+	// readers can always unmarshal the column as a map.
+	extras := identity.Extra
+	if extras == nil {
+		extras = map[string]extraValue{}
+	}
+	extraFieldsJSON, err := json.Marshal(extras)
+	if err != nil {
+		// not covered: extraValue.MarshalJSON only encodes strings and
+		// []string, so json.Marshal cannot fail on this map.
+		return err
+	}
 
 	now := time.Now()
 	user := model.User{
@@ -258,6 +279,7 @@ func (s *AuthService) upsertUser(ctx context.Context, identity *Identity) error 
 		Email:           identity.Email,
 		OtherAccounts:   string(otherAccountsJSON),
 		ServiceAccounts: string(serviceAccountsJSON),
+		ExtraFields:     string(extraFieldsJSON),
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
@@ -265,7 +287,7 @@ func (s *AuthService) upsertUser(ctx context.Context, identity *Identity) error 
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "subject"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"username", "email", "other_accounts", "service_accounts", "updated_at",
+			"username", "email", "other_accounts", "service_accounts", "extra_fields", "updated_at",
 		}),
 	}).Create(&user).Error
 }
@@ -295,6 +317,54 @@ func stringSliceClaim(claims map[string]any, key string, required bool) ([]strin
 		}
 	}
 	return values, nil
+}
+
+// extraClaims extracts the operator-configured extra fields (mapping:
+// template name -> claim name, see config.OAuthFields.Extra) from claims.
+// Scalars (string, bool, number) coerce to strings; an array keeps its
+// string elements as a list. A missing, null, or unsupported-shape claim
+// warns and stores empty — the same optional-field posture as
+// stringSliceClaim — which key ID templates later render as MISSING.
+// Returns nil when no extras are configured.
+func extraClaims(claims map[string]any, mapping map[string]string) map[string]extraValue {
+	if len(mapping) == 0 {
+		return nil
+	}
+
+	extras := make(map[string]extraValue, len(mapping))
+	for name, claim := range mapping {
+		raw, ok := claims[claim]
+		if !ok || raw == nil {
+			slog.Warn("OIDC ID token is missing the configured extra claim",
+				slog.String("field", name), slog.String("claim", claim))
+			extras[name] = scalarExtra("")
+			continue
+		}
+
+		switch v := raw.(type) {
+		case string:
+			extras[name] = scalarExtra(v)
+		case bool:
+			extras[name] = scalarExtra(strconv.FormatBool(v))
+		case float64:
+			// encoding/json decodes every JSON number as float64; -1
+			// precision renders integral values without a decimal point.
+			extras[name] = scalarExtra(strconv.FormatFloat(v, 'f', -1, 64))
+		case []any:
+			values := make([]string, 0, len(v))
+			for _, e := range v {
+				if s, ok := e.(string); ok {
+					values = append(values, s)
+				}
+			}
+			extras[name] = listExtra(values)
+		default:
+			slog.Warn("configured extra claim has an unsupported shape",
+				slog.String("field", name), slog.String("claim", claim))
+			extras[name] = scalarExtra("")
+		}
+	}
+	return extras
 }
 
 // randomToken returns a random, URL-safe string suitable for a one-time use

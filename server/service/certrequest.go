@@ -139,7 +139,7 @@ type CertRequestService struct {
 
 // NewCertRequestService constructs a CertRequestService, parsing
 // c.CertOptions' per-type key ID templates (see
-// docs/features.md (key ID templating)) so a bad template fails startup.
+// docs/certificate-keyid-template.md) so a bad template fails startup.
 // publisher/subscriber back the wake-topic broker (see certmsg.WaitTopic) —
 // the gochannel-based pair from server/pubsub.
 func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publisher, subscriber message.Subscriber) (*CertRequestService, error) {
@@ -380,7 +380,7 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 		return nil, fmt.Errorf("failed to look up certificate request: %w", err)
 	}
 
-	if err := s.bindRequester(ctx, &req, identity); err != nil {
+	if _, err := s.bindRequester(ctx, &req, identity); err != nil {
 		return nil, err
 	}
 
@@ -529,9 +529,16 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 		}
 	}
 
-	if err := s.bindRequester(ctx, &req, identity); err != nil {
+	user, err := s.bindRequester(ctx, &req, identity)
+	if err != nil {
 		return err
 	}
+
+	// The session-built identity carries no Extra (see
+	// middleware.SessionAuthMiddleware), so the key ID template's extra
+	// fields are hydrated from the approver's users row, persisted at
+	// login. identity is per-request, so mutating it stays local.
+	identity.Extra = decodeExtraFields(user.ExtraFields)
 
 	if s.config.FIPSEnabled() {
 		if err := s.checkFIPSApproved(req.PublicKey); err != nil {
@@ -586,17 +593,21 @@ func (s *CertRequestService) checkFIPSApproved(authorizedKey string) error {
 // verification code the client displays and the browser has to match, which
 // is deliberately out of scope here (see docs/security-review-2026-08-11.md
 // finding 2).
-func (s *CertRequestService) bindRequester(ctx context.Context, req *model.CertificateRequest, identity *Identity) error {
-	userID, err := s.resolveUserID(ctx, identity)
+//
+// Returns the resolved users row so Approve can consume its persisted
+// fields (extra_fields) without a second lookup.
+func (s *CertRequestService) bindRequester(ctx context.Context, req *model.CertificateRequest, identity *Identity) (model.User, error) {
+	user, err := s.resolveUser(ctx, identity)
 	if err != nil {
-		return err
+		return model.User{}, err
 	}
+	userID := user.ID
 
 	if req.UserID != nil {
 		if *req.UserID != userID {
-			return &errorresponses.ForbiddenError{Reason: "certificate request belongs to another user"}
+			return model.User{}, &errorresponses.ForbiddenError{Reason: "certificate request belongs to another user"}
 		}
-		return nil
+		return user, nil
 	}
 
 	// Guarded so two approvals racing on an unclaimed request can't both
@@ -606,10 +617,10 @@ func (s *CertRequestService) bindRequester(ctx context.Context, req *model.Certi
 		Where("id = ? AND user_id IS NULL", req.ID).
 		Update("user_id", userID)
 	if result.Error != nil {
-		// not covered: failing this query and not resolveUserID's (which
+		// not covered: failing this query and not resolveUser's (which
 		// is tested) needs per-query DB fault injection, which this
 		// codebase has no helper for.
-		return fmt.Errorf("failed to bind certificate request to user: %w", result.Error)
+		return model.User{}, fmt.Errorf("failed to bind certificate request to user: %w", result.Error)
 	}
 
 	if result.RowsAffected == 0 {
@@ -618,29 +629,29 @@ func (s *CertRequestService) bindRequester(ctx context.Context, req *model.Certi
 			// not covered: failing the re-read and not the guarded UPDATE
 			// above it needs per-query DB fault injection, which this
 			// codebase has no helper for.
-			return fmt.Errorf("failed to re-read certificate request after a racing claim: %w", err)
+			return model.User{}, fmt.Errorf("failed to re-read certificate request after a racing claim: %w", err)
 		}
 		if claimed.UserID == nil || *claimed.UserID != userID {
-			return &errorresponses.ForbiddenError{Reason: "certificate request belongs to another user"}
+			return model.User{}, &errorresponses.ForbiddenError{Reason: "certificate request belongs to another user"}
 		}
 	}
 
 	req.UserID = &userID
-	return nil
+	return user, nil
 }
 
-// resolveUserID maps identity to its users row ID, keyed on the OIDC
-// subject. The row is written at login (AuthService.upsertUser), so a miss
-// means the caller's session outlived its user record.
-func (s *CertRequestService) resolveUserID(ctx context.Context, identity *Identity) (string, error) {
+// resolveUser maps identity to its users row, keyed on the OIDC subject.
+// The row is written at login (AuthService.upsertUser), so a miss means the
+// caller's session outlived its user record.
+func (s *CertRequestService) resolveUser(ctx context.Context, identity *Identity) (model.User, error) {
 	var user model.User
 	if err := s.db.WithContext(ctx).First(&user, "subject = ?", identity.Subject).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", &errorresponses.ForbiddenError{Reason: "no user record for the authenticated identity"}
+			return model.User{}, &errorresponses.ForbiddenError{Reason: "no user record for the authenticated identity"}
 		}
-		return "", fmt.Errorf("failed to look up the approving user: %w", err)
+		return model.User{}, fmt.Errorf("failed to look up the approving user: %w", err)
 	}
-	return user.ID, nil
+	return user, nil
 }
 
 // approveServiceEnrollment implements Approve's service branch — see its
@@ -669,18 +680,13 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 	// docs/certificate-lifetime-policy.md), and the approving identity —
 	// which both derive from — no longer exists when `service retrieve`
 	// redeems the code unattended.
-	keyID, err := executeKeyIDTemplate(policy.keyIDTemplate, keyIDTemplateData{
-		Username: identity.Username,
-		Subject:  identity.Subject,
-		Email:    identity.Email,
-		ClientIP: req.SourceIP,
-		UniqueID: req.ID,
-	})
+	keyID, err := executeKeyIDTemplate(policy.keyIDTemplate, newKeyIDTemplateData(identity, req.SourceIP, req.ID))
 	if err != nil {
 		// not covered: parseKeyIDTemplate already executed
 		// policy.keyIDTemplate once against a zero-value keyIDTemplateData
-		// at construction, and keyIDTemplateData is a flat struct of
-		// strings, so executing it against real data cannot newly fail.
+		// at construction, extra lookups render MISSING rather than
+		// erroring (missingkey=zero), and the data is plain strings and
+		// extraValues, so executing against real data cannot newly fail.
 		return fmt.Errorf("failed to compute key ID: %w", err)
 	}
 
@@ -827,19 +833,14 @@ func newDecision(requestID string, outcome model.CertificateRequestDecisionOutco
 // comment. policy/narrowed are req.Type's already-resolved,
 // server-config-bounded policy.
 func (s *CertRequestService) approveForSigning(ctx context.Context, req model.CertificateRequest, identity *Identity, policy *certTypePolicy, narrowed RequestedOptions, dc DecisionContext) error {
-	keyID, err := executeKeyIDTemplate(policy.keyIDTemplate, keyIDTemplateData{
-		Username: identity.Username,
-		Subject:  identity.Subject,
-		Email:    identity.Email,
-		ClientIP: req.SourceIP,
-		UniqueID: req.ID,
-	})
+	keyID, err := executeKeyIDTemplate(policy.keyIDTemplate, newKeyIDTemplateData(identity, req.SourceIP, req.ID))
 	if err != nil {
 		// not covered: parseKeyIDTemplate already executed
-		// policy.keyIDTemplate once against a zero-value
-		// keyIDTemplateData at construction to catch unresolvable fields,
-		// and keyIDTemplateData is a flat struct of strings, so executing
-		// it again against real request data cannot newly fail.
+		// policy.keyIDTemplate once against a zero-value keyIDTemplateData
+		// at construction to catch unresolvable fields, extra lookups
+		// render MISSING rather than erroring (missingkey=zero), and the
+		// data is plain strings and extraValues, so executing it again
+		// against real request data cannot newly fail.
 		return fmt.Errorf("failed to compute key ID: %w", err)
 	}
 

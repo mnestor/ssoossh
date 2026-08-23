@@ -20,6 +20,12 @@ type User struct {
 	OtherAccounts   string `gorm:"column:other_accounts"`
 	ServiceAccounts string `gorm:"column:service_accounts"`
 
+	// ExtraFields is a JSON-encoded map of the operator-configured extra
+	// claim fields captured at login (config.OAuthFields.Extra): template
+	// name -> string or array of strings. Consumed by key ID templates at
+	// approval time via service.Identity.Extra.
+	ExtraFields string `gorm:"column:extra_fields"`
+
 	CreatedAt time.Time `gorm:"column:created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at"`
 

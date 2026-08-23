@@ -35,4 +35,14 @@ type OAuthFields struct {
 	// back to the standard "email" claim opportunistically (not an error
 	// if absent either way).
 	Email string `mapstructure:"email"`
+
+	// Extra maps additional template field names to claim names. Each
+	// configured claim is captured at login (scalars as strings, string
+	// arrays as lists), stored on the users row, and made available to
+	// key ID templates as {{.Extra.<name>}} (or {{join .Extra.<name>
+	// "<sep>"}} for lists). A claim absent from the ID token stores empty
+	// and renders as MISSING; login never fails over one. Names with
+	// characters beyond letters/digits/underscores need the template's
+	// index syntax: {{index .Extra "my-name"}}.
+	Extra map[string]string `mapstructure:"extra"`
 }

@@ -337,18 +337,18 @@ func TestCertRequestService_ShouldSurfaceGenericDBErrors(t *testing.T) {
 		closeUnderlyingDB(t, svc.db)
 
 		req := &model.CertificateRequest{ID: requestID, UserID: nil}
-		if err := svc.bindRequester(context.Background(), req, identity); err == nil {
+		if _, err := svc.bindRequester(context.Background(), req, identity); err == nil {
 			t.Error("bindRequester() error = nil, want error")
 		}
 	})
 
-	t.Run("resolveUserID", func(t *testing.T) {
+	t.Run("resolveUser", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestCertRequestService(t, 0)
 		closeUnderlyingDB(t, svc.db)
 
-		if _, err := svc.resolveUserID(context.Background(), &Identity{Subject: "sub-alice"}); err == nil {
-			t.Error("resolveUserID() error = nil, want error")
+		if _, err := svc.resolveUser(context.Background(), &Identity{Subject: "sub-alice"}); err == nil {
+			t.Error("resolveUser() error = nil, want error")
 		}
 	})
 
@@ -885,6 +885,65 @@ func TestCertRequestService_Approve_ShouldNarrowExtensionsAndPublishSigningJob(t
 	}
 }
 
+// TestCertRequestService_Approve_ShouldHydrateExtraFieldsFromTheUserRow
+// covers the approval-time side of the extra-fields pipeline: the session
+// identity carries no Extra (see middleware.SessionAuthMiddleware), so the
+// key ID template's {{.Extra.*}} values must come from the approver's users
+// row (persisted at login), with MISSING for names never configured.
+func TestCertRequestService_Approve_ShouldHydrateExtraFieldsFromTheUserRow(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+		User: config.CertOptionsUser{
+			KeyIDTemplate: `{{.Username}}|{{.Extra.dept}}|{{join .Extra.accounts ";"}}|{{.Extra.nope}}`,
+			ValidDuration: time.Hour,
+		},
+	})
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypeUser,
+		PublicKey: "ssh-ed25519 AAAA...",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	messages, err := svc.subscriber.Subscribe(ctx, certmsg.SignQueueTopic)
+	if err != nil {
+		t.Fatalf("unexpected error subscribing to the sign queue: %v", err)
+	}
+
+	// The identity deliberately has no Extra: hydration must read the row.
+	identity := &Identity{Username: "alice", Subject: "sub-1", Email: "alice@example.com"}
+	userID := seedUser(t, svc.db, identity.Subject)
+	if err := svc.db.Model(&model.User{}).Where("id = ?", userID).
+		Update("extra_fields", `{"dept":"eng","accounts":["a","b"]}`).Error; err != nil {
+		t.Fatalf("failed to seed extra_fields: %v", err)
+	}
+
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ""); err != nil {
+		t.Fatalf("unexpected error approving request: %v", err)
+	}
+
+	select {
+	case msg := <-messages:
+		var job certmsg.SigningJob
+		if err := json.Unmarshal(msg.Payload, &job); err != nil {
+			t.Fatalf("failed to decode signing job: %v", err)
+		}
+		msg.Ack()
+
+		want := "alice|eng|a;b|MISSING"
+		if job.KeyID != want {
+			t.Errorf("got KeyID %q, want %q", job.KeyID, want)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for the signing job to be published")
+	}
+}
+
 func TestCertRequestService_Approve_ShouldRejectWhenIdentityLacksRequiredGroup(t *testing.T) {
 	t.Parallel()
 
@@ -1374,7 +1433,7 @@ func TestCertRequestService_Approve_ShouldRejectAnApproverWhoIsNotTheRequester(t
 
 	// Bind it to alice while leaving it pending — the state a request is in
 	// once alice has opened the approval page but not yet decided.
-	if err := svc.bindRequester(context.Background(), &model.CertificateRequest{ID: requestID}, alice); err != nil {
+	if _, err := svc.bindRequester(context.Background(), &model.CertificateRequest{ID: requestID}, alice); err != nil {
 		t.Fatalf("unexpected error binding the request to alice: %v", err)
 	}
 
@@ -1517,14 +1576,14 @@ func TestApprove_ShouldRejectDuplicateBindingAttempt(t *testing.T) {
 
 	// Alice binds the request by directly calling bindRequester
 	req := &model.CertificateRequest{ID: requestID}
-	if err := svc.bindRequester(context.Background(), req, alice); err != nil {
+	if _, err := svc.bindRequester(context.Background(), req, alice); err != nil {
 		t.Fatalf("unexpected error binding to alice: %v", err)
 	}
 
 	// Bob attempts to bind the same request
 	// The WHERE user_id IS NULL guard should prevent this
 	req2 := &model.CertificateRequest{ID: requestID}
-	err := svc.bindRequester(context.Background(), req2, bob)
+	_, err := svc.bindRequester(context.Background(), req2, bob)
 	if err == nil {
 		t.Fatal("expected bob's bindRequester to fail on a request already bound to alice")
 	}
@@ -1814,7 +1873,7 @@ func TestBindRequester_ShouldDetectARacingClaim(t *testing.T) {
 	}
 
 	req := &model.CertificateRequest{ID: requestID, UserID: nil}
-	err := svc.bindRequester(context.Background(), req, loser)
+	_, err := svc.bindRequester(context.Background(), req, loser)
 
 	var forbidden *errorresponses.ForbiddenError
 	if !errors.As(err, &forbidden) {

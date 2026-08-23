@@ -148,6 +148,21 @@ func (idp *IdentityProvider) handleAuthorize(w http.ResponseWriter, r *http.Requ
 		claims["groups"] = anyGroups
 	}
 
+	// extra_claims is a JSON object merged into the ID token verbatim, so a
+	// test can stamp arbitrary additional claims (e.g. the ones
+	// authentication.fields.extra maps into key ID templates) without the
+	// form growing a field per claim shape.
+	if extraJSON := r.PostFormValue("extra_claims"); extraJSON != "" {
+		var extra map[string]any
+		if err := json.Unmarshal([]byte(extraJSON), &extra); err != nil {
+			http.Error(w, "extra_claims is not a JSON object", http.StatusBadRequest)
+			return
+		}
+		for k, v := range extra {
+			claims[k] = v
+		}
+	}
+
 	code, err := randomHex(16)
 	if err != nil {
 		http.Error(w, "failed to generate authorization code", http.StatusInternalServerError)

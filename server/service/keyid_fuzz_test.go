@@ -16,6 +16,9 @@ func FuzzParseKeyIDTemplate(f *testing.F) {
 	f.Add("{{.Subject}}", "subject")
 	f.Add("{{.UniqueID}}", "uniqueid")
 	f.Add("pam:{{.Username}}", "pam")
+	f.Add("{{.Extra.dept}}", "extra")
+	f.Add(`{{join .Extra.accounts ";"}}`, "extra_join")
+	f.Add(`{{index .Extra "odd-name"}}`, "extra_index")
 
 	// Seed with common malformed cases
 	f.Add("{{.Username", "unclosed")
@@ -55,6 +58,10 @@ func FuzzParseKeyIDTemplate(f *testing.F) {
 				Email:    "alice@example.com",
 				ClientIP: "192.0.2.1",
 				UniqueID: "uuid-12345",
+				Extra: map[string]extraValue{
+					"dept":     scalarExtra("eng"),
+					"accounts": listExtra([]string{"a", "b"}),
+				},
 			}
 
 			result, execErr := executeKeyIDTemplate(tmpl, data)
