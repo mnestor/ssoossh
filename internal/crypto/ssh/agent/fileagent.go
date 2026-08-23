@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -139,8 +140,9 @@ func (f *FileAgent) Backend() string {
 // it against the certificate it just installed to decide what the new one
 // supersedes. Returning a bare public key broke both — inspect reported
 // "not a certificate", and prune found no match for the identity it had
-// just written and deleted its own key files (FileAgent.Remove removes the
-// whole identity regardless of the key passed to it).
+// just written and asked to remove it. Remove now only acts on the identity
+// named to it, so that mistake would no longer cost the key files, but
+// prune would still be deleting the wrong thing on any agent that does.
 func (f *FileAgent) List(filterByCA bool) ([]*ssh.PublicKey, error) {
 	var keys []*ssh.PublicKey
 	if f.keypair == nil {
@@ -179,10 +181,24 @@ func (f *FileAgent) Add(key any) error {
 	return errors.New("Add not supported for FileAgent")
 }
 
-// Remove deletes the key files for this agent's identity, regardless of the
-// key passed in; a FileAgent only ever manages a single identity, so this is
-// equivalent to RemoveAll.
+// Remove deletes the key files when key is the identity this agent holds,
+// and does nothing otherwise. Honouring the argument is what keeps a caller
+// that names some other identity from wiping this one: `ssh login`'s
+// pruneSuperseded calls Remove for every identity it judges superseded, so
+// a Remove that ignored its argument would turn any misjudgement there into
+// deleted key files — which is how a login once deleted the very keys it
+// had just written. RemoveAll is the explicit "remove everything" path.
+//
+// The comparison is against the loaded identity's exact wire form (see
+// identity): a certificate matches the certificate, a bare public key
+// matches the bare public key, and neither stands in for the other.
 func (f *FileAgent) Remove(key ssh.PublicKey) error {
+	if key == nil || f.keypair == nil {
+		return nil
+	}
+	if !bytes.Equal(key.Marshal(), (*f.identity()).Marshal()) {
+		return nil
+	}
 	_, err := f.RemoveAll()
 	return err
 }

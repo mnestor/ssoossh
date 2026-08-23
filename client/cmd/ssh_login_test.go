@@ -668,11 +668,18 @@ func TestRunLogin_ShouldIncludeEffectiveExtensionsInTheRequest(t *testing.T) {
 
 // The bug this pins, end to end through a real FileAgent: pruneSuperseded
 // removes every loaded identity that is not the certificate just installed.
-// FileAgent.List used to answer with the bare public key, which never
-// compares equal to a certificate, and FileAgent.Remove deletes the whole
-// identity regardless of the key handed to it. So a file-backed `ssh login`
-// wrote its three key files, verified them, then deleted them and reported
-// success — `ls ~/.ssh/id_ssoossh*` found nothing afterwards.
+// Two defects lined up to make that fatal. FileAgent.List answered with the
+// bare public key, which never compares equal to a certificate, so prune
+// judged the identity it had just written to be a superseded one; and
+// FileAgent.Remove ignored the key handed to it and deleted the whole
+// identity, so that judgement landed. A file-backed `ssh login` wrote its
+// three key files, verified them, then deleted them and reported success —
+// `ls ~/.ssh/id_ssoossh*` found nothing afterwards.
+//
+// Both are fixed. This test only exercises the List half — with List
+// answering correctly, prune finds its match and never calls Remove at all
+// — so Remove honouring its argument is pinned in
+// TestFileAgent_Remove instead.
 func TestPruneSuperseded_ShouldNotDeleteTheCertificateItJustInstalled(t *testing.T) {
 	t.Parallel()
 
