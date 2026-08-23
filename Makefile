@@ -44,8 +44,7 @@ endef
 define TESTCOMPONENT
 	mkdir -p .coverage
 	go test -coverprofile=.coverage/coverage-$(1).out ./$(1)/...
-	grep -v -E -f exclude-from-coverage.txt .coverage/coverage-$(1).out > .coverage/coverage-$(1).filtered.out
-	go tool cover -func=.coverage/coverage-$(1).filtered.out | tail -1
+	go tool cover -func=.coverage/coverage-$(1).out | tail -1
 endef
 
 .DEFAULT_GOAL := help
@@ -117,7 +116,7 @@ frontend-clean: ## Remove the built web UI
 .PHONY: test test-server test-client test-pam test-internal test-race cover cover-ci frontend-test
 # server/frontend embeds server/frontend/dist. The unit suite includes tests
 # that assert on real UI assets, so the UI has to exist first.
-test: $(FRONTEND_DIST) test-server test-client test-pam test-internal ## Unit tests per component, with filtered coverage
+test: $(FRONTEND_DIST) test-server test-client test-pam test-internal ## Unit tests per component, with coverage
 
 test-server:
 	$(call TESTCOMPONENT,server)
@@ -136,14 +135,15 @@ test-internal:
 test-race: $(FRONTEND_DIST) ## Unit tests under -race
 	CGO_ENABLED=1 go test -race ./...
 
+# Unfiltered on purpose: an uncoverable block carries a "not covered:"
+# comment at the code instead of a line range in a side file, so the number
+# here is the same one CI and Codecov report.
 cover: $(FRONTEND_DIST) ## Coverage HTML report at .coverage/coverage.html
-	go test -coverprofile=.coverage/coverage-all.out ./...
-	grep -v -E -f exclude-from-coverage.txt .coverage/coverage-all.out > .coverage/coverage.out
+	go test -coverprofile=.coverage/coverage.out ./...
 	go tool cover -html=.coverage/coverage.out -o .coverage/coverage.html
 
 # Mirrors codecover.yaml's test run (minus the Codecov upload, which needs a
-# token). Unlike `cover`, this is not filtered against
-# exclude-from-coverage.txt -- it is what the runner actually executes.
+# token) -- it is what the runner actually executes.
 cover-ci: $(FRONTEND_DIST) ## Coverage exactly as codecover.yaml runs it
 	CGO_ENABLED=0 go test -v -covermode=atomic -coverprofile=coverage.txt ./...
 

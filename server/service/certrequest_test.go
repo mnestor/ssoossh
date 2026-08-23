@@ -2598,10 +2598,10 @@ func TestCertRequestService_Deny_ShouldRollBackStatusWhenDecisionInsertFails(t *
 }
 
 // TestLookupDecision_ShouldSurfaceAGenericDBError covers lookupDecision's
-// own error branch directly (as opposed to Detail's propagation of it,
-// which needs per-query fault injection this codebase doesn't have — see
-// exclude-from-coverage.txt). Called in isolation, lookupDecision is a
-// single query, so closing the connection first reaches it directly.
+// own error branch directly, as opposed to Detail's propagation of it,
+// which needs per-query fault injection this codebase has no helper for.
+// Called in isolation, lookupDecision is a single query, so closing the
+// connection first reaches it directly.
 func TestLookupDecision_ShouldSurfaceAGenericDBError(t *testing.T) {
 	t.Parallel()
 

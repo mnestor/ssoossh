@@ -260,7 +260,9 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 
 	optionsJSON, err := json.Marshal(p.RequestedOptions)
 	if err != nil {
-		return "", fmt.Errorf("failed to encode requested options: %w", err) // excluded from coverage: RequestedOptions is a plain struct of strings/bools/slices, json.Marshal can't fail on it, see exclude-from-coverage.txt
+		// not covered: RequestedOptions is a plain struct of strings,
+		// bools and slices, so json.Marshal cannot fail on it.
+		return "", fmt.Errorf("failed to encode requested options: %w", err)
 	}
 
 	req := model.CertificateRequest{
@@ -398,7 +400,12 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 
 	decision, err := s.lookupDecision(ctx, req.ID)
 	if err != nil {
-		return nil, err // excluded from coverage: forcing this specific query to fail while leaving Detail's earlier lookup and bindRequester's query intact needs per-query DB fault injection this codebase doesn't have — TestLookupDecision_ShouldSurfaceAGenericDBError covers lookupDecision's own error branch directly instead, see exclude-from-coverage.txt
+		// not covered: failing this query while leaving Detail's earlier
+		// lookup and bindRequester's query intact needs per-query DB fault
+		// injection, which this codebase has no helper for.
+		// TestLookupDecision_ShouldSurfaceAGenericDBError covers
+		// lookupDecision's own error branch directly instead.
+		return nil, err
 	}
 
 	principals := policy.principals(req.Hostname, req.Username, identity)
@@ -604,13 +611,19 @@ func (s *CertRequestService) bindRequester(ctx context.Context, req *model.Certi
 		Where("id = ? AND user_id IS NULL", req.ID).
 		Update("user_id", userID)
 	if result.Error != nil {
-		return fmt.Errorf("failed to bind certificate request to user: %w", result.Error) // excluded from coverage: forcing this specific query (not resolveUserID's, tested) to fail needs per-query DB fault injection, see exclude-from-coverage.txt
+		// not covered: failing this query and not resolveUserID's (which
+		// is tested) needs per-query DB fault injection, which this
+		// codebase has no helper for.
+		return fmt.Errorf("failed to bind certificate request to user: %w", result.Error)
 	}
 
 	if result.RowsAffected == 0 {
 		var claimed model.CertificateRequest
 		if err := s.db.WithContext(ctx).First(&claimed, "id = ?", req.ID).Error; err != nil {
-			return fmt.Errorf("failed to re-read certificate request after a racing claim: %w", err) // excluded from coverage: forcing the re-read specifically (not the guarded UPDATE above it) to fail needs per-query DB fault injection, see exclude-from-coverage.txt
+			// not covered: failing the re-read and not the guarded UPDATE
+			// above it needs per-query DB fault injection, which this
+			// codebase has no helper for.
+			return fmt.Errorf("failed to re-read certificate request after a racing claim: %w", err)
 		}
 		if claimed.UserID == nil || *claimed.UserID != userID {
 			return &errorresponses.ForbiddenError{Reason: "certificate request belongs to another user"}
@@ -651,7 +664,9 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 
 	narrowedJSON, err := json.Marshal(narrowed)
 	if err != nil {
-		return fmt.Errorf("failed to encode narrowed options: %w", err) // excluded from coverage: RequestedOptions is a plain struct, json.Marshal can't fail on it, see exclude-from-coverage.txt
+		// not covered: RequestedOptions is a plain struct, so json.Marshal
+		// cannot fail on it.
+		return fmt.Errorf("failed to encode narrowed options: %w", err)
 	}
 	token := uuid.NewString()
 	now := time.Now()
@@ -659,7 +674,10 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 
 	decision, err := newDecision(req.ID, model.CertificateRequestDecisionApproved, identity, dc, now)
 	if err != nil {
-		return err // excluded from coverage: newDecision can only fail via its own json.Marshal calls on []string, already unreachable at their own definition, see exclude-from-coverage.txt
+		// not covered: newDecision can only fail through its own
+		// json.Marshal calls on []string, unreachable at their own
+		// definition.
+		return err
 	}
 
 	// The status update, enrollment creation, and decision-audit insert are
@@ -678,7 +696,10 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 				"resolved_at":       now,
 			})
 		if result.Error != nil {
-			return fmt.Errorf("failed to mark certificate request as enrolled: %w", result.Error) // excluded from coverage: forcing this specific query to fail while leaving the enclosing Transaction() able to begin needs per-query DB fault injection this codebase doesn't have, see exclude-from-coverage.txt
+			// not covered: failing this query while leaving the enclosing
+			// Transaction() able to begin needs per-query DB fault
+			// injection, which this codebase has no helper for.
+			return fmt.Errorf("failed to mark certificate request as enrolled: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
 			return fmt.Errorf("certificate request %q is not pending", req.ID)
@@ -721,15 +742,17 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 func newDecision(requestID string, outcome model.CertificateRequestDecisionOutcome, identity *Identity, dc DecisionContext, decidedAt time.Time) (*model.CertificateRequestDecision, error) {
 	groupsJSON, err := json.Marshal(identity.Groups)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode decision groups: %w", err) // excluded from coverage: []string, json.Marshal can't fail on it, see exclude-from-coverage.txt
+		// not covered (this branch and the two below): all three are
+		// []string, so json.Marshal cannot fail on them.
+		return nil, fmt.Errorf("failed to encode decision groups: %w", err)
 	}
 	otherAccountsJSON, err := json.Marshal(identity.OtherAccounts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode decision other accounts: %w", err) // excluded from coverage: []string, json.Marshal can't fail on it, see exclude-from-coverage.txt
+		return nil, fmt.Errorf("failed to encode decision other accounts: %w", err)
 	}
 	serviceAccountsJSON, err := json.Marshal(identity.ServiceAccounts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode decision service accounts: %w", err) // excluded from coverage: []string, json.Marshal can't fail on it, see exclude-from-coverage.txt
+		return nil, fmt.Errorf("failed to encode decision service accounts: %w", err)
 	}
 
 	return &model.CertificateRequestDecision{
@@ -763,7 +786,12 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 		UniqueID: req.ID,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to compute key ID: %w", err) // excluded from coverage: parseKeyIDTemplate already executed policy.keyIDTemplate once against a zero-value keyIDTemplateData at construction to catch unresolvable fields; keyIDTemplateData is a flat struct of strings, so executing it again against real request data cannot newly fail, see exclude-from-coverage.txt
+		// not covered: parseKeyIDTemplate already executed
+		// policy.keyIDTemplate once against a zero-value
+		// keyIDTemplateData at construction to catch unresolvable fields,
+		// and keyIDTemplateData is a flat struct of strings, so executing
+		// it again against real request data cannot newly fail.
+		return fmt.Errorf("failed to compute key ID: %w", err)
 	}
 
 	// Allocate certificate serial now, before queuing the signing job,
@@ -789,7 +817,10 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 
 	decision, err := newDecision(req.ID, model.CertificateRequestDecisionApproved, identity, dc, now)
 	if err != nil {
-		return err // excluded from coverage: newDecision can only fail via its own json.Marshal calls on []string, already unreachable at their own definition, see exclude-from-coverage.txt
+		// not covered: newDecision can only fail through its own
+		// json.Marshal calls on []string, unreachable at their own
+		// definition.
+		return err
 	}
 
 	// See approveServiceEnrollment's comment on why this pair is
@@ -800,7 +831,10 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 			Where("id = ? AND status = ?", req.ID, model.CertificateRequestStatusPending).
 			Updates(map[string]any{"status": model.CertificateRequestStatusSigning, "serial_number": serialNum})
 		if result.Error != nil {
-			return fmt.Errorf("failed to mark certificate request as signing: %w", result.Error) // excluded from coverage: forcing this specific query to fail while leaving the enclosing Transaction() able to begin needs per-query DB fault injection this codebase doesn't have, see exclude-from-coverage.txt
+			// not covered: failing this query while leaving the enclosing
+			// Transaction() able to begin needs per-query DB fault
+			// injection, which this codebase has no helper for.
+			return fmt.Errorf("failed to mark certificate request as signing: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
 			return fmt.Errorf("certificate request %q is not pending", req.ID)
@@ -839,7 +873,9 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 	}
 	payload, err := json.Marshal(job)
 	if err != nil {
-		return fmt.Errorf("failed to encode signing job: %w", err) // excluded from coverage: certmsg.SigningJob is a plain struct, json.Marshal can't fail on it, see exclude-from-coverage.txt
+		// not covered: certmsg.SigningJob is a plain struct, so
+		// json.Marshal cannot fail on it.
+		return fmt.Errorf("failed to encode signing job: %w", err)
 	}
 
 	// If this publish fails, the row is left in Signing with no queued
@@ -882,7 +918,10 @@ func (s *CertRequestService) Deny(ctx context.Context, requestID string, identit
 
 	decision, err := newDecision(requestID, model.CertificateRequestDecisionDenied, identity, dc, now)
 	if err != nil {
-		return err // excluded from coverage: newDecision can only fail via its own json.Marshal calls on []string, already unreachable at their own definition, see exclude-from-coverage.txt
+		// not covered: newDecision can only fail through its own
+		// json.Marshal calls on []string, unreachable at their own
+		// definition.
+		return err
 	}
 
 	// See approveServiceEnrollment's comment on why this pair is
@@ -899,7 +938,10 @@ func (s *CertRequestService) Deny(ctx context.Context, requestID string, identit
 			"resolved_at": now,
 		})
 		if result.Error != nil {
-			return fmt.Errorf("failed to deny certificate request: %w", result.Error) // excluded from coverage: forcing this specific query to fail while leaving the enclosing Transaction() able to begin needs per-query DB fault injection this codebase doesn't have, see exclude-from-coverage.txt
+			// not covered: failing this query while leaving the enclosing
+			// Transaction() able to begin needs per-query DB fault
+			// injection, which this codebase has no helper for.
+			return fmt.Errorf("failed to deny certificate request: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
 			return fmt.Errorf("certificate request %q is not pending", requestID)
@@ -1221,7 +1263,8 @@ func (s *CertRequestService) notifyWaiter(requestID string, outcome requestOutco
 		Code:        outcome.code,
 	})
 	if err != nil {
-		// excluded from coverage: requestOutcomeMessage is a plain struct, json.Marshal can't fail on it, see exclude-from-coverage.txt
+		// not covered: requestOutcomeMessage is a plain struct, so
+		// json.Marshal cannot fail on it.
 		slog.Error("failed to encode certificate request outcome", "request_id", requestID, "error", err)
 		return
 	}

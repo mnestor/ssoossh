@@ -16,7 +16,10 @@ func NewECDSAKeyPair(bits int) (*SSHKeypair, error) {
 	}
 	priv, err := ecdsa.GenerateKey(curve, rand.Reader)
 	if err != nil {
-		return nil, err // excluded from coverage: crypto/rand.Reader failure isn't reproducible in tests, see exclude-from-coverage.txt
+		// not covered: rand.Reader is crypto/rand's, which crashes the
+		// process rather than returning an error (Go 1.24+), so there is
+		// no way to make GenerateKey fail here from a test.
+		return nil, err
 	}
 	return &SSHKeypair{
 		privateKey: priv,

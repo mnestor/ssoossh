@@ -18,12 +18,11 @@ inserts a line above 133.
 1. One worktree per feature. Never two agents in one checkout.
 2. Schema is single-owner. Only one branch at a time touches `server/model/` or
    `server/resources/migrations/`.
-3. Coverage exclusions are single-owner per Go file.
-4. Nobody runs `make test-e2e` except the integrator, and only serially.
-5. Never hand-resolve a generated file. Take one side, then regenerate.
-6. Merge one branch at a time, rebasing each on the new `main` before its turn.
-7. Run the post-merge ritual after every branch lands, not once at the end.
-8. Verify every agent report against the tree before acting on it. An agent's
+3. Nobody runs `make test-e2e` except the integrator, and only serially.
+4. Never hand-resolve a generated file. Take one side, then regenerate.
+5. Merge one branch at a time, rebasing each on the new `main` before its turn.
+6. Run the post-merge ritual after every branch lands, not once at the end.
+7. Verify every agent report against the tree before acting on it. An agent's
    summary is a claim, not evidence.
 
 ## Setup
@@ -71,19 +70,18 @@ git worktree remove ../ssoossh-<feature>
 
 ## Ownership
 
-Three resources cannot be held by more than one branch at a time. Assign them
+Two resources cannot be held by more than one branch at a time. Assign them
 before starting, and record the assignment somewhere the agents can read.
 
 | Resource | Why it is single-owner |
 | --- | --- |
 | `server/model/` and `server/resources/migrations/` | One migration file per driver, edited by hand, must stay consistent across both |
-| `exclude-from-coverage.txt` entries for a given `.go` file | Entries are line ranges; another branch editing the same file invalidates them silently |
 | `make test-e2e` | Uses a fixed host account and a real `sshd`; not isolated by worktrees |
 
 Everything else can be worked in parallel. Prefer assigning whole files or whole
 packages to a branch rather than splitting a file between two.
 
-## The four hazards
+## The three hazards
 
 ### 1. Checked-in generated files
 
@@ -106,36 +104,6 @@ CI does catch it. `make openapi-check` ([Makefile:104](../Makefile#L104)) and
 side of a regeneration run rather than asking git, so a stale merge fails
 whether or not the file was committed. See [wire-types.md](../wire-types.md).
 
-### 2. `exclude-from-coverage.txt`
-
-Per [.claude/rules/test-go.md](../../.claude/rules/test-go.md), code that cannot be
-tested gets its exact uncovered line ranges added to
-[exclude-from-coverage.txt](../exclude-from-coverage.txt). The entries are
-regexes carrying line and column positions:
-
-```
-server/service/certrequest\.go:485\.87,487\.4
-```
-
-They are applied by a plain grep against the coverprofile
-([Makefile:187](../Makefile#L187)):
-
-```
-grep -v -E -f exclude-from-coverage.txt .coverage/coverage-all.out > .coverage/coverage.out
-```
-
-`server/service/certrequest.go` alone has 17 such entries. If branch A inserts
-lines above one of those ranges and branch B edits that entry, the merge
-succeeds and every one of A's shifted ranges now matches nothing. There is no
-conflict marker and no error at merge time. The exclusion has simply stopped
-excluding, and coverage numbers move for reasons unrelated to any test.
-
-Two mitigations, both required:
-
-- One branch owns the exclusions for a given `.go` file.
-- The integrator re-derives ranges with `make cover` after each merge, rather
-  than trusting the merged text.
-
 ### 3. One migration file per driver
 
 The schema lives in exactly two tracked files, which are duplicates of each
@@ -156,7 +124,7 @@ Hence rule 2: exactly one branch at a time owns schema. If a second feature
 needs a column, it either waits for the first to land and rebases, or the two
 schema changes are made together on the owning branch up front.
 
-### 4. `make test-e2e` is not parallel-safe
+### 3. `make test-e2e` is not parallel-safe
 
 Worktrees isolate the filesystem. They do not isolate the host.
 
@@ -248,15 +216,14 @@ Serialize. Do not merge several branches at once.
 
 ## Post-merge ritual
 
-Run after **each** branch lands, not once at the end. Steps 1 through 3 repair
-the three silent-breakage hazards; step 4 is the gate.
+Run after **each** branch lands, not once at the end. Step 1 repairs the
+silent-breakage hazard; step 2 is the gate.
 
 ```sh
 make openapi && make types   # 1. regenerate, never hand-merge; commit the result
 go mod tidy                  #    if go.mod/go.sum conflicted
 pnpm install --lockfile-only #    (in frontend/) if pnpm-lock.yaml conflicted
-make cover                   # 2. re-derive coverage exclusion line ranges
-make lint && make test       # 3. full gate
+make lint && make test       # 2. full gate
 ```
 
 Then, once, after the final branch has landed:
@@ -265,21 +232,16 @@ Then, once, after the final branch has landed:
 make test-e2e
 ```
 
-Step 2 is the one most easily skipped and the one whose omission is hardest to
-notice later. If `make cover` reports coverage for lines that are supposed to be
-excluded, the ranges have shifted and the entries need rewriting against the
-merged file.
+Step 1 is the one most easily skipped and the one whose omission is hardest to
+notice later: a stale generated file fails CI on a branch that did not write it.
 
 ## Known escape hatches
 
-Two changes would remove most of the friction above. Neither is done, and both
-are worth doing before running many features in parallel becomes routine:
+One change would remove most of the remaining friction above. It is not done,
+and is worth doing before running many features in parallel becomes routine:
 
 - **Split the init migration into additive timestamped files.** golang-migrate
   is already the driver ([server/bootstrap/db.go](../server/bootstrap/db.go)),
   so branches could each add their own migration instead of editing a shared
   one. Note that two branches picking the same timestamp prefix would still
   collide, so timestamps must be taken at creation time.
-- **Make coverage exclusions position-independent.** Function-scoped or
-  marker-based exclusions would survive line shifts, removing hazard 2 and the
-  recurring "update coverage exclusion line ranges" commits it causes.

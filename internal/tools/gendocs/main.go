@@ -50,8 +50,9 @@ func run(outDir string) error {
 	// Generate server (ssoosshd) man page from the Command wrapper
 	serverCmd := servercmd.NewCommand()
 	cobraCmd := serverCmd.Command()
-	// cobraCmd == nil is a defensive check that shouldn't occur in practice; servercmd.NewCommand
-	// always returns a valid Command wrapper with a non-nil cobra.Command, so this is excluded from coverage.
+	// not covered: a defensive check that cannot trip, because
+	// servercmd.NewCommand always returns a wrapper holding a non-nil
+	// cobra.Command.
 	if cobraCmd == nil {
 		return fmt.Errorf("get cobra command from server Command wrapper")
 	}
@@ -82,9 +83,11 @@ func run(outDir string) error {
 	return nil
 }
 
-// main() parses command-line arguments and calls run(). It is excluded from coverage because
-// it calls os.Exit(1) and log.Fatal(err), which terminate the process and cannot be tested
-// from Go tests without specialized tools like os/exec. The testable logic is in run().
+// main() parses command-line arguments and calls run().
+//
+// not covered: both failure paths terminate the process (os.Exit and
+// log.Fatal), which a Go test cannot survive without re-executing the
+// binary through os/exec. The testable logic lives in run().
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprintf(os.Stderr, "Usage: gendocs <output-dir>\n")

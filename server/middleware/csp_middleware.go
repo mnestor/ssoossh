@@ -50,11 +50,10 @@ func (m *CspMiddleware) Add() gin.HandlerFunc {
 
 // generateNonce returns a random base64url-encoded 16-byte nonce.
 //
-// The error branch below is defensive and excluded from coverage
-// (exclude-from-coverage.txt): as of Go 1.24, crypto/rand.Read never
-// actually returns an error — it crashes the process instead if the
-// underlying OS random source fails — so this path cannot be exercised or
-// naturally reached.
+// not covered: the error branch below is defensive. As of Go 1.24,
+// crypto/rand.Read never returns an error. It crashes the process instead
+// if the underlying OS random source fails, so this path cannot be
+// exercised or naturally reached.
 func generateNonce() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {

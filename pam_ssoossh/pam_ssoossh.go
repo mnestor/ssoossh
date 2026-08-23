@@ -21,11 +21,12 @@ import (
 
 // http://www.fifi.org/doc/libpam-doc/html/pam_modules-3.html#ss3.2
 //
-// No Go unit test covers this function (test-go.md): every branch past the
-// nil check calls GetUser, which needs a live PAM handle.
-// pam_ssoossh/testing/pamtest.c is the manual harness; parseArgs and
-// Authenticate, the logic this function is otherwise a thin cgo wrapper
-// around, are unit tested directly in args_test.go and auth_test.go.
+// not covered: no Go unit test covers this function (test-go.md) because
+// every branch past the nil check calls GetUser, which needs a live PAM
+// handle. pam_ssoossh/testing/pamtest.c is the manual harness; parseArgs
+// and Authenticate, the logic this function is otherwise a thin cgo
+// wrapper around, are unit tested directly in args_test.go and
+// auth_test.go.
 //
 //export authenticate
 func authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, args **C.char) C.int {

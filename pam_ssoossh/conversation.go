@@ -65,8 +65,10 @@ type pamConversation struct {
 	pamh *C.pam_handle_t
 }
 
-// Info implements Conversation. It calls into libpam through cgo and needs a
-// live PAM transaction, so it has no Go unit test (test-go.md);
+// Info implements Conversation.
+//
+// not covered: it calls into libpam through cgo and needs a live PAM
+// transaction, so it has no Go unit test (test-go.md);
 // pam_ssoossh/testing/pamtest.c is the manual harness that exercises it
 // against a real PAM stack.
 func (p *pamConversation) Info(msg string) error {

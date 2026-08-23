@@ -139,9 +139,8 @@ func buildWriteIndexFn(fsys fs.FS) (func(w io.Writer, nonce string) error, error
 // and index.html itself is always served fresh with a per-request CSP
 // nonce injected into its script tags.
 func RegisterFrontend(router *gin.Engine) error {
-	// fs.Sub only fails on a malformed dir argument; "dist" is a hardcoded
-	// literal, so this is unreachable and excluded from coverage
-	// (exclude-from-coverage.txt).
+	// not covered: fs.Sub only fails on a malformed dir argument, and
+	// "dist" is a hardcoded literal.
 	distFS, err := fs.Sub(frontendFS, "dist")
 	if err != nil {
 		return fmt.Errorf("failed to create sub FS: %w", err)
@@ -156,11 +155,10 @@ func RegisterFrontend(router *gin.Engine) error {
 // frontend build, so asserting against it would make these tests depend on
 // which build happens to be on disk.
 func registerFrontendFS(router *gin.Engine, distFS fs.FS) error {
-	// buildWriteIndexFn's own error path is unit tested directly against a
-	// synthetic fs.FS (see frontend_test.go); reaching it here would require
-	// index.html to be missing from the bundle, which `make frontend`
-	// guarantees against. Excluded from coverage
-	// (exclude-from-coverage.txt).
+	// not covered: buildWriteIndexFn's own error path is unit tested
+	// directly against a synthetic fs.FS (see frontend_test.go); reaching
+	// it here would require index.html to be missing from the bundle,
+	// which `make frontend` guarantees against.
 	writeIndexFn, err := buildWriteIndexFn(distFS)
 	if err != nil {
 		return fmt.Errorf("failed to build index.html writer: %w", err)

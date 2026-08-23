@@ -128,7 +128,9 @@ func (p *PubSub) buildRouter(wmLogger watermill.LoggerAdapter) error {
 	// shutdown rather than being cut short by it.
 	router, err := message.NewRouter(message.RouterConfig{CloseTimeout: 3 * time.Second}, wmLogger)
 	if err != nil {
-		return fmt.Errorf("failed to create watermill router: %w", err) // excluded from coverage: RouterConfig is a hardcoded valid value, Validate() can't fail on it, see exclude-from-coverage.txt
+		// not covered: RouterConfig is the hardcoded value above, and
+		// Validate() cannot fail on it.
+		return fmt.Errorf("failed to create watermill router: %w", err)
 	}
 
 	// Order matters: the first middleware added is the outermost, so this is
@@ -291,7 +293,11 @@ func (p *PubSub) Run(ctx context.Context) error {
 		// as Run is called (an immediate shutdown, or a test using a
 		// pre-canceled context), and it stayed invisible until there were
 		// handlers registered to wait for.
-		// excluded from coverage: deterministically forcing the timeout arm requires a pre-canceled context racing an unstarted Router, which in practice leaves Router.Run blocked rather than honoring ctx — a real hang risk, not a reliable unit test, see exclude-from-coverage.txt
+		//
+		// not covered (the timeout arm only): forcing it deterministically
+		// needs a pre-canceled context racing an unstarted Router, which
+		// in practice leaves Router.Run blocked rather than honoring ctx.
+		// That is a real hang risk in a test, not a reliable assertion.
 		select {
 		case <-p.Router.Running():
 		case <-time.After(routerStartTimeout):
@@ -319,7 +325,10 @@ func (p *PubSub) Close(context.Context) error {
 	// having started the Router.
 	if p.Router.IsRunning() {
 		if err := p.Router.Close(); err != nil {
-			return fmt.Errorf("failed to close watermill router: %w", err) // excluded from coverage: Router is a concrete type (not interfaces), so a failure can't be injected black-box; verified a double Close returns no error, see exclude-from-coverage.txt
+			// not covered: Router is a concrete watermill type, not an
+			// interface, so a Close failure cannot be injected from
+			// outside; a double Close was verified to return no error.
+			return fmt.Errorf("failed to close watermill router: %w", err)
 		}
 	}
 
@@ -337,7 +346,10 @@ func (p *PubSub) Close(context.Context) error {
 
 	if p.channel != nil {
 		if err := p.channel.Close(); err != nil {
-			return fmt.Errorf("failed to close gochannel pub/sub: %w", err) // excluded from coverage: channel is a concrete type (not interfaces), so a failure can't be injected black-box; verified a double Close returns no error, see exclude-from-coverage.txt
+			// not covered: channel is a concrete gochannel type, not an
+			// interface, so a Close failure cannot be injected from
+			// outside; a double Close was verified to return no error.
+			return fmt.Errorf("failed to close gochannel pub/sub: %w", err)
 		}
 	}
 

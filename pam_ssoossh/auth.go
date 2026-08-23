@@ -41,7 +41,9 @@ func Authenticate(ctx context.Context, log Logger, conv Conversation, user strin
 		SkipVerifySSL: cfg.insecureSkipVerify,
 	})
 	if err != nil {
-		// excluded from coverage: cfg.server was just validated non-empty above and this config carries no client-cert fields, so buildTLSConfig can't fail, see exclude-from-coverage.txt
+		// not covered: cfg.server was validated non-empty above and this
+		// config carries no client-certificate fields, which are the only
+		// inputs that can make buildTLSConfig fail.
 		return PamAbort, fmt.Errorf("build API client: %w", err)
 	}
 
@@ -51,11 +53,15 @@ func Authenticate(ctx context.Context, log Logger, conv Conversation, user strin
 	keyType := fipsmode.DefaultSSHKeyType()
 	kp, err := keypair.NewSSHKeypair(string(keyType), fipsmode.DefaultSizeForAlgorithm(keyType))
 	if err != nil {
-		return PamAbort, err // excluded from coverage: crypto/rand.Reader failure isn't reproducible in tests, see exclude-from-coverage.txt
+		// not covered: keypair generation reads crypto/rand, which crashes
+		// the process rather than returning an error (Go 1.24+).
+		return PamAbort, err
 	}
 	pub, err := kp.MarshalAuthorizedKey()
 	if err != nil {
-		return PamAbort, err // excluded from coverage: kp.publicKey is always a type ssh.NewPublicKey accepts, see exclude-from-coverage.txt
+		// not covered: kp was just built by keypair.NewSSHKeypair, so its
+		// public key is always a type ssh.NewPublicKey accepts.
+		return PamAbort, err
 	}
 	log.Debugf("generated ephemeral keypair for %s: %s", user, pub)
 

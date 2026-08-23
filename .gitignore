@@ -75,8 +75,7 @@ yarn-error.log*
 /.envrc
 /private.pgp
 
-# Coverage and test artifacts. exclude-from-coverage.txt is tracked and
-# deliberately outside these patterns.
+# Coverage and test artifacts.
 /coverage*
 /.coverage/
 # Runtime diagnostics a failing run leaves behind. Every suite built on

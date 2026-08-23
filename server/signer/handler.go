@@ -85,7 +85,9 @@ func (h *Handler) handle(msg *message.Message) error {
 	payload, err := json.Marshal(reply)
 	if err != nil {
 		// Can't even describe the failure; retrying won't help.
-		// excluded from coverage: certmsg.SignedReply is a plain struct of strings/ints, json.Marshal can't fail on it, see exclude-from-coverage.txt
+		//
+		// not covered: certmsg.SignedReply is a plain struct of strings,
+		// ints, slices and times, so json.Marshal cannot fail on it.
 		slog.Error("failed to encode signed reply", "request_id", job.RequestID, "error", err)
 		return nil
 	}

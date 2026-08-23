@@ -13,7 +13,10 @@ func NewRSAKeyPair(bits int) (*SSHKeypair, error) {
 	}
 	priv, err := rsa.GenerateKey(rand.Reader, bits)
 	if err != nil {
-		return nil, err // excluded from coverage: crypto/rand.Reader failure isn't reproducible in tests, see exclude-from-coverage.txt
+		// not covered: rand.Reader is crypto/rand's, which crashes the
+		// process rather than returning an error (Go 1.24+), and the
+		// 2048-bit floor above rules out the no-primes-found failure.
+		return nil, err
 	}
 	return &SSHKeypair{
 		privateKey: priv,

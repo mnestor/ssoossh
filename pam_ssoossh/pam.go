@@ -37,9 +37,12 @@ import (
 	"errors"
 )
 
-// GetUser calls into libpam through cgo and needs a live PAM transaction, so
-// it has no Go unit test (test-go.md); pam_ssoossh/testing/pamtest.c is the
-// manual harness that exercises it against a real PAM stack.
+// GetUser reads the username from the PAM transaction.
+//
+// not covered: it calls into libpam through cgo and needs a live PAM
+// transaction, so it has no Go unit test (test-go.md);
+// pam_ssoossh/testing/pamtest.c is the manual harness that exercises it
+// against a real PAM stack.
 func GetUser(pamh *C.pam_handle_t) (string, error) {
 	var cUsername *C.char
 	ret := C.get_user(pamh, &cUsername)

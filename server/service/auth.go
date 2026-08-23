@@ -110,7 +110,8 @@ func NewAuthService(ctx context.Context, c *config.Config, db *gorm.DB, httpClie
 	// from server_name and the listen port.
 	origin := c.HTTP.PublicOrigin()
 	if origin == "" {
-		// excluded from coverage: PublicOrigin only returns "" when ServerName is also "", already rejected above, so this can't be reached with the required-field check in place, see exclude-from-coverage.txt
+		// not covered: PublicOrigin only returns "" when ServerName is
+		// also "", which the required-field check above already rejects.
 		return nil, errors.New("cannot build the OIDC redirect URI: set http.public_url to the URL browsers reach this server at, e.g. \"https://ssh.example.com\" (or http.server_name when nothing sits in front of this process)")
 	}
 	redirectURL := origin + "/auth/callback"
@@ -139,7 +140,9 @@ func NewAuthService(ctx context.Context, c *config.Config, db *gorm.DB, httpClie
 func (s *AuthService) AuthorizationURL(ctx context.Context, state string) (authURL string, nonce string, pkceVerifier string, err error) {
 	nonce, err = randomToken()
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to generate OIDC nonce: %w", err) // excluded from coverage: crypto/rand.Read failure isn't reproducible in tests, see exclude-from-coverage.txt
+		// not covered: randomToken fails only if crypto/rand.Read does,
+		// which crashes the process rather than returning an error.
+		return "", "", "", fmt.Errorf("failed to generate OIDC nonce: %w", err)
 	}
 
 	pkceVerifier = oauth2.GenerateVerifier()
@@ -173,7 +176,10 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce str
 
 	var claims map[string]any
 	if err := idToken.Claims(&claims); err != nil {
-		return nil, fmt.Errorf("failed to parse OIDC ID token claims: %w", err) // excluded from coverage: Verify above already parsed this same payload as JSON to validate standard claims, so re-unmarshaling it here can't fail, see exclude-from-coverage.txt
+		// not covered: Verify above already parsed this same payload as
+		// JSON to validate the standard claims, so re-unmarshaling it
+		// here cannot fail.
+		return nil, fmt.Errorf("failed to parse OIDC ID token claims: %w", err)
 	}
 
 	fields := s.config.AuthConfig.Fields
@@ -183,7 +189,9 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce str
 		return nil, fmt.Errorf("OIDC ID token is missing the configured username claim %q", fields.Username)
 	}
 
-	// excluded from coverage: all three calls below pass required=false, and stringSliceClaim never returns an error when required is false — it warns and returns nil instead, see exclude-from-coverage.txt
+	// not covered (the three error branches below): all three calls pass
+	// required=false, and stringSliceClaim only returns an error when
+	// required is true. Otherwise it warns and returns nil.
 	groups, err := stringSliceClaim(claims, fields.Groups, false)
 	if err != nil {
 		return nil, err
@@ -228,11 +236,13 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce str
 // Subject. Group membership is deliberately not persisted here (see root
 // CLAUDE.md Hard Constraints).
 func (s *AuthService) upsertUser(ctx context.Context, identity *Identity) error {
-	otherAccountsJSON, err := json.Marshal(identity.OtherAccounts) // excluded from coverage: []string, json.Marshal can't fail on it, see exclude-from-coverage.txt
+	// not covered (both error branches below): these are []string, so
+	// json.Marshal cannot fail on them.
+	otherAccountsJSON, err := json.Marshal(identity.OtherAccounts)
 	if err != nil {
 		return err
 	}
-	serviceAccountsJSON, err := json.Marshal(identity.ServiceAccounts) // excluded from coverage: []string, json.Marshal can't fail on it, see exclude-from-coverage.txt
+	serviceAccountsJSON, err := json.Marshal(identity.ServiceAccounts)
 	if err != nil {
 		return err
 	}

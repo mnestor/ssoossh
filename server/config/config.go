@@ -35,9 +35,9 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 
 	// set defaults
 	//
-	// The error branch below is unreachable and excluded from coverage
-	// (exclude-from-coverage.txt): defaultconfig is defaults.yaml, embedded
-	// at compile time and checked into the repo as valid YAML.
+	// not covered: the error branch below is unreachable. defaultconfig is
+	// defaults.yaml, embedded at compile time and checked into the repo as
+	// valid YAML.
 	v.SetConfigType("yaml")
 	if err := v.ReadConfig(bytes.NewBufferString(defaultconfig)); err != nil {
 		return nil, fmt.Errorf("failed to load embedded default config: %w", err)

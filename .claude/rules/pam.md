@@ -12,9 +12,9 @@ paths:
   package entirely.
 - cgo entry points (`pam.go`, `pam_ssoossh.go`) are thin wrappers around a
   live `pam_handle_t` and have no Go unit test — that's expected, not a gap.
-  Document why in a comment and list the exact lines in
-  `exclude-from-coverage.txt`, same as the existing entries for `pam.go`
-  and `pam_ssoossh.go`. Pull the actual logic (arg parsing, auth decision)
+  Document why in a `not covered:` comment on the function, the way
+  `pam.go`'s `GetUser` and `pam_ssoossh.go`'s `authenticate` already do.
+  Pull the actual logic (arg parsing, auth decision)
   out into a plain Go function the cgo wrapper calls, and unit test that
   function directly (see `args_test.go`, `auth_test.go`).
 - `pam_ssoossh/testing/pamtest.c` is the manual harness for exercising cgo

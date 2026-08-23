@@ -270,8 +270,9 @@ gets quarantined with an issue, not `retries: 3`.
 
 - A `make test-e2e` target, so running it locally is one command with the same
   arguments CI uses.
-- `test/e2e` added to `exclude-from-coverage.txt` — it is a harness, not
-  covered code.
+- `test/e2e` is a harness, not covered code. It sits behind the `e2e` build
+  tag, so it contributes no blocks to the unit-test coverage profile in the
+  first place.
 - A short `test/e2e/README.md`: how to run one tier, how to keep the browser
   visible, where artifacts land.
 

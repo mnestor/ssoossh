@@ -216,15 +216,15 @@ Verdict: **Defer until first release.** This is a release-readiness check, not a
 
 **Status:** Proposed
 
-Feasibility: High (codecover.yaml already runs coverage; exclude-from-coverage.txt exists with 3.1K of rules)
+Feasibility: High (codecover.yaml already runs coverage, and since the exclusion list was removed the number it reports is the real one)
 
-Expected Yield: Low. The real question: is coverage a useful gate, or does it train people to write low-quality tests that hit lines? Evidence: exclude-from-coverage.txt is disciplined (every entry has a comment), but rate_limit_test.go explicitly works around the goroutine leak (line 32-34 comment) rather than fixing it. High coverage numbers can mask weak tests. The 90%+ packages are security-critical (crypto/ssh, middleware, service), so the gate would protect the right places. But changes-now.md and changes-next.md do not mention coverage gating as a blocker.
+Expected Yield: Low. The real question: is coverage a useful gate, or does it train people to write low-quality tests that hit lines? Evidence: the exclusion list this repo used to carry looked disciplined (every entry had a comment) and was still 51/89 dead, silently excluding nothing; rate_limit_test.go explicitly works around the goroutine leak (line 32-34 comment) rather than fixing it. High coverage numbers can mask weak tests. The 90%+ packages are security-critical (crypto/ssh, middleware, service), so the gate would protect the right places. But changes-now.md and changes-next.md do not mention coverage gating as a blocker.
 
 Build Cost: Trivial. Add a threshold to codecover.yaml.
 
-Recurring Cost: Maintenance. Legitimate exclusions (error paths, CGO) need ongoing review. False negatives (weak tests) are hard to detect automatically.
+Recurring Cost: Maintenance. Uncoverable code (error paths, CGO) stays in the denominator and has to be argued about per package. False negatives (weak tests) are hard to detect automatically.
 
-Verdict: **Build now, but conservatively.** Gate on <85% (current state: many packages are 90%+), not 90%+, to avoid false positives. Require PR review of any new exclude-from-coverage.txt entries. Re-examine the gate quarterly (is it catching real issues, or training worse behavior?). Pair with Item 3 (fuzzing) to validate that high coverage means something.
+Verdict: **Build now, but conservatively.** Gate on <85% (current state: many packages are 90%+), not 90%+, to avoid false positives. Require PR review of any new `not covered:` comment. Re-examine the gate quarterly (is it catching real issues, or training worse behavior?). Pair with Item 3 (fuzzing) to validate that high coverage means something.
 
 ## 17. Benchmark Regression Tracking
 

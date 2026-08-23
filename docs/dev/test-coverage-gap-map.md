@@ -225,5 +225,5 @@ These are the minimum scenarios from the mission spec that must be added:
 2. **`data-testid` attributes**: Frontend needs stable selectors for tier 2 tests. Add to all elements currently matched by prose.
 3. **Offline flag**: Recent commit 0fa6f87 added an `Offline()` method to commands — verify this flag truly skips all network calls.
 4. **Admin/auditor authorization**: Commit 0fa6f87 added admin as parent of auditor — cover the full hierarchy end-to-end.
-5. **Coverage exclusions**: All entries in `exclude-from-coverage.txt` are documented with specific line ranges — no additional exclusions should be added without justification.
+5. **Coverage exclusions**: There are none. Coverage is reported unfiltered, and code a test cannot reach carries a `not covered:` comment at the block saying why (see `.claude/rules/test-go.md`).
 

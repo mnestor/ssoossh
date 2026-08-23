@@ -33,7 +33,10 @@ import (
 func LocalInterfaceAddresses() []string {
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return nil // excluded from coverage: net.Interfaces() failing isn't reproducible without mocking the OS network stack, see exclude-from-coverage.txt
+		// not covered: net.Interfaces() reads the OS network stack
+		// directly, and this function takes no seam to substitute it, so a
+		// failure cannot be induced from a test.
+		return nil
 	}
 
 	var addrs []string
@@ -43,12 +46,18 @@ func LocalInterfaceAddresses() []string {
 		}
 		ifaceAddrs, err := iface.Addrs()
 		if err != nil {
-			continue // excluded from coverage: a single interface's Addrs() failing isn't reproducible without mocking the OS network stack, see exclude-from-coverage.txt
+			// not covered: as above, one interface's Addrs() failing needs
+			// the OS network stack to fail.
+			continue
 		}
 		for _, a := range ifaceAddrs {
 			ipNet, ok := a.(*net.IPNet)
 			if !ok || ipNet.IP.IsLoopback() {
-				continue // excluded from coverage: every real interface address is a *net.IPNet, and a loopback address surviving the FlagLoopback filter above isn't reproducible on a real test machine, see exclude-from-coverage.txt
+				// not covered: every address a real interface reports is a
+				// *net.IPNet, and a loopback address surviving the
+				// FlagLoopback filter above needs an interface no test
+				// machine has.
+				continue
 			}
 			if ipNet.IP.IsLinkLocalUnicast() {
 				continue

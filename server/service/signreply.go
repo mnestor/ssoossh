@@ -127,11 +127,13 @@ func (h *SignedReplyHandler) resolveFailure(ctx context.Context, reply certmsg.S
 func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certmsg.SignedReply) error {
 	criticalOptions, err := json.Marshal(reply.CriticalOptions)
 	if err != nil {
-		return fmt.Errorf("failed to encode critical options: %w", err) // excluded from coverage: map[string]string, json.Marshal can't fail on it, see exclude-from-coverage.txt
+		// not covered: a map[string]string, so json.Marshal cannot fail.
+		return fmt.Errorf("failed to encode critical options: %w", err)
 	}
 	extensions, err := json.Marshal(reply.Extensions)
 	if err != nil {
-		return fmt.Errorf("failed to encode extensions: %w", err) // excluded from coverage: []string, json.Marshal can't fail on it, see exclude-from-coverage.txt
+		// not covered: a []string, so json.Marshal cannot fail.
+		return fmt.Errorf("failed to encode extensions: %w", err)
 	}
 
 	// Read the owner off the request rather than carrying it through the
@@ -203,7 +205,8 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 	if reply.Type == model.CertificateTypeHost && reply.Hostname != "" {
 		principalsJSON, err := json.Marshal(reply.Principals)
 		if err != nil {
-			return fmt.Errorf("failed to encode host principals: %w", err) // excluded from coverage: []string, json.Marshal can't fail on it, see exclude-from-coverage.txt
+			// not covered: a []string, so json.Marshal cannot fail.
+			return fmt.Errorf("failed to encode host principals: %w", err)
 		}
 
 		mapping := model.HostMapping{

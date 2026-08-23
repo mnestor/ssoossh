@@ -55,7 +55,10 @@ func (a *app) initSignerHandler() error {
 	if fipsEnabled {
 		caSigner, err := keys.Signer(context.Background())
 		if err != nil {
-			return fmt.Errorf("failed to load CA signing key: %w", err) // excluded from coverage: keys is a *signer.ConfigKeySource constructed just above, whose Signer always returns the already-parsed key with a nil error, see exclude-from-coverage.txt
+			// not covered: keys is the *signer.ConfigKeySource constructed
+			// just above, and its Signer returns the already-parsed key
+			// with a nil error.
+			return fmt.Errorf("failed to load CA signing key: %w", err)
 		}
 		keyType, ok := fipsmode.FromSSHAlgorithm(caSigner.PublicKey().Type())
 		if !ok || !fipsmode.IsApprovedInFIPS(keyType) {

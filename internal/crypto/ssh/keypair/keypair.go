@@ -132,7 +132,8 @@ func keypairFromParsedKey(priv any, source string) (*SSHKeypair, error) {
 	case ed25519.PrivateKey:
 		pub, ok := k.Public().(ed25519.PublicKey)
 		if !ok {
-			// excluded from coverage: ed25519.PrivateKey.Public() always returns ed25519.PublicKey, see exclude-from-coverage.txt
+			// not covered: ed25519.PrivateKey.Public() always returns an
+			// ed25519.PublicKey, so this assertion cannot fail.
 			return nil, errors.New("ed25519 private key returned an unexpected public key type")
 		}
 		return &SSHKeypair{privateKey: k, publicKey: pub}, nil
@@ -178,7 +179,10 @@ func (k *SSHKeypair) Public() ssh.PublicKey {
 func (k *SSHKeypair) MarshalAuthorizedKey() (string, error) {
 	pub, err := ssh.NewPublicKey(k.publicKey)
 	if err != nil {
-		return "", err // excluded from coverage: k.publicKey is always a type ssh.NewPublicKey accepts, every constructor validates this, see exclude-from-coverage.txt
+		// not covered: k.publicKey is always a type ssh.NewPublicKey
+		// accepts, because every constructor in this package validates it
+		// before storing it.
+		return "", err
 	}
 	return string(ssh.MarshalAuthorizedKey(pub)), nil
 }
@@ -232,7 +236,9 @@ func VerifyCertSignature(cert *ssh.Certificate, ca ssh.PublicKey) bool {
 	unsigned.Signature = nil
 	marshaled := unsigned.Marshal()
 	if len(marshaled) < 4 {
-		return false // excluded from coverage: a marshaled certificate is always far longer than 4 bytes, see exclude-from-coverage.txt
+		// not covered: a marshaled certificate is always far longer than
+		// 4 bytes, so this length guard cannot trip.
+		return false
 	}
 	signedBytes := marshaled[:len(marshaled)-4]
 	return ca.Verify(signedBytes, cert.Signature) == nil
@@ -298,7 +304,10 @@ func (k *SSHKeypair) MarshalPrivateKey() ([]byte, error) {
 	case *ecdsa.PrivateKey:
 		privBytes, err := x509.MarshalECPrivateKey(priv)
 		if err != nil {
-			return nil, err // excluded from coverage: priv was just generated or parsed by this package, marshaling it back can't fail, see exclude-from-coverage.txt
+			// not covered: priv was generated or parsed by this package,
+			// so it is on one of the SSH-supported NIST curves and
+			// marshaling it back cannot fail.
+			return nil, err
 		}
 		block = &pem.Block{
 			Type:  "EC PRIVATE KEY",
@@ -310,7 +319,9 @@ func (k *SSHKeypair) MarshalPrivateKey() ([]byte, error) {
 		var err error
 		block, err = ssh.MarshalPrivateKey(crypto.PrivateKey(k.privateKey), "ssoossh")
 		if err != nil {
-			return nil, err // excluded from coverage: k.privateKey was just generated or parsed by this package, marshaling it back can't fail, see exclude-from-coverage.txt
+			// not covered: k.privateKey was generated or parsed by this
+			// package, so marshaling it back cannot fail.
+			return nil, err
 		}
 	default:
 		return nil, errors.New("unsupported private key type for PEM encoding")

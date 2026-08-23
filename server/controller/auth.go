@@ -53,7 +53,11 @@ func NewAuthController(group *gin.RouterGroup, authService service.AuthProvider,
 func (a *authController) logoutHandler(g *gin.Context) {
 	if err := middleware.ClearIdentitySession(g); err != nil {
 		handleError(g, err)
-		return // excluded from coverage: session.Clear() removes any oversized value used to force Save() to fail before Save() runs, see exclude-from-coverage.txt
+		// not covered: ClearIdentitySession calls sess.Clear() before
+		// Save(), which drops the oversized value the tests use to break
+		// Save (see oversizedSessionSeed in authhandlers_test.go).
+		// Covering it needs a sessions.Store fake that fails on demand.
+		return
 	}
 
 	respondData(g, gin.H{"logged_out": true})
@@ -83,7 +87,9 @@ func (a *authController) loginHandler(g *gin.Context) {
 	state, err := randomState()
 	if err != nil {
 		handleError(g, err)
-		return // excluded from coverage: crypto/rand.Read failure isn't reproducible in tests, see exclude-from-coverage.txt
+		// not covered: randomState fails only if crypto/rand.Read does,
+		// which crashes the process rather than returning an error.
+		return
 	}
 
 	authURL, nonce, pkceVerifier, err := a.authService.AuthorizationURL(g.Request.Context(), state)
@@ -98,16 +104,26 @@ func (a *authController) loginHandler(g *gin.Context) {
 	}
 	if err := middleware.SetOIDCNonce(g, nonce); err != nil {
 		handleError(g, err)
-		return // excluded from coverage: reaching this specific Save() failure (not SetOIDCState's, tested) needs byte-precise session-size engineering, see exclude-from-coverage.txt
+		// not covered: oversizedSessionSeed breaks only the first Save()
+		// in the chain (SetOIDCState's, which is tested), so the later
+		// ones stay unreached. Covering them needs a sessions.Store fake
+		// that fails on the Nth Save.
+		return
 	}
 	if err := middleware.SetOIDCVerifier(g, pkceVerifier); err != nil {
 		handleError(g, err)
-		return // excluded from coverage: reaching this specific Save() failure (not SetOIDCState's, tested) needs byte-precise session-size engineering, see exclude-from-coverage.txt
+		// not covered: oversizedSessionSeed breaks only the first Save()
+		// in the chain (SetOIDCState's, which is tested), so the later
+		// ones stay unreached. Covering them needs a sessions.Store fake
+		// that fails on the Nth Save.
+		return
 	}
 	if returnTo := g.Query("return_to"); isSafeReturnURL(returnTo) {
 		if err := middleware.SetReturnURL(g, returnTo); err != nil {
 			handleError(g, err)
-			return // excluded from coverage: same as SetOIDCNonce above, one Save() call further down the chain
+			// not covered: same as SetOIDCNonce above, one Save() call
+			// further down the chain.
+			return
 		}
 	}
 
@@ -146,13 +162,21 @@ func (a *authController) callbackHandler(g *gin.Context) {
 	nonce, err := middleware.PopOIDCNonce(g)
 	if err != nil {
 		handleError(g, err)
-		return // excluded from coverage: reaching this specific Save() failure (not PopOIDCState's, tested) needs byte-precise session-size engineering, see exclude-from-coverage.txt
+		// not covered: oversizedSessionSeed breaks only the first Save()
+		// in the chain (PopOIDCState's, which is tested), so the later
+		// ones stay unreached. Covering them needs a sessions.Store fake
+		// that fails on the Nth Save.
+		return
 	}
 
 	pkceVerifier, err := middleware.PopOIDCVerifier(g)
 	if err != nil {
 		handleError(g, err)
-		return // excluded from coverage: reaching this specific Save() failure (not PopOIDCState's, tested) needs byte-precise session-size engineering, see exclude-from-coverage.txt
+		// not covered: oversizedSessionSeed breaks only the first Save()
+		// in the chain (PopOIDCState's, which is tested), so the later
+		// ones stay unreached. Covering them needs a sessions.Store fake
+		// that fails on the Nth Save.
+		return
 	}
 
 	identity, err := a.authService.HandleCallback(g.Request.Context(), code, nonce, pkceVerifier)
@@ -163,13 +187,17 @@ func (a *authController) callbackHandler(g *gin.Context) {
 
 	if err := middleware.SetIdentitySession(g, identity); err != nil {
 		handleError(g, err)
-		return // excluded from coverage: same category as PopOIDCNonce above, further down the chain
+		// not covered: same as PopOIDCNonce above, further down the same
+		// Save() chain.
+		return
 	}
 
 	returnURL, err := middleware.PopReturnURL(g)
 	if err != nil {
 		handleError(g, err)
-		return // excluded from coverage: same category as PopOIDCNonce above, further down the chain
+		// not covered: same as PopOIDCNonce above, further down the same
+		// Save() chain.
+		return
 	}
 	if !isSafeReturnURL(returnURL) {
 		returnURL = "/"
@@ -193,7 +221,9 @@ func isSafeReturnURL(url string) bool {
 func randomState() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate OIDC state: %w", err) // excluded from coverage: crypto/rand.Read failure isn't reproducible in tests, see exclude-from-coverage.txt
+		// not covered: crypto/rand.Read crashes the process rather than
+		// returning an error (Go 1.24+).
+		return "", fmt.Errorf("failed to generate OIDC state: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }

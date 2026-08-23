@@ -72,8 +72,7 @@ you are not sure what exists.
 ### Running Tests Locally
 
 ```bash
-# Unit tests, per component, with coverage filtered through
-# exclude-from-coverage.txt
+# Unit tests, per component, with a coverage summary per component
 make test
 
 # Just one package
@@ -119,7 +118,7 @@ and fail the merge gate over punctuation.
 - Imports in 3 groups: standard lib, external, local (separated by blank lines).
 - Every function has a comment explaining what it does.
 - Tests are colocated: `email.go` → `email_test.go`.
-- If code cannot be tested (cgo entry points, bootstrap sequences), document why in a comment and add line ranges to `exclude-from-coverage.txt`.
+- If code cannot be tested (cgo entry points, unreachable defensive branches), say why at the code in a comment starting `not covered:`.
 
 **TypeScript/Svelte:**
 - No `{@html}`, `innerHTML`, or `eval`.
@@ -129,7 +128,15 @@ and fail the merge gate over punctuation.
 
 **Coverage:**
 - Aim for >90% coverage in each package.
-- Not all code can be tested (e.g., cgo, shutdown cleanup). Document the reason and line ranges in `exclude-from-coverage.txt`.
+- Coverage is reported unfiltered: what `make test`, `make cover`, CI and
+  Codecov show is the same number. There is no exclusion list.
+- Not all code can be tested (cgo entry points, `crypto/rand` failures,
+  defensive branches that cannot be reached). Explain those in place with
+  a comment starting `not covered:`, so a reader looking at the coverage
+  report finds the reason next to the code. Grep for `not covered:` to see
+  every such block.
+- That marker is for code a test genuinely cannot reach. Code that is
+  merely awkward to reach is a gap: write the test.
 
 ## Submitting a Pull Request
 

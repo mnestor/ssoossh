@@ -68,7 +68,10 @@ func setRateLimitHeaders(c *gin.Context, limiter *rate.Limiter, burst int) {
 
 	remaining := int(tokens)
 	if remaining < 0 {
-		remaining = 0 // excluded from coverage: rate.Limiter.Tokens() never goes negative after Allow() (verified empirically); only Reserve()/ReserveN(), unused here, can drive it negative, see exclude-from-coverage.txt
+		// not covered: rate.Limiter.Tokens() never goes negative after
+		// Allow(); only Reserve()/ReserveN(), which this package does not
+		// use, can drive it negative.
+		remaining = 0
 	}
 
 	var reset int
@@ -92,10 +95,12 @@ type client struct {
 
 // cleanupClients runs forever, once a minute evicting entries from clients
 // that haven't been seen in over 3 minutes. It is a thin real-time driver
-// around evictStaleClients (which carries the actual logic and is unit
-// tested directly); this loop is excluded from coverage in
-// exclude-from-coverage.txt since testing it would mean sleeping a real
-// minute or adding a clock/ticker abstraction solely for this call site.
+// around evictStaleClients, which carries the actual logic and is unit
+// tested directly.
+//
+// not covered past its first iteration: driving this loop would mean
+// sleeping a real minute or adding a clock/ticker abstraction solely for
+// this call site.
 func cleanupClients(mu *sync.Mutex, clients map[string]*client) {
 	for {
 		time.Sleep(time.Minute)
