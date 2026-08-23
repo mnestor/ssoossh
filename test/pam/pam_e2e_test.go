@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// TestPAMAuthenticationWithPamtest calls the existing pamtest.c harness
+// TestPAMModuleBuildsAndExportsSymbols calls the existing pamtest.c harness
 // to authenticate through a real PAM stack. This verifies:
 // 1. The module builds correctly
 // 2. The module can be installed into a real PAM configuration
@@ -19,7 +19,17 @@ import (
 //
 // This test uses pam_ssoossh/testing/pamtest.c, which is the existing
 // manual testing harness for the PAM module.
-func TestPAMAuthenticationWithPamtest(t *testing.T) {
+// TestPAMModuleBuildsAndExportsSymbols builds pam_ssoossh.so and the
+// pamtest harness and asserts the module exports the PAM entry points.
+// Renamed from TestPAMAuthenticationWithPamtest at merge: it does NOT
+// authenticate through a PAM stack - pam_start/pam_authenticate never run.
+// That end-to-end test (install the module into a container's pam.d,
+// drive it with pamtest, assert PAM_SUCCESS and the fail-closed codes)
+// remains the open gap this directory exists for; the Dockerfile here is
+// its intended vehicle. Until it exists, PAM behavior coverage comes from
+// the unit suite (CGO_ENABLED=1 go test -tags=pam ./pam_ssoossh/...) and
+// the manual recipe in pam_ssoossh/testing/README.md.
+func TestPAMModuleBuildsAndExportsSymbols(t *testing.T) {
 	if testing.Short() {
 		t.Skip("PAM e2e tests require build tools")
 	}
