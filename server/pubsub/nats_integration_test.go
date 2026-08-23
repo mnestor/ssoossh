@@ -170,9 +170,15 @@ func startNATS(t *testing.T, pki *testPKI, port int) string {
 	)
 
 	// create (not run) so the certs can be docker-cp'd in before start.
-	out, err := exec.Command("docker", args...).CombinedOutput()
+	// The container ID comes from stdout alone: on a cache miss docker
+	// create writes pull progress to stderr while still exiting 0, and a
+	// CombinedOutput capture would corrupt the ID with that noise.
+	create := exec.Command("docker", args...)
+	var createErr strings.Builder
+	create.Stderr = &createErr
+	out, err := create.Output()
 	if err != nil {
-		t.Fatalf("docker create: %v\n%s", err, out)
+		t.Fatalf("docker create: %v\n%s", err, createErr.String())
 	}
 	id := strings.TrimSpace(string(out))
 	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() })
