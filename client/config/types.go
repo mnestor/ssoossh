@@ -70,11 +70,6 @@ type Config struct {
 	// from user config, not bound to flags, and not merged — it acts as an
 	// unconditional floor that subtracts from any flag/config result.
 	ForbiddenCertificateExtensions []string `mapstructure:"-"`
-
-	// PrincipalMappingFile is the path used by `host principals` and
-	// `host mapping` for the local principal mapping (JSON object: account → principals).
-	// Default: /etc/ssoossh/principals.json
-	PrincipalMappingFile string `mapstructure:"principal_mapping_file"`
 }
 
 // SSHKeyOptions selects the algorithm and size for the keypair the client

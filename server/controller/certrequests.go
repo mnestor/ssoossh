@@ -332,9 +332,10 @@ func (cr *certRequestController) approveHandler(g *gin.Context) {
 		return
 	}
 
-	// The body is optional: only service-type approvals carry one (the
-	// chosen service account). An absent or empty body binds to the zero
-	// value rather than erroring, so user/PAM approvals stay body-less.
+	// The body is optional: only service-type and user-type approvals carry
+	// one (the chosen service account and/or principals). An absent or empty
+	// body binds to the zero value rather than erroring, so PAM approvals
+	// stay body-less.
 	var body webtypes.ApproveRequestBody
 	if g.Request.ContentLength > 0 {
 		if err := g.ShouldBindJSON(&body); err != nil {
@@ -343,7 +344,11 @@ func (cr *certRequestController) approveHandler(g *gin.Context) {
 		}
 	}
 
-	if err := cr.certRequestService.Approve(g.Request.Context(), g.Param("id"), identity, decisionContext(g), body.ServiceAccount); err != nil {
+	selection := service.ApprovalSelection{
+		ServiceAccount: body.ServiceAccount,
+		Principals:     body.Principals,
+	}
+	if err := cr.certRequestService.Approve(g.Request.Context(), g.Param("id"), identity, decisionContext(g), selection); err != nil {
 		handleError(g, err)
 		return
 	}

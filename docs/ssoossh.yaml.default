@@ -150,10 +150,3 @@ try_open_browser: false
 # sshkey:
 #   type: ecdsa
 #   size: 384
-
-# Local principal-mapping file shared by `host mapping` (writes) and
-# `host principals` (reads, offline, for sshd's
-# AuthorizedPrincipalsCommand). JSON object of local account -> list of
-# certificate principals allowed to log in as it.
-# Default: /etc/ssoossh/principals.json
-# principal_mapping_file: /etc/ssoossh/principals.json

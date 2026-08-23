@@ -41,11 +41,11 @@ type fakeCertRequestService struct {
 	approveErr error
 	denyErr    error
 
-	gotApproveIdentity *service.Identity
-	gotApproveDC       service.DecisionContext
-	gotServiceAccount  string
-	gotDenyIdentity    *service.Identity
-	gotDenyDC          service.DecisionContext
+	gotApproveIdentity   *service.Identity
+	gotApproveDC         service.DecisionContext
+	gotApprovalSelection service.ApprovalSelection
+	gotDenyIdentity      *service.Identity
+	gotDenyDC            service.DecisionContext
 
 	detail    *service.RequestDetail
 	detailErr error
@@ -72,10 +72,10 @@ func (f *fakeCertRequestService) Detail(_ context.Context, requestID string, _ *
 	}, nil
 }
 
-func (f *fakeCertRequestService) Approve(_ context.Context, _ string, identity *service.Identity, dc service.DecisionContext, serviceAccount string) error {
+func (f *fakeCertRequestService) Approve(_ context.Context, _ string, identity *service.Identity, dc service.DecisionContext, selection service.ApprovalSelection) error {
 	f.gotApproveIdentity = identity
 	f.gotApproveDC = dc
-	f.gotServiceAccount = serviceAccount
+	f.gotApprovalSelection = selection
 	return f.approveErr
 }
 
@@ -454,11 +454,11 @@ func TestApproveHandler_ShouldForwardTheChosenServiceAccount(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
-	if svc.gotServiceAccount != "svc-deploy" {
-		t.Errorf("got forwarded service account %q, want %q", svc.gotServiceAccount, "svc-deploy")
+	if svc.gotApprovalSelection.ServiceAccount != "svc-deploy" {
+		t.Errorf("got forwarded service account %q, want %q", svc.gotApprovalSelection.ServiceAccount, "svc-deploy")
 	}
 
-	svc.gotServiceAccount = "stale"
+	svc.gotApprovalSelection.ServiceAccount = "stale"
 	w = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/certs/requests/req-1/approve", nil)
 	r.ServeHTTP(w, req)
@@ -466,8 +466,8 @@ func TestApproveHandler_ShouldForwardTheChosenServiceAccount(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("body-less approve: got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
-	if svc.gotServiceAccount != "" {
-		t.Errorf("body-less approve forwarded %q, want empty", svc.gotServiceAccount)
+	if svc.gotApprovalSelection.ServiceAccount != "" {
+		t.Errorf("body-less approve forwarded %q, want empty", svc.gotApprovalSelection.ServiceAccount)
 	}
 }
 
