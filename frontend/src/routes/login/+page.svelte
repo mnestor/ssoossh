@@ -40,7 +40,10 @@
 		? 'pointer-events-none opacity-50 blur-[2px]'
 		: ''}"
 >
-	<div class="flex w-full max-w-[380px] flex-col items-center gap-[22px] text-center">
+	<div
+		data-testid="login-view"
+		class="flex w-full max-w-[380px] flex-col items-center gap-[22px] text-center"
+	>
 		<BrandMark size={40} strokeWidth={1.6} />
 
 		<div>
@@ -66,7 +69,7 @@
 			<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
 			<a class="text-sm font-medium text-accent hover:underline" href={returnTo}>Continue</a>
 		{:else}
-			<Button full disabled={blocked} onclick={() => startLogin(returnTo)}>
+			<Button testid="sign-in-button" full disabled={blocked} onclick={() => startLogin(returnTo)}>
 				Continue with SSO
 				<Icon name="arrow-right" size="sm" />
 			</Button>

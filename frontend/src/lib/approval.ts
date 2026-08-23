@@ -137,14 +137,15 @@ export function approvalBlockedReason(detail: RequestDetail): BlockedReason | nu
 }
 
 /** What the approval page should render instead of a request it could not
- * load. `signIn` marks the one case the user can resolve themselves. `kind`
- * is a stable identifier for the e2e browser tier to select on, so it isn't
- * matching against `title`'s prose (see test/e2e/README.md). */
+ * load. Every case here is terminal: a 401 never reaches this, because a
+ * signed-out visitor is redirected to /login instead (see auth.goToLogin),
+ * so nothing described here offers an action. `kind` is a stable identifier
+ * for the e2e browser tier to select on, so it isn't matching against
+ * `title`'s prose (see test/e2e/README.md). */
 export interface LoadFailure {
 	title: string;
 	message: string;
-	signIn: boolean;
-	kind: 'unauthenticated' | 'forbidden' | 'not-found' | 'unknown';
+	kind: 'forbidden' | 'not-found' | 'unknown';
 }
 
 /**
@@ -156,23 +157,17 @@ export interface LoadFailure {
  * (service.CertRequestService.bindRequester), so a 403 means someone else
  * already claimed it — most often the user opening a link from a colleague's
  * terminal, which is exactly the confusion worth naming.
+ *
+ * 401 is deliberately absent: the caller redirects to /login before asking
+ * for a description, so "not signed in" is a state this page never renders.
  */
 export function describeLoadError(error: unknown): LoadFailure {
 	if (error instanceof ApiError) {
-		if (error.isUnauthenticated) {
-			return {
-				title: 'Sign in to continue',
-				message: 'This request has to be reviewed by the person it belongs to.',
-				signIn: true,
-				kind: 'unauthenticated'
-			};
-		}
 		if (error.isForbidden) {
 			return {
 				title: 'This request belongs to someone else',
 				message:
 					'It was already opened by another account, and only that account can approve or deny it. Ask whoever started it to approve from their own session.',
-				signIn: false,
 				kind: 'forbidden'
 			};
 		}
@@ -181,7 +176,6 @@ export function describeLoadError(error: unknown): LoadFailure {
 				title: 'No such request',
 				message:
 					'It may have expired and been cleaned up, or the link may be incomplete. Run the client again to start a new one.',
-				signIn: false,
 				kind: 'not-found'
 			};
 		}
@@ -190,7 +184,6 @@ export function describeLoadError(error: unknown): LoadFailure {
 	return {
 		title: 'Could not load this request',
 		message: error instanceof Error ? error.message : 'something went wrong',
-		signIn: false,
 		kind: 'unknown'
 	};
 }

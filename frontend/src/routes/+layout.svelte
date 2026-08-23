@@ -3,7 +3,7 @@
 	import { page } from '$app/state';
 	import '../app.css';
 	import { logout } from '$lib/api/endpoints';
-	import { errorMessage, startLogin } from '$lib/auth';
+	import { errorMessage, goToLogin } from '$lib/auth';
 	import { loadBranding, getBranding } from '$lib/branding.svelte';
 	import BrandMark from '$lib/components/BrandMark.svelte';
 	import Button from '$lib/components/Button.svelte';
@@ -124,7 +124,7 @@
 						onsignout={signOut}
 					/>
 				{:else if session.resolved && !onLoginPage}
-					<Button variant="ghost" onclick={() => startLogin(page.url.pathname)}>Sign in</Button>
+					<Button variant="ghost" onclick={() => goToLogin(page.url.pathname)}>Sign in</Button>
 				{/if}
 			</div>
 		</div>

@@ -13,14 +13,19 @@ import (
 // SPA against the real server: routing, CSP, cookies, the granted-vs-
 // requested rendering. See docs/dev/e2e-testing-plan.md.
 
-func TestApproval_UnauthenticatedVisitorSeesSignInNotApprove(t *testing.T) {
+// An approval URL is how most people reach this app at all, and they reach
+// it signed out. That has to land on the real /login screen rather than a
+// sign-in prompt improvised by the approval page: /login is where a
+// deployment's consent notice is shown, and a notice can only gate a
+// sign-in it stands in front of.
+func TestApproval_UnauthenticatedVisitorIsSentToTheLoginScreen(t *testing.T) {
 	f := newFixture(t)
 	browser := harness.StartBrowser(t)
 
 	login := harness.StartLogin(t, f.SsoosshBin, f.Server.BaseURL, f.Agent.Socket)
 	approvalURL := login.ApprovalURL(t, waitFor)
 
-	browser.Navigate(t, approvalURL, `[data-testid="load-failure-unauthenticated"]`)
+	browser.Navigate(t, approvalURL, `[data-testid="login-view"]`)
 	browser.WaitVisible(t, `[data-testid="sign-in-button"]`)
 	browser.AssertNotPresent(t, `[data-testid="approve-button"]`)
 }

@@ -231,6 +231,7 @@ interface BrandingConfig {
 - The form stays inert — blurred, dimmed, and `pointer-events-none` — until the user clicks "I Accept", and the sign-in button is `disabled` for as long as it is.
 - This is a blocking modal, not a dismissible banner. Escape is blocked so it cannot be dismissed unaccepted.
 - The modal carries no visible title: the notice is each deployment's own approved wording, shown in full and never summarized, so a generic "Notice" heading would only compete with it. The heading stays in the accessibility tree (`sr-only` + `aria-labelledby`) to name the dialog, and a long notice scrolls inside a keyboard-reachable region rather than pushing "I Accept" off screen.
+- The notice can only gate a sign-in it stands in front of, so every "you need to sign in" path lands on `/login` first: `auth.goToLogin` is what a 401 and the header's sign-in button call, carrying a `return_to`. `auth.startLogin` — the jump to the identity provider — is called from `/login` alone, downstream of acceptance. This matters most on `/approve/<id>`: a certificate request URL is how most people reach the app at all, and they arrive signed out.
 
 ### Environment Variables
 

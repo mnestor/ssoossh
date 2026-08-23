@@ -3,11 +3,10 @@
 	import { approveRequest, denyRequest, getRequestDetail } from '$lib/api/endpoints';
 	import type { RequestDetail } from '$lib/api/types';
 	import { describeLoadError, type LoadFailure } from '$lib/approval';
-	import { errorMessage, startLogin } from '$lib/auth';
+	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import { session } from '$lib/session.svelte';
 	import Alert from '$lib/components/Alert.svelte';
 	import ApprovalView from '$lib/components/ApprovalView.svelte';
-	import Button from '$lib/components/Button.svelte';
 	import Card from '$lib/components/Card.svelte';
 
 	// The page a client prints as approval_url. It is the only place a human
@@ -54,6 +53,15 @@
 				if (controller.signal.aborted) {
 					return;
 				}
+				// A signed-out visitor is the ordinary way this page is
+				// reached: the approval URL is printed by a client that has
+				// no browser session. Send them to /login rather than
+				// rendering a sign-in prompt here, so they get the real
+				// login screen and, where a deployment sets one, the consent
+				// notice that gates it.
+				if (redirectIfUnauthenticated(cause)) {
+					return;
+				}
 				failure = describeLoadError(cause);
 			});
 
@@ -88,13 +96,6 @@
 	<div class="w-full max-w-[560px]">
 		<Card title={failure.title} testid="load-failure-{failure.kind}">
 			<p class="text-sm text-ink-muted">{failure.message}</p>
-			{#if failure.signIn}
-				<div class="mt-5">
-					<Button testid="sign-in-button" onclick={() => startLogin(`/approve/${id}`)}
-						>Sign in to continue</Button
-					>
-				</div>
-			{/if}
 		</Card>
 	</div>
 {:else if detail}

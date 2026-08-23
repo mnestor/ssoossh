@@ -9,7 +9,8 @@
       "preLaunchTask": "npm: dev",
       "env": {
         "APP_ENV": "development",
-        "ISTERMINAL": "1"
+        "ISTERMINAL": "1",
+        "CGO_ENABLED": "1"
       },
       "envFile": [
         "${workspaceFolder}/.env",

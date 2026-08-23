@@ -170,18 +170,10 @@ describe('approvalBlockedReason', () => {
 });
 
 describe('describeLoadError', () => {
-	it('should offer a sign-in for an unauthenticated load', () => {
-		expect(describeLoadError(new ApiError(401, 'unauthorized')).signIn).toBe(true);
-	});
-
 	it('should explain that a forbidden request belongs to someone else', () => {
 		expect(describeLoadError(new ApiError(403, 'forbidden')).title).toBe(
 			'This request belongs to someone else'
 		);
-	});
-
-	it('should not offer a sign-in for a forbidden request', () => {
-		expect(describeLoadError(new ApiError(403, 'forbidden')).signIn).toBe(false);
 	});
 
 	it('should report a missing request as no such request', () => {
