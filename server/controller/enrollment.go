@@ -1,7 +1,9 @@
 package controller
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 
 	"github.com/gin-gonic/gin"
 
@@ -108,17 +110,31 @@ func (e *enrollmentController) retrievalsHandler(g *gin.Context) {
 	respondData(g, resp)
 }
 
-// ExtractEnrollmentCodeForRateLimit reads the enrollment code from the request
-// body without consuming it, for use in the CodeBucket rate limiter. Returns
-// an empty string if the body is malformed or the field is missing. Safe to
-// call multiple times on the same context; gin buffers the raw body so each
-// call can re-read it.
+// ExtractEnrollmentCodeForRateLimit reads the enrollment code from the
+// request body for the CodeBucket rate limiter, and puts the body back so
+// the handler behind it can still bind. Returns an empty string if the body
+// is malformed or the field is missing — the handler is what reports that
+// to the caller, not the limiter.
+//
+// The restore is the whole point. gin's GetRawData is io.ReadAll over
+// c.Request.Body: it neither buffers nor rewinds, contrary to what this
+// function's comment used to claim. Without putting the body back,
+// retrieveHandler's ShouldBindJSON read an already-drained stream and every
+// redemption failed with a 500 carrying io.EOF, so `service retrieve` could
+// not redeem a code at all wherever the per-code rate limit was configured.
 func ExtractEnrollmentCodeForRateLimit(c *gin.Context) string {
-	var body apitypes.RetrieveRequestBody
 	rawData, err := c.GetRawData()
 	if err != nil {
+		// Partially consumed at best; hand the handler an empty body rather
+		// than a half-read one, and let it produce the error.
+		c.Request.Body = io.NopCloser(bytes.NewReader(nil))
 		return ""
 	}
+	// Restored before the parse below can return early, so a malformed body
+	// still reaches the handler and still gets the handler's 400.
+	c.Request.Body = io.NopCloser(bytes.NewReader(rawData))
+
+	var body apitypes.RetrieveRequestBody
 	if err := json.Unmarshal(rawData, &body); err != nil {
 		return ""
 	}
