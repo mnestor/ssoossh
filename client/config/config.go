@@ -86,13 +86,19 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	// Flags override whatever the files said. Bound rather than read
 	// directly so viper's own precedence applies: a flag that wasn't passed
 	// contributes its empty default at the lowest priority and does not
-	// clobber a configured value. --key-type/--key-size are local to `ssh
-	// login` (the only command that generates a keypair), so Lookup returns
-	// nil and binding them no-ops for every other command's cmd.
+	// clobber a configured value. --key-type/--key-size and certificate
+	// extension flags are local to `ssh login` (the only command that
+	// generates a keypair and requests extensions), so Lookup returns nil
+	// and binding them no-ops for every other command's cmd.
 	if err := bindFlags(v, cmd, map[string]string{
-		"server":   "server",
-		"key-type": "sshkey.type",
-		"key-size": "sshkey.size",
+		"server":              "server",
+		"key-type":            "sshkey.type",
+		"key-size":            "sshkey.size",
+		"no-pty":              "certificate_extensions.no_pty",
+		"no-agent-forwarding": "certificate_extensions.no_agent_forwarding",
+		"no-port-forwarding":  "certificate_extensions.no_port_forwarding",
+		"no-x11-forwarding":   "certificate_extensions.no_x11_forwarding",
+		"no-user-rc":          "certificate_extensions.no_user_rc",
 	}); err != nil {
 		return nil, err
 	}
@@ -113,7 +119,9 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	// GPO registry, macOS managed preferences) wins over even the enforce
 	// file. See policy_windows.go / policy_darwin.go / policy_other.go —
 	// each key it sets is treated exactly like an enforce-file key.
-	policySetsFIPS, err := mergePlatformPolicy(v, loadPolicy)
+	// Forbidden certificate extensions are handled separately because they're
+	// not a per-key override but an unconditional floor — see extractForbiddenExtensions.
+	policySetsFIPS, policyForbiddenExtensions, err := mergePlatformPolicy(v, loadPolicy)
 	if err != nil {
 		return nil, err
 	}
@@ -123,6 +131,7 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 	c.FIPSEnforced = (enforceSetsFIPS || policySetsFIPS) && c.FIPS != nil && *c.FIPS
+	c.ForbiddenCertificateExtensions = policyForbiddenExtensions
 
 	// Resolve the key settings now so a bad combination is reported at
 	// startup rather than at the first attempt to obtain a certificate.
@@ -143,23 +152,39 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 // (see loadPlatformPolicy and its per-GOOS implementations) into v, and
 // reports whether it set fips: true — the platform-policy counterpart of
 // enforceFileSets, used the same way by newConfig's FIPSEnforced
-// computation.
-func mergePlatformPolicy(v *viper.Viper, loadPolicy func() (map[string]any, error)) (fipsSet bool, err error) {
+// computation. It also extracts and returns the forbidden_certificate_extensions
+// list, which is handled separately because it's not a per-key override but
+// an unconditional floor on which extensions are allowed.
+func mergePlatformPolicy(v *viper.Viper, loadPolicy func() (map[string]any, error)) (fipsSet bool, forbiddenExtensions []string, err error) {
 	policy, err := loadPolicy()
 	if err != nil {
-		return false, fmt.Errorf("failed to load platform policy: %w", err)
+		return false, nil, fmt.Errorf("failed to load platform policy: %w", err)
 	}
 	if len(policy) == 0 {
-		return false, nil
+		return false, nil, nil
+	}
+
+	// Extract forbidden extensions before merging, since it shouldn't go through
+	// viper's normal merge (it's a list that acts as a floor, not an override).
+	if forbidden, ok := policy["forbidden_certificate_extensions"]; ok {
+		delete(policy, "forbidden_certificate_extensions")
+		// Convert []any to []string if present
+		if forbiddenSlice, ok := forbidden.([]any); ok {
+			for _, ext := range forbiddenSlice {
+				if s, ok := ext.(string); ok {
+					forbiddenExtensions = append(forbiddenExtensions, s)
+				}
+			}
+		}
 	}
 
 	if fips, ok := policy["fips"].(bool); ok {
 		fipsSet = fips
 	}
 	if err := v.MergeConfigMap(policy); err != nil {
-		return false, fmt.Errorf("failed to merge platform policy: %w", err)
+		return false, nil, fmt.Errorf("failed to merge platform policy: %w", err)
 	}
-	return fipsSet, nil
+	return fipsSet, forbiddenExtensions, nil
 }
 
 func mergeConfig(v *viper.Viper, f string) {

@@ -9,6 +9,11 @@ package config
 // convert through here, so the native-source-to-YAML-key mapping lives in
 // each platform file, and the one nesting rule they share lives here once.
 //
+// Special case: forbidden_certificate_extensions (a list) is left as-is
+// at the top level, not nested, because it's handled separately after
+// unmarshaling (it's extracted and used to set ForbiddenCertificateExtensions
+// directly on the Config struct, not merged through viper).
+//
 //nolint:unused // prod callers are policy_darwin.go/policy_windows.go (build-tag-excluded on Linux CI); exercised by policy_test.go, which `run.tests: false` also excludes from lint
 func buildPolicyMap(flat map[string]any) map[string]any {
 	nested := make(map[string]any, len(flat))

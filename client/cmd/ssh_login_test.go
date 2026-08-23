@@ -455,3 +455,208 @@ func TestRunLogin_ShouldNotFailWhenPruningDoes(t *testing.T) {
 		t.Errorf("got %q, want the stale certificate mentioned", out.String())
 	}
 }
+
+// TestEffectiveExtensions_ShouldRequestTheFullSetByDefault verifies the
+// baseline: without any opt-outs or policy forbidding, all extensions are
+// requested.
+func TestEffectiveExtensions_ShouldRequestTheFullSetByDefault(t *testing.T) {
+	cfg := &config.Config{}
+	removals := make(map[string]extensionRemovalReason)
+
+	exts, err := effectiveExtensions(cfg, removals)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(exts) != len(loginExtensions) {
+		t.Errorf("got %d extensions, want %d (all of them)", len(exts), len(loginExtensions))
+	}
+	if len(removals) != 0 {
+		t.Errorf("got removals %v, want none with default config", removals)
+	}
+}
+
+// TestEffectiveExtensions_ShouldApplyConfigOptOuts checks that config file
+// settings remove extensions from the requested set.
+func TestEffectiveExtensions_ShouldApplyConfigOptOuts(t *testing.T) {
+	tests := []struct {
+		name        string
+		cfg         *config.Config
+		wantRemoved []string
+	}{
+		{
+			name:        "should respect no_pty in config",
+			cfg:         &config.Config{CertificateExtensions: config.CertificateExtensionOptions{NoPTY: true}},
+			wantRemoved: []string{"permit-pty"},
+		},
+		{
+			name:        "should respect no_agent_forwarding in config",
+			cfg:         &config.Config{CertificateExtensions: config.CertificateExtensionOptions{NoAgentForwarding: true}},
+			wantRemoved: []string{"permit-agent-forwarding"},
+		},
+		{
+			name: "should respect multiple opt-outs in config",
+			cfg: &config.Config{CertificateExtensions: config.CertificateExtensionOptions{
+				NoPTY:            true,
+				NoPortForwarding: true,
+			}},
+			wantRemoved: []string{"permit-pty", "permit-port-forwarding"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			removals := make(map[string]extensionRemovalReason)
+			exts, err := effectiveExtensions(tt.cfg, removals)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			for _, removed := range tt.wantRemoved {
+				if reason, ok := removals[removed]; !ok {
+					t.Errorf("extension %q should have been removed, got removals %v", removed, removals)
+				} else if reason != removed_config {
+					t.Errorf("extension %q should be removed by config, got reason %v", removed, reason)
+				}
+
+				// Verify it's not in the returned set.
+				for _, ext := range exts {
+					if ext == removed {
+						t.Errorf("extension %q should be removed but is in the result", removed)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestEffectiveExtensions_ShouldRefuseEmptySet ensures a certificate cannot
+// be issued with no extensions, which would be unusable.
+func TestEffectiveExtensions_ShouldRefuseEmptySet(t *testing.T) {
+	tests := []struct {
+		name    string
+		cfg     *config.Config
+		errText string
+	}{
+		{
+			name: "should refuse when config removes all extensions",
+			cfg: &config.Config{CertificateExtensions: config.CertificateExtensionOptions{
+				NoPTY:             true,
+				NoAgentForwarding: true,
+				NoPortForwarding:  true,
+				NoX11Forwarding:   true,
+				NoUserRC:          true,
+			}},
+			errText: "all certificate extensions were opted out via configuration",
+		},
+		{
+			name: "should refuse when policy forbids all extensions",
+			cfg: &config.Config{
+				ForbiddenCertificateExtensions: loginExtensions,
+			},
+			errText: "all certificate extensions are forbidden by policy",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			removals := make(map[string]extensionRemovalReason)
+			_, err := effectiveExtensions(tt.cfg, removals)
+			if err == nil {
+				t.Fatalf("expected an error, got nil")
+			}
+			if !strings.Contains(err.Error(), tt.errText) {
+				t.Errorf("got error %q, want it to contain %q", err, tt.errText)
+			}
+		})
+	}
+}
+
+// TestEffectiveExtensions_ShouldEnforcePolicyAsAFloor checks that policy
+// forbidding overrides user settings — a flag cannot re-add what policy forbids.
+// When this results in an empty set, it should fail with a policy-specific error.
+func TestEffectiveExtensions_ShouldEnforcePolicyAsAFloor(t *testing.T) {
+	// Config requests only port-forwarding (opts out of the rest).
+	// Policy forbids port-forwarding.
+	// Expected: error because policy forbade the only thing config allowed.
+	cfg := &config.Config{
+		CertificateExtensions: config.CertificateExtensionOptions{
+			NoPTY:             true,
+			NoAgentForwarding: true,
+			NoX11Forwarding:   true,
+			NoUserRC:          true,
+			// NoPortForwarding: false (it's requested)
+		},
+		ForbiddenCertificateExtensions: []string{"permit-port-forwarding"},
+	}
+
+	removals := make(map[string]extensionRemovalReason)
+	_, err := effectiveExtensions(cfg, removals)
+	if err == nil {
+		t.Fatal("expected an error when policy forbids the only allowed extension")
+	}
+	if !strings.Contains(err.Error(), "forbidden by policy") {
+		t.Errorf("got error %q, want it to mention policy", err)
+	}
+}
+
+// TestRunLogin_ShouldIncludeEffectiveExtensionsInTheRequest checks that
+// the effective set (after all opt-outs and policy) is actually passed to
+// the API.
+func TestRunLogin_ShouldIncludeEffectiveExtensionsInTheRequest(t *testing.T) {
+	tests := []struct {
+		name           string
+		cfg            *config.Config
+		wantExtensions []string
+	}{
+		{
+			name:           "should request default extensions when nothing is opted out",
+			cfg:            &config.Config{},
+			wantExtensions: loginExtensions,
+		},
+		{
+			name: "should exclude opted-out extensions",
+			cfg: &config.Config{CertificateExtensions: config.CertificateExtensionOptions{
+				NoAgentForwarding: true,
+			}},
+			wantExtensions: []string{"permit-pty", "permit-port-forwarding", "permit-X11-forwarding", "permit-user-rc"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ours := newTestCA(t)
+			ag := &stubAgent{cas: []xssh.PublicKey{ours.public}}
+			fresh := newTestCert(t, ours, "alice", time.Hour)
+			client := &fakeAPIClient{result: &api.CertificateResult{
+				Status:      api.StatusApproved,
+				Certificate: string(xssh.MarshalAuthorizedKey(fresh)),
+			}}
+
+			var out bytes.Buffer
+			if err := runLogin(context.Background(), newLoginRoot(tt.cfg, ag, client), &out, false); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if len(client.createdWithOpts) != 1 {
+				t.Fatalf("expected one request, got %d", len(client.createdWithOpts))
+			}
+
+			opts := client.createdWithOpts[0]
+			if len(opts.Extensions) != len(tt.wantExtensions) {
+				t.Errorf("got %d extensions, want %d: %v", len(opts.Extensions), len(tt.wantExtensions), opts.Extensions)
+			}
+
+			// Order doesn't matter for this test, just presence.
+			extSet := make(map[string]bool)
+			for _, ext := range opts.Extensions {
+				extSet[ext] = true
+			}
+			for _, want := range tt.wantExtensions {
+				if !extSet[want] {
+					t.Errorf("extension %q not in request, got %v", want, opts.Extensions)
+				}
+			}
+		})
+	}
+}
