@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { CertificateRecord } from '$lib/api/types';
 import CertDetailModal from './CertDetailModal.svelte';
@@ -93,5 +93,76 @@ describe('CertDetailModal', () => {
 		expect(
 			screen.getByRole('button', { name: 'Copy link to this certificate' })
 		).toBeInTheDocument();
+	});
+
+	describe('retrieval log', () => {
+		afterEach(() => {
+			vi.unstubAllGlobals();
+		});
+
+		/** stubRetrievals answers the log fetch with rows (or an error status). */
+		function stubRetrievals(rows: unknown[] | null, status = 200) {
+			const fetchMock = vi.fn(() =>
+				Promise.resolve(
+					new Response(
+						JSON.stringify(
+							rows === null
+								? { data: null, error: 'forbidden' }
+								: { data: { retrievals: rows }, error: null }
+						),
+						{ status, headers: { 'Content-Type': 'application/json' } }
+					)
+				)
+			);
+			vi.stubGlobal('fetch', fetchMock);
+			return fetchMock;
+		}
+
+		it('should list each redemption with when, where, and its serial', async () => {
+			stubRetrievals([
+				{
+					retrieved_at: '2026-08-23T12:00:00Z',
+					source_ip: '203.0.113.9',
+					certificate_serial: 4242,
+					succeeded: true
+				},
+				{
+					retrieved_at: '2026-08-23T12:00:00Z',
+					source_ip: '203.0.113.10',
+					certificate_serial: 4243,
+					succeeded: false
+				}
+			]);
+			render(CertDetailModal, { cert: cert({ type: 'service' }), onclosed: vi.fn() });
+
+			expect(await screen.findByText('203.0.113.9')).toBeInTheDocument();
+			expect(screen.getByText('203.0.113.10')).toBeInTheDocument();
+			expect(screen.getByText('4242')).toBeInTheDocument();
+			// The failed redemption is marked; the successful one is not.
+			expect(screen.getAllByText('Failed')).toHaveLength(1);
+		});
+
+		it('should say so when the enrollment was never retrieved', async () => {
+			stubRetrievals([]);
+			render(CertDetailModal, { cert: cert({ type: 'service' }), onclosed: vi.fn() });
+
+			expect(await screen.findByText('Never retrieved.')).toBeInTheDocument();
+		});
+
+		it('should hide the section when the caller may not see the log', async () => {
+			const fetchMock = stubRetrievals(null, 403);
+			render(CertDetailModal, { cert: cert({ type: 'service' }), onclosed: vi.fn() });
+
+			await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+			await Promise.resolve();
+			expect(screen.queryByText('Retrievals')).not.toBeInTheDocument();
+		});
+
+		it('should not fetch a log for non-service certificates', () => {
+			const fetchMock = stubRetrievals([]);
+			render(CertDetailModal, { cert: cert(), onclosed: vi.fn() });
+
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
 	});
 });

@@ -286,6 +286,47 @@ describe('ApprovalView', () => {
 		});
 	});
 
+	describe('service account picker', () => {
+		const serviceDetail = detail({ type: 'service' });
+
+		it('should not offer a picker for non-service requests', () => {
+			mount({ serviceAccounts: ['svc-a'] });
+			expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+		});
+
+		it('should list the approver’s service accounts for a service request', () => {
+			mount({ detail: serviceDetail, serviceAccounts: ['svc-a', 'svc-b'] });
+			const select = screen.getByRole('combobox', { name: 'Service account to approve for' });
+			expect(select).toBeInTheDocument();
+			expect(screen.getByRole('option', { name: 'svc-b' })).toBeInTheDocument();
+		});
+
+		it('should keep Approve disabled until an account is chosen', async () => {
+			const { onapprove } = mount({ detail: serviceDetail, serviceAccounts: ['svc-a'] });
+
+			const approve = screen.getByRole('button', { name: /Approve/ });
+			expect(approve).toBeDisabled();
+			await userEvent.click(approve);
+			expect(onapprove).not.toHaveBeenCalled();
+
+			await userEvent.selectOptions(screen.getByRole('combobox'), 'svc-a');
+			expect(approve).toBeEnabled();
+			await userEvent.click(approve);
+			expect(onapprove).toHaveBeenCalledOnce();
+		});
+
+		it('should block approval when the approver has no service accounts', () => {
+			mount({ detail: serviceDetail, serviceAccounts: [] });
+			expect(screen.getByTestId('blocked-no-service-accounts')).toBeInTheDocument();
+			expect(screen.queryByRole('button', { name: /Approve/ })).not.toBeInTheDocument();
+		});
+
+		it('should not gate non-service approvals on an account', () => {
+			mount({ serviceAccounts: [] });
+			expect(screen.getByRole('button', { name: /Approve/ })).toBeEnabled();
+		});
+	});
+
 	describe('decision record display', () => {
 		it('should not show a decision record when decided_at is missing', () => {
 			mount();

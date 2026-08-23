@@ -205,7 +205,10 @@
 					<p class="text-[13px] text-ink-muted">Never retrieved.</p>
 				{:else}
 					<dl class="divide-y divide-border-subtle">
-						{#each retrievals.retrievals as retrieval (retrieval.retrieved_at)}
+						<!-- Keyed by position: reusable codes mean two redemptions can
+						     land in the same second, and a keyed each throws on a
+						     duplicate key rather than rendering it. -->
+						{#each retrievals.retrievals as retrieval, index (index)}
 							<div class="flex items-center justify-between gap-3 py-3">
 								<div>
 									<div class="text-[13px]">{formatDateTime(retrieval.retrieved_at)}</div>
