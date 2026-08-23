@@ -77,10 +77,21 @@ jobs:
     container:
       image: ghcr.io/mnestor/ubuntu-build:latest
     timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: e2e
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     strategy:
       fail-fast: false
       matrix:
-        backend: [sqlite]
+        backend: [sqlite, postgres]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef474303e # v5.6.0
@@ -95,6 +106,8 @@ jobs:
           name: e2e-binaries
 
       - name: Run tier 1 tests
+        env:
+          SSOOSSH_E2E_POSTGRES_DSN: ${{ matrix.backend == 'postgres' && 'postgres://postgres:e2e@postgres:5432/e2e?sslmode=disable' || '' }}
         run: |
           go test -buildvcs=false -tags=e2e -count=1 -timeout=5m -json ./test/e2e/... | \
             gotestsum --junitfile=test-results-tier1-${{ matrix.backend }}.xml --raw-command -- cat
@@ -123,10 +136,21 @@ jobs:
     container:
       image: ghcr.io/mnestor/ubuntu-build:latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: e2e
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     strategy:
       fail-fast: false
       matrix:
-        backend: [sqlite]
+        backend: [sqlite, postgres]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef474303e # v5.6.0
@@ -141,6 +165,8 @@ jobs:
           name: e2e-binaries
 
       - name: Run tier 2 tests
+        env:
+          SSOOSSH_E2E_POSTGRES_DSN: ${{ matrix.backend == 'postgres' && 'postgres://postgres:e2e@postgres:5432/e2e?sslmode=disable' || '' }}
         run: |
           go test -buildvcs=false -tags=e2e -count=1 -timeout=10m -run "TestApproval" -json ./test/e2e/... | \
             gotestsum --junitfile=test-results-tier2-${{ matrix.backend }}.xml --raw-command -- cat
@@ -169,10 +195,21 @@ jobs:
     container:
       image: ghcr.io/mnestor/ubuntu-build:latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: e2e
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     strategy:
       fail-fast: false
       matrix:
-        backend: [sqlite]
+        backend: [sqlite, postgres]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef474303e # v5.6.0
@@ -197,6 +234,8 @@ jobs:
           mkdir -p /run/sshd
 
       - name: Run tier 3 tests
+        env:
+          SSOOSSH_E2E_POSTGRES_DSN: ${{ matrix.backend == 'postgres' && 'postgres://postgres:e2e@postgres:5432/e2e?sslmode=disable' || '' }}
         run: |
           go test -buildvcs=false -tags=e2e -count=1 -timeout=10m -run "TestSSH" -json ./test/e2e/... | \
             gotestsum --junitfile=test-results-tier3-${{ matrix.backend }}.xml --raw-command -- cat
