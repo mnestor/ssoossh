@@ -131,7 +131,7 @@ After mutation testing revealed that the binding predicate guard (`WHERE id = ? 
 - **With guard present:** Test PASSES (bob's binding correctly rejected)
 - **With guard removed** (WHERE "id = ?" only): Test FAILS (bob's binding incorrectly succeeds)
 
-**Critical Property Validated:** Exactly one approver can win the binding race. Without the `WHERE user_id IS NULL` guard, the second approver would overwrite the first's claim, violating the "certificate carries the approver's principals" security model documented in docs/decisions.md's "Settled: audited and solid" section.
+**Critical Property Validated:** Exactly one approver can win the binding race. Without the `WHERE user_id IS NULL` guard, the second approver would overwrite the first's claim, violating the "certificate carries the approver's principals" security model documented in docs/features.md.
 
 **Limitation Note:** The in-memory SQLite pool uses `SetMaxOpenConns(1)` to prevent "no such table" errors on `:memory:` databases, which serializes all access and masks true race conditions. This test validates the sequential security property. A true concurrent race test would require file-based SQLite and would likely expose additional concurrency issues (e.g., the critical section between read and update is not atomic at the application level). The test documents that the mutation (removing the guard) is immediately caught, proving it serves a real purpose even in the sequential case.
 

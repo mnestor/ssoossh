@@ -41,7 +41,7 @@ Self-hosted, homelab-friendly, early development.
 
 | Document | What it covers |
 | --- | --- |
-| [decisions.md](decisions.md) | The consolidated record of what was deferred, declined, or settled, and why. **Read before proposing work** |
+| [decisions.md](decisions.md) | What ssoossh deliberately does not do, and why |
 
 ## In progress
 
