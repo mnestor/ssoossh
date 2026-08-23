@@ -171,7 +171,7 @@ func runLogin(ctx context.Context, root *RootCommand, out io.Writer, force bool)
 // a user-type request's LocalUsername/LocalHostname — the local client is
 // the requester for this certificate type, so this is who/where the
 // request actually came from (see
-// docs/certificate-audit-metadata-plan.md). Best-effort: either value is
+// docs/dev/changes-next.md). Best-effort: either value is
 // left empty on a lookup failure rather than failing the login over
 // metadata that isn't a precondition for issuance.
 func localIdentity() (username, hostname string) {

@@ -115,7 +115,7 @@ Frontend config: `frontend/stryker.conf.mjs`
 
 ## References
 
-- TTL Enforcement: `docs/deferred.md` "Mutation testing"
+- TTL Enforcement: `docs/dev/deferred.md` "Mutation testing"
 - Test Standards: `.claude/rules/test-go.md`
 - Prior Finding: Weak test empirically verified and fixed via mutation testing
 
@@ -131,13 +131,13 @@ After mutation testing revealed that the binding predicate guard (`WHERE id = ? 
 - **With guard present:** Test PASSES (bob's binding correctly rejected)
 - **With guard removed** (WHERE "id = ?" only): Test FAILS (bob's binding incorrectly succeeds)
 
-**Critical Property Validated:** Exactly one approver can win the binding race. Without the `WHERE user_id IS NULL` guard, the second approver would overwrite the first's claim, violating the "certificate carries the approver's principals" security model documented in docs/deferred.md's "Settled: audited and solid" section.
+**Critical Property Validated:** Exactly one approver can win the binding race. Without the `WHERE user_id IS NULL` guard, the second approver would overwrite the first's claim, violating the "certificate carries the approver's principals" security model documented in docs/dev/deferred.md's "Settled: audited and solid" section.
 
 **Limitation Note:** The in-memory SQLite pool uses `SetMaxOpenConns(1)` to prevent "no such table" errors on `:memory:` databases, which serializes all access and masks true race conditions. This test validates the sequential security property. A true concurrent race test would require file-based SQLite and would likely expose additional concurrency issues (e.g., the critical section between read and update is not atomic at the application level). The test documents that the mutation (removing the guard) is immediately caught, proving it serves a real purpose even in the sequential case.
 
 **Recommendation:** If SetMaxOpenConns(1) is ever relaxed for production performance, upgrade the race test to use a temporary file-based database and verify no concurrent writes corrupt the binding.
 
-### docs/deferred.md Update
+### docs/dev/deferred.md Update
 
 The "Settled: audited and solid, do not rework" section claims:
 

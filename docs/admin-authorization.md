@@ -1,10 +1,12 @@
-# Admin authorization — plan
+# Admin authorization
 
-**Status: planned, nothing implemented.** There is no admin concept in the
-product today: `model.User` has no role, no middleware authorizes an
-admin-scoped action, and no phase currently owns building one. It has been
-deferred repeatedly across the project's planning documents, which is why it
-needs writing down before it is deferred again.
+**Status: implemented** (commit `0fa6f87`, 2026-08-22). The roles below
+exist: `server/middleware/auth_middleware.go` enforces them, admin group
+membership satisfies auditor-scoped routes, and an unset group narrows
+access rather than widening it (an empty group never authorizes anyone).
+The rest of this document is the design as built — what each role gates,
+and what admin must never be able to do — and remains the reference for
+those invariants.
 
 ## What needs it
 

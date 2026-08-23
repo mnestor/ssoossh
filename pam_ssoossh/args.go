@@ -11,12 +11,12 @@ import (
 // defaultSkewTolerance is used when skew-tolerance is absent or unparseable.
 // Symmetric: applied to both ValidAfter and ValidBefore (check 4). Chosen
 // together with the server's cert_options.pam.valid_duration — see
-// docs/release-phase5-pam-client.md.
+// docs/pam.d-sudo.example.
 const defaultSkewTolerance = 2 * time.Second
 
 // defaultWaitTimeout is used when timeout is absent or unparseable. Bounds
 // how long Authenticate blocks on browser approval before giving up — see
-// docs/release-phase5-pam-client.md, "Timeouts and cancellation".
+// the timeout module argument in docs/pam.d-sudo.example.
 const defaultWaitTimeout = 60 * time.Second
 
 type config struct {

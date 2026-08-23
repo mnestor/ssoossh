@@ -57,7 +57,7 @@ const (
 
 // CertificateRequestDecisionOutcome is the decision recorded on a
 // CertificateRequestDecision row — see
-// docs/certificate-audit-metadata-plan.md.
+// docs/dev/changes-next.md.
 type CertificateRequestDecisionOutcome string
 
 const (

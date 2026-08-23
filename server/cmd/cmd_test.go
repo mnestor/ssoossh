@@ -66,7 +66,7 @@ func TestNewCommand_VersionShouldRunWithoutBootstrap(t *testing.T) {
 
 	// version must not require --config or a reachable OIDC provider --
 	// it's the diagnostic a bug reporter runs precisely when those are
-	// broken. See docs/release-phase6-artifacts.md, "Version stamping".
+	// broken. Version stamping is wired in .goreleaser.yml via internal/version.
 	c := NewCommand()
 	c.SetArgs([]string{"version"})
 	// c.Command().Execute(), not c.Execute(): the latter is this package's

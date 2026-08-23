@@ -2,10 +2,9 @@
 
 A recipe for exercising `pam_ssoossh.so` against a real PAM stack, outside
 the Go test suite. Not automated; `pamtest.c` in this directory is the
-harness. See [release-phase3-pam-build-env.md](../../docs/release-phase3-pam-build-env.md)
-for the build environment this assumes, and
-[release-phase5-pam-client.md](../../docs/release-phase5-pam-client.md) for
-where this fits in verification.
+harness. The build environment it assumes is described below; see
+[deployment.md](../../docs/deployment.md)'s PAM section for where this
+fits in verification.
 
 ## Build environment
 
@@ -28,9 +27,8 @@ Swap the archive for the host architecture as needed.
 
 ## Build and install the module
 
-From the repository root, with `CGO_ENABLED=1` and the `pam` build tag (see
-[release-phase3-pam-build-env.md](../../docs/release-phase3-pam-build-env.md)
-for why both are required):
+From the repository root, with `CGO_ENABLED=1` and the `pam` build tag (both are required: every file in the package is behind the `pam` build
+tag and imports C):
 
 ```console
 $ CGO_ENABLED=1 go build -tags=pam -buildmode=c-shared -o pam_ssoossh.so ./pam_ssoossh/
@@ -55,8 +53,7 @@ account required    pam_unix.so
 `server` and `trusted-ca-file` are both required — Authenticate fails closed
 (`PamUserUnknown`/`PamNoModuleData`) before any network call if either is
 missing. `trusted-ca-file` is `authorized_keys` format, one CA per line (see
-"Check 1" in
-[release-phase5-pam-client.md](../../docs/release-phase5-pam-client.md)).
+check 1 in [checks.go](../checks.go)).
 Two more module arguments tune the checks themselves, both accepting
 anything `time.ParseDuration` understands: `skew-tolerance` (default `2s`),
 the symmetric clock-skew allowance on the certificate's validity window, and
@@ -95,6 +92,5 @@ browser and confirm `pamtest` reports the matching result.
 
 Only once this is solid against the test service name should the same
 stanza be added to the real `auth` group for `sudo`/`su`, per
-[release-phase7-deploy-docs.md](../../docs/release-phase7-deploy-docs.md)'s
-lockout warning: keep a second root shell open while editing
+[deployment.md](../../docs/deployment.md)'s lockout warning: keep a second root shell open while editing
 `/etc/pam.d/sudo`.

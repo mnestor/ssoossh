@@ -52,7 +52,7 @@ type CertificateRequest struct {
 	// request. For a user cert there is no way to request one except via
 	// the local client, so local_user@host is the requester identity, not
 	// optional extra context — see
-	// docs/certificate-audit-metadata-plan.md.
+	// docs/dev/changes-next.md.
 	LocalUsername string `gorm:"column:local_username"`
 	LocalHostname string `gorm:"column:local_hostname"`
 
@@ -68,7 +68,7 @@ type CertificateRequest struct {
 	// host requests (not yet supported). Pre-allocation ensures the serial
 	// is available to persist at resolution without waiting for the signer.
 	// This avoids burning serials on signing failures. See
-	// docs/changes-next.md items 5 and 11 for the rationale.
+	// docs/dev/changes-next.md items 5 and 11 for the rationale.
 	SerialNumber *uint64 `gorm:"column:serial_number"`
 
 	// Status carries a CHECK constraint mirroring the migration's. Every

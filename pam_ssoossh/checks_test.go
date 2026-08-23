@@ -3,7 +3,7 @@
 package main
 
 // Test methodology: check 2 (key binding) is written and tested first, per
-// docs/release-phase5-pam-client.md — it is the check that would otherwise
+// the PAM design — it is the check that would otherwise
 // be missing entirely. Its test uses a genuinely CA-signed certificate (via
 // testCA.sign, a real (*ssh.Certificate).SignCert call), not a hand-built
 // struct with a fake SignatureKey: the point is that checks 1, 3, and 4 all

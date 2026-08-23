@@ -2295,7 +2295,7 @@ func decisionFor(t *testing.T, db *gorm.DB, requestID string) model.CertificateR
 }
 
 // TestCertRequestService_Approve_ShouldPersistFullDecisionAudit is the core
-// assertion behind docs/certificate-audit-metadata-plan.md's "keep the
+// assertion behind docs/dev/changes-next.md's "keep the
 // entire set of data about a user that approves/rejects a request": every
 // field on Identity — not just Subject/Username — plus the full connection
 // context, lands in the decision row Approve's signing branch writes.

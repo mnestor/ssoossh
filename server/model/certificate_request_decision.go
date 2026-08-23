@@ -17,7 +17,7 @@ import "time"
 // means a decider's identity is frozen at decision time and can never be
 // rewritten by a later change to the users table — there is deliberately no
 // UserID foreign key here, only plain copied values. See
-// docs/certificate-audit-metadata-plan.md.
+// docs/dev/changes-next.md.
 type CertificateRequestDecision struct {
 	ID string `gorm:"column:id;primaryKey"`
 
@@ -41,7 +41,7 @@ type CertificateRequestDecision struct {
 	// or silently delete audit records via CASCADE, both unacceptable. By
 	// keeping a copied ID (like decider identity), the audit record outlives
 	// the request, and retention can be applied per-table (see
-	// docs/changes-next.md section "First: decide the retention story").
+	// docs/dev/changes-next.md section "First: decide the retention story").
 
 	// Outcome is "approved" or "denied" — see
 	// model.CertificateRequestDecisionOutcome* in enums.go. The CHECK

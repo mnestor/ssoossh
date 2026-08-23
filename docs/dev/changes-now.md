@@ -59,7 +59,9 @@ approve or deny actually happened.
 Recorded so the next pass does not redo them.
 
 - [x] **Docs folder cleanup.** Stripped dead `release-plan.md` /
-      `release-phase*.md` references from all 11 citing documents; deleted
+      `release-phase*.md` references from the citing documents (a 2026-08-23
+      pass caught 24 more in Go, Svelte, SQL, and compose comments the first
+      sweep missed); deleted
       `project-guidelines.md` (duplicated root `CLAUDE.md` almost verbatim)
       and `docker-setup.md` (four lines of personal devcontainer notes);
       rebuilt `docs/README.md`'s index, which was missing seven documents

@@ -29,7 +29,7 @@ type Client interface {
 	// the requesting client's own OS identity — for a user cert there is no
 	// way to request one except via the local client, so this is who/where
 	// the request actually came from (see
-	// docs/certificate-audit-metadata-plan.md). It returns as soon as
+	// docs/dev/changes-next.md). It returns as soon as
 	// ssoosshd has created the request, so the caller can show
 	// PendingRequest.ApprovalURL to a human before blocking on
 	// AwaitCertificate.
