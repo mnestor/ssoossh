@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
@@ -114,11 +115,20 @@ func (a *adminController) expireEnrollmentHandler(g *gin.Context) {
 
 	// Update the enrollment's ExpiresAt to now, which will prevent retrieval
 	// in the enrollment service.
-	if err := a.db.WithContext(g.Request.Context()).
+	result := a.db.WithContext(g.Request.Context()).
 		Model(&adminEnrollmentModel{}).
 		Where("id = ?", id).
-		Update("expires_at", time.Now()).Error; err != nil {
-		handleError(g, err)
+		Update("expires_at", time.Now())
+	if result.Error != nil {
+		handleError(g, result.Error)
+		return
+	}
+	// A valid UPDATE that matched no rows returns a nil error but affects
+	// zero rows: without this the handler would answer {"expired": true} for
+	// an enrollment ID that does not exist, contradicting its own documented
+	// 404 and telling an admin an expiry happened that did not.
+	if result.RowsAffected == 0 {
+		handleError(g, &errorresponses.NotFoundError{Resource: fmt.Sprintf("enrollment %q", id)})
 		return
 	}
 

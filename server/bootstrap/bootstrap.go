@@ -4,6 +4,7 @@
 package bootstrap
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -28,6 +29,11 @@ type app struct {
 	svc        *services
 	router     *Server
 	scheduler  *job.Scheduler
+
+	// stopSessionCleanup stops the session store's periodic-cleanup
+	// goroutine. Set while building the router (initEngine); registered as a
+	// shutdown hook by BootstrapServe. nil in modes that build no router.
+	stopSessionCleanup func(context.Context) error
 }
 
 // BootstrapServe wires up and runs the server (full or API mode).
@@ -126,6 +132,9 @@ func BootstrapServe(cmd *cobra.Command, mode ServerMode) error {
 		return err
 	}
 	serviceRunners = append(serviceRunners, a.router.Run)
+	// Stop the session store's cleanup goroutine on shutdown (set while
+	// building the router). Add is nil-safe if a mode ever skips the router.
+	shutdowns.Add(a.stopSessionCleanup)
 
 	// Run all background services
 	// This call blocks until the context is canceled

@@ -29,10 +29,10 @@ func TestNewSSHKeypair_GenerateAndMarshalRoundTrip(t *testing.T) {
 		keySize int
 		load    func(pem []byte) (*SSHKeypair, error)
 	}{
-		{name: "should round-trip an RSA keypair", keyType: "rsa", keySize: 2048, load: LoadRSAKeyPair},
-		{name: "should round-trip an ECDSA P-256 keypair", keyType: "ecdsa", keySize: 256, load: LoadECDSAKeyPair},
-		{name: "should round-trip an ECDSA P-384 keypair", keyType: "ecdsa", keySize: 384, load: LoadECDSAKeyPair},
-		{name: "should round-trip an ECDSA P-521 keypair", keyType: "ecdsa", keySize: 521, load: LoadECDSAKeyPair},
+		{name: "should round-trip an RSA keypair", keyType: "rsa", keySize: 2048, load: LoadSSHKeypair},
+		{name: "should round-trip an ECDSA P-256 keypair", keyType: "ecdsa", keySize: 256, load: LoadSSHKeypair},
+		{name: "should round-trip an ECDSA P-384 keypair", keyType: "ecdsa", keySize: 384, load: LoadSSHKeypair},
+		{name: "should round-trip an ECDSA P-521 keypair", keyType: "ecdsa", keySize: 521, load: LoadSSHKeypair},
 		{name: "should round-trip an Ed25519 keypair", keyType: "ed25519", keySize: 0, load: LoadSSHKeypair},
 	}
 

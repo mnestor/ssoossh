@@ -60,7 +60,6 @@ func TestNewFileAgent_ResolvesToAbsolutePath(t *testing.T) {
 		want string
 	}{
 		{name: "should expand a leading ~/ to the home directory", path: "~/nonexistent-ssoossh-test-key", want: filepath.Join(home, "nonexistent-ssoossh-test-key")},
-		{name: "should expand a bare ~ to the home directory", path: "~", want: home},
 		{name: "should resolve a bare filename under ~/.ssh", path: "nonexistent-ssoossh-test-key", want: filepath.Join(home, ".ssh", "nonexistent-ssoossh-test-key")},
 		{name: "should resolve a relative path under ~/.ssh", path: filepath.Join("sub", "nonexistent-ssoossh-test-key"), want: filepath.Join(home, ".ssh", "sub", "nonexistent-ssoossh-test-key")},
 	}
@@ -106,26 +105,26 @@ func TestNewFileAgent_AbsolutePathUnchanged(t *testing.T) {
 	}
 }
 
-// should not panic on an empty path, resolving it under ~/.ssh like any other bare relative path
+// should reject an empty path instead of silently resolving it to ~/.ssh
+// itself, which every later write or remove would then operate on
 func TestNewFileAgent_EmptyPath(t *testing.T) {
 	t.Parallel()
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skipf("no home directory available: %v", err)
+	if _, err := NewFileAgent(""); err == nil {
+		t.Error("NewFileAgent(\"\") error = nil, want error")
 	}
+	if _, err := NewFileAgent("   "); err == nil {
+		t.Error("NewFileAgent(\"   \") error = nil, want error")
+	}
+}
 
-	ag, err := NewFileAgent("")
-	if err != nil {
-		t.Fatalf("NewFileAgent() error = %v", err)
-	}
-	fa, ok := ag.(*FileAgent)
-	if !ok {
-		t.Fatalf("NewFileAgent() returned %T, want *FileAgent", ag)
-	}
-	want := filepath.Join(home, ".ssh")
-	if fa.privKey != want {
-		t.Errorf("privKey = %q, want %q", fa.privKey, want)
+// should reject a path that names an existing directory
+func TestNewFileAgent_DirectoryPath(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if _, err := NewFileAgent(dir); err == nil {
+		t.Error("NewFileAgent() error = nil, want error for a directory path")
 	}
 }
 
@@ -228,28 +227,97 @@ func TestNewFileAgent_UnparseableCertFile(t *testing.T) {
 func TestFileAgent_AddKeypair_WritesFiles(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	path := filepath.Join(dir, "id_ssoossh")
-
-	ag, err := NewFileAgent(path)
-	if err != nil {
-		t.Fatalf("NewFileAgent() error = %v", err)
-	}
-
-	kp, err := keypair.NewEd25519KeyPair()
-	if err != nil {
-		t.Fatalf("NewEd25519KeyPair() error = %v", err)
-	}
-
-	if err := ag.AddKeypair(kp); err != nil {
-		t.Fatalf("AddKeypair() error = %v", err)
-	}
-
-	for _, suffix := range []string{"", ".pub", "-cert.pub"} {
-		if _, err := os.Stat(path + suffix); err != nil {
-			t.Errorf("expected file %s to exist, got error: %v", path+suffix, err)
+	newKeypair := func(t *testing.T) *keypair.SSHKeypair {
+		t.Helper()
+		kp, err := keypair.NewEd25519KeyPair()
+		if err != nil {
+			t.Fatalf("NewEd25519KeyPair() error = %v", err)
 		}
+		return kp
 	}
+
+	t.Run("should write key and public key but no certificate file when the keypair has none", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path := filepath.Join(dir, "id_ssoossh")
+		ag, err := NewFileAgent(path)
+		if err != nil {
+			t.Fatalf("NewFileAgent() error = %v", err)
+		}
+
+		if err := ag.AddKeypair(newKeypair(t)); err != nil {
+			t.Fatalf("AddKeypair() error = %v", err)
+		}
+
+		for _, suffix := range []string{"", ".pub"} {
+			if _, err := os.Stat(path + suffix); err != nil {
+				t.Errorf("expected file %s to exist, got error: %v", path+suffix, err)
+			}
+		}
+		if _, err := os.Stat(path + "-cert.pub"); !os.IsNotExist(err) {
+			t.Errorf("expected no certificate file for a certificate-less keypair, stat error = %v", err)
+		}
+	})
+
+	t.Run("should write all three files when the keypair carries a certificate", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path := filepath.Join(dir, "id_ssoossh")
+		ag, err := NewFileAgent(path)
+		if err != nil {
+			t.Fatalf("NewFileAgent() error = %v", err)
+		}
+
+		ca := newKeypair(t)
+		caSigner, err := ssh.NewSignerFromKey(ca.Private())
+		if err != nil {
+			t.Fatalf("NewSignerFromKey() error = %v", err)
+		}
+		kp := newKeypair(t)
+		kp.SetCertificate(newTestCert(t, kp.Public(), caSigner))
+
+		if err := ag.AddKeypair(kp); err != nil {
+			t.Fatalf("AddKeypair() error = %v", err)
+		}
+
+		for _, suffix := range []string{"", ".pub", "-cert.pub"} {
+			if _, err := os.Stat(path + suffix); err != nil {
+				t.Errorf("expected file %s to exist, got error: %v", path+suffix, err)
+			}
+		}
+	})
+
+	t.Run("should remove a stale certificate file left by an earlier keypair", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path := filepath.Join(dir, "id_ssoossh")
+		certPath := path + "-cert.pub"
+		if err := os.WriteFile(certPath, []byte("stale"), 0600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+		f := &FileAgent{privKey: path}
+
+		if err := f.AddKeypair(newKeypair(t)); err != nil {
+			t.Fatalf("AddKeypair() error = %v", err)
+		}
+		if _, err := os.Stat(certPath); !os.IsNotExist(err) {
+			t.Errorf("expected stale certificate %s to be removed, stat error = %v", certPath, err)
+		}
+	})
+
+	t.Run("should create a missing parent directory", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path := filepath.Join(dir, "nested", "deeper", "id_ssoossh")
+		f := &FileAgent{privKey: path}
+
+		if err := f.AddKeypair(newKeypair(t)); err != nil {
+			t.Fatalf("AddKeypair() error = %v", err)
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected %s to exist, got error: %v", path, err)
+		}
+	})
 }
 
 // should refuse to add or remove keys directly, since FileAgent is not a live agent
@@ -463,6 +531,28 @@ func TestFileAgent_CleanupAgent(t *testing.T) {
 			t.Errorf("expected %s to still exist, stat error = %v", path, err)
 		}
 	})
+
+	t.Run("should refuse to run when no CAs are registered", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		path := filepath.Join(dir, "id_ssoossh")
+		leaf, err := keypair.NewEd25519KeyPair()
+		if err != nil {
+			t.Fatalf("NewEd25519KeyPair() error = %v", err)
+		}
+		leaf.SetCertificate(newTestCert(t, leaf.Public(), caSigner))
+		f := &FileAgent{keypair: leaf, privKey: path}
+		if err := os.WriteFile(path, []byte("dummy"), 0600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		if err := f.CleanupAgent(); err == nil {
+			t.Error("CleanupAgent() error = nil, want error with no CAs registered")
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected %s to still exist with no CAs registered, stat error = %v", path, err)
+		}
+	})
 }
 
 // should build one signer from the loaded keypair, or error when none is loaded
@@ -674,8 +764,13 @@ func TestFileAgent_AddKeypair_WriteError(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	// A path under a nonexistent parent directory: os.WriteFile will fail.
-	f := &FileAgent{privKey: filepath.Join(dir, "nonexistent", "id_ssoossh")}
+	// The parent "directory" is a regular file, so AddKeypair's MkdirAll
+	// (and any write beneath it) must fail.
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	f := &FileAgent{privKey: filepath.Join(blocker, "id_ssoossh")}
 
 	kp, err := keypair.NewEd25519KeyPair()
 	if err != nil {

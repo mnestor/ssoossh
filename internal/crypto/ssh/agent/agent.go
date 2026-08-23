@@ -182,19 +182,20 @@ func (a *SshAgent) Signers() ([]ssh.Signer, error) {
 
 // CleanupAgent removes any certificate identities from the agent that are
 // not time-valid or not signed by a trusted CA (see SetCA). Identities that
-// aren't ssh.Certificate keys are left untouched.
+// aren't ssh.Certificate keys are left untouched. With no CAs registered it
+// refuses to run rather than judging every certificate invalid and
+// removing identities that may be perfectly good.
 func (a *SshAgent) CleanupAgent() error {
+	if len(a.cas) == 0 {
+		return errors.New("refusing to clean up agent identities: no trusted CAs registered (call SetCA first)")
+	}
 	keys, err := a.agent.List()
 	if err != nil {
 		return err
 	}
 
 	for _, key := range keys {
-		parsed, err := ssh.ParsePublicKey(key.Marshal())
-		if err != nil {
-			continue
-		}
-		cert, ok := parsed.(*ssh.Certificate)
+		cert, ok := parseAgentCertificate(key)
 		if !ok {
 			continue
 		}
@@ -205,6 +206,19 @@ func (a *SshAgent) CleanupAgent() error {
 		}
 	}
 	return nil
+}
+
+// parseAgentCertificate reparses an agent identity as an ssh.Certificate,
+// reporting false for identities that don't parse or aren't certificates.
+// Shared by List, CleanupAgent, and Certificates, which all walk the
+// agent's identities looking for certificates.
+func parseAgentCertificate(key *agent.Key) (*ssh.Certificate, bool) {
+	parsed, err := ssh.ParsePublicKey(key.Marshal())
+	if err != nil {
+		return nil, false
+	}
+	cert, ok := parsed.(*ssh.Certificate)
+	return cert, ok
 }
 
 // SetCA registers one or more trusted CA public keys, in addition to any
@@ -233,11 +247,7 @@ func (a *SshAgent) Certificates() ([]*ssh.Certificate, error) {
 	}
 	var certs []*ssh.Certificate
 	for _, k := range keys {
-		parsed, err := ssh.ParsePublicKey(k.Marshal())
-		if err != nil {
-			continue
-		}
-		cert, ok := parsed.(*ssh.Certificate)
+		cert, ok := parseAgentCertificate(k)
 		if !ok {
 			continue
 		}

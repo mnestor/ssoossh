@@ -223,6 +223,39 @@ func TestNewConfig_ShouldLetAnEnforcedFileOverrideTheUsersOwnConfig(t *testing.T
 	}
 }
 
+// TestNewConfig_ShouldFailClosedWhenTheEnforceFileIsMalformed is the
+// fail-closed guarantee for the lock: a malformed enforce file must abort
+// startup, not be silently skipped, because skipping it drops every setting
+// the administrator pinned and lets the user's own config win — exactly the
+// bypass the mechanism exists to prevent.
+func TestNewConfig_ShouldFailClosedWhenTheEnforceFileIsMalformed(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml": "enforce: locked.yaml\n",
+		"locked.yaml":  "insecure_skip_verify: : not valid yaml {{{\n",
+	})
+	userConfig := writeConfig(t, "insecure_skip_verify: true\n")
+	cmd := newConfigCommand(t, "--config", userConfig)
+
+	if _, err := newConfig(cmd, testPaths(sysDir), noPolicy); err == nil {
+		t.Error("newConfig() error = nil, want an error for a malformed enforce file")
+	}
+}
+
+// TestNewConfig_ShouldFailClosedWhenTheEnforceFileIsMissing covers the other
+// way the lock can silently vanish: naming an enforce file that does not
+// exist. Like a malformed file, a missing one must be a hard error rather
+// than a no-op.
+func TestNewConfig_ShouldFailClosedWhenTheEnforceFileIsMissing(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{
+		"ssoossh.yaml": "enforce: nonexistent.yaml\n",
+	})
+	cmd := newConfigCommand(t, "--config", writeConfig(t, ""))
+
+	if _, err := newConfig(cmd, testPaths(sysDir), noPolicy); err == nil {
+		t.Error("newConfig() error = nil, want an error for a missing enforce file")
+	}
+}
+
 // TestNewConfig_ShouldIgnoreEnforceOutsideTheSystemFile keeps the lock from
 // being self-service: a user who can write their own config must not be able
 // to point `enforce` at a file of their choosing.

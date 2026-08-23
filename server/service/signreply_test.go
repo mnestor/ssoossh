@@ -358,11 +358,11 @@ func TestSignedReplyHandler_ShouldSurfaceACreateFailure(t *testing.T) {
 	}
 }
 
-// TestMarkResolved_ShouldLogAndReturnOnADBError covers markResolved's own
-// error branch. markResolved has no return value to assert on — Deny/expire
-// already prove the guarded-update semantics — so this only confirms it
-// doesn't panic when the update itself fails.
-func TestMarkResolved_ShouldLogAndReturnOnADBError(t *testing.T) {
+// TestMarkResolved_ShouldReturnErrorOnADBError covers markResolved's own
+// error branch: a genuine DB failure is returned (not swallowed) so the
+// reply handler can nack and retry rather than stranding the request in
+// Signing.
+func TestMarkResolved_ShouldReturnErrorOnADBError(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, time.Hour)
@@ -370,7 +370,9 @@ func TestMarkResolved_ShouldLogAndReturnOnADBError(t *testing.T) {
 	requestID := signingRequest(t, svc)
 	closeUnderlyingDB(t, svc.db)
 
-	h.markResolved(context.Background(), requestID, model.CertificateRequestStatusApproved, "")
+	if err := h.markResolved(context.Background(), requestID, model.CertificateRequestStatusApproved, ""); err == nil {
+		t.Error("markResolved() error = nil, want error when the update fails")
+	}
 }
 
 // TestSignedReplyHandler_ShouldStillRecordACertificateWithNoOwner keeps a

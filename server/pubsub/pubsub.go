@@ -309,8 +309,18 @@ func (p *PubSub) Run(ctx context.Context) error {
 // transport goes away. Matches servicerunner.Service's signature, for use
 // with bootstrap's shutdownManager.
 func (p *PubSub) Close(context.Context) error {
-	if err := p.Router.Close(); err != nil {
-		return fmt.Errorf("failed to close watermill router: %w", err) // excluded from coverage: Router is a concrete type (not interfaces), so a failure can't be injected black-box; verified a double Close returns no error, see exclude-from-coverage.txt
+	// Only close a Router that actually started. watermill's Router.Close on
+	// a never-started Router does not return early - it waits out the full
+	// CloseTimeout on handlers that never reported in (the same trap Run's
+	// shutdown goroutine documents). In normal operation Run's goroutine has
+	// already closed it by the time this runs, so IsRunning() is false and
+	// this is a fast no-op rather than a redundant blocking double-close;
+	// skipping it also keeps this safe if Close is ever reached without Run
+	// having started the Router.
+	if p.Router.IsRunning() {
+		if err := p.Router.Close(); err != nil {
+			return fmt.Errorf("failed to close watermill router: %w", err) // excluded from coverage: Router is a concrete type (not interfaces), so a failure can't be injected black-box; verified a double Close returns no error, see exclude-from-coverage.txt
+		}
 	}
 
 	if p.natsPublisher != nil {

@@ -4,8 +4,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 )
 
@@ -19,23 +17,6 @@ func NewECDSAKeyPair(bits int) (*SSHKeypair, error) {
 	priv, err := ecdsa.GenerateKey(curve, rand.Reader)
 	if err != nil {
 		return nil, err // excluded from coverage: crypto/rand.Reader failure isn't reproducible in tests, see exclude-from-coverage.txt
-	}
-	return &SSHKeypair{
-		privateKey: priv,
-		publicKey:  &priv.PublicKey,
-	}, nil
-}
-
-// LoadECDSAKeyPair loads an ECDSA keypair from PEM-encoded ("EC PRIVATE
-// KEY") private key bytes.
-func LoadECDSAKeyPair(privPEM []byte) (*SSHKeypair, error) {
-	block, _ := pem.Decode(privPEM)
-	if block == nil || block.Type != "EC PRIVATE KEY" {
-		return nil, errors.New("invalid PEM block for EC private key")
-	}
-	priv, err := x509.ParseECPrivateKey(block.Bytes)
-	if err != nil {
-		return nil, err
 	}
 	return &SSHKeypair{
 		privateKey: priv,

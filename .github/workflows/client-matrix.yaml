@@ -1,87 +1,55 @@
 name: client-matrix
+
+# Cross-platform coverage for the code that runs on end-user machines: the
+# client and the ssh agent. Linux alone would miss Windows/macOS-specific
+# path handling, agent sockets (Pageant, launchd), and keychain behavior.
+#
+# The goreleaser snapshot job that used to live here was a duplicate of
+# build.yaml's build-most (same config, same secrets, every PR); build.yaml
+# owns release-pipeline validation now.
 on:
   workflow_dispatch:
   pull_request:
-  push:
-    branches: [main]
+  schedule:
+    # Weekly double check; PRs do the heavy lifting day to day.
+    - cron: "30 4 * * 1" # 04:30 UTC Monday
 
 permissions:
   contents: read
 
 concurrency:
-  group: client-matrix-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  snapshot-build:
-    name: Release snapshot build
+  # Path gate: skip the 3-OS matrix (macOS minutes bill at 10x) when the
+  # client/agent code didn't change. Skipped jobs still satisfy required
+  # checks; see build.yaml's changes job for the pattern.
+  changes:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code || 'true' }}
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: github.event_name == 'pull_request'
+        id: filter
         with:
-          go-version-file: "go.mod"
-          check-latest: true
-          cache: true
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v4.4.0
-        with:
-          node-version: 26
-
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v4.4.0
-        with:
-          version: 11
-
-      # goreleaser builds ssoosshd too, and the server embeds
-      # server/frontend/dist - only a placeholder index.html is tracked.
-      - name: Build web UI
-        run: make frontend
-
-      # Real signing material, same as the release workflow: a snapshot
-      # build through the actual .goreleaser.yml (every platform and arch,
-      # minus the PAM modules which have their own configs) validates the
-      # release pipeline itself on every PR, not just that six GOOS/GOARCH
-      # pairs compile. The quill post-hook fails without these - verified,
-      # not assumed - so this job needs the same secrets release does.
-      - uses: 1password/load-secrets-action@e544b780808654ba8ceba5fb2fe2897103d92ff4 # v5.0.0
-        id: secrets
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          GPG_PASSPHRASE: "op://Github Actions/ifx7xxoazokhouv2z2cstg7f7a/password"
-          QUILL_NOTARY_ISSUER: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_NOTARY_ISSUER
-          QUILL_NOTARY_KEY: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_NOTARY_KEY
-          QUILL_NOTARY_KEY_ID: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_NOTARY_KEY_ID
-          QUILL_SIGN_P12: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_SIGN_P12
-          QUILL_SIGN_PASSWORD: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_SIGN_PASSWORD
-
-      - name: Save gpg key
-        run: |
-          op read "op://Github Actions/ifx7xxoazokhouv2z2cstg7f7a/private.pgp" > "${GITHUB_WORKSPACE}/private.pgp"
-          git config --global --add safe.directory "$(pwd)"
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-
-      - name: GoReleaser snapshot build
-        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v6.4.0
-        with:
-          distribution: goreleaser
-          version: nightly
-          args: build -f .goreleaser.yml --clean --snapshot
-        env:
-          RELEASE: "false"
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NFPM_PASSPHRASE: ${{ steps.secrets.outputs.GPG_PASSPHRASE }}
-          QUILL_NOTARY_ISSUER: ${{ steps.secrets.outputs.QUILL_NOTARY_ISSUER }}
-          QUILL_NOTARY_KEY: ${{ steps.secrets.outputs.QUILL_NOTARY_KEY }}
-          QUILL_NOTARY_KEY_ID: ${{ steps.secrets.outputs.QUILL_NOTARY_KEY_ID }}
-          QUILL_SIGN_P12: ${{ steps.secrets.outputs.QUILL_SIGN_P12 }}
-          QUILL_SIGN_PASSWORD: ${{ steps.secrets.outputs.QUILL_SIGN_PASSWORD }}
+          filters: |
+            code:
+              - 'client/**'
+              - 'cmd/ssoossh/**'
+              - 'internal/**'
+              - 'go.mod'
+              - 'go.sum'
+              - '.github/workflows/client-matrix.yaml'
 
   test-matrix:
     name: Test on ${{ matrix.os }}
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -90,48 +58,24 @@ jobs:
       fail-fast: false
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: "go.mod"
           check-latest: true
           cache: true
 
-      - name: Run client tests
-        run: go test -v -count=1 ./client/...
-
-      - name: Run agent tests
-        run: go test -v -count=1 ./internal/crypto/ssh/agent/...
-
-      - name: Run platform-specific tests (Linux only)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          echo "Running Linux-specific platform tests..."
-          go test -v -count=1 -run ".*Platform.*" ./client/config/...
-          go test -v -count=1 -run ".*Platform.*" ./internal/crypto/ssh/agent/...
-
-      - name: Run platform-specific tests (macOS only)
-        if: matrix.os == 'macos-latest'
-        run: |
-          echo "Running macOS-specific platform tests..."
-          go test -v -count=1 -run ".*Darwin|.*macOS|.*Launchd" ./client/config/...
-          go test -v -count=1 -run ".*Darwin|.*macOS|.*Launchd" ./internal/crypto/ssh/agent/...
-
-      - name: Run platform-specific tests (Windows only)
-        if: matrix.os == 'windows-latest'
-        run: |
-          echo "Running Windows-specific platform tests..."
-          go test -v -count=1 -run ".*Windows|.*Pageant|.*WSL" ./client/config/...
-          go test -v -count=1 -run ".*Windows|.*Pageant|.*WSL" ./internal/crypto/ssh/agent/...
-
-      - name: Collect coverage
-        if: always()
-        run: go test -v -count=1 -coverprofile=coverage-${{ matrix.os }}.txt ./client/... ./internal/crypto/ssh/agent/...
+      # One run does everything: the unfiltered invocation already includes
+      # every platform-specific test compiled in for this GOOS, and
+      # -coverprofile on the same run replaces the separate coverage pass
+      # that used to execute the whole suite a second time per OS.
+      - name: Run client and agent tests
+        run: go test -count=1 -coverprofile=coverage-${{ matrix.os }}.txt ./client/... ./internal/crypto/ssh/agent/...
 
       - name: Upload coverage
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-${{ matrix.os }}
           path: coverage-${{ matrix.os }}.txt
@@ -139,23 +83,27 @@ jobs:
 
   coverage-merge:
     name: Merge coverage reports
+    needs: [changes, test-matrix]
+    # Run whenever the matrix actually ran, even partially failed, so a
+    # single red OS still produces a merged report; skip when the paths
+    # gate skipped the matrix.
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' && contains(fromJSON('["success", "failure"]'), needs.test-matrix.result) }}
     runs-on: ubuntu-latest
-    needs: test-matrix
-    if: always()
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: "go.mod"
           check-latest: true
 
       - name: Download all coverage artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: coverage
+          pattern: coverage-*
 
       - name: Merge coverage reports
         run: |

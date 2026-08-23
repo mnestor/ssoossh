@@ -2,6 +2,7 @@ package agent
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,18 +23,26 @@ type FileAgent struct {
 	cas     []ssh.PublicKey
 
 	// HasPrivKey, HasPubKey, and HasCert record whether each corresponding
-	// file existed on disk at construction time (see NewFileAgent).
+	// file existed on disk at construction time (see NewFileAgent), and are
+	// updated when AddKeypair writes new ones.
 	HasPrivKey bool
 	HasPubKey  bool
 	HasCert    bool
 }
 
 // NewFileAgent creates a FileAgent for the given private key path.
-// It does not require files to be present, but will check and record their existence.
-// A relative path (including a bare filename, or "~"/"~/...") is resolved
-// against the user's ~/.ssh directory; os.UserHomeDir handles Windows and
-// WSL, so no platform-specific logic is needed here.
+// It does not require files to be present, but will check and record their
+// existence. A relative path (including a bare filename, or "~"/"~/...") is
+// resolved against the user's ~/.ssh directory; os.UserHomeDir handles
+// Windows and WSL, so no platform-specific logic is needed here.
+//
+// An empty path is rejected outright: it would resolve to ~/.ssh itself,
+// and every later write or remove would then operate on the directory —
+// the classic way key files end up somewhere the user never looks.
 func NewFileAgent(path string) (Agent, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, errors.New("key file path is empty; set key_filename to the private key file to use")
+	}
 	if !filepath.IsAbs(path) {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
@@ -46,51 +55,55 @@ func NewFileAgent(path string) (Agent, error) {
 			path = filepath.Join(homeDir, ".ssh", path)
 		}
 	}
+	if fi, err := os.Stat(path); err == nil && fi.IsDir() {
+		return nil, fmt.Errorf("key file path %s is a directory, not a file", path)
+	}
 
-	ag := &FileAgent{
+	f := &FileAgent{
 		privKey: path,
 	}
 
-	// Check for private key file
+	// Check for private key file. Read/parse failures are tolerated on
+	// purpose: a corrupt or unreadable key must not brick the agent, because
+	// the next login's AddKeypair overwrites it and self-heals.
 	if _, err := os.Stat(path); err == nil {
-		ag.HasPrivKey = true
+		f.HasPrivKey = true
 		data, err := os.ReadFile(path)
 		if err == nil {
 			kp, err := keypair.LoadSSHKeypair(data)
 			if err == nil {
-				ag.keypair = kp
+				f.keypair = kp
 			}
 		}
 	}
 
 	// Check for public key file
-	pubPath := path + ".pub"
-	if _, err := os.Stat(pubPath); err == nil {
-		ag.HasPubKey = true
+	if _, err := os.Stat(path + ".pub"); err == nil {
+		f.HasPubKey = true
 	}
 
 	// Check for certificate file and load it if present
 	certPath := path + "-cert.pub"
 	if _, err := os.Stat(certPath); err == nil {
-		ag.HasCert = true
+		f.HasCert = true
 		certData, err := os.ReadFile(certPath)
-		if err == nil && ag.keypair != nil {
+		if err == nil && f.keypair != nil {
 			// Best-effort: an unparseable cert file just leaves the
 			// keypair without a certificate loaded.
-			_ = ag.keypair.ParseCertificateFromString(string(certData)) //nolint:errcheck // best-effort, see comment above
+			_ = f.keypair.ParseCertificateFromString(string(certData)) //nolint:errcheck // best-effort, see comment above
 		}
 	}
 
-	return ag, nil
+	return f, nil
 }
 
 // Type always returns AgentTypeFile.
-func (a *FileAgent) Type() string {
+func (f *FileAgent) Type() string {
 	return AgentTypeFile
 }
 
 // Backend reports the storage backend for this agent; always BackendFile.
-func (a *FileAgent) Backend() string {
+func (f *FileAgent) Backend() string {
 	return BackendFile
 }
 
@@ -119,25 +132,6 @@ func (f *FileAgent) List(filterByCA bool) ([]*ssh.PublicKey, error) {
 	return keys, nil
 }
 
-// Sign has the agent sign the data using the first key.
-// func (f *FileAgent) Sign(key ssh.PublicKey, data []byte) (*ssh.Signature, error) {
-// 	if f.keypair == nil {
-// 		return nil, errors.New("no keypair loaded")
-// 	}
-// 	pub, err := keypair.SSHPublicKey(f.keypair)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	if publicKeysEqual(pub, key) {
-// 		signer, err := ssh.NewSignerFromKey(f.keypair)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 		return signer.Sign(nil, data)
-// 	}
-// 	return nil, errors.New("key not found")
-// }
-
 // Add is not supported for FileAgent; use AddKeypair to write a keypair to disk.
 func (f *FileAgent) Add(key any) error {
 	return errors.New("Add not supported for FileAgent")
@@ -153,31 +147,54 @@ func (f *FileAgent) Remove(key ssh.PublicKey) error {
 
 // RemoveAll deletes the private key, public key, and certificate files on
 // disk for this agent's identity path. It returns 1 if files were removed,
-// or 0 if there was nothing to remove.
+// or 0 if there was nothing to remove. Removal failures are reported, not
+// swallowed: a logout that leaves a private key behind must not look
+// successful.
 func (f *FileAgent) RemoveAll() (int, error) {
-	// privkey is ours so we just remove it
-	if _, err := os.Stat(f.privKey); err != nil {
+	fi, err := os.Stat(f.privKey)
+	if err != nil {
 		return 0, nil
 	}
-	os.Remove(f.privKey)
-	os.Remove(f.privKey + "-cert.pub")
-	os.Remove(f.privKey + ".pub")
+	if fi.IsDir() {
+		return 0, fmt.Errorf("refusing to remove %s: it is a directory, not a key file", f.privKey)
+	}
+	err = errors.Join(
+		os.Remove(f.privKey),
+		removeIfPresent(f.privKey+"-cert.pub"),
+		removeIfPresent(f.privKey+".pub"),
+	)
+	if err != nil {
+		return 1, fmt.Errorf("remove key files: %w", err)
+	}
 	return 1, nil
+}
+
+// removeIfPresent removes path, treating "already gone" as success.
+func removeIfPresent(path string) error {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 // CleanupAgent removes the on-disk key files if the loaded certificate is
 // not time-valid or not signed by a trusted CA (see SetCA). A keypair with
-// no certificate loaded is left untouched.
-func (a *FileAgent) CleanupAgent() error {
-	if a.keypair == nil {
+// no certificate loaded is left untouched. With no CAs registered it
+// refuses to run rather than judging every certificate invalid and
+// deleting keys that may be perfectly good.
+func (f *FileAgent) CleanupAgent() error {
+	if f.keypair == nil {
 		return nil
 	}
-	cert := a.keypair.Certificate()
+	cert := f.keypair.Certificate()
 	if cert == nil {
 		return nil
 	}
-	if !CertificateValid(cert, a.cas) {
-		_, err := a.RemoveAll()
+	if len(f.cas) == 0 {
+		return errors.New("refusing to clean up key files: no trusted CAs registered (call SetCA first)")
+	}
+	if !CertificateValid(cert, f.cas) {
+		_, err := f.RemoveAll()
 		return err
 	}
 	return nil
@@ -208,7 +225,7 @@ func (f *FileAgent) Agent() agent.Agent {
 
 // SetCA registers one or more trusted CA public keys, in addition to any
 // already registered via previous calls.
-func (a *FileAgent) SetCA(cas ...string) error {
+func (f *FileAgent) SetCA(cas ...string) error {
 	if len(cas) == 0 {
 		return errors.New("at least one CA public key string is required")
 	}
@@ -216,7 +233,7 @@ func (a *FileAgent) SetCA(cas ...string) error {
 	if err != nil {
 		return err
 	}
-	a.cas = append(a.cas, parsed...)
+	f.cas = append(f.cas, parsed...)
 	return nil
 }
 
@@ -228,53 +245,81 @@ func (f *FileAgent) Certificates() ([]*ssh.Certificate, error) {
 	certPath := f.privKey + "-cert.pub"
 	data, err := os.ReadFile(certPath)
 	if err != nil {
-		return nil, errors.New("certificate file not found: " + certPath)
+		return nil, fmt.Errorf("read certificate file %s: %w", certPath, err)
 	}
-	pub, _, _, rest, err := ssh.ParseAuthorizedKey(data)
-	if err != nil || len(rest) > 0 {
-		return nil, errors.New("failed to parse certificate file: " + certPath)
-	}
-	cert, ok := pub.(*ssh.Certificate)
-	if !ok {
-		return nil, errors.New("file is not an ssh certificate: " + certPath)
+	cert, err := keypair.ParseCertificate(data)
+	if err != nil {
+		return nil, fmt.Errorf("certificate file %s: %w", certPath, err)
 	}
 	if !CertificateValid(cert, f.cas) {
-		return nil, errors.New("no valid certifiates found: " + certPath)
+		return nil, fmt.Errorf("no valid certificates found in %s", certPath)
 	}
-	var certs []*ssh.Certificate
-	certs = append(certs, cert)
-	return certs, nil
+	return []*ssh.Certificate{cert}, nil
 }
 
-// AddKeypair adds an SSHKeypair to the FileAgent's list of signers,
-// writes the private key to file, the certificate (if present) to privKey+"-cert.pub",
-// and the SSH public key to privKey+".pub".
-func (f *FileAgent) AddKeypair(keypair *keypair.SSHKeypair) error {
-	// Write private key PEM to file
-	privPEM, err := keypair.MarshalPrivateKey()
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(f.privKey, privPEM, 0600); err != nil {
-		return err
+// AddKeypair writes kp's private key to the agent's path, the SSH public
+// key to privKey+".pub", and the certificate (if present) to
+// privKey+"-cert.pub", creating the parent directory when missing. Every
+// write is verified by statting the file afterwards, and every failure
+// names the path involved — key files silently landing in the wrong place
+// (or nowhere) is exactly the failure mode this agent exists to avoid.
+// When kp carries no certificate, a stale privKey+"-cert.pub" from an
+// earlier keypair is removed rather than left to mismatch the new key.
+func (f *FileAgent) AddKeypair(kp *keypair.SSHKeypair) error {
+	dir := filepath.Dir(f.privKey)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create key directory %s: %w", dir, err)
 	}
 
-	// Write public key to privKey+".pub"
-	pubStr, err := keypair.MarshalAuthorizedKey()
+	privPEM, err := kp.MarshalPrivateKey()
 	if err != nil {
-		return err
+		return fmt.Errorf("encode private key: %w", err)
 	}
-	pubPath := f.privKey + ".pub"
-	if err := os.WriteFile(pubPath, []byte(pubStr), 0644); err != nil { //nolint:gosec // public key, standard OpenSSH .pub convention is world-readable; no secret material
-		return err
+	if err := writeAndVerify(f.privKey, privPEM, 0o600); err != nil {
+		return fmt.Errorf("private key: %w", err)
 	}
+	f.HasPrivKey = true
+
+	pubStr, err := kp.MarshalAuthorizedKey()
+	if err != nil {
+		return fmt.Errorf("encode public key: %w", err)
+	}
+	if err := writeAndVerify(f.privKey+".pub", []byte(pubStr), 0o644); err != nil {
+		return fmt.Errorf("public key: %w", err)
+	}
+	f.HasPubKey = true
 
 	certPath := f.privKey + "-cert.pub"
-	if err := os.WriteFile(certPath, keypair.MarshalCertificate(), 0644); err != nil { //nolint:gosec // certificate, same as the .pub file above: public, no secret material
-		return err
+	if certData := kp.MarshalCertificate(); certData != nil {
+		if err := writeAndVerify(certPath, certData, 0o644); err != nil {
+			return fmt.Errorf("certificate: %w", err)
+		}
+		f.HasCert = true
+	} else {
+		if err := removeIfPresent(certPath); err != nil {
+			return fmt.Errorf("remove stale certificate %s: %w", certPath, err)
+		}
+		f.HasCert = false
 	}
 
-	// Add to in-memory keypair and certificate
-	f.keypair = keypair
+	f.keypair = kp
+	return nil
+}
+
+// writeAndVerify writes data to path and then confirms the file actually
+// exists and is non-empty, so a write that an overlay, sync tool, or
+// antivirus quietly discarded surfaces as an error instead of a key that
+// "disappeared".
+func writeAndVerify(path string, data []byte, perm os.FileMode) error {
+	if err := os.WriteFile(path, data, perm); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("wrote %s but cannot find it afterwards: %w", path, err)
+	}
+	if fi.Size() == 0 && len(data) > 0 {
+		return fmt.Errorf("wrote %s but the file is empty afterwards", path)
+	}
 	return nil
 }

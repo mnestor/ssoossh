@@ -1,69 +1,90 @@
 name: e2e
 
-# The end-to-end merge gate (docs/e2e-testing-plan.md): a separate workflow
-# from build-test.yaml because this one has a different runtime, different
-# failure modes, and its own artifacts. It's the only job that checks the
-# product rather than the parts.
+# The end-to-end merge gate (docs/e2e-testing-plan.md): the only workflow
+# that checks the product rather than the parts.
 #
 # Tiers run as separate jobs so that "a break is reported at the layer it
-# happened" — job name alone tells you tier 1 (wire), tier 2 (browser), or
-# tier 3 (sshd) failed. Build is cached across tiers. No automatic retries
-# (a retried e2e test is a test nobody trusts; flakes get quarantined).
+# happened" -- job name alone tells you tier 1 (wire), tier 2 (browser),
+# tier 3 (sshd), or tier 3 (pam) failed. The -run/-skip filters below are
+# anchored and mutually exclusive, so every test in ./test/e2e runs in
+# exactly one tier: tier 1 used to run the whole unfiltered suite, which
+# both duplicated the other tiers and hard-failed on TestSSH because
+# tier 1's container never installs sshd (the harness t.Fatals on missing
+# prerequisites; it does not skip). Build is cached across tiers. No
+# automatic retries (a retried e2e test is a test nobody trusts; flakes get
+# quarantined).
 on:
   workflow_dispatch:
   pull_request:
-  push:
-    # tags:
-    #   - v*
-    branches:
-      - main
   schedule:
-    # Extended flake detection: run full suite at -count=5 nightly to surface
-    # flakes before they land in the PR gate.
-    - cron: "0 2 * * *"  # 02:00 UTC daily
+    # Weekly extended flake detection: the full suite at -count=5. PRs do
+    # the day-to-day gating; this is the periodic double check.
+    - cron: "0 3 * * 1" # 03:00 UTC Monday
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # Path gate; see build.yaml's changes job for the pattern. Skipped
+  # entirely on the weekly schedule, which cascades through `needs`: only
+  # weekly-extended runs then.
+  changes:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code || 'true' }}
+    steps:
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'frontend/**'
+              - 'Makefile'
+              - '.github/workflows/e2e.yaml'
+
   prepare:
     name: build artifacts
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: [self-hosted, tester]
     container:
       image: ghcr.io/mnestor/ubuntu-build:latest
     timeout-minutes: 10
-    outputs:
-      frontend-cache-key: ${{ steps.frontend.outputs.cache-key }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef474303e # v5.6.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: "go.mod"
           check-latest: true
           cache: true
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v4.4.0
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 11
 
       # The Go build cannot compile without it: server/frontend embeds dist/.
       - name: Build web UI
-        id: frontend
-        run: |
-          make frontend
-          echo "cache-key=$(git rev-parse --short HEAD)-frontend" >> $GITHUB_OUTPUT
+        run: make frontend
 
       - name: Build binaries
         run: go build -buildvcs=false -o bin/ ./cmd/...
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-binaries
           path: |
@@ -72,11 +93,12 @@ jobs:
 
   tier-1:
     name: tier 1 (wire)
-    needs: prepare
+    needs: [changes, prepare]
+    if: needs.changes.outputs.code == 'true'
     runs-on: [self-hosted, tester]
     container:
       image: ghcr.io/mnestor/ubuntu-build:latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     services:
       postgres:
         image: postgres:17-alpine
@@ -93,34 +115,36 @@ jobs:
       matrix:
         backend: [sqlite, postgres]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef474303e # v5.6.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: "go.mod"
           check-latest: true
           cache: true
 
+      # Not in the runner image; every test step pipes through it.
+      - name: Install gotestsum
+        run: |
+          go install gotest.tools/gotestsum@v1.13.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
       - name: Download artifacts
-        uses: actions/download-artifact@e4b0c20b663c359a96327a894f3454240b1008a7 # v4.1.8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: e2e-binaries
 
-      # Tier 1 has no -run filter, so the sweep includes the PAM-stack tests;
-      # they build pam_ssoossh.so and pamtest.c on the spot.
-      - name: Ensure PAM build tools are available
-        run: apt-get update && apt-get install -y --no-install-recommends gcc libpam0g-dev
-
+      # -skip carves out exactly what the other tiers own (anchored, so
+      # TestApprove_* stays here while TestApproval_* goes to tier 2).
       - name: Run tier 1 tests
         env:
           SSOOSSH_E2E_POSTGRES_DSN: ${{ matrix.backend == 'postgres' && 'postgres://postgres:e2e@postgres:5432/e2e?sslmode=disable' || '' }}
         run: |
-          go test -buildvcs=false -tags=e2e -count=1 -timeout=5m -json ./test/e2e/... | \
+          go test -buildvcs=false -tags=e2e -count=1 -timeout=5m -skip '^(TestApproval_|TestSSH_|TestPAMStack_)' -json ./test/e2e/... | \
             gotestsum --junitfile=test-results-tier1-${{ matrix.backend }}.xml --raw-command -- cat
-        continue-on-error: false
 
       - name: Upload diagnostics
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-diagnostics-tier1-${{ matrix.backend }}
           path: test/e2e/_artifacts/
@@ -128,7 +152,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-test-results-tier1-${{ matrix.backend }}
           path: test-results-tier1-${{ matrix.backend }}.xml
@@ -136,7 +160,8 @@ jobs:
 
   tier-2:
     name: tier 2 (browser)
-    needs: prepare
+    needs: [changes, prepare]
+    if: needs.changes.outputs.code == 'true'
     runs-on: [self-hosted, tester]
     container:
       image: ghcr.io/mnestor/ubuntu-build:latest
@@ -157,15 +182,20 @@ jobs:
       matrix:
         backend: [sqlite, postgres]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef474303e # v5.6.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: "go.mod"
           check-latest: true
           cache: true
 
+      - name: Install gotestsum
+        run: |
+          go install gotest.tools/gotestsum@v1.13.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
       - name: Download artifacts
-        uses: actions/download-artifact@e4b0c20b663c359a96327a894f3454240b1008a7 # v4.1.8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: e2e-binaries
 
@@ -173,13 +203,12 @@ jobs:
         env:
           SSOOSSH_E2E_POSTGRES_DSN: ${{ matrix.backend == 'postgres' && 'postgres://postgres:e2e@postgres:5432/e2e?sslmode=disable' || '' }}
         run: |
-          go test -buildvcs=false -tags=e2e -count=1 -timeout=10m -run "TestApproval" -json ./test/e2e/... | \
+          go test -buildvcs=false -tags=e2e -count=1 -timeout=10m -run '^TestApproval_' -json ./test/e2e/... | \
             gotestsum --junitfile=test-results-tier2-${{ matrix.backend }}.xml --raw-command -- cat
-        continue-on-error: false
 
       - name: Upload diagnostics
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-diagnostics-tier2-${{ matrix.backend }}
           path: test/e2e/_artifacts/
@@ -187,7 +216,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-test-results-tier2-${{ matrix.backend }}
           path: test-results-tier2-${{ matrix.backend }}.xml
@@ -195,7 +224,8 @@ jobs:
 
   tier-3:
     name: tier 3 (sshd)
-    needs: prepare
+    needs: [changes, prepare]
+    if: needs.changes.outputs.code == 'true'
     runs-on: [self-hosted, tester]
     container:
       image: ghcr.io/mnestor/ubuntu-build:latest
@@ -216,20 +246,23 @@ jobs:
       matrix:
         backend: [sqlite, postgres]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef474303e # v5.6.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: "go.mod"
           check-latest: true
           cache: true
 
+      - name: Install gotestsum
+        run: |
+          go install gotest.tools/gotestsum@v1.13.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
       - name: Download artifacts
-        uses: actions/download-artifact@e4b0c20b663c359a96327a894f3454240b1008a7 # v4.1.8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: e2e-binaries
 
-      # Present on the hosted image, but asserting it beats a confusing
-      # "no such file" three steps later.
       - name: Ensure sshd is available
         run: |
           apt-get update && apt-get install -y --no-install-recommends openssh-server
@@ -242,13 +275,12 @@ jobs:
         env:
           SSOOSSH_E2E_POSTGRES_DSN: ${{ matrix.backend == 'postgres' && 'postgres://postgres:e2e@postgres:5432/e2e?sslmode=disable' || '' }}
         run: |
-          go test -buildvcs=false -tags=e2e -count=1 -timeout=10m -run "TestSSH" -json ./test/e2e/... | \
+          go test -buildvcs=false -tags=e2e -count=1 -timeout=10m -run '^TestSSH_' -json ./test/e2e/... | \
             gotestsum --junitfile=test-results-tier3-${{ matrix.backend }}.xml --raw-command -- cat
-        continue-on-error: false
 
       - name: Upload diagnostics
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-diagnostics-tier3-${{ matrix.backend }}
           path: test/e2e/_artifacts/
@@ -256,7 +288,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-test-results-tier3-${{ matrix.backend }}
           path: test-results-tier3-${{ matrix.backend }}.xml
@@ -264,7 +296,8 @@ jobs:
 
   tier-3-pam:
     name: tier 3 (pam)
-    needs: prepare
+    needs: [changes, prepare]
+    if: needs.changes.outputs.code == 'true'
     runs-on: [self-hosted, tester]
     container:
       image: ghcr.io/mnestor/ubuntu-build:latest
@@ -285,15 +318,20 @@ jobs:
       matrix:
         backend: [sqlite, postgres]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef474303e # v5.6.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: "go.mod"
           check-latest: true
           cache: true
 
+      - name: Install gotestsum
+        run: |
+          go install gotest.tools/gotestsum@v1.13.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
       - name: Download artifacts
-        uses: actions/download-artifact@e4b0c20b663c359a96327a894f3454240b1008a7 # v4.1.8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: e2e-binaries
 
@@ -306,13 +344,12 @@ jobs:
         env:
           SSOOSSH_E2E_POSTGRES_DSN: ${{ matrix.backend == 'postgres' && 'postgres://postgres:e2e@postgres:5432/e2e?sslmode=disable' || '' }}
         run: |
-          go test -buildvcs=false -tags=e2e -count=1 -timeout=10m -run "TestPAMStack" -json ./test/e2e/... | \
+          go test -buildvcs=false -tags=e2e -count=1 -timeout=10m -run '^TestPAMStack_' -json ./test/e2e/... | \
             gotestsum --junitfile=test-results-tier3-pam-${{ matrix.backend }}.xml --raw-command -- cat
-        continue-on-error: false
 
       - name: Upload diagnostics
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-diagnostics-tier3-pam-${{ matrix.backend }}
           path: test/e2e/_artifacts/
@@ -320,64 +357,84 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: e2e-test-results-tier3-pam-${{ matrix.backend }}
           path: test-results-tier3-pam-${{ matrix.backend }}.xml
           retention-days: 7
 
+  # Hosted runner on purpose: it only echoes markdown, no reason to occupy
+  # a self-hosted tester slot for it.
   e2e-summary:
     name: e2e results
     needs: [tier-1, tier-2, tier-3, tier-3-pam]
-    runs-on: [self-hosted, tester]
-    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: ${{ !cancelled() && needs.tier-1.result != 'skipped' }}
     steps:
-      - name: Download all test results
-        uses: actions/download-artifact@e4b0c20b663c359a96327a894f3454240b1008a7 # v4.1.8
-        with:
-          path: test-results/
-          pattern: e2e-test-results-*
-
       - name: Summarize results
         run: |
           echo "## E2E Test Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Tier | Backend | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|---------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Tier 1 (wire) | sqlite | ${{ needs.tier-1.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Tier 2 (browser) | sqlite | ${{ needs.tier-2.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Tier 3 (sshd) | sqlite | ${{ needs.tier-3.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Tier 3 (pam) | sqlite | ${{ needs.tier-3-pam.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tier | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Tier 1 (wire) | ${{ needs.tier-1.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tier 2 (browser) | ${{ needs.tier-2.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tier 3 (sshd) | ${{ needs.tier-3.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tier 3 (pam) | ${{ needs.tier-3-pam.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           if [[ "${{ needs.tier-1.result }}" == "success" && "${{ needs.tier-2.result }}" == "success" && "${{ needs.tier-3.result }}" == "success" && "${{ needs.tier-3-pam.result }}" == "success" ]]; then
-            echo "✓ All tiers passed" >> $GITHUB_STEP_SUMMARY
+            echo "All tiers passed" >> $GITHUB_STEP_SUMMARY
             exit 0
           else
-            echo "✗ One or more tiers failed" >> $GITHUB_STEP_SUMMARY
+            echo "One or more tiers failed" >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
 
-  nightly-extended:
-    name: nightly extended tests
+  # The weekly double check: the entire suite, unfiltered, five times, so
+  # flakes surface here instead of in the PR gate. The only job that runs
+  # on the schedule.
+  weekly-extended:
+    name: weekly extended tests
     if: github.event_name == 'schedule'
     runs-on: [self-hosted, tester]
     container:
       image: ghcr.io/mnestor/ubuntu-build:latest
-    timeout-minutes: 30
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: e2e
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [sqlite, postgres]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef474303e # v5.6.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: "go.mod"
           check-latest: true
           cache: true
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v4.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v4.4.0
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 11
+
+      - name: Install gotestsum
+        run: |
+          go install gotest.tools/gotestsum@v1.13.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Build web UI
         run: make frontend
@@ -385,32 +442,31 @@ jobs:
       - name: Build binaries
         run: go build -buildvcs=false -o bin/ ./cmd/...
 
-      - name: Ensure sshd is available
+      # The unfiltered suite needs every tier's prerequisites.
+      - name: Ensure sshd and PAM build tools are available
         run: |
-          apt-get update && apt-get install -y --no-install-recommends openssh-server
+          apt-get update && apt-get install -y --no-install-recommends openssh-server gcc libpam0g-dev
           mkdir -p /run/sshd
 
-      - name: Ensure PAM build tools are available
-        run: apt-get install -y --no-install-recommends gcc libpam0g-dev
-
       - name: Run extended test suite (5 iterations)
+        env:
+          SSOOSSH_E2E_POSTGRES_DSN: ${{ matrix.backend == 'postgres' && 'postgres://postgres:e2e@postgres:5432/e2e?sslmode=disable' || '' }}
         run: |
           go test -buildvcs=false -tags=e2e -count=5 -timeout=30m -json ./test/e2e/... | \
-            gotestsum --junitfile=test-results-extended.xml --raw-command -- cat
-        continue-on-error: false
+            gotestsum --junitfile=test-results-extended-${{ matrix.backend }}.xml --raw-command -- cat
 
       - name: Upload diagnostics on failure
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: e2e-diagnostics-extended
+          name: e2e-diagnostics-extended-${{ matrix.backend }}
           path: test/e2e/_artifacts/
           retention-days: 7
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: e2e-test-results-extended
-          path: test-results-extended.xml
+          name: e2e-test-results-extended-${{ matrix.backend }}
+          path: test-results-extended-${{ matrix.backend }}.xml
           retention-days: 7

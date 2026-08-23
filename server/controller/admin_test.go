@@ -8,9 +8,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/middleware"
 )
 
 // newTestConfig returns a minimal config suitable for admin tests.
@@ -239,6 +241,47 @@ func TestExpireEnrollmentHandler_RequiresAdminAuth(t *testing.T) {
 
 	if w.Code != http.StatusForbidden {
 		t.Errorf("got status %d, want %d", w.Code, http.StatusForbidden)
+	}
+}
+
+// TestExpireEnrollmentHandler_ShouldReturn404ForUnknownID pins the fix for a
+// silent success: a valid UPDATE that matches no rows must surface as a 404,
+// not report {"expired": true} for an enrollment that does not exist. Uses a
+// real in-memory DB (the shared mockDB is a bare handle that errors before
+// reaching the zero-rows branch) with only the enrollments table the handler
+// touches.
+func TestExpireEnrollmentHandler_ShouldReturn404ForUnknownID(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cfg := newTestConfig(t)
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open in-memory sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&adminEnrollmentModel{}); err != nil {
+		t.Fatalf("migrate enrollments table: %v", err)
+	}
+
+	r := gin.New()
+	r.Use(middleware.NewErrorHandlerMiddleware().Add())
+	NewAdminController(
+		&r.RouterGroup,
+		cfg,
+		db,
+		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
+		mockAuditorAuthMiddleware(true),
+		mockCSRFMiddleware(),
+	)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/admin/enrollments/does-not-exist/expire", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("got status %d, want %d for an unknown enrollment ID", w.Code, http.StatusNotFound)
 	}
 }
 

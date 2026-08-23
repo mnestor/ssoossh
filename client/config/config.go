@@ -112,7 +112,15 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 			enforce = filepath.Join(paths.systemDir, enforce)
 		}
 		enforceSetsFIPS = enforceFileSets(enforce, "fips")
-		mergeConfig(v, enforce)
+		// Fail closed, unlike the optional user/local config files merged
+		// above: `enforce` is the admin's mechanism for locking settings a
+		// user cannot override, so a missing or malformed enforce file must
+		// be a hard startup error rather than silently dropping every locked
+		// setting (which is exactly what the control exists to prevent).
+		v.SetConfigFile(enforce)
+		if err := v.MergeInConfig(); err != nil {
+			return nil, fmt.Errorf("failed to load enforce file %q: %w", enforce, err)
+		}
 	}
 
 	// Merged after `enforce`, so a platform-native policy source (Windows

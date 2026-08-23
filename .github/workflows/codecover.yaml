@@ -1,33 +1,58 @@
 name: codecover
+
+# Unit test suite plus Codecov upload. Runs on hosted runners; the
+# e2e/pam/resilience suites are tagged out of `./...` so this stays the
+# fast whole-repo unit gate.
 on:
   workflow_dispatch:
-  push:
-    # tags:
-    #   - v*
-    branches:
-      - main
   pull_request:
+  schedule:
+    # Weekly double check; PRs do the heavy lifting day to day.
+    - cron: "15 5 * * 1" # 05:15 UTC Monday
+
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  coverage:
+  # Path gate; see build.yaml's changes job for the pattern.
+  changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code || 'true' }}
+    steps:
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'frontend/**'
+              - 'Makefile'
+              - '.github/workflows/codecover.yaml'
+
+  coverage:
+    name: codecheck
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     container:
       image: ghcr.io/mnestor/ubuntu-build:latest
-    permissions:
-      contents: read # for actions/checkout to fetch code
-      pull-requests: read # for golangci/golangci-lint-action to fetch pull requests
-    name: codecheck
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v5.6.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           check-latest: true
           go-version-file: "go.mod"
@@ -37,12 +62,12 @@ jobs:
         run: go mod download
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v4.4.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 26
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v4.4.0
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 11
 
@@ -54,7 +79,12 @@ jobs:
       - name: Run tests
         run: CGO_ENABLED=0 go test -buildvcs=false -v -covermode=atomic -coverprofile=coverage.txt ./...
 
-      - uses: 1password/load-secrets-action@e544b780808654ba8ceba5fb2fe2897103d92ff4 # v5.0.0
+      # `!cancelled()` on this step too, not just the upload: a failing
+      # test run used to stop the job before the token was ever loaded,
+      # which silently skipped the upload the condition below was meant to
+      # keep alive.
+      - uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
+        if: ${{ !cancelled() }}
         id: secrets
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
@@ -62,6 +92,6 @@ jobs:
 
       - name: Upload coverage reports to Codecov
         if: ${{ !cancelled() }}
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v5.5.5
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           token: ${{ steps.secrets.outputs.CODECOV_TOKEN }}

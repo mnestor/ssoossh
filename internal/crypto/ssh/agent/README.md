@@ -100,10 +100,16 @@ type Agent interface {
   registered or nothing valid is found.
 - **`CleanupAgent()`** — removes identities that are expired or not signed by
   a registered CA. For `FileAgent` this deletes the key files entirely,
-  since a `FileAgent` manages exactly one identity.
+  since a `FileAgent` manages exactly one identity. Errors if no CA is
+  registered rather than treating every certificate as invalid and removing
+  material that may be perfectly good.
 - **`AddKeypair(kp *keypair.SshKeypair)`** — adds a keypair (see the sibling
   `keypair` package) and its certificate to the backend: `Add` on a live
   agent, or writing `path`/`path.pub`/`path-cert.pub` for `FileAgent`.
+  `FileAgent` creates the parent directory when missing, verifies each file
+  actually exists on disk after writing (a key that silently lands nowhere
+  is this agent's worst failure mode), and removes a stale `path-cert.pub`
+  when the new keypair carries no certificate.
 - **`Add`/`Remove`/`Signers`/`Agent()`** — lower-level, closer to the
   underlying `golang.org/x/crypto/ssh/agent.Agent` API. `FileAgent` doesn't
   support arbitrary `Add`/`Remove` (it always manages its single configured

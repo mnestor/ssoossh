@@ -94,8 +94,13 @@ func (h *SignedReplyHandler) resolveSuccess(ctx context.Context, reply certmsg.S
 		certificate: reply.Certificate,
 	})
 
-	h.markResolved(ctx, reply.RequestID, model.CertificateRequestStatusApproved, "")
-	return nil
+	// A DB error here (as opposed to a benign zero-rows race, which
+	// markResolved reports as nil) is returned so the handler nacks and the
+	// reply is retried: otherwise the row stays in Signing and the
+	// invalidation sweep would later mark this certificate's request Failed
+	// even though it was successfully issued and audited. The retry is safe
+	// because recordCertificate and notifyWaiter above are both idempotent.
+	return h.markResolved(ctx, reply.RequestID, model.CertificateRequestStatusApproved, "")
 }
 
 // resolveFailure marks the request failed and tells the waiting client, so a
@@ -112,9 +117,10 @@ func (h *SignedReplyHandler) resolveFailure(ctx context.Context, reply certmsg.S
 		status: model.CertificateRequestStatusFailed,
 	})
 
-	h.markResolved(ctx, reply.RequestID, model.CertificateRequestStatusFailed,
+	// Returned so a DB error nacks and retries (notifyWaiter is idempotent);
+	// a benign zero-rows race comes back as nil. See resolveSuccess.
+	return h.markResolved(ctx, reply.RequestID, model.CertificateRequestStatusFailed,
 		fmt.Sprintf("%s: %s", reply.ErrorCode, reply.Error))
-	return nil
 }
 
 // recordCertificate writes the audit row for an issued certificate.
@@ -175,7 +181,18 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 		ExpiresAt:            reply.ValidBefore,
 	}
 
-	if err := h.db.WithContext(ctx).Create(&cert).Error; err != nil {
+	// Idempotent on the serial: serials are pre-allocated and uniquely
+	// indexed (model.Certificate.SerialNumber), so a redelivered reply (a
+	// nacked handler retried, or NATS at-least-once redelivery) finds the row
+	// already present and skips it rather than failing on the unique
+	// constraint. This is what makes it safe for resolveSuccess to nack on a
+	// later markResolved failure: the retry cannot duplicate the audit row.
+	if err := h.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "serial_number"}},
+			DoNothing: true,
+		}).
+		Create(&cert).Error; err != nil {
 		return fmt.Errorf("failed to persist certificate audit record: %w", err)
 	}
 
@@ -216,12 +233,16 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 //
 // Guarded on the current status the same way Deny and expire are, so a
 // request already resolved some other way (denied or expired in a race)
-// isn't overwritten. Zero rows affected is therefore an expected outcome,
-// not an error — and this is deliberately not fatal to handling the reply:
-// the certificate has already been delivered and audited by this point, so
-// failing here would redeliver the whole reply and duplicate the audit row
-// to fix nothing.
-func (h *SignedReplyHandler) markResolved(ctx context.Context, requestID string, status model.CertificateRequestStatus, failureReason string) {
+// isn't overwritten. Zero rows affected is therefore an expected outcome
+// and returns nil, not an error.
+//
+// A genuine DB error is returned so the caller can nack and retry: leaving
+// the row in Signing lets the invalidation sweep later mark an
+// already-issued certificate's request Failed. Retrying is safe because the
+// reply handler's other steps (recordCertificate, notifyWaiter) are
+// idempotent; if retries are ultimately exhausted the sweep is still the
+// backstop, exactly as before.
+func (h *SignedReplyHandler) markResolved(ctx context.Context, requestID string, status model.CertificateRequestStatus, failureReason string) error {
 	result := h.db.WithContext(ctx).Model(&model.CertificateRequest{}).
 		Where("id = ? AND status = ?", requestID, model.CertificateRequestStatusSigning).
 		Updates(map[string]any{
@@ -232,10 +253,11 @@ func (h *SignedReplyHandler) markResolved(ctx context.Context, requestID string,
 	if result.Error != nil {
 		slog.Error("failed to mark certificate request resolved",
 			"request_id", requestID, "status", status, "error", result.Error)
-		return
+		return fmt.Errorf("mark certificate request %s resolved: %w", requestID, result.Error)
 	}
 	if result.RowsAffected == 0 {
 		slog.Debug("certificate request was already resolved",
 			"request_id", requestID, "status", status)
 	}
+	return nil
 }

@@ -553,9 +553,21 @@ func TestSshAgent_CleanupAgent(t *testing.T) {
 
 	t.Run("should propagate an error from List", func(t *testing.T) {
 		t.Parallel()
-		a := &SshAgent{agent: &fakeXAgent{listErr: errors.New("boom")}}
+		a := &SshAgent{agent: &fakeXAgent{listErr: errors.New("boom")}, cas: []ssh.PublicKey{ca.Public()}}
 		if err := a.CleanupAgent(); err == nil {
 			t.Error("CleanupAgent() error = nil, want error")
+		}
+	})
+
+	t.Run("should refuse to run when no CAs are registered", func(t *testing.T) {
+		t.Parallel()
+		fake := &fakeXAgent{keys: []*agent.Key{agentKeyFor(validCert)}}
+		a := &SshAgent{agent: fake}
+		if err := a.CleanupAgent(); err == nil {
+			t.Error("CleanupAgent() error = nil, want error with no CAs registered")
+		}
+		if len(fake.keys) != 1 {
+			t.Errorf("CleanupAgent() removed keys with no CAs registered, left %d, want 1", len(fake.keys))
 		}
 	})
 

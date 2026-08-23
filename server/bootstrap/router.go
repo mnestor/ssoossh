@@ -17,10 +17,10 @@ import (
 	"time"
 
 	"github.com/gin-contrib/sessions"
-	gormsessions "github.com/gin-contrib/sessions/gorm"
 	"github.com/gin-gonic/gin"
 	"github.com/pires/go-proxyproto"
 	sloggin "github.com/samber/slog-gin"
+	"github.com/wader/gormstore/v2"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"golang.org/x/time/rate"
 	"gorm.io/gorm"
@@ -34,6 +34,20 @@ import (
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
 )
+
+// gormSessionStore adapts *gormstore.Store to gin-contrib's sessions.Store
+// interface, which needs an Options(sessions.Options) method the base store
+// does not provide. This mirrors gin-contrib/sessions/gorm's own unexported
+// wrapper; we replicate it only so we can construct the store directly and
+// own the cleanup goroutine's quit channel (see initEngine).
+type gormSessionStore struct {
+	*gormstore.Store
+}
+
+// Options applies gin-contrib session options to the underlying store.
+func (s *gormSessionStore) Options(options sessions.Options) {
+	s.SessionOpts = options.ToGorillaOptions()
+}
 
 // Server wraps the Gin router and the HTTP(S) server that serves it.
 type Server struct {
@@ -168,15 +182,27 @@ func (a *app) initEngine() (*gin.Engine, error) {
 		return nil, fmt.Errorf("failed to resolve session secret: %w", err)
 	}
 
-	// expiredSessionCleanup=true starts a background goroutine that
-	// periodically deletes expired rows. gormsessions.NewStore AutoMigrates
-	// its own "sessions" table on a.db every startup - a deliberate,
-	// narrow exception to the no-AutoMigrate convention (see
-	// server/model/model.go and .claude/rules/go.md): that table is
-	// entirely owned and queried by the gormstore library, not by our own
-	// model/ or migrations, so there's no schema this project's migrations
-	// need to track for it.
-	sessionStore := gormsessions.NewStore(a.db, true, sessionSecret)
+	// gormstore.New AutoMigrates its own "sessions" table on a.db every
+	// startup - a deliberate, narrow exception to the no-AutoMigrate
+	// convention (see server/model/model.go and .claude/rules/go.md): that
+	// table is entirely owned and queried by the gormstore library, not by
+	// our own model/ or migrations, so there's no schema this project's
+	// migrations need to track for it.
+	//
+	// Constructed directly rather than via gormsessions.NewStore because that
+	// wrapper starts the periodic-cleanup goroutine on a quit channel it
+	// never returns, leaving no way to stop it - a goroutine leak on every
+	// shutdown that keeps the process alive (in-process restarts, tests). We
+	// own the quit channel here and close it from a shutdown hook (see
+	// a.stopSessionCleanup, wired in BootstrapServe).
+	gs := gormstore.New(a.db, sessionSecret)
+	sessionCleanupQuit := make(chan struct{})
+	go gs.PeriodicCleanup(1*time.Hour, sessionCleanupQuit)
+	a.stopSessionCleanup = func(context.Context) error {
+		close(sessionCleanupQuit)
+		return nil
+	}
+	sessionStore := &gormSessionStore{Store: gs}
 
 	// The store's own defaults set only Path and MaxAge, which leaves
 	// HttpOnly and Secure false and omits SameSite from the wire entirely.

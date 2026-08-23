@@ -10,9 +10,9 @@ ECDSA, or Ed25519 key.
 
 | Type | Generate | Load from PEM | Notes |
 | --- | --- | --- | --- |
-| RSA | `NewRSAKeyPair(bits)` | `LoadRSAKeyPair` / `LoadSSHKeypair` | Minimum 2048 bits. |
-| ECDSA | `NewECDSAKeyPair(bits)` | `LoadECDSAKeyPair` / `LoadSSHKeypair` | `bits` selects the curve: 256 (P-256), 384 (P-384), or 521 (P-521). |
-| Ed25519 | `NewEd25519KeyPair()` | `LoadSSHKeypair` (PEM) / `LoadEd25519KeyPair` (raw 32-byte seed) | |
+| RSA | `NewRSAKeyPair(bits)` | `LoadSSHKeypair` | Minimum 2048 bits. |
+| ECDSA | `NewECDSAKeyPair(bits)` | `LoadSSHKeypair` | `bits` selects the curve: 256 (P-256), 384 (P-384), or 521 (P-521). |
+| Ed25519 | `NewEd25519KeyPair()` | `LoadSSHKeypair` | |
 
 DSA (`ssh-dss`) is intentionally not supported — it's deprecated and removed
 from modern OpenSSH clients. FIDO2/security-key-backed types
@@ -100,13 +100,9 @@ produced it.
   KEY` (SEC1), `PRIVATE KEY` (PKCS#8 — RSA, ECDSA, or Ed25519), or
   `OPENSSH PRIVATE KEY` (RSA, ECDSA, or Ed25519). Use this unless you already
   know the exact algorithm and PEM format and want to skip the detection.
-- **`LoadRSAKeyPair` / `LoadECDSAKeyPair`** — narrower helpers that require a
-  specific PEM block type (`RSA PRIVATE KEY` / `EC PRIVATE KEY`
-  respectively) and return an error otherwise.
-- **`LoadEd25519KeyPair(privBytes []byte)`** — loads from a raw 32-byte
-  Ed25519 seed, *not* PEM. This is a different input format than
-  `MarshalPrivateKey` produces for Ed25519 — for PEM-encoded Ed25519 keys,
-  use `LoadSSHKeypair`.
+- **`LoadSSHKeypair` is the only loader.** The per-algorithm loaders
+  (`LoadRSAKeyPair`, `LoadECDSAKeyPair`, `LoadEd25519KeyPair`) were removed:
+  they duplicated `LoadSSHKeypair`'s cases and had no callers.
 
 ## Relationship to `internal/crypto/ssh/agent`
 

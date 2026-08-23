@@ -11,8 +11,9 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
+	"fmt"
 
-	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -71,7 +72,7 @@ func LoadSSHKeypair(data []byte) (*SSHKeypair, error) {
 	case "RSA PRIVATE KEY":
 		priv, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to parse RSA private key")
+			return nil, fmt.Errorf("failed to parse RSA private key: %w", err)
 		}
 		return &SSHKeypair{
 			privateKey: priv,
@@ -80,7 +81,7 @@ func LoadSSHKeypair(data []byte) (*SSHKeypair, error) {
 	case "EC PRIVATE KEY":
 		priv, err := x509.ParseECPrivateKey(block.Bytes)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to parse EC private key")
+			return nil, fmt.Errorf("failed to parse EC private key: %w", err)
 		}
 		return &SSHKeypair{
 			privateKey: priv,
@@ -89,17 +90,17 @@ func LoadSSHKeypair(data []byte) (*SSHKeypair, error) {
 	case "PRIVATE KEY":
 		priv, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to parse PKCS8 private key")
+			return nil, fmt.Errorf("failed to parse PKCS8 private key: %w", err)
 		}
 		return keypairFromPKCS8(priv)
 	case "OPENSSH PRIVATE KEY":
 		priv, err := ssh.ParseRawPrivateKey(data)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to parse OpenSSH private key")
+			return nil, fmt.Errorf("failed to parse OpenSSH private key: %w", err)
 		}
 		return keypairFromOpenSSHRaw(priv)
 	default:
-		return nil, errors.Errorf("unsupported key type: %s", block.Type)
+		return nil, fmt.Errorf("unsupported key type: %s", block.Type)
 	}
 }
 
@@ -138,7 +139,7 @@ func keypairFromParsedKey(priv any, source string) (*SSHKeypair, error) {
 	case *ecdsa.PrivateKey:
 		return &SSHKeypair{privateKey: k, publicKey: &k.PublicKey}, nil
 	default:
-		return nil, errors.Errorf("unsupported %s private key type: %T", source, k)
+		return nil, fmt.Errorf("unsupported %s private key type: %T", source, k)
 	}
 }
 
@@ -154,7 +155,7 @@ func NewSSHKeypair(keyType string, keySize int) (*SSHKeypair, error) {
 	case "ed25519":
 		return NewEd25519KeyPair()
 	default:
-		return nil, errors.Errorf("unsupported key type: %s", keyType)
+		return nil, fmt.Errorf("unsupported key type: %s", keyType)
 	}
 }
 
@@ -254,15 +255,27 @@ func (k *SSHKeypair) MarshalCertificate() []byte {
 	return ssh.MarshalAuthorizedKey(k.certificate)
 }
 
-// ParseCertificateFromString parses an SSH certificate from an authorized_keys string and sets it.
-func (k *SSHKeypair) ParseCertificateFromString(certStr string) error {
-	pub, _, _, rest, err := ssh.ParseAuthorizedKey([]byte(certStr))
+// ParseCertificate parses an SSH certificate from authorized_keys-format
+// bytes. Shared by ParseCertificateFromString and the file-backed agent's
+// certificate loading, so the two never drift on what counts as a valid
+// certificate file.
+func ParseCertificate(data []byte) (*ssh.Certificate, error) {
+	pub, _, _, rest, err := ssh.ParseAuthorizedKey(data)
 	if err != nil || len(rest) > 0 {
-		return errors.New("failed to parse certificate string")
+		return nil, errors.New("failed to parse certificate")
 	}
 	cert, ok := pub.(*ssh.Certificate)
 	if !ok {
-		return errors.New("provided string is not an SSH certificate")
+		return nil, errors.New("not an SSH certificate")
+	}
+	return cert, nil
+}
+
+// ParseCertificateFromString parses an SSH certificate from an authorized_keys string and sets it.
+func (k *SSHKeypair) ParseCertificateFromString(certStr string) error {
+	cert, err := ParseCertificate([]byte(certStr))
+	if err != nil {
+		return err
 	}
 	k.certificate = cert
 	return nil

@@ -173,7 +173,18 @@ func registerFrontendFS(router *gin.Engine, distFS fs.FS) error {
 		path := strings.TrimPrefix(c.Request.URL.Path, "/")
 
 		if strings.HasSuffix(path, "/") {
-			c.Redirect(http.StatusMovedPermanently, strings.TrimRight(c.Request.URL.String(), "/"))
+			// Redirect to the slash-trimmed path, but build the target from
+			// the cleaned path with a single forced leading slash. Using
+			// c.Request.URL.String() directly turned a protocol-relative
+			// request like //evil.com/ into "Location: //evil.com", which a
+			// browser follows off-site — an open redirect. Collapsing the
+			// leading slashes keeps the redirect on this origin; the query
+			// string is preserved.
+			target := "/" + strings.Trim(path, "/")
+			if c.Request.URL.RawQuery != "" {
+				target += "?" + c.Request.URL.RawQuery
+			}
+			c.Redirect(http.StatusMovedPermanently, target)
 			return
 		}
 

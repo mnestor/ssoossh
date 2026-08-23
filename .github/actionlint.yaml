@@ -1,0 +1,5 @@
+# Custom labels for the self-hosted e2e runners so actionlint recognizes
+# `runs-on: [self-hosted, tester]`.
+self-hosted-runner:
+  labels:
+    - tester

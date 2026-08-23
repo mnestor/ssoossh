@@ -351,6 +351,35 @@ func TestRegisterFrontend_ShouldRedirectTrailingSlash(t *testing.T) {
 	}
 }
 
+// TestRegisterFrontend_ShouldNotRedirectOffSiteForProtocolRelativePath guards
+// the trailing-slash redirect against turning a protocol-relative request
+// like //evil.com/ into an off-site "Location: //evil.com" (an open
+// redirect). The target must stay rooted on this origin with a single
+// leading slash.
+func TestRegisterFrontend_ShouldNotRedirectOffSiteForProtocolRelativePath(t *testing.T) {
+	t.Parallel()
+
+	r := newTestFrontendRouter(t)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	// Set the path directly: an origin-form inbound request can carry a path
+	// beginning with // that httptest would otherwise parse as a host.
+	req.URL.Path = "//evil.com/"
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMovedPermanently {
+		t.Fatalf("got status %d, want %d", w.Code, http.StatusMovedPermanently)
+	}
+	got := w.Header().Get("Location")
+	if strings.HasPrefix(got, "//") {
+		t.Errorf("got Location %q, which is protocol-relative and redirects off-site", got)
+	}
+	if got != "/evil.com" {
+		t.Errorf("got Location %q, want %q (rooted on this origin)", got, "/evil.com")
+	}
+}
+
 func TestRegisterFrontend_ShouldServeExistingStaticAssetWithCaching(t *testing.T) {
 	t.Parallel()
 
