@@ -4,6 +4,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"sync"
@@ -167,11 +168,18 @@ func (c *Command) ExecuteContext(ctx context.Context) error {
 
 // Execute runs the command with a context that's canceled on shutdown
 // signals (e.g. SIGINT/SIGTERM), exiting the process with status 1 on error.
+//
+// The error must be printed here, not just returned: startup-validation
+// failures (a mode refusing gochannel, a missing cookie_key) happen before
+// logging is initialized, so discarding err meant the process died with
+// exit 1 and no output at all - an operator staring at a silent systemd
+// failure.
 func (c *Command) Execute() {
 	ctx := signals.SignalContext(context.Background())
 
 	err := c.ExecuteContext(ctx)
 	if err != nil {
+		fmt.Fprintln(os.Stderr, "ssoosshd:", err)
 		os.Exit(1)
 	}
 }
