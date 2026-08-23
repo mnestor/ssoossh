@@ -49,8 +49,7 @@
 	const rowEvents: Record<string, string> = {
 		user: 'certificate requested',
 		pam: 'certificate requested',
-		service: 'service key requested',
-		host: 'host enrollment requested'
+		service: 'service key requested'
 	};
 
 	// Shallow-route within this same page (a modal query param), not a

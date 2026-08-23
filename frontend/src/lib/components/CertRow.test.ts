@@ -30,18 +30,11 @@ describe('CertRow', () => {
 		expect(screen.getByText('alice@example.com')).toBeInTheDocument();
 	});
 
-	it('should fall back to the hostname when no account is recorded', () => {
+	it('should fall back to the key id when no account is recorded', () => {
 		const record = cert({
 			decided_by_email: undefined,
-			decided_by_username: undefined,
-			hostname: 'build-runner-03'
+			decided_by_username: undefined
 		});
-		render(CertRow, { cert: record, now, onclick: vi.fn() });
-		expect(screen.getByText('build-runner-03')).toBeInTheDocument();
-	});
-
-	it('should fall back to the key id when nothing else names it', () => {
-		const record = cert({ decided_by_email: undefined, decided_by_username: undefined });
 		render(CertRow, { cert: record, now, onclick: vi.fn() });
 		expect(screen.getByText('key-1')).toBeInTheDocument();
 	});

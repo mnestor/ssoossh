@@ -33,16 +33,14 @@
 		{ value: 'all' as const, label: 'All', icon: 'layout-grid' },
 		{ value: 'user' as const, label: 'User', icon: 'user' },
 		{ value: 'pam' as const, label: 'PAM', icon: 'terminal' },
-		{ value: 'service' as const, label: 'Service', icon: 'cog' },
-		{ value: 'host' as const, label: 'Host', icon: 'server' }
+		{ value: 'service' as const, label: 'Service', icon: 'cog' }
 	];
 
 	// What each certificate type's row is a record of.
 	const rowEvents: Record<string, string> = {
 		user: 'certificate requested',
 		pam: 'certificate requested',
-		service: 'service key requested',
-		host: 'host enrollment requested'
+		service: 'service key requested'
 	};
 
 	// Rows say how long ago something was, so they need a clock that moves.

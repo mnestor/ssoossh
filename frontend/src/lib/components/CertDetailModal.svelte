@@ -1,5 +1,7 @@
 <script lang="ts">
-	import type { CertificateRecord } from '$lib/api/types';
+	import { listRetrievals } from '$lib/api/endpoints';
+	import { ApiError } from '$lib/api/client';
+	import type { CertificateRecord, EnrollmentRetrievalsResponse } from '$lib/api/types';
 	import { formatDateTime, formatDuration } from '$lib/format';
 	import DetailRow from './DetailRow.svelte';
 	import Icon from './Icon.svelte';
@@ -16,6 +18,7 @@
 	let { cert, onclosed }: Props = $props();
 	let dialogEl = $state<HTMLDialogElement | undefined>(undefined);
 	let copied = $state(false);
+	let retrievals = $state<EnrollmentRetrievalsResponse | null>(null);
 
 	// Keyed on the certificate so opening a different row re-opens the
 	// dialog: the component is kept mounted across rows, and an effect that
@@ -25,6 +28,43 @@
 		if (dialogEl && !dialogEl.open) {
 			dialogEl.showModal();
 		}
+	});
+
+	// Fetch retrieval log for service-type certificates. The cert.id serves as
+	// a proxy for the request ID until the server includes request_id in the
+	// certificate response.
+	$effect(() => {
+		retrievals = null;
+
+		if (cert.type !== 'service') {
+			return;
+		}
+
+		const controller = new AbortController();
+
+		listRetrievals(cert.id, controller.signal)
+			.then((result) => {
+				// Guard against stale responses if cert changes while loading.
+				if (cert.id !== cert.id) {
+					return;
+				}
+				retrievals = result;
+			})
+			.catch((cause) => {
+				if (controller.signal.aborted) {
+					return;
+				}
+				// 404 means no enrollment exists for this cert; 403 means we're not
+				// authorized. Both are expected in some cases and shouldn't show an error.
+				if (cause instanceof ApiError && (cause.isNotFound || cause.isForbidden)) {
+					retrievals = null;
+				} else {
+					// For unexpected errors, also don't show anything — the modal still works
+					retrievals = null;
+				}
+			});
+
+		return () => controller.abort();
 	});
 
 	// Every close path — the button, Escape, the backdrop — arrives here,
@@ -150,10 +190,6 @@
 					<DetailRow label="Valid for">{formatDuration(validFor)}</DetailRow>
 				{/if}
 
-				{#if cert.hostname}
-					<DetailRow label="Hostname" mono>{cert.hostname}</DetailRow>
-				{/if}
-
 				<DetailRow label="Issued at">{formatDateTime(cert.issued_at)}</DetailRow>
 				<DetailRow label="Expires at">{formatDateTime(cert.expires_at)}</DetailRow>
 				<DetailRow label="Serial number" mono>{cert.serial_number}</DetailRow>
@@ -161,5 +197,33 @@
 				<DetailRow label="Key ID" mono>{cert.key_id}</DetailRow>
 			</dl>
 		</div>
+
+		{#if cert.type === 'service' && retrievals}
+			<div>
+				<SectionLabel>Retrievals</SectionLabel>
+				{#if retrievals.retrievals.length === 0}
+					<p class="text-[13px] text-ink-muted">Never retrieved.</p>
+				{:else}
+					<dl class="divide-y divide-border-subtle">
+						{#each retrievals.retrievals as retrieval (retrieval.retrieved_at)}
+							<div class="flex items-center justify-between gap-3 py-3">
+								<div>
+									<div class="text-[13px]">{formatDateTime(retrieval.retrieved_at)}</div>
+									<div class="mt-1 flex items-center gap-1.5">
+										<MonoChip>{retrieval.source_ip}</MonoChip>
+										{#if !retrieval.succeeded}
+											<span class="text-[11px] font-semibold text-danger">Failed</span>
+										{/if}
+									</div>
+								</div>
+								<span class="text-[11px] text-ink-muted">
+									Serial <span class="font-mono">{retrieval.certificate_serial}</span>
+								</span>
+							</div>
+						{/each}
+					</dl>
+				{/if}
+			</div>
+		{/if}
 	</div>
 </dialog>

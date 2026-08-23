@@ -34,6 +34,10 @@
 		actionError?: string | null;
 		/** Set once a decision has been recorded, to replace the buttons. */
 		outcome?: 'approved' | 'denied' | null;
+		/** Service accounts available to this approver (for service-type requests). */
+		serviceAccounts?: string[];
+		/** Selected service account for approval (for service-type requests). */
+		selectedServiceAccount?: string | null;
 		onapprove: () => void;
 		ondeny: () => void;
 	}
@@ -43,6 +47,8 @@
 		busy = false,
 		actionError = null,
 		outcome = null,
+		serviceAccounts = [],
+		selectedServiceAccount = $bindable(),
 		onapprove,
 		ondeny
 	}: Props = $props();
@@ -65,6 +71,8 @@
 	});
 
 	const hasDecisionRecord = $derived(!!detail.decided_at);
+	const isServiceRequest = $derived(detail.type === 'service');
+	const hasServiceAccounts = $derived(serviceAccounts.length > 0);
 
 	// The short form of the request id, for the corner of the card — enough
 	// to tell two requests apart when comparing against a log line. Labelled
@@ -98,7 +106,8 @@
 		'in-progress':
 			'This request has already been approved and its certificate is being signed. Nothing further is needed here.',
 		'already-resolved':
-			'This request is closed. Certificate requests are short-lived by design — run the client again to start a new one.'
+			'This request is closed. Certificate requests are short-lived by design — run the client again to start a new one.',
+		'no-service-accounts': 'You have no service accounts to approve this for.'
 	};
 </script>
 
@@ -158,9 +167,6 @@
 					</span>
 				</DetailRow>
 			{/if}
-			{#if detail.hostname}
-				<DetailRow label="Hostname" mono>{detail.hostname}</DetailRow>
-			{/if}
 			<DetailRow label="Requested at">{formatDateTime(detail.created_at)}</DetailRow>
 			<DetailRow label="Public key" mono>{detail.public_key}</DetailRow>
 		</dl>
@@ -219,12 +225,36 @@
 				<Alert variant="warning" title="Denied" testid="outcome-denied">
 					The waiting client has been told, and no certificate was issued.
 				</Alert>
+			{:else if isServiceRequest && !hasServiceAccounts}
+				<Alert variant="warning" testid="blocked-no-service-accounts">
+					{blockedText['no-service-accounts']}
+				</Alert>
 			{:else if blocked}
 				<Alert variant={blocked === 'in-progress' ? 'info' : 'warning'} testid="blocked-{blocked}">
 					{blockedText[blocked]}
 				</Alert>
 			{:else}
 				<div class="space-y-3">
+					{#if isServiceRequest}
+						<div>
+							<SectionLabel>Select service account</SectionLabel>
+							<div class="flex flex-col gap-2.5">
+								<label class="flex flex-col gap-1">
+									<span class="text-[13px] text-ink-muted">Account</span>
+									<select
+										bind:value={selectedServiceAccount}
+										aria-label="Service account to approve for"
+										class="rounded border border-border-subtle bg-surface px-3 py-2 text-[13px] text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+									>
+										<option value="">Select an account...</option>
+										{#each serviceAccounts as account (account)}
+											<option value={account}>{account}</option>
+										{/each}
+									</select>
+								</label>
+							</div>
+						</div>
+					{/if}
 					{#if actionError}
 						<Alert variant="error" title="That did not go through">{actionError}</Alert>
 					{/if}
@@ -236,7 +266,12 @@
 							<Icon name="x" size="sm" />
 							Deny
 						</Button>
-						<Button testid="approve-button" {busy} onclick={onapprove}>
+						<Button
+							testid="approve-button"
+							{busy}
+							disabled={isServiceRequest && !selectedServiceAccount}
+							onclick={onapprove}
+						>
 							<Icon name="check" size="sm" />
 							{busy ? 'Working…' : 'Approve'}
 						</Button>

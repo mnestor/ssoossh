@@ -29,10 +29,8 @@
 	}: Props = $props();
 
 	// The subject line is whatever names this certificate to a human: the
-	// account it was decided for, else the host it enrolled, else its key id.
-	const subject = $derived(
-		cert.decided_by_email || cert.decided_by_username || cert.hostname || cert.key_id
-	);
+	// account it was decided for, else its key id.
+	const subject = $derived(cert.decided_by_email || cert.decided_by_username || cert.key_id);
 
 	const principals = $derived(
 		cert.principals
