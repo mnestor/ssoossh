@@ -8,7 +8,7 @@ package main
 // classification — runs against a real httptest.Server standing in for
 // ssoosshd, signing genuinely CA-signed certificates for whatever public key
 // the request under test posted. This is what
-// docs/release-phase5-pam-client.md's Work item 5 calls "the full
+// what the PAM design called "the full
 // authenticate path against a fake server", and — per the same doc's Work
 // item 6, which explicitly leaves the choice between a real `sudo` tier and
 // calling Authenticate directly to a judgment call and recommends "direct
@@ -455,7 +455,7 @@ func TestAuthenticate_ShouldFailFastWhenServerUnreachable(t *testing.T) {
 
 	// Nothing listens here; connection refused. Fails fast rather than
 	// hanging so the PAM stack can fall through to whatever comes next in
-	// /etc/pam.d — see docs/release-phase5-pam-client.md.
+	// /etc/pam.d — see docs/pam.d-sudo.example.
 	cfg := config{server: "http://127.0.0.1:1", trustedCAFile: caFile, waitTimeout: 5 * time.Second, skewTolerance: 2 * time.Second}
 
 	code, err := Authenticate(context.Background(), stubLogger{}, &fakeConversation{}, "alice", cfg)

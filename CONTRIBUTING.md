@@ -20,7 +20,7 @@ If you are Claude or another AI assistant working in this repository:
 
 - Read `/home/vscode/.claude/CLAUDE.md` (user's global instructions) and `./CLAUDE.md` (project-specific instructions).
 - Read `./.claude/rules/` for language-specific conventions (Go, TypeScript).
-- Follow the instructions in `docs/parallel-agent-workflow.md` if multiple agents are working in parallel.
+- Follow the instructions in `docs/dev/parallel-agent-workflow.md` if multiple agents are working in parallel.
 - The project uses `rtk` (Rust Token Killer) to minimize token usage; use it in bash commands.
 - Conventional commits are required; keep PRs focused on one concern.
 

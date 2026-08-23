@@ -141,7 +141,7 @@ func outcomeCertificate(result *api.CertificateResult) (int, string, error) {
 // classifyRequestError turns an error from CreatePAMRequest or
 // AwaitCertificate into a PAM return code. A context deadline or
 // cancellation (timeout, or Ctrl-C at the sudo prompt — see
-// docs/release-phase5-pam-client.md, "Timeouts and cancellation") means the
+// the timeout module argument, docs/pam.d-sudo.example) means the
 // attempt was abandoned, not that the server is unreachable, so it gets its
 // own code and message; anything else is treated as the server being
 // unreachable, which is PamAuthInfoUnavail's documented meaning ("cannot

@@ -53,7 +53,7 @@ CREATE TABLE certificate_requests (
     -- is who/where the request actually came from. Populated client-side
     -- (os/user.Current(), os.Hostname()) for CertificateTypeUser requests
     -- only; empty for every other type. See
-    -- docs/certificate-audit-metadata-plan.md.
+    -- docs/dev/changes-next.md.
     local_username TEXT NOT NULL DEFAULT '',
     local_hostname TEXT NOT NULL DEFAULT '',
     -- ServiceAccount is set only for CertificateTypeService requests: the
@@ -64,7 +64,7 @@ CREATE TABLE certificate_requests (
     -- enrollments (they don't produce certificates at approval time).
     -- Pre-allocation ensures the serial is available to persist at
     -- resolution without waiting for the signer, avoiding burned serials
-    -- on signing failures (see docs/changes-next.md items 5 and 11).
+    -- on signing failures (see docs/dev/changes-next.md items 5 and 11).
     serial_number INTEGER
 );
 
@@ -101,7 +101,7 @@ CREATE TABLE certificates (
     -- queued), ensuring it's available to persist at request resolution
     -- without waiting for the signer. The UNIQUE constraint converts
     -- collisions into failed inserts rather than silently revoking
-    -- unrelated certificates (see docs/changes-next.md item 11).
+    -- unrelated certificates (see docs/dev/changes-next.md item 11).
     serial_number INTEGER NOT NULL UNIQUE,
     key_id TEXT NOT NULL DEFAULT '',
     principals TEXT NOT NULL DEFAULT '',
@@ -120,7 +120,7 @@ CREATE INDEX idx_certificates_certificate_request_id ON certificates(certificate
 -- The audit record of a single Approve/Deny decision. One row per decision,
 -- ever, inserted once and never updated or deleted — see
 -- server/model/certificate_request_decision.go and
--- docs/certificate-audit-metadata-plan.md. Kept in its own table rather than
+-- docs/dev/changes-next.md. Kept in its own table rather than
 -- as columns on certificate_requests: that table is the busy, read/write
 -- pipeline table (status transitions, the sweep); this is an append-only
 -- log entry about one event in that pipeline's history, and its own table
@@ -140,12 +140,12 @@ CREATE INDEX idx_certificates_certificate_request_id ON certificates(certificate
 -- normal operation.
 --
 -- certificate_request_id is a plain copied ID, not a foreign key. The
--- decisions table is permanent and append-only (see docs/changes-next.md
+-- decisions table is permanent and append-only (see docs/dev/changes-next.md
 -- section "First: decide the retention story"). Pruning certificate_requests
 -- is blocked by the FK or silently deletes the audit record via CASCADE, both
 -- unacceptable. Keeping copied values (like decider identity) avoids this:
 -- the audit record outlives the request it describes, and retention policy
--- can be applied per-table independently (see docs/changes-next.md).
+-- can be applied per-table independently (see docs/dev/changes-next.md).
 CREATE TABLE certificate_request_decisions (
     id TEXT PRIMARY KEY NOT NULL,
     certificate_request_id TEXT NOT NULL UNIQUE,

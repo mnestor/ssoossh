@@ -45,7 +45,7 @@ func authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, args **C.char) 
 	// Every invocation logs its own version at Info, not gated behind
 	// debug: a module that can only be asked its version with debug
 	// already enabled is a worse support problem than one extra log line
-	// per sudo/su attempt. See docs/release-phase6-artifacts.md, "Version
+	// per sudo/su attempt. See .claude/rules/pam.md, "Version
 	// stamping".
 	w.Infof("pam_ssoossh %s (commit %s, built %s by %s)", version.Version, version.Commit, version.Date, version.BuiltBy)
 
@@ -66,7 +66,7 @@ func authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, args **C.char) 
 	// A human has to open a browser and approve — signal.NotifyContext lets
 	// Ctrl-C at the sudo prompt abandon the request instead of leaving this
 	// blocked on SSE, and the timeout bounds how long a human with no
-	// browser can hang a sudo prompt. See docs/release-phase5-pam-client.md,
+	// browser can hang a sudo prompt. See docs/deployment.md's PAM section,
 	// "Timeouts and cancellation".
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -84,7 +84,7 @@ func authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, args **C.char) 
 	// the two are tracked separately so a failure path that returns a
 	// non-success code is never reported as a successful authentication
 	// merely because it forgot to attach an error. See
-	// docs/release-phase5-pam-client.md, "Fix the nil-error success
+	// the original design note: "Fix the nil-error success
 	// logging".
 	if success == PamSuccess {
 		w.Infof("successful authentication: %s", username)

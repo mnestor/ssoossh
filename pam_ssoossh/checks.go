@@ -18,7 +18,7 @@ import (
 
 // parseTrustedCAs reads path and parses it as authorized_keys format, one CA
 // per line, so a deployment can rotate CAs without a coordinated restart of
-// every host — see docs/release-phase5-pam-client.md.
+// every host — see docs/what-ssoossh-is.md.
 func parseTrustedCAs(path string) ([]ssh.PublicKey, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -43,7 +43,7 @@ func parseTrustedCAs(path string) ([]ssh.PublicKey, error) {
 // checkCASignature is check 1: the certificate must be signed by one of the
 // trusted CAs. This is a signature verification (kp.SignedBy), not a string
 // comparison against the trusted-CA file's contents — see
-// docs/release-phase5-pam-client.md, "Check 1 is a signature verification,
+// the original design note: "Check 1 is a signature verification,
 // not a string comparison".
 func checkCASignature(kp *keypair.SSHKeypair, cas []ssh.PublicKey) error {
 	for _, ca := range cas {
@@ -58,7 +58,7 @@ func checkCASignature(kp *keypair.SSHKeypair, cas []ssh.PublicKey) error {
 // keypair generated for this attempt. Without this, checks 1, 3, and 4
 // passing together would accept any CA-signed certificate carrying the
 // right principal, including one issued to somebody else's keypair — see
-// docs/release-phase5-pam-client.md, "Check 2 is the one that would
+// the original design note: "Check 2 is the one that would
 // otherwise be missing".
 func checkKeyBinding(cert *ssh.Certificate, kp *keypair.SSHKeypair) error {
 	if cert.Key == nil {

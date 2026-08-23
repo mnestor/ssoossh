@@ -186,7 +186,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 }
 
 // TestPipeline_EndToEnd_PAM is TestPipeline_EndToEnd's PAM counterpart, and
-// the assertion docs/release-phase4-pam-server.md calls out by name: the
+// the assertion the PAM server design called out by name: the
 // approver's OIDC username ("mike.nestor") and the local account the PAM
 // module is authenticating ("mnestor") are deliberately different, so a
 // certificate that ends up naming the wrong one is caught here rather than

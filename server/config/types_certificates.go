@@ -58,7 +58,7 @@ type CertOptions struct {
 
 	// KeyIDTemplate is a Go text/template string executed against the
 	// issuance context to produce the certificate's key ID (see
-	// docs/certificate-keyid-template.md for available fields and the
+	// docs/features.md (key ID templating) for available fields and the
 	// per-type fallback rule). Empty falls back to
 	// CertificateOptions.User.KeyIDTemplate.
 	KeyIDTemplate string `mapstructure:"key_id_template"`
@@ -82,12 +82,12 @@ type CertOptionsUser struct {
 	// KeyIDTemplate is the fallback for CertOptionsService.KeyIDTemplate
 	// and CertOptions.KeyIDTemplate (host) when either is empty, since
 	// user certificates are the common case. See
-	// docs/certificate-keyid-template.md.
+	// docs/features.md (key ID templating).
 	KeyIDTemplate string `mapstructure:"key_id_template"`
 
 	// LifetimePolicy configures tiered certificate duration based on OIDC
 	// group membership and source network narrowing — see
-	// docs/certificate-lifetime-policy-plan.md.
+	// docs/certificate-lifetime-policy.md.
 	LifetimePolicy LifetimePolicy `mapstructure:"lifetime_policy"`
 }
 
@@ -100,13 +100,13 @@ type CertOptionsService struct {
 	Extensions    []string      `mapstructure:"extensions"`
 
 	// KeyIDTemplate; see CertOptions.KeyIDTemplate and
-	// docs/certificate-keyid-template.md. Empty falls back to
+	// docs/features.md (key ID templating). Empty falls back to
 	// CertificateOptions.User.KeyIDTemplate.
 	KeyIDTemplate string `mapstructure:"key_id_template"`
 
 	// LifetimePolicy configures tiered certificate duration based on OIDC
 	// group membership and source network narrowing — see
-	// docs/certificate-lifetime-policy-plan.md.
+	// docs/certificate-lifetime-policy.md.
 	LifetimePolicy LifetimePolicy `mapstructure:"lifetime_policy"`
 }
 
@@ -121,7 +121,7 @@ type CertOptionsPAM struct {
 	// here means no PAM certificates are ever issued rather than "any
 	// authenticated user may approve" — "who may sudo on this host" is a
 	// narrower question than "who may log in", and this option has to fail
-	// closed rather than default open (see docs/admin-authorization-plan.md's
+	// closed rather than default open (see docs/features.md's
 	// identical empty-denies rule for admin.require_group). An operator must
 	// set this explicitly to enable PAM issuance at all.
 	RequireGroup string `mapstructure:"require_group"`
@@ -129,7 +129,7 @@ type CertOptionsPAM struct {
 	// ValidDuration should be seconds, not hours: a PAM certificate is
 	// validated once, in-process, and discarded — it never enters an agent
 	// and is never reused. Pick this together with the client's skew
-	// tolerance (see docs/release-phase5-pam-client.md).
+	// tolerance (see pam_ssoossh/checks.go, check 4).
 	ValidDuration time.Duration `mapstructure:"valid_duration,string"`
 
 	// Extensions should default to empty. permit-pty and friends are
@@ -147,7 +147,7 @@ type CertOptionsPAM struct {
 }
 
 // LifetimePolicy configures certificate issuance duration based on tiered
-// groups and source network policies — see docs/certificate-lifetime-policy-plan.md.
+// groups and source network policies — see docs/certificate-lifetime-policy.md.
 // Empty configuration (all fields at their zero values) means all certificates
 // receive ValidDuration from the enclosing CertOptions* struct.
 type LifetimePolicy struct {
@@ -166,7 +166,7 @@ type LifetimePolicy struct {
 	// duration, and the final effective lifetime is clamped to the ceiling
 	// set by the enclosing CertOptions*.ValidDuration.
 	//
-	// See docs/certificate-lifetime-policy-plan.md section "Which address"
+	// See docs/certificate-lifetime-policy.md section "Which address"
 	// for why the server-observed source IP is used, and why
 	// RequestedOptions.SourceAddresses is never consulted.
 	SourcePolicy []SourcePolicyEntry `mapstructure:"source_policy"`
@@ -182,7 +182,7 @@ type LifetimePolicyTier struct {
 }
 
 // SourcePolicyEntry restricts certificate lifetime and options based on the
-// source IP address of the request. See docs/certificate-lifetime-policy-plan.md
+// source IP address of the request. See docs/certificate-lifetime-policy.md
 // section "Source-network policy" for the full semantics.
 type SourcePolicyEntry struct {
 	// CIDR is the IPv4 or IPv6 network this rule applies to, in CIDR notation
@@ -201,7 +201,7 @@ type SourcePolicyEntry struct {
 
 	// PinSourceAddress, when true, adds a critical "source-address" SSH option
 	// pinning the certificate to this network. Valid only for service certificates;
-	// ignored for user certificates (see docs/certificate-lifetime-policy-plan.md
+	// ignored for user certificates (see docs/certificate-lifetime-policy.md
 	// "Not for user certificates"). The network must be narrow enough to actually
 	// restrict — a /0 or ::/0 with PinSourceAddress=true is a warning sign (the
 	// certificate can be used anywhere, pinning is meaningless). Narrowing is

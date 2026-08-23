@@ -88,7 +88,7 @@ type SigningJob struct {
 	// Serial is the pre-allocated certificate serial, reserved at approval
 	// time before the signer runs. This ensures the serial is available to
 	// persist at request resolution without waiting for the signer, avoiding
-	// burned serials on signing failures. See docs/changes-next.md items 5
+	// burned serials on signing failures. See docs/dev/changes-next.md items 5
 	// and 11.
 	Serial uint64 `json:"serial"`
 }

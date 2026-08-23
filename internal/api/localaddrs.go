@@ -12,7 +12,7 @@ import (
 // private local address that downstream hosts see when it connects, which
 // is not the address ssoosshd sees when it mints the certificate. See
 // docs/ssoossh-context.md's "Certificate lifetime policy" and
-// docs/certificate-audit-metadata-plan.md.
+// docs/dev/changes-next.md.
 //
 // Link-local addresses (fe80::/10, 169.254.0.0/16) are left out along with
 // loopback. They are meaningful only within a single link, so they can

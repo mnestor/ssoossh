@@ -365,7 +365,7 @@ and nothing in the codebase touches either. Excluding tests and comments,
 `TODO` at `server/service/host.go:54`.
 
 For `host_mappings` that is straightforwardly "designed, not built", and
-matches the host-certificate status recorded in `docs/changes-next.md`.
+matches the host-certificate status recorded in `docs/dev/changes-next.md`.
 
 `enrollments` is more interesting, because the feature it belongs to is
 half-built and the two halves disagree. `approveServiceEnrollment` does

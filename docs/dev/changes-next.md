@@ -92,7 +92,7 @@ Sequenced. The ordering below is the recommendation, not an arbitrary list.
 
 ### 1. Admin and auditor roles — the critical path
 
-Design: [admin-authorization-plan.md](admin-authorization-plan.md), which is
+Design: [features.md](../features.md)'s admin section, which is
 thorough — OIDC-group-based, two narrow roles, no DB role column,
 session-scoped revocation window.
 
@@ -114,7 +114,7 @@ Open questions to resolve first:
 
 ### 2. Certificate lifetime and source-network policy
 
-Design: [certificate-lifetime-policy-plan.md](certificate-lifetime-policy-plan.md).
+Design: [certificate-lifetime-policy.md](certificate-lifetime-policy.md).
 Unusually complete — longest-prefix subnet matching, host-rule-wins-outright,
 narrowing-only invariant, config schema drafted. Zero code.
 
@@ -185,7 +185,7 @@ Two things are missing:
 
 ## Not designed at all
 
-Raised in [certificate-audit-metadata-plan.md](certificate-audit-metadata-plan.md)
+Raised in [dev/changes-next.md](dev/changes-next.md)
 and elsewhere, with no design work behind them yet. Each needs a design pass
 before it is schedulable.
 
@@ -204,7 +204,7 @@ before it is schedulable.
 
 Small, left over from the 2026-08-22 docs cleanup.
 
-- `certificate-keyid-template.md` describes four service-only template fields
+- `features.md`'s key ID templating section describes four service-only template fields
   (`{{.ServiceAccount}}`, `{{.ApprovedBy}}`, `{{.ApproverSubject}}`,
   `{{.ApprovedAt}}`) that are designed but unimplemented — **re-verified**
   absent from `server/`. Fine as-is; revisit when service certificates ship.

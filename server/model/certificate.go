@@ -38,13 +38,13 @@ type Certificate struct {
 	// ensuring it's available to persist at request resolution without waiting
 	// for the signer. The UNIQUE constraint converts collisions into failed
 	// inserts rather than silently revoking unrelated certificates — see
-	// docs/changes-next.md item 11.
+	// docs/dev/changes-next.md item 11.
 	SerialNumber uint64 `gorm:"column:serial_number;uniqueIndex:idx_certificates_serial_number"`
 
 	// KeyID is the free-form audit-trail string sshd logs on every
 	// authentication, produced by executing the applicable
 	// config.CertOptions*.KeyIDTemplate (see
-	// docs/certificate-keyid-template.md).
+	// docs/features.md (key ID templating)).
 	KeyID string `gorm:"column:key_id"`
 
 	// Principals is a comma-separated list. TODO: move to a join table if

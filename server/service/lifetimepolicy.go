@@ -18,7 +18,7 @@ func isLifetimePolicyConfigured(p config.LifetimePolicy) bool {
 
 // lifetimePolicyEngine evaluates certificate lifetime and options based on
 // tiered group membership and source network restrictions — see
-// docs/certificate-lifetime-policy-plan.md.
+// docs/certificate-lifetime-policy.md.
 type lifetimePolicyEngine struct {
 	// userPolicy and servicePolicy are the parsed/validated policies for each
 	// type. They remain nil if no lifetime policy is configured for that type.
@@ -211,7 +211,7 @@ func (e *lifetimePolicyEngine) evaluateSourceRule(policy *parsedLifetimePolicy, 
 	}
 
 	// Normalize IPv4-mapped IPv6 addresses to their IPv4 equivalent, so
-	// ::ffff:10.0.0.1 matches 10.0.0.0/8 — see docs/certificate-lifetime-policy-plan.md.
+	// ::ffff:10.0.0.1 matches 10.0.0.0/8 — see docs/certificate-lifetime-policy.md.
 	addr = addr.Unmap()
 
 	// Find the longest-prefix match; ties go to the stricter rule.
@@ -247,7 +247,7 @@ func (e *lifetimePolicyEngine) evaluateSourceRule(policy *parsedLifetimePolicy, 
 // but never grant them.
 //
 // For user certificates: restrictions apply to extensions only, never to
-// source-address options (see docs/certificate-lifetime-policy-plan.md).
+// source-address options (see docs/certificate-lifetime-policy.md).
 //
 // For service certificates: restrictions apply to both extensions and
 // source-address via pin_source_address (if the source rule enables it).
@@ -329,7 +329,7 @@ func (e *lifetimePolicyEngine) policyFor(certType model.CertificateType) *parsed
 
 // validateStartupConfig checks that source-network policy is consistent with
 // the server's reverse-proxy configuration, logging warnings if a footgun is
-// detected (see docs/certificate-lifetime-policy-plan.md section "The footgun
+// detected (see docs/certificate-lifetime-policy.md section "The footgun
 // this creates"). Called once at bootstrap, before policies are used to evaluate
 // requests.
 func (e *lifetimePolicyEngine) validateStartupConfig(trustedProxies []string) {
@@ -346,7 +346,7 @@ func (e *lifetimePolicyEngine) validateStartupConfig(trustedProxies []string) {
 			slog.Warn("source-network policy configured without http.trusted_proxies — " +
 				"all requests will appear to come from the reverse proxy's address, " +
 				"silently landing all clients in the most generous tier. " +
-				"See docs/certificate-lifetime-policy-plan.md section 'The footgun this creates'.")
+				"See docs/certificate-lifetime-policy.md section 'The footgun this creates'.")
 		}
 	}
 }

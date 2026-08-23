@@ -1,13 +1,12 @@
-# Certificate lifetime & approval policy — plan
+# Certificate lifetime & approval policy
 
-**Status: draft, not implemented.** Captures the design discussion so it
-can be picked up later. Builds on `docs/ssoossh-context.md`'s "Certificate
-lifetime policy (design in progress)" section and the provisional defaults
-`Approve` currently uses (see `docs/signing-pipeline.md`'s
-implementation notes — flat per-type `ValidDuration`, username-only
-principals). This plan supersedes those defaults once implemented; it does
-not replace `RequireGroup` enforcement or extension narrowing, which are
-already implemented and considered settled.
+**Status: implemented.** The policy engine described here exists as
+`server/service/lifetimepolicy.go` (`lifetimePolicyEngine`: group tiers,
+source-address rules, most-specific-wins against a per-type ceiling) and is
+what `Approve` evaluates. This document remains the design rationale — why
+the precedence rules are what they are — and the reference for the
+semantics the engine's tests assert. `RequireGroup` enforcement and
+extension narrowing were settled separately and are unchanged by it.
 
 ## Hard constraints on the design
 

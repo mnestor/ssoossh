@@ -140,4 +140,4 @@ The post-merge ritual fixes all three.
 
 ## Reference
 
-See `docs/parallel-agent-workflow.md` for more detail, including worked examples and the full post-merge ritual checklist.
+See `docs/dev/parallel-agent-workflow.md` for more detail, including worked examples and the full post-merge ritual checklist.

@@ -141,7 +141,7 @@ type CertRequestService struct {
 
 // NewCertRequestService constructs a CertRequestService, parsing
 // c.CertOptions' per-type key ID templates (see
-// docs/certificate-keyid-template.md) so a bad template fails startup.
+// docs/features.md (key ID templating)) so a bad template fails startup.
 // publisher/subscriber back the wake-topic broker (see certmsg.WaitTopic) —
 // the gochannel-based pair from server/pubsub.
 func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publisher, subscriber message.Subscriber) (*CertRequestService, error) {
@@ -241,7 +241,7 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 	// alone would wrongly reject the client's real connections. Plain
 	// string-equality dedup is enough here; netip-normalized matching
 	// belongs to the deferred source-address policy engine in
-	// docs/certificate-lifetime-policy-plan.md, not this capture step.
+	// docs/certificate-lifetime-policy.md, not this capture step.
 	//
 	// The caller's own list is normalized here rather than trusted to arrive
 	// clean: any client at all — an older release, pam_ssoossh, something
@@ -522,7 +522,7 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 	// authorization to issue host certificates is the trust boundary. This
 	// trades per-hostname allowlisting for simpler operations (no pre-registration
 	// required) while keeping the SSH server admin gate as the authorization
-	// mechanism. See docs/changes-next.md section 4 for the principal invariant.
+	// mechanism. See docs/dev/changes-next.md section 4 for the principal invariant.
 	if req.Type == model.CertificateTypeHost && !s.adminChecker.IsSSHServerAdmin(identity) {
 		return fmt.Errorf("identity is not authorized to approve host certificates")
 	}

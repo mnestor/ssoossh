@@ -201,7 +201,7 @@ export interface Envelope<T extends any> {
  * and LocalHostname are the requesting client's own OS identity — for a
  * user cert there is no way to request one except via the local client, so
  * this is who/where the request actually came from, not optional extra
- * context (see docs/certificate-audit-metadata-plan.md).
+ * context (see docs/dev/changes-next.md).
  */
 export interface UserRequestBody {
 	public_key: string;
@@ -232,7 +232,7 @@ export interface ServiceEnrollRequestBody {
  * local account pam_ssoossh is authenticating (e.g. who is running `sudo`)
  * — the certificate's principal is this, not whatever the browser identity
  * that later approves the request happens to be called (see
- * docs/release-phase4-pam-server.md, "Principal resolution").
+ * docs/what-ssoossh-is.md, PAM principal resolution).
  */
 export interface PAMRequestBody {
 	public_key: string;

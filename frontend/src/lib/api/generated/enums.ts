@@ -50,7 +50,7 @@ export type CertificateRequestStatus = typeof CertificateRequestStatusPending | 
 /**
  * CertificateRequestDecisionOutcome is the decision recorded on a
  * CertificateRequestDecision row — see
- * docs/certificate-audit-metadata-plan.md.
+ * docs/dev/changes-next.md.
  */
 export type CertificateRequestDecisionOutcome = string;
 export const CertificateRequestDecisionApproved: CertificateRequestDecisionOutcome = "approved";

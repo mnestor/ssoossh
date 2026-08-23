@@ -59,14 +59,16 @@ approve or deny actually happened.
 Recorded so the next pass does not redo them.
 
 - [x] **Docs folder cleanup.** Stripped dead `release-plan.md` /
-      `release-phase*.md` references from all 11 citing documents; deleted
+      `release-phase*.md` references from the citing documents (a 2026-08-23
+      pass caught 24 more in Go, Svelte, SQL, and compose comments the first
+      sweep missed); deleted
       `project-guidelines.md` (duplicated root `CLAUDE.md` almost verbatim)
       and `docker-setup.md` (four lines of personal devcontainer notes);
       rebuilt `docs/README.md`'s index, which was missing seven documents
       that exist in the folder; removed the dead
       `security-review-2026-08-11.md` link.
 - [x] **Consolidated the three review documents** into this file,
-      [changes-next.md](changes-next.md), and [deferred.md](deferred.md).
+      [changes-next.md](changes-next.md), and [decisions.md](../decisions.md).
 - [x] **Decision actor and source IP persisted.** `Approve`/`Deny` now record
       who decided and from where, in a dedicated append-only
       `certificate_request_decisions` table
