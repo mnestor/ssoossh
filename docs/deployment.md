@@ -157,16 +157,98 @@ Also set `http.trusted_proxies` to the proxy's address (e.g.
 request is attributed to the proxy's own IP, including in the approver
 client-IP key ID field.
 
+## 6.5. Startup modes: full, api, and sign
+
+`ssoosshd` can run in three modes, selected by subcommand:
+
+### Full mode (default): `ssoosshd serve` or `ssoosshd serve full`
+
+Runs all components in one process:
+- HTTP server
+- Certificate approval listener
+- In-process signer (holds CA key)
+
+**Use case:** Single-instance deployments, development, testing.
+
+**Configuration:** Standard `ssoosshd.yaml`; pubsub backend defaults to `gochannel`
+(in-process). No additional setup needed.
+
+**Invocation:**
+```bash
+ssoosshd serve        # Implicit full mode
+ssoosshd serve full   # Explicit full mode
+```
+
+### API-only mode: `ssoosshd serve api`
+
+Runs the HTTP server and listener without the signer:
+- HTTP server
+- Certificate approval listener
+- Publishes signing jobs to NATS
+- No CA key, no database access for signing
+
+**Use case:** Multi-instance deployments where the signer is isolated.
+
+**Configuration:** Must set `pubsub.backend: nats` and provide NATS URL + mTLS
+credentials. Fails at startup if gochannel is configured (signing jobs would go
+nowhere).
+
+**Invocation:**
+```bash
+ssoosshd serve api
+```
+
+**Systemd unit:**
+```ini
+[Service]
+ExecStart=/usr/local/sbin/ssoosshd serve api
+```
+
+### Signer-only mode: `ssoosshd sign`
+
+Runs only the certificate signing component:
+- NATS connection
+- CA key access
+- Consumes signing jobs from NATS
+- Publishes signed certificates
+
+**Use case:** CA key isolation — run the signer on a separate machine with
+restricted network access.
+
+**Configuration:** Requires NATS configuration (`pubsub.backend: nats`) and CA
+key (`ssh_key`). Does not need or use database, HTTP, OIDC, or LDAP settings.
+Fails at startup if gochannel is configured (cannot bridge separate processes).
+
+**Invocation:**
+```bash
+ssoosshd sign
+```
+
+**Systemd unit:**
+```ini
+[Service]
+ExecStart=/usr/local/sbin/ssoosshd sign
+```
+
 ## 7. Running more than one instance
 
-Multi-instance deployment requires:
-- A shared PostgreSQL database (SQLite is single-connection)
-- NATS as the message broker
+Multi-instance deployment means running multiple `ssoosshd` processes against
+a shared database. This enables horizontal scaling and load balancing.
+
+**Deployment topology:** Several `ssoosshd serve api` instances (HTTP +
+listener) behind a load balancer, each communicating with NATS. One or more
+`ssoosshd sign` processes (signer only) also connected to NATS. All instances
+share a PostgreSQL database.
+
+**Requires:**
+- A shared PostgreSQL database (SQLite is single-connection only)
+- NATS as the message broker (see §6.5 for mode options)
 - mTLS client certificates for NATS authentication
 - An explicit session cookie key (not per-process random)
+- Multi-instance mode enabled (`multi_instance: true`)
 
-If you only run one process, skip this section and use the default
-`pubsub.backend: gochannel`.
+If you only run one process, skip this section and use the default full mode
+with `pubsub.backend: gochannel` (in-process).
 
 ### Setting up NATS
 
@@ -211,6 +293,46 @@ openssl x509 -req -in client.csr -CA ca-cert.pem -CAkey ca-key.pem \
 
 Configure NATS to require client certificates (see NATS documentation for
 `tls` and `authorization` blocks).
+
+#### NATS authorization (subject permissions)
+
+NATS authorization maps certificate identity (CN/SAN) to subject permissions,
+enforcing which processes can publish and subscribe to which topics. Use the
+certificate's Common Name (CN) to identify processes:
+
+```nats
+# nats-server configuration
+authorization: {
+  users: [
+    # API instances: consume signing replies, publish to listen/resolve topics
+    {
+      user: "api-instance-1"
+      permissions: {
+        publish: ["certrequest.signed", "certrequest.wait.>"]
+        subscribe: ["certrequest.signed", "certrequest.wait.>"]
+      }
+    },
+    # Signer: consume signing requests, publish replies
+    {
+      user: "signer-instance"
+      permissions: {
+        publish: ["certrequest.signed"]
+        subscribe: ["certrequest.sign"]
+      }
+    },
+  ]
+}
+```
+
+The subject layout:
+- **`certrequest.sign`** — signing requests (queue group "signer"; exactly one consumer receives each)
+- **`certrequest.signed`** — signed certificates ready to deliver (queue group "signed-listeners"; exactly one consumer per listener group)
+- **`certrequest.wait.<request-id>`** — per-request delivery topics (fan-out; each client subscribed gets a copy)
+
+API instances should have permission to both publish and subscribe (they are
+both subscribers to the signed topic and publishers to the wait topics for
+their own clients). Signer instances only need to consume the sign queue and
+publish to the signed topic.
 
 ### Configuring ssoosshd for multi-instance
 
