@@ -91,10 +91,10 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	// generates a keypair and requests extensions), so Lookup returns nil
 	// and binding them no-ops for every other command's cmd.
 	if err := bindFlags(v, cmd, map[string]string{
-		"server":               "server",
-		"key-type":             "sshkey.type",
-		"key-size":             "sshkey.size",
-		"no-pty":               "certificate_extensions.no_pty",
+		"server":              "server",
+		"key-type":            "sshkey.type",
+		"key-size":            "sshkey.size",
+		"no-pty":              "certificate_extensions.no_pty",
 		"no-agent-forwarding": "certificate_extensions.no_agent_forwarding",
 		"no-port-forwarding":  "certificate_extensions.no_port_forwarding",
 		"no-x11-forwarding":   "certificate_extensions.no_x11_forwarding",

@@ -193,6 +193,28 @@ func effectiveExtensions(cfg *config.Config, removals map[string]extensionRemova
 	return result, nil
 }
 
+// printEffectiveExtensions outputs a summary of which extensions are being
+// requested and which were removed by which layer (config or policy).
+func printEffectiveExtensions(out io.Writer, effective []string, allDefault []string, removals map[string]extensionRemovalReason) {
+	fmt.Fprintf(out, "Requesting certificate extensions: %v (removed: ", effective)
+	var first bool
+	for _, ext := range allDefault {
+		if reason, removed := removals[ext]; removed {
+			if first {
+				fmt.Fprint(out, ", ")
+			}
+			reasonStr := "config"
+			switch reason {
+			case removed_policy:
+				reasonStr = "policy"
+			}
+			fmt.Fprintf(out, "%s(%s)", ext, reasonStr)
+			first = true
+		}
+	}
+	fmt.Fprintf(out, ")\n\n")
+}
+
 // runLogin obtains a usable certificate and loads it into the agent (or key
 // files), reusing a valid one when there is one. It returns an error — and
 // so a non-zero exit status — for every outcome that does not end with a
@@ -237,25 +259,7 @@ func runLogin(ctx context.Context, root *RootCommand, out io.Writer, force bool)
 
 	// Show what's being requested if it differs from the default.
 	if len(removals) > 0 {
-		fmt.Fprintf(out, "Requesting certificate extensions: %v (removed: ", effectiveExts)
-		var first bool
-		for i, ext := range loginExtensions {
-			if reason, removed := removals[ext]; removed {
-				if i > 0 && first {
-					fmt.Fprint(out, ", ")
-				}
-				reasonStr := "config"
-				switch reason {
-				case removed_flag:
-					reasonStr = "flag"
-				case removed_policy:
-					reasonStr = "policy"
-				}
-				fmt.Fprintf(out, "%s(%s)", ext, reasonStr)
-				first = true
-			}
-		}
-		fmt.Fprintf(out, ")\n\n")
+		printEffectiveExtensions(out, effectiveExts, loginExtensions, removals)
 	}
 
 	pending, err := root.API().CreateUserRequest(ctx, publicKey, localUsername, localHostname, api.RequestedOptions{

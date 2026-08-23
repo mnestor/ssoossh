@@ -485,19 +485,19 @@ func TestEffectiveExtensions_ShouldApplyConfigOptOuts(t *testing.T) {
 		wantRemoved []string
 	}{
 		{
-			name: "should respect no_pty in config",
-			cfg:  &config.Config{CertificateExtensions: config.CertificateExtensionOptions{NoPTY: true}},
+			name:        "should respect no_pty in config",
+			cfg:         &config.Config{CertificateExtensions: config.CertificateExtensionOptions{NoPTY: true}},
 			wantRemoved: []string{"permit-pty"},
 		},
 		{
-			name: "should respect no_agent_forwarding in config",
-			cfg:  &config.Config{CertificateExtensions: config.CertificateExtensionOptions{NoAgentForwarding: true}},
+			name:        "should respect no_agent_forwarding in config",
+			cfg:         &config.Config{CertificateExtensions: config.CertificateExtensionOptions{NoAgentForwarding: true}},
 			wantRemoved: []string{"permit-agent-forwarding"},
 		},
 		{
 			name: "should respect multiple opt-outs in config",
 			cfg: &config.Config{CertificateExtensions: config.CertificateExtensionOptions{
-				NoPTY:          true,
+				NoPTY:            true,
 				NoPortForwarding: true,
 			}},
 			wantRemoved: []string{"permit-pty", "permit-port-forwarding"},
@@ -610,8 +610,8 @@ func TestRunLogin_ShouldIncludeEffectiveExtensionsInTheRequest(t *testing.T) {
 		wantExtensions []string
 	}{
 		{
-			name: "should request default extensions when nothing is opted out",
-			cfg:  &config.Config{},
+			name:           "should request default extensions when nothing is opted out",
+			cfg:            &config.Config{},
 			wantExtensions: loginExtensions,
 		},
 		{
