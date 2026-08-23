@@ -99,7 +99,7 @@ func TestNewCertTypePolicies_Principals_ShouldUseUsernameForUserAndServiceCertif
 	policies := mustCertTypePolicies(t, config.CertificateOptions{})
 
 	for _, certType := range []model.CertificateType{model.CertificateTypeUser, model.CertificateTypeService} {
-		got := policies[certType].principals("", &Identity{Username: "alice"})
+		got := policies[certType].principals("", &Identity{Username: "alice"}, nil)
 		if len(got) != 1 || got[0] != "alice" {
 			t.Errorf("for %s: got %v, want [\"alice\"]", certType, got)
 		}
@@ -116,7 +116,7 @@ func TestNewCertTypePolicies_Principals_ShouldUsePAMUsernameNotIdentity(t *testi
 
 	policies := mustCertTypePolicies(t, config.CertificateOptions{})
 
-	got := policies[model.CertificateTypePAM].principals("mnestor", &Identity{Username: "mike.nestor"})
+	got := policies[model.CertificateTypePAM].principals("mnestor", &Identity{Username: "mike.nestor"}, nil)
 	if len(got) != 1 || got[0] != "mnestor" {
 		t.Errorf("got %v, want [\"mnestor\"]", got)
 	}

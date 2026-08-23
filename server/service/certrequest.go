@@ -57,13 +57,24 @@ type DecisionContext struct {
 	ForwardedFor   string
 }
 
+// ApprovalSelection carries the human's choices when approving a request,
+// varying by certificate type. ServiceAccount is required for
+// CertificateTypeService; Principals is optional for CertificateTypeUser
+// and ignored for others. Empty/absent Principals on a user request
+// defaults to []string{approver.Username} server-side, preserving existing
+// behavior for direct API callers.
+type ApprovalSelection struct {
+	ServiceAccount string
+	Principals     []string
+}
+
 // CertRequestProvider manages the pending-approval lifecycle for
 // certificate requests. CertRequestService is the production
 // implementation.
 type CertRequestProvider interface {
 	CreateRequest(ctx context.Context, p NewCertRequestParams) (requestID string, err error)
 	Detail(ctx context.Context, requestID string, identity *Identity) (*RequestDetail, error)
-	Approve(ctx context.Context, requestID string, identity *Identity, dc DecisionContext, serviceAccount string) error
+	Approve(ctx context.Context, requestID string, identity *Identity, dc DecisionContext, selection ApprovalSelection) error
 	Deny(ctx context.Context, requestID string, identity *Identity, dc DecisionContext) error
 	Wait(ctx context.Context, requestID string) (status model.CertificateRequestStatus, certificate string, code string, err error)
 }
@@ -404,7 +415,10 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 		return nil, err
 	}
 
-	principals := policy.principals(req.Username, identity)
+	// Pass empty principals for the preview: user-type requests default to the
+	// approver's username in the preview (since no selection has been made yet),
+	// and PAM/service don't use this field.
+	principals := policy.principals(req.Username, identity, nil)
 	for _, p := range principals {
 		if err := sshcrypto.ValidatePrincipal(p); err != nil {
 			return nil, fmt.Errorf("invalid principal: %w", err)
@@ -473,18 +487,16 @@ func (s *CertRequestService) lookupDecision(ctx context.Context, requestID strin
 //     a member, or Approve fails without publishing/enrolling anything. PAM
 //     is the one type where an unset RequireGroup denies rather than opens
 //     — see CertOptionsPAM.RequireGroup.
-//   - Principals are a conservative provisional default — just the
-//     identity's username for user —
-//     pending the still-undecided "which LDAP attributes become
-//     principals" question (docs/dev/ssoossh-context.md). PAM and service
-//     are the deliberate exceptions: PAM's principal is the local account
-//     named on the request (req.Username), and a service certificate's is
-//     serviceAccount — required for service-type requests, and it must be
-//     one of the approver's own identity.ServiceAccounts (account linkage:
-//     approving for an account you aren't associated with is refused).
-//     Ignored for every other type. Safe to extend later without narrowing
-//     what's already granted.
-func (s *CertRequestService) Approve(ctx context.Context, requestID string, identity *Identity, dc DecisionContext, serviceAccount string) error {
+//   - Principals: User-type requests carry the approver's selection (or
+//     default to the approver's username if none was selected), validated
+//     against the set of accounts the approver holds (username plus
+//     OtherAccounts). PAM's principal is the local account named on the
+//     request (req.Username). Service certificates use the selected
+//     ServiceAccount — required, and it must be one of the approver's own
+//     identity.ServiceAccounts (account linkage: approving for an account
+//     you aren't associated with is refused). Empty/absent Principals on a
+//     user request preserves existing behavior for direct API callers.
+func (s *CertRequestService) Approve(ctx context.Context, requestID string, identity *Identity, dc DecisionContext, selection ApprovalSelection) error {
 	var req model.CertificateRequest
 	if err := s.db.WithContext(ctx).First(&req, "id = ?", requestID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -521,10 +533,16 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 		return fmt.Errorf("identity is not authorized to approve %s certificates", req.Type)
 	}
 
-	// Service account linkage, checked before bindRequester so a caller who
-	// cannot approve at all never claims the request.
+	// Service account linkage (service-type requests) and user principal
+	// linkage (user-type requests) are checked before bindRequester so a
+	// caller who cannot approve at all never claims the request.
 	if req.Type == model.CertificateTypeService {
-		if err := checkServiceAccountLinkage(identity, serviceAccount); err != nil {
+		if err := checkServiceAccountLinkage(identity, selection.ServiceAccount); err != nil {
+			return err
+		}
+	}
+	if req.Type == model.CertificateTypeUser {
+		if err := checkUserPrincipalLinkage(identity, selection.Principals); err != nil {
 			return err
 		}
 	}
@@ -548,9 +566,9 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 
 	switch policy.flow {
 	case flowEnrollment:
-		return s.approveServiceEnrollment(ctx, req, narrowed, identity, policy, dc, serviceAccount)
+		return s.approveServiceEnrollment(ctx, req, narrowed, identity, policy, dc, selection.ServiceAccount)
 	case flowSigning:
-		return s.approveForSigning(ctx, req, identity, policy, narrowed, dc)
+		return s.approveForSigning(ctx, req, identity, policy, narrowed, dc, selection.Principals)
 	default:
 		// This should never happen — every certificate type in
 		// newCertTypePolicies maps to either flowEnrollment or flowSigning.
@@ -791,6 +809,29 @@ func checkServiceAccountLinkage(identity *Identity, serviceAccount string) error
 	return nil
 }
 
+// checkUserPrincipalLinkage enforces principal linkage on a user-type
+// approval: every selected principal must be either the approver's own
+// username or one of their OtherAccounts. Rejects any principal the
+// approver doesn't hold, preventing a caller from handing themselves
+// access they haven't been granted.
+func checkUserPrincipalLinkage(identity *Identity, selected []string) error {
+	// Build the set of principals the approver holds: their username plus
+	// any other accounts.
+	allowed := make(map[string]bool)
+	allowed[identity.Username] = true
+	for _, account := range identity.OtherAccounts {
+		allowed[account] = true
+	}
+
+	// Every selected principal must be in the allowed set.
+	for _, principal := range selected {
+		if !allowed[principal] {
+			return &errorresponses.ForbiddenError{Reason: fmt.Sprintf("approver does not hold principal %q", principal)}
+		}
+	}
+	return nil
+}
+
 // newDecision builds the immutable audit record for a single Approve/Deny
 // resolution of requestID, snapshotting identity's full six fields and dc's
 // connection context. Plain copied values, not a reference to the users
@@ -831,8 +872,9 @@ func newDecision(requestID string, outcome model.CertificateRequestDecisionOutco
 
 // approveForSigning implements Approve's user/PAM branch — see its doc
 // comment. policy/narrowed are req.Type's already-resolved,
-// server-config-bounded policy.
-func (s *CertRequestService) approveForSigning(ctx context.Context, req model.CertificateRequest, identity *Identity, policy *certTypePolicy, narrowed RequestedOptions, dc DecisionContext) error {
+// server-config-bounded policy. selectedPrincipals is the approver's
+// selection for user-type requests and is ignored for PAM.
+func (s *CertRequestService) approveForSigning(ctx context.Context, req model.CertificateRequest, identity *Identity, policy *certTypePolicy, narrowed RequestedOptions, dc DecisionContext, selectedPrincipals []string) error {
 	keyID, err := executeKeyIDTemplate(policy.keyIDTemplate, newKeyIDTemplateData(identity, req.SourceIP, req.ID))
 	if err != nil {
 		// not covered: parseKeyIDTemplate already executed
@@ -898,11 +940,11 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 		return err
 	}
 
-	// Principals are derived per-type: user and service use the approver's
-	// username, PAM uses the local account being authenticated. Validate
-	// every one before it can be persisted or
+	// Principals are derived per-type: user uses the approver's selection
+	// (or defaults to their username), PAM uses the local account being
+	// authenticated. Validate every one before it can be persisted or
 	// signed into a certificate; the signer re-checks as a backstop.
-	principals := policy.principals(req.Username, identity)
+	principals := policy.principals(req.Username, identity, selectedPrincipals)
 	for _, p := range principals {
 		if err := sshcrypto.ValidatePrincipal(p); err != nil {
 			return fmt.Errorf("invalid principal: %w", err)
