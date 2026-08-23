@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -277,6 +278,7 @@ func runLogin(ctx context.Context, root *RootCommand, out io.Writer, force bool)
 		openBrowser(ctx, out, pending.ApprovalURL)
 	}
 	fmt.Fprintln(out, "Waiting for approval…")
+	slog.Info("waiting for approval", "request", pending.RequestID)
 
 	result, err := root.API().AwaitCertificate(ctx, pending)
 	if err != nil {
@@ -290,6 +292,8 @@ func runLogin(ctx context.Context, root *RootCommand, out io.Writer, force bool)
 	if err := kp.ParseCertificateFromString(result.Certificate); err != nil {
 		return fmt.Errorf("the issued certificate could not be parsed: %w", err)
 	}
+	slog.Info("certificate issued", "principals", principalList(kp.Certificate()), "expiry", expiryPhrase(kp.Certificate()))
+	slog.Debug("storing the certificate", "backend", root.Agent().Backend())
 	if err := root.Agent().AddKeypair(kp); err != nil {
 		return fmt.Errorf("load the certificate into %s: %w", root.Agent().Backend(), err)
 	}
