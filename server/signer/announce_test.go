@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,8 +100,8 @@ func TestAnnouncer_ShouldAnnounceOnRequestMessage(t *testing.T) {
 	// Receive the announcement triggered by the request
 	announce := receiveAnnounce(t, channel)
 
-	// Verify the announced key matches the source key
-	want := string(ssh.MarshalAuthorizedKey(caPub))
+	// Verify the announced key matches the source key (in trimmed authorized_keys form)
+	want := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(caPub)))
 	if announce.PublicKey != want {
 		t.Errorf("got public key %q, want %q", announce.PublicKey, want)
 	}
@@ -116,62 +117,33 @@ func TestAnnouncer_ShouldAnnounceAtStartup(t *testing.T) {
 	channel := newTestChannel(t)
 	an := NewAnnouncer(ks, channel, 1*time.Hour)
 
-	// Subscribe to announcements before Run, since gochannel is non-persistent
-	// and messages published before subscription are lost.
-	announceReceived := make(chan certmsg.CAKeyAnnounce, 1)
-	announcementsDone := make(chan error, 1)
+	// Start the announcer directly (not via Router) to test Run's startup announce.
+	// Use a longer timeout than we need to avoid context timeout being the limiting
+	// factor in the test.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 
+	// Start Run in a goroutine and collect its result
+	runDone := make(chan error, 1)
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-
-		announcements, err := channel.Subscribe(ctx, certmsg.CAKeyAnnounceTopic)
-		if err != nil {
-			announcementsDone <- err
-			return
-		}
-
-		select {
-		case msg := <-announcements:
-			var announce certmsg.CAKeyAnnounce
-			if err := announce.Unmarshal(msg.Payload); err != nil {
-				announcementsDone <- err
-				return
-			}
-			msg.Ack()
-			announceReceived <- announce
-			announcementsDone <- nil
-		case <-ctx.Done():
-			announcementsDone <- ctx.Err()
-		}
+		runDone <- an.Run(ctx)
 	}()
 
-	// Give the subscriber a chance to subscribe before calling Run
-	time.Sleep(100 * time.Millisecond)
+	// Wait for an announcement to be published
+	announce := receiveAnnounce(t, channel)
 
-	// Run the announcer briefly
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	_ = an.Run(ctx) // Ignore the context.Canceled error
-
-	// Wait for the subscriber to report
-	if err := <-announcementsDone; err != nil {
-		t.Fatalf("subscription error: %v", err)
+	// Verify the startup announcement was received with the correct key
+	want := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(caPub)))
+	if announce.PublicKey != want {
+		t.Errorf("got public key %q, want %q", announce.PublicKey, want)
+	}
+	if announce.AnnouncedAt.IsZero() {
+		t.Error("expected a non-zero announcement timestamp")
 	}
 
-	// Verify the startup announcement was received
-	select {
-	case announce := <-announceReceived:
-		want := string(ssh.MarshalAuthorizedKey(caPub))
-		if announce.PublicKey != want {
-			t.Errorf("got public key %q, want %q", announce.PublicKey, want)
-		}
-		if announce.AnnouncedAt.IsZero() {
-			t.Error("expected a non-zero announcement timestamp")
-		}
-	default:
-		t.Fatal("no announcement received")
-	}
+	// Clean up: wait for Run to exit when context is canceled
+	cancel()
+	<-runDone
 }
 
 func TestAnnouncer_ShouldAnnounceMarshaledAuthorizedKeysForm(t *testing.T) {

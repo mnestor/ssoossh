@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
@@ -66,10 +67,10 @@ func (an *Announcer) announce(ctx context.Context) error {
 		return nil
 	}
 
-	// Marshal the public key in authorized_keys format and trim trailing
-	// whitespace.
+	// Marshal the public key in authorized_keys format and trim whitespace to
+	// produce a single line with no leading or trailing whitespace.
 	pubKey := ssh.MarshalAuthorizedKey(signer.PublicKey())
-	publicKeyStr := string(pubKey)
+	publicKeyStr := strings.TrimSpace(string(pubKey))
 
 	announce := certmsg.CAKeyAnnounce{
 		PublicKey:   publicKeyStr,
