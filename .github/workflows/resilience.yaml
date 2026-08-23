@@ -94,8 +94,12 @@ jobs:
             go-${{ runner.os }}-
       - name: Build web UI
         run: make frontend
+      # 10m, not the 5m the other suites get: two sustained-load tests hold
+      # the server under continuous load for SSOOSSH_SOAK_DURATION each
+      # (30s by default, see test/load/soak_test.go) on top of the
+      # concurrency and burst tests.
       - name: Run load tests
-        run: CGO_ENABLED=1 go test -buildvcs=false -tags=load -race -count=1 -timeout=5m ./test/load/...
+        run: CGO_ENABLED=1 go test -buildvcs=false -tags=load -race -count=1 -timeout=10m ./test/load/...
 
   a11y:
     name: Accessibility Tests

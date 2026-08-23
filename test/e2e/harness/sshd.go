@@ -1,9 +1,8 @@
-//go:build e2e
+//go:build e2e || resilience || load
 
 package harness
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
@@ -37,7 +36,7 @@ type SSHD struct {
 	Principal string
 
 	cmd            *exec.Cmd
-	stdout, stderr *bytes.Buffer
+	stdout, stderr *lockedBuffer
 }
 
 // StartSSHD ensures a dedicated unlocked local account exists, writes a
@@ -45,7 +44,7 @@ type SSHD struct {
 // TestSSHUser, and launches a real sshd as root via sudo. Requires sshd to
 // be installed (`apt-get install openssh-server`) and passwordless sudo —
 // both true on the hosted CI runner this targets; see the "sshd needs an
-// unlocked account" obstacle in docs/e2e-testing-plan.md.
+// unlocked account" obstacle in docs/dev/e2e-testing-plan.md.
 func StartSSHD(t *testing.T, caPublicKey string) *SSHD {
 	t.Helper()
 
@@ -107,7 +106,7 @@ LogLevel VERBOSE
 	}
 
 	cmd := exec.Command("sudo", "/usr/sbin/sshd", "-f", configPath, "-D", "-e")
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr lockedBuffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
@@ -174,7 +173,7 @@ func (s *SSHD) shutdown(t *testing.T) {
 func requireSSHD(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("/usr/sbin/sshd"); err != nil {
-		t.Fatalf("harness: sshd is not installed; run `sudo apt-get install -y openssh-server` (see docs/e2e-testing-plan.md, tier 3)")
+		t.Fatalf("harness: sshd is not installed; run `sudo apt-get install -y openssh-server` (see docs/dev/e2e-testing-plan.md, tier 3)")
 	}
 	if _, err := exec.LookPath("sudo"); err != nil {
 		t.Fatalf("harness: sudo is not available; tier 3 needs passwordless sudo to run sshd as root")

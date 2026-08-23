@@ -17,13 +17,13 @@ afterwards.
 - SSH login via the ssoossh client and `ssh_config` (`Match exec` or
   `ProxyCommand`) — see [getting-started.md](getting-started.md).
 - `sudo`/`su` via `pam_ssoossh`, reusing the same browser approval flow —
-  see [deployment.md §7](deployment.md#7-pam-sudo-and-su).
+  see [deployment.md §8](deployment.md#8-pam-sudo-and-su).
 - Client packages for Linux (`.deb`/`.rpm`), Windows (`.zip`), and macOS
   (`.zip`, quill-signed and notarized).
 
 ## Deliberately Deferred (Not Oversights)
 
-Each has a written plan in `docs/README.md`'s "Planned" and "Designed but deferred" tables. The service and host client commands fail with a clear message rather than hanging.
+Each has a written plan under `docs/` (see the index in [README.md](README.md)). The service and host client commands fail with a clear message rather than hanging. Several of these (admin/auditor roles, lifetime policy, multi-instance) have since landed on the main branch; see [features.md](features.md) for current status.
 
 - **Service certificates** — non-interactive account certificates
 - **Host certificates** and principal mapping

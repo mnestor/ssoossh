@@ -7,6 +7,26 @@ re-asking.
 
 What ssoossh *does* do is in [features.md](features.md).
 
+## Security invariants
+
+Hard constraints every change is measured against, from the original design
+brief:
+
+- The server never receives private keys. The client sends private keys
+  nowhere except the local ssh-agent or a local file.
+- The client never opens a listening port. No loopback redirect; the
+  browser lands on the server and the client learns the outcome over its
+  SSE stream.
+- Server config is the outer bound on every option. Client request asks,
+  web UI narrows or adjusts, server config gates. Options the deployment
+  does not permit are trimmed (not rejected) and shown in the web UI
+  before approval.
+- Group membership never appears in a certificate. Groups feed the
+  lifetime decision only.
+- `verify-required` is not used at all. `no-touch-required` is not offered
+  for client-generated keys, only relevant for enrolled `sk-` keys on the
+  service path.
+
 ## Parked on purpose
 
 Worth doing eventually; not started because nothing needs it yet.

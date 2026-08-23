@@ -26,7 +26,7 @@ const (
 	StatusExpired  = "expired"
 	// StatusEnrolled resolves a service-enrollment request: the payload
 	// carries CertificateResult.Code (an enrollment token), not a
-	// certificate. See docs/ssoossh-context.md, "Service enrollment".
+	// certificate. See docs/dev/ssoossh-context.md, "Service enrollment".
 	StatusEnrolled = "enrolled"
 	// StatusFailed means the request was approved but signing failed, or a
 	// sweep invalidated it. No certificate will ever arrive for it.
@@ -116,7 +116,7 @@ type CertificateResult struct {
 	Certificate string `json:"certificate,omitempty"`
 
 	// Code is the enrollment token, set only when Status is "enrolled"
-	// (CertificateTypeService — see docs/ssoossh-context.md, "Service
+	// (CertificateTypeService — see docs/dev/ssoossh-context.md, "Service
 	// enrollment"). `service retrieve` presents this later to redeem the
 	// actual certificate.
 	Code string `json:"code,omitempty"`

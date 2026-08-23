@@ -1,10 +1,11 @@
+# Frontend-only rules. Paths under this directory can only be matched from
+# here, so anything frontend-specific belongs in this file rather than the
+# repo root — see the root .gitignore for the anchoring policy that keeps
+# source files from being hidden.
+
 node_modules
 
 # Output
-.output
-.vercel
-.netlify
-.wrangler
 /.svelte-kit
 /build
 
@@ -12,15 +13,10 @@ node_modules
 .DS_Store
 Thumbs.db
 
-# Env
+# Env, templates included: nothing here belongs in the repo.
 .env
 .env.*
-!.env.example
-!.env.test
 
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
-
-# Paraglide
-src/lib/paraglide

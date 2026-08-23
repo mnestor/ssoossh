@@ -19,7 +19,7 @@ func NewHostController(group *gin.RouterGroup, hostService service.HostProvider,
 
 	// TODO: assuming sync also requires host-cert auth since the mapping
 	// discloses which local accounts a cert's principals resolve to — not
-	// an explicit requirement in docs/ssoossh-context.md, revisit if that's
+	// an explicit requirement in docs/dev/ssoossh-context.md, revisit if that's
 	// too strict for first-time-sync bootstrapping.
 	hostGroup.GET("/hosts/:hostname/sync", h.syncHandler)
 }

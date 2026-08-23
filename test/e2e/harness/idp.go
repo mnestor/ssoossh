@@ -1,9 +1,9 @@
-//go:build e2e
+//go:build e2e || resilience || load
 
 // Package harness provides the process apparatus for the end-to-end suite:
 // a real OIDC identity provider, a real ssoosshd instance, a real ssoossh
 // client, a private ssh-agent, and (tier 3) a real sshd. See
-// docs/e2e-testing-plan.md for the design this implements.
+// docs/dev/e2e-testing-plan.md for the design this implements.
 package harness
 
 import (

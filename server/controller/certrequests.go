@@ -201,7 +201,7 @@ func (cr *certRequestController) createUserRequestHandler(g *gin.Context) {
 // createHostSignRequestHandler handles POST /api/certs/host/sign: creates a
 // pending request for first issuance of a host certificate, gated by the
 // OIDC approval chain (a human vouching for the machine — the anti-MITM
-// control, see docs/ssoossh-context.md), and returns its events/approval
+// control, see docs/dev/ssoossh-context.md), and returns its events/approval
 // URLs (see createUserRequestHandler). Subsequent renewals go through
 // HostController instead, authenticated by the existing certificate.
 //

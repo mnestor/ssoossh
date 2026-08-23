@@ -11,7 +11,7 @@
   signing behind that interface, don't hardcode ssh-agent assumptions into
   callers
 - Full design context (open questions, future plans):
-  `docs/ssoossh-context.md`
+  `docs/dev/ssoossh-context.md`
 
 ## Certificate Rules
 

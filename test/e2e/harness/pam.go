@@ -1,10 +1,9 @@
-//go:build e2e
+//go:build e2e || resilience || load
 
 package harness
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -76,10 +75,10 @@ func PAMArtifacts(t *testing.T) (modulePath, pamtestPath string) {
 func requirePAMBuildEnv(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("gcc"); err != nil {
-		t.Fatalf("harness: gcc is not installed; run `sudo apt-get install -y gcc libpam0g-dev` (see docs/pam-e2e-testing.md)")
+		t.Fatalf("harness: gcc is not installed; run `sudo apt-get install -y gcc libpam0g-dev` (see docs/dev/pam-e2e-testing.md)")
 	}
 	if _, err := os.Stat("/usr/include/security/pam_appl.h"); err != nil {
-		t.Fatalf("harness: libpam development headers are missing; run `sudo apt-get install -y libpam0g-dev` (see docs/pam-e2e-testing.md)")
+		t.Fatalf("harness: libpam development headers are missing; run `sudo apt-get install -y libpam0g-dev` (see docs/dev/pam-e2e-testing.md)")
 	}
 	if _, err := exec.LookPath("sudo"); err != nil {
 		t.Fatalf("harness: sudo is not available; the PAM stack test needs passwordless sudo to write /etc/pam.d")
@@ -210,30 +209,4 @@ func (p *Pamtest) Wait(t *testing.T) (exitCode int, output string) {
 		t.Fatalf("harness: pamtest did not exit in time\noutput:\n%s", p.output.Bytes())
 	}
 	return 0, "" // unreachable; t.Fatalf above does not return
-}
-
-// lockedBuffer is a mutex-guarded byte buffer: pamtest's stderr (written by
-// the OS pipe copier) and the stdout scanner goroutine both append to it.
-type lockedBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *lockedBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *lockedBuffer) WriteLine(line string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.buf.WriteString(line)
-	b.buf.WriteByte('\n')
-}
-
-func (b *lockedBuffer) Bytes() []byte {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return bytes.Clone(b.buf.Bytes())
 }

@@ -7,7 +7,7 @@ import "time"
 // approved. After that, `service retrieve` calls present only Code — the
 // server never re-accepts a public key for an existing enrollment, so a
 // stolen code can't be paired with an attacker's keypair (see
-// docs/ssoossh-context.md, "Service enrollment").
+// docs/dev/ssoossh-context.md, "Service enrollment").
 type Enrollment struct {
 	ID        string `gorm:"column:id;primaryKey"`
 	Code      string `gorm:"column:code"`
@@ -21,7 +21,7 @@ type Enrollment struct {
 	ExpiresAt time.Time `gorm:"column:expires_at"`
 
 	// RedeemedAt is set on first successful `service retrieve`.
-	// TODO: decide (see docs/ssoossh-context.md open questions) whether
+	// TODO: decide (see docs/dev/ssoossh-context.md open questions) whether
 	// enrollments are single-use or reusable until ExpiresAt, and whether
 	// proof-of-possession is required at retrieve time.
 	RedeemedAt *time.Time `gorm:"column:redeemed_at"`

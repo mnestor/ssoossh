@@ -95,11 +95,15 @@ func TestRecovery_AfterShutdown(t *testing.T) {
 	login2 := harness.StartLogin(t, f.ssoosshBin, f.server.BaseURL, f.agent.Socket, "--force")
 	approvalURL2 := login2.ApprovalURL(t, waitFor)
 
-	browser.Navigate(t, approvalURL2, `[data-testid="sign-in-button"]`)
-	browser.Click(t, `[data-testid="sign-in-button"]`)
-	browser.CompleteIdPLogin(t, "bob")
-	browser.WaitVisible(t, `[data-testid="approval-view"]`)
-	browser.Click(t, `[data-testid="approve-button"]`)
+	// A second browser, not the one above: that one still holds alice's
+	// session, so the approval page would render the request straight away
+	// and never show the sign-in button this flow starts from.
+	browser2 := harness.StartBrowser(t)
+	browser2.Navigate(t, approvalURL2, `[data-testid="sign-in-button"]`)
+	browser2.Click(t, `[data-testid="sign-in-button"]`)
+	browser2.CompleteIdPLogin(t, "bob")
+	browser2.WaitVisible(t, `[data-testid="approval-view"]`)
+	browser2.Click(t, `[data-testid="approve-button"]`)
 
 	if err := login2.Wait(t, waitFor); err != nil {
 		t.Errorf("second login failed after first succeeded: %v", err)

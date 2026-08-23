@@ -1,7 +1,7 @@
 # End-to-end suite
 
 Proves, on every pull request, that `ssoossh ssh login` → browser approval →
-certificate → `ssh` actually works. See `docs/e2e-testing-plan.md` for the
+certificate → `ssh` actually works. See `docs/dev/e2e-testing-plan.md` for the
 full design and `docs/release-phase2-e2e.md` for why it's built the way it
 is.
 

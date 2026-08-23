@@ -4,7 +4,7 @@
 //
 // This package has, and must keep, **zero database access**. That isn't a
 // convenience — it's what lets the signer become a genuinely separate,
-// minimally-privileged process later (see docs/signer-split-deferred.md) without
+// minimally-privileged process later (see docs/dev/signer-split-deferred.md) without
 // a rewrite. It deliberately imports neither gorm, nor server/service, nor
 // server/config; bootstrap passes it the raw key material instead. There's a
 // test (see zerodb_test.go) that fails if gorm ever appears in this
@@ -39,7 +39,7 @@ type CAKeySource interface {
 // Note that server/service.CAService parses the same key material to serve
 // the CA *public* key over the API, and deliberately discards the private
 // half. The two are independent on purpose: once the signer is a separate
-// process (see docs/signer-split-deferred.md), only the signer gets
+// process (see docs/dev/signer-split-deferred.md), only the signer gets
 // the private key and the webserver is configured with public keys alone.
 type ConfigKeySource struct {
 	signer ssh.Signer

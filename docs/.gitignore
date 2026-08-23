@@ -1,3 +1,4 @@
-delivery*
-security*
+# Local-only working notes. Keep these exact, never prefix globs: `delivery*`
+# and `security*` used to live here and would have swallowed any docs/
+# page whose name started with either word.
 descriptions.md

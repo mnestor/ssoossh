@@ -4,7 +4,7 @@ package load
 
 import (
 	"fmt"
-	"runtime"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,25 +13,51 @@ import (
 	"github.com/mnestor/ssoossh/test/e2e/harness"
 )
 
-// TestSoak_SustainedLoad_1Hour exercises the server under continuous load for
-// an extended period, watching for memory leaks, goroutine leaks, or gradual
-// degradation. Issues to catch: memory growth without GC, stale connections,
-// connection pool exhaustion over time.
-func TestSoak_SustainedLoad_1Hour(t *testing.T) {
+// defaultSoakDuration is how long each sustained-load test runs by default.
+// It is deliberately short: the whole package shares one `go test -timeout`,
+// and a soak long enough to be worth the name would blow it. Set
+// SSOOSSH_SOAK_DURATION (any time.ParseDuration value, e.g. "30m") to run a
+// real soak locally or on a schedule with a matching -timeout.
+const defaultSoakDuration = 30 * time.Second
+
+// soakDurationEnv names the override, kept in one place so the skip message
+// and the parser cannot drift apart.
+const soakDurationEnv = "SSOOSSH_SOAK_DURATION"
+
+// TestSoak_SustainedLoad_ThreeWorkers exercises the server under continuous
+// load from three workers, watching for gradual degradation: connection
+// pool exhaustion, stale connections, a server that stops serving.
+func TestSoak_SustainedLoad_ThreeWorkers(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping long-running soak test in short mode")
+		t.Skip("skipping soak test in short mode")
 	}
 
-	testSoakLoad(t, 1*time.Hour, 5) // 5 concurrent, for 1 hour
+	testSoakLoad(t, soakDuration(t), 3)
 }
 
-// TestSoak_SustainedLoad_30Minutes is a shorter soak test for CI.
-func TestSoak_SustainedLoad_30Minutes(t *testing.T) {
+// TestSoak_SustainedLoad_FiveWorkers is the same soak at higher concurrency.
+func TestSoak_SustainedLoad_FiveWorkers(t *testing.T) {
 	if testing.Short() {
-		t.Skip("skipping long-running soak test in short mode")
+		t.Skip("skipping soak test in short mode")
 	}
 
-	testSoakLoad(t, 30*time.Minute, 3) // 3 concurrent, for 30 minutes
+	testSoakLoad(t, soakDuration(t), 5)
+}
+
+// soakDuration returns the configured soak length, defaulting to something
+// that fits a normal CI run.
+func soakDuration(t *testing.T) time.Duration {
+	t.Helper()
+
+	raw := os.Getenv(soakDurationEnv)
+	if raw == "" {
+		return defaultSoakDuration
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		t.Fatalf("%s=%q is not a duration: %v", soakDurationEnv, raw, err)
+	}
+	return d
 }
 
 func testSoakLoad(t *testing.T, duration time.Duration, concurrency int) {
@@ -42,16 +68,9 @@ func testSoakLoad(t *testing.T, duration time.Duration, concurrency int) {
 	agent := harness.StartAgent(t)
 	_, ssoossh := harness.Binaries(t)
 
-	// Record baseline metrics.
-	baselineGoroutines := runtime.NumGoroutine()
-	var baselineMemStats runtime.MemStats
-	runtime.ReadMemStats(&baselineMemStats)
-
 	var totalRequests int64
 	var totalSuccesses int64
 	var totalFailures int64
-	var maxGoroutines int32
-	var maxAlloc int64
 
 	deadline := time.Now().Add(duration)
 	var wg sync.WaitGroup
@@ -62,35 +81,28 @@ func testSoakLoad(t *testing.T, duration time.Duration, concurrency int) {
 		go func(w int) {
 			defer wg.Done()
 
-			for time.Now().Before(deadline) {
+			for iteration := 0; time.Now().Before(deadline); iteration++ {
 				atomic.AddInt64(&totalRequests, 1)
 
-				login := harness.StartLogin(t, ssoossh, server.BaseURL, agent.Socket)
-				url := login.ApprovalURL(t, 10*time.Second)
+				// --force every time: the workers share one agent, and
+				// without it the client finds the certificate a previous
+				// iteration left there, reuses it, and exits before it ever
+				// registers a request — no load, and no approval URL.
+				login := harness.StartLogin(t, ssoossh, server.BaseURL, agent.Socket, "--force")
+				url := login.ApprovalURL(t, waitFor)
 
-				browser := harness.StartBrowser(t)
-				browser.Navigate(t, url, `[data-testid="sign-in-button"]`)
-				browser.Click(t, `[data-testid="sign-in-button"]`)
-				browser.CompleteIdPLogin(t, fmt.Sprintf("worker%d_user%d", w, time.Now().Unix()))
-				browser.WaitVisible(t, `[data-testid="approval-view"]`)
-				browser.Click(t, `[data-testid="approve-button"]`)
+				// A distinct user per iteration, so each request is its own.
+				username := fmt.Sprintf("worker%d_user%d", w, iteration)
+				if err := approveAs(server.BaseURL, url, username); err != nil {
+					atomic.AddInt64(&totalFailures, 1)
+					t.Logf("approving %s failed: %v", username, err)
+					continue
+				}
 
-				if err := login.Wait(t, 10*time.Second); err != nil {
+				if err := login.Wait(t, waitFor); err != nil {
 					atomic.AddInt64(&totalFailures, 1)
 				} else {
 					atomic.AddInt64(&totalSuccesses, 1)
-				}
-
-				// Check goroutine count periodically.
-				if g := int32(runtime.NumGoroutine()); g > maxGoroutines {
-					atomic.StoreInt32(&maxGoroutines, g)
-				}
-
-				// Check memory usage.
-				var ms runtime.MemStats
-				runtime.ReadMemStats(&ms)
-				if int64(ms.Alloc) > atomic.LoadInt64(&maxAlloc) {
-					atomic.StoreInt64(&maxAlloc, int64(ms.Alloc))
 				}
 			}
 		}(worker)
@@ -98,21 +110,12 @@ func testSoakLoad(t *testing.T, duration time.Duration, concurrency int) {
 
 	wg.Wait()
 
-	// Analyze results.
-	finalGoroutines := runtime.NumGoroutine()
-	var finalMemStats runtime.MemStats
-	runtime.ReadMemStats(&finalMemStats)
-
-	t.Logf("Soak test completed:")
+	t.Logf("Soak test completed after %v at concurrency %d:", duration, concurrency)
 	t.Logf("  Total requests: %d", totalRequests)
 	t.Logf("  Successes: %d, Failures: %d", totalSuccesses, totalFailures)
 	if totalRequests > 0 {
 		t.Logf("  Success rate: %.2f%%", 100.0*float64(totalSuccesses)/float64(totalRequests))
 	}
-	t.Logf("  Goroutines: baseline %d, max %d, final %d",
-		baselineGoroutines, maxGoroutines, finalGoroutines)
-	t.Logf("  Memory: baseline %d MB, max %d MB, final %d MB",
-		baselineMemStats.Alloc/1_000_000, maxAlloc/1_000_000, finalMemStats.Alloc/1_000_000)
 
 	// Verify success rate is acceptable.
 	if totalSuccesses == 0 {
@@ -124,19 +127,8 @@ func testSoakLoad(t *testing.T, duration time.Duration, concurrency int) {
 		t.Errorf("success rate too low: %.2f%%", 100.0*successRate)
 	}
 
-	// Verify goroutine cleanup (tighter than concurrent tests).
-	goroutineLeaked := finalGoroutines - baselineGoroutines
-	if goroutineLeaked > 5 {
-		t.Errorf("goroutine leak in soak: baseline %d, final %d, leaked %d (threshold 5)",
-			baselineGoroutines, finalGoroutines, goroutineLeaked)
-	}
-
-	// Verify memory didn't grow unbounded.
-	// Allow up to 200 MB growth over baseline.
-	memoryGrowth := int64(finalMemStats.Alloc) - int64(baselineMemStats.Alloc)
-	if memoryGrowth > 200_000_000 {
-		t.Errorf("excessive memory growth: %d MB", memoryGrowth/1_000_000)
-	}
+	// The point of a soak is what the server looks like afterward.
+	assertServerStillServes(t, server.BaseURL)
 }
 
 // TestStress_BurstApprovals exercises the approval handler with sudden bursts
@@ -159,19 +151,18 @@ func TestStress_BurstApprovals(t *testing.T) {
 
 	// Start all logins without waiting.
 	approvalURLs := make([]string, n)
-	var urlMu sync.Mutex
 
 	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
 
-			login := harness.StartLogin(t, ssoossh, server.BaseURL, agent.Socket)
-			url := login.ApprovalURL(t, 10*time.Second)
-
-			urlMu.Lock()
-			approvalURLs[idx] = url
-			urlMu.Unlock()
+			// --force: these all share one agent, so a certificate issued
+			// by an earlier burst member would otherwise be reused instead
+			// of registering a new request.
+			login := harness.StartLogin(t, ssoossh, server.BaseURL, agent.Socket, "--force")
+			// Each goroutine owns its own slot, so no lock is needed.
+			approvalURLs[idx] = login.ApprovalURL(t, waitFor)
 		}(i)
 	}
 
@@ -186,14 +177,10 @@ func TestStress_BurstApprovals(t *testing.T) {
 			if approvalURLs[idx] == "" {
 				return
 			}
-
-			browser := harness.StartBrowser(t)
-			browser.Navigate(t, approvalURLs[idx], `[data-testid="sign-in-button"]`)
-			browser.Click(t, `[data-testid="sign-in-button"]`)
-			browser.CompleteIdPLogin(t, fmt.Sprintf("user%d", idx))
-			browser.WaitVisible(t, `[data-testid="approval-view"]`)
-			browser.Click(t, `[data-testid="approve-button"]`)
-
+			if err := approveAs(server.BaseURL, approvalURLs[idx], fmt.Sprintf("user%d", idx)); err != nil {
+				t.Logf("approving request %d failed: %v", idx, err)
+				return
+			}
 			atomic.AddInt32(&successCount, 1)
 		}(i)
 	}
@@ -206,4 +193,6 @@ func TestStress_BurstApprovals(t *testing.T) {
 	}
 
 	t.Logf("Burst approval test: %d/%d approvals succeeded", successCount, n)
+
+	assertServerStillServes(t, server.BaseURL)
 }

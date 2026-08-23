@@ -12,7 +12,7 @@ import (
 // Tier 3 ("ssh"): tier 1 plus a real sshd trusting the test CA — the
 // certificate actually authenticating a session. Modifies the host: creates
 // harness.TestSSHUser, unlocks it, and runs sshd as root via sudo. See
-// docs/e2e-testing-plan.md.
+// docs/dev/e2e-testing-plan.md.
 
 func TestSSH_SshdAcceptsTheIssuedCertificate(t *testing.T) {
 	f := newFixture(t)

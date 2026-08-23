@@ -1,4 +1,4 @@
-//go:build e2e
+//go:build e2e || resilience || load
 
 package harness
 
@@ -23,7 +23,7 @@ var approvalURLPattern = regexp.MustCompile(`https?://\S+`)
 // observe the approval URL while the process is still running, not after.
 type LoginProcess struct {
 	cmd    *exec.Cmd
-	stdout bytes.Buffer
+	stdout lockedBuffer
 
 	mu          sync.Mutex
 	stderr      bytes.Buffer

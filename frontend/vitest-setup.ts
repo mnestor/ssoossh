@@ -29,3 +29,24 @@ if (typeof HTMLDialogElement !== 'undefined') {
 		};
 	}
 }
+
+// Node 26 (the CI image) injects its own experimental `localStorage` and
+// `sessionStorage` into every vm context, overwriting the accessors jsdom
+// installed on that same global. Node's read back undefined unless the process
+// was started with --localstorage-file, so a bare `localStorage.clear()` in a
+// test throws instead of reaching jsdom. jsdom's real Storage objects are
+// still there one layer down, so point the globals back at them. On a Node
+// that has no such global (22, local dev) they already agree and this is a
+// no-op.
+const jsdomWindow = globalThis as unknown as {
+	_localStorage?: Storage;
+	_sessionStorage?: Storage;
+};
+for (const [name, storage] of [
+	['localStorage', jsdomWindow._localStorage],
+	['sessionStorage', jsdomWindow._sessionStorage]
+] as const) {
+	if (storage) {
+		Object.defineProperty(globalThis, name, { configurable: true, get: () => storage });
+	}
+}

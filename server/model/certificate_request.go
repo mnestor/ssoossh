@@ -7,7 +7,7 @@ import "time"
 // `host sign`, `service enroll`), resolved when a user approves/denies in
 // the web UI or it times out. Approving a CertificateTypeService request
 // creates an Enrollment rather than issuing a certificate immediately — see
-// docs/ssoossh-context.md, "Service enrollment".
+// docs/dev/ssoossh-context.md, "Service enrollment".
 //
 // The SSE endpoint the client is waiting on watches a request by ID.
 // TODO: the pub/sub or channel-based broker backing that watch is not yet
@@ -43,7 +43,7 @@ type CertificateRequest struct {
 	RequestedOptions string `gorm:"column:requested_options"`
 
 	// SourceIP is one of the lifetime-policy signals (see
-	// docs/ssoossh-context.md "Certificate lifetime policy" — client-supplied
+	// docs/dev/ssoossh-context.md "Certificate lifetime policy" — client-supplied
 	// source addresses are unverified input and need a policy ceiling).
 	SourceIP string `gorm:"column:source_ip"`
 

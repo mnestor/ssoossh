@@ -36,6 +36,19 @@ jobs:
               - '.golangci.yml'
               - '.github/workflows/lint.yaml'
 
+  # Deliberately outside the `changes` path gate: the rules this checks live
+  # in .gitignore files, and the failure it catches (a source file ignored,
+  # so a clean checkout does not have it) shows up as an unrelated build or
+  # import error somewhere else entirely.
+  gitignore:
+    name: gitignore
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: check .gitignore invariants
+        run: scripts/check-gitignore.sh
+
   lint:
     name: lint
     needs: changes

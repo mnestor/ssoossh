@@ -2,19 +2,14 @@
 
 // Package e2e is the merge-gate suite: real ssoosshd and ssoossh binaries,
 // a real (harness-provided) OIDC identity provider, a real ssh-agent, and
-// (tier 3) a real sshd. See docs/e2e-testing-plan.md for the design.
+// (tier 3) a real sshd. See docs/dev/e2e-testing-plan.md for the design.
 package e2e
 
 import (
-	"encoding/json"
 	"net/http"
-	"net/http/cookiejar"
-	"net/url"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/test/e2e/harness"
 )
 
@@ -51,11 +46,11 @@ func newFixture(t *testing.T) *fixture {
 func newBrowserClient(t *testing.T) *http.Client {
 	t.Helper()
 
-	jar, err := cookiejar.New(nil)
+	client, err := harness.NewCookieClient()
 	if err != nil {
-		t.Fatalf("harness: failed to create cookie jar: %v", err)
+		t.Fatalf("harness: %v", err)
 	}
-	return &http.Client{Jar: jar}
+	return client
 }
 
 // requestIDFromApprovalURL extracts the certificate request's UUID from an
@@ -63,47 +58,20 @@ func newBrowserClient(t *testing.T) *http.Client {
 func requestIDFromApprovalURL(t *testing.T, approvalURL string) string {
 	t.Helper()
 
-	u, err := url.Parse(approvalURL)
+	id, err := harness.RequestIDFromApprovalURL(approvalURL)
 	if err != nil {
-		t.Fatalf("harness: failed to parse approval URL %q: %v", approvalURL, err)
-	}
-	id := strings.TrimPrefix(u.Path, "/approve/")
-	if id == "" || id == u.Path {
-		t.Fatalf("harness: approval URL %q does not look like /approve/<id>", approvalURL)
+		t.Fatalf("harness: %v", err)
 	}
 	return id
 }
 
 // authenticate drives client through the full OIDC login against the
-// harness IdP: GET .../auth/login?return_to=..., submit the IdP's real
-// login form as username (with groups, if any), and follow the resulting
-// redirect chain back into the server. client's cookie jar holds an
-// authenticated session afterward.
+// harness IdP, leaving an authenticated session in its cookie jar.
 func authenticate(t *testing.T, client *http.Client, serverBaseURL, returnTo, username string, groups []string) {
 	t.Helper()
 
-	loginURL := serverBaseURL + "/auth/login?return_to=" + url.QueryEscape(returnTo)
-	resp, err := client.Get(loginURL)
-	if err != nil {
-		t.Fatalf("harness: failed to reach the OIDC login redirect: %v", err)
-	}
-	resp.Body.Close()
-
-	idpAuthorizeURL := resp.Request.URL.String()
-
-	form := url.Values{"username": {username}}
-	for _, g := range groups {
-		form.Add("groups", g)
-	}
-
-	resp2, err := client.PostForm(idpAuthorizeURL, form)
-	if err != nil {
-		t.Fatalf("harness: failed to submit the IdP login form: %v", err)
-	}
-	defer resp2.Body.Close()
-	if resp2.StatusCode != http.StatusOK {
-		t.Fatalf("harness: expected 200 after completing OIDC login, got %d (final URL %s)",
-			resp2.StatusCode, resp2.Request.URL)
+	if err := harness.Authenticate(client, serverBaseURL, returnTo, username, groups); err != nil {
+		t.Fatalf("harness: %v", err)
 	}
 }
 
@@ -115,19 +83,8 @@ func approve(t *testing.T, client *http.Client, serverBaseURL, requestID, userna
 	t.Helper()
 
 	authenticate(t, client, serverBaseURL, "/approve/"+requestID, username, groups)
-
-	resp, err := client.Post(serverBaseURL+"/api/certs/requests/"+requestID+"/approve", "application/json", nil)
-	if err != nil {
-		t.Fatalf("harness: failed to POST approve: %v", err)
-	}
-	defer resp.Body.Close()
-
-	var envelope apitypes.Envelope[apitypes.ApproveResponse]
-	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
-		t.Fatalf("harness: failed to decode approve response: %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("harness: approve failed: status %d, error %q", resp.StatusCode, envelope.Error)
+	if err := harness.Approve(client, serverBaseURL, requestID); err != nil {
+		t.Fatalf("harness: %v", err)
 	}
 }
 
@@ -136,18 +93,7 @@ func deny(t *testing.T, client *http.Client, serverBaseURL, requestID, username 
 	t.Helper()
 
 	authenticate(t, client, serverBaseURL, "/approve/"+requestID, username, nil)
-
-	resp, err := client.Post(serverBaseURL+"/api/certs/requests/"+requestID+"/deny", "application/json", nil)
-	if err != nil {
-		t.Fatalf("harness: failed to POST deny: %v", err)
-	}
-	defer resp.Body.Close()
-
-	var envelope apitypes.Envelope[apitypes.DenyResponse]
-	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
-		t.Fatalf("harness: failed to decode deny response: %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("harness: deny failed: status %d, error %q", resp.StatusCode, envelope.Error)
+	if err := harness.Deny(client, serverBaseURL, requestID); err != nil {
+		t.Fatalf("harness: %v", err)
 	}
 }

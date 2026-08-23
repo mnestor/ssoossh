@@ -8,7 +8,7 @@ package pubsub
 // queue group to the subscription. If that wiring is subtly wrong the unit
 // tests stay green and production mints N certificates per approval - which
 // is why this file exists and why it must genuinely execute
-// (docs/multi-instance-safety-plan.md, queue groups).
+// (docs/dev/multi-instance-safety-plan.md, queue groups).
 //
 // Behind the natsintegration tag because it needs Docker:
 //

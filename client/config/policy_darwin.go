@@ -13,7 +13,7 @@ import (
 // extension) a configuration profile targets to lock ssoossh client
 // settings — the same identifier an MDM's Custom Settings/Managed
 // Preferences payload names.
-const preferenceDomain = "com.mnestor.ssoossh"
+const preferenceDomain = "com.github.mnestor.ssoossh"
 
 // managedPreferencesDir is where macOS materializes managed-preferences
 // plists for an installed configuration profile. A package-level var

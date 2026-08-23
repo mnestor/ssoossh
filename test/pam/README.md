@@ -8,7 +8,7 @@ automated real-stack pass is `TestPAMStack*` in
 `test/e2e/pam_stack_test.go`: a real `pam_authenticate` through a
 dedicated `/etc/pam.d` service loading the built module, driven by
 `pam_ssoossh/testing/pamtest.c` against a real ssoosshd (see
-`docs/pam-e2e-testing.md`). The manual recipe in
+`docs/dev/pam-e2e-testing.md`). The manual recipe in
 `pam_ssoossh/testing/README.md` remains for pre-deployment verification
 on a target host. The Dockerfile here is the vehicle for the still-unbuilt
 containerized scenarios (syslog capture, sudo/sshd front ends).
@@ -20,7 +20,7 @@ containerized scenarios (syslog capture, sudo/sshd front ends).
 
 ## Running Tests
 
-See `docs/pam-e2e-testing.md` for full documentation.
+See `docs/dev/pam-e2e-testing.md` for full documentation.
 
 Quick start:
 

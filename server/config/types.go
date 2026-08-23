@@ -64,7 +64,7 @@ type Config struct {
 	// enabled, certain checks are enforced (e.g., cookie_key must be
 	// explicitly set) and behaviors adapt to account for cross-instance
 	// message delivery (e.g., CertRequestService.Wait decodes wake-message
-	// payloads). See docs/multi-instance-safety-plan.md.
+	// payloads). See docs/dev/multi-instance-safety-plan.md.
 	MultiInstance bool `mapstructure:"multi_instance"`
 }
 
@@ -162,7 +162,7 @@ type DB struct {
 }
 
 // LDAPConfig configures optional LDAP identity enrichment, looked up by the
-// username resolved from OIDC (see docs/ssoossh-context.md — "Which LDAP
+// username resolved from OIDC (see docs/dev/ssoossh-context.md — "Which LDAP
 // attributes become principals" is still an open question). Enabled false
 // (the default) skips LDAP entirely; OIDC claims alone are sufficient.
 //

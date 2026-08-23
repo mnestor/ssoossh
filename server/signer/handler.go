@@ -53,7 +53,7 @@ func (h *Handler) Register(r *message.Router, subscriber message.Subscriber) {
 // clear-eyed about what it does *not* buy today: gochannel is in-memory and
 // non-persistent (see server/pubsub.New), so a crash loses in-flight jobs
 // outright regardless of ack timing. Real at-least-once redelivery arrives
-// with JetStream (docs/signer-split-deferred.md); until then, a
+// with JetStream (docs/dev/signer-split-deferred.md); until then, a
 // request left stranded in "signing" is the sweep's job to clean up.
 func (h *Handler) handle(msg *message.Message) error {
 	var job certmsg.SigningJob

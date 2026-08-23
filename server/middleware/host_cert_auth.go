@@ -13,7 +13,7 @@ const HostnameContextKey = "ssoossh.hostname"
 // HostCertAuthMiddleware protects `host renew`: the caller authenticates by
 // presenting its existing, still-valid host certificate rather than a
 // fresh OIDC approval (hosts rotate keys on their own schedule — see
-// docs/ssoossh-context.md, "Certificate types").
+// docs/dev/ssoossh-context.md, "Certificate types").
 type HostCertAuthMiddleware struct{}
 
 // NewHostCertAuthMiddleware creates a HostCertAuthMiddleware.

@@ -312,7 +312,7 @@ Notes on this draft:
 - `source_policy` entries are caps, not replacements: the effective duration
   is `min(tier_duration, subnet_rule, valid_duration)`, consistent with
   "intersection is the shortest lifetime" already established in
-  `docs/ssoossh-context.md`. `valid_duration` is in that expression on
+  `docs/dev/ssoossh-context.md`. `valid_duration` is in that expression on
   purpose — it is the ceiling a UI-supplied rule is clamped to, and it is
   re-applied at evaluation rather than trusted from write time.
 
@@ -401,7 +401,7 @@ Steps 1 and 2 are worth doing regardless of whether the UI is ever built.
 
 - **ForceCommand:** STAYS DROPPED (fail-closed). The plan explicitly states line 64: "stays out of subnet policy entirely — 'which command' is not a property of a network.'" No narrowing mechanism for it. This is an intentional design decision, not missing functionality. Waiting for this feature to exist is complete.
 
-- **Certificate on the wire in multi-instance wake message:** Accepted, fine. Already published as public data. (Marked resolved in docs/multi-instance-safety-plan.md.)
+- **Certificate on the wire in multi-instance wake message:** Accepted, fine. Already published as public data. (Marked resolved in docs/dev/multi-instance-safety-plan.md.)
 
 - **Service-account linkage:** Evaluated at enrollment time, never re-derived at retrieve time. feat/service-certs has added `certificate_requests.service_account` schema column.
 

@@ -2058,7 +2058,7 @@ func TestNotifyWaiter_ShouldNotPanicWhenPublishingFails(t *testing.T) {
 // is the regression test for the multi-instance safety fix: a client waiting
 // on instance B should receive a certificate issued on instance A via the
 // wake message, without needing to round-trip to the database. This exercises
-// the payload decoding path in Wait added by docs/multi-instance-safety-plan.md.
+// the payload decoding path in Wait added by docs/dev/multi-instance-safety-plan.md.
 //
 // The test constructs two CertRequestService instances over the same database
 // and transport, creates a request on one, and has the other's Wait decode the
@@ -2745,7 +2745,7 @@ func TestCertRequestService_CreateRequest_ShouldPersistLocalIdentity(t *testing.
 // TestCertRequestService_CreateRequest_ShouldUnionSourceIPIntoSourceAddresses
 // covers Phase 2 problem 2: the server-observed SourceIP is folded into the
 // stored SourceAddresses list rather than left as a second, disconnected
-// value — the union docs/ssoossh-context.md describes for a client behind
+// value — the union docs/dev/ssoossh-context.md describes for a client behind
 // NAT.
 // TestCertRequestService_CreateRequest_ShouldNormalizeSourceAddresses covers
 // the case that took the approval page down: net.IP.String() drops an IPv6

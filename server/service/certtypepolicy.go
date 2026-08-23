@@ -41,7 +41,7 @@ type certTypePolicy struct {
 	noTouchEligible bool
 	keyIDTemplate   *template.Template
 	// principals computes a certificate's principal list from per-request
-	// context. See docs/ssoossh-context.md's "Which LDAP attributes become
+	// context. See docs/dev/ssoossh-context.md's "Which LDAP attributes become
 	// principals" open question for why this defaults to the approver's
 	// identity, and CertRequestService.Approve's doc comment for PAM/Host's
 	// exceptions.

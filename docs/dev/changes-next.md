@@ -114,7 +114,7 @@ Open questions to resolve first:
 
 ### 2. Certificate lifetime and source-network policy
 
-Design: [certificate-lifetime-policy.md](certificate-lifetime-policy.md).
+Design: [certificate-lifetime-policy.md](../certificate-lifetime-policy.md).
 Unusually complete — longest-prefix subnet matching, host-rule-wins-outright,
 narrowing-only invariant, config schema drafted. Zero code.
 
@@ -185,7 +185,7 @@ Two things are missing:
 
 ## Not designed at all
 
-Raised in [dev/changes-next.md](dev/changes-next.md)
+Raised in [dev/changes-next.md](changes-next.md)
 and elsewhere, with no design work behind them yet. Each needs a design pass
 before it is schedulable.
 

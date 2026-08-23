@@ -162,7 +162,7 @@ func (p *PubSub) buildRouter(wmLogger watermill.LoggerAdapter) error {
 // JetStream is disabled (Disabled: true) — only NATS core is used with
 // at-most-once delivery. A dropped job costs the client a full RequestTTL
 // wait before retrying, which is acceptable for the interactive approval
-// flow. See docs/multi-instance-safety-plan.md for durability reasoning.
+// flow. See docs/dev/multi-instance-safety-plan.md for durability reasoning.
 func newNATS(cfg *config.PubSubConfig, wmLogger watermill.LoggerAdapter, sLogger *slog.Logger) (*PubSub, error) {
 	// Create the publisher
 	pub, err := natslib.NewPublisher(
@@ -254,7 +254,7 @@ func subjectCalculator(queueGroupPrefix, topic string) *natslib.SubjectDetail {
 //
 // A dead-letter topic would be the better answer; it's deliberately deferred
 // until there's a durable broker to put one on (see
-// docs/signer-split-deferred.md) — a poison queue nobody consumes is
+// docs/dev/signer-split-deferred.md) — a poison queue nobody consumes is
 // no better than this log line.
 func dropAfterRetries(logger watermill.LoggerAdapter) message.HandlerMiddleware {
 	return func(next message.HandlerFunc) message.HandlerFunc {

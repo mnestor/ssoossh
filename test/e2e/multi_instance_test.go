@@ -4,7 +4,7 @@
 // quarantined behind the multi_instance_test build tag because ssoosshd is
 // currently single-instance only and cannot sit behind a load balancer.
 // These tests document known limitations and will become part of the
-// merge-gate suite once docs/multi-instance-safety-plan.md is acted on.
+// merge-gate suite once docs/dev/multi-instance-safety-plan.md is acted on.
 //
 // Run with: go test -tags=e2e,multi_instance_test ./test/e2e
 package e2e
@@ -21,7 +21,7 @@ import (
 )
 
 // TestMultiInstance_ColdCacheReturns410OnApprovedRequest reproduces the
-// multi-instance defect documented in docs/multi-instance-safety-plan.md:
+// multi-instance defect documented in docs/dev/multi-instance-safety-plan.md:
 //
 // When a certificate request is approved on instance A, the approval writes
 // status=Approved to the shared Postgres database and publishes a wake to
@@ -41,7 +41,7 @@ import (
 // instance. The gap is entirely that no cross-instance broker is wired: the
 // server is hardcoded to use gochannel (in-process only). The fix requires
 // configuring a real broker (NATS or equivalent) as documented in
-// docs/multi-instance-safety-plan.md.
+// docs/dev/multi-instance-safety-plan.md.
 //
 // This test verifies the defect exists in the current code by:
 // 1. Starting two ssoosshd instances against one shared Postgres

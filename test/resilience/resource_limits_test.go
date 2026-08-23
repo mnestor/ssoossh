@@ -24,9 +24,12 @@ func TestEdgeCase_DuplicateApprovalClick(t *testing.T) {
 	browser.CompleteIdPLogin(t, "alice")
 	browser.WaitVisible(t, `[data-testid="approval-view"]`)
 
-	// Click approve twice in rapid succession.
+	// Click approve twice in rapid succession. The second click is
+	// best-effort: the first approval resolves the request, and the page is
+	// entitled to have swapped the button for the outcome before the second
+	// one lands. That is the no-op this test is about, not a failure.
 	browser.Click(t, `[data-testid="approve-button"]`)
-	browser.Click(t, `[data-testid="approve-button"]`)
+	browser.ClickIfPresent(t, `[data-testid="approve-button"]`)
 
 	// Only one certificate should be issued.
 	if err := login.Wait(t, waitFor); err != nil {
@@ -34,9 +37,8 @@ func TestEdgeCase_DuplicateApprovalClick(t *testing.T) {
 	}
 
 	certs := f.agent.Certificates(t)
-	if len(certs) > 1 {
-		// Multiple certs may exist if the test issued multiple logins, so just document
-		t.Logf("Certificate count: %d (expected exactly 1 per distinct login)", len(certs))
+	if len(certs) != 1 {
+		t.Errorf("expected exactly one certificate after a duplicate approval, got %d", len(certs))
 	}
 }
 

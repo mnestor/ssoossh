@@ -5,7 +5,7 @@ import "time"
 // HostMapping is the server-side source of truth for principal mapping that
 // `ssoossh host sync` pulls down and writes locally for sshd's
 // AuthorizedPrincipalsCommand to answer from without touching the network
-// (see docs/ssoossh-context.md, "Principal mapping"). Purely local mapping
+// (see docs/dev/ssoossh-context.md, "Principal mapping"). Purely local mapping
 // files on the host remain supported independent of this table.
 type HostMapping struct {
 	ID       string `gorm:"column:id;primaryKey"`

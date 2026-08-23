@@ -1,4 +1,4 @@
-//go:build e2e
+//go:build e2e || resilience || load
 
 package harness
 
@@ -23,7 +23,7 @@ const browserWaitFor = 15 * time.Second
 // (chromedp gives each ExecAllocator its own profile directory) — that's
 // what stands in for "two different people" in the requester-binding test.
 //
-// chromedp is the harness's first choice per docs/e2e-testing-plan.md
+// chromedp is the harness's first choice per docs/dev/e2e-testing-plan.md
 // ("Driving the browser"): pure Go, no second toolchain, and hosted Ubuntu
 // runners already ship Chrome. If the SPA's async loading ever fights its
 // lack of auto-waiting badly enough to matter, this file is the whole seam
@@ -135,6 +135,25 @@ func (b *Browser) Click(t *testing.T, selector string) {
 		b.screenshotOnFailure(t)
 		t.Fatalf("harness: clicking %s failed: %v", selector, err)
 	}
+}
+
+// ClickIfPresent clicks selector if the page has it right now, and reports
+// whether it did. Unlike Click it neither waits for the element nor fails
+// when it is missing — for a deliberate double-click, where the first click
+// is entitled to have replaced the button before the second one lands.
+func (b *Browser) ClickIfPresent(t *testing.T, selector string) bool {
+	t.Helper()
+
+	var clicked bool
+	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
+	defer cancel()
+	if err := chromedp.Run(ctx, chromedp.EvaluateAsDevTools(
+		fmt.Sprintf("(() => { const el = document.querySelector(%q); if (!el) { return false; } el.click(); return true; })()", selector),
+		&clicked,
+	)); err != nil {
+		t.Fatalf("harness: clicking %s if present failed: %v", selector, err)
+	}
+	return clicked
 }
 
 // CompleteIdPLogin fills and submits the harness IdP's real login form

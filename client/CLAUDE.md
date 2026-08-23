@@ -5,7 +5,7 @@
 - Manages ssh keypairs in files or ssh-agent; keypair is regenerated whenever
   a new certificate is needed.
 - Full design context (enrollment flow, principal mapping, open questions):
-  `docs/ssoossh-context.md`
+  `docs/dev/ssoossh-context.md`
 
 # Design rules
 - Viper config loading (~/.config/ssoossh.yaml | ./ssoossh.yaml), CLI

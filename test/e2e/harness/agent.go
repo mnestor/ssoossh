@@ -1,9 +1,8 @@
-//go:build e2e
+//go:build e2e || resilience || load
 
 package harness
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"net"
@@ -37,7 +36,7 @@ func StartAgent(t *testing.T) *Agent {
 	socket := filepath.Join(t.TempDir(), "agent.sock")
 
 	cmd := exec.Command("ssh-agent", "-D", "-a", socket)
-	var stderr bytes.Buffer
+	var stderr lockedBuffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("harness: failed to start ssh-agent: %v", err)
@@ -56,7 +55,7 @@ func StartAgent(t *testing.T) *Agent {
 	return a
 }
 
-func waitForSocket(t *testing.T, path string, stderr *bytes.Buffer) {
+func waitForSocket(t *testing.T, path string, stderr *lockedBuffer) {
 	t.Helper()
 
 	deadline := time.Now().Add(5 * time.Second)

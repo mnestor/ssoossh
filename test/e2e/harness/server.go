@@ -1,9 +1,8 @@
-//go:build e2e
+//go:build e2e || resilience || load
 
 package harness
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
@@ -64,7 +63,7 @@ type Server struct {
 	ConfigPath string
 
 	cmd            *exec.Cmd
-	stdout, stderr *bytes.Buffer
+	stdout, stderr *lockedBuffer
 	name           string
 }
 
@@ -112,7 +111,7 @@ func StartServer(t *testing.T, idp *IdentityProvider, opts ServerOptions) *Serve
 
 	args := append(append([]string{}, opts.Args...), "--config", configPath)
 	cmd := exec.Command(ssoosshdPath, args...)
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr lockedBuffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
@@ -196,7 +195,7 @@ func (s *Server) shutdown(t *testing.T) {
 
 // freePort binds an ephemeral TCP port, reads it, and closes the listener
 // immediately so ssoosshd can bind it instead. This has a theoretical
-// reuse race, deliberately accepted (docs/e2e-testing-plan.md, "Ports").
+// reuse race, deliberately accepted (docs/dev/e2e-testing-plan.md, "Ports").
 func freePort(t *testing.T) int {
 	t.Helper()
 
@@ -251,7 +250,7 @@ type serverConfigData struct {
 
 // renderServerConfig builds the ssoosshd config YAML from d directly (not
 // from a text/template over hand-typed prose) — the exact obstacle
-// docs/e2e-testing-plan.md calls out: "authentication:" must be top-level,
+// docs/dev/e2e-testing-plan.md calls out: "authentication:" must be top-level,
 // not nested under "http:", which the project's own sample once got wrong.
 func renderServerConfig(d serverConfigData) string {
 	var b strings.Builder

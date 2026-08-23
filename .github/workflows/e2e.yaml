@@ -1,6 +1,6 @@
 name: e2e
 
-# The end-to-end merge gate (docs/e2e-testing-plan.md): the only workflow
+# The end-to-end merge gate (docs/dev/e2e-testing-plan.md): the only workflow
 # that checks the product rather than the parts.
 #
 # Tiers run as separate jobs so that "a break is reported at the layer it

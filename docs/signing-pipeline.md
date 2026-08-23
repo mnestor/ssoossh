@@ -9,9 +9,11 @@ are gone, but every decision that still constrains the code is recorded here.
 real gochannel transport, real signer, and in-memory sqlite, and asserts a
 CA-verifiable certificate comes out the far end.
 
-Transport is Watermill's in-memory `gochannel`. Everything runs in **one
-process**; the split into separate signer and API processes is designed but
-deferred — see [signer-split-deferred.md](signer-split-deferred.md).
+Transport is Watermill's in-memory `gochannel` in the default single-process
+mode. The split into separate signer and API processes is implemented: with
+`pubsub.backend: nats`, the same pipeline runs across `ssoosshd serve api`
+and `ssoosshd sign` processes — see
+[deployment.md](deployment.md#6-startup-modes-full-api-and-sign).
 
 ## Why it looks like this
 
@@ -20,6 +22,18 @@ which could not survive a restart or scale past one process. Separately,
 signing needed a home, and the decision was to keep it out of the webserver's
 memory space entirely rather than implement it inline — the CA private key
 should not sit alongside HTTP handling and OIDC/LDAP calls.
+
+## Why message-passing rather than RPC
+
+A direct gRPC/mTLS call from the approving node to the signer would have to
+either block that node's thread waiting for the result, or re-publish the
+result to whichever node holds the SSE connection — two hops instead of one,
+with a blocked thread in between.
+
+With Watermill the signer publishes the result directly to wherever the SSE
+thread is listening. One signaling model end to end, and the cluster stays
+stateless with respect to "which node owns this request": no node is pinned to
+a request from approval through delivery.
 
 ## Components
 
@@ -49,11 +63,58 @@ there is one type rather than two kept in sync by hand.
 | Topic | Shape | Durability need |
 | --- | --- | --- |
 | `certrequest.wait.<id>` | one per request | none — the database is truth |
-| `certrequest.sign` | shared queue | wants durability (deferred) |
-| `certrequest.signed` | shared reply topic | wants durability (deferred) |
+| `certrequest.sign` | shared queue | none — at-most-once by decision, the human retries (see [decisions.md](decisions.md)) |
+| `certrequest.signed` | shared reply topic | none — same decision |
 
 The signed-reply topic is shared rather than per-request because only the
 listener ever subscribes to it — there is no fan-out concern.
+
+## How the processes and NATS fit together
+
+The split topology: a `serve api` process (HTTP handlers plus the
+listener), a `sign` process, NATS carrying the three subjects between
+them, and the database on the api side only. Numbers trace one request.
+
+```mermaid
+flowchart LR
+    C["ssoossh client"]
+    C -->|"1: POST + wait on SSE"| API
+
+    API["serve api<br/>HTTP + listener"]
+    W["browser"] -->|"2: approve"| API
+
+    subgraph N["NATS"]
+        SIGN(["certrequest.sign"])
+        SIGNED(["certrequest.signed"])
+        WAIT(["certrequest.wait.id"])
+    end
+
+    API -->|"3: signing job"| SIGN
+    SIGN -->|"4"| S["sign<br/>CA key, no database"]
+    S -->|"5: signed certificate"| SIGNED
+    SIGNED -->|"6"| API
+    API -->|"7: audit row"| DB[("PostgreSQL")]
+    API -->|"8: wake + certificate"| WAIT
+    WAIT -->|"9: fan-out"| API
+    API -->|"10: deliver over SSE"| C
+```
+
+Steps 8–9 look like the api process talking to itself, and in this
+two-process picture it is — but the hop through the wait topic is what
+makes scaling out transparent. Run several `serve api` instances behind a
+load balancer and nothing in the diagram changes: `certrequest.sign` is a
+queue group ("signer"), so exactly one signer takes each job;
+`certrequest.signed` is a queue group ("signed-listeners"), so exactly
+one instance's listener records the audit row and publishes the wake;
+`certrequest.wait.<id>` has no queue group, so it fans out and reaches
+whichever instance holds the client's SSE stream — even when that is not
+the instance that took the approval. No instance is pinned to a request
+at any point.
+
+In the default single-process mode the picture is the same minus the
+middleman: the identical subjects ride Watermill's in-memory `gochannel`
+instead of NATS, and API, listener, and signer are goroutines in one
+process.
 
 ## Flow
 
@@ -293,4 +354,4 @@ overwritten.
 - The sweep's age-threshold approach is already safe for several instances
   sharing a database. The `RequestTTL = 0` boot-only fallback is **not** — a
   restarting instance would invalidate another instance's in-flight work. See
-  [multi-instance-safety-plan.md](multi-instance-safety-plan.md).
+  [multi-instance-safety-plan.md](dev/multi-instance-safety-plan.md).

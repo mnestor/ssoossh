@@ -163,7 +163,7 @@ update:
 	go get -u ./...
 	go mod tidy
 
-.PHONY: test test-server test-client test-pam test-internal test-e2e cover lint
+.PHONY: test test-server test-client test-pam test-internal test-e2e cover lint check-gitignore
 # server/frontend embeds server/frontend/dist and nothing there is tracked,
 # so the UI has to exist before the Go tests can compile at all.
 test: $(FRONTEND_DIST) test-server test-client test-pam test-internal
@@ -180,7 +180,7 @@ test-pam:
 test-internal:
 	$(call TESTCOMPONENT,internal)
 
-# The merge-gate end-to-end suite (docs/e2e-testing-plan.md): a real
+# The merge-gate end-to-end suite (docs/dev/e2e-testing-plan.md): a real
 # ssoosshd and ssoossh, a harness-provided OIDC IdP, a private ssh-agent,
 # and a real sshd. Behind the `e2e` build tag, so it never runs as part of
 # `make test`. Tier 3 modifies the host (creates and unlocks a dedicated
@@ -190,7 +190,7 @@ test-e2e: $(FRONTEND_DIST)
 
 # Reproducing tests for known limitations (quarantined — do not run in CI).
 # These tests verify defects exist; they should fail loudly. See
-# docs/e2e-testing-plan.md for context.
+# docs/dev/e2e-testing-plan.md for context.
 test-e2e-multi-instance: $(FRONTEND_DIST)
 	go test -tags=e2e,multi_instance_test -count=1 -timeout=10m ./test/e2e/...
 
@@ -219,6 +219,12 @@ lint-pam:
 
 lint-internal:
 	golangci-lint run ./internal/...
+
+# Mirrors lint.yaml's gitignore job: no tracked file may match an ignore
+# rule, and no source file may be ignored. Cheap enough to run any time you
+# touch a .gitignore.
+check-gitignore:
+	@scripts/check-gitignore.sh
 
 version:
 	@echo "Version: $(VERSION)"

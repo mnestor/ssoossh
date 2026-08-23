@@ -98,12 +98,16 @@ func TestDatabase_RequestContextCancelledDoesNotCorruptState(t *testing.T) {
 	login2 := harness.StartLogin(t, f.ssoosshBin, f.server.BaseURL, f.agent.Socket, "--force")
 	approvalURL2 := login2.ApprovalURL(t, waitFor)
 
-	// Navigate to the second approval and approve it.
-	browser.Navigate(t, approvalURL2, `[data-testid="sign-in-button"]`)
-	browser.Click(t, `[data-testid="sign-in-button"]`)
-	browser.CompleteIdPLogin(t, "bob")
-	browser.WaitVisible(t, `[data-testid="approval-view"]`)
-	browser.Click(t, `[data-testid="approve-button"]`)
+	// Navigate to the second approval and approve it. A second browser, not
+	// the one above: that one still holds alice's session, so the approval
+	// page would render the request straight away and never show the sign-in
+	// button this flow starts from.
+	browser2 := harness.StartBrowser(t)
+	browser2.Navigate(t, approvalURL2, `[data-testid="sign-in-button"]`)
+	browser2.Click(t, `[data-testid="sign-in-button"]`)
+	browser2.CompleteIdPLogin(t, "bob")
+	browser2.WaitVisible(t, `[data-testid="approval-view"]`)
+	browser2.Click(t, `[data-testid="approve-button"]`)
 
 	if err := login2.Wait(t, waitFor); err != nil {
 		t.Errorf("second login failed after first succeeded: %v", err)
@@ -157,10 +161,13 @@ func TestDatabase_MultipleParallelRequestsAreIsolated(t *testing.T) {
 		t.Errorf("login 2 failed: %v", err2)
 	}
 
-	// Verify both users now have certificates.
+	// Isolation shows in the distinct approval URLs and in both logins
+	// completing, not in the agent's contents: whichever login loads its
+	// certificate second prunes the other one (pruneSuperseded in
+	// client/cmd/ssh_login.go), so exactly one survives.
 	certs := f.agent.Certificates(t)
-	if len(certs) < 2 {
-		t.Errorf("expected at least 2 certificates, got %d", len(certs))
+	if len(certs) != 1 {
+		t.Errorf("expected the agent to hold the surviving certificate, got %d", len(certs))
 	}
 }
 
@@ -184,22 +191,29 @@ func TestDatabase_ServerShutdownBlocksGracefully(t *testing.T) {
 
 // TestDatabase_CertificateSerialIsIncremented validates that each issued
 // certificate gets a unique serial number (no duplicates, which would be a
-// certificate-identity bug). This requires checking the database directly or
-// comparing issued certificates.
+// certificate-identity bug). Each serial is read while its certificate is
+// still the one in the agent: the client prunes the certificate a new one
+// supersedes, so the two are never there together to compare at the end.
 func TestDatabase_CertificateSerialIsIncremented(t *testing.T) {
 	f := newFixture(t)
 
 	// Issue two certificates in sequence.
+	serials := make([]uint64, 0, 2)
 	for i := 0; i < 2; i++ {
-		login := harness.StartLogin(t, f.ssoosshBin, f.server.BaseURL, f.agent.Socket)
+		// --force from the second login on. Without it the client finds the
+		// still-valid certificate the previous iteration left in the agent,
+		// reuses it, and exits before printing an approval URL at all.
+		var extraArgs []string
 		if i > 0 {
-			// Force a new request by using --force.
-			// The harness doesn't expose --force here in the function signature,
-			// but the second call should be a distinct request.
+			extraArgs = append(extraArgs, "--force")
 		}
+		login := harness.StartLogin(t, f.ssoosshBin, f.server.BaseURL, f.agent.Socket, extraArgs...)
 		approvalURL := login.ApprovalURL(t, waitFor)
 
-		browser := f.startBrowser(t)
+		// A browser per iteration: a reused one is still signed in as the
+		// previous user, and the approval page would skip the sign-in button
+		// this flow waits for.
+		browser := harness.StartBrowser(t)
 		browser.Navigate(t, approvalURL, `[data-testid="sign-in-button"]`)
 		browser.Click(t, `[data-testid="sign-in-button"]`)
 		browser.CompleteIdPLogin(t, fmt.Sprintf("user%d", i))
@@ -209,17 +223,15 @@ func TestDatabase_CertificateSerialIsIncremented(t *testing.T) {
 		if err := login.Wait(t, waitFor); err != nil {
 			t.Fatalf("login %d failed: %v", i, err)
 		}
+
+		certs := f.agent.Certificates(t)
+		if len(certs) != 1 {
+			t.Fatalf("expected exactly one certificate in the agent after login %d, got %d", i, len(certs))
+		}
+		serials = append(serials, certs[0].Serial)
 	}
 
-	// Verify two distinct certificates were issued.
-	certs := f.agent.Certificates(t)
-	if len(certs) < 2 {
-		t.Errorf("expected at least 2 certificates, got %d", len(certs))
-	}
-
-	// Check that serials are distinct.
-	// Each certificate has a Serial field that should be unique.
-	if len(certs) >= 2 && certs[0].Serial == certs[1].Serial {
-		t.Errorf("certificate serials should be distinct: %d == %d", certs[0].Serial, certs[1].Serial)
+	if serials[0] == serials[1] {
+		t.Errorf("certificate serials should be distinct: %d == %d", serials[0], serials[1])
 	}
 }

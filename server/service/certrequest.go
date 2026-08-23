@@ -112,7 +112,7 @@ type requestOutcomeMessage struct {
 //     the certificate itself isn't issued until `service retrieve`
 //
 // publisher/subscriber are gochannel-backed (in-process, in-memory) — see
-// docs/signer-split-deferred.md for when that becomes configurable.
+// docs/dev/signer-split-deferred.md for when that becomes configurable.
 // Either way, the wake signal alone is never the
 // only source of truth: resolved (below) and the DB are both checked
 // before ever relying on it, so a lost/missed wake message is a latency
@@ -134,7 +134,7 @@ type CertRequestService struct {
 	resolved map[string]requestOutcome
 	// TODO: ca signing dependency (reuse/extend CAService — it currently
 	// only exposes GetCAPublicKey, not signing) and the lifetime-policy
-	// computation (see docs/ssoossh-context.md "Certificate lifetime
+	// computation (see docs/dev/ssoossh-context.md "Certificate lifetime
 	// policy") are still needed before Approve can actually issue a
 	// certificate.
 }
@@ -232,7 +232,7 @@ func normalizeSourceAddresses(addrs []string) []string {
 func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequestParams) (requestID string, err error) {
 	// Union the server-observed source address into the caller's own
 	// reported SourceAddresses before persisting, so the stored value is
-	// the complete set docs/ssoossh-context.md's lifetime-policy section
+	// the complete set docs/dev/ssoossh-context.md's lifetime-policy section
 	// describes: the client's own interfaces plus the address the server
 	// observed the request coming from. This matters for a client behind
 	// NAT — the address ssoosshd sees when it mints the certificate is not
@@ -317,7 +317,7 @@ func (s *CertRequestService) ttlCutoff() time.Time {
 // This must run on EVERY instance. The map is process-local memory, so
 // unlike the database sweep it can never be gated behind leader election —
 // electing one leader would leave every other instance leaking. See
-// docs/multi-instance-safety-plan.md item 3.
+// docs/dev/multi-instance-safety-plan.md item 3.
 func (s *CertRequestService) EvictResolved(_ context.Context) error {
 	cutoff := time.Now().Add(-s.config.CertOptions.RequestTTL)
 
@@ -451,7 +451,7 @@ func (s *CertRequestService) lookupDecision(ctx context.Context, requestID strin
 //     here in the approving request — there's no signer round trip to wait
 //     on, since the certificate itself isn't produced until a later
 //     `service retrieve` redeems the token (see
-//     docs/ssoossh-context.md, "Service enrollment"). The client waiting on
+//     docs/dev/ssoossh-context.md, "Service enrollment"). The client waiting on
 //     Wait/SSE for this request gets the token, not a certificate.
 //
 // Policy resolution (applies to both branches):
@@ -461,7 +461,7 @@ func (s *CertRequestService) lookupDecision(ctx context.Context, requestID strin
 //   - ForceCommand and SourceAddresses are dropped entirely: there's no
 //     server config concept yet to bound either against (source-address
 //     policy is explicitly "design in progress," see
-//     docs/ssoossh-context.md), and granting an unbounded client-requested
+//     docs/dev/ssoossh-context.md), and granting an unbounded client-requested
 //     critical option would violate the same hard constraint. Revisit once
 //     that policy exists.
 //   - NoTouchRequired is only ever granted for CertificateTypeService, per
@@ -473,7 +473,7 @@ func (s *CertRequestService) lookupDecision(ctx context.Context, requestID strin
 //   - Principals are a conservative provisional default — just the
 //     identity's username for user/service, just the hostname for host —
 //     pending the still-undecided "which LDAP attributes become
-//     principals" question (docs/ssoossh-context.md). PAM is the deliberate
+//     principals" question (docs/dev/ssoossh-context.md). PAM is the deliberate
 //     exception: its principal is the local account named on the request
 //     (req.Username), not the approver's identity — see resolvePrincipals.
 //     Safe to extend later without narrowing what's already granted.
@@ -1131,7 +1131,7 @@ func (s *CertRequestService) expire(ctx context.Context, requestID string) {
 //
 // Authorization: gochannel (in-process) is in a trusted boundary. NATS
 // requires mTLS peer authentication (documented as an operational
-// prerequisite in docs/multi-instance-safety-plan.md); this method
+// prerequisite in docs/dev/multi-instance-safety-plan.md); this method
 // documents but does not enforce that requirement, as NATS configuration
 // is outside ssoosshd's scope.
 //
@@ -1201,7 +1201,7 @@ func (s *CertRequestService) tryHandleWakeMessage(ctx context.Context, requestID
 // after this point, including a late reconnect, reads it directly) and
 // publishes it to the request's wake topic (see certmsg.WaitTopic) so anything
 // currently blocked in Wait — in this process or, once a real shared
-// broker is configured (docs/signer-split-deferred.md), another
+// broker is configured (docs/dev/signer-split-deferred.md), another
 // one — wakes up. A publish failure here is logged but not fatal to the
 // caller (Deny/expire's own DB update already succeeded, which is the
 // durable fact) — a blocked Wait call will still catch up on its own via

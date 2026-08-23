@@ -41,7 +41,7 @@ func (a *app) registerJobs(ctx context.Context) error {
 // startup. Removing it also removes a genuine multi-instance hazard — with
 // no bound the sweep treats every signing row as stranded, so a restarting
 // instance would invalidate another instance's live in-flight requests
-// (docs/multi-instance-safety-plan.md, item 2).
+// (docs/dev/multi-instance-safety-plan.md, item 2).
 func (a *app) registerSweepJob(ctx context.Context) error {
 	certOptions := a.config.CertOptions
 
@@ -76,7 +76,7 @@ func (a *app) registerSweepJob(ctx context.Context) error {
 //
 // Kept separate from the sweep rather than folded into it, deliberately.
 // The sweep does database work and is a candidate for leader election once
-// multiple instances are supported (docs/multi-instance-safety-plan.md,
+// multiple instances are supported (docs/dev/multi-instance-safety-plan.md,
 // item 3). This pass operates on process-local memory, so it must run on
 // every instance — if it ever inherited the sweep's leader gating, every
 // non-leader would silently resume leaking.

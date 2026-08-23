@@ -17,7 +17,7 @@ type EnrollmentProvider interface {
 // CertRequestService.Approve for a CertificateTypeService request) into a
 // signed certificate. `service retrieve` posts only the enrollment code —
 // never a public key — so a stolen code can't be paired with an attacker's
-// keypair (see docs/ssoossh-context.md, "Service enrollment").
+// keypair (see docs/dev/ssoossh-context.md, "Service enrollment").
 type EnrollmentService struct {
 	config *config.Config
 	// TODO: db *gorm.DB, ca signing dependency.
@@ -32,7 +32,7 @@ func NewEnrollmentService(c *config.Config) (*EnrollmentService, error) {
 // identified by code, using the public key and option set stored at
 // approval time.
 //
-// TODO: open question (docs/ssoossh-context.md) — should this require
+// TODO: open question (docs/dev/ssoossh-context.md) — should this require
 // proof-of-possession (a server challenge the caller signs with the private
 // key)? Currently a stolen code yields an unusable certificate but can
 // still burn issuances and reveal the option set.

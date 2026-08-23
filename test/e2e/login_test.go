@@ -11,7 +11,7 @@ import (
 
 // Tier 1 ("wire"): the harness plus the real ssoossh and ssoosshd binaries,
 // approval driven over HTTP with a cookie jar walking the OIDC redirects —
-// no browser. See docs/e2e-testing-plan.md's assertion table.
+// no browser. See docs/dev/e2e-testing-plan.md's assertion table.
 
 func TestLogin_PrintsApprovalURLBeforeCompletion(t *testing.T) {
 	f := newFixture(t)

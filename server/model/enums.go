@@ -7,7 +7,7 @@ package model
 // next `make types`.
 
 // CertificateType identifies which of the three certificate types
-// (docs/ssoossh-context.md — "Certificate types") a row represents.
+// (docs/dev/ssoossh-context.md — "Certificate types") a row represents.
 type CertificateType string
 
 const (
@@ -36,7 +36,7 @@ const (
 	// CertificateRequestStatusEnrolled is CertificateTypeService's terminal
 	// approval state: EnrollmentToken is set, and the certificate itself
 	// isn't issued until a later `service retrieve` redeems it — see
-	// docs/ssoossh-context.md, "Service enrollment".
+	// docs/dev/ssoossh-context.md, "Service enrollment".
 	CertificateRequestStatusEnrolled CertificateRequestStatus = "enrolled"
 	CertificateRequestStatusDenied   CertificateRequestStatus = "denied"
 	CertificateRequestStatusExpired  CertificateRequestStatus = "expired"

@@ -44,23 +44,16 @@ func TestGenerateClientManpage(t *testing.T) {
 	}
 }
 
-// TestGenerateClientManpageInvalidDir should return error when directory doesn't exist and can't be created.
+// TestGenerateClientManpageInvalidDir should return error when the output directory does not exist.
 func TestGenerateClientManpageInvalidDir(t *testing.T) {
-	// Create a path that can't be written to (using a non-existent parent)
-	outDir := filepath.Join(t.TempDir(), "readonly", "subdir")
-
-	// Remove the parent to make it non-writable
-	parentDir := filepath.Dir(outDir)
-	os.RemoveAll(parentDir)
-
-	// Make parent read-only (if possible on this system)
-	readonlyParent := filepath.Dir(parentDir)
-	os.Chmod(readonlyParent, 0555)
-	defer os.Chmod(readonlyParent, 0755)
+	// generateClientManpage writes straight into outDir without creating it,
+	// so a missing parent makes the create fail with ENOENT. That holds for
+	// any uid, unlike a permission-based setup.
+	outDir := filepath.Join(t.TempDir(), "missing", "subdir")
 
 	err := generateClientManpage(outDir)
 	if err == nil {
-		t.Error("Expected error when writing to restricted directory, got nil")
+		t.Error("Expected error when writing to a missing directory, got nil")
 	}
 }
 
@@ -334,16 +327,15 @@ func TestRun(t *testing.T) {
 
 // TestRunInvalidDirectory should return error when directory cannot be created.
 func TestRunInvalidDirectory(t *testing.T) {
-	// Use a path that cannot be created
-	outDir := filepath.Join(t.TempDir(), "readonly", "subdir")
+	// A regular file standing where run() needs a parent directory makes
+	// MkdirAll fail with ENOTDIR. Read-only permission bits would not: CI runs
+	// the suite as root inside a container, and root writes through them.
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0600); err != nil {
+		t.Fatalf("Failed to create blocking file: %v", err)
+	}
 
-	// Create a file at the parent path to block directory creation
-	parentDir := filepath.Dir(outDir)
-	os.RemoveAll(parentDir)
-	os.Chmod(filepath.Dir(parentDir), 0555)
-	defer os.Chmod(filepath.Dir(parentDir), 0755)
-
-	err := run(outDir)
+	err := run(filepath.Join(blocker, "subdir"))
 	if err == nil {
 		t.Error("Expected error for invalid directory, got nil")
 	}
@@ -392,28 +384,19 @@ func TestRunBothManpagesExist(t *testing.T) {
 
 // TestRunErrorPropagation should verify errors are propagated from functions called by run().
 func TestRunErrorPropagation(t *testing.T) {
-	// Skip on Windows where permission handling is different
-	if os.Getenv("GOOS") == "windows" {
-		t.Skip("Skipping on Windows due to permission handling differences")
-	}
-
 	outDir := t.TempDir()
 
-	// Create the directory and make it read-only to trigger write errors
-	readonlyDir := filepath.Join(outDir, "readonly")
-	err := os.Mkdir(readonlyDir, 0755)
-	if err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
+	// The output directory itself is writable, so run() gets past MkdirAll and
+	// fails inside man page generation instead: a directory sitting on the
+	// server man page's own path makes the generator's create fail with
+	// EISDIR, which no uid can write through.
+	if err := os.Mkdir(filepath.Join(outDir, "ssoosshd.8"), 0755); err != nil {
+		t.Fatalf("Failed to create blocking directory: %v", err)
 	}
 
-	// Make directory read-only to prevent writing files
-	os.Chmod(readonlyDir, 0555)
-	defer os.Chmod(readonlyDir, 0755)
-
-	// Attempt to run with read-only directory
-	err = run(readonlyDir)
+	err := run(outDir)
 	if err == nil {
-		t.Error("Expected error when writing to read-only directory, got nil")
+		t.Error("Expected error when the man page path is not writable, got nil")
 	}
 }
 

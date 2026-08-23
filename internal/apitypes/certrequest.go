@@ -22,7 +22,7 @@ type HostSignRequestBody struct {
 // ServiceEnrollRequestBody is the POST /api/certs/service/enroll request
 // body. PublicKey may be operator-supplied (BYO key, possibly HSM/PKCS#11/
 // encrypted file — the server never sees the private half) or
-// client-generated (see docs/ssoossh-context.md, "Service enrollment").
+// client-generated (see docs/dev/ssoossh-context.md, "Service enrollment").
 type ServiceEnrollRequestBody struct {
 	PublicKey        string           `json:"public_key" binding:"required"`
 	RequestedOptions RequestedOptions `json:"requested_options,omitempty"`

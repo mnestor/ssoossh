@@ -4,7 +4,7 @@ package load
 
 import (
 	"fmt"
-	"runtime"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -17,7 +17,7 @@ const waitFor = 10 * time.Second
 
 // TestConcurrentLogins_10Simultaneous measures the server's ability to handle
 // 10 concurrent login requests. Each starts independently, gets approved, and
-// completes. Verifies no panics, 500 errors, or goroutine/memory leaks.
+// completes. Verifies no panics, 500s, or a server left unable to serve.
 func TestConcurrentLogins_10Simultaneous(t *testing.T) {
 	testConcurrentLogins(t, 10)
 }
@@ -40,11 +40,6 @@ func testConcurrentLogins(t *testing.T, n int) {
 	agent := harness.StartAgent(t)
 	_, ssoossh := harness.Binaries(t)
 
-	// Record baseline goroutines and memory.
-	baselineGoroutines := runtime.NumGoroutine()
-	var m1 runtime.MemStats
-	runtime.ReadMemStats(&m1)
-
 	var wg sync.WaitGroup
 	var successCount int32
 	var failCount int32
@@ -55,15 +50,17 @@ func testConcurrentLogins(t *testing.T, n int) {
 		go func(userID int) {
 			defer wg.Done()
 
-			login := harness.StartLogin(t, ssoossh, server.BaseURL, agent.Socket)
+			// --force: every login here shares one agent, and a certificate
+			// another one already landed there would otherwise be reused
+			// instead of putting a new request through the server.
+			login := harness.StartLogin(t, ssoossh, server.BaseURL, agent.Socket, "--force")
 			url := login.ApprovalURL(t, waitFor)
 
-			browser := harness.StartBrowser(t)
-			browser.Navigate(t, url, `[data-testid="sign-in-button"]`)
-			browser.Click(t, `[data-testid="sign-in-button"]`)
-			browser.CompleteIdPLogin(t, fmt.Sprintf("user%d", userID))
-			browser.WaitVisible(t, `[data-testid="approval-view"]`)
-			browser.Click(t, `[data-testid="approve-button"]`)
+			if err := approveAs(server.BaseURL, url, fmt.Sprintf("user%d", userID)); err != nil {
+				atomic.AddInt32(&failCount, 1)
+				t.Logf("approving login %d failed: %v", userID, err)
+				return
+			}
 
 			if err := login.Wait(t, waitFor); err != nil {
 				atomic.AddInt32(&failCount, 1)
@@ -84,21 +81,7 @@ func testConcurrentLogins(t *testing.T, n int) {
 		t.Errorf("expected %d successful logins, got %d", n, successCount)
 	}
 
-	// Check goroutine cleanup.
-	finalGoroutines := runtime.NumGoroutine()
-	leaked := finalGoroutines - baselineGoroutines
-	if leaked > 5 {
-		t.Errorf("goroutine leak: baseline %d, final %d, leaked %d (threshold 5)",
-			baselineGoroutines, finalGoroutines, leaked)
-	}
-
-	// Check memory delta.
-	var m2 runtime.MemStats
-	runtime.ReadMemStats(&m2)
-	allocDelta := m2.Alloc - m1.Alloc
-	if allocDelta > 100_000_000 { // 100 MB threshold
-		t.Logf("WARNING: large memory growth: %d bytes allocated", allocDelta)
-	}
+	assertServerStillServes(t, server.BaseURL)
 }
 
 // TestSerialNumberAllocation_Concurrent validates that each issued certificate
@@ -110,41 +93,41 @@ func TestSerialNumberAllocation_Concurrent(t *testing.T) {
 
 	idp := harness.NewIdentityProvider(t)
 	server := harness.StartServer(t, idp, harness.ServerOptions{})
-	agent := harness.StartAgent(t)
 	_, ssoossh := harness.Binaries(t)
 
 	n := 20 // Issue 20 certs concurrently.
 	var wg sync.WaitGroup
 	serials := make([]uint64, n)
-	var mu sync.Mutex
 
 	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
 
+			// An agent per login, not one shared: the client prunes every
+			// certificate its new one supersedes (pruneSuperseded in
+			// client/cmd/ssh_login.go), so a shared agent would hold one
+			// certificate at the end no matter how many were issued, and
+			// which one it kept would be a race.
+			agent := harness.StartAgent(t)
 			login := harness.StartLogin(t, ssoossh, server.BaseURL, agent.Socket)
 			url := login.ApprovalURL(t, waitFor)
 
-			browser := harness.StartBrowser(t)
-			browser.Navigate(t, url, `[data-testid="sign-in-button"]`)
-			browser.Click(t, `[data-testid="sign-in-button"]`)
-			browser.CompleteIdPLogin(t, fmt.Sprintf("user%d", idx))
-			browser.WaitVisible(t, `[data-testid="approval-view"]`)
-			browser.Click(t, `[data-testid="approve-button"]`)
-
+			if err := approveAs(server.BaseURL, url, fmt.Sprintf("user%d", idx)); err != nil {
+				t.Logf("approving login %d failed: %v", idx, err)
+				return
+			}
 			if err := login.Wait(t, waitFor); err != nil {
 				t.Logf("login %d failed: %v", idx, err)
 				return
 			}
 
-			// Get the issued certificate and record its serial.
 			certs := agent.Certificates(t)
-			if len(certs) > 0 {
-				mu.Lock()
-				serials[idx] = certs[len(certs)-1].Serial
-				mu.Unlock()
+			if len(certs) != 1 {
+				t.Errorf("expected exactly one certificate in agent %d, got %d", idx, len(certs))
+				return
 			}
+			serials[idx] = certs[0].Serial
 		}(i)
 	}
 
@@ -154,7 +137,7 @@ func TestSerialNumberAllocation_Concurrent(t *testing.T) {
 	seen := make(map[uint64]bool)
 	for i, serial := range serials {
 		if serial == 0 {
-			t.Logf("cert %d: serial not set (cert may not have been issued)", i)
+			t.Errorf("cert %d: no certificate was issued", i)
 			continue
 		}
 		if seen[serial] {
@@ -192,16 +175,14 @@ func TestCertificateSigningThroughput_HighLoad(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 
-			login := harness.StartLogin(t, ssoossh, server.BaseURL, agent.Socket)
+			// --force, for the same shared-agent reason as above.
+			login := harness.StartLogin(t, ssoossh, server.BaseURL, agent.Socket, "--force")
 			url := login.ApprovalURL(t, waitFor)
 
-			browser := harness.StartBrowser(t)
-			browser.Navigate(t, url, `[data-testid="sign-in-button"]`)
-			browser.Click(t, `[data-testid="sign-in-button"]`)
-			browser.CompleteIdPLogin(t, fmt.Sprintf("user%d", idx))
-			browser.WaitVisible(t, `[data-testid="approval-view"]`)
-			browser.Click(t, `[data-testid="approve-button"]`)
-
+			if err := approveAs(server.BaseURL, url, fmt.Sprintf("user%d", idx)); err != nil {
+				t.Logf("approving login %d failed: %v", idx, err)
+				return
+			}
 			if err := login.Wait(t, waitFor); err == nil {
 				atomic.AddInt32(&successCount, 1)
 			}
@@ -217,4 +198,47 @@ func TestCertificateSigningThroughput_HighLoad(t *testing.T) {
 
 	opsPerSec := float64(successCount) / elapsed.Seconds()
 	t.Logf("Certificate signing throughput: %.2f ops/sec over %v", opsPerSec, elapsed)
+}
+
+// approveAs signs in as username and approves the request behind
+// approvalURL over HTTP — the same redirect chain and endpoints a browser
+// walks, minus the browser. Every simulated user gets its own cookie jar,
+// so their sessions stay as separate as separate browsers would keep them.
+//
+// This suite drives approvals over HTTP rather than through chromedp on
+// purpose: one headless Chrome per simulated user does not survive tens of
+// concurrent logins on a CI runner, and what these tests measure is the
+// server under concurrency, not the SPA.
+func approveAs(serverBaseURL, approvalURL, username string) error {
+	requestID, err := harness.RequestIDFromApprovalURL(approvalURL)
+	if err != nil {
+		return err
+	}
+	client, err := harness.NewCookieClient()
+	if err != nil {
+		return err
+	}
+	if err := harness.Authenticate(client, serverBaseURL, "/approve/"+requestID, username, nil); err != nil {
+		return err
+	}
+	return harness.Approve(client, serverBaseURL, requestID)
+}
+
+// assertServerStillServes checks that the server is healthy after a load
+// run. This replaces an earlier in-process goroutine and heap check, which
+// sampled runtime.NumGoroutine() in the *test* binary: those counts belong
+// to the harness (chromedp, exec copiers, HTTP clients), not to ssoosshd,
+// and grew with the harness itself. A server that leaked connections,
+// exhausted its pool, or wedged a worker fails here instead.
+func assertServerStillServes(t *testing.T, serverBaseURL string) {
+	t.Helper()
+
+	resp, err := http.Get(serverBaseURL + "/healthz")
+	if err != nil {
+		t.Fatalf("server unreachable after the load run: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("server unhealthy after the load run: /healthz answered %d", resp.StatusCode)
+	}
 }

@@ -23,12 +23,12 @@ type HostProvider interface {
 //   - Renew, authenticated by the existing valid host certificate itself
 //     (hosts rotate keys on their own schedule)
 //   - SyncPrincipals, which `host sync` pulls down and writes locally for
-//     sshd's AuthorizedPrincipalsCommand (see docs/ssoossh-context.md,
+//     sshd's AuthorizedPrincipalsCommand (see docs/dev/ssoossh-context.md,
 //     "Principal mapping")
 //
 // First issuance (`host sign`) goes through CertRequestService instead,
 // since it requires the OIDC approval chain — a human vouching for the
-// machine is the anti-MITM control (see docs/ssoossh-context.md,
+// machine is the anti-MITM control (see docs/dev/ssoossh-context.md,
 // "Certificate types").
 type HostService struct {
 	config *config.Config
@@ -46,7 +46,7 @@ func NewHostService(c *config.Config, db *gorm.DB) (*HostService, error) {
 // middleware.HostCertAuthMiddleware) rather than a fresh OIDC approval.
 //
 // TODO: decide the renewal grace window for host certs that expire before
-// `host renew` runs (open question in docs/ssoossh-context.md).
+// `host renew` runs (open question in docs/dev/ssoossh-context.md).
 func (s *HostService) Renew(ctx context.Context, hostname string, existingCert string, newPublicKey string) (certificate string, err error) {
 	return "", errors.New("not implemented")
 }

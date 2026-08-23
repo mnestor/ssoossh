@@ -11,7 +11,7 @@ import (
 // Tier 2 ("browser"): the same server as tier 1, with the approval page
 // driven in a real headless browser instead of a plain http.Client — the
 // SPA against the real server: routing, CSP, cookies, the granted-vs-
-// requested rendering. See docs/e2e-testing-plan.md.
+// requested rendering. See docs/dev/e2e-testing-plan.md.
 
 func TestApproval_UnauthenticatedVisitorSeesSignInNotApprove(t *testing.T) {
 	f := newFixture(t)
