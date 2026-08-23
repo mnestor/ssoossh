@@ -67,9 +67,8 @@ func (a *adminController) effectiveConfigHandler(g *gin.Context) {
 		DBProvider:  string(a.config.DB.Provider),
 		ProviderURL: a.config.AuthConfig.ProviderURL,
 
-		AdminRequireGroup:        a.config.Admin.RequireGroup,
-		AdminAuditorGroup:        a.config.Admin.AuditorGroup,
-		AdminSSHServerAdminGroup: a.config.Admin.SSHServerAdminGroup,
+		AdminRequireGroup: a.config.Admin.RequireGroup,
+		AdminAuditorGroup: a.config.Admin.AuditorGroup,
 
 		LoggingLevel: a.config.Logging.Level,
 
@@ -79,8 +78,6 @@ func (a *adminController) effectiveConfigHandler(g *gin.Context) {
 		CertServiceValidDuration: a.config.CertOptions.Service.ValidDuration.String(),
 		CertServiceRequireGroup:  a.config.CertOptions.Service.RequireGroup,
 		CertServiceExtensions:    orEmpty(a.config.CertOptions.Service.Extensions),
-		CertHostValidDuration:    a.config.CertOptions.Host.ValidDuration.String(),
-		CertHostRequireGroup:     a.config.CertOptions.Host.RequireGroup,
 		CertPAMValidDuration:     a.config.CertOptions.PAM.ValidDuration.String(),
 		CertPAMRequireGroup:      a.config.CertOptions.PAM.RequireGroup,
 		CertRequestTTL:           a.config.CertOptions.RequestTTL.String(),

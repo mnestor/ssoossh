@@ -197,35 +197,3 @@ func TestApprove_AuthzErrorsAreLogged(t *testing.T) {
 		}
 	}
 }
-
-// TestApprove_SSHServerAdminCanAccessHostRoutes verifies SSH server admin scope works.
-func TestApprove_SSHServerAdminCanAccessHostRoutes(t *testing.T) {
-	t.Parallel()
-
-	idp := harness.NewIdentityProvider(t)
-	srv := harness.StartServer(t, idp, harness.ServerOptions{})
-
-	// SSH server admin should eventually be able to access host certificate routes
-	// This documents the interface (implementation pending host-certs feature)
-	client := &http.Client{}
-	req, err := http.NewRequestWithContext(
-		context.Background(),
-		http.MethodPost,
-		srv.BaseURL+"/api/host/certificates/sign",
-		nil,
-	)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("failed to make request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// Route existence check
-	if resp.StatusCode == http.StatusNotFound {
-		t.Logf("host routes not yet implemented (404)")
-	}
-}

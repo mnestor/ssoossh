@@ -80,7 +80,6 @@ func TestNewCertTypePolicies_ShouldOnlyGrantNoTouchRequiredForService(t *testing
 	}{
 		{"should grant for service", model.CertificateTypeService, true},
 		{"should not grant for user", model.CertificateTypeUser, false},
-		{"should not grant for host", model.CertificateTypeHost, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -94,24 +93,13 @@ func TestNewCertTypePolicies_ShouldOnlyGrantNoTouchRequiredForService(t *testing
 	}
 }
 
-func TestNewCertTypePolicies_Principals_ShouldUseHostnameForHostCertificates(t *testing.T) {
-	t.Parallel()
-
-	policies := mustCertTypePolicies(t, config.CertificateOptions{})
-
-	got := policies[model.CertificateTypeHost].principals("db01.internal", "", &Identity{Username: "alice"})
-	if len(got) != 1 || got[0] != "db01.internal" {
-		t.Errorf("got %v, want [\"db01.internal\"]", got)
-	}
-}
-
 func TestNewCertTypePolicies_Principals_ShouldUseUsernameForUserAndServiceCertificates(t *testing.T) {
 	t.Parallel()
 
 	policies := mustCertTypePolicies(t, config.CertificateOptions{})
 
 	for _, certType := range []model.CertificateType{model.CertificateTypeUser, model.CertificateTypeService} {
-		got := policies[certType].principals("db01.internal", "", &Identity{Username: "alice"})
+		got := policies[certType].principals("", &Identity{Username: "alice"})
 		if len(got) != 1 || got[0] != "alice" {
 			t.Errorf("for %s: got %v, want [\"alice\"]", certType, got)
 		}
@@ -128,7 +116,7 @@ func TestNewCertTypePolicies_Principals_ShouldUsePAMUsernameNotIdentity(t *testi
 
 	policies := mustCertTypePolicies(t, config.CertificateOptions{})
 
-	got := policies[model.CertificateTypePAM].principals("", "mnestor", &Identity{Username: "mike.nestor"})
+	got := policies[model.CertificateTypePAM].principals("mnestor", &Identity{Username: "mike.nestor"})
 	if len(got) != 1 || got[0] != "mnestor" {
 		t.Errorf("got %v, want [\"mnestor\"]", got)
 	}
@@ -146,7 +134,6 @@ func TestNewCertTypePolicies_ShouldSetFlowPerType(t *testing.T) {
 		{model.CertificateTypeUser, flowSigning},
 		{model.CertificateTypePAM, flowSigning},
 		{model.CertificateTypeService, flowEnrollment},
-		{model.CertificateTypeHost, flowSigning},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.certType), func(t *testing.T) {

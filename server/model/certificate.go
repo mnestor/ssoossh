@@ -14,7 +14,7 @@ type Certificate struct {
 	// schema has (same reasoning as CertificateRequestDecision's `unique`
 	// tag). Adding a CertificateType means updating this tag and both
 	// migrations alongside enums.go.
-	Type   CertificateType `gorm:"column:type;check:chk_certificates_type,type IN ('user','host','service','pam')"`
+	Type   CertificateType `gorm:"column:type;check:chk_certificates_type,type IN ('user','service','pam')"`
 	UserID *string         `gorm:"column:user_id"` // nil for host certs, which identify a machine, not a user
 
 	// CertificateRequestID is the request whose approval authorized this
@@ -29,9 +29,6 @@ type Certificate struct {
 	// practice, but a NOT NULL column would add a second way for the
 	// audit-record write to fail and lose the record entirely.
 	CertificateRequestID *string `gorm:"column:certificate_request_id"`
-
-	// Hostname is set only for CertificateTypeHost.
-	Hostname string `gorm:"column:hostname"`
 
 	PublicKeyFingerprint string `gorm:"column:public_key_fingerprint"`
 	// SerialNumber is pre-allocated at approval time (before signing is queued),

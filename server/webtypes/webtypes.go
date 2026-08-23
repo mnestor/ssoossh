@@ -67,7 +67,6 @@ type RequestDetailResponse struct {
 	Type          model.CertificateType          `json:"type" validate:"required"`
 	Status        model.CertificateRequestStatus `json:"status" validate:"required"`
 	SourceIP      string                         `json:"source_ip" validate:"required"`
-	Hostname      string                         `json:"hostname,omitempty"`
 	LocalUsername string                         `json:"local_username,omitempty"`
 	LocalHostname string                         `json:"local_hostname,omitempty"`
 	PublicKey     string                         `json:"public_key" validate:"required"`
@@ -111,7 +110,6 @@ type CertificateResponse struct {
 	KeyID        string                `json:"key_id" validate:"required"`
 	Principals   string                `json:"principals" validate:"required"`
 	Fingerprint  string                `json:"public_key_fingerprint" validate:"required"`
-	Hostname     string                `json:"hostname,omitempty"`
 	IssuedAt     time.Time             `json:"issued_at" validate:"required"`
 	ExpiresAt    time.Time             `json:"expires_at" validate:"required"`
 
@@ -177,9 +175,8 @@ type EffectiveConfigResponse struct {
 	ProviderURL string `json:"provider_url" validate:"required"`
 
 	// Admin authorization
-	AdminRequireGroup        string `json:"admin_require_group,omitempty"`
-	AdminAuditorGroup        string `json:"admin_auditor_group,omitempty"`
-	AdminSSHServerAdminGroup string `json:"admin_ssh_server_admin_group,omitempty"`
+	AdminRequireGroup string `json:"admin_require_group,omitempty"`
+	AdminAuditorGroup string `json:"admin_auditor_group,omitempty"`
 
 	// Logging configuration
 	LoggingLevel string `json:"logging_level" validate:"required"`
@@ -191,8 +188,6 @@ type EffectiveConfigResponse struct {
 	CertServiceValidDuration string   `json:"cert_service_valid_duration" validate:"required"`
 	CertServiceRequireGroup  string   `json:"cert_service_require_group,omitempty"`
 	CertServiceExtensions    []string `json:"cert_service_extensions" validate:"required"`
-	CertHostValidDuration    string   `json:"cert_host_valid_duration" validate:"required"`
-	CertHostRequireGroup     string   `json:"cert_host_require_group,omitempty"`
 	CertPAMValidDuration     string   `json:"cert_pam_valid_duration" validate:"required"`
 	CertPAMRequireGroup      string   `json:"cert_pam_require_group,omitempty"`
 	CertRequestTTL           string   `json:"cert_request_ttl" validate:"required"`

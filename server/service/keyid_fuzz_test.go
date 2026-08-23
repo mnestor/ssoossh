@@ -11,7 +11,6 @@ import (
 func FuzzParseKeyIDTemplate(f *testing.F) {
 	// Seed corpus with valid templates
 	f.Add("{{.Username}}", "user")
-	f.Add("{{.Hostname}}", "host")
 	f.Add("{{.Email}}", "email")
 	f.Add("{{.ClientIP}}", "clientip")
 	f.Add("{{.Subject}}", "subject")
@@ -55,7 +54,6 @@ func FuzzParseKeyIDTemplate(f *testing.F) {
 				Subject:  "alice@example.com",
 				Email:    "alice@example.com",
 				ClientIP: "192.0.2.1",
-				Hostname: "web01.example.com",
 				UniqueID: "uuid-12345",
 			}
 

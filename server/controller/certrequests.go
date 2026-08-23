@@ -14,7 +14,6 @@ import (
 // field is not nil, that middleware is applied to that endpoint's handler.
 type CertRequestRateLimitMiddleware struct {
 	User          gin.HandlerFunc
-	HostSign      gin.HandlerFunc
 	ServiceEnroll gin.HandlerFunc
 	PAM           gin.HandlerFunc
 }
@@ -41,13 +40,6 @@ func NewCertRequestController(group *gin.RouterGroup, certRequestService service
 		group.POST("/certs/user", rateLimitMiddleware.User, cr.createUserRequestHandler)
 	} else {
 		group.POST("/certs/user", cr.createUserRequestHandler)
-	}
-
-	// Register /certs/host/sign with optional rate limit middleware
-	if rateLimitMiddleware != nil && rateLimitMiddleware.HostSign != nil {
-		group.POST("/certs/host/sign", rateLimitMiddleware.HostSign, cr.createHostSignRequestHandler)
-	} else {
-		group.POST("/certs/host/sign", cr.createHostSignRequestHandler)
 	}
 
 	// Register /certs/service/enroll with optional rate limit middleware
@@ -194,38 +186,6 @@ func (cr *certRequestController) createUserRequestHandler(g *gin.Context) {
 		PublicKey:        body.PublicKey,
 		LocalUsername:    body.LocalUsername,
 		LocalHostname:    body.LocalHostname,
-		RequestedOptions: toServiceOptions(body.RequestedOptions),
-	})
-}
-
-// createHostSignRequestHandler handles POST /api/certs/host/sign: creates a
-// pending request for first issuance of a host certificate, gated by the
-// OIDC approval chain (a human vouching for the machine — the anti-MITM
-// control, see docs/dev/ssoossh-context.md), and returns its events/approval
-// URLs (see createUserRequestHandler). Subsequent renewals go through
-// HostController instead, authenticated by the existing certificate.
-//
-// @Summary     Create a host certificate request
-// @Description Accepted, but approving one currently fails — host certificates are not
-// @Description issuable yet (delivery phase 9).
-// @Tags        client
-// @Accept      json
-// @Produce     json
-// @Param       request body apitypes.HostSignRequestBody true "The host public key, its hostname, and the options being asked for"
-// @Success     200 {object} openapidoc.CreateRequestEnvelope "Request created"
-// @Failure     400 {object} openapidoc.ErrorEnvelope "Malformed body, or a public key that will not parse"
-// @Router      /api/certs/host/sign [post]
-func (cr *certRequestController) createHostSignRequestHandler(g *gin.Context) {
-	var body apitypes.HostSignRequestBody
-	if err := g.ShouldBindJSON(&body); err != nil {
-		handleError(g, err)
-		return
-	}
-
-	cr.createRequest(g, service.NewCertRequestParams{
-		Type:             model.CertificateTypeHost,
-		PublicKey:        body.PublicKey,
-		Hostname:         body.Hostname,
 		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})
 }

@@ -34,7 +34,6 @@ import (
 type NewCertRequestParams struct {
 	Type             model.CertificateType
 	PublicKey        string
-	Hostname         string // set for CertificateTypeHost only
 	Username         string // set for CertificateTypePAM only — see model.CertificateRequest.Username
 	SourceIP         string
 	LocalUsername    string // set for CertificateTypeUser only — see model.CertificateRequest.LocalUsername
@@ -98,8 +97,8 @@ type requestOutcomeMessage struct {
 }
 
 // CertRequestService manages the pending-approval lifecycle shared by all
-// three certificate types: a client creates a request (`ssh login`,
-// `host sign`, `service enroll`) and its events endpoint waits for it to
+// certificate types: a client creates a request (`ssh login`,
+// `service enroll`) and its events endpoint waits for it to
 // resolve (see server/controller/certrequests.go's eventsHandler); a human
 // opens the approval URL that client printed and approves or denies it
 // out-of-band, which is what unblocks that wait via publisher/subscriber
@@ -107,7 +106,7 @@ type requestOutcomeMessage struct {
 // NewCertRequestController for why.
 //
 // Approving a request behaves differently per Type:
-//   - user, host: sign and persist a model.Certificate immediately
+//   - user, PAM: queue a signing job and resolve to a certificate
 //   - service: create a model.Enrollment instead (see service/enrollment.go) —
 //     the certificate itself isn't issued until `service retrieve`
 //
@@ -118,13 +117,12 @@ type requestOutcomeMessage struct {
 // before ever relying on it, so a lost/missed wake message is a latency
 // problem (caught on reconnect), not a correctness one.
 type CertRequestService struct {
-	config       *config.Config
-	db           *gorm.DB
-	policies     map[model.CertificateType]*certTypePolicy
-	publisher    message.Publisher
-	subscriber   message.Subscriber
-	adminChecker SSHServerAdminChecker
-	engine       *lifetimePolicyEngine
+	config     *config.Config
+	db         *gorm.DB
+	policies   map[model.CertificateType]*certTypePolicy
+	publisher  message.Publisher
+	subscriber message.Subscriber
+	engine     *lifetimePolicyEngine
 
 	mu sync.Mutex
 	// resolved caches the outcome for any requestID notifyWaiter has fired
@@ -156,14 +154,13 @@ func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publ
 	}
 
 	return &CertRequestService{
-		config:       c,
-		db:           db,
-		policies:     newCertTypePolicies(c.CertOptions, keyIDTmpls),
-		publisher:    publisher,
-		subscriber:   subscriber,
-		adminChecker: NewConfigSSHServerAdminChecker(c),
-		engine:       engine,
-		resolved:     make(map[string]requestOutcome),
+		config:     c,
+		db:         db,
+		policies:   newCertTypePolicies(c.CertOptions, keyIDTmpls),
+		publisher:  publisher,
+		subscriber: subscriber,
+		engine:     engine,
+		resolved:   make(map[string]requestOutcome),
 	}, nil
 }
 
@@ -269,7 +266,6 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 		ID:               uuid.NewString(),
 		Type:             p.Type,
 		PublicKey:        p.PublicKey,
-		Hostname:         p.Hostname,
 		Username:         p.Username,
 		RequestedOptions: string(optionsJSON),
 		SourceIP:         p.SourceIP,
@@ -408,7 +404,7 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 		return nil, err
 	}
 
-	principals := policy.principals(req.Hostname, req.Username, identity)
+	principals := policy.principals(req.Username, identity)
 	for _, p := range principals {
 		if err := sshcrypto.ValidatePrincipal(p); err != nil {
 			return nil, fmt.Errorf("invalid principal: %w", err)
@@ -473,12 +469,12 @@ func (s *CertRequestService) lookupDecision(ctx context.Context, requestID strin
 //     that policy exists.
 //   - NoTouchRequired is only ever granted for CertificateTypeService, per
 //     root CLAUDE.md.
-//   - RequireGroup (service/host/PAM config) is enforced: identity must be
+//   - RequireGroup (service/PAM config) is enforced: identity must be
 //     a member, or Approve fails without publishing/enrolling anything. PAM
 //     is the one type where an unset RequireGroup denies rather than opens
 //     — see CertOptionsPAM.RequireGroup.
 //   - Principals are a conservative provisional default — just the
-//     identity's username for user/service, just the hostname for host —
+//     identity's username for user/service —
 //     pending the still-undecided "which LDAP attributes become
 //     principals" question (docs/dev/ssoossh-context.md). PAM is the deliberate
 //     exception: its principal is the local account named on the request
@@ -519,19 +515,6 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 	}
 	if policy.requireGroup != "" && !slices.Contains(identity.Groups, policy.requireGroup) {
 		return fmt.Errorf("identity is not authorized to approve %s certificates", req.Type)
-	}
-
-	// Host certificates require the SSH server admin role, checked before
-	// bindRequester so an unauthorized caller cannot claim the request and
-	// see it in their history. The principal (hostname) is not validated
-	// against an allowlist — it is surfaced prominently in the approval UI
-	// for the approver to validate by inspection, and the approver's
-	// authorization to issue host certificates is the trust boundary. This
-	// trades per-hostname allowlisting for simpler operations (no pre-registration
-	// required) while keeping the SSH server admin gate as the authorization
-	// mechanism. See docs/dev/changes-next.md section 4 for the principal invariant.
-	if req.Type == model.CertificateTypeHost && !s.adminChecker.IsSSHServerAdmin(identity) {
-		return fmt.Errorf("identity is not authorized to approve host certificates")
 	}
 
 	if err := s.bindRequester(ctx, &req, identity); err != nil {
@@ -689,7 +672,7 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 		return fmt.Errorf("failed to compute key ID: %w", err)
 	}
 
-	principals := policy.principals("", "", identity)
+	principals := policy.principals("", identity)
 	for _, p := range principals {
 		if err := sshcrypto.ValidatePrincipal(p); err != nil {
 			return fmt.Errorf("invalid principal: %w", err)
@@ -765,7 +748,7 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 	}
 
 	// No signer round trip for enrollment — notify the wake topic directly
-	// from here, unlike the user/host queue-and-wait path.
+	// from here, unlike the user/PAM queue-and-wait path.
 	s.notifyWaiter(req.ID, requestOutcome{status: model.CertificateRequestStatusEnrolled, code: token})
 
 	return nil
@@ -818,7 +801,6 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 		Subject:  identity.Subject,
 		Email:    identity.Email,
 		ClientIP: req.SourceIP,
-		Hostname: req.Hostname,
 		UniqueID: req.ID,
 	})
 	if err != nil {
@@ -885,10 +867,10 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 	}
 
 	// Principals are derived per-type: user and service use the approver's
-	// username, PAM and host use context-specific values (PAM's local account
-	// name, host's hostname). Validate every one before it can be persisted or
+	// username, PAM uses the local account being authenticated. Validate
+	// every one before it can be persisted or
 	// signed into a certificate; the signer re-checks as a backstop.
-	principals := policy.principals(req.Hostname, req.Username, identity)
+	principals := policy.principals(req.Username, identity)
 	for _, p := range principals {
 		if err := sshcrypto.ValidatePrincipal(p); err != nil {
 			return fmt.Errorf("invalid principal: %w", err)
@@ -899,7 +881,6 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 		RequestID:        req.ID,
 		Type:             req.Type,
 		PublicKey:        req.PublicKey,
-		Hostname:         req.Hostname,
 		Principals:       principals,
 		KeyID:            keyID,
 		RequestedOptions: narrowed,

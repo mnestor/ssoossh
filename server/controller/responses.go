@@ -66,7 +66,6 @@ func newRequestDetailResponse(d *service.RequestDetail) webtypes.RequestDetailRe
 		Type:          d.Request.Type,
 		Status:        d.Request.Status,
 		SourceIP:      d.Request.SourceIP,
-		Hostname:      d.Request.Hostname,
 		LocalUsername: d.Request.LocalUsername,
 		LocalHostname: d.Request.LocalHostname,
 		PublicKey:     d.Request.PublicKey,
@@ -170,7 +169,6 @@ func newCertificateResponsesWithDecisions(certsWithDecisions []service.Certifica
 			KeyID:        cd.Certificate.KeyID,
 			Principals:   cd.Certificate.Principals,
 			Fingerprint:  cd.Certificate.PublicKeyFingerprint,
-			Hostname:     cd.Certificate.Hostname,
 			IssuedAt:     cd.Certificate.IssuedAt,
 			ExpiresAt:    cd.Certificate.ExpiresAt,
 		}

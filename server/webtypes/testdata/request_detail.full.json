@@ -3,7 +3,6 @@
   "type": "user",
   "status": "pending",
   "source_ip": "198.51.100.7",
-  "hostname": "db1.example.org",
   "local_username": "alice",
   "local_hostname": "alice-laptop",
   "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample alice@laptop",

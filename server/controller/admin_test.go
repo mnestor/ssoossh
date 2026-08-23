@@ -31,9 +31,8 @@ func newTestConfig(t *testing.T) *config.Config {
 			ProviderURL: "https://example.com/.well-known/openid-configuration",
 		},
 		Admin: config.AdminConfig{
-			RequireGroup:        "ssoossh-admins",
-			AuditorGroup:        "ssoossh-auditors",
-			SSHServerAdminGroup: "ssoossh-ssh-server-admins",
+			RequireGroup: "ssoossh-admins",
+			AuditorGroup: "ssoossh-auditors",
 		},
 		Logging: config.AppLogging{
 			Level: "info",
@@ -45,9 +44,6 @@ func newTestConfig(t *testing.T) *config.Config {
 			},
 			Service: config.CertOptionsService{
 				ValidDuration: 24 * time.Hour,
-			},
-			Host: config.CertOptions{
-				ValidDuration: 365 * 24 * time.Hour,
 			},
 			PAM: config.CertOptionsPAM{
 				ValidDuration: 5 * time.Minute,
@@ -476,10 +472,5 @@ func TestAdminConfigPredicates(t *testing.T) {
 	// Test auditor role is enabled
 	if !cfg.Admin.IsAuditorEnabled() {
 		t.Error("IsAuditorEnabled() should return true when AuditorGroup is set")
-	}
-
-	// Test SSH server admin role is enabled
-	if !cfg.Admin.IsSSHServerAdminEnabled() {
-		t.Error("IsSSHServerAdminEnabled() should return true when SSHServerAdminGroup is set")
 	}
 }

@@ -61,7 +61,6 @@ func fullFixtures() map[string]any {
 			Type:          model.CertificateTypeUser,
 			Status:        model.CertificateRequestStatusPending,
 			SourceIP:      "198.51.100.7",
-			Hostname:      "db1.example.org",
 			LocalUsername: "alice",
 			LocalHostname: "alice-laptop",
 			PublicKey:     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample alice@laptop",
@@ -89,12 +88,11 @@ func fullFixtures() map[string]any {
 		},
 		"certificate": webtypes.CertificateResponse{
 			ID:           "6d5c4b3a-2f1e-4d0c-9b8a-7f6e5d4c3b2a",
-			Type:         model.CertificateTypeHost,
+			Type:         model.CertificateTypeService,
 			SerialNumber: 7346115228134082560,
 			KeyID:        "alice@example.org/0b4f2b1a",
 			Principals:   "alice,alice@example.org",
 			Fingerprint:  "SHA256:2Fd4rIWZ8kQnGx0mJvKp1YhLcTzXbA3sNeR5uW7oPqM",
-			Hostname:     "db1.example.org",
 			IssuedAt:     issuedAt,
 			ExpiresAt:    issuedAt.Add(8 * time.Hour),
 

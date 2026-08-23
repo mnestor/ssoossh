@@ -1104,28 +1104,20 @@ func TestCertRequestService_Approve_ShouldReturnNotFoundForAnUnknownID(t *testin
 	}
 }
 
-// TestCertRequestService_Approve_ShouldRejectHostCertificates covers
-// Approve's default switch case: host certificates aren't issuable yet (the
-// signer only handles user and PAM), so approving one must fail immediately
-// rather than queuing a job the signer would refuse.
-func TestCertRequestService_Approve_ShouldRejectHostCertificates(t *testing.T) {
+// TestCertRequestService_ShouldRejectRetiredHostType pins the host-cert
+// removal at the service boundary: the retired type has no policy and no
+// place in the schema (the type CHECK excludes it), so creating such a
+// request must fail rather than persist a row nothing can ever resolve.
+func TestCertRequestService_ShouldRejectRetiredHostType(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, time.Hour)
-	identity := &Identity{Username: "alice", Subject: "sub-alice"}
-	seedUser(t, svc.db, identity.Subject)
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	if _, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeHost,
 		PublicKey: "ssh-ed25519 AAAA... host",
-		Hostname:  "web-01.example.com",
-	})
-	if err != nil {
-		t.Fatalf("unexpected error creating request: %v", err)
-	}
-
-	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}); err == nil {
-		t.Fatal("expected approving a host certificate request to fail: host issuance isn't supported yet")
+	}); err == nil {
+		t.Fatal("expected creating a host certificate request to fail: the type is retired")
 	}
 }
 

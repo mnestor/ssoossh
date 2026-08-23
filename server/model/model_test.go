@@ -45,14 +45,6 @@ func TestCertificateRequestDecisionTableName(t *testing.T) {
 	}
 }
 
-// TestHostMappingTableName should return the correct GORM table name.
-func TestHostMappingTableName(t *testing.T) {
-	hm := HostMapping{}
-	if got := hm.TableName(); got != "host_mappings" {
-		t.Errorf("HostMapping.TableName() = %q, want %q", got, "host_mappings")
-	}
-}
-
 // TestServerSecretTableName should return the correct GORM table name.
 func TestServerSecretTableName(t *testing.T) {
 	ss := ServerSecret{}
@@ -70,7 +62,6 @@ func TestCertificateStructure(t *testing.T) {
 			Type:                 CertificateTypeUser,
 			UserID:               ptrString("user-456"),
 			CertificateRequestID: ptrString("req-789"),
-			Hostname:             "example.com",
 			PublicKeyFingerprint: "SHA256:abcd...",
 			SerialNumber:         123456,
 			KeyID:                "laptop-key",
@@ -89,18 +80,6 @@ func TestCertificateStructure(t *testing.T) {
 		}
 	})
 
-	t.Run("should allow nil UserID for host certificates", func(t *testing.T) {
-		cert := Certificate{
-			ID:       "host-cert-1",
-			Type:     CertificateTypeHost,
-			UserID:   nil,
-			Hostname: "db.example.com",
-		}
-
-		if cert.UserID != nil {
-			t.Error("UserID should be nil for host cert")
-		}
-	})
 }
 
 // TestUserStructure verifies User model fields.
@@ -190,20 +169,6 @@ func TestCertificateRequestStructure(t *testing.T) {
 		}
 	})
 
-	t.Run("should construct host certificate request", func(t *testing.T) {
-		cr := CertificateRequest{
-			ID:        "req-host",
-			Type:      CertificateTypeHost,
-			PublicKey: "ssh-rsa AAAAB3...",
-			Hostname:  "db.example.com",
-			Status:    CertificateRequestStatusPending,
-		}
-
-		if cr.Hostname != "db.example.com" {
-			t.Error("Hostname mismatch for host request")
-		}
-	})
-
 	t.Run("should construct service enrollment request", func(t *testing.T) {
 		cr := CertificateRequest{
 			ID:              "req-svc",
@@ -259,26 +224,6 @@ func TestCertificateRequestDecisionStructure(t *testing.T) {
 
 		if d.Outcome != CertificateRequestDecisionDenied {
 			t.Errorf("Outcome mismatch")
-		}
-	})
-}
-
-// TestHostMappingStructure verifies HostMapping model fields.
-func TestHostMappingStructure(t *testing.T) {
-	t.Run("should construct host mapping", func(t *testing.T) {
-		now := time.Now()
-		hm := HostMapping{
-			ID:         "mapping-123",
-			Hostname:   "db.example.com",
-			Principals: `{"root": ["admin"], "deploy": ["svc-deploy"]}`,
-			UpdatedAt:  now,
-		}
-
-		if hm.ID != "mapping-123" {
-			t.Errorf("ID mismatch")
-		}
-		if hm.Hostname != "db.example.com" {
-			t.Errorf("Hostname mismatch")
 		}
 	})
 }

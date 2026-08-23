@@ -105,7 +105,6 @@ func (s *CertificateService) ListForIdentity(ctx context.Context, identity *Iden
 		CertKeyID                    string
 		CertPrincipals               string
 		CertPublicKeyFingerprint     string
-		CertHostname                 string
 		CertIssuedAt                 time.Time
 		CertExpiresAt                time.Time
 		DecisionID                   *string
@@ -133,7 +132,7 @@ func (s *CertificateService) ListForIdentity(ctx context.Context, identity *Iden
 			certificates.serial_number as cert_serial_number,
 			certificates.key_id as cert_key_id, certificates.principals as cert_principals,
 			certificates.public_key_fingerprint as cert_public_key_fingerprint,
-			certificates.hostname as cert_hostname, certificates.issued_at as cert_issued_at,
+			certificates.issued_at as cert_issued_at,
 			certificates.expires_at as cert_expires_at,
 			certificate_request_decisions.id as decision_id,
 			certificate_request_decisions.certificate_request_id as decision_certificate_request_id,
@@ -177,7 +176,6 @@ func (s *CertificateService) ListForIdentity(ctx context.Context, identity *Iden
 			KeyID:                r.CertKeyID,
 			Principals:           r.CertPrincipals,
 			PublicKeyFingerprint: r.CertPublicKeyFingerprint,
-			Hostname:             r.CertHostname,
 			IssuedAt:             r.CertIssuedAt,
 			ExpiresAt:            r.CertExpiresAt,
 		}

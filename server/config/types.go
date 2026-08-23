@@ -199,12 +199,6 @@ type AdminConfig struct {
 	// disabling them. Fails closed: no identity, or membership in neither
 	// group, denies.
 	AuditorGroup string `mapstructure:"auditor_group"`
-
-	// SSHServerAdminGroup is the OIDC group a caller must belong to in order
-	// to manage SSH host certificates. This is consumed by feat/host-certs
-	// via the middleware.SSHServerAdminChecker interface. Empty disables SSH
-	// server admin operations entirely.
-	SSHServerAdminGroup string `mapstructure:"ssh_server_admin_group"`
 }
 
 // IsAdminEnabled reports whether admin authorization is configured
@@ -217,10 +211,4 @@ func (a *AdminConfig) IsAdminEnabled() bool {
 // (AuditorGroup is non-empty).
 func (a *AdminConfig) IsAuditorEnabled() bool {
 	return a.AuditorGroup != ""
-}
-
-// IsSSHServerAdminEnabled reports whether SSH server admin authorization is
-// configured (SSHServerAdminGroup is non-empty).
-func (a *AdminConfig) IsSSHServerAdminEnabled() bool {
-	return a.SSHServerAdminGroup != ""
 }

@@ -10,12 +10,11 @@ import (
 type CertificateOptions struct {
 	User    CertOptionsUser    `mapstructure:"user"`
 	Service CertOptionsService `mapstructure:"service"`
-	Host    CertOptions        `mapstructure:"host"`
 	PAM     CertOptionsPAM     `mapstructure:"pam"`
 
-	// RequestTTL is how long a pending certificate request (user, host, or
+	// RequestTTL is how long a pending certificate request (user or
 	// service) stays valid for approval before it's treated as expired.
-	// Shared across all three types — it's "how stale can an unapproved
+	// Shared across the types — it's "how stale can an unapproved
 	// request get," not a per-type concept like ValidDuration (the issued
 	// certificate's own lifetime).
 	RequestTTL time.Duration `mapstructure:"request_ttl,string"`
@@ -48,20 +47,6 @@ func (c *CertificateOptions) Validate() error {
 		return fmt.Errorf("cert_options.request_ttl must be greater than zero (the default is 5m): a disabled TTL leaves pending requests unbounded and gives the stranded-request sweep no cutoff")
 	}
 	return nil
-}
-
-// CertOptions configures issuance of host certificates: the OIDC group
-// required to request one, and how long they're valid for.
-type CertOptions struct {
-	RequireGroup  string        `mapstructure:"require_group"`
-	ValidDuration time.Duration `mapstructure:"valid_duration,string"`
-
-	// KeyIDTemplate is a Go text/template string executed against the
-	// issuance context to produce the certificate's key ID (see
-	// docs/features.md (key ID templating) for available fields and the
-	// per-type fallback rule). Empty falls back to
-	// CertificateOptions.User.KeyIDTemplate.
-	KeyIDTemplate string `mapstructure:"key_id_template"`
 }
 
 // CertOptionsUser configures issuance of user certificates: who may approve

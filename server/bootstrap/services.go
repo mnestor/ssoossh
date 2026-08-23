@@ -26,7 +26,6 @@ type services struct {
 	auth          *service.AuthService
 	certRequest   *service.CertRequestService
 	certificate   *service.CertificateService
-	host          *service.HostService
 	enrollment    *service.EnrollmentService
 	caKeyRegistry *service.CAKeyRegistry
 }
@@ -60,11 +59,6 @@ func (a *app) initServices() (*services, error) {
 
 	g.Go(func() (err error) {
 		svc.certRequest, err = service.NewCertRequestService(a.config, a.db, a.pubSub.Publisher, a.pubSub.Subscriber)
-		return err
-	})
-
-	g.Go(func() (err error) {
-		svc.host, err = service.NewHostService(a.config, a.db)
 		return err
 	})
 

@@ -17,7 +17,7 @@ type CertificateRequest struct {
 
 	// Type carries a CHECK constraint mirroring the migration's — see
 	// model.Certificate.Type for why the tag is duplicated there.
-	Type CertificateType `gorm:"column:type;check:chk_certificate_requests_type,type IN ('user','host','service','pam')"`
+	Type CertificateType `gorm:"column:type;check:chk_certificate_requests_type,type IN ('user','service','pam')"`
 
 	// UserID is set once the requester authenticates via OIDC. Absent for
 	// an unauthenticated initial "host sign" ask, TODO: confirm host sign
@@ -25,10 +25,6 @@ type CertificateRequest struct {
 	UserID *string `gorm:"column:user_id"`
 
 	PublicKey string `gorm:"column:public_key"`
-
-	// Hostname is set only for CertificateTypeHost requests.
-	// TODO: i think this would just go in principals
-	Hostname string `gorm:"column:hostname"`
 
 	// Username is set only for CertificateTypePAM requests: the local
 	// account the PAM module is authenticating (e.g. who is running

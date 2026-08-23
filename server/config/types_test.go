@@ -77,34 +77,13 @@ func TestAdminConfigIsAuditorEnabled_ShouldReturnTrueWhenAuditorGroupSet(t *test
 	}
 }
 
-// TestAdminConfigIsSSHServerAdminEnabled_ShouldReturnFalseWhenSSHServerAdminGroupEmpty tests disabled.
-func TestAdminConfigIsSSHServerAdminEnabled_ShouldReturnFalseWhenSSHServerAdminGroupEmpty(t *testing.T) {
-	t.Parallel()
-
-	admin := &AdminConfig{SSHServerAdminGroup: ""}
-	if admin.IsSSHServerAdminEnabled() {
-		t.Error("IsSSHServerAdminEnabled() should return false when SSHServerAdminGroup is empty")
-	}
-}
-
-// TestAdminConfigIsSSHServerAdminEnabled_ShouldReturnTrueWhenSSHServerAdminGroupSet tests enabled.
-func TestAdminConfigIsSSHServerAdminEnabled_ShouldReturnTrueWhenSSHServerAdminGroupSet(t *testing.T) {
-	t.Parallel()
-
-	admin := &AdminConfig{SSHServerAdminGroup: "ssoossh-ssh-admins"}
-	if !admin.IsSSHServerAdminEnabled() {
-		t.Error("IsSSHServerAdminEnabled() should return true when SSHServerAdminGroup is non-empty")
-	}
-}
-
 // TestAdminConfigRolesIndependent tests that roles are independent (not coupled).
 func TestAdminConfigRolesIndependent(t *testing.T) {
 	t.Parallel()
 
 	admin := &AdminConfig{
-		RequireGroup:        "ssoossh-admins",
-		AuditorGroup:        "",
-		SSHServerAdminGroup: "",
+		RequireGroup: "ssoossh-admins",
+		AuditorGroup: "",
 	}
 
 	if !admin.IsAdminEnabled() {
@@ -112,9 +91,6 @@ func TestAdminConfigRolesIndependent(t *testing.T) {
 	}
 	if admin.IsAuditorEnabled() {
 		t.Error("auditor should not be enabled")
-	}
-	if admin.IsSSHServerAdminEnabled() {
-		t.Error("SSH server admin should not be enabled")
 	}
 }
 
@@ -172,27 +148,6 @@ func TestCertOptionsServiceStructure(t *testing.T) {
 	}
 }
 
-// TestCertOptionsStructure tests CertOptions (host) field construction.
-func TestCertOptionsStructure(t *testing.T) {
-	t.Parallel()
-
-	opts := CertOptions{
-		RequireGroup:  "infrastructure",
-		ValidDuration: 365 * 24 * time.Hour,
-		KeyIDTemplate: "host-{{.Hostname}}-{{.Year}}",
-	}
-
-	if opts.RequireGroup != "infrastructure" {
-		t.Errorf("RequireGroup = %q, want %q", opts.RequireGroup, "infrastructure")
-	}
-	if opts.ValidDuration != 365*24*time.Hour {
-		t.Errorf("ValidDuration = %v, want %v", opts.ValidDuration, 365*24*time.Hour)
-	}
-	if opts.KeyIDTemplate == "" {
-		t.Error("KeyIDTemplate should not be empty")
-	}
-}
-
 // TestCertOptionsPAMStructure tests CertOptionsPAM field construction.
 func TestCertOptionsPAMStructure(t *testing.T) {
 	t.Parallel()
@@ -224,10 +179,6 @@ func TestCertificateOptionsStructure(t *testing.T) {
 			RequireGroup:  "",
 			ValidDuration: 24 * time.Hour,
 		},
-		Host: CertOptions{
-			RequireGroup:  "infrastructure",
-			ValidDuration: 365 * 24 * time.Hour,
-		},
 		PAM: CertOptionsPAM{
 			RequireGroup:  "",
 			ValidDuration: 5 * time.Minute,
@@ -241,9 +192,6 @@ func TestCertificateOptionsStructure(t *testing.T) {
 	}
 	if opts.Service.ValidDuration != 24*time.Hour {
 		t.Errorf("Service.ValidDuration mismatch")
-	}
-	if opts.Host.RequireGroup != "infrastructure" {
-		t.Errorf("Host.RequireGroup mismatch")
 	}
 	if opts.RequestTTL != 10*time.Minute {
 		t.Errorf("RequestTTL mismatch")

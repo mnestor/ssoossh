@@ -43,9 +43,9 @@ type certTypePolicy struct {
 	// principals computes a certificate's principal list from per-request
 	// context. See docs/dev/ssoossh-context.md's "Which LDAP attributes become
 	// principals" open question for why this defaults to the approver's
-	// identity, and CertRequestService.Approve's doc comment for PAM/Host's
-	// exceptions.
-	principals func(hostname, pamUsername string, identity *Identity) []string
+	// identity, and CertRequestService.Approve's doc comment for PAM's
+	// exception.
+	principals func(pamUsername string, identity *Identity) []string
 	flow       certApprovalFlow
 }
 
@@ -65,7 +65,7 @@ func narrowRequestedOptions(p *certTypePolicy, requested RequestedOptions) Reque
 func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates) map[model.CertificateType]*certTypePolicy {
 	// identityUsername is shared by User and Service — both fall back to
 	// the approver's own identity (see resolvePrincipals' old doc comment).
-	identityUsername := func(_, _ string, identity *Identity) []string {
+	identityUsername := func(_ string, identity *Identity) []string {
 		return []string{identity.Username}
 	}
 
@@ -87,22 +87,12 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates) map
 			principals:      identityUsername,
 			flow:            flowEnrollment,
 		},
-		model.CertificateTypeHost: {
-			requireGroup:  opts.Host.RequireGroup,
-			validDuration: opts.Host.ValidDuration,
-
-			keyIDTemplate: kt.host,
-			principals: func(hostname, _ string, _ *Identity) []string {
-				return []string{hostname}
-			},
-			flow: flowSigning,
-		},
 		model.CertificateTypePAM: {
 			requireGroup:  opts.PAM.RequireGroup,
 			validDuration: opts.PAM.ValidDuration,
 			extensions:    opts.PAM.Extensions,
 			keyIDTemplate: kt.pam,
-			principals: func(_, pamUsername string, _ *Identity) []string {
+			principals: func(pamUsername string, _ *Identity) []string {
 				return []string{pamUsername}
 			},
 			flow: flowSigning,

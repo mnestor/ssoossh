@@ -259,10 +259,6 @@ type CertRequestRateLimitSettings struct {
 	// User is the limit for POST /api/certs/user (interactive user cert).
 	User float64 `mapstructure:"user"`
 
-	// HostSign is the limit for POST /api/certs/host/sign (first host cert
-	// issuance, requires human approval).
-	HostSign float64 `mapstructure:"host_sign"`
-
 	// ServiceEnroll is the limit for POST /api/certs/service/enroll (service
 	// enrollment, unattended).
 	ServiceEnroll float64 `mapstructure:"service_enroll"`

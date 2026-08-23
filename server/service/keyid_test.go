@@ -34,9 +34,9 @@ func TestNewKeyIDTemplates_ShouldErrorOnUnknownField(t *testing.T) {
 }
 
 // TestNewKeyIDTemplates_ShouldErrorOnEachPerTypeTemplate covers the
-// Service/Host/PAM error branches specifically — each needs every template
-// validated before it (User, then Service, then Host) to be well-formed, or
-// the earlier one's error would mask this one's.
+// Service/PAM error branches specifically — each needs every template
+// validated before it (User, then Service) to be well-formed, or the
+// earlier one's error would mask this one's.
 func TestNewKeyIDTemplates_ShouldErrorOnEachPerTypeTemplate(t *testing.T) {
 	t.Parallel()
 
@@ -47,10 +47,6 @@ func TestNewKeyIDTemplates_ShouldErrorOnEachPerTypeTemplate(t *testing.T) {
 		{
 			name: "should error on a malformed Service template",
 			opts: config.CertificateOptions{Service: config.CertOptionsService{KeyIDTemplate: "{{.Bogus}}"}},
-		},
-		{
-			name: "should error on a malformed Host template",
-			opts: config.CertificateOptions{Host: config.CertOptions{KeyIDTemplate: "{{.Bogus}}"}},
 		},
 		{
 			name: "should error on a malformed PAM template",
@@ -84,12 +80,6 @@ func TestNewKeyIDTemplates_FallbackChain(t *testing.T) {
 			wantKeyID: "alice",
 		},
 		{
-			name:      "should use the default hostname template for host when nothing is configured",
-			opts:      config.CertificateOptions{},
-			field:     func(t *keyIDTemplates) *template.Template { return t.host },
-			wantKeyID: "db01",
-		},
-		{
 			name: "should fall back service to the configured user template",
 			opts: config.CertificateOptions{
 				User: config.CertOptionsUser{KeyIDTemplate: "u:{{.Username}}"},
@@ -98,21 +88,13 @@ func TestNewKeyIDTemplates_FallbackChain(t *testing.T) {
 			wantKeyID: "u:alice",
 		},
 		{
-			name: "should fall back host to the configured user template when host is unset",
-			opts: config.CertificateOptions{
-				User: config.CertOptionsUser{KeyIDTemplate: "u:{{.Username}}"},
-			},
-			field:     func(t *keyIDTemplates) *template.Template { return t.host },
-			wantKeyID: "u:alice",
-		},
-		{
 			name: "should not fall back when a type has its own template",
 			opts: config.CertificateOptions{
-				User: config.CertOptionsUser{KeyIDTemplate: "u:{{.Username}}"},
-				Host: config.CertOptions{KeyIDTemplate: "h:{{.Hostname}}"},
+				User:    config.CertOptionsUser{KeyIDTemplate: "u:{{.Username}}"},
+				Service: config.CertOptionsService{KeyIDTemplate: "s:{{.Username}}"},
 			},
-			field:     func(t *keyIDTemplates) *template.Template { return t.host },
-			wantKeyID: "h:db01",
+			field:     func(t *keyIDTemplates) *template.Template { return t.service },
+			wantKeyID: "s:alice",
 		},
 		{
 			name:      "should use PAM's own default template when nothing is configured",
@@ -151,7 +133,7 @@ func TestNewKeyIDTemplates_FallbackChain(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			got, err := executeKeyIDTemplate(tt.field(tmpls), keyIDTemplateData{Username: "alice", Hostname: "db01"})
+			got, err := executeKeyIDTemplate(tt.field(tmpls), keyIDTemplateData{Username: "alice"})
 			if err != nil {
 				t.Fatalf("unexpected error executing template: %v", err)
 			}

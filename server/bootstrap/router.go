@@ -392,9 +392,6 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 		if a.config.HTTP.CertRequestRateLimit.User > 0 {
 			certRequestRateLimit.User = limiter.PerIP(rate.Limit(a.config.HTTP.CertRequestRateLimit.User), 1)
 		}
-		if a.config.HTTP.CertRequestRateLimit.HostSign > 0 {
-			certRequestRateLimit.HostSign = limiter.PerIP(rate.Limit(a.config.HTTP.CertRequestRateLimit.HostSign), 1)
-		}
 		if a.config.HTTP.CertRequestRateLimit.ServiceEnroll > 0 {
 			certRequestRateLimit.ServiceEnroll = limiter.PerIP(rate.Limit(a.config.HTTP.CertRequestRateLimit.ServiceEnroll), 1)
 		}
@@ -406,7 +403,6 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 
 	controller.NewUserController(apiGroup, sessionAuth)
 	controller.NewCertificateController(apiGroup, a.svc.certificate, sessionAuth)
-	controller.NewHostController(apiGroup, a.svc.host, middleware.NewHostCertAuthMiddleware().Add())
 
 	// Build per-code rate limit middleware for service certificate redemption.
 	// The limit is keyed on the enrollment code to protect against brute-forcing.

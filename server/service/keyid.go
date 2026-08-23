@@ -21,7 +21,6 @@ type keyIDTemplateData struct {
 	Subject  string
 	Email    string
 	ClientIP string
-	Hostname string
 	UniqueID string
 }
 
@@ -29,7 +28,6 @@ type keyIDTemplateData struct {
 // the key ID" with zero configuration required.
 const (
 	defaultUserServiceKeyIDTemplate = "{{.Username}}"
-	defaultHostKeyIDTemplate        = "{{.Hostname}}"
 
 	// defaultPAMKeyIDTemplate is PAM's own default — deliberately not a
 	// fallback to defaultUserServiceKeyIDTemplate. A sudo and a login by
@@ -46,15 +44,14 @@ const (
 type keyIDTemplates struct {
 	user    *template.Template
 	service *template.Template
-	host    *template.Template
 	pam     *template.Template
 }
 
 // newKeyIDTemplates parses opts' per-type templates. User certificates are
-// the common case, so an unset Service or Host template falls back to
-// whatever's configured for User (raw, before defaulting) — only when
-// User's is also unset does each type fall back to its own hardcoded
-// default. See docs/features.md (key ID templating).
+// the common case, so an unset Service template falls back to whatever's
+// configured for User (raw, before defaulting) — only when User's is also
+// unset does each type fall back to its own hardcoded default. See
+// docs/features.md (key ID templating).
 func newKeyIDTemplates(opts config.CertificateOptions) (*keyIDTemplates, error) {
 	userSrc := opts.User.KeyIDTemplate
 	if userSrc == "" {
@@ -74,20 +71,8 @@ func newKeyIDTemplates(opts config.CertificateOptions) (*keyIDTemplates, error) 
 		return nil, err
 	}
 
-	hostSrc := opts.Host.KeyIDTemplate
-	if hostSrc == "" {
-		hostSrc = opts.User.KeyIDTemplate
-	}
-	if hostSrc == "" {
-		hostSrc = defaultHostKeyIDTemplate
-	}
-	hostTmpl, err := parseKeyIDTemplate("host", hostSrc)
-	if err != nil {
-		return nil, err
-	}
-
-	// PAM deliberately does not fall back to userSrc the way service and
-	// host do — see defaultPAMKeyIDTemplate.
+	// PAM deliberately does not fall back to userSrc the way service
+	// does — see defaultPAMKeyIDTemplate.
 	pamSrc := opts.PAM.KeyIDTemplate
 	if pamSrc == "" {
 		pamSrc = defaultPAMKeyIDTemplate
@@ -97,7 +82,7 @@ func newKeyIDTemplates(opts config.CertificateOptions) (*keyIDTemplates, error) 
 		return nil, err
 	}
 
-	return &keyIDTemplates{user: userTmpl, service: serviceTmpl, host: hostTmpl, pam: pamTmpl}, nil
+	return &keyIDTemplates{user: userTmpl, service: serviceTmpl, pam: pamTmpl}, nil
 }
 
 // parseKeyIDTemplate parses src and immediately executes it once against a
