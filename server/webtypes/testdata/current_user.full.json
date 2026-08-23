@@ -6,6 +6,9 @@
     "engineering",
     "sre"
   ],
+  "other_accounts": [
+    "alice.adm"
+  ],
   "service_accounts": [
     "svc-deploy"
   ],

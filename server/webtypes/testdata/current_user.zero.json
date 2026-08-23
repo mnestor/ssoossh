@@ -3,6 +3,7 @@
   "username": "",
   "email": "",
   "groups": null,
+  "other_accounts": null,
   "service_accounts": null,
   "is_auditor": false
 }

@@ -413,6 +413,17 @@ components:
             auditor-only affordances like other users' retrieval logs. Display
             only — the server re-checks on every auditor-scoped read.
           type: boolean
+        other_accounts:
+          description: |-
+            OtherAccounts are alternate account identifiers this identity is
+            known by on target systems (see config.OAuthFields.OtherAccounts),
+            shown so a user can see every account name tied to their identity.
+            Display only for now: user certificates carry Username as their sole
+            principal until the principal-list work lands.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
         service_accounts:
           description: |-
             ServiceAccounts are the service accounts this identity may approve
@@ -430,6 +441,7 @@ components:
       - email
       - groups
       - is_auditor
+      - other_accounts
       - service_accounts
       - subject
       - username

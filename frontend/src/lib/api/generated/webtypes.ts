@@ -38,6 +38,14 @@ export interface CurrentUserResponse {
 	email: string;
 	groups: string[];
 	/**
+	 * OtherAccounts are alternate account identifiers this identity is
+	 * known by on target systems (see config.OAuthFields.OtherAccounts),
+	 * shown so a user can see every account name tied to their identity.
+	 * Display only for now: user certificates carry Username as their sole
+	 * principal until the principal-list work lands.
+	 */
+	other_accounts: string[];
+	/**
 	 * ServiceAccounts are the service accounts this identity may approve
 	 * service certificates for (see config.OAuthFields.ServiceAccounts) —
 	 * the approval page's picker is populated from them.

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+
 	import Icon from './Icon.svelte';
 
 	// The header's identity control: who you are acting as, and the one
@@ -69,6 +71,14 @@
 			aria-label="Account"
 			class="absolute right-0 z-40 mt-2 min-w-[10rem] rounded-lg border border-border-subtle bg-surface p-1 shadow-lg"
 		>
+			<a
+				href={resolve('/account')}
+				role="menuitem"
+				onclick={() => (open = false)}
+				class="block w-full rounded px-3 py-2 text-left text-sm transition hover:bg-surface-muted"
+			>
+				Account
+			</a>
 			<button
 				type="button"
 				role="menuitem"

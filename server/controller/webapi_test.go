@@ -76,10 +76,12 @@ func TestCurrentUserHandler_ShouldReturnTheSessionIdentity(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	identity := &service.Identity{
-		Subject:  "sub-alice",
-		Username: "alice",
-		Email:    "alice@example.com",
-		Groups:   []string{"ssh-users"},
+		Subject:         "sub-alice",
+		Username:        "alice",
+		Email:           "alice@example.com",
+		Groups:          []string{"ssh-users"},
+		OtherAccounts:   []string{"alice.adm"},
+		ServiceAccounts: []string{"svc-backup"},
 	}
 
 	r := gin.New()
@@ -104,6 +106,12 @@ func TestCurrentUserHandler_ShouldReturnTheSessionIdentity(t *testing.T) {
 	if len(got.Groups) != 1 || got.Groups[0] != "ssh-users" {
 		t.Errorf("got groups %v, want [ssh-users]", got.Groups)
 	}
+	if len(got.OtherAccounts) != 1 || got.OtherAccounts[0] != "alice.adm" {
+		t.Errorf("got other accounts %v, want [alice.adm]", got.OtherAccounts)
+	}
+	if len(got.ServiceAccounts) != 1 || got.ServiceAccounts[0] != "svc-backup" {
+		t.Errorf("got service accounts %v, want [svc-backup]", got.ServiceAccounts)
+	}
 }
 
 // TestCurrentUserHandler_ShouldRenderGroupsAsAnEmptyArray keeps the UI from
@@ -124,6 +132,12 @@ func TestCurrentUserHandler_ShouldRenderGroupsAsAnEmptyArray(t *testing.T) {
 	}
 	if got := w.Body.String(); !strings.Contains(got, `"groups":[]`) {
 		t.Errorf("expected groups to render as [], got %s", got)
+	}
+	if got := w.Body.String(); !strings.Contains(got, `"other_accounts":[]`) {
+		t.Errorf("expected other_accounts to render as [], got %s", got)
+	}
+	if got := w.Body.String(); !strings.Contains(got, `"service_accounts":[]`) {
+		t.Errorf("expected service_accounts to render as [], got %s", got)
 	}
 }
 

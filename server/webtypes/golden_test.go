@@ -54,6 +54,7 @@ func fullFixtures() map[string]any {
 			Username:        "alice",
 			Email:           "alice@example.org",
 			Groups:          []string{"engineering", "sre"},
+			OtherAccounts:   []string{"alice.adm"},
 			ServiceAccounts: []string{"svc-deploy"},
 			IsAuditor:       true,
 		},

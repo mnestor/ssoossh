@@ -51,12 +51,25 @@ describe('UserMenu', () => {
 	it('should show a busy label while signing out', async () => {
 		render(UserMenu, { label: 'alice@example.com', busy: true, onsignout: vi.fn() });
 		await userEvent.click(screen.getByRole('button'));
-		expect(screen.getByRole('menuitem')).toHaveTextContent('Signing out…');
+		expect(screen.getByRole('menuitem', { name: 'Signing out…' })).toBeInTheDocument();
 	});
 
 	it('should disable the sign-out item while signing out', async () => {
 		render(UserMenu, { label: 'alice@example.com', busy: true, onsignout: vi.fn() });
 		await userEvent.click(screen.getByRole('button'));
-		expect(screen.getByRole('menuitem')).toBeDisabled();
+		expect(screen.getByRole('menuitem', { name: 'Signing out…' })).toBeDisabled();
+	});
+
+	it('should link to the account page', async () => {
+		render(UserMenu, { label: 'alice@example.com', onsignout: vi.fn() });
+		await userEvent.click(screen.getByRole('button'));
+		expect(screen.getByRole('menuitem', { name: 'Account' })).toHaveAttribute('href', '/account');
+	});
+
+	it('should close the menu when the account link is chosen', async () => {
+		render(UserMenu, { label: 'alice@example.com', onsignout: vi.fn() });
+		await userEvent.click(screen.getByRole('button'));
+		await userEvent.click(screen.getByRole('menuitem', { name: 'Account' }));
+		expect(screen.queryByRole('menu')).not.toBeInTheDocument();
 	});
 });

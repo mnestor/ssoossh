@@ -59,6 +59,7 @@ func newCurrentUserResponse(identity *service.Identity, c *config.Config) webtyp
 		Username:        identity.Username,
 		Email:           identity.Email,
 		Groups:          orEmpty(identity.Groups),
+		OtherAccounts:   orEmpty(identity.OtherAccounts),
 		ServiceAccounts: orEmpty(identity.ServiceAccounts),
 		IsAuditor:       c.Admin.GrantsAuditor(identity.Groups),
 	}

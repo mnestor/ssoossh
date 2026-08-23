@@ -26,7 +26,10 @@ import (
 // authentication. Groups are used only for the certificate lifetime
 // decision — never placed in a certificate (see root CLAUDE.md Hard
 // Constraints). OtherAccounts and ServiceAccounts are persisted on
-// model.User but not otherwise consumed yet.
+// model.User and ride the login session (middleware.SetIdentitySession):
+// ServiceAccounts gate service-approval linkage
+// (checkServiceAccountLinkage) and both are surfaced by /api/users/me for
+// the web UI's account page.
 type Identity struct {
 	Subject         string
 	Username        string
