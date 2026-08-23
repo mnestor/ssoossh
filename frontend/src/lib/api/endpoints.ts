@@ -6,6 +6,7 @@ import type {
 	CertificateListResponse,
 	CurrentUser,
 	DenyResult,
+	EnrollmentRetrievalsResponse,
 	RequestDetail
 } from './types';
 
@@ -26,10 +27,16 @@ export function getRequestDetail(id: string, signal?: AbortSignal): Promise<Requ
 	return request<RequestDetail>(`/certs/requests/${encodeURIComponent(id)}`, { signal });
 }
 
-/** POST /api/certs/requests/:id/approve. */
-export function approveRequest(id: string): Promise<ApproveResult> {
+/**
+ * POST /api/certs/requests/:id/approve.
+ * For service-type requests, serviceAccount is required and names which of
+ * the approver's service accounts the certificate principal should be.
+ */
+export function approveRequest(id: string, serviceAccount?: string): Promise<ApproveResult> {
+	const body = serviceAccount ? { service_account: serviceAccount } : undefined;
 	return request<ApproveResult>(`/certs/requests/${encodeURIComponent(id)}/approve`, {
-		method: 'POST'
+		method: 'POST',
+		body
 	});
 }
 
@@ -53,6 +60,23 @@ export function listCertificates(
 	}
 	const url = params.toString() ? `/certs?${params.toString()}` : '/certs';
 	return request<CertificateListResponse>(url, { signal });
+}
+
+/**
+ * GET /api/certs/requests/:id/retrievals — the retrieval log for a service
+ * enrollment, showing every code redemption. Only callable by the enrollment's
+ * approver or an auditor; returns 403 otherwise and 404 if no enrollment exists.
+ */
+export function listRetrievals(
+	id: string,
+	signal?: AbortSignal
+): Promise<EnrollmentRetrievalsResponse> {
+	return request<EnrollmentRetrievalsResponse>(
+		`/certs/requests/${encodeURIComponent(id)}/retrievals`,
+		{
+			signal
+		}
+	);
 }
 
 /**

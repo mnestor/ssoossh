@@ -4,6 +4,7 @@
 	import type { RequestDetail } from '$lib/api/types';
 	import { describeLoadError, type LoadFailure } from '$lib/approval';
 	import { errorMessage, startLogin } from '$lib/auth';
+	import { session } from '$lib/session.svelte';
 	import Alert from '$lib/components/Alert.svelte';
 	import ApprovalView from '$lib/components/ApprovalView.svelte';
 	import Button from '$lib/components/Button.svelte';
@@ -19,6 +20,7 @@
 	let busy = $state(false);
 	let actionError = $state<string | null>(null);
 	let outcome = $state<'approved' | 'denied' | null>(null);
+	let selectedServiceAccount = $state<string | null>(null);
 
 	// GET .../requests/:id is also what binds the request to the caller
 	// server-side, so loading this page is itself the claim. A second person
@@ -67,7 +69,7 @@
 		actionError = null;
 		try {
 			if (action === 'approved') {
-				await approveRequest(id);
+				await approveRequest(id, selectedServiceAccount ?? undefined);
 			} else {
 				await denyRequest(id);
 			}
@@ -101,6 +103,8 @@
 		{busy}
 		{actionError}
 		{outcome}
+		serviceAccounts={session.user?.service_accounts ?? []}
+		bind:selectedServiceAccount
 		onapprove={() => decide('approved')}
 		ondeny={() => decide('denied')}
 	/>

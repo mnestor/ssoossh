@@ -112,7 +112,8 @@ export function anyTrimmed(entries: OptionDiffEntry[]): boolean {
 }
 
 /** Why an approval decision cannot be offered, or null when it can be. */
-export type BlockedReason = 'not-yours' | 'already-resolved' | 'in-progress';
+export type BlockedReason =
+	'not-yours' | 'already-resolved' | 'in-progress' | 'no-service-accounts';
 
 /**
  * approvalBlockedReason reports whether the approve/deny buttons should be
