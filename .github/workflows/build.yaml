@@ -77,11 +77,11 @@ jobs:
     env:
       ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     steps:
-      # Deliberately not the pinned v7 used everywhere else: this container
-      # is an old-glibc PAM builder (see .github/workflows/TODO.md) that
-      # cannot run the node runtime newer checkout versions need. Revisit
-      # when the builder image moves to a newer base.
-      - uses: actions/checkout@v1
+      # Deliberately not the v7 used everywhere else: this container is an
+      # old-glibc PAM builder (see .github/workflows/TODO.md) that cannot
+      # run the node runtime newer checkout versions need. Revisit when the
+      # builder image moves to a newer base.
+      - uses: actions/checkout@544eadc6bf3d226fd7a7a9f0dc5b5bf7ca0675b9 # v1
         with:
           fetch-depth: 0
 
