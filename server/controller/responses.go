@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
 	"github.com/mnestor/ssoossh/server/webtypes"
@@ -49,12 +50,17 @@ func orEmpty[T any](s []T) []T {
 }
 
 // newCurrentUserResponse converts the session identity to its wire shape.
-func newCurrentUserResponse(identity *service.Identity) webtypes.CurrentUserResponse {
+// IsAuditor is display-only: the server re-checks GrantsAuditor on every
+// auditor-scoped read, so the UI hiding or showing an affordance changes
+// nothing about what this session can actually fetch.
+func newCurrentUserResponse(identity *service.Identity, c *config.Config) webtypes.CurrentUserResponse {
 	return webtypes.CurrentUserResponse{
-		Subject:  identity.Subject,
-		Username: identity.Username,
-		Email:    identity.Email,
-		Groups:   orEmpty(identity.Groups),
+		Subject:         identity.Subject,
+		Username:        identity.Username,
+		Email:           identity.Email,
+		Groups:          orEmpty(identity.Groups),
+		ServiceAccounts: orEmpty(identity.ServiceAccounts),
+		IsAuditor:       c.Admin.GrantsAuditor(identity.Groups),
 	}
 }
 

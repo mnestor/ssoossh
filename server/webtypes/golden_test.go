@@ -50,10 +50,12 @@ func fullFixtures() map[string]any {
 
 	return map[string]any{
 		"current_user": webtypes.CurrentUserResponse{
-			Subject:  "9c1f0f8e-1d0a-4a37-9d1e-2f6a1b4c5d6e",
-			Username: "alice",
-			Email:    "alice@example.org",
-			Groups:   []string{"engineering", "sre"},
+			Subject:         "9c1f0f8e-1d0a-4a37-9d1e-2f6a1b4c5d6e",
+			Username:        "alice",
+			Email:           "alice@example.org",
+			Groups:          []string{"engineering", "sre"},
+			ServiceAccounts: []string{"svc-deploy"},
+			IsAuditor:       true,
 		},
 		"certificate_options": options,
 		"request_detail": webtypes.RequestDetailResponse{

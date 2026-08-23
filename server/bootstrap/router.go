@@ -401,7 +401,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	}
 	controller.NewCertRequestController(apiGroup, a.svc.certRequest, sessionAuth, csrf, certRequestRateLimit)
 
-	controller.NewUserController(apiGroup, sessionAuth)
+	controller.NewUserController(apiGroup, a.config, sessionAuth)
 	controller.NewCertificateController(apiGroup, a.svc.certificate, sessionAuth)
 
 	// Build per-code rate limit middleware for service certificate redemption.
@@ -417,7 +417,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 			controller.ExtractEnrollmentCodeForRateLimit,
 		)
 	}
-	controller.NewEnrollmentController(apiGroup, a.svc.enrollment, enrollmentRateLimit)
+	controller.NewEnrollmentController(apiGroup, a.svc.enrollment, enrollmentRateLimit, sessionAuth)
 	controller.NewAdminController(apiGroup, a.config, a.db, sessionAuth, adminAuth, auditorAuth, csrf)
 
 	return nil

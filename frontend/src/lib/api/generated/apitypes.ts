@@ -210,14 +210,6 @@ export interface UserRequestBody {
 	requested_options?: RequestedOptions;
 }
 /**
- * HostSignRequestBody is the POST /api/certs/host/sign request body.
- */
-export interface HostSignRequestBody {
-	public_key: string;
-	hostname: string;
-	requested_options?: RequestedOptions;
-}
-/**
  * ServiceEnrollRequestBody is the POST /api/certs/service/enroll request
  * body. PublicKey may be operator-supplied (BYO key, possibly HSM/PKCS#11/
  * encrypted file — the server never sees the private half) or
@@ -241,8 +233,7 @@ export interface PAMRequestBody {
 }
 /**
  * CreateRequestResponse is what every create-request endpoint
- * (UserRequestBody/HostSignRequestBody/ServiceEnrollRequestBody/
- * PAMRequestBody's handlers)
+ * (UserRequestBody/ServiceEnrollRequestBody/PAMRequestBody's handlers)
  * returns: the created request's ID plus two URLs — EventsURL for the
  * client's own SSE connection to wait on the outcome, ApprovalURL for the
  * human to open in a browser. Both are relative — the client already knows

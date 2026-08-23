@@ -2,5 +2,7 @@
   "subject": "",
   "username": "",
   "email": "",
-  "groups": null
+  "groups": null,
+  "service_accounts": null,
+  "is_auditor": false
 }

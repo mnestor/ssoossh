@@ -19,6 +19,7 @@ import (
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 
+	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
@@ -82,7 +83,7 @@ func TestCurrentUserHandler_ShouldReturnTheSessionIdentity(t *testing.T) {
 	}
 
 	r := gin.New()
-	NewUserController(&r.RouterGroup, identityMiddleware(identity))
+	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(identity))
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
@@ -113,7 +114,7 @@ func TestCurrentUserHandler_ShouldRenderGroupsAsAnEmptyArray(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	NewUserController(&r.RouterGroup, identityMiddleware(&service.Identity{Subject: "sub-alice"}))
+	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(&service.Identity{Subject: "sub-alice"}))
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
@@ -141,7 +142,7 @@ func TestCurrentUserHandler_ShouldRejectWithoutAnIdentityOnContext(t *testing.T)
 		c.Next()
 		gotErrors = len(c.Errors)
 	})
-	NewUserController(&r.RouterGroup, passthrough)
+	NewUserController(&r.RouterGroup, &config.Config{}, passthrough)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
@@ -526,7 +527,7 @@ func TestWebReadEndpoints_ShouldFailClosedWithoutASession(t *testing.T) {
 			r.Use(sessions.Sessions("ssoossh_session", cookie.NewStore([]byte("test-secret"))))
 			sessionAuth := middleware.NewSessionAuthMiddleware(5*time.Minute, time.Hour).Add()
 
-			NewUserController(&r.RouterGroup, sessionAuth)
+			NewUserController(&r.RouterGroup, &config.Config{}, sessionAuth)
 			NewCertificateController(&r.RouterGroup, &fakeCertificateService{}, sessionAuth)
 			NewCertRequestController(&r.RouterGroup, &fakeCertRequestService{}, sessionAuth, passthrough, nil)
 

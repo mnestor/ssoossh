@@ -41,7 +41,7 @@ func (s *stubCertRequestService) Detail(_ context.Context, _ string, _ *service.
 	return &service.RequestDetail{}, nil
 }
 
-func (s *stubCertRequestService) Approve(_ context.Context, _ string, _ *service.Identity, _ service.DecisionContext) error {
+func (s *stubCertRequestService) Approve(_ context.Context, _ string, _ *service.Identity, _ service.DecisionContext, _ string) error {
 	return nil
 }
 func (s *stubCertRequestService) Deny(_ context.Context, _ string, _ *service.Identity, _ service.DecisionContext) error {

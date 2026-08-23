@@ -6,14 +6,16 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/mnestor/ssoossh/internal/apitypes"
+	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
 // NewEnrollmentController registers the service-certificate retrieval
-// route on group. When retrieveRateLimitMiddleware is provided, it is
-// applied to the /certs/service/retrieve endpoint to protect against
-// code brute-forcing.
-func NewEnrollmentController(group *gin.RouterGroup, enrollmentService service.EnrollmentProvider, retrieveRateLimitMiddleware gin.HandlerFunc) {
+// route and the web UI's retrieval-log route on group. When
+// retrieveRateLimitMiddleware is provided, it is applied to the
+// /certs/service/retrieve endpoint to protect against code brute-forcing.
+func NewEnrollmentController(group *gin.RouterGroup, enrollmentService service.EnrollmentProvider, retrieveRateLimitMiddleware gin.HandlerFunc, sessionAuthMiddleware gin.HandlerFunc) {
 	e := &enrollmentController{enrollmentService: enrollmentService}
 
 	if retrieveRateLimitMiddleware != nil {
@@ -21,6 +23,8 @@ func NewEnrollmentController(group *gin.RouterGroup, enrollmentService service.E
 	} else {
 		group.POST("/certs/service/retrieve", e.retrieveHandler)
 	}
+
+	group.GET("/certs/requests/:id/retrievals", sessionAuthMiddleware, e.retrievalsHandler)
 }
 
 // enrollmentController handles the service-enrollment HTTP routes.
@@ -59,6 +63,49 @@ func (e *enrollmentController) retrieveHandler(g *gin.Context) {
 	}
 
 	respondData(g, apitypes.RetrieveResponse{Certificate: certificate})
+}
+
+// retrievalsHandler handles GET /api/certs/requests/:id/retrievals (web
+// UI, behind sessionAuthMiddleware): the retrieval log for a service
+// request's enrollment, newest first.
+//
+// @Summary     A service enrollment's retrieval log
+// @Description Every redemption of the enrollment created from this service request —
+// @Description when, from where, and whether a certificate was issued. Codes are
+// @Description reusable, so the log accumulates one row per redemption. Visible to the
+// @Description enrollment's approving user and to auditors.
+// @Tags        web
+// @Produce     json
+// @Param       id path string true "The certificate request's UUID"
+// @Success     200 {object} openapidoc.EnrollmentRetrievalsEnvelope "The retrieval log"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Neither the approving user nor an auditor"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "No enrollment for this request"
+// @Security    sessionCookie
+// @Router      /api/certs/requests/{id}/retrievals [get]
+func (e *enrollmentController) retrievalsHandler(g *gin.Context) {
+	identity, ok := middleware.Identity(g)
+	if !ok {
+		handleError(g, &middleware.UnauthorizedError{})
+		return
+	}
+
+	rows, err := e.enrollmentService.ListRetrievals(g.Request.Context(), g.Param("id"), identity)
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	resp := webtypes.EnrollmentRetrievalsResponse{Retrievals: []webtypes.EnrollmentRetrievalResponse{}}
+	for _, r := range rows {
+		resp.Retrievals = append(resp.Retrievals, webtypes.EnrollmentRetrievalResponse{
+			RetrievedAt:       r.RetrievedAt,
+			SourceIP:          r.SourceIP,
+			CertificateSerial: r.CertificateSerial,
+			Succeeded:         r.Succeeded,
+		})
+	}
+	respondData(g, resp)
 }
 
 // ExtractEnrollmentCodeForRateLimit reads the enrollment code from the request

@@ -72,22 +72,7 @@ func (m *AuditorAuthMiddleware) Add() gin.HandlerFunc {
 			return
 		}
 
-		// Admin implies auditor. Checked independently of the auditor group so
-		// that leaving auditor_group unset narrows access to admins rather than
-		// locking everyone out.
-		if m.config.Admin.IsAdminEnabled() &&
-			containsString(identity.Groups, m.config.Admin.RequireGroup) {
-			c.Next()
-			return
-		}
-
-		if !m.config.Admin.IsAuditorEnabled() {
-			_ = c.Error(&ForbiddenError{}) //nolint:errcheck
-			c.Abort()
-			return
-		}
-
-		if !containsString(identity.Groups, m.config.Admin.AuditorGroup) {
+		if !m.config.Admin.GrantsAuditor(identity.Groups) {
 			_ = c.Error(&ForbiddenError{}) //nolint:errcheck
 			c.Abort()
 			return

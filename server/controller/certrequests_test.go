@@ -43,6 +43,7 @@ type fakeCertRequestService struct {
 
 	gotApproveIdentity *service.Identity
 	gotApproveDC       service.DecisionContext
+	gotServiceAccount  string
 	gotDenyIdentity    *service.Identity
 	gotDenyDC          service.DecisionContext
 
@@ -71,9 +72,10 @@ func (f *fakeCertRequestService) Detail(_ context.Context, requestID string, _ *
 	}, nil
 }
 
-func (f *fakeCertRequestService) Approve(_ context.Context, _ string, identity *service.Identity, dc service.DecisionContext) error {
+func (f *fakeCertRequestService) Approve(_ context.Context, _ string, identity *service.Identity, dc service.DecisionContext, serviceAccount string) error {
 	f.gotApproveIdentity = identity
 	f.gotApproveDC = dc
+	f.gotServiceAccount = serviceAccount
 	return f.approveErr
 }
 
@@ -425,6 +427,47 @@ func TestApproveHandler_ShouldReadIdentityFromContext(t *testing.T) {
 	decodeEnvelope(t, w.Body.Bytes(), &got)
 	if got.Status != "signing" {
 		t.Errorf(`got status %q, want "signing"`, got.Status)
+	}
+}
+
+// should forward the body's service account to the service, and default it
+// to empty when the request carries no body at all (user/PAM approvals).
+func TestApproveHandler_ShouldForwardTheChosenServiceAccount(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{}
+
+	r := gin.New()
+	sessionAuth := func(c *gin.Context) {
+		c.Set(middleware.IdentityContextKey, &service.Identity{Username: "alice"})
+		c.Next()
+	}
+	NewCertRequestController(&r.RouterGroup, svc, sessionAuth, passthrough, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/certs/requests/req-1/approve",
+		strings.NewReader(`{"service_account":"svc-deploy"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if svc.gotServiceAccount != "svc-deploy" {
+		t.Errorf("got forwarded service account %q, want %q", svc.gotServiceAccount, "svc-deploy")
+	}
+
+	svc.gotServiceAccount = "stale"
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/certs/requests/req-1/approve", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("body-less approve: got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if svc.gotServiceAccount != "" {
+		t.Errorf("body-less approve forwarded %q, want empty", svc.gotServiceAccount)
 	}
 }
 

@@ -20,10 +20,12 @@ import (
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
-// EnrollmentProvider redeems an enrollment code into a signed certificate.
-// EnrollmentService is the production implementation.
+// EnrollmentProvider redeems an enrollment code into a signed certificate
+// and serves the per-enrollment retrieval log. EnrollmentService is the
+// production implementation.
 type EnrollmentProvider interface {
 	Retrieve(ctx context.Context, code string, sourceIP string) (certificate string, err error)
+	ListRetrievals(ctx context.Context, requestID string, identity *Identity) ([]model.EnrollmentRetrieval, error)
 }
 
 // EnrollmentService redeems an approved model.Enrollment (created by
@@ -206,6 +208,40 @@ func (s *EnrollmentService) awaitSignedCertificate(ctx context.Context, messages
 			return "", fmt.Errorf("timed out waiting for certificate signing")
 		}
 	}
+}
+
+// ListRetrievals returns the retrieval log for the enrollment created from
+// certificate request requestID, newest first.
+//
+// Authorization: the enrollment's approving user, or an identity with
+// auditor-level access (config.AdminConfig.GrantsAuditor). Checked here
+// rather than in a route middleware because the approver rule depends on
+// the row being read. Fails closed with Forbidden for anyone else.
+func (s *EnrollmentService) ListRetrievals(ctx context.Context, requestID string, identity *Identity) ([]model.EnrollmentRetrieval, error) {
+	var enrollment model.Enrollment
+	if err := s.db.WithContext(ctx).First(&enrollment, "certificate_request_id = ?", requestID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, &errorresponses.NotFoundError{Resource: fmt.Sprintf("enrollment for request %q", requestID)}
+		}
+		return nil, fmt.Errorf("failed to look up enrollment: %w", err)
+	}
+
+	if !s.config.Admin.GrantsAuditor(identity.Groups) {
+		var user model.User
+		err := s.db.WithContext(ctx).First(&user, "subject = ?", identity.Subject).Error
+		if err != nil || user.ID != enrollment.UserID {
+			return nil, &errorresponses.ForbiddenError{Reason: "retrieval log belongs to another user"}
+		}
+	}
+
+	var retrievals []model.EnrollmentRetrieval
+	if err := s.db.WithContext(ctx).
+		Where("enrollment_id = ?", enrollment.ID).
+		Order("retrieved_at DESC").
+		Find(&retrievals).Error; err != nil {
+		return nil, fmt.Errorf("failed to list enrollment retrievals: %w", err)
+	}
+	return retrievals, nil
 }
 
 // markRetrievalSucceeded records delivery on the retrieval row and stamps

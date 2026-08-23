@@ -5,5 +5,9 @@
   "groups": [
     "engineering",
     "sre"
-  ]
+  ],
+  "service_accounts": [
+    "svc-deploy"
+  ],
+  "is_auditor": true
 }

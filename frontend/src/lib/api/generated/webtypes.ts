@@ -37,6 +37,51 @@ export interface CurrentUserResponse {
 	username: string;
 	email: string;
 	groups: string[];
+	/**
+	 * ServiceAccounts are the service accounts this identity may approve
+	 * service certificates for (see config.OAuthFields.ServiceAccounts) —
+	 * the approval page's picker is populated from them.
+	 */
+	service_accounts: string[];
+	/**
+	 * IsAuditor reports whether this session holds auditor-level access
+	 * (config.AdminConfig.GrantsAuditor), so the UI can show
+	 * auditor-only affordances like other users' retrieval logs. Display
+	 * only — the server re-checks on every auditor-scoped read.
+	 */
+	is_auditor: boolean;
+}
+/**
+ * ApproveRequestBody is the optional body of the approve endpoint. For a
+ * service-type request the approver must name which of their service
+ * accounts the certificate is for; the server validates membership and the
+ * chosen account becomes the certificate principal. Ignored for other
+ * request types.
+ */
+export interface ApproveRequestBody {
+	service_account?: string;
+}
+/**
+ * EnrollmentRetrievalResponse is one redemption of a service enrollment
+ * code, for the retrieval log shown to the enrollment's approver and to
+ * auditors. Codes are reusable, so an enrollment accumulates these.
+ */
+export interface EnrollmentRetrievalResponse {
+	retrieved_at: string;
+	source_ip: string;
+	certificate_serial: number /* uint64 */;
+	/**
+	 * Succeeded is false for a redemption that passed code validation but
+	 * failed at signing — still worth surfacing: someone held the code.
+	 */
+	succeeded: boolean;
+}
+/**
+ * EnrollmentRetrievalsResponse is the retrieval log for one service
+ * certificate request's enrollment.
+ */
+export interface EnrollmentRetrievalsResponse {
+	retrievals: EnrollmentRetrievalResponse[];
 }
 /**
  * CertificateOptionsResponse is one side of the requested/granted pair the
@@ -68,7 +113,6 @@ export interface RequestDetailResponse {
 	type: CertificateType;
 	status: CertificateRequestStatus;
 	source_ip: string;
-	hostname?: string;
 	local_username?: string;
 	local_hostname?: string;
 	public_key: string;
@@ -110,7 +154,6 @@ export interface CertificateResponse {
 	key_id: string;
 	principals: string;
 	public_key_fingerprint: string;
-	hostname?: string;
 	issued_at: string;
 	expires_at: string;
 	decided_by_outcome?: string;
@@ -189,7 +232,6 @@ export interface EffectiveConfigResponse {
 	 */
 	admin_require_group?: string;
 	admin_auditor_group?: string;
-	admin_ssh_server_admin_group?: string;
 	/**
 	 * Logging configuration
 	 */
@@ -203,8 +245,6 @@ export interface EffectiveConfigResponse {
 	cert_service_valid_duration: string;
 	cert_service_require_group?: string;
 	cert_service_extensions: string[];
-	cert_host_valid_duration: string;
-	cert_host_require_group?: string;
 	cert_pam_valid_duration: string;
 	cert_pam_require_group?: string;
 	cert_request_ttl: string;

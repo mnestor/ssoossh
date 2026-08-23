@@ -99,7 +99,8 @@ func enrollService(t *testing.T, svc *CertRequestService, publicKey string) stri
 
 	seedUser(t, svc.db, "sub-svc")
 	err = svc.Approve(context.Background(), requestID,
-		&Identity{Username: "approver", Subject: "sub-svc"}, DecisionContext{})
+		&Identity{Username: "approver", Subject: "sub-svc", ServiceAccounts: []string{"svc-deploy"}},
+		DecisionContext{}, "svc-deploy")
 	if err != nil {
 		t.Fatalf("unexpected error approving service request: %v", err)
 	}
@@ -153,7 +154,9 @@ func TestEnrollmentRetrieve_EndToEnd(t *testing.T) {
 			return string(auth.Marshal()) == string(caPub.Marshal())
 		},
 	}
-	if err := checker.CheckCert("approver", cert); err != nil {
+	// The principal is the service account chosen at approval, not the
+	// approver's own username.
+	if err := checker.CheckCert("svc-deploy", cert); err != nil {
 		t.Errorf("delivered certificate did not validate for the approval-time principal: %v", err)
 	}
 	if string(cert.Key.Marshal()) != string(clientKeypair.Public().Marshal()) {
@@ -365,6 +368,182 @@ func TestEnrollmentRetrieve_ShouldTimeOutWithoutSigner(t *testing.T) {
 	if _, err := enrollment.Retrieve(context.Background(), "orphan-code", "203.0.113.7"); err == nil {
 		t.Error("Retrieve() error = nil, want timeout error")
 	}
+}
+
+// should require the approver to choose one of their own service accounts,
+// store it on the request, and make it the enrollment principal.
+func TestApprove_ServiceAccountLinkage(t *testing.T) {
+	t.Parallel()
+
+	newRequest := func(t *testing.T, svc *CertRequestService) string {
+		t.Helper()
+		requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+			Type:      model.CertificateTypeService,
+			PublicKey: "ssh-ed25519 AAAA... svc",
+		})
+		if err != nil {
+			t.Fatalf("unexpected error creating request: %v", err)
+		}
+		return requestID
+	}
+
+	t.Run("should refuse approval without a service account", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Hour)
+		requestID := newRequest(t, svc)
+		identity := &Identity{Username: "alice", Subject: "sub-1", ServiceAccounts: []string{"svc-a"}}
+		seedUser(t, svc.db, identity.Subject)
+
+		if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ""); err == nil {
+			t.Fatal("expected an error approving without a service account")
+		}
+	})
+
+	t.Run("should refuse a service account the approver is not associated with", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Hour)
+		requestID := newRequest(t, svc)
+		identity := &Identity{Username: "alice", Subject: "sub-1", ServiceAccounts: []string{"svc-a"}}
+		seedUser(t, svc.db, identity.Subject)
+
+		err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, "svc-b")
+		if err == nil {
+			t.Fatal("expected an error for a service account outside the approver's own")
+		}
+		var req model.CertificateRequest
+		if dbErr := svc.db.First(&req, "id = ?", requestID).Error; dbErr != nil {
+			t.Fatalf("failed to read back request: %v", dbErr)
+		}
+		if req.Status != model.CertificateRequestStatusPending {
+			t.Errorf("expected the request to remain pending, got %q", req.Status)
+		}
+	})
+
+	t.Run("should store the account on the request and make it the principal", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Hour)
+		requestID := newRequest(t, svc)
+		identity := &Identity{Username: "alice", Subject: "sub-1", ServiceAccounts: []string{"svc-a", "svc-b"}}
+		seedUser(t, svc.db, identity.Subject)
+
+		if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, "svc-b"); err != nil {
+			t.Fatalf("unexpected error approving: %v", err)
+		}
+
+		var req model.CertificateRequest
+		if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+			t.Fatalf("failed to read back request: %v", err)
+		}
+		if req.ServiceAccount != "svc-b" {
+			t.Errorf("got stored service account %q, want %q", req.ServiceAccount, "svc-b")
+		}
+
+		var enrollment model.Enrollment
+		if err := svc.db.First(&enrollment).Error; err != nil {
+			t.Fatalf("failed to read back enrollment: %v", err)
+		}
+		var principals []string
+		if err := json.Unmarshal([]byte(enrollment.Principals), &principals); err != nil {
+			t.Fatalf("failed to decode enrollment principals: %v", err)
+		}
+		if len(principals) != 1 || principals[0] != "svc-b" {
+			t.Errorf("got enrollment principals %v, want [svc-b]", principals)
+		}
+	})
+}
+
+// should scope the retrieval log to the approving user and auditors.
+func TestListRetrievals_Authorization(t *testing.T) {
+	t.Parallel()
+
+	auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
+
+	setup := func(t *testing.T) (*CertRequestService, *EnrollmentService, string, string) {
+		t.Helper()
+		svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		requestID := uuid.NewString()
+		approverID := seedUser(t, svc.db, "sub-approver")
+		if err := svc.db.Create(&model.CertificateRequest{
+			ID: requestID, Type: model.CertificateTypeService,
+			PublicKey: "ssh-ed25519 AAAA...", UserID: &approverID,
+			Status: model.CertificateRequestStatusEnrolled, CreatedAt: time.Now(),
+		}).Error; err != nil {
+			t.Fatalf("failed to seed request: %v", err)
+		}
+		enrollmentID := uuid.NewString()
+		if err := svc.db.Create(&model.Enrollment{
+			ID: enrollmentID, Code: "code-" + enrollmentID, PublicKey: "k",
+			OptionSet: "{}", Principals: `["svc-a"]`, UserID: approverID,
+			CertificateRequestID: &requestID,
+			CreatedAt:            time.Now(), ExpiresAt: time.Now().Add(time.Hour),
+		}).Error; err != nil {
+			t.Fatalf("failed to seed enrollment: %v", err)
+		}
+		if err := svc.db.Create(&model.EnrollmentRetrieval{
+			ID: uuid.NewString(), EnrollmentID: enrollmentID,
+			SourceIP: "203.0.113.9", CertificateSerial: 42,
+			RetrievedAt: time.Now(), Succeeded: true,
+		}).Error; err != nil {
+			t.Fatalf("failed to seed retrieval: %v", err)
+		}
+		return svc, enrollment, requestID, approverID
+	}
+
+	t.Run("should allow the approving user", func(t *testing.T) {
+		t.Parallel()
+		_, enrollment, requestID, _ := setup(t)
+
+		rows, err := enrollment.ListRetrievals(context.Background(),
+			requestID, &Identity{Subject: "sub-approver"})
+		if err != nil {
+			t.Fatalf("ListRetrievals() error = %v", err)
+		}
+		if len(rows) != 1 || rows[0].SourceIP != "203.0.113.9" {
+			t.Errorf("got %v, want the seeded retrieval", rows)
+		}
+	})
+
+	t.Run("should allow an auditor who is not the approver", func(t *testing.T) {
+		t.Parallel()
+		svc, enrollment, requestID, _ := setup(t)
+		seedUser(t, svc.db, "sub-auditor")
+
+		rows, err := enrollment.ListRetrievals(context.Background(),
+			requestID, &Identity{Subject: "sub-auditor", Groups: []string{"auditors"}})
+		if err != nil {
+			t.Fatalf("ListRetrievals() error = %v", err)
+		}
+		if len(rows) != 1 {
+			t.Errorf("got %d rows, want 1", len(rows))
+		}
+	})
+
+	t.Run("should refuse anyone else", func(t *testing.T) {
+		t.Parallel()
+		svc, enrollment, requestID, _ := setup(t)
+		seedUser(t, svc.db, "sub-other")
+
+		_, err := enrollment.ListRetrievals(context.Background(),
+			requestID, &Identity{Subject: "sub-other"})
+		var forbidden *errorresponses.ForbiddenError
+		if !errors.As(err, &forbidden) {
+			t.Errorf("ListRetrievals() error = %v, want ForbiddenError", err)
+		}
+	})
+
+	t.Run("should answer not-found for a request without an enrollment", func(t *testing.T) {
+		t.Parallel()
+		_, enrollment, _, _ := setup(t)
+
+		_, err := enrollment.ListRetrievals(context.Background(),
+			uuid.NewString(), &Identity{Subject: "sub-approver"})
+		var notFound *errorresponses.NotFoundError
+		if !errors.As(err, &notFound) {
+			t.Errorf("ListRetrievals() error = %v, want NotFoundError", err)
+		}
+	})
 }
 
 // seedEnrollment inserts row with generated ID and approver linkage

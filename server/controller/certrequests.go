@@ -7,6 +7,7 @@ import (
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
 // CertRequestRateLimitMiddleware holds optional per-endpoint rate limit
@@ -309,9 +310,15 @@ func (cr *certRequestController) eventsHandler(g *gin.Context) {
 // @Summary     Approve a request
 // @Description Session-authed and CSRF-guarded. Publishes a signing job; the certificate
 // @Description reaches the client over its own SSE stream, not in this response.
+// @Description
+// @Description Approving a service-type request requires a body naming which of the
+// @Description approver's own service accounts the certificate is for; that account
+// @Description becomes the certificate principal. Other types take no body.
 // @Tags        web
+// @Accept      json
 // @Produce     json
 // @Param       id path string true "The certificate request's UUID"
+// @Param       request body webtypes.ApproveRequestBody false "Service-account selection (service-type requests only)"
 // @Success     200 {object} openapidoc.ApproveEnvelope "Queued for signing"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Bound to another user, or a cross-origin call"
@@ -325,7 +332,18 @@ func (cr *certRequestController) approveHandler(g *gin.Context) {
 		return
 	}
 
-	if err := cr.certRequestService.Approve(g.Request.Context(), g.Param("id"), identity, decisionContext(g)); err != nil {
+	// The body is optional: only service-type approvals carry one (the
+	// chosen service account). An absent or empty body binds to the zero
+	// value rather than erroring, so user/PAM approvals stay body-less.
+	var body webtypes.ApproveRequestBody
+	if g.Request.ContentLength > 0 {
+		if err := g.ShouldBindJSON(&body); err != nil {
+			handleError(g, err)
+			return
+		}
+	}
+
+	if err := cr.certRequestService.Approve(g.Request.Context(), g.Param("id"), identity, decisionContext(g), body.ServiceAccount); err != nil {
 		handleError(g, err)
 		return
 	}

@@ -3,6 +3,7 @@ package controller
 import (
 	"github.com/gin-gonic/gin"
 
+	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/middleware"
 )
 
@@ -12,15 +13,18 @@ import (
 // There is deliberately no route to list or read *other* users. Nothing in
 // the UI needs one yet, and an endpoint that enumerates identities is worth
 // adding on demand with an authorization rule rather than by default.
-func NewUserController(group *gin.RouterGroup, sessionAuthMiddleware gin.HandlerFunc) {
-	uc := &userController{}
+func NewUserController(group *gin.RouterGroup, c *config.Config, sessionAuthMiddleware gin.HandlerFunc) {
+	uc := &userController{config: c}
 
 	group.GET("/users/me", sessionAuthMiddleware, uc.currentUserHandler)
 }
 
-// userController handles the user-facing identity routes. It holds no
-// service: everything it returns already lives on the session.
-type userController struct{}
+// userController handles the user-facing identity routes. It holds config
+// only to derive the session's roles (auditor); everything else it returns
+// already lives on the session.
+type userController struct {
+	config *config.Config
+}
 
 // currentUserHandler returns the caller's own identity, so the UI can show
 // who it is acting as without a second round trip to the IdP.
@@ -48,5 +52,5 @@ func (uc *userController) currentUserHandler(g *gin.Context) {
 		return
 	}
 
-	respondData(g, newCurrentUserResponse(identity))
+	respondData(g, newCurrentUserResponse(identity, uc.config))
 }

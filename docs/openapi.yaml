@@ -37,18 +37,6 @@ components:
       required:
       - status
       type: object
-    apitypes.HostSignRequestBody:
-      properties:
-        hostname:
-          type: string
-        public_key:
-          type: string
-        requested_options:
-          $ref: '#/components/schemas/apitypes.RequestedOptions'
-      required:
-      - hostname
-      - public_key
-      type: object
     apitypes.PAMRequestBody:
       properties:
         public_key:
@@ -121,13 +109,6 @@ components:
           type: string
         requested_options:
           $ref: '#/components/schemas/apitypes.RequestedOptions'
-      required:
-      - public_key
-      type: object
-    controller.renewHostRequestBody:
-      properties:
-        public_key:
-          type: string
       required:
       - public_key
       type: object
@@ -227,6 +208,15 @@ components:
       required:
       - data
       type: object
+    openapidoc.EnrollmentRetrievalsEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.EnrollmentRetrievalsResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
     openapidoc.ErrorEnvelope:
       properties:
         data:
@@ -289,6 +279,11 @@ components:
           type: string
       required:
       - data
+      type: object
+    webtypes.ApproveRequestBody:
+      properties:
+        service_account:
+          type: string
       type: object
     webtypes.BrandingResponse:
       properties:
@@ -378,8 +373,6 @@ components:
           type: string
         expires_at:
           type: string
-        hostname:
-          type: string
         id:
           type: string
         issued_at:
@@ -413,6 +406,22 @@ components:
             type: string
           type: array
           uniqueItems: false
+        is_auditor:
+          description: |-
+            IsAuditor reports whether this session holds auditor-level access
+            (config.AdminConfig.GrantsAuditor), so the UI can show
+            auditor-only affordances like other users' retrieval logs. Display
+            only — the server re-checks on every auditor-scoped read.
+          type: boolean
+        service_accounts:
+          description: |-
+            ServiceAccounts are the service accounts this identity may approve
+            service certificates for (see config.OAuthFields.ServiceAccounts) —
+            the approval page's picker is populated from them.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
         subject:
           type: string
         username:
@@ -420,6 +429,8 @@ components:
       required:
       - email
       - groups
+      - is_auditor
+      - service_accounts
       - subject
       - username
       type: object
@@ -429,12 +440,6 @@ components:
           type: string
         admin_require_group:
           description: Admin authorization
-          type: string
-        admin_ssh_server_admin_group:
-          type: string
-        cert_host_require_group:
-          type: string
-        cert_host_valid_duration:
           type: string
         cert_pam_require_group:
           type: string
@@ -480,7 +485,6 @@ components:
           description: Server connection and TLS settings
           type: string
       required:
-      - cert_host_valid_duration
       - cert_pam_valid_duration
       - cert_request_ttl
       - cert_service_extensions
@@ -494,6 +498,35 @@ components:
       - port
       - provider_url
       - server_name
+      type: object
+    webtypes.EnrollmentRetrievalResponse:
+      properties:
+        certificate_serial:
+          type: integer
+        retrieved_at:
+          type: string
+        source_ip:
+          type: string
+        succeeded:
+          description: |-
+            Succeeded is false for a redemption that passed code validation but
+            failed at signing — still worth surfacing: someone held the code.
+          type: boolean
+      required:
+      - certificate_serial
+      - retrieved_at
+      - source_ip
+      - succeeded
+      type: object
+    webtypes.EnrollmentRetrievalsResponse:
+      properties:
+        retrievals:
+          items:
+            $ref: '#/components/schemas/webtypes.EnrollmentRetrievalResponse'
+          type: array
+          uniqueItems: false
+      required:
+      - retrievals
       type: object
     webtypes.RequestDetailResponse:
       properties:
@@ -538,8 +571,6 @@ components:
           type: string
         granted:
           $ref: '#/components/schemas/webtypes.CertificateOptionsResponse'
-        hostname:
-          type: string
         id:
           type: string
         is_owned_by_you:
@@ -870,67 +901,6 @@ paths:
       summary: The caller's issued-certificate history
       tags:
       - web
-  /api/certs/host/renew:
-    post:
-      description: |-
-        Not implemented (delivery phase 9). The auth transport is decided — an
-        SSH-certificate signed challenge — but unbuilt, so the middleware in
-        front of this fails closed.
-      requestBody:
-        content:
-          application/json:
-            schema:
-              oneOf:
-              - type: object
-              - $ref: '#/components/schemas/controller.renewHostRequestBody'
-                description: The new host public key
-                summary: request
-        description: The new host public key
-        required: true
-      responses:
-        "501":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Not implemented
-      summary: Renew a host certificate
-      tags:
-      - client
-  /api/certs/host/sign:
-    post:
-      description: |-
-        Accepted, but approving one currently fails — host certificates are not
-        issuable yet (delivery phase 9).
-      requestBody:
-        content:
-          application/json:
-            schema:
-              oneOf:
-              - type: object
-              - $ref: '#/components/schemas/apitypes.HostSignRequestBody'
-                description: The host public key, its hostname, and the options being
-                  asked for
-                summary: request
-        description: The host public key, its hostname, and the options being asked
-          for
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.CreateRequestEnvelope'
-          description: Request created
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Malformed body, or a public key that will not parse
-      summary: Create a host certificate request
-      tags:
-      - client
   /api/certs/pam:
     post:
       description: |-
@@ -1020,6 +990,10 @@ paths:
       description: |-
         Session-authed and CSRF-guarded. Publishes a signing job; the certificate
         reaches the client over its own SSE stream, not in this response.
+
+        Approving a service-type request requires a body naming which of the
+        approver's own service accounts the certificate is for; that account
+        becomes the certificate principal. Other types take no body.
       parameters:
       - description: The certificate request's UUID
         in: path
@@ -1027,6 +1001,16 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/webtypes.ApproveRequestBody'
+                description: Service-account selection (service-type requests only)
+                summary: request
+        description: Service-account selection (service-type requests only)
       responses:
         "200":
           content:
@@ -1143,6 +1127,50 @@ paths:
       summary: Wait for a request's outcome (SSE)
       tags:
       - client
+  /api/certs/requests/{id}/retrievals:
+    get:
+      description: |-
+        Every redemption of the enrollment created from this service request —
+        when, from where, and whether a certificate was issued. Codes are
+        reusable, so the log accumulates one row per redemption. Visible to the
+        enrollment's approving user and to auditors.
+      parameters:
+      - description: The certificate request's UUID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.EnrollmentRetrievalsEnvelope'
+          description: The retrieval log
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Neither the approving user nor an auditor
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No enrollment for this request
+      security:
+      - sessionCookie: []
+      summary: A service enrollment's retrieval log
+      tags:
+      - web
   /api/certs/service/enroll:
     post:
       description: |-
@@ -1179,9 +1207,11 @@ paths:
   /api/certs/service/retrieve:
     post:
       description: |-
-        Not implemented yet (delivery phase 8): the service behind this returns
-        an error, so the route exists and answers 500 rather than issuing
-        anything.
+        Signs and returns a service certificate for the enrollment the code
+        identifies, using the public key and options fixed at approval time.
+        Codes are reusable until the enrollment expires; every redemption is
+        logged for the approving user and auditors. The certificate is valid
+        from now until the enrollment's expiry.
       requestBody:
         content:
           application/json:
@@ -1200,12 +1230,18 @@ paths:
               schema:
                 $ref: '#/components/schemas/openapidoc.RetrieveEnvelope'
           description: The signed service certificate
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Unknown or expired enrollment code
         "500":
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Not implemented
+          description: Signing failed or timed out
       summary: Redeem an enrollment code for a certificate
       tags:
       - client
@@ -1241,26 +1277,6 @@ paths:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
           description: Malformed body, or a public key that will not parse
       summary: Create a user certificate request
-      tags:
-      - client
-  /api/hosts/{hostname}/sync:
-    get:
-      description: Not implemented (delivery phase 9). Fails closed.
-      parameters:
-      - description: The host's name
-        in: path
-        name: hostname
-        required: true
-        schema:
-          type: string
-      responses:
-        "501":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Not implemented
-      summary: Pull the principal mapping for a host
       tags:
       - client
   /api/users/me:

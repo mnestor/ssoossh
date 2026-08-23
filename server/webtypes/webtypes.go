@@ -36,6 +36,45 @@ type CurrentUserResponse struct {
 	Username string   `json:"username" validate:"required"`
 	Email    string   `json:"email" validate:"required"`
 	Groups   []string `json:"groups" validate:"required"`
+
+	// ServiceAccounts are the service accounts this identity may approve
+	// service certificates for (see config.OAuthFields.ServiceAccounts) —
+	// the approval page's picker is populated from them.
+	ServiceAccounts []string `json:"service_accounts" validate:"required"`
+
+	// IsAuditor reports whether this session holds auditor-level access
+	// (config.AdminConfig.GrantsAuditor), so the UI can show
+	// auditor-only affordances like other users' retrieval logs. Display
+	// only — the server re-checks on every auditor-scoped read.
+	IsAuditor bool `json:"is_auditor" validate:"required"`
+}
+
+// ApproveRequestBody is the optional body of the approve endpoint. For a
+// service-type request the approver must name which of their service
+// accounts the certificate is for; the server validates membership and the
+// chosen account becomes the certificate principal. Ignored for other
+// request types.
+type ApproveRequestBody struct {
+	ServiceAccount string `json:"service_account,omitempty"`
+}
+
+// EnrollmentRetrievalResponse is one redemption of a service enrollment
+// code, for the retrieval log shown to the enrollment's approver and to
+// auditors. Codes are reusable, so an enrollment accumulates these.
+type EnrollmentRetrievalResponse struct {
+	RetrievedAt       time.Time `json:"retrieved_at" validate:"required"`
+	SourceIP          string    `json:"source_ip" validate:"required"`
+	CertificateSerial uint64    `json:"certificate_serial" validate:"required"`
+
+	// Succeeded is false for a redemption that passed code validation but
+	// failed at signing — still worth surfacing: someone held the code.
+	Succeeded bool `json:"succeeded" validate:"required"`
+}
+
+// EnrollmentRetrievalsResponse is the retrieval log for one service
+// certificate request's enrollment.
+type EnrollmentRetrievalsResponse struct {
+	Retrievals []EnrollmentRetrievalResponse `json:"retrievals" validate:"required"`
 }
 
 // CertificateOptionsResponse is one side of the requested/granted pair the

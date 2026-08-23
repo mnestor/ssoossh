@@ -8,6 +8,13 @@
  * (docs/dev/ssoossh-context.md — "Certificate types") a row represents.
  */
 export const CertificateTypeUser = "user";
+/**
+ * CertificateTypeHost is retired: host certificates were removed (see
+ * docs/decisions.md — no secure host verification exists yet). The
+ * constant remains only because server/signer and server/certmsg keep
+ * dormant host handling (lifetime cap, message fields) that lands with
+ * the HSM signer work; nothing creates, stores, or accepts this type.
+ */
 export const CertificateTypeHost = "host";
 export const CertificateTypeService = "service";
 export const CertificateTypePAM = "pam";
@@ -23,7 +30,7 @@ export const CertificateRequestStatusPending = "pending";
  * docs/signing-pipeline.md) — not yet terminal. The signer
  * (docs/signing-pipeline.md) and its listener/resolver
  * still need to run before this becomes CertificateRequestStatusApproved.
- * Only used for CertificateTypeUser/CertificateTypeHost — service
+ * Only used for CertificateTypeUser/CertificateTypePAM — service
  * requests go straight from Pending to CertificateRequestStatusEnrolled,
  * no signer involved at approval time.
  */

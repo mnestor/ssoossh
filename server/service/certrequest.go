@@ -63,7 +63,7 @@ type DecisionContext struct {
 type CertRequestProvider interface {
 	CreateRequest(ctx context.Context, p NewCertRequestParams) (requestID string, err error)
 	Detail(ctx context.Context, requestID string, identity *Identity) (*RequestDetail, error)
-	Approve(ctx context.Context, requestID string, identity *Identity, dc DecisionContext) error
+	Approve(ctx context.Context, requestID string, identity *Identity, dc DecisionContext, serviceAccount string) error
 	Deny(ctx context.Context, requestID string, identity *Identity, dc DecisionContext) error
 	Wait(ctx context.Context, requestID string) (status model.CertificateRequestStatus, certificate string, code string, err error)
 }
@@ -474,13 +474,17 @@ func (s *CertRequestService) lookupDecision(ctx context.Context, requestID strin
 //     is the one type where an unset RequireGroup denies rather than opens
 //     — see CertOptionsPAM.RequireGroup.
 //   - Principals are a conservative provisional default — just the
-//     identity's username for user/service —
+//     identity's username for user —
 //     pending the still-undecided "which LDAP attributes become
-//     principals" question (docs/dev/ssoossh-context.md). PAM is the deliberate
-//     exception: its principal is the local account named on the request
-//     (req.Username), not the approver's identity — see resolvePrincipals.
-//     Safe to extend later without narrowing what's already granted.
-func (s *CertRequestService) Approve(ctx context.Context, requestID string, identity *Identity, dc DecisionContext) error {
+//     principals" question (docs/dev/ssoossh-context.md). PAM and service
+//     are the deliberate exceptions: PAM's principal is the local account
+//     named on the request (req.Username), and a service certificate's is
+//     serviceAccount — required for service-type requests, and it must be
+//     one of the approver's own identity.ServiceAccounts (account linkage:
+//     approving for an account you aren't associated with is refused).
+//     Ignored for every other type. Safe to extend later without narrowing
+//     what's already granted.
+func (s *CertRequestService) Approve(ctx context.Context, requestID string, identity *Identity, dc DecisionContext, serviceAccount string) error {
 	var req model.CertificateRequest
 	if err := s.db.WithContext(ctx).First(&req, "id = ?", requestID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -517,6 +521,14 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 		return fmt.Errorf("identity is not authorized to approve %s certificates", req.Type)
 	}
 
+	// Service account linkage, checked before bindRequester so a caller who
+	// cannot approve at all never claims the request.
+	if req.Type == model.CertificateTypeService {
+		if err := checkServiceAccountLinkage(identity, serviceAccount); err != nil {
+			return err
+		}
+	}
+
 	if err := s.bindRequester(ctx, &req, identity); err != nil {
 		return err
 	}
@@ -529,7 +541,7 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 
 	switch policy.flow {
 	case flowEnrollment:
-		return s.approveServiceEnrollment(ctx, req, narrowed, identity, policy, dc)
+		return s.approveServiceEnrollment(ctx, req, narrowed, identity, policy, dc, serviceAccount)
 	case flowSigning:
 		return s.approveForSigning(ctx, req, identity, policy, narrowed, dc)
 	default:
@@ -634,7 +646,7 @@ func (s *CertRequestService) resolveUserID(ctx context.Context, identity *Identi
 // approveServiceEnrollment implements Approve's service branch — see its
 // doc comment. narrowed is req's already-resolved, server-config-bounded
 // RequestedOptions. policy is req.Type's certTypePolicy.
-func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req model.CertificateRequest, narrowed RequestedOptions, identity *Identity, policy *certTypePolicy, dc DecisionContext) error {
+func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req model.CertificateRequest, narrowed RequestedOptions, identity *Identity, policy *certTypePolicy, dc DecisionContext, serviceAccount string) error {
 	// Compute certificate lifetime using the policy engine, and narrow options
 	// based on the matching source policy rule.
 	effectiveDuration, _, err := s.engine.evaluateDuration(req.Type, identity, req.SourceIP, policy.validDuration)
@@ -672,7 +684,11 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 		return fmt.Errorf("failed to compute key ID: %w", err)
 	}
 
-	principals := policy.principals("", identity)
+	// The chosen service account (validated against the approver's own
+	// identity.ServiceAccounts in Approve) is the certificate principal —
+	// the whole point of the linkage check is that the certificate names
+	// the account, not the human who approved it.
+	principals := []string{serviceAccount}
 	for _, p := range principals {
 		if err := sshcrypto.ValidatePrincipal(p); err != nil {
 			return fmt.Errorf("invalid principal: %w", err)
@@ -709,6 +725,7 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 				"status":            model.CertificateRequestStatusEnrolled,
 				"requested_options": string(narrowedJSON),
 				"enrollment_token":  token,
+				"service_account":   serviceAccount,
 				"resolved_at":       now,
 			})
 		if result.Error != nil {
@@ -751,6 +768,20 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 	// from here, unlike the user/PAM queue-and-wait path.
 	s.notifyWaiter(req.ID, requestOutcome{status: model.CertificateRequestStatusEnrolled, code: token})
 
+	return nil
+}
+
+// checkServiceAccountLinkage enforces service account linkage on a
+// service-type approval: the approver must name the service account, and
+// only one their identity is actually associated with — group membership
+// alone doesn't let someone mint a certificate for an arbitrary account.
+func checkServiceAccountLinkage(identity *Identity, serviceAccount string) error {
+	if serviceAccount == "" {
+		return fmt.Errorf("approving a service certificate requires choosing a service account")
+	}
+	if !slices.Contains(identity.ServiceAccounts, serviceAccount) {
+		return fmt.Errorf("identity is not associated with service account %q", serviceAccount)
+	}
 	return nil
 }
 

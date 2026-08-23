@@ -212,3 +212,33 @@ func (a *AdminConfig) IsAdminEnabled() bool {
 func (a *AdminConfig) IsAuditorEnabled() bool {
 	return a.AuditorGroup != ""
 }
+
+// GrantsAuditor reports whether an identity holding groups has
+// auditor-level access. Admins are a superset of auditors: admin group
+// membership grants access even when the auditor group is unconfigured, so
+// leaving auditor_group unset narrows auditor operations to admins rather
+// than locking everyone out. Fails closed: empty groups, or membership in
+// neither configured group, denies. The single authority for this rule —
+// middleware.AuditorAuthMiddleware and every auditor-visible read go
+// through it.
+func (a *AdminConfig) GrantsAuditor(groups []string) bool {
+	if a.IsAdminEnabled() && containsGroup(groups, a.RequireGroup) {
+		return true
+	}
+	return a.IsAuditorEnabled() && containsGroup(groups, a.AuditorGroup)
+}
+
+// containsGroup reports whether needle is in haystack. An empty needle
+// never matches, so an unconfigured group cannot accidentally authorize a
+// caller.
+func containsGroup(haystack []string, needle string) bool {
+	if needle == "" {
+		return false
+	}
+	for _, s := range haystack {
+		if s == needle {
+			return true
+		}
+	}
+	return false
+}
