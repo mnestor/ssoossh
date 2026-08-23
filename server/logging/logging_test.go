@@ -8,6 +8,7 @@ package logging
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -377,4 +378,119 @@ func TestNew_ShouldSkipDevNullFilenames(t *testing.T) {
 	// All logs go to stdout (because ISTERMINAL=1), not to /dev/null files
 	slog.Info("test-message")
 	// Test passes if New completed without error
+}
+
+// captureStdouterr swaps os.Stdout and os.Stderr for pipes, runs fn, and
+// returns what each stream received. Sequential by nature - it mutates
+// process globals, so callers must not run in parallel.
+func captureStdouterr(t *testing.T, fn func()) (stdout, stderr string) {
+	t.Helper()
+
+	origOut, origErr := os.Stdout, os.Stderr
+	outR, outW, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	errR, errW, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout, os.Stderr = outW, errW
+	defer func() { os.Stdout, os.Stderr = origOut, origErr }()
+
+	fn()
+
+	_ = outW.Close()
+	_ = errW.Close()
+	outB, _ := io.ReadAll(outR)
+	errB, _ := io.ReadAll(errR)
+	return string(outB), string(errB)
+}
+
+// TestNew_DestinationContractWhenNotATerminal locks in the package-doc
+// table for the non-terminal case (containers, systemd, this test binary):
+// INFO reaches stdout, ERROR reaches both stdout and stderr, and nothing
+// below the configured level appears anywhere. This is the regression test
+// for the bug where a predicate-less ERROR route starved stdout of all
+// INFO/DEBUG output outside a terminal.
+//
+// Mutates the default logger and process stdio; must not run in parallel.
+func TestNew_DestinationContractWhenNotATerminal(t *testing.T) {
+	tests := []struct {
+		name       string
+		level      string
+		log        func()
+		wantStdout []string
+		notStdout  []string
+		wantStderr []string
+		notStderr  []string
+	}{
+		{
+			name:       "should emit info to stdout only when not a terminal",
+			level:      "info",
+			log:        func() { slog.Info("split-mode-info-marker") },
+			wantStdout: []string{"split-mode-info-marker"},
+			notStderr:  []string{"split-mode-info-marker"},
+		},
+		{
+			name:       "should copy errors to stderr as well when not a terminal",
+			level:      "info",
+			log:        func() { slog.Error("split-mode-error-marker") },
+			wantStdout: []string{"split-mode-error-marker"},
+			wantStderr: []string{"split-mode-error-marker"},
+		},
+		{
+			name:      "should drop records below the configured level everywhere",
+			level:     "warn",
+			log:       func() { slog.Info("below-level-marker") },
+			notStdout: []string{"below-level-marker"},
+			notStderr: []string{"below-level-marker"},
+		},
+		{
+			name:       "should emit debug when the level asks for it",
+			level:      "debug",
+			log:        func() { slog.Debug("debug-marker") },
+			wantStdout: []string{"debug-marker"},
+			notStderr:  []string{"debug-marker"},
+		},
+	}
+
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &config.Config{}
+			c.Logging.Level = tt.level
+			// No filename: stdout is the fallback main destination.
+
+			stdout, stderr := captureStdouterr(t, func() {
+				if _, err := New(c); err != nil {
+					t.Fatalf("New() error = %v", err)
+				}
+				tt.log()
+			})
+
+			for _, want := range tt.wantStdout {
+				if !strings.Contains(stdout, want) {
+					t.Errorf("stdout missing %q; got:\n%s", want, stdout)
+				}
+			}
+			for _, not := range tt.notStdout {
+				if strings.Contains(stdout, not) {
+					t.Errorf("stdout unexpectedly contains %q", not)
+				}
+			}
+			for _, want := range tt.wantStderr {
+				if !strings.Contains(stderr, want) {
+					t.Errorf("stderr missing %q; got:\n%s", want, stderr)
+				}
+			}
+			for _, not := range tt.notStderr {
+				if strings.Contains(stderr, not) {
+					t.Errorf("stderr unexpectedly contains %q", not)
+				}
+			}
+		})
+	}
 }

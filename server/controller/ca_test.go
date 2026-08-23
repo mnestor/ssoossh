@@ -47,7 +47,7 @@ func newTestCAService(t *testing.T) *service.CAService {
 		t.Fatalf("failed to marshal private key: %v", err)
 	}
 
-	svc, err := service.NewCAService(&config.Config{SSHKey: string(pem.EncodeToMemory(block))}, nil)
+	svc, err := service.NewCAService(&config.Config{Signer: config.SignerConfig{SSHKey: string(pem.EncodeToMemory(block))}}, nil)
 	if err != nil {
 		t.Fatalf("failed to build CAService: %v", err)
 	}

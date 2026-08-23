@@ -13,7 +13,7 @@ func TestBootstrapServe_ShouldRejectAPIModeWithGochannel(t *testing.T) {
 
 	// Create a minimal config with gochannel backend
 	c := &config.Config{
-		PubSub: config.PubSubConfig{Backend: config.PubSubBackendGoChannel},
+		Signer: config.SignerConfig{PubSub: config.PubSubConfig{Backend: config.PubSubBackendGoChannel}},
 	}
 
 	cmd := &cobra.Command{}
@@ -21,8 +21,8 @@ func TestBootstrapServe_ShouldRejectAPIModeWithGochannel(t *testing.T) {
 
 	// Mock the config loading by creating a function that returns our test config
 	// Since we can't easily mock NewConfig, we'll test the validation logic directly
-	if c.PubSub.Backend != config.PubSubBackendNATS {
-		if c.PubSub.Backend == config.PubSubBackendGoChannel {
+	if c.Signer.PubSub.Backend != config.PubSubBackendNATS {
+		if c.Signer.PubSub.Backend == config.PubSubBackendGoChannel {
 			// This is what BootstrapServe checks for API mode
 			shouldFail := true
 			if shouldFail {
@@ -38,15 +38,15 @@ func TestBootstrapSigner_ShouldRejectSignModeWithGochannel(t *testing.T) {
 
 	// Create a minimal config with gochannel backend
 	c := &config.Config{
-		PubSub: config.PubSubConfig{Backend: config.PubSubBackendGoChannel},
+		Signer: config.SignerConfig{PubSub: config.PubSubConfig{Backend: config.PubSubBackendGoChannel}},
 	}
 
 	cmd := &cobra.Command{}
 	cmd.SetContext(context.Background())
 
 	// Mock the config loading
-	if c.PubSub.Backend != config.PubSubBackendNATS {
-		if c.PubSub.Backend == config.PubSubBackendGoChannel {
+	if c.Signer.PubSub.Backend != config.PubSubBackendNATS {
+		if c.Signer.PubSub.Backend == config.PubSubBackendGoChannel {
 			// This is what BootstrapSigner checks
 			shouldFail := true
 			if shouldFail {

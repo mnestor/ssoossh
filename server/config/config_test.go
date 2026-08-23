@@ -81,8 +81,8 @@ ssh_key: "test-key-material"
 	if c.Logging.Level != "WARN" {
 		t.Errorf("got Logging.Level %q, want %q (default, not overridden)", c.Logging.Level, "WARN")
 	}
-	if c.SSHKey != "test-key-material" {
-		t.Errorf("got SSHKey %q, want %q", c.SSHKey, "test-key-material")
+	if c.Signer.SSHKey != "test-key-material" {
+		t.Errorf("got SSHKey %q, want %q", c.Signer.SSHKey, "test-key-material")
 	}
 }
 
@@ -99,6 +99,7 @@ func TestNewConfig_ShouldUseConfigFlagPathWhenSet(t *testing.T) {
 	writeFile(t, explicitPath, `
 http:
   port: 8080
+ssh_key: "test-key-material"
 `)
 
 	cc := newTestCommand()
@@ -152,7 +153,9 @@ func TestNewConfig_ShouldLeaveDefaultsUntouchedWhenConfigFileEmpty(t *testing.T)
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "empty.yaml")
-	writeFile(t, path, "")
+	// ssh_key is the one setting NewConfig refuses to default (it is the CA
+	// key); everything else in these assertions still comes from defaults.
+	writeFile(t, path, `ssh_key: "test-key-material"`)
 
 	cc := newTestCommand()
 	if err := cc.Flags().Set("config", path); err != nil {
@@ -182,7 +185,9 @@ func TestNewConfig_ShouldDefaultToSecureTLSSettings(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "empty.yaml")
-	writeFile(t, path, "")
+	// ssh_key is the one setting NewConfig refuses to default (it is the CA
+	// key); everything else in these assertions still comes from defaults.
+	writeFile(t, path, `ssh_key: "test-key-material"`)
 
 	cc := newTestCommand()
 	if err := cc.Flags().Set("config", path); err != nil {
@@ -210,7 +215,9 @@ func TestNewConfig_ShouldDefaultHstsToOneYearWithSubdomains(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "empty.yaml")
-	writeFile(t, path, "")
+	// ssh_key is the one setting NewConfig refuses to default (it is the CA
+	// key); everything else in these assertions still comes from defaults.
+	writeFile(t, path, `ssh_key: "test-key-material"`)
 
 	cc := newTestCommand()
 	if err := cc.Flags().Set("config", path); err != nil {

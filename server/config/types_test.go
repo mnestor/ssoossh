@@ -352,7 +352,7 @@ func TestConfigStructure(t *testing.T) {
 			RequireGroup: "ssoossh-admins",
 			AuditorGroup: "ssoossh-auditors",
 		},
-		SSHKey: "ssh-ed25519 AAAAC3...",
+		Signer: SignerConfig{SSHKey: "ssh-ed25519 AAAAC3..."},
 		FIPS:   &trueVal,
 	}
 

@@ -86,8 +86,11 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		return nil, err
 	}
 
-	// Validate message-broker configuration before first use.
-	if err := c.PubSub.Validate(); err != nil {
+	// Validate the signer subset (broker + CA key) before first use. Every
+	// mode signs or forwards signing jobs, so this is unconditional - and
+	// an empty ssh_key used to surface much later as the services init
+	// failing with a bare "ssh: no key found".
+	if err := c.Signer.Validate(); err != nil {
 		return nil, err
 	}
 

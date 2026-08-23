@@ -73,7 +73,7 @@ func newContractServer(t *testing.T, certRequests service.CertRequestProvider) (
 		t.Fatalf("failed to marshal private key: %v", err)
 	}
 
-	c := &config.Config{SSHKey: string(pem.EncodeToMemory(block))}
+	c := &config.Config{Signer: config.SignerConfig{SSHKey: string(pem.EncodeToMemory(block))}}
 	caSvc, err := service.NewCAService(c, nil)
 	if err != nil {
 		t.Fatalf("failed to build CAService: %v", err)

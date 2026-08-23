@@ -50,7 +50,7 @@ func newTestApp(t *testing.T, c *config.Config) *app {
 	if err != nil {
 		t.Fatalf("failed to marshal private key: %v", err)
 	}
-	c.SSHKey = string(pem.EncodeToMemory(block))
+	c.Signer.SSHKey = string(pem.EncodeToMemory(block))
 
 	caSvc, err := service.NewCAService(c, nil)
 	if err != nil {

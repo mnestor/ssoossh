@@ -48,7 +48,7 @@ func TestNewCAService_ShouldSucceedWithValidPrivateKey(t *testing.T) {
 	t.Parallel()
 
 	pemKey, wantPub := generateTestSSHPrivateKey(t)
-	c := &config.Config{SSHKey: pemKey}
+	c := &config.Config{Signer: config.SignerConfig{SSHKey: pemKey}}
 
 	svc, err := NewCAService(c, nil)
 	if err != nil {
@@ -67,7 +67,7 @@ func TestNewCAService_ShouldSucceedWithValidPrivateKey(t *testing.T) {
 func TestNewCAService_ShouldErrorWithInvalidPrivateKey(t *testing.T) {
 	t.Parallel()
 
-	c := &config.Config{SSHKey: "not a valid private key"}
+	c := &config.Config{Signer: config.SignerConfig{SSHKey: "not a valid private key"}}
 
 	_, err := NewCAService(c, nil)
 	if err == nil {
@@ -78,7 +78,7 @@ func TestNewCAService_ShouldErrorWithInvalidPrivateKey(t *testing.T) {
 func TestNewCAService_ShouldErrorWithEmptyPrivateKey(t *testing.T) {
 	t.Parallel()
 
-	c := &config.Config{SSHKey: ""}
+	c := &config.Config{Signer: config.SignerConfig{SSHKey: ""}}
 
 	_, err := NewCAService(c, nil)
 	if err == nil {
@@ -90,7 +90,7 @@ func TestGetCAPublicKey_ShouldReturnTrimmedKeyWithoutTrailingNewline(t *testing.
 	t.Parallel()
 
 	pemKey, _ := generateTestSSHPrivateKey(t)
-	c := &config.Config{SSHKey: pemKey}
+	c := &config.Config{Signer: config.SignerConfig{SSHKey: pemKey}}
 
 	svc, err := NewCAService(c, nil)
 	if err != nil {

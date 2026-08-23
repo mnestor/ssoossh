@@ -46,7 +46,7 @@ func BootstrapServe(cmd *cobra.Command, mode ServerMode) error {
 	}
 
 	// API mode requires NATS for publishing signing jobs to the separate signer.
-	if mode == ServerModeAPI && c.PubSub.Backend != config.PubSubBackendNATS {
+	if mode == ServerModeAPI && c.Signer.PubSub.Backend != config.PubSubBackendNATS {
 		return fmt.Errorf("api mode publishes signing jobs to the pub/sub broker; gochannel is in-process only — set pubsub.backend to 'nats' or use full mode with an in-process signer")
 	}
 
@@ -158,7 +158,7 @@ func BootstrapSigner(cmd *cobra.Command) error {
 	}
 
 	// Signer mode requires NATS for receiving signing requests from API instances.
-	if c.PubSub.Backend != config.PubSubBackendNATS {
+	if c.Signer.PubSub.Backend != config.PubSubBackendNATS {
 		return fmt.Errorf("sign mode receives signing jobs from the pub/sub broker; gochannel is in-process only — set pubsub.backend to 'nats' to run the signer as a separate process, or use full mode with an in-process signer")
 	}
 
@@ -185,7 +185,6 @@ func BootstrapSigner(cmd *cobra.Command) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize pub/sub: %w", err)
 	}
-	serviceRunners = append(serviceRunners, a.pubSub.Run)
 	shutdowns.Add(a.pubSub.Close)
 
 	// Register just the signer handler (this registers it on a.pubSub.Router)
@@ -193,7 +192,10 @@ func BootstrapSigner(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to initialize signer: %w", err)
 	}
 
-	// Start the pub/sub router
+	// Start the pub/sub router - exactly once, and only after the handler is
+	// registered. This was appended a second time above initSignerHandler
+	// too, and the duplicate runner's "router is already running" error tore
+	// the whole process down: sign mode had never actually been started.
 	serviceRunners = append(serviceRunners, a.pubSub.Run)
 
 	// Run all background services

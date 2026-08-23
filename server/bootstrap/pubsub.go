@@ -12,5 +12,5 @@ import (
 // registers handlers on its Router, and services that publish take its
 // Publisher/Subscriber by injection.
 func (a *app) initPubSub() (*pubsub.PubSub, error) {
-	return pubsub.New(&a.config.PubSub, slog.With("type", "queue"))
+	return pubsub.New(&a.config.Signer.PubSub, slog.With("type", "queue"))
 }

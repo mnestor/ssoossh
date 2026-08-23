@@ -26,10 +26,10 @@ type CAService struct {
 	capubkey string
 }
 
-// NewCAService loads the CA private key from c.SSHKey and derives its
+// NewCAService loads the CA private key from c.Signer.SSHKey and derives its
 // public key, which is served via GetCAPublicKey.
 func NewCAService(c *config.Config, httpClient *http.Client) (*CAService, error) {
-	signer, err := ssh.ParsePrivateKey([]byte(c.SSHKey))
+	signer, err := ssh.ParsePrivateKey([]byte(c.Signer.SSHKey))
 	if err != nil {
 		return nil, err
 	}

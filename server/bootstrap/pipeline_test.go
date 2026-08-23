@@ -39,7 +39,7 @@ func testECDSAKeyPEM(t *testing.T) string {
 func TestInitPipeline_ShouldRejectANonFIPSApprovedCAKeyUnderFIPS(t *testing.T) {
 	t.Parallel()
 
-	c := &config.Config{SSHKey: testSSHKeyPEM(t), FIPS: boolPtr(true)}
+	c := &config.Config{Signer: config.SignerConfig{SSHKey: testSSHKeyPEM(t)}, FIPS: boolPtr(true)}
 
 	ps, err := pubsub.New(&config.PubSubConfig{}, slog.Default())
 	if err != nil {
@@ -60,7 +60,7 @@ func TestInitPipeline_ShouldRejectANonFIPSApprovedCAKeyUnderFIPS(t *testing.T) {
 func TestInitPipeline_ShouldSucceedWithAFIPSApprovedCAKeyUnderFIPS(t *testing.T) {
 	t.Parallel()
 
-	c := &config.Config{SSHKey: testECDSAKeyPEM(t), FIPS: boolPtr(true)}
+	c := &config.Config{Signer: config.SignerConfig{SSHKey: testECDSAKeyPEM(t)}, FIPS: boolPtr(true)}
 
 	ps, err := pubsub.New(&config.PubSubConfig{}, slog.Default())
 	if err != nil {

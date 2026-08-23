@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/mnestor/ssoossh/internal/fipsmode"
@@ -19,10 +18,6 @@ type Config struct {
 	HTTP  HTTPSettings `mapstructure:"http"`
 	Queue QueueConfig  `mapstructure:"queue"`
 
-	// PubSub configures the message broker (gochannel in-process, or NATS
-	// for multi-instance deployments). See PubSubConfig for details.
-	PubSub PubSubConfig `mapstructure:"pubsub"`
-
 	// AuthConfig configures OAuth/OIDC authentication for the server. See
 	// OAuthConfig for details on provider URL, scopes, and field mapping
 	// from OIDC claims to ssoossh identity fields (username, groups).
@@ -39,7 +34,12 @@ type Config struct {
 	// together; feat/host-certs originally declared it at the root.
 	Admin AdminConfig `mapstructure:"admin"`
 
-	SSHKey      string             `mapstructure:"ssh_key"`
+	// Signer carries everything the signer needs (the CA key and the
+	// broker), squashed so its YAML keys stay top-level. `ssoosshd sign`
+	// is configured entirely by this subset; the full server shares the
+	// same fields. See SignerConfig.
+	Signer SignerConfig `mapstructure:",squash"`
+
 	CertOptions CertificateOptions `mapstructure:"cert_options"`
 
 	// Branding optionally customizes the login page and web UI with
@@ -99,26 +99,6 @@ type BrandingSettings struct {
 // fipsmode.Enabled.
 func (c *Config) FIPSEnabled() bool {
 	return fipsmode.Enabled(c.FIPS)
-}
-
-// ValidateForMode performs mode-specific configuration validation.
-// mode determines which config sections are required:
-// - ServerModeFull and ServerModeAPI require HTTP and CertOptions validation
-// - SignerModeOnly only requires PubSub and SSHKey validation.
-func (c *Config) ValidateForMode(mode int) error {
-	// SignerModeOnly: only validate PubSub and SSHKey
-	if mode == 2 { // SignerModeOnly = 2 in modes.go
-		// PubSub was already validated in NewConfig
-		// Verify SSH key is set
-		if c.SSHKey == "" {
-			return fmt.Errorf("ssh_key is required for signer mode")
-		}
-		return nil
-	}
-
-	// Full and API modes: validate HTTP and CertOptions
-	// (already done in NewConfig, but documented here for clarity)
-	return nil
 }
 
 type QueueConfig struct {

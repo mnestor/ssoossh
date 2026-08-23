@@ -46,7 +46,7 @@ func (a *app) initSignerHandler() error {
 	// keeps only the public half. Failing startup on a bad key is the point —
 	// a server that can't sign is misconfigured, and finding out at the first
 	// approval instead of at boot would be worse.
-	keys, err := signer.NewConfigKeySource(a.config.SSHKey)
+	keys, err := signer.NewConfigKeySource(a.config.Signer.SSHKey)
 	if err != nil {
 		return fmt.Errorf("failed to load CA signing key: %w", err)
 	}

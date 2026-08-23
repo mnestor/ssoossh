@@ -37,7 +37,7 @@ func TestInitServices_ShouldConstructCAService(t *testing.T) {
 
 	oidcSrv := testutil.NewTestOIDCProvider(t)
 
-	c := &config.Config{SSHKey: testSSHKeyPEM(t)}
+	c := &config.Config{Signer: config.SignerConfig{SSHKey: testSSHKeyPEM(t)}}
 	c.AuthConfig.ClientID = "test-client"
 	c.AuthConfig.ProviderURL = oidcSrv.URL
 	c.AuthConfig.Fields.Username = "sub"
@@ -74,7 +74,7 @@ func TestInitServices_ShouldErrorOnInvalidSSHKey(t *testing.T) {
 
 	oidcSrv := testutil.NewTestOIDCProvider(t)
 
-	c := &config.Config{SSHKey: "not a valid key"}
+	c := &config.Config{Signer: config.SignerConfig{SSHKey: "not a valid key"}}
 	c.AuthConfig.ClientID = "test-client"
 	c.AuthConfig.ProviderURL = oidcSrv.URL
 	c.AuthConfig.Fields.Username = "sub"
