@@ -68,13 +68,76 @@ Enable metrics. Default:
 The CA's private key, inline, in OpenSSH private-key PEM format (e.g. the
 output of
 .BR "ssh-keygen -t ed25519" ).
-.BR Required ;
-the server fails to start if it is missing or unparseable. This is the
-only certificate-signing key source currently implemented \(em signing
-always happens with this key loaded directly into the server process; there
-is no ssh-agent-based or HSM/KMS-based signing backend yet, even though the
-signing pipeline is built behind an interface that could support one later.
-Never log or otherwise expose this value.
+Mutually exclusive with
+.BR hsm ;
+exactly one must be set for signing modes (full server or signer-only),
+while API-only mode requires neither.
+Supported for all SSH key types (ECDSA, RSA, Ed25519). Never log or
+otherwise expose this value.
+.TP
+.BI hsm: " object"
+Configures a PKCS#11 (Hardware Security Module) key source for the CA
+private key, as an alternative to
+.BR ssh_key .
+Mutually exclusive with
+.BR ssh_key .
+Requires the following sub-fields:
+.RS
+.TP
+.BI module: " string"
+Absolute path to the PKCS#11 shared library (e.g.
+.I /usr/local/lib/softhsm/libsofthsm2.so
+for SoftHSM2, or the vendor's library for a real HSM).
+.TP
+.BI token_label: " string"
+Name of the PKCS#11 token (e.g. created with
+.BR "softhsm2-util --init-token --label ..." ).
+.TP
+.BI "pin or " pin_file: " string"
+Exactly one of
+.B pin
+(inline, not recommended for production) or
+.B pin_file
+(path to a file containing the user PIN, with restricted permissions).
+.TP
+.BI key_label: " string"
+.B (recommended)
+The PKCS#11 key label (CKA_LABEL), e.g.
+.I ssoossh-ca .
+.TP
+.BI key_id: " string"
+.B (optional)
+Hex-encoded PKCS#11 key ID (CKA_ID), e.g.
+.IR 01 .
+At least one of
+.B key_label
+or
+.B key_id
+must be set; when both are set, both must match the same key.
+.RE
+.IP
+Supported algorithms: ECDSA P-256, P-384, P-521; RSA >= 2048.
+Not supported: Ed25519 (Go PKCS#11 limitation); use
+.B ssh_key
+for Ed25519 CAs. Consult
+.B docs/hsm.md
+for SoftHSM2 setup, importing existing keys, and deployment guidance.
+.TP
+.BI max_cert_lifetime: " duration"
+Maximum lifetime for user, service, and PAM certificates, enforced as
+a defense-in-depth check before signing. Any certificate with a validity
+span exceeding this duration is rejected at issuance time.
+Specified as a Go duration string (e.g.
+.IR 2160h " for 90 days, " 8760h " for 1 year)."
+Must be greater than zero. Default:
+.BR 2160h " (90 days)."
+.TP
+.BI max_host_cert_lifetime: " duration"
+Maximum lifetime for host certificates, enforced as a defense-in-depth
+check before signing. Specified as a Go duration string.
+Default:
+.BR 17544h " (2 years)."
+Must be greater than zero.
 .SS logging (main application log)
 .TP
 .BI logging.level: " string"

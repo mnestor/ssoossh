@@ -115,10 +115,25 @@
 # ----------------------------------------------------------------------
 # ssh_key - the SSH CA private key ssoosshd uses to sign issued
 # certificates. Inline PEM, not a file path.
+# Exactly one of ssh_key or hsm may be set.
 # ----------------------------------------------------------------------
 # ssh_key: |
 #   -----BEGIN OPENSSH PRIVATE KEY-----
 #   -----END OPENSSH PRIVATE KEY-----
+
+# ----------------------------------------------------------------------
+# hsm - source the CA private key from a PKCS#11 token (HSM) instead of
+# ssh_key. Exactly one of ssh_key / hsm may be set. See docs/hsm.md for
+# setup instructions.
+# Supported algorithms: ECDSA P-256/384/521, RSA >= 2048.
+# Not supported: Ed25519 (keep ssh_key for Ed25519 CAs).
+# ----------------------------------------------------------------------
+# hsm:
+#   module: /usr/local/lib/softhsm/libsofthsm2.so
+#   token_label: ssoossh-ca
+#   pin_file: /etc/ssoossh/hsm-pin       # or pin: "1234"
+#   key_label: ssoossh-ca
+#   # key_id: "01"                       # hex CKA_ID, alternative to key_label
 
 # ----------------------------------------------------------------------
 # fips - steers the server toward FIPS 140-3 approved algorithms. Null
@@ -142,6 +157,24 @@
 # defaults/validation). Set true when actually deploying.
 # ----------------------------------------------------------------------
 # production: true
+
+# ----------------------------------------------------------------------
+# max_cert_lifetime - the maximum lifetime for user, service, and PAM
+# certificates, enforced as a defense-in-depth check before signing.
+# Any issued certificate with a validity span exceeding this duration
+# is rejected. Specified as a Go duration string (e.g. "90d" is not valid;
+# use "2160h" for 90 days, "8760h" for 1 year).
+# Default: 2160h (90 days). Must be > 0.
+# ----------------------------------------------------------------------
+# max_cert_lifetime: 2160h
+
+# ----------------------------------------------------------------------
+# max_host_cert_lifetime - the maximum lifetime for host certificates,
+# enforced as a defense-in-depth check before signing.
+# Specified as a Go duration string (e.g. "8760h" for 1 year, "17544h" for 2 years).
+# Default: 17544h (2 years). Must be > 0.
+# ----------------------------------------------------------------------
+# max_host_cert_lifetime: 17544h
 
 # ----------------------------------------------------------------------
 # traces / metrics - enable OpenTelemetry traces and metrics export.

@@ -6,10 +6,9 @@
 - Decides certificate contents, signs public keys, serves the web UI for
   approval/confirmation/per-user certificate history
 - API endpoint provides methods to frontend and client pieces
-- CA key lives in an ssh-agent the server process can reach (v1);
-  PKCS#11/HSM/cloud KMS planned behind the same signing interface — keep
-  signing behind that interface, don't hardcode ssh-agent assumptions into
-  callers
+- CA key sources: inline SSH key (ssh_key), PKCS#11/HSM token (hsm),
+  or registry-fetched keys (split mode / multi-instance); signing always
+  happens behind a keysource interface, never hardcoded to any single backend
 - Full design context (open questions, future plans):
   `docs/ssoossh-context.md`
 
