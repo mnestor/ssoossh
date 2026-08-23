@@ -3,6 +3,7 @@
 package testutil
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -19,12 +20,14 @@ func NewTestOIDCProvider(t *testing.T) *httptest.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{
-			"issuer": %q,
-			"authorization_endpoint": %q,
-			"token_endpoint": %q,
-			"jwks_uri": %q
-		}`, srv.URL, srv.URL+"/auth", srv.URL+"/token", srv.URL+"/keys")
+		// json.Encoder rather than Fprintf so the document is built by a
+		// real JSON writer (and semgrep's XSS rule stays quiet).
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"issuer":                 srv.URL,
+			"authorization_endpoint": srv.URL + "/auth",
+			"token_endpoint":         srv.URL + "/token",
+			"jwks_uri":               srv.URL + "/keys",
+		})
 	})
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

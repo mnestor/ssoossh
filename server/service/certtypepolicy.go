@@ -1,7 +1,9 @@
 package service
 
 import (
-	"text/template"
+	// Key ID templates render plain-text SSH certificate key IDs, never
+	// HTML; html/template's escaping would corrupt them.
+	"text/template" // nosemgrep: go.lang.security.audit.xss.import-text-template.import-text-template
 	"time"
 
 	"github.com/mnestor/ssoossh/server/config"
