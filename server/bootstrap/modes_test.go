@@ -4,8 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/mnestor/ssoossh/server/config"
 	"github.com/spf13/cobra"
+
+	"github.com/mnestor/ssoossh/server/config"
 )
 
 func TestBootstrapServe_ShouldRejectAPIModeWithGochannel(t *testing.T) {

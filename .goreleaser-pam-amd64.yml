@@ -42,7 +42,7 @@ builds:
       -X github.com/mnestor/ssoossh/internal/version.BuiltBy={{- if index .Env "github" }}{{.Env.github.runner.name}}{{ else }}goreleaser{{ end }}
 
 nfpms:
-  - id: linux-pam-build-amd64
+  - id: pam-deb-amd64
     package_name: ssoossh-pam
     file_name_template: "ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     license: &license "MIT"
@@ -76,7 +76,7 @@ nfpms:
         dst: /usr/share/man/man8/pam_ssoossh.8
 
   - id: pam-rpm-amd64
-    package_name: ssoossh_pam
+    package_name: ssoossh-pam
     file_name_template: "ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     license: *license
     maintainer: *maintainer

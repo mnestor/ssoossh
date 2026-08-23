@@ -80,22 +80,17 @@ func FuzzParsePolicyPlist(f *testing.F) {
 			return
 		}
 
-		// If we got a result, it should be a valid map
-		if result != nil {
-			for key, value := range result {
-				// Key should be a non-empty string
-				if key == "" {
-					// Empty keys are weird but not a panic
-				}
-
-				// Value should be one of the recognized types
-				switch value.(type) {
-				case string, int64, bool:
-					// Valid types
-				default:
-					// Unexpected type - should have been filtered by parser
-					t.Logf("unexpected value type for key %q: %T", key, value)
-				}
+		// If we got a result, it should be a valid map. Ranging over a nil
+		// map is a no-op, so no nil check is needed. An empty key is odd
+		// but not a failure -- what matters is that every value is one of
+		// the types the parser is documented to produce.
+		for key, value := range result {
+			switch value.(type) {
+			case string, int64, bool:
+				// Valid types
+			default:
+				// Unexpected type - should have been filtered by parser
+				t.Logf("unexpected value type for key %q: %T", key, value)
 			}
 		}
 	})

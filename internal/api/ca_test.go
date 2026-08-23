@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -53,7 +54,8 @@ func TestGetCA_ShouldReturnResponseErrorOnFailure(t *testing.T) {
 	}
 
 	_, err = c.GetCA(context.Background())
-	respErr, ok := err.(*ResponseError)
+	respErr := &ResponseError{}
+	ok := errors.As(err, &respErr)
 	if !ok {
 		t.Fatalf("expected a *ResponseError, got %T: %v", err, err)
 	}

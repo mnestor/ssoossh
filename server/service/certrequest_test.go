@@ -1700,7 +1700,7 @@ func seedRequestWithUnsupportedType(t *testing.T, db *gorm.DB) string {
 	// the life of the test instead. Each Postgres test owns its own schema
 	// (see newTestPostgresDB), so dropping it here cannot affect anything
 	// running in parallel.
-	if db.Dialector.Name() == "postgres" {
+	if db.Name() == "postgres" {
 		if err := db.Exec(`ALTER TABLE certificate_requests DROP CONSTRAINT IF EXISTS chk_certificate_requests_type`).Error; err != nil {
 			t.Fatalf("failed to drop the type check constraint: %v", err)
 		}

@@ -341,13 +341,14 @@ func TestCertificateService_CursorWithConcurrentIssuance(t *testing.T) {
 	sharedTime1 := now
 	sharedTime2 := now.Add(-time.Second)
 
-	var certs []*model.Certificate
-	certs = append(certs, seedCertificate(t, reqSvc, &userID, 1, sharedTime1))
-	certs = append(certs, seedCertificate(t, reqSvc, &userID, 2, sharedTime1))
-	certs = append(certs, seedCertificate(t, reqSvc, &userID, 3, sharedTime1))
-	certs = append(certs, seedCertificate(t, reqSvc, &userID, 4, sharedTime2))
-	certs = append(certs, seedCertificate(t, reqSvc, &userID, 5, sharedTime2))
-	certs = append(certs, seedCertificate(t, reqSvc, &userID, 6, sharedTime2))
+	// The seeded rows are asserted on through the paged reads below, not
+	// through the return values, so they are deliberately not collected.
+	seedCertificate(t, reqSvc, &userID, 1, sharedTime1)
+	seedCertificate(t, reqSvc, &userID, 2, sharedTime1)
+	seedCertificate(t, reqSvc, &userID, 3, sharedTime1)
+	seedCertificate(t, reqSvc, &userID, 4, sharedTime2)
+	seedCertificate(t, reqSvc, &userID, 5, sharedTime2)
+	seedCertificate(t, reqSvc, &userID, 6, sharedTime2)
 
 	// Get first page (3 results) — should be certs at sharedTime1.
 	page1, cursor1, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 3)

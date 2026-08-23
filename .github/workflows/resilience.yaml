@@ -7,7 +7,8 @@ on:
   workflow_dispatch:
   pull_request:
   schedule:
-    # Weekly double check; PRs do the heavy lifting day to day.
+    # Kept only for the load job below, which is schedule-only. The
+    # resilience and a11y jobs run on PRs and do not need a weekly repeat.
     - cron: "30 5 * * 1" # 05:30 UTC Monday
 
 permissions:
@@ -71,10 +72,13 @@ jobs:
       - name: Run resilience tests
         run: CGO_ENABLED=1 go test -buildvcs=false -tags=resilience -race -count=1 -timeout=5m ./test/resilience/...
 
+  # Schedule and manual dispatch only. Two of these tests hold the server
+  # under sustained load for SSOOSSH_SOAK_DURATION each, which is a poor
+  # fit for a per-PR gate: it is the slowest job in the workflow and the
+  # class of regression it catches does not arrive one PR at a time.
   load:
     name: Load and Concurrency Tests
-    needs: changes
-    if: needs.changes.outputs.go == 'true'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:

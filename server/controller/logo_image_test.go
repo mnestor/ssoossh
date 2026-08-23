@@ -243,7 +243,7 @@ func TestComputeSimpleETag(t *testing.T) {
 	}
 }
 
-// contains is a simple helper to check if a string contains a substring
+// contains is a simple helper to check if a string contains a substring.
 func contains(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {
 		if s[i:i+len(substr)] == substr {

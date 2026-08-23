@@ -13,8 +13,6 @@ package config
 // at the top level, not nested, because it's handled separately after
 // unmarshaling (it's extracted and used to set ForbiddenCertificateExtensions
 // directly on the Config struct, not merged through viper).
-//
-//nolint:unused // prod callers are policy_darwin.go/policy_windows.go (build-tag-excluded on Linux CI); exercised by policy_test.go, which `run.tests: false` also excludes from lint
 func buildPolicyMap(flat map[string]any) map[string]any {
 	nested := make(map[string]any, len(flat))
 	var sshkey map[string]any

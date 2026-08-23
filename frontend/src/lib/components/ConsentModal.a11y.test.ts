@@ -68,7 +68,7 @@ describe('ConsentModal accessibility', () => {
 	});
 
 	it('should have high contrast text and button colors', () => {
-		const { container } = render(ConsentModal, {
+		render(ConsentModal, {
 			notice: 'Notice text',
 			onaccepted: () => {}
 		});
@@ -120,7 +120,7 @@ describe('ConsentModal accessibility', () => {
 		expect(button).toBeInTheDocument();
 	});
 
-	it('should activate button on click', () => {
+	it('should call onaccepted when the button is clicked', async () => {
 		let accepted = false;
 		render(ConsentModal, {
 			notice: 'Notice text',
@@ -129,9 +129,9 @@ describe('ConsentModal accessibility', () => {
 			}
 		});
 
-		const button = screen.getByRole('button', { name: /accept|approve/i });
-		// Button should be clickable and interactive
-		expect(button).toBeEnabled();
+		await userEvent.click(screen.getByRole('button', { name: /accept|approve/i }));
+
+		expect(accepted).toBe(true);
 	});
 
 	it('should work with reduced motion preferences', () => {

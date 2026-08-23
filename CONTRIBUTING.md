@@ -10,7 +10,7 @@ This project actively uses AI assistance in development. If you are using Claude
 
 1. **Disclose your use.** Mention it in your pull request description (e.g., "Implemented with Claude Code assistance").
 2. **Take responsibility for correctness.** The PR author is responsible for verifying that all changes work correctly, pass tests, and follow the project's standards. AI output is a draft, not a finished product.
-3. **Review carefully.** Before submitting, test your changes locally (`make test && make lint`), read the diff, and verify it matches what you intended.
+3. **Review carefully.** Before submitting, run `make pre-pr`, read the diff, and verify it matches what you intended.
 
 This transparency helps the maintainer understand the contribution's context and ensures accountability.
 
@@ -61,34 +61,52 @@ Fixes #42
 
 - Go 1.26+
 - Node.js 26+, pnpm 11+
-- Docker (for e2e tests)
-- golangci-lint, semgrep (for CI checks)
+- golangci-lint
+- Docker (for `make semgrep`; the e2e suite does not need it)
+- libpam headers, only if you touch `pam_ssoossh/`. The devcontainer already
+  has them; on a bare host run `scripts/build-env-for-pam.sh`.
+
+`make help` lists every target with a one-line description. Run it first if
+you are not sure what exists.
 
 ### Running Tests Locally
 
 ```bash
-# Build frontend and run all tests
+# Unit tests, per component, with coverage filtered through
+# exclude-from-coverage.txt
 make test
 
-# Run just one package's tests
-go test ./server/cmd/...
+# Just one package
+go test ./server/service/...
 
-# Run frontend tests
-cd frontend && pnpm test
+# Frontend tests (vitest)
+make frontend-test
 
-# Run end-to-end tests (requires special setup; see test/e2e/README.md)
-# make test-e2e    # only run this after consulting the e2e guide
+# Tagged suites that are NOT part of `make test`
+make test-resilience     # shutdown, database loss, OIDC loss
+make test-load           # load, soak, concurrency (slow; weekly in CI)
+make test-migration      # SQLite/Postgres schema parity
+
+# End-to-end. Tier 3 modifies host state: it creates and unlocks a local
+# account and runs sshd as root. Read test/e2e/README.md before running it.
+make test-e2e
 ```
 
 ### Linting
 
 ```bash
-# Check code style and common errors
-make lint
+# Fix everything that can be fixed mechanically. Run this BEFORE `make lint`.
+make lint-fix
 
-# Auto-format Go code
-make fmt
+# Then check. This is the merge gate.
+make lint
 ```
+
+`make lint-fix` matters more than it looks. Several enabled linters are
+mechanically fixable — `godot` (comment full stops), the gofmt/goimports
+formatters, and the `interface{}` to `any` rewrite — and there is no
+pre-commit hook in this repo to catch them. Without `lint-fix` they reach CI
+and fail the merge gate over punctuation.
 
 ### Code Standards
 
@@ -117,14 +135,70 @@ make fmt
 
 1. **Create a branch** off `main`: `git checkout -b feat/your-feature`.
 2. **Make your changes.** Write tests as you go.
-3. **Run the full gate locally:**
+3. **Run the gate locally:**
    ```bash
-   make lint && make test
+   make pre-pr
    ```
 4. **Commit with conventional commits.** Keep one concern per commit.
 5. **Open a PR** against `main`. The description should explain *why* the change matters, not just *what* changed.
-6. **Wait for CI.** The build, test, lint, and security checks must pass before merging.
+6. **Wait for CI.** See the table below for what blocks a merge.
 7. **Respond to feedback.** Add commits (don't amend) so the review history is clear.
+
+### Before you open a PR
+
+`make pre-pr` is the whole checklist in one target. It runs, in order:
+
+| Step | What it does | Why the order matters |
+| --- | --- | --- |
+| `make fmt` | gofmt plus prettier, in place | Formatting first, so nothing after it reports a formatting problem |
+| `make lint-fix` | `golangci-lint run --fix` | Fixes the mechanical findings before anything checks for them |
+| `make check-generated` | types, OpenAPI, man pages | Catches a generated file you forgot to regenerate and commit |
+| `make ci-required` | every blocking CI check | The actual gate |
+
+Expect the first run to take a while: `ci-required` builds the web UI, runs
+the whole unit suite with coverage, builds the PAM module under cgo, and runs
+the frontend lint, typecheck, and semgrep scan.
+
+If you want to run one piece at a time, `make ci-required` is the list:
+
+```
+fmt-check check-gitignore lint frontend-lint frontend-check actionlint
+check-generated build pam test-pam lint-pam cover-ci semgrep
+```
+
+**Deliberately not in `pre-pr`:** `test-e2e` (modifies host state, so it stays
+opt-in), `test-load` (weekly in CI, not per-PR), and the macOS and Windows
+client legs, which need those operating systems. If your change touches
+`client/` or `internal/crypto/ssh/agent/`, CI will run those two legs for you
+and they are the ones most likely to surprise you — path handling, agent
+sockets, and keychain behavior differ per platform.
+
+### What CI blocks on
+
+| Workflow | Blocking | Notes |
+| --- | --- | --- |
+| `lint` | yes | Go lint, frontend lint and svelte-check, actionlint, .gitignore invariants |
+| `codecover` | yes | Unit suite plus the Codecov upload |
+| `build` | yes | On PRs: generated-artifact staleness plus a single-target snapshot build. The full signed multi-platform pipeline runs on tags, weekly, and manual dispatch |
+| `e2e` | yes | Four tiers. sqlite only except tier 1, which runs both backends |
+| `client-matrix` | yes | macOS and Windows client and agent tests |
+| `resilience` | yes | Resilience and accessibility. The load job is weekly, not per-PR |
+| `security` | partly | semgrep blocks; govulncheck and pnpm audit report to a PR comment |
+
+Most workflows are behind a path filter, so a docs-only PR will show several
+checks as skipped. Skipped satisfies branch protection; it is not a failure.
+
+### If CI fails and your local run passed
+
+- **`check-generated`** — you changed a Go wire type, a swag annotation, or a
+  cobra command without running `make types`, `make openapi`, or `make gendocs`
+  and committing the result.
+- **`frontend-check`** — `pnpm build` does not typecheck, so a Svelte or
+  TypeScript type error only shows up here. `make frontend-check` locally.
+- **`semgrep`** — frontend only, and it is a merge gate rather than advisory.
+  `make semgrep` reproduces it exactly (same pinned image, same rule packs).
+- **`client-matrix`** — a macOS or Windows path. Nothing local reproduces it;
+  read the job log.
 
 ### PR Guidelines
 

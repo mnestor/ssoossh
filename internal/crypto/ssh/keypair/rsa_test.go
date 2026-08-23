@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-// should reject a key size below the 2048-bit minimum
+// should reject a key size below the 2048-bit minimum.
 func TestNewRSAKeyPair_RejectsSmallKeySize(t *testing.T) {
 	t.Parallel()
 

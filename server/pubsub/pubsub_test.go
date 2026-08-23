@@ -105,7 +105,7 @@ func TestRun_ShouldReturnWhenContextIsCanceled(t *testing.T) {
 	}
 }
 
-// should drop (ack, not propagate) a message whose handler still fails after retries, and pass through a handler's success
+// should drop (ack, not propagate) a message whose handler still fails after retries, and pass through a handler's success.
 func TestDropAfterRetries(t *testing.T) {
 	t.Parallel()
 

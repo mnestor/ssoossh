@@ -7,12 +7,37 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 
 	servercmd "github.com/mnestor/ssoossh/server/cmd"
 )
+
+// manPageDate returns the date stamped into every generated page's HISTORY
+// line.
+//
+// Fixed rather than time.Now(), which is what cobra uses when the header
+// leaves Date nil. A current date makes the output differ on every run, so
+// `make man-check` -- which asserts the committed pages still match what the
+// commands produce -- could never pass on any day but the one the pages were
+// last generated. Bump this deliberately when the documentation changes in a
+// way worth dating.
+//
+// SOURCE_DATE_EPOCH overrides it, following the reproducible-builds
+// convention, so a downstream rebuild can stamp its own date.
+func manPageDate() (time.Time, error) {
+	if s := os.Getenv("SOURCE_DATE_EPOCH"); s != "" {
+		secs, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("parse SOURCE_DATE_EPOCH: %w", err)
+		}
+		return time.Unix(secs, 0).UTC(), nil
+	}
+	return time.Date(2026, time.August, 23, 0, 0, 0, 0, time.UTC), nil
+}
 
 // run performs the actual man page generation. It is extracted from main()
 // to enable testing. It returns an error instead of calling os.Exit or log.Fatalf.
@@ -31,10 +56,16 @@ func run(outDir string) error {
 		return fmt.Errorf("get cobra command from server Command wrapper")
 	}
 
-	err := doc.GenManTree(cobraCmd, &doc.GenManHeader{
+	date, err := manPageDate()
+	if err != nil {
+		return err
+	}
+
+	err = doc.GenManTree(cobraCmd, &doc.GenManHeader{
 		Title:   "SSOOSSHD",
 		Section: "8",
 		Source:  "ssoosshd",
+		Date:    &date,
 	}, outDir)
 	if err != nil {
 		return fmt.Errorf("generate server man page: %w", err)
@@ -42,7 +73,7 @@ func run(outDir string) error {
 	fmt.Printf("Generated %s\n", filepath.Join(outDir, "ssoosshd.8"))
 
 	// Generate client (ssoossh) man page - create a minimal cobra tree just for docs
-	err = generateClientManpage(outDir)
+	err = generateClientManpage(outDir, date)
 	if err != nil {
 		return fmt.Errorf("generate client man page: %w", err)
 	}
@@ -65,8 +96,10 @@ func main() {
 	}
 }
 
-// generateClientManpage creates a minimal client command tree for man page generation.
-func generateClientManpage(outDir string) error {
+// generateClientManpage creates a minimal client command tree for man page
+// generation. date is threaded through from run so both trees carry the same
+// stamp; see manPageDate for why it is not time.Now().
+func generateClientManpage(outDir string, date time.Time) error {
 	// Create a minimal root command that represents ssoossh
 	// We can't generate from the real client command tree easily due to simplecobra's design,
 	// so we create a minimal representation for documentation purposes.
@@ -114,5 +147,6 @@ func generateClientManpage(outDir string) error {
 		Title:   "SSOOSSH",
 		Section: "1",
 		Source:  "ssoossh",
+		Date:    &date,
 	}, outDir)
 }

@@ -1,11 +1,15 @@
 name: build
 
-# The release pipeline and its PR dry-run. On a v* tag push this publishes
-# the real release (goreleaser archives/packages, the ssoosshd Docker
-# image); on PRs it runs the same pipeline in snapshot mode so a broken
-# release config is caught before merge. The weekly run re-validates the
-# pipeline against upstream drift (new goreleaser, new base images) even
-# when nothing has been pushed.
+# The release pipeline, plus the cheap check that stands in for it on PRs.
+#
+# On a v* tag push this publishes the real release (goreleaser
+# archives/packages, the ssoosshd Docker image). PRs no longer run that
+# pipeline: they run `build-check`, which does the generated-artifact
+# staleness checks and a single-target snapshot build, with no release
+# secrets on the runner. The weekly run is what still exercises the full
+# multi-platform signed pipeline against upstream drift (new goreleaser,
+# new base images), which is the job the PR dry-run was really doing and
+# was paying for on every push to do it.
 on:
   workflow_dispatch:
   push:
@@ -13,7 +17,10 @@ on:
       - v*
   pull_request:
   schedule:
-    # Weekly pipeline double check; PRs do the heavy lifting day to day.
+    # The only run that exercises the full signed multi-platform pipeline
+    # outside an actual release. Kept while the other weekly duplicates
+    # were dropped, because this one is not a duplicate of anything a PR
+    # does.
     - cron: "0 4 * * 1" # 04:00 UTC Monday
 
 permissions:
@@ -56,9 +63,60 @@ jobs:
               - '.redoclyrc.yaml'
               - '.github/workflows/build.yaml'
 
+  # What a PR gets instead of the release pipeline: the checks that catch a
+  # committed artifact going stale, plus proof that the tree still builds
+  # through goreleaser. One target (linux/amd64) rather than four platforms,
+  # no PAM containers, and no 1Password/GPG/notarization secrets -- a PR
+  # branch does not need the signing key to prove the config parses.
+  build-check:
+    name: build check
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/mnestor/ubuntu-build:latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # Catches a Go wire type changing without the frontend's generated
+      # TypeScript being regenerated.
+      - name: Check generated frontend types are current
+        run: make types-check
+
+      # docs/openapi.yaml is generated from the swag annotations on the
+      # handlers. Catches a route or response shape changing without the
+      # spec following.
+      - name: Check generated OpenAPI spec is current
+        run: make openapi-check
+
+      - name: Lint OpenAPI spec
+        run: make openapi-lint
+
+      # Man pages are generated from the cobra commands; same staleness
+      # trap as the two above.
+      - name: Check generated man pages are current
+        run: make man-check
+
+      # The server binary embeds server/frontend/dist.
+      - name: Build web UI
+        run: make frontend
+
+      - name: Snapshot build (linux/amd64)
+        run: |
+          git config --global --add safe.directory "$(pwd)"
+          goreleaser build --single-target --snapshot --clean -f .goreleaser.yml
+        env:
+          GOOS: linux
+          GOARCH: amd64
+
   build-pam:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    # Tag pushes, the weekly pipeline check, and manual dispatch only. PRs
+    # get build-check above.
+    if: github.event_name != 'pull_request' && needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.runs }}
     timeout-minutes: 30
     permissions:
@@ -119,7 +177,7 @@ jobs:
     # configs write assets into the same GitHub release, and racing them
     # has caused duplicate-release creation.
     needs: [changes, build-pam]
-    if: needs.changes.outputs.code == 'true'
+    if: github.event_name != 'pull_request' && needs.changes.outputs.code == 'true'
     permissions:
       # goreleaser creates the release and uploads assets on tag pushes.
       contents: write
@@ -146,6 +204,11 @@ jobs:
       # Validate the OpenAPI spec against the OpenAPI 3.1 specification.
       - name: Lint OpenAPI spec
         run: make openapi-lint
+
+      # Man pages are generated from the cobra commands. A stale page must
+      # not ship in a release archive.
+      - name: Check generated man pages are current
+        run: make man-check
 
       # Must run before goreleaser: the server binary embeds
       # server/frontend/dist, and only a placeholder index.html is tracked.
@@ -218,7 +281,7 @@ jobs:
     # Gated behind build-most so a tag push never publishes an image for a
     # release whose goreleaser half failed and was deleted.
     needs: [changes, build-most]
-    if: needs.changes.outputs.code == 'true'
+    if: github.event_name != 'pull_request' && needs.changes.outputs.code == 'true'
     permissions:
       contents: read
       packages: write

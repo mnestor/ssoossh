@@ -56,7 +56,7 @@ export const StatusExpired = "expired";
 /**
  * StatusEnrolled resolves a service-enrollment request: the payload
  * carries CertificateResult.Code (an enrollment token), not a
- * certificate. See docs/ssoossh-context.md, "Service enrollment".
+ * certificate. See docs/dev/ssoossh-context.md, "Service enrollment".
  */
 export const StatusEnrolled = "enrolled";
 /**
@@ -150,7 +150,7 @@ export interface CertificateResult {
 	certificate?: string;
 	/**
 	 * Code is the enrollment token, set only when Status is "enrolled"
-	 * (CertificateTypeService — see docs/ssoossh-context.md, "Service
+	 * (CertificateTypeService — see docs/dev/ssoossh-context.md, "Service
 	 * enrollment"). `service retrieve` presents this later to redeem the
 	 * actual certificate.
 	 */
@@ -221,7 +221,7 @@ export interface HostSignRequestBody {
  * ServiceEnrollRequestBody is the POST /api/certs/service/enroll request
  * body. PublicKey may be operator-supplied (BYO key, possibly HSM/PKCS#11/
  * encrypted file — the server never sees the private half) or
- * client-generated (see docs/ssoossh-context.md, "Service enrollment").
+ * client-generated (see docs/dev/ssoossh-context.md, "Service enrollment").
  */
 export interface ServiceEnrollRequestBody {
 	public_key: string;
@@ -285,7 +285,7 @@ export interface DenyResponse {
  * RetrieveRequestBody is the POST /api/certs/service/retrieve request
  * body. Only the code is posted — never a public key, so a stolen code
  * can't be paired with an attacker's keypair (see
- * docs/ssoossh-context.md, "Service enrollment").
+ * docs/dev/ssoossh-context.md, "Service enrollment").
  */
 export interface RetrieveRequestBody {
 	code: string;

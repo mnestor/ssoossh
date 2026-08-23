@@ -6,11 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 )
 
-// should parse a CA public key from either authorized_keys format or raw base64, and reject anything else
+// should parse a CA public key from either authorized_keys format or raw base64, and reject anything else.
 func TestParseCAPublicKey(t *testing.T) {
 	t.Parallel()
 
@@ -50,7 +51,7 @@ func TestParseCAPublicKey(t *testing.T) {
 	}
 }
 
-// should validate certificate time bounds and CA trust independently
+// should validate certificate time bounds and CA trust independently.
 func TestCertificateValid(t *testing.T) {
 	t.Parallel()
 
@@ -85,7 +86,7 @@ func TestCertificateValid(t *testing.T) {
 		return cert
 	}
 
-	now := uint64(time.Now().Unix())
+	now := uint64(time.Now().Unix()) //nolint:gosec // test fixture, always a real date
 
 	tests := []struct {
 		name string

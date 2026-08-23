@@ -75,7 +75,7 @@ func FuzzParseKeyIDTemplate(f *testing.F) {
 	})
 }
 
-// Helper to create repeated strings for DOS testing
+// Helper to create repeated strings for DOS testing.
 func repeatString(s string, n int) string {
 	result := ""
 	for i := 0; i < n; i++ {

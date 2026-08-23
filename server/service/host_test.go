@@ -7,7 +7,7 @@ import (
 	"github.com/mnestor/ssoossh/server/config"
 )
 
-// should construct without error and always report "not implemented" for Renew and SyncPrincipals
+// should construct without error and always report "not implemented" for Renew and SyncPrincipals.
 func TestHostService(t *testing.T) {
 	t.Parallel()
 

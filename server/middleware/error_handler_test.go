@@ -38,7 +38,7 @@ func TestErrorHandlerMiddleware_ShouldUseErrorsHttpStatusCodeWhenAvailable(t *te
 	handler := NewErrorHandlerMiddleware().Add()
 
 	c, w := newTestRequest("203.0.113.31:1111")
-	c.Error(&TooManyRequestsError{}) //nolint:errcheck
+	c.Error(&TooManyRequestsError{})
 	c.Abort()
 	handler(c)
 
@@ -56,7 +56,7 @@ func TestErrorHandlerMiddleware_ShouldDefaultTo500ForPlainErrors(t *testing.T) {
 	handler := NewErrorHandlerMiddleware().Add()
 
 	c, w := newTestRequest("203.0.113.32:1111")
-	c.Error(errors.New("boom")) //nolint:errcheck
+	c.Error(errors.New("boom"))
 	c.Abort()
 	handler(c)
 
@@ -79,7 +79,7 @@ func TestErrorHandlerMiddleware_ShouldNotOverwriteAResponseAlreadyWritten(t *tes
 	c.JSON(http.StatusCreated, gin.H{"ok": true})
 	// A handler could register an error after already writing a response
 	// (unusual, but possible); the written response must win.
-	c.Error(&TooManyRequestsError{}) //nolint:errcheck
+	c.Error(&TooManyRequestsError{})
 
 	handler(c)
 

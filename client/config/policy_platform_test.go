@@ -86,14 +86,14 @@ func TestWindowsRegistryFixture(t *testing.T) {
 	// Create an in-memory registry-shaped data structure.
 
 	type registryFixture struct {
-		HKCU map[string]interface{}
+		HKCU map[string]any
 	}
 
 	fixture := registryFixture{
-		HKCU: map[string]interface{}{
-			"Software": map[string]interface{}{
-				"ssoossh": map[string]interface{}{
-					"allowed_principals": "alice,bob",
+		HKCU: map[string]any{
+			"Software": map[string]any{
+				"ssoossh": map[string]any{
+					"allowed_principals":   "alice,bob",
 					"certificate_lifetime": "1h",
 				},
 			},
@@ -105,12 +105,12 @@ func TestWindowsRegistryFixture(t *testing.T) {
 		t.Errorf("registry fixture HKCU is nil")
 	}
 
-	softwareKey, ok := fixture.HKCU["Software"].(map[string]interface{})
+	softwareKey, ok := fixture.HKCU["Software"].(map[string]any)
 	if !ok {
 		t.Errorf("registry fixture missing Software key")
 	}
 
-	ssoosshKey, ok := softwareKey["ssoossh"].(map[string]interface{})
+	ssoosshKey, ok := softwareKey["ssoossh"].(map[string]any)
 	if !ok {
 		t.Errorf("registry fixture missing ssoossh key")
 	}
@@ -126,10 +126,10 @@ func TestWindowsRegistryFixture(t *testing.T) {
 // TestRegistryFixtureJSON tests JSON-encoded registry fixtures.
 func TestRegistryFixtureJSON(t *testing.T) {
 	// Serialize registry fixture to JSON
-	fixture := map[string]interface{}{
-		"HKCU": map[string]interface{}{
-			"Software": map[string]interface{}{
-				"ssoossh": map[string]interface{}{
+	fixture := map[string]any{
+		"HKCU": map[string]any{
+			"Software": map[string]any{
+				"ssoossh": map[string]any{
 					"allowed_principals": "alice,bob",
 				},
 			},
@@ -142,7 +142,7 @@ func TestRegistryFixtureJSON(t *testing.T) {
 	}
 
 	// Parse it back
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	if err := json.Unmarshal(jsonData, &parsed); err != nil {
 		t.Fatalf("failed to unmarshal fixture JSON: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestPolicyStructure(t *testing.T) {
 	// - allowed_principals (list/array of strings)
 	// - certificate_lifetime (duration string)
 
-	validStructure := map[string]interface{}{
+	validStructure := map[string]any{
 		"allowed_principals":   []string{"alice", "bob"},
 		"certificate_lifetime": "1h",
 	}

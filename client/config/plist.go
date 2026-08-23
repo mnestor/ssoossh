@@ -15,8 +15,6 @@ import (
 // settings ssoossh understands, not to be a general-purpose plist decoder.
 // A document that isn't well-formed XML, or has no root <dict>, is an
 // error.
-//
-//nolint:unused // prod caller is policy_darwin.go (build-tag-excluded on Linux CI); exercised by plist_test.go, which `run.tests: false` also excludes from lint
 func parsePolicyPlist(data []byte) (map[string]any, error) {
 	dec := xml.NewDecoder(bytes.NewReader(data))
 
@@ -44,8 +42,6 @@ func parsePolicyPlist(data []byte) (map[string]any, error) {
 // between entries. done reports the root <dict>'s closing tag. ok is false
 // when the value's type isn't one this parser understands — the entry is
 // still consumed correctly, just not returned.
-//
-//nolint:unused // see parsePolicyPlist
 func readDictEntry(dec *xml.Decoder) (key string, value any, ok bool, done bool, err error) {
 	for {
 		tok, err := dec.Token()
@@ -68,8 +64,6 @@ func readDictEntry(dec *xml.Decoder) (key string, value any, ok bool, done bool,
 
 // readKeyedValue reads a <key> element's text, then the value element that
 // follows it.
-//
-//nolint:unused // see parsePolicyPlist
 func readKeyedValue(dec *xml.Decoder) (key string, value any, ok bool, done bool, err error) {
 	key, err = readCharData(dec)
 	if err != nil {
@@ -91,8 +85,6 @@ func readKeyedValue(dec *xml.Decoder) (key string, value any, ok bool, done bool
 // DOCTYPE, the wrapping <plist> element) to the start of the document's
 // root <dict>, leaving the decoder positioned to read that dict's children
 // next.
-//
-//nolint:unused // see parsePolicyPlist
 func seekRootDict(dec *xml.Decoder) error {
 	for {
 		tok, err := dec.Token()
@@ -107,8 +99,6 @@ func seekRootDict(dec *xml.Decoder) error {
 
 // nextStartElement returns the next StartElement token, skipping any
 // intervening character data (e.g. whitespace between tags).
-//
-//nolint:unused // see parsePolicyPlist
 func nextStartElement(dec *xml.Decoder) (xml.StartElement, error) {
 	for {
 		tok, err := dec.Token()
@@ -123,8 +113,6 @@ func nextStartElement(dec *xml.Decoder) (xml.StartElement, error) {
 
 // readCharData reads character data up to the next end element, for
 // <key> and <string> contents.
-//
-//nolint:unused // see parsePolicyPlist
 func readCharData(dec *xml.Decoder) (string, error) {
 	var buf bytes.Buffer
 	for {
@@ -146,8 +134,6 @@ func readCharData(dec *xml.Decoder) (string, error) {
 // position in the document stays correct) for any type this parser
 // doesn't need to understand. Arrays of strings are handled as a special
 // case — they become []any with string elements.
-//
-//nolint:unused // see parsePolicyPlist
 func readScalarValue(dec *xml.Decoder, start xml.StartElement) (value any, ok bool, err error) {
 	switch start.Name.Local {
 	case "string":
@@ -183,8 +169,6 @@ func readScalarValue(dec *xml.Decoder, start xml.StartElement) (value any, ok bo
 // readArrayOfStrings reads an <array> of <string> elements, returning an
 // []any with the string contents. Non-string elements are skipped without error.
 // This is used for policy list values like forbidden certificate extensions.
-//
-//nolint:unused // see parsePolicyPlist
 func readArrayOfStrings(dec *xml.Decoder) ([]any, error) {
 	var result []any
 	for {
@@ -217,8 +201,6 @@ func readArrayOfStrings(dec *xml.Decoder) ([]any, error) {
 // StartElement the caller already consumed, so an unsupported value's
 // subtree (a nested <dict>/<array>, or a self-closing element like
 // <true/>) doesn't confuse the caller's position in the document.
-//
-//nolint:unused // see parsePolicyPlist
 func skipToEnd(dec *xml.Decoder) error {
 	depth := 1
 	for depth > 0 {

@@ -134,7 +134,7 @@ func TestEffectiveConfigHandler_ShouldReturnConfigData(t *testing.T) {
 	}
 
 	var resp struct {
-		Data map[string]interface{} `json:"data"`
+		Data map[string]any `json:"data"`
 	}
 
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
@@ -378,7 +378,7 @@ func TestCertificateHistoryHandler_ShouldReturnEmptyList(t *testing.T) {
 
 	var resp struct {
 		Data struct {
-			Certificates []interface{} `json:"certificates"`
+			Certificates []any `json:"certificates"`
 		} `json:"data"`
 	}
 

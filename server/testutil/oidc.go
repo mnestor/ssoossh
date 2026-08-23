@@ -22,12 +22,18 @@ func NewTestOIDCProvider(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		// json.Encoder rather than Fprintf so the document is built by a
 		// real JSON writer (and semgrep's XSS rule stays quiet).
-		_ = json.NewEncoder(w).Encode(map[string]string{
+		//
+		// The error is surfaced rather than discarded: a failed encode
+		// here sends a truncated discovery document, and the test that
+		// depends on it fails somewhere far less obvious.
+		if err := json.NewEncoder(w).Encode(map[string]string{
 			"issuer":                 srv.URL,
 			"authorization_endpoint": srv.URL + "/auth",
 			"token_endpoint":         srv.URL + "/token",
 			"jwks_uri":               srv.URL + "/keys",
-		})
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	})
 	mux.HandleFunc("/keys", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

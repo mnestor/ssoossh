@@ -343,7 +343,7 @@ func TestLogoutHandler_ShouldClearTheSessionAndReturnLoggedOut(t *testing.T) {
 func oversizedSessionSeed(c *gin.Context) {
 	sess := sessions.Default(c)
 	sess.Set("junk", strings.Repeat("x", 8192))
-	_ = sess.Save() //nolint:errcheck // the point of this seed is that this call succeeds; the next one in the real handler is what's expected to fail
+	_ = sess.Save()
 	c.Next()
 }
 

@@ -168,24 +168,13 @@ jobs:
     container:
       image: ghcr.io/mnestor/ssoossh-build:latest
     timeout-minutes: 10
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_PASSWORD: e2e
-          POSTGRES_DB: e2e
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    strategy:
-      fail-fast: false
-      matrix:
-        backend: [sqlite, postgres]
+    # sqlite only. This tier exercises the browser approval flow, which does not
+    # change behaviour with the storage backend -- tier 1 owns the
+    # wire and persistence surface where it does, and weekly-extended
+    # runs the whole suite against both. Running the matrix here cost a
+    # job and a Postgres service container to re-prove tier 1's point.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
       # Replaces the module/build caching setup-go provided before the Go
       # toolchain moved into the runner image.
       - name: Cache Go modules
@@ -203,18 +192,16 @@ jobs:
         with:
           name: e2e-binaries
 
-      - name: Run tier 2 tests
-        env:
-          SSOOSSH_E2E_POSTGRES_DSN: ${{ matrix.backend == 'postgres' && 'postgres://postgres:e2e@postgres:5432/e2e?sslmode=disable' || '' }}
+      - name: Run tier 2 (browser) tests
         run: |
           go test -buildvcs=false -tags=e2e -count=1 -timeout=10m -run '^TestApproval_' -json ./test/e2e/... | \
-            gotestsum --junitfile=test-results-tier2-${{ matrix.backend }}.xml --raw-command -- cat
+            gotestsum --junitfile=test-results-tier2.xml --raw-command -- cat
 
       - name: Upload diagnostics
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: e2e-diagnostics-tier2-${{ matrix.backend }}
+          name: e2e-diagnostics-tier2
           path: test/e2e/_artifacts/
           retention-days: 7
 
@@ -222,8 +209,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: e2e-test-results-tier2-${{ matrix.backend }}
-          path: test-results-tier2-${{ matrix.backend }}.xml
+          name: e2e-test-results-tier2
+          path: test-results-tier2.xml
           retention-days: 7
 
   tier-3:
@@ -234,24 +221,13 @@ jobs:
     container:
       image: ghcr.io/mnestor/ssoossh-build:latest
     timeout-minutes: 10
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_PASSWORD: e2e
-          POSTGRES_DB: e2e
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    strategy:
-      fail-fast: false
-      matrix:
-        backend: [sqlite, postgres]
+    # sqlite only. This tier exercises a real sshd, which does not
+    # change behaviour with the storage backend -- tier 1 owns the
+    # wire and persistence surface where it does, and weekly-extended
+    # runs the whole suite against both. Running the matrix here cost a
+    # job and a Postgres service container to re-prove tier 1's point.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
       # Replaces the module/build caching setup-go provided before the Go
       # toolchain moved into the runner image.
       - name: Cache Go modules
@@ -268,7 +244,6 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: e2e-binaries
-
       - name: Ensure sshd is available
         run: |
           apt-get update && apt-get install -y --no-install-recommends openssh-server
@@ -277,18 +252,16 @@ jobs:
           # fails with "Missing privilege separation directory" without it.
           mkdir -p /run/sshd
 
-      - name: Run tier 3 tests
-        env:
-          SSOOSSH_E2E_POSTGRES_DSN: ${{ matrix.backend == 'postgres' && 'postgres://postgres:e2e@postgres:5432/e2e?sslmode=disable' || '' }}
+      - name: Run tier 3 (sshd) tests
         run: |
           go test -buildvcs=false -tags=e2e -count=1 -timeout=10m -run '^TestSSH_' -json ./test/e2e/... | \
-            gotestsum --junitfile=test-results-tier3-${{ matrix.backend }}.xml --raw-command -- cat
+            gotestsum --junitfile=test-results-tier3.xml --raw-command -- cat
 
       - name: Upload diagnostics
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: e2e-diagnostics-tier3-${{ matrix.backend }}
+          name: e2e-diagnostics-tier3
           path: test/e2e/_artifacts/
           retention-days: 7
 
@@ -296,8 +269,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: e2e-test-results-tier3-${{ matrix.backend }}
-          path: test-results-tier3-${{ matrix.backend }}.xml
+          name: e2e-test-results-tier3
+          path: test-results-tier3.xml
           retention-days: 7
 
   tier-3-pam:
@@ -308,24 +281,13 @@ jobs:
     container:
       image: ghcr.io/mnestor/ssoossh-build:latest
     timeout-minutes: 10
-    services:
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_PASSWORD: e2e
-          POSTGRES_DB: e2e
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    strategy:
-      fail-fast: false
-      matrix:
-        backend: [sqlite, postgres]
+    # sqlite only. This tier exercises a real PAM stack, which does not
+    # change behaviour with the storage backend -- tier 1 owns the
+    # wire and persistence surface where it does, and weekly-extended
+    # runs the whole suite against both. Running the matrix here cost a
+    # job and a Postgres service container to re-prove tier 1's point.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
       # Replaces the module/build caching setup-go provided before the Go
       # toolchain moved into the runner image.
       - name: Cache Go modules
@@ -342,24 +304,21 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: e2e-binaries
-
       # The test builds pam_ssoossh.so (cgo, needs libpam headers) and
       # compiles pamtest.c itself; it only needs the toolchain present.
       - name: Ensure PAM build tools are available
         run: apt-get update && apt-get install -y --no-install-recommends gcc libpam0g-dev
 
-      - name: Run tier 3 PAM tests
-        env:
-          SSOOSSH_E2E_POSTGRES_DSN: ${{ matrix.backend == 'postgres' && 'postgres://postgres:e2e@postgres:5432/e2e?sslmode=disable' || '' }}
+      - name: Run tier 3 (pam) tests
         run: |
           go test -buildvcs=false -tags=e2e -count=1 -timeout=10m -run '^TestPAMStack_' -json ./test/e2e/... | \
-            gotestsum --junitfile=test-results-tier3-pam-${{ matrix.backend }}.xml --raw-command -- cat
+            gotestsum --junitfile=test-results-tier3-pam.xml --raw-command -- cat
 
       - name: Upload diagnostics
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: e2e-diagnostics-tier3-pam-${{ matrix.backend }}
+          name: e2e-diagnostics-tier3-pam
           path: test/e2e/_artifacts/
           retention-days: 7
 
@@ -367,8 +326,8 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: e2e-test-results-tier3-pam-${{ matrix.backend }}
-          path: test-results-tier3-pam-${{ matrix.backend }}.xml
+          name: e2e-test-results-tier3-pam
+          path: test-results-tier3-pam.xml
           retention-days: 7
 
   e2e-summary:

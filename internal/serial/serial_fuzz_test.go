@@ -22,10 +22,8 @@ func FuzzNew(f *testing.F) {
 			t.Fatalf("serial.New() returned %d > Mask (%d)", serial, Mask)
 		}
 
-		// Serial is allowed to be zero (documented behavior)
-		if serial < 0 {
-			t.Fatalf("serial.New() returned negative value: %d", serial)
-		}
+		// Serial is allowed to be zero (documented behavior), and it is a
+		// uint64, so there is no negative case left to check.
 	})
 }
 

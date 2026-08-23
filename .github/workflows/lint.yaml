@@ -1,11 +1,14 @@
 name: lint
 
+# Static analysis for the three things that are not tests: Go, the frontend,
+# and the workflow files themselves. Every job here is a merge gate.
+#
+# No `changes` path gate: each job here costs about as much as the gate job
+# that would guard it, so the gate was pure overhead. The expensive
+# workflows (build, e2e, client-matrix) keep theirs.
 on:
   workflow_dispatch:
   pull_request:
-  schedule:
-    # Weekly double check; PRs do the heavy lifting day to day.
-    - cron: "0 5 * * 1" # 05:00 UTC Monday
 
 permissions:
   contents: read
@@ -15,62 +18,73 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Path gate; see build.yaml's changes job for the pattern.
-  changes:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      pull-requests: read
-    outputs:
-      code: ${{ steps.filter.outputs.code || 'true' }}
-    steps:
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        if: github.event_name == 'pull_request'
-        id: filter
-        with:
-          filters: |
-            code:
-              - '**/*.go'
-              - 'go.mod'
-              - 'go.sum'
-              - '.golangci.yml'
-              - '.github/workflows/lint.yaml'
-
-  # Deliberately outside the `changes` path gate: the rules this checks live
-  # in .gitignore files, and the failure it catches (a source file ignored,
-  # so a clean checkout does not have it) shows up as an unrelated build or
-  # import error somewhere else entirely.
-  gitignore:
-    name: gitignore
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: check .gitignore invariants
-        run: scripts/check-gitignore.sh
-
-  lint:
-    name: lint
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+  go:
+    name: go
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
       image: ghcr.io/mnestor/ssoossh-build:latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: create a dummy file so the frontend/dist isn't empty
-        # Fixes:
-        # lint: server/frontend/frontend_included.go#L29
-        # pattern all:dist/*: no matching files found (typecheck)
-        run: |
-          go generate ./...
-      # A finding fails the job: this is a merge gate, not advisory. The
-      # continue-on-error that used to be here meant lint could never go
-      # red at all.
+
+      # No tracked file may match an ignore rule, and no source file may be
+      # ignored. Runs first because the failure it catches -- a source file
+      # missing from a clean checkout -- otherwise surfaces as an unrelated
+      # build or import error somewhere else entirely.
+      - name: check .gitignore invariants
+        run: scripts/check-gitignore.sh
+
+      # No frontend build needed: golangci-lint typechecks server/frontend,
+      # which embeds dist/ via `//go:embed all:dist/*`, and the tracked
+      # dist/.gitignore is what makes that pattern match. (A `go generate`
+      # step used to sit here claiming to create a placeholder; the repo has
+      # no //go:generate directives, so it never did anything.)
+      #
+      # A finding fails the job: this is a merge gate, not advisory.
       - name: golangci-lint
         # Must stay v2.x: .golangci.yml is a `version: "2"` config, which
         # golangci-lint v1 cannot parse at all.
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.13
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: ghcr.io/mnestor/ubuntu-build:latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install dependencies
+        run: CI=true pnpm install --frozen-lockfile
+
+      # prettier --check plus eslint.
+      - name: pnpm lint
+        run: pnpm lint
+
+      # svelte-check against tsconfig.json. This is the only thing that
+      # typechecks hand-written Svelte and TypeScript: `make types-check`
+      # only proves the *generated* wire types match the Go source, and
+      # `pnpm build` does not typecheck.
+      - name: pnpm check
+        run: pnpm check
+
+  workflows:
+    name: workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: ghcr.io/mnestor/ubuntu-build:latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Catches expression typos, bad `needs:` references, and steps that
+      # point at things which do not exist -- the class of error that is
+      # otherwise only found by pushing and waiting.
+      - name: actionlint
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12

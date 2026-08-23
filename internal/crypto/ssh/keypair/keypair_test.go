@@ -12,14 +12,14 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// should satisfy the generic Keypair interface
+// should satisfy the generic Keypair interface.
 func TestSSHKeypair_ImplementsKeypair(t *testing.T) {
 	t.Parallel()
 
 	var _ Keypair = (*SSHKeypair)(nil)
 }
 
-// should generate a keypair and round-trip its private key through PEM for every supported algorithm
+// should generate a keypair and round-trip its private key through PEM for every supported algorithm.
 func TestNewSSHKeypair_GenerateAndMarshalRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -74,7 +74,7 @@ func TestNewSSHKeypair_GenerateAndMarshalRoundTrip(t *testing.T) {
 	}
 }
 
-// should reject unsupported ECDSA curve sizes
+// should reject unsupported ECDSA curve sizes.
 func TestNewECDSAKeyPair_RejectsUnsupportedBits(t *testing.T) {
 	t.Parallel()
 
@@ -83,7 +83,7 @@ func TestNewECDSAKeyPair_RejectsUnsupportedBits(t *testing.T) {
 	}
 }
 
-// should reject an unknown key type
+// should reject an unknown key type.
 func TestNewSSHKeypair_RejectsUnknownType(t *testing.T) {
 	t.Parallel()
 
@@ -173,7 +173,7 @@ func mustMarshalPrivateKey(t *testing.T, kp *SSHKeypair) []byte {
 	return data
 }
 
-// should reject malformed input at every stage: undecodable PEM, an unsupported block type, and malformed key bytes within a recognized block type
+// should reject malformed input at every stage: undecodable PEM, an unsupported block type, and malformed key bytes within a recognized block type.
 func TestLoadSSHKeypair_RejectsInvalidInput(t *testing.T) {
 	t.Parallel()
 
@@ -201,7 +201,7 @@ func TestLoadSSHKeypair_RejectsInvalidInput(t *testing.T) {
 	}
 }
 
-// should reject a PKCS8 key of an algorithm type it does not recognize
+// should reject a PKCS8 key of an algorithm type it does not recognize.
 func TestKeypairFromPKCS8_RejectsUnsupportedType(t *testing.T) {
 	t.Parallel()
 
@@ -210,7 +210,7 @@ func TestKeypairFromPKCS8_RejectsUnsupportedType(t *testing.T) {
 	}
 }
 
-// should reject an OpenSSH-parsed key of an algorithm type it does not recognize
+// should reject an OpenSSH-parsed key of an algorithm type it does not recognize.
 func TestKeypairFromOpenSSHRaw_RejectsUnsupportedType(t *testing.T) {
 	t.Parallel()
 
@@ -219,7 +219,7 @@ func TestKeypairFromOpenSSHRaw_RejectsUnsupportedType(t *testing.T) {
 	}
 }
 
-// should expose the raw private key passed to the constructor
+// should expose the raw private key passed to the constructor.
 func TestSSHKeypair_Private(t *testing.T) {
 	t.Parallel()
 
@@ -232,7 +232,7 @@ func TestSSHKeypair_Private(t *testing.T) {
 	}
 }
 
-// should derive the SSH public key from the stored public key
+// should derive the SSH public key from the stored public key.
 func TestSSHKeypair_Public(t *testing.T) {
 	t.Parallel()
 
@@ -245,7 +245,7 @@ func TestSSHKeypair_Public(t *testing.T) {
 	}
 }
 
-// should store and return the certificate, defaulting to nil when unset
+// should store and return the certificate, defaulting to nil when unset.
 func TestSSHKeypair_CertificateAndSetCertificate(t *testing.T) {
 	t.Parallel()
 
@@ -264,7 +264,7 @@ func TestSSHKeypair_CertificateAndSetCertificate(t *testing.T) {
 	}
 }
 
-// should report whether the loaded certificate was signed by the given CA
+// should report whether the loaded certificate was signed by the given CA.
 func TestSSHKeypair_SignedBy(t *testing.T) {
 	t.Parallel()
 
@@ -307,8 +307,8 @@ func TestSSHKeypair_SignedBy(t *testing.T) {
 		cert := &ssh.Certificate{
 			Key:         leaf.Public(),
 			CertType:    ssh.UserCert,
-			ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()),
-			ValidBefore: uint64(time.Now().Add(time.Hour).Unix()),
+			ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()), //nolint:gosec // test fixture, always a real date
+			ValidBefore: uint64(time.Now().Add(time.Hour).Unix()),  //nolint:gosec // test fixture, always a real date
 		}
 		if err := cert.SignCert(rand.Reader, caSigner); err != nil {
 			t.Fatalf("SignCert() error = %v", err)
@@ -332,8 +332,8 @@ func TestSSHKeypair_SignedBy(t *testing.T) {
 		cert := &ssh.Certificate{
 			Key:         leaf.Public(),
 			CertType:    ssh.UserCert,
-			ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()),
-			ValidBefore: uint64(time.Now().Add(time.Hour).Unix()),
+			ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()), //nolint:gosec // test fixture, always a real date
+			ValidBefore: uint64(time.Now().Add(time.Hour).Unix()),  //nolint:gosec // test fixture, always a real date
 		}
 		otherSigner, err := ssh.NewSignerFromKey(other.Private())
 		if err != nil {
@@ -351,7 +351,7 @@ func TestSSHKeypair_SignedBy(t *testing.T) {
 	})
 }
 
-// should reject a certificate whose SignatureKey matches but whose Signature bytes were tampered with after signing
+// should reject a certificate whose SignatureKey matches but whose Signature bytes were tampered with after signing.
 func TestVerifyCertSignature_RejectsTamperedSignature(t *testing.T) {
 	t.Parallel()
 
@@ -371,8 +371,8 @@ func TestVerifyCertSignature_RejectsTamperedSignature(t *testing.T) {
 	cert := &ssh.Certificate{
 		Key:         leaf.Public(),
 		CertType:    ssh.UserCert,
-		ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()),
-		ValidBefore: uint64(time.Now().Add(time.Hour).Unix()),
+		ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()), //nolint:gosec // test fixture, always a real date
+		ValidBefore: uint64(time.Now().Add(time.Hour).Unix()),  //nolint:gosec // test fixture, always a real date
 	}
 	if err := cert.SignCert(rand.Reader, caSigner); err != nil {
 		t.Fatalf("SignCert() error = %v", err)
@@ -392,7 +392,7 @@ func TestVerifyCertSignature_RejectsTamperedSignature(t *testing.T) {
 	}
 }
 
-// should reject nil inputs and a certificate with no signature or SignatureKey
+// should reject nil inputs and a certificate with no signature or SignatureKey.
 func TestVerifyCertSignature_RejectsIncompleteInput(t *testing.T) {
 	t.Parallel()
 
@@ -425,7 +425,7 @@ func TestVerifyCertSignature_RejectsIncompleteInput(t *testing.T) {
 	}
 }
 
-// should marshal a set certificate to authorized_keys format and error when none is set
+// should marshal a set certificate to authorized_keys format and error when none is set.
 func TestSSHKeypair_CertificateString(t *testing.T) {
 	t.Parallel()
 
@@ -472,7 +472,7 @@ func mustSignCert(t *testing.T, pub ssh.PublicKey, signerKP *SSHKeypair) *ssh.Ce
 	return cert
 }
 
-// should marshal a set certificate to bytes, and return nil when none is set
+// should marshal a set certificate to bytes, and return nil when none is set.
 func TestSSHKeypair_MarshalCertificate(t *testing.T) {
 	t.Parallel()
 
@@ -491,7 +491,7 @@ func TestSSHKeypair_MarshalCertificate(t *testing.T) {
 	}
 }
 
-// should parse and set a certificate from an authorized_keys-format string, rejecting anything else
+// should parse and set a certificate from an authorized_keys-format string, rejecting anything else.
 func TestSSHKeypair_ParseCertificateFromString(t *testing.T) {
 	t.Parallel()
 
@@ -534,7 +534,7 @@ func TestSSHKeypair_ParseCertificateFromString(t *testing.T) {
 	})
 }
 
-// should reject a private key of a type it does not know how to PEM-encode
+// should reject a private key of a type it does not know how to PEM-encode.
 func TestSSHKeypair_MarshalPrivateKey_RejectsUnsupportedType(t *testing.T) {
 	t.Parallel()
 

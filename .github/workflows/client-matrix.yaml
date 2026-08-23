@@ -16,9 +16,6 @@ name: client-matrix
 on:
   workflow_dispatch:
   pull_request:
-  schedule:
-    # Weekly double check; PRs do the heavy lifting day to day.
-    - cron: "30 4 * * 1" # 04:30 UTC Monday
 
 permissions:
   contents: read

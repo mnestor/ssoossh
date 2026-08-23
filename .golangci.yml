@@ -2,18 +2,17 @@ version: "2"
 run:
   concurrency: 4
   relative-path-mode: gomod
-  build-tags:
-    - codeanalysis
   modules-download-mode: readonly
   issues-exit-code: 2
-  tests: false
+  # Test files are ~half the tree and the project mandates table-driven
+  # tests everywhere; linting them is the point. The narrow _test.go
+  # exclusions below carve out the findings that are noise there.
+  tests: true
   allow-parallel-runners: true
   allow-serial-runners: true
 linters:
   enable:
-    - cyclop
     - dogsled
-    - dupl
     - dupword
     - errorlint
     - gocognit
@@ -21,8 +20,6 @@ linters:
     - gosec
     - nolintlint
   settings:
-    cyclop:
-      max-complexity: 20
     godot:
       # swag annotations are directives, not prose — "@Router /api/ca [get]"
       # has no business ending in a period.
@@ -52,11 +49,27 @@ linters:
           - errcheck
           - ineffassign
         path: _test\.go$
+      # Table-driven tests are long by construction: the table, the loop,
+      # and a subtest body all count toward one function. Complexity limits
+      # are about code a reader has to hold in their head to change it
+      # safely, which is not what a case table is.
+      - linters:
+          - gocognit
+          - dogsled
+        path: _test\.go$
+      # Both of these are scoped to test files on purpose. Test fixtures
+      # dial self-signed certs and hold throwaway credentials; production
+      # code must not get the same pass. internal/api/client.go sets
+      # InsecureSkipVerify from config, which is exactly the line gosec
+      # should keep reporting.
       - linters:
           - gosec
-        text: 'G402: TLS MinVersion too low'
-      - path: (.+)\.go$
+        text: 'G402'
+        path: _test\.go$
+      - linters:
+          - gosec
         text: 'G101: Potential hardcoded credentials'
+        path: _test\.go$
     paths:
       - .*\.pb\.go$
       - third_party$

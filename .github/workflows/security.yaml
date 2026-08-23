@@ -6,6 +6,8 @@ on:
   schedule:
     # Catches new CVEs/advisories landing against unchanged dependencies --
     # the other triggers only re-scan when a push or PR happens to occur.
+    # One of only two schedules left in the repo, and it earns its slot:
+    # nothing else re-checks dependencies that nobody touched.
     - cron: "0 6 * * 1" # 06:00 UTC Monday
 
 permissions:
@@ -26,7 +28,6 @@ jobs:
     outputs:
       go: ${{ steps.filter.outputs.go || 'true' }}
       frontend: ${{ steps.filter.outputs.frontend || 'true' }}
-      code: ${{ steps.filter.outputs.code || 'true' }}
     steps:
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         if: github.event_name == 'pull_request'
@@ -39,20 +40,13 @@ jobs:
               - 'go.sum'
             frontend:
               - 'frontend/**'
-            code:
-              - '**/*.go'
-              - 'go.mod'
-              - 'go.sum'
-              - 'frontend/**'
-              - '.semgrep.yaml'
+              - '.semgrepignore'
               - '.github/workflows/security.yaml'
 
-  # All three scanners are advisory (findings don't fail the job) but no
-  # longer invisible: each one tees its real output into the job summary,
-  # uploads it as an artifact, and the report job below aggregates
-  # everything into a single PR comment. The old summary steps read
-  # `steps.<id>.outputs.result`, which plain run steps never set, so every
-  # summary rendered empty.
+  # govulncheck and pnpm audit stay advisory: both report on dependencies
+  # you may not be able to fix in the same PR that surfaces them, so they
+  # tee their output into the job summary and the PR comment below rather
+  # than blocking. semgrep is different -- see that job.
   govulncheck:
     name: govulncheck
     needs: changes
@@ -74,10 +68,9 @@ jobs:
           key: go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             go-${{ runner.os }}-
-      # server/frontend embeds dist/*; without at least a placeholder the
-      # package loader fails before the scan starts.
-      - name: Generate placeholder embeds
-        run: go generate ./...
+      # No frontend build needed: server/frontend embeds dist/* via
+      # `//go:embed all:dist/*`, and the tracked dist/.gitignore is what
+      # makes that pattern match on a clean checkout.
       - name: Run govulncheck
         id: scan
         continue-on-error: true
@@ -135,42 +128,48 @@ jobs:
           path: frontend/audit.txt
           retention-days: 7
 
+  # Blocking, frontend-only, and pinned. Each of those is deliberate:
+  #
+  # Blocking, because an advisory-forever scanner trains you to skip the PR
+  # comment that also carries govulncheck.
+  #
+  # Frontend-only, because gosec (inside golangci-lint, see lint.yaml)
+  # already gates the Go side. Pointing semgrep at Go too just re-litigates
+  # the same findings in a second tool. Note semgrep has no Svelte parser,
+  # so this covers the hand-written .ts under frontend/src, not the .svelte
+  # components -- eslint and svelte-check own those.
+  #
+  # Pinned to an exact image version rather than `latest`, and to named
+  # rule packs rather than `--config auto`, because a gate has to be
+  # reproducible: `auto` selects rulesets from repo contents at scan time,
+  # so which rules ran could change with no commit here and turn a green PR
+  # red. The packs still track upstream between image bumps; that residual
+  # drift is accepted, the wholesale kind was not. Bumping the tag is a
+  # reviewable commit.
   semgrep:
     name: semgrep
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
-      image: semgrep/semgrep
+      image: semgrep/semgrep:1.174.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: semgrep scan
-        id: scan
-        continue-on-error: true
-        run: semgrep scan --config auto --error 2>&1 | tee semgrep.txt
-      - name: Add results to job summary
-        if: ${{ !cancelled() }}
         run: |
-          {
-            echo "## semgrep (${{ steps.scan.outcome }})"
-            echo '```'
-            head -c 60000 semgrep.txt
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload results
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: security-semgrep
-          path: semgrep.txt
-          retention-days: 7
+          semgrep scan --error --metrics=off \
+            --config p/typescript \
+            --config p/javascript \
+            frontend/src
 
-  # One sticky comment per PR with all three scanners' output, updated in
-  # place on each push rather than stacking a new comment per run.
+  # One sticky comment per PR with the advisory scanners' output, updated in
+  # place on each push rather than stacking a new comment per run. semgrep
+  # is not here: it fails the build directly, so its findings are on the
+  # check, not in a comment.
   report:
     name: PR report
-    needs: [govulncheck, pnpm-audit, semgrep]
+    needs: [govulncheck, pnpm-audit]
     if: ${{ !cancelled() && github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -192,7 +191,7 @@ jobs:
           {
             echo "## Security scan results"
             echo ""
-            for scanner in govulncheck pnpm-audit semgrep; do
+            for scanner in govulncheck pnpm-audit; do
               file=$(find "results/security-${scanner}" -type f 2>/dev/null | head -1)
               echo "<details><summary>${scanner}</summary>"
               echo ""
@@ -206,6 +205,7 @@ jobs:
               echo "</details>"
               echo ""
             done
+            echo "_semgrep is a blocking check, not reported here._"
             echo "_Full output on each job's summary page._"
           } > comment.md
           gh pr comment "$PR" -R "$REPO" --edit-last --create-if-none --body-file comment.md \

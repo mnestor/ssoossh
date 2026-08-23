@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// should fail closed with 501, since the host-certificate transport is not yet implemented
+// should fail closed with 501, since the host-certificate transport is not yet implemented.
 func TestHostCertAuthMiddleware_ShouldFailClosed(t *testing.T) {
 	t.Parallel()
 

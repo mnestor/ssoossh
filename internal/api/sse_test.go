@@ -117,7 +117,8 @@ func TestWaitForOutcome_ShouldSurfaceGoneWithoutRetrying(t *testing.T) {
 
 	_, err := waitForOutcome(context.Background(), nil, ts.URL)
 
-	respErr, ok := err.(*ResponseError)
+	respErr := &ResponseError{}
+	ok := errors.As(err, &respErr)
 	if !ok {
 		t.Fatalf("expected a *ResponseError, got %T: %v", err, err)
 	}
@@ -140,7 +141,8 @@ func TestWaitForOutcome_ShouldErrorOnNon2xxConnect(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	_, err := waitForOutcome(context.Background(), nil, ts.URL)
-	respErr, ok := err.(*ResponseError)
+	respErr := &ResponseError{}
+	ok := errors.As(err, &respErr)
 	if !ok {
 		t.Fatalf("expected a *ResponseError, got %T: %v", err, err)
 	}

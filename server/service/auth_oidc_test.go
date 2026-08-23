@@ -56,7 +56,7 @@ func newFakeOIDCProvider(t *testing.T) *fakeOIDCProvider {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck // test fixture, encoding a static map never fails
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"issuer":                 p.srv.URL,
 			"authorization_endpoint": p.srv.URL + "/authorize",
 			"token_endpoint":         p.srv.URL + "/token",
@@ -66,13 +66,13 @@ func newFakeOIDCProvider(t *testing.T) *fakeOIDCProvider {
 	mux.HandleFunc("/jwks", func(w http.ResponseWriter, r *http.Request) {
 		jwk := josejwt.JSONWebKey{Key: &priv.PublicKey, KeyID: "test-key", Algorithm: "RS256", Use: "sig"}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(josejwt.JSONWebKeySet{Keys: []josejwt.JSONWebKey{jwk}}) //nolint:errcheck // test fixture
+		_ = json.NewEncoder(w).Encode(josejwt.JSONWebKeySet{Keys: []josejwt.JSONWebKey{jwk}})
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		if p.tokenExchangeFails {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_grant"}) //nolint:errcheck // test fixture
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_grant"})
 			return
 		}
 		body := map[string]any{
@@ -84,7 +84,7 @@ func newFakeOIDCProvider(t *testing.T) *fakeOIDCProvider {
 			body["id_token"] = p.nextID
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(body) //nolint:errcheck // test fixture
+		_ = json.NewEncoder(w).Encode(body)
 	})
 
 	p.srv = httptest.NewServer(mux)

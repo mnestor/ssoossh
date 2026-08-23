@@ -7,9 +7,8 @@ package main
 // the actual create-then-await flow, all four checks wired together, error
 // classification — runs against a real httptest.Server standing in for
 // ssoosshd, signing genuinely CA-signed certificates for whatever public key
-// the request under test posted. This is what
-// what the PAM design called "the full
-// authenticate path against a fake server", and — per the same doc's Work
+// the request under test posted. This is what the PAM design called "the
+// full authenticate path against a fake server", and — per the same doc's Work
 // item 6, which explicitly leaves the choice between a real `sudo` tier and
 // calling Authenticate directly to a judgment call and recommends "direct
 // Authenticate in the PR gate" — this is that: a real OIDC browser and a
@@ -174,7 +173,7 @@ type pamRequestBody struct {
 // response from ssoosshd uses.
 func writeEnvelope(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck // test helper, encoding a static map never fails
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data":  payload,
 		"error": nil,
 	})
@@ -183,7 +182,7 @@ func writeEnvelope(w http.ResponseWriter, payload any) {
 // writeSSEEvent writes name/data in gin's c.SSEvent wire format.
 func writeSSEEvent(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/event-stream")
-	encoded, _ := json.Marshal(map[string]any{"data": data, "error": nil}) //nolint:errcheck // test helper, inputs are always marshalable
+	encoded, _ := json.Marshal(map[string]any{"data": data, "error": nil})
 	_, _ = w.Write([]byte("event:" + name + "\n"))
 	_, _ = w.Write([]byte("data:" + string(encoded) + "\n\n"))
 	if f, ok := w.(http.Flusher); ok {

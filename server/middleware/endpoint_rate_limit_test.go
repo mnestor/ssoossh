@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -51,7 +52,8 @@ func TestEndpointRateLimiter_PerIP_ShouldRejectRequestsBeyondBurst(t *testing.T)
 	if len(c2.Errors) != 1 {
 		t.Fatalf("expected exactly one error, got %d", len(c2.Errors))
 	}
-	if _, ok := c2.Errors[0].Err.(*TooManyRequestsError); !ok {
+	tooManyRequestsError := &TooManyRequestsError{}
+	if !errors.As(c2.Errors[0].Err, &tooManyRequestsError) {
 		t.Errorf("expected TooManyRequestsError, got %T", c2.Errors[0].Err)
 	}
 }

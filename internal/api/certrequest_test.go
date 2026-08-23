@@ -9,6 +9,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -22,7 +23,7 @@ import (
 // envelope every JSON body this API emits.
 func writeSSEEvent(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/event-stream")
-	encoded, _ := json.Marshal(map[string]any{"data": data, "error": nil}) //nolint:errcheck // test helper, inputs are always marshalable
+	encoded, _ := json.Marshal(map[string]any{"data": data, "error": nil})
 	_, _ = w.Write([]byte("event:" + name + "\n"))
 	_, _ = w.Write([]byte("data:" + string(encoded) + "\n\n"))
 	if f, ok := w.(http.Flusher); ok {
@@ -44,7 +45,7 @@ func writeCreateResponse(w http.ResponseWriter, requestID, eventsPath string) {
 // response from ssoosshd uses (see apitypes.Envelope).
 func writeEnvelope(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck // test helper, encoding a static map never fails
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"data":  payload,
 		"error": nil,
 	})
@@ -58,7 +59,7 @@ func TestCreateUserRequest_ShouldReturnApprovedOutcome(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/certs/user":
 			body, _ := io.ReadAll(r.Body)
-			_ = json.Unmarshal(body, &gotBody) //nolint:errcheck // test assertion, failure surfaces via the nil check below
+			_ = json.Unmarshal(body, &gotBody)
 			writeCreateResponse(w, "req-1", "/api/certs/requests/req-1/events")
 		case r.Method == http.MethodGet && r.URL.Path == "/api/certs/requests/req-1/events":
 			writeSSEEvent(w, "approved", map[string]string{"certificate": "ssh-ed25519-cert-v01@openssh.com AAAA..."})
@@ -117,7 +118,7 @@ func TestCreateHostRequest_ShouldSendHostname(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/certs/host/sign":
 			body, _ := io.ReadAll(r.Body)
-			_ = json.Unmarshal(body, &gotBody) //nolint:errcheck // test assertion, failure surfaces via the nil check below
+			_ = json.Unmarshal(body, &gotBody)
 			writeCreateResponse(w, "req-2", "/api/certs/requests/req-2/events")
 		case r.Method == http.MethodGet && r.URL.Path == "/api/certs/requests/req-2/events":
 			writeSSEEvent(w, "denied", map[string]string{})
@@ -191,7 +192,7 @@ func TestCreatePAMRequest_ShouldSendUsername(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/certs/pam":
 			body, _ := io.ReadAll(r.Body)
-			_ = json.Unmarshal(body, &gotBody) //nolint:errcheck // test assertion, failure surfaces via the nil check below
+			_ = json.Unmarshal(body, &gotBody)
 			writeCreateResponse(w, "req-4", "/api/certs/requests/req-4/events")
 		case r.Method == http.MethodGet && r.URL.Path == "/api/certs/requests/req-4/events":
 			writeSSEEvent(w, "approved", map[string]string{"certificate": "ssh-ed25519-cert-v01@openssh.com AAAA..."})
@@ -239,7 +240,8 @@ func TestCreateUserRequest_ShouldReturnResponseErrorWhenCreateFails(t *testing.T
 	}
 
 	_, err = c.CreateUserRequest(context.Background(), "", "", "", RequestedOptions{})
-	respErr, ok := err.(*ResponseError)
+	respErr := &ResponseError{}
+	ok := errors.As(err, &respErr)
 	if !ok {
 		t.Fatalf("expected a *ResponseError, got %T: %v", err, err)
 	}
@@ -397,7 +399,7 @@ func TestCreateUserRequest_ShouldReturnApprovalURLBeforeAnyoneApproves(t *testin
 
 	waited := make(chan *CertificateResult, 1)
 	go func() {
-		result, _ := c.AwaitCertificate(ctx, pending) //nolint:errcheck // the assertion below covers the outcome
+		result, _ := c.AwaitCertificate(ctx, pending)
 		waited <- result
 	}()
 

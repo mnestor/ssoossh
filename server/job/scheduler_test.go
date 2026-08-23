@@ -59,7 +59,7 @@ func TestRegisterJob_ShouldRunImmediatelyWhenRequested(t *testing.T) {
 	}
 
 	s.scheduler.Start()
-	defer s.scheduler.Shutdown() //nolint:errcheck
+	defer s.scheduler.Shutdown()
 
 	select {
 	case <-ran:

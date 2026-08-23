@@ -97,7 +97,7 @@ func TestGetBrandingHandler(t *testing.T) {
 					LogoURL     string `json:"logo_url"`
 					LoginNotice string `json:"login_notice"`
 				} `json:"data"`
-				Error interface{} `json:"error"`
+				Error any `json:"error"`
 			}
 
 			if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {

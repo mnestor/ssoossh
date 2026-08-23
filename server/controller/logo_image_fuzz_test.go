@@ -122,17 +122,11 @@ func FuzzSkipXMLPrologue(f *testing.F) {
 		result := skipXMLPrologue(data)
 
 		// Should never panic
-		// Result is either nil or a byte slice
-		if result != nil {
-			// If we got a result, it should either be the same as data
-			// (no prologue) or be a prefix of data
-			if !bytes.HasPrefix(data, result) && len(result) > 0 {
-				// Actually we're trimming the beginning, so result should be
-				// within data or the start of the root element
-				if !bytes.Contains(data, result) && !bytes.Equal(result, data) {
-					// This is OK - skipXMLPrologue returns the remainder
-				}
-			}
+		// skipXMLPrologue returns a suffix of its input, so whatever comes
+		// back must still be findable inside it. Anything else means the
+		// function invented bytes.
+		if len(result) > 0 && !bytes.Contains(data, result) {
+			t.Errorf("skipXMLPrologue returned %d bytes not present in the %d-byte input", len(result), len(data))
 		}
 	})
 }

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,7 +19,7 @@ func TestRetrieveServiceCertificate_ShouldReturnCertificate(t *testing.T) {
 			t.Errorf("got path %q, want %q", r.URL.Path, "/api/certs/service/retrieve")
 		}
 		body, _ := io.ReadAll(r.Body)
-		_ = json.Unmarshal(body, &gotBody) //nolint:errcheck // test assertion, failure surfaces via the nil check below
+		_ = json.Unmarshal(body, &gotBody)
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"data":{"certificate":"ssh-ed25519-cert-v01@openssh.com AAAA... service"},"error":null}`))
@@ -58,7 +59,8 @@ func TestRetrieveServiceCertificate_ShouldReturnResponseErrorOnFailure(t *testin
 	}
 
 	_, err = c.RetrieveServiceCertificate(context.Background(), "bad-code")
-	respErr, ok := err.(*ResponseError)
+	respErr := &ResponseError{}
+	ok := errors.As(err, &respErr)
 	if !ok {
 		t.Fatalf("expected a *ResponseError, got %T: %v", err, err)
 	}

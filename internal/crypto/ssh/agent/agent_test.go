@@ -8,9 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+
+	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 )
 
 // fakeXAgent is a minimal in-memory implementation of
@@ -92,7 +93,7 @@ func agentKeyFor(pub ssh.PublicKey) *agent.Key {
 	return &agent.Key{Format: pub.Type(), Blob: pub.Marshal()}
 }
 
-// should report ssh-agent as the coarse type when backed by any live agent connection
+// should report ssh-agent as the coarse type when backed by any live agent connection.
 func TestSshAgent_TypeAndBackend(t *testing.T) {
 	t.Parallel()
 
@@ -123,7 +124,7 @@ func TestSshAgent_TypeAndBackend(t *testing.T) {
 }
 
 // should satisfy the generic Agent interface without requiring callers to
-// know whether they hold a live agent or a file-backed implementation
+// know whether they hold a live agent or a file-backed implementation.
 func TestAgent_InterfaceSatisfiedByAllBackends(t *testing.T) {
 	t.Parallel()
 
@@ -133,7 +134,7 @@ func TestAgent_InterfaceSatisfiedByAllBackends(t *testing.T) {
 	)
 }
 
-// should expose the underlying golang.org/x/crypto/ssh/agent.Agent when present
+// should expose the underlying golang.org/x/crypto/ssh/agent.Agent when present.
 func TestSshAgent_Agent(t *testing.T) {
 	t.Parallel()
 
@@ -151,8 +152,8 @@ func newTestCert(t *testing.T, pub ssh.PublicKey, caSigner ssh.Signer) *ssh.Cert
 	cert := &ssh.Certificate{
 		Key:         pub,
 		CertType:    ssh.UserCert,
-		ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()),
-		ValidBefore: uint64(time.Now().Add(time.Hour).Unix()),
+		ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()), //nolint:gosec // test fixture, always a real date
+		ValidBefore: uint64(time.Now().Add(time.Hour).Unix()),  //nolint:gosec // test fixture, always a real date
 	}
 	if err := cert.SignCert(rand.Reader, caSigner); err != nil {
 		t.Fatalf("SignCert() error = %v", err)
@@ -160,7 +161,7 @@ func newTestCert(t *testing.T, pub ssh.PublicKey, caSigner ssh.Signer) *ssh.Cert
 	return cert
 }
 
-// should accept multiple CAs registered across separate SetCA calls, matching a certificate signed by any of them
+// should accept multiple CAs registered across separate SetCA calls, matching a certificate signed by any of them.
 func TestSetCA_AccumulatesMultipleCAs(t *testing.T) {
 	t.Parallel()
 
@@ -208,7 +209,7 @@ func TestSetCA_AccumulatesMultipleCAs(t *testing.T) {
 	}
 }
 
-// should reject a certificate not signed by any registered CA
+// should reject a certificate not signed by any registered CA.
 func TestCertificateValid_RejectsUntrustedSigner(t *testing.T) {
 	t.Parallel()
 
@@ -236,7 +237,7 @@ func TestCertificateValid_RejectsUntrustedSigner(t *testing.T) {
 	}
 }
 
-// should list identities from the underlying agent, optionally filtered to certificates signed by a trusted CA
+// should list identities from the underlying agent, optionally filtered to certificates signed by a trusted CA.
 func TestSshAgent_List(t *testing.T) {
 	t.Parallel()
 
@@ -308,7 +309,7 @@ func TestSshAgent_List(t *testing.T) {
 	})
 }
 
-// should delegate signing to the underlying agent
+// should delegate signing to the underlying agent.
 func TestSshAgent_Sign(t *testing.T) {
 	t.Parallel()
 
@@ -338,7 +339,7 @@ func TestSshAgent_Sign(t *testing.T) {
 	})
 }
 
-// should accept only agent.AddedKey values, delegating everything else as an error
+// should accept only agent.AddedKey values, delegating everything else as an error.
 func TestSshAgent_Add(t *testing.T) {
 	t.Parallel()
 
@@ -377,7 +378,7 @@ func TestSshAgent_Add(t *testing.T) {
 	})
 }
 
-// should close the underlying connection when present, and be a no-op otherwise
+// should close the underlying connection when present, and be a no-op otherwise.
 func TestSshAgent_Close(t *testing.T) {
 	t.Parallel()
 
@@ -392,7 +393,7 @@ func TestSshAgent_Close(t *testing.T) {
 	t.Run("should close the underlying connection when present", func(t *testing.T) {
 		t.Parallel()
 		serverConn, clientConn := net.Pipe()
-		t.Cleanup(func() { _ = serverConn.Close() }) //nolint:errcheck // test cleanup
+		t.Cleanup(func() { _ = serverConn.Close() })
 		a := &SshAgent{conn: clientConn}
 		if err := a.Close(); err != nil {
 			t.Errorf("Close() error = %v, want nil", err)
@@ -400,7 +401,7 @@ func TestSshAgent_Close(t *testing.T) {
 	})
 }
 
-// should delegate identity removal to the underlying agent
+// should delegate identity removal to the underlying agent.
 func TestSshAgent_Remove(t *testing.T) {
 	t.Parallel()
 
@@ -430,7 +431,7 @@ func TestSshAgent_Remove(t *testing.T) {
 	})
 }
 
-// should remove every identity in the agent, one at a time, and count the removals
+// should remove every identity in the agent, one at a time, and count the removals.
 func TestSshAgent_RemoveAll(t *testing.T) {
 	t.Parallel()
 
@@ -473,7 +474,7 @@ func TestSshAgent_RemoveAll(t *testing.T) {
 	})
 }
 
-// should delegate signer retrieval to the underlying agent
+// should delegate signer retrieval to the underlying agent.
 func TestSshAgent_Signers(t *testing.T) {
 	t.Parallel()
 
@@ -483,7 +484,7 @@ func TestSshAgent_Signers(t *testing.T) {
 	}
 }
 
-// should remove certificate identities that are expired or untrusted, leaving valid ones and non-certificate keys alone
+// should remove certificate identities that are expired or untrusted, leaving valid ones and non-certificate keys alone.
 func TestSshAgent_CleanupAgent(t *testing.T) {
 	t.Parallel()
 
@@ -585,7 +586,7 @@ func TestSshAgent_CleanupAgent(t *testing.T) {
 	})
 }
 
-// should return only certificates signed by a trusted CA, erroring when none are configured or none qualify
+// should return only certificates signed by a trusted CA, erroring when none are configured or none qualify.
 func TestSshAgent_Certificates(t *testing.T) {
 	t.Parallel()
 
@@ -659,7 +660,7 @@ func TestSshAgent_Certificates(t *testing.T) {
 	})
 }
 
-// should send the keypair's private key, certificate, and a fixed comment to the underlying agent
+// should send the keypair's private key, certificate, and a fixed comment to the underlying agent.
 func TestSshAgent_AddKeypair(t *testing.T) {
 	t.Parallel()
 
@@ -709,7 +710,7 @@ func TestSshAgent_AddKeypair(t *testing.T) {
 	})
 }
 
-// should require at least one CA and reject an unparseable CA string
+// should require at least one CA and reject an unparseable CA string.
 func TestSshAgent_SetCA_ErrorPaths(t *testing.T) {
 	t.Parallel()
 

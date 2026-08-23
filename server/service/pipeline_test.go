@@ -159,10 +159,10 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	if string(cert.Key.Marshal()) != string(clientKeypair.Public().Marshal()) {
 		t.Error("delivered certificate is not bound to the requesting public key")
 	}
-	if _, ok := cert.Permissions.Extensions["permit-pty"]; !ok {
-		t.Errorf("expected permit-pty to survive narrowing, got %v", cert.Permissions.Extensions)
+	if _, ok := cert.Extensions["permit-pty"]; !ok {
+		t.Errorf("expected permit-pty to survive narrowing, got %v", cert.Extensions)
 	}
-	if _, ok := cert.Permissions.Extensions["permit-agent-forwarding"]; ok {
+	if _, ok := cert.Extensions["permit-agent-forwarding"]; ok {
 		t.Error("expected permit-agent-forwarding to be narrowed away by server config")
 	}
 
@@ -313,8 +313,8 @@ func TestPipeline_EndToEnd_PAM(t *testing.T) {
 	if len(cert.ValidPrincipals) != 1 || cert.ValidPrincipals[0] != "mnestor" {
 		t.Errorf(`got ValidPrincipals %v, want ["mnestor"] (the local account, not the approver's OIDC username)`, cert.ValidPrincipals)
 	}
-	if len(cert.Permissions.Extensions) != 0 {
-		t.Errorf("expected no extensions on a PAM certificate, got %v", cert.Permissions.Extensions)
+	if len(cert.Extensions) != 0 {
+		t.Errorf("expected no extensions on a PAM certificate, got %v", cert.Extensions)
 	}
 
 	caPub := caKeypair.Public()

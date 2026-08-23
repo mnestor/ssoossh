@@ -29,13 +29,13 @@ func newTestSyslogWriter(t *testing.T) (*syslog.Writer, *net.UnixConn) {
 	if err != nil {
 		t.Fatalf("ListenUnixgram() error = %v", err)
 	}
-	t.Cleanup(func() { _ = conn.Close() }) //nolint:errcheck // test cleanup
+	t.Cleanup(func() { _ = conn.Close() })
 
 	w, err := syslog.Dial("unixgram", sock, syslog.LOG_AUTHPRIV, "ssoossh-test")
 	if err != nil {
 		t.Fatalf("syslog.Dial() error = %v", err)
 	}
-	t.Cleanup(func() { _ = w.Close() }) //nolint:errcheck // test cleanup
+	t.Cleanup(func() { _ = w.Close() })
 
 	return w, conn
 }
@@ -51,7 +51,7 @@ func readOne(t *testing.T, conn *net.UnixConn) string {
 	return string(buf[:n])
 }
 
-// should forward every severity to the underlying syslog.Writer, gating Debugf on the debug mode
+// should forward every severity to the underlying syslog.Writer, gating Debugf on the debug mode.
 func TestSyslogLogger(t *testing.T) {
 	t.Run("should send an Info message", func(t *testing.T) {
 		w, conn := newTestSyslogWriter(t)
@@ -134,7 +134,7 @@ func TestSyslogLogger(t *testing.T) {
 	})
 }
 
-// should write to the underlying *log.Logger, gating Debugf on the debug mode
+// should write to the underlying *log.Logger, gating Debugf on the debug mode.
 func TestFileLogger(t *testing.T) {
 	t.Run("should write Info/Notice/Warning/Error with their level prefixes", func(t *testing.T) {
 		var buf bytes.Buffer
@@ -201,10 +201,10 @@ func TestFileLogger(t *testing.T) {
 	})
 }
 
-// should fall back to a stderr-backed fileLogger, since no syslog daemon is reachable in the test environment
+// should fall back to a stderr-backed fileLogger, since no syslog daemon is reachable in the test environment.
 func TestInitLogger(t *testing.T) {
 	logger := initLogger("ssoossh-test")
-	t.Cleanup(func() { _ = logger.Close() }) //nolint:errcheck // test cleanup
+	t.Cleanup(func() { _ = logger.Close() })
 
 	if logger == nil {
 		t.Fatal("initLogger() returned nil")

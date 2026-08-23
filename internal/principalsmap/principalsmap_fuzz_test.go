@@ -41,12 +41,11 @@ func FuzzPrincipalsMapYAML(f *testing.F) {
 			return
 		}
 
-		// If we got a map, structure should be sound
+		// If we got a map, structure should be sound. Ranging over a nil
+		// slice is a no-op, so the inner nil check adds nothing.
 		for _, principals := range m {
-			if principals != nil {
-				for _, p := range principals {
-					_ = p // verify no panic on each principal
-				}
+			for _, p := range principals {
+				_ = p // verify no panic on each principal
 			}
 		}
 	})

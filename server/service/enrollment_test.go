@@ -7,7 +7,7 @@ import (
 	"github.com/mnestor/ssoossh/server/config"
 )
 
-// should construct without error and always report "not implemented" for Retrieve
+// should construct without error and always report "not implemented" for Retrieve.
 func TestEnrollmentService(t *testing.T) {
 	t.Parallel()
 

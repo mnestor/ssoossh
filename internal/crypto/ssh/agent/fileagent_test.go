@@ -10,7 +10,7 @@ import (
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 )
 
-// should report file as the backend and agent type for a FileAgent
+// should report file as the backend and agent type for a FileAgent.
 func TestFileAgent_TypeAndBackend(t *testing.T) {
 	t.Parallel()
 
@@ -24,7 +24,7 @@ func TestFileAgent_TypeAndBackend(t *testing.T) {
 	}
 }
 
-// should create a FileAgent for a path with no existing key material
+// should create a FileAgent for a path with no existing key material.
 func TestNewFileAgent_WhenNoFilesExist(t *testing.T) {
 	t.Parallel()
 
@@ -45,7 +45,7 @@ func TestNewFileAgent_WhenNoFilesExist(t *testing.T) {
 	}
 }
 
-// should resolve a non-absolute path to an absolute one under the user's home directory
+// should resolve a non-absolute path to an absolute one under the user's home directory.
 func TestNewFileAgent_ResolvesToAbsolutePath(t *testing.T) {
 	t.Parallel()
 
@@ -85,7 +85,7 @@ func TestNewFileAgent_ResolvesToAbsolutePath(t *testing.T) {
 	}
 }
 
-// should leave an already-absolute path untouched
+// should leave an already-absolute path untouched.
 func TestNewFileAgent_AbsolutePathUnchanged(t *testing.T) {
 	t.Parallel()
 
@@ -106,7 +106,7 @@ func TestNewFileAgent_AbsolutePathUnchanged(t *testing.T) {
 }
 
 // should reject an empty path instead of silently resolving it to ~/.ssh
-// itself, which every later write or remove would then operate on
+// itself, which every later write or remove would then operate on.
 func TestNewFileAgent_EmptyPath(t *testing.T) {
 	t.Parallel()
 
@@ -118,7 +118,7 @@ func TestNewFileAgent_EmptyPath(t *testing.T) {
 	}
 }
 
-// should reject a path that names an existing directory
+// should reject a path that names an existing directory.
 func TestNewFileAgent_DirectoryPath(t *testing.T) {
 	t.Parallel()
 
@@ -128,7 +128,7 @@ func TestNewFileAgent_DirectoryPath(t *testing.T) {
 	}
 }
 
-// should detect and load existing private key, public key, and certificate files
+// should detect and load existing private key, public key, and certificate files.
 func TestNewFileAgent_LoadsExistingKeyMaterial(t *testing.T) {
 	t.Parallel()
 
@@ -185,7 +185,7 @@ func TestNewFileAgent_LoadsExistingKeyMaterial(t *testing.T) {
 	}
 }
 
-// should still record HasCert when the certificate file exists but cannot be parsed, leaving the keypair's certificate unset
+// should still record HasCert when the certificate file exists but cannot be parsed, leaving the keypair's certificate unset.
 func TestNewFileAgent_UnparseableCertFile(t *testing.T) {
 	t.Parallel()
 
@@ -223,7 +223,7 @@ func TestNewFileAgent_UnparseableCertFile(t *testing.T) {
 	}
 }
 
-// should write private key, public key, and certificate files when adding a keypair
+// should write private key, public key, and certificate files when adding a keypair.
 func TestFileAgent_AddKeypair_WritesFiles(t *testing.T) {
 	t.Parallel()
 
@@ -320,7 +320,7 @@ func TestFileAgent_AddKeypair_WritesFiles(t *testing.T) {
 	})
 }
 
-// should refuse to add or remove keys directly, since FileAgent is not a live agent
+// should refuse to add or remove keys directly, since FileAgent is not a live agent.
 func TestFileAgent_AddAndRemove_Unsupported(t *testing.T) {
 	t.Parallel()
 
@@ -332,7 +332,7 @@ func TestFileAgent_AddAndRemove_Unsupported(t *testing.T) {
 	}
 }
 
-// should return no identities when no keypair is loaded, and the keypair filtered by CA trust otherwise
+// should return no identities when no keypair is loaded, and the keypair filtered by CA trust otherwise.
 func TestFileAgent_List(t *testing.T) {
 	t.Parallel()
 
@@ -403,7 +403,7 @@ func TestFileAgent_List(t *testing.T) {
 	})
 }
 
-// should delegate to RemoveAll regardless of which key is passed, since a FileAgent manages a single identity
+// should delegate to RemoveAll regardless of which key is passed, since a FileAgent manages a single identity.
 func TestFileAgent_Remove(t *testing.T) {
 	t.Parallel()
 
@@ -422,7 +422,7 @@ func TestFileAgent_Remove(t *testing.T) {
 	}
 }
 
-// should report nothing removed when there is no private key file on disk
+// should report nothing removed when there is no private key file on disk.
 func TestFileAgent_RemoveAll_NoFile(t *testing.T) {
 	t.Parallel()
 
@@ -438,7 +438,7 @@ func TestFileAgent_RemoveAll_NoFile(t *testing.T) {
 	}
 }
 
-// should remove an untrusted or expired certificate identity, and leave a valid one in place
+// should remove an untrusted or expired certificate identity, and leave a valid one in place.
 func TestFileAgent_CleanupAgent(t *testing.T) {
 	t.Parallel()
 
@@ -555,7 +555,7 @@ func TestFileAgent_CleanupAgent(t *testing.T) {
 	})
 }
 
-// should build one signer from the loaded keypair, or error when none is loaded
+// should build one signer from the loaded keypair, or error when none is loaded.
 func TestFileAgent_Signers(t *testing.T) {
 	t.Parallel()
 
@@ -584,7 +584,7 @@ func TestFileAgent_Signers(t *testing.T) {
 	})
 }
 
-// should be a no-op, since FileAgent holds no persistent connection
+// should be a no-op, since FileAgent holds no persistent connection.
 func TestFileAgent_Close(t *testing.T) {
 	t.Parallel()
 
@@ -594,7 +594,7 @@ func TestFileAgent_Close(t *testing.T) {
 	}
 }
 
-// should always report no underlying live-agent connection
+// should always report no underlying live-agent connection.
 func TestFileAgent_Agent(t *testing.T) {
 	t.Parallel()
 
@@ -604,7 +604,7 @@ func TestFileAgent_Agent(t *testing.T) {
 	}
 }
 
-// should require at least one CA and reject an unparseable CA string, otherwise accumulating registered CAs
+// should require at least one CA and reject an unparseable CA string, otherwise accumulating registered CAs.
 func TestFileAgent_SetCA(t *testing.T) {
 	t.Parallel()
 
@@ -655,7 +655,7 @@ func TestFileAgent_SetCA(t *testing.T) {
 	})
 }
 
-// should read and validate the on-disk certificate file against registered CAs
+// should read and validate the on-disk certificate file against registered CAs.
 func TestFileAgent_Certificates(t *testing.T) {
 	t.Parallel()
 
@@ -759,7 +759,7 @@ func TestFileAgent_Certificates(t *testing.T) {
 	})
 }
 
-// should surface the underlying write error when the private key cannot be written to disk
+// should surface the underlying write error when the private key cannot be written to disk.
 func TestFileAgent_AddKeypair_WriteError(t *testing.T) {
 	t.Parallel()
 
@@ -782,7 +782,7 @@ func TestFileAgent_AddKeypair_WriteError(t *testing.T) {
 	}
 }
 
-// should compare two public keys by their marshaled bytes, treating nil as never equal
+// should compare two public keys by their marshaled bytes, treating nil as never equal.
 func TestPublicKeysEqual(t *testing.T) {
 	t.Parallel()
 

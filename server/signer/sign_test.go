@@ -149,14 +149,14 @@ func TestSign_ShouldMapJobFieldsOntoTheCertificate(t *testing.T) {
 	if len(cert.ValidPrincipals) != 1 || cert.ValidPrincipals[0] != "alice" {
 		t.Errorf(`got ValidPrincipals %v, want ["alice"]`, cert.ValidPrincipals)
 	}
-	if cert.ValidAfter != uint64(job.ValidAfter.Unix()) {
+	if cert.ValidAfter != uint64(job.ValidAfter.Unix()) { //nolint:gosec // test fixture, always a real date
 		t.Errorf("got ValidAfter %d, want %d", cert.ValidAfter, job.ValidAfter.Unix())
 	}
-	if cert.ValidBefore != uint64(job.ValidBefore.Unix()) {
+	if cert.ValidBefore != uint64(job.ValidBefore.Unix()) { //nolint:gosec // test fixture, always a real date
 		t.Errorf("got ValidBefore %d, want %d", cert.ValidBefore, job.ValidBefore.Unix())
 	}
-	if _, ok := cert.Permissions.Extensions["permit-pty"]; !ok {
-		t.Errorf("expected permit-pty in extensions, got %v", cert.Permissions.Extensions)
+	if _, ok := cert.Extensions["permit-pty"]; !ok {
+		t.Errorf("expected permit-pty in extensions, got %v", cert.Extensions)
 	}
 	if cert.Serial == 0 {
 		t.Error("expected a non-zero serial")
@@ -227,11 +227,11 @@ func TestSign_ShouldCarryCriticalOptionsFaithfully(t *testing.T) {
 	}
 	cert := parseCert(t, reply.Certificate)
 
-	if got := cert.Permissions.CriticalOptions["force-command"]; got != "/usr/bin/true" {
+	if got := cert.CriticalOptions["force-command"]; got != "/usr/bin/true" {
 		t.Errorf("got force-command %q, want %q", got, "/usr/bin/true")
 	}
 	want := "10.0.0.1/32,192.168.1.0/24"
-	if got := cert.Permissions.CriticalOptions["source-address"]; got != want {
+	if got := cert.CriticalOptions["source-address"]; got != want {
 		t.Errorf("got source-address %q, want %q", got, want)
 	}
 }
@@ -249,8 +249,8 @@ func TestSign_ShouldGrantNoTouchRequiredWhenRequested(t *testing.T) {
 	}
 	cert := parseCert(t, reply.Certificate)
 
-	if _, ok := cert.Permissions.Extensions["no-touch-required"]; !ok {
-		t.Errorf("expected no-touch-required in extensions, got %v", cert.Permissions.Extensions)
+	if _, ok := cert.Extensions["no-touch-required"]; !ok {
+		t.Errorf("expected no-touch-required in extensions, got %v", cert.Extensions)
 	}
 }
 
@@ -299,8 +299,8 @@ func TestSign_ShouldIssueUserCertForPAM(t *testing.T) {
 	if cert.CertType != ssh.UserCert {
 		t.Errorf("got CertType %d, want %d (ssh.UserCert)", cert.CertType, ssh.UserCert)
 	}
-	if len(cert.Permissions.Extensions) != 0 {
-		t.Errorf("expected no extensions on a PAM certificate, got %v", cert.Permissions.Extensions)
+	if len(cert.Extensions) != 0 {
+		t.Errorf("expected no extensions on a PAM certificate, got %v", cert.Extensions)
 	}
 }
 
@@ -334,7 +334,7 @@ func TestSign_ShouldReportAnUnavailableCA(t *testing.T) {
 	}
 }
 
-// should classify a signError by its code, defaulting to ErrCodeSignFailed for anything else, and unwrap to the wrapped error
+// should classify a signError by its code, defaulting to ErrCodeSignFailed for anything else, and unwrap to the wrapped error.
 func TestSignError(t *testing.T) {
 	t.Parallel()
 
@@ -357,7 +357,7 @@ func TestSignError(t *testing.T) {
 		t.Parallel()
 		wrapped := errors.New("underlying")
 		se := &signError{code: certmsg.ErrCodeSignFailed, err: wrapped}
-		if got := se.Unwrap(); got != wrapped {
+		if got := se.Unwrap(); !errors.Is(got, wrapped) {
 			t.Errorf("Unwrap() = %v, want %v", got, wrapped)
 		}
 		if !errors.Is(se, wrapped) {
@@ -377,7 +377,7 @@ func (b *brokenSigner) Sign(rand io.Reader, data []byte) (*ssh.Signature, error)
 	return nil, errors.New("signing hardware unavailable")
 }
 
-// should classify a signing failure from the CA itself, not just from the key source
+// should classify a signing failure from the CA itself, not just from the key source.
 func TestSign_ShouldReportASigningFailure(t *testing.T) {
 	t.Parallel()
 

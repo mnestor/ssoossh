@@ -5,13 +5,20 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+// testManPageDate is a fixed stamp, so the generated pages are byte-identical
+// between runs. Mirrors what manPageDate returns with no SOURCE_DATE_EPOCH set.
+func testManPageDateValue() time.Time {
+	return time.Date(2026, time.August, 23, 0, 0, 0, 0, time.UTC)
+}
 
 // TestGenerateClientManpage should create man page file with correct content structure.
 func TestGenerateClientManpage(t *testing.T) {
 	outDir := t.TempDir()
 
-	err := generateClientManpage(outDir)
+	err := generateClientManpage(outDir, testManPageDateValue())
 	if err != nil {
 		t.Fatalf("generateClientManpage failed: %v", err)
 	}
@@ -51,7 +58,7 @@ func TestGenerateClientManpageInvalidDir(t *testing.T) {
 	// any uid, unlike a permission-based setup.
 	outDir := filepath.Join(t.TempDir(), "missing", "subdir")
 
-	err := generateClientManpage(outDir)
+	err := generateClientManpage(outDir, testManPageDateValue())
 	if err == nil {
 		t.Error("Expected error when writing to a missing directory, got nil")
 	}
@@ -61,7 +68,7 @@ func TestGenerateClientManpageInvalidDir(t *testing.T) {
 func TestGenerateClientManpageContainsSubcommands(t *testing.T) {
 	outDir := t.TempDir()
 
-	err := generateClientManpage(outDir)
+	err := generateClientManpage(outDir, testManPageDateValue())
 	if err != nil {
 		t.Fatalf("generateClientManpage failed: %v", err)
 	}
@@ -90,7 +97,7 @@ func TestGenerateClientManpageContainsSubcommands(t *testing.T) {
 func TestGenerateClientManpageOutputStructure(t *testing.T) {
 	outDir := t.TempDir()
 
-	err := generateClientManpage(outDir)
+	err := generateClientManpage(outDir, testManPageDateValue())
 	if err != nil {
 		t.Fatalf("generateClientManpage failed: %v", err)
 	}
@@ -120,7 +127,7 @@ func TestGenerateClientManpageOutputStructure(t *testing.T) {
 func TestGenerateClientManpageConfiguration(t *testing.T) {
 	outDir := t.TempDir()
 
-	err := generateClientManpage(outDir)
+	err := generateClientManpage(outDir, testManPageDateValue())
 	if err != nil {
 		t.Fatalf("generateClientManpage failed: %v", err)
 	}
@@ -183,7 +190,7 @@ func TestCobraCommandGeneration(t *testing.T) {
 	// Test that we can write man pages to a buffer (without actual file I/O)
 	// This verifies the cobra structures are valid
 	outDir := t.TempDir()
-	err := generateClientManpage(outDir)
+	err := generateClientManpage(outDir, testManPageDateValue())
 	if err != nil {
 		t.Fatalf("Failed to generate client manpage: %v", err)
 	}
@@ -201,7 +208,7 @@ func TestErrorHandling(t *testing.T) {
 	}
 	file.Close()
 
-	err = generateClientManpage(outDir)
+	err = generateClientManpage(outDir, testManPageDateValue())
 	if err == nil {
 		t.Error("Expected error when outDir is a file, got nil")
 	}
@@ -212,7 +219,7 @@ func TestMultipleManpageGeneration(t *testing.T) {
 	outDir := t.TempDir()
 
 	// Generate client man page
-	err := generateClientManpage(outDir)
+	err := generateClientManpage(outDir, testManPageDateValue())
 	if err != nil {
 		t.Fatalf("Failed to generate client man page: %v", err)
 	}
@@ -244,10 +251,10 @@ func TestGenerateClientManpageConcurrency(t *testing.T) {
 	done := make(chan error, 2)
 
 	go func() {
-		done <- generateClientManpage(outDir1)
+		done <- generateClientManpage(outDir1, testManPageDateValue())
 	}()
 	go func() {
-		done <- generateClientManpage(outDir2)
+		done <- generateClientManpage(outDir2, testManPageDateValue())
 	}()
 
 	for i := 0; i < 2; i++ {
@@ -268,7 +275,7 @@ func TestGenerateClientManpageConcurrency(t *testing.T) {
 func TestGenerateClientManpageContentSize(t *testing.T) {
 	outDir := t.TempDir()
 
-	err := generateClientManpage(outDir)
+	err := generateClientManpage(outDir, testManPageDateValue())
 	if err != nil {
 		t.Fatalf("generateClientManpage failed: %v", err)
 	}
@@ -408,7 +415,7 @@ func BenchmarkGenerateClientManpage(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		tempDir := filepath.Join(outDir, "bench", "dir", string(rune(i)))
 		os.MkdirAll(tempDir, 0755)
-		generateClientManpage(tempDir)
+		generateClientManpage(tempDir, testManPageDateValue())
 	}
 }
 
@@ -420,5 +427,58 @@ func BenchmarkRun(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		tempDir := filepath.Join(outDir, "bench", "run", string(rune(i)))
 		run(tempDir)
+	}
+}
+
+// TestManPageDate covers the stamp that makes generation reproducible: a
+// fixed default so `make man-check` can pass on any day, and a
+// SOURCE_DATE_EPOCH override for downstream rebuilds.
+func TestManPageDate(t *testing.T) {
+	tests := []struct {
+		name    string
+		epoch   string
+		want    time.Time
+		wantErr bool
+	}{
+		{
+			name:  "should return the fixed date when SOURCE_DATE_EPOCH is unset",
+			epoch: "",
+			want:  time.Date(2026, time.August, 23, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			name:  "should honour SOURCE_DATE_EPOCH when it is set",
+			epoch: "1700000000",
+			want:  time.Unix(1700000000, 0).UTC(),
+		},
+		{
+			name:  "should treat the unix epoch itself as a real value",
+			epoch: "0",
+			want:  time.Unix(0, 0).UTC(),
+		},
+		{
+			name:    "should error when SOURCE_DATE_EPOCH is not an integer",
+			epoch:   "not-a-number",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("SOURCE_DATE_EPOCH", tt.epoch)
+
+			got, err := manPageDate()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("manPageDate() = %v, want an error", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("manPageDate() returned unexpected error: %v", err)
+			}
+			if !got.Equal(tt.want) {
+				t.Errorf("manPageDate() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

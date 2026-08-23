@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// should require SSH_AUTH_SOCK to be set, dial the socket it names, and wrap the connection as an OpenSSH-backed SshAgent
+// should require SSH_AUTH_SOCK to be set, dial the socket it names, and wrap the connection as an OpenSSH-backed SshAgent.
 func TestNewOpenSSHAgent(t *testing.T) {
 	t.Run("should error when SSH_AUTH_SOCK is not set", func(t *testing.T) {
 		t.Setenv("SSH_AUTH_SOCK", "")
@@ -37,17 +37,17 @@ func TestNewOpenSSHAgent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("os.MkdirTemp() error = %v", err)
 		}
-		t.Cleanup(func() { _ = os.RemoveAll(dir) }) //nolint:errcheck // test cleanup
+		t.Cleanup(func() { _ = os.RemoveAll(dir) })
 		sockPath := filepath.Join(dir, "agent.sock")
 		ln, err := net.Listen("unix", sockPath)
 		if err != nil {
 			t.Fatalf("net.Listen() error = %v", err)
 		}
-		t.Cleanup(func() { _ = ln.Close() }) //nolint:errcheck // test cleanup
+		t.Cleanup(func() { _ = ln.Close() })
 		go func() {
 			conn, err := ln.Accept()
 			if err == nil {
-				_ = conn.Close() //nolint:errcheck // test fixture, connection is discarded once dialed
+				_ = conn.Close()
 			}
 		}()
 
@@ -57,7 +57,7 @@ func TestNewOpenSSHAgent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewOpenSSHAgent() error = %v", err)
 		}
-		t.Cleanup(func() { _ = got.Close() }) //nolint:errcheck // test cleanup
+		t.Cleanup(func() { _ = got.Close() })
 
 		sshAgent, ok := got.(*SshAgent)
 		if !ok {
@@ -69,7 +69,7 @@ func TestNewOpenSSHAgent(t *testing.T) {
 	})
 }
 
-// should delegate to NewOpenSSHAgent on Unix
+// should delegate to NewOpenSSHAgent on Unix.
 func TestNewSSHAgent(t *testing.T) {
 	t.Setenv("SSH_AUTH_SOCK", "")
 

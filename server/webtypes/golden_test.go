@@ -218,6 +218,7 @@ func assertGolden(t *testing.T, path string, fixture any) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatalf("failed to create testdata directory: %v", err)
 		}
+		//nolint:gosec // golden files are committed artifacts meant to be world-readable
 		if err := os.WriteFile(path, encoded, 0o644); err != nil {
 			t.Fatalf("failed to write golden %s: %v", path, err)
 		}

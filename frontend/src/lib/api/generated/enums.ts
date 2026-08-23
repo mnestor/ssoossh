@@ -5,7 +5,7 @@
 
 /**
  * CertificateType identifies which of the three certificate types
- * (docs/ssoossh-context.md — "Certificate types") a row represents.
+ * (docs/dev/ssoossh-context.md — "Certificate types") a row represents.
  */
 export const CertificateTypeUser = "user";
 export const CertificateTypeHost = "host";
@@ -33,7 +33,7 @@ export const CertificateRequestStatusApproved = "approved";
  * CertificateRequestStatusEnrolled is CertificateTypeService's terminal
  * approval state: EnrollmentToken is set, and the certificate itself
  * isn't issued until a later `service retrieve` redeems it — see
- * docs/ssoossh-context.md, "Service enrollment".
+ * docs/dev/ssoossh-context.md, "Service enrollment".
  */
 export const CertificateRequestStatusEnrolled = "enrolled";
 export const CertificateRequestStatusDenied = "denied";

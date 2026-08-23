@@ -167,8 +167,8 @@ func newTestCert(t *testing.T, ca testCA, principal string, validFor time.Durati
 		CertType:        xssh.UserCert,
 		KeyId:           principal,
 		ValidPrincipals: []string{principal},
-		ValidAfter:      uint64(time.Now().Add(-time.Hour).Unix()),
-		ValidBefore:     uint64(time.Now().Add(validFor).Unix()),
+		ValidAfter:      uint64(time.Now().Add(-time.Hour).Unix()), //nolint:gosec // test fixture, always a real date
+		ValidBefore:     uint64(time.Now().Add(validFor).Unix()),   //nolint:gosec // test fixture, always a real date
 	}
 	if err := cert.SignCert(rand.Reader, ca.signer); err != nil {
 		t.Fatalf("sign certificate: %v", err)

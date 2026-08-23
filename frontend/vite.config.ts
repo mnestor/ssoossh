@@ -52,11 +52,7 @@ export default defineConfig(({ mode }) => {
 				all: true,
 				// Only report on actual source, not generated types
 				include: ['src/**/*.{ts,svelte}'],
-				exclude: [
-					'src/lib/api/generated/**',
-					'**/*.spec.ts',
-					'**/*.test.ts'
-				],
+				exclude: ['src/lib/api/generated/**', '**/*.spec.ts', '**/*.test.ts'],
 				reporter: ['text', 'json', 'html']
 			}
 		},

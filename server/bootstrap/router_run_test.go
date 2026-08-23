@@ -284,7 +284,7 @@ func TestServerRun_ShouldServeTLSWhenInlineCertificateConfigured(t *testing.T) {
 
 	client := &http.Client{
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // self-signed test certificate
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 	}
 	resp := getWithRetry(t, client, "https://"+addr+"/healthz")

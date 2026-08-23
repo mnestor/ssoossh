@@ -6,6 +6,7 @@ package middleware
 // gin.Context objects. Each test verifies one specific rate limit behavior.
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -70,7 +71,8 @@ func TestRateLimitMiddleware_ShouldRejectRequestsBeyondBurst(t *testing.T) {
 	if len(c2.Errors) != 1 {
 		t.Fatalf("expected exactly one error to be attached, got %d", len(c2.Errors))
 	}
-	if _, ok := c2.Errors[0].Err.(*TooManyRequestsError); !ok {
+	tooManyRequestsError := &TooManyRequestsError{}
+	if !errors.As(c2.Errors[0].Err, &tooManyRequestsError) {
 		t.Errorf("expected TooManyRequestsError, got %T", c2.Errors[0].Err)
 	}
 }
