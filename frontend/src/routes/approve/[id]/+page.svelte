@@ -24,17 +24,26 @@
 
 	// Build the list of principals the approver holds: username plus other accounts,
 	// deduplicated and in that order.
+	//
+	// Deduplicated with indexOf rather than a Set: svelte/prefer-svelte-reactivity
+	// rejects a built-in Set here, and reaching for SvelteSet instead would
+	// imply reactive state this does not have — the collection is scratch,
+	// built fresh on every evaluation of the derived and discarded once the
+	// array is returned. The lists are a handful of entries.
 	const userPrincipals = $derived.by(() => {
-		const principals = new Set<string>();
-		if (session.user?.username) {
-			principals.add(session.user.username);
-		}
-		if (session.user?.other_accounts) {
-			for (const account of session.user.other_accounts) {
-				principals.add(account);
+		const principals: string[] = [];
+		const add = (name: string) => {
+			if (name && !principals.includes(name)) {
+				principals.push(name);
 			}
+		};
+		if (session.user?.username) {
+			add(session.user.username);
 		}
-		return Array.from(principals);
+		for (const account of session.user?.other_accounts ?? []) {
+			add(account);
+		}
+		return principals;
 	});
 
 	// Initialize selected principals to the username on first load.

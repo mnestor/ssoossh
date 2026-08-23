@@ -159,5 +159,17 @@ jobs:
       # one file, which is why the frontend suite was widely believed to run
       # nowhere: people looked for a "frontend tests" job and there wasn't
       # one.
+      # test:coverage rather than test: the v8 provider and its excludes were
+      # already configured in vite.config.ts and nothing ever invoked them, so
+      # frontend coverage was collectable and collected by nobody. Running the
+      # suite with it costs nothing extra -- it is the same run.
       - name: Run frontend unit and a11y tests
-        run: pnpm test
+        run: pnpm test:coverage
+
+      - name: Upload frontend coverage
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frontend-coverage
+          path: frontend/coverage/
+          retention-days: 7

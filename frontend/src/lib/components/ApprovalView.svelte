@@ -54,7 +54,12 @@
 		serviceAccounts = [],
 		selectedServiceAccount = $bindable(),
 		userPrincipals = [],
-		selectedPrincipals = $bindable(),
+		// A fallback, like userPrincipals and serviceAccounts above. The prop
+		// is declared optional and the approve button reads
+		// selectedPrincipals.length, so without one any consumer that omits
+		// it crashes the component on render. The approve route always binds
+		// it, which is why nothing caught this.
+		selectedPrincipals = $bindable([]),
 		onapprove,
 		ondeny
 	}: Props = $props();
@@ -275,7 +280,7 @@
 											bind:group={selectedPrincipals}
 											class="rounded border border-border-subtle bg-surface accent-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 										/>
-										<span class="text-[13px] text-ink font-mono">{principal}</span>
+										<span class="font-mono text-[13px] text-ink">{principal}</span>
 									</label>
 								{/each}
 							</div>
@@ -295,7 +300,8 @@
 						<Button
 							testid="approve-button"
 							{busy}
-							disabled={(isServiceRequest && !selectedServiceAccount) || (isUserRequest && selectedPrincipals.length === 0)}
+							disabled={(isServiceRequest && !selectedServiceAccount) ||
+								(isUserRequest && selectedPrincipals.length === 0)}
 							onclick={onapprove}
 						>
 							<Icon name="check" size="sm" />

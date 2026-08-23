@@ -30,11 +30,26 @@ function detail(overrides: Partial<RequestDetail> = {}): RequestDetail {
 	};
 }
 
-/** mount renders the view with no-op decision handlers unless overridden. */
+/**
+ * mount renders the view with no-op decision handlers unless overridden.
+ *
+ * selectedPrincipals defaults to ['alice'] because the approve route
+ * pre-selects the approver's own username before rendering (see
+ * routes/approve/[id]/+page.svelte), so a user-type request never reaches
+ * this component with an empty selection. Mounting without one put the view
+ * in a state the app does not produce, where approve is correctly disabled --
+ * which is what the picker tests below assert deliberately.
+ */
 function mount(props: Partial<Parameters<typeof ApprovalView>[1]> = {}) {
 	const onapprove = vi.fn();
 	const ondeny = vi.fn();
-	render(ApprovalView, { detail: detail(), onapprove, ondeny, ...props });
+	render(ApprovalView, {
+		detail: detail(),
+		selectedPrincipals: ['alice'],
+		onapprove,
+		ondeny,
+		...props
+	});
 	return { onapprove, ondeny };
 }
 
@@ -418,7 +433,11 @@ describe('ApprovalView', () => {
 		});
 
 		it('should pre-check the username principal', () => {
-			mount({ detail: detail({ type: 'user' }), userPrincipals: ['alice', 'alice-alt'], selectedPrincipals: ['alice'] });
+			mount({
+				detail: detail({ type: 'user' }),
+				userPrincipals: ['alice', 'alice-alt'],
+				selectedPrincipals: ['alice']
+			});
 			const checkboxes = screen.getAllByRole('checkbox');
 			expect(checkboxes[0]).toBeChecked();
 		});
