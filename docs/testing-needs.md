@@ -70,3 +70,46 @@ before trusting them.
 
 Related: `make openapi-lint` shells out to `npx @redocly/cli`, so it is
 skipped in the same environments for the same reason.
+
+## The client man page is hand-written fiction, and its gate is vacuous
+
+**Found:** 2026-08-23, after adding a `--verbose` flag that never appeared in
+`docs/man/ssoossh.1` even though `make gendocs` reported success and
+`make man-check` passed.
+
+`generateClientManpage` (`internal/tools/gendocs/main.go:105`) does not
+generate from the client's command tree. It hand-builds a parallel cobra
+command: the Short and Long strings are copy-pasted from
+`RootCommand.Init`, `--config` and `--server` are re-declared by hand, and
+the subcommands are five stubs with invented descriptions. The server page
+above it is generated from the real `servercmd.NewCommand()`; only the
+client page is a duplicate.
+
+So the page drifts silently, and it already has:
+
+- `host` is described as "Manage host certificates". The real command is
+  "Manage local sshd principal mapping", and `docs/decisions.md:61` records
+  that host certificates were removed. The man page documents a feature that
+  does not exist.
+- `ca` is described as "Manage CA certificates"; it prints the CA public key.
+- `--verbose` is absent, as is every subcommand below the top level —
+  `ssh login|logout|proxycommand|inspect|config`, `host principals|mapping`,
+  `service enroll|retrieve` — and all of their flags.
+
+`make man-check` cannot catch any of this. It regenerates with gendocs and
+diffs the result against the committed file, so it compares gendocs to
+itself. It is a real gate for the server page and a vacuous one for the
+client page — worse than no gate, because it reports success.
+
+The fix is to generate from the real tree. The obstacle named in the comment
+is real but not insurmountable: `simplecobra.New` returns an `*Exec` that
+exposes only `Execute`, so the assembled `*cobra.Command` is not directly
+reachable. `Execute` returns a `*Commandeer`, which does carry
+`CobraCommand`, so one route is to execute the tree once with output
+redirected to `io.Discard` purely to obtain it. Another is for `client/cmd`
+to expose an accessor that assembles the same `[]simplecobra.Commander` and
+hands back the cobra root. Either beats maintaining a second copy of the CLI
+by hand.
+
+Until then, treat `docs/man/ssoossh.1` as unverified: adding a flag or a
+subcommand does not update it, and nothing will tell you.
