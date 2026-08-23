@@ -327,14 +327,22 @@ gendocs: ## Regenerate man pages from the cobra commands
 	go run ./internal/tools/gendocs docs/man
 	@echo "Man pages regenerated (ssoossh.1, ssoosshd.8)"
 
+# The pages gendocs produces: the two roots plus one per cobra subcommand.
+# The glob matters. Hashing only ssoossh.1 and ssoosshd.8 (as this did
+# originally) misses the five subcommand pages entirely, so adding a cobra
+# subcommand would produce a new page that nothing told you to commit.
+# pam_ssoossh.8 and the .5 config-format pages are hand-written and are
+# deliberately outside this set; a gendocs run leaves them byte-identical.
+GENERATED_MAN := docs/man/ssoossh.1 docs/man/ssoosshd*.8
+
 man-check:
-	@before_ssoossh=$$(sha256sum docs/man/ssoossh.1 2>/dev/null); \
-	before_ssoosshd=$$(sha256sum docs/man/ssoosshd.8 2>/dev/null); \
+	@before=$$(sha256sum $(GENERATED_MAN) 2>/dev/null | sort); \
 	$(MAKE) --no-print-directory gendocs >/dev/null; \
-	after_ssoossh=$$(sha256sum docs/man/ssoossh.1 2>/dev/null); \
-	after_ssoosshd=$$(sha256sum docs/man/ssoosshd.8 2>/dev/null); \
-	if [ "$$before_ssoossh" != "$$after_ssoossh" ] || [ "$$before_ssoosshd" != "$$after_ssoosshd" ]; then \
-		echo "Man pages are stale: run 'make gendocs' and commit the result"; \
+	after=$$(sha256sum $(GENERATED_MAN) 2>/dev/null | sort); \
+	if [ "$$before" != "$$after" ]; then \
+		echo "Man pages are stale: a cobra command's name, description, or"; \
+		echo "subcommand set changed without the pages being regenerated."; \
+		echo "Run 'make gendocs' and commit the result (including any new page)."; \
 		exit 1; \
 	fi
 
