@@ -17,7 +17,8 @@ export type {
 	CertificateOptionsResponse as CertificateOptions,
 	CertificateResponse as CertificateRecord,
 	CurrentUserResponse as CurrentUser,
-	RequestDetailResponse as RequestDetail
+	RequestDetailResponse as RequestDetail,
+	EnrollmentRetrievalsResponse
 } from './generated/webtypes';
 
 export type {
