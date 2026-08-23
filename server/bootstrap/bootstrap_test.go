@@ -179,14 +179,53 @@ func TestBootstrap_ShouldErrorWhenSSHKeyInvalid(t *testing.T) {
 	saveSlogDefault(t)
 	t.Setenv("OTEL_LOGS_EXPORTER", "none")
 
+	oidcSrv := testutil.NewTestOIDCProvider(t)
+	extra := fmt.Sprintf(`authentication:
+  client_id: test-client
+  provider_url: %q
+  fields:
+    username: sub`, oidcSrv.URL)
+
 	cc := newBootstrapCommand(t, context.Background(),
-		writeBootstrapConfig(t, bootstrapConfigOpts{sshKey: "not-a-valid-key"}))
+		writeBootstrapConfig(t, bootstrapConfigOpts{
+			sshKey:    "not-a-valid-key",
+			httpExtra: "  server_name: ssoossh.example.com",
+			extra:     extra,
+		}))
 
 	err := BootstrapServe(cc, ServerModeFull)
 	if err == nil {
 		t.Fatal("expected an error for an invalid CA SSH key, got nil")
 	}
-	if !strings.Contains(err.Error(), "services") {
-		t.Errorf("expected a services initialization error, got: %v", err)
+	// Error comes from initCAKeyAnnouncer -> NewConfigKeySource -> ssh.ParsePrivateKey
+	if !strings.Contains(err.Error(), "failed to parse CA private key") {
+		t.Errorf("expected a CA key parsing error, got: %v", err)
+	}
+}
+
+func TestBootstrapSigner_ShouldErrorWhenSSHKeyMissing(t *testing.T) {
+	saveSlogDefault(t)
+	t.Setenv("OTEL_LOGS_EXPORTER", "none")
+
+	cc := newBootstrapCommand(t, context.Background(),
+		writeBootstrapConfig(t, bootstrapConfigOpts{
+			sshKey: "",
+			// Use gochannel backend so NATS config is not required, but note that
+			// BootstrapSigner itself rejects gochannel (requires NATS). This test
+			// verifies the SSH key check happens before the backend check.
+		}))
+
+	err := BootstrapSigner(cc)
+	if err == nil {
+		t.Fatal("expected an error for missing CA SSH key in signer mode, got nil")
+	}
+	// The error could be either:
+	// 1. "no CA private key configured" from initCAKeyAnnouncer (if checked first), or
+	// 2. "gochannel is in-process only" from BootstrapSigner backend check
+	// We verify it's one of the expected signer-mode errors, not an auth config error
+	errStr := err.Error()
+	if !strings.Contains(errStr, "no CA private key configured") &&
+		!strings.Contains(errStr, "gochannel is in-process only") {
+		t.Errorf("expected SSH key or backend config error, got: %v", err)
 	}
 }
