@@ -188,9 +188,13 @@ let both transports coexist without changing handlers.
 2. ~~**The constructor.**~~ **Done.** `server/pubsub.New()` branches on
    `Backend` and calls either `newGoChannel()` or `newNATS()`. Both build a
    shared `message.Router` with the same middleware and `CloseTimeout`.
-3. ~~**Queue groups.**~~ **Done.** `subjectCalculator()` derives queue groups
-   from topic names: `certrequest.sign` → "signer", `certrequest.signed` →
-   "signed-listeners", and `certrequest.wait.*` → empty (fan-out).
+3. ~~**Queue groups.**~~ **Implemented, unit tested.** `subjectCalculator()`
+   derives queue groups from topic names: `certrequest.sign` → "signer",
+   `certrequest.signed` → "signed-listeners", and `certrequest.wait.*` → empty
+   (fan-out). Unit test `TestSubjectCalculator_ShouldReturnQueueGroupForSignTopics`
+   verifies derivation. Full integration test (two subscribers per queue receiving
+   exactly one message each) would require a TLS-configured NATS server; the
+   mechanism itself is delegated to watermill-nats/v2.2.0, which has its own tests.
 4. ~~**Durability for the sign queue.**~~ **Done.** `JetStream.Disabled = true`
    for NATS core (at-most-once). A dropped job costs a full `RequestTTL` wait,
    acceptable for interactive approval. See `server/pubsub/pubsub.go` for
