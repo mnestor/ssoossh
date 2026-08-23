@@ -61,7 +61,7 @@ func TestExecuteEndToEnd(t *testing.T) {
 		{name: "ssh config", args: []string{"ssh", "config"}, wantNilErr: true},
 		{name: "host principals with no args", args: []string{"host", "principals"}, wantErr: errors.New("usage: ssoossh host principals <username>")},
 		{name: "host mapping list", args: []string{"host", "mapping", "list"}, wantNilErr: true},
-		{name: "service enroll", args: []string{"service", "enroll"}, wantErr: errors.New("the certificate request resolved with no outcome")},
+		{name: "service enroll", args: []string{"service", "enroll"}, wantErr: errors.New("the enrollment request resolved with no outcome")},
 		{name: "service retrieve", args: []string{"service", "retrieve"}, wantErr: errors.New("load enrollment: read enrollment file: open : no such file or directory")},
 		{name: "version", args: []string{"version"}, wantNilErr: true},
 	}

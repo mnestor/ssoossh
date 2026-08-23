@@ -3,10 +3,12 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/bep/simplecobra"
+
 	"github.com/mnestor/ssoossh/internal/api"
 )
 
@@ -46,33 +48,16 @@ func runServiceRetrieve(ctx context.Context, root *RootCommand, codeFlag, output
 
 	certText, err := root.API().RetrieveServiceCertificate(ctx, code)
 	if err != nil {
-		if respErr, ok := err.(*api.ResponseError); ok && respErr.IsNotFound() {
+		respErr := &api.ResponseError{}
+		if errors.As(err, &respErr) {
 			return fmt.Errorf("enrollment code not found or expired")
 		}
 		return fmt.Errorf("retrieve certificate: %w", err)
 	}
 
 	if outputFlag != "" {
-		tmpfile, err := os.CreateTemp("", ".ssoossh-cert-*")
-		if err != nil {
-			return fmt.Errorf("create temp file: %w", err)
-		}
-		defer os.Remove(tmpfile.Name())
-
-		if _, err := tmpfile.WriteString(certText); err != nil {
-			tmpfile.Close()
-			return fmt.Errorf("write certificate file: %w", err)
-		}
-		if err := tmpfile.Close(); err != nil {
-			return fmt.Errorf("close certificate file: %w", err)
-		}
-
-		if err := os.Rename(tmpfile.Name(), outputFlag); err != nil {
-			return fmt.Errorf("write certificate file: %w", err)
-		}
-
-		if err := os.Chmod(outputFlag, 0644); err != nil {
-			return fmt.Errorf("chmod certificate file: %w", err)
+		if err := writeFileAtomic(outputFlag, []byte(certText), 0644); err != nil {
+			return err
 		}
 	} else {
 		fmt.Fprint(os.Stdout, certText)

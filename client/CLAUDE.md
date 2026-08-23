@@ -17,7 +17,7 @@
 
 ```
 ssoossh ssh login | logout | proxycommand | inspect | config
-ssoossh host sign | renew | sync | principals
+ssoossh host principals | mapping (list | add | remove)
 ssoossh service enroll | retrieve
 ssoossh ca
 ssoossh version
@@ -28,10 +28,9 @@ ssoossh version
   is the only mode where key files on disk work without an agent)
 - `host principals` — implements sshd's `AuthorizedPrincipalsCommand`. Runs
   as root, called on every login attempt, **never touches the network** —
-  answers from whatever `host sync` last wrote. Cache staleness is the host
-  admin's call (file mtime / `host sync` exit status), not this command's.
-- `host sync` — pulls the principal mapping from the server and writes it
-  locally; purely local mapping files remain supported too
+  answers from the local mapping file `host mapping` manages. Host
+  certificates and server-side mappings were removed (docs/decisions.md);
+  the mapping is purely local.
 - `ca` — prints the CA public key for `TrustedUserCAKeys` / `@cert-authority`
 - Service enrollment: keypair is either operator-supplied (server never sees
   the private half) or client-generated; the server returns an enrollment

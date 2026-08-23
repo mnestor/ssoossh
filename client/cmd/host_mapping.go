@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"slices"
 
 	"github.com/bep/simplecobra"
+
 	sshcrypto "github.com/mnestor/ssoossh/internal/crypto/ssh"
 )
 
@@ -82,7 +82,10 @@ func newHostMappingAddCommand() simplecobra.Commander {
 				return fmt.Errorf("invalid principal: %w", err)
 			}
 
-			mapping := loadOrEmptyMapping(root.Config().PrincipalMappingFile)
+			mapping, err := loadMapping(root.Config().PrincipalMappingFile)
+			if err != nil {
+				return err
+			}
 			principals := mapping[account]
 			if !slices.Contains(principals, principal) {
 				principals = append(principals, principal)
@@ -107,7 +110,10 @@ func newHostMappingRemoveCommand() simplecobra.Commander {
 			}
 			account := args[0]
 
-			mapping := loadOrEmptyMapping(root.Config().PrincipalMappingFile)
+			mapping, err := loadMapping(root.Config().PrincipalMappingFile)
+			if err != nil {
+				return err
+			}
 			if len(args) == 1 {
 				delete(mapping, account)
 			} else {
@@ -127,20 +133,29 @@ func newHostMappingRemoveCommand() simplecobra.Commander {
 	}
 }
 
-func loadOrEmptyMapping(path string) map[string][]string {
+// loadMapping reads the mapping file. A missing file is an empty mapping
+// (nothing has been added yet); a malformed one is an error — silently
+// treating it as empty would let the next add/remove overwrite whatever
+// the operator actually had.
+func loadMapping(path string) (map[string][]string, error) {
 	if path == "" {
-		return make(map[string][]string)
+		return make(map[string][]string), nil
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return make(map[string][]string)
+		if os.IsNotExist(err) {
+			return make(map[string][]string), nil
+		}
+		return nil, fmt.Errorf("read mapping file: %w", err)
 	}
 	var mapping map[string][]string
-	_ = json.Unmarshal(data, &mapping)
+	if err := json.Unmarshal(data, &mapping); err != nil {
+		return nil, fmt.Errorf("malformed mapping file %s: %w", path, err)
+	}
 	if mapping == nil {
 		mapping = make(map[string][]string)
 	}
-	return mapping
+	return mapping, nil
 }
 
 func writeMapping(path string, mapping map[string][]string) error {
@@ -153,26 +168,5 @@ func writeMapping(path string, mapping map[string][]string) error {
 		return fmt.Errorf("encode mapping: %w", err)
 	}
 
-	tmpfile, err := ioutil.TempFile("", ".ssoossh-mapping-*")
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	defer os.Remove(tmpfile.Name())
-
-	if _, err := tmpfile.Write(data); err != nil {
-		tmpfile.Close()
-		return fmt.Errorf("write mapping file: %w", err)
-	}
-	if err := tmpfile.Close(); err != nil {
-		return fmt.Errorf("close mapping file: %w", err)
-	}
-
-	if err := os.Rename(tmpfile.Name(), path); err != nil {
-		return fmt.Errorf("write mapping file: %w", err)
-	}
-
-	if err := os.Chmod(path, 0644); err != nil {
-		return fmt.Errorf("chmod mapping file: %w", err)
-	}
-	return nil
+	return writeFileAtomic(path, data, 0644)
 }

@@ -3,9 +3,9 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 
 	"github.com/bep/simplecobra"
@@ -91,18 +91,15 @@ func runServiceEnroll(ctx context.Context, root *RootCommand, out io.Writer, key
 		return describeWaitError(err)
 	}
 
-	if err := checkOutcome(result); err != nil {
+	code, err := enrollmentCode(result)
+	if err != nil {
 		return err
 	}
-
-	// Service enrollments return a code, not a certificate
-	code := result.Certificate
 
 	enrollment := ServiceEnrollment{
 		Code:      code,
 		PublicKey: publicKey,
 	}
-
 	if kp != nil {
 		privPEM, err := kp.MarshalPrivateKey()
 		if err != nil {
@@ -113,35 +110,52 @@ func runServiceEnroll(ctx context.Context, root *RootCommand, out io.Writer, key
 		enrollment.PrivateKeyFile = keyPath
 	}
 
-	data, err := json.MarshalIndent(enrollment, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode enrollment: %w", err)
-	}
-
-	tmpfile, err := ioutil.TempFile("", ".ssoossh-enroll-*")
-	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
-	}
-	defer os.Remove(tmpfile.Name())
-
-	if _, err := tmpfile.Write(data); err != nil {
-		tmpfile.Close()
-		return fmt.Errorf("write enrollment file: %w", err)
-	}
-	if err := tmpfile.Close(); err != nil {
-		return fmt.Errorf("close enrollment file: %w", err)
-	}
-
 	enrollmentPath := cfg.ServiceEnrollmentFile
-	if err := os.Rename(tmpfile.Name(), enrollmentPath); err != nil {
-		return fmt.Errorf("write enrollment file: %w", err)
-	}
-
-	if err := os.Chmod(enrollmentPath, 0600); err != nil {
-		return fmt.Errorf("chmod enrollment file: %w", err)
+	if err := saveEnrollment(enrollmentPath, enrollment); err != nil {
+		return err
 	}
 
 	fmt.Fprintf(out, "Enrollment code saved to %s.\n", enrollmentPath)
 	fmt.Fprintf(out, "Run `ssoossh service retrieve` to fetch certificates.\n")
 	return nil
+}
+
+// enrollmentCode extracts the enrollment code from a resolved service
+// request. Unlike ssh login's checkOutcome, the outcome this path wants is
+// "enrolled" — the server mints a code at approval, and the certificate
+// itself is only issued later when `service retrieve` redeems it.
+func enrollmentCode(result *api.CertificateResult) (string, error) {
+	if result == nil {
+		return "", errors.New("the enrollment request resolved with no outcome")
+	}
+
+	switch result.Status {
+	case api.StatusEnrolled:
+		if result.Code == "" {
+			return "", errors.New("the request was enrolled but no code was delivered; run service enroll again")
+		}
+		return result.Code, nil
+	case api.StatusDenied:
+		return "", errors.New("the request was denied, so no enrollment was created")
+	case api.StatusExpired:
+		return "", errors.New("the request expired before anyone approved it; run service enroll again")
+	case api.StatusFailed:
+		return "", errors.New("ssoosshd could not create the enrollment; check the server logs, then run service enroll again")
+	default:
+		return "", fmt.Errorf("the server reported an unrecognized outcome %q", result.Status)
+	}
+}
+
+// saveEnrollment persists the enrollment file. 0600 because the code
+// redeems certificates until the enrollment expires, and the private key
+// material may be inline.
+func saveEnrollment(path string, enrollment ServiceEnrollment) error {
+	if path == "" {
+		return errors.New("service_enrollment_file not configured")
+	}
+	data, err := json.MarshalIndent(enrollment, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode enrollment: %w", err)
+	}
+	return writeFileAtomic(path, data, 0600)
 }
