@@ -149,11 +149,11 @@ func TestSigningJobStructure(t *testing.T) {
 		validBefore := now.Add(30 * time.Minute)
 
 		job := SigningJob{
-			RequestID: "req-456",
-			Type:      model.CertificateTypeUser,
-			PublicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5...",
+			RequestID:  "req-456",
+			Type:       model.CertificateTypeUser,
+			PublicKey:  "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5...",
 			Principals: []string{"alice@example.com"},
-			KeyID:     "laptop-2024-08-22",
+			KeyID:      "laptop-2024-08-22",
 			RequestedOptions: RequestedOptions{
 				Extensions: []string{"permit-pty"},
 			},
@@ -219,11 +219,11 @@ func TestSignedReplyStructure(t *testing.T) {
 func TestErrorCodeConstants(t *testing.T) {
 	t.Run("should have all error code constants defined", func(t *testing.T) {
 		codes := map[string]string{
-			"ErrCodeUnsupportedType":   ErrCodeUnsupportedType,
-			"ErrCodeBadPublicKey":      ErrCodeBadPublicKey,
-			"ErrCodeCAUnavailable":     ErrCodeCAUnavailable,
-			"ErrCodeSignFailed":        ErrCodeSignFailed,
-			"ErrCodeFIPSNotApproved":   ErrCodeFIPSNotApproved,
+			"ErrCodeUnsupportedType": ErrCodeUnsupportedType,
+			"ErrCodeBadPublicKey":    ErrCodeBadPublicKey,
+			"ErrCodeCAUnavailable":   ErrCodeCAUnavailable,
+			"ErrCodeSignFailed":      ErrCodeSignFailed,
+			"ErrCodeFIPSNotApproved": ErrCodeFIPSNotApproved,
 		}
 
 		for name, code := range codes {

@@ -7,7 +7,6 @@ package postgres
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -18,16 +17,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
-
-// containsSSLMode checks if the DSN already contains a sslmode parameter.
-func containsSSLMode(dsn string) bool {
-	parsed, err := url.Parse(dsn)
-	if err != nil {
-		return false
-	}
-	query := parsed.Query()
-	return query.Get("sslmode") != ""
-}
 
 // ConnectAndMigrate starts a throwaway postgres:17-alpine container, waits
 // for it, opens a gorm handle, and applies the up migrations. The second
@@ -68,7 +57,7 @@ func ConnectAndMigrate(t *testing.T, ctx context.Context) (*gorm.DB, string) {
 		t.Fatalf("docker run postgres: %v\n%s", err, out)
 	}
 	id := strings.TrimSpace(string(out))
-	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() })
+	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() }) //nolint:errcheck // best-effort teardown; --rm reaps it regardless.
 
 	dsn := fmt.Sprintf("postgres://postgres:parity@127.0.0.1:%d/parity?sslmode=disable", port)
 

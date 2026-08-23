@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -57,7 +58,7 @@ func doMigrate(_ context.Context, db *gorm.DB, fn func(*migrate.Migrate) error) 
 		return fmt.Errorf("failed to create migrate instance: %w", err)
 	}
 
-	if err := fn(m); err != nil && err != migrate.ErrNoChange {
+	if err := fn(m); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("failed to apply migration: %w", err)
 	}
 

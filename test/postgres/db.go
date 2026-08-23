@@ -1,57 +1,13 @@
 package postgres
 
 import (
-	"context"
-	"fmt"
 	"testing"
 
-	"github.com/golang-migrate/migrate/v4"
-	postgresMigrate "github.com/golang-migrate/migrate/v4/database/postgres"
-	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"gorm.io/gorm"
-
-	"github.com/mnestor/ssoossh/server/resources"
 )
 
 // Note: Postgres container setup for E2E tests is in test/e2e/harness/postgres.go.
 // This package provides schema utilities and query helpers for testing.
-
-// migratePostgres applies the embedded postgres migrations to the database.
-func migratePostgres(t *testing.T, ctx context.Context, db *gorm.DB) error {
-	t.Helper()
-
-	sqlDB, err := db.DB()
-	if err != nil {
-		return fmt.Errorf("failed to get sql.DB: %w", err)
-	}
-
-	conn, err := sqlDB.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get connection: %w", err)
-	}
-	defer func() { _ = conn.Close() }()
-
-	driver, err := postgresMigrate.WithConnection(ctx, conn, &postgresMigrate.Config{})
-	if err != nil {
-		return fmt.Errorf("failed to create migration driver: %w", err)
-	}
-
-	source, err := iofs.New(resources.FS, "migrations/postgres")
-	if err != nil {
-		return fmt.Errorf("failed to create migration source: %w", err)
-	}
-
-	m, err := migrate.NewWithInstance("iofs", source, "ssoossh", driver)
-	if err != nil {
-		return fmt.Errorf("failed to create migrate instance: %w", err)
-	}
-
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		return fmt.Errorf("failed to apply migrations: %w", err)
-	}
-
-	return nil
-}
 
 // Tables returns the list of user-created tables in the public schema,
 // excluding system tables like schema_migrations.

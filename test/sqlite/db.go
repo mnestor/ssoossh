@@ -3,6 +3,7 @@
 package sqlite
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -33,7 +34,10 @@ func ConnectAndMigrate(t *testing.T) *gorm.DB {
 
 	// Register cleanup.
 	t.Cleanup(func() {
-		sqlDB, _ := db.DB()
+		sqlDB, err := db.DB()
+		if err != nil {
+			return
+		}
 		if sqlDB != nil {
 			_ = sqlDB.Close()
 		}
@@ -70,7 +74,7 @@ func migrateSQLite(t *testing.T, db *gorm.DB) error {
 		return fmt.Errorf("failed to create migrate instance: %w", err)
 	}
 
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
@@ -166,7 +170,6 @@ func Indexes(t *testing.T, db *gorm.DB, tableName string) []IndexInfo {
 	defer func() { _ = rows.Close() }()
 
 	var indexes []IndexInfo
-	var indexNames []string
 
 	for rows.Next() {
 		var seq, unused, unique int
@@ -201,7 +204,6 @@ func Indexes(t *testing.T, db *gorm.DB, tableName string) []IndexInfo {
 			Unique:    unique != 0,
 			Columns:   columns,
 		})
-		indexNames = append(indexNames, name)
 	}
 
 	return indexes

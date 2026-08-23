@@ -38,15 +38,15 @@ func FuzzSniffImageType(f *testing.F) {
 	f.Add([]byte{0x00})
 
 	// SVG-like but invalid
-	f.Add([]byte(`<svgfoo/>`))                               // svgfoo instead of svg
-	f.Add([]byte(`< svg/>`))                                 // space before svg
-	f.Add([]byte(`<SVG/>`))                                  // uppercase
-	f.Add([]byte(`<!-- comment --><svg/>`))                 // SVG after comment
-	f.Add([]byte(`<?xml version="1.0"?><svg/>`))            // with XML declaration
-	f.Add([]byte(`<!DOCTYPE svg><svg/>`))                   // with DOCTYPE
-	f.Add([]byte("<!-- unterminated comment\n<svg/>"))      // unterminated comment
-	f.Add([]byte("<?php unterminated\n<svg/>"))             // unterminated PI
-	f.Add([]byte("<!DOCTYPE\n<svg/>"))                      // unterminated DOCTYPE
+	f.Add([]byte(`<svgfoo/>`))                         // svgfoo instead of svg
+	f.Add([]byte(`< svg/>`))                           // space before svg
+	f.Add([]byte(`<SVG/>`))                            // uppercase
+	f.Add([]byte(`<!-- comment --><svg/>`))            // SVG after comment
+	f.Add([]byte(`<?xml version="1.0"?><svg/>`))       // with XML declaration
+	f.Add([]byte(`<!DOCTYPE svg><svg/>`))              // with DOCTYPE
+	f.Add([]byte("<!-- unterminated comment\n<svg/>")) // unterminated comment
+	f.Add([]byte("<?php unterminated\n<svg/>"))        // unterminated PI
+	f.Add([]byte("<!DOCTYPE\n<svg/>"))                 // unterminated DOCTYPE
 
 	// Edge case: lots of comments/whitespace before SVG
 	prologue := ""
@@ -57,13 +57,13 @@ func FuzzSniffImageType(f *testing.F) {
 	f.Add([]byte(prologue))
 
 	// SVG element boundary cases
-	f.Add([]byte("<svg >"))      // with space and no close
-	f.Add([]byte("<svg\t>"))     // with tab
-	f.Add([]byte("<svg\n>"))     // with newline
-	f.Add([]byte("<svg\r>"))     // with carriage return
-	f.Add([]byte("<svg/>"))      // self-closing
-	f.Add([]byte("<svg />"))     // self-closing with space
-	f.Add([]byte("<svg:element/>"))  // namespaced
+	f.Add([]byte("<svg >"))         // with space and no close
+	f.Add([]byte("<svg\t>"))        // with tab
+	f.Add([]byte("<svg\n>"))        // with newline
+	f.Add([]byte("<svg\r>"))        // with carriage return
+	f.Add([]byte("<svg/>"))         // self-closing
+	f.Add([]byte("<svg />"))        // self-closing with space
+	f.Add([]byte("<svg:element/>")) // namespaced
 
 	// Not SVG
 	f.Add([]byte(`<html><svg></svg></html>`))
@@ -96,15 +96,15 @@ func FuzzSkipXMLPrologue(f *testing.F) {
 	f.Add([]byte("   \n\t<svg/>"))
 
 	// Edge cases
-	f.Add([]byte(`<svg/>`))                                  // no prologue
-	f.Add([]byte(`<?xml?><svg/>`))                          // minimal PI
-	f.Add([]byte(`<!----><!--><svg/>`))                      // empty comments
-	f.Add([]byte(""))                                        // empty
+	f.Add([]byte(`<svg/>`))             // no prologue
+	f.Add([]byte(`<?xml?><svg/>`))      // minimal PI
+	f.Add([]byte(`<!----><!--><svg/>`)) // empty comments
+	f.Add([]byte(""))                   // empty
 
 	// Unterminated constructs (should return nil)
-	f.Add([]byte(`<?xml version`))                           // unterminated PI
-	f.Add([]byte(`<!-- no close`))                           // unterminated comment
-	f.Add([]byte(`<!DOCTYPE`))                               // unterminated DOCTYPE
+	f.Add([]byte(`<?xml version`)) // unterminated PI
+	f.Add([]byte(`<!-- no close`)) // unterminated comment
+	f.Add([]byte(`<!DOCTYPE`))     // unterminated DOCTYPE
 
 	// Nested/complex
 	f.Add([]byte(`<!-- outer <!-- inner --> --><svg/>`))
@@ -160,7 +160,7 @@ func FuzzIsSVG(f *testing.F) {
 	f.Add([]byte(`<svg`))
 	f.Add([]byte(`<`))
 	f.Add([]byte(`<s`))
-	f.Add([]byte(`<?xml?>`))                 // just prologue, no element
+	f.Add([]byte(`<?xml?>`)) // just prologue, no element
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		isSVGResult := isSVG(data)

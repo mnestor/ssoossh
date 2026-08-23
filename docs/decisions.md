@@ -29,12 +29,8 @@ Worth doing eventually; not started because nothing needs it yet.
 - **API versioning, gateways, service meshes, circuit breakers.** One
   self-hosted binary with a single first-party client under active
   development. There is nothing to version against and nothing to mesh.
-- **GraphQL, WebSockets, PWA/offline support, push notifications.** The
-  web UI is a login and an approval page. The one real-time channel is
-  SSE, one-directional by nature: the server telling a waiting client its
-  certificate is ready.
-- **Internationalization.** Single-locale self-hosted tool. Revisit only
-  if community deployments actually ask.
+- **Internationalization.** Single-locale self-hosted tool. Revisit when
+  the community asks for it.
 - **Certificates that outlive their approval.** Issued certificates are
   never persisted server-side. Delivery is the only copy; a client that
   misses it re-requests. This is a feature: there is no certificate store
@@ -42,14 +38,6 @@ Worth doing eventually; not started because nothing needs it yet.
 
 ## Declined: security decisions with teeth
 
-- **The deployment-wide pending-requests listing.** There used to be an
-  endpoint listing every pending request to any signed-in user; it was
-  deleted rather than admin-gated. A request has no owner at creation, the
-  request ID is the capability, and a certificate takes the *approver's*
-  principals — so any screen inviting people to approve requests they did
-  not start is an escalation channel. Gating it admin-only would have
-  concentrated that hazard on the most privileged accounts. Kept here as
-  the shape of question to ask about any future listing endpoint.
 - **An admin role stored in the database.** Admin is an OIDC group named
   in configuration. A database flag has a bootstrapping problem ("who
   creates the first admin"), drifts from the identity provider, and lets
@@ -63,11 +51,15 @@ Worth doing eventually; not started because nothing needs it yet.
   Encryption does not authenticate, the payload is not secret (it is the
   future certificate's own contents), and a fleet-shared key is coarse and
   awkward to rotate. The broker connection carries per-node identity via
-  mTLS instead.
+  mTLS instead. Additionally the certificate itself is useless without 
+  the private key that never left the client.
 - **Pinning user certificates to a source address.** People move — office,
   VPN, hotel, phone tether — and a pinned certificate turns every network
   change into a failed login for no gain a short lifetime does not already
   provide. Services sit still, so service certificates *can* be pinned.
+  This may be implemented at some point as yes, users do log into remote
+  systems and need to ssh from them. So, pinning those certificates could
+  be considered a worthwhile choice.
 
 ## Declined: durability and availability machinery
 
@@ -80,10 +72,6 @@ Worth doing eventually; not started because nothing needs it yet.
   would fix certificate delivery but not the stranded-request sweep or
   per-process session keys — a configuration that half-works is worse than
   a clear requirement. Multi-instance requires NATS, full stop.
-- **A keepalive poll to hold web sessions open.** The session slides on
-  real activity server-side instead. A poll keeps a session alive for an
-  unattended browser, which is exactly the case the idle timeout exists
-  for.
 - **`request_ttl: 0` as "expiry disabled."** Removed outright. Every
   consumer needed a special case for it and each was a hazard — a sweep
   with no bound, a cache with no safe eviction age. Startup rejects a

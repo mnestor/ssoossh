@@ -192,11 +192,11 @@ func TestCertificateRequestStructure(t *testing.T) {
 
 	t.Run("should construct host certificate request", func(t *testing.T) {
 		cr := CertificateRequest{
-			ID:       "req-host",
-			Type:     CertificateTypeHost,
+			ID:        "req-host",
+			Type:      CertificateTypeHost,
 			PublicKey: "ssh-rsa AAAAB3...",
-			Hostname: "db.example.com",
-			Status:   CertificateRequestStatusPending,
+			Hostname:  "db.example.com",
+			Status:    CertificateRequestStatusPending,
 		}
 
 		if cr.Hostname != "db.example.com" {
@@ -206,11 +206,11 @@ func TestCertificateRequestStructure(t *testing.T) {
 
 	t.Run("should construct service enrollment request", func(t *testing.T) {
 		cr := CertificateRequest{
-			ID:             "req-svc",
-			Type:           CertificateTypeService,
-			PublicKey:      "ssh-ed25519...",
-			ServiceAccount: "svc-deploy",
-			Status:         CertificateRequestStatusEnrolled,
+			ID:              "req-svc",
+			Type:            CertificateTypeService,
+			PublicKey:       "ssh-ed25519...",
+			ServiceAccount:  "svc-deploy",
+			Status:          CertificateRequestStatusEnrolled,
 			EnrollmentToken: "token-xyz",
 		}
 
