@@ -1,12 +1,14 @@
 package signer
 
 import (
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rsa"
 	"fmt"
 
+	"github.com/eclipse-keypont/crypto11"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -43,4 +45,67 @@ func wrapCASigner(s crypto.Signer) (ssh.Signer, error) {
 	default:
 		return nil, fmt.Errorf("key type %T is not supported for HSM CA keys (ECDSA P-256/384/521 or RSA >= 2048; Ed25519 requires the ssh_key source)", pub)
 	}
+}
+
+// HSMParams configures a connection to a PKCS#11 token.
+type HSMParams struct {
+	Module     string // path to PKCS#11 .so
+	TokenLabel string
+	PIN        string
+	KeyID      []byte // nil when selecting by label only
+	KeyLabel   string // "" when selecting by id only
+}
+
+// HSMKeySource is a CAKeySource whose private key lives in a PKCS#11 token.
+// The key never enters process memory: crypto11 hands back a crypto.Signer
+// that performs each signature inside the HSM. Construction connects, logs
+// in, and locates the key so a misconfigured HSM fails at boot, matching
+// ConfigKeySource's fail-at-startup behavior. Close releases the PKCS#11
+// context; bootstrap runs it on shutdown.
+type HSMKeySource struct {
+	signer ssh.Signer
+	ctx11  *crypto11.Context
+}
+
+// NewHSMKeySource opens the PKCS#11 module and resolves the CA key pair.
+//
+// No unit test exercises the crypto11 calls below — they require a real
+// PKCS#11 module. hsmkeysource_softhsm_test.go covers them against SoftHSM2
+// behind the softhsm build tag (run in CI by .github/workflows/hsm.yaml);
+// the pure logic (algorithm gating) is unit-tested via wrapCASigner. The
+// crypto11 call lines are listed in exclude-from-coverage.txt.
+func NewHSMKeySource(p HSMParams) (*HSMKeySource, error) {
+	ctx11, err := crypto11.Configure(&crypto11.Config{
+		Path:       p.Module,
+		TokenLabel: p.TokenLabel,
+		Pin:        p.PIN,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("open PKCS#11 module %s: %w", p.Module, err)
+	}
+	kp, err := ctx11.FindKeyPair(p.KeyID, []byte(p.KeyLabel))
+	if err != nil {
+		_ = ctx11.Close()
+		return nil, fmt.Errorf("find CA key pair in HSM: %w", err)
+	}
+	if kp == nil { // crypto11 returns nil, nil when nothing matches
+		_ = ctx11.Close()
+		return nil, fmt.Errorf("no key pair found in HSM token %q matching label %q / id %x", p.TokenLabel, p.KeyLabel, p.KeyID)
+	}
+	signer, err := wrapCASigner(kp)
+	if err != nil {
+		_ = ctx11.Close()
+		return nil, err
+	}
+	return &HSMKeySource{signer: signer, ctx11: ctx11}, nil
+}
+
+// Signer implements CAKeySource.
+func (s *HSMKeySource) Signer(context.Context) (ssh.Signer, error) {
+	return s.signer, nil
+}
+
+// Close releases the PKCS#11 sessions and unloads the module.
+func (s *HSMKeySource) Close() error {
+	return s.ctx11.Close()
 }

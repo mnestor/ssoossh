@@ -87,3 +87,5 @@ internal/tools/gendocs/main\.go:57\.13,58\.22
 internal/tools/gendocs/main\.go:58\.22,61\.3
 internal/tools/gendocs/main\.go:63\.2,63\.40
 internal/tools/gendocs/main\.go:63\.40,65\.3
+server/signer/hsmkeysource\.go:78\.2,100\.33
+server/signer/hsmkeysource\.go:110\.2,110\.28
