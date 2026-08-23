@@ -29,8 +29,8 @@ func newHostMappingCommand() simplecobra.Commander {
 
 func newHostMappingListCommand() simplecobra.Commander {
 	return &simpleCommand{
-		name:  "list",
-		short: "Print the current principal mapping.",
+		name:    "list",
+		short:   "Print the current principal mapping.",
 		offline: true,
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
 			cfg := root.Config()

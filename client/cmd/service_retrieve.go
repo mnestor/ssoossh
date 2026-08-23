@@ -94,4 +94,3 @@ func loadEnrollment(path string) (*ServiceEnrollment, error) {
 
 	return &enrollment, nil
 }
-

@@ -16,9 +16,9 @@ import (
 
 // ServiceEnrollment holds the enrollment code and public key for later retrieval.
 type ServiceEnrollment struct {
-	Code              string `json:"code"`
-	PublicKey         string `json:"public_key"`
-	PrivateKeyFile    string `json:"private_key_file,omitempty"`
+	Code               string `json:"code"`
+	PublicKey          string `json:"public_key"`
+	PrivateKeyFile     string `json:"private_key_file,omitempty"`
 	PrivateKeyMaterial string `json:"private_key_material,omitempty"`
 }
 

@@ -17,7 +17,7 @@ import (
 
 // Global SoftHSM manager and temp directory, initialized in TestMain.
 var (
-	softhsmMgr   *softhsmManager
+	softhsmMgr    *softhsmManager
 	softhsmTmpDir string
 )
 
@@ -269,7 +269,7 @@ func TestHSMKeySource_ShouldFailWhenKeyLabelMissing(t *testing.T) {
 		Module:     module,
 		TokenLabel: tokenLabel,
 		PIN:        "1234",
-		KeyID:      nil, // not using ID
+		KeyID:      nil,    // not using ID
 		KeyLabel:   "nope", // wrong label
 	})
 
