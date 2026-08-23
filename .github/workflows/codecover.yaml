@@ -61,6 +61,24 @@ jobs:
       - name: Run PAM tests
         run: CGO_ENABLED=1 go test -buildvcs=false -v -tags=pam -covermode=atomic -coverprofile=coverage-pam.txt ./pam_ssoossh/...
 
+      # The ratchet. Coverage regressions are about direction, not position:
+      # client/cmd fell 88.7% -> 76.6% over a fortnight with nothing deleted,
+      # just new code landing under-tested, and no gate noticed. Reuses the
+      # profiles the two steps above already produced rather than running the
+      # suite a third time.
+      #
+      # `!cancelled()` so a coverage drop is still reported when some other
+      # step failed -- the two are usually the same change.
+      - name: Check coverage floors
+        if: ${{ !cancelled() }}
+        run: |
+          # Into a copy, never coverage.txt itself: the Codecov upload below
+          # takes both files, so appending the PAM profile to the main one
+          # would count those packages twice.
+          cp coverage.txt coverage-combined.txt
+          tail -n +2 coverage-pam.txt >> coverage-combined.txt
+          ./scripts/check-coverage-floors.sh coverage-combined.txt
+
       # `!cancelled()` on this step too, not just the upload: a failing
       # test run used to stop the job before the token was ever loaded,
       # which silently skipped the upload the condition below was meant to

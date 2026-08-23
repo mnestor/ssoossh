@@ -161,6 +161,16 @@ cover-ci: $(FRONTEND_DIST) ## Coverage exactly as codecover.yaml runs it
 	CGO_ENABLED=1 go test -v -covermode=atomic -coverprofile=coverage.txt ./...
 	CGO_ENABLED=1 go test -v -tags=pam -covermode=atomic -coverprofile=coverage-pam.txt ./pam_ssoossh/...
 
+# The ratchet. Coverage regressions are the one finding in the audit that
+# was about direction rather than position: client/cmd fell 88.7% -> 76.6%
+# over a fortnight with nothing deleted, just new code landing
+# under-tested, and no gate noticed. Per package rather than one module
+# number, because the module total moves for unrelated reasons and hides
+# exactly that.
+.PHONY: cover-floors
+cover-floors: $(FRONTEND_DIST) ## Fail if any package dropped below its floor in .coverage-floors
+	./scripts/check-coverage-floors.sh
+
 frontend-test: ## Frontend unit and a11y tests (vitest)
 	cd frontend && CI=true pnpm install --frozen-lockfile && pnpm test
 
@@ -461,7 +471,7 @@ security: govulncheck pnpm-audit semgrep ## Run every security scanner
 # reverses its up; it was wired into no workflow whatsoever. The e2e tier-1
 # matrix proves the app works on both backends, which is a different claim
 # from the schemas agreeing.
-ci-required: fmt-check check-gitignore lint lint-tagged frontend-lint frontend-check frontend-test actionlint check-generated build pam test-pam lint-pam cover-ci test-migration semgrep ## Every blocking check CI runs
+ci-required: fmt-check check-gitignore lint lint-tagged frontend-lint frontend-check frontend-test actionlint check-generated build pam test-pam lint-pam cover-ci cover-floors test-migration semgrep ## Every blocking check CI runs
 
 # Advisory: govulncheck and pnpm audit report to the PR summary rather than
 # blocking, because both can surface a dependency you cannot fix in the same
