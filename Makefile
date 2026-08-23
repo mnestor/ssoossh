@@ -188,6 +188,15 @@ test-internal:
 test-e2e: $(FRONTEND_DIST)
 	go test -tags=e2e -count=1 -timeout=10m ./test/e2e/...
 
+# Reproducing tests for known limitations (quarantined — do not run in CI).
+# These tests verify defects exist; they should fail loudly. See
+# docs/e2e-testing-plan.md for context.
+test-e2e-multi-instance: $(FRONTEND_DIST)
+	go test -tags=e2e,multi_instance_test -count=1 -timeout=10m ./test/e2e/...
+
+test-memory-leak:
+	go test -tags=memory_leak_test -count=1 -timeout=1m ./server/service/... -v -run MemoryLeak
+
 cover: $(FRONTEND_DIST)
 	go test -coverprofile=.coverage/coverage-all.out ./...
 	grep -v -E -f exclude-from-coverage.txt .coverage/coverage-all.out > .coverage/coverage.out

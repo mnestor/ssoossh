@@ -272,11 +272,39 @@ gets quarantined with an issue, not `retries: 3`.
 - A short `test/e2e/README.md`: how to run one tier, how to keep the browser
   visible, where artifacts land.
 
+## Single-instance limitation
+
+**ssoosshd is single-instance today and cannot sit behind a load balancer.**
+When a certificate request is approved on one instance, the approval is
+published only to that instance's in-process message broker (gochannel). A
+second instance approving the same request has a cold resolved cache and returns
+HTTP 410 Gone, because the certificate itself is never persisted to the database.
+
+This is a known limitation documented in full in `docs/multi-instance-safety-plan.md`.
+The E2E tests run single-instance only. Two tests, quarantined behind build tags,
+document the failure:
+
+```bash
+# Reproduces the 410 error across instances (requires Docker):
+go test -tags=e2e,multi_instance_test ./test/e2e -v -run TestMultiInstance
+
+# Verifies the resolved map memory leak:
+go test -tags=memory_leak_test ./server/service -v -run MemoryLeak
+```
+
+Neither test should pass in the current code — their failure is the evidence
+that the defects exist. Multi-instance support is out of scope for this
+deliverable. It requires solving `docs/multi-instance-safety-plan.md`.
+
+## Database dialect support
+
+The E2E harness tests both SQLite (default) and Postgres to ensure schema
+equivalence and migration correctness across dialects. This is now first-class:
+Postgres gates PRs alongside SQLite, proving the product works regardless of
+backend. The harness is responsible for setup; see `test/e2e/harness/postgres.go`.
+
 ## Explicitly out of scope
 
-- **Postgres.** The matrix doubles runtime to cover a layer the E2E is not
-  aimed at. Worth a nightly run once `multi-instance-safety-plan.md` is acted
-  on.
 - **macOS and Windows runners.** The client is cross-platform and its agent
   handling genuinely differs (Pageant, the WSL relay), so this will matter —
   but not before the Linux path is trustworthy.
