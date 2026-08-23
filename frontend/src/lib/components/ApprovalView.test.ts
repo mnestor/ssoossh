@@ -406,8 +406,13 @@ describe('ApprovalView', () => {
 			expect(screen.queryByText('Select principals')).not.toBeInTheDocument();
 		});
 
-		it('should list the approver's principals for a user request', () => {
-			mount({ detail: detail({ type: 'user' }), userPrincipals: ['alice', 'alice-alt'] });
+		// principals: [] clears the read-only Principals row, which otherwise
+		// renders 'alice' a second time and makes getByText ambiguous.
+		it('should list the candidate principals when the request is a user request', () => {
+			mount({
+				detail: detail({ type: 'user', principals: [] }),
+				userPrincipals: ['alice', 'alice-alt']
+			});
 			expect(screen.getByText('alice')).toBeInTheDocument();
 			expect(screen.getByText('alice-alt')).toBeInTheDocument();
 		});
@@ -454,7 +459,7 @@ describe('ApprovalView', () => {
 			expect(screen.queryByText('Select principals')).not.toBeInTheDocument();
 		});
 
-		it('should render checkboxes only for principals without other_accounts', () => {
+		it('should render a single checkbox when the approver holds no other accounts', () => {
 			mount({
 				detail: detail({ type: 'user' }),
 				userPrincipals: ['alice'],

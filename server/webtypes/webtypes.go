@@ -40,8 +40,9 @@ type CurrentUserResponse struct {
 	// OtherAccounts are alternate account identifiers this identity is
 	// known by on target systems (see config.OAuthFields.OtherAccounts),
 	// shown so a user can see every account name tied to their identity.
-	// Display only for now: user certificates carry Username as their sole
-	// principal until the principal-list work lands.
+	// These are also the candidates, alongside Username, that the approval
+	// page offers as principals for a user certificate (see
+	// ApproveRequestBody.Principals).
 	OtherAccounts []string `json:"other_accounts" validate:"required"`
 
 	// ServiceAccounts are the service accounts this identity may approve

@@ -40,7 +40,17 @@ export function approveRequest(
 		principals?: string[];
 	}
 ): Promise<ApproveResult> {
-	const body = options && (options.serviceAccount || options.principals?.length) ? options : undefined;
+	// The options object is camelCase for callers; the wire field names are
+	// webtypes.ApproveRequestBody's snake_case json tags. Mapping here rather
+	// than posting `options` verbatim, which would send `serviceAccount` and
+	// silently fail to bind server-side.
+	const hasSelection = !!options && (!!options.serviceAccount || !!options.principals?.length);
+	const body = hasSelection
+		? {
+				...(options.serviceAccount ? { service_account: options.serviceAccount } : {}),
+				...(options.principals?.length ? { principals: options.principals } : {})
+			}
+		: undefined;
 	return request<ApproveResult>(`/certs/requests/${encodeURIComponent(id)}/approve`, {
 		method: 'POST',
 		body
