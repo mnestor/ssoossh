@@ -39,6 +39,63 @@ type app struct {
 	// goroutine. Set while building the router (initEngine); registered as a
 	// shutdown hook by BootstrapServe. nil in modes that build no router.
 	stopSessionCleanup func(context.Context) error
+
+	// caKeySource caches the memoized CA key source (config or HSM), built
+	// once and shared by both the signer handler and CA key announcer.
+	caKeySource signer.CAKeySource
+	// closeCAKeySource is a nil-safe shutdown hook to close the key source
+	// if it requires cleanup (HSM sources do; config sources don't). Set by
+	// newCAKeySource if the source has a Close() method; registered with
+	// shutdowns.Add in BootstrapServe and BootstrapSigner.
+	closeCAKeySource func(context.Context) error
+}
+
+// newCAKeySource builds and memoizes the CAKeySource the signer handler signs
+// with and the CA key announcer publishes: PKCS#11-backed when the HSM block
+// is configured, otherwise the inline ssh_key PEM. Only constructed once per
+// process, regardless of how many times this method is called. Config
+// validation has already enforced exactly one source is configured for
+// signing modes.
+func (a *app) newCAKeySource() (signer.CAKeySource, error) {
+	// Memoized: if already built, return the cached instance.
+	if a.caKeySource != nil {
+		return a.caKeySource, nil
+	}
+
+	// Select the key source based on config.
+	if !a.config.Signer.HSM.Enabled() {
+		// PEM-backed source from config
+		ks, err := signer.NewConfigKeySource(a.config.Signer.SSHKey)
+		if err != nil {
+			return nil, err
+		}
+		a.caKeySource = ks
+		return ks, nil
+	}
+
+	// HSM-backed source
+	pin, err := a.config.Signer.HSM.ResolvePIN()
+	if err != nil {
+		return nil, err
+	}
+	keyID, err := a.config.Signer.HSM.KeyIDBytes()
+	if err != nil {
+		return nil, err
+	}
+	ks, err := signer.NewHSMKeySource(signer.HSMParams{
+		Module:     a.config.Signer.HSM.Module,
+		TokenLabel: a.config.Signer.HSM.TokenLabel,
+		PIN:        pin,
+		KeyID:      keyID,
+		KeyLabel:   a.config.Signer.HSM.KeyLabel,
+	})
+	if err != nil {
+		return nil, err
+	}
+	a.caKeySource = ks
+	// Wrap ks.Close to match servicerunner.Service signature (accepts context, returns error).
+	a.closeCAKeySource = func(context.Context) error { return ks.Close() }
+	return ks, nil
 }
 
 // BootstrapServe wires up and runs the server (full or API mode).
@@ -125,6 +182,9 @@ func BootstrapServe(cmd *cobra.Command, mode ServerMode) error {
 		// Add it to serviceRunners
 		serviceRunners = append(serviceRunners, announcer.Run)
 	}
+
+	// Register CA key source cleanup on shutdown (nil-safe).
+	shutdowns.Add(a.closeCAKeySource)
 
 	// Init the job scheduler
 	//
@@ -226,6 +286,9 @@ func BootstrapSigner(cmd *cobra.Command) error {
 	// Register the announcer's request handler
 	announcer.Register(a.pubSub.Router, a.pubSub.Subscriber)
 
+	// Register CA key source cleanup on shutdown (nil-safe).
+	shutdowns.Add(a.closeCAKeySource)
+
 	// Start the pub/sub router - exactly once, and only after the handler is
 	// registered. This was appended a second time above initSignerHandler
 	// too, and the duplicate runner's "router is already running" error tore
@@ -250,12 +313,14 @@ func BootstrapSigner(cmd *cobra.Command) error {
 
 // initCAKeyAnnouncer creates the CA key Announcer for modes that need it
 // (full and signer-only). For full mode, it also seeds the registry
-// synchronously so a fresh boot never serves an empty key list.
+// synchronously so a fresh boot never serves an empty key list. The CA key
+// source is built and memoized by newCAKeySource, so this call returns the
+// same instance on every invocation.
 func (a *app) initCAKeyAnnouncer(mode ServerMode) (*signer.Announcer, error) {
-	// Load the CA key source
-	keys, err := signer.NewConfigKeySource(a.config.Signer.SSHKey)
+	// Load the memoized CA key source (built once, cached for reuse)
+	keys, err := a.newCAKeySource()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load CA signing key for announcer: %w", err)
+		return nil, fmt.Errorf("failed to load CA signing key: %w", err)
 	}
 
 	// For full mode, seed the registry from the in-process key source

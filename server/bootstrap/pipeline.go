@@ -59,13 +59,15 @@ func (a *app) initPipeline(mode ServerMode) error {
 }
 
 // initSignerHandler registers the signer handler on the pub/sub Router.
-// Extracted so it can be called independently by signer-only mode.
+// Extracted so it can be called independently by signer-only mode. Uses the
+// memoized CA key source built by newCAKeySource (which also gates to HSM or
+// config sources based on configuration).
 func (a *app) initSignerHandler() error {
-	// Parsed here rather than reusing CAService's: that service deliberately
-	// keeps only the public half. Failing startup on a bad key is the point —
-	// a server that can't sign is misconfigured, and finding out at the first
-	// approval instead of at boot would be worse.
-	keys, err := signer.NewConfigKeySource(a.config.Signer.SSHKey)
+	// Load the memoized CA key source (built once on first call, cached for reuse).
+	// Failing startup on a bad key is the point — a server that can't sign is
+	// misconfigured, and finding out at the first approval instead of at boot would
+	// be worse.
+	keys, err := a.newCAKeySource()
 	if err != nil {
 		return fmt.Errorf("failed to load CA signing key: %w", err)
 	}
