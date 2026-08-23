@@ -99,3 +99,7 @@ yarn-error.log*
 *.local.yml
 *.local.yaml
 
+
+# Personal scratch list. Untracked deliberately: it is a working note, and
+# tracking it turns every reordering into a diff for everyone else.
+/todo.md
