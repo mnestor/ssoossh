@@ -39,7 +39,7 @@ The output shows the slot number; note it for later commands (typically slot 0).
 Generate an ECDSA P-256 key pair:
 
 ```bash
-sudo pkcs11-tool --module /usr/local/lib/softhsm/libsofthsm2.so \
+sudo pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so \
   --slot 0 --login --pin 1234 \
   --keypairgen --key-type EC:prime256v1 \
   --label ssoossh-ca --id 01
@@ -48,7 +48,7 @@ sudo pkcs11-tool --module /usr/local/lib/softhsm/libsofthsm2.so \
 Verify the key was created:
 
 ```bash
-sudo pkcs11-tool --module /usr/local/lib/softhsm/libsofthsm2.so \
+sudo pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so \
   --slot 0 --login --pin 1234 \
   --list-objects
 ```
@@ -60,7 +60,7 @@ You should see both the public and private key objects.
 If you have an existing CA private key in PEM format (e.g., `ca-key.pem`), convert it to PKCS#8 format and import it:
 
 ```bash
-# Convert OpenSSH private key to PKCS#8 format
+# Convert PEM-format private key to PKCS#8 format
 openssl pkcs8 -topk8 -inform PEM -outform PEM \
   -in ca-key.pem -out ca-key-pkcs8.pem -nocrypt
 
@@ -82,13 +82,15 @@ sudo chmod 700 /var/lib/softhsm/tokens/
 
 ## Configuration
 
+The PKCS#11 module path varies by distribution. The examples below use `/usr/lib/softhsm/libsofthsm2.so` (standard Debian/Ubuntu location). If your system uses a different path, locate it with `find /usr -name 'libsofthsm2.so'` and substitute accordingly.
+
 Add an `hsm:` block to your `ssoosshd.yaml`. Exactly one of `ssh_key` or `hsm` may be set; both cannot coexist. See `docs/ssoosshd.yaml.default` for additional options.
 
 ### Example: Using a Token with PIN
 
 ```yaml
 hsm:
-  module: /usr/local/lib/softhsm/libsofthsm2.so
+  module: /usr/lib/softhsm/libsofthsm2.so
   token_label: ssoossh-ca
   pin: "1234"
   key_label: ssoossh-ca
@@ -100,7 +102,7 @@ For better security, store the PIN in a separate file (readable only by ssoosshd
 
 ```yaml
 hsm:
-  module: /usr/local/lib/softhsm/libsofthsm2.so
+  module: /usr/lib/softhsm/libsofthsm2.so
   token_label: ssoossh-ca
   pin_file: /etc/ssoossh/hsm-pin
   key_label: ssoossh-ca
@@ -120,7 +122,7 @@ If your token has multiple keys, use the hex key ID (CKA_ID) instead of or in ad
 
 ```yaml
 hsm:
-  module: /usr/local/lib/softhsm/libsofthsm2.so
+  module: /usr/lib/softhsm/libsofthsm2.so
   token_label: ssoossh-ca
   pin_file: /etc/ssoossh/hsm-pin
   key_id: "01"
@@ -129,7 +131,7 @@ hsm:
 Look up the key ID with:
 
 ```bash
-sudo pkcs11-tool --module /usr/local/lib/softhsm/libsofthsm2.so \
+sudo pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so \
   --slot 0 --login --pin 1234 \
   --list-objects
 ```
@@ -192,7 +194,7 @@ The Docker image is built on `distroless/base` (non-static, to support dynamic l
 Mount the HSM library and token data into the container:
 
 ```bash
-docker run -v /usr/local/lib/softhsm/libsofthsm2.so:/usr/local/lib/softhsm/libsofthsm2.so:ro \
+docker run -v /usr/lib/softhsm/libsofthsm2.so:/usr/lib/softhsm/libsofthsm2.so:ro \
   -v /var/lib/softhsm/tokens/:/var/lib/softhsm/tokens/:rw \
   -v /etc/ssoossh/ssoosshd.yaml:/etc/ssoosshd.yaml:ro \
   ssoossh/ssoosshd:latest

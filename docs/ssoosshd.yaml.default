@@ -129,7 +129,7 @@
 # Not supported: Ed25519 (keep ssh_key for Ed25519 CAs).
 # ----------------------------------------------------------------------
 # hsm:
-#   module: /usr/local/lib/softhsm/libsofthsm2.so
+#   module: /usr/lib/softhsm/libsofthsm2.so
 #   token_label: ssoossh-ca
 #   pin_file: /etc/ssoossh/hsm-pin       # or pin: "1234"
 #   key_label: ssoossh-ca
