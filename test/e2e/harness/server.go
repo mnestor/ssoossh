@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"testing"
@@ -48,6 +49,12 @@ type ServerOptions struct {
 	// Empty means automatic: a private database per server when
 	// SSOOSSH_E2E_POSTGRES_DSN is set, in-memory sqlite otherwise.
 	DSN string
+	// UserKeyIDTemplate sets cert_options.user.key_id_template. Empty keeps
+	// the product default ({{.Username}}).
+	UserKeyIDTemplate string
+	// ExtraClaimFields sets authentication.fields.extra (template field
+	// name -> claim name), for key ID template tests.
+	ExtraClaimFields map[string]string
 }
 
 // Server is a running ssoosshd subprocess.
@@ -119,18 +126,20 @@ func newServerConfig(t *testing.T, idp *IdentityProvider, opts ServerOptions) (c
 	sshKeyPEM, caPublicKey := generateCAKey(t)
 
 	configYAML := renderServerConfig(serverConfigData{
-		PublicURL:       baseURL,
-		ServerName:      "127.0.0.1",
-		Address:         "127.0.0.1",
-		Port:            port,
-		ClientID:        harnessClientID,
-		ClientSecret:    harnessClientSecret,
-		ProviderURL:     idp.URL(),
-		SSHKeyPEM:       sshKeyPEM,
-		ValidDuration:   opts.ValidDuration,
-		Extensions:      opts.Extensions,
-		PAMRequireGroup: opts.PAMRequireGroup,
-		DSN:             dsn,
+		PublicURL:         baseURL,
+		ServerName:        "127.0.0.1",
+		Address:           "127.0.0.1",
+		Port:              port,
+		ClientID:          harnessClientID,
+		ClientSecret:      harnessClientSecret,
+		ProviderURL:       idp.URL(),
+		SSHKeyPEM:         sshKeyPEM,
+		ValidDuration:     opts.ValidDuration,
+		Extensions:        opts.Extensions,
+		PAMRequireGroup:   opts.PAMRequireGroup,
+		DSN:               dsn,
+		UserKeyIDTemplate: opts.UserKeyIDTemplate,
+		ExtraClaimFields:  opts.ExtraClaimFields,
 	}) + opts.ExtraConfigYAML
 
 	configPath = filepath.Join(t.TempDir(), "ssoosshd.yaml")
@@ -276,18 +285,20 @@ func generateCAKey(t *testing.T) (privatePEM, publicAuthorizedKey string) {
 }
 
 type serverConfigData struct {
-	PublicURL       string
-	ServerName      string
-	Address         string
-	Port            int
-	ClientID        string
-	ClientSecret    string
-	ProviderURL     string
-	SSHKeyPEM       string
-	ValidDuration   string
-	Extensions      []string
-	PAMRequireGroup string
-	DSN             string
+	PublicURL         string
+	ServerName        string
+	Address           string
+	Port              int
+	ClientID          string
+	ClientSecret      string
+	ProviderURL       string
+	SSHKeyPEM         string
+	ValidDuration     string
+	Extensions        []string
+	PAMRequireGroup   string
+	DSN               string
+	UserKeyIDTemplate string
+	ExtraClaimFields  map[string]string
 }
 
 // renderServerConfig builds the ssoosshd config YAML from d directly (not
@@ -313,6 +324,18 @@ func renderServerConfig(d serverConfigData) string {
 	fmt.Fprintf(&b, "    username: \"preferred_username\"\n")
 	fmt.Fprintf(&b, "    groups: \"groups\"\n")
 	fmt.Fprintf(&b, "    email: \"email\"\n")
+	if len(d.ExtraClaimFields) > 0 {
+		fmt.Fprintf(&b, "    extra:\n")
+		// Sorted so the rendered config is deterministic across runs.
+		names := make([]string, 0, len(d.ExtraClaimFields))
+		for name := range d.ExtraClaimFields {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			fmt.Fprintf(&b, "      %s: %q\n", name, d.ExtraClaimFields[name])
+		}
+	}
 
 	// d.DSN empty means throwaway in-memory sqlite. Non-empty it is a
 	// postgres database this server owns outright: newServerConfig
@@ -344,6 +367,9 @@ func renderServerConfig(d serverConfigData) string {
 	fmt.Fprintf(&b, "cert_options:\n")
 	fmt.Fprintf(&b, "  user:\n")
 	fmt.Fprintf(&b, "    valid_duration: %s\n", d.ValidDuration)
+	if d.UserKeyIDTemplate != "" {
+		fmt.Fprintf(&b, "    key_id_template: %q\n", d.UserKeyIDTemplate)
+	}
 	fmt.Fprintf(&b, "    extensions:\n")
 	for _, ext := range d.Extensions {
 		fmt.Fprintf(&b, "      - %s\n", ext)

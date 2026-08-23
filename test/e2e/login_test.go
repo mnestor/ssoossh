@@ -108,6 +108,53 @@ func TestLogin_CertificateCarriesOnlyPermittedExtensionsAndNoCriticalOptions(t *
 	}
 }
 
+// TestLogin_KeyIDTemplateRendersExtraClaimFields proves the extra-claims
+// pipeline against real binaries: authentication.fields.extra maps ID token
+// claims at the approver's login, the values persist on the users row, and
+// the configured key ID template renders them — including join for a
+// list-valued claim and MISSING for a claim the token never carried — in
+// the certificate the client actually receives.
+func TestLogin_KeyIDTemplateRendersExtraClaimFields(t *testing.T) {
+	idp := harness.NewIdentityProvider(t)
+	srv := harness.StartServer(t, idp, harness.ServerOptions{
+		UserKeyIDTemplate: `{{.Username}}|{{.Extra.dept}}|{{join .Extra.accounts ";"}}|{{.Extra.absent}}`,
+		ExtraClaimFields: map[string]string{
+			"dept":     "department",
+			"accounts": "altAccounts",
+			"absent":   "notInToken",
+		},
+	})
+	agent := harness.StartAgent(t)
+	_, ssoosshBin := harness.Binaries(t)
+
+	login := harness.StartLogin(t, ssoosshBin, srv.BaseURL, agent.Socket)
+	requestID := requestIDFromApprovalURL(t, login.ApprovalURL(t, waitFor))
+
+	client := newBrowserClient(t)
+	if err := harness.AuthenticateWithExtraClaims(client, srv.BaseURL, "/approve/"+requestID, "alice", nil, map[string]any{
+		"department":  "eng",
+		"altAccounts": []string{"a-alice", "b-alice"},
+	}); err != nil {
+		t.Fatalf("harness: %v", err)
+	}
+	if err := harness.Approve(client, srv.BaseURL, requestID); err != nil {
+		t.Fatalf("harness: %v", err)
+	}
+
+	if err := login.Wait(t, waitFor); err != nil {
+		t.Fatalf("ssh login failed after approval: %v\nstderr:\n%s", err, login.Stderr())
+	}
+
+	certs := agent.Certificates(t)
+	if len(certs) != 1 {
+		t.Fatalf("got %d certificates loaded in the agent, want 1", len(certs))
+	}
+	want := "alice|eng|a-alice;b-alice|MISSING"
+	if certs[0].KeyId != want {
+		t.Errorf("got key ID %q, want %q", certs[0].KeyId, want)
+	}
+}
+
 func TestLogin_DenyingResolvesWithNoCertificate(t *testing.T) {
 	f := newFixture(t)
 

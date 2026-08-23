@@ -56,6 +56,13 @@ func RequestIDFromApprovalURL(approvalURL string) (string, error) {
 // redirect chain back into the server. client's cookie jar holds an
 // authenticated session afterward.
 func Authenticate(client *http.Client, serverBaseURL, returnTo, username string, groups []string) error {
+	return AuthenticateWithExtraClaims(client, serverBaseURL, returnTo, username, groups, nil)
+}
+
+// AuthenticateWithExtraClaims is Authenticate with additional ID token
+// claims stamped by the harness IdP (see its extra_claims form field) —
+// for tests exercising authentication.fields.extra.
+func AuthenticateWithExtraClaims(client *http.Client, serverBaseURL, returnTo, username string, groups []string, extraClaims map[string]any) error {
 	loginURL := serverBaseURL + "/auth/login?return_to=" + url.QueryEscape(returnTo)
 	resp, err := client.Get(loginURL)
 	if err != nil {
@@ -68,6 +75,13 @@ func Authenticate(client *http.Client, serverBaseURL, returnTo, username string,
 	form := url.Values{"username": {username}}
 	for _, g := range groups {
 		form.Add("groups", g)
+	}
+	if len(extraClaims) > 0 {
+		extraJSON, err := json.Marshal(extraClaims)
+		if err != nil {
+			return fmt.Errorf("encode extra claims: %w", err)
+		}
+		form.Add("extra_claims", string(extraJSON))
 	}
 
 	resp2, err := client.PostForm(idpAuthorizeURL, form)
