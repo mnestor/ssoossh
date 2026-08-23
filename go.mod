@@ -22,7 +22,7 @@ require (
 	github.com/kbolino/pageant v0.0.0-20180919004629-179b60797d9f
 	github.com/lmittmann/tint v1.2.0
 	github.com/mattn/go-isatty v0.0.24
-	github.com/nats-io/nats.go v1.52.0
+	github.com/nats-io/nats.go v1.53.1
 	github.com/orandin/slog-gorm v1.4.0
 	github.com/pires/go-proxyproto v0.15.0
 	github.com/samber/slog-gin v1.21.1
@@ -32,7 +32,7 @@ require (
 	github.com/spf13/viper v1.21.0
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
-	github.com/wader/gormstore/v2 v2.0.3
+	github.com/wader/gormstore/v2 v2.0.5
 	go.opentelemetry.io/contrib/bridges/otelslog v0.20.0
 	go.opentelemetry.io/contrib/exporters/autoexport v0.70.0
 	go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin v0.70.0
