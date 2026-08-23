@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -14,6 +15,14 @@ import (
 	"github.com/mnestor/ssoossh/server/certmsg"
 	"github.com/mnestor/ssoossh/server/model"
 )
+
+// SignLimits holds the lifetime ceilings the signer enforces before minting
+// certificates, as defense-in-depth: an attacker able to publish directly to
+// the sign queue must not get unbounded certificates.
+type SignLimits struct {
+	MaxCertLifetime     time.Duration
+	MaxHostCertLifetime time.Duration
+}
 
 // signError carries a certmsg.ErrCode* classification alongside the
 // human-readable message, so the handler can turn it into a failure reply
@@ -102,7 +111,7 @@ func permissionsFor(opts certmsg.RequestedOptions) ssh.Permissions {
 
 // Sign produces a signed certificate for job using the CA key from ks.
 //
-// It's a pure function of (job, ks, fipsEnabled): no database, no
+// It's a pure function of (job, ks, fipsEnabled, limits): no database, no
 // server-config re-derivation. The returned reply carries what was
 // *actually* signed, so the listener/resolver can write the audit row
 // straight from it without re-reading and re-interpreting the original
@@ -113,7 +122,28 @@ func permissionsFor(opts certmsg.RequestedOptions) ssh.Permissions {
 // compromised, an attacker able to publish directly to the sign queue would
 // otherwise bypass that check entirely. It's a plain value, not policy
 // re-derivation — see this package's doc comment.
-func Sign(ctx context.Context, ks CAKeySource, job certmsg.SigningJob, fipsEnabled bool) (certmsg.SignedReply, error) {
+//
+// limits enforces the lifetime ceilings as a defense-in-depth backstop:
+// it's a plain value passed by bootstrap, not policy re-derivation.
+func Sign(ctx context.Context, ks CAKeySource, job certmsg.SigningJob, fipsEnabled bool, limits SignLimits) (certmsg.SignedReply, error) {
+	// Validate certificate lifetime as a backstop: an attacker able to
+	// publish directly to the sign queue must not get unbounded certificates.
+	// This is a plain-value check, not policy re-derivation.
+	if job.ValidBefore.Before(job.ValidAfter) || job.ValidBefore.Equal(job.ValidAfter) {
+		return certmsg.SignedReply{}, newSignError(certmsg.ErrCodeSignFailed,
+			"certificate lifetime invalid: ValidBefore (%v) must be after ValidAfter (%v)", job.ValidBefore, job.ValidAfter)
+	}
+
+	span := job.ValidBefore.Sub(job.ValidAfter)
+	cap := limits.MaxCertLifetime
+	if job.Type == model.CertificateTypeHost {
+		cap = limits.MaxHostCertLifetime
+	}
+	if span > cap {
+		return certmsg.SignedReply{}, newSignError(certmsg.ErrCodeLifetimeRejected,
+			"certificate lifetime %v exceeds maximum %v for type %q", span, cap, job.Type)
+	}
+
 	certType, err := certTypeFor(job.Type)
 	if err != nil {
 		return certmsg.SignedReply{}, err

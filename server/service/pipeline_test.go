@@ -16,6 +16,15 @@ import (
 	"github.com/mnestor/ssoossh/server/signer"
 )
 
+// newDefaultTestSignerLimits returns SignLimits with generous defaults suitable
+// for pipeline tests.
+func newDefaultTestSignerLimits() signer.SignLimits {
+	return signer.SignLimits{
+		MaxCertLifetime:     time.Hour * 24 * 90,
+		MaxHostCertLifetime: time.Hour * 24 * 365 * 2,
+	}
+}
+
 // TestPipeline_EndToEnd exercises the whole certificate pipeline in one
 // process: create → approve → sign → deliver. It's the first test that
 // covers the components together rather than in isolation, and the only one
@@ -59,7 +68,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create router: %v", err)
 	}
-	signer.NewHandler(keys, svc.publisher, false).Register(router, svc.subscriber)
+	signer.NewHandler(keys, svc.publisher, false, newDefaultTestSignerLimits()).Register(router, svc.subscriber)
 	NewSignedReplyHandler(svc.db, svc).Register(router, svc.subscriber)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -222,7 +231,7 @@ func TestPipeline_EndToEnd_PAM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create router: %v", err)
 	}
-	signer.NewHandler(keys, svc.publisher, false).Register(router, svc.subscriber)
+	signer.NewHandler(keys, svc.publisher, false, newDefaultTestSignerLimits()).Register(router, svc.subscriber)
 	NewSignedReplyHandler(svc.db, svc).Register(router, svc.subscriber)
 
 	ctx, cancel := context.WithCancel(context.Background())

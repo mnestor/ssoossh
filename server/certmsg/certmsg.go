@@ -122,6 +122,9 @@ const (
 	// algorithm isn't FIPS-approved, and the signer is running with FIPS
 	// enabled.
 	ErrCodeFIPSNotApproved = "fips_not_approved"
+	// ErrCodeLifetimeRejected means the job's requested certificate lifetime
+	// exceeds the configured maximum for its certificate type.
+	ErrCodeLifetimeRejected = "lifetime_rejected"
 )
 
 // SignedReply is the signer's result, consumed by the listener/resolver.

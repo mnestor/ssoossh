@@ -68,6 +68,11 @@ pubsub:
     # CA certificate file to verify the NATS server (PEM). Required when url is set.
     ca_file: ""
 
+# Signer lifetime limits: enforced as a defense-in-depth check before
+# minting certificates. Fail-closed by default; operators override explicitly.
+max_cert_lifetime: 2160h
+max_host_cert_lifetime: 17544h
+
 # ldap and authentication are top-level, not nested under http: -- Config's
 # mapstructure tags for LDAP and AuthConfig are on Config itself, not on
 # HTTPSettings. Nesting them under http: here previously meant every default

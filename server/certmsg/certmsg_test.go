@@ -99,6 +99,14 @@ func TestSignedReplyFailed(t *testing.T) {
 			},
 			want: true,
 		},
+		{
+			name: "should return true for ErrCodeLifetimeRejected",
+			r: SignedReply{
+				ErrorCode: ErrCodeLifetimeRejected,
+				Error:     "certificate lifetime exceeds maximum",
+			},
+			want: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -224,6 +232,7 @@ func TestErrorCodeConstants(t *testing.T) {
 			"ErrCodeCAUnavailable":   ErrCodeCAUnavailable,
 			"ErrCodeSignFailed":      ErrCodeSignFailed,
 			"ErrCodeFIPSNotApproved": ErrCodeFIPSNotApproved,
+			"ErrCodeLifetimeRejected": ErrCodeLifetimeRejected,
 		}
 
 		for name, code := range codes {
@@ -240,6 +249,7 @@ func TestErrorCodeConstants(t *testing.T) {
 			ErrCodeCAUnavailable,
 			ErrCodeSignFailed,
 			ErrCodeFIPSNotApproved,
+			ErrCodeLifetimeRejected,
 		}
 
 		seen := make(map[string]bool)

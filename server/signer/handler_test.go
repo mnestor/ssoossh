@@ -15,6 +15,15 @@ import (
 	"github.com/mnestor/ssoossh/server/certmsg"
 )
 
+// newDefaultTestHandlerLimits returns SignLimits with generous defaults suitable
+// for handler tests.
+func newDefaultTestHandlerLimits() SignLimits {
+	return SignLimits{
+		MaxCertLifetime:     time.Hour * 24 * 90,
+		MaxHostCertLifetime: time.Hour * 24 * 365 * 2,
+	}
+}
+
 // Test methodology: the handler is exercised directly (rather than through a
 // running Router) so each case asserts one thing — what got published, and
 // whether the message was acked — without needing router lifecycle
@@ -74,7 +83,7 @@ func TestHandler_ShouldPublishASignedReplyOnSuccess(t *testing.T) {
 
 	ks, _ := newTestKeySource(t)
 	channel := newTestChannel(t)
-	h := NewHandler(ks, channel, false)
+	h := NewHandler(ks, channel, false, newDefaultTestHandlerLimits())
 	job := newTestJob(t)
 
 	reply, err := handleJob(t, h, channel, job)
@@ -102,7 +111,7 @@ func TestHandler_ShouldPublishAFailureReplyAndAck(t *testing.T) {
 
 	ks := &staticKeySource{err: errors.New("ssh-agent unreachable")}
 	channel := newTestChannel(t)
-	h := NewHandler(ks, channel, false)
+	h := NewHandler(ks, channel, false, newDefaultTestHandlerLimits())
 	job := newTestJob(t)
 
 	reply, err := handleJob(t, h, channel, job)
@@ -140,7 +149,7 @@ func TestHandler_ShouldNackWhenPublishingTheReplyFails(t *testing.T) {
 	t.Parallel()
 
 	ks, _ := newTestKeySource(t)
-	h := NewHandler(ks, failingPublisher{}, false)
+	h := NewHandler(ks, failingPublisher{}, false, newDefaultTestHandlerLimits())
 	job := newTestJob(t)
 
 	payload, err := json.Marshal(job)
@@ -164,7 +173,7 @@ func TestHandler_Register(t *testing.T) {
 
 	channel := newTestChannel(t)
 	ks, _ := newTestKeySource(t)
-	h := NewHandler(ks, channel, false)
+	h := NewHandler(ks, channel, false, newDefaultTestHandlerLimits())
 
 	router, err := message.NewRouter(message.RouterConfig{}, watermill.NewSlogLogger(slog.Default()))
 	if err != nil {
@@ -221,7 +230,7 @@ func TestHandler_ShouldAckAnUnparseableJobWithoutPublishing(t *testing.T) {
 
 	ks, _ := newTestKeySource(t)
 	channel := newTestChannel(t)
-	h := NewHandler(ks, channel, false)
+	h := NewHandler(ks, channel, false, newDefaultTestHandlerLimits())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()

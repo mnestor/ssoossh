@@ -87,6 +87,15 @@ func newTestJob(t *testing.T) certmsg.SigningJob {
 	}
 }
 
+// newDefaultTestLimits returns SignLimits with generous defaults suitable
+// for most tests.
+func newDefaultTestLimits() SignLimits {
+	return SignLimits{
+		MaxCertLifetime:     time.Hour * 24 * 90,
+		MaxHostCertLifetime: time.Hour * 24 * 365 * 2,
+	}
+}
+
 // parseCert parses a signed certificate out of its authorized_keys form.
 func parseCert(t *testing.T, certificate string) *ssh.Certificate {
 	t.Helper()
@@ -108,7 +117,7 @@ func TestSign_ShouldProduceACertificateVerifiableAgainstTheCA(t *testing.T) {
 	ks, caPub := newTestKeySource(t)
 	job := newTestJob(t)
 
-	reply, err := Sign(context.Background(), ks, job, false)
+	reply, err := Sign(context.Background(), ks, job, false, newDefaultTestLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -134,7 +143,7 @@ func TestSign_ShouldMapJobFieldsOntoTheCertificate(t *testing.T) {
 	ks, _ := newTestKeySource(t)
 	job := newTestJob(t)
 
-	reply, err := Sign(context.Background(), ks, job, false)
+	reply, err := Sign(context.Background(), ks, job, false, newDefaultTestLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -177,7 +186,7 @@ func TestSign_ShouldUsePreAllocatedSerial(t *testing.T) {
 
 	job := newTestJob(t)
 	job.Serial = expectedSerial
-	reply, err := Sign(context.Background(), ks, job, false)
+	reply, err := Sign(context.Background(), ks, job, false, newDefaultTestLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -198,7 +207,7 @@ func TestSign_ShouldProduceSerialsStorableByDatabaseSQL(t *testing.T) {
 
 	ks, _ := newTestKeySource(t)
 	for i := range 50 {
-		reply, err := Sign(context.Background(), ks, newTestJob(t), false)
+		reply, err := Sign(context.Background(), ks, newTestJob(t), false, newDefaultTestLimits())
 		if err != nil {
 			t.Fatalf("unexpected error on iteration %d: %v", i, err)
 		}
@@ -221,7 +230,7 @@ func TestSign_ShouldCarryCriticalOptionsFaithfully(t *testing.T) {
 	job.RequestedOptions.ForceCommand = "/usr/bin/true"
 	job.RequestedOptions.SourceAddresses = []string{"10.0.0.1/32", "192.168.1.0/24"}
 
-	reply, err := Sign(context.Background(), ks, job, false)
+	reply, err := Sign(context.Background(), ks, job, false, newDefaultTestLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -243,7 +252,7 @@ func TestSign_ShouldGrantNoTouchRequiredWhenRequested(t *testing.T) {
 	job := newTestJob(t)
 	job.RequestedOptions.NoTouchRequired = true
 
-	reply, err := Sign(context.Background(), ks, job, false)
+	reply, err := Sign(context.Background(), ks, job, false, newDefaultTestLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -266,7 +275,7 @@ func TestSign_ShouldRejectUnsupportedCertificateTypes(t *testing.T) {
 		job := newTestJob(t)
 		job.Type = certType
 
-		_, err := Sign(context.Background(), ks, job, false)
+		_, err := Sign(context.Background(), ks, job, false, newDefaultTestLimits())
 		if err == nil {
 			t.Fatalf("expected an error for certificate type %q, got nil", certType)
 		}
@@ -290,7 +299,7 @@ func TestSign_ShouldIssueUserCertForPAM(t *testing.T) {
 	job.KeyID = "pam:alice"
 	job.RequestedOptions = certmsg.RequestedOptions{}
 
-	reply, err := Sign(context.Background(), ks, job, false)
+	reply, err := Sign(context.Background(), ks, job, false, newDefaultTestLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -311,7 +320,7 @@ func TestSign_ShouldRejectAnUnparseablePublicKey(t *testing.T) {
 	job := newTestJob(t)
 	job.PublicKey = "not-a-public-key"
 
-	_, err := Sign(context.Background(), ks, job, false)
+	_, err := Sign(context.Background(), ks, job, false, newDefaultTestLimits())
 	if err == nil {
 		t.Fatal("expected an error for an unparseable public key, got nil")
 	}
@@ -325,7 +334,7 @@ func TestSign_ShouldReportAnUnavailableCA(t *testing.T) {
 
 	ks := &staticKeySource{err: errors.New("ssh-agent unreachable")}
 
-	_, err := Sign(context.Background(), ks, newTestJob(t), false)
+	_, err := Sign(context.Background(), ks, newTestJob(t), false, newDefaultTestLimits())
 	if err == nil {
 		t.Fatal("expected an error when the CA key is unavailable, got nil")
 	}
@@ -391,7 +400,7 @@ func TestSign_ShouldReportASigningFailure(t *testing.T) {
 	}
 	ks := &staticKeySource{signer: &brokenSigner{pub: caSigner.PublicKey()}}
 
-	_, err = Sign(context.Background(), ks, newTestJob(t), false)
+	_, err = Sign(context.Background(), ks, newTestJob(t), false, newDefaultTestLimits())
 	if err == nil {
 		t.Fatal("expected an error when the CA signer fails to sign, got nil")
 	}
@@ -424,7 +433,7 @@ func TestSign_FIPS(t *testing.T) {
 		t.Parallel()
 
 		ks, _ := newTestKeySource(t)
-		_, err := Sign(context.Background(), ks, newTestJob(t), true)
+		_, err := Sign(context.Background(), ks, newTestJob(t), true, newDefaultTestLimits())
 		if err == nil {
 			t.Fatal("expected an error for a non-FIPS-approved (ed25519) key under fipsEnabled")
 		}
@@ -440,7 +449,7 @@ func TestSign_FIPS(t *testing.T) {
 		job := newTestJob(t)
 		job.PublicKey = newTestECDSAPublicKey(t)
 
-		if _, err := Sign(context.Background(), ks, job, true); err != nil {
+		if _, err := Sign(context.Background(), ks, job, true, newDefaultTestLimits()); err != nil {
 			t.Errorf("unexpected error for a FIPS-approved (ecdsa) key under fipsEnabled: %v", err)
 		}
 	})
@@ -449,7 +458,7 @@ func TestSign_FIPS(t *testing.T) {
 		t.Parallel()
 
 		ks, _ := newTestKeySource(t)
-		if _, err := Sign(context.Background(), ks, newTestJob(t), false); err != nil {
+		if _, err := Sign(context.Background(), ks, newTestJob(t), false, newDefaultTestLimits()); err != nil {
 			t.Errorf("unexpected error for an ed25519 key when fipsEnabled is false: %v", err)
 		}
 	})
@@ -498,5 +507,167 @@ func TestNewConfigKeySource_ShouldReturnTheParsedSigner(t *testing.T) {
 	got := string(ssh.MarshalAuthorizedKey(signer.PublicKey()))
 	if strings.TrimSpace(got) != strings.TrimSpace(want) {
 		t.Errorf("signer public key %q does not match the configured key %q", got, want)
+	}
+}
+
+// TestSign_Lifetime_ShouldAcceptCertificateExactlyAtCap tests that a user cert
+// with lifetime exactly equal to the cap is accepted.
+func TestSign_Lifetime_ShouldAcceptCertificateExactlyAtCap(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+	job := newTestJob(t)
+	now := time.Now().Truncate(time.Second)
+	cap := time.Hour * 48
+	job.ValidAfter = now
+	job.ValidBefore = now.Add(cap)
+
+	limits := SignLimits{
+		MaxCertLifetime:     cap,
+		MaxHostCertLifetime: cap * 10,
+	}
+
+	reply, err := Sign(context.Background(), ks, job, false, limits)
+	if err != nil {
+		t.Fatalf("unexpected error for cert exactly at cap: %v", err)
+	}
+	if reply.Certificate == "" {
+		t.Fatal("expected a certificate to be signed")
+	}
+}
+
+// TestSign_Lifetime_ShouldRejectUserCertificateOverCap tests that a user cert
+// with lifetime exceeding the cap is rejected with ErrCodeLifetimeRejected.
+func TestSign_Lifetime_ShouldRejectUserCertificateOverCap(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+	job := newTestJob(t)
+	now := time.Now().Truncate(time.Second)
+	cap := time.Hour * 48
+	job.ValidAfter = now
+	job.ValidBefore = now.Add(cap + time.Second)
+
+	limits := SignLimits{
+		MaxCertLifetime:     cap,
+		MaxHostCertLifetime: cap * 10,
+	}
+
+	_, err := Sign(context.Background(), ks, job, false, limits)
+	if err == nil {
+		t.Fatal("expected an error for cert over cap, got nil")
+	}
+	if got := errorCode(err); got != certmsg.ErrCodeLifetimeRejected {
+		t.Errorf("got error code %q, want %q", got, certmsg.ErrCodeLifetimeRejected)
+	}
+}
+
+// TestSign_Lifetime_ShouldRejectHostCertificateOverCap tests that a host cert
+// with lifetime exceeding its cap is rejected with ErrCodeLifetimeRejected.
+func TestSign_Lifetime_ShouldRejectHostCertificateOverCap(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+	job := newTestJob(t)
+	job.Type = model.CertificateTypeHost
+	now := time.Now().Truncate(time.Second)
+	hostCap := time.Hour * 100
+	userCap := time.Hour * 48
+	job.ValidAfter = now
+	job.ValidBefore = now.Add(hostCap + time.Second)
+
+	limits := SignLimits{
+		MaxCertLifetime:     userCap,
+		MaxHostCertLifetime: hostCap,
+	}
+
+	_, err := Sign(context.Background(), ks, job, false, limits)
+	if err == nil {
+		t.Fatal("expected an error for host cert over cap, got nil")
+	}
+	if got := errorCode(err); got != certmsg.ErrCodeLifetimeRejected {
+		t.Errorf("got error code %q, want %q", got, certmsg.ErrCodeLifetimeRejected)
+	}
+}
+
+// TestSign_Lifetime_ShouldRejectInvalidBefore tests that a cert with
+// ValidBefore <= ValidAfter is rejected.
+func TestSign_Lifetime_ShouldRejectInvalidBefore(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+	job := newTestJob(t)
+	now := time.Now().Truncate(time.Second)
+	job.ValidAfter = now
+	job.ValidBefore = now
+
+	limits := SignLimits{
+		MaxCertLifetime:     time.Hour * 24,
+		MaxHostCertLifetime: time.Hour * 48,
+	}
+
+	_, err := Sign(context.Background(), ks, job, false, limits)
+	if err == nil {
+		t.Fatal("expected an error for ValidBefore <= ValidAfter, got nil")
+	}
+	if got := errorCode(err); got != certmsg.ErrCodeSignFailed {
+		t.Errorf("got error code %q, want %q", got, certmsg.ErrCodeSignFailed)
+	}
+}
+
+// TestSign_Lifetime_ShouldRejectHostCertificateExactlyAtUserCap tests that a
+// host cert under the user cap (but within host cap) is rejected because it's
+// compared against the host cap specifically.
+func TestSign_Lifetime_ShouldRejectHostCertificateAtUserCapButOverHostCap(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+	job := newTestJob(t)
+	job.Type = model.CertificateTypeHost
+	now := time.Now().Truncate(time.Second)
+	hostCap := time.Hour * 48
+	userCap := time.Hour * 100
+	job.ValidAfter = now
+	job.ValidBefore = now.Add(hostCap + time.Second)
+
+	limits := SignLimits{
+		MaxCertLifetime:     userCap,
+		MaxHostCertLifetime: hostCap,
+	}
+
+	_, err := Sign(context.Background(), ks, job, false, limits)
+	if err == nil {
+		t.Fatal("expected an error for host cert over host cap, got nil")
+	}
+	if got := errorCode(err); got != certmsg.ErrCodeLifetimeRejected {
+		t.Errorf("got error code %q, want %q", got, certmsg.ErrCodeLifetimeRejected)
+	}
+}
+
+// TestSign_Lifetime_ShouldRejectPAMCertificateOverUserCap tests that a PAM
+// cert with lifetime exceeding the user cap is rejected.
+func TestSign_Lifetime_ShouldRejectPAMCertificateOverUserCap(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+	job := newTestJob(t)
+	job.Type = model.CertificateTypePAM
+	job.KeyID = "pam:alice"
+	now := time.Now().Truncate(time.Second)
+	userCap := time.Hour * 48
+	job.ValidAfter = now
+	job.ValidBefore = now.Add(userCap + time.Second)
+
+	limits := SignLimits{
+		MaxCertLifetime:     userCap,
+		MaxHostCertLifetime: time.Hour * 100,
+	}
+
+	_, err := Sign(context.Background(), ks, job, false, limits)
+	if err == nil {
+		t.Fatal("expected an error for PAM cert over cap, got nil")
+	}
+	if got := errorCode(err); got != certmsg.ErrCodeLifetimeRejected {
+		t.Errorf("got error code %q, want %q", got, certmsg.ErrCodeLifetimeRejected)
 	}
 }

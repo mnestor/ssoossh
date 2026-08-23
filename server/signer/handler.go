@@ -17,6 +17,7 @@ type Handler struct {
 	keys        CAKeySource
 	publisher   message.Publisher
 	fipsEnabled bool
+	limits      SignLimits
 }
 
 // NewHandler constructs a Handler signing with keys and replying via
@@ -24,9 +25,10 @@ type Handler struct {
 // independent FIPS-approval check on every job — defense in depth in case
 // the main server process (which already checks this in
 // CertRequestService.Approve) is ever compromised and jobs reach the sign
-// queue directly.
-func NewHandler(keys CAKeySource, publisher message.Publisher, fipsEnabled bool) *Handler {
-	return &Handler{keys: keys, publisher: publisher, fipsEnabled: fipsEnabled}
+// queue directly. limits enforces lifetime ceilings as a defense-in-depth
+// backstop.
+func NewHandler(keys CAKeySource, publisher message.Publisher, fipsEnabled bool, limits SignLimits) *Handler {
+	return &Handler{keys: keys, publisher: publisher, fipsEnabled: fipsEnabled, limits: limits}
 }
 
 // Register adds the sign-queue consumer to r.
@@ -66,7 +68,7 @@ func (h *Handler) handle(msg *message.Message) error {
 		return nil
 	}
 
-	reply, err := Sign(msg.Context(), h.keys, job, h.fipsEnabled)
+	reply, err := Sign(msg.Context(), h.keys, job, h.fipsEnabled, h.limits)
 	if err != nil {
 		slog.Error("failed to sign certificate",
 			"request_id", job.RequestID,
