@@ -32,9 +32,14 @@ const (
 	// sessionKeyIdentityRefreshedAt is the Unix time the session was last
 	// written, set by SetIdentitySession and updated by the sliding-expiry
 	// refresh in SessionAuthMiddleware. It exists so the middleware can
-	// tell how far into its lifetime a session is without a Save on every
-	// request.
+	// tell how far into its idle window a session is without a Save on
+	// every request.
 	sessionKeyIdentityRefreshedAt = "identity_refreshed_at"
+	// sessionKeyIdentityIssuedAt is the Unix time the session was created
+	// at login. Unlike refreshedAt it is never updated afterwards - it is
+	// what the absolute session cap is measured against, so sliding must
+	// not touch it.
+	sessionKeyIdentityIssuedAt = "identity_issued_at"
 )
 
 // sessionString reads key from sess as a string, returning "" if it's
@@ -127,7 +132,9 @@ func SetIdentitySession(c *gin.Context, identity *service.Identity) error {
 	sess.Set(sessionKeyIdentityUsername, identity.Username)
 	sess.Set(sessionKeyIdentityEmail, identity.Email)
 	sess.Set(sessionKeyIdentityGroups, strings.Join(identity.Groups, ","))
-	sess.Set(sessionKeyIdentityRefreshedAt, time.Now().Unix())
+	now := time.Now().Unix()
+	sess.Set(sessionKeyIdentityIssuedAt, now)
+	sess.Set(sessionKeyIdentityRefreshedAt, now)
 	return sess.Save()
 }
 
@@ -159,29 +166,40 @@ func Identity(c *gin.Context) (*service.Identity, bool) {
 // logged-in session (see SetIdentitySession, written by the OIDC callback
 // in controller.authController).
 //
-// It also slides the session's expiry: cookie MaxAge is otherwise absolute
-// — written once at login and never touched again — so an actively-clicking
-// user was logged out mid-task when it ran down. Once a request arrives
-// past half the session's lifetime, the middleware re-saves the session,
-// which reissues the cookie with a fresh MaxAge and pushes the store row's
-// expires_at forward. Half-life rather than every request keeps the
-// Set-Cookie header and the session-store write off the common path.
-// The result is an idle timeout: activity extends the session, absence
-// ends it. Deliberately no client-side keepalive to go with this — a poll
-// would keep a session alive for an unattended browser, which is the case
-// the timeout exists for.
+// It enforces a two-tier lifetime, the same shape as a corporate SSO:
+//
+//   - An idle window (idleTimeout): the cookie's MaxAge. Once a request
+//     arrives past half the window the middleware re-saves the session,
+//     which reissues the cookie with a fresh MaxAge and pushes the store
+//     row's expires_at forward. Half-life rather than every request keeps
+//     the Set-Cookie header and the store write off the common path. An
+//     abandoned browser expires after one quiet window; an active one
+//     slides indefinitely -
+//   - - until the absolute cap (maxSession), measured against the login
+//     timestamp that sliding never touches. Past it, the next request is
+//     unauthenticated no matter how active the session was, and the user
+//     signs in again. This is also what bounds how stale the session's
+//     group claims can get, since the refresh deliberately does not
+//     re-check them against the identity provider.
+//
+// Deliberately no client-side keepalive to go with this - a poll would
+// keep a session alive for an unattended browser, which is the case the
+// idle window exists for.
 type SessionAuthMiddleware struct {
-	// maxAge is the session lifetime in force (bootstrap's
-	// resolvedCookieMaxAge), which the refresh threshold derives from.
-	maxAge time.Duration
+	// idleTimeout is the sliding window (bootstrap's
+	// resolvedCookieIdleTimeout), which the refresh threshold derives from.
+	idleTimeout time.Duration
+	// maxSession is the absolute cap (bootstrap's resolvedCookieMaxAge),
+	// enforced against sessionKeyIdentityIssuedAt.
+	maxSession time.Duration
 }
 
-// NewSessionAuthMiddleware creates a SessionAuthMiddleware. maxAge must be
-// the same lifetime the session store's cookie options were built with, or
-// refreshed cookies come back with a different lifetime than first-issue
-// ones.
-func NewSessionAuthMiddleware(maxAge time.Duration) *SessionAuthMiddleware {
-	return &SessionAuthMiddleware{maxAge: maxAge}
+// NewSessionAuthMiddleware creates a SessionAuthMiddleware. idleTimeout
+// must be the same lifetime the session store's cookie options were built
+// with, or refreshed cookies come back with a different lifetime than
+// first-issue ones; maxSession is the absolute cap from the same config.
+func NewSessionAuthMiddleware(idleTimeout, maxSession time.Duration) *SessionAuthMiddleware {
+	return &SessionAuthMiddleware{idleTimeout: idleTimeout, maxSession: maxSession}
 }
 
 // Add returns a gin.HandlerFunc that reads the identity persisted by
@@ -193,6 +211,22 @@ func (m *SessionAuthMiddleware) Add() gin.HandlerFunc {
 
 		subject := sessionString(sess, sessionKeyIdentitySubject)
 		if subject == "" {
+			_ = c.Error(&UnauthorizedError{}) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+			c.Abort()
+			return
+		}
+
+		// Absolute cap: a session past maxSession is over regardless of
+		// activity - sliding extends the idle window below, never this.
+		// A session predating sessionKeyIdentityIssuedAt (issuedAt zero)
+		// has an unknown age; fail closed and make the user log in again
+		// rather than granting a stale session an unbounded lifetime.
+		issuedAt, hasIssuedAt := sess.Get(sessionKeyIdentityIssuedAt).(int64)
+		if !hasIssuedAt || time.Since(time.Unix(issuedAt, 0)) > m.maxSession {
+			// Best-effort clear so the dead session stops round-tripping;
+			// the 401 stands even if the save fails.
+			sess.Clear()
+			_ = sess.Save()                   //nolint:errcheck // the session is already being rejected; a failed clear changes nothing.
 			_ = c.Error(&UnauthorizedError{}) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 			c.Abort()
 			return
@@ -213,14 +247,12 @@ func (m *SessionAuthMiddleware) Add() gin.HandlerFunc {
 			Groups:   groups,
 		})
 
-		// Sliding expiry: re-save once past half the lifetime (see the type
-		// comment). A session predating sessionKeyIdentityRefreshedAt has an
-		// unknown age, so refresh it immediately rather than guessing. A
-		// failed save is logged-and-continued rather than fatal: the session
-		// is still valid as-is, and failing the request would turn a refresh
-		// optimization into an outage.
-		refreshedAt, _ := sess.Get(sessionKeyIdentityRefreshedAt).(int64)
-		if time.Since(time.Unix(refreshedAt, 0)) > m.maxAge/2 {
+		// Sliding expiry: re-save once past half the idle window (see the
+		// type comment). A failed save is logged-and-continued rather than
+		// fatal: the session is still valid as-is, and failing the request
+		// would turn a refresh optimization into an outage.
+		refreshedAt, hasRefreshedAt := sess.Get(sessionKeyIdentityRefreshedAt).(int64)
+		if !hasRefreshedAt || time.Since(time.Unix(refreshedAt, 0)) > m.idleTimeout/2 {
 			sess.Set(sessionKeyIdentityRefreshedAt, time.Now().Unix())
 			if err := sess.Save(); err != nil {
 				_ = c.Error(err) //nolint:errcheck // c.Error only registers the error for logging; the request proceeds on the still-valid session.

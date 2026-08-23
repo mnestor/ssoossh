@@ -250,7 +250,11 @@ func sessionCookieOptions(c *config.Config) (sessions.Options, error) {
 	// expires_at = now + MaxAge seconds — that is, already expired — while
 	// reads filter on `expires_at > now`. A zero here means every request
 	// after login is unauthenticated.
-	maxAge := resolvedCookieMaxAge(c)
+	// The cookie attribute carries the idle window, not the absolute cap:
+	// the sliding refresh in SessionAuthMiddleware reissues it on activity,
+	// and the middleware enforces the absolute cap separately against the
+	// login timestamp.
+	maxAge := resolvedCookieIdleTimeout(c)
 
 	opts := sessions.Options{
 		Path:     "/",
@@ -268,6 +272,18 @@ func sessionCookieOptions(c *config.Config) (sessions.Options, error) {
 // sessionCookieOptions because the sliding-expiry middleware needs the same
 // number — the refresh must reissue the cookie with the lifetime the store
 // was configured with, not a second constant that can drift.
+func resolvedCookieIdleTimeout(c *config.Config) time.Duration {
+	if c.HTTP.CookieIdleTimeout > 0 {
+		return c.HTTP.CookieIdleTimeout
+	}
+	return defaultCookieIdleTimeout
+}
+
+// resolvedCookieMaxAge is the absolute session cap in force: the configured
+// cookie_max_age, or the fallback when it is unset. Enforced server-side by
+// SessionAuthMiddleware against the login timestamp, not by the cookie
+// attribute — the cookie's own MaxAge carries the idle window, since that
+// is what the sliding refresh reissues.
 func resolvedCookieMaxAge(c *config.Config) time.Duration {
 	if c.HTTP.CookieMaxAge > 0 {
 		return c.HTTP.CookieMaxAge
@@ -275,13 +291,20 @@ func resolvedCookieMaxAge(c *config.Config) time.Duration {
 	return defaultCookieMaxAge
 }
 
-// defaultCookieMaxAge is how long a session lasts when http.cookie_max_age
-// is unset. Also the admin revocation window: how long a removed group
-// membership keeps working, since group claims live in the session rather
-// than the database. Changes to group membership in the identity provider
-// take effect at the next login. The NASA session-timeout value should be
-// confirmed against policy, but 15 minutes is a reasonable default.
-const defaultCookieMaxAge = 15 * time.Minute
+// defaultCookieIdleTimeout is how long a session survives without a request
+// when http.cookie_idle_timeout is unset. The sliding refresh extends it on
+// activity, so this is the abandoned-browser window, not the working-day
+// bound.
+const defaultCookieIdleTimeout = 30 * time.Minute
+
+// defaultCookieMaxAge is the absolute session cap when http.cookie_max_age
+// is unset: a working day with margin, after which even an active session
+// re-authenticates. Also the admin revocation window: group claims live in
+// the session rather than the database, so a removed membership keeps
+// working until the session ends. The sliding refresh deliberately does not
+// re-check groups; this cap is what bounds how stale they can get, which is
+// why it must stay absolute rather than sliding.
+const defaultCookieMaxAge = 9 * time.Hour
 
 // parseSameSite maps the configured name to its http.SameSite value. Empty
 // means strict — see config.HTTPSettings.CookieSameSite for why that is the
@@ -309,7 +332,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 		return fmt.Errorf("failed to register frontend: %w", err)
 	}
 
-	sessionAuth := middleware.NewSessionAuthMiddleware(resolvedCookieMaxAge(a.config)).Add()
+	sessionAuth := middleware.NewSessionAuthMiddleware(resolvedCookieIdleTimeout(a.config), resolvedCookieMaxAge(a.config)).Add()
 	csrf := middleware.NewCsrfMiddleware(a.config.HTTP.PublicOrigin()).Add()
 	adminAuth := middleware.NewAdminAuthMiddleware(a.config).Add()
 	auditorAuth := middleware.NewAuditorAuthMiddleware(a.config).Add()

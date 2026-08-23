@@ -26,6 +26,7 @@ func TestSessionCookieOptions_ShouldHardenTheSessionCookie(t *testing.T) {
 		cookieSecure *bool
 		sameSite     string
 		maxAge       time.Duration
+		idleTimeout  time.Duration
 		wantSecure   bool
 		wantSameSite http.SameSite
 		wantMaxAge   int
@@ -61,10 +62,15 @@ func TestSessionCookieOptions_ShouldHardenTheSessionCookie(t *testing.T) {
 			wantSameSite: http.SameSiteNoneMode,
 		},
 		{
-			name:         "should convert max age to seconds",
+			// The cookie attribute carries the idle window (the sliding
+			// refresh reissues it); the absolute cap is enforced separately
+			// by SessionAuthMiddleware, so cookie_max_age must not leak
+			// into the cookie header.
+			name:         "should put the idle window in the cookie max age",
 			maxAge:       2 * time.Hour,
+			idleTimeout:  20 * time.Minute,
 			wantSameSite: http.SameSiteStrictMode,
-			wantMaxAge:   7200,
+			wantMaxAge:   1200,
 		},
 	}
 
@@ -77,6 +83,7 @@ func TestSessionCookieOptions_ShouldHardenTheSessionCookie(t *testing.T) {
 			c.HTTP.CookieSecure = tt.cookieSecure
 			c.HTTP.CookieSameSite = tt.sameSite
 			c.HTTP.CookieMaxAge = tt.maxAge
+			c.HTTP.CookieIdleTimeout = tt.idleTimeout
 
 			opts, err := sessionCookieOptions(c)
 			if err != nil {
@@ -95,12 +102,12 @@ func TestSessionCookieOptions_ShouldHardenTheSessionCookie(t *testing.T) {
 			if opts.SameSite != tt.wantSameSite {
 				t.Errorf("got SameSite %v, want %v", opts.SameSite, tt.wantSameSite)
 			}
-			// An unset cookie_max_age yields the default rather than zero;
-			// zero would write every session already expired. Covered
+			// An unset cookie_idle_timeout yields the default rather than
+			// zero; zero would write every session already expired. Covered
 			// directly by TestSessionCookieOptions_ShouldNeverProduceAZeroMaxAge.
 			wantMaxAge := tt.wantMaxAge
 			if wantMaxAge == 0 {
-				wantMaxAge = int(defaultCookieMaxAge.Seconds())
+				wantMaxAge = int(defaultCookieIdleTimeout.Seconds())
 			}
 			if opts.MaxAge != wantMaxAge {
 				t.Errorf("got MaxAge %d, want %d", opts.MaxAge, wantMaxAge)

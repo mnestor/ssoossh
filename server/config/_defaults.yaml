@@ -10,7 +10,10 @@ http:
   # is_https when a proxy terminates it). Set only to override that.
   cookie_secure:
   cookie_same_site: strict
-  cookie_max_age: 300s
+  # Absolute session cap, measured from login; activity never extends it.
+  cookie_max_age: 9h
+  # Idle window; sliding - any request in the second half reissues it.
+  cookie_idle_timeout: 30m
   rate_limit: 60
   rate_duration: 1m
   rate_limit_disable_for_dev: false

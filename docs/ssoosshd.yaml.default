@@ -250,10 +250,24 @@
   ## middleware regardless of this setting.
   # cookie_same_site: strict
 
-  ## How long a session cookie remains valid. Note: 0 does not mean "no
-  ## expiry" — it falls back to a 12h default applied in code. Set an
-  ## explicit positive duration to mean what it says.
-  # cookie_max_age: 300s
+  ## Web sessions have a two-tier lifetime, like a corporate SSO:
+  ##
+  ## cookie_max_age is the absolute cap, measured from login. Activity
+  ## never extends it: past this age the next request is unauthenticated
+  ## and the user signs in again. It is also the ceiling on how stale a
+  ## session's group claims can get, since groups are read at login and
+  ## not re-checked until the next one.
+  ##
+  ## cookie_idle_timeout is how long a session survives without a request.
+  ## It slides: any activity in the second half of the window reissues the
+  ## cookie for a fresh window, so a session in active use only ever ends
+  ## at cookie_max_age, while an abandoned browser expires after one quiet
+  ## window. It must not exceed cookie_max_age; startup refuses that.
+  ##
+  ## 0 for either does not mean "no expiry" — each falls back to the
+  ## default shown. Set explicit positive durations to mean what they say.
+  # cookie_max_age: 9h
+  # cookie_idle_timeout: 30m
 
   ## Rate limiting: max requests per rate_duration window, per client.
   # rate_limit: 60

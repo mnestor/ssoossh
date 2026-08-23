@@ -182,7 +182,7 @@ func TestSetIdentitySessionAndSessionAuthMiddleware(t *testing.T) {
 	r := newSessionTestRouter()
 	var gotIdentity *service.Identity
 	var gotOK bool
-	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute).Add(), func(c *gin.Context) {
+	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour).Add(), func(c *gin.Context) {
 		gotIdentity, gotOK = Identity(c)
 		c.String(http.StatusOK, "ok")
 	})
@@ -214,9 +214,10 @@ func TestSetIdentitySessionAndSessionAuthMiddleware(t *testing.T) {
 }
 
 // slidingExpiryRequest logs an identity in, then replays the session cookie
-// against a route guarded by a middleware built with maxAge, returning
-// whether that second response reissued the session cookie.
-func slidingExpiryRequest(t *testing.T, maxAge time.Duration) bool {
+// against a route guarded by a middleware built with the given idle window
+// and absolute cap, returning the second response's status code and whether
+// it reissued the session cookie.
+func slidingExpiryRequest(t *testing.T, idleTimeout, maxSession time.Duration) (int, bool) {
 	t.Helper()
 
 	setResp := doSessionRequest(t, func(c *gin.Context) {
@@ -226,7 +227,10 @@ func slidingExpiryRequest(t *testing.T, maxAge time.Duration) bool {
 	}, nil)
 
 	r := newSessionTestRouter()
-	r.GET("/whoami", NewSessionAuthMiddleware(maxAge).Add(), func(c *gin.Context) {
+	// The error handler is what turns the middleware's UnauthorizedError
+	// into a 401 status; without it a rejection reads as an empty 200.
+	r.Use(NewErrorHandlerMiddleware().Add())
+	r.GET("/whoami", NewSessionAuthMiddleware(idleTimeout, maxSession).Add(), func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})
 	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)
@@ -236,31 +240,49 @@ func slidingExpiryRequest(t *testing.T, maxAge time.Duration) bool {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("got status %d, want %d", w.Code, http.StatusOK)
-	}
-	return len(w.Result().Cookies()) > 0
+	return w.Code, len(w.Result().Cookies()) > 0
 }
 
-func TestSessionAuthMiddleware_ShouldReissueCookieWhenPastHalfLife(t *testing.T) {
+func TestSessionAuthMiddleware_ShouldReissueCookieWhenPastHalfIdleWindow(t *testing.T) {
 	t.Parallel()
 
-	// A negative maxAge makes the half-life threshold negative, so a
+	// A negative idle window makes the half-life threshold negative, so a
 	// freshly-issued session is already "past" it — the refresh must fire
-	// without the test having to manipulate clocks.
-	if !slidingExpiryRequest(t, -time.Minute) {
-		t.Fatal("expected a session past its half-life to be re-saved with a fresh cookie")
+	// without the test having to manipulate clocks. The cap stays generous
+	// so only the sliding path is in play.
+	status, reissued := slidingExpiryRequest(t, -time.Minute, time.Hour)
+	if status != http.StatusOK {
+		t.Fatalf("got status %d, want %d", status, http.StatusOK)
+	}
+	if !reissued {
+		t.Fatal("expected a session past its idle half-life to be re-saved with a fresh cookie")
 	}
 }
 
 func TestSessionAuthMiddleware_ShouldNotReissueCookieWhenFresh(t *testing.T) {
 	t.Parallel()
 
-	// A generous maxAge keeps the just-issued session well inside its
+	// A generous idle window keeps the just-issued session well inside its
 	// half-life, so the middleware must leave the cookie alone — refreshing
 	// every request is exactly what the half-life check exists to avoid.
-	if slidingExpiryRequest(t, time.Hour) {
+	status, reissued := slidingExpiryRequest(t, time.Hour, 2*time.Hour)
+	if status != http.StatusOK {
+		t.Fatalf("got status %d, want %d", status, http.StatusOK)
+	}
+	if reissued {
 		t.Fatal("expected a fresh session to not be re-saved on every request")
+	}
+}
+
+func TestSessionAuthMiddleware_ShouldRejectSessionPastAbsoluteCap(t *testing.T) {
+	t.Parallel()
+
+	// A negative cap puts even a just-issued session past its absolute
+	// lifetime, so the request must come back unauthorized no matter how
+	// generous the idle window is — activity never extends the cap.
+	status, _ := slidingExpiryRequest(t, time.Hour, -time.Minute)
+	if status != http.StatusUnauthorized {
+		t.Fatalf("got status %d, want %d for a session past its absolute cap", status, http.StatusUnauthorized)
 	}
 }
 
@@ -273,7 +295,7 @@ func TestSessionAuthMiddleware_ShouldFailClosedWithoutASession(t *testing.T) {
 	r := newSessionTestRouter()
 	r.Use(NewErrorHandlerMiddleware().Add())
 	var reached bool
-	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute).Add(), func(c *gin.Context) {
+	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour).Add(), func(c *gin.Context) {
 		reached = true
 	})
 
@@ -302,7 +324,7 @@ func TestSessionAuthMiddleware_ShouldHandleNoGroups(t *testing.T) {
 
 	r := newSessionTestRouter()
 	var gotIdentity *service.Identity
-	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute).Add(), func(c *gin.Context) {
+	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour).Add(), func(c *gin.Context) {
 		gotIdentity, _ = Identity(c)
 	})
 	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)
@@ -335,7 +357,7 @@ func TestClearIdentitySession(t *testing.T) {
 
 	r := newSessionTestRouter()
 	r.Use(NewErrorHandlerMiddleware().Add())
-	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute).Add(), func(c *gin.Context) {
+	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour).Add(), func(c *gin.Context) {
 		c.String(http.StatusOK, "should not reach here")
 	})
 	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)

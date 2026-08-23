@@ -524,7 +524,7 @@ func TestWebReadEndpoints_ShouldFailClosedWithoutASession(t *testing.T) {
 			// store middleware isn't registered — initEngine always does, so
 			// mirror that here rather than working around it.
 			r.Use(sessions.Sessions("ssoossh_session", cookie.NewStore([]byte("test-secret"))))
-			sessionAuth := middleware.NewSessionAuthMiddleware(5*time.Minute).Add()
+			sessionAuth := middleware.NewSessionAuthMiddleware(5*time.Minute, time.Hour).Add()
 
 			NewUserController(&r.RouterGroup, sessionAuth)
 			NewCertificateController(&r.RouterGroup, &fakeCertificateService{}, sessionAuth)

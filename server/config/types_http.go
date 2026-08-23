@@ -116,9 +116,20 @@ type HTTPSettings struct {
 	// middleware.CsrfMiddleware.
 	CookieSameSite string `mapstructure:"cookie_same_site"`
 
-	// CookieMaxAge is how long a session cookie remains valid. Zero uses the
-	// store's own default.
+	// CookieMaxAge is the absolute ceiling on a session's lifetime, measured
+	// from login. Activity does not extend it: once a session is this old
+	// the next request is unauthenticated regardless of how recently it was
+	// used, and the user signs in again. Zero uses the built-in default.
 	CookieMaxAge time.Duration `mapstructure:"cookie_max_age"`
+
+	// CookieIdleTimeout is how long a session survives without a request.
+	// SessionAuthMiddleware slides this window on activity (re-saving the
+	// session past half the window, which reissues the cookie), so an
+	// actively-used session only ever ends at CookieMaxAge, while an
+	// abandoned browser expires after this much quiet. Zero uses the
+	// built-in default. Must not exceed CookieMaxAge - an idle window
+	// longer than the absolute cap cannot ever be reached.
+	CookieIdleTimeout time.Duration `mapstructure:"cookie_idle_timeout"`
 
 	// RateLimit is the maximum number of requests per RateDuration allowed
 	// per client IP. Zero or negative disables rate limiting entirely.
@@ -280,6 +291,12 @@ type ServiceCodeRateLimitSettings struct {
 func (h *HTTPSettings) Validate() error {
 	if _, err := h.parsePublicURL(); err != nil {
 		return err
+	}
+	// Only checkable when both are set explicitly; when either falls back
+	// to its built-in default the bootstrap resolvers keep the pair
+	// consistent (30m inside 9h).
+	if h.CookieIdleTimeout > 0 && h.CookieMaxAge > 0 && h.CookieIdleTimeout > h.CookieMaxAge {
+		return fmt.Errorf("http.cookie_idle_timeout (%s) must not exceed http.cookie_max_age (%s): the idle window can never outlive the absolute session cap", h.CookieIdleTimeout, h.CookieMaxAge)
 	}
 	return nil
 }
