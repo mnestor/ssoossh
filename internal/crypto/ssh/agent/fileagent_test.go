@@ -425,22 +425,145 @@ func TestFileAgent_List(t *testing.T) {
 	})
 }
 
-// should delegate to RemoveAll regardless of which key is passed, since a FileAgent manages a single identity.
+// should remove the key files only when the key passed in is the identity
+// this agent holds.
+//
+// Honouring the argument is what keeps a caller that asks to remove some
+// other identity from wiping this one. `ssh login`'s pruneSuperseded calls
+// Remove for every identity it considers superseded; when it misjudges the
+// current identity as superseded — as it did once already, from List
+// returning a bare public key instead of the certificate — a Remove that
+// ignores its argument turns that misjudgement into deleted key files.
+// RemoveAll stays the explicit "remove everything" path.
 func TestFileAgent_Remove(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	path := filepath.Join(dir, "id_ssoossh")
-	if err := os.WriteFile(path, []byte("dummy"), 0600); err != nil {
+	ca, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	caSigner, err := ssh.NewSignerFromKey(ca.Private())
+	if err != nil {
+		t.Fatalf("NewSignerFromKey() error = %v", err)
+	}
+
+	// held builds a FileAgent whose files are on disk and whose identity is
+	// the returned public key: the certificate when withCert is set, the
+	// bare public key otherwise.
+	held := func(t *testing.T, withCert bool) (*FileAgent, ssh.PublicKey) {
+		t.Helper()
+		kp, err := keypair.NewEd25519KeyPair()
+		if err != nil {
+			t.Fatalf("NewEd25519KeyPair() error = %v", err)
+		}
+		if withCert {
+			kp.SetCertificate(newTestCert(t, kp.Public(), caSigner))
+		}
+		f := &FileAgent{privKey: filepath.Join(t.TempDir(), "id_ssoossh")}
+		if err := f.AddKeypair(kp); err != nil {
+			t.Fatalf("AddKeypair() error = %v", err)
+		}
+		return f, *f.identity()
+	}
+
+	// other is an identity this agent does not hold.
+	other := func(t *testing.T) ssh.PublicKey {
+		t.Helper()
+		kp, err := keypair.NewEd25519KeyPair()
+		if err != nil {
+			t.Fatalf("NewEd25519KeyPair() error = %v", err)
+		}
+		return kp.Public()
+	}
+
+	tests := []struct {
+		name        string
+		withCert    bool
+		key         func(t *testing.T, f *FileAgent, identity ssh.PublicKey) ssh.PublicKey
+		wantRemoved bool
+	}{
+		{
+			name:        "should remove the key files when the key is the held public key",
+			key:         func(_ *testing.T, _ *FileAgent, identity ssh.PublicKey) ssh.PublicKey { return identity },
+			wantRemoved: true,
+		},
+		{
+			name:        "should remove the key files when the key is the held certificate",
+			withCert:    true,
+			key:         func(_ *testing.T, _ *FileAgent, identity ssh.PublicKey) ssh.PublicKey { return identity },
+			wantRemoved: true,
+		},
+		{
+			name:        "should leave the key files in place when the key is another identity",
+			key:         func(t *testing.T, _ *FileAgent, _ ssh.PublicKey) ssh.PublicKey { return other(t) },
+			wantRemoved: false,
+		},
+		{
+			name:        "should leave the key files in place when the key is another identity and a certificate is held",
+			withCert:    true,
+			key:         func(t *testing.T, _ *FileAgent, _ ssh.PublicKey) ssh.PublicKey { return other(t) },
+			wantRemoved: false,
+		},
+		{
+			name:        "should leave the key files in place when the key is nil",
+			key:         func(_ *testing.T, _ *FileAgent, _ ssh.PublicKey) ssh.PublicKey { return nil },
+			wantRemoved: false,
+		},
+		{
+			// A certificate for the held key is not the held identity when
+			// the agent has no certificate loaded, and vice versa: the
+			// caller is naming material this agent is not managing.
+			name:     "should leave the key files in place when the key is a certificate for the held public key",
+			withCert: false,
+			key: func(t *testing.T, f *FileAgent, _ ssh.PublicKey) ssh.PublicKey {
+				t.Helper()
+				return newTestCert(t, f.keypair.Public(), caSigner)
+			},
+			wantRemoved: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			f, identity := held(t, tt.withCert)
+
+			if err := f.Remove(tt.key(t, f, identity)); err != nil {
+				t.Fatalf("Remove() error = %v", err)
+			}
+
+			_, err := os.Stat(f.privKey)
+			if tt.wantRemoved && !os.IsNotExist(err) {
+				t.Errorf("expected %s to be removed, stat error = %v", f.privKey, err)
+			}
+			if !tt.wantRemoved && err != nil {
+				t.Errorf("expected %s to be left in place, stat error = %v", f.privKey, err)
+			}
+		})
+	}
+}
+
+// should leave the key files in place when no identity is loaded, since
+// there is nothing for the key to match. RemoveAll is the way to clear
+// files whose private key could not be parsed.
+func TestFileAgent_Remove_NoIdentityLoaded(t *testing.T) {
+	t.Parallel()
+
+	kp, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "id_ssoossh")
+	if err := os.WriteFile(path, []byte("not a key"), 0600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	f := &FileAgent{privKey: path}
 
-	if err := f.Remove(nil); err != nil {
+	if err := f.Remove(kp.Public()); err != nil {
 		t.Fatalf("Remove() error = %v", err)
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Errorf("expected %s to be removed, stat error = %v", path, err)
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("expected %s to be left in place, stat error = %v", path, err)
 	}
 }
 
