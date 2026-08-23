@@ -69,6 +69,15 @@ func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.PersistentFlags().StringP("config", "c", "", "path to the ssoossh config file")
 	cmd.PersistentFlags().String("server", "", "server address including scheme (e.g. \"https://example.com\") assumes https if omited.")
 
+	// Hidden: a diagnostic aid, not part of the command's advertised
+	// surface. $SSOOSSH_DEBUG does the same thing for invocations whose
+	// command line is not yours to edit — see debugEnabled.
+	cmd.PersistentFlags().Bool(debugFlagName, false,
+		"print the resolved configuration, its sources, and key storage to stderr")
+	if err := cmd.PersistentFlags().MarkHidden(debugFlagName); err != nil {
+		return fmt.Errorf("hide --%s: %w", debugFlagName, err)
+	}
+
 	return nil
 }
 
@@ -84,6 +93,15 @@ func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 	// flags (e.g. ssh login's --key-type). `runner` is the actually-invoked
 	// command, with every inherited persistent flag and its own local flags
 	// already merged, so it's the one newConfig must read.
+	// Deferred so every return path below reports, including the failing
+	// ones — a startup that did not finish is when this is most useful, and
+	// the alternative is a report at each of five early returns.
+	if debugEnabled(runner.CobraCommand) {
+		defer func() {
+			writeDebugReport(os.Stderr, r.cfg, r.agentForDebug(), runner.CobraCommand.CommandPath(), r.initErr)
+		}()
+	}
+
 	cfg, err := r.newConfig(runner.CobraCommand)
 	if err != nil {
 		r.initErr = fmt.Errorf("load config: %w", err)
@@ -127,6 +145,17 @@ func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 	r.initErr = r.ssh.SetCA(cfg.CAPubkey)
 
 	return nil
+}
+
+// agentForDebug returns the resolved agent for the debug report, or nil
+// when there is none. A plain `r.ssh` would hand the report a non-nil
+// interface holding a nil pointer whenever agent resolution failed, and it
+// would then call Type() on it.
+func (r *RootCommand) agentForDebug() agentDescriber {
+	if r.ssh == nil {
+		return nil
+	}
+	return r.ssh
 }
 
 // resolveAgent decides where keys and certificates are kept, honoring the

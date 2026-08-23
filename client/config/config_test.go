@@ -475,3 +475,105 @@ func TestNewConfig_ShouldSurfaceAPlatformPolicyLoadError(t *testing.T) {
 		t.Fatal("expected a platform policy load error to fail config loading")
 	}
 }
+
+// sourceFor returns the recorded outcome for the named source, so a test can
+// assert one entry without pinning the whole chain's length.
+func sourceFor(t *testing.T, sources []ConfigSource, label string) ConfigSource {
+	t.Helper()
+	for _, s := range sources {
+		if s.Label == label {
+			return s
+		}
+	}
+	t.Fatalf("no %q entry in the recorded sources: %v", label, sources)
+	return ConfigSource{}
+}
+
+// The gap this closes: mergeConfig ignores errors, because a missing file at
+// any search location is normal. That also swallows a config file that IS
+// there and failed to parse — the user believes their settings are in
+// effect, and nothing says otherwise. --debug reads these outcomes.
+func TestNewConfig_ShouldRecordAMalformedConfigFileAsAnError(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{"ssoossh.yaml": "server: https://sys.example.com\n"})
+	badConfig := writeConfig(t, "server: https://ssh.example.com\nbroken: [unclosed\n")
+	cmd := newConfigCommand(t, "--config", badConfig)
+
+	cfg, err := newConfig(cmd, testPaths(sysDir), noPolicy)
+	if err != nil {
+		t.Fatalf("a malformed optional config must not fail the load: %v", err)
+	}
+
+	got := sourceFor(t, cfg.Sources, "--config")
+	if got.Status != SourceError {
+		t.Fatalf("status = %q, want %q (sources: %v)", got.Status, SourceError, cfg.Sources)
+	}
+	if got.Err == "" {
+		t.Error("expected the parse failure to be recorded, got an empty message")
+	}
+}
+
+func TestNewConfig_ShouldRecordAMergedConfigFile(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{"ssoossh.yaml": "server: https://sys.example.com\n"})
+	cmd := newConfigCommand(t)
+
+	cfg, err := newConfig(cmd, testPaths(sysDir), noPolicy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := sourceFor(t, cfg.Sources, "system file").Status; got != SourceMerged {
+		t.Errorf("system file status = %q, want %q", got, SourceMerged)
+	}
+}
+
+func TestNewConfig_ShouldRecordAnAbsentConfigFileAsAbsent(t *testing.T) {
+	cmd := newConfigCommand(t)
+
+	cfg, err := newConfig(cmd, testPaths(t.TempDir()), noPolicy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := sourceFor(t, cfg.Sources, "system file").Status; got != SourceAbsent {
+		t.Errorf("system file status = %q, want %q", got, SourceAbsent)
+	}
+}
+
+func TestNewConfig_ShouldRecordAnUnusedConfigFlagAsNotGiven(t *testing.T) {
+	cmd := newConfigCommand(t)
+
+	cfg, err := newConfig(cmd, testPaths(t.TempDir()), noPolicy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := sourceFor(t, cfg.Sources, "--config").Status; got != SourceNotGiven {
+		t.Errorf("--config status = %q, want %q", got, SourceNotGiven)
+	}
+}
+
+// The chain is only meaningful in precedence order: a reader uses it to work
+// out which source won, and that answer is the last merged entry.
+func TestNewConfig_ShouldRecordSourcesInPrecedenceOrder(t *testing.T) {
+	sysDir := writeSystemConfig(t, map[string]string{"ssoossh.yaml": "server: https://sys.example.com\n"})
+	cmd := newConfigCommand(t, "--config", writeConfig(t, "server: https://ssh.example.com\n"))
+
+	cfg, err := newConfig(cmd, testPaths(sysDir), noPolicy)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var labels []string
+	for _, s := range cfg.Sources {
+		labels = append(labels, s.Label)
+	}
+	want := []string{"embedded defaults", "system file", "--config", "command-line flags", "enforce", "platform policy"}
+	if len(labels) != len(want) {
+		t.Fatalf("sources = %v, want %v", labels, want)
+	}
+	for i := range want {
+		if labels[i] != want[i] {
+			t.Fatalf("sources = %v, want %v", labels, want)
+		}
+	}
+}

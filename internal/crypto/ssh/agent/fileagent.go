@@ -39,21 +39,43 @@ type FileAgent struct {
 // An empty path is rejected outright: it would resolve to ~/.ssh itself,
 // and every later write or remove would then operate on the directory —
 // the classic way key files end up somewhere the user never looks.
-func NewFileAgent(path string) (Agent, error) {
+// ResolveKeyPath turns a configured key_filename into the absolute path the
+// file agent actually reads and writes. Exported so anything that reports
+// on key storage — `--debug`, notably — can show the same path the agent
+// uses instead of echoing the configured value back. A report that stats
+// the unexpanded string calls "~/.ssh/id" missing while the agent is
+// happily using it, which is worse than saying nothing.
+//
+// A relative path (a bare filename, or "~"/"~/...") resolves against the
+// user's ~/.ssh directory; os.UserHomeDir handles Windows and WSL, so no
+// platform-specific logic is needed here.
+//
+// An empty path is rejected outright: it would resolve to ~/.ssh itself,
+// and every later write or remove would then operate on the directory —
+// the classic way key files end up somewhere the user never looks.
+func ResolveKeyPath(path string) (string, error) {
 	if strings.TrimSpace(path) == "" {
-		return nil, errors.New("key file path is empty; set key_filename to the private key file to use")
+		return "", errors.New("key file path is empty; set key_filename to the private key file to use")
 	}
-	if !filepath.IsAbs(path) {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
-		}
-		switch {
-		case path == "~" || strings.HasPrefix(path, "~/"):
-			path = filepath.Join(homeDir, strings.TrimPrefix(path, "~"))
-		default:
-			path = filepath.Join(homeDir, ".ssh", path)
-		}
+	if filepath.IsAbs(path) {
+		return path, nil
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case path == "~" || strings.HasPrefix(path, "~/"):
+		return filepath.Join(homeDir, strings.TrimPrefix(path, "~")), nil
+	default:
+		return filepath.Join(homeDir, ".ssh", path), nil
+	}
+}
+
+func NewFileAgent(path string) (Agent, error) {
+	path, err := ResolveKeyPath(path)
+	if err != nil {
+		return nil, err
 	}
 	if fi, err := os.Stat(path); err == nil && fi.IsDir() {
 		return nil, fmt.Errorf("key file path %s is a directory, not a file", path)
