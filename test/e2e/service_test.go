@@ -360,3 +360,47 @@ func slicesContains(haystack []string, needle string) bool {
 	}
 	return false
 }
+
+// The tier 3 proof of the whole feature: an unattended job gets a
+// certificate with `service retrieve` and an sshd accepts it, with no agent
+// involved anywhere. This is the documented Match exec story for hosts
+// without an agent, and nothing proved an sshd would accept a certificate
+// obtained that way.
+func TestService_ShouldProduceACertificateSshdAcceptsWithNoAgent(t *testing.T) {
+	idp := harness.NewIdentityProvider(t)
+	srv := harness.StartServer(t, idp, harness.ServerOptions{
+		ServiceAccountsField: serviceAccountClaim,
+	})
+	_, bin := harness.Binaries(t)
+	sshd := harness.StartSSHD(t, srv.CAPublicKey)
+
+	// The service account has to be the local account sshd maps
+	// certificates to, since the account chosen at approval becomes the
+	// certificate's principal.
+	f := &serviceFixture{Server: srv, Bin: bin, Account: sshd.Principal}
+	keyPath := filepath.Join(t.TempDir(), "svckey")
+
+	code, _ := f.enroll(t, keyPath)
+
+	res := harness.RunClient(t, f.Bin, harness.ClientOptions{
+		Args: []string{"service", "retrieve", "--code", code, "--key", keyPath, "--server", f.Server.BaseURL},
+	})
+	if res.ExitCode != 0 {
+		t.Fatalf("service retrieve failed with exit %d\nstderr:\n%s", res.ExitCode, res.Stderr)
+	}
+
+	// No agent: SSH_AUTH_SOCK is empty, and IdentitiesOnly stops ssh
+	// offering anything but the key named here. ssh finds the certificate
+	// by deriving <key>-cert.pub from IdentityFile, which is why the three
+	// filenames the enroll guidance insists on are not negotiable.
+	output, err := harness.RunSSHWith(t, sshd, "", []string{
+		"IdentityFile " + keyPath,
+		"IdentitiesOnly yes",
+	}, "echo ssoossh-service-ok")
+	if err != nil {
+		t.Fatalf("ssh with a service certificate failed: %v\noutput:\n%s", err, output)
+	}
+	if !strings.Contains(output, "ssoossh-service-ok") {
+		t.Errorf("got ssh output %q, want it to contain the echoed marker", output)
+	}
+}

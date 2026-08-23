@@ -226,6 +226,19 @@ func writeHostKey(t *testing.T, path string) {
 func RunSSH(t *testing.T, s *SSHD, agentSocket string, remoteCommand string) (output string, err error) {
 	t.Helper()
 
+	return RunSSHWith(t, s, agentSocket, nil, remoteCommand)
+}
+
+// RunSSHWith is RunSSH with extra -o options, for tests that need ssh
+// itself configured differently -- ProxyCommand being the one that matters,
+// since that is how `ssoossh ssh proxycommand` is reached in production and
+// there is no other way to drive it as ssh actually invokes it.
+//
+// Each entry in extraOptions is one option string, e.g.
+// "ProxyCommand /usr/bin/ssoossh ssh proxycommand /usr/bin/nc %h %p".
+func RunSSHWith(t *testing.T, s *SSHD, agentSocket string, extraOptions []string, remoteCommand string) (output string, err error) {
+	t.Helper()
+
 	args := []string{
 		// -F /dev/null: ignore the developer's own ssh config (and with it
 		// the system-wide one) — a personal "Host *" with IdentitiesOnly or
@@ -241,8 +254,23 @@ func RunSSH(t *testing.T, s *SSHD, agentSocket string, remoteCommand string) (ou
 		"--",
 		remoteCommand,
 	}
+	// Extra options go before the destination, and are inserted rather than
+	// appended: everything from s.Principal onwards is positional.
+	if len(extraOptions) > 0 {
+		withOpts := make([]string, 0, len(args)+2*len(extraOptions))
+		for _, opt := range extraOptions {
+			withOpts = append(withOpts, "-o", opt)
+		}
+		args = append(withOpts, args...)
+	}
+
 	cmd := exec.Command("ssh", args...)
-	cmd.Env = append(os.Environ(), "SSH_AUTH_SOCK="+agentSocket)
+	// HOME is isolated for the same reason the client harness isolates it:
+	// a ProxyCommand runs the ssoossh client as a child of ssh, inheriting
+	// this environment, and without this it would read the developer's own
+	// ~/.config/ssoossh.yaml. ssh itself needs no home here -- -F /dev/null
+	// and UserKnownHostsFile=/dev/null already cover what it would look for.
+	cmd.Env = append(os.Environ(), "SSH_AUTH_SOCK="+agentSocket, "HOME="+t.TempDir())
 
 	out, runErr := cmd.CombinedOutput()
 	return string(out), runErr
