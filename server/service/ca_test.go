@@ -1,10 +1,5 @@
 package service
 
-// Test methodology: Unit tests for SSH certificate issuance service logic.
-// Tests run in parallel (t.Parallel()). Verifies certificate generation,
-// validation, and signing. Uses table-driven tests for multiple scenarios.
-// Helper functions generate test SSH keys and configurations.
-
 import (
 	"context"
 	"crypto/ed25519"
@@ -14,8 +9,6 @@ import (
 	"testing"
 
 	"golang.org/x/crypto/ssh"
-
-	"github.com/mnestor/ssoossh/server/config"
 )
 
 // generateTestSSHPrivateKey returns a throwaway ed25519 SSH private key in
@@ -44,13 +37,47 @@ func generateTestSSHPrivateKey(t *testing.T) (pemKey string, authorizedKey strin
 		strings.TrimRight(string(ssh.MarshalAuthorizedKey(sshPub)), "\n")
 }
 
-func TestNewCAService_ShouldSucceedWithValidPrivateKey(t *testing.T) {
+// mockCAKeyRegistry is a mock implementation of CAKeyRegistryReader for testing.
+type mockCAKeyRegistry struct {
+	keys []string
+	err  error
+}
+
+func (m *mockCAKeyRegistry) ActiveKeys(ctx context.Context) ([]string, error) {
+	return m.keys, m.err
+}
+
+func TestNewCAService_ShouldSucceedWithValidRegistry(t *testing.T) {
 	t.Parallel()
 
-	pemKey, wantPub := generateTestSSHPrivateKey(t)
-	c := &config.Config{Signer: config.SignerConfig{SSHKey: pemKey}}
+	registry := &mockCAKeyRegistry{keys: []string{"ssh-ed25519 AAAA..."}}
 
-	svc, err := NewCAService(c, nil)
+	svc, err := NewCAService(nil, registry)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if svc == nil {
+		t.Fatal("expected non-nil CAService")
+	}
+}
+
+func TestNewCAService_ShouldErrorWithNilRegistry(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewCAService(nil, nil)
+	if err == nil {
+		t.Fatal("expected an error for nil registry, got nil")
+	}
+}
+
+func TestGetCAPublicKey_ShouldReturnSingleKey(t *testing.T) {
+	t.Parallel()
+
+	key := "ssh-ed25519 AAAA..."
+	registry := &mockCAKeyRegistry{keys: []string{key}}
+
+	svc, err := NewCAService(nil, registry)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -59,49 +86,44 @@ func TestNewCAService_ShouldSucceedWithValidPrivateKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error from GetCAPublicKey, got %v", err)
 	}
-	if got != wantPub {
-		t.Errorf("got public key %q, want %q", got, wantPub)
+	if got != key {
+		t.Errorf("got %q, want %q", got, key)
 	}
 }
 
-func TestNewCAService_ShouldErrorWithInvalidPrivateKey(t *testing.T) {
+func TestGetCAPublicKey_ShouldReturnMultipleKeysJoined(t *testing.T) {
 	t.Parallel()
 
-	c := &config.Config{Signer: config.SignerConfig{SSHKey: "not a valid private key"}}
+	keys := []string{"ssh-ed25519 AAAA...", "ssh-ed25519 BBBB..."}
+	registry := &mockCAKeyRegistry{keys: keys}
 
-	_, err := NewCAService(c, nil)
-	if err == nil {
-		t.Fatal("expected an error for invalid private key, got nil")
-	}
-}
-
-func TestNewCAService_ShouldErrorWithEmptyPrivateKey(t *testing.T) {
-	t.Parallel()
-
-	c := &config.Config{Signer: config.SignerConfig{SSHKey: ""}}
-
-	_, err := NewCAService(c, nil)
-	if err == nil {
-		t.Fatal("expected an error for empty private key, got nil")
-	}
-}
-
-func TestGetCAPublicKey_ShouldReturnTrimmedKeyWithoutTrailingNewline(t *testing.T) {
-	t.Parallel()
-
-	pemKey, _ := generateTestSSHPrivateKey(t)
-	c := &config.Config{Signer: config.SignerConfig{SSHKey: pemKey}}
-
-	svc, err := NewCAService(c, nil)
+	svc, err := NewCAService(nil, registry)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
 	got, err := svc.GetCAPublicKey(context.Background())
 	if err != nil {
+		t.Fatalf("expected no error from GetCAPublicKey, got %v", err)
+	}
+	expected := "ssh-ed25519 AAAA...\nssh-ed25519 BBBB..."
+	if got != expected {
+		t.Errorf("got %q, want %q", got, expected)
+	}
+}
+
+func TestGetCAPublicKey_ShouldErrorWhenNoActiveKeys(t *testing.T) {
+	t.Parallel()
+
+	registry := &mockCAKeyRegistry{keys: []string{}}
+
+	svc, err := NewCAService(nil, registry)
+	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if strings.HasSuffix(got, "\n") {
-		t.Errorf("expected public key to have no trailing newline, got %q", got)
+
+	_, err = svc.GetCAPublicKey(context.Background())
+	if err == nil {
+		t.Fatal("expected an error for empty key list, got nil")
 	}
 }

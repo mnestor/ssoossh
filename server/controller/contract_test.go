@@ -13,19 +13,13 @@ package controller_test
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
-	"encoding/pem"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/crypto/ssh"
 
 	"github.com/mnestor/ssoossh/internal/api"
-	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/controller"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
@@ -57,6 +51,15 @@ func (s *stubCertRequestService) Wait(_ context.Context, _ string) (model.Certif
 	return model.CertificateRequestStatusApproved, s.cert, "", nil
 }
 
+// mockCAKeyRegistry for testing.
+type mockCAKeyRegistry struct {
+	keys []string
+}
+
+func (m *mockCAKeyRegistry) ActiveKeys(ctx context.Context) ([]string, error) {
+	return m.keys, nil
+}
+
 // newContractServer wires the real controllers onto a real listener and
 // returns a real client pointed at it.
 func newContractServer(t *testing.T, certRequests service.CertRequestProvider) (*httptest.Server, api.Client) {
@@ -64,17 +67,12 @@ func newContractServer(t *testing.T, certRequests service.CertRequestProvider) (
 
 	gin.SetMode(gin.TestMode)
 
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate ed25519 key: %v", err)
-	}
-	block, err := ssh.MarshalPrivateKey(priv, "contract-test")
-	if err != nil {
-		t.Fatalf("failed to marshal private key: %v", err)
+	// Create a mock registry with a test key
+	mockReg := &mockCAKeyRegistry{
+		keys: []string{"ssh-ed25519 AAAA"},
 	}
 
-	c := &config.Config{Signer: config.SignerConfig{SSHKey: string(pem.EncodeToMemory(block))}}
-	caSvc, err := service.NewCAService(c, nil)
+	caSvc, err := service.NewCAService(nil, mockReg)
 	if err != nil {
 		t.Fatalf("failed to build CAService: %v", err)
 	}

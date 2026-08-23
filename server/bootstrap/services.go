@@ -47,7 +47,7 @@ func (a *app) initServices() (*services, error) {
 	g := new(errgroup.Group)
 
 	g.Go(func() (err error) {
-		svc.ca, err = service.NewCAService(a.config, a.httpClient)
+		svc.ca, err = service.NewCAService(a.httpClient, svc.caKeyRegistry)
 		return err
 	})
 

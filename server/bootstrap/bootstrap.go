@@ -8,15 +8,20 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
+	"time"
 
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/italypaleale/go-kit/servicerunner"
 	"github.com/spf13/cobra"
+	"golang.org/x/crypto/ssh"
 	"gorm.io/gorm"
 
+	"github.com/mnestor/ssoossh/server/certmsg"
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/job"
 	"github.com/mnestor/ssoossh/server/pubsub"
+	"github.com/mnestor/ssoossh/server/signer"
 )
 
 // app holds the dependencies shared across the server's bootstrap sequence.
@@ -107,6 +112,18 @@ func BootstrapServe(cmd *cobra.Command, mode ServerMode) error {
 	// starts (see initPipeline).
 	if err := a.initPipeline(mode); err != nil {
 		return fmt.Errorf("failed to initialize certificate pipeline: %w", err)
+	}
+
+	// For full mode, set up the CA key Announcer (which also seeds the registry)
+	if mode == ServerModeFull {
+		announcer, err := a.initCAKeyAnnouncer(mode)
+		if err != nil {
+			return fmt.Errorf("failed to initialize CA key announcer: %w", err)
+		}
+		// Register the announcer's request handler
+		announcer.Register(a.pubSub.Router, a.pubSub.Subscriber)
+		// Add it to serviceRunners
+		serviceRunners = append(serviceRunners, announcer.Run)
 	}
 
 	// Init the job scheduler
@@ -201,11 +218,21 @@ func BootstrapSigner(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to initialize signer: %w", err)
 	}
 
+	// Set up the CA key Announcer for signer-only mode
+	announcer, err := a.initCAKeyAnnouncer(SignerModeOnly)
+	if err != nil {
+		return fmt.Errorf("failed to initialize CA key announcer: %w", err)
+	}
+	// Register the announcer's request handler
+	announcer.Register(a.pubSub.Router, a.pubSub.Subscriber)
+
 	// Start the pub/sub router - exactly once, and only after the handler is
 	// registered. This was appended a second time above initSignerHandler
 	// too, and the duplicate runner's "router is already running" error tore
 	// the whole process down: sign mode had never actually been started.
 	serviceRunners = append(serviceRunners, a.pubSub.Run)
+	// Add the announcer to serviceRunners
+	serviceRunners = append(serviceRunners, announcer.Run)
 
 	// Run all background services
 	err = servicerunner.
@@ -219,4 +246,43 @@ func BootstrapSigner(cmd *cobra.Command) error {
 	shutdowns.Run(ctx)
 
 	return nil
+}
+
+// initCAKeyAnnouncer creates the CA key Announcer for modes that need it
+// (full and signer-only). For full mode, it also seeds the registry
+// synchronously so a fresh boot never serves an empty key list.
+func (a *app) initCAKeyAnnouncer(mode ServerMode) (*signer.Announcer, error) {
+	// Load the CA key source
+	keys, err := signer.NewConfigKeySource(a.config.Signer.SSHKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load CA signing key for announcer: %w", err)
+	}
+
+	// For full mode, seed the registry from the in-process key source
+	if mode == ServerModeFull && a.svc != nil && a.svc.caKeyRegistry != nil {
+		ctx := context.Background()
+		// Get the public key from the signer
+		caSigner, err := keys.Signer(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get signer for registry seed: %w", err)
+		}
+
+		// Create an announcement and upsert it into the registry
+		pubKey := ssh.MarshalAuthorizedKey(caSigner.PublicKey())
+		publicKeyStr := strings.TrimSpace(string(pubKey))
+
+		announce := certmsg.CAKeyAnnounce{
+			PublicKey:   publicKeyStr,
+			AnnouncedAt: time.Now(),
+		}
+
+		if err := a.svc.caKeyRegistry.Upsert(ctx, announce); err != nil {
+			return nil, fmt.Errorf("failed to seed CA key registry: %w", err)
+		}
+	}
+
+	// Create the Announcer
+	announcer := signer.NewAnnouncer(keys, a.pubSub.Publisher, 5*time.Minute)
+
+	return announcer, nil
 }

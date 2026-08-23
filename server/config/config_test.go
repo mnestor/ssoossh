@@ -259,3 +259,25 @@ func TestNewConfig_ShouldErrorWhenConfigValueHasWrongType(t *testing.T) {
 		t.Fatal("expected an error when a config value has the wrong type, got nil")
 	}
 }
+
+func TestNewConfig_ShouldAllowEmptySSHKeyForAPIMode(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "api-mode.yaml")
+	// ssh_key is intentionally left empty for API-only mode
+	writeFile(t, path, "")
+
+	cc := newTestCommand()
+	if err := cc.Flags().Set("config", path); err != nil {
+		t.Fatalf("failed to set --config flag: %v", err)
+	}
+
+	c, err := NewConfig(cc)
+	if err != nil {
+		t.Fatalf("expected no error for API mode without ssh_key, got %v", err)
+	}
+	if c.Signer.SSHKey != "" {
+		t.Errorf("got SSHKey %q, want empty string for API mode", c.Signer.SSHKey)
+	}
+}

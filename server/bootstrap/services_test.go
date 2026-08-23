@@ -63,13 +63,12 @@ func TestInitServices_ShouldConstructCAService(t *testing.T) {
 	}
 }
 
-// TestInitServices_ShouldErrorOnInvalidSSHKey exercises initServices with a
-// fixture matching what Bootstrap actually passes it — a fully populated
-// app, same as TestInitServices_ShouldConstructCAService — because
-// initServices now builds every service concurrently: an app missing
-// dependencies the other constructors need (db, pubSub) would fail before
-// ever reaching the invalid SSH key this test means to exercise.
-func TestInitServices_ShouldErrorOnInvalidSSHKey(t *testing.T) {
+// TestInitServices_ShouldSucceedWithInvalidSSHKeyForAPIMode verifies that
+// initServices succeeds even with an invalid SSH key, since SSH key
+// validation no longer happens in initServices — it's deferred to
+// initSignerHandler (which is only called for full and signer-only modes).
+// API mode doesn't need a valid SSH key at all.
+func TestInitServices_ShouldSucceedWithInvalidSSHKeyForAPIMode(t *testing.T) {
 	t.Parallel()
 
 	oidcSrv := testutil.NewTestOIDCProvider(t)
@@ -91,7 +90,11 @@ func TestInitServices_ShouldErrorOnInvalidSSHKey(t *testing.T) {
 	})
 	a := &app{config: c, pubSub: ps}
 
-	if _, err := a.initServices(); err == nil {
-		t.Fatal("expected an error for an invalid SSH key, got nil")
+	svc, err := a.initServices()
+	if err != nil {
+		t.Fatalf("expected no error for API mode with invalid SSH key, got %v", err)
+	}
+	if svc.ca == nil {
+		t.Fatal("expected a non-nil CAService")
 	}
 }
