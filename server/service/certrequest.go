@@ -522,29 +522,8 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 		return err
 	}
 	narrowed := narrowRequestedOptions(policy, requested)
-	// PAM is the one type where an unset requireGroup denies rather than
-	// opens: "who may sudo" is deliberately narrower than "who may log in",
-	// so a deployment that hasn't configured cert_options.pam.require_group
-	// issues no PAM certificates at all (see CertOptionsPAM.RequireGroup).
-	if req.Type == model.CertificateTypePAM && policy.requireGroup == "" {
-		return fmt.Errorf("pam certificate issuance requires cert_options.pam.require_group to be configured")
-	}
-	if policy.requireGroup != "" && !slices.Contains(identity.Groups, policy.requireGroup) {
-		return fmt.Errorf("identity is not authorized to approve %s certificates", req.Type)
-	}
-
-	// Service account linkage (service-type requests) and user principal
-	// linkage (user-type requests) are checked before bindRequester so a
-	// caller who cannot approve at all never claims the request.
-	if req.Type == model.CertificateTypeService {
-		if err := checkServiceAccountLinkage(identity, selection.ServiceAccount); err != nil {
-			return err
-		}
-	}
-	if req.Type == model.CertificateTypeUser {
-		if err := checkUserPrincipalLinkage(identity, selection.Principals); err != nil {
-			return err
-		}
+	if err := checkApproverAuthorization(req.Type, policy, identity, selection); err != nil {
+		return err
 	}
 
 	user, err := s.bindRequester(ctx, &req, identity)
@@ -575,6 +554,35 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 		// This guard exists only to catch bugs in policy initialization.
 		return fmt.Errorf("unsupported certificate approval flow for %s", req.Type)
 	}
+}
+
+// checkApproverAuthorization decides whether identity may approve a request
+// of certType at all: group membership, plus the per-type account linkage
+// that ties the certificate's principals to accounts the approver actually
+// holds.
+//
+// Split out of Approve both to keep that function readable and because
+// every check here shares one requirement — it must run before
+// bindRequester, so a caller who cannot approve never claims the request.
+func checkApproverAuthorization(certType model.CertificateType, policy *certTypePolicy, identity *Identity, selection ApprovalSelection) error {
+	// PAM is the one type where an unset requireGroup denies rather than
+	// opens: "who may sudo" is deliberately narrower than "who may log in",
+	// so a deployment that hasn't configured cert_options.pam.require_group
+	// issues no PAM certificates at all (see CertOptionsPAM.RequireGroup).
+	if certType == model.CertificateTypePAM && policy.requireGroup == "" {
+		return fmt.Errorf("pam certificate issuance requires cert_options.pam.require_group to be configured")
+	}
+	if policy.requireGroup != "" && !slices.Contains(identity.Groups, policy.requireGroup) {
+		return fmt.Errorf("identity is not authorized to approve %s certificates", certType)
+	}
+
+	if certType == model.CertificateTypeService {
+		return checkServiceAccountLinkage(identity, selection.ServiceAccount)
+	}
+	if certType == model.CertificateTypeUser {
+		return checkUserPrincipalLinkage(identity, selection.Principals)
+	}
+	return nil
 }
 
 // checkFIPSApproved rejects authorizedKey if its algorithm isn't

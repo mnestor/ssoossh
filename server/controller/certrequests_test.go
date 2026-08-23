@@ -41,11 +41,11 @@ type fakeCertRequestService struct {
 	approveErr error
 	denyErr    error
 
-	gotApproveIdentity    *service.Identity
-	gotApproveDC          service.DecisionContext
-	gotApprovalSelection  service.ApprovalSelection
-	gotDenyIdentity       *service.Identity
-	gotDenyDC             service.DecisionContext
+	gotApproveIdentity   *service.Identity
+	gotApproveDC         service.DecisionContext
+	gotApprovalSelection service.ApprovalSelection
+	gotDenyIdentity      *service.Identity
+	gotDenyDC            service.DecisionContext
 
 	detail    *service.RequestDetail
 	detailErr error
