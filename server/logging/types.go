@@ -1,6 +1,33 @@
 package logging
 
-import "io"
+import (
+	"io"
+	"log/slog"
+)
+
+// AttrKeyType is the slog attribute key whose value routes a record to a
+// named logger. Producers must attach it via Tagged rather than typing the
+// key by hand.
+const AttrKeyType = "type"
+
+// The named-logger tags. A record tagged with one of these goes ONLY to
+// that logger's configured destination (see the package doc's destination
+// contract); a typo'd tag would silently fall through to the main log,
+// which is why producers and the router share these constants instead of
+// string literals.
+const (
+	TagAccessLog = "accesslog"
+	TagDB        = "db"
+	TagQueue     = "queue"
+	TagLDAP      = "ldap"
+)
+
+// Tagged returns a logger whose records carry the named-logger tag, for
+// handing to a subsystem (gin access logging, gorm, watermill). The one
+// sanctioned way to produce the attribute.
+func Tagged(tag string) *slog.Logger {
+	return slog.With(slog.String(AttrKeyType, tag))
+}
 
 // loggerSource is what New needs from a named logger's config to build its
 // handler — implemented directly on *config.GenericLogging and

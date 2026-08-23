@@ -214,7 +214,7 @@ func dbLogger(c *config.Config) logger.Interface {
 	loggerOpts := make([]slogGorm.Option, 0, 6)
 	dbLogLevel := logging.LevelFromString(c.DB.Logging.Level)
 	loggerOpts = append(loggerOpts,
-		slogGorm.WithHandler(slog.With("type", "db").Handler()),
+		slogGorm.WithHandler(logging.Tagged(logging.TagDB).Handler()),
 		slogGorm.WithSlowThreshold(200*time.Millisecond),
 		slogGorm.WithErrorField("error"),
 		slogGorm.SetLogLevel(slogGorm.DefaultLogType, dbLogLevel),

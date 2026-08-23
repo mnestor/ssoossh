@@ -68,7 +68,7 @@ func New(c *config.Config) (closeFns []func(context.Context) error, err error) {
 	router := slogmulti.Router()
 	for _, nl := range namedLoggers(c) {
 		if h := newNamedHandler(nl); h != nil {
-			router = router.Add(h, slogmulti.AttrValueIs("type", nl.tag))
+			router = router.Add(h, slogmulti.AttrValueIs(AttrKeyType, nl.tag))
 		}
 	}
 	router = router.Add(generalFanout(c, isTerminal))
@@ -95,10 +95,10 @@ func New(c *config.Config) (closeFns []func(context.Context) error, err error) {
 // bespoke routing block — see docs/signing-pipeline.md.
 func namedLoggers(c *config.Config) []namedLoggerConfig {
 	return []namedLoggerConfig{
-		{tag: "accesslog", src: &c.HTTP.AccessLogging},
-		{tag: "db", src: &c.DB.Logging},
-		{tag: "queue", src: &c.Queue.Logging},
-		{tag: "ldap", src: &c.LDAP.Logging},
+		{tag: TagAccessLog, src: &c.HTTP.AccessLogging},
+		{tag: TagDB, src: &c.DB.Logging},
+		{tag: TagQueue, src: &c.Queue.Logging},
+		{tag: TagLDAP, src: &c.LDAP.Logging},
 	}
 }
 

@@ -101,6 +101,6 @@ func newNamedHandler(cfg namedLoggerConfig) slog.Handler {
 	return GetHandler(cfg.src.LogJSONEnabled(), false, logDestination(filename, cfg.src), &slog.HandlerOptions{
 		AddSource:   cfg.src.LogAddSource(),
 		Level:       LevelFromString(cfg.src.LogLevelString()),
-		ReplaceAttr: dropAttr("type"),
+		ReplaceAttr: dropAttr(AttrKeyType),
 	})
 }

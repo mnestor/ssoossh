@@ -30,6 +30,7 @@ import (
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/controller"
 	"github.com/mnestor/ssoossh/server/frontend"
+	"github.com/mnestor/ssoossh/server/logging"
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
 )
@@ -113,7 +114,7 @@ func (a *app) initEngine() (*gin.Engine, error) {
 		r.Use(otelgin.Middleware(version.Name))
 	}
 
-	r.Use(sloggin.NewWithConfig(slog.With("type", "accesslog"), sloggin.Config{
+	r.Use(sloggin.NewWithConfig(logging.Tagged(logging.TagAccessLog), sloggin.Config{
 		WithUserAgent:      c.HTTP.AccessLogging.WithUserAgent,
 		WithClientIP:       c.HTTP.AccessLogging.WithClientIP,
 		WithRequestHeader:  c.HTTP.AccessLogging.WithRequestHeader,
