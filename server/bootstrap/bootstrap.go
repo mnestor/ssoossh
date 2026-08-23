@@ -8,15 +8,20 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
+	"time"
 
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/italypaleale/go-kit/servicerunner"
 	"github.com/spf13/cobra"
+	"golang.org/x/crypto/ssh"
 	"gorm.io/gorm"
 
+	"github.com/mnestor/ssoossh/server/certmsg"
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/job"
 	"github.com/mnestor/ssoossh/server/pubsub"
+	"github.com/mnestor/ssoossh/server/signer"
 )
 
 // app holds the dependencies shared across the server's bootstrap sequence.
@@ -34,6 +39,63 @@ type app struct {
 	// goroutine. Set while building the router (initEngine); registered as a
 	// shutdown hook by BootstrapServe. nil in modes that build no router.
 	stopSessionCleanup func(context.Context) error
+
+	// caKeySource caches the memoized CA key source (config or HSM), built
+	// once and shared by both the signer handler and CA key announcer.
+	caKeySource signer.CAKeySource
+	// closeCAKeySource is a nil-safe shutdown hook to close the key source
+	// if it requires cleanup (HSM sources do; config sources don't). Set by
+	// newCAKeySource if the source has a Close() method; registered with
+	// shutdowns.Add in BootstrapServe and BootstrapSigner.
+	closeCAKeySource func(context.Context) error
+}
+
+// newCAKeySource builds and memoizes the CAKeySource the signer handler signs
+// with and the CA key announcer publishes: PKCS#11-backed when the HSM block
+// is configured, otherwise the inline ssh_key PEM. Only constructed once per
+// process, regardless of how many times this method is called. Config
+// validation has already enforced exactly one source is configured for
+// signing modes.
+func (a *app) newCAKeySource() (signer.CAKeySource, error) {
+	// Memoized: if already built, return the cached instance.
+	if a.caKeySource != nil {
+		return a.caKeySource, nil
+	}
+
+	// Select the key source based on config.
+	if !a.config.Signer.HSM.Enabled() {
+		// PEM-backed source from config
+		ks, err := signer.NewConfigKeySource(a.config.Signer.SSHKey)
+		if err != nil {
+			return nil, err
+		}
+		a.caKeySource = ks
+		return ks, nil
+	}
+
+	// HSM-backed source
+	pin, err := a.config.Signer.HSM.ResolvePIN()
+	if err != nil {
+		return nil, err
+	}
+	keyID, err := a.config.Signer.HSM.KeyIDBytes()
+	if err != nil {
+		return nil, err
+	}
+	ks, err := signer.NewHSMKeySource(signer.HSMParams{
+		Module:     a.config.Signer.HSM.Module,
+		TokenLabel: a.config.Signer.HSM.TokenLabel,
+		PIN:        pin,
+		KeyID:      keyID,
+		KeyLabel:   a.config.Signer.HSM.KeyLabel,
+	})
+	if err != nil {
+		return nil, err
+	}
+	a.caKeySource = ks
+	// Wrap ks.Close to match servicerunner.Service signature (accepts context, returns error).
+	a.closeCAKeySource = func(context.Context) error { return ks.Close() }
+	return ks, nil
 }
 
 // BootstrapServe wires up and runs the server (full or API mode).
@@ -108,6 +170,21 @@ func BootstrapServe(cmd *cobra.Command, mode ServerMode) error {
 	if err := a.initPipeline(mode); err != nil {
 		return fmt.Errorf("failed to initialize certificate pipeline: %w", err)
 	}
+
+	// For full mode, set up the CA key Announcer (which also seeds the registry)
+	if mode == ServerModeFull {
+		announcer, err := a.initCAKeyAnnouncer(mode)
+		if err != nil {
+			return fmt.Errorf("failed to initialize CA key announcer: %w", err)
+		}
+		// Register the announcer's request handler
+		announcer.Register(a.pubSub.Router, a.pubSub.Subscriber)
+		// Add it to serviceRunners
+		serviceRunners = append(serviceRunners, announcer.Run)
+	}
+
+	// Register CA key source cleanup on shutdown (nil-safe).
+	shutdowns.Add(a.closeCAKeySource)
 
 	// Init the job scheduler
 	//
@@ -201,11 +278,24 @@ func BootstrapSigner(cmd *cobra.Command) error {
 		return fmt.Errorf("failed to initialize signer: %w", err)
 	}
 
+	// Set up the CA key Announcer for signer-only mode
+	announcer, err := a.initCAKeyAnnouncer(SignerModeOnly)
+	if err != nil {
+		return fmt.Errorf("failed to initialize CA key announcer: %w", err)
+	}
+	// Register the announcer's request handler
+	announcer.Register(a.pubSub.Router, a.pubSub.Subscriber)
+
+	// Register CA key source cleanup on shutdown (nil-safe).
+	shutdowns.Add(a.closeCAKeySource)
+
 	// Start the pub/sub router - exactly once, and only after the handler is
 	// registered. This was appended a second time above initSignerHandler
 	// too, and the duplicate runner's "router is already running" error tore
 	// the whole process down: sign mode had never actually been started.
 	serviceRunners = append(serviceRunners, a.pubSub.Run)
+	// Add the announcer to serviceRunners
+	serviceRunners = append(serviceRunners, announcer.Run)
 
 	// Run all background services
 	err = servicerunner.
@@ -219,4 +309,45 @@ func BootstrapSigner(cmd *cobra.Command) error {
 	shutdowns.Run(ctx)
 
 	return nil
+}
+
+// initCAKeyAnnouncer creates the CA key Announcer for modes that need it
+// (full and signer-only). For full mode, it also seeds the registry
+// synchronously so a fresh boot never serves an empty key list. The CA key
+// source is built and memoized by newCAKeySource, so this call returns the
+// same instance on every invocation.
+func (a *app) initCAKeyAnnouncer(mode ServerMode) (*signer.Announcer, error) {
+	// Load the memoized CA key source (built once, cached for reuse)
+	keys, err := a.newCAKeySource()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load CA signing key: %w", err)
+	}
+
+	// For full mode, seed the registry from the in-process key source
+	if mode == ServerModeFull && a.svc != nil && a.svc.caKeyRegistry != nil {
+		ctx := context.Background()
+		// Get the public key from the signer
+		caSigner, err := keys.Signer(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get signer for registry seed: %w", err)
+		}
+
+		// Create an announcement and upsert it into the registry
+		pubKey := ssh.MarshalAuthorizedKey(caSigner.PublicKey())
+		publicKeyStr := strings.TrimSpace(string(pubKey))
+
+		announce := certmsg.CAKeyAnnounce{
+			PublicKey:   publicKeyStr,
+			AnnouncedAt: time.Now(),
+		}
+
+		if err := a.svc.caKeyRegistry.Upsert(ctx, announce); err != nil {
+			return nil, fmt.Errorf("failed to seed CA key registry: %w", err)
+		}
+	}
+
+	// Create the Announcer
+	announcer := signer.NewAnnouncer(keys, a.pubSub.Publisher, 5*time.Minute)
+
+	return announcer, nil
 }

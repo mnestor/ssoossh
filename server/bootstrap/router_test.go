@@ -7,9 +7,7 @@ package bootstrap
 // integration tests with real network listeners.
 
 import (
-	"crypto/ed25519"
-	"crypto/rand"
-	"encoding/pem"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,11 +15,19 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/crypto/ssh"
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/service"
 )
+
+// testCAKeyRegistry is a mock implementation of CAKeyRegistry for testing.
+type testCAKeyRegistry struct {
+	keys []string
+}
+
+func (t *testCAKeyRegistry) ActiveKeys(ctx context.Context) ([]string, error) {
+	return t.keys, nil
+}
 
 // Tests in this file are unit tests for router setup: they call initRouter to
 // build a *Server, then use httptest to send requests through the router
@@ -35,24 +41,20 @@ import (
 
 // newTestApp builds a minimal *app sufficient to call initRouter: a config,
 // a services struct holding a real *service.CAService built from a
-// throwaway test SSH key (caController.caService is a concrete type, not an
-// interface, so a fake can't be substituted without changing production
-// code), and an in-memory sqlite *gorm.DB (initRouter's session store setup
-// needs a real *gorm.DB - it AutoMigrates its own table on construction).
+// mock registry with a test key (caController.caService is a concrete type,
+// not an interface, so a fake can't be substituted without changing
+// production code), and an in-memory sqlite *gorm.DB (initRouter's session
+// store setup needs a real *gorm.DB - it AutoMigrates its own table on
+// construction).
 func newTestApp(t *testing.T, c *config.Config) *app {
 	t.Helper()
 
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate ed25519 key: %v", err)
+	// Create a mock registry with a test key
+	mockReg := &testCAKeyRegistry{
+		keys: []string{"ssh-ed25519 AAAA"},
 	}
-	block, err := ssh.MarshalPrivateKey(priv, "test-key")
-	if err != nil {
-		t.Fatalf("failed to marshal private key: %v", err)
-	}
-	c.Signer.SSHKey = string(pem.EncodeToMemory(block))
 
-	caSvc, err := service.NewCAService(c, nil)
+	caSvc, err := service.NewCAService(nil, mockReg)
 	if err != nil {
 		t.Fatalf("failed to build CAService: %v", err)
 	}

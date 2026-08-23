@@ -8,18 +8,13 @@ package controller
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
-	"encoding/pem"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/crypto/ssh"
 
-	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/service"
 )
 
@@ -33,21 +28,24 @@ func (f *fakeCAService) GetCAPublicKey(_ context.Context) (string, error) {
 	return "", f.err
 }
 
-// newTestCAService builds a real *service.CAService from a throwaway
-// ed25519 key.
+// mockCAKeyRegistry for testing.
+type mockCAKeyRegistry struct {
+	keys []string
+}
+
+func (m *mockCAKeyRegistry) ActiveKeys(ctx context.Context) ([]string, error) {
+	return m.keys, nil
+}
+
+// newTestCAService builds a real *service.CAService with a mock registry.
 func newTestCAService(t *testing.T) *service.CAService {
 	t.Helper()
 
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate ed25519 key: %v", err)
-	}
-	block, err := ssh.MarshalPrivateKey(priv, "test-key")
-	if err != nil {
-		t.Fatalf("failed to marshal private key: %v", err)
+	mockReg := &mockCAKeyRegistry{
+		keys: []string{"ssh-ed25519 AAAA"},
 	}
 
-	svc, err := service.NewCAService(&config.Config{Signer: config.SignerConfig{SSHKey: string(pem.EncodeToMemory(block))}}, nil)
+	svc, err := service.NewCAService(nil, mockReg)
 	if err != nil {
 		t.Fatalf("failed to build CAService: %v", err)
 	}

@@ -12,6 +12,7 @@
 package certmsg
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/mnestor/ssoossh/server/model"
@@ -29,6 +30,16 @@ const (
 	// per-request because only the listener/resolver ever subscribes: there
 	// is no fan-out to scope.
 	SignedTopic = "certrequest.signed"
+
+	// CAKeyAnnounceTopic is the topic signers publish their CA public key to
+	// so servers can persist and serve it. Many signers may announce the same
+	// CA key (HA setup); the listener deduplicates by fingerprint.
+	CAKeyAnnounceTopic = "ca.key.announce"
+
+	// CAKeyRequestTopic is the topic servers publish to, requesting signers
+	// (re)announce their CA public key. Used during server startup to seed
+	// the registry and during operation to handle signer reconnection.
+	CAKeyRequestTopic = "ca.key.request"
 )
 
 // WaitTopic returns the per-request wake topic CertRequestService.Wait
@@ -111,6 +122,9 @@ const (
 	// algorithm isn't FIPS-approved, and the signer is running with FIPS
 	// enabled.
 	ErrCodeFIPSNotApproved = "fips_not_approved"
+	// ErrCodeLifetimeRejected means the job's requested certificate lifetime
+	// exceeds the configured maximum for its certificate type.
+	ErrCodeLifetimeRejected = "lifetime_rejected"
 )
 
 // SignedReply is the signer's result, consumed by the listener/resolver.
@@ -145,3 +159,29 @@ type SignedReply struct {
 
 // Failed reports whether this reply represents a signing failure.
 func (r SignedReply) Failed() bool { return r.ErrorCode != "" }
+
+// CAKeyAnnounce is the CA public key announcement message published by signers
+// to advertise their CA signing key. Servers subscribe to this topic to build
+// and maintain a registry of available CA public keys. Multiple signers with
+// the same CA key (HA setup) will result in duplicate announces; the listener
+// deduplicates by computing the fingerprint server-side, so a mismatched or
+// differently-formatted announce can never create a duplicate registry row.
+type CAKeyAnnounce struct {
+	// PublicKey is the CA public key in authorized_keys format (single line).
+	// The listener computes its fingerprint server-side to deduplicate across
+	// multiple signers with the same key.
+	PublicKey string `json:"public_key"`
+
+	// AnnouncedAt is the time this key was announced.
+	AnnouncedAt time.Time `json:"announced_at"`
+}
+
+// Marshal serializes CAKeyAnnounce to JSON bytes.
+func (a CAKeyAnnounce) Marshal() ([]byte, error) {
+	return json.Marshal(a)
+}
+
+// Unmarshal deserializes JSON bytes into a CAKeyAnnounce.
+func (a *CAKeyAnnounce) Unmarshal(data []byte) error {
+	return json.Unmarshal(data, a)
+}

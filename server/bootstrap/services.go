@@ -22,12 +22,13 @@ const authDiscoveryTimeout = 10 * time.Second
 
 // services groups the business-logic services the router depends on.
 type services struct {
-	ca          *service.CAService
-	auth        *service.AuthService
-	certRequest *service.CertRequestService
-	certificate *service.CertificateService
-	host        *service.HostService
-	enrollment  *service.EnrollmentService
+	ca            *service.CAService
+	auth          *service.AuthService
+	certRequest   *service.CertRequestService
+	certificate   *service.CertificateService
+	host          *service.HostService
+	enrollment    *service.EnrollmentService
+	caKeyRegistry *service.CAKeyRegistry
 }
 
 // initServices constructs the services using a.config and a.httpClient,
@@ -41,11 +42,12 @@ type services struct {
 func (a *app) initServices() (*services, error) {
 	svc := &services{}
 	svc.certificate = service.NewCertificateService(a.db)
+	svc.caKeyRegistry = service.NewCAKeyRegistry(a.db, 15*time.Minute)
 
 	g := new(errgroup.Group)
 
 	g.Go(func() (err error) {
-		svc.ca, err = service.NewCAService(a.config, a.httpClient)
+		svc.ca, err = service.NewCAService(a.httpClient, svc.caKeyRegistry)
 		return err
 	})
 

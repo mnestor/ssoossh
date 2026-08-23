@@ -41,9 +41,13 @@ define BUILDALL
 	RELEASE=false goreleaser build --clean --snapshot=${DIRTY}
 endef
 
+# $(1) -- component directory (server, client, internal)
+# $(2) -- CGO_ENABLED for the test run. Inside the recipe rather than in
+# front of $(call ...) at the call site: each line of a define is its own
+# shell, so a prefix there would only reach the mkdir.
 define TESTCOMPONENT
 	mkdir -p .coverage
-	go test -coverprofile=.coverage/coverage-$(1).out ./$(1)/...
+	CGO_ENABLED=$(2) go test -coverprofile=.coverage/coverage-$(1).out ./$(1)/...
 	go tool cover -func=.coverage/coverage-$(1).out | tail -1
 endef
 
@@ -90,8 +94,10 @@ FRONTEND_DIST := server/frontend/dist/index.html
 $(FRONTEND_DIST):
 	$(MAKE) frontend
 
+# CGO_ENABLED=1 because server/signer's HSM key source reaches libpkcs11
+# through crypto11: with cgo off the server packages do not build at all.
 build: $(FRONTEND_DIST) ## Build all Go packages
-	go build ./...
+	CGO_ENABLED=1 go build ./...
 
 linux: ## Snapshot build for linux/amd64 only
 	$(call BUILDIT,linux,amd64)
@@ -118,17 +124,19 @@ frontend-clean: ## Remove the built web UI
 # that assert on real UI assets, so the UI has to exist first.
 test: $(FRONTEND_DIST) test-server test-client test-pam test-internal ## Unit tests per component, with coverage
 
+# server and internal need cgo for the same reason `build` does: the HSM
+# key source binds libpkcs11. client has no such dependency.
 test-server:
-	$(call TESTCOMPONENT,server)
+	$(call TESTCOMPONENT,server,1)
 
 test-client:
-	$(call TESTCOMPONENT,client)
+	$(call TESTCOMPONENT,client,0)
 
 test-pam:
 	CGO_ENABLED=1 go test -tags=pam ./pam_ssoossh/...
 
 test-internal:
-	$(call TESTCOMPONENT,internal)
+	$(call TESTCOMPONENT,internal,1)
 
 # CGO_ENABLED is explicit because -race requires cgo and the devcontainer
 # sets CGO_ENABLED=0 by default.
@@ -139,20 +147,26 @@ test-race: $(FRONTEND_DIST) ## Unit tests under -race
 # comment at the code instead of a line range in a side file, so the number
 # here is the same one CI and Codecov report.
 cover: $(FRONTEND_DIST) ## Coverage HTML report at .coverage/coverage.html
-	go test -coverprofile=.coverage/coverage.out ./...
+	CGO_ENABLED=1 go test -coverprofile=.coverage/coverage.out ./...
 	go tool cover -html=.coverage/coverage.out -o .coverage/coverage.html
 
 # Mirrors codecover.yaml's test run (minus the Codecov upload, which needs a
 # token) -- it is what the runner actually executes.
 cover-ci: $(FRONTEND_DIST) ## Coverage exactly as codecover.yaml runs it
-	CGO_ENABLED=0 go test -v -covermode=atomic -coverprofile=coverage.txt ./...
+	CGO_ENABLED=1 go test -v -covermode=atomic -coverprofile=coverage.txt ./...
 
 frontend-test: ## Frontend unit and a11y tests (vitest)
 	cd frontend && CI=true pnpm install --frozen-lockfile && pnpm test
 
 ##@ Test (tagged suites, not part of `make test`)
 
-.PHONY: test-e2e test-e2e-multi-instance test-memory-leak test-resilience test-load test-migration
+.PHONY: test-e2e test-e2e-multi-instance test-memory-leak test-resilience test-load test-migration test-hsm
+# The HSM key source against a real PKCS#11 token. Behind the `softhsm` tag
+# so `make test` never needs softhsm2 installed; CI installs softhsm2 and
+# opensc for it (see the runner image).
+test-hsm: ## HSM key source tests against softhsm2 (needs softhsm2 + opensc)
+	CGO_ENABLED=1 go test -tags=softhsm ./server/signer/ -run TestHSMKeySource -v
+
 # The merge-gate end-to-end suite (docs/dev/e2e-testing-plan.md): a real
 # ssoosshd and ssoossh, a harness-provided OIDC IdP, a private ssh-agent,
 # and a real sshd. Behind the `e2e` build tag, so it never runs as part of

@@ -1,0 +1,44 @@
+name: hsm
+
+on:
+  pull_request:
+    paths:
+      - "server/signer/**"
+      - "server/config/**"
+      - "server/bootstrap/**"
+      - "go.mod"
+      - ".github/workflows/hsm.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  softhsm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - run: sudo apt-get update && sudo apt-get install -y softhsm2 opensc
+
+      - name: Verify SoftHSM2 module installed
+        run: test -f /usr/lib/softhsm/libsofthsm2.so || (echo "SoftHSM2 module not found"; exit 1)
+
+      - name: Run HSM key source tests
+        run: CGO_ENABLED=1 go test -tags=softhsm ./server/signer/ -run TestHSMKeySource -v
+
+      - name: Check for skipped tests
+        run: |
+          if grep -q "SKIP" <(CGO_ENABLED=1 go test -tags=softhsm ./server/signer/ -run TestHSMKeySource -v); then
+            echo "SoftHSM tests were skipped, indicating missing dependencies or provisioning issues"
+            exit 1
+          fi

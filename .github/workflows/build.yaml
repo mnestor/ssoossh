@@ -216,6 +216,14 @@ jobs:
       - name: Build web UI
         run: make frontend
 
+      - name: Set up Zig
+        run: |
+          mkdir -p /tmp/zig
+          cd /tmp/zig
+          wget -q https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz
+          tar -xf zig-linux-x86_64-0.14.0.tar.xz
+          echo "/tmp/zig/zig-linux-x86_64-0.14.0" >> $GITHUB_PATH
+
       - uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
         id: secrets
         env:
@@ -250,6 +258,45 @@ jobs:
           QUILL_NOTARY_KEY_ID: ${{ steps.secrets.outputs.QUILL_NOTARY_KEY_ID }}
           QUILL_SIGN_P12: ${{ steps.secrets.outputs.QUILL_SIGN_P12 }}
           QUILL_SIGN_PASSWORD: ${{ steps.secrets.outputs.QUILL_SIGN_PASSWORD }}
+
+      - name: Verify glibc floor (GNU build)
+        run: |
+          set -euo pipefail
+          GLIBC_MAX=$(objdump -T dist/server-linux-build_linux_amd64_v1/ssoosshd 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -1)
+          echo "Maximum GLIBC version in ssoosshd: $GLIBC_MAX"
+          if [ "$GLIBC_MAX" = "GLIBC_2.28" ]; then
+            echo "✓ glibc floor is 2.28 (expected)"
+          elif [ -z "$GLIBC_MAX" ]; then
+            echo "✗ Could not determine GLIBC version (static binary?)"
+            exit 1
+          else
+            echo "✗ GLIBC version $GLIBC_MAX is newer than 2.28 floor"
+            exit 1
+          fi
+
+      - name: Verify musl build is dynamically linked (Alpine)
+        run: |
+          set -euo pipefail
+          MUSL_BINARY="dist/server-linux-musl-build_linux_amd64_v1/ssoosshd"
+          if [ ! -f "$MUSL_BINARY" ]; then
+            echo "✗ musl binary not found at $MUSL_BINARY"
+            exit 1
+          fi
+          FILE_OUTPUT=$(file "$MUSL_BINARY")
+          echo "File output: $FILE_OUTPUT"
+          if echo "$FILE_OUTPUT" | grep -q "dynamically linked"; then
+            echo "✓ musl binary is dynamically linked (supports dlopen)"
+          else
+            echo "✗ musl binary is statically linked (cannot dlopen PKCS#11 modules)"
+            exit 1
+          fi
+
+      - name: Smoke test musl binary in Alpine
+        run: |
+          set -euo pipefail
+          MUSL_BINARY="dist/server-linux-musl-build_linux_amd64_v1/ssoosshd"
+          docker run --rm -v "$(pwd)/$MUSL_BINARY:/ssoosshd:ro" alpine:latest /ssoosshd --version || { echo "✗ musl binary failed to run in Alpine container"; exit 1; }
+          echo "✓ musl binary runs in Alpine container"
 
       - name: remove the release, we failed
         if: startsWith(github.ref, 'refs/tags/') && failure()

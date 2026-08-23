@@ -4,12 +4,9 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
-
-	"golang.org/x/crypto/ssh"
-
-	"github.com/mnestor/ssoossh/server/config"
 )
 
 // CAPublicKeyProvider exposes the CA's public key. CAService is the
@@ -18,32 +15,42 @@ type CAPublicKeyProvider interface {
 	GetCAPublicKey(ctx context.Context) (string, error)
 }
 
-// CAService signs and exposes information about the SSH certificate
-// authority used to issue user, host, and service certificates.
-type CAService struct {
-	httpClient *http.Client
-	// ca         string
-	capubkey string
+// CAKeyRegistryReader supplies the active CA public keys.
+type CAKeyRegistryReader interface {
+	ActiveKeys(ctx context.Context) ([]string, error)
 }
 
-// NewCAService loads the CA private key from c.Signer.SSHKey and derives its
-// public key, which is served via GetCAPublicKey.
-func NewCAService(c *config.Config, httpClient *http.Client) (*CAService, error) {
-	signer, err := ssh.ParsePrivateKey([]byte(c.Signer.SSHKey))
-	if err != nil {
-		return nil, err
-	}
+// CAService exposes the SSH certificate authority's public key, loaded from
+// the registry of announced signer keys. The CA's private key is no longer
+// parsed here — it lives in the signer (which may be in-process or remote),
+// and this service reads only the public half.
+type CAService struct {
+	httpClient *http.Client
+	registry   CAKeyRegistryReader
+}
 
+// NewCAService constructs a CAService backed by the given key registry.
+func NewCAService(httpClient *http.Client, registry CAKeyRegistryReader) (*CAService, error) {
+	if registry == nil {
+		return nil, fmt.Errorf("ca registry is required")
+	}
 	return &CAService{
 		httpClient: httpClient,
-		capubkey: strings.Trim(
-			string(ssh.MarshalAuthorizedKey(signer.PublicKey())),
-			"\n",
-		),
+		registry:   registry,
 	}, nil
 }
 
-// GetCAPublicKey returns the CA's public key in authorized_keys format.
+// GetCAPublicKey returns the CA's public keys in authorized_keys format,
+// one key per line. If no keys are active, returns an error.
 func (s *CAService) GetCAPublicKey(ctx context.Context) (string, error) {
-	return s.capubkey, nil
+	keys, err := s.registry.ActiveKeys(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve active CA keys: %w", err)
+	}
+
+	if len(keys) == 0 {
+		return "", fmt.Errorf("no signer has registered a CA key yet")
+	}
+
+	return strings.Join(keys, "\n"), nil
 }
