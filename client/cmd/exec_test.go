@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/bep/simplecobra"
@@ -49,6 +50,10 @@ func TestExecuteEndToEnd(t *testing.T) {
 		wantErr error
 		// wantNilErr marks a command that's expected to succeed end-to-end.
 		wantNilErr bool
+		// useMappingFile appends --file pointing at a fresh temp path, for
+		// the host commands: their default is /etc/ssoossh/principals.json,
+		// which a unit test must neither read nor write.
+		useMappingFile bool
 	}{
 		{name: "ca", args: []string{"ca"}, wantNilErr: true},
 		// login reaches its real implementation and fails at the outcome:
@@ -63,14 +68,38 @@ func TestExecuteEndToEnd(t *testing.T) {
 		{name: "host mapping list", args: []string{"host", "mapping", "list"}, wantNilErr: true},
 		{name: "service enroll with no key source", args: []string{"service", "enroll"}, wantErr: errors.New("--key is required")},
 		{name: "service retrieve with no code", args: []string{"service", "retrieve"}, wantErr: errors.New("--code is required")},
+		{name: "service retrieve with no key", args: []string{"service", "retrieve", "--code", "abc"}, wantErr: errors.New("--key is required")},
 		{name: "version", args: []string{"version"}, wantNilErr: true},
+
+		// The arity guards live in the simplecobra wrappers rather than in
+		// the run bodies, so they are the half a user reaches by typing the
+		// command wrong -- and the half these rows were missing. Both
+		// mapping constructors sat at 12.5% statement coverage while their
+		// run functions were near 90%.
+		{name: "host mapping add with no arguments", args: []string{"host", "mapping", "add"}, wantErr: errors.New("usage: ssoossh host mapping add <account> <principal>")},
+		{name: "host mapping add with only an account", args: []string{"host", "mapping", "add", "deploy"}, wantErr: errors.New("usage: ssoossh host mapping add <account> <principal>")},
+		{name: "host mapping remove with no arguments", args: []string{"host", "mapping", "remove"}, wantErr: errors.New("usage: ssoossh host mapping remove <account> [principal]")},
+
+		// The success paths through the same wrappers, which need --file:
+		// the default mapping file is /etc/ssoossh/principals.json and a
+		// unit test must not write there. Together with the arity rows
+		// above these take both constructors from 12.5% to covered.
+		{name: "host mapping add", args: []string{"host", "mapping", "add", "deploy", "alice"}, useMappingFile: true, wantNilErr: true},
+		{name: "host mapping remove a principal", args: []string{"host", "mapping", "remove", "deploy", "alice"}, useMappingFile: true, wantNilErr: true},
+		{name: "host mapping remove an account", args: []string{"host", "mapping", "remove", "deploy"}, useMappingFile: true, wantNilErr: true},
+		{name: "host principals for an account", args: []string{"host", "principals", "deploy"}, useMappingFile: true, wantNilErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newTestExec(t)
 
-			_, err := f.exec.Execute(context.Background(), tt.args)
+			args := tt.args
+			if tt.useMappingFile {
+				args = append(append([]string{}, args...), "--file", filepath.Join(t.TempDir(), "principals.json"))
+			}
+
+			_, err := f.exec.Execute(context.Background(), args)
 
 			switch {
 			case tt.wantNilErr:

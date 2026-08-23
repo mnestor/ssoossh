@@ -2,14 +2,19 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/crypto/ssh"
 
 	"github.com/mnestor/ssoossh/client/config"
 	"github.com/mnestor/ssoossh/internal/api"
+	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 )
 
 // should hand back the code only for the enrolled outcome — `service
@@ -304,5 +309,169 @@ func TestWriteFileAtomic_ShouldFailWhenTheDirectoryDoesNotExist(t *testing.T) {
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("writeFileAtomic() error = %v, want wrapping os.ErrNotExist", err)
+	}
+}
+
+// runServiceEnroll sat at 7.4% statement coverage: the only path anything
+// executed was its `--key is required` guard. Everything after it -- resolving
+// the key, creating the enrollment, printing the code, --retrieve, and the
+// ssh_config guidance -- was orchestration nothing had ever run, even though
+// its helpers were individually well covered. That is the shape where a
+// package-level number looks survivable while the part that decides the order
+// of events is untested.
+
+// enrollFixture wires a RootCommand around a fakeAPIClient and returns the
+// --key path to drive runServiceEnroll with.
+func enrollFixture(t *testing.T, apiClient *fakeAPIClient) (*RootCommand, string) {
+	t.Helper()
+	return &RootCommand{cfg: &config.Config{Server: "https://example.test"}, api: apiClient},
+		filepath.Join(t.TempDir(), "svc_key")
+}
+
+func TestRunServiceEnroll_ShouldGenerateAKeypairAndPrintTheCode(t *testing.T) {
+	client := &fakeAPIClient{result: &api.CertificateResult{Status: api.StatusEnrolled, Code: "code-123"}}
+	root, keyPath := enrollFixture(t, client)
+	var out bytes.Buffer
+
+	if err := runServiceEnroll(context.Background(), root, &out, keyPath, false); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, path := range []string{keyPath, keyPath + ".pub"} {
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected %s to be generated: %v", path, err)
+		}
+	}
+	if !strings.Contains(out.String(), "code-123") {
+		t.Errorf("expected the enrollment code in the output, got:\n%s", out.String())
+	}
+}
+
+// The guidance is the whole product of the command for someone setting up a
+// cron job: the ssh_config recipe, and the three filenames that make it work.
+func TestRunServiceEnroll_ShouldPrintTheSshConfigGuidance(t *testing.T) {
+	client := &fakeAPIClient{result: &api.CertificateResult{Status: api.StatusEnrolled, Code: "code-123"}}
+	root, keyPath := enrollFixture(t, client)
+	var out bytes.Buffer
+
+	if err := runServiceEnroll(context.Background(), root, &out, keyPath, false); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{"Match user", "IdentityFile", "IdentitiesOnly yes", "--grace", keyPath} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected the guidance to contain %q, got:\n%s", want, got)
+		}
+	}
+}
+
+// --retrieve writes the certificate immediately, so the operator learns the
+// enrollment works now rather than when cron first runs.
+func TestRunServiceEnroll_ShouldWriteTheCertificateWhenRetrieveIsAsked(t *testing.T) {
+	certText := signedCertText(t, time.Now().Add(time.Hour))
+	client := &fakeAPIClient{
+		result:       &api.CertificateResult{Status: api.StatusEnrolled, Code: "code-123"},
+		retrieveCert: certText,
+	}
+	root, keyPath := enrollFixture(t, client)
+	var out bytes.Buffer
+
+	if err := runServiceEnroll(context.Background(), root, &out, keyPath, true); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !client.retrieveCalled {
+		t.Error("expected --retrieve to redeem the code")
+	}
+	if _, err := os.Stat(keyPath + "-cert.pub"); err != nil {
+		t.Errorf("expected the certificate to be written: %v", err)
+	}
+	if !strings.Contains(out.String(), "retrieved right away") {
+		t.Errorf("expected the immediate retrieval to be reported, got:\n%s", out.String())
+	}
+}
+
+// The code is printed before retrieval is attempted, and a retrieval failure
+// must not cost the operator the one copy of it they will ever see. The
+// ordering is the property; the comment on retrieveRightAway says so and
+// nothing checked it.
+func TestRunServiceEnroll_ShouldKeepTheCodeVisibleWhenRetrievalFails(t *testing.T) {
+	client := &fakeAPIClient{
+		result:      &api.CertificateResult{Status: api.StatusEnrolled, Code: "code-123"},
+		retrieveErr: errors.New("server said no"),
+	}
+	root, keyPath := enrollFixture(t, client)
+	var out bytes.Buffer
+
+	err := runServiceEnroll(context.Background(), root, &out, keyPath, true)
+	if err == nil {
+		t.Fatal("expected the retrieval failure to be reported")
+	}
+	if !strings.Contains(out.String(), "code-123") {
+		t.Errorf("the enrollment code was lost on a retrieval failure, output:\n%s", out.String())
+	}
+}
+
+// A server that answers with a public key instead of a certificate is a
+// backend fault the operator has to be told about, not something to write to
+// disk as though it were a certificate.
+func TestRunServiceEnroll_ShouldRefuseANonCertificateFromTheServer(t *testing.T) {
+	kp, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	client := &fakeAPIClient{
+		result:       &api.CertificateResult{Status: api.StatusEnrolled, Code: "code-123"},
+		retrieveCert: string(ssh.MarshalAuthorizedKey(kp.Public())),
+	}
+	root, keyPath := enrollFixture(t, client)
+	var out bytes.Buffer
+
+	err = runServiceEnroll(context.Background(), root, &out, keyPath, true)
+	if err == nil {
+		t.Fatal("expected a public key to be refused")
+	}
+	if !strings.Contains(err.Error(), "not a certificate") {
+		t.Errorf("got %q, want it to say the server returned a public key", err.Error())
+	}
+}
+
+// An existing keypair is enrolled as-is rather than regenerated, which is
+// what lets an operator enroll a key they already trust.
+func TestRunServiceEnroll_ShouldEnrollAnExistingKeypair(t *testing.T) {
+	client := &fakeAPIClient{result: &api.CertificateResult{Status: api.StatusEnrolled, Code: "code-123"}}
+	root, keyPath := enrollFixture(t, client)
+
+	kp, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	pub := string(ssh.MarshalAuthorizedKey(kp.Public()))
+	if err := os.WriteFile(keyPath, []byte("existing private key\n"), 0o600); err != nil {
+		t.Fatalf("write private key: %v", err)
+	}
+	// 0600 rather than a public key's usual 0644: the test only needs the
+	// file to exist and be readable by this process, and gosec rightly
+	// objects to a wider mode in a fixture.
+	if err := os.WriteFile(keyPath+".pub", []byte(pub), 0o600); err != nil {
+		t.Fatalf("write public key: %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := runServiceEnroll(context.Background(), root, &out, keyPath, false); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(client.createdWith) != 1 || client.createdWith[0] != pub {
+		t.Errorf("expected the existing public key to be enrolled, got %v", client.createdWith)
+	}
+	// The private half must be left exactly as it was.
+	data, err := os.ReadFile(keyPath)
+	if err != nil {
+		t.Fatalf("read private key: %v", err)
+	}
+	if string(data) != "existing private key\n" {
+		t.Error("the existing private key was overwritten")
 	}
 }

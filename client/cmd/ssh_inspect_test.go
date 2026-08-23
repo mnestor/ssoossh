@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -122,5 +123,73 @@ func TestCriticalOptionList(t *testing.T) {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// certTypeName renders the SSH certificate type constant as the word a
+// human uses. The host and unknown arms had never run: ssoossh issues only
+// user certificates, so nothing in the suite produced anything else -- which
+// is exactly why the unknown arm is worth pinning. A server that started
+// sending something unexpected should read as "unknown (3)" and not as a
+// blank or a crash.
+func TestCertTypeName_ShouldNameEachCertificateType(t *testing.T) {
+	tests := []struct {
+		name     string
+		certType uint32
+		want     string
+	}{
+		{name: "user", certType: xssh.UserCert, want: "user"},
+		{name: "host", certType: xssh.HostCert, want: "host"},
+		{name: "anything else", certType: 99, want: "unknown (99)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := certTypeName(tt.certType); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// runInspect casts each listed identity to *ssh.Certificate, and its own
+// comment calls the failure branch unreachable short of a backend bug. The
+// backend bug was real: FileAgent.List(true) returned a bare public key
+// where a certificate was promised (800d5e1). Reporting it beats printing
+// nothing, because "nothing loaded" and "the backend handed me the wrong
+// thing" send a reader in completely different directions.
+func TestRunInspect_ShouldReportAnIdentityThatIsNotACertificate(t *testing.T) {
+	ours := newTestCA(t)
+	ag := &stubAgent{
+		identities:     []xssh.PublicKey{ours.public},
+		cas:            []xssh.PublicKey{ours.public},
+		listUnfiltered: true,
+	}
+
+	var out bytes.Buffer
+	if err := runInspect(&RootCommand{ssh: ag}, &out); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "not a certificate") {
+		t.Errorf("expected the non-certificate to be reported, got:\n%s", out.String())
+	}
+}
+
+// A listing failure names the backend, since "which store could not be
+// read" is the whole of what the reader needs next.
+func TestRunInspect_ShouldReportAListingFailure(t *testing.T) {
+	ag := &stubAgent{listErr: errors.New("socket is gone")}
+
+	var out bytes.Buffer
+	err := runInspect(&RootCommand{ssh: ag}, &out)
+	if err == nil {
+		t.Fatal("expected a listing failure to be reported")
+	}
+	if !strings.Contains(err.Error(), "socket is gone") {
+		t.Errorf("got %q, want it to carry the underlying failure", err.Error())
+	}
+	if !strings.Contains(err.Error(), "stub") {
+		t.Errorf("got %q, want it to name the backend", err.Error())
 	}
 }
