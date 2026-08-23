@@ -195,6 +195,13 @@ type fakeAPIClient struct {
 	// onAwait runs at the moment the wait begins, which is how a test
 	// observes what had already been printed by then.
 	onAwait func()
+	// retrieveCert/retrieveErr drive RetrieveServiceCertificate, and
+	// retrieveCalled records whether it was reached — that is how a test
+	// tells `service retrieve` skipping a still-valid certificate from it
+	// refreshing one.
+	retrieveCert   string
+	retrieveErr    error
+	retrieveCalled bool
 }
 
 func (f *fakeAPIClient) GetCA(ctx context.Context) (string, error) { return "", nil }
@@ -223,7 +230,8 @@ func (f *fakeAPIClient) AwaitCertificate(ctx context.Context, req *api.PendingRe
 	return f.result, f.awaitErr
 }
 func (f *fakeAPIClient) RetrieveServiceCertificate(ctx context.Context, code string) (string, error) {
-	return "", nil
+	f.retrieveCalled = true
+	return f.retrieveCert, f.retrieveErr
 }
 
 var _ api.Client = (*fakeAPIClient)(nil)
