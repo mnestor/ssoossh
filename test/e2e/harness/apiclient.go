@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 
+	"golang.org/x/crypto/ssh"
+
 	"github.com/mnestor/ssoossh/internal/apitypes"
 )
 
@@ -78,6 +80,38 @@ func Authenticate(client *http.Client, serverBaseURL, returnTo, username string,
 			resp2.StatusCode, resp2.Request.URL)
 	}
 	return nil
+}
+
+// FetchCAKeys GETs /api/ca and parses every key in the (possibly
+// multi-line) response — the registry-backed endpoint returns one
+// authorized_keys-format key per active signer.
+func FetchCAKeys(serverBaseURL string) ([]ssh.PublicKey, error) {
+	resp, err := http.Get(serverBaseURL + "/api/ca")
+	if err != nil {
+		return nil, fmt.Errorf("get /api/ca: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var envelope apitypes.Envelope[apitypes.CAResponse]
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return nil, fmt.Errorf("decode /api/ca response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("/api/ca failed: status %d, error %q", resp.StatusCode, envelope.Error)
+	}
+
+	var keys []ssh.PublicKey
+	for _, line := range strings.Split(envelope.Data.CA, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		key, err := ParseAuthorizedKey(line)
+		if err != nil {
+			return nil, fmt.Errorf("parse CA key line %q: %w", line, err)
+		}
+		keys = append(keys, key)
+	}
+	return keys, nil
 }
 
 // Approve POSTs approve for requestID as whoever client is authenticated

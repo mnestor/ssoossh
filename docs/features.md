@@ -92,8 +92,17 @@ local principal-mapping tooling (`host mapping`, `host principals`) for
   the signer optionally split into its own process so the CA key never
   shares memory with the web tier: `serve`, `serve api`, and `sign`
   startup modes ([deployment.md](deployment.md#6-startup-modes-full-api-and-sign)).
-- The CA key lives in an ssh-agent, never in process memory; OpenAPI spec
-  and TypeScript types are generated from the code with CI drift checks.
+- The CA key comes from config or a PKCS#11 token (HSM or SoftHSM2); on
+  the token path the private key never leaves the hardware
+  ([hsm.md](hsm.md)), and in split mode the web tier holds no private key
+  at all: signers announce their public keys to a registry and the web
+  tier serves only those.
+- Multiple CA keys can be active at once. Each signer announces its own
+  key, `/api/ca` returns the full set, and clients and PAM trust a
+  certificate signed by any of them, which covers key rotation and
+  independent signers with distinct keys.
+- OpenAPI spec and TypeScript types are generated from the code with CI
+  drift checks.
 
 ## PAM
 
@@ -114,7 +123,7 @@ local principal-mapping tooling (`host mapping`, `host principals`) for
   and a preview of which enrollments and unattended jobs it will break.
 - **Approver identity in key IDs**: service-certificate key IDs naming the
   human who approved them.
-- **HSM / PKCS#11 / cloud KMS signing**, behind the same signing interface
-  the ssh-agent uses today.
+- **Cloud KMS signing**, behind the same key-source interface the config
+  and PKCS#11 backends use today.
 - **Runtime-editable narrowing policy**: admins tightening (never
   loosening) policy from the web UI, fully audited.

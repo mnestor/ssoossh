@@ -43,6 +43,11 @@ type ServerOptions struct {
 	// closed: unset (the default) means the server issues no PAM
 	// certificates at all (see CertOptionsPAM.RequireGroup).
 	PAMRequireGroup string
+	// DSN points this server at a specific postgres database, so a test can
+	// deliberately share one database across servers (multi-signer HA).
+	// Empty means automatic: a private database per server when
+	// SSOOSSH_E2E_POSTGRES_DSN is set, in-memory sqlite otherwise.
+	DSN string
 }
 
 // Server is a running ssoosshd subprocess.
@@ -67,9 +72,29 @@ type Server struct {
 	name           string
 }
 
-// StartServer renders a config pointing at idp, starts ssoosshd against it,
-// waits for /healthz, and registers teardown via t.Cleanup.
-func StartServer(t *testing.T, idp *IdentityProvider, opts ServerOptions) *Server {
+// The OAuth credentials every harness-rendered config carries; exposed on
+// Server for tests that drive the IdP directly.
+const (
+	harnessClientID     = "e2e-test-client"
+	harnessClientSecret = "e2e-test-secret"
+)
+
+// NewSignerConfig renders exactly the config StartServer would — fresh CA
+// key, fresh (unused) port, same defaults and DSN resolution — and writes it
+// without starting a process. For tests that run `ssoosshd sign` as a
+// standalone signer with its own CA key (multi-signer split mode). Returns
+// the config path and the CA public key in authorized_keys format.
+func NewSignerConfig(t *testing.T, idp *IdentityProvider, opts ServerOptions) (configPath, caPublicKey string) {
+	t.Helper()
+
+	configPath, _, caPublicKey = newServerConfig(t, idp, opts)
+	return configPath, caPublicKey
+}
+
+// newServerConfig applies ServerOptions defaults, resolves the database,
+// generates a CA key, renders the YAML, and writes it to a temp file. Both
+// StartServer and NewSignerConfig build on it.
+func newServerConfig(t *testing.T, idp *IdentityProvider, opts ServerOptions) (configPath, baseURL, caPublicKey string) {
 	t.Helper()
 
 	if opts.ValidDuration == "" {
@@ -79,33 +104,49 @@ func StartServer(t *testing.T, idp *IdentityProvider, opts ServerOptions) *Serve
 		opts.Extensions = []string{"permit-pty", "permit-agent-forwarding"}
 	}
 
+	// Automatic database resolution: a private postgres database per server
+	// when the environment advertises an instance, in-memory sqlite
+	// otherwise. opts.DSN overrides both, for tests that deliberately share
+	// one database across servers.
+	dsn := opts.DSN
+	if dsn == "" && os.Getenv("SSOOSSH_E2E_POSTGRES_DSN") != "" {
+		dsn = NewPostgresDatabase(t)
+	}
+
 	port := freePort(t)
-	baseURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	baseURL = fmt.Sprintf("http://127.0.0.1:%d", port)
 
 	sshKeyPEM, caPublicKey := generateCAKey(t)
-
-	const clientID = "e2e-test-client"
-	const clientSecret = "e2e-test-secret"
 
 	configYAML := renderServerConfig(serverConfigData{
 		PublicURL:       baseURL,
 		ServerName:      "127.0.0.1",
 		Address:         "127.0.0.1",
 		Port:            port,
-		ClientID:        clientID,
-		ClientSecret:    clientSecret,
+		ClientID:        harnessClientID,
+		ClientSecret:    harnessClientSecret,
 		ProviderURL:     idp.URL(),
 		SSHKeyPEM:       sshKeyPEM,
 		ValidDuration:   opts.ValidDuration,
 		Extensions:      opts.Extensions,
 		PAMRequireGroup: opts.PAMRequireGroup,
+		DSN:             dsn,
 	}) + opts.ExtraConfigYAML
 
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "ssoosshd.yaml")
+	configPath = filepath.Join(t.TempDir(), "ssoosshd.yaml")
 	if err := os.WriteFile(configPath, []byte(configYAML), 0o600); err != nil {
 		t.Fatalf("harness: failed to write server config: %v", err)
 	}
+
+	return configPath, baseURL, caPublicKey
+}
+
+// StartServer renders a config pointing at idp, starts ssoosshd against it,
+// waits for /healthz, and registers teardown via t.Cleanup.
+func StartServer(t *testing.T, idp *IdentityProvider, opts ServerOptions) *Server {
+	t.Helper()
+
+	configPath, baseURL, caPublicKey := newServerConfig(t, idp, opts)
 
 	ssoosshdPath, _ := Binaries(t)
 
@@ -122,7 +163,7 @@ func StartServer(t *testing.T, idp *IdentityProvider, opts ServerOptions) *Serve
 		ConfigPath:  configPath,
 		BaseURL:     baseURL,
 		CAPublicKey: caPublicKey,
-		ClientID:    clientID,
+		ClientID:    harnessClientID,
 		cmd:         cmd,
 		stdout:      &stdout,
 		stderr:      &stderr,
@@ -246,6 +287,7 @@ type serverConfigData struct {
 	ValidDuration   string
 	Extensions      []string
 	PAMRequireGroup string
+	DSN             string
 }
 
 // renderServerConfig builds the ssoosshd config YAML from d directly (not
@@ -272,16 +314,16 @@ func renderServerConfig(d serverConfigData) string {
 	fmt.Fprintf(&b, "    groups: \"groups\"\n")
 	fmt.Fprintf(&b, "    email: \"email\"\n")
 
-	// Default backend is throwaway in-memory sqlite. With
-	// SSOOSSH_E2E_POSTGRES_DSN set, the whole suite runs the server against
-	// that live Postgres instead — the same flows on real dialect
-	// semantics. The instance must be disposable: each server start
-	// migrates into whatever schema the DSN points at, and tests assume
-	// they own it.
+	// d.DSN empty means throwaway in-memory sqlite. Non-empty it is a
+	// postgres database this server owns outright: newServerConfig
+	// provisions a private one per server via NewPostgresDatabase (so runs
+	// with SSOOSSH_E2E_POSTGRES_DSN exercise the same flows on real dialect
+	// semantics with sqlite-equivalent isolation), or the test passed
+	// ServerOptions.DSN to deliberately share one database across servers.
 	fmt.Fprintf(&b, "db:\n")
-	if dsn := os.Getenv("SSOOSSH_E2E_POSTGRES_DSN"); dsn != "" {
+	if d.DSN != "" {
 		fmt.Fprintf(&b, "  provider: postgres\n")
-		fmt.Fprintf(&b, "  connection_string: %q\n", dsn)
+		fmt.Fprintf(&b, "  connection_string: %q\n", d.DSN)
 	} else {
 		fmt.Fprintf(&b, "  provider: sqlite\n")
 		fmt.Fprintf(&b, "  connection_string: \":memory:\"\n")

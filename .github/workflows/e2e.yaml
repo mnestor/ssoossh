@@ -5,9 +5,11 @@ name: e2e
 #
 # Tiers run as separate jobs so that "a break is reported at the layer it
 # happened" -- job name alone tells you tier 1 (wire), tier 2 (browser),
-# tier 3 (sshd), or tier 3 (pam) failed. The -run/-skip filters below are
-# anchored and mutually exclusive, so every test in ./test/e2e runs in
-# exactly one tier: tier 1 used to run the whole unfiltered suite, which
+# tier 3 (sshd), tier 3 (pam), or multi-signer failed. The -run/-skip
+# filters below are anchored and mutually exclusive, so every test in
+# ./test/e2e runs in exactly one tier (multi-signer owns TestMultiSigner_
+# and runs on the bare runner because its NATS scenario needs docker):
+# tier 1 used to run the whole unfiltered suite, which
 # both duplicated the other tiers and hard-failed on TestSSH because
 # tier 1's container never installs sshd (the harness t.Fatals on missing
 # prerequisites; it does not skip). Build is cached across tiers. No
@@ -140,9 +142,13 @@ jobs:
       - name: Run tier 1 tests
         env:
           SSOOSSH_E2E_POSTGRES_DSN: ${{ matrix.backend == 'postgres' && 'postgres://postgres:e2e@postgres:5432/e2e?sslmode=disable' || '' }}
+        # gotestsum runs go test itself so a test failure fails the step.
+        # The previous `go test -json | gotestsum --raw-command -- cat` pipe
+        # exited with cat's status: always 0, green CI over failing tests
+        # (the default Actions shell has no pipefail).
         run: |
-          go test -buildvcs=false -tags=e2e -count=1 -timeout=5m -skip '^(TestApproval_|TestSSH_|TestPAMStack_)' -json ./test/e2e/... | \
-            gotestsum --junitfile=test-results-tier1-${{ matrix.backend }}.xml --raw-command -- cat
+          gotestsum --junitfile=test-results-tier1-${{ matrix.backend }}.xml -- \
+            -buildvcs=false -tags=e2e -count=1 -timeout=5m -skip '^(TestApproval_|TestSSH_|TestPAMStack_|TestMultiSigner_)' ./test/e2e/...
 
       - name: Upload diagnostics
         if: failure()
@@ -193,9 +199,11 @@ jobs:
           name: e2e-binaries
 
       - name: Run tier 2 (browser) tests
+        # gotestsum runs go test itself so a test failure fails the step
+        # (see the tier 1 step for why the old pipe form did not).
         run: |
-          go test -buildvcs=false -tags=e2e -count=1 -timeout=10m -run '^TestApproval_' -json ./test/e2e/... | \
-            gotestsum --junitfile=test-results-tier2.xml --raw-command -- cat
+          gotestsum --junitfile=test-results-tier2.xml -- \
+            -buildvcs=false -tags=e2e -count=1 -timeout=10m -run '^TestApproval_' ./test/e2e/...
 
       - name: Upload diagnostics
         if: failure()
@@ -253,9 +261,11 @@ jobs:
           mkdir -p /run/sshd
 
       - name: Run tier 3 (sshd) tests
+        # gotestsum runs go test itself so a test failure fails the step
+        # (see the tier 1 step for why the old pipe form did not).
         run: |
-          go test -buildvcs=false -tags=e2e -count=1 -timeout=10m -run '^TestSSH_' -json ./test/e2e/... | \
-            gotestsum --junitfile=test-results-tier3.xml --raw-command -- cat
+          gotestsum --junitfile=test-results-tier3.xml -- \
+            -buildvcs=false -tags=e2e -count=1 -timeout=10m -run '^TestSSH_' ./test/e2e/...
 
       - name: Upload diagnostics
         if: failure()
@@ -310,9 +320,11 @@ jobs:
         run: apt-get update && apt-get install -y --no-install-recommends gcc libpam0g-dev
 
       - name: Run tier 3 (pam) tests
+        # gotestsum runs go test itself so a test failure fails the step
+        # (see the tier 1 step for why the old pipe form did not).
         run: |
-          go test -buildvcs=false -tags=e2e -count=1 -timeout=10m -run '^TestPAMStack_' -json ./test/e2e/... | \
-            gotestsum --junitfile=test-results-tier3-pam.xml --raw-command -- cat
+          gotestsum --junitfile=test-results-tier3-pam.xml -- \
+            -buildvcs=false -tags=e2e -count=1 -timeout=10m -run '^TestPAMStack_' ./test/e2e/...
 
       - name: Upload diagnostics
         if: failure()
@@ -330,9 +342,80 @@ jobs:
           path: test-results-tier3-pam.xml
           retention-days: 7
 
+  multi-signer:
+    name: multi-signer
+    needs: [changes, prepare]
+    if: needs.changes.outputs.code == 'true'
+    # Bare runner, not the build container: the split-signer scenario needs
+    # the docker daemon for NATS, plus sudo/sshd/PAM like the tier 3 jobs.
+    # Go comes from setup-go instead of the image; the postgres service
+    # publishes its port on localhost because there is no job container
+    # network to join.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Download artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: e2e-binaries
+
+      - name: Ensure sshd and PAM build tools are available
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends openssh-server gcc libpam0g-dev
+          sudo mkdir -p /run/sshd
+
+      # Same version the build image ships (.github/docker/Dockerfile.runner);
+      # the bare runner does not have it preinstalled.
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@v1.13.0
+
+      # gotestsum runs go test itself so a test failure fails the step
+      # (see the tier 1 step for why the old pipe form did not).
+      - name: Run multi-signer tests
+        env:
+          SSOOSSH_E2E_POSTGRES_DSN: postgres://postgres:e2e@localhost:5432/e2e?sslmode=disable
+        run: |
+          gotestsum --junitfile=test-results-multi-signer.xml -- \
+            -buildvcs=false -tags=e2e -count=1 -timeout=10m -run '^TestMultiSigner_' ./test/e2e/...
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-diagnostics-multi-signer
+          path: test/e2e/_artifacts/
+          retention-days: 7
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-test-results-multi-signer
+          path: test-results-multi-signer.xml
+          retention-days: 7
+
   e2e-summary:
     name: e2e results
-    needs: [tier-1, tier-2, tier-3, tier-3-pam]
+    needs: [tier-1, tier-2, tier-3, tier-3-pam, multi-signer]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: ${{ !cancelled() && needs.tier-1.result != 'skipped' }}
@@ -347,9 +430,10 @@ jobs:
           echo "| Tier 2 (browser) | ${{ needs.tier-2.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Tier 3 (sshd) | ${{ needs.tier-3.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Tier 3 (pam) | ${{ needs.tier-3-pam.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Multi-signer | ${{ needs.multi-signer.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [[ "${{ needs.tier-1.result }}" == "success" && "${{ needs.tier-2.result }}" == "success" && "${{ needs.tier-3.result }}" == "success" && "${{ needs.tier-3-pam.result }}" == "success" ]]; then
+          if [[ "${{ needs.tier-1.result }}" == "success" && "${{ needs.tier-2.result }}" == "success" && "${{ needs.tier-3.result }}" == "success" && "${{ needs.tier-3-pam.result }}" == "success" && "${{ needs.multi-signer.result }}" == "success" ]]; then
             echo "All tiers passed" >> $GITHUB_STEP_SUMMARY
             exit 0
           else
@@ -412,9 +496,11 @@ jobs:
       - name: Run extended test suite (5 iterations)
         env:
           SSOOSSH_E2E_POSTGRES_DSN: ${{ matrix.backend == 'postgres' && 'postgres://postgres:e2e@postgres:5432/e2e?sslmode=disable' || '' }}
+        # gotestsum runs go test itself so a test failure fails the step
+        # (see the tier 1 step for why the old pipe form did not).
         run: |
-          go test -buildvcs=false -tags=e2e -count=5 -timeout=30m -json ./test/e2e/... | \
-            gotestsum --junitfile=test-results-extended-${{ matrix.backend }}.xml --raw-command -- cat
+          gotestsum --junitfile=test-results-extended-${{ matrix.backend }}.xml -- \
+            -buildvcs=false -tags=e2e -count=5 -timeout=30m ./test/e2e/...
 
       - name: Upload diagnostics on failure
         if: failure()

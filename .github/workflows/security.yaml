@@ -170,7 +170,12 @@ jobs:
   report:
     name: PR report
     needs: [govulncheck, pnpm-audit]
-    if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+    # Same-repo PRs only. A fork's GITHUB_TOKEN is capped read-only no
+    # matter what `pull-requests: write` below asks for, so `gh pr comment`
+    # 403s and takes the || fallback down with it, failing the job for a
+    # contributor who cannot fix it. Fork PRs still get the scan output on
+    # each job's summary page.
+    if: ${{ !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
