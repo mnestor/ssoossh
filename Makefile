@@ -36,7 +36,7 @@ endef
 
 define TESTCOMPONENT
 	mkdir -p .coverage
-	go test -coverprofile=.coverage/coverage-$(1).out ./$(1)/...
+	CGO_ENABLED=1 go test -coverprofile=.coverage/coverage-$(1).out ./$(1)/...
 	grep -v -E -f exclude-from-coverage.txt .coverage/coverage-$(1).out > .coverage/coverage-$(1).filtered.out
 	go tool cover -func=.coverage/coverage-$(1).filtered.out | tail -1
 endef
@@ -62,7 +62,7 @@ $(FRONTEND_DIST):
 	$(MAKE) frontend
 
 build: $(FRONTEND_DIST)
-	go build ./...
+	CGO_ENABLED=1 go build ./...
 
 linux:
 	$(call BUILDIT,linux,amd64)
@@ -180,6 +180,10 @@ test-pam:
 test-internal:
 	$(call TESTCOMPONENT,internal)
 
+# HSM integration tests; needs softhsm2 + opensc installed
+test-hsm:
+	CGO_ENABLED=1 go test -tags=softhsm ./server/signer/ -run TestHSMKeySource -v
+
 # The merge-gate end-to-end suite (docs/e2e-testing-plan.md): a real
 # ssoosshd and ssoossh, a harness-provided OIDC IdP, a private ssh-agent,
 # and a real sshd. Behind the `e2e` build tag, so it never runs as part of
@@ -247,7 +251,7 @@ test-race: $(FRONTEND_DIST)
 # exclude-from-coverage.txt or turned into an HTML report — it's what the
 # runner actually executes.
 cover-ci: $(FRONTEND_DIST)
-	CGO_ENABLED=0 go test -v -covermode=atomic -coverprofile=coverage.txt ./...
+	CGO_ENABLED=1 go test -v -covermode=atomic -coverprofile=coverage.txt ./...
 
 # Mirrors security.yaml's govulncheck job. Ships with the devcontainer base
 # image; if missing: go install golang.org/x/vuln/cmd/govulncheck@latest

@@ -170,6 +170,14 @@ jobs:
       - name: Build web UI
         run: make frontend
 
+      - name: Set up Zig
+        run: |
+          mkdir -p /tmp/zig
+          cd /tmp/zig
+          wget -q https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz
+          tar -xf zig-linux-x86_64-0.14.0.tar.xz
+          echo "/tmp/zig/zig-linux-x86_64-0.14.0" >> $GITHUB_PATH
+
       - uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
         id: secrets
         env:

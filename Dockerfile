@@ -29,15 +29,14 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=frontend /src/server/frontend/dist ./server/frontend/dist
-# CGO_ENABLED=0 and -tags=nomsgpack match .goreleaser.yml's server-linux-build.
-RUN CGO_ENABLED=0 go build -tags=nomsgpack -o /out/ssoosshd ./cmd/ssoosshd
+# server build stage: cgo needed for the PKCS#11 (HSM) CA key support
+RUN CGO_ENABLED=1 go build -tags=nomsgpack -o /out/ssoosshd ./cmd/ssoosshd
 
 # ---- runtime --------------------------------------------------------------
-# distroless/static-debian12 carries CA certificates (needed for the
-# outbound HTTPS call to the OIDC provider's well-known endpoint) and a
-# non-root "nonroot" user/group (65532:65532), and nothing else — the
-# binary above is statically linked (CGO_ENABLED=0), so it needs no libc.
-FROM gcr.io/distroless/static-debian12:nonroot
+# base-debian12 (not static-) because ssoosshd is now dynamically linked
+# (cgo, dlopen for PKCS#11 modules). To use an HSM in-container, mount the
+# PKCS#11 module and its deps into the image (see docs/hsm.md).
+FROM gcr.io/distroless/base-debian12:nonroot
 COPY --from=build /out/ssoosshd /usr/local/sbin/ssoosshd
 USER nonroot:nonroot
 EXPOSE 8080

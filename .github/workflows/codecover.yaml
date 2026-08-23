@@ -77,7 +77,7 @@ jobs:
         run: make frontend
 
       - name: Run tests
-        run: CGO_ENABLED=0 go test -buildvcs=false -v -covermode=atomic -coverprofile=coverage.txt ./...
+        run: CGO_ENABLED=1 go test -buildvcs=false -v -covermode=atomic -coverprofile=coverage.txt ./...
 
       # `!cancelled()` on this step too, not just the upload: a failing
       # test run used to stop the job before the token was ever loaded,
