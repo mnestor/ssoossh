@@ -20,6 +20,29 @@
 	let actionError = $state<string | null>(null);
 	let outcome = $state<'approved' | 'denied' | null>(null);
 	let selectedServiceAccount = $state<string | null>(null);
+	let selectedPrincipals = $state<string[]>([]);
+
+	// Build the list of principals the approver holds: username plus other accounts,
+	// deduplicated and in that order.
+	const userPrincipals = $derived.by(() => {
+		const principals = new Set<string>();
+		if (session.user?.username) {
+			principals.add(session.user.username);
+		}
+		if (session.user?.other_accounts) {
+			for (const account of session.user.other_accounts) {
+				principals.add(account);
+			}
+		}
+		return Array.from(principals);
+	});
+
+	// Initialize selected principals to the username on first load.
+	$effect(() => {
+		if (detail && !selectedPrincipals.length && session.user?.username) {
+			selectedPrincipals = [session.user.username];
+		}
+	});
 
 	// GET .../requests/:id is also what binds the request to the caller
 	// server-side, so loading this page is itself the claim. A second person
@@ -77,7 +100,10 @@
 		actionError = null;
 		try {
 			if (action === 'approved') {
-				await approveRequest(id, selectedServiceAccount ?? undefined);
+				await approveRequest(id, {
+					serviceAccount: selectedServiceAccount ?? undefined,
+					principals: selectedPrincipals
+				});
 			} else {
 				await denyRequest(id);
 			}
