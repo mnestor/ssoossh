@@ -43,7 +43,7 @@ func TestInitServices_ShouldConstructCAService(t *testing.T) {
 	c.AuthConfig.Fields.Username = "sub"
 	c.HTTP.ServerName = "ssoossh.example.com"
 
-	ps, err := pubsub.New(slog.Default())
+	ps, err := pubsub.New(&config.PubSubConfig{}, slog.Default())
 	if err != nil {
 		t.Fatalf("failed to build pub/sub: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestInitServices_ShouldErrorOnInvalidSSHKey(t *testing.T) {
 	c.AuthConfig.Fields.Username = "sub"
 	c.HTTP.ServerName = "ssoossh.example.com"
 
-	ps, err := pubsub.New(slog.Default())
+	ps, err := pubsub.New(&config.PubSubConfig{}, slog.Default())
 	if err != nil {
 		t.Fatalf("failed to build pub/sub: %v", err)
 	}

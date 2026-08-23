@@ -51,6 +51,23 @@ http:
     log_span_id: false
     log_trace_id: false
 
+pubsub:
+  # Message broker backend. "gochannel" (default, in-process) is suitable
+  # for single-instance deployments. "nats" is required for multi-instance
+  # deployments sharing a database. Set backend: nats and fill in the nats
+  # section below to enable NATS.
+  backend: gochannel
+  nats:
+    # NATS server connection URL, e.g. "nats://nats.example.com:4222".
+    # Leave empty to use gochannel (in-process).
+    url: ""
+    # mTLS client certificate file (PEM). Required when url is set.
+    cert_file: ""
+    # mTLS client certificate key file (PEM). Required when url is set.
+    key_file: ""
+    # CA certificate file to verify the NATS server (PEM). Required when url is set.
+    ca_file: ""
+
 # ldap and authentication are top-level, not nested under http: -- Config's
 # mapstructure tags for LDAP and AuthConfig are on Config itself, not on
 # HTTPSettings. Nesting them under http: here previously meant every default

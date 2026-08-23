@@ -13,13 +13,18 @@ import (
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
+
+	"github.com/mnestor/ssoossh/server/config"
 )
 
-// newTestPubSub builds a PubSub for tests, closing it on test cleanup.
+// newTestPubSub builds a gochannel PubSub for tests, closing it on test cleanup.
 func newTestPubSub(t *testing.T) *PubSub {
 	t.Helper()
 
-	ps, err := New(slog.Default())
+	cfg := &config.PubSubConfig{
+		Backend: config.PubSubBackendGoChannel,
+	}
+	ps, err := New(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error building PubSub: %v", err)
 	}
@@ -145,12 +150,64 @@ func TestDropAfterRetries(t *testing.T) {
 func TestClose_ShouldBeSafeToCallOnAnUnstartedRouter(t *testing.T) {
 	t.Parallel()
 
-	ps, err := New(slog.Default())
+	cfg := &config.PubSubConfig{
+		Backend: config.PubSubBackendGoChannel,
+	}
+	ps, err := New(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("unexpected error building PubSub: %v", err)
 	}
 
 	if err := ps.Close(context.Background()); err != nil {
 		t.Errorf("unexpected error closing an unstarted PubSub: %v", err)
+	}
+}
+
+// Queue group tests verify that topics are subscribed with the correct
+// queue group semantics. These tests use SubjectCalculator directly rather
+// than connecting to NATS, but confirm the derivation logic.
+func TestSubjectCalculator_ShouldReturnQueueGroupForSignTopics(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		topic          string
+		wantQueueGroup string
+	}{
+		{
+			name:           "certrequest.sign should have signer queue group",
+			topic:          "certrequest.sign",
+			wantQueueGroup: "signer",
+		},
+		{
+			name:           "certrequest.signed should have signed-listeners queue group",
+			topic:          "certrequest.signed",
+			wantQueueGroup: "signed-listeners",
+		},
+		{
+			name:           "wait topic should have no queue group",
+			topic:          "certrequest.wait.12345",
+			wantQueueGroup: "",
+		},
+		{
+			name:           "unknown topic should have no queue group",
+			topic:          "unknown.topic",
+			wantQueueGroup: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			detail := subjectCalculator("ssoossh", tt.topic)
+
+			if detail.Primary != tt.topic {
+				t.Errorf("got Primary %q, want %q", detail.Primary, tt.topic)
+			}
+			if detail.QueueGroup != tt.wantQueueGroup {
+				t.Errorf("got QueueGroup %q, want %q", detail.QueueGroup, tt.wantQueueGroup)
+			}
+		})
 	}
 }

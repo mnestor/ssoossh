@@ -41,7 +41,7 @@ func TestInitPipeline_ShouldRejectANonFIPSApprovedCAKeyUnderFIPS(t *testing.T) {
 
 	c := &config.Config{SSHKey: testSSHKeyPEM(t), FIPS: boolPtr(true)}
 
-	ps, err := pubsub.New(slog.Default())
+	ps, err := pubsub.New(&config.PubSubConfig{}, slog.Default())
 	if err != nil {
 		t.Fatalf("failed to build pub/sub: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestInitPipeline_ShouldRejectANonFIPSApprovedCAKeyUnderFIPS(t *testing.T) {
 	})
 	a := &app{config: c, pubSub: ps}
 
-	if err := a.initPipeline(); err == nil {
+	if err := a.initPipeline(ServerModeFull); err == nil {
 		t.Fatal("expected startup to fail for a non-FIPS-approved (ed25519) CA key under FIPS")
 	}
 }
@@ -62,7 +62,7 @@ func TestInitPipeline_ShouldSucceedWithAFIPSApprovedCAKeyUnderFIPS(t *testing.T)
 
 	c := &config.Config{SSHKey: testECDSAKeyPEM(t), FIPS: boolPtr(true)}
 
-	ps, err := pubsub.New(slog.Default())
+	ps, err := pubsub.New(&config.PubSubConfig{}, slog.Default())
 	if err != nil {
 		t.Fatalf("failed to build pub/sub: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestInitPipeline_ShouldSucceedWithAFIPSApprovedCAKeyUnderFIPS(t *testing.T)
 	t.Cleanup(func() { _ = ps.Close(t.Context()) })
 	a := &app{config: c, pubSub: ps, svc: &services{}}
 
-	if err := a.initPipeline(); err != nil {
+	if err := a.initPipeline(ServerModeFull); err != nil {
 		t.Errorf("unexpected error for a FIPS-approved (ecdsa) CA key: %v", err)
 	}
 }

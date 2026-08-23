@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/mnestor/ssoossh/internal/fipsmode"
@@ -17,6 +18,10 @@ type Config struct {
 	DB    DB           `mapstructure:"db"`
 	HTTP  HTTPSettings `mapstructure:"http"`
 	Queue QueueConfig  `mapstructure:"queue"`
+
+	// PubSub configures the message broker (gochannel in-process, or NATS
+	// for multi-instance deployments). See PubSubConfig for details.
+	PubSub PubSubConfig `mapstructure:"pubsub"`
 
 	// AuthConfig configures OAuth/OIDC authentication for the server. See
 	// OAuthConfig for details on provider URL, scopes, and field mapping
@@ -94,6 +99,26 @@ type BrandingSettings struct {
 // fipsmode.Enabled.
 func (c *Config) FIPSEnabled() bool {
 	return fipsmode.Enabled(c.FIPS)
+}
+
+// ValidateForMode performs mode-specific configuration validation.
+// mode determines which config sections are required:
+// - ServerModeFull and ServerModeAPI require HTTP and CertOptions validation
+// - SignerModeOnly only requires PubSub and SSHKey validation
+func (c *Config) ValidateForMode(mode int) error {
+	// SignerModeOnly: only validate PubSub and SSHKey
+	if mode == 2 { // SignerModeOnly = 2 in modes.go
+		// PubSub was already validated in NewConfig
+		// Verify SSH key is set
+		if c.SSHKey == "" {
+			return fmt.Errorf("ssh_key is required for signer mode")
+		}
+		return nil
+	}
+
+	// Full and API modes: validate HTTP and CertOptions
+	// (already done in NewConfig, but documented here for clarity)
+	return nil
 }
 
 type QueueConfig struct {

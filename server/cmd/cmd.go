@@ -80,9 +80,10 @@ func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 }
 
 // Run implements simplecobra.Commander. For the root (bare ssoosshd with no
-// subcommand), this bootstraps and runs the server until context is canceled.
+// subcommand), this bootstraps and runs the server in full mode for backward
+// compatibility.
 func (r *RootCommand) Run(ctx context.Context, cd *simplecobra.Commandeer, args []string) error {
-	return bootstrap.Bootstrap(cd.CobraCommand)
+	return bootstrap.BootstrapServe(cd.CobraCommand, bootstrap.ServerModeFull)
 }
 
 // CobraCommand returns the underlying cobra.Command. Only available after Init
@@ -105,6 +106,8 @@ type Command struct {
 func NewCommand() *Command {
 	root := &RootCommand{
 		commands: []simplecobra.Commander{
+			newServeCommand(),
+			newSignCommand(),
 			newVersionCommand(),
 		},
 	}

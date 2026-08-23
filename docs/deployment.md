@@ -157,67 +157,259 @@ Also set `http.trusted_proxies` to the proxy's address (e.g.
 request is attributed to the proxy's own IP, including in the approver
 client-IP key ID field.
 
+## 6.5. Startup modes: full, api, and sign
+
+`ssoosshd` can run in three modes, selected by subcommand:
+
+### Full mode (default): `ssoosshd serve` or `ssoosshd serve full`
+
+Runs all components in one process:
+- HTTP server
+- Certificate approval listener
+- In-process signer (holds CA key)
+
+**Use case:** Single-instance deployments, development, testing.
+
+**Configuration:** Standard `ssoosshd.yaml`; pubsub backend defaults to `gochannel`
+(in-process). No additional setup needed.
+
+**Invocation:**
+```bash
+ssoosshd serve        # Implicit full mode
+ssoosshd serve full   # Explicit full mode
+```
+
+### API-only mode: `ssoosshd serve api`
+
+Runs the HTTP server and listener without the signer:
+- HTTP server
+- Certificate approval listener
+- Publishes signing jobs to NATS
+- No CA key, no database access for signing
+
+**Use case:** Multi-instance deployments where the signer is isolated.
+
+**Configuration:** Must set `pubsub.backend: nats` and provide NATS URL + mTLS
+credentials. Fails at startup if gochannel is configured (signing jobs would go
+nowhere).
+
+**Invocation:**
+```bash
+ssoosshd serve api
+```
+
+**Systemd unit:**
+```ini
+[Service]
+ExecStart=/usr/local/sbin/ssoosshd serve api
+```
+
+### Signer-only mode: `ssoosshd sign`
+
+Runs only the certificate signing component:
+- NATS connection
+- CA key access
+- Consumes signing jobs from NATS
+- Publishes signed certificates
+
+**Use case:** CA key isolation — run the signer on a separate machine with
+restricted network access.
+
+**Configuration:** Requires NATS configuration (`pubsub.backend: nats`) and CA
+key (`ssh_key`). Does not need or use database, HTTP, OIDC, or LDAP settings.
+Fails at startup if gochannel is configured (cannot bridge separate processes).
+
+**Invocation:**
+```bash
+ssoosshd sign
+```
+
+**Systemd unit:**
+```ini
+[Service]
+ExecStart=/usr/local/sbin/ssoosshd sign
+```
+
 ## 7. Running more than one instance
 
-**Multi-instance is supported, and it requires NATS.** Until the NATS
-transport lands, run exactly one `ssoosshd` process. Do not put two behind a
-load balancer, sticky or otherwise. If you only run one process, skip this
-section.
+Multi-instance deployment means running multiple `ssoosshd` processes against
+a shared database. This enables horizontal scaling and load balancing.
 
-### Why a second instance breaks
+**Deployment topology:** Several `ssoosshd serve api` instances (HTTP +
+listener) behind a load balancer, each communicating with NATS. One or more
+`ssoosshd sign` processes (signer only) also connected to NATS. All instances
+share a PostgreSQL database.
 
-The whole issuance pipeline runs over `server/pubsub`, which is gochannel —
-in-process only. One approval crosses that pub/sub three times:
+**Requires:**
+- A shared PostgreSQL database (SQLite is single-connection only)
+- NATS as the message broker (see §6.5 for mode options)
+- mTLS client certificates for NATS authentication
+- An explicit session cookie key (not per-process random)
+- Multi-instance mode enabled (`multi_instance: true`)
 
-1. Approving publishes a signing job to `certrequest.sign`.
-2. A signer consumes it and publishes the result to `certrequest.signed`.
-3. The listener publishes the outcome to `certrequest.wait.<id>`, which is
-   what the waiting client's SSE stream is subscribed to.
+If you only run one process, skip this section and use the default full mode
+with `pubsub.backend: gochannel` (in-process).
 
-Every one of those hops is in-process, so the entire chain completes inside
-whichever instance received the approval. The instance holding the client's
-SSE stream is subscribed to a wake that is published on a different process
-and never arrives. Certificates are never persisted — deliberately — so
-when that client's `Wait` eventually reads `status=approved` from the shared
-database there is nothing left to hand it, and it gets **410 Gone**.
+### Setting up NATS
 
-The client is told to re-request, so nothing is silently wrong, but logins
-fail until one happens to land correctly.
+NATS is the message broker that carries certificate approvals, signatures,
+and delivery notifications across instances. Each instance must be able to
+reach the NATS server over the network.
 
-### Why sticky sessions are not offered as a workaround
+#### Option 1: NATS in Docker (development)
 
-Routing by request ID would technically collapse the pipeline onto one
-instance, because all three routes carry the ID in the path and today's
-signer runs in-process. It is still not a supported configuration, because
-delivery is not the only thing that breaks with two instances:
+```bash
+docker run -p 4222:4222 nats:latest
+```
 
-- **The sweep.** With `RequestTTL = 0` there is no derivable bound, so the
-  sweep treats every `signing` row as stranded. Harmless as a single-process
-  boot pass; with two instances a restarting instance invalidates the
-  other's live in-flight requests. Sticky routing does not touch this.
-- **Sessions.** `http.cookie_key` defaults to a per-process random key, so
-  sessions break on any request that lands elsewhere. Browsers reach plenty
-  of routes that carry no request ID to hash on.
-- **Scheduled work.** Every instance runs the sweep. That is currently safe
-  because it is idempotent, but it is N× the queries and a trap for the next
-  job that isn't.
+Listens on port 4222, no authentication. Not suitable for production.
 
-A configuration that fixes one of three failure modes is worse than a clear
-"not yet" — it looks like it works until the sweep or a session says
-otherwise.
+#### Option 2: NATS with mTLS (production)
 
-### What NATS changes
+NATS requires mutual TLS authentication. Generate or obtain:
+- NATS server certificate and key
+- CA certificate to verify the server
+- Client certificates and keys for each `ssoosshd` instance
 
-The application logic is already written for it. `tryHandleWakeMessage`
-decodes the certificate from the wake payload and re-verifies the status
-against the database before trusting it; the `Wait` loop comment names the
-case directly — "this is what lets an SSE client on instance B receive a
-certificate issued on instance A." What is missing is the transport, its
-configuration, and queue-group semantics so the sign queue and signed-reply
-topic are consumed once rather than by every instance.
+If using a local CA:
 
-See [multi-instance-safety-plan.md](multi-instance-safety-plan.md) for the
-remaining work and the order to do it in.
+```bash
+# CA
+openssl genrsa -out ca-key.pem 2048
+openssl req -new -x509 -days 365 -key ca-key.pem -out ca-cert.pem
+
+# Server (sign the server certificate with your CA)
+openssl genrsa -out server-key.pem 2048
+openssl req -new -key server-key.pem -out server.csr
+openssl x509 -req -in server.csr -CA ca-cert.pem -CAkey ca-key.pem \
+  -CAcreateserial -out server-cert.pem -days 365
+
+# Client (sign for each ssoosshd instance)
+openssl genrsa -out client-key.pem 2048
+openssl req -new -key client-key.pem -out client.csr
+openssl x509 -req -in client.csr -CA ca-cert.pem -CAkey ca-key.pem \
+  -CAcreateserial -out client-cert.pem -days 365
+```
+
+Configure NATS to require client certificates (see NATS documentation for
+`tls` and `authorization` blocks).
+
+#### NATS authorization (subject permissions)
+
+NATS authorization maps certificate identity (CN/SAN) to subject permissions,
+enforcing which processes can publish and subscribe to which topics. Use the
+certificate's Common Name (CN) to identify processes:
+
+```nats
+# nats-server configuration
+authorization: {
+  users: [
+    # API instances: consume signing replies, publish to listen/resolve topics
+    {
+      user: "api-instance-1"
+      permissions: {
+        publish: ["certrequest.signed", "certrequest.wait.>"]
+        subscribe: ["certrequest.signed", "certrequest.wait.>"]
+      }
+    },
+    # Signer: consume signing requests, publish replies
+    {
+      user: "signer-instance"
+      permissions: {
+        publish: ["certrequest.signed"]
+        subscribe: ["certrequest.sign"]
+      }
+    },
+  ]
+}
+```
+
+The subject layout:
+- **`certrequest.sign`** — signing requests (queue group "signer"; exactly one consumer receives each)
+- **`certrequest.signed`** — signed certificates ready to deliver (queue group "signed-listeners"; exactly one consumer per listener group)
+- **`certrequest.wait.<request-id>`** — per-request delivery topics (fan-out; each client subscribed gets a copy)
+
+API instances should have permission to both publish and subscribe (they are
+both subscribers to the signed topic and publishers to the wait topics for
+their own clients). Signer instances only need to consume the sign queue and
+publish to the signed topic.
+
+### Configuring ssoosshd for multi-instance
+
+Set these in `/etc/ssoossh/ssoosshd.yaml` (or your config file):
+
+```yaml
+# Enable multi-instance mode: requires explicit session cookie key
+multi_instance: true
+
+# Session cookie must be consistent across instances
+http:
+  cookie_key: "your-secret-key-here-32-bytes-minimum"
+
+# Configure NATS transport
+pubsub:
+  backend: nats
+  nats:
+    url: "nats://nats.example.com:4222"
+    cert_file: "/path/to/client-cert.pem"
+    key_file: "/path/to/client-key.pem"
+    ca_file: "/path/to/ca-cert.pem"
+
+# All instances must use the same PostgreSQL database
+db:
+  provider: postgres
+  connection_string: "postgres://user:pass@db.example.com/ssoossh"
+```
+
+Each instance receives its own client certificate. Update `cert_file`,
+`key_file`, and `ca_file` paths on each instance if they differ.
+
+### Failover and load balancing
+
+Place instances behind a load balancer (haproxy, nginx, cloud LB). The load
+balancer can route requests to any instance:
+
+- Approvals on instance A reach a database that instance B reads
+- Certificates issued on instance A reach clients waiting on instance B via
+  NATS
+- Sessions persist across instances (shared database, shared cookie key)
+
+No sticky sessions required. If an instance crashes or NATS is unreachable:
+
+- **Pending approvals**: Clients waiting in `Wait()` keep waiting on the database
+  status. If the database status is still `pending` or `signing`, the wait loop
+  continues. If it moves to `approved` and the wake message is lost, the client
+  sees 410 Gone (certificate never persisted, by design) and must re-request.
+- **NATS messages**: "Sign now" messages on the sign queue might be lost if a
+  signer crashes mid-processing. Clients see the status stayed `signing` and
+  keep waiting. After `request_ttl` elapses, the status expires and they re-request.
+- **Session cookies**: Persist as long as the shared database is available and
+  the `cookie_key` is consistent across instances. Instance restart doesn't affect sessions.
+
+Clients never notice which instance they reached.
+
+### What can go wrong
+
+**Missing mTLS credentials:** `ssoosshd` fails at startup if `pubsub.backend: nats`
+but any of `cert_file`, `key_file`, or `ca_file` is unset or unreadable.
+
+**Wrong cookie_key:** If `multi_instance: true` but `http.cookie_key` is
+unset, `ssoosshd` fails at startup. If `cookie_key` differs between instances,
+users experience random logouts as requests land on instances with different
+keys.
+
+**Database connection issues:** One instance becoming unable to reach the
+database does not affect others, but that instance becomes unavailable. The
+database itself must be highly available (replication, failover).
+
+**NATS availability:** If NATS is down, all instances can still serve cached
+content (past session data, historical certificate records), but new approvals
+cannot be delivered to waiting clients. Both the signer and listener(s) must
+reach NATS for the certificate pipeline to work.
+
+See [multi-instance-safety-plan.md](multi-instance-safety-plan.md) for design
+details and [signer-split-deferred.md](signer-split-deferred.md) for how NATS
+enables running the signer in a separate process.
 
 ## 8. PAM: `sudo` and `su`
 
