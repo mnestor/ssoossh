@@ -1,11 +1,17 @@
 # PAM Module End-to-End Testing
 
-**Status: the automated real-stack tier described below is deliberately
-not built.** See [decisions.md](decisions.md): the unit suite covers the
-module's logic, `test/pam/` asserts the build and exported symbols, and
-the real-stack pass is the manual `pamtest.c` recipe in
-`pam_ssoossh/testing/README.md`. This document is kept as the design for
-that tier should the decision ever be revisited.
+**Status: the automated real-stack tier exists** — `TestPAMStack*` in
+`test/e2e/pam_stack_test.go`, run by the `tier 3 (pam)` job in
+`.github/workflows/e2e.yaml`. It compiles `pam_ssoossh/testing/pamtest.c`,
+installs a dedicated `/etc/pam.d` service loading the freshly built
+`pam_ssoossh.so`, and drives a real `pam_authenticate` through browser
+approval and denial against a real ssoosshd. (An earlier decision had
+parked this tier as a documented manual step; that rested on the cost of
+*containerized* PAM stacks — the host-mutating approach tier 3 already
+established for sshd turned out to cover it cheaply, so the decision was
+reversed 2026-08-23.) The container-based design below is kept for the
+scenarios the live tier does not reach (syslog capture, per-return-code
+matrix through a real stack).
 
 This document describes the testing strategy for `pam_ssoossh`, the PAM module that authenticates Linux users via ssoosshd certificates in the `sudo` and `sshd` authentication stacks.
 
@@ -229,7 +235,7 @@ test/pam/             # E2E verification
 
 ### What Is Not Tested
 
-❌ **Real PAM stack**: Unit tests use httptest.Server instead of a real sudo/sshd PAM transaction. This would require Docker-in-Docker or complex test containerization, which is deferred.
+✅ **Real PAM stack (auth stage)**: `TestPAMStack*` in `test/e2e/pam_stack_test.go` drives `pam_authenticate` through a real libpam stack loading the built module, end to end against a real ssoosshd (approve and deny). Not covered there: a real `sudo`/`sshd` front end (the transaction is driven by `pamtest.c`) and the account stage (stubbed with `pam_permit`).
 
 ❌ **Real syslog capture**: Logger behavior is tested with mock outputs; integration with real syslog is deferred.
 

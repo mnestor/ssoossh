@@ -16,10 +16,18 @@ int main(int argc, char **argv) {
     pam_handle_t *p = NULL;
     struct pam_conv conv = { misc_conv, NULL };
 
+    /* Unbuffered, so the approval URL reaches a pipe reader (tee, or the
+     * e2e harness in test/e2e/harness/pam.go) while pam_authenticate is
+     * still blocked waiting on the browser. */
+    setbuf(stdout, NULL);
+
     int r = pam_start(service, "games", &conv, &p);
     if (r != PAM_SUCCESS) { fprintf(stderr, "start %d\n", r); return 1; }
-    r = pam_authenticate(p, 0); printf("auth=%s\n", pam_strerror(p, r));
+    int auth = pam_authenticate(p, 0); printf("auth=%s\n", pam_strerror(p, auth));
+    /* Run the account stage regardless, matching a real login flow's output,
+     * but fold both results into the exit code: a permissive account stack
+     * (e.g. pam_permit) must not turn a failed authentication into exit 0. */
     r = pam_acct_mgmt(p, 0); printf("acct=%s\n", pam_strerror(p, r));
     pam_end(p, r);
-    return r == PAM_SUCCESS ? 0 : 1;
+    return (auth == PAM_SUCCESS && r == PAM_SUCCESS) ? 0 : 1;
 }

@@ -22,9 +22,10 @@ go test -tags=e2e ./test/e2e/...
 Run one tier (or one test) with `-run`:
 
 ```
-go test -tags=e2e -run TestLogin ./test/e2e/...   # tier 1, wire
+go test -tags=e2e -run TestLogin ./test/e2e/...    # tier 1, wire
 go test -tags=e2e -run TestSSH ./test/e2e/...      # tier 3, sshd
 go test -tags=e2e -run TestApproval ./test/e2e/... # tier 2, browser
+go test -tags=e2e -run TestPAMStack ./test/e2e/... # tier 3, pam
 ```
 
 Requires a built web UI (`make frontend`) — the harness builds the
@@ -40,6 +41,13 @@ is needed locally.
 Needs `openssh-server` installed and passwordless `sudo`. It's idempotent —
 safe to run repeatedly — but it is a real system-account change, not a
 sandboxed one.
+
+`TestPAMStack_*` (harness/pam.go) builds `pam_ssoossh.so` (cgo; needs `gcc`
+and `libpam0g-dev`), compiles `pam_ssoossh/testing/pamtest.c`, and writes a
+dedicated `/etc/pam.d/ssoossh-e2e-pam-*` service via `sudo` (removed again
+in cleanup). The real `sudo`/`su` stacks are never touched, and the module
+is loaded by absolute path from a temp directory — nothing is installed
+into the system module directory.
 
 ## Tier 2 / browser debugging
 

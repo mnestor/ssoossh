@@ -18,19 +18,6 @@ Worth doing eventually; not started because nothing needs it yet.
   full server config with mode-aware validation. That means secrets the
   signer never uses can sit in its config file — acceptable for now,
   worth hardening once the split topology is in real use.
-- **Automated PAM-stack end-to-end testing.** There is no test that
-  installs `pam_ssoossh.so` into a real `pam.d` stack and drives
-  `pam_authenticate` through it. Decided (2026-08-23) to accept and
-  document that gap rather than automate it: the module's logic - argument
-  parsing, the four certificate checks, fail-closed error mapping - is
-  covered by the unit suite (`CGO_ENABLED=1 go test -tags=pam
-  ./pam_ssoossh/...`), the build and exported PAM symbols are asserted in
-  `test/pam/`, and the real-stack pass is a documented manual step using
-  `pam_ssoossh/testing/pamtest.c` before touching a production `pam.d`.
-  Three automation attempts showed the cost (container PAM stacks, syslog
-  capture, a C conversation driver) out of proportion to what the unit
-  suite does not already catch. Revisit if a PAM-integration bug ever
-  actually escapes to a release.
 - **Re-checking group claims mid-session.** Groups are read at login and
   the session's absolute cap bounds how stale they can get. If a shorter
   revocation window is ever needed, the fix is re-validating claims on

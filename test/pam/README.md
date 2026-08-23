@@ -2,12 +2,16 @@
 
 What this directory actually asserts today: the module builds as an ELF
 shared object and exports the PAM entry points
-(`TestPAMModuleBuildsAndExportsSymbols`). The full containerized
-real-stack tier was deliberately not built - see `docs/decisions.md` -
-and behavior coverage lives in the unit suite
-(`CGO_ENABLED=1 go test -tags=pam ./pam_ssoossh/...`) plus the manual
-`pamtest.c` recipe in `pam_ssoossh/testing/README.md`. The Dockerfile
-here is the intended vehicle if that decision is ever revisited.
+(`TestPAMModuleBuildsAndExportsSymbols`). Behavior coverage lives in the
+unit suite (`CGO_ENABLED=1 go test -tags=pam ./pam_ssoossh/...`), and the
+automated real-stack pass is `TestPAMStack*` in
+`test/e2e/pam_stack_test.go`: a real `pam_authenticate` through a
+dedicated `/etc/pam.d` service loading the built module, driven by
+`pam_ssoossh/testing/pamtest.c` against a real ssoosshd (see
+`docs/pam-e2e-testing.md`). The manual recipe in
+`pam_ssoossh/testing/README.md` remains for pre-deployment verification
+on a target host. The Dockerfile here is the vehicle for the still-unbuilt
+containerized scenarios (syslog capture, sudo/sshd front ends).
 
 ## Files
 

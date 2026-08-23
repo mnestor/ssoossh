@@ -105,6 +105,11 @@ jobs:
         with:
           name: e2e-binaries
 
+      # Tier 1 has no -run filter, so the sweep includes the PAM-stack tests;
+      # they build pam_ssoossh.so and pamtest.c on the spot.
+      - name: Ensure PAM build tools are available
+        run: apt-get update && apt-get install -y --no-install-recommends gcc libpam0g-dev
+
       - name: Run tier 1 tests
         env:
           SSOOSSH_E2E_POSTGRES_DSN: ${{ matrix.backend == 'postgres' && 'postgres://postgres:e2e@postgres:5432/e2e?sslmode=disable' || '' }}
@@ -257,9 +262,73 @@ jobs:
           path: test-results-tier3-${{ matrix.backend }}.xml
           retention-days: 7
 
+  tier-3-pam:
+    name: tier 3 (pam)
+    needs: prepare
+    runs-on: [self-hosted, tester]
+    container:
+      image: ghcr.io/mnestor/ubuntu-build:latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: e2e
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [sqlite, postgres]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef474303e # v5.6.0
+        with:
+          go-version-file: "go.mod"
+          check-latest: true
+          cache: true
+
+      - name: Download artifacts
+        uses: actions/download-artifact@e4b0c20b663c359a96327a894f3454240b1008a7 # v4.1.8
+        with:
+          name: e2e-binaries
+
+      # The test builds pam_ssoossh.so (cgo, needs libpam headers) and
+      # compiles pamtest.c itself; it only needs the toolchain present.
+      - name: Ensure PAM build tools are available
+        run: apt-get update && apt-get install -y --no-install-recommends gcc libpam0g-dev
+
+      - name: Run tier 3 PAM tests
+        env:
+          SSOOSSH_E2E_POSTGRES_DSN: ${{ matrix.backend == 'postgres' && 'postgres://postgres:e2e@postgres:5432/e2e?sslmode=disable' || '' }}
+        run: |
+          go test -buildvcs=false -tags=e2e -count=1 -timeout=10m -run "TestPAMStack" -json ./test/e2e/... | \
+            gotestsum --junitfile=test-results-tier3-pam-${{ matrix.backend }}.xml --raw-command -- cat
+        continue-on-error: false
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: e2e-diagnostics-tier3-pam-${{ matrix.backend }}
+          path: test/e2e/_artifacts/
+          retention-days: 7
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4.6.2
+        with:
+          name: e2e-test-results-tier3-pam-${{ matrix.backend }}
+          path: test-results-tier3-pam-${{ matrix.backend }}.xml
+          retention-days: 7
+
   e2e-summary:
     name: e2e results
-    needs: [tier-1, tier-2, tier-3]
+    needs: [tier-1, tier-2, tier-3, tier-3-pam]
     runs-on: [self-hosted, tester]
     if: always()
     steps:
@@ -278,9 +347,10 @@ jobs:
           echo "| Tier 1 (wire) | sqlite | ${{ needs.tier-1.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Tier 2 (browser) | sqlite | ${{ needs.tier-2.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Tier 3 (sshd) | sqlite | ${{ needs.tier-3.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tier 3 (pam) | sqlite | ${{ needs.tier-3-pam.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [[ "${{ needs.tier-1.result }}" == "success" && "${{ needs.tier-2.result }}" == "success" && "${{ needs.tier-3.result }}" == "success" ]]; then
+          if [[ "${{ needs.tier-1.result }}" == "success" && "${{ needs.tier-2.result }}" == "success" && "${{ needs.tier-3.result }}" == "success" && "${{ needs.tier-3-pam.result }}" == "success" ]]; then
             echo "✓ All tiers passed" >> $GITHUB_STEP_SUMMARY
             exit 0
           else
@@ -319,6 +389,9 @@ jobs:
         run: |
           apt-get update && apt-get install -y --no-install-recommends openssh-server
           mkdir -p /run/sshd
+
+      - name: Ensure PAM build tools are available
+        run: apt-get install -y --no-install-recommends gcc libpam0g-dev
 
       - name: Run extended test suite (5 iterations)
         run: |

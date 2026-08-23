@@ -1,10 +1,12 @@
 # Manual PAM testing
 
 A recipe for exercising `pam_ssoossh.so` against a real PAM stack, outside
-the Go test suite. Not automated; `pamtest.c` in this directory is the
-harness. The build environment it assumes is described below; see
-[deployment.md](../../docs/deployment.md)'s PAM section for where this
-fits in verification.
+the Go test suite. `pamtest.c` in this directory is the harness. The e2e
+suite drives the same harness automatically (`TestPAMStack*` in
+`test/e2e/pam_stack_test.go`); this recipe remains for verifying a real
+deployment target by hand. The build environment it assumes is described
+below; see [deployment.md](../../docs/deployment.md)'s PAM section for
+where this fits in verification.
 
 ## Build environment
 

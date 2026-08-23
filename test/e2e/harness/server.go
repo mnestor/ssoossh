@@ -36,8 +36,14 @@ type ServerOptions struct {
 	Args []string
 	// ExtraConfigYAML is appended verbatim to the rendered config. Used to
 	// add top-level sections the template does not know about (pubsub for
-	// the split-mode test).
+	// the split-mode test). Not usable for cert_options.pam: that lives
+	// under the cert_options key the template already renders, and a
+	// duplicate top-level key is a YAML error — hence PAMRequireGroup below.
 	ExtraConfigYAML string
+	// PAMRequireGroup sets cert_options.pam.require_group, which fails
+	// closed: unset (the default) means the server issues no PAM
+	// certificates at all (see CertOptionsPAM.RequireGroup).
+	PAMRequireGroup string
 }
 
 // Server is a running ssoosshd subprocess.
@@ -83,16 +89,17 @@ func StartServer(t *testing.T, idp *IdentityProvider, opts ServerOptions) *Serve
 	const clientSecret = "e2e-test-secret"
 
 	configYAML := renderServerConfig(serverConfigData{
-		PublicURL:     baseURL,
-		ServerName:    "127.0.0.1",
-		Address:       "127.0.0.1",
-		Port:          port,
-		ClientID:      clientID,
-		ClientSecret:  clientSecret,
-		ProviderURL:   idp.URL(),
-		SSHKeyPEM:     sshKeyPEM,
-		ValidDuration: opts.ValidDuration,
-		Extensions:    opts.Extensions,
+		PublicURL:       baseURL,
+		ServerName:      "127.0.0.1",
+		Address:         "127.0.0.1",
+		Port:            port,
+		ClientID:        clientID,
+		ClientSecret:    clientSecret,
+		ProviderURL:     idp.URL(),
+		SSHKeyPEM:       sshKeyPEM,
+		ValidDuration:   opts.ValidDuration,
+		Extensions:      opts.Extensions,
+		PAMRequireGroup: opts.PAMRequireGroup,
 	}) + opts.ExtraConfigYAML
 
 	dir := t.TempDir()
@@ -229,16 +236,17 @@ func generateCAKey(t *testing.T) (privatePEM, publicAuthorizedKey string) {
 }
 
 type serverConfigData struct {
-	PublicURL     string
-	ServerName    string
-	Address       string
-	Port          int
-	ClientID      string
-	ClientSecret  string
-	ProviderURL   string
-	SSHKeyPEM     string
-	ValidDuration string
-	Extensions    []string
+	PublicURL       string
+	ServerName      string
+	Address         string
+	Port            int
+	ClientID        string
+	ClientSecret    string
+	ProviderURL     string
+	SSHKeyPEM       string
+	ValidDuration   string
+	Extensions      []string
+	PAMRequireGroup string
 }
 
 // renderServerConfig builds the ssoosshd config YAML from d directly (not
@@ -298,6 +306,13 @@ func renderServerConfig(d serverConfigData) string {
 	fmt.Fprintf(&b, "    extensions:\n")
 	for _, ext := range d.Extensions {
 		fmt.Fprintf(&b, "      - %s\n", ext)
+	}
+	// The pam block's valid_duration and extensions keep the product
+	// defaults (30s, none) — appropriate for a certificate validated once
+	// in-process and discarded.
+	if d.PAMRequireGroup != "" {
+		fmt.Fprintf(&b, "  pam:\n")
+		fmt.Fprintf(&b, "    require_group: %q\n", d.PAMRequireGroup)
 	}
 
 	return b.String()

@@ -62,11 +62,13 @@ test/e2e/
     server.go     # ssoosshd: config, start, wait for /healthz, teardown
     agent.go      # a private ssh-agent per test
     sshd.go       # a real sshd trusting the test CA
+    pam.go        # builds pam_ssoossh.so + pamtest, installs a /etc/pam.d service
     client.go     # runs the ssoossh binary, captures stdout/stderr
     browser.go    # drives the approval page
   login_test.go     # tier 1: the wire
   approval_test.go  # tier 2: the browser
   ssh_test.go       # tier 3: sshd
+  pam_stack_test.go # tier 3: a real pam_authenticate through pam_ssoossh.so
 ```
 
 `test/` is the standard Go location for external test apparatus, and keeps
@@ -97,6 +99,7 @@ happened.
 | 1 — wire | Harness + `ssoossh` binary; approval driven over HTTP with a cookie jar walking the OIDC redirects | Request lifecycle, SSE delivery, narrowing, session and CSRF handling | ~10s |
 | 2 — browser | The same, with the approval page driven in a real browser | The SPA against the real server: routing, CSP, cookies, the granted-vs-requested rendering | ~30s |
 | 3 — ssh | Tier 1 plus a real `sshd` trusting the test CA | The certificate actually authenticating a session | ~15s |
+| 3 — pam | Tier 1 plus a real libpam stack loading a freshly built `pam_ssoossh.so`, driven by `pamtest.c` | The module authenticating (and refusing) a real PAM transaction end to end | ~15s |
 
 Tier 1 is worth having separately from tier 2 despite the overlap: when both
 fail, the pair says whether the break is in the server or the UI, which is the
