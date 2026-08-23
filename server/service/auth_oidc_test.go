@@ -304,6 +304,62 @@ func TestHandleCallback_ShouldExchangeAndUpsertTheUser(t *testing.T) {
 	}
 }
 
+// TestHandleCallback_ShouldExtractAndPersistConfiguredExtraFields covers
+// the extra-fields pipeline end to end: configured mapping -> ID token
+// claims -> Identity.Extra -> JSON on the users row (extra_fields).
+func TestHandleCallback_ShouldExtractAndPersistConfiguredExtraFields(t *testing.T) {
+	t.Parallel()
+
+	provider := newFakeOIDCProvider(t)
+	db := newTestUserDB(t)
+	c := newTestAuthConfig(provider, "client-1")
+	c.AuthConfig.Fields.Extra = map[string]string{
+		"dept":     "department",
+		"accounts": "altAccounts",
+		"absent":   "notInToken",
+	}
+	svc, err := NewAuthService(context.Background(), c, db, provider.srv.Client())
+	if err != nil {
+		t.Fatalf("NewAuthService() error = %v", err)
+	}
+
+	provider.nextID = provider.signIDToken(t, "sub-alice", "client-1", "nonce-1", map[string]any{
+		"preferred_username": "alice",
+		"department":         "eng",
+		"altAccounts":        []string{"a-alice", "b-alice"},
+	})
+
+	identity, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1", oauth2.GenerateVerifier())
+	if err != nil {
+		t.Fatalf("HandleCallback() error = %v", err)
+	}
+
+	if got := identity.Extra["dept"].String(); got != "eng" {
+		t.Errorf("Extra[dept] = %q, want %q", got, "eng")
+	}
+	if got := identity.Extra["accounts"].String(); got != "a-alice,b-alice" {
+		t.Errorf("Extra[accounts] = %q, want %q", got, "a-alice,b-alice")
+	}
+	if got := identity.Extra["absent"].String(); got != "MISSING" {
+		t.Errorf("Extra[absent] = %q, want %q", got, "MISSING")
+	}
+
+	var row model.User
+	if err := db.First(&row, "subject = ?", "sub-alice").Error; err != nil {
+		t.Fatalf("failed to load upserted user: %v", err)
+	}
+	var stored map[string]extraValue
+	if err := json.Unmarshal([]byte(row.ExtraFields), &stored); err != nil {
+		t.Fatalf("failed to decode persisted extra_fields %q: %v", row.ExtraFields, err)
+	}
+	if got := stored["dept"].String(); got != "eng" {
+		t.Errorf("persisted dept = %q, want %q", got, "eng")
+	}
+	if got := stored["accounts"].Join(";"); got != "a-alice;b-alice" {
+		t.Errorf("persisted accounts joined = %q, want %q", got, "a-alice;b-alice")
+	}
+}
+
 func TestHandleCallback_ShouldSurfaceATokenExchangeFailure(t *testing.T) {
 	t.Parallel()
 

@@ -522,6 +522,20 @@ identity is authorized to manage/enroll certificates for.
 Claim holding the user's email. Empty falls back to the standard
 .B email
 claim opportunistically (not an error if that is absent too).
+.TP
+.BI extra: " map"
+Additional claims to capture at login for key ID templates, as a map of
+template field name to claim name. Each configured claim is stored on the
+user record (scalars as strings, JSON string arrays as lists) and is
+available to
+.B cert_options.*.key_id_template
+as
+.IB {{.Extra. name }}
+(lists joined via
+.IB "{{join .Extra." name " \(dq;\(dq}}" ).
+A claim absent from the ID token stores empty and renders as
+.B MISSING
+in the key ID; login never fails over one. Default: unset.
 .RE
 .SS ldap (optional identity enrichment)
 .B "Schema is parsed but not yet consumed by the server"

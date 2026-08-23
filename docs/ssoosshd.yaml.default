@@ -528,6 +528,16 @@
     # other_accounts: ""
     # service_accounts: ""
 
+    ## Additional claims to capture at login for key ID templates, as a
+    ## map of template field name -> claim name. Each is stored on the
+    ## user record and referenced as {{.Extra.<name>}} (lists via
+    ## {{join .Extra.<name> ";"}}); an absent claim stores empty and
+    ## renders as MISSING rather than failing the login. See
+    ## docs/certificate-keyid-template.md.
+    # extra:
+    #   dept: "department"
+    #   accounts: "altAccounts"
+
 # ----------------------------------------------------------------------
 # cert_options - issuance rules for each SSH certificate type ssoosshd
 # can sign: user, service, and pam.

@@ -14,14 +14,44 @@ import (
 )
 
 // keyIDTemplateData is the set of fields available for substitution in a
-// config.CertOptions*.KeyIDTemplate. See docs/features.md (key ID templating)
+// config.CertOptions*.KeyIDTemplate. See docs/certificate-keyid-template.md
 // — keep that table in sync with this struct.
+//
+// Extra holds the operator-configured extra claim fields (see
+// config.OAuthFields.Extra), referenced as {{.Extra.name}} or {{join
+// .Extra.name ";"}}. Lookups of names that were never configured render
+// missingPlaceholder rather than failing: templates are parsed with
+// missingkey=zero and extraValue's zero value prints MISSING.
 type keyIDTemplateData struct {
 	Username string
 	Subject  string
 	Email    string
 	ClientIP string
 	UniqueID string
+	Extra    map[string]extraValue
+}
+
+// newKeyIDTemplateData builds the render data for one issuance. Every empty
+// standard field is substituted with missingPlaceholder so a key ID shows
+// an auditable gap instead of silently collapsing (extras get the same
+// treatment via extraValue.String).
+func newKeyIDTemplateData(identity *Identity, clientIP, uniqueID string) keyIDTemplateData {
+	return keyIDTemplateData{
+		Username: orMissing(identity.Username),
+		Subject:  orMissing(identity.Subject),
+		Email:    orMissing(identity.Email),
+		ClientIP: orMissing(clientIP),
+		UniqueID: orMissing(uniqueID),
+		Extra:    identity.Extra,
+	}
+}
+
+// orMissing substitutes missingPlaceholder for an empty string.
+func orMissing(s string) string {
+	if s == "" {
+		return missingPlaceholder
+	}
+	return s
 }
 
 // Defaults used when nothing is configured at all, preserving "identity is
@@ -51,7 +81,7 @@ type keyIDTemplates struct {
 // the common case, so an unset Service template falls back to whatever's
 // configured for User (raw, before defaulting) — only when User's is also
 // unset does each type fall back to its own hardcoded default. See
-// docs/features.md (key ID templating).
+// docs/certificate-keyid-template.md.
 func newKeyIDTemplates(opts config.CertificateOptions) (*keyIDTemplates, error) {
 	userSrc := opts.User.KeyIDTemplate
 	if userSrc == "" {
@@ -87,12 +117,20 @@ func newKeyIDTemplates(opts config.CertificateOptions) (*keyIDTemplates, error) 
 
 // parseKeyIDTemplate parses src and immediately executes it once against a
 // zero-value keyIDTemplateData, so a reference to a field that doesn't
-// exist (a typo, or a field docs/features.md (key ID templating) no longer
+// exist (a typo, or a field docs/certificate-keyid-template.md no longer
 // documents) is caught now rather than at the first real issuance —
 // text/template only validates syntax at Parse time, not field names,
 // which are only resolved against real data at Execute time.
 func parseKeyIDTemplate(name, src string) (*template.Template, error) {
-	tmpl, err := template.New(name).Parse(src)
+	// missingkey=zero makes an .Extra lookup of an unconfigured name render
+	// the zero extraValue — which prints missingPlaceholder — instead of
+	// erroring. It only affects map lookups; struct field typos still fail
+	// the validation execute below. "join" renders a list-valued extra with
+	// an explicit separator (String's default is a comma).
+	tmpl, err := template.New(name).
+		Option("missingkey=zero").
+		Funcs(template.FuncMap{"join": extraValue.Join}).
+		Parse(src)
 	if err != nil {
 		return nil, fmt.Errorf("invalid key_id_template for %s certificates: %w", name, err)
 	}

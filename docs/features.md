@@ -56,8 +56,11 @@ local principal-mapping tooling (`host mapping`, `host principals`) for
   ([certificate-lifetime-policy.md](certificate-lifetime-policy.md)).
 - Key IDs, which are what `sshd` logs and therefore the audit trail, are
   shaped per type by a Go template
-  (`{{.Username}}:{{.ClientIP}}:{{.UniqueID}}`...); a bad template fails
-  startup, not the first issuance.
+  (`{{.Username}}:{{.ClientIP}}:{{.UniqueID}}`...), including
+  operator-defined extra OIDC claim fields captured at login
+  (`{{.Extra.dept}}`); a bad template fails startup, not the first
+  issuance, and a field with no value renders as `MISSING` rather than
+  vanishing ([certificate-keyid-template.md](certificate-keyid-template.md)).
 - Every decision recorded append-only: who approved or denied, from where,
   when, and what was actually granted.
 
