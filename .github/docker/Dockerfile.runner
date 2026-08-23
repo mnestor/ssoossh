@@ -1,0 +1,41 @@
+FROM ubuntu:26.04
+
+LABEL org.opencontainers.image.source="https://github.com/mnestor/ssoossh"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.description="ubuntu image with build tools and certficate chain"
+
+ARG DEBIAN_FRONTEND=noninteractive
+# zig cross-compiles ssoosshd's cgo (PKCS#11) build against a pinned glibc
+# floor and musl; keep in sync with the zig version pinned in ssoossh's
+# release workflow.
+ARG ZIG_VERSION=0.14.0
+RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sources.list.d/goreleaser.list \
+  && apt-get update && apt-get install -y --no-install-recommends gnupg curl ca-certificates \
+  && curl -sSfL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
+  && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+  && curl -fsSL https://deb.nodesource.com/setup_26.x | bash - \
+  && apt-get update &&  apt-get upgrade -y \
+  && apt-get install -y --no-install-recommends \
+    google-chrome-stable nodejs libpam0g-dev openssh-server \
+    sudo build-essential git curl unzip jq gh goreleaser \
+    # softhsm2 + opensc (pkcs11-tool) back ssoossh's HSM signing tests
+    softhsm2 opensc xz-utils \
+  && curl -sL -o /tmp/quill.deb $(curl -s https://api.github.com/repos/anchore/quill/releases/latest | jq -r '.assets[] |select(.name|match("linux_amd64.deb$")) | .browser_download_url') \
+  && dpkg -i /tmp/quill.deb \
+  && curl -fsSL https://get.pnpm.io/install.sh | ENV="$HOME/.bashrc" SHELL="$(which bash)" bash - \
+  && curl -sL https://go.dev/dl/go1.26.6.linux-amd64.tar.gz | tar -C /usr/local -xz \
+  && curl -sL https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz | tar -C /usr/local -xJ \
+  && ln -s /usr/local/zig-linux-x86_64-${ZIG_VERSION}/zig /usr/local/bin/zig \
+  && /usr/local/go/bin/go install gotest.tools/gotestsum@v1.13.0 \
+  # GitHub mounts the workspace owned by the runner's uid while this
+  # container runs as root; without this every git call (and the Makefile's
+  # $(shell git ...) version stamps) dies with "dubious ownership".
+  && git config --system --add safe.directory '*' \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# pnpm's installer only wires PATH into /root/.bashrc, which CI steps never
+# source, so its home has to be on PATH explicitly.
+ENV PNPM_HOME=/root/.local/share/pnpm
+ENV PATH=/usr/local/go/bin:/root/go/bin:$PNPM_HOME/bin:$PATH
+

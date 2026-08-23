@@ -1,0 +1,91 @@
+# Devcontainer image for this repo. Published as
+# ghcr.io/mnestor/ssoossh-devcontainer:latest (by
+# .github/workflows/build-image.yaml) so the .devcontainer configs can
+# pull a prebuilt image instead of running `docker build` on every
+# devcontainer rebuild -- the apt install below is slow enough that
+# rebuilding it interactively every time is worth avoiding.
+#
+# Base image and 1Password op versions are pinned to real tags so
+# Dependabot can open version-bump PRs for them. apt packages and the
+# `go install`/`npm install` targets below are intentionally left
+# unpinned -- Dependabot has no ecosystem support for those, so the
+# tradeoff is staying on latest there and running
+# `apt-get update && apt-get upgrade` inside the running container
+# whenever you want them refreshed.
+
+FROM mcr.microsoft.com/devcontainers/go:dev-1.26-trixie
+ARG CREATED
+ARG COMMIT
+ARG VERSION=local
+LABEL \
+  org.opencontainers.image.source="https://github.com/mnestor/ssoossh" \
+  org.opencontainers.image.description="Go development container for github.com/mnestor/ssoossh, for Visual Studio Code Remote Containers development"
+
+ENV GOPATH=/go
+ENV PATH=$GOPATH/bin:/usr/local/go/bin:$PATH \
+  CGO_ENABLED=0 \
+  GO111MODULE=on \
+  GOSUMDB=off
+
+COPY --from=1password/op:2.39.0 /usr/local/bin/op /usr/local/bin/op
+
+# pam_ssoossh (pam_ssoossh/, `pam` build tag) needs native libpam headers
+# for `make pam`/`make test-pam`. No arm64 cross-compile toolchain here --
+# the pinned-glibc release build runs scripts/pam-build-images/*.Dockerfile
+# in their own containers instead (see ssoossh's
+# docs/release-phase3-pam-build-env.md).
+#
+# node and gh used to come from devcontainer features
+# (ghcr.io/devcontainers/features/node, .../github-cli) in ssoossh's
+# server/client devcontainer.json. Moved here so they're baked into the
+# published image instead of reinstalled as a local build layer on every
+# devcontainer rebuild -- same rationale as the apt install itself (see
+# top-of-file comment). The base image already ships git, so that feature
+# was dropped outright rather than moved.
+RUN install -d -m 0755 /etc/apt/keyrings \
+  && echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sources.list.d/goreleaser.list \
+  && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
+  && apt-get update \
+  && apt-get -y install --no-install-recommends \
+  dnsutils \
+  goreleaser \
+  jq \
+  ripgrep \
+  git-crypt \
+  yamllint \
+  libpam0g-dev \
+  nodejs \
+  gh \
+  && gh release download  --repo anchore/quill -p '*amd64.deb' -O /tmp/quill.deb \ 
+  && dpkg -i /tmp/quill.deb \
+  && rm -rf /var/lib/apt/lists/* /tmp/quill.deb
+  
+USER vscode
+
+# ssoossh's devcontainer configs bind-mount host tooling config onto these
+# paths (.devcontainer/server|client/devcontainer.json's "mounts"). A mount
+# target that doesn't already exist gets created by dockerd as root before
+# the mount lands, which vscode then can't write through -- and for a
+# file-type mount (.claude.json), a missing target is created as a
+# directory, which breaks the mount outright. Pre-creating everything here,
+# as vscode, avoids both.
+RUN mkdir -p \
+  /home/vscode/.claude \
+  /home/vscode/.local/bin\
+  /home/vscode/.local/share/rtk \
+  /home/vscode/.config/gh \
+  /home/vscode/.config/rtk \
+  && echo '{}' > /home/vscode/.claude.json
+
+RUN curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(go env GOPATH)/bin \
+  && curl -fsSL https://claude.ai/install.sh | bash \
+  && curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash \
+  && curl -fsSL https://get.pnpm.io/install.sh | ENV="$HOME/.bashrc" SHELL="$(which bash)" bash - \
+  && go install github.com/princjef/gomarkdoc/cmd/gomarkdoc@latest \
+  && go install github.com/caarlos0/svu/v3@latest \
+  && go install golang.org/x/lint/golint@latest \
+  && go install gotest.tools/gotestsum@latest \
+  && go install github.com/rhysd/actionlint/cmd/actionlint@latest
