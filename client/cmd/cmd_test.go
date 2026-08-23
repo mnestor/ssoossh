@@ -186,6 +186,9 @@ type fakeAPIClient struct {
 	result      *api.CertificateResult
 	awaitErr    error
 	createdWith []string
+	// createdWithOpts tracks RequestedOptions for each CreateUserRequest call,
+	// so tests can verify the correct extensions are requested.
+	createdWithOpts []api.RequestedOptions
 	// awaitCalled records whether the wait was reached, so a test can assert
 	// a reused certificate short-circuited before any server call.
 	awaitCalled bool
@@ -197,6 +200,7 @@ type fakeAPIClient struct {
 func (f *fakeAPIClient) GetCA(ctx context.Context) (string, error) { return "", nil }
 func (f *fakeAPIClient) CreateUserRequest(ctx context.Context, publicKey, localUsername, localHostname string, opts api.RequestedOptions) (*api.PendingRequest, error) {
 	f.createdWith = append(f.createdWith, publicKey)
+	f.createdWithOpts = append(f.createdWithOpts, opts)
 	if f.createErr != nil {
 		return nil, f.createErr
 	}
