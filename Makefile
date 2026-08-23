@@ -363,11 +363,18 @@ gendocs: ## Regenerate man pages from the cobra commands
 
 # The pages gendocs produces: the two roots plus one per cobra subcommand.
 # The glob matters. Hashing only ssoossh.1 and ssoosshd.8 (as this did
-# originally) misses the five subcommand pages entirely, so adding a cobra
+# originally) misses the subcommand pages entirely, so adding a cobra
 # subcommand would produce a new page that nothing told you to commit.
+#
+# ssoossh*.1 rather than the literal ssoossh.1 for the same reason: the
+# client page is now generated from the client's real command tree, so it
+# produces a page per subcommand (18 of them) exactly as the server side
+# always did. Pinning the literal name would have left seventeen of those
+# ungated — the hole this whole change closes, reopened one level down.
+#
 # pam_ssoossh.8 and the .5 config-format pages are hand-written and are
 # deliberately outside this set; a gendocs run leaves them byte-identical.
-GENERATED_MAN := docs/man/ssoossh.1 docs/man/ssoosshd*.8
+GENERATED_MAN := docs/man/ssoossh*.1 docs/man/ssoosshd*.8
 
 man-check:
 	@before=$$(sha256sum $(GENERATED_MAN) 2>/dev/null | sort); \

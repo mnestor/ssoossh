@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 
+	clientcmd "github.com/mnestor/ssoossh/client/cmd"
 	servercmd "github.com/mnestor/ssoossh/server/cmd"
 )
 
@@ -99,52 +99,24 @@ func main() {
 	}
 }
 
-// generateClientManpage creates a minimal client command tree for man page
-// generation. date is threaded through from run so both trees carry the same
-// stamp; see manPageDate for why it is not time.Now().
+// generateClientManpage generates the client pages from the client's real
+// command tree. date is threaded through from run so both trees carry the
+// same stamp; see manPageDate for why it is not time.Now().
+//
+// This used to hand-build a parallel cobra tree, on the reasoning that
+// simplecobra put the assembled tree out of reach. The cost was a gate that
+// reported success while measuring nothing: `make man-check` regenerates
+// and diffs, so against a hand-built tree it compared the duplicate to
+// itself and always passed. The page drifted until it described `host` as
+// "Manage host certificates" — a feature docs/decisions.md records as
+// removed — and omitted --verbose along with every subcommand below the top
+// level. clientcmd.CobraCommandForManpage returns the same tree Execute
+// runs, so the diff means something again.
 func generateClientManpage(outDir string, date time.Time) error {
-	// Create a minimal root command that represents ssoossh
-	// We can't generate from the real client command tree easily due to simplecobra's design,
-	// so we create a minimal representation for documentation purposes.
-	root := &cobra.Command{
-		Use:   "ssoossh",
-		Short: "The ssoossh client — turns an OIDC login into a short-lived SSH certificate, from your ssh_config.",
-		Long: "The ssoossh client wires SSO into your existing SSH workflow. Configured " +
-			"as a ProxyCommand or Match exec in ssh_config, it generates a fresh keypair, " +
-			"hands the public key to the ssoossh server, opens your browser for OIDC " +
-			"authentication, and loads the signed certificate into your ssh-agent — or writes " +
-			"key and certificate files when no agent is available. Private keys never leave " +
-			"the machine. Valid certificates are reused until they expire, so authenticating " +
-			"once could cover a workday rather than every connection. Runs on macOS, Linux, " +
-			"and Windows, and also handles local principal mapping for " +
-			"AuthorizedPrincipalsCommand and service-account certificates for unattended " +
-			"jobs.",
+	root, err := clientcmd.CobraCommandForManpage()
+	if err != nil {
+		return fmt.Errorf("build client command tree: %w", err)
 	}
-
-	root.PersistentFlags().StringP("config", "c", "", "path to the ssoossh config file")
-	root.PersistentFlags().String("server", "", "server address including scheme (e.g. \"https://example.com\") assumes https if omitted.")
-
-	// Add minimal subcommands to match the client structure
-	root.AddCommand(&cobra.Command{
-		Use:   "ssh",
-		Short: "Manage SSH certificates",
-	})
-	root.AddCommand(&cobra.Command{
-		Use:   "host",
-		Short: "Manage host certificates",
-	})
-	root.AddCommand(&cobra.Command{
-		Use:   "service",
-		Short: "Manage service certificates",
-	})
-	root.AddCommand(&cobra.Command{
-		Use:   "ca",
-		Short: "Manage CA certificates",
-	})
-	root.AddCommand(&cobra.Command{
-		Use:   "version",
-		Short: "Print ssoossh version, commit, and build info.",
-	})
 
 	return doc.GenManTree(root, &doc.GenManHeader{
 		Title:   "SSOOSSH",

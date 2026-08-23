@@ -6,7 +6,7 @@ ssoossh - The ssoossh client — turns an OIDC login into a short-lived SSH cert
 
 
 .SH SYNOPSIS
-\fBssoossh [flags]\fP
+\fBssoossh [command] [flags]\fP
 
 
 .SH DESCRIPTION
@@ -23,7 +23,15 @@ The ssoossh client wires SSO into your existing SSH workflow. Configured as a Pr
 
 .PP
 \fB--server\fP=""
-	server address including scheme (e.g. "https://example.com") assumes https if omitted.
+	server address including scheme (e.g. "https://example.com") assumes https if omited.
+
+.PP
+\fB-v\fP, \fB--verbose\fP[=0]
+	trace what the command is doing, to stderr; repeat for more (-v steps, -vv requests and files, -vvv bodies)
+
+
+.SH SEE ALSO
+\fBssoossh-ca(1)\fP, \fBssoossh-host(1)\fP, \fBssoossh-service(1)\fP, \fBssoossh-ssh(1)\fP, \fBssoossh-version(1)\fP
 
 
 .SH HISTORY
