@@ -43,12 +43,21 @@ jobs:
       # no //go:generate directives, so it never did anything.)
       #
       # A finding fails the job: this is a merge gate, not advisory.
+      # golangci-lint comes from the build image (see
+      # .github/docker/Dockerfile.runner, GOLANGCI_LINT_VERSION) rather than
+      # from an action that downloads it per run. The version lives in one
+      # place that way, and it is the same binary a developer running
+      # `make lint` locally gets.
       - name: golangci-lint
-        # Must stay v2.x: .golangci.yml is a `version: "2"` config, which
-        # golangci-lint v1 cannot parse at all.
-        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
-        with:
-          version: v2.13
+        run: make lint
+
+      # pam_ssoossh needs its own pass: without the pam build tag and cgo,
+      # golangci-lint cannot see those files at all and silently skips them
+      # (see the Makefile's lint-fix comment). This ran only in the
+      # Makefile's ci-required target, which no workflow invoked, so the
+      # package was linted on developer machines and nowhere else.
+      - name: golangci-lint (pam)
+        run: make lint-pam
 
   frontend:
     name: frontend

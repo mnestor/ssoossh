@@ -9,6 +9,20 @@ ARG DEBIAN_FRONTEND=noninteractive
 # floor and musl; keep in sync with the zig version pinned in ssoossh's
 # release workflow.
 ARG ZIG_VERSION=0.14.0
+# Tools baked in so CI steps don't fetch them on every run. Each is pinned,
+# and each pin is the one the workflow that used to install it asked for:
+#   golangci-lint  was golangci/golangci-lint-action's `version:` in lint.yaml
+#   govulncheck    was `go run ...@v1.7.0` in security.yaml
+#   redocly        was `npx @redocly/cli@...` in the Makefile's openapi-lint
+#   actionlint     was `go run ...@v1.7.12` in the Makefile's actionlint,
+#                  which pulled a second Go toolchain down with it
+# Bumping one here is the whole change; nothing pins them a second time.
+# golangci-lint must stay v2.x: .golangci.yml is a `version: "2"` config,
+# which v1 cannot parse at all.
+ARG GOLANGCI_LINT_VERSION=2.13.1
+ARG GOVULNCHECK_VERSION=v1.7.0
+ARG REDOCLY_VERSION=1.28.1
+ARG ACTIONLINT_VERSION=v1.7.12
 RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sources.list.d/goreleaser.list \
   && apt-get update && apt-get install -y --no-install-recommends gnupg curl ca-certificates \
   && curl -sSfL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
@@ -27,6 +41,15 @@ RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sourc
   && curl -sL https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz | tar -C /usr/local -xJ \
   && ln -s /usr/local/zig-linux-x86_64-${ZIG_VERSION}/zig /usr/local/bin/zig \
   && /usr/local/go/bin/go install gotest.tools/gotestsum@v1.13.0 \
+  && /usr/local/go/bin/go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION} \
+  && /usr/local/go/bin/go install github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION} \
+  # The release tarball rather than `go install`: it is the artifact
+  # golangci-lint publishes and supports, and it keeps the linter's very
+  # large dependency tree out of this module's go.sum.
+  && curl -fsSL https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64.tar.gz \
+     | tar -C /tmp -xz \
+  && mv /tmp/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-amd64/golangci-lint /usr/local/bin/golangci-lint \
+  && npm install -g @redocly/cli@${REDOCLY_VERSION} \
   # GitHub mounts the workspace owned by the runner's uid while this
   # container runs as root; without this every git call (and the Makefile's
   # $(shell git ...) version stamps) dies with "dubious ownership".

@@ -263,8 +263,14 @@ frontend-check: ## svelte-check the frontend against tsconfig.json
 	cd frontend && CI=true pnpm install --frozen-lockfile && pnpm check
 
 # Mirrors lint.yaml's workflows job.
+# Prefers the actionlint the build image installs (see
+# .github/docker/Dockerfile.runner, ACTIONLINT_VERSION); `go run` otherwise,
+# which fetches the tool and a matching Go toolchain every time. Keep the
+# `go run` pin in step with the image's.
+ACTIONLINT ?= $(shell command -v actionlint 2>/dev/null || echo "go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12")
+
 actionlint: ## Lint the GitHub Actions workflow files
-	go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+	$(ACTIONLINT)
 
 # Mirrors lint.yaml's gitignore step: no tracked file may match an ignore
 # rule, and no source file may be ignored. Cheap enough to run any time you
@@ -337,8 +343,14 @@ openapi-check:
 # Validate docs/openapi.yaml against the OpenAPI 3.1 specification using redocly.
 # This catches structural errors, missing required fields, and other spec violations.
 # Uses a pinned version and configuration file (.redoclyrc.yaml) for known exceptions.
+# REDOCLY prefers a redocly already on PATH -- the build image installs a
+# pinned one (see .github/docker/Dockerfile.runner, REDOCLY_VERSION) so CI
+# does not fetch it per run -- and falls back to npx for a developer who has
+# not got it. Keep the npx pin in step with the image's.
+REDOCLY ?= $(shell command -v redocly 2>/dev/null || echo "npx @redocly/cli@1.28.1")
+
 openapi-lint:
-	npx @redocly/cli@1.28.1 lint docs/openapi.yaml --config .redoclyrc.yaml
+	$(REDOCLY) lint docs/openapi.yaml --config .redoclyrc.yaml
 
 # Generate man pages (ssoossh.1 and ssoosshd.8) from cobra commands.
 # Config format pages (ssoossh.yaml.5, ssoosshd.yaml.5) are hand-written and

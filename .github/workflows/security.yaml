@@ -74,7 +74,10 @@ jobs:
       - name: Run govulncheck
         id: scan
         continue-on-error: true
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./... 2>&1 | tee govulncheck.txt
+        # govulncheck is baked into the build image (see
+        # .github/docker/Dockerfile.runner, GOVULNCHECK_VERSION); `go run`
+        # here recompiled it from source on every run.
+        run: govulncheck ./... 2>&1 | tee govulncheck.txt
       - name: Add results to job summary
         if: ${{ !cancelled() }}
         run: |
