@@ -36,6 +36,13 @@ type ClientOptions struct {
 	// client.
 	Dir string
 
+	// Home is the HOME the client runs with. Empty means a fresh
+	// t.TempDir(). Set it when the test needs to look at what the client
+	// wrote there -- a relative key_filename resolves to $HOME/.ssh/<name>
+	// (agent.ResolveKeyPath), so file-storage tests have to know the
+	// directory in advance, or supply their own.
+	Home string
+
 	// LocalYAML, if non-empty, is written to <Dir>/ssoossh.yaml — the
 	// lowest-precedence location the client reads from the working
 	// directory.
@@ -114,7 +121,7 @@ func RunClient(t *testing.T, ssoosshPath string, o ClientOptions) ClientResult {
 // buildClientCommand assembles the *exec.Cmd for o, materializing whatever
 // configuration files it asks for. Shared by RunClient and StartClient so
 // the two agree on the environment a client invocation gets.
-func buildClientCommand(t *testing.T, ssoosshPath string, o ClientOptions) (*exec.Cmd, *lockedBuffer, *lockedBuffer) {
+func buildClientCommand(t *testing.T, ssoosshPath string, o ClientOptions) (cmd *exec.Cmd, stdout, stderr *lockedBuffer) {
 	t.Helper()
 
 	dir := o.Dir
@@ -127,7 +134,10 @@ func buildClientCommand(t *testing.T, ssoosshPath string, o ClientOptions) (*exe
 	// ~/.config/ssoossh.yaml, so whether the suite passes depends on who is
 	// running it — the same hazard the fresh working directory already
 	// guards against for ./ssoossh.yaml.
-	home := t.TempDir()
+	home := o.Home
+	if home == "" {
+		home = t.TempDir()
+	}
 	if o.UserYAML != "" {
 		writeConfigFile(t, filepath.Join(home, ".config", "ssoossh.yaml"), o.UserYAML)
 	}
@@ -145,15 +155,27 @@ func buildClientCommand(t *testing.T, ssoosshPath string, o ClientOptions) (*exe
 		args = append(args, "--config", named)
 	}
 
-	cmd := exec.Command(ssoosshPath, args...)
+	cmd = exec.Command(ssoosshPath, args...)
 	cmd.Dir = dir
 	cmd.Env = clientEnv(home, o)
 
-	var stdout, stderr lockedBuffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	stdout, stderr = &lockedBuffer{}, &lockedBuffer{}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 
-	return cmd, &stdout, &stderr
+	return cmd, stdout, stderr
+}
+
+// KeyFilePaths returns the three OpenSSH-named paths a file-backed client
+// writes for keyFilename under home: private key, public key, certificate.
+// Mirrors agent.ResolveKeyPath's rule that a relative name lives in
+// $HOME/.ssh.
+func KeyFilePaths(home, keyFilename string) (privateKey, publicKey, certificate string) {
+	base := keyFilename
+	if !filepath.IsAbs(base) {
+		base = filepath.Join(home, ".ssh", base)
+	}
+	return base, base + ".pub", base + "-cert.pub"
 }
 
 // clientEnv builds the child environment: the parent's, with HOME pointed
