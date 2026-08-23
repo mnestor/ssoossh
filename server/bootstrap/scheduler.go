@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/go-co-op/gocron/v2"
 
@@ -16,6 +17,9 @@ const sweepJobName = "certrequest-sweep"
 // evictJobName identifies the resolved-outcome cache eviction pass.
 const evictJobName = "certrequest-evict-resolved"
 
+// caKeyExpirySweepJobName identifies the CA signer key expiry sweep.
+const caKeyExpirySweepJobName = "ca-key-expiry-sweep"
+
 // registerJobs registers the server's scheduled jobs. Called before any
 // service runner starts, so anything it runs inline here happens before the
 // HTTP server accepts a request.
@@ -23,7 +27,10 @@ func (a *app) registerJobs(ctx context.Context) error {
 	if err := a.registerSweepJob(ctx); err != nil {
 		return err
 	}
-	return a.registerEvictJob(ctx)
+	if err := a.registerEvictJob(ctx); err != nil {
+		return err
+	}
+	return a.registerCAKeyExpirySweepJob(ctx)
 }
 
 // registerSweepJob schedules the stranded-request sweep, which fails
@@ -98,6 +105,28 @@ func (a *app) registerEvictJob(ctx context.Context) error {
 
 	slog.DebugContext(ctx, "registered resolved certificate outcome eviction",
 		slog.String("job", evictJobName),
+		slog.Duration("interval", interval),
+	)
+	return nil
+}
+
+// registerCAKeyExpirySweepJob schedules the hourly CA signer key expiry sweep
+// (see service.CAKeyRegistry.SweepExpired), which removes keys that haven't
+// been announced in the configured TTL. This is hygiene, not correctness —
+// ActiveKeys never returns expired rows, so the sweep is safe at any cadence.
+func (a *app) registerCAKeyExpirySweepJob(ctx context.Context) error {
+	const interval = time.Hour
+
+	err := a.scheduler.RegisterJob(ctx, caKeyExpirySweepJobName, gocron.DurationJob(interval),
+		a.svc.caKeyRegistry.SweepExpired,
+		service.RegisterJobOpts{},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to register the ca signer key expiry sweep: %w", err)
+	}
+
+	slog.DebugContext(ctx, "registered ca signer key expiry sweep",
+		slog.String("job", caKeyExpirySweepJobName),
 		slog.Duration("interval", interval),
 	)
 	return nil
