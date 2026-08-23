@@ -1,5 +1,12 @@
 # PAM Module End-to-End Testing
 
+**Status: the automated real-stack tier described below is deliberately
+not built.** See [decisions.md](decisions.md): the unit suite covers the
+module's logic, `test/pam/` asserts the build and exported symbols, and
+the real-stack pass is the manual `pamtest.c` recipe in
+`pam_ssoossh/testing/README.md`. This document is kept as the design for
+that tier should the decision ever be revisited.
+
 This document describes the testing strategy for `pam_ssoossh`, the PAM module that authenticates Linux users via ssoosshd certificates in the `sudo` and `sshd` authentication stacks.
 
 ## Overview

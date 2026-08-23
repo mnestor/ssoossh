@@ -1,6 +1,13 @@
 # PAM End-to-End Testing
 
-This directory contains the containerized e2e test suite for `pam_ssoossh`, the PAM module that authenticates users via ssoosshd certificates.
+What this directory actually asserts today: the module builds as an ELF
+shared object and exports the PAM entry points
+(`TestPAMModuleBuildsAndExportsSymbols`). The full containerized
+real-stack tier was deliberately not built - see `docs/decisions.md` -
+and behavior coverage lives in the unit suite
+(`CGO_ENABLED=1 go test -tags=pam ./pam_ssoossh/...`) plus the manual
+`pamtest.c` recipe in `pam_ssoossh/testing/README.md`. The Dockerfile
+here is the intended vehicle if that decision is ever revisited.
 
 ## Files
 
