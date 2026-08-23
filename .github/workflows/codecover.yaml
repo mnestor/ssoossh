@@ -53,15 +53,22 @@ jobs:
       # test run used to stop the job before the token was ever loaded,
       # which silently skipped the upload the condition below was meant to
       # keep alive.
+      #
+      # The fork clause is the second half of the same problem: a
+      # pull_request from a fork gets no repository secrets, so
+      # OP_SERVICE_ACCOUNT_TOKEN arrives empty and this step fails the job
+      # for a contributor who has no way to fix it. Skip the upload there
+      # instead. workflow_dispatch carries no event.pull_request at all,
+      # which is why event_name is tested first.
       - uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         id: secrets
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           CODECOV_TOKEN: op://Github Actions/CODECOV_TOKEN/credential
 
       - name: Upload coverage reports to Codecov
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           token: ${{ steps.secrets.outputs.CODECOV_TOKEN }}

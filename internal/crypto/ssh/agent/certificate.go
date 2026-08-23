@@ -34,17 +34,30 @@ func parseCAPublicKey(caStr string) (ssh.PublicKey, error) {
 	return pub, nil
 }
 
-// parseCAPublicKeys parses each of cas (authorized_keys format or raw
-// base64) via parseCAPublicKey, used by both SshAgent.SetCA and
-// FileAgent.SetCA.
+// parseCAPublicKeys parses each of cas via parseCAPublicKey, used by both
+// SshAgent.SetCA and FileAgent.SetCA. Each string may itself hold several
+// keys, one per line — the shape the server's /api/ca endpoint returns when
+// multiple signer keys are active — so every string is split on newlines and
+// each non-blank line parsed on its own (authorized_keys format or raw
+// base64). A string with no keys on any line is an error, not silently empty.
 func parseCAPublicKeys(cas []string) ([]ssh.PublicKey, error) {
 	parsed := make([]ssh.PublicKey, 0, len(cas))
 	for _, caStr := range cas {
-		pub, err := parseCAPublicKey(caStr)
-		if err != nil {
-			return nil, err
+		found := false
+		for _, line := range strings.Split(caStr, "\n") {
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			pub, err := parseCAPublicKey(line)
+			if err != nil {
+				return nil, err
+			}
+			parsed = append(parsed, pub)
+			found = true
 		}
-		parsed = append(parsed, pub)
+		if !found {
+			return nil, errors.New("CA public key string cannot be empty")
+		}
 	}
 	return parsed, nil
 }

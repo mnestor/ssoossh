@@ -87,14 +87,25 @@ func requirePAMBuildEnv(t *testing.T) {
 
 // InstallPAMService writes /etc/pam.d/<name> loading modulePath (by
 // absolute path, so nothing is copied into the system module directory)
-// against srv, removing the file in t.Cleanup. A dedicated service name so
-// the real sudo/su stacks are never touched. The account stage is
-// pam_permit: this tier's scope is the auth stage only.
+// against srv, trusting srv's own CA. See InstallPAMServiceWithCA.
 func InstallPAMService(t *testing.T, name, modulePath string, srv *Server) {
 	t.Helper()
 
+	InstallPAMServiceWithCA(t, name, modulePath, srv, srv.CAPublicKey)
+}
+
+// InstallPAMServiceWithCA writes /etc/pam.d/<name> loading modulePath (by
+// absolute path, so nothing is copied into the system module directory)
+// against srv with an explicit trusted CA set — caKeys may hold several
+// authorized_keys-format keys, one per line, the module's documented
+// rotation/multi-signer format. The file is removed in t.Cleanup. A
+// dedicated service name so the real sudo/su stacks are never touched. The
+// account stage is pam_permit: this tier's scope is the auth stage only.
+func InstallPAMServiceWithCA(t *testing.T, name, modulePath string, srv *Server, caKeys string) {
+	t.Helper()
+
 	caFile := filepath.Join(t.TempDir(), "ca.pub")
-	if err := os.WriteFile(caFile, []byte(strings.TrimSpace(srv.CAPublicKey)+"\n"), 0o644); err != nil { //nolint:gosec // a public key is not a secret
+	if err := os.WriteFile(caFile, []byte(strings.TrimSpace(caKeys)+"\n"), 0o644); err != nil { //nolint:gosec // a public key is not a secret
 		t.Fatalf("harness: failed to write trusted-ca-file: %v", err)
 	}
 

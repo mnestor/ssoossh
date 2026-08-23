@@ -51,6 +51,59 @@ func TestParseCAPublicKey(t *testing.T) {
 	}
 }
 
+// should parse every key in a multi-line CA string, as served by the
+// server's /api/ca endpoint (one authorized_keys-format key per line).
+func TestParseCAPublicKeys(t *testing.T) {
+	t.Parallel()
+
+	caA, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	caB, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	keyA, err := caA.MarshalAuthorizedKey()
+	if err != nil {
+		t.Fatalf("MarshalAuthorizedKey() error = %v", err)
+	}
+	keyB, err := caB.MarshalAuthorizedKey()
+	if err != nil {
+		t.Fatalf("MarshalAuthorizedKey() error = %v", err)
+	}
+	rawBase64 := base64.StdEncoding.EncodeToString(caA.Public().Marshal())
+
+	tests := []struct {
+		name     string
+		in       []string
+		wantKeys int
+		wantErr  bool
+	}{
+		{name: "should parse a single-key string", in: []string{keyA}, wantKeys: 1},
+		{name: "should parse two keys joined by a newline in one string", in: []string{keyA + "\n" + keyB}, wantKeys: 2},
+		{name: "should skip blank lines between keys", in: []string{keyA + "\n\n" + keyB + "\n"}, wantKeys: 2},
+		{name: "should parse keys split across separate strings", in: []string{keyA, keyB}, wantKeys: 2},
+		{name: "should fall back to raw base64 per line", in: []string{rawBase64 + "\n" + keyB}, wantKeys: 2},
+		{name: "should reject a string of only blank lines", in: []string{"\n\n"}, wantErr: true},
+		{name: "should reject when any line is unparseable", in: []string{keyA + "\nnot a key"}, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := parseCAPublicKeys(tt.in)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parseCAPublicKeys(%q) error = %v, wantErr %v", tt.in, err, tt.wantErr)
+			}
+			if !tt.wantErr && len(got) != tt.wantKeys {
+				t.Errorf("parseCAPublicKeys(%q) returned %d keys, want %d", tt.in, len(got), tt.wantKeys)
+			}
+		})
+	}
+}
+
 // should validate certificate time bounds and CA trust independently.
 func TestCertificateValid(t *testing.T) {
 	t.Parallel()

@@ -227,6 +227,11 @@ func RunSSH(t *testing.T, s *SSHD, agentSocket string, remoteCommand string) (ou
 	t.Helper()
 
 	args := []string{
+		// -F /dev/null: ignore the developer's own ssh config (and with it
+		// the system-wide one) — a personal "Host *" with IdentitiesOnly or
+		// a fixed IdentityFile would silently stop ssh from offering the
+		// agent's certificate, failing this tier only on that machine.
+		"-F", "/dev/null",
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "PreferredAuthentications=publickey",
