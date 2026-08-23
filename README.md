@@ -13,16 +13,51 @@ the OIDC provider.
 > have server-side support; their client commands are not wired up yet.
 > Interfaces and configuration are expected to change.
 
+## Is it AI slop?
+
+Let's get this out of the way: maybe? This idea has been bouncing around
+in my head for years, and I've taken a few stabs at writing it. Attempt #1
+worked but the codebase disgusted me. Attempt #2 was at work, while I was
+learning Go; it came out reasonably well and a small group of us ran it in
+production for the last two years. I liked it enough to want it at home,
+so I started attempt #3 there, rewriting everything from scratch. It was
+a stripped-down version but making progress, and then I switched my home
+IdP to [pocket-id](https://github.com/pocket-id/pocket-id). Go with a
+frontend, exactly the shape I needed, and I liked their structure. So:
+attempt #4.
+
+I was decently into #4 when leadership at work started pushing us to use
+AI more. I'd built a few small Go binaries with it and was surprised how
+well they came out: same conventions I'd set up, choices I agreed with.
+So I threw Claude at #4 once I had a decent structure in place. Now I
+have tests I hadn't yet figured out how to write in Go, and every feature
+I wanted in the first version is implemented.
+
+Hopefully I've guarded well against the slop. I haven't reviewed
+everything, the tests especially, but I've made multiple review passes,
+and when my own edits broke things the tests caught it. That's a good
+sign they're real.
+
 ## The problem
 
-SSH keys are bearer credentials with no expiry and no central revocation:
-once a key lands in `authorized_keys`, nothing ties "this key is
-authorized" to "this person still works here." SSH certificates solve the
-mechanics (principals, constraints, expiry); what's usually missing is the
-piece that decides *who* gets one, with which principals, for how long,
-tied to the identity provider you already run.
+1. SSH keys are bearer credentials with no expiry and no central revocation:
+   once a key lands in `authorized_keys`, nothing ties "this key is
+   authorized" to "this person still works here." SSH certificates solve the
+   mechanics (principals, constraints, expiry); what's usually missing is the
+   piece that decides *who* gets one, with which principals, for how long,
+   tied to the identity provider you already run.
 
-ssoossh is that piece.
+2. You use hardware-backed SSH keys and disallow `AgentForwarding`. Once
+   you're on a remote system, how do you ssh onward to the next one? Your
+   key can't follow you.
+
+3. You've gone passwordless, and now you need to `sudo` on a remote
+   system. Your hardware token is plugged into the machine in front of
+   you, not the one you're logged into.
+
+ssoossh is the missing piece: it decides who gets a certificate, brings
+the approval to wherever you are, and works where your hardware token
+can't.
 
 ## How it works
 

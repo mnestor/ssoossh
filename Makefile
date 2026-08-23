@@ -255,7 +255,7 @@ check-gitignore: ## Assert the .gitignore invariants hold
 ##@ Generated artifacts
 
 .PHONY: check-generated types types-check openapi openapi-check openapi-lint gendocs man-check
-.PHONY: changelog changelog-check third-party-licenses
+.PHONY: third-party-licenses
 # Every "is the committed output still what the source produces" gate, in
 # one place. All four are merge gates.
 check-generated: types-check openapi-check openapi-lint man-check ## Assert every generated artifact is current
@@ -343,23 +343,6 @@ man-check:
 		echo "Man pages are stale: a cobra command's name, description, or"; \
 		echo "subcommand set changed without the pages being regenerated."; \
 		echo "Run 'make gendocs' and commit the result (including any new page)."; \
-		exit 1; \
-	fi
-
-# Release-time only, and deliberately not a CI gate: it needs git-cliff plus
-# the full tag history on the runner, which is a lot of setup to police a
-# file that is regenerated at release anyway. Install with:
-# cargo install git-cliff
-changelog: ## Regenerate CHANGELOG.md from conventional commits (needs git-cliff)
-	git-cliff --output CHANGELOG.md
-	@echo "CHANGELOG.md generated"
-
-changelog-check:
-	@before=$$(sha256sum CHANGELOG.md 2>/dev/null); \
-	$(MAKE) --no-print-directory changelog >/dev/null; \
-	after=$$(sha256sum CHANGELOG.md 2>/dev/null); \
-	if [ "$$before" != "$$after" ]; then \
-		echo "CHANGELOG.md is stale: run 'make changelog' and commit the result"; \
 		exit 1; \
 	fi
 

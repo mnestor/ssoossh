@@ -100,12 +100,3 @@ yarn-error.log*
 *.local.yml
 *.local.yaml
 
-# Local scratch directories
-/.app
-/.pkg
-/.old/
-/.internal.old/
-
-# Docs deliberately kept out of the repo
-/.devcontainer/README.md
-/docs/docker-setup.md

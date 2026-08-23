@@ -1,10 +1,10 @@
 # Release Notes
 
-For detailed commit history and changes, see [CHANGELOG.md](../CHANGELOG.md).
+For detailed commit history and changes, see the [GitHub releases](https://github.com/mnestor/ssoossh/releases). Each release's notes are generated from the git log at tag time.
 
 ## Overview
 
-This document provides a high-level summary of what was accomplished and what was deliberately deferred. For a complete list of changes, commits, and authors, see the [CHANGELOG](../CHANGELOG.md).
+This document provides a high-level summary of what was accomplished and what was deliberately deferred. For a complete list of changes, commits, and authors, see the [GitHub releases](https://github.com/mnestor/ssoossh/releases).
 
 ## What's in the Current Release
 
@@ -47,4 +47,4 @@ Deliberately not included. All certificates in this release are short-lived (sec
 
 - macOS ships as signed, notarized `.zip` only (no `.dmg` yet)
 
-For details, see [CHANGELOG.md](../CHANGELOG.md).
+For details, see the [GitHub releases](https://github.com/mnestor/ssoossh/releases).
