@@ -20,8 +20,9 @@ import (
 // for pipeline tests.
 func newDefaultTestSignerLimits() signer.SignLimits {
 	return signer.SignLimits{
-		MaxCertLifetime:     time.Hour * 24 * 90,
-		MaxHostCertLifetime: time.Hour * 24 * 365 * 2,
+		MaxCertLifetime:        time.Hour * 24 * 90,
+		MaxHostCertLifetime:    time.Hour * 24 * 365 * 2,
+		MaxServiceCertLifetime: time.Hour * 24 * 365 * 2,
 	}
 }
 

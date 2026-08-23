@@ -94,6 +94,15 @@ func (h *SignedReplyHandler) resolveSuccess(ctx context.Context, reply certmsg.S
 		certificate: reply.Certificate,
 	})
 
+	// A service reply resolves a retrieval, not a certificate request: its
+	// RequestID is an enrollment_retrievals row (see
+	// EnrollmentService.Retrieve), and the original request row went
+	// terminal (Enrolled) back at approval — there is nothing to move out
+	// of Signing.
+	if reply.Type == model.CertificateTypeService {
+		return nil
+	}
+
 	// A DB error here (as opposed to a benign zero-rows race, which
 	// markResolved reports as nil) is returned so the handler nacks and the
 	// reply is retried: otherwise the row stays in Signing and the
@@ -116,6 +125,11 @@ func (h *SignedReplyHandler) resolveFailure(ctx context.Context, reply certmsg.S
 	h.certs.notifyWaiter(reply.RequestID, requestOutcome{
 		status: model.CertificateRequestStatusFailed,
 	})
+
+	// See resolveSuccess: a service reply has no request row in Signing.
+	if reply.Type == model.CertificateTypeService {
+		return nil
+	}
 
 	// Returned so a DB error nacks and retries (notifyWaiter is idempotent);
 	// a benign zero-rows race comes back as nil. See resolveSuccess.
@@ -150,21 +164,30 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 	// lose the audit record entirely, which is the very outcome the
 	// best-effort handling here exists to avoid.
 	var userID, requestID *string
-	var req model.CertificateRequest
-	switch err := h.db.WithContext(ctx).Select("user_id").First(&req, "id = ?", reply.RequestID).Error; {
-	case err != nil:
-		slog.Warn("could not resolve the owner of an issued certificate",
-			"request_id", reply.RequestID, "error", err)
-	case req.UserID == nil:
-		// The request exists but was never bound to a user. Recording the
-		// request ID is what keeps this row reattachable later rather than
-		// permanently orphaned.
-		requestID = &reply.RequestID
-		slog.Warn("issued certificate has no owner: its request was never bound to a user",
-			"request_id", reply.RequestID)
-	default:
-		userID = req.UserID
-		requestID = &reply.RequestID
+	if reply.Type == model.CertificateTypeService {
+		// A service reply's RequestID is an enrollment_retrievals row, not
+		// a certificate request (see EnrollmentService.Retrieve): the audit
+		// chain runs retrieval → enrollment → the request approved back
+		// when the enrollment was created, and the enrollment carries both
+		// the approving user and that request's ID.
+		userID, requestID = h.resolveRetrievalOwner(ctx, reply.RequestID)
+	} else {
+		var req model.CertificateRequest
+		switch err := h.db.WithContext(ctx).Select("user_id").First(&req, "id = ?", reply.RequestID).Error; {
+		case err != nil:
+			slog.Warn("could not resolve the owner of an issued certificate",
+				"request_id", reply.RequestID, "error", err)
+		case req.UserID == nil:
+			// The request exists but was never bound to a user. Recording the
+			// request ID is what keeps this row reattachable later rather than
+			// permanently orphaned.
+			requestID = &reply.RequestID
+			slog.Warn("issued certificate has no owner: its request was never bound to a user",
+				"request_id", reply.RequestID)
+		default:
+			userID = req.UserID
+			requestID = &reply.RequestID
+		}
 	}
 
 	cert := model.Certificate{
@@ -228,6 +251,27 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 	}
 
 	return nil
+}
+
+// resolveRetrievalOwner resolves the audit linkage for a service
+// certificate issued at retrieval time: retrievalID → enrollment → the
+// approving user and the originally approved request. Best effort, same as
+// the request-owner lookup above: a broken linkage costs history for this
+// row, never the audit row itself.
+func (h *SignedReplyHandler) resolveRetrievalOwner(ctx context.Context, retrievalID string) (userID, requestID *string) {
+	var retrieval model.EnrollmentRetrieval
+	if err := h.db.WithContext(ctx).First(&retrieval, "id = ?", retrievalID).Error; err != nil {
+		slog.Warn("could not resolve the retrieval behind an issued service certificate",
+			"retrieval_id", retrievalID, "error", err)
+		return nil, nil
+	}
+	var enrollment model.Enrollment
+	if err := h.db.WithContext(ctx).First(&enrollment, "id = ?", retrieval.EnrollmentID).Error; err != nil {
+		slog.Warn("could not resolve the enrollment behind an issued service certificate",
+			"retrieval_id", retrievalID, "enrollment_id", retrieval.EnrollmentID, "error", err)
+		return nil, nil
+	}
+	return &enrollment.UserID, enrollment.CertificateRequestID
 }
 
 // markResolved moves a request out of Signing into its terminal status,

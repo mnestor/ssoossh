@@ -88,8 +88,9 @@ func (a *app) initSignerHandler() error {
 	}
 
 	limits := signer.SignLimits{
-		MaxCertLifetime:     a.config.Signer.MaxCertLifetime,
-		MaxHostCertLifetime: a.config.Signer.MaxHostCertLifetime,
+		MaxCertLifetime:        a.config.Signer.MaxCertLifetime,
+		MaxHostCertLifetime:    a.config.Signer.MaxHostCertLifetime,
+		MaxServiceCertLifetime: a.config.Signer.MaxServiceCertLifetime,
 	}
 	signer.NewHandler(keys, a.pubSub.Publisher, fipsEnabled, limits).Register(a.pubSub.Router, a.pubSub.Subscriber)
 

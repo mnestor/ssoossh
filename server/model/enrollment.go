@@ -16,16 +16,53 @@ type Enrollment struct {
 	// OptionSet is JSON-encoded, fixed at approval time.
 	OptionSet string `gorm:"column:option_set"`
 
+	// KeyID and Principals are likewise fixed at approval time
+	// (evaluate-at-enrollment-time: retrieval never re-derives policy).
+	// Principals is a JSON-encoded []string.
+	KeyID      string `gorm:"column:key_id"`
+	Principals string `gorm:"column:principals"`
+
+	// CertificateRequestID links back to the approved request, keeping
+	// certificates issued at retrieval time on the same audit chain as the
+	// approval decision.
+	CertificateRequestID *string `gorm:"column:certificate_request_id"`
+
 	UserID    string    `gorm:"column:user_id"` // who approved this enrollment
 	CreatedAt time.Time `gorm:"column:created_at"`
 	ExpiresAt time.Time `gorm:"column:expires_at"`
 
-	// RedeemedAt is set on first successful `service retrieve`.
-	// TODO: decide (see docs/dev/ssoossh-context.md open questions) whether
-	// enrollments are single-use or reusable until ExpiresAt, and whether
-	// proof-of-possession is required at retrieve time.
+	// RedeemedAt is set on first successful `service retrieve`. Enrollment
+	// codes are reusable until ExpiresAt — this timestamp is audit detail,
+	// not a single-use gate. Per-redemption history is in
+	// EnrollmentRetrieval.
 	RedeemedAt *time.Time `gorm:"column:redeemed_at"`
 }
 
 // TableName overrides GORM's default pluralization to match the migration.
 func (Enrollment) TableName() string { return "enrollments" }
+
+// EnrollmentRetrieval logs one `service retrieve` redemption of an
+// enrollment code. Codes are reusable until expiry, so an enrollment can
+// have many of these; the approving user and auditors read them back to see
+// when and from where the code was used. CertificateSerial links to the
+// certificates audit row when signing succeeded (Succeeded true).
+type EnrollmentRetrieval struct {
+	ID           string `gorm:"column:id;primaryKey"`
+	EnrollmentID string `gorm:"column:enrollment_id"`
+	SourceIP     string `gorm:"column:source_ip"`
+
+	// CertificateSerial is pre-allocated before signing is queued, same as
+	// CertificateRequest.SerialNumber, so the row can exist before the
+	// signer answers.
+	CertificateSerial uint64 `gorm:"column:certificate_serial"`
+
+	RetrievedAt time.Time `gorm:"column:retrieved_at"`
+
+	// Succeeded is set once the signed certificate was delivered to the
+	// caller; a false row records a redemption attempt that passed code
+	// validation but failed at signing.
+	Succeeded bool `gorm:"column:succeeded"`
+}
+
+// TableName overrides GORM's default pluralization to match the migration.
+func (EnrollmentRetrieval) TableName() string { return "enrollment_retrievals" }

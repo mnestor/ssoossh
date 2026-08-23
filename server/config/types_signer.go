@@ -105,6 +105,14 @@ type SignerConfig struct {
 	// enforced as a defense-in-depth check before signing. Default 17544h
 	// (2 years). Must be > 0 (fail-closed).
 	MaxHostCertLifetime time.Duration `mapstructure:"max_host_cert_lifetime,string"`
+
+	// MaxServiceCertLifetime is the maximum lifetime for service
+	// certificates, enforced as a defense-in-depth check before signing.
+	// Service enrollments default to 8760h (cert_options.service
+	// valid_duration), so this cap carries the same headroom over its
+	// default that the host cap does. Default 17544h (2 years). Must be
+	// > 0 (fail-closed).
+	MaxServiceCertLifetime time.Duration `mapstructure:"max_service_cert_lifetime,string"`
 }
 
 // Validate rejects a signer configuration that cannot issue certificates.
@@ -122,6 +130,9 @@ func (s *SignerConfig) Validate() error {
 	}
 	if s.MaxHostCertLifetime <= 0 {
 		return fmt.Errorf("max_host_cert_lifetime must be > 0, got %v", s.MaxHostCertLifetime)
+	}
+	if s.MaxServiceCertLifetime <= 0 {
+		return fmt.Errorf("max_service_cert_lifetime must be > 0, got %v", s.MaxServiceCertLifetime)
 	}
 
 	hsmEnabled := s.HSM.Enabled()

@@ -72,6 +72,7 @@ pubsub:
 # minting certificates. Fail-closed by default; operators override explicitly.
 max_cert_lifetime: 2160h
 max_host_cert_lifetime: 17544h
+max_service_cert_lifetime: 17544h
 
 # ldap and authentication are top-level, not nested under http: -- Config's
 # mapstructure tags for LDAP and AuthConfig are on Config itself, not on

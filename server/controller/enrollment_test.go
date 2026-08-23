@@ -23,10 +23,12 @@ type fakeEnrollmentService struct {
 	certificate string
 	err         error
 	gotCode     string
+	gotSourceIP string
 }
 
-func (f *fakeEnrollmentService) Retrieve(_ context.Context, code string) (string, error) {
+func (f *fakeEnrollmentService) Retrieve(_ context.Context, code string, sourceIP string) (string, error) {
 	f.gotCode = code
+	f.gotSourceIP = sourceIP
 	if f.err != nil {
 		return "", f.err
 	}

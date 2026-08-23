@@ -32,15 +32,18 @@ type enrollmentController struct {
 // retrieve`): redeems an enrollment code for a signed service certificate.
 //
 // @Summary     Redeem an enrollment code for a certificate
-// @Description Not implemented yet (delivery phase 8): the service behind this returns
-// @Description an error, so the route exists and answers 500 rather than issuing
-// @Description anything.
+// @Description Signs and returns a service certificate for the enrollment the code
+// @Description identifies, using the public key and options fixed at approval time.
+// @Description Codes are reusable until the enrollment expires; every redemption is
+// @Description logged for the approving user and auditors. The certificate is valid
+// @Description from now until the enrollment's expiry.
 // @Tags        client
 // @Accept      json
 // @Produce     json
 // @Param       request body apitypes.RetrieveRequestBody true "The enrollment code to redeem"
 // @Success     200 {object} openapidoc.RetrieveEnvelope "The signed service certificate"
-// @Failure     500 {object} openapidoc.ErrorEnvelope "Not implemented"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "Unknown or expired enrollment code"
+// @Failure     500 {object} openapidoc.ErrorEnvelope "Signing failed or timed out"
 // @Router      /api/certs/service/retrieve [post]
 func (e *enrollmentController) retrieveHandler(g *gin.Context) {
 	var body apitypes.RetrieveRequestBody
@@ -49,7 +52,7 @@ func (e *enrollmentController) retrieveHandler(g *gin.Context) {
 		return
 	}
 
-	certificate, err := e.enrollmentService.Retrieve(g.Request.Context(), body.Code)
+	certificate, err := e.enrollmentService.Retrieve(g.Request.Context(), body.Code, g.ClientIP())
 	if err != nil {
 		handleError(g, err)
 		return

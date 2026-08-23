@@ -270,7 +270,7 @@ func TestSign_ShouldRejectUnsupportedCertificateTypes(t *testing.T) {
 
 	for _, certType := range []model.CertificateType{
 		model.CertificateTypeHost,
-		model.CertificateTypeService,
+		model.CertificateType("bogus"),
 	} {
 		job := newTestJob(t)
 		job.Type = certType

@@ -69,7 +69,7 @@ func (a *app) initServices() (*services, error) {
 	})
 
 	g.Go(func() (err error) {
-		svc.enrollment, err = service.NewEnrollmentService(a.config)
+		svc.enrollment, err = service.NewEnrollmentService(a.config, a.db, a.pubSub.Publisher, a.pubSub.Subscriber)
 		return err
 	})
 

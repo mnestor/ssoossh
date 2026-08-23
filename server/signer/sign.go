@@ -20,8 +20,9 @@ import (
 // certificates, as defense-in-depth: an attacker able to publish directly to
 // the sign queue must not get unbounded certificates.
 type SignLimits struct {
-	MaxCertLifetime     time.Duration
-	MaxHostCertLifetime time.Duration
+	MaxCertLifetime        time.Duration
+	MaxHostCertLifetime    time.Duration
+	MaxServiceCertLifetime time.Duration
 }
 
 // signError carries a certmsg.ErrCode* classification alongside the
@@ -51,16 +52,17 @@ func errorCode(err error) string {
 
 // certTypeFor maps a ssoossh certificate type onto an SSH certificate type.
 //
-// User and PAM both map to ssh.UserCert: a PAM certificate authenticates a
-// person to a local operation (e.g. `sudo`), same as a user certificate
-// authenticates a person to an SSH session — the difference is entirely in
-// lifetime, options, and who validates it, not in certificate type. Host and
-// service are deferred until the user path is fully working (see
-// docs/signing-pipeline.md). Service requests never reach
-// the sign queue at all: approving one creates an enrollment instead (see
-// CertRequestService.Approve).
+// User, PAM, and service all map to ssh.UserCert: a PAM certificate
+// authenticates a person to a local operation (e.g. `sudo`) and a service
+// certificate authenticates an unattended account to an SSH session, same
+// as a user certificate authenticates a person — the differences are
+// entirely in lifetime, options, and who validates them, not in
+// certificate type. Service jobs reach the sign queue from
+// EnrollmentService.Retrieve (approval creates the enrollment; each
+// redemption publishes a job). Host certificates are not issued.
 func certTypeFor(t model.CertificateType) (uint32, error) {
-	if t == model.CertificateTypeUser || t == model.CertificateTypePAM {
+	switch t {
+	case model.CertificateTypeUser, model.CertificateTypePAM, model.CertificateTypeService:
 		return ssh.UserCert, nil
 	}
 	return 0, newSignError(certmsg.ErrCodeUnsupportedType, "certificate type %q is not supported yet", t)
@@ -136,8 +138,11 @@ func Sign(ctx context.Context, ks CAKeySource, job certmsg.SigningJob, fipsEnabl
 
 	span := job.ValidBefore.Sub(job.ValidAfter)
 	cap := limits.MaxCertLifetime
-	if job.Type == model.CertificateTypeHost {
+	switch job.Type {
+	case model.CertificateTypeHost:
 		cap = limits.MaxHostCertLifetime
+	case model.CertificateTypeService:
+		cap = limits.MaxServiceCertLifetime
 	}
 	if span > cap {
 		return certmsg.SignedReply{}, newSignError(certmsg.ErrCodeLifetimeRejected,

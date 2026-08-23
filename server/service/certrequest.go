@@ -668,6 +668,39 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 		// cannot fail on it.
 		return fmt.Errorf("failed to encode narrowed options: %w", err)
 	}
+
+	// Key ID and principals are fixed here, not at retrieve time: the
+	// enrollment contract is evaluate-at-enrollment-time (see
+	// docs/certificate-lifetime-policy.md), and the approving identity —
+	// which both derive from — no longer exists when `service retrieve`
+	// redeems the code unattended.
+	keyID, err := executeKeyIDTemplate(policy.keyIDTemplate, keyIDTemplateData{
+		Username: identity.Username,
+		Subject:  identity.Subject,
+		Email:    identity.Email,
+		ClientIP: req.SourceIP,
+		UniqueID: req.ID,
+	})
+	if err != nil {
+		// not covered: parseKeyIDTemplate already executed
+		// policy.keyIDTemplate once against a zero-value keyIDTemplateData
+		// at construction, and keyIDTemplateData is a flat struct of
+		// strings, so executing it against real data cannot newly fail.
+		return fmt.Errorf("failed to compute key ID: %w", err)
+	}
+
+	principals := policy.principals("", "", identity)
+	for _, p := range principals {
+		if err := sshcrypto.ValidatePrincipal(p); err != nil {
+			return fmt.Errorf("invalid principal: %w", err)
+		}
+	}
+	principalsJSON, err := json.Marshal(principals)
+	if err != nil {
+		// not covered: a []string, so json.Marshal cannot fail on it.
+		return fmt.Errorf("failed to encode principals: %w", err)
+	}
+
 	token := uuid.NewString()
 	now := time.Now()
 	expiresAt := now.Add(effectiveDuration)
@@ -707,13 +740,16 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 
 		// Create the enrollment record with the computed lifetime.
 		enrollment := &model.Enrollment{
-			ID:        uuid.NewString(),
-			Code:      token,
-			PublicKey: req.PublicKey,
-			OptionSet: string(narrowedJSON),
-			UserID:    *req.UserID, // req.UserID was bound in Approve
-			CreatedAt: now,
-			ExpiresAt: expiresAt,
+			ID:                   uuid.NewString(),
+			Code:                 token,
+			PublicKey:            req.PublicKey,
+			OptionSet:            string(narrowedJSON),
+			KeyID:                keyID,
+			Principals:           string(principalsJSON),
+			CertificateRequestID: &req.ID,
+			UserID:               *req.UserID, // req.UserID was bound in Approve
+			CreatedAt:            now,
+			ExpiresAt:            expiresAt,
 		}
 		if err := tx.Create(enrollment).Error; err != nil {
 			return fmt.Errorf("failed to create enrollment: %w", err)

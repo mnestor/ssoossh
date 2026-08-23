@@ -32,6 +32,9 @@ func TestSignerConfig_DefaultLifetimeLimits(t *testing.T) {
 	if c.Signer.MaxHostCertLifetime != 17544*time.Hour {
 		t.Errorf("MaxHostCertLifetime = %v, want 17544h", c.Signer.MaxHostCertLifetime)
 	}
+	if c.Signer.MaxServiceCertLifetime != 17544*time.Hour {
+		t.Errorf("MaxServiceCertLifetime = %v, want 17544h", c.Signer.MaxServiceCertLifetime)
+	}
 }
 
 func TestSignerConfig_CustomLifetimeLimits(t *testing.T) {
@@ -44,6 +47,7 @@ func TestSignerConfig_CustomLifetimeLimits(t *testing.T) {
 ssh_key: "test-key-material"
 max_cert_lifetime: 5000h
 max_host_cert_lifetime: 20000h
+max_service_cert_lifetime: 30000h
 `)
 
 	if err := cc.Flags().Set("config", configPath); err != nil {
@@ -61,15 +65,19 @@ max_host_cert_lifetime: 20000h
 	if c.Signer.MaxHostCertLifetime != 20000*time.Hour {
 		t.Errorf("MaxHostCertLifetime = %v, want 20000h", c.Signer.MaxHostCertLifetime)
 	}
+	if c.Signer.MaxServiceCertLifetime != 30000*time.Hour {
+		t.Errorf("MaxServiceCertLifetime = %v, want 30000h", c.Signer.MaxServiceCertLifetime)
+	}
 }
 
 func TestSignerConfig_Validate_RejectsZeroMaxCertLifetime(t *testing.T) {
 	t.Parallel()
 
 	sc := SignerConfig{
-		SSHKey:              "test-key",
-		MaxCertLifetime:     0,
-		MaxHostCertLifetime: 1 * time.Hour,
+		SSHKey:                 "test-key",
+		MaxCertLifetime:        0,
+		MaxHostCertLifetime:    1 * time.Hour,
+		MaxServiceCertLifetime: 1 * time.Hour,
 	}
 
 	err := sc.Validate()
@@ -82,9 +90,10 @@ func TestSignerConfig_Validate_RejectsNegativeMaxCertLifetime(t *testing.T) {
 	t.Parallel()
 
 	sc := SignerConfig{
-		SSHKey:              "test-key",
-		MaxCertLifetime:     -1 * time.Hour,
-		MaxHostCertLifetime: 1 * time.Hour,
+		SSHKey:                 "test-key",
+		MaxCertLifetime:        -1 * time.Hour,
+		MaxHostCertLifetime:    1 * time.Hour,
+		MaxServiceCertLifetime: 1 * time.Hour,
 	}
 
 	err := sc.Validate()
@@ -97,9 +106,10 @@ func TestSignerConfig_Validate_RejectsZeroMaxHostCertLifetime(t *testing.T) {
 	t.Parallel()
 
 	sc := SignerConfig{
-		SSHKey:              "test-key",
-		MaxCertLifetime:     1 * time.Hour,
-		MaxHostCertLifetime: 0,
+		SSHKey:                 "test-key",
+		MaxCertLifetime:        1 * time.Hour,
+		MaxHostCertLifetime:    0,
+		MaxServiceCertLifetime: 1 * time.Hour,
 	}
 
 	err := sc.Validate()
@@ -112,9 +122,10 @@ func TestSignerConfig_Validate_RejectsNegativeMaxHostCertLifetime(t *testing.T) 
 	t.Parallel()
 
 	sc := SignerConfig{
-		SSHKey:              "test-key",
-		MaxCertLifetime:     1 * time.Hour,
-		MaxHostCertLifetime: -1 * time.Hour,
+		SSHKey:                 "test-key",
+		MaxCertLifetime:        1 * time.Hour,
+		MaxHostCertLifetime:    -1 * time.Hour,
+		MaxServiceCertLifetime: 1 * time.Hour,
 	}
 
 	err := sc.Validate()
@@ -123,14 +134,46 @@ func TestSignerConfig_Validate_RejectsNegativeMaxHostCertLifetime(t *testing.T) 
 	}
 }
 
-func TestSignerConfig_Validate_AcceptsPositiveLifetimeLimits(t *testing.T) {
+func TestSignerConfig_Validate_RejectsZeroMaxServiceCertLifetime(t *testing.T) {
 	t.Parallel()
 
 	sc := SignerConfig{
 		SSHKey:              "test-key",
-		MaxCertLifetime:     2160 * time.Hour,
-		MaxHostCertLifetime: 17544 * time.Hour,
-		PubSub:              PubSubConfig{Backend: "gochannel"},
+		MaxCertLifetime:     1 * time.Hour,
+		MaxHostCertLifetime: 1 * time.Hour,
+	}
+
+	err := sc.Validate()
+	if err == nil {
+		t.Fatal("expected an error for zero MaxServiceCertLifetime, got nil")
+	}
+}
+
+func TestSignerConfig_Validate_RejectsNegativeMaxServiceCertLifetime(t *testing.T) {
+	t.Parallel()
+
+	sc := SignerConfig{
+		SSHKey:                 "test-key",
+		MaxCertLifetime:        1 * time.Hour,
+		MaxHostCertLifetime:    1 * time.Hour,
+		MaxServiceCertLifetime: -1 * time.Hour,
+	}
+
+	err := sc.Validate()
+	if err == nil {
+		t.Fatal("expected an error for negative MaxServiceCertLifetime, got nil")
+	}
+}
+
+func TestSignerConfig_Validate_AcceptsPositiveLifetimeLimits(t *testing.T) {
+	t.Parallel()
+
+	sc := SignerConfig{
+		SSHKey:                 "test-key",
+		MaxCertLifetime:        2160 * time.Hour,
+		MaxHostCertLifetime:    17544 * time.Hour,
+		PubSub:                 PubSubConfig{Backend: "gochannel"},
+		MaxServiceCertLifetime: 17544 * time.Hour,
 	}
 
 	err := sc.Validate()
@@ -172,11 +215,12 @@ func TestSignerConfigValidate_HSM(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			sc := SignerConfig{
-				SSHKey:              tt.sshKey,
-				HSM:                 tt.hsm,
-				PubSub:              validPubSub,
-				MaxCertLifetime:     2160 * time.Hour,
-				MaxHostCertLifetime: 17544 * time.Hour,
+				SSHKey:                 tt.sshKey,
+				HSM:                    tt.hsm,
+				PubSub:                 validPubSub,
+				MaxCertLifetime:        2160 * time.Hour,
+				MaxHostCertLifetime:    17544 * time.Hour,
+				MaxServiceCertLifetime: 17544 * time.Hour,
 			}
 			err := sc.Validate()
 			if tt.wantErr == "" {
