@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
-      image: ghcr.io/mnestor/ubuntu-build:latest
+      image: ghcr.io/mnestor/ssoossh-build:latest
     defaults:
       run:
         working-directory: frontend
@@ -79,7 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
-      image: ghcr.io/mnestor/ubuntu-build:latest
+      image: ghcr.io/mnestor/ssoossh-build:latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
