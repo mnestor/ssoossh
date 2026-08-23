@@ -20,8 +20,11 @@ import (
 // This is the live counterpart to static SQL parsing tests — it catches divergences
 // that the database engines interpret differently.
 func TestMigrationParity_SchemasShouldBeIdentical(t *testing.T) {
-	// Start both databases.
-	t.Parallel()
+	// Deliberately NOT t.Parallel(): the postgres harness binds one fixed
+	// port (test/postgres/container.go), so two container-backed tests
+	// running at once read each other's databases — this one saw
+	// DownShouldReverseUp's mid-cycle schema, resurrected columns and
+	// all. The harness comment always said sequential; this enforces it.
 	ctx := t.Context()
 
 	pgDB, _ := postgres.ConnectAndMigrate(t, ctx)
@@ -93,7 +96,7 @@ func TestMigrationParity_SchemasShouldBeIdentical(t *testing.T) {
 // after up migrations returns to a clean state, and that a subsequent up reaches
 // the same schema as the first up.
 func TestMigrationParity_DownShouldReverseUp(t *testing.T) {
-	t.Parallel()
+	// Not t.Parallel() — see TestMigrationParity_SchemasShouldBeIdentical.
 	ctx := t.Context()
 
 	pgDB, _ := postgres.ConnectAndMigrate(t, ctx)
