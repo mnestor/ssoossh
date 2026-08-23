@@ -10,7 +10,7 @@ ssoossh - The ssoossh client — turns an OIDC login into a short-lived SSH cert
 
 
 .SH DESCRIPTION
-The ssoossh client wires SSO into your existing SSH workflow. Configured as a ProxyCommand or Match exec in ssh_config, it generates a fresh keypair, hands the public key to the ssoossh server, opens your browser for OIDC authentication, and loads the signed certificate into your ssh-agent — or writes key and certificate files when no agent is available. Private keys never leave the machine. Valid certificates are reused until they expire, so authenticating once could cover a workday rather than every connection. Runs on macOS, Linux, and Windows, and also handles host enrollment, per-host principal mapping for AuthorizedPrincipalsCommand, and service-account certificates for unattended jobs.
+The ssoossh client wires SSO into your existing SSH workflow. Configured as a ProxyCommand or Match exec in ssh_config, it generates a fresh keypair, hands the public key to the ssoossh server, opens your browser for OIDC authentication, and loads the signed certificate into your ssh-agent — or writes key and certificate files when no agent is available. Private keys never leave the machine. Valid certificates are reused until they expire, so authenticating once could cover a workday rather than every connection. Runs on macOS, Linux, and Windows, and also handles local principal mapping for AuthorizedPrincipalsCommand and service-account certificates for unattended jobs.
 
 
 .SH OPTIONS

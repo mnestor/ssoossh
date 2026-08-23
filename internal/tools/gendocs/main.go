@@ -116,8 +116,8 @@ func generateClientManpage(outDir string, date time.Time) error {
 			"key and certificate files when no agent is available. Private keys never leave " +
 			"the machine. Valid certificates are reused until they expire, so authenticating " +
 			"once could cover a workday rather than every connection. Runs on macOS, Linux, " +
-			"and Windows, and also handles host enrollment, per-host principal mapping for " +
-			"AuthorizedPrincipalsCommand, and service-account certificates for unattended " +
+			"and Windows, and also handles local principal mapping for " +
+			"AuthorizedPrincipalsCommand and service-account certificates for unattended " +
 			"jobs.",
 	}
 
