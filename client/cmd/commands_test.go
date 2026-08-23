@@ -23,7 +23,7 @@ func TestCommandGroupsExposeExpectedSurface(t *testing.T) {
 		wantSubs []string
 	}{
 		{name: "ssh", group: newSSHCommand(), wantSubs: []string{"login", "logout", "proxycommand", "inspect", "config"}},
-		{name: "host", group: newHostCommand(), wantSubs: []string{"sign", "renew", "sync", "principals"}},
+		{name: "host", group: newHostCommand(), wantSubs: []string{"principals", "mapping"}},
 		{name: "service", group: newServiceCommand(), wantSubs: []string{"enroll", "retrieve"}},
 	}
 

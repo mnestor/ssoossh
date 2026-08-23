@@ -209,9 +209,6 @@ func (f *fakeAPIClient) CreateUserRequest(ctx context.Context, publicKey, localU
 	}
 	return f.pending, nil
 }
-func (f *fakeAPIClient) CreateHostRequest(ctx context.Context, publicKey, hostname string, opts api.RequestedOptions) (*api.PendingRequest, error) {
-	return f.CreateUserRequest(ctx, publicKey, "", "", opts)
-}
 func (f *fakeAPIClient) CreateServiceEnrollment(ctx context.Context, publicKey string, opts api.RequestedOptions) (*api.PendingRequest, error) {
 	return f.CreateUserRequest(ctx, publicKey, "", "", opts)
 }

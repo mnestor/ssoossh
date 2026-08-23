@@ -31,6 +31,11 @@ func (e *ResponseError) Error() string {
 	return fmt.Sprintf("ssoosshd returned status %d: %s", e.StatusCode, e.Message)
 }
 
+// IsNotFound reports whether this is a 404 not-found error.
+func (e *ResponseError) IsNotFound() bool {
+	return e != nil && e.StatusCode == 404
+}
+
 // decodeResponseError builds a *ResponseError from resp, whose status is
 // already known to be non-2xx. resty has already unmarshalled the body into
 // resp.ResultError() via the client-wide SetResultError(&errorBody{}) — no

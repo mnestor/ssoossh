@@ -41,15 +41,6 @@ func (c *RestyClient) CreateUserRequest(ctx context.Context, publicKey, localUse
 	})
 }
 
-// CreateHostRequest implements Client.
-func (c *RestyClient) CreateHostRequest(ctx context.Context, publicKey, hostname string, opts RequestedOptions) (*PendingRequest, error) {
-	return c.create(ctx, "/certs/host/sign", apitypes.HostSignRequestBody{
-		PublicKey:        publicKey,
-		Hostname:         hostname,
-		RequestedOptions: opts,
-	})
-}
-
 // CreateServiceEnrollment implements Client.
 func (c *RestyClient) CreateServiceEnrollment(ctx context.Context, publicKey string, opts RequestedOptions) (*PendingRequest, error) {
 	return c.create(ctx, "/certs/service/enroll", apitypes.ServiceEnrollRequestBody{

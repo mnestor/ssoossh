@@ -153,6 +153,10 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 		slog.Warn(w)
 	}
 
+	if err := c.ResolvePaths(); err != nil {
+		return nil, fmt.Errorf("failed to resolve config paths: %w", err)
+	}
+
 	return &c, nil
 }
 

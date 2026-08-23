@@ -57,11 +57,6 @@ func (c *offlineAPIClient) CreateUserRequest(ctx context.Context, publicKey, loc
 	return nil, c.refuse("CreateUserRequest")
 }
 
-// CreateHostRequest implements api.Client.
-func (c *offlineAPIClient) CreateHostRequest(ctx context.Context, publicKey, hostname string, opts api.RequestedOptions) (*api.PendingRequest, error) {
-	return nil, c.refuse("CreateHostRequest")
-}
-
 // CreateServiceEnrollment implements api.Client.
 func (c *offlineAPIClient) CreateServiceEnrollment(ctx context.Context, publicKey string, opts api.RequestedOptions) (*api.PendingRequest, error) {
 	return nil, c.refuse("CreateServiceEnrollment")

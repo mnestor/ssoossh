@@ -56,11 +56,10 @@ func TestOfflineCommandsDeclareOffline(t *testing.T) {
 		want bool
 	}{
 		{name: "host principals answers from local state only", cmd: newHostPrincipalsCommand(), want: true},
+		{name: "host mapping manages local state only", cmd: newHostMappingCommand(), want: true},
 		{name: "version prints build-time constants only", cmd: newVersionCommand(), want: true},
 		{name: "ca fetches the CA from the server", cmd: newCACommand(), want: false},
 		{name: "ssh login obtains a certificate from the server", cmd: newSSHLoginCommand(), want: false},
-		{name: "host sign goes through the OIDC approval chain", cmd: newHostSignCommand(), want: false},
-		{name: "host sync pulls the mapping from the server", cmd: newHostSyncCommand(), want: false},
 		{name: "service retrieve redeems an enrollment code", cmd: newServiceRetrieveCommand(), want: false},
 	}
 
@@ -204,10 +203,6 @@ func TestOfflineAPIClientRefusesEveryCall(t *testing.T) {
 		{name: "should refuse GetCA", call: func() error { _, err := c.GetCA(ctx); return err }},
 		{name: "should refuse CreateUserRequest", call: func() error {
 			_, err := c.CreateUserRequest(ctx, "key", "user", "host", api.RequestedOptions{})
-			return err
-		}},
-		{name: "should refuse CreateHostRequest", call: func() error {
-			_, err := c.CreateHostRequest(ctx, "key", "host", api.RequestedOptions{})
 			return err
 		}},
 		{name: "should refuse CreateServiceEnrollment", call: func() error {

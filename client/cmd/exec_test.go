@@ -59,12 +59,10 @@ func TestExecuteEndToEnd(t *testing.T) {
 		{name: "ssh proxycommand with no command", args: []string{"ssh", "proxycommand"}, wantErr: errProxyCommandRequiresArgs},
 		{name: "ssh inspect", args: []string{"ssh", "inspect"}, wantNilErr: true},
 		{name: "ssh config", args: []string{"ssh", "config"}, wantNilErr: true},
-		{name: "host sign", args: []string{"host", "sign"}},
-		{name: "host renew", args: []string{"host", "renew"}},
-		{name: "host sync", args: []string{"host", "sync"}},
-		{name: "host principals", args: []string{"host", "principals"}},
-		{name: "service enroll", args: []string{"service", "enroll"}},
-		{name: "service retrieve", args: []string{"service", "retrieve"}},
+		{name: "host principals with no args", args: []string{"host", "principals"}, wantErr: errors.New("usage: ssoossh host principals <username>")},
+		{name: "host mapping list", args: []string{"host", "mapping", "list"}, wantNilErr: true},
+		{name: "service enroll", args: []string{"service", "enroll"}, wantErr: errors.New("the certificate request resolved with no outcome")},
+		{name: "service retrieve", args: []string{"service", "retrieve"}, wantErr: errors.New("load enrollment: read enrollment file: open : no such file or directory")},
 		{name: "version", args: []string{"version"}, wantNilErr: true},
 	}
 

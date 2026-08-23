@@ -35,11 +35,6 @@ type Client interface {
 	// AwaitCertificate.
 	CreateUserRequest(ctx context.Context, publicKey, localUsername, localHostname string, opts RequestedOptions) (*PendingRequest, error)
 
-	// CreateHostRequest asks for first issuance of a host certificate for
-	// hostname, gated by the OIDC approval chain. Returns without waiting,
-	// like CreateUserRequest.
-	CreateHostRequest(ctx context.Context, publicKey, hostname string, opts RequestedOptions) (*PendingRequest, error)
-
 	// CreateServiceEnrollment asks to enroll publicKey for unattended
 	// service certificate issuance. Returns without waiting, like
 	// CreateUserRequest. Note that approving one of these yields

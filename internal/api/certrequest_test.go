@@ -110,46 +110,6 @@ func TestCreateUserRequest_ShouldReturnApprovedOutcome(t *testing.T) {
 	}
 }
 
-func TestCreateHostRequest_ShouldSendHostname(t *testing.T) {
-	t.Parallel()
-
-	var gotBody map[string]any
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/certs/host/sign":
-			body, _ := io.ReadAll(r.Body)
-			_ = json.Unmarshal(body, &gotBody)
-			writeCreateResponse(w, "req-2", "/api/certs/requests/req-2/events")
-		case r.Method == http.MethodGet && r.URL.Path == "/api/certs/requests/req-2/events":
-			writeSSEEvent(w, "denied", map[string]string{})
-		default:
-			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	t.Cleanup(ts.Close)
-
-	c, err := NewClient(Config{ServerURL: ts.URL})
-	if err != nil {
-		t.Fatalf("unexpected error building client: %v", err)
-	}
-
-	pending, err := c.CreateHostRequest(context.Background(), "ssh-ed25519 AAAA... host", "db01.internal", RequestedOptions{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	result, err := c.AwaitCertificate(context.Background(), pending)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Status != StatusDenied {
-		t.Errorf("got status %q, want %q", result.Status, StatusDenied)
-	}
-	if gotBody["hostname"] != "db01.internal" {
-		t.Errorf("got hostname %v, want %q", gotBody["hostname"], "db01.internal")
-	}
-}
-
 func TestCreateServiceEnrollment_ShouldHitEnrollEndpoint(t *testing.T) {
 	t.Parallel()
 

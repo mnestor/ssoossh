@@ -2,10 +2,11 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"os"
 
 	"github.com/bep/simplecobra"
-
-	"github.com/mnestor/ssoossh/internal/errs"
 )
 
 func newHostPrincipalsCommand() simplecobra.Commander {
@@ -18,10 +19,43 @@ func newHostPrincipalsCommand() simplecobra.Commander {
 		offline: true,
 		long: "Implements AuthorizedPrincipalsCommand. Runs as root, called on every login " +
 			"attempt, and must never touch the network — it answers only from whatever " +
-			"`host sync` last wrote locally. Cache staleness (via file mtime or `host sync` " +
-			"exit status) is the host admin's call, not this command's.",
+			"local mapping files were written. Expects one argument: the local username to " +
+			"look up. Prints one principal per line; unknown account or missing file exits " +
+			"0 with no output (sshd treats as no principals). Malformed file exits non-zero.",
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
-			return &errs.NotImplementedError{What: "host principals"}
+			if len(args) < 1 {
+				return fmt.Errorf("usage: ssoossh host principals <username>")
+			}
+			username := args[0]
+
+			cfg := root.Config()
+			mappingPath := cfg.PrincipalMappingFile
+			if mappingPath == "" {
+				return nil
+			}
+
+			data, err := os.ReadFile(mappingPath)
+			if err != nil {
+				if os.IsNotExist(err) {
+					return nil
+				}
+				return fmt.Errorf("read principal mapping file: %w", err)
+			}
+
+			var mapping map[string][]string
+			if err := json.Unmarshal(data, &mapping); err != nil {
+				return fmt.Errorf("malformed principal mapping file: %w", err)
+			}
+
+			principals, ok := mapping[username]
+			if !ok {
+				return nil
+			}
+
+			for _, p := range principals {
+				fmt.Println(p)
+			}
+			return nil
 		},
 	}
 }
