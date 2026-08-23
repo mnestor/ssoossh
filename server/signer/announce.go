@@ -94,8 +94,28 @@ func (an *Announcer) announce(ctx context.Context) error {
 // is canceled. Shaped to sit in bootstrap's serviceRunners alongside
 // pubSub.Run. Returns nil when ctx is canceled (clean shutdown).
 func (an *Announcer) Run(ctx context.Context) error {
-	// Announce at startup
+	// Announce at startup, unless shutdown has already begun.
+	//
+	// The guard is not defensive tidiness. bootstrap runs this alongside
+	// pubSub.Run in servicerunner, and pubSub.Run closes the watermill
+	// Router the moment ctx is done. Closing the Router stops its handlers,
+	// and stopping a handler closes its publisher — which for the gochannel
+	// backend is the same object this announces through. So on an immediate
+	// shutdown the startup announce can land on a closed pub/sub, and
+	// reporting that as an error made servicerunner fail the whole server's
+	// startup because it had been asked to stop.
+	if ctx.Err() != nil {
+		return nil
+	}
 	if err := an.announce(ctx); err != nil {
+		// Re-checked rather than trusted from above: the close races this
+		// publish, so cancellation can arrive between the guard and the
+		// failure. A live context here means a real transport problem —
+		// a signer that cannot announce is one no server can find — and
+		// that still has to be reported.
+		if ctx.Err() != nil {
+			return nil
+		}
 		return err
 	}
 
