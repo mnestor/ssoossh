@@ -215,6 +215,7 @@ jobs:
 
       - name: Verify glibc floor (GNU build)
         run: |
+          set -euo pipefail
           GLIBC_MAX=$(objdump -T dist/server-linux-build_linux_amd64_v1/ssoosshd 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -1)
           echo "Maximum GLIBC version in ssoosshd: $GLIBC_MAX"
           if [ "$GLIBC_MAX" = "GLIBC_2.28" ]; then
@@ -229,6 +230,7 @@ jobs:
 
       - name: Verify musl build is dynamically linked (Alpine)
         run: |
+          set -euo pipefail
           MUSL_BINARY="dist/server-linux-musl-build_linux_amd64_v1/ssoosshd"
           if [ ! -f "$MUSL_BINARY" ]; then
             echo "✗ musl binary not found at $MUSL_BINARY"
@@ -245,8 +247,9 @@ jobs:
 
       - name: Smoke test musl binary in Alpine
         run: |
+          set -euo pipefail
           MUSL_BINARY="dist/server-linux-musl-build_linux_amd64_v1/ssoosshd"
-          docker run --rm -v "$(pwd)/$MUSL_BINARY:/ssoosshd:ro" alpine:latest /ssoosshd --version
+          docker run --rm -v "$(pwd)/$MUSL_BINARY:/ssoosshd:ro" alpine:latest /ssoosshd --version || { echo "✗ musl binary failed to run in Alpine container"; exit 1; }
           echo "✓ musl binary runs in Alpine container"
 
       - name: remove the release, we failed
