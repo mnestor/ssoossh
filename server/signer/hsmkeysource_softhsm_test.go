@@ -69,7 +69,7 @@ func TestMain(m *testing.M) {
 		if err := os.MkdirAll(tokensDir, 0o755); err == nil {
 			confPath := filepath.Join(tmpDir, "softhsm2.conf")
 			confContent := "directories.tokendir = " + tokensDir + "\nobjectstore.backend = file\n"
-			if err := os.WriteFile(confPath, []byte(confContent), 0o644); err == nil {
+			if err := os.WriteFile(confPath, []byte(confContent), 0o600); err == nil {
 				// Set the environment variable for this process.
 				if err := os.Setenv("SOFTHSM2_CONF", confPath); err == nil {
 					module := findSofthsmModule()
@@ -146,8 +146,8 @@ func buildTestCert(t *testing.T, publicKeyStr string) *ssh.Certificate {
 		CertType:        ssh.UserCert,
 		KeyId:           "test-key",
 		ValidPrincipals: []string{"testuser"},
-		ValidAfter:      uint64(now.Unix()),
-		ValidBefore:     uint64(now.Add(time.Hour).Unix()),
+		ValidAfter:      uint64(now.Unix()),                //nolint:gosec // a Unix timestamp is positive for any real date
+		ValidBefore:     uint64(now.Add(time.Hour).Unix()), //nolint:gosec // as above
 		Permissions:     ssh.Permissions{Extensions: map[string]string{}},
 	}
 	return cert

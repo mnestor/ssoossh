@@ -152,8 +152,14 @@ cover: $(FRONTEND_DIST) ## Coverage HTML report at .coverage/coverage.html
 
 # Mirrors codecover.yaml's test run (minus the Codecov upload, which needs a
 # token) -- it is what the runner actually executes.
+#
+# Two runs, because ./... cannot see pam_ssoossh: every file there is behind
+# //go:build pam, so the first run compiles the package to nothing and PAM
+# contributes neither numerator nor denominator. Codecov takes both profiles;
+# they cover disjoint packages, so nothing is double counted.
 cover-ci: $(FRONTEND_DIST) ## Coverage exactly as codecover.yaml runs it
 	CGO_ENABLED=1 go test -v -covermode=atomic -coverprofile=coverage.txt ./...
+	CGO_ENABLED=1 go test -v -tags=pam -covermode=atomic -coverprofile=coverage-pam.txt ./pam_ssoossh/...
 
 frontend-test: ## Frontend unit and a11y tests (vitest)
 	cd frontend && CI=true pnpm install --frozen-lockfile && pnpm test
@@ -237,6 +243,24 @@ lint-fix: ## Auto-fix every lint finding that golangci-lint can fix
 
 lint: ## golangci-lint over the whole module (merge gate)
 	CGO_ENABLED=1 golangci-lint run ./...
+
+# `lint` above passes no build tags, so every file behind e2e, resilience,
+# load, dbparity or softhsm is invisible to it -- which is most of test/.
+# Only lint-pam passed a tag before this, and only for PAM. Running it over
+# the tagged suites for the first time surfaced findings that had been
+# accumulating unseen in the one part of the tree nobody linted.
+#
+# One invocation per tag set rather than a single combined one: the tags are
+# mutually exclusive in places (multi_instance_test replaces a file's
+# contents), so a combined run does not typecheck.
+LINT_TAGGED := e2e resilience load dbparity softhsm
+
+.PHONY: lint-tagged
+lint-tagged: ## golangci-lint over the build-tagged suites lint(1) cannot see
+	@for tag in $(LINT_TAGGED); do \
+		echo "golangci-lint --build-tags=$$tag"; \
+		CGO_ENABLED=1 golangci-lint run --build-tags=$$tag ./... || exit 1; \
+	done
 
 lint-server:
 	CGO_ENABLED=1 golangci-lint run ./server/...
@@ -425,7 +449,19 @@ security: govulncheck pnpm-audit semgrep ## Run every security scanner
 # Deliberately absent: test-e2e (e2e.yaml's tiers modify host state -- see
 # test/e2e/README.md -- so it stays opt-in), test-load (weekly, not per-PR),
 # and the client-matrix macOS/Windows legs, which need those OSes.
-ci-required: fmt-check check-gitignore lint frontend-lint frontend-check actionlint check-generated build pam test-pam lint-pam cover-ci semgrep ## Every blocking check CI runs
+#
+# frontend-test is here because it was not, and the omission was invisible:
+# the vitest suite ran in exactly one place, resilience.yaml's job named
+# "Accessibility Tests", which runs `pnpm test` -- all twenty test files,
+# only one of which is about accessibility. A contributor running
+# `make pre-pr` executed no frontend test at all.
+#
+# test-migration is here for the same reason. It asserts the SQLite and
+# Postgres schemas come out identical and that every down migration
+# reverses its up; it was wired into no workflow whatsoever. The e2e tier-1
+# matrix proves the app works on both backends, which is a different claim
+# from the schemas agreeing.
+ci-required: fmt-check check-gitignore lint lint-tagged frontend-lint frontend-check frontend-test actionlint check-generated build pam test-pam lint-pam cover-ci test-migration semgrep ## Every blocking check CI runs
 
 # Advisory: govulncheck and pnpm audit report to the PR summary rather than
 # blocking, because both can surface a dependency you cannot fix in the same

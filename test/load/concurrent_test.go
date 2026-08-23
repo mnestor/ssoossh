@@ -77,7 +77,10 @@ func testConcurrentLogins(t *testing.T, n int) {
 	if failCount > 0 {
 		t.Errorf("%d logins failed out of %d", failCount, n)
 	}
-	if successCount != int32(n) {
+	// int(successCount) rather than int32(n): n is the worker count, and
+	// widening the counter avoids a conversion that is only safe because of
+	// how small n happens to be.
+	if int(successCount) != n {
 		t.Errorf("expected %d successful logins, got %d", n, successCount)
 	}
 

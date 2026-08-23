@@ -4,7 +4,6 @@ package resilience
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -62,9 +61,3 @@ func contextWithTimeout(d time.Duration) (context.Context, context.CancelFunc) {
 
 // waitFor is a sensible default timeout for blocking operations (login, approval, etc).
 const waitFor = 10 * time.Second
-
-// environment returns the current environment, for tests that need to fork
-// processes with specific env vars (e.g., to disable pubsub or database).
-func environment() []string {
-	return os.Environ()
-}

@@ -28,6 +28,7 @@ jobs:
     outputs:
       go: ${{ steps.filter.outputs.go || 'true' }}
       frontend: ${{ steps.filter.outputs.frontend || 'true' }}
+      migrations: ${{ steps.filter.outputs.migrations || 'true' }}
     steps:
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         if: github.event_name == 'pull_request'
@@ -43,6 +44,12 @@ jobs:
               - '.github/workflows/resilience.yaml'
             frontend:
               - 'frontend/**'
+              - '.github/workflows/resilience.yaml'
+            migrations:
+              - 'server/resources/migrations/**'
+              - 'test/migration/**'
+              - 'test/postgres/**'
+              - 'test/sqlite/**'
               - '.github/workflows/resilience.yaml'
 
   resilience:
@@ -105,8 +112,35 @@ jobs:
       - name: Run load tests
         run: CGO_ENABLED=1 go test -buildvcs=false -tags=load -race -count=1 -timeout=10m ./test/load/...
 
+  # SQLite/Postgres schema parity. This suite existed and was wired into no
+  # workflow at all, on the reasoning that the e2e tier-1 matrix already runs
+  # both backends -- but that proves the app works on each, which is a
+  # different claim from the two schemas agreeing. A column present on
+  # Postgres and missing on SQLite passes e2e right up until something reads
+  # it.
+  #
+  # Bare runner, not the build container: test/postgres brings its own
+  # postgres up with `docker run`, so it needs a daemon rather than a
+  # services: block. SSOOSSH_REQUIRE_DOCKER makes a missing daemon fail the
+  # job instead of skipping every test and reporting green.
+  migrations:
+    name: Migration Parity
+    needs: changes
+    if: needs.changes.outputs.migrations == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+      - name: Run migration parity tests
+        env:
+          SSOOSSH_REQUIRE_DOCKER: "1"
+        run: go test -buildvcs=false -tags=dbparity -count=1 -timeout=10m ./test/migration/...
+
   a11y:
-    name: Accessibility Tests
+    name: Frontend Tests
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
@@ -120,5 +154,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install dependencies
         run: CI=true pnpm install --frozen-lockfile
-      - name: Run accessibility tests
+      # `pnpm test` is the whole vitest suite -- 20 files, of which one is
+      # about accessibility. The job and this step were both named for that
+      # one file, which is why the frontend suite was widely believed to run
+      # nowhere: people looked for a "frontend tests" job and there wasn't
+      # one.
+      - name: Run frontend unit and a11y tests
         run: pnpm test

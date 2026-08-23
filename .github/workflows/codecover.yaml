@@ -49,6 +49,18 @@ jobs:
       - name: Run tests
         run: CGO_ENABLED=1 go test -buildvcs=false -v -covermode=atomic -coverprofile=coverage.txt ./...
 
+      # Separate run, and it is not optional. Every file in pam_ssoossh/
+      # carries //go:build pam -- sources and tests alike -- so the run above
+      # compiles the package to nothing. It contributed neither numerator nor
+      # denominator to coverage.txt, which meant PAM's real coverage reached
+      # no dashboard and a regression in it moved no number. `make test-pam`
+      # ran the tests but passed no -coverprofile, so nothing measured them.
+      #
+      # PAM is the authorization decision for sudo. It is the last part of
+      # this repo that should be invisible to coverage.
+      - name: Run PAM tests
+        run: CGO_ENABLED=1 go test -buildvcs=false -v -tags=pam -covermode=atomic -coverprofile=coverage-pam.txt ./pam_ssoossh/...
+
       # `!cancelled()` on this step too, not just the upload: a failing
       # test run used to stop the job before the token was ever loaded,
       # which silently skipped the upload the condition below was meant to
@@ -72,3 +84,7 @@ jobs:
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           token: ${{ steps.secrets.outputs.CODECOV_TOKEN }}
+          # Both profiles, or the PAM one is collected and thrown away.
+          # Codecov merges them; they cover disjoint packages, so there is
+          # no double counting.
+          files: ./coverage.txt,./coverage-pam.txt
