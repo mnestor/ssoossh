@@ -51,10 +51,6 @@ try_open_browser: false
 #   no_x11_forwarding: false
 #   no_user_rc: false
 
-# Path where `service enroll` stores the enrollment code and public key.
-# Default: ~/.config/ssoossh/service_enrollment.json
-# service_enrollment_file: ""
-
 # Path used by `host principals` and `host mapping` for the principal mapping.
 # Default: /etc/ssoossh/principals.json
 # principal_mapping_file: /etc/ssoossh/principals.json

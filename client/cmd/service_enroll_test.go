@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/mnestor/ssoossh/client/config"
 	"github.com/mnestor/ssoossh/internal/api"
 )
 
@@ -51,39 +53,179 @@ func TestEnrollmentCode(t *testing.T) {
 	}
 }
 
-// should round-trip the enrollment file with credential-tight permissions.
-func TestSaveEnrollment_RoundTrip(t *testing.T) {
+// should require exactly one key source — the previous implicit-generate
+// behavior wrote a private key to a path the operator never named, which
+// is what removing the enrollment file was meant to end.
+func TestCheckEnrollKeySelection(t *testing.T) {
 	t.Parallel()
 
-	path := filepath.Join(t.TempDir(), "enrollment.json")
-	saved := ServiceEnrollment{Code: "code-1", PublicKey: "ssh-ed25519 AAAA", PrivateKeyMaterial: "PEM"}
-
-	if err := saveEnrollment(path, saved); err != nil {
-		t.Fatalf("saveEnrollment() error = %v", err)
+	tests := []struct {
+		name          string
+		publicKeyPath string
+		generatePath  string
+		wantErr       string
+	}{
+		{name: "should accept an operator-supplied public key", publicKeyPath: "/tmp/id.pub"},
+		{name: "should accept a generate path", generatePath: "/tmp/service_key"},
+		{name: "should reject neither being set", wantErr: "choose a key source"},
+		{name: "should reject both being set", publicKeyPath: "/tmp/id.pub", generatePath: "/tmp/service_key", wantErr: "mutually exclusive"},
 	}
 
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat enrollment file: %v", err)
-	}
-	if got := info.Mode().Perm(); got != 0600 {
-		t.Errorf("enrollment file mode = %o, want 0600", got)
-	}
-
-	loaded, err := loadEnrollment(path)
-	if err != nil {
-		t.Fatalf("loadEnrollment() error = %v", err)
-	}
-	if *loaded != saved {
-		t.Errorf("round-trip mismatch: got %+v, want %+v", *loaded, saved)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := checkEnrollKeySelection(tt.publicKeyPath, tt.generatePath)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("checkEnrollKeySelection() error = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("checkEnrollKeySelection() error = %v, want containing %q", err, tt.wantErr)
+			}
+		})
 	}
 }
 
-func TestSaveEnrollment_ShouldRequireAConfiguredPath(t *testing.T) {
+// should follow the OpenSSH layout so the printed retrieve command names
+// the file sshd will actually look for.
+func TestKeyPathDerivation(t *testing.T) {
 	t.Parallel()
 
-	if err := saveEnrollment("", ServiceEnrollment{Code: "c"}); err == nil {
-		t.Fatal("saveEnrollment() error = nil, want error for empty path")
+	tests := []struct {
+		name    string
+		path    string
+		wantPub string
+		wantCrt string
+	}{
+		{name: "should derive from a private key path", path: "/etc/ssoossh/service_key", wantPub: "/etc/ssoossh/service_key.pub", wantCrt: "/etc/ssoossh/service_key-cert.pub"},
+		{name: "should not double the suffix for a public key path", path: "/etc/ssoossh/service_key.pub", wantPub: "/etc/ssoossh/service_key.pub.pub", wantCrt: "/etc/ssoossh/service_key-cert.pub"},
+		{name: "should handle a bare relative name", path: "id_ed25519", wantPub: "id_ed25519.pub", wantCrt: "id_ed25519-cert.pub"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := publicKeyPathFor(tt.path); got != tt.wantPub {
+				t.Errorf("publicKeyPathFor(%q) = %q, want %q", tt.path, got, tt.wantPub)
+			}
+			if got := certificatePathFor(tt.path); got != tt.wantCrt {
+				t.Errorf("certificatePathFor(%q) = %q, want %q", tt.path, got, tt.wantCrt)
+			}
+		})
+	}
+}
+
+// should write the private key 0600 and the public key beside it, and hand
+// back the same public key that gets enrolled.
+func TestGenerateServiceKeypair(t *testing.T) {
+	t.Parallel()
+
+	keyPath := filepath.Join(t.TempDir(), "service_key")
+	cfg := &config.Config{}
+
+	publicKey, err := generateServiceKeypair(cfg, keyPath)
+	if err != nil {
+		t.Fatalf("generateServiceKeypair() error = %v", err)
+	}
+
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		t.Fatalf("stat private key: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0600 {
+		t.Errorf("private key mode = %o, want 0600", got)
+	}
+
+	pubData, err := os.ReadFile(publicKeyPathFor(keyPath))
+	if err != nil {
+		t.Fatalf("read public key: %v", err)
+	}
+	if string(pubData) != publicKey {
+		t.Errorf("public key file = %q, want the enrolled key %q", pubData, publicKey)
+	}
+}
+
+// should refuse to clobber an existing key — overwriting a private key
+// destroys every certificate that depends on it.
+func TestGenerateServiceKeypair_ShouldRefuseToOverwrite(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		existing func(dir string) string
+	}{
+		{name: "should refuse when the private key exists", existing: func(dir string) string { return filepath.Join(dir, "service_key") }},
+		{name: "should refuse when only the public key exists", existing: func(dir string) string { return filepath.Join(dir, "service_key.pub") }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			if err := os.WriteFile(tt.existing(dir), []byte("existing"), 0600); err != nil {
+				t.Fatalf("seed existing file: %v", err)
+			}
+
+			_, err := generateServiceKeypair(&config.Config{}, filepath.Join(dir, "service_key"))
+			if err == nil || !strings.Contains(err.Error(), "already exists") {
+				t.Fatalf("generateServiceKeypair() error = %v, want an already-exists refusal", err)
+			}
+		})
+	}
+}
+
+// should print the code and a runnable retrieve command — a code with no
+// instructions is the failure mode that removing the enrollment file would
+// otherwise introduce.
+func TestPrintEnrollmentCode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		publicKeyPath string
+		generatePath  string
+		wantContains  []string
+		wantAbsent    string
+	}{
+		{
+			name:          "should name the derived cert path for a supplied public key",
+			publicKeyPath: "/etc/ssoossh/service_key.pub",
+			wantContains: []string{
+				"code-1",
+				"SSOOSSH_ENROLLMENT_CODE=code-1",
+				"--output /etc/ssoossh/service_key-cert.pub",
+			},
+			wantAbsent: "Private key written to",
+		},
+		{
+			name:         "should report both written files when generating",
+			generatePath: "/etc/ssoossh/service_key",
+			wantContains: []string{
+				"Private key written to /etc/ssoossh/service_key",
+				"Public key written to  /etc/ssoossh/service_key.pub",
+				"--output /etc/ssoossh/service_key-cert.pub",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var out bytes.Buffer
+			printEnrollmentCode(&out, "code-1", tt.publicKeyPath, tt.generatePath)
+
+			got := out.String()
+			for _, want := range tt.wantContains {
+				if !strings.Contains(got, want) {
+					t.Errorf("printEnrollmentCode() output missing %q, got:\n%s", want, got)
+				}
+			}
+			if tt.wantAbsent != "" && strings.Contains(got, tt.wantAbsent) {
+				t.Errorf("printEnrollmentCode() output should not contain %q, got:\n%s", tt.wantAbsent, got)
+			}
+		})
 	}
 }
 

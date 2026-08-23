@@ -61,8 +61,8 @@ func TestExecuteEndToEnd(t *testing.T) {
 		{name: "ssh config", args: []string{"ssh", "config"}, wantNilErr: true},
 		{name: "host principals with no args", args: []string{"host", "principals"}, wantErr: errors.New("usage: ssoossh host principals <username>")},
 		{name: "host mapping list", args: []string{"host", "mapping", "list"}, wantNilErr: true},
-		{name: "service enroll", args: []string{"service", "enroll"}, wantErr: errors.New("the enrollment request resolved with no outcome")},
-		{name: "service retrieve", args: []string{"service", "retrieve"}, wantErr: errors.New("load enrollment: read enrollment file: open : no such file or directory")},
+		{name: "service enroll with no key source", args: []string{"service", "enroll"}, wantErr: errors.New("choose a key source: --public-key <public-key-file> to enroll a key you already have, or --generate <private-key-file> to generate one")},
+		{name: "service retrieve with no code", args: []string{"service", "retrieve"}, wantErr: errors.New("no enrollment code: pass --code or set $SSOOSSH_ENROLLMENT_CODE to the code `service enroll` printed")},
 		{name: "version", args: []string{"version"}, wantNilErr: true},
 	}
 

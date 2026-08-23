@@ -151,13 +151,6 @@ try_open_browser: false
 #   type: ecdsa
 #   size: 384
 
-# Path where `service enroll` stores the enrollment code and key material,
-# and `service retrieve` reads it back. Created 0600; the code redeems
-# certificates until the enrollment expires, so treat the file like a
-# credential.
-# Default: ~/.config/ssoossh/service_enrollment.json
-# service_enrollment_file: ""
-
 # Local principal-mapping file shared by `host mapping` (writes) and
 # `host principals` (reads, offline, for sshd's
 # AuthorizedPrincipalsCommand). JSON object of local account -> list of
