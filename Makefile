@@ -172,16 +172,19 @@ test-hsm: ## HSM key source tests against softhsm2 (needs softhsm2 + opensc)
 # and a real sshd. Behind the `e2e` build tag, so it never runs as part of
 # `make test`. Tier 3 modifies the host (creates and unlocks a dedicated
 # local account, runs sshd as root via sudo) -- see test/e2e/README.md.
+# CGO_ENABLED=1: the e2e test package itself is cgo-free, but the harness
+# builds ssoosshd with the inherited environment, and that build needs cgo
+# (crypto11 -> libpkcs11) like every other server build.
 test-e2e: $(FRONTEND_DIST) ## End-to-end suite (modifies host state, read test/e2e/README.md first)
-	go test -tags=e2e -count=1 -timeout=10m ./test/e2e/...
+	CGO_ENABLED=1 go test -tags=e2e -count=1 -timeout=10m ./test/e2e/...
 
 # Reproducing tests for known limitations (quarantined -- do not run in CI).
 # These tests verify defects exist; they should fail loudly.
 test-e2e-multi-instance: $(FRONTEND_DIST) ## Quarantined multi-instance repro tests (expected to fail)
-	go test -tags=e2e,multi_instance_test -count=1 -timeout=10m ./test/e2e/...
+	CGO_ENABLED=1 go test -tags=e2e,multi_instance_test -count=1 -timeout=10m ./test/e2e/...
 
 test-memory-leak: ## Memory leak repro tests
-	go test -tags=memory_leak_test -count=1 -timeout=1m ./server/service/... -v -run MemoryLeak
+	CGO_ENABLED=1 go test -tags=memory_leak_test -count=1 -timeout=1m ./server/service/... -v -run MemoryLeak
 
 # Mirrors resilience.yaml's resilience job.
 test-resilience: $(FRONTEND_DIST) ## Resilience suite (shutdown, db loss, oidc loss)

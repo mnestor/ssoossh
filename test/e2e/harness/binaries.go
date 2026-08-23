@@ -61,10 +61,16 @@ func Binaries(t *testing.T) (ssoosshd, ssoossh string) {
 }
 
 // buildBinary runs `go build -o dir/name pkg` from root.
+//
+// CGO_ENABLED=1 for the same reason the Makefile's build target sets it:
+// ssoosshd reaches libpkcs11 through crypto11, and inheriting a cgo-free
+// environment (the devcontainer default) would fail every test at harness
+// setup.
 func buildBinary(root, dir, name, pkg string) error {
 	out := filepath.Join(dir, name)
 	cmd := exec.Command("go", "build", "-buildvcs=false", "-o", out, pkg)
 	cmd.Dir = root
+	cmd.Env = append(os.Environ(), "CGO_ENABLED=1")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return &buildError{pkg: pkg, output: string(output), err: err}
