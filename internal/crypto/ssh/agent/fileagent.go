@@ -132,6 +132,15 @@ func (f *FileAgent) Backend() string {
 // List returns the identities known to the agent. When filterByCA is true,
 // the keypair is only included if it's signed by one of the trusted CAs
 // (see SetCA); when false, the keypair is included regardless.
+//
+// The identity is the certificate whenever one is loaded, not the bare
+// public key. Callers rely on that: `ssh inspect` casts what List(true)
+// returns to *ssh.Certificate, and `ssh login`'s pruneSuperseded compares
+// it against the certificate it just installed to decide what the new one
+// supersedes. Returning a bare public key broke both — inspect reported
+// "not a certificate", and prune found no match for the identity it had
+// just written and deleted its own key files (FileAgent.Remove removes the
+// whole identity regardless of the key passed to it).
 func (f *FileAgent) List(filterByCA bool) ([]*ssh.PublicKey, error) {
 	var keys []*ssh.PublicKey
 	if f.keypair == nil {
@@ -139,19 +148,30 @@ func (f *FileAgent) List(filterByCA bool) ([]*ssh.PublicKey, error) {
 	}
 
 	if !filterByCA {
-		pub := f.keypair.Public()
-		keys = append(keys, &pub)
+		keys = append(keys, f.identity())
 		return keys, nil
 	}
 
 	for _, ca := range f.cas {
 		if f.keypair.SignedBy(ca) {
-			pub := f.keypair.Public()
-			keys = append(keys, &pub)
+			keys = append(keys, f.identity())
 			break
 		}
 	}
 	return keys, nil
+}
+
+// identity is the keypair as an ssh.PublicKey: the certificate when one is
+// loaded, the bare public key otherwise. A certificate is itself an
+// ssh.PublicKey, so this narrows nothing for callers that only want the key
+// material.
+func (f *FileAgent) identity() *ssh.PublicKey {
+	if cert := f.keypair.Certificate(); cert != nil {
+		var pub ssh.PublicKey = cert
+		return &pub
+	}
+	pub := f.keypair.Public()
+	return &pub
 }
 
 // Add is not supported for FileAgent; use AddKeypair to write a keypair to disk.
