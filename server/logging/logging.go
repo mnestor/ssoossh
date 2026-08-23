@@ -45,18 +45,23 @@ func New(c *config.Config) (closeFns []func(context.Context) error, err error) {
 		}
 	}
 
-	// always send errors to stderr if not a terminal
-	// will get these anyway below if a terminal
-	// I think this is good for use in containers?
-	if !isTerminal {
-		h := GetHandler(c.Logging.LogJSON, isTerminal, os.Stderr, &slog.HandlerOptions{
-			Level: slog.LevelError,
-		})
-		router = router.Add(h)
-	}
-
 	{ // group these together
 		var fanout []slog.Handler
+
+		// Always send errors to stderr when not a terminal (containers,
+		// systemd). Part of the fanout below, NOT its own router.Add: the
+		// router resolves with FirstMatch, and a predicate-less handler
+		// added here matched every record first - so this ERROR-levelled
+		// handler swallowed all INFO/DEBUG output whenever stdout was not
+		// a terminal. In a terminal everything worked, which is exactly
+		// why the bug survived: dev runs looked fine while every systemd,
+		// docker, and test-harness process logged errors only, regardless
+		// of logging.level.
+		if !isTerminal {
+			fanout = append(fanout, GetHandler(c.Logging.LogJSON, isTerminal, os.Stderr, &slog.HandlerOptions{
+				Level: slog.LevelError,
+			}))
+		}
 
 		baseLevel := LevelFromString(c.Logging.Level)
 		opts := &slog.HandlerOptions{
@@ -67,13 +72,19 @@ func New(c *config.Config) (closeFns []func(context.Context) error, err error) {
 		}
 
 		// Main log handler: discard to io.Discard if /dev/null, otherwise use configured path
+		haveMainHandler := false
 		if c.Logging.Filename != "" {
 			h := GetHandler(c.Logging.LogJSON, isTerminal, logDestination(c.Logging.Filename, &c.Logging), opts)
 			fanout = append(fanout, h)
+			haveMainHandler = true
 		}
 
-		// if we are a terminal or CopyStdout enabled then log there as well
-		if isTerminal || c.Logging.CopyStdout || len(fanout) == 0 {
+		// If we are a terminal or CopyStdout is enabled then log there as
+		// well - and always when no main handler exists yet, so a process
+		// with no filename configured still logs somewhere. Tracked with
+		// haveMainHandler rather than len(fanout), which now also counts
+		// the stderr error handler above.
+		if isTerminal || c.Logging.CopyStdout || !haveMainHandler {
 			h := GetHandler(c.Logging.LogJSON, isTerminal, os.Stdout, opts)
 			fanout = append(fanout, h)
 		}

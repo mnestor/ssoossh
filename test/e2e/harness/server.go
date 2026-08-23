@@ -31,6 +31,13 @@ type ServerOptions struct {
 	// Extensions overrides the user certificate's permitted extensions.
 	// Defaults to permit-pty and permit-agent-forwarding.
 	Extensions []string
+	// Args are inserted before --config on the ssoosshd command line, so a
+	// test can select a startup mode ("serve", "api") - see split_test.go.
+	Args []string
+	// ExtraConfigYAML is appended verbatim to the rendered config. Used to
+	// add top-level sections the template does not know about (pubsub for
+	// the split-mode test).
+	ExtraConfigYAML string
 }
 
 // Server is a running ssoosshd subprocess.
@@ -44,6 +51,11 @@ type Server struct {
 	// ClientID/ClientSecret are the OAuth credentials this instance is
 	// configured with, for tests that need to drive the IdP directly.
 	ClientID string
+
+	// ConfigPath is the rendered config file, shared with the signer
+	// process in split-mode tests - both halves must agree on the broker
+	// and the CA key.
+	ConfigPath string
 
 	cmd            *exec.Cmd
 	stdout, stderr *bytes.Buffer
@@ -81,7 +93,7 @@ func StartServer(t *testing.T, idp *IdentityProvider, opts ServerOptions) *Serve
 		SSHKeyPEM:     sshKeyPEM,
 		ValidDuration: opts.ValidDuration,
 		Extensions:    opts.Extensions,
-	})
+	}) + opts.ExtraConfigYAML
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "ssoosshd.yaml")
@@ -91,7 +103,8 @@ func StartServer(t *testing.T, idp *IdentityProvider, opts ServerOptions) *Serve
 
 	ssoosshdPath, _ := Binaries(t)
 
-	cmd := exec.Command(ssoosshdPath, "--config", configPath)
+	args := append(append([]string{}, opts.Args...), "--config", configPath)
+	cmd := exec.Command(ssoosshdPath, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -100,6 +113,7 @@ func StartServer(t *testing.T, idp *IdentityProvider, opts ServerOptions) *Serve
 	}
 
 	srv := &Server{
+		ConfigPath:  configPath,
 		BaseURL:     baseURL,
 		CAPublicKey: caPublicKey,
 		ClientID:    clientID,
@@ -269,6 +283,9 @@ func renderServerConfig(d serverConfigData) string {
 	fmt.Fprintf(&b, "production: false\n")
 	fmt.Fprintf(&b, "logging:\n")
 	fmt.Fprintf(&b, "  level: DEBUG\n")
+	// Stdout too, or process logs land in a timberjack temp file where
+	// neither artifact capture nor the signer-readiness poll can see them.
+	fmt.Fprintf(&b, "  enable_stdout: true\n")
 
 	fmt.Fprintf(&b, "ssh_key: |\n")
 	for _, line := range strings.Split(strings.TrimRight(d.SSHKeyPEM, "\n"), "\n") {
