@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/bep/simplecobra"
-	"github.com/spf13/cobra"
 
 	"github.com/mnestor/ssoossh/server/bootstrap"
 )
