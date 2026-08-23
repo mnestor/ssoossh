@@ -728,3 +728,87 @@ func TestPruneSuperseded_ShouldNotDeleteTheCertificateItJustInstalled(t *testing
 		}
 	}
 }
+
+// The attribution the user sees has to name the layer they can actually
+// change. Flags reach effectiveExtensions through viper -- bindFlags binds
+// --no-pty to certificate_extensions.no_pty -- so by the time the value is
+// read there is nothing in the struct distinguishing "I typed this" from "a
+// file said this". Without SetByFlag the removal is blamed on config, which
+// sends someone who just typed --no-pty looking through config files for it.
+func TestEffectiveExtensions_ShouldAttributeRemovalsToFlagsWhenAFlagSetThem(t *testing.T) {
+	cfg := &config.Config{
+		CertificateExtensions: config.CertificateExtensionOptions{NoPTY: true},
+		SetByFlag:             map[string]bool{"certificate_extensions.no_pty": true},
+	}
+	removals := make(map[string]extensionRemovalReason)
+
+	if _, err := effectiveExtensions(cfg, removals); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got, ok := removals["permit-pty"]; !ok {
+		t.Fatal("expected permit-pty to be removed")
+	} else if got != removed_flag {
+		t.Errorf("got removal reason %v for a flag-set opt-out, want removed_flag", got)
+	}
+}
+
+// The same opt-out with no flag behind it stays attributed to config.
+func TestEffectiveExtensions_ShouldAttributeRemovalsToConfigWhenNoFlagSetThem(t *testing.T) {
+	cfg := &config.Config{
+		CertificateExtensions: config.CertificateExtensionOptions{NoPTY: true},
+	}
+	removals := make(map[string]extensionRemovalReason)
+
+	if _, err := effectiveExtensions(cfg, removals); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := removals["permit-pty"]; got != removed_config {
+		t.Errorf("got removal reason %v, want removed_config", got)
+	}
+}
+
+// The "opted out via command-line flags" message existed but nothing could
+// produce it: removed_flag was declared, switched on in two places, and
+// never assigned. Opting everything out with flags reported the config
+// wording.
+func TestEffectiveExtensions_ShouldBlameFlagsWhenFlagsEmptyTheSet(t *testing.T) {
+	cfg := &config.Config{
+		CertificateExtensions: config.CertificateExtensionOptions{
+			NoPTY:             true,
+			NoAgentForwarding: true,
+			NoPortForwarding:  true,
+			NoX11Forwarding:   true,
+			NoUserRC:          true,
+		},
+		SetByFlag: map[string]bool{
+			"certificate_extensions.no_pty":              true,
+			"certificate_extensions.no_agent_forwarding": true,
+			"certificate_extensions.no_port_forwarding":  true,
+			"certificate_extensions.no_x11_forwarding":   true,
+			"certificate_extensions.no_user_rc":          true,
+		},
+	}
+	removals := make(map[string]extensionRemovalReason)
+
+	_, err := effectiveExtensions(cfg, removals)
+	if err == nil {
+		t.Fatal("expected an error when every extension is opted out")
+	}
+	if !strings.Contains(err.Error(), "command-line flags") {
+		t.Errorf("got %q, want it to blame command-line flags", err.Error())
+	}
+}
+
+// And the summary line names the flag rather than the config file.
+func TestPrintEffectiveExtensions_ShouldNameFlagsAsTheReason(t *testing.T) {
+	removals := map[string]extensionRemovalReason{"permit-pty": removed_flag}
+	var buf bytes.Buffer
+
+	printEffectiveExtensions(&buf, []string{"permit-user-rc"}, loginExtensions, removals)
+
+	if !strings.Contains(buf.String(), "permit-pty(flag)") {
+		t.Errorf("got %q, want it to attribute permit-pty to a flag", buf.String())
+	}
+}

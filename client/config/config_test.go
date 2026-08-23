@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -493,17 +494,22 @@ func sourceFor(t *testing.T, sources []ConfigSource, label string) ConfigSource 
 // any search location is normal. That also swallows a config file that IS
 // there and failed to parse — the user believes their settings are in
 // effect, and nothing says otherwise. --debug reads these outcomes.
+//
+// Driven through the system file rather than --config: a search-path
+// location is where "optional" genuinely applies, and it is the case this
+// recording exists for. A malformed file named explicitly with --config is
+// a hard error instead — see
+// TestNewConfig_ShouldFailWhenTheExplicitConfigFileIsMalformed.
 func TestNewConfig_ShouldRecordAMalformedConfigFileAsAnError(t *testing.T) {
-	sysDir := writeSystemConfig(t, map[string]string{"ssoossh.yaml": "server: https://sys.example.com\n"})
-	badConfig := writeConfig(t, "server: https://ssh.example.com\nbroken: [unclosed\n")
-	cmd := newConfigCommand(t, "--config", badConfig)
+	sysDir := writeSystemConfig(t, map[string]string{"ssoossh.yaml": "server: https://sys.example.com\nbroken: [unclosed\n"})
+	cmd := newConfigCommand(t)
 
 	cfg, err := newConfig(cmd, testPaths(sysDir), noPolicy)
 	if err != nil {
 		t.Fatalf("a malformed optional config must not fail the load: %v", err)
 	}
 
-	got := sourceFor(t, cfg.Sources, "--config")
+	got := sourceFor(t, cfg.Sources, "system file")
 	if got.Status != SourceError {
 		t.Fatalf("status = %q, want %q (sources: %v)", got.Status, SourceError, cfg.Sources)
 	}
@@ -575,5 +581,55 @@ func TestNewConfig_ShouldRecordSourcesInPrecedenceOrder(t *testing.T) {
 		if labels[i] != want[i] {
 			t.Fatalf("sources = %v, want %v", labels, want)
 		}
+	}
+}
+
+// A --config the user named explicitly is not the same as a search-path
+// location that happens to be empty. Absence is normal at the search paths
+// and is deliberately not an error there; naming a file that is not there
+// is a typo, and continuing means the user's settings silently do not
+// apply. If their file set `server:` they get a confusing failure much
+// later; if it set `use_agent: false` they quietly keep using the agent the
+// setting exists to avoid.
+//
+// Same reasoning the `enforce` file already fails closed on, for the same
+// reason: silently dropping settings someone asked for is the failure mode
+// worth refusing.
+func TestNewConfig_ShouldFailWhenTheExplicitConfigFileIsMissing(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "not-here.yaml")
+	cmd := newConfigCommand(t, "--config", missing)
+
+	_, err := newConfig(cmd, testPaths(t.TempDir()), noPolicy)
+	if err == nil {
+		t.Fatal("expected an error for a --config file that does not exist")
+	}
+	if !strings.Contains(err.Error(), missing) {
+		t.Errorf("expected the error to name the file, got %v", err)
+	}
+}
+
+// Malformed is the other half: viper skips a file it cannot parse, so
+// without this the user's settings vanish just as quietly.
+func TestNewConfig_ShouldFailWhenTheExplicitConfigFileIsMalformed(t *testing.T) {
+	path := writeConfig(t, "server: [unterminated\n")
+	cmd := newConfigCommand(t, "--config", path)
+
+	_, err := newConfig(cmd, testPaths(t.TempDir()), noPolicy)
+	if err == nil {
+		t.Fatal("expected an error for a --config file that cannot be parsed")
+	}
+	if !strings.Contains(err.Error(), path) {
+		t.Errorf("expected the error to name the file, got %v", err)
+	}
+}
+
+// The search-path locations keep their existing behaviour: absent is the
+// common case and must stay silent, or every machine without a system file
+// fails to start.
+func TestNewConfig_ShouldStillIgnoreAbsentSearchPathFiles(t *testing.T) {
+	cmd := newConfigCommand(t)
+
+	if _, err := newConfig(cmd, testPaths(t.TempDir()), noPolicy); err != nil {
+		t.Errorf("expected absent search-path files to be tolerated, got %v", err)
 	}
 }

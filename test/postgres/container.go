@@ -33,6 +33,14 @@ func ConnectAndMigrate(t *testing.T, ctx context.Context) (*gorm.DB, string) {
 	t.Helper()
 
 	if err := exec.Command("docker", "info").Run(); err != nil {
+		// Skipping is right on a laptop without docker and wrong in CI,
+		// where a silent skip is a green check for a suite that never ran
+		// -- the same shape of problem as a gate that compares a generated
+		// file to itself. SSOOSSH_REQUIRE_DOCKER=1 turns the skip into the
+		// failure it should be anywhere the daemon is supposed to exist.
+		if os.Getenv("SSOOSSH_REQUIRE_DOCKER") == "1" {
+			t.Fatalf("docker daemon unavailable and SSOOSSH_REQUIRE_DOCKER=1: %v", err)
+		}
 		t.Skipf("docker daemon unavailable: %v", err)
 	}
 

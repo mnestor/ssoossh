@@ -43,6 +43,15 @@ type RootCommand struct {
 	newSSHAgent  func() (agent.Agent, error)
 	newFileAgent func(path string) (agent.Agent, error)
 
+	// cobraRoot is the assembled *cobra.Command, captured by Init. It is the
+	// only way out of simplecobra to the tree itself: simplecobra.Exec keeps
+	// its root Commandeer unexported and exposes it only as Execute's return
+	// value, but Init is handed the Commandeer directly, and by the time
+	// simplecobra.New returns, every subcommand has been added beneath this
+	// pointer. That is what lets CobraCommandForManpage generate from the
+	// real tree without executing anything.
+	cobraRoot *cobra.Command
+
 	commands []simplecobra.Commander
 }
 
@@ -55,6 +64,7 @@ func (r *RootCommand) Commands() []simplecobra.Commander { return r.commands }
 // Init implements simplecobra.Commander.
 func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd := cd.CobraCommand
+	r.cobraRoot = cmd
 	cmd.Short = "The ssoossh client — turns an OIDC login into a short-lived SSH certificate, from your ssh_config."
 	cmd.Long = "The ssoossh client wires SSO into your existing SSH workflow. Configured " +
 		"as a ProxyCommand or Match exec in ssh_config, it generates a fresh keypair, " +
@@ -288,14 +298,19 @@ func Execute() {
 	}
 }
 
-// CobraCommandForManpage returns the root cobra.Command tree for man page generation.
-// This is for documentation tools only; it bypasses the normal initialization flow.
-func CobraCommandForManpage() (*cobra.Command, error) {
+// newManpageRoot assembles the real command tree for documentation, with
+// every PreRun seam left nil.
+//
+// Nil is the point rather than an oversight. simplecobra.New compiles the
+// whole tree — running each command's Init, registering every flag, and
+// nesting every subcommand — without running PreRun, which only fires from
+// cobra's PreRunE during an actual Execute. So a docs build needs no
+// config file, no ssh-agent, and no reachable server, and leaving the
+// seams nil is what proves it stays that way: reintroducing an Execute
+// here would nil-panic instead of quietly reading the developer's own
+// configuration and dialing out for the CA.
+func newManpageRoot() (*RootCommand, error) {
 	root := &RootCommand{
-		newConfig:    config.NewConfig,
-		newAPIClient: newAPIClientFromConfig,
-		newSSHAgent:  agent.NewSSHAgent,
-		newFileAgent: agent.NewFileAgent,
 		commands: []simplecobra.Commander{
 			newCACommand(),
 			newSSHCommand(),
@@ -305,24 +320,24 @@ func CobraCommandForManpage() (*cobra.Command, error) {
 		},
 	}
 
-	// Execute with help to initialize the cobra tree without running anything
-	exec, err := simplecobra.New(root)
-	if err != nil {
+	if _, err := simplecobra.New(root); err != nil {
 		return nil, fmt.Errorf("initialize command tree: %w", err)
 	}
-
-	// Try to get the cobra command by executing with help
-	// This triggers Init() on all commands, building the tree
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // immediately cancel to avoid blocking
-
-	rootCD, execErr := exec.Execute(ctx, []string{})
-	if execErr != nil {
-		return nil, fmt.Errorf("execute for initialization: %w", execErr)
+	if root.cobraRoot == nil {
+		return nil, fmt.Errorf("command tree compiled without capturing the cobra root")
 	}
-	if rootCD == nil {
-		return nil, fmt.Errorf("failed to initialize cobra command tree")
-	}
+	return root, nil
+}
 
-	return rootCD.CobraCommand, nil
+// CobraCommandForManpage returns the root cobra.Command tree for man page
+// generation. It is the same tree Execute runs, so a flag or subcommand
+// added anywhere below appears in the generated pages without anyone
+// having to remember to mirror it — which is the whole reason this exists
+// rather than gendocs hand-building a parallel tree.
+func CobraCommandForManpage() (*cobra.Command, error) {
+	root, err := newManpageRoot()
+	if err != nil {
+		return nil, err
+	}
+	return root.cobraRoot, nil
 }

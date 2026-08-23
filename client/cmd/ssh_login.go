@@ -55,6 +55,22 @@ var extensionToConfig = map[string]func(*config.CertificateExtensionOptions) boo
 	"permit-user-rc":          func(c *config.CertificateExtensionOptions) bool { return c.NoUserRC },
 }
 
+// extensionToViperKey maps extension names to the config key their opt-out
+// lives under, which is also the key the corresponding --no-* flag binds to
+// (see bindFlags in client/config). effectiveExtensions uses it to look the
+// extension up in Config.SetByFlag and so report which layer removed it.
+//
+// Kept beside extensionToConfig above rather than derived from it: the two
+// have to stay in step, and a name typed twice next to each other is easier
+// to keep honest than one computed from a struct field name.
+var extensionToViperKey = map[string]string{
+	"permit-pty":              "certificate_extensions.no_pty",
+	"permit-agent-forwarding": "certificate_extensions.no_agent_forwarding",
+	"permit-port-forwarding":  "certificate_extensions.no_port_forwarding",
+	"permit-X11-forwarding":   "certificate_extensions.no_x11_forwarding",
+	"permit-user-rc":          "certificate_extensions.no_user_rc",
+}
+
 // reuseGrace is how much validity a already-loaded certificate must have
 // left before `ssh login` will hand it back instead of getting a new one.
 // Without it a certificate expiring in the next instant counts as reusable
@@ -127,6 +143,37 @@ func newSSHLoginCommand() simplecobra.Commander {
 	}
 }
 
+// emptyExtensionSetError explains that nothing is left to request, naming
+// the layer the reader can actually do something about.
+//
+// Policy outranks a flag and a flag outranks config, so the highest reason
+// present is the one reported: telling someone to edit a config file when
+// policy forbids the extension outright wastes the one instruction they
+// get, and telling them to edit a file when they typed a flag sends them to
+// the wrong place entirely.
+func emptyExtensionSetError(removals map[string]extensionRemovalReason) error {
+	reason := removed_config
+	for _, r := range removals {
+		if r > reason {
+			reason = r
+		}
+	}
+
+	switch reason {
+	case removed_config:
+		return errors.New("all certificate extensions were opted out via configuration; cannot issue an unusable certificate")
+	case removed_flag:
+		return errors.New("all certificate extensions were opted out via command-line flags; cannot issue an unusable certificate")
+	case removed_policy:
+		return errors.New("all certificate extensions are forbidden by policy; cannot issue an unusable certificate")
+	default:
+		// not covered: reason comes from the three constants above and the
+		// loop only ever raises it, so there is no fourth value to reach
+		// here short of a new constant being added without a case.
+		return fmt.Errorf("all certificate extensions removed by unknown reason; cannot issue an unusable certificate")
+	}
+}
+
 // effectiveExtensions computes which extensions to request, applying
 // config opt-outs, flag opt-outs, and policy forbidding in order. It
 // returns the effective extensions list and an attribution map showing
@@ -140,11 +187,19 @@ func effectiveExtensions(cfg *config.Config, removals map[string]extensionRemova
 		requested[ext] = true
 	}
 
-	// Apply config opt-outs.
+	// Apply config opt-outs, attributing each to the layer the user can
+	// actually change. A flag and a config file reach this struct the same
+	// way -- bindFlags binds --no-pty to certificate_extensions.no_pty --
+	// so cfg.SetByFlag is the only thing that distinguishes them, and
+	// without it someone who just typed --no-pty is told their
+	// configuration did it.
 	for ext, isOptedOut := range extensionToConfig {
 		if isOptedOut(&cfg.CertificateExtensions) {
 			delete(requested, ext)
 			removals[ext] = removed_config
+			if cfg.SetByFlag[extensionToViperKey[ext]] {
+				removals[ext] = removed_flag
+			}
 		}
 	}
 
@@ -164,26 +219,7 @@ func effectiveExtensions(cfg *config.Config, removals map[string]extensionRemova
 
 	// Guard against empty set.
 	if len(requested) == 0 {
-		// Determine which layer removed the last extension(s).
-		lastReason := removed_config
-		for _, reason := range removals {
-			if reason != removed_config {
-				lastReason = reason
-			}
-		}
-
-		var reasonText string
-		switch lastReason {
-		case removed_config:
-			return nil, errors.New("all certificate extensions were opted out via configuration; cannot issue an unusable certificate")
-		case removed_flag:
-			return nil, errors.New("all certificate extensions were opted out via command-line flags; cannot issue an unusable certificate")
-		case removed_policy:
-			return nil, errors.New("all certificate extensions are forbidden by policy; cannot issue an unusable certificate")
-		default:
-			reasonText = "unknown reason"
-			return nil, fmt.Errorf("all certificate extensions removed by %s; cannot issue an unusable certificate", reasonText)
-		}
+		return nil, emptyExtensionSetError(removals)
 	}
 
 	// Convert back to a sorted slice.
@@ -195,7 +231,7 @@ func effectiveExtensions(cfg *config.Config, removals map[string]extensionRemova
 }
 
 // printEffectiveExtensions outputs a summary of which extensions are being
-// requested and which were removed by which layer (config or policy).
+// requested and which were removed by which layer (config, flag, or policy).
 func printEffectiveExtensions(out io.Writer, effective []string, allDefault []string, removals map[string]extensionRemovalReason) {
 	fmt.Fprintf(out, "Requesting certificate extensions: %v (removed: ", effective)
 	var first bool
@@ -206,6 +242,8 @@ func printEffectiveExtensions(out io.Writer, effective []string, allDefault []st
 			}
 			reasonStr := "config"
 			switch reason {
+			case removed_flag:
+				reasonStr = "flag"
 			case removed_policy:
 				reasonStr = "policy"
 			}

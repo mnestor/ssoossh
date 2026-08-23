@@ -191,3 +191,75 @@ func TestAnnouncer_ShouldAnnounceMarshaledAuthorizedKeysForm(t *testing.T) {
 		t.Error("announced key does not match the source key")
 	}
 }
+
+// Shutting down is not a startup failure. bootstrap runs the announcer as
+// one of servicerunner's services alongside pubSub.Run, and pubSub.Run
+// closes the watermill Router as soon as the context is done. Closing the
+// Router stops its handlers, and stopping a handler closes its publisher --
+// which for gochannel is the same object the announcer publishes through.
+//
+// So on an immediate shutdown the startup announce can land after the
+// pub/sub is closed, and gochannel answers "Pub/Sub closed". Returning that
+// made servicerunner report a failed startup for a server that was simply
+// being asked to stop; it is what made
+// TestBootstrap_ShouldStartAndShutDownCleanlyWhenContextCanceled fail
+// intermittently under a loaded `go test ./...`.
+func TestAnnouncer_ShouldNotFailWhenTheContextIsAlreadyCanceled(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+	channel := newTestChannel(t)
+	an := NewAnnouncer(ks, channel, 1*time.Hour)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := an.Run(ctx); err != nil {
+		t.Errorf("expected a clean return on an already-canceled context, got %v", err)
+	}
+}
+
+// The same shutdown, but reached through the failure itself: the context is
+// live when Run starts and the pub/sub is already gone. This is the actual
+// race -- cancellation and the close happen between the guard above and the
+// publish -- so a closed transport must not be reported as a startup
+// failure either, matching what the ticker loop already does with the
+// identical error.
+func TestAnnouncer_ShouldNotFailWhenThePubSubClosedDuringShutdown(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+	channel := newTestChannel(t)
+	if err := channel.Close(); err != nil {
+		t.Fatalf("failed to close the test channel: %v", err)
+	}
+	an := NewAnnouncer(ks, channel, 1*time.Hour)
+
+	// Canceled after the channel is gone, standing in for the ordering the
+	// race produces: the publish fails, and by the time it does the server
+	// is shutting down.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := an.Run(ctx); err != nil {
+		t.Errorf("expected a clean return while shutting down, got %v", err)
+	}
+}
+
+// A publish failure that is not a shutdown still has to be reported: it
+// means the signer cannot tell servers its CA key, and a signer nobody can
+// find is useless. Guarding the shutdown case must not swallow this one.
+func TestAnnouncer_ShouldStillFailWhenPublishingFailsAndTheContextIsLive(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+	channel := newTestChannel(t)
+	if err := channel.Close(); err != nil {
+		t.Fatalf("failed to close the test channel: %v", err)
+	}
+	an := NewAnnouncer(ks, channel, 1*time.Hour)
+
+	if err := an.Run(context.Background()); err == nil {
+		t.Error("expected a publish failure to be reported when not shutting down")
+	}
+}

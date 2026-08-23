@@ -93,6 +93,8 @@ func StartNATS(t *testing.T, port int) *NATS {
 	id := strings.TrimSpace(string(out))
 	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() }) //nolint:errcheck // best-effort teardown.
 
+	//nolint:gosec // G204: dir is this test's own t.TempDir and id came from
+	// `docker create` above -- neither is user input.
 	if out, err := exec.Command("docker", "cp", dir+"/.", id+":/certs").CombinedOutput(); err != nil {
 		t.Fatalf("harness: docker cp nats certs: %v\n%s", err, out)
 	}
@@ -219,7 +221,9 @@ func StartSigner(t *testing.T, ssoosshdPath, configPath string) {
 		t.Fatalf("harness: failed to start signer: %v", err)
 	}
 	t.Cleanup(func() {
+		//nolint:errcheck // best-effort teardown: the process may already be gone.
 		_ = cmd.Process.Kill()
+		//nolint:errcheck // as above; reaping is courtesy, not a assertion.
 		_, _ = cmd.Process.Wait()
 		_ = logFile.Close()
 	})
@@ -230,6 +234,9 @@ func StartSigner(t *testing.T, ssoosshdPath, configPath string) {
 	// wording change does not silently break readiness.
 	deadline := time.Now().Add(30 * time.Second)
 	for {
+		//nolint:errcheck // the file may not exist yet on the first pass; an
+		// empty read simply means "no marker yet" and the deadline below is
+		// what turns a permanently missing file into a failure.
 		out, _ := os.ReadFile(logPath)
 		if strings.Contains(string(out), "certrequest") {
 			return

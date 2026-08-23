@@ -30,7 +30,11 @@ func StartPostgres(t *testing.T) {
 
 	// Use the postgres module which provides a simplified setup for Postgres.
 	// Documentation: github.com/testcontainers/testcontainers-go/modules/postgres
-	pgContainer, err := postgresModule.RunContainer(ctx,
+	// Run, not the deprecated RunContainer: the latter is a wrapper that
+	// calls Run with "postgres:16-alpine" hardcoded. Naming the image here
+	// makes the version the suite tests against visible and pinnable rather
+	// than an upstream default that can move under us.
+	pgContainer, err := postgresModule.Run(ctx, "postgres:16-alpine",
 		postgresModule.WithDatabase("ssoossh"),
 		postgresModule.WithUsername("ssoossh"),
 		postgresModule.WithPassword("testpassword"),

@@ -317,3 +317,92 @@ func TestConfigStructure(t *testing.T) {
 		t.Errorf("DB.Provider mismatch")
 	}
 }
+
+// GrantsAuditor is the single authority for auditor-level access --
+// middleware.AuditorAuthMiddleware and every auditor-visible read go through
+// it -- and it sat at 0% coverage along with containsGroup.
+//
+// Two rules make the table below worth reading as a whole rather than as
+// separate cases. Admins are a superset of auditors, so admin membership
+// grants access even when auditor_group is unset: leaving it unset narrows
+// auditor operations to admins rather than locking everyone out. And it
+// fails closed -- an unconfigured group must never match, or a deployment
+// that simply has not set auditor_group would grant auditor access to
+// anyone whose group list happens to contain an empty string.
+func TestGrantsAuditor_ShouldDecideAuditorAccess(t *testing.T) {
+	tests := []struct {
+		name   string
+		cfg    AdminConfig
+		groups []string
+		want   bool
+	}{
+		{
+			name:   "admin group grants auditor access",
+			cfg:    AdminConfig{RequireGroup: "admins", AuditorGroup: "auditors"},
+			groups: []string{"admins"},
+			want:   true,
+		},
+		{
+			name:   "auditor group grants auditor access",
+			cfg:    AdminConfig{RequireGroup: "admins", AuditorGroup: "auditors"},
+			groups: []string{"auditors"},
+			want:   true,
+		},
+		{
+			name:   "admin group still grants when auditor is unconfigured",
+			cfg:    AdminConfig{RequireGroup: "admins"},
+			groups: []string{"admins"},
+			want:   true,
+		},
+		{
+			name:   "neither group denies",
+			cfg:    AdminConfig{RequireGroup: "admins", AuditorGroup: "auditors"},
+			groups: []string{"engineering"},
+			want:   false,
+		},
+		{
+			name:   "no groups at all denies",
+			cfg:    AdminConfig{RequireGroup: "admins", AuditorGroup: "auditors"},
+			groups: nil,
+			want:   false,
+		},
+		{
+			name:   "an empty group list entry never matches an unset admin group",
+			cfg:    AdminConfig{AuditorGroup: "auditors"},
+			groups: []string{""},
+			want:   false,
+		},
+		{
+			name:   "an empty group list entry never matches an unset auditor group",
+			cfg:    AdminConfig{RequireGroup: "admins"},
+			groups: []string{""},
+			want:   false,
+		},
+		{
+			name:   "nothing configured denies everyone",
+			cfg:    AdminConfig{},
+			groups: []string{"admins", "auditors", ""},
+			want:   false,
+		},
+		{
+			name:   "auditor group alone grants without an admin group",
+			cfg:    AdminConfig{AuditorGroup: "auditors"},
+			groups: []string{"auditors"},
+			want:   true,
+		},
+		{
+			name:   "membership is exact, not a prefix",
+			cfg:    AdminConfig{RequireGroup: "admins", AuditorGroup: "auditors"},
+			groups: []string{"admins-readonly", "auditors-emeritus"},
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.GrantsAuditor(tt.groups); got != tt.want {
+				t.Errorf("GrantsAuditor(%v) = %v, want %v", tt.groups, got, tt.want)
+			}
+		})
+	}
+}

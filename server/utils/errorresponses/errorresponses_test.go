@@ -8,6 +8,8 @@ package errorresponses
 import (
 	"net/http"
 	"testing"
+
+	"github.com/mnestor/ssoossh/internal/apitypes"
 )
 
 func TestTooManyRequestsError_ShouldReturnMessageFromError(t *testing.T) {
@@ -135,5 +137,48 @@ func TestForbiddenError_ShouldReturn403FromHttpStatusCode(t *testing.T) {
 	err := &ForbiddenError{}
 	if got := err.HTTPStatusCode(); got != http.StatusForbidden {
 		t.Errorf("got %d, want %d", got, http.StatusForbidden)
+	}
+}
+
+// Every ErrorCode method sat at 0% coverage. They are what the API returns
+// as the machine-readable half of an error, which clients branch on, so a
+// wrong or duplicated code is a wire-contract break that reads as a
+// cosmetic string change in review.
+//
+// Asserted together in one table so the codes can be seen side by side:
+// two errors sharing a code is only visible when they are read next to each
+// other, and Misdirected/Forbidden deliberately do share one.
+func TestErrorCode_ShouldReportTheWireCodeForEachError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  interface {
+			error
+			ErrorCode() string
+			HTTPStatusCode() int
+		}
+		wantCode   string
+		wantStatus int
+	}{
+		{name: "too many requests", err: &TooManyRequestsError{}, wantCode: apitypes.ErrorCodeRateLimited, wantStatus: http.StatusTooManyRequests},
+		{name: "misdirected request", err: &MisdirectedRequestError{}, wantCode: apitypes.ErrorCodeForbidden, wantStatus: http.StatusMisdirectedRequest},
+		{name: "not found", err: &NotFoundError{Resource: "certificate request \"abc\""}, wantCode: apitypes.ErrorCodeNotFound, wantStatus: http.StatusNotFound},
+		{name: "certificate unavailable", err: &CertificateUnavailableError{}, wantCode: apitypes.ErrorCodeUnavailable, wantStatus: http.StatusGone},
+		{name: "not implemented", err: &NotImplementedError{}, wantCode: apitypes.ErrorCodeNotImplemented, wantStatus: http.StatusNotImplemented},
+		{name: "forbidden", err: &ForbiddenError{}, wantCode: apitypes.ErrorCodeForbidden, wantStatus: http.StatusForbidden},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.err.ErrorCode(); got != tt.wantCode {
+				t.Errorf("ErrorCode() = %q, want %q", got, tt.wantCode)
+			}
+			if got := tt.err.HTTPStatusCode(); got != tt.wantStatus {
+				t.Errorf("HTTPStatusCode() = %d, want %d", got, tt.wantStatus)
+			}
+			// A code the client cannot branch on is no better than none.
+			if tt.err.ErrorCode() == "" {
+				t.Error("ErrorCode() is empty")
+			}
+		})
 	}
 }

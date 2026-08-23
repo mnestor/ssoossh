@@ -1,0 +1,61 @@
+# Minimum statement coverage per package, enforced by
+# scripts/check-coverage-floors.sh (`make cover-floors`).
+#
+# A ratchet, not a target. Raising a floor is a normal part of adding tests.
+# Lowering one is a deliberate act, and the point of keeping them here is
+# that it shows up in review as an edit to this file rather than as a number
+# quietly sliding on a dashboard.
+#
+# Why per package rather than one number for the module: the module total
+# moves for reasons unrelated to the package someone just changed, so a
+# well-tested new package can mask a regression elsewhere. client/cmd fell
+# from 88.7% to 76.6% over a fortnight while the module total barely moved.
+# That is the failure this file exists to catch.
+#
+# Floors are set at the current value less a small margin, so ordinary churn
+# does not trip them but a real regression does. Packages with no tests at
+# all are listed at 0 rather than omitted: an entry that has to be edited to
+# stay honest is better than silence.
+
+client/cmd                      87.0
+client/config                   90.0
+internal/api                    83.0
+internal/apitypes              100.0
+internal/crypto/ssh            100.0
+internal/crypto/ssh/agent       93.0
+internal/crypto/ssh/keypair     92.0
+internal/errs                  100.0
+internal/fipsmode              100.0
+internal/principalsmap         100.0
+internal/serial                 79.0
+internal/tools/gendocs          71.0
+internal/tracelog               93.0
+
+pam_ssoossh                     75.0
+
+server/bootstrap                85.0
+server/certmsg                 100.0
+server/cmd                      76.0
+server/config                   85.0
+server/config/tlsutils          98.0
+server/controller               84.0
+server/dbtime                   81.0
+server/frontend                 94.0
+server/job                      92.0
+server/logging                  97.0
+server/middleware               93.0
+server/model                    74.0
+server/pubsub                   66.0
+server/service                  86.0
+server/signer                   74.0
+server/utils/errorresponses    100.0
+server/utils/tracing           100.0
+
+# Entrypoints and test-only helpers. main() is a wiring shim in both
+# commands; server/testutil and test/* exist to serve other tests. Listed so
+# a package that grows real logic here has to be given a floor deliberately.
+cmd/ssoossh                      0.0
+cmd/ssoosshd                     0.0
+server/testutil                  0.0
+test/postgres                    0.0
+test/sqlite                      0.0

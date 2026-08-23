@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -183,3 +184,57 @@ func nil2Agent() agentDescriber { return nil }
 
 // errDebugStub stands in for a startup failure.
 var errDebugStub = errors.New("test: build API client failed")
+
+// fileState answers "why can this not read my key". Flattening a permission
+// problem to "missing" would send the reader looking in the wrong place, so
+// the three outcomes have to stay distinguishable.
+func TestFileState_ShouldDistinguishPresentMissingAndUnreadable(t *testing.T) {
+	dir := t.TempDir()
+
+	present := filepath.Join(dir, "present")
+	if err := os.WriteFile(present, []byte("hello"), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	// A path whose parent is not a directory: stat fails with something
+	// other than "not exist", which is the third branch.
+	notADir := filepath.Join(present, "child")
+
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "present reports size and mode", path: present, want: "exists, 5 bytes, mode 600"},
+		{name: "missing says so", path: filepath.Join(dir, "absent"), want: "(missing)"},
+		{name: "any other error is shown as-is", path: notADir, want: "unreadable"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := fileState(tt.path); !strings.Contains(got, tt.want) {
+				t.Errorf("got %q, want it to contain %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// agentForDebug exists so the report never calls Type() on a nil agent. A
+// plain r.ssh would hand it a non-nil interface holding a nil pointer
+// whenever agent resolution failed -- which is exactly when the report is
+// most wanted.
+func TestAgentForDebug_ShouldReturnNilWhenNoAgentResolved(t *testing.T) {
+	root := &RootCommand{}
+
+	if got := root.agentForDebug(); got != nil {
+		t.Errorf("got %v, want nil when no agent was resolved", got)
+	}
+}
+
+func TestAgentForDebug_ShouldReturnTheAgentWhenOneResolved(t *testing.T) {
+	root := &RootCommand{ssh: &fakeAgent{}}
+
+	if got := root.agentForDebug(); got == nil {
+		t.Error("expected the resolved agent to be returned")
+	}
+}

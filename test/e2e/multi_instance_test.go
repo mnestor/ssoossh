@@ -54,8 +54,13 @@ func TestMultiInstance_ColdCacheReturns410OnApprovedRequest(t *testing.T) {
 
 	// Set up the shared infrastructure: IdP and two agent instances.
 	idp := harness.NewIdentityProvider(t)
+	// One agent, not two: only instance A ever runs a client. Step 3 below
+	// reaches instance B with a direct HTTP GET rather than a second CLI
+	// invocation, because the point is B's cold cache, not B's client. A
+	// second agent was started here and never used, which stopped this file
+	// compiling at all -- so the suite failed at `go build` rather than at
+	// its assertion, and documented nothing.
 	agent1 := harness.StartAgent(t)
-	agent2 := harness.StartAgent(t)
 	_, ssoosshBin := harness.Binaries(t)
 
 	// Start instance A with Postgres backend. The environment variable

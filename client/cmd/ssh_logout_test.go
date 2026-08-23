@@ -29,6 +29,16 @@ type stubAgent struct {
 	removeAllCalled bool
 	added           *keypair.SSHKeypair
 	removeErr       error
+
+	// listErr makes List fail, which callers have to survive: a listing
+	// failure is not a reason to lose a certificate the user already holds.
+	listErr error
+	// listUnfiltered makes List(true) return identities that are not
+	// certificates, which is the shape of the backend bug 800d5e1 fixed --
+	// FileAgent.List returned a bare public key where a certificate was
+	// promised. runInspect's "not a certificate" branch exists for exactly
+	// that and its comment calls it unreachable short of a backend bug.
+	listUnfiltered bool
 }
 
 func (s *stubAgent) Type() string {
@@ -43,10 +53,13 @@ func (s *stubAgent) Backend() string { return "stub" }
 // trusted CA, with no time-validity check — an expired ssoossh certificate is
 // still ssoossh's to remove.
 func (s *stubAgent) List(filterByCA bool) ([]*xssh.PublicKey, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
 	var out []*xssh.PublicKey
 	for i := range s.identities {
 		key := s.identities[i]
-		if !filterByCA {
+		if !filterByCA || s.listUnfiltered {
 			out = append(out, &key)
 			continue
 		}

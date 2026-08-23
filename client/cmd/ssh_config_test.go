@@ -120,3 +120,39 @@ func TestCASummary(t *testing.T) {
 		})
 	}
 }
+
+// storageDescription reports where keys actually end up, which is a runtime
+// answer rather than a configured one: use_agent and fallback_file_agent
+// state a preference and whether an agent was reachable settles it. The
+// not-initialized arm is the one that matters -- it is what a reader sees
+// when startup failed, which is when they are most likely to be looking.
+func TestStorageDescription_ShouldReportTheResolvedBackend(t *testing.T) {
+	tests := []struct {
+		name string
+		root *RootCommand
+		want string
+	}{
+		{name: "no agent resolved", root: &RootCommand{}, want: "(not initialized)"},
+		{name: "an agent resolved", root: &RootCommand{ssh: &describingAgent{typ: "agent", backend: "ssh-agent"}}, want: "agent (ssh-agent)"},
+		{name: "file storage resolved", root: &RootCommand{ssh: &describingAgent{typ: "file", backend: "/home/u/.ssh/id_ssoossh"}}, want: "file (/home/u/.ssh/id_ssoossh)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := storageDescription(tt.root); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// describingAgent is a fakeAgent that answers Type and Backend, which is all
+// storageDescription reads.
+type describingAgent struct {
+	fakeAgent
+	typ     string
+	backend string
+}
+
+func (d *describingAgent) Type() string    { return d.typ }
+func (d *describingAgent) Backend() string { return d.backend }

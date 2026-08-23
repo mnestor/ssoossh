@@ -45,6 +45,8 @@ func PAMArtifacts(t *testing.T) (modulePath, pamtestPath string) {
 
 		// The module needs both the pam build tag (every file in the
 		// package is behind it) and cgo — see pam_ssoossh/testing/README.md.
+		//nolint:gosec // G204: dir is this test's own t.TempDir; nothing here
+		// is user input.
 		module := exec.Command("go", "build", "-buildvcs=false", "-tags=pam",
 			"-buildmode=c-shared", "-o", filepath.Join(dir, "pam_ssoossh.so"), "./pam_ssoossh/")
 		module.Dir = root
@@ -54,6 +56,8 @@ func PAMArtifacts(t *testing.T) (modulePath, pamtestPath string) {
 			return
 		}
 
+		//nolint:gosec // G204: dir and root are harness-computed paths, not
+		// user input.
 		driver := exec.Command("gcc", "-o", filepath.Join(dir, "pamtest"),
 			filepath.Join(root, "pam_ssoossh", "testing", "pamtest.c"), "-lpam", "-lpam_misc")
 		if out, err := driver.CombinedOutput(); err != nil {

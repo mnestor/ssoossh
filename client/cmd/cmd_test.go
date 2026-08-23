@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/bep/simplecobra"
@@ -237,3 +239,71 @@ func (f *fakeAPIClient) RetrieveServiceCertificate(ctx context.Context, code str
 var _ api.Client = (*fakeAPIClient)(nil)
 
 var _ agent.Agent = (*fakeAgent)(nil)
+
+// newAPIClientFromConfig is the mapping from client config into api.Config.
+// internal/ cannot import client/config, so this translation exists only
+// here and nothing had run it -- a field dropped on this side would be
+// invisible until a deployment behaved differently from its configuration.
+func TestNewAPIClientFromConfig_ShouldBuildAClientFromTheResolvedConfig(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  *config.Config
+	}{
+		{name: "verifying TLS", cfg: &config.Config{Server: "https://ssh.example.test"}},
+		{name: "skipping TLS verification", cfg: &config.Config{Server: "https://ssh.example.test", SkipVerifySSL: true}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := newAPIClientFromConfig(tt.cfg)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if client == nil {
+				t.Fatal("expected a client")
+			}
+		})
+	}
+}
+
+func TestNewAPIClientFromConfig_ShouldFailWhenTheServerIsUnusable(t *testing.T) {
+	if _, err := newAPIClientFromConfig(&config.Config{Server: ""}); err == nil {
+		t.Error("expected an error for a config with no server")
+	}
+}
+
+// newExec assembles the real tree with the real seams. Nothing had called it
+// -- the tests all build their own root -- so a command dropped from the
+// list, or a seam left nil, would have compiled and shipped.
+func TestNewExec_ShouldBuildTheRealCommandTree(t *testing.T) {
+	x, err := newExec()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if x == nil {
+		t.Fatal("expected an Exec")
+	}
+}
+
+// The root command's own Run just prints help: invoked bare, ssoossh has
+// nothing to do, and printing usage is the useful answer.
+func TestRootCommand_ShouldPrintHelpWhenInvokedBare(t *testing.T) {
+	root, err := newManpageRoot()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var out bytes.Buffer
+	root.cobraRoot.SetOut(&out)
+	root.cobraRoot.SetErr(&out)
+
+	// A real Commandeer, because Run reaches through it for the cobra
+	// command to print help from.
+	cd := &simplecobra.Commandeer{CobraCommand: root.cobraRoot}
+	if err := root.Run(context.Background(), cd, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out.String(), "ssoossh") {
+		t.Errorf("expected help output naming the program, got:\n%s", out.String())
+	}
+}

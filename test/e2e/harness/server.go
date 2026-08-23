@@ -55,6 +55,18 @@ type ServerOptions struct {
 	// ExtraClaimFields sets authentication.fields.extra (template field
 	// name -> claim name), for key ID template tests.
 	ExtraClaimFields map[string]string
+
+	// ServiceAccountsField sets authentication.fields.service_accounts, the
+	// claim naming which service accounts an identity may approve service
+	// certificates for. Empty leaves the key unset, which is the product
+	// default and means no identity can approve a service enrollment --
+	// so a service test has to set it.
+	//
+	// Rendered inside the fields block rather than appended through
+	// ExtraConfigYAML: appending would need a second top-level
+	// "authentication:" key, and the later one wins, silently discarding
+	// client_id and provider_url.
+	ServiceAccountsField string
 }
 
 // Server is a running ssoosshd subprocess.
@@ -126,20 +138,21 @@ func newServerConfig(t *testing.T, idp *IdentityProvider, opts ServerOptions) (c
 	sshKeyPEM, caPublicKey := generateCAKey(t)
 
 	configYAML := renderServerConfig(serverConfigData{
-		PublicURL:         baseURL,
-		ServerName:        "127.0.0.1",
-		Address:           "127.0.0.1",
-		Port:              port,
-		ClientID:          harnessClientID,
-		ClientSecret:      harnessClientSecret,
-		ProviderURL:       idp.URL(),
-		SSHKeyPEM:         sshKeyPEM,
-		ValidDuration:     opts.ValidDuration,
-		Extensions:        opts.Extensions,
-		PAMRequireGroup:   opts.PAMRequireGroup,
-		DSN:               dsn,
-		UserKeyIDTemplate: opts.UserKeyIDTemplate,
-		ExtraClaimFields:  opts.ExtraClaimFields,
+		PublicURL:            baseURL,
+		ServerName:           "127.0.0.1",
+		Address:              "127.0.0.1",
+		Port:                 port,
+		ClientID:             harnessClientID,
+		ClientSecret:         harnessClientSecret,
+		ProviderURL:          idp.URL(),
+		SSHKeyPEM:            sshKeyPEM,
+		ValidDuration:        opts.ValidDuration,
+		Extensions:           opts.Extensions,
+		PAMRequireGroup:      opts.PAMRequireGroup,
+		DSN:                  dsn,
+		UserKeyIDTemplate:    opts.UserKeyIDTemplate,
+		ExtraClaimFields:     opts.ExtraClaimFields,
+		ServiceAccountsField: opts.ServiceAccountsField,
 	}) + opts.ExtraConfigYAML
 
 	configPath = filepath.Join(t.TempDir(), "ssoosshd.yaml")
@@ -285,20 +298,21 @@ func generateCAKey(t *testing.T) (privatePEM, publicAuthorizedKey string) {
 }
 
 type serverConfigData struct {
-	PublicURL         string
-	ServerName        string
-	Address           string
-	Port              int
-	ClientID          string
-	ClientSecret      string
-	ProviderURL       string
-	SSHKeyPEM         string
-	ValidDuration     string
-	Extensions        []string
-	PAMRequireGroup   string
-	DSN               string
-	UserKeyIDTemplate string
-	ExtraClaimFields  map[string]string
+	PublicURL            string
+	ServerName           string
+	Address              string
+	Port                 int
+	ClientID             string
+	ClientSecret         string
+	ProviderURL          string
+	SSHKeyPEM            string
+	ValidDuration        string
+	Extensions           []string
+	PAMRequireGroup      string
+	DSN                  string
+	UserKeyIDTemplate    string
+	ExtraClaimFields     map[string]string
+	ServiceAccountsField string
 }
 
 // renderServerConfig builds the ssoosshd config YAML from d directly (not
@@ -324,6 +338,9 @@ func renderServerConfig(d serverConfigData) string {
 	fmt.Fprintf(&b, "    username: \"preferred_username\"\n")
 	fmt.Fprintf(&b, "    groups: \"groups\"\n")
 	fmt.Fprintf(&b, "    email: \"email\"\n")
+	if d.ServiceAccountsField != "" {
+		fmt.Fprintf(&b, "    service_accounts: %q\n", d.ServiceAccountsField)
+	}
 	if len(d.ExtraClaimFields) > 0 {
 		fmt.Fprintf(&b, "    extra:\n")
 		// Sorted so the rendered config is deterministic across runs.
