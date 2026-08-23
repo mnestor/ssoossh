@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -376,6 +377,13 @@ func TestFileAgent_List(t *testing.T) {
 		if len(got) != 1 {
 			t.Fatalf("List(false) returned %d identities, want 1", len(got))
 		}
+		// Which identity, not just how many. identity() promises the
+		// certificate when one is loaded and the bare public key otherwise,
+		// and a count alone cannot tell those apart -- the same blind spot
+		// that let List(true) return the wrong kind of thing (800d5e1).
+		if _, ok := (*got[0]).(*ssh.Certificate); !ok {
+			t.Errorf("List(false) returned %T, want the loaded certificate", *got[0])
+		}
 	})
 
 	t.Run("should return the keypair when filtering by a CA that signed it", func(t *testing.T) {
@@ -387,6 +395,13 @@ func TestFileAgent_List(t *testing.T) {
 		}
 		if len(got) != 1 {
 			t.Fatalf("List(true) returned %d identities, want 1", len(got))
+		}
+		// The identity has to be the one that was loaded, not merely some
+		// identity: pruneSuperseded compares what comes back against the
+		// certificate it just installed, and removes anything that does not
+		// match. A stand-in here would read as superseded and be deleted.
+		if !bytes.Equal((*got[0]).Marshal(), leaf.Certificate().Marshal()) {
+			t.Error("List(true) returned an identity other than the loaded certificate")
 		}
 	})
 
