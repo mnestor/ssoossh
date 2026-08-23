@@ -219,10 +219,10 @@ func writeConfigFile(t *testing.T, path, content string) {
 // SSE stream until approved, denied, or expired. A test has to observe the
 // URL while the process is still running, not after it exits.
 type ClientProcess struct {
-	cmd    *exec.Cmd
-	stdout lockedBuffer
+	cmd *exec.Cmd
 
 	mu          sync.Mutex
+	stdout      bytes.Buffer
 	stderr      bytes.Buffer
 	approvalURL string
 	urlSeen     chan struct{}
@@ -244,12 +244,22 @@ func StartClient(t *testing.T, ssoosshPath string, o ClientOptions) *ClientProce
 		done:    make(chan struct{}),
 	}
 
-	// The buffers buildClientCommand attached are replaced: stdout goes to
-	// this process's own buffer, and stderr needs a pipe rather than a
-	// buffer so scanStderr can publish the approval URL as it appears
-	// instead of after the process exits.
-	cmd.Stdout = &cp.stdout
+	// Both streams get pipes rather than the buffers buildClientCommand
+	// attached, because the approval URL has to be published while the
+	// process is still blocked on SSE, not after it exits.
+	//
+	// Both, not just stderr: `ssh login` prints its URL to stderr (it runs
+	// from ssh_config's Match exec, where stdout belongs to ssh), but
+	// `service enroll` prints the same URL to stdout, because there its
+	// output is the product of the command rather than commentary beside
+	// one. Scanning a single stream would work for whichever command was
+	// written first and silently hang for the other.
+	cmd.Stdout = nil
 	cmd.Stderr = nil
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatalf("harness: failed to attach stdout pipe: %v", err)
+	}
 	stderrPipe, err := cmd.StderrPipe()
 	if err != nil {
 		t.Fatalf("harness: failed to attach stderr pipe: %v", err)
@@ -260,8 +270,21 @@ func StartClient(t *testing.T, ssoosshPath string, o ClientOptions) *ClientProce
 		t.Fatalf("harness: failed to start %s %v: %v", ssoosshPath, o.Args, err)
 	}
 
-	go cp.scanStderr(stderrPipe)
+	// Wait must not run until both scanners have drained their pipe:
+	// cmd.Wait closes the pipes, and a scanner still reading one then sees
+	// a "file already closed" error and loses whatever had not been read.
+	var scanners sync.WaitGroup
+	scanners.Add(2)
 	go func() {
+		defer scanners.Done()
+		cp.scan(stdoutPipe, &cp.stdout)
+	}()
+	go func() {
+		defer scanners.Done()
+		cp.scan(stderrPipe, &cp.stderr)
+	}()
+	go func() {
+		scanners.Wait()
 		cp.waitErr = cmd.Wait()
 		close(cp.done)
 	}()
@@ -291,18 +314,18 @@ func StartLogin(t *testing.T, ssoosshPath, serverURL, agentSocket string, extraA
 	})
 }
 
-// scanStderr copies r line by line into cp.stderr and, the first time a URL
-// appears in a line, publishes it via urlSeen — the process is typically
-// still blocked on SSE at that point, which is exactly the property the
-// "approval URL printed before completion" assertion needs to observe.
-func (cp *ClientProcess) scanStderr(r io.Reader) {
+// scan copies r line by line into buf and, the first time a URL appears in
+// a line, publishes it via urlSeen — the process is typically still blocked
+// on SSE at that point, which is exactly the property the "approval URL
+// printed before completion" assertion needs to observe.
+func (cp *ClientProcess) scan(r io.Reader, buf *bytes.Buffer) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := scanner.Text()
 
 		cp.mu.Lock()
-		cp.stderr.WriteString(line)
-		cp.stderr.WriteByte('\n')
+		buf.WriteString(line)
+		buf.WriteByte('\n')
 		cp.mu.Unlock()
 
 		if m := approvalURLPattern.FindString(line); m != "" {
@@ -377,9 +400,15 @@ func (cp *ClientProcess) ExitCode(t *testing.T, timeout time.Duration) int {
 }
 
 // Stdout returns everything the process has written to stdout so far.
-// Production code sends nothing here for `ssh login` — see ssh_login.go's
-// doc comment — so this is mainly a sanity check that it stayed that way.
-func (cp *ClientProcess) Stdout() string { return cp.stdout.String() }
+// `ssh login` sends nothing here — see ssh_login.go's doc comment — so for
+// that command this is mainly a sanity check that it stayed that way.
+// `service enroll` writes its whole report here, including the enrollment
+// code.
+func (cp *ClientProcess) Stdout() string {
+	cp.mu.Lock()
+	defer cp.mu.Unlock()
+	return cp.stdout.String()
+}
 
 // Stderr returns everything the process has written to stderr so far.
 func (cp *ClientProcess) Stderr() string {

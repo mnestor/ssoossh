@@ -3,8 +3,10 @@
 package harness
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -13,6 +15,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/mnestor/ssoossh/internal/apitypes"
+	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
 // This file is the non-browser stand-in for a person approving a request:
@@ -135,6 +138,23 @@ func Approve(client *http.Client, serverBaseURL, requestID string) error {
 	return decide[apitypes.ApproveResponse](client, serverBaseURL, requestID, "approve")
 }
 
+// ApproveService POSTs approve for a service enrollment, naming which of
+// the approver's service accounts the certificate is for.
+//
+// A service request needs this and a plain Approve will not do: the server
+// validates that serviceAccount is one the approving identity holds (from
+// the authentication.fields.service_accounts claim) and makes it the
+// certificate's principal. The browser identity never becomes the
+// principal for a service certificate, which is the property that makes
+// unattended enrollment safe to approve.
+func ApproveService(client *http.Client, serverBaseURL, requestID, serviceAccount string) error {
+	body, err := json.Marshal(webtypes.ApproveRequestBody{ServiceAccount: serviceAccount})
+	if err != nil {
+		return fmt.Errorf("encode approve body: %w", err)
+	}
+	return decideWithBody[apitypes.ApproveResponse](client, serverBaseURL, requestID, "approve", body)
+}
+
 // Deny POSTs deny for requestID as whoever client is authenticated as.
 func Deny(client *http.Client, serverBaseURL, requestID string) error {
 	return decide[apitypes.DenyResponse](client, serverBaseURL, requestID, "deny")
@@ -144,7 +164,18 @@ func Deny(client *http.Client, serverBaseURL, requestID string) error {
 // the server answers with. Both endpoints have the same shape, differing
 // only in the payload type the envelope carries.
 func decide[T any](client *http.Client, serverBaseURL, requestID, action string) error {
-	resp, err := client.Post(serverBaseURL+"/api/certs/requests/"+requestID+"/"+action, "application/json", nil)
+	return decideWithBody[T](client, serverBaseURL, requestID, action, nil)
+}
+
+// decideWithBody is decide with a JSON request body, which the approve
+// endpoint takes for service requests (naming the service account) and for
+// user requests choosing among several principals.
+func decideWithBody[T any](client *http.Client, serverBaseURL, requestID, action string, body []byte) error {
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	resp, err := client.Post(serverBaseURL+"/api/certs/requests/"+requestID+"/"+action, "application/json", reader)
 	if err != nil {
 		return fmt.Errorf("post %s: %w", action, err)
 	}
