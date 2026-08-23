@@ -15,10 +15,16 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// Global SoftHSM manager and temp directory, initialized in TestMain.
+var (
+	softhsmMgr   *softhsmManager
+	softhsmTmpDir string
+)
+
 // findSofthsmModule returns the SoftHSM2 PKCS#11 module path or skips.
 // Checks SSOOSSH_TEST_PKCS11_MODULE, then Debian/Ubuntu locations, then
 // non-standard paths like /usr/local/lib/softhsm/libsofthsm2.so.
-func findSofthsmModule(t *testing.T) string {
+func findSofthsmModule() string {
 	if p := os.Getenv("SSOOSSH_TEST_PKCS11_MODULE"); p != "" {
 		return p
 	}
@@ -32,7 +38,6 @@ func findSofthsmModule(t *testing.T) string {
 			return p
 		}
 	}
-	t.Skip("softhsm2 module not found; install softhsm2 or set SSOOSSH_TEST_PKCS11_MODULE")
 	return ""
 }
 
@@ -46,74 +51,64 @@ type softhsmManager struct {
 	module    string
 }
 
-var softhsmOnce struct {
-	mgr *softhsmManager
-	err error
-}
-
-// initSoftHSM initializes the shared SoftHSM2 environment once per process.
-// It creates a temp directory, a softhsm2.conf pointing to it, and returns
-// the manager. Subsequent calls return the same manager.
-func initSoftHSM(t *testing.T) *softhsmManager {
-	t.Helper()
-
-	// Populate on first call only.
-	if softhsmOnce.mgr != nil || softhsmOnce.err != nil {
-		if softhsmOnce.err != nil {
-			t.Fatalf("softhsm initialization failed: %v", softhsmOnce.err)
-		}
-		return softhsmOnce.mgr
-	}
-
+// TestMain initializes the shared SoftHSM2 environment once and ensures
+// cleanup after all tests finish. This approach works around SoftHSM2's
+// config caching by creating one conf+tokendir per test binary run, with
+// distinct token labels per test for isolation.
+func TestMain(m *testing.M) {
 	// Create the shared temp directory.
 	tmpDir, err := os.MkdirTemp("", "softhsm2-test-*")
 	if err != nil {
-		softhsmOnce.err = err
-		t.Fatalf("failed to create temp directory for softhsm2: %v", err)
+		// If we can't create the temp dir, skip the tests gracefully
+		// (they will see softhsmMgr == nil and skip).
+		softhsmTmpDir = ""
+	} else {
+		softhsmTmpDir = tmpDir
+
+		tokensDir := filepath.Join(tmpDir, "tokens")
+		if err := os.MkdirAll(tokensDir, 0o755); err == nil {
+			confPath := filepath.Join(tmpDir, "softhsm2.conf")
+			confContent := "directories.tokendir = " + tokensDir + "\nobjectstore.backend = file\n"
+			if err := os.WriteFile(confPath, []byte(confContent), 0o644); err == nil {
+				// Set the environment variable for this process.
+				if err := os.Setenv("SOFTHSM2_CONF", confPath); err == nil {
+					module := findSofthsmModule()
+					if module != "" {
+						softhsmMgr = &softhsmManager{
+							confPath:  confPath,
+							tokensDir: tokensDir,
+							module:    module,
+						}
+					}
+				}
+			}
+		}
 	}
 
-	tokensDir := filepath.Join(tmpDir, "tokens")
-	if err := os.MkdirAll(tokensDir, 0o755); err != nil {
-		softhsmOnce.err = err
-		t.Fatalf("failed to create tokens directory: %v", err)
+	// Run all tests.
+	code := m.Run()
+
+	// Clean up the temp directory after all tests finish.
+	if softhsmTmpDir != "" {
+		os.RemoveAll(softhsmTmpDir)
 	}
 
-	confPath := filepath.Join(tmpDir, "softhsm2.conf")
-	confContent := "directories.tokendir = " + tokensDir + "\nobjectstore.backend = file\n"
-	if err := os.WriteFile(confPath, []byte(confContent), 0o644); err != nil {
-		softhsmOnce.err = err
-		t.Fatalf("failed to write softhsm2.conf: %v", err)
-	}
-
-	// Set the environment variable for this process.
-	if err := os.Setenv("SOFTHSM2_CONF", confPath); err != nil {
-		softhsmOnce.err = err
-		t.Fatalf("failed to set SOFTHSM2_CONF: %v", err)
-	}
-
-	mgr := &softhsmManager{
-		confPath:  confPath,
-		tokensDir: tokensDir,
-		module:    findSofthsmModule(t),
-	}
-	softhsmOnce.mgr = mgr
-	return mgr
+	os.Exit(code)
 }
 
-// provisionToken creates an isolated SoftHSM2 token within the shared token
-// store with a distinct label, generates one key of the given type, and
-// returns the module path. keyType is "EC:prime256v1" or "RSA:2048".
-func (m *softhsmManager) provisionToken(t *testing.T, keyType, keyLabel, keyID string) string {
+// provisionToken creates a new SoftHSM2 token with the given label,
+// generates one key of the given type, and returns the module path.
+// keyType is "EC:prime256v1" or "RSA:2048".
+func provisionToken(t *testing.T, tokenLabel, keyType, keyLabel, keyID string) string {
 	t.Helper()
 
-	// Initialize the token with a unique label per test.
-	// Token labels are limited to 32 characters, so use a hash-based suffix.
-	// For simplicity, use a counter based on key ID.
-	tokenLabel := "test-" + keyLabel
+	if softhsmMgr == nil {
+		t.Skip("softhsm2 not initialized")
+	}
 
 	run := func(name string, args ...string) {
 		cmd := exec.Command(name, args...)
-		cmd.Env = append(os.Environ(), "SOFTHSM2_CONF="+m.confPath)
+		cmd.Env = append(os.Environ(), "SOFTHSM2_CONF="+softhsmMgr.confPath)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("%s %v: %v\n%s", name, args, err, out)
@@ -125,11 +120,11 @@ func (m *softhsmManager) provisionToken(t *testing.T, keyType, keyLabel, keyID s
 		"--pin", "1234", "--so-pin", "123456")
 
 	// Generate the key in this token.
-	run("pkcs11-tool", "--module", m.module, "--login", "--pin", "1234",
+	run("pkcs11-tool", "--module", softhsmMgr.module, "--login", "--pin", "1234",
 		"--keypairgen", "--key-type", keyType,
 		"--label", keyLabel, "--id", keyID)
 
-	return m.module
+	return softhsmMgr.module
 }
 
 // buildTestCert constructs a minimal ssh.Certificate for testing,
@@ -161,14 +156,14 @@ func buildTestCert(t *testing.T, publicKeyStr string) *ssh.Certificate {
 // TestHSMKeySource_ShouldSignWithECDSAKeyFromSoftHSM tests that an
 // ECDSA P-256 key in SoftHSM2 can be used to sign and verify a certificate.
 func TestHSMKeySource_ShouldSignWithECDSAKeyFromSoftHSM(t *testing.T) {
-	mgr := initSoftHSM(t)
-	keyLabel := "test-ec-key"
-	module := mgr.provisionToken(t, "EC:prime256v1", keyLabel, "01")
+	tokenLabel := "hsm-ec-sign"
+	keyLabel := "ec-key"
+	module := provisionToken(t, tokenLabel, "EC:prime256v1", keyLabel, "01")
 
 	// Configure the HSM key source.
 	hs, err := NewHSMKeySource(HSMParams{
 		Module:     module,
-		TokenLabel: "test-" + keyLabel,
+		TokenLabel: tokenLabel,
 		PIN:        "1234",
 		KeyID:      []byte{0x01},
 		KeyLabel:   keyLabel,
@@ -210,14 +205,14 @@ func TestHSMKeySource_ShouldSignWithECDSAKeyFromSoftHSM(t *testing.T) {
 // TestHSMKeySource_ShouldSignRSAWithSHA2FromSoftHSM tests that an RSA 2048-bit
 // key in SoftHSM2 signs with rsa-sha2-512 algorithm.
 func TestHSMKeySource_ShouldSignRSAWithSHA2FromSoftHSM(t *testing.T) {
-	mgr := initSoftHSM(t)
-	keyLabel := "test-rsa-key"
-	module := mgr.provisionToken(t, "RSA:2048", keyLabel, "02")
+	tokenLabel := "hsm-rsa-sha2"
+	keyLabel := "rsa-key"
+	module := provisionToken(t, tokenLabel, "RSA:2048", keyLabel, "02")
 
 	// Configure the HSM key source.
 	hs, err := NewHSMKeySource(HSMParams{
 		Module:     module,
-		TokenLabel: "test-" + keyLabel,
+		TokenLabel: tokenLabel,
 		PIN:        "1234",
 		KeyID:      []byte{0x02},
 		KeyLabel:   keyLabel,
@@ -265,15 +260,14 @@ func TestHSMKeySource_ShouldSignRSAWithSHA2FromSoftHSM(t *testing.T) {
 // returns an error containing "no key pair found" when the requested key
 // label does not exist.
 func TestHSMKeySource_ShouldFailWhenKeyLabelMissing(t *testing.T) {
-	mgr := initSoftHSM(t)
-	// Provision a token with a key, but request a different label.
-	keyLabel := "test-ec-key"
-	module := mgr.provisionToken(t, "EC:prime256v1", keyLabel, "01")
+	tokenLabel := "hsm-missing-label"
+	keyLabel := "ec-key"
+	module := provisionToken(t, tokenLabel, "EC:prime256v1", keyLabel, "01")
 
 	// Try to open with the wrong label.
 	_, err := NewHSMKeySource(HSMParams{
 		Module:     module,
-		TokenLabel: "test-" + keyLabel,
+		TokenLabel: tokenLabel,
 		PIN:        "1234",
 		KeyID:      nil, // not using ID
 		KeyLabel:   "nope", // wrong label
@@ -294,15 +288,14 @@ func TestHSMKeySource_ShouldFailWhenKeyLabelMissing(t *testing.T) {
 // TestHSMKeySource_ShouldFailWhenPINWrong tests that NewHSMKeySource
 // returns an error from the crypto11 Configure call when the PIN is wrong.
 func TestHSMKeySource_ShouldFailWhenPINWrong(t *testing.T) {
-	mgr := initSoftHSM(t)
-	// Provision a token (doesn't matter which key).
-	keyLabel := "test-ec-key"
-	module := mgr.provisionToken(t, "EC:prime256v1", keyLabel, "01")
+	tokenLabel := "hsm-wrong-pin"
+	keyLabel := "ec-key"
+	module := provisionToken(t, tokenLabel, "EC:prime256v1", keyLabel, "01")
 
 	// Try to open with the wrong PIN.
 	_, err := NewHSMKeySource(HSMParams{
 		Module:     module,
-		TokenLabel: "test-" + keyLabel,
+		TokenLabel: tokenLabel,
 		PIN:        "9999", // wrong PIN
 		KeyID:      nil,
 		KeyLabel:   keyLabel,
