@@ -399,4 +399,74 @@ describe('ApprovalView', () => {
 			expect(liveRegion?.textContent).toContain('denied');
 		});
 	});
+
+	describe('principal picker (user certificates)', () => {
+		it('should not offer a picker for non-user requests', () => {
+			mount({ detail: detail({ type: 'service' }), userPrincipals: ['alice'] });
+			expect(screen.queryByText('Select principals')).not.toBeInTheDocument();
+		});
+
+		// principals: [] clears the read-only Principals row, which otherwise
+		// renders 'alice' a second time and makes getByText ambiguous.
+		it('should list the candidate principals when the request is a user request', () => {
+			mount({
+				detail: detail({ type: 'user', principals: [] }),
+				userPrincipals: ['alice', 'alice-alt']
+			});
+			expect(screen.getByText('alice')).toBeInTheDocument();
+			expect(screen.getByText('alice-alt')).toBeInTheDocument();
+		});
+
+		it('should pre-check the username principal', () => {
+			mount({ detail: detail({ type: 'user' }), userPrincipals: ['alice', 'alice-alt'], selectedPrincipals: ['alice'] });
+			const checkboxes = screen.getAllByRole('checkbox');
+			expect(checkboxes[0]).toBeChecked();
+		});
+
+		it('should keep approve disabled until at least one principal is selected', async () => {
+			const { onapprove } = mount({
+				detail: detail({ type: 'user' }),
+				userPrincipals: ['alice'],
+				selectedPrincipals: []
+			});
+
+			const approve = screen.getByRole('button', { name: /Approve/ });
+			expect(approve).toBeDisabled();
+			await userEvent.click(approve);
+			expect(onapprove).not.toHaveBeenCalled();
+		});
+
+		it('should enable approve once at least one principal is selected', async () => {
+			const { onapprove } = mount({
+				detail: detail({ type: 'user' }),
+				userPrincipals: ['alice'],
+				selectedPrincipals: ['alice']
+			});
+
+			const approve = screen.getByRole('button', { name: /Approve/ });
+			expect(approve).toBeEnabled();
+			await userEvent.click(approve);
+			expect(onapprove).toHaveBeenCalledOnce();
+		});
+
+		it('should still render service select for service-type requests', () => {
+			mount({
+				detail: detail({ type: 'service' }),
+				serviceAccounts: ['svc-a'],
+				userPrincipals: []
+			});
+			expect(screen.getByRole('combobox')).toBeInTheDocument();
+			expect(screen.queryByText('Select principals')).not.toBeInTheDocument();
+		});
+
+		it('should render a single checkbox when the approver holds no other accounts', () => {
+			mount({
+				detail: detail({ type: 'user' }),
+				userPrincipals: ['alice'],
+				selectedPrincipals: ['alice']
+			});
+			const checkboxes = screen.getAllByRole('checkbox');
+			expect(checkboxes).toHaveLength(1);
+		});
+	});
 });

@@ -38,6 +38,10 @@
 		serviceAccounts?: string[];
 		/** Selected service account for approval (for service-type requests). */
 		selectedServiceAccount?: string | null;
+		/** Principals available to this approver (for user-type requests). */
+		userPrincipals?: string[];
+		/** Selected principals for approval (for user-type requests). */
+		selectedPrincipals?: string[];
 		onapprove: () => void;
 		ondeny: () => void;
 	}
@@ -49,6 +53,8 @@
 		outcome = null,
 		serviceAccounts = [],
 		selectedServiceAccount = $bindable(),
+		userPrincipals = [],
+		selectedPrincipals = $bindable(),
 		onapprove,
 		ondeny
 	}: Props = $props();
@@ -72,7 +78,9 @@
 
 	const hasDecisionRecord = $derived(!!detail.decided_at);
 	const isServiceRequest = $derived(detail.type === 'service');
+	const isUserRequest = $derived(detail.type === 'user');
 	const hasServiceAccounts = $derived(serviceAccounts.length > 0);
+	const hasPrincipals = $derived(userPrincipals.length > 0);
 
 	// The short form of the request id, for the corner of the card — enough
 	// to tell two requests apart when comparing against a log line. Labelled
@@ -255,6 +263,24 @@
 							</div>
 						</div>
 					{/if}
+					{#if isUserRequest && hasPrincipals}
+						<div>
+							<SectionLabel>Select principals</SectionLabel>
+							<div class="flex flex-col gap-2.5">
+								{#each userPrincipals as principal (principal)}
+									<label class="flex items-center gap-2">
+										<input
+											type="checkbox"
+											value={principal}
+											bind:group={selectedPrincipals}
+											class="rounded border border-border-subtle bg-surface accent-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+										/>
+										<span class="text-[13px] text-ink font-mono">{principal}</span>
+									</label>
+								{/each}
+							</div>
+						</div>
+					{/if}
 					{#if actionError}
 						<Alert variant="error" title="That did not go through">{actionError}</Alert>
 					{/if}
@@ -269,7 +295,7 @@
 						<Button
 							testid="approve-button"
 							{busy}
-							disabled={isServiceRequest && !selectedServiceAccount}
+							disabled={(isServiceRequest && !selectedServiceAccount) || (isUserRequest && selectedPrincipals.length === 0)}
 							onclick={onapprove}
 						>
 							<Icon name="check" size="sm" />

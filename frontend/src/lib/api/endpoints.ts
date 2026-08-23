@@ -29,11 +29,28 @@ export function getRequestDetail(id: string, signal?: AbortSignal): Promise<Requ
 
 /**
  * POST /api/certs/requests/:id/approve.
- * For service-type requests, serviceAccount is required and names which of
- * the approver's service accounts the certificate principal should be.
+ * For service-type requests, serviceAccount names which of the approver's
+ * service accounts the certificate principal should be. For user-type requests,
+ * principals is the list of principals to include on the certificate.
  */
-export function approveRequest(id: string, serviceAccount?: string): Promise<ApproveResult> {
-	const body = serviceAccount ? { service_account: serviceAccount } : undefined;
+export function approveRequest(
+	id: string,
+	options?: {
+		serviceAccount?: string;
+		principals?: string[];
+	}
+): Promise<ApproveResult> {
+	// The options object is camelCase for callers; the wire field names are
+	// webtypes.ApproveRequestBody's snake_case json tags. Mapping here rather
+	// than posting `options` verbatim, which would send `serviceAccount` and
+	// silently fail to bind server-side.
+	const hasSelection = !!options && (!!options.serviceAccount || !!options.principals?.length);
+	const body = hasSelection
+		? {
+				...(options.serviceAccount ? { service_account: options.serviceAccount } : {}),
+				...(options.principals?.length ? { principals: options.principals } : {})
+			}
+		: undefined;
 	return request<ApproveResult>(`/certs/requests/${encodeURIComponent(id)}/approve`, {
 		method: 'POST',
 		body

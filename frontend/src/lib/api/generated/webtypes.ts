@@ -41,8 +41,9 @@ export interface CurrentUserResponse {
 	 * OtherAccounts are alternate account identifiers this identity is
 	 * known by on target systems (see config.OAuthFields.OtherAccounts),
 	 * shown so a user can see every account name tied to their identity.
-	 * Display only for now: user certificates carry Username as their sole
-	 * principal until the principal-list work lands.
+	 * These are also the candidates, alongside Username, that the approval
+	 * page offers as principals for a user certificate (see
+	 * ApproveRequestBody.Principals).
 	 */
 	other_accounts: string[];
 	/**
@@ -63,11 +64,14 @@ export interface CurrentUserResponse {
  * ApproveRequestBody is the optional body of the approve endpoint. For a
  * service-type request the approver must name which of their service
  * accounts the certificate is for; the server validates membership and the
- * chosen account becomes the certificate principal. Ignored for other
- * request types.
+ * chosen account becomes the certificate principal. For a user-type request
+ * Principals may contain the username and/or any other accounts the approver
+ * holds; empty/absent Principals defaults to the approver's username server-side.
+ * Ignored for other request types.
  */
 export interface ApproveRequestBody {
 	service_account?: string;
+	principals?: string[];
 }
 /**
  * EnrollmentRetrievalResponse is one redemption of a service enrollment

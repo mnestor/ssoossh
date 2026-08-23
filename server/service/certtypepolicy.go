@@ -41,11 +41,15 @@ type certTypePolicy struct {
 	noTouchEligible bool
 	keyIDTemplate   *template.Template
 	// principals computes a certificate's principal list from per-request
-	// context. See docs/dev/ssoossh-context.md's "Which LDAP attributes become
-	// principals" open question for why this defaults to the approver's
-	// identity, and CertRequestService.Approve's doc comment for PAM's
-	// exception.
-	principals func(pamUsername string, identity *Identity) []string
+	// context and the approver's selection (for user-type requests). For
+	// user-type requests, returns the selection (or defaults to
+	// []string{identity.Username} if selection is empty). For PAM requests,
+	// ignores both identity and selection, returning the local account being
+	// authenticated (req.Username at call-time). Service certificates ignore
+	// this field and use the selected service account directly. See
+	// docs/dev/ssoossh-context.md for the "Which LDAP attributes become
+	// principals" open question.
+	principals func(pamUsername string, identity *Identity, selected []string) []string
 	flow       certApprovalFlow
 }
 
@@ -63,9 +67,20 @@ func narrowRequestedOptions(p *certTypePolicy, requested RequestedOptions) Reque
 // already-parsed key ID templates (see newKeyIDTemplates) into one lookup
 // table keyed by model.CertificateType.
 func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates) map[model.CertificateType]*certTypePolicy {
-	// identityUsername is shared by User and Service — both fall back to
-	// the approver's own identity (see resolvePrincipals' old doc comment).
-	identityUsername := func(_ string, identity *Identity) []string {
+	// userPrincipals returns the approver's selection for user-type
+	// requests, or defaults to the approver's username if the selection is
+	// empty (preserving existing behavior for direct API callers).
+	userPrincipals := func(_ string, identity *Identity, selected []string) []string {
+		if len(selected) > 0 {
+			return selected
+		}
+		return []string{identity.Username}
+	}
+
+	// servicePrincipals is the placeholder for service certificates — this
+	// field is never consulted for service types (approveServiceEnrollment
+	// uses selection.ServiceAccount directly), but it exists for symmetry.
+	servicePrincipals := func(_ string, identity *Identity, _ []string) []string {
 		return []string{identity.Username}
 	}
 
@@ -75,7 +90,7 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates) map
 			validDuration: opts.User.ValidDuration,
 			extensions:    opts.User.Extensions,
 			keyIDTemplate: kt.user,
-			principals:    identityUsername,
+			principals:    userPrincipals,
 			flow:          flowSigning,
 		},
 		model.CertificateTypeService: {
@@ -84,7 +99,7 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates) map
 			extensions:      opts.Service.Extensions,
 			noTouchEligible: true,
 			keyIDTemplate:   kt.service,
-			principals:      identityUsername,
+			principals:      servicePrincipals,
 			flow:            flowEnrollment,
 		},
 		model.CertificateTypePAM: {
@@ -92,7 +107,7 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates) map
 			validDuration: opts.PAM.ValidDuration,
 			extensions:    opts.PAM.Extensions,
 			keyIDTemplate: kt.pam,
-			principals: func(pamUsername string, _ *Identity) []string {
+			principals: func(pamUsername string, _ *Identity, _ []string) []string {
 				return []string{pamUsername}
 			},
 			flow: flowSigning,

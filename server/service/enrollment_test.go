@@ -100,7 +100,7 @@ func enrollService(t *testing.T, svc *CertRequestService, publicKey string) stri
 	seedUser(t, svc.db, "sub-svc")
 	err = svc.Approve(context.Background(), requestID,
 		&Identity{Username: "approver", Subject: "sub-svc", ServiceAccounts: []string{"svc-deploy"}},
-		DecisionContext{}, "svc-deploy")
+		DecisionContext{}, ApprovalSelection{ServiceAccount: "svc-deploy"})
 	if err != nil {
 		t.Fatalf("unexpected error approving service request: %v", err)
 	}
@@ -394,7 +394,7 @@ func TestApprove_ServiceAccountLinkage(t *testing.T) {
 		identity := &Identity{Username: "alice", Subject: "sub-1", ServiceAccounts: []string{"svc-a"}}
 		seedUser(t, svc.db, identity.Subject)
 
-		if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ""); err == nil {
+		if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{}); err == nil {
 			t.Fatal("expected an error approving without a service account")
 		}
 	})
@@ -406,7 +406,7 @@ func TestApprove_ServiceAccountLinkage(t *testing.T) {
 		identity := &Identity{Username: "alice", Subject: "sub-1", ServiceAccounts: []string{"svc-a"}}
 		seedUser(t, svc.db, identity.Subject)
 
-		err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, "svc-b")
+		err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{ServiceAccount: "svc-b"})
 		if err == nil {
 			t.Fatal("expected an error for a service account outside the approver's own")
 		}
@@ -426,7 +426,7 @@ func TestApprove_ServiceAccountLinkage(t *testing.T) {
 		identity := &Identity{Username: "alice", Subject: "sub-1", ServiceAccounts: []string{"svc-a", "svc-b"}}
 		seedUser(t, svc.db, identity.Subject)
 
-		if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, "svc-b"); err != nil {
+		if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{ServiceAccount: "svc-b"}); err != nil {
 			t.Fatalf("unexpected error approving: %v", err)
 		}
 
@@ -435,7 +435,7 @@ func TestApprove_ServiceAccountLinkage(t *testing.T) {
 			t.Fatalf("failed to read back request: %v", err)
 		}
 		if req.ServiceAccount != "svc-b" {
-			t.Errorf("got stored service account %q, want %q", req.ServiceAccount, "svc-b")
+			t.Errorf("got stored service account %q, want %q", req.ServiceAccount, ApprovalSelection{ServiceAccount: "svc-b"})
 		}
 
 		var enrollment model.Enrollment
