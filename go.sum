@@ -192,8 +192,8 @@ github.com/hashicorp/golang-lru/v2 v2.0.7 h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs
 github.com/hashicorp/golang-lru/v2 v2.0.7/go.mod h1:QeFd9opnmA6QUJc5vARoKUSoFhyfM2/ZepoAG6RGpeM=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
-github.com/italypaleale/go-kit v0.0.0-20260806152440-491aff6b42b5 h1:bT2aB2nHewW4pHmVk36aRADW1owTDz1q1V5mRa5BCs0=
-github.com/italypaleale/go-kit v0.0.0-20260806152440-491aff6b42b5/go.mod h1:wg4UsIbsbtDiVqUjJdo/tO9lXo0OXBuwPOpSJ+u+1jI=
+github.com/italypaleale/go-kit v1.0.0 h1:c+SaYHTaoZzTgbPXhSbNVdNRkNdNhE0YljBWWoPTdKI=
+github.com/italypaleale/go-kit v1.0.0/go.mod h1:wg4UsIbsbtDiVqUjJdo/tO9lXo0OXBuwPOpSJ+u+1jI=
 github.com/jackc/chunkreader v1.0.0/go.mod h1:RT6O25fNZIuasFJRyZ4R/Y2BbhasbmZXF9QQ7T3kePo=
 github.com/jackc/chunkreader/v2 v2.0.0/go.mod h1:odVSm741yZoC3dpHEUXIqA9tQRhFrgOHwnPIn9lDKlk=
 github.com/jackc/chunkreader/v2 v2.0.1/go.mod h1:odVSm741yZoC3dpHEUXIqA9tQRhFrgOHwnPIn9lDKlk=

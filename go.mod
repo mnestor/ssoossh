@@ -18,7 +18,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/google/uuid v1.6.0
-	github.com/italypaleale/go-kit v0.0.0-20260806152440-491aff6b42b5
+	github.com/italypaleale/go-kit v1.0.0
 	github.com/kbolino/pageant v0.0.0-20180919004629-179b60797d9f
 	github.com/lmittmann/tint v1.2.0
 	github.com/mattn/go-isatty v0.0.24
