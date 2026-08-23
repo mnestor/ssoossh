@@ -52,10 +52,10 @@ func TestParsePolicyPlist_ShouldReturnAnEmptyMapForAnEmptyDict(t *testing.T) {
 	}
 }
 
-func TestParsePolicyPlist_ShouldSkipKeysWithUnsupportedValueTypes(t *testing.T) {
+func TestParsePolicyPlist_ShouldParseArraysOfStringsAndSkipOthers(t *testing.T) {
 	data := []byte(`<plist version="1.0">
 <dict>
-	<key>ignored_array</key>
+	<key>forbidden_list</key>
 	<array><string>a</string><string>b</string></array>
 	<key>ignored_dict</key>
 	<dict><key>nested</key><string>x</string></dict>
@@ -69,9 +69,20 @@ func TestParsePolicyPlist_ShouldSkipKeysWithUnsupportedValueTypes(t *testing.T) 
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if _, ok := values["ignored_array"]; ok {
-		t.Error("expected the <array> value to be skipped")
+	// Arrays of strings are now parsed
+	if arr, ok := values["forbidden_list"]; ok {
+		if arrSlice, ok := arr.([]any); ok {
+			if len(arrSlice) != 2 || arrSlice[0] != "a" || arrSlice[1] != "b" {
+				t.Errorf("got forbidden_list %v, want [a b]", arrSlice)
+			}
+		} else {
+			t.Errorf("got forbidden_list type %T, want []any", arr)
+		}
+	} else {
+		t.Error("expected the <array> of strings to be parsed")
 	}
+
+	// Dicts are still skipped
 	if _, ok := values["ignored_dict"]; ok {
 		t.Error("expected the <dict> value to be skipped")
 	}
@@ -101,5 +112,27 @@ func TestParsePolicyPlist_ShouldRejectAnInvalidInteger(t *testing.T) {
 
 	if _, err := parsePolicyPlist(data); err == nil {
 		t.Fatal("expected an error for an unparsable <integer>")
+	}
+}
+
+func TestParsePolicyPlist_ShouldParseArraysSkippingNonStringElements(t *testing.T) {
+	data := []byte(`<plist version="1.0">
+<dict>
+	<key>mixed_array</key>
+	<array><string>a</string><integer>1</integer><string>b</string></array>
+</dict>
+</plist>`)
+
+	values, err := parsePolicyPlist(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if arr, ok := values["mixed_array"].([]any); ok {
+		if len(arr) != 2 || arr[0] != "a" || arr[1] != "b" {
+			t.Errorf("got mixed_array %v, want [a b] (integer skipped)", arr)
+		}
+	} else {
+		t.Errorf("got mixed_array type %T, want []any", values["mixed_array"])
 	}
 }

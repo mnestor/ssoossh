@@ -27,6 +27,13 @@ var policyStringValues = map[string]string{
 	"SSHKeyType":  "sshkey.type",
 }
 
+// policyMultiStringValues names the REG_MULTI_SZ values under
+// policyRegistryPath. Each maps a registry value name to a canonical
+// setting that takes a string slice.
+var policyMultiStringValues = map[string]string{
+	"ForbiddenCertificateExtensions": "forbidden_certificate_extensions",
+}
+
 // policyDwordValues names the REG_DWORD values under policyRegistryPath.
 // dwordAsBool marks which of them are boolean settings (0/1) rather than
 // plain integers.
@@ -82,6 +89,11 @@ func loadPolicyFrom(root registry.Key, path string) (map[string]any, error) {
 			flat[canonical] = v != 0
 		} else {
 			flat[canonical] = int(v)
+		}
+	}
+	for name, canonical := range policyMultiStringValues {
+		if v, _, err := key.GetStringsValue(name); err == nil {
+			flat[canonical] = v
 		}
 	}
 

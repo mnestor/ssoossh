@@ -144,7 +144,8 @@ func readCharData(dec *xml.Decoder) (string, error) {
 // readScalarValue interprets start as a plist value element. It returns
 // ok=false (having still consumed the whole subtree, so the caller's
 // position in the document stays correct) for any type this parser
-// doesn't need to understand.
+// doesn't need to understand. Arrays of strings are handled as a special
+// case — they become []any with string elements.
 //
 //nolint:unused // see parsePolicyPlist
 func readScalarValue(dec *xml.Decoder, start xml.StartElement) (value any, ok bool, err error) {
@@ -170,8 +171,45 @@ func readScalarValue(dec *xml.Decoder, start xml.StartElement) (value any, ok bo
 	case "false":
 		return false, true, skipToEnd(dec)
 
+	case "array":
+		arr, err := readArrayOfStrings(dec)
+		return arr, err == nil, err
+
 	default:
 		return nil, false, skipToEnd(dec)
+	}
+}
+
+// readArrayOfStrings reads an <array> of <string> elements, returning an
+// []any with the string contents. Non-string elements are skipped without error.
+// This is used for policy list values like forbidden certificate extensions.
+//
+//nolint:unused // see parsePolicyPlist
+func readArrayOfStrings(dec *xml.Decoder) ([]any, error) {
+	var result []any
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, fmt.Errorf("read array: %w", err)
+		}
+
+		switch t := tok.(type) {
+		case xml.EndElement:
+			return result, nil
+		case xml.StartElement:
+			if t.Name.Local == "string" {
+				s, err := readCharData(dec)
+				if err != nil {
+					return nil, fmt.Errorf("read array string: %w", err)
+				}
+				result = append(result, s)
+			} else {
+				// Skip any non-string element
+				if err := skipToEnd(dec); err != nil {
+					return nil, fmt.Errorf("skip non-string array element: %w", err)
+				}
+			}
+		}
 	}
 }
 

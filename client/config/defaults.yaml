@@ -36,3 +36,17 @@ try_open_browser: false
 # sshkey:
 #   type: ed25519
 #   size: 0
+
+# Certificate extensions requested in an `ssh login` request. Opt out of any
+# by setting the corresponding no_* to true. The default requests the full
+# interactive set: permit-pty, permit-agent-forwarding, permit-port-forwarding,
+# permit-X11-forwarding, and permit-user-rc. The server narrows this against
+# its own configuration before issuing (see Hard Constraints in the root
+# CLAUDE.md), so requesting the full set is always safe.
+#
+# certificate_extensions:
+#   no_pty: false
+#   no_agent_forwarding: false
+#   no_port_forwarding: false
+#   no_x11_forwarding: false
+#   no_user_rc: false

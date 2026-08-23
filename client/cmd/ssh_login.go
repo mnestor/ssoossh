@@ -19,23 +19,39 @@ import (
 	"github.com/mnestor/ssoossh/internal/api"
 	sshagent "github.com/mnestor/ssoossh/internal/crypto/ssh/agent"
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
+
+	"github.com/mnestor/ssoossh/client/config"
 )
 
-// loginExtensions are the certificate extensions `ssh login` asks for. The
-// server narrows this against its own configuration and the web UI shows
-// what survived before anyone approves (see root CLAUDE.md, Hard
+// loginExtensions are the certificate extensions `ssh login` asks for by
+// default. The server narrows this against its own configuration and the web
+// UI shows what survived before anyone approves (see root CLAUDE.md, Hard
 // Constraints), so asking for the full interactive set is a request, not a
 // demand — anything the deployment does not permit is simply trimmed.
 //
-// Asking for nothing is not an option: narrowing is an intersection, so an
-// empty request yields a certificate carrying no extensions at all, which
-// cannot open an interactive session.
+// Users can opt out of extensions via config settings or CLI flags, and
+// administrators can forbid extensions via policy (Windows registry, macOS
+// managed preferences, or the enforce file on Linux). The effective set is
+// the default, minus config opt-outs, minus flag opt-outs, minus policy
+// forbidden — in that order. Asking for nothing is not an option: narrowing
+// is an intersection, so an empty request yields a certificate carrying no
+// extensions at all, which cannot open an interactive session.
 var loginExtensions = []string{
 	"permit-pty",
 	"permit-agent-forwarding",
 	"permit-port-forwarding",
 	"permit-X11-forwarding",
 	"permit-user-rc",
+}
+
+// extensionToConfig maps extension names to their config field addresses,
+// used by effectiveExtensions to check opt-out settings.
+var extensionToConfig = map[string]func(*config.CertificateExtensionOptions) bool{
+	"permit-pty":              func(c *config.CertificateExtensionOptions) bool { return c.NoPTY },
+	"permit-agent-forwarding": func(c *config.CertificateExtensionOptions) bool { return c.NoAgentForwarding },
+	"permit-port-forwarding":  func(c *config.CertificateExtensionOptions) bool { return c.NoPortForwarding },
+	"permit-X11-forwarding":   func(c *config.CertificateExtensionOptions) bool { return c.NoX11Forwarding },
+	"permit-user-rc":          func(c *config.CertificateExtensionOptions) bool { return c.NoUserRC },
 }
 
 // reuseGrace is how much validity a already-loaded certificate must have
@@ -47,6 +63,16 @@ const reuseGrace = 10 * time.Second
 // browserLaunchTimeout bounds the best-effort browser launch. The URL is
 // always printed first, so a launcher that hangs must not hold up the login.
 const browserLaunchTimeout = 5 * time.Second
+
+// extensionRemovalReason tracks why an extension was removed from the
+// requested set, for the effective-request summary line.
+type extensionRemovalReason int
+
+const (
+	removed_config extensionRemovalReason = iota
+	removed_flag
+	removed_policy
+)
 
 func newSSHLoginCommand() simplecobra.Commander {
 	// --force replaces the loaded certificate: "this one is somehow wrong,
@@ -77,6 +103,18 @@ func newSSHLoginCommand() simplecobra.Commander {
 				"ssh key algorithm to generate: ed25519, ecdsa, or rsa (default depends on FIPS mode)")
 			cd.CobraCommand.Flags().Int("key-size", 0,
 				"ssh key size (bits for rsa, curve for ecdsa; ignored for ed25519)")
+			// Certificate extension flags: opt out of requested extensions.
+			// Bound to certificate_extensions.* in config.go's newConfig.
+			cd.CobraCommand.Flags().Bool("no-pty", false,
+				"do not request permit-pty extension")
+			cd.CobraCommand.Flags().Bool("no-agent-forwarding", false,
+				"do not request permit-agent-forwarding extension")
+			cd.CobraCommand.Flags().Bool("no-port-forwarding", false,
+				"do not request permit-port-forwarding extension")
+			cd.CobraCommand.Flags().Bool("no-x11-forwarding", false,
+				"do not request permit-X11-forwarding extension")
+			cd.CobraCommand.Flags().Bool("no-user-rc", false,
+				"do not request permit-user-rc extension")
 			return nil
 		},
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
@@ -86,6 +124,73 @@ func newSSHLoginCommand() simplecobra.Commander {
 			return runLogin(ctx, root, cd.CobraCommand.ErrOrStderr(), force)
 		},
 	}
+}
+
+// effectiveExtensions computes which extensions to request, applying
+// config opt-outs, flag opt-outs, and policy forbidding in order. It
+// returns the effective extensions list and an attribution map showing
+// which layer (config, flag, or policy) removed each extension that was
+// removed. It returns an error if the result is empty (an unusable
+// certificate).
+func effectiveExtensions(cfg *config.Config, removals map[string]extensionRemovalReason) ([]string, error) {
+	// Start with the full set.
+	requested := make(map[string]bool)
+	for _, ext := range loginExtensions {
+		requested[ext] = true
+	}
+
+	// Apply config opt-outs.
+	for ext, isOptedOut := range extensionToConfig {
+		if isOptedOut(&cfg.CertificateExtensions) {
+			delete(requested, ext)
+			removals[ext] = removed_config
+		}
+	}
+
+	// Apply policy-forbidden (unconditionally, even if a flag tried to re-add it).
+	for _, forbidden := range cfg.ForbiddenCertificateExtensions {
+		if requested[forbidden] {
+			delete(requested, forbidden)
+			removals[forbidden] = removed_policy
+		} else if _, inRemoved := removals[forbidden]; inRemoved {
+			// If it was already removed by config, overwrite to show policy as the reason.
+			removals[forbidden] = removed_policy
+		} else {
+			// If it wasn't in the default set at all, still record it for clarity.
+			removals[forbidden] = removed_policy
+		}
+	}
+
+	// Guard against empty set.
+	if len(requested) == 0 {
+		// Determine which layer removed the last extension(s).
+		lastReason := removed_config
+		for _, reason := range removals {
+			if reason != removed_config {
+				lastReason = reason
+			}
+		}
+
+		var reasonText string
+		switch lastReason {
+		case removed_config:
+			return nil, errors.New("all certificate extensions were opted out via configuration; cannot issue an unusable certificate")
+		case removed_flag:
+			return nil, errors.New("all certificate extensions were opted out via command-line flags; cannot issue an unusable certificate")
+		case removed_policy:
+			return nil, errors.New("all certificate extensions are forbidden by policy; cannot issue an unusable certificate")
+		default:
+			reasonText = "unknown reason"
+			return nil, fmt.Errorf("all certificate extensions removed by %s; cannot issue an unusable certificate", reasonText)
+		}
+	}
+
+	// Convert back to a sorted slice.
+	result := make([]string, 0, len(requested))
+	for ext := range requested {
+		result = append(result, ext)
+	}
+	return result, nil
 }
 
 // runLogin obtains a usable certificate and loads it into the agent (or key
@@ -123,8 +228,38 @@ func runLogin(ctx context.Context, root *RootCommand, out io.Writer, force bool)
 
 	localUsername, localHostname := localIdentity()
 
+	// Compute effective extensions with attribution.
+	removals := make(map[string]extensionRemovalReason)
+	effectiveExts, err := effectiveExtensions(cfg, removals)
+	if err != nil {
+		return err
+	}
+
+	// Show what's being requested if it differs from the default.
+	if len(removals) > 0 {
+		fmt.Fprintf(out, "Requesting certificate extensions: %v (removed: ", effectiveExts)
+		var first bool
+		for i, ext := range loginExtensions {
+			if reason, removed := removals[ext]; removed {
+				if i > 0 && first {
+					fmt.Fprint(out, ", ")
+				}
+				reasonStr := "config"
+				switch reason {
+				case removed_flag:
+					reasonStr = "flag"
+				case removed_policy:
+					reasonStr = "policy"
+				}
+				fmt.Fprintf(out, "%s(%s)", ext, reasonStr)
+				first = true
+			}
+		}
+		fmt.Fprintf(out, ")\n\n")
+	}
+
 	pending, err := root.API().CreateUserRequest(ctx, publicKey, localUsername, localHostname, api.RequestedOptions{
-		Extensions:      loginExtensions,
+		Extensions:      effectiveExts,
 		SourceAddresses: api.LocalInterfaceAddresses(),
 	})
 	if err != nil {

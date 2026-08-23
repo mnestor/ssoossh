@@ -54,6 +54,22 @@ type Config struct {
 	// This is only settable in /etc/ssoossh/ssoossh.yaml
 	// if a setting is in this file then clients CANNOT change it
 	LockedFile string `mapstructure:"enforce"`
+
+	// CertificateExtensions controls which SSH certificate extensions are
+	// requested. Each boolean is an opt-out from the full interactive set
+	// (loginExtensions in ssh_login.go). Flags override config, which
+	// overrides these defaults. Policy-forbidden extensions (see
+	// ForbiddenCertificateExtensions) are subtracted unconditionally,
+	// after flag/config resolution — a flag cannot re-add what policy
+	// forbids.
+	CertificateExtensions CertificateExtensionOptions `mapstructure:"certificate_extensions"`
+
+	// ForbiddenCertificateExtensions names extensions that policy forbids.
+	// This is set only by platform-native policy (GPO registry on Windows,
+	// managed preferences on macOS, enforce file on Linux). It is not read
+	// from user config, not bound to flags, and not merged — it acts as an
+	// unconditional floor that subtracts from any flag/config result.
+	ForbiddenCertificateExtensions []string `mapstructure:"-"`
 }
 
 // SSHKeyOptions selects the algorithm and size for the keypair the client
@@ -86,3 +102,14 @@ const (
 	SSHKeyTypeECDSA   = fipsmode.SSHKeyTypeECDSA
 	SSHKeyTypeRSA     = fipsmode.SSHKeyTypeRSA
 )
+
+// CertificateExtensionOptions controls which SSH certificate extensions
+// are requested. Each field is an opt-out from the full interactive set.
+// Unset (false) means "request this extension", true means "do not request it".
+type CertificateExtensionOptions struct {
+	NoPTY             bool `mapstructure:"no_pty"`
+	NoAgentForwarding bool `mapstructure:"no_agent_forwarding"`
+	NoPortForwarding  bool `mapstructure:"no_port_forwarding"`
+	NoX11Forwarding   bool `mapstructure:"no_x11_forwarding"`
+	NoUserRC          bool `mapstructure:"no_user_rc"`
+}
