@@ -12,7 +12,7 @@ import (
 	sshcrypto "github.com/mnestor/ssoossh/internal/crypto/ssh"
 )
 
-func newHostMappingCommand() simplecobra.Commander {
+func newHostMappingCommand(mappingFileFunc func() string) simplecobra.Commander {
 	return &simpleCommand{
 		name:  "mapping",
 		short: "Manage the local principal mapping file.",
@@ -20,51 +20,53 @@ func newHostMappingCommand() simplecobra.Commander {
 			"Used by `host principals` to answer sshd's AuthorizedPrincipalsCommand.",
 		offline: true,
 		commands: []simplecobra.Commander{
-			newHostMappingListCommand(),
-			newHostMappingAddCommand(),
-			newHostMappingRemoveCommand(),
+			newHostMappingListCommand(mappingFileFunc),
+			newHostMappingAddCommand(mappingFileFunc),
+			newHostMappingRemoveCommand(mappingFileFunc),
 		},
 	}
 }
 
-func newHostMappingListCommand() simplecobra.Commander {
+func newHostMappingListCommand(mappingFileFunc func() string) simplecobra.Commander {
 	return &simpleCommand{
 		name:    "list",
 		short:   "Print the current principal mapping.",
 		offline: true,
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
-			cfg := root.Config()
-			mappingPath := cfg.PrincipalMappingFile
-			if mappingPath == "" {
-				fmt.Println("{}")
-				return nil
-			}
-
-			data, err := os.ReadFile(mappingPath)
-			if err != nil {
-				if os.IsNotExist(err) {
-					fmt.Println("{}")
-					return nil
-				}
-				return fmt.Errorf("read mapping file: %w", err)
-			}
-
-			var mapping map[string][]string
-			if err := json.Unmarshal(data, &mapping); err != nil {
-				return fmt.Errorf("malformed mapping file: %w", err)
-			}
-
-			out, err := json.MarshalIndent(mapping, "", "  ")
-			if err != nil {
-				return fmt.Errorf("encode mapping: %w", err)
-			}
-			fmt.Println(string(out))
-			return nil
+			return runHostMappingList(ctx, mappingFileFunc())
 		},
 	}
 }
 
-func newHostMappingAddCommand() simplecobra.Commander {
+func runHostMappingList(ctx context.Context, mappingPath string) error {
+	if mappingPath == "" {
+		fmt.Println("{}")
+		return nil
+	}
+
+	data, err := os.ReadFile(mappingPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Println("{}")
+			return nil
+		}
+		return fmt.Errorf("read mapping file: %w", err)
+	}
+
+	var mapping map[string][]string
+	if err := json.Unmarshal(data, &mapping); err != nil {
+		return fmt.Errorf("malformed mapping file: %w", err)
+	}
+
+	out, err := json.MarshalIndent(mapping, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode mapping: %w", err)
+	}
+	fmt.Println(string(out))
+	return nil
+}
+
+func newHostMappingAddCommand(mappingFileFunc func() string) simplecobra.Commander {
 	return &simpleCommand{
 		name:  "add",
 		short: "Add a principal to an account's mapping.",
@@ -82,22 +84,26 @@ func newHostMappingAddCommand() simplecobra.Commander {
 				return fmt.Errorf("invalid principal: %w", err)
 			}
 
-			mapping, err := loadMapping(root.Config().PrincipalMappingFile)
-			if err != nil {
-				return err
-			}
-			principals := mapping[account]
-			if !slices.Contains(principals, principal) {
-				principals = append(principals, principal)
-				mapping[account] = principals
-			}
-
-			return writeMapping(root.Config().PrincipalMappingFile, mapping)
+			return runHostMappingAdd(account, principal, mappingFileFunc())
 		},
 	}
 }
 
-func newHostMappingRemoveCommand() simplecobra.Commander {
+func runHostMappingAdd(account, principal, mappingPath string) error {
+	mapping, err := loadMapping(mappingPath)
+	if err != nil {
+		return err
+	}
+	principals := mapping[account]
+	if !slices.Contains(principals, principal) {
+		principals = append(principals, principal)
+		mapping[account] = principals
+	}
+
+	return writeMapping(mappingPath, mapping)
+}
+
+func newHostMappingRemoveCommand(mappingFileFunc func() string) simplecobra.Commander {
 	return &simpleCommand{
 		name:  "remove",
 		short: "Remove a principal or an entire account mapping.",
@@ -110,27 +116,36 @@ func newHostMappingRemoveCommand() simplecobra.Commander {
 			}
 			account := args[0]
 
-			mapping, err := loadMapping(root.Config().PrincipalMappingFile)
-			if err != nil {
-				return err
-			}
 			if len(args) == 1 {
-				delete(mapping, account)
-			} else {
-				principal := args[1]
-				principals := mapping[account]
-				idx := slices.Index(principals, principal)
-				if idx >= 0 {
-					mapping[account] = slices.Delete(principals, idx, idx+1)
-					if len(mapping[account]) == 0 {
-						delete(mapping, account)
-					}
-				}
+				return runHostMappingRemove(account, "", mappingFileFunc())
 			}
-
-			return writeMapping(root.Config().PrincipalMappingFile, mapping)
+			principal := args[1]
+			return runHostMappingRemove(account, principal, mappingFileFunc())
 		},
 	}
+}
+
+func runHostMappingRemove(account, principal, mappingPath string) error {
+	mapping, err := loadMapping(mappingPath)
+	if err != nil {
+		return err
+	}
+	if principal == "" {
+		// Remove the entire account mapping.
+		delete(mapping, account)
+	} else {
+		// Remove a specific principal from the account.
+		principals := mapping[account]
+		idx := slices.Index(principals, principal)
+		if idx >= 0 {
+			mapping[account] = slices.Delete(principals, idx, idx+1)
+			if len(mapping[account]) == 0 {
+				delete(mapping, account)
+			}
+		}
+	}
+
+	return writeMapping(mappingPath, mapping)
 }
 
 // loadMapping reads the mapping file. A missing file is an empty mapping
@@ -160,7 +175,7 @@ func loadMapping(path string) (map[string][]string, error) {
 
 func writeMapping(path string, mapping map[string][]string) error {
 	if path == "" {
-		return fmt.Errorf("principal_mapping_file not configured")
+		return fmt.Errorf("no mapping file: --file is empty")
 	}
 
 	data, err := json.MarshalIndent(mapping, "", "  ")

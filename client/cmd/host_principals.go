@@ -9,7 +9,7 @@ import (
 	"github.com/bep/simplecobra"
 )
 
-func newHostPrincipalsCommand() simplecobra.Commander {
+func newHostPrincipalsCommand(mappingFileFunc func() string) simplecobra.Commander {
 	return &simpleCommand{
 		name:  "principals",
 		short: "Print the local principal mapping for sshd's AuthorizedPrincipalsCommand.",
@@ -27,35 +27,36 @@ func newHostPrincipalsCommand() simplecobra.Commander {
 				return fmt.Errorf("usage: ssoossh host principals <username>")
 			}
 			username := args[0]
-
-			cfg := root.Config()
-			mappingPath := cfg.PrincipalMappingFile
-			if mappingPath == "" {
-				return nil
-			}
-
-			data, err := os.ReadFile(mappingPath)
-			if err != nil {
-				if os.IsNotExist(err) {
-					return nil
-				}
-				return fmt.Errorf("read principal mapping file: %w", err)
-			}
-
-			var mapping map[string][]string
-			if err := json.Unmarshal(data, &mapping); err != nil {
-				return fmt.Errorf("malformed principal mapping file: %w", err)
-			}
-
-			principals, ok := mapping[username]
-			if !ok {
-				return nil
-			}
-
-			for _, p := range principals {
-				fmt.Println(p)
-			}
-			return nil
+			return runHostPrincipals(ctx, username, mappingFileFunc())
 		},
 	}
+}
+
+func runHostPrincipals(ctx context.Context, username, mappingPath string) error {
+	if mappingPath == "" {
+		return nil
+	}
+
+	data, err := os.ReadFile(mappingPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read principal mapping file: %w", err)
+	}
+
+	var mapping map[string][]string
+	if err := json.Unmarshal(data, &mapping); err != nil {
+		return fmt.Errorf("malformed principal mapping file: %w", err)
+	}
+
+	principals, ok := mapping[username]
+	if !ok {
+		return nil
+	}
+
+	for _, p := range principals {
+		fmt.Println(p)
+	}
+	return nil
 }
