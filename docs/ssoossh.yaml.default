@@ -75,10 +75,12 @@ use_agent: true
 # key files (true), or fail (false).
 fallback_file_agent: true
 
-# Basename used when writing key/pubkey/certificate to disk, which happens
-# when use_agent is false, or when no agent is available and
-# fallback_file_agent is true.
-key_filename: ssoossh
+# Name used when writing key/pubkey/certificate to disk, which happens when
+# use_agent is false, or when no agent is available and fallback_file_agent
+# is true. A bare name resolves inside ~/.ssh, "~/..." is expanded, and an
+# absolute path is used as given. The public key and certificate are written
+# beside it as <name>.pub and <name>-cert.pub.
+key_filename: id_ssoossh
 
 # Try to open the approval URL in a browser. Strictly best-effort: the URL is
 # always printed first, and a launch failure never fails the login.
