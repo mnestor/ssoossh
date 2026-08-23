@@ -36,7 +36,7 @@ endef
 
 define TESTCOMPONENT
 	mkdir -p .coverage
-	CGO_ENABLED=1 go test -coverprofile=.coverage/coverage-$(1).out ./$(1)/...
+	go test -coverprofile=.coverage/coverage-$(1).out ./$(1)/...
 	grep -v -E -f exclude-from-coverage.txt .coverage/coverage-$(1).out > .coverage/coverage-$(1).filtered.out
 	go tool cover -func=.coverage/coverage-$(1).filtered.out | tail -1
 endef
@@ -169,7 +169,7 @@ update:
 test: $(FRONTEND_DIST) test-server test-client test-pam test-internal
 
 test-server:
-	$(call TESTCOMPONENT,server)
+	CGO_ENABLED=1 $(call TESTCOMPONENT,server)
 
 test-client:
 	$(call TESTCOMPONENT,client)
@@ -178,7 +178,7 @@ test-pam:
 	CGO_ENABLED=1 go test -tags=pam ./pam_ssoossh/...
 
 test-internal:
-	$(call TESTCOMPONENT,internal)
+	CGO_ENABLED=1 $(call TESTCOMPONENT,internal)
 
 # HSM integration tests; needs softhsm2 + opensc installed
 test-hsm:
