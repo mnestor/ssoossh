@@ -13,6 +13,11 @@ import (
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/agent"
 )
 
+// noMappingFile stands in for the --file accessor the host commands are
+// constructed with, for tests that assert something other than which path
+// gets read.
+func noMappingFile() string { return "" }
+
 // notACommander is a Commander that doesn't implement offlineCommander, to
 // pin the default: an undeclared command is online.
 type notACommander struct{}
@@ -55,8 +60,10 @@ func TestOfflineCommandsDeclareOffline(t *testing.T) {
 		cmd  simplecobra.Commander
 		want bool
 	}{
-		{name: "host principals answers from local state only", cmd: newHostPrincipalsCommand(), want: true},
-		{name: "host mapping manages local state only", cmd: newHostMappingCommand(), want: true},
+		// The mapping-file accessor is irrelevant here: this asserts the
+		// offline flag, not what path the command would read.
+		{name: "host principals answers from local state only", cmd: newHostPrincipalsCommand(noMappingFile), want: true},
+		{name: "host mapping manages local state only", cmd: newHostMappingCommand(noMappingFile), want: true},
 		{name: "version prints build-time constants only", cmd: newVersionCommand(), want: true},
 		{name: "ca fetches the CA from the server", cmd: newCACommand(), want: false},
 		{name: "ssh login obtains a certificate from the server", cmd: newSSHLoginCommand(), want: false},
