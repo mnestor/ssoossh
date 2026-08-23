@@ -25,6 +25,11 @@ type ctxKey string
 
 const Context ctxKey = "CONFIG"
 
+// configFlagLabel names the --config source in the merge chain. A constant
+// because mergeConfigFiles both labels that source and singles it out for
+// stricter handling than the search-path locations, and the two must agree.
+const configFlagLabel = "--config"
+
 // NewConfig loads the ssoosshd configuration using Viper.
 //
 // If the command's --config/-c flag is set, that file is used. Otherwise, the
@@ -64,7 +69,10 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 		return nil, fmt.Errorf("failed to read config flag: %w", err)
 	}
 
-	enforce, sources := mergeConfigFiles(v, paths, configFile)
+	enforce, sources, err := mergeConfigFiles(v, paths, configFile)
+	if err != nil {
+		return nil, err
+	}
 
 	// Flags override whatever the files said. Bound rather than read
 	// directly so viper's own precedence applies: a flag that wasn't passed
@@ -169,7 +177,7 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 // Split out of newConfig to keep that function readable; the ordering rules
 // it encodes are the interesting part and were getting lost among newConfig's
 // other concerns.
-func mergeConfigFiles(v *viper.Viper, paths searchPaths, configFile string) (enforce string, sources []ConfigSource) {
+func mergeConfigFiles(v *viper.Viper, paths searchPaths, configFile string) (enforce string, sources []ConfigSource, err error) {
 	sources = []ConfigSource{{Label: "embedded defaults", Status: SourceMerged}}
 
 	// The system file first, so it is the one `enforce` is read from, then
@@ -183,23 +191,37 @@ func mergeConfigFiles(v *viper.Viper, paths searchPaths, configFile string) (enf
 		configFiles = append(configFiles, candidate{"local file", paths.localFile})
 	}
 	if configFile != "" {
-		configFiles = append(configFiles, candidate{"--config", configFile})
+		configFiles = append(configFiles, candidate{configFlagLabel, configFile})
 		v.SetConfigFile(configFile)
 	}
 
 	for i, file := range configFiles {
-		sources = append(sources, mergeConfig(v, file.label, file.path))
+		source := mergeConfig(v, file.label, file.path)
+		sources = append(sources, source)
 		if i == 0 {
 			enforce = v.GetString("enforce")
+		}
+
+		// A file the user named on the command line is not the same as a
+		// search-path location that happens to be empty. Absence is normal
+		// at the search paths and stays silent there. Naming one that is
+		// not there, or cannot be parsed, is a typo — and continuing means
+		// every setting in it silently does not apply, which surfaces much
+		// later as a confusing failure or, worse, as a security setting
+		// quietly not in effect.
+		//
+		// Same reasoning `enforce` below already fails closed on.
+		if file.label == configFlagLabel && source.Status != SourceMerged {
+			return "", nil, fmt.Errorf("failed to load the config file %q given with --config: %s", file.path, source.describeFailure())
 		}
 	}
 	// Recorded after the loop so the chain reads in precedence order: an
 	// explicit --config is merged last of the files above, so its "not
 	// given" marker belongs here rather than ahead of them.
 	if configFile == "" {
-		sources = append(sources, ConfigSource{Label: "--config", Status: SourceNotGiven})
+		sources = append(sources, ConfigSource{Label: configFlagLabel, Status: SourceNotGiven})
 	}
-	return enforce, sources
+	return enforce, sources, nil
 }
 
 // mergePlatformPolicy loads and merges the platform-native policy source

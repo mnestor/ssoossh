@@ -50,6 +50,16 @@ type ConfigSource struct {
 	AdminLock bool
 }
 
+// describeFailure says why a source did not contribute, for an error
+// message about a file the user named explicitly. Only meaningful when
+// Status is not SourceMerged.
+func (s ConfigSource) describeFailure() string {
+	if s.Status == SourceError {
+		return s.Err
+	}
+	return "no such file"
+}
+
 // String renders one line of the merge chain.
 func (s ConfigSource) String() string {
 	target := s.Label
