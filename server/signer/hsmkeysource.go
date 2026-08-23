@@ -83,7 +83,11 @@ func NewHSMKeySource(p HSMParams) (*HSMKeySource, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open PKCS#11 module %s: %w", p.Module, err)
 	}
-	kp, err := ctx11.FindKeyPair(p.KeyID, []byte(p.KeyLabel))
+	var keyLabel []byte
+	if p.KeyLabel != "" {
+		keyLabel = []byte(p.KeyLabel)
+	}
+	kp, err := ctx11.FindKeyPair(p.KeyID, keyLabel)
 	if err != nil {
 		_ = ctx11.Close()
 		return nil, fmt.Errorf("find CA key pair in HSM: %w", err)
