@@ -29,11 +29,18 @@ export function getRequestDetail(id: string, signal?: AbortSignal): Promise<Requ
 
 /**
  * POST /api/certs/requests/:id/approve.
- * For service-type requests, serviceAccount is required and names which of
- * the approver's service accounts the certificate principal should be.
+ * For service-type requests, serviceAccount names which of the approver's
+ * service accounts the certificate principal should be. For user-type requests,
+ * principals is the list of principals to include on the certificate.
  */
-export function approveRequest(id: string, serviceAccount?: string): Promise<ApproveResult> {
-	const body = serviceAccount ? { service_account: serviceAccount } : undefined;
+export function approveRequest(
+	id: string,
+	options?: {
+		serviceAccount?: string;
+		principals?: string[];
+	}
+): Promise<ApproveResult> {
+	const body = options && (options.serviceAccount || options.principals?.length) ? options : undefined;
 	return request<ApproveResult>(`/certs/requests/${encodeURIComponent(id)}/approve`, {
 		method: 'POST',
 		body
