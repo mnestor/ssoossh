@@ -17,6 +17,14 @@ FROM mcr.microsoft.com/devcontainers/go:dev-1.26-trixie
 ARG CREATED
 ARG COMMIT
 ARG VERSION=local
+# Pinned to match .github/docker/Dockerfile.runner, so `make lint` here and
+# `make lint` in CI are the same binary. golangci-lint's installer takes
+# whatever is newest when unpinned, which is how a devcontainer starts
+# reporting findings CI does not, or misses ones it does. It must also stay
+# v2.x: .golangci.yml is a `version: "2"` config, which v1 cannot parse.
+ARG GOLANGCI_LINT_VERSION=2.13.1
+ARG ACTIONLINT_VERSION=v1.7.12
+ARG GOTESTSUM_VERSION=v1.13.0
 LABEL \
   org.opencontainers.image.source="https://github.com/mnestor/ssoossh" \
   org.opencontainers.image.description="Go development container for github.com/mnestor/ssoossh, for Visual Studio Code Remote Containers development"
@@ -80,12 +88,12 @@ RUN mkdir -p \
   /home/vscode/.config/rtk \
   && echo '{}' > /home/vscode/.claude.json
 
-RUN curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(go env GOPATH)/bin \
+RUN curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(go env GOPATH)/bin v${GOLANGCI_LINT_VERSION} \
   && curl -fsSL https://claude.ai/install.sh | bash \
   && curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash \
   && curl -fsSL https://get.pnpm.io/install.sh | ENV="$HOME/.bashrc" SHELL="$(which bash)" bash - \
   && go install github.com/princjef/gomarkdoc/cmd/gomarkdoc@latest \
   && go install github.com/caarlos0/svu/v3@latest \
   && go install golang.org/x/lint/golint@latest \
-  && go install gotest.tools/gotestsum@latest \
-  && go install github.com/rhysd/actionlint/cmd/actionlint@latest
+  && go install gotest.tools/gotestsum@${GOTESTSUM_VERSION} \
+  && go install github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}
