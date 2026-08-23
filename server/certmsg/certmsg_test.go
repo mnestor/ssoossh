@@ -270,4 +270,90 @@ func TestTopicConstants(t *testing.T) {
 			t.Errorf("SignedTopic = %q, want %q", SignedTopic, "certrequest.signed")
 		}
 	})
+
+	t.Run("should have ca key announce topic defined", func(t *testing.T) {
+		if CAKeyAnnounceTopic == "" {
+			t.Error("CAKeyAnnounceTopic is empty")
+		}
+		if CAKeyAnnounceTopic != "ca.key.announce" {
+			t.Errorf("CAKeyAnnounceTopic = %q, want %q", CAKeyAnnounceTopic, "ca.key.announce")
+		}
+	})
+
+	t.Run("should have ca key request topic defined", func(t *testing.T) {
+		if CAKeyRequestTopic == "" {
+			t.Error("CAKeyRequestTopic is empty")
+		}
+		if CAKeyRequestTopic != "ca.key.request" {
+			t.Errorf("CAKeyRequestTopic = %q, want %q", CAKeyRequestTopic, "ca.key.request")
+		}
+	})
+}
+
+func TestCAKeyAnnounceStructure(t *testing.T) {
+	t.Run("should construct complete CAKeyAnnounce", func(t *testing.T) {
+		now := time.Now()
+		announce := CAKeyAnnounce{
+			PublicKey:   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5...",
+			AnnouncedAt: now,
+		}
+
+		if announce.PublicKey != "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5..." {
+			t.Errorf("PublicKey = %q, want %q", announce.PublicKey, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5...")
+		}
+		if !announce.AnnouncedAt.Equal(now) {
+			t.Errorf("AnnouncedAt mismatch")
+		}
+	})
+}
+
+func TestCAKeyAnnounceMarshalUnmarshal(t *testing.T) {
+	t.Run("should round-trip marshal and unmarshal CAKeyAnnounce", func(t *testing.T) {
+		now := time.Now()
+		original := CAKeyAnnounce{
+			PublicKey:   "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDa8...",
+			AnnouncedAt: now,
+		}
+
+		data, err := original.Marshal()
+		if err != nil {
+			t.Fatalf("Marshal() error = %v", err)
+		}
+
+		var recovered CAKeyAnnounce
+		err = recovered.Unmarshal(data)
+		if err != nil {
+			t.Fatalf("Unmarshal() error = %v", err)
+		}
+
+		if recovered.PublicKey != original.PublicKey {
+			t.Errorf("PublicKey mismatch: got %q, want %q", recovered.PublicKey, original.PublicKey)
+		}
+		if !recovered.AnnouncedAt.Equal(original.AnnouncedAt) {
+			t.Errorf("AnnouncedAt mismatch")
+		}
+	})
+
+	t.Run("should handle empty PublicKey", func(t *testing.T) {
+		now := time.Now()
+		announce := CAKeyAnnounce{
+			PublicKey:   "",
+			AnnouncedAt: now,
+		}
+
+		data, err := announce.Marshal()
+		if err != nil {
+			t.Fatalf("Marshal() error = %v", err)
+		}
+
+		var recovered CAKeyAnnounce
+		err = recovered.Unmarshal(data)
+		if err != nil {
+			t.Fatalf("Unmarshal() error = %v", err)
+		}
+
+		if recovered.PublicKey != "" {
+			t.Errorf("PublicKey should be empty, got %q", recovered.PublicKey)
+		}
+	})
 }
