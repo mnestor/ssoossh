@@ -13,13 +13,13 @@ import (
 
 func TestGetBrandingHandler(t *testing.T) {
 	tests := []struct {
-		name             string
-		branding         config.BrandingSettings
-		logoImg          *logoImage
-		expectedCode     int
-		expectedOrgName  string
-		expectedLogoURL  string
-		expectedNotice   string
+		name            string
+		branding        config.BrandingSettings
+		logoImg         *logoImage
+		expectedCode    int
+		expectedOrgName string
+		expectedLogoURL string
+		expectedNotice  string
 	}{
 		{
 			name:            "should return empty branding when config is empty and no logo",
@@ -122,9 +122,9 @@ func TestGetBrandingHandler(t *testing.T) {
 
 func TestGetLogoHandler(t *testing.T) {
 	tests := []struct {
-		name              string
-		logoImg           *logoImage
-		expectedCode      int
+		name                string
+		logoImg             *logoImage
+		expectedCode        int
 		expectedContentType string
 	}{
 		{
@@ -134,7 +134,7 @@ func TestGetLogoHandler(t *testing.T) {
 				contentType: "image/png",
 				etag:        `W/"test-png"`,
 			},
-			expectedCode:      http.StatusOK,
+			expectedCode:        http.StatusOK,
 			expectedContentType: "image/png",
 		},
 		{
@@ -144,7 +144,7 @@ func TestGetLogoHandler(t *testing.T) {
 				contentType: "image/svg+xml",
 				etag:        `W/"test-svg"`,
 			},
-			expectedCode:      http.StatusOK,
+			expectedCode:        http.StatusOK,
 			expectedContentType: "image/svg+xml",
 		},
 	}

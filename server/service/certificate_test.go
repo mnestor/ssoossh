@@ -52,12 +52,12 @@ func seedCertificateWithRequest(t *testing.T, svc *CertRequestService, userID *s
 
 	// Create a request first.
 	req := model.CertificateRequest{
-		ID:       uuid.NewString(),
-		UserID:   userID,
-		Type:     model.CertificateTypeUser,
-		Status:   model.CertificateRequestStatusApproved,
+		ID:        uuid.NewString(),
+		UserID:    userID,
+		Type:      model.CertificateTypeUser,
+		Status:    model.CertificateRequestStatusApproved,
 		PublicKey: "test-key",
-		SourceIP: "127.0.0.1",
+		SourceIP:  "127.0.0.1",
 	}
 	if err := svc.db.Create(&req).Error; err != nil {
 		t.Fatalf("failed to seed certificate request: %v", err)
@@ -74,13 +74,13 @@ func seedCertificateWithRequest(t *testing.T, svc *CertRequestService, userID *s
 
 	// Create the certificate linked to the request.
 	cert := model.Certificate{
-		ID:                     uuid.NewString(),
-		Type:                   model.CertificateTypeUser,
-		UserID:                 userID,
-		SerialNumber:           serial,
-		IssuedAt:               issuedAt,
-		ExpiresAt:              issuedAt.Add(time.Hour),
-		CertificateRequestID:   &req.ID,
+		ID:                   uuid.NewString(),
+		Type:                 model.CertificateTypeUser,
+		UserID:               userID,
+		SerialNumber:         serial,
+		IssuedAt:             issuedAt,
+		ExpiresAt:            issuedAt.Add(time.Hour),
+		CertificateRequestID: &req.ID,
 	}
 	if err := svc.db.Create(&cert).Error; err != nil {
 		t.Fatalf("failed to seed certificate with request: %v", err)
@@ -453,10 +453,10 @@ func TestCertificateService_CertificateWithDecision(t *testing.T) {
 
 	now := time.Now()
 	decision := &model.CertificateRequestDecision{
-		Outcome:  model.CertificateRequestDecisionApproved,
-		Subject:  "sub-approver",
-		Username: "approver",
-		Email:    "approver@example.com",
+		Outcome:   model.CertificateRequestDecisionApproved,
+		Subject:   "sub-approver",
+		Username:  "approver",
+		Email:     "approver@example.com",
 		DecidedAt: now,
 	}
 	cert := seedCertificateWithRequest(t, reqSvc, &userID, 1, now, decision)

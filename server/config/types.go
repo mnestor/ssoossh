@@ -104,7 +104,7 @@ func (c *Config) FIPSEnabled() bool {
 // ValidateForMode performs mode-specific configuration validation.
 // mode determines which config sections are required:
 // - ServerModeFull and ServerModeAPI require HTTP and CertOptions validation
-// - SignerModeOnly only requires PubSub and SSHKey validation
+// - SignerModeOnly only requires PubSub and SSHKey validation.
 func (c *Config) ValidateForMode(mode int) error {
 	// SignerModeOnly: only validate PubSub and SSHKey
 	if mode == 2 { // SignerModeOnly = 2 in modes.go

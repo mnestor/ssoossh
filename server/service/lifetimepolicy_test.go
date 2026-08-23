@@ -106,9 +106,9 @@ func TestParseLifetimePolicy(t *testing.T) {
 			policy: config.LifetimePolicy{
 				SourcePolicy: []config.SourcePolicyEntry{
 					{
-						CIDR:       "10.0.0.0/8",
+						CIDR:        "10.0.0.0/8",
 						MaxDuration: 10 * time.Hour,
-						Extensions: []string{"permit-pty", "permit-port-forwarding"},
+						Extensions:  []string{"permit-pty", "permit-port-forwarding"},
 					},
 				},
 			},
@@ -234,10 +234,10 @@ func TestEvaluateTier(t *testing.T) {
 
 func TestEvaluateSourceRule(t *testing.T) {
 	tests := []struct {
-		name         string
-		policy       *parsedLifetimePolicy
-		sourceIP     string
-		expectedDur  time.Duration
+		name           string
+		policy         *parsedLifetimePolicy
+		sourceIP       string
+		expectedDur    time.Duration
 		expectedReason string
 	}{
 		{
@@ -370,13 +370,13 @@ func TestEvaluateSourceRule(t *testing.T) {
 
 func TestEvaluateDuration(t *testing.T) {
 	tests := []struct {
-		name       string
-		engine     *lifetimePolicyEngine
-		certType   model.CertificateType
-		identity   *Identity
-		sourceIP   string
-		ceiling    time.Duration
-		expected   time.Duration
+		name     string
+		engine   *lifetimePolicyEngine
+		certType model.CertificateType
+		identity *Identity
+		sourceIP string
+		ceiling  time.Duration
+		expected time.Duration
 	}{
 		{
 			name: "no policy configured, use ceiling",
@@ -384,11 +384,11 @@ func TestEvaluateDuration(t *testing.T) {
 				userPolicy:    nil,
 				servicePolicy: nil,
 			},
-			certType:  model.CertificateTypeUser,
-			identity:  &Identity{Groups: []string{"users"}},
-			sourceIP:  "10.0.0.1",
-			ceiling:   10 * time.Hour,
-			expected:  10 * time.Hour,
+			certType: model.CertificateTypeUser,
+			identity: &Identity{Groups: []string{"users"}},
+			sourceIP: "10.0.0.1",
+			ceiling:  10 * time.Hour,
+			expected: 10 * time.Hour,
 		},
 		{
 			name: "tier policy only, no source rules",
@@ -400,11 +400,11 @@ func TestEvaluateDuration(t *testing.T) {
 					},
 				},
 			},
-			certType:  model.CertificateTypeUser,
-			identity:  &Identity{Groups: []string{"admin"}},
-			sourceIP:  "10.0.0.1",
-			ceiling:   10 * time.Hour,
-			expected:  10 * time.Hour, // clamped to ceiling
+			certType: model.CertificateTypeUser,
+			identity: &Identity{Groups: []string{"admin"}},
+			sourceIP: "10.0.0.1",
+			ceiling:  10 * time.Hour,
+			expected: 10 * time.Hour, // clamped to ceiling
 		},
 		{
 			name: "tier policy only, tier doesn't match",
@@ -416,11 +416,11 @@ func TestEvaluateDuration(t *testing.T) {
 					},
 				},
 			},
-			certType:  model.CertificateTypeUser,
-			identity:  &Identity{Groups: []string{"users"}},
-			sourceIP:  "10.0.0.1",
-			ceiling:   10 * time.Hour,
-			expected:  1 * time.Hour, // uses defaultDuration
+			certType: model.CertificateTypeUser,
+			identity: &Identity{Groups: []string{"users"}},
+			sourceIP: "10.0.0.1",
+			ceiling:  10 * time.Hour,
+			expected: 1 * time.Hour, // uses defaultDuration
 		},
 		{
 			name: "source rule restricts tier",
@@ -439,11 +439,11 @@ func TestEvaluateDuration(t *testing.T) {
 					},
 				},
 			},
-			certType:  model.CertificateTypeUser,
-			identity:  &Identity{Groups: []string{"admin"}},
-			sourceIP:  "10.1.2.3",
-			ceiling:   24 * time.Hour,
-			expected:  2 * time.Hour, // min(tier 24h, source 2h, ceiling 24h)
+			certType: model.CertificateTypeUser,
+			identity: &Identity{Groups: []string{"admin"}},
+			sourceIP: "10.1.2.3",
+			ceiling:  24 * time.Hour,
+			expected: 2 * time.Hour, // min(tier 24h, source 2h, ceiling 24h)
 		},
 		{
 			name: "ceiling clamps result",
@@ -455,11 +455,11 @@ func TestEvaluateDuration(t *testing.T) {
 					},
 				},
 			},
-			certType:  model.CertificateTypeUser,
-			identity:  &Identity{Groups: []string{"admin"}},
-			sourceIP:  "10.0.0.1",
-			ceiling:   5 * time.Hour,
-			expected:  5 * time.Hour, // clamped to ceiling
+			certType: model.CertificateTypeUser,
+			identity: &Identity{Groups: []string{"admin"}},
+			sourceIP: "10.0.0.1",
+			ceiling:  5 * time.Hour,
+			expected: 5 * time.Hour, // clamped to ceiling
 		},
 	}
 
@@ -507,10 +507,10 @@ func TestNarrowRequestedOptionsWithPolicy(t *testing.T) {
 				userPolicy: &parsedLifetimePolicy{
 					sourceRules: []parsedSourceRule{
 						{
-							prefix:       netip.MustParsePrefix("0.0.0.0/0"),
-							maxDuration:  15 * time.Minute,
-							extensions:   []string{"permit-pty"},
-							prefixLen:    0,
+							prefix:      netip.MustParsePrefix("0.0.0.0/0"),
+							maxDuration: 15 * time.Minute,
+							extensions:  []string{"permit-pty"},
+							prefixLen:   0,
 						},
 					},
 				},

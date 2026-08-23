@@ -127,7 +127,7 @@ func TestBootstrap_ShouldStartAndShutDownCleanlyWhenContextCanceled(t *testing.T
 		extra:     extra,
 	}))
 
-	if err := Bootstrap(cc); err != nil {
+	if err := BootstrapServe(cc, ServerModeFull); err != nil {
 		t.Fatalf("expected Bootstrap to shut down cleanly, got %v", err)
 	}
 }
@@ -137,7 +137,7 @@ func TestBootstrap_ShouldErrorWhenConfigFileMissing(t *testing.T) {
 
 	cc := newBootstrapCommand(t, context.Background(), filepath.Join(t.TempDir(), "does-not-exist.yaml"))
 
-	if err := Bootstrap(cc); err == nil {
+	if err := BootstrapServe(cc, ServerModeFull); err == nil {
 		t.Fatal("expected an error when the config file does not exist, got nil")
 	}
 }
@@ -150,7 +150,7 @@ func TestBootstrap_ShouldErrorWhenObservabilityInitFails(t *testing.T) {
 	cc := newBootstrapCommand(t, context.Background(),
 		writeBootstrapConfig(t, bootstrapConfigOpts{extra: "traces: true\n"}))
 
-	err := Bootstrap(cc)
+	err := BootstrapServe(cc, ServerModeFull)
 	if err == nil {
 		t.Fatal("expected an error when the tracing exporter cannot be created, got nil")
 	}
@@ -166,7 +166,7 @@ func TestBootstrap_ShouldErrorWhenDatabaseProviderUnsupported(t *testing.T) {
 	cc := newBootstrapCommand(t, context.Background(),
 		writeBootstrapConfig(t, bootstrapConfigOpts{dbProvider: "mysql"}))
 
-	err := Bootstrap(cc)
+	err := BootstrapServe(cc, ServerModeFull)
 	if err == nil {
 		t.Fatal("expected an error for an unsupported database provider, got nil")
 	}
@@ -182,7 +182,7 @@ func TestBootstrap_ShouldErrorWhenSSHKeyInvalid(t *testing.T) {
 	cc := newBootstrapCommand(t, context.Background(),
 		writeBootstrapConfig(t, bootstrapConfigOpts{sshKey: "not-a-valid-key"}))
 
-	err := Bootstrap(cc)
+	err := BootstrapServe(cc, ServerModeFull)
 	if err == nil {
 		t.Fatal("expected an error for an invalid CA SSH key, got nil")
 	}

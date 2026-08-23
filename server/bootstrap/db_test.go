@@ -7,10 +7,10 @@ package bootstrap
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"regexp"
 	"runtime"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -496,7 +496,7 @@ func TestMigrationParity_ShouldKeepSqliteAndPostgresSchemaInSync(t *testing.T) {
 
 type schemaInfo struct {
 	tables  map[string]map[string]string // table -> column -> normalized definition
-	indexes map[string]string             // index name -> definition
+	indexes map[string]string            // index name -> definition
 }
 
 func parseSQL(content string) schemaInfo {

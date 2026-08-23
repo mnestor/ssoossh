@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
+	natslib "github.com/ThreeDotsLabs/watermill-nats/v2/pkg/nats"
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/ThreeDotsLabs/watermill/message/router/middleware"
 	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
-	natslib "github.com/ThreeDotsLabs/watermill-nats/v2/pkg/nats"
 	natsgo "github.com/nats-io/nats.go"
 
 	"github.com/mnestor/ssoossh/server/config"
@@ -37,9 +37,9 @@ type PubSub struct {
 	Router     *message.Router
 
 	// Backend-specific: only one of these is populated depending on config
-	channel         *gochannel.GoChannel
-	natsPublisher   *natslib.Publisher
-	natsSubscriber  *natslib.Subscriber
+	channel        *gochannel.GoChannel
+	natsPublisher  *natslib.Publisher
+	natsSubscriber *natslib.Subscriber
 }
 
 // New builds a pub/sub pair and Router ready for handlers to be registered.
@@ -154,10 +154,10 @@ func (p *PubSub) buildRouter(wmLogger watermill.LoggerAdapter) error {
 // newNATS builds NATS-backed publisher and subscriber with queue-group
 // semantics for competing consumers. Topics are mapped via a custom
 // SubjectCalculator that derives queue groups from topic names:
-// - "certrequest.sign" and "certrequest.signed" use queue groups to ensure
-//   only one instance processes each (competing consumer pattern)
-// - "certrequest.wait.*" topics use empty queue groups for fan-out to the
-//   one instance holding that request's SSE connection
+//   - "certrequest.sign" and "certrequest.signed" use queue groups to ensure
+//     only one instance processes each (competing consumer pattern)
+//   - "certrequest.wait.*" topics use empty queue groups for fan-out to the
+//     one instance holding that request's SSE connection
 //
 // JetStream is disabled (Disabled: true) — only NATS core is used with
 // at-most-once delivery. A dropped job costs the client a full RequestTTL
@@ -172,7 +172,7 @@ func newNATS(cfg *config.PubSubConfig, wmLogger watermill.LoggerAdapter, sLogger
 				natsgo.ClientCert(cfg.NATS.CertFile, cfg.NATS.KeyFile),
 				natsgo.RootCAs(cfg.NATS.CAFile),
 			},
-			Marshaler:        natslib.JSONMarshaler{},
+			Marshaler:         natslib.JSONMarshaler{},
 			SubjectCalculator: subjectCalculator,
 			JetStream: natslib.JetStreamConfig{
 				Disabled: true,
@@ -192,13 +192,13 @@ func newNATS(cfg *config.PubSubConfig, wmLogger watermill.LoggerAdapter, sLogger
 				natsgo.ClientCert(cfg.NATS.CertFile, cfg.NATS.KeyFile),
 				natsgo.RootCAs(cfg.NATS.CAFile),
 			},
-			QueueGroupPrefix: "ssoossh", // Prefix for deriving queue group names
-			Unmarshaler:      natslib.JSONMarshaler{},
+			QueueGroupPrefix:  "ssoossh", // Prefix for deriving queue group names
+			Unmarshaler:       natslib.JSONMarshaler{},
 			SubjectCalculator: subjectCalculator,
 			SubscribersCount:  1,
-			CloseTimeout:     3 * time.Second,
-			AckWaitTimeout:   30 * time.Second,
-			SubscribeTimeout: 5 * time.Second,
+			CloseTimeout:      3 * time.Second,
+			AckWaitTimeout:    30 * time.Second,
+			SubscribeTimeout:  5 * time.Second,
 			JetStream: natslib.JetStreamConfig{
 				Disabled: true,
 			},

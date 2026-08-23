@@ -17,9 +17,9 @@ import (
 // - "certrequest.wait.*" → no queue group (fan-out to all subscribers)
 func TestSubjectCalculator_ShouldDeriveQueueGroups(t *testing.T) {
 	tests := []struct {
-		name           string
-		topic          string
-		expectedGroup  string
+		name            string
+		topic           string
+		expectedGroup   string
 		shouldHaveGroup bool
 	}{
 		{
