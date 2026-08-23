@@ -406,11 +406,153 @@ Steps 1 and 2 are worth doing regardless of whether the UI is ever built.
 
 - **SourceAddresses:** UN-DROPPED for service certificates only. Narrowed through `pinSourceAddress` config field in source policy rules. User certificates do not support source-address pinning (per plan line 62-65: "Not for user certificates"). This is the narrowing-only invariant: the policy can only restrict what addresses are allowed (to just the source IP), never expand them.
 
+  **Reopened 2026-08-23.** Attaching this to `SourcePolicyEntry` conflates
+  address restriction with lifetime capping, and what is granted is the
+  observed address rather than the configured network. See "Known defect:
+  `source-address` is welded to the lifetime rule" below before building on
+  this.
+
 - **ForceCommand:** STAYS DROPPED (fail-closed). The plan explicitly states line 64: "stays out of subnet policy entirely — 'which command' is not a property of a network.'" No narrowing mechanism for it. This is an intentional design decision, not missing functionality. Waiting for this feature to exist is complete.
 
 - **Certificate on the wire in multi-instance wake message:** Accepted, fine. Already published as public data. (Marked resolved in docs/dev/multi-instance-safety-plan.md.)
 
 - **Service-account linkage:** Evaluated at enrollment time, never re-derived at retrieve time. feat/service-certs has added `certificate_requests.service_account` schema column.
+
+## Known defect: `source-address` is welded to the lifetime rule
+
+**Status:** identified 2026-08-23. Not scheduled. This needs rework, not a
+patch, and the settled decision recorded in STEP 1 above is the thing being
+reopened.
+
+`pin_source_address` is a field on `SourcePolicyEntry`
+(`server/config/types_certificates.go:172-195`), the same struct that exists
+to carry `max_duration`. That puts two unrelated policy questions on one rule
+list:
+
+- **How long** may a certificate issued to a client on this network live?
+  Applies to user and service certificates.
+- **From which addresses** may the issued certificate be used? A critical
+  option written into the certificate, service certificates only.
+
+The first is a cap the server applies at issuance. The second is a
+restriction the certificate carries to every host it is later presented to.
+They take a CIDR as input and share nothing else, but the implementation
+currently makes them share the rule list, the match, the tie-break, and the
+enable condition too.
+
+### What the sharing costs
+
+1. **One match, two answers.** `evaluateSourceRule`
+   (`server/service/lifetimepolicy.go:198-241`) and
+   `narrowRequestedOptionsWithPolicy` (`:270-295`) each run their own copy of
+   the same longest-prefix loop, and each takes its answer from the single
+   winning entry. Refining the lifetime map therefore silently rewrites the
+   pinning map. Add `10.20.5.0/24` with a shorter `max_duration` for a lab
+   inside an already-pinned `10.20.0.0/16`, forget to repeat
+   `pin_source_address: true`, and every enrollment from that lab quietly
+   stops being pinned. Nothing warns.
+2. **The tie-break is a duration comparison.** When two entries have equal
+   prefix length the winner is the one with the shorter `max_duration`
+   (`:230`, `:288`). Whether a certificate is pinned can therefore be decided
+   by which of two rules happens to grant less time, a comparison with no
+   bearing on address restriction.
+3. **Two copies of the matcher, kept in sync by hand.** Same loop, same
+   tie-break, written twice, because one caller wants a duration out of it and
+   the other wants an option.
+4. **Enabling either enables both.** `isLifetimePolicyConfigured` (`:15-17`)
+   treats a non-empty `source_policy` as a configured lifetime policy, which
+   switches on tier evaluation. An operator who wants pinning and no lifetime
+   tiering gets the tier machinery anyway, and walks into the next item.
+5. **Pin-only config yields zero-length certificates.**
+   `LifetimePolicy.DefaultDuration`'s doc comment promises "If zero, the
+   enclosing `CertOptions*.ValidDuration` is used instead"
+   (`server/config/types_certificates.go:139-141`). `evaluateDuration` does
+   not implement that fallback (`server/service/lifetimepolicy.go:139-169`).
+   With no tier matched and no `default_duration`, the effective duration is
+   zero, it survives both the `min` against the source rule and the ceiling
+   clamp untouched, and `approveServiceEnrollment` then sets
+   `expiresAt = now` (`server/service/certrequest.go:737`). The enrollment is
+   dead on arrival. Config that only ever wanted a pin has to set an unrelated
+   duration to work at all.
+6. **`extensions` has the same shape of problem**, less sharply. Per-network
+   extension narrowing is a real question, but it too is answered by whichever
+   entry won the duration match.
+
+### The granted value is not the configured one
+
+Separate from the coupling, and the same rework should settle it.
+
+`narrowRequestedOptionsWithPolicy` writes the single observed address:
+`narrowed.SourceAddresses = []string{sourceIP}` (`:307`). The signer joins
+that list into the critical option (`server/signer/sign.go:100-106`), so the
+certificate carries one bare address, which OpenSSH reads as a `/32` or
+`/128`.
+
+Both the config comment ("pinning the certificate to this network",
+`server/config/types_certificates.go:187-194`) and this document's own text
+("pinning the certificate to the range it was issued for", under "What
+'narrowing only' means precisely") describe a pin to the rule's CIDR. Neither
+is what happens.
+
+- The `cidr:` an operator writes selects the rule and contributes nothing to
+  what is granted. Widening it changes which hosts match; it never widens the
+  pin.
+- Under NAT the observed address is the NAT egress, so the pin names the
+  gateway rather than the service host, and every host behind that gateway
+  satisfies it equally.
+- The union built for exactly this case is discarded before it can help.
+  `CreateRequest` merges the client's reported interface addresses with the
+  observed source IP and persists the result
+  (`server/service/certrequest.go:240-266`); `narrowRequestedOptions` drops
+  the whole list at approve (`server/service/certtypepolicy.go:59-64`); the
+  policy then rebuilds a one-element list from the observed IP. The stored
+  union is audit data and nothing more.
+- The "a `/0` with `PinSourceAddress=true` is a warning sign" note in the
+  config comment is enforced nowhere. `validateStartupConfig`
+  (`server/service/lifetimepolicy.go:335-352`) checks `trusted_proxies` and
+  stops. Worse, because the pin is a `/32` of the observed address rather
+  than the rule's range, a `0.0.0.0/0` entry with pinning on is not the
+  harmless no-op the comment implies: it pins every certificate to whatever
+  address its enrollment happened to come from.
+
+### Related: `service enroll` reports no addresses
+
+`ssh login` (`client/cmd/ssh_login.go:265-268`) and pam_ssoossh
+(`pam_ssoossh/auth.go:69`) both populate `RequestedOptions.SourceAddresses`
+from `api.LocalInterfaceAddresses()`. `service enroll` sends an empty option
+set (`client/cmd/service_enroll.go:73`), so the only address ever recorded
+for an enrollment is the one ssoosshd observed. It should send them too, for
+parity and because a service host is precisely the case the NAT reasoning in
+`LocalInterfaceAddresses`' doc comment was written for.
+
+The one-line client fix is inert on its own: the list is dropped at approve
+today and the pin is rebuilt from the observed IP regardless. It belongs with
+the rework, so it lands alongside a decision about which addresses may
+actually be granted.
+
+### What the rework has to decide
+
+Questions, not a plan.
+
+1. **A separate config surface.** A distinct CIDR-keyed list for address
+   restriction, matched on its own, so the lifetime map and the pinning map
+   can be refined independently. `pin_source_address` on `SourcePolicyEntry`
+   goes away rather than gaining a sibling.
+2. **What gets granted.** The rule's CIDR, the observed address, the
+   request's reported addresses intersected with the rule's CIDR, or the
+   union of the reported set and the observed address. Narrowing-only has to
+   hold for whichever wins: a client-supplied address may survive an
+   intersection, never be granted on the client's say-so.
+3. **Enrollment-time or retrieve-time.** Settled as enrollment-time for
+   lifetime (see "Which certificate types"). Pinning has both the stronger
+   case for retrieve-time, since it describes where the certificate will
+   actually be used, and the stronger objection, since a relocated unattended
+   job then silently stops working with no human present to see why.
+4. **Whether user certificates get a pin at all.** `docs/decisions.md`
+   declines it, with a note that it may be worth reconsidering for users who
+   ssh onward from remote systems.
+5. **Startup validation.** Whatever a `/0` pin means once (2) is decided
+   should be a startup error or warning, not a comment.
 
 ## To resume this
 

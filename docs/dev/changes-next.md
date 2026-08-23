@@ -122,6 +122,20 @@ Splits cleanly in two, and the split matters: **step 1, the config-file-only
 policy engine, has no blocker and can ship independently of admin roles.**
 Only the runtime-editable host-rules half waits on §1 above.
 
+**Known defect, identified 2026-08-23: `source-address` pinning is welded to
+the lifetime rule.** `pin_source_address` lives on `SourcePolicyEntry`, so
+"how long may this certificate live" and "from which addresses may it be
+used" share one rule list, one longest-prefix match, and a tie-break decided
+by duration. Refining the lifetime map silently rewrites the pinning map. On
+top of that, what gets granted is the observed source IP as a bare `/32`, not
+the rule's configured CIDR, which is what both the config comment and the
+design document describe. This is a rework of the config surface and the
+evaluation split, not a patch. Full write-up, including the pin-only config
+that yields zero-length enrollments and the missing `service enroll` source
+addresses, in
+[certificate-lifetime-policy.md](../certificate-lifetime-policy.md) under
+"Known defect: `source-address` is welded to the lifetime rule".
+
 Open questions:
 
 - Is the certificate acceptable on the wire in the multi-instance wake

@@ -117,9 +117,7 @@ local principal-mapping tooling (`host mapping`, `host principals`) for
 
 ## Coming later
 
-- **Host certificates**, only if a secure host-verification mechanism
-  (something like an ACME challenge) makes hostname claims provable —
-  see [decisions.md](decisions.md).
+- **ACME for TLS**, setup acme for public trusted ssl certs on webserver
 - **LDAP enrichment**: additional principals and account identifiers from
   a directory, feeding user disablement sweeps.
 - **Admin user-disable flow**: disable a departed user with a grace period
@@ -130,3 +128,6 @@ local principal-mapping tooling (`host mapping`, `host principals`) for
   and PKCS#11 backends use today.
 - **Runtime-editable narrowing policy**: admins tightening (never
   loosening) policy from the web UI, fully audited.
+- **Host certificates**, only if a secure host-verification mechanism
+  (something like an ACME challenge) makes hostname claims provable —
+  see [decisions.md](decisions.md).
