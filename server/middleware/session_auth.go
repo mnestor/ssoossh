@@ -29,6 +29,19 @@ const (
 	// sessionKeyIdentityGroups is comma-joined. Group names sourced from
 	// OIDC/LDAP aren't expected to contain commas; revisit if that changes.
 	sessionKeyIdentityGroups = "identity_groups"
+	// sessionKeyIdentityOtherAccounts and sessionKeyIdentityServiceAccounts
+	// are comma-joined too, same convention and same caveat as the groups
+	// key above. Both have to survive the round trip: service certificate
+	// approval is authorized against identity.ServiceAccounts (see
+	// service.checkServiceAccountLinkage), and both are snapshotted into
+	// the decision audit record, so an identity rebuilt without them is an
+	// identity that cannot approve anything and audits as account-less.
+	//
+	// Cheap to carry: gormstore keeps the session payload in a database
+	// column and the cookie holds only the session id, so this costs text
+	// on the session row, not cookie bytes.
+	sessionKeyIdentityOtherAccounts   = "identity_other_accounts"
+	sessionKeyIdentityServiceAccounts = "identity_service_accounts"
 	// sessionKeyIdentityRefreshedAt is the Unix time the session was last
 	// written, set by SetIdentitySession and updated by the sliding-expiry
 	// refresh in SessionAuthMiddleware. It exists so the middleware can
@@ -50,6 +63,17 @@ func sessionString(sess sessions.Session, key string) string {
 		return ""
 	}
 	return v
+}
+
+// sessionStringSlice reads a comma-joined list written by
+// SetIdentitySession, returning nil for an absent or empty value rather
+// than the one-element slice strings.Split would give for "".
+func sessionStringSlice(sess sessions.Session, key string) []string {
+	raw := sessionString(sess, key)
+	if raw == "" {
+		return nil
+	}
+	return strings.Split(raw, ",")
 }
 
 // SetOIDCState stores state in the session for a later PopOIDCState call to
@@ -132,6 +156,8 @@ func SetIdentitySession(c *gin.Context, identity *service.Identity) error {
 	sess.Set(sessionKeyIdentityUsername, identity.Username)
 	sess.Set(sessionKeyIdentityEmail, identity.Email)
 	sess.Set(sessionKeyIdentityGroups, strings.Join(identity.Groups, ","))
+	sess.Set(sessionKeyIdentityOtherAccounts, strings.Join(identity.OtherAccounts, ","))
+	sess.Set(sessionKeyIdentityServiceAccounts, strings.Join(identity.ServiceAccounts, ","))
 	now := time.Now().Unix()
 	sess.Set(sessionKeyIdentityIssuedAt, now)
 	sess.Set(sessionKeyIdentityRefreshedAt, now)
@@ -235,16 +261,13 @@ func (m *SessionAuthMiddleware) Add() gin.HandlerFunc {
 		username := sessionString(sess, sessionKeyIdentityUsername)
 		email := sessionString(sess, sessionKeyIdentityEmail)
 
-		var groups []string
-		if groupsCSV := sessionString(sess, sessionKeyIdentityGroups); groupsCSV != "" {
-			groups = strings.Split(groupsCSV, ",")
-		}
-
 		c.Set(IdentityContextKey, &service.Identity{
-			Subject:  subject,
-			Username: username,
-			Email:    email,
-			Groups:   groups,
+			Subject:         subject,
+			Username:        username,
+			Email:           email,
+			Groups:          sessionStringSlice(sess, sessionKeyIdentityGroups),
+			OtherAccounts:   sessionStringSlice(sess, sessionKeyIdentityOtherAccounts),
+			ServiceAccounts: sessionStringSlice(sess, sessionKeyIdentityServiceAccounts),
 		})
 
 		// Sliding expiry: re-save once past half the idle window (see the

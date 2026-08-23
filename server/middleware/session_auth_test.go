@@ -9,6 +9,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
@@ -163,14 +164,34 @@ func TestPopReturnURL_ShouldReturnEmptyWhenNeverSet(t *testing.T) {
 	}
 }
 
+// TestSetIdentitySessionAndSessionAuthMiddleware asserts what a
+// service.Identity keeps across the session round trip, compared as a
+// struct rather than field by field on purpose. A field-by-field check
+// silently ignores any field added to Identity afterwards, which is how
+// OtherAccounts and ServiceAccounts came to be dropped by the middleware
+// with every test still green: nothing here mentioned them, so nothing
+// noticed.
+//
+// Every field the session carries is populated, so a dropped one shows up
+// as a difference. The exception is Extra, which the session deliberately
+// does not carry: it is a map of operator-defined claim values rather than
+// a flat list, and the one path that needs it rehydrates it from the
+// approver's users row instead (service.CertRequestService.Approve,
+// "identity.Extra = decodeExtraFields"). identityFieldCount below makes a
+// newly added field impossible to leave unasserted.
 func TestSetIdentitySessionAndSessionAuthMiddleware(t *testing.T) {
 	t.Parallel()
 
 	identity := &service.Identity{
-		Subject:  "sub-alice",
-		Username: "alice",
-		Email:    "alice@example.com",
-		Groups:   []string{"ssh-users", "admins"},
+		Subject:         "sub-alice",
+		Username:        "alice",
+		Email:           "alice@example.com",
+		Groups:          []string{"ssh-users", "admins"},
+		OtherAccounts:   []string{"alice-admin", "alice-ops"},
+		ServiceAccounts: []string{"svc-deploy", "svc-backup"},
+		// Extra is left nil: its element type is unexported, so this
+		// package cannot build one, and the middleware never sets it
+		// either. The assertion below still pins that it stays nil.
 	}
 
 	setResp := doSessionRequest(t, func(c *gin.Context) {
@@ -199,17 +220,30 @@ func TestSetIdentitySessionAndSessionAuthMiddleware(t *testing.T) {
 	if !gotOK {
 		t.Fatal("expected Identity() to find an identity on the context")
 	}
-	if gotIdentity.Subject != identity.Subject {
-		t.Errorf("got Subject %q, want %q", gotIdentity.Subject, identity.Subject)
+	if !reflect.DeepEqual(gotIdentity, identity) {
+		t.Errorf("round-tripped identity = %+v, want %+v", gotIdentity, identity)
 	}
-	if gotIdentity.Username != identity.Username {
-		t.Errorf("got Username %q, want %q", gotIdentity.Username, identity.Username)
+	if gotIdentity.Extra != nil {
+		t.Errorf("round-tripped Extra = %v, want nil: the session does not carry it", gotIdentity.Extra)
 	}
-	if gotIdentity.Email != identity.Email {
-		t.Errorf("got Email %q, want %q", gotIdentity.Email, identity.Email)
-	}
-	if len(gotIdentity.Groups) != 2 || gotIdentity.Groups[0] != "ssh-users" || gotIdentity.Groups[1] != "admins" {
-		t.Errorf("got Groups %v, want [ssh-users admins]", gotIdentity.Groups)
+}
+
+// identityFieldCount is the number of service.Identity fields the test
+// above accounts for. It exists so that adding a field to Identity fails
+// here rather than silently riding along unasserted: populate the new
+// field in that test, put it on the carried or the deliberately-excluded
+// side, and bump this. It has already earned its keep once, catching
+// Identity.Extra arriving from another branch.
+const identityFieldCount = 7
+
+func TestIdentity_ShouldAccountForEveryFieldInTheRoundTripTest(t *testing.T) {
+	t.Parallel()
+
+	if got := reflect.TypeOf(service.Identity{}).NumField(); got != identityFieldCount {
+		t.Errorf("service.Identity has %d fields, want %d — a field was added or removed; "+
+			"decide whether the session carries it, update "+
+			"TestSetIdentitySessionAndSessionAuthMiddleware, and change identityFieldCount",
+			got, identityFieldCount)
 	}
 }
 
@@ -310,9 +344,10 @@ func TestSessionAuthMiddleware_ShouldFailClosedWithoutASession(t *testing.T) {
 	}
 }
 
-// TestSessionAuthMiddleware_ShouldDefaultGroupsToNilWhenUnset covers a
-// session with an identity but no groups CSV — a real scenario for a user
-// in no groups, distinct from Groups being explicitly empty.
+// TestSessionAuthMiddleware_ShouldHandleNoGroups covers a session with an
+// identity but empty list claims — a real scenario for a user in no groups
+// with no linked accounts. Each must come back nil rather than the
+// one-element slice strings.Split gives for "".
 func TestSessionAuthMiddleware_ShouldHandleNoGroups(t *testing.T) {
 	t.Parallel()
 
@@ -336,6 +371,12 @@ func TestSessionAuthMiddleware_ShouldHandleNoGroups(t *testing.T) {
 
 	if len(gotIdentity.Groups) != 0 {
 		t.Errorf("got Groups %v, want empty", gotIdentity.Groups)
+	}
+	if len(gotIdentity.OtherAccounts) != 0 {
+		t.Errorf("got OtherAccounts %v, want empty", gotIdentity.OtherAccounts)
+	}
+	if len(gotIdentity.ServiceAccounts) != 0 {
+		t.Errorf("got ServiceAccounts %v, want empty", gotIdentity.ServiceAccounts)
 	}
 }
 
