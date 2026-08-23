@@ -132,6 +132,8 @@
 		{outcome}
 		serviceAccounts={session.user?.service_accounts ?? []}
 		bind:selectedServiceAccount
+		{userPrincipals}
+		bind:selectedPrincipals
 		onapprove={() => decide('approved')}
 		ondeny={() => decide('denied')}
 	/>

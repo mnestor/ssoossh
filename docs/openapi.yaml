@@ -282,6 +282,11 @@ components:
       type: object
     webtypes.ApproveRequestBody:
       properties:
+        principals:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
         service_account:
           type: string
       type: object
