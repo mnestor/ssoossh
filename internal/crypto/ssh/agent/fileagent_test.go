@@ -390,6 +390,28 @@ func TestFileAgent_List(t *testing.T) {
 		}
 	})
 
+	// The type matters, not just the count. ssh_inspect casts the result to
+	// *ssh.Certificate on the grounds that "List(true) filters to
+	// certificates", and ssh login's pruneSuperseded compares what comes
+	// back against the certificate it just installed. Handing either of
+	// them a bare public key silently breaks both: inspect prints "not a
+	// certificate", and prune decides the identity it just wrote is a
+	// superseded one and deletes it.
+	t.Run("should return the certificate rather than the bare public key when filtering by CA", func(t *testing.T) {
+		t.Parallel()
+		f := &FileAgent{keypair: leaf, cas: []ssh.PublicKey{ca.Public()}}
+		got, err := f.List(true)
+		if err != nil {
+			t.Fatalf("List(true) error = %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("List(true) returned %d identities, want 1", len(got))
+		}
+		if _, ok := (*got[0]).(*ssh.Certificate); !ok {
+			t.Fatalf("List(true) returned %T, want *ssh.Certificate", *got[0])
+		}
+	})
+
 	t.Run("should return nothing when filtering by a CA that did not sign it", func(t *testing.T) {
 		t.Parallel()
 		f := &FileAgent{keypair: leaf, cas: []ssh.PublicKey{other.Public()}}

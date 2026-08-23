@@ -5,10 +5,14 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"log/slog"
+	"net/http"
 	"strings"
+	"time"
 
 	"resty.dev/v3"
 
+	"github.com/mnestor/ssoossh/internal/tracelog"
 	"github.com/mnestor/ssoossh/internal/version"
 )
 
@@ -78,6 +82,15 @@ type Config struct {
 	// otherwise limited to standard trust-chain and hostname checks — no
 	// additional pinning.
 	SkipVerifySSL bool
+
+	// Logger receives per-request tracing. Nil means none, which is the
+	// default and what pam_ssoossh relies on: it is loaded into sudo and
+	// sshd, where writing to stdout or stderr corrupts the host process's
+	// own output, and it routes its logging to syslog through its own
+	// Logger rather than slog. Defaulting to slog.Default() here would put
+	// this package's tracing on that stderr by accident, so the caller that
+	// wants tracing has to say so.
+	Logger *slog.Logger
 }
 
 // RestyClient is the production Client implementation, backed by resty.
@@ -117,7 +130,56 @@ func NewClient(cfg Config) (*RestyClient, error) {
 		SetTLSClientConfig(tlsConfig).
 		SetResultError(&errorBody{})
 
+	installRequestTracing(c, cfg.Logger)
+
 	return &RestyClient{http: c, serverURL: serverURL, tlsConfig: tlsConfig}, nil
+}
+
+// installRequestTracing logs every request and response to log, at levels
+// internal/tracelog defines so the caller's -v count decides what is
+// actually emitted. A nil logger installs nothing at all — see Config.Logger
+// for why that is the default rather than slog.Default().
+//
+// Bodies and headers are logged only at the deepest level, and only after
+// tracelog's redaction: this output exists to be pasted into bug reports.
+func installRequestTracing(c *resty.Client, log *slog.Logger) {
+	if log == nil {
+		return
+	}
+	c.AddRequestMiddleware(func(_ *resty.Client, r *resty.Request) error {
+		log.Debug("http request", "method", r.Method, "url", r.URL)
+		if log.Enabled(r.Context(), tracelog.LevelTrace) {
+			logHeaders(r.Context(), log, "http request header", r.Header)
+			if body, ok := r.Body.(string); ok {
+				log.Log(r.Context(), tracelog.LevelTrace, "http request body", "body", tracelog.Body(body))
+			}
+		}
+		return nil
+	})
+
+	c.AddResponseMiddleware(func(_ *resty.Client, resp *resty.Response) error {
+		log.Debug("http response",
+			"method", resp.Request.Method,
+			"url", resp.Request.URL,
+			"status", resp.StatusCode(),
+			"duration", resp.Duration().Round(time.Millisecond).String())
+		if log.Enabled(resp.Request.Context(), tracelog.LevelTrace) {
+			logHeaders(resp.Request.Context(), log, "http response header", resp.Header())
+			log.Log(resp.Request.Context(), tracelog.LevelTrace, "http response body",
+				"body", tracelog.Body(resp.String()))
+		}
+		return nil
+	})
+}
+
+// logHeaders emits one line per header, redacted. One line each rather than
+// a single joined value so a long header set stays readable in a terminal.
+func logHeaders(ctx context.Context, log *slog.Logger, msg string, headers http.Header) {
+	for name, values := range headers {
+		for _, v := range values {
+			log.Log(ctx, tracelog.LevelTrace, msg, "name", name, "value", tracelog.Header(name, v))
+		}
+	}
 }
 
 // normalizeServerURL trims any trailing slash and supplies the scheme when

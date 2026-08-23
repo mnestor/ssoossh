@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 )
@@ -33,5 +34,6 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	if err := os.Rename(tmpfile.Name(), path); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
+	slog.Debug("wrote file", "path", path, "bytes", len(data), "mode", fmt.Sprintf("%o", perm))
 	return nil
 }

@@ -39,21 +39,43 @@ type FileAgent struct {
 // An empty path is rejected outright: it would resolve to ~/.ssh itself,
 // and every later write or remove would then operate on the directory —
 // the classic way key files end up somewhere the user never looks.
-func NewFileAgent(path string) (Agent, error) {
+// ResolveKeyPath turns a configured key_filename into the absolute path the
+// file agent actually reads and writes. Exported so anything that reports
+// on key storage — `--debug`, notably — can show the same path the agent
+// uses instead of echoing the configured value back. A report that stats
+// the unexpanded string calls "~/.ssh/id" missing while the agent is
+// happily using it, which is worse than saying nothing.
+//
+// A relative path (a bare filename, or "~"/"~/...") resolves against the
+// user's ~/.ssh directory; os.UserHomeDir handles Windows and WSL, so no
+// platform-specific logic is needed here.
+//
+// An empty path is rejected outright: it would resolve to ~/.ssh itself,
+// and every later write or remove would then operate on the directory —
+// the classic way key files end up somewhere the user never looks.
+func ResolveKeyPath(path string) (string, error) {
 	if strings.TrimSpace(path) == "" {
-		return nil, errors.New("key file path is empty; set key_filename to the private key file to use")
+		return "", errors.New("key file path is empty; set key_filename to the private key file to use")
 	}
-	if !filepath.IsAbs(path) {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
-		}
-		switch {
-		case path == "~" || strings.HasPrefix(path, "~/"):
-			path = filepath.Join(homeDir, strings.TrimPrefix(path, "~"))
-		default:
-			path = filepath.Join(homeDir, ".ssh", path)
-		}
+	if filepath.IsAbs(path) {
+		return path, nil
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case path == "~" || strings.HasPrefix(path, "~/"):
+		return filepath.Join(homeDir, strings.TrimPrefix(path, "~")), nil
+	default:
+		return filepath.Join(homeDir, ".ssh", path), nil
+	}
+}
+
+func NewFileAgent(path string) (Agent, error) {
+	path, err := ResolveKeyPath(path)
+	if err != nil {
+		return nil, err
 	}
 	if fi, err := os.Stat(path); err == nil && fi.IsDir() {
 		return nil, fmt.Errorf("key file path %s is a directory, not a file", path)
@@ -110,6 +132,15 @@ func (f *FileAgent) Backend() string {
 // List returns the identities known to the agent. When filterByCA is true,
 // the keypair is only included if it's signed by one of the trusted CAs
 // (see SetCA); when false, the keypair is included regardless.
+//
+// The identity is the certificate whenever one is loaded, not the bare
+// public key. Callers rely on that: `ssh inspect` casts what List(true)
+// returns to *ssh.Certificate, and `ssh login`'s pruneSuperseded compares
+// it against the certificate it just installed to decide what the new one
+// supersedes. Returning a bare public key broke both — inspect reported
+// "not a certificate", and prune found no match for the identity it had
+// just written and deleted its own key files (FileAgent.Remove removes the
+// whole identity regardless of the key passed to it).
 func (f *FileAgent) List(filterByCA bool) ([]*ssh.PublicKey, error) {
 	var keys []*ssh.PublicKey
 	if f.keypair == nil {
@@ -117,19 +148,30 @@ func (f *FileAgent) List(filterByCA bool) ([]*ssh.PublicKey, error) {
 	}
 
 	if !filterByCA {
-		pub := f.keypair.Public()
-		keys = append(keys, &pub)
+		keys = append(keys, f.identity())
 		return keys, nil
 	}
 
 	for _, ca := range f.cas {
 		if f.keypair.SignedBy(ca) {
-			pub := f.keypair.Public()
-			keys = append(keys, &pub)
+			keys = append(keys, f.identity())
 			break
 		}
 	}
 	return keys, nil
+}
+
+// identity is the keypair as an ssh.PublicKey: the certificate when one is
+// loaded, the bare public key otherwise. A certificate is itself an
+// ssh.PublicKey, so this narrows nothing for callers that only want the key
+// material.
+func (f *FileAgent) identity() *ssh.PublicKey {
+	if cert := f.keypair.Certificate(); cert != nil {
+		var pub ssh.PublicKey = cert
+		return &pub
+	}
+	pub := f.keypair.Public()
+	return &pub
 }
 
 // Add is not supported for FileAgent; use AddKeypair to write a keypair to disk.

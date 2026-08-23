@@ -91,6 +91,11 @@ make test-migration      # SQLite/Postgres schema parity
 make test-e2e
 ```
 
+Known coverage gaps are tracked in [docs/testing-needs.md](docs/testing-needs.md),
+each with the bug that exposed it. Add to it when you find a gap you are not
+closing in the same change, and delete entries as they are closed rather than
+marking them done.
+
 ### Linting
 
 ```bash

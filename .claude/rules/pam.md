@@ -24,3 +24,19 @@ paths:
   gated behind debug) — a module that can only report its version with
   debug already enabled is a worse support problem than one extra log line
   per auth attempt.
+- **Never write to stdout or stderr from anything pam_ssoossh can reach.**
+  The module is loaded into `sudo` and `sshd`; writing to either stream
+  corrupts the host process's own output and can leak into the PAM
+  conversation. pam_ssoossh logs through its own `Logger` (`logger.go`) to
+  syslog, and never calls `slog.SetDefault` — so inside PAM, `slog.Default()`
+  is Go's built-in handler, which writes to **stderr**.
+  That makes `slog.Default()` unusable in any `internal/` package pam
+  imports: today `internal/api`, `internal/crypto/ssh/keypair`,
+  `internal/fipsmode`, `internal/principalsmap`, and `internal/version`.
+  Such a package must take an explicit `*slog.Logger` and do nothing when it
+  is nil — see `api.Config.Logger` and `installRequestTracing`. Relying on a
+  level being below the default handler's threshold is not sufficient; it
+  breaks silently the moment someone adds a higher-level call.
+  Client-only packages (`client/...`, `internal/crypto/ssh/agent`, which pam
+  does not import) may use `slog.Default()`. If pam ever needs one of those,
+  it needs the explicit-logger treatment first.

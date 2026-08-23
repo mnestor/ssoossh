@@ -6,9 +6,13 @@ package config
 import (
 	"bytes"
 	_ "embed"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -60,28 +64,7 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 		return nil, fmt.Errorf("failed to read config flag: %w", err)
 	}
 
-	// The system file first, so it is the one `enforce` is read from, then
-	// each more specific location. A missing file at any of them is normal.
-	configFiles := []string{filepath.Join(paths.systemDir, configFileName)}
-	if paths.userFile != "" {
-		configFiles = append(configFiles, paths.userFile)
-	}
-	if paths.localFile != "" {
-		configFiles = append(configFiles, paths.localFile)
-	}
-
-	if configFile != "" {
-		configFiles = append(configFiles, configFile)
-		v.SetConfigFile(configFile)
-	}
-
-	enforce := ""
-	for i, file := range configFiles {
-		mergeConfig(v, file)
-		if i == 0 {
-			enforce = v.GetString("enforce")
-		}
-	}
+	enforce, sources := mergeConfigFiles(v, paths, configFile)
 
 	// Flags override whatever the files said. Bound rather than read
 	// directly so viper's own precedence applies: a flag that wasn't passed
@@ -90,7 +73,7 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	// extension flags are local to `ssh login` (the only command that
 	// generates a keypair and requests extensions), so Lookup returns nil
 	// and binding them no-ops for every other command's cmd.
-	if err := bindFlags(v, cmd, map[string]string{
+	changed, err := bindFlags(v, cmd, map[string]string{
 		"server":              "server",
 		"key-type":            "sshkey.type",
 		"key-size":            "sshkey.size",
@@ -99,14 +82,24 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 		"no-port-forwarding":  "certificate_extensions.no_port_forwarding",
 		"no-x11-forwarding":   "certificate_extensions.no_x11_forwarding",
 		"no-user-rc":          "certificate_extensions.no_user_rc",
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, err
 	}
+	flagSource := ConfigSource{Label: "command-line flags", Status: SourceNotGiven}
+	if len(changed) > 0 {
+		flagSource.Status = SourceMerged
+		flagSource.Detail = strings.Join(changed, ", ")
+	}
+	sources = append(sources, flagSource)
 
 	// Merged last, so it wins over every user-writable location — that is the
 	// whole point of `enforce`. A relative target resolves inside the system
 	// directory, so naming one cannot reach a file the user controls.
 	enforceSetsFIPS := false
+	if enforce == "" {
+		sources = append(sources, ConfigSource{Label: "enforce", Status: SourceNotGiven, AdminLock: true})
+	}
 	if enforce != "" {
 		if !filepath.IsAbs(enforce) {
 			enforce = filepath.Join(paths.systemDir, enforce)
@@ -121,6 +114,7 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 		if err := v.MergeInConfig(); err != nil {
 			return nil, fmt.Errorf("failed to load enforce file %q: %w", enforce, err)
 		}
+		sources = append(sources, ConfigSource{Label: "enforce", Path: enforce, Status: SourceMerged, AdminLock: true})
 	}
 
 	// Merged after `enforce`, so a platform-native policy source (Windows
@@ -133,6 +127,11 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	if err != nil {
 		return nil, err
 	}
+	policyStatus := SourceNotGiven
+	if policySetsFIPS || len(policyForbiddenExtensions) > 0 {
+		policyStatus = SourceMerged
+	}
+	sources = append(sources, ConfigSource{Label: "platform policy", Status: policyStatus, AdminLock: true})
 
 	var c Config
 	if err := v.Unmarshal(&c); err != nil {
@@ -157,7 +156,49 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 		return nil, fmt.Errorf("failed to resolve config paths: %w", err)
 	}
 
+	c.Sources = sources
+
 	return &c, nil
+}
+
+// mergeConfigFiles merges the file half of the configuration chain into v
+// and returns the `enforce` target the system file named, along with the
+// outcome of every location consulted.
+//
+// Split out of newConfig to keep that function readable; the ordering rules
+// it encodes are the interesting part and were getting lost among newConfig's
+// other concerns.
+func mergeConfigFiles(v *viper.Viper, paths searchPaths, configFile string) (enforce string, sources []ConfigSource) {
+	sources = []ConfigSource{{Label: "embedded defaults", Status: SourceMerged}}
+
+	// The system file first, so it is the one `enforce` is read from, then
+	// each more specific location. A missing file at any of them is normal.
+	type candidate struct{ label, path string }
+	configFiles := []candidate{{"system file", filepath.Join(paths.systemDir, configFileName)}}
+	if paths.userFile != "" {
+		configFiles = append(configFiles, candidate{"user file", paths.userFile})
+	}
+	if paths.localFile != "" {
+		configFiles = append(configFiles, candidate{"local file", paths.localFile})
+	}
+	if configFile != "" {
+		configFiles = append(configFiles, candidate{"--config", configFile})
+		v.SetConfigFile(configFile)
+	}
+
+	for i, file := range configFiles {
+		sources = append(sources, mergeConfig(v, file.label, file.path))
+		if i == 0 {
+			enforce = v.GetString("enforce")
+		}
+	}
+	// Recorded after the loop so the chain reads in precedence order: an
+	// explicit --config is merged last of the files above, so its "not
+	// given" marker belongs here rather than ahead of them.
+	if configFile == "" {
+		sources = append(sources, ConfigSource{Label: "--config", Status: SourceNotGiven})
+	}
+	return enforce, sources
 }
 
 // mergePlatformPolicy loads and merges the platform-native policy source
@@ -199,25 +240,60 @@ func mergePlatformPolicy(v *viper.Viper, loadPolicy func() (map[string]any, erro
 	return fipsSet, forbiddenExtensions, nil
 }
 
-func mergeConfig(v *viper.Viper, f string) {
+// mergeConfig merges f into v and reports what happened. A missing file is
+// normal at every search location, so it is not an error — but it is also
+// not the same as a file that exists and failed to parse, and the caller
+// records the difference (see ConfigSource) because only one of the two is
+// a configuration the user believes is in effect.
+func mergeConfig(v *viper.Viper, label, f string) ConfigSource {
 	v.SetConfigFile(f)
-	_ = v.MergeInConfig() //nolint:errcheck // config override is optional
+	err := v.MergeInConfig()
+	switch {
+	case err == nil:
+		return ConfigSource{Label: label, Path: f, Status: SourceMerged}
+	case isNotExist(err):
+		return ConfigSource{Label: label, Path: f, Status: SourceAbsent}
+	default:
+		return ConfigSource{Label: label, Path: f, Status: SourceError, Err: err.Error()}
+	}
+}
+
+// isNotExist reports whether err is viper's or the OS's "no such file". A
+// file that is simply not there is the common case at most search
+// locations, and must not be reported as a problem.
+func isNotExist(err error) bool {
+	var notFound viper.ConfigFileNotFoundError
+	if errors.As(err, &notFound) {
+		return true
+	}
+	return errors.Is(err, os.ErrNotExist)
 }
 
 // bindFlags binds each cmd flag named in flagToKey to the viper key it maps
 // to, skipping any flag cmd does not have registered (a leaf-local flag on
 // a command other than the one invoked).
-func bindFlags(v *viper.Viper, cmd *cobra.Command, flagToKey map[string]string) error {
+// Returns the names of the flags the caller actually passed, sorted, so the
+// merge chain can report which flags overrode the files rather than only
+// that flags were considered.
+func bindFlags(v *viper.Viper, cmd *cobra.Command, flagToKey map[string]string) ([]string, error) {
+	var changed []string
 	for flag, key := range flagToKey {
 		f := cmd.Flags().Lookup(flag)
 		if f == nil {
 			continue
 		}
 		if err := v.BindPFlag(key, f); err != nil {
-			return fmt.Errorf("failed to bind the --%s flag: %w", flag, err)
+			return nil, fmt.Errorf("failed to bind the --%s flag: %w", flag, err)
+		}
+		if f.Changed {
+			changed = append(changed, "--"+flag)
 		}
 	}
-	return nil
+	// Sorted because flagToKey is a map: without this the reported order
+	// varies run to run, and a diagnostic report that differs between two
+	// identical invocations wastes the reader's time.
+	sort.Strings(changed)
+	return changed, nil
 }
 
 // enforceFileSets reports whether the enforce file at path explicitly sets

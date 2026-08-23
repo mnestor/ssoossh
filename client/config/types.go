@@ -70,6 +70,13 @@ type Config struct {
 	// from user config, not bound to flags, and not merged — it acts as an
 	// unconditional floor that subtracts from any flag/config result.
 	ForbiddenCertificateExtensions []string `mapstructure:"-"`
+
+	// Sources records the configuration merge chain in the order it was
+	// applied, including locations that were absent and files that failed
+	// to parse. Populated by newConfig, never by unmarshalling, and read by
+	// `--debug`. It is the only place a silently-skipped bad config file
+	// becomes visible — see ConfigSource.
+	Sources []ConfigSource `mapstructure:"-"`
 }
 
 // SSHKeyOptions selects the algorithm and size for the keypair the client

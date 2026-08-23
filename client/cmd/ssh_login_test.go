@@ -3,8 +3,11 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +16,8 @@ import (
 
 	"github.com/mnestor/ssoossh/client/config"
 	"github.com/mnestor/ssoossh/internal/api"
+	sshagent "github.com/mnestor/ssoossh/internal/crypto/ssh/agent"
+	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 )
 
 // newLoginRoot assembles a RootCommand around a stub agent and API client,
@@ -658,5 +663,61 @@ func TestRunLogin_ShouldIncludeEffectiveExtensionsInTheRequest(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The bug this pins, end to end through a real FileAgent: pruneSuperseded
+// removes every loaded identity that is not the certificate just installed.
+// FileAgent.List used to answer with the bare public key, which never
+// compares equal to a certificate, and FileAgent.Remove deletes the whole
+// identity regardless of the key handed to it. So a file-backed `ssh login`
+// wrote its three key files, verified them, then deleted them and reported
+// success — `ls ~/.ssh/id_ssoossh*` found nothing afterwards.
+func TestPruneSuperseded_ShouldNotDeleteTheCertificateItJustInstalled(t *testing.T) {
+	t.Parallel()
+
+	ca, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+	caSigner, err := xssh.NewSignerFromKey(ca.Private())
+	if err != nil {
+		t.Fatalf("NewSignerFromKey() error = %v", err)
+	}
+	leaf, err := keypair.NewEd25519KeyPair()
+	if err != nil {
+		t.Fatalf("NewEd25519KeyPair() error = %v", err)
+	}
+
+	cert := &xssh.Certificate{
+		Key:         leaf.Public(),
+		CertType:    xssh.UserCert,
+		KeyId:       "mnestor",
+		ValidAfter:  uint64(time.Now().Add(-time.Hour).Unix()),    //nolint:gosec // a Unix timestamp is positive for any real date
+		ValidBefore: uint64(time.Now().Add(8 * time.Hour).Unix()), //nolint:gosec // a Unix timestamp is positive for any real date
+	}
+	if err := cert.SignCert(rand.Reader, caSigner); err != nil {
+		t.Fatalf("SignCert() error = %v", err)
+	}
+	leaf.SetCertificate(cert)
+
+	keyPath := filepath.Join(t.TempDir(), "id_ssoossh")
+	ag, err := sshagent.NewFileAgent(keyPath)
+	if err != nil {
+		t.Fatalf("NewFileAgent() error = %v", err)
+	}
+	if err := ag.SetCA(string(xssh.MarshalAuthorizedKey(ca.Public()))); err != nil {
+		t.Fatalf("SetCA() error = %v", err)
+	}
+	if err := ag.AddKeypair(leaf); err != nil {
+		t.Fatalf("AddKeypair() error = %v", err)
+	}
+
+	pruneSuperseded(ag, cert, &bytes.Buffer{})
+
+	for _, path := range []string{keyPath, keyPath + ".pub", keyPath + "-cert.pub"} {
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected %s to survive pruning the certificate it holds: %v", path, err)
+		}
 	}
 }

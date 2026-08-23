@@ -19,6 +19,7 @@ import (
 	"github.com/mnestor/ssoossh/client/config"
 	"github.com/mnestor/ssoossh/internal/api"
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/agent"
+	"github.com/mnestor/ssoossh/internal/tracelog"
 )
 
 var _ simplecobra.Commander = (*RootCommand)(nil)
@@ -69,6 +70,21 @@ func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
 	cmd.PersistentFlags().StringP("config", "c", "", "path to the ssoossh config file")
 	cmd.PersistentFlags().String("server", "", "server address including scheme (e.g. \"https://example.com\") assumes https if omited.")
 
+	// Hidden: a diagnostic aid, not part of the command's advertised
+	// surface. $SSOOSSH_DEBUG does the same thing for invocations whose
+	// command line is not yours to edit — see debugEnabled.
+	cmd.PersistentFlags().Bool(debugFlagName, false,
+		"print the resolved configuration, its sources, and key storage to stderr")
+	if err := cmd.PersistentFlags().MarkHidden(debugFlagName); err != nil {
+		return fmt.Errorf("hide --%s: %w", debugFlagName, err)
+	}
+
+	// Not hidden, unlike --debug: -v is what people already reach for, and
+	// it is what a bug report should be asked to include. $SSOOSSH_VERBOSE
+	// carries the same count where the command line is not yours to edit.
+	cmd.PersistentFlags().CountP(verboseFlagName, "v",
+		"trace what the command is doing, to stderr; repeat for more (-v steps, -vv requests and files, -vvv bodies)")
+
 	return nil
 }
 
@@ -84,12 +100,36 @@ func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 	// flags (e.g. ssh login's --key-type). `runner` is the actually-invoked
 	// command, with every inherited persistent flag and its own local flags
 	// already merged, so it's the one newConfig must read.
+
+	// Tracing is installed before anything else, so config-loading warnings
+	// and every trace
+	// point below reach the handler this installs rather than the default
+	// one. Cheap when no verbosity was asked for: the level is Warn, which
+	// is what the default handler already emitted.
+	verbosity := verbosityFor(runner.CobraCommand)
+	installTracing(os.Stderr, verbosity)
+	slog.Log(context.Background(), tracelog.LevelFor(1), "starting",
+		"command", runner.CobraCommand.CommandPath(), "verbosity", verbosity)
+
+	// Deferred so every return path below reports, including the failing
+	// ones — a startup that did not finish is when this is most useful, and
+	// the alternative is a report at each of five early returns.
+	if debugEnabled(runner.CobraCommand) {
+		defer func() {
+			writeDebugReport(os.Stderr, r.cfg, r.agentForDebug(), runner.CobraCommand.CommandPath(), r.initErr)
+		}()
+	}
+
 	cfg, err := r.newConfig(runner.CobraCommand)
 	if err != nil {
 		r.initErr = fmt.Errorf("load config: %w", err)
 		return nil
 	}
 	r.cfg = cfg
+	slog.Info("configuration loaded", "server", cfg.Server, "sources", len(cfg.Sources))
+	for _, src := range cfg.Sources {
+		slog.Debug("config source", "source", src.String())
+	}
 
 	// An offline command stops here. Config is already loaded, since even a
 	// command that never talks to the server has to know where its own
@@ -124,9 +164,21 @@ func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 		return nil
 	}
 	r.ssh = a
+	slog.Info("key storage resolved", "type", a.Type(), "backend", a.Backend())
 	r.initErr = r.ssh.SetCA(cfg.CAPubkey)
 
 	return nil
+}
+
+// agentForDebug returns the resolved agent for the debug report, or nil
+// when there is none. A plain `r.ssh` would hand the report a non-nil
+// interface holding a nil pointer whenever agent resolution failed, and it
+// would then call Type() on it.
+func (r *RootCommand) agentForDebug() agentDescriber {
+	if r.ssh == nil {
+		return nil
+	}
+	return r.ssh
 }
 
 // resolveAgent decides where keys and certificates are kept, honoring the
@@ -196,6 +248,10 @@ func newAPIClientFromConfig(cfg *config.Config) (api.Client, error) {
 	return api.NewClient(api.Config{
 		ServerURL:     cfg.Server,
 		SkipVerifySSL: cfg.SkipVerifySSL,
+		// The client is a terminal program, so its tracing belongs on the
+		// handler installed by installTracing. pam_ssoossh deliberately
+		// passes no logger — see api.Config.Logger.
+		Logger: slog.Default(),
 	})
 }
 
