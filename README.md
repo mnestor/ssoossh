@@ -21,9 +21,8 @@ mechanics (principals, constraints, expiry); what's usually missing is the
 piece that decides *who* gets one, with which principals, for how long —
 tied to the identity provider you already run.
 
-ssoossh is that piece. See
-[docs/what-ssoossh-is.md](docs/what-ssoossh-is.md#the-problem) for the full
-picture.
+ssoossh is that piece. See [docs/features.md](docs/features.md) for
+everything it does.
 
 ## How it works
 
@@ -113,9 +112,9 @@ service certificate enrollment and the PAM path.
 | **ssoosshd** (server) | The trust anchor and policy decision point. Authenticates via OIDC, maps identity to certificate contents, signs with the CA key, and serves the web UI where issuance is approved. |
 | **pam_ssoossh** | A Linux PAM module for `sudo`/`su`. Requests a very short-lived certificate, validates it, and discards it — SSH login itself is not in scope here, since that path is already certificate-based. |
 
-See [docs/what-ssoossh-is.md](docs/what-ssoossh-is.md) for the full design:
-certificate types, certificate terms, and the open questions still being
-worked through.
+See [docs/features.md](docs/features.md) for the full feature set and
+[docs/decisions.md](docs/decisions.md) for what ssoossh deliberately does
+not do.
 
 ## Getting started
 

@@ -18,7 +18,7 @@ import (
 
 // parseTrustedCAs reads path and parses it as authorized_keys format, one CA
 // per line, so a deployment can rotate CAs without a coordinated restart of
-// every host — see docs/what-ssoossh-is.md.
+// every host — see docs/features.md.
 func parseTrustedCAs(path string) ([]ssh.PublicKey, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

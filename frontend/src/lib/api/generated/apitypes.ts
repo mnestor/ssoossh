@@ -232,7 +232,7 @@ export interface ServiceEnrollRequestBody {
  * local account pam_ssoossh is authenticating (e.g. who is running `sudo`)
  * — the certificate's principal is this, not whatever the browser identity
  * that later approves the request happens to be called (see
- * docs/what-ssoossh-is.md, PAM principal resolution).
+ * docs/features.md, PAM).
  */
 export interface PAMRequestBody {
 	public_key: string;

@@ -9,8 +9,7 @@ Self-hosted, homelab-friendly, early development.
 | Document | What it covers |
 | --- | --- |
 | [getting-started.md](getting-started.md) | The shortest path to a working `ssh login` |
-| [what-ssoossh-is.md](what-ssoossh-is.md) | The problem, how it works, components, certificate types and terms |
-| [features.md](features.md) | Everything implemented, one section per feature, with the invariants each is built around |
+| [features.md](features.md) | What ssoossh solves, and everything it does today |
 | [flows.md](flows.md) | Mermaid sequence diagrams for each flow |
 
 ## Operating it

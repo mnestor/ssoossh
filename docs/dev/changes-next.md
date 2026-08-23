@@ -208,7 +208,7 @@ Small, left over from the 2026-08-22 docs cleanup.
   (`{{.ServiceAccount}}`, `{{.ApprovedBy}}`, `{{.ApproverSubject}}`,
   `{{.ApprovedAt}}`) that are designed but unimplemented — **re-verified**
   absent from `server/`. Fine as-is; revisit when service certificates ship.
-- `ssoossh-context.md` and `what-ssoossh-is.md` overlap — both carry
+- `ssoossh-context.md` and the removed `what-ssoossh-is.md` overlapped — both carried
   "Components" and "Certificate types" sections. They differ in depth and
   apparent audience, so this is a five-minute call rather than an obvious
   merge: consolidate, or state each one's audience at the top.

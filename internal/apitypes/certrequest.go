@@ -32,7 +32,7 @@ type ServiceEnrollRequestBody struct {
 // local account pam_ssoossh is authenticating (e.g. who is running `sudo`)
 // — the certificate's principal is this, not whatever the browser identity
 // that later approves the request happens to be called (see
-// docs/what-ssoossh-is.md, PAM principal resolution).
+// docs/features.md, PAM).
 type PAMRequestBody struct {
 	PublicKey        string           `json:"public_key" binding:"required"`
 	Username         string           `json:"username" binding:"required"`

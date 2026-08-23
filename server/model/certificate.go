@@ -53,7 +53,7 @@ type Certificate struct {
 
 	// CriticalOptions is a JSON-encoded map[string]string of granted SSH
 	// certificate critical options (force-command, source-address — see
-	// docs/what-ssoossh-is.md "Certificate terms"). Unlike Extensions,
+	// docs/features.md, issuance). Unlike Extensions,
 	// sshd rejects the certificate outright if it doesn't understand one
 	// of these, so an empty map here is meaningfully different from an
 	// empty Extensions list.

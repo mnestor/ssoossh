@@ -120,7 +120,7 @@ func TestNewCertTypePolicies_Principals_ShouldUseUsernameForUserAndServiceCertif
 
 // TestNewCertTypePolicies_Principals_ShouldUsePAMUsernameNotIdentity is the
 // assertion that catches the wrong reading of
-// the PAM principal-resolution design (docs/what-ssoossh-is.md): PAM
+// the PAM principal-resolution design (docs/features.md, PAM): PAM
 // certificates must name the local account the module authenticated, not
 // the approver's OIDC identity, even when those two names differ.
 func TestNewCertTypePolicies_Principals_ShouldUsePAMUsernameNotIdentity(t *testing.T) {

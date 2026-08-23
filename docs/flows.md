@@ -1,6 +1,6 @@
 # ssoossh flows
 
-Mermaid diagrams for the flows described in `what-ssoossh-is.md`. Rendered by GitHub,
+Mermaid diagrams for each flow (see `features.md` for the feature-level view). Rendered by GitHub,
 GitLab, Obsidian, and anything else that supports
 [Mermaid](https://github.com/mermaid-js/mermaid).
 

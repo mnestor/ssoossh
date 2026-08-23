@@ -43,7 +43,7 @@ func WaitTopic(requestID string) string {
 // / CertOptionsService / CertOptions) before anything reaches the web UI or
 // gets signed — see root CLAUDE.md Hard Constraints ("server config is the
 // outer bound"). Field names and semantics follow
-// docs/what-ssoossh-is.md's "Certificate terms" section.
+// docs/features.md's issuance section.
 type RequestedOptions struct {
 	// Extensions are the SSH certificate extensions requested (e.g.
 	// "permit-pty", "permit-agent-forwarding"). Fail-open: sshd ignores
@@ -58,7 +58,7 @@ type RequestedOptions struct {
 	// SourceAddresses are the client's own interface addresses, unioned
 	// server-side with the address the request was observed from to form
 	// the SSH "source-address" critical option (see
-	// docs/what-ssoossh-is.md, "Certificate lifetime and context policy" —
+	// docs/certificate-lifetime-policy.md —
 	// NAT means neither address alone is sufficient). Unverified client
 	// input; server config is the ceiling on what's actually granted.
 	SourceAddresses []string `json:"source_addresses,omitempty"`

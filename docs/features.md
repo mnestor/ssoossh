@@ -1,8 +1,28 @@
 # Features
 
-What ssoossh does today. For the concepts, read
-[what-ssoossh-is.md](what-ssoossh-is.md); for setup,
-[deployment.md](deployment.md) and the annotated config samples. What it
+## The five things ssoossh solves
+
+1. **No more key sprawl.** Servers stop holding `authorized_keys` files —
+   they trust one CA. Add a server without copying keys to it; remove a
+   person without touching a single machine.
+2. **SSH access is your company login.** Getting in goes through the same
+   identity provider as everything else, so joining, leaving, and group
+   changes take effect where they are already managed. Leave the company,
+   lose SSH.
+3. **Credentials that expire on their own.** Certificates are short-lived
+   by design. A key that leaked last week opens nothing today, and there
+   is no revocation list to maintain — expiry does that work.
+4. **You see what you grant, and it is all on record.** The approval page
+   shows exactly what a certificate will allow — with anything policy
+   trimmed struck through — before anyone approves, and every decision is
+   recorded: who, from where, what was granted. `sshd` logs the key ID on
+   every login, so the audit trail reaches the servers themselves.
+5. **One flow for people, servers, services, and sudo.** Interactive SSH,
+   host identity, unattended service accounts, and `sudo`/`su` via PAM
+   all go through the same CA, the same approval, the same policy.
+
+What follows is everything it does today. For setup, see
+[deployment.md](deployment.md) and the annotated config samples; what it
 deliberately does not do is in [decisions.md](decisions.md).
 
 ## Issuance

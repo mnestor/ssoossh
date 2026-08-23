@@ -76,7 +76,7 @@
 	// pam_ssoossh, not an interactive SSH session — "requesting an SSH
 	// certificate" would misdescribe what's actually being authorized, so
 	// the heading says what this type of certificate is for instead (see
-	// docs/what-ssoossh-is.md, PAM approval).
+	// docs/features.md, PAM).
 	const cardCopy = $derived(
 		detail.type === 'pam'
 			? {
