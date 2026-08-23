@@ -5,6 +5,7 @@ package agent
 
 import (
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -28,7 +29,16 @@ func TestNewOpenSSHAgent(t *testing.T) {
 	})
 
 	t.Run("should connect and return an SshAgent backed by the OpenSSH agent", func(t *testing.T) {
-		sockPath := filepath.Join(t.TempDir(), "agent.sock")
+		// Not t.TempDir(): it embeds this subtest's 74-char name in the
+		// path, which on macOS pushes the socket path past the 104-byte
+		// sun_path limit and bind fails with EINVAL. MkdirTemp keeps it
+		// short on every platform.
+		dir, err := os.MkdirTemp("", "agent")
+		if err != nil {
+			t.Fatalf("os.MkdirTemp() error = %v", err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(dir) }) //nolint:errcheck // test cleanup
+		sockPath := filepath.Join(dir, "agent.sock")
 		ln, err := net.Listen("unix", sockPath)
 		if err != nil {
 			t.Fatalf("net.Listen() error = %v", err)
