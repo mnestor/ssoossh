@@ -32,7 +32,12 @@ ssoossh version
   certificates and server-side mappings were removed (docs/decisions.md);
   the mapping is purely local.
 - `ca` — prints the CA public key for `TrustedUserCAKeys` / `@cert-authority`
-- Service enrollment: keypair is either operator-supplied (server never sees
-  the private half) or client-generated; the server returns an enrollment
-  code bound to both the public key and the authorized option set, and later
-  invocations post only the code — never resubmit the key
+- Service enrollment: `ssoossh service enroll --key <path>` (generates a keypair
+  or enrolls an existing one at <path>/<path>.pub), obtaining an enrollment code.
+  Later, `ssoossh service retrieve --code <code> --key <path>` redeems the code
+  once per call, writing the certificate to <path>-cert.pub. The server binds
+  the code to both the public key and the authorized option set; later invocations
+  post only the code — never resubmit the key. Supports `--retrieve` on enroll
+  to get the certificate immediately, `--force` on retrieve to bypass the local
+  cache, and `--grace <duration>` to control how long a cached certificate is
+  considered fresh before refreshing

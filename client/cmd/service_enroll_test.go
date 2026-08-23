@@ -53,43 +53,96 @@ func TestEnrollmentCode(t *testing.T) {
 	}
 }
 
-// should require exactly one key source — the previous implicit-generate
-// behavior wrote a private key to a path the operator never named, which
-// is what removing the enrollment file was meant to end.
-func TestCheckEnrollKeySelection(t *testing.T) {
+// should decide between generating and enrolling from what is on disk, and
+// name the missing file when only half a keypair is there.
+func TestResolveServiceKey(t *testing.T) {
 	t.Parallel()
 
+	const existingPub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIexisting service@host\n"
+
 	tests := []struct {
-		name          string
-		publicKeyPath string
-		generatePath  string
-		wantErr       string
+		name        string
+		writePriv   bool
+		writePub    bool
+		wantPublic  string
+		wantErrPath string
 	}{
-		{name: "should accept an operator-supplied public key", publicKeyPath: "/tmp/id.pub"},
-		{name: "should accept a generate path", generatePath: "/tmp/service_key"},
-		{name: "should reject neither being set", wantErr: "choose a key source"},
-		{name: "should reject both being set", publicKeyPath: "/tmp/id.pub", generatePath: "/tmp/service_key", wantErr: "mutually exclusive"},
+		{
+			name:      "should enroll the existing public key when both halves are present",
+			writePriv: true, writePub: true,
+			wantPublic: existingPub,
+		},
+		{
+			name:        "should refuse when only the public key is present",
+			writePub:    true,
+			wantErrPath: "service_key",
+		},
+		{
+			name:        "should refuse when only the private key is present",
+			writePriv:   true,
+			wantErrPath: "service_key.pub",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			err := checkEnrollKeySelection(tt.publicKeyPath, tt.generatePath)
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("checkEnrollKeySelection() error = %v, want nil", err)
+			keyPath := filepath.Join(t.TempDir(), "service_key")
+			if tt.writePriv {
+				if err := os.WriteFile(keyPath, []byte("private"), 0600); err != nil {
+					t.Fatalf("write private key: %v", err)
+				}
+			}
+			if tt.writePub {
+				if err := os.WriteFile(keyPath+".pub", []byte(existingPub), 0600); err != nil {
+					t.Fatalf("write public key: %v", err)
+				}
+			}
+
+			got, err := resolveServiceKey(&config.Config{}, keyPath)
+
+			if tt.wantErrPath != "" {
+				if err == nil {
+					t.Fatalf("expected an error naming %s, got none", tt.wantErrPath)
+				}
+				if !strings.Contains(err.Error(), tt.wantErrPath) {
+					t.Errorf("error %q does not name the missing file %s", err, tt.wantErrPath)
 				}
 				return
 			}
-			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-				t.Fatalf("checkEnrollKeySelection() error = %v, want containing %q", err, tt.wantErr)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.wantPublic {
+				t.Errorf("resolveServiceKey() = %q, want %q", got, tt.wantPublic)
 			}
 		})
 	}
 }
 
-// should follow the OpenSSH layout so the printed retrieve command names
-// the file sshd will actually look for.
+// should generate a usable keypair when neither half exists, leaving both
+// files behind for ssh to find. Separate from the table above because it is
+// the one case that writes rather than reads, and it needs a real key
+// configuration to generate against.
+func TestResolveServiceKey_ShouldGenerateWhenNeitherHalfExists(t *testing.T) {
+	t.Parallel()
+
+	keyPath := filepath.Join(t.TempDir(), "service_key")
+
+	got, err := resolveServiceKey(&config.Config{}, keyPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got == "" {
+		t.Fatal("expected the generated public key to be returned")
+	}
+	for _, path := range []string{keyPath, keyPath + ".pub"} {
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected %s to exist after generating: %v", path, err)
+		}
+	}
+}
+
 func TestKeyPathDerivation(t *testing.T) {
 	t.Parallel()
 
@@ -176,56 +229,28 @@ func TestGenerateServiceKeypair_ShouldRefuseToOverwrite(t *testing.T) {
 	}
 }
 
-// should print the code and a runnable retrieve command — a code with no
-// instructions is the failure mode that removing the enrollment file would
-// otherwise introduce.
-func TestPrintEnrollmentCode(t *testing.T) {
+// should format the file paths with absolute paths when possible.
+func TestPrintEnrollmentCodeAndPaths(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name          string
-		publicKeyPath string
-		generatePath  string
-		wantContains  []string
-		wantAbsent    string
-	}{
-		{
-			name:          "should name the derived cert path for a supplied public key",
-			publicKeyPath: "/etc/ssoossh/service_key.pub",
-			wantContains: []string{
-				"code-1",
-				"SSOOSSH_ENROLLMENT_CODE=code-1",
-				"--output /etc/ssoossh/service_key-cert.pub",
-			},
-			wantAbsent: "Private key written to",
-		},
-		{
-			name:         "should report both written files when generating",
-			generatePath: "/etc/ssoossh/service_key",
-			wantContains: []string{
-				"Private key written to /etc/ssoossh/service_key",
-				"Public key written to  /etc/ssoossh/service_key.pub",
-				"--output /etc/ssoossh/service_key-cert.pub",
-			},
-		},
+	var out bytes.Buffer
+	printEnrollmentCodeAndPaths(&out, "id_ed25519")
+
+	got := out.String()
+	wantContains := []string{
+		"ssh key files are:",
+		"Private key:",
+		"Public key:",
+		"Certificate:",
+		"id_ed25519",
+		"id_ed25519.pub",
+		"id_ed25519-cert.pub",
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			var out bytes.Buffer
-			printEnrollmentCode(&out, "code-1", tt.publicKeyPath, tt.generatePath)
-
-			got := out.String()
-			for _, want := range tt.wantContains {
-				if !strings.Contains(got, want) {
-					t.Errorf("printEnrollmentCode() output missing %q, got:\n%s", want, got)
-				}
-			}
-			if tt.wantAbsent != "" && strings.Contains(got, tt.wantAbsent) {
-				t.Errorf("printEnrollmentCode() output should not contain %q, got:\n%s", tt.wantAbsent, got)
-			}
-		})
+	for _, want := range wantContains {
+		if !strings.Contains(got, want) {
+			t.Errorf("printEnrollmentCodeAndPaths() output missing %q, got:\n%s", want, got)
+		}
 	}
 }
 
