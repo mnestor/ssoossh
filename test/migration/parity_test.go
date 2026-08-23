@@ -1,3 +1,5 @@
+//go:build dbparity
+
 // Package migration_test provides comprehensive tests for database migrations
 // across SQLite and Postgres, verifying that both dialects produce equivalent
 // schemas and behave identically.
@@ -7,8 +9,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-
-	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/resources"
 	"github.com/mnestor/ssoossh/test/postgres"
@@ -96,7 +96,7 @@ func TestMigrationParity_DownShouldReverseUp(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 
-	pgDB, pgContainer := postgres.ConnectAndMigrate(t, ctx)
+	pgDB, _ := postgres.ConnectAndMigrate(t, ctx)
 
 	// Get the tables after up.
 	upTables := postgres.Tables(t, pgDB)
@@ -105,7 +105,7 @@ func TestMigrationParity_DownShouldReverseUp(t *testing.T) {
 	}
 
 	// Run down migrations.
-	if err := postgres.RunDown(t, ctx, pgContainer, pgDB); err != nil {
+	if err := postgres.RunDown(t, ctx, pgDB); err != nil {
 		t.Fatalf("down migration failed: %v", err)
 	}
 
@@ -118,7 +118,7 @@ func TestMigrationParity_DownShouldReverseUp(t *testing.T) {
 	}
 
 	// Run up again.
-	if err := postgres.RunUp(t, ctx, pgContainer, pgDB); err != nil {
+	if err := postgres.RunUp(t, ctx, pgDB); err != nil {
 		t.Fatalf("re-applying up migration failed: %v", err)
 	}
 

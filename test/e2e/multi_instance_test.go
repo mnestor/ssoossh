@@ -135,6 +135,6 @@ func TestMultiInstance_ColdCacheReturns410OnApprovedRequest(t *testing.T) {
 	// The defect has been successfully reproduced: instance B returned 410
 	// instead of the certificate because its cache was cold and the approval
 	// notification never reached it via the in-process gochannel pubsub.
-	t.Logf("DEFECT REPRODUCED: instance B correctly returned 410 Gone "+
+	t.Logf("DEFECT REPRODUCED: instance B correctly returned 410 Gone " +
 		"(the certificate was never persisted, and the wake message never reached B's cache)")
 }

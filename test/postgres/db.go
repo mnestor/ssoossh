@@ -69,11 +69,11 @@ func Tables(t *testing.T, db *gorm.DB) []string {
 
 // ColumnInfo holds information about a column in a table.
 type ColumnInfo struct {
-	TableName  string
-	ColumnName string
-	DataType   string
-	IsNullable bool
-	ColumnDefault *string
+	TableName      string
+	ColumnName     string
+	DataType       string
+	IsNullable     bool
+	ColumnDefault  *string
 	ConstraintType *string
 }
 
@@ -166,10 +166,10 @@ func Indexes(t *testing.T, db *gorm.DB, tableName string) map[string][]string {
 
 // ForeignKeys returns information about foreign keys in the given table.
 type ForeignKeyInfo struct {
-	ConstraintName    string
-	ColumnName        string
-	ReferencedTable   string
-	ReferencedColumn  string
+	ConstraintName   string
+	ColumnName       string
+	ReferencedTable  string
+	ReferencedColumn string
 }
 
 // ForeignKeys queries foreign key constraints.

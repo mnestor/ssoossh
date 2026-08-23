@@ -14,12 +14,12 @@ import (
 // fixture holds a running server, IdP, and client infrastructure for resilience tests.
 // It shares the same harness as e2e tests, reusing Binaries, StartServer, etc.
 type fixture struct {
-	idp       *harness.IdentityProvider
-	server    *harness.Server
-	agent     *harness.Agent
-	browser   *harness.Browser
+	idp        *harness.IdentityProvider
+	server     *harness.Server
+	agent      *harness.Agent
+	browser    *harness.Browser
 	ssoosshBin string
-	ssoosshd  string
+	ssoosshd   string
 }
 
 // newFixture starts a minimal harness: IdP, server, and agent. It does not start

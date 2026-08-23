@@ -30,19 +30,19 @@ func RunDown(t *testing.T, ctx context.Context, db *gorm.DB) error {
 }
 
 // doMigrate is a helper that sets up a migrator and applies fn.
-func doMigrate(ctx context.Context, db *gorm.DB, fn func(*migrate.Migrate) error) error {
+//
+// WithInstance over the pool rather than WithConnection over a checked-out
+// conn: the suite runs up/down/up as three sequential migrator instances,
+// and a deferred conn.Close returning the driver's connection to the pool
+// let a later instance receive a handle a prior driver still referenced -
+// surfacing as "transaction commit failed: conn closed" mid-migration.
+func doMigrate(_ context.Context, db *gorm.DB, fn func(*migrate.Migrate) error) error {
 	sqlDB, err := db.DB()
 	if err != nil {
 		return fmt.Errorf("failed to get sql.DB: %w", err)
 	}
 
-	conn, err := sqlDB.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get connection: %w", err)
-	}
-	defer func() { _ = conn.Close() }()
-
-	driver, err := postgresMigrate.WithConnection(ctx, conn, &postgresMigrate.Config{})
+	driver, err := postgresMigrate.WithInstance(sqlDB, &postgresMigrate.Config{})
 	if err != nil {
 		return fmt.Errorf("failed to create migration driver: %w", err)
 	}

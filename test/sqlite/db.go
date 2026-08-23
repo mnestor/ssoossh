@@ -51,7 +51,11 @@ func migrateSQLite(t *testing.T, db *gorm.DB) error {
 		return fmt.Errorf("failed to get sql.DB: %w", err)
 	}
 
-	driver, err := sqliteMigrate.WithInstance(sqlDB, &sqliteMigrate.Config{})
+	// NoTxWrap matches production (server/bootstrap/db.go): the migration
+	// SQL carries its own BEGIN/COMMIT, so the driver wrapping it in a
+	// second transaction fails with "cannot start a transaction within a
+	// transaction".
+	driver, err := sqliteMigrate.WithInstance(sqlDB, &sqliteMigrate.Config{NoTxWrap: true})
 	if err != nil {
 		return fmt.Errorf("failed to create migration driver: %w", err)
 	}
@@ -87,12 +91,12 @@ func Tables(t *testing.T, db *gorm.DB) []string {
 
 // ColumnInfo holds information about a column in a table.
 type ColumnInfo struct {
-	TableName     string
-	ColumnName    string
-	DataType      string
-	IsNullable    bool
-	DefaultValue  *string
-	IsPrimaryKey  bool
+	TableName    string
+	ColumnName   string
+	DataType     string
+	IsNullable   bool
+	DefaultValue *string
+	IsPrimaryKey bool
 }
 
 // ColumnDetails queries the schema and returns comprehensive information
@@ -205,14 +209,14 @@ func Indexes(t *testing.T, db *gorm.DB, tableName string) []IndexInfo {
 
 // ForeignKeyInfo holds information about a foreign key constraint.
 type ForeignKeyInfo struct {
-	ID              int
-	Sequence        int
-	ReferencedTable string
-	ColumnName      string
+	ID               int
+	Sequence         int
+	ReferencedTable  string
+	ColumnName       string
 	ReferencedColumn string
-	OnDelete        string
-	OnUpdate        string
-	Match           string
+	OnDelete         string
+	OnUpdate         string
+	Match            string
 }
 
 // ForeignKeys queries foreign key constraints for a table.
