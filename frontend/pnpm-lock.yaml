@@ -55,8 +55,8 @@ importers:
         specifier: ^3.23.0
         version: 3.23.0(eslint@9.39.5(jiti@2.7.0))(svelte@5.56.9(@typescript-eslint/types@8.67.0))
       globals:
-        specifier: ^16.5.0
-        version: 16.5.0
+        specifier: ^17.11.0
+        version: 17.11.0
       jsdom:
         specifier: ^27.4.0
         version: 27.4.0
@@ -1071,6 +1071,7 @@ packages:
   eslint@9.39.5:
     resolution: {integrity: sha512-DgZS62aPLXKlnxILS/AYCoRvHaZeXceIzlXPkkGGzJWSow1aEk0lbTlxUSlyjC8jcaKxAdOnTDz+o1JFSBsyjw==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -1164,6 +1165,10 @@ packages:
 
   globals@16.5.0:
     resolution: {integrity: sha512-c/c15i26VrJ4IRt5Z89DnIzCGDn9EcebibhAOjw5ibqEHsE1wLUgkPn9RDmNcUKyU87GeaL633nyJ+pplFR2ZQ==}
+    engines: {node: '>=18'}
+
+  globals@17.11.0:
+    resolution: {integrity: sha512-Z2I8hM+PbJDXQDq3Icgpzv+mPdwr68iZUU9d5WW4FuXfDUQfkZaZuvjMv42/5crNyw154+9+VWXbYrUgDXbxNw==}
     engines: {node: '>=18'}
 
   graceful-fs@4.2.11:
@@ -2806,6 +2811,8 @@ snapshots:
   globals@14.0.0: {}
 
   globals@16.5.0: {}
+
+  globals@17.11.0: {}
 
   graceful-fs@4.2.11: {}
 
