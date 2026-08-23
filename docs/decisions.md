@@ -1,4 +1,9 @@
-# Deferred, declined, and settled
+# Decisions: deferred, declined, and settled
+
+The consolidated record of what was decided against, or parked, and why.
+**Read before proposing work** — most "why don't we just" questions are
+answered here, and re-litigating a settled decision without new evidence
+wastes everyone's time.
 
 Three kinds of thing, kept together because they answer the same question:
 *why isn't this on a plan?*
@@ -47,7 +52,7 @@ pocket-id. Adopt opportunistically; none of these blocks anything.
 - **OpenAPI field-level polish.** Endpoint coverage in `openapi.yaml` is
   complete, but field descriptions are uneven and no example values are
   included. Polish, not a correctness gap. (Distinct from CI-validating the
-  spec, which is in [changes-next.md](changes-next.md).)
+  spec, which is in [changes-next.md](dev/changes-next.md).)
 
 ## Declined: not applicable at this scale
 
@@ -68,7 +73,7 @@ Recorded so they are not re-run from scratch.
 | Web performance audit | Two static pages under ~100 lines, no heavy dependencies, served same-origin as the API. Revisit only if real usage shows slowness, and start with DevTools rather than a formal audit. |
 | `pkg/` directory | goreleaser has one because it is importable by third parties. ssoossh has no such goal — different product shape, not a missing convention. |
 | UUIDs as Postgres `uuid` instead of `TEXT` | Costs ~20 bytes per key and gives up the type check. Not worth a migration on its own; worth knowing if the ID type is ever revisited. |
-| Length limits on Postgres `TEXT` columns | On Postgres, `TEXT` and `VARCHAR(n)` are the same storage with the same index behavior, so this is not the anti-pattern it is on other engines. Input length belongs in validation at the API boundary — which is the `ValidatePrincipal` item in [changes-now.md](changes-now.md). |
+| Length limits on Postgres `TEXT` columns | On Postgres, `TEXT` and `VARCHAR(n)` are the same storage with the same index behavior, so this is not the anti-pattern it is on other engines. Input length belongs in validation at the API boundary — which is the `ValidatePrincipal` item in [changes-now.md](dev/changes-now.md). |
 
 ## Settled: audited and solid, do not rework
 
@@ -99,7 +104,7 @@ Changing them needs a reason beyond style.
 - **CSP and related headers.** Per-request nonce, `default-src 'self'`,
   `frame-ancestors 'none'`, HSTS, `Cache-Control: private, no-store`, CORS
   narrowly scoped to OIDC well-known endpoints. (The three *missing* headers
-  are a separate item in [changes-now.md](changes-now.md) — this entry is
+  are a separate item in [changes-now.md](dev/changes-now.md) — this entry is
   about what is already right.)
 - **Frontend XSS surface.** No `{@html}`, no `innerHTML`, no `eval`. Relies on
   Svelte's auto-escaping. Return-URL validation duplicated client- and
@@ -116,7 +121,7 @@ Changing them needs a reason beyond style.
   documented and justified. **Two caveats** the 2026-08-22 schema audit
   added: there are no down migrations (a violation of the project's own
   `.claude/rules/database.md`), and index coverage does not match the actual
-  query shapes. Both are in [changes-next.md](changes-next.md); the
+  query shapes. Both are in [changes-next.md](dev/changes-next.md); the
   fundamentals above still stand.
 - **`certificate_request_decisions` duplicating identity fields from
   `users`.** Looks like a 3NF violation and is not — it is a deliberate
@@ -199,4 +204,54 @@ known limits on how far that audit's assurance extends.
 - `signer/signing.go`'s cryptographic signing step itself. The audit covered
   the *authorization decision* to sign, not the signing implementation.
 - Actual resolved frontend dependency versions — see the `pnpm audit` item in
-  [changes-now.md](changes-now.md).
+  [changes-now.md](dev/changes-now.md).
+
+
+## Declined: rulings from the 2026-08 hardening pass
+
+Each of these was raised, argued, and decided by the maintainer. The reason
+is the record; do not re-open without new evidence.
+
+- **JetStream durability for the signing pipeline.** NATS core with queue
+  groups, at-most-once, is the accepted posture. A dropped signing job means
+  the person who just approved sees their CLI still waiting, cancels, and
+  reruns login — the flow is short and interactive, so the human is the
+  retry mechanism and durability machinery buys nothing worth its
+  complexity. Recorded where `gochannel.Config.Persistent` is set.
+- **Sticky sessions as a multi-instance workaround.** Routing by request ID
+  would fix certificate delivery (all three routes carry the ID, and the
+  signer is in-process today) but fixes only one of three failure modes —
+  the stranded-request sweep and per-process session keys break
+  independently of routing. A configuration that half-works is worse than a
+  clear requirement, so multi-instance requires NATS, full stop.
+- **A client-side keepalive poll for web sessions.** Declined in favour of
+  server-side sliding expiry: a poll keeps a session alive for an unattended
+  browser, which is precisely the case the idle timeout exists for.
+- **`request_ttl: 0` as "expiry disabled."** Removed outright. Every
+  consumer carried a fallback for it and each was a hazard: the sweep had no
+  bound (and with two instances would have invalidated live requests) and
+  the resolved-outcome cache had no age at which eviction was safe. Startup
+  now rejects a non-positive TTL.
+- **Go mutation testing in CI (gremlins).** It runs under Go 1.26, but a
+  dry run on a 38-line package needed 5.7GB of scratch and a real run
+  accumulated ~1GB/minute; a full-project run wants 50GB+. Occasional local
+  use only, with aggressive `/tmp` cleanup; never in the pipeline.
+- **The deployment-wide pending-requests endpoint.** `GET
+  /api/certs/requests/pending` was deleted rather than admin-gated: a
+  request has no owner at creation (created unauthenticated), the ID is the
+  capability, and a certificate takes the *approver's* principals — so any
+  screen inviting people to approve requests they did not start is an
+  escalation channel. Gating it admin-only would have concentrated the
+  hazard on the most privileged accounts rather than removing it. Kept here
+  as the shape of question to ask about any listing endpoint.
+- **A role column on `model.User`, and casbin.** Admin is an OIDC group
+  named in config: a database flag has a bootstrapping problem ("who makes
+  the first admin"), drifts from the IdP, and lets an admin promote others
+  through the API; a policy engine is a lot of machinery for two roles.
+  Nothing reachable over HTTP can widen anyone's authority.
+- **Encrypting signing-job payloads to authenticate the requester.**
+  Rejected in the signer-split design: encryption does not authenticate a
+  sender, the payload is not secret (it is the future certificate's own
+  contents), and a fleet-shared key is coarse and awkward to rotate. mTLS
+  to NATS carries per-node identity instead. See
+  [signer-split-deferred.md](signer-split-deferred.md).

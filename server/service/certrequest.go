@@ -141,7 +141,7 @@ type CertRequestService struct {
 
 // NewCertRequestService constructs a CertRequestService, parsing
 // c.CertOptions' per-type key ID templates (see
-// docs/certificate-keyid-template.md) so a bad template fails startup.
+// docs/features.md (key ID templating)) so a bad template fails startup.
 // publisher/subscriber back the wake-topic broker (see certmsg.WaitTopic) —
 // the gochannel-based pair from server/pubsub.
 func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publisher, subscriber message.Subscriber) (*CertRequestService, error) {

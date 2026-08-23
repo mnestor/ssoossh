@@ -92,7 +92,7 @@ Sequenced. The ordering below is the recommendation, not an arbitrary list.
 
 ### 1. Admin and auditor roles — the critical path
 
-Design: [admin-authorization.md](admin-authorization.md), which is
+Design: [features.md](../features.md)'s admin section, which is
 thorough — OIDC-group-based, two narrow roles, no DB role column,
 session-scoped revocation window.
 
@@ -204,7 +204,7 @@ before it is schedulable.
 
 Small, left over from the 2026-08-22 docs cleanup.
 
-- `certificate-keyid-template.md` describes four service-only template fields
+- `features.md`'s key ID templating section describes four service-only template fields
   (`{{.ServiceAccount}}`, `{{.ApprovedBy}}`, `{{.ApproverSubject}}`,
   `{{.ApprovedAt}}`) that are designed but unimplemented — **re-verified**
   absent from `server/`. Fine as-is; revisit when service certificates ship.

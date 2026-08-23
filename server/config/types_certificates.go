@@ -58,7 +58,7 @@ type CertOptions struct {
 
 	// KeyIDTemplate is a Go text/template string executed against the
 	// issuance context to produce the certificate's key ID (see
-	// docs/certificate-keyid-template.md for available fields and the
+	// docs/features.md (key ID templating) for available fields and the
 	// per-type fallback rule). Empty falls back to
 	// CertificateOptions.User.KeyIDTemplate.
 	KeyIDTemplate string `mapstructure:"key_id_template"`
@@ -82,7 +82,7 @@ type CertOptionsUser struct {
 	// KeyIDTemplate is the fallback for CertOptionsService.KeyIDTemplate
 	// and CertOptions.KeyIDTemplate (host) when either is empty, since
 	// user certificates are the common case. See
-	// docs/certificate-keyid-template.md.
+	// docs/features.md (key ID templating).
 	KeyIDTemplate string `mapstructure:"key_id_template"`
 
 	// LifetimePolicy configures tiered certificate duration based on OIDC
@@ -100,7 +100,7 @@ type CertOptionsService struct {
 	Extensions    []string      `mapstructure:"extensions"`
 
 	// KeyIDTemplate; see CertOptions.KeyIDTemplate and
-	// docs/certificate-keyid-template.md. Empty falls back to
+	// docs/features.md (key ID templating). Empty falls back to
 	// CertificateOptions.User.KeyIDTemplate.
 	KeyIDTemplate string `mapstructure:"key_id_template"`
 
@@ -121,7 +121,7 @@ type CertOptionsPAM struct {
 	// here means no PAM certificates are ever issued rather than "any
 	// authenticated user may approve" — "who may sudo on this host" is a
 	// narrower question than "who may log in", and this option has to fail
-	// closed rather than default open (see docs/admin-authorization.md's
+	// closed rather than default open (see docs/features.md's
 	// identical empty-denies rule for admin.require_group). An operator must
 	// set this explicitly to enable PAM issuance at all.
 	RequireGroup string `mapstructure:"require_group"`

@@ -68,7 +68,7 @@ Recorded so the next pass does not redo them.
       that exist in the folder; removed the dead
       `security-review-2026-08-11.md` link.
 - [x] **Consolidated the three review documents** into this file,
-      [changes-next.md](changes-next.md), and [deferred.md](deferred.md).
+      [changes-next.md](changes-next.md), and [decisions.md](../decisions.md).
 - [x] **Decision actor and source IP persisted.** `Approve`/`Deny` now record
       who decided and from where, in a dedicated append-only
       `certificate_request_decisions` table

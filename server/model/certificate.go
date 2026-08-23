@@ -44,7 +44,7 @@ type Certificate struct {
 	// KeyID is the free-form audit-trail string sshd logs on every
 	// authentication, produced by executing the applicable
 	// config.CertOptions*.KeyIDTemplate (see
-	// docs/certificate-keyid-template.md).
+	// docs/features.md (key ID templating)).
 	KeyID string `gorm:"column:key_id"`
 
 	// Principals is a comma-separated list. TODO: move to a join table if
