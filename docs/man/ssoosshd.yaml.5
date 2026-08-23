@@ -134,6 +134,14 @@ Must be greater than zero. Default:
 .TP
 .BI max_host_cert_lifetime: " duration"
 Maximum lifetime for host certificates, enforced as a defense-in-depth
+check before signing. Retained for the signer's dormant host support;
+nothing issues host certificates. Specified as a Go duration string.
+Default:
+.BR 17544h " (2 years)."
+Must be greater than zero.
+.TP
+.BI max_service_cert_lifetime: " duration"
+Maximum lifetime for service certificates, enforced as a defense-in-depth
 check before signing. Specified as a Go duration string.
 Default:
 .BR 17544h " (2 years)."
@@ -551,7 +559,7 @@ is set.
 .SS cert_options (issuance policy)
 .TP
 .BI cert_options.request_ttl: " duration"
-How long a pending certificate request (user, host, service, or PAM) stays
+How long a pending certificate request (user, service, or PAM) stays
 open for approval before it is treated as expired. Shared across every
 type. Default:
 .BR 5m .
@@ -593,8 +601,8 @@ Go
 .B text/template
 string executed against issuance context to produce the certificate's key
 ID. Empty uses a built-in default. This is also the fallback used by
-.BR cert_options.service " and " cert_options.host
-when their own
+.BR cert_options.service
+when its own
 .B key_id_template
 is empty (but
 .B not
@@ -614,18 +622,6 @@ empty,
 .B valid_duration
 .BR 8760h " (one year), " extensions
 empty.
-.TP
-.B cert_options.host.*
-Policy for host certificates:
-.BR require_group ", " valid_duration ", " key_id_template
-(no
-.B extensions
-\(em host certificates do not carry interactive-session extensions).
-Defaults:
-.B require_group
-empty,
-.B valid_duration
-.BR 8760h .
 .TP
 .B cert_options.pam.*
 Policy for PAM certificates (short-lived certificates a

@@ -17,9 +17,9 @@
    trimmed struck through, before anyone approves. Every decision is
    recorded: who, from where, what was granted. `sshd` logs the key ID on
    every login, so the audit trail reaches the servers themselves.
-5. **One flow for people, servers, services, and sudo.** Interactive SSH,
-   host identity, unattended service accounts, and `sudo`/`su` via PAM
-   all go through the same CA, the same approval, the same policy.
+5. **One flow for people, services, and sudo.** Interactive SSH,
+   unattended service accounts, and `sudo`/`su` via PAM all go through
+   the same CA, the same approval, the same policy.
 
 What follows is what it does today, with status marked where a piece is
 still landing. For setup, see [configuration.md](configuration.md) and
@@ -32,8 +32,13 @@ in [decisions.md](decisions.md).
 | --- | --- | --- |
 | **User** | interactive SSH | shipped end to end |
 | **PAM** | `sudo`/`su` via `pam_ssoossh` | shipped end to end |
-| **Host** | server identity: `host sign` first, `host renew` after, authenticated by the existing certificate | server API exists; client commands fail with a clear "not implemented" message |
-| **Service** | non-interactive: enroll once, retrieve unattended | server API exists; client commands fail with a clear "not implemented" message |
+| **Service** | non-interactive: enroll once, retrieve unattended, every retrieval logged | shipped end to end |
+
+Host certificates were removed rather than finished: without a secure way
+for a host to prove its claim to a hostname, issuing host identity is a
+hole, not a feature — see [decisions.md](decisions.md). The client keeps
+local principal-mapping tooling (`host mapping`, `host principals`) for
+`AuthorizedPrincipalsCommand`; it has no server side.
 
 ## Issuance
 
@@ -100,10 +105,9 @@ in [decisions.md](decisions.md).
 
 ## Coming later
 
-- **Host and service client commands** wired to the existing server APIs:
-  host enrollment, per-host principal mapping for
-  `AuthorizedPrincipalsCommand`, and service-account certificates for
-  unattended jobs.
+- **Host certificates**, only if a secure host-verification mechanism
+  (something like an ACME challenge) makes hostname claims provable —
+  see [decisions.md](decisions.md).
 - **LDAP enrichment**: additional principals and account identifiers from
   a directory, feeding user disablement sweeps.
 - **Admin user-disable flow**: disable a departed user with a grace period

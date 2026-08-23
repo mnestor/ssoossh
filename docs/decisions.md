@@ -58,6 +58,18 @@ Worth doing eventually; not started because nothing needs it yet.
 
 ## Declined: security decisions with teeth
 
+- **Host certificates.** Removed after being half-built rather than
+  finished. A host certificate asserts "this key speaks for this
+  hostname," but nothing in the design could verify that claim: approval
+  reduced to a human eyeballing a hostname string an unauthenticated
+  requester typed, and every scheme for server-side principal mappings
+  had the same hole one layer down. Issuing unverifiable host identity
+  from the CA that also signs user access is worse than issuing none.
+  Revisit only with a real host-verification mechanism — something like
+  an ACME challenge proving control of the name — not by re-arguing the
+  approval flow. Local principal mapping for
+  `AuthorizedPrincipalsCommand` stayed in the client (`host mapping`,
+  `host principals`); it never needed a server.
 - **An admin role stored in the database.** Admin is an OIDC group named
   in configuration. A database flag has a bootstrapping problem ("who
   creates the first admin"), drifts from the identity provider, and lets

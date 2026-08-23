@@ -1,5 +1,12 @@
 # Certificate lifetime & approval policy
 
+> **Note (2026-08-23):** host certificates were removed after this was
+> written ([decisions.md](decisions.md)); references to a Host type,
+> host rules, or `cert_options.host` below are historical rationale, not
+> current behavior. The "service account linkage" open item below is
+> resolved: the approver chooses the account in the web UI and it becomes
+> the certificate principal.
+
 **Status: implemented.** The policy engine described here exists as
 `server/service/lifetimepolicy.go` (`lifetimePolicyEngine`: group tiers,
 source-address rules, most-specific-wins against a per-type ceiling) and is

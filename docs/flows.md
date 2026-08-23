@@ -268,16 +268,19 @@ Nothing is written to disk. Stack configuration and the lockout warning:
 
 ```mermaid
 flowchart LR
-    CA["ssoossh CA<br/>key held in ssh-agent<br/>HSM / KMS planned"]
+    CA["ssoossh CA<br/>ssh-agent, file, or PKCS#11 HSM"]
     CA --> U["User certificate<br/>interactive SSH<br/>shipped"]
-    CA --> H["Host certificate<br/>server identity<br/>client commands pending"]
-    CA --> S["Service certificate<br/>non-interactive<br/>client commands pending"]
+    CA --> S["Service certificate<br/>non-interactive<br/>shipped"]
+    CA --> P["PAM certificate<br/>sudo/su<br/>shipped"]
     U --> T["Target hosts trust the CA"]
-    H --> T
     S --> T
 ```
 
-Host certificates: `host sign` for first issuance (OIDC approval chain, so
-a human vouches for the machine), `host renew` afterward, authenticated by
-the existing certificate. Like the service path, the server API exists and
-the client commands are not wired up yet.
+Service certificates: `service enroll` requests, a human approves in the
+browser choosing which of their service accounts the certificate is for,
+and the enrollment code redeems certificates unattended via
+`service retrieve` until it expires — every redemption logged for the
+approver and auditors. Host certificates were removed
+([decisions.md](decisions.md)); the local principal-mapping commands
+(`host mapping`, `host principals`) support sshd's
+`AuthorizedPrincipalsCommand` without any server side.

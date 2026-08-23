@@ -177,6 +177,14 @@
 # max_host_cert_lifetime: 17544h
 
 # ----------------------------------------------------------------------
+# max_service_cert_lifetime - the maximum lifetime for service
+# certificates, enforced as a defense-in-depth check before signing.
+# Specified as a Go duration string.
+# Default: 17544h (2 years). Must be > 0.
+# ----------------------------------------------------------------------
+# max_service_cert_lifetime: 17544h
+
+# ----------------------------------------------------------------------
 # traces / metrics - enable OpenTelemetry traces and metrics export.
 # Further configuration is done via environment variables per the OpenTelemetry
 # SDK specification: https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/
@@ -346,7 +354,6 @@
   ## limit. A request exceeding any limit gets a 429 Too Many Requests response.
   # cert_request_rate_limit:
     # user: 10              # POST /api/certs/user (interactive user)
-    # host_sign: 5          # POST /api/certs/host/sign (first host cert)
     # service_enroll: 5     # POST /api/certs/service/enroll (service enrollment)
     # pam: 10               # POST /api/certs/pam (short-lived PAM cert)
 
@@ -523,12 +530,12 @@
 
 # ----------------------------------------------------------------------
 # cert_options - issuance rules for each SSH certificate type ssoosshd
-# can sign: user, service, and host.
+# can sign: user, service, and pam.
 # ----------------------------------------------------------------------
 # cert_options:
-  ## How long a pending certificate request (user, host, or service) stays
-  ## valid for approval before it's treated as expired. Shared across all
-  ## three types — this is "how stale can an unapproved request get," not
+  ## How long a pending certificate request (user or service) stays
+  ## valid for approval before it's treated as expired. Shared across
+  ## the types — this is "how stale can an unapproved request get," not
   ## a per-type concept like valid_duration below.
   # request_ttl: 5m
 
@@ -556,7 +563,7 @@
 
     ## Key ID template (Go text/template, see docs/certificate-keyid-template.md).
     ## Empty uses the built-in default. This is also the fallback used by
-    ## service and host below when their own key_id_template is empty.
+    ## service below when its own key_id_template is empty.
     # key_id_template: ""
 
   ## --- service: certificates for non-interactive accounts/processes
@@ -577,23 +584,6 @@
     #   - "permit-port-forwarding"
     #   - "permit-pty"
     #   - "permit-user-rc"
-
-    ## Key ID template. Empty falls back to cert_options.user.key_id_template.
-    # key_id_template: ""
-
-  ## --- host: certificates issued so that clients with a
-  ## --- "@cert-authority" line in their known_hosts can implicitly
-  ## --- trust this server (and others signed by the same CA), instead
-  ## --- of trust-on-first-use.
-  # host:
-    ## OIDC group required before ssoosshd will issue a host
-    ## certificate to the caller.
-    # require_group: "SSH Host Signers"
-
-    ## How long an issued host certificate remains valid. Host keys are
-    ## long-lived by nature, so this is typically set to the largest
-    ## practical value (largest unit supported is hours: 8760h = 1 year).
-    # valid_duration: 8760h
 
     ## Key ID template. Empty falls back to cert_options.user.key_id_template.
     # key_id_template: ""

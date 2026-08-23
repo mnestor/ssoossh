@@ -103,19 +103,21 @@ using `pam_ssoossh`; widen `skew-tolerance` only as a last resort.
 
 ### Can my hosts get certificates too?
 
-Host certificates (server identity, ending `known_hosts` churn) are
-designed and have server-side support, but the client's `host sign` and
-`host renew` commands are not wired up yet; they fail with a clear
-message. [flows.md](flows.md) §6 shows the designed flow.
+No. Host certificates were removed rather than finished: nothing could
+verify a host's claim to its hostname, and unverifiable host identity
+from the CA that also signs user access is worse than none — see
+[decisions.md](decisions.md). They may return if a real host-verification
+mechanism (something like an ACME challenge) lands. The client's
+`host mapping` and `host principals` commands remain for local
+`AuthorizedPrincipalsCommand` mapping; they never talk to the server.
 
 ## ssoossh server operators
 
 ### Is it production ready?
 
-Early development. User certificates and `sudo`/`su` through PAM work end
-to end; host and service certificates have server-side support but their
-client commands are not wired up yet. Interfaces and configuration are
-expected to change. See [features.md](features.md) for the status table.
+Early development. User, service, and `sudo`/`su` PAM certificates work
+end to end. Interfaces and configuration are expected to change. See
+[features.md](features.md) for the status table.
 
 ### Which identity providers work?
 
