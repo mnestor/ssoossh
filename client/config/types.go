@@ -77,6 +77,22 @@ type Config struct {
 	// `--debug`. It is the only place a silently-skipped bad config file
 	// becomes visible — see ConfigSource.
 	Sources []ConfigSource `mapstructure:"-"`
+
+	// SetByFlag names the settings a command-line flag actually set, keyed
+	// by the viper key the flag binds to (e.g.
+	// "certificate_extensions.no_pty"). Populated by newConfig from
+	// bindFlags, never unmarshalled.
+	//
+	// It exists because binding is lossy in the direction that matters for
+	// telling a user where a value came from: a flag and a config file both
+	// end up as the same field on this struct, so a message about a setting
+	// cannot otherwise name the layer the reader is able to change. Blaming
+	// the config file for something someone just typed on the command line
+	// sends them looking in the wrong place.
+	//
+	// Only consulted for user-facing attribution. Precedence is viper's
+	// business and is not affected by this.
+	SetByFlag map[string]bool `mapstructure:"-"`
 }
 
 // SSHKeyOptions selects the algorithm and size for the keypair the client

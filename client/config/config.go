@@ -73,7 +73,7 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	// extension flags are local to `ssh login` (the only command that
 	// generates a keypair and requests extensions), so Lookup returns nil
 	// and binding them no-ops for every other command's cmd.
-	changed, err := bindFlags(v, cmd, map[string]string{
+	changed, setByFlag, err := bindFlags(v, cmd, map[string]string{
 		"server":              "server",
 		"key-type":            "sshkey.type",
 		"key-size":            "sshkey.size",
@@ -139,6 +139,7 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	}
 	c.FIPSEnforced = (enforceSetsFIPS || policySetsFIPS) && c.FIPS != nil && *c.FIPS
 	c.ForbiddenCertificateExtensions = policyForbiddenExtensions
+	c.SetByFlag = setByFlag
 
 	// Resolve the key settings now so a bad combination is reported at
 	// startup rather than at the first attempt to obtain a certificate.
@@ -275,25 +276,31 @@ func isNotExist(err error) bool {
 // Returns the names of the flags the caller actually passed, sorted, so the
 // merge chain can report which flags overrode the files rather than only
 // that flags were considered.
-func bindFlags(v *viper.Viper, cmd *cobra.Command, flagToKey map[string]string) ([]string, error) {
-	var changed []string
+// It returns both the display list of changed flags (for the debug report)
+// and the set of viper keys those flags set, keyed the way Config.SetByFlag
+// is — binding loses which layer a value came from, and that is the only
+// thing that can tell a user whether to look at their command line or their
+// config file.
+func bindFlags(v *viper.Viper, cmd *cobra.Command, flagToKey map[string]string) (changed []string, setByFlag map[string]bool, err error) {
+	setByFlag = make(map[string]bool)
 	for flag, key := range flagToKey {
 		f := cmd.Flags().Lookup(flag)
 		if f == nil {
 			continue
 		}
 		if err := v.BindPFlag(key, f); err != nil {
-			return nil, fmt.Errorf("failed to bind the --%s flag: %w", flag, err)
+			return nil, nil, fmt.Errorf("failed to bind the --%s flag: %w", flag, err)
 		}
 		if f.Changed {
 			changed = append(changed, "--"+flag)
+			setByFlag[key] = true
 		}
 	}
 	// Sorted because flagToKey is a map: without this the reported order
 	// varies run to run, and a diagnostic report that differs between two
 	// identical invocations wastes the reader's time.
 	sort.Strings(changed)
-	return changed, nil
+	return changed, setByFlag, nil
 }
 
 // enforceFileSets reports whether the enforce file at path explicitly sets
