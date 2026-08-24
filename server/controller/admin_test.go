@@ -601,9 +601,9 @@ func TestReassignEnrollmentHandler_AuthorizationRoute(t *testing.T) {
 			name:          "should reject authenticated stranger with 403",
 			authenticated: true,
 			identity: &service.Identity{
-				Subject: "sub-stranger",
+				Subject:  "sub-stranger",
 				Username: "stranger",
-				Groups:  []string{},
+				Groups:   []string{},
 			},
 			enrollmentID:   "enroll-123",
 			toUserID:       "user-456",
@@ -614,9 +614,9 @@ func TestReassignEnrollmentHandler_AuthorizationRoute(t *testing.T) {
 			name:          "should allow enrollment owner with 200",
 			authenticated: true,
 			identity: &service.Identity{
-				Subject: "sub-owner",
+				Subject:  "sub-owner",
 				Username: "owner",
-				Groups:  []string{},
+				Groups:   []string{},
 			},
 			enrollmentID:   "enroll-123",
 			toUserID:       "user-456",
@@ -627,9 +627,9 @@ func TestReassignEnrollmentHandler_AuthorizationRoute(t *testing.T) {
 			name:          "should allow admin with 200",
 			authenticated: true,
 			identity: &service.Identity{
-				Subject: "sub-admin",
+				Subject:  "sub-admin",
 				Username: "admin",
-				Groups:  []string{"ssoossh-admins"},
+				Groups:   []string{"ssoossh-admins"},
 			},
 			enrollmentID:   "enroll-123",
 			toUserID:       "user-456",
@@ -696,8 +696,6 @@ func TestReassignEnrollmentHandler_AuthorizationRoute(t *testing.T) {
 						t.Errorf("expected identity subject %q, got %v", tt.identity.Subject, call.identity)
 					}
 				}
-			} else {
-				// Service may or may not be called for anonymous case, but reassign should not succeed
 			}
 		})
 	}
