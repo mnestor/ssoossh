@@ -238,9 +238,25 @@ a startup error — a misspelled override would otherwise appear to do
 nothing. Files that are not `*.tmpl` are ignored, so a README or an editor
 backup beside your overrides is fine.
 
-The built-in templates live in `server/mail/templates/` and are the best
-starting point for an override: copy one out, edit it, and drop it in the
-override directory under the same name.
+The built-in templates are the best starting point for an override: copy one
+out, edit it, and drop it in the override directory under the same name.
+Reference copies ship with the server, so you do not need a source tree:
+
+| Install | Where the reference copies are |
+| --- | --- |
+| `.deb` / `.rpm` / `.apk` | `/usr/share/ssoossh/mail-templates/` |
+| Container image | `/usr/share/ssoossh/mail-templates/` |
+| Release archive | `mail-templates/` inside the tarball |
+| Source tree | `server/mail/templates/` |
+
+Those copies are reference material, never active. They are deliberately not
+installed into an override directory: a file in one *is* an override, so a
+package upgrade would either overwrite an operator's edits or — with
+`config|noreplace` — pin them to a stale template forever. Stale is not a
+cosmetic problem here, because the server refuses to start when the override
+directory holds a template for a notification kind it does not recognize, so
+a kind dropped in a later release would take the server down with it. Copy
+them somewhere of your own and point `mail.template_dir` there.
 
 ## Adding a notification kind
 

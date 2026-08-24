@@ -146,8 +146,16 @@ nfpms:
         dst: /usr/share/doc/ssoossh-client/NOTICE
       - src: THIRD-PARTY-LICENSES.md
         dst: /usr/share/doc/ssoossh-client/THIRD-PARTY-LICENSES.md
-      - src: docs/man/ssoossh.1
-        dst: /usr/share/man/man1/ssoossh.1
+      # Glob, not the root page alone: gendocs writes one page per cobra
+      # subcommand, and shipping only ssoossh.1 left `man ssoossh-ssh-login`
+      # failing on an installed host for a page this repo generates and
+      # commits. The pattern picks up a new subcommand's page on its own.
+      #
+      # ssoossh*.1 is safe where ssoossh*.5 would not be: every ssoosshd
+      # page name also starts with "ssoossh", so the config pages stay
+      # listed explicitly and each package owns only its own.
+      - src: docs/man/ssoossh*.1
+        dst: /usr/share/man/man1/
       - src: docs/man/ssoossh.yaml.5
         dst: /usr/share/man/man5/ssoossh.yaml.5
 
@@ -178,10 +186,24 @@ nfpms:
         dst: /usr/share/doc/ssoosshd/NOTICE
       - src: THIRD-PARTY-LICENSES.md
         dst: /usr/share/doc/ssoosshd/THIRD-PARTY-LICENSES.md
-      - src: docs/man/ssoosshd.8
-        dst: /usr/share/man/man8/ssoosshd.8
+      # One page per cobra subcommand — see the client package above for
+      # why this is a glob and why the .5 page is not.
+      - src: docs/man/ssoosshd*.8
+        dst: /usr/share/man/man8/
       - src: docs/man/ssoosshd.yaml.5
         dst: /usr/share/man/man5/ssoosshd.yaml.5
+      # The mail notification templates the binary embeds, shipped as
+      # reference copies to start an override from (see
+      # docs/email-notifications.md). /usr/share, deliberately not an
+      # active mail.template_dir: a file installed into an override
+      # directory IS an override, and an upgrade would then either destroy
+      # the operator's edits or — with config|noreplace — pin them to a
+      # stale template forever. Stale is not cosmetic here: the renderer
+      # refuses an override directory holding a template for a
+      # notification kind it does not recognize, so a kind dropped in a
+      # later release would stop the server from starting.
+      - src: server/mail/templates/*.tmpl
+        dst: /usr/share/ssoossh/mail-templates/
 
   - id: server-musl
     package_name: ssoosshd
@@ -205,10 +227,24 @@ nfpms:
         dst: /usr/share/doc/ssoosshd/NOTICE
       - src: THIRD-PARTY-LICENSES.md
         dst: /usr/share/doc/ssoosshd/THIRD-PARTY-LICENSES.md
-      - src: docs/man/ssoosshd.8
-        dst: /usr/share/man/man8/ssoosshd.8
+      # One page per cobra subcommand — see the client package above for
+      # why this is a glob and why the .5 page is not.
+      - src: docs/man/ssoosshd*.8
+        dst: /usr/share/man/man8/
       - src: docs/man/ssoosshd.yaml.5
         dst: /usr/share/man/man5/ssoosshd.yaml.5
+      # The mail notification templates the binary embeds, shipped as
+      # reference copies to start an override from (see
+      # docs/email-notifications.md). /usr/share, deliberately not an
+      # active mail.template_dir: a file installed into an override
+      # directory IS an override, and an upgrade would then either destroy
+      # the operator's edits or — with config|noreplace — pin them to a
+      # stale template forever. Stale is not cosmetic here: the renderer
+      # refuses an override directory holding a template for a
+      # notification kind it does not recognize, so a kind dropped in a
+      # later release would stop the server from starting.
+      - src: server/mail/templates/*.tmpl
+        dst: /usr/share/ssoossh/mail-templates/
 
 archives:
   - id: linux-clients-archives
@@ -222,8 +258,11 @@ archives:
       - LICENSE
       - NOTICE
       - THIRD-PARTY-LICENSES.md
-      - docs/man/ssoossh.1
-      - docs/man/ssoossh.yaml.5
+      # Every page, not just the client's: an archive owns no filesystem
+      # paths, so the co-installation constraint that splits the .deb/.rpm
+      # contents below does not apply here, and a tarball that documents
+      # the whole tool is more useful than one that documents half of it.
+      - docs/man/*
 
   - id: linux-server-archives
     ids:
@@ -236,8 +275,11 @@ archives:
       - LICENSE
       - NOTICE
       - THIRD-PARTY-LICENSES.md
-      - docs/man/ssoosshd.8
-      - docs/man/ssoosshd.yaml.5
+      # Every page — see the client archive above.
+      - docs/man/*
+      - src: server/mail/templates/*.tmpl
+        dst: mail-templates
+        strip_parent: true
 
   - id: linux-server-musl-archives
     ids:
@@ -250,8 +292,11 @@ archives:
       - LICENSE
       - NOTICE
       - THIRD-PARTY-LICENSES.md
-      - docs/man/ssoosshd.8
-      - docs/man/ssoosshd.yaml.5
+      # Every page — see the client archive above.
+      - docs/man/*
+      - src: server/mail/templates/*.tmpl
+        dst: mail-templates
+        strip_parent: true
 
   - formats: ["zip"]
     id: windows-archives

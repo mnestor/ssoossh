@@ -659,6 +659,13 @@ mail:
   #
   # The available fields per notification are listed in
   # docs/email-notifications.md.
+  #
+  # Reference copies of the built-in templates are installed alongside the
+  # server at /usr/share/ssoossh/mail-templates/ (and shipped as
+  # mail-templates/ in the release archives). Copy one from there, edit it,
+  # and point this at your own directory -- do NOT point this at
+  # /usr/share/ssoossh/mail-templates itself, which a package upgrade
+  # replaces.
   #template_dir: "/etc/ssoossh/mail-templates"
 
   smtp:

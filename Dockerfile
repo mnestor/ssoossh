@@ -38,6 +38,14 @@ RUN CGO_ENABLED=1 go build -tags=nomsgpack -o /out/ssoosshd ./cmd/ssoosshd
 # PKCS#11 module and its deps into the image (see docs/hsm.md).
 FROM gcr.io/distroless/base-debian12:nonroot
 COPY --from=build /out/ssoosshd /usr/local/sbin/ssoosshd
+# Reference copies of the mail notification templates the binary embeds, so
+# an operator writing a mail.template_dir override can copy one out of the
+# running image rather than hunting for the matching source tag. Same path
+# and same reasoning as the .deb/.rpm/.apk packages: /usr/share, never an
+# active template_dir, since a file in an override directory IS an override
+# and would then survive as a stale copy across an upgrade. See
+# docs/email-notifications.md.
+COPY --from=build /src/server/mail/templates/ /usr/share/ssoossh/mail-templates/
 USER nonroot:nonroot
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/sbin/ssoosshd"]
