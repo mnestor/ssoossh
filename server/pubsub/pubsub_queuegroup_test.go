@@ -15,6 +15,7 @@ import (
 // - "certrequest.sign" → queue group "signer" (competing consumer)
 // - "certrequest.signed" → queue group "signed-listeners" (competing consumer)
 // - "certrequest.wait.*" → no queue group (fan-out to all subscribers)
+// - "notification.send" → queue group "notifiers" (competing consumer)
 func TestSubjectCalculator_ShouldDeriveQueueGroups(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -32,6 +33,14 @@ func TestSubjectCalculator_ShouldDeriveQueueGroups(t *testing.T) {
 			name:            "certrequest.signed uses signed-listeners queue group",
 			topic:           "certrequest.signed",
 			expectedGroup:   "signed-listeners",
+			shouldHaveGroup: true,
+		},
+		{
+			// Without this, every instance would deliver the same event and
+			// the recipient would get one copy of the mail per server.
+			name:            "notification.send uses the notifiers queue group",
+			topic:           "notification.send",
+			expectedGroup:   "notifiers",
 			shouldHaveGroup: true,
 		},
 		{

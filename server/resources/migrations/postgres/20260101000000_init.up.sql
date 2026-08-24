@@ -239,6 +239,25 @@ CREATE TABLE enrollment_retrievals (
 );
 CREATE INDEX idx_enrollment_retrievals_enrollment_id ON enrollment_retrievals(enrollment_id);
 
+-- One row per (user, notification kind) the user has made an explicit
+-- choice about. Absence means the kind's registered default, which is what
+-- lets a new notification kind ship without a schema change or a backfill
+-- (see server/notify and server/model/notification_preference.go).
+--
+-- kind is deliberately not constrained to a fixed list: the authority for
+-- which kinds exist is the Go registry, and a row for a kind that has since
+-- been removed must stay inert rather than block a migration.
+CREATE TABLE notification_preferences (
+    id TEXT PRIMARY KEY NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    kind TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+);
+CREATE UNIQUE INDEX idx_notification_preferences_user_kind
+    ON notification_preferences(user_id, kind);
+
 CREATE TABLE ca_signer_keys (
     fingerprint TEXT PRIMARY KEY NOT NULL,
     public_key TEXT NOT NULL,

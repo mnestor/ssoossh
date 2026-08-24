@@ -7,12 +7,34 @@ import type {
 	CurrentUser,
 	DenyResult,
 	EnrollmentRetrievalsResponse,
+	NotificationPreferences,
 	RequestDetail
 } from './types';
 
 /** GET /api/users/me. */
 export function getCurrentUser(signal?: AbortSignal): Promise<CurrentUser> {
 	return request<CurrentUser>('/users/me', { signal });
+}
+
+/** GET /api/users/me/notifications — the caller's own notification preferences. */
+export function getNotificationPreferences(signal?: AbortSignal): Promise<NotificationPreferences> {
+	return request<NotificationPreferences>('/users/me/notifications', { signal });
+}
+
+/**
+ * PUT /api/users/me/notifications.
+ *
+ * Sends only the kinds being changed. The server leaves every other kind
+ * alone, so a tab loaded before an upgrade cannot reset preferences for
+ * kinds it has never heard of, and answers with the preferences as stored.
+ */
+export function updateNotificationPreferences(
+	kinds: Record<string, boolean>
+): Promise<NotificationPreferences> {
+	return request<NotificationPreferences>('/users/me/notifications', {
+		method: 'PUT',
+		body: { kinds }
+	});
 }
 
 /**

@@ -1,0 +1,74 @@
+An enrollment code for unattended certificate issuance was created from a
+request you approved{{ if .ApprovedByUsername }} as {{ .ApprovedByUsername }}{{ end }}.
+
+The code itself is not in this message and never will be. It was shown once,
+in the terminal that ran `ssoossh service enroll`, and is stored nowhere else.
+If that terminal is gone, enroll again rather than looking for it.
+
+WHAT IT ISSUES
+
+  Service account       {{ .ServiceAccount }}
+  Certificate principal {{ join .Principals ", " }}
+  Key ID                {{ .KeyID }}
+  Certificate lifetime  {{ approx .CertificateLifetime }} from each redemption
+{{ if .Extensions }}  Extensions            {{ join .Extensions ", " }}
+{{ end }}{{ if .ForceCommand }}  Forced command        {{ .ForceCommand }}
+{{ end }}{{ if .SourceAddresses }}  Source addresses      {{ join .SourceAddresses ", " }}
+{{ end }}{{ if .NoTouchRequired }}  No touch required     yes (hardware-backed key)
+{{ end }}
+The service account is the only principal of every certificate this code
+produces. Your own username is not.
+
+WHICH KEY IT IS BOUND TO
+
+  Fingerprint           {{ .PublicKeyFingerprint }}
+  Type                  {{ .PublicKeyType }}
+
+The code only ever produces certificates for that key. `service retrieve`
+never resubmits a public key, so a stolen code cannot be paired with someone
+else's keypair. If you do not recognize this key, treat the enrollment as
+unwanted and expire it.
+
+WHEN IT STOPS WORKING
+
+  Code expires          {{ datetime .CodeExpiresAt }} (in {{ until .CodeExpiresAt }})
+
+Enroll again before then to keep an unattended job running. The code outliving
+each certificate is the point: that is what lets a cron job keep renewing
+without a human re-approving it.
+
+SETTING THE JOB UP
+
+Add this to the ~/.ssh/config of the account that runs the job, replacing
+USERNAME with the remote user and /path/to/key with the private key you
+enrolled:
+
+  Match user USERNAME exec 'ssoossh service retrieve --code CODE --key /path/to/key'
+    IdentityFile /path/to/key
+    IdentitiesOnly yes
+
+No CertificateFile line is needed. ssh derives /path/to/key-cert.pub from
+IdentityFile's name, which is why the three file names are not negotiable:
+the private key is <name>, the public key is <name>.pub, and the certificate
+is <name>-cert.pub, all in one directory. Match exec runs before ssh reads
+the key files, so this needs no agent.
+
+The certificate is refreshed automatically when it has expired or expires
+within a minute. Change that with --grace <time>, or refresh unconditionally
+with --force. <time> is a number followed by s, m, or h.
+
+The code is reusable until it expires, so the same command is safe to run
+from cron or a systemd timer.
+
+REQUEST DETAIL
+
+  Request ID            {{ .RequestID }}
+  Enrollment ID         {{ .EnrollmentID }}
+  Requested from        {{ .RequestSourceIP }}
+  Approved at           {{ datetime .ApprovedAt }}
+{{ if .ServerURL }}
+Every redemption of this code is logged. Review it at
+{{ .ServerURL }}/logs/me
+{{ end }}
+You are receiving this because "Service enrollment created" is enabled in your
+notification preferences{{ if .ServerURL }} at {{ .ServerURL }}/preferences{{ end }}.

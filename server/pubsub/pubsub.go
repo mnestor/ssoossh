@@ -20,6 +20,7 @@ import (
 	natsgo "github.com/nats-io/nats.go"
 
 	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/notify"
 )
 
 // routerStartTimeout bounds how long Run's shutdown watcher waits for the
@@ -284,11 +285,18 @@ func subjectCalculator(queueGroupPrefix, topic string) *natslib.SubjectDetail {
 	// instance processes each job. Derive a stable queue group name from the
 	// topic. Certrequest.wait.* topics get no queue group (empty string),
 	// giving them ordinary fan-out semantics scoped to one instance.
+	//
+	// Notifications are competing-consumer for a plainer reason than the
+	// signing topics: without a queue group every instance in a
+	// multi-instance deployment would deliver the same event, and the
+	// recipient would get one copy of the mail per running server.
 	switch topic {
 	case "certrequest.sign":
 		detail.QueueGroup = "signer"
 	case "certrequest.signed":
 		detail.QueueGroup = "signed-listeners"
+	case notify.Topic:
+		detail.QueueGroup = "notifiers"
 	}
 
 	return detail

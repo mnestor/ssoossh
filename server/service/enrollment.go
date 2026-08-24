@@ -17,6 +17,7 @@ import (
 	"github.com/mnestor/ssoossh/server/certmsg"
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/server/notify"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
@@ -47,12 +48,30 @@ type EnrollmentService struct {
 	db         *gorm.DB
 	publisher  message.Publisher
 	subscriber message.Subscriber
+
+	// notifier reports each redemption to the approving user. Never nil —
+	// see CertRequestService.SetNotifier.
+	notifier Notifier
 }
 
 // NewEnrollmentService constructs an EnrollmentService signing through the
 // pipeline behind publisher/subscriber.
 func NewEnrollmentService(c *config.Config, db *gorm.DB, publisher message.Publisher, subscriber message.Subscriber) (*EnrollmentService, error) {
-	return &EnrollmentService{config: c, db: db, publisher: publisher, subscriber: subscriber}, nil
+	return &EnrollmentService{
+		config:     c,
+		db:         db,
+		publisher:  publisher,
+		subscriber: subscriber,
+		notifier:   discardNotifications{},
+	}, nil
+}
+
+// SetNotifier attaches the notification publisher. See
+// CertRequestService.SetNotifier.
+func (s *EnrollmentService) SetNotifier(n Notifier) {
+	if n != nil {
+		s.notifier = n
+	}
 }
 
 // Retrieve signs and returns a service certificate for the enrollment
@@ -165,14 +184,74 @@ func (s *EnrollmentService) Retrieve(ctx context.Context, code string, sourceIP 
 		return "", fmt.Errorf("failed to publish signing job: %w", err)
 	}
 
+	// Whether the signer answers or not, this redemption is worth
+	// reporting: a code that validated and then failed to produce a
+	// certificate is exactly the case an operator wants to hear about, and
+	// staying quiet about it would make this a success log rather than an
+	// alarm.
+	//
+	// firstRedemption is read from the row loaded before this attempt, so
+	// it describes the state the code was in when it was presented rather
+	// than after markRetrievalSucceeded has stamped it.
+	firstRedemption := enrollment.RedeemedAt == nil
+
 	cert, err := s.awaitSignedCertificate(ctx, messages, serialNum)
 	if err != nil {
+		s.notifyRedemption(ctx, enrollment, retrieval, principals, validBefore, firstRedemption, false)
 		return "", err
 	}
 
 	s.markRetrievalSucceeded(ctx, enrollment.ID, retrieval.ID, now)
 
+	s.notifyRedemption(ctx, enrollment, retrieval, principals, validBefore, firstRedemption, true)
+
 	return cert, nil
+}
+
+// notifyRedemption queues the redemption notification for the user who
+// approved the enrollment.
+//
+// Queued rather than sent: the caller here is an unattended job waiting on
+// its certificate, and a slow or unreachable mail relay must not delay the
+// answer it came for. Called after the certificate has been delivered (or
+// the failure established) for the same reason.
+func (s *EnrollmentService) notifyRedemption(
+	ctx context.Context,
+	enrollment model.Enrollment,
+	retrieval model.EnrollmentRetrieval,
+	principals []string,
+	certificateExpiresAt time.Time,
+	firstRedemption bool,
+	succeeded bool,
+) {
+	requestID := ""
+	if enrollment.CertificateRequestID != nil {
+		requestID = *enrollment.CertificateRequestID
+	}
+
+	// The service account is the enrollment's sole principal, fixed at
+	// approval time — see CertRequestService.approveServiceEnrollment.
+	serviceAccount := ""
+	if len(principals) > 0 {
+		serviceAccount = principals[0]
+	}
+
+	s.notifier.Notify(ctx, notify.KindServiceEnrollmentRedeemed, enrollment.UserID, &notify.ServiceEnrollmentRedeemed{
+		ServiceAccount:       serviceAccount,
+		RequestID:            requestID,
+		EnrollmentID:         enrollment.ID,
+		RetrievalID:          retrieval.ID,
+		SourceIP:             retrieval.SourceIP,
+		RetrievedAt:          retrieval.RetrievedAt,
+		CertificateSerial:    retrieval.CertificateSerial,
+		CertificateExpiresAt: certificateExpiresAt,
+		KeyID:                enrollment.KeyID,
+		Principals:           principals,
+		Succeeded:            succeeded,
+		FirstRedemption:      firstRedemption,
+		CodeExpiresAt:        enrollment.ExpiresAt,
+		ServerURL:            s.config.HTTP.PublicOrigin(),
+	})
 }
 
 // awaitSignedCertificate blocks until the retrieval's wake topic carries a

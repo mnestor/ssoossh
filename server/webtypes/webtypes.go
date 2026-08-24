@@ -271,3 +271,51 @@ type VersionResponse struct {
 	// an untagged build, where there is no release page to link to.
 	ReleaseURL string `json:"release_url,omitempty"`
 }
+
+// NotificationKindResponse is one notification kind on the preferences
+// page: what it is, and whether this user wants it.
+//
+// Title and Description are served rather than hardcoded in the frontend so
+// that adding a notification kind stays a server-side change — the page
+// renders whatever the server lists (see server/notify).
+type NotificationKindResponse struct {
+	// Kind is the stable identifier, the key the update body uses.
+	Kind string `json:"kind" validate:"required"`
+
+	// Title is the short label shown beside the toggle.
+	Title string `json:"title" validate:"required"`
+
+	// Description is the sentence explaining when this one fires.
+	Description string `json:"description" validate:"required"`
+
+	// Enabled is this user's answer, or the kind's default when they have
+	// never given one.
+	Enabled bool `json:"enabled"`
+}
+
+// NotificationPreferencesResponse is the preferences page's whole payload.
+type NotificationPreferencesResponse struct {
+	// MailEnabled reports whether the server can send mail at all. False
+	// means the toggles are still recorded but nothing is delivered, which
+	// the page says out loud rather than leaving the user to infer.
+	MailEnabled bool `json:"mail_enabled"`
+
+	// Address is where notifications would be sent, from the users table.
+	// Empty when the identity provider releases no email claim — the other
+	// reason nothing arrives, and equally worth showing.
+	Address string `json:"address"`
+
+	// Kinds is every notification the server knows how to send, in a
+	// stable order.
+	Kinds []NotificationKindResponse `json:"kinds" validate:"required"`
+}
+
+// UpdateNotificationPreferencesBody is the preferences page's save. Only
+// the kinds named are changed, so a client that knows about fewer kinds
+// than the server cannot silently reset the ones it has never heard of.
+type UpdateNotificationPreferencesBody struct {
+	// Kinds maps a notification kind to whether it should be sent. An
+	// unknown key is rejected rather than ignored: silently dropping it
+	// would report success for a preference that was never stored.
+	Kinds map[string]bool `json:"kinds" validate:"required"`
+}

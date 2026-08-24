@@ -43,8 +43,10 @@ server/dbtime                   81.0
 server/frontend                 94.0
 server/job                      92.0
 server/logging                  97.0
+server/mail                     91.0
 server/middleware               93.0
 server/model                    74.0
+server/notify                   95.0
 server/pubsub                   66.0
 server/service                  86.0
 server/signer                   74.0

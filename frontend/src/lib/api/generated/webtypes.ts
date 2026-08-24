@@ -298,3 +298,64 @@ export interface VersionResponse {
 	 */
 	release_url?: string;
 }
+/**
+ * NotificationKindResponse is one notification kind on the preferences
+ * page: what it is, and whether this user wants it.
+ * Title and Description are served rather than hardcoded in the frontend so
+ * that adding a notification kind stays a server-side change — the page
+ * renders whatever the server lists (see server/notify).
+ */
+export interface NotificationKindResponse {
+	/**
+	 * Kind is the stable identifier, the key the update body uses.
+	 */
+	kind: string;
+	/**
+	 * Title is the short label shown beside the toggle.
+	 */
+	title: string;
+	/**
+	 * Description is the sentence explaining when this one fires.
+	 */
+	description: string;
+	/**
+	 * Enabled is this user's answer, or the kind's default when they have
+	 * never given one.
+	 */
+	enabled: boolean;
+}
+/**
+ * NotificationPreferencesResponse is the preferences page's whole payload.
+ */
+export interface NotificationPreferencesResponse {
+	/**
+	 * MailEnabled reports whether the server can send mail at all. False
+	 * means the toggles are still recorded but nothing is delivered, which
+	 * the page says out loud rather than leaving the user to infer.
+	 */
+	mail_enabled: boolean;
+	/**
+	 * Address is where notifications would be sent, from the users table.
+	 * Empty when the identity provider releases no email claim — the other
+	 * reason nothing arrives, and equally worth showing.
+	 */
+	address: string;
+	/**
+	 * Kinds is every notification the server knows how to send, in a
+	 * stable order.
+	 */
+	kinds: NotificationKindResponse[];
+}
+/**
+ * UpdateNotificationPreferencesBody is the preferences page's save. Only
+ * the kinds named are changed, so a client that knows about fewer kinds
+ * than the server cannot silently reset the ones it has never heard of.
+ */
+export interface UpdateNotificationPreferencesBody {
+	/**
+	 * Kinds maps a notification kind to whether it should be sent. An
+	 * unknown key is rejected rather than ignored: silently dropping it
+	 * would report success for a preference that was never stored.
+	 */
+	kinds: { [key: string]: boolean};
+}

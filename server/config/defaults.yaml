@@ -608,6 +608,143 @@ cert_options:
     key_id_template: ""
 
 # ----------------------------------------------------------------------
+# mail - outbound email notifications.
+#
+# Disabled by default. Notifications are an addition to the certificate
+# flows rather than a part of them: every path that emits one behaves
+# identically with this off, and nothing that a browser or an unattended
+# job waits on ever waits on the mail relay. Events are queued and
+# delivered on a background consumer, so a slow, greylisting, or
+# unreachable relay delays nothing.
+#
+# Which notifications exist, what each one contains, and how to override a
+# template are documented in docs/email-notifications.md. Users choose
+# which ones they receive at /preferences in the web UI.
+# ----------------------------------------------------------------------
+mail:
+  # Turn outbound mail on. With this false no delivery consumer is
+  # registered and no event is queued, so the rest of this section is not
+  # even validated.
+  enabled: false
+
+  # The envelope and header sender. Required when enabled. Either a bare
+  # address or a display name plus one:
+  #
+  #   from: "ssoossh@example.com"
+  #   from: "ssoossh <no-reply@example.com>"
+  from: ""
+
+  # Optional Reply-To header. Worth pointing at a monitored address: these
+  # messages report credential activity, and the first thing a recipient
+  # does with an unexpected one is try to reply.
+  #reply_to: "ssh-admins@example.com"
+
+  # Prepended to every rendered subject. Templates write their own
+  # subjects; this exists so an operator can tag all of them at once
+  # without editing any template. Empty adds nothing.
+  subject_prefix: ""
+
+  # Directory of local template overrides. A file here replaces the
+  # embedded template of the same name; anything absent falls back to the
+  # embedded one, so overriding a single message does not mean vendoring
+  # the whole set.
+  #
+  # Files are named <kind>.<part>.tmpl, where part is subject, txt, or
+  # html — for example service_enrollment_created.txt.tmpl. Every override
+  # is parsed AND executed against an empty payload at startup, so a
+  # syntax error or a reference to a field that does not exist stops the
+  # server rather than producing mail that silently stops arriving. A file
+  # here whose name matches no notification is also a startup error, since
+  # a misspelled override would otherwise appear to do nothing.
+  #
+  # The available fields per notification are listed in
+  # docs/email-notifications.md.
+  #template_dir: "/etc/ssoossh/mail-templates"
+
+  smtp:
+    # The relay. Two deployments are expected: a local relay (localhost,
+    # no TLS, no auth — the mail system on this host takes it from here),
+    # or a remote submission service (a hostname, port 587 or 465, TLS,
+    # and credentials).
+    host: "localhost"
+
+    # Conventionally 25 for a local relay, 587 for submission with
+    # STARTTLS, 465 for implicit TLS.
+    port: 25
+
+    # Transport policy, one of:
+    #
+    #   off            never negotiate STARTTLS. Reasonable only for a
+    #                  relay on loopback.
+    #   opportunistic  use STARTTLS when offered, continue in plaintext
+    #                  when not. The default: it protects the remote case
+    #                  without breaking the local relay that offers
+    #                  nothing.
+    #   required       fail the delivery rather than send in plaintext.
+    #                  The right setting for any relay reached over a
+    #                  network you do not own — opportunistic TLS is
+    #                  strippable by anyone on the path.
+    #   implicit       dial TLS directly (SMTPS, conventionally port 465).
+    #
+    # TLS is optional but strongly suggested for a non-local relay, and
+    # the server logs a warning at startup when one is reached without it.
+    tls: "opportunistic"
+
+    # Override the name the relay's certificate is verified against.
+    # Needed only when host is an address rather than the name on the
+    # certificate. Empty verifies against host.
+    #server_name: "smtp.example.com"
+
+    # PEM bundle to verify the relay's certificate against, for a relay
+    # using a private CA. Empty uses the system trust store.
+    #ca_file: "/etc/ssl/certs/internal-ca.pem"
+
+    # Skip verification of the relay's certificate. This turns TLS into
+    # obfuscation: anyone who can redirect the connection can also present
+    # their own certificate. For a lab with a self-signed relay only, and
+    # warned about at startup.
+    insecure_skip_verify: false
+
+    # SASL mechanism, one of: none (default), auto, plain, login,
+    # cram-md5, scram-sha-1, scram-sha-256, xoauth2. "auto" negotiates the
+    # strongest mechanism the relay advertises.
+    #
+    # Authentication is optional but suggested for a non-local relay: a
+    # relay accepting mail from this server unauthenticated is usually a
+    # misconfiguration on one side or the other, and the server logs a
+    # warning at startup when it sees one.
+    auth: "none"
+
+    # SASL username. Required for every mechanism but none.
+    #username: "ssoossh@example.com"
+
+    # SASL password, or the OAuth2 token for xoauth2. Prefer
+    # password_file: this value is a secret sitting in a config file that
+    # auditors can read the effective version of.
+    #password: ""
+
+    # Read the password from a file instead — a mounted secret, or a
+    # systemd credential. Takes precedence over password when both are
+    # set. Read once at startup; trailing whitespace is trimmed, since an
+    # editor's newline is never part of the password.
+    #password_file: "/run/secrets/ssoossh-smtp-password"
+
+    # Name announced in the EHLO/HELO greeting. Empty uses the local
+    # hostname, which is right unless the relay checks it for something
+    # specific.
+    #helo: "ssoossh.example.com"
+
+    # Bounds one delivery's connect-and-send. This bounds only the
+    # background sender; nothing a browser or an unattended job waits on
+    # is behind it.
+    timeout: 15s
+
+  # Where mail delivery logs go. Same shape as every other component's
+  # logging block; empty filename logs to the main application log.
+  logging:
+    level: "info"
+
+# ----------------------------------------------------------------------
 # branding - optional customization of the login page and web UI. Every
 # field is optional and empty means unbranded. The endpoint serving these
 # is unauthenticated, so only put values here that are safe to show

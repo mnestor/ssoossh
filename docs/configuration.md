@@ -161,6 +161,27 @@ Both split modes fail at startup if the in-process backend is configured.
 NATS setup, subject permissions, and failover behavior:
 [deployment.md](deployment.md#7-running-more-than-one-instance).
 
+### Email notifications
+
+Off by default. Turn it on by naming a relay and a sender:
+
+```yaml
+mail:
+  enabled: true
+  from: "ssoossh <no-reply@example.com>"
+  smtp:
+    host: "localhost"
+    port: 25
+```
+
+That is the local-relay case, where no TLS and no authentication are
+reasonable. For a relay reached over a network both are strongly suggested,
+and the server warns at startup when they are missing. Users choose which
+notifications they receive at `/preferences` in the web UI.
+
+Full reference, including what each notification contains and how to
+override a template: [email-notifications.md](email-notifications.md).
+
 ## Client: `ssoossh.yaml`
 
 One setting has no default:

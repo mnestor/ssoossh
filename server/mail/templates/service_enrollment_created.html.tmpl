@@ -1,0 +1,57 @@
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1c1e21;max-width:640px">
+  <p>An enrollment code for unattended certificate issuance was created from a request you
+  approved{{ if .ApprovedByUsername }} as <strong>{{ .ApprovedByUsername }}</strong>{{ end }}.</p>
+
+  <p style="background:#fff6e5;border-left:3px solid #d98207;padding:10px 14px;margin:18px 0">
+    The code itself is not in this message and never will be. It was shown once, in the terminal
+    that ran <code>ssoossh service enroll</code>, and is stored nowhere else. If that terminal is
+    gone, enroll again rather than looking for it.
+  </p>
+
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">What it issues</h3>
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Service account</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .ServiceAccount }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Certificate principal</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ join .Principals ", " }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Key ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .KeyID }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Certificate lifetime</td><td style="padding:4px 0">{{ approx .CertificateLifetime }} from each redemption</td></tr>
+    {{ if .Extensions }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Extensions</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ join .Extensions ", " }}</td></tr>{{ end }}
+    {{ if .ForceCommand }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Forced command</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .ForceCommand }}</td></tr>{{ end }}
+    {{ if .SourceAddresses }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Source addresses</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ join .SourceAddresses ", " }}</td></tr>{{ end }}
+    {{ if .NoTouchRequired }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">No touch required</td><td style="padding:4px 0">yes (hardware-backed key)</td></tr>{{ end }}
+  </table>
+  <p style="color:#6b7280;font-size:13px">The service account is the only principal of every certificate this code produces. Your own username is not.</p>
+
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Which key it is bound to</h3>
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Fingerprint</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all">{{ .PublicKeyFingerprint }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Type</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .PublicKeyType }}</td></tr>
+  </table>
+  <p style="color:#6b7280;font-size:13px">The code only ever produces certificates for that key &mdash; <code>service retrieve</code> never resubmits a public key, so a stolen code cannot be paired with someone else's keypair. If you do not recognize this key, treat the enrollment as unwanted and expire it.</p>
+
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">When it stops working</h3>
+  <p style="margin:0 0 6px"><strong>{{ datetime .CodeExpiresAt }}</strong> &mdash; in {{ until .CodeExpiresAt }}.</p>
+  <p style="color:#6b7280;font-size:13px">Enroll again before then to keep an unattended job running. The code outliving each certificate is the point: that is what lets a cron job keep renewing without a human re-approving it.</p>
+
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Setting the job up</h3>
+  <p>Add this to the <code>~/.ssh/config</code> of the account that runs the job, replacing <code>USERNAME</code> with the remote user and <code>/path/to/key</code> with the private key you enrolled:</p>
+  <pre style="background:#f4f5f7;border-radius:6px;padding:12px 14px;overflow-x:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.5">Match user USERNAME exec 'ssoossh service retrieve --code CODE --key /path/to/key'
+  IdentityFile /path/to/key
+  IdentitiesOnly yes</pre>
+  <p style="color:#6b7280;font-size:13px">No <code>CertificateFile</code> line is needed: ssh derives <code>/path/to/key-cert.pub</code> from <code>IdentityFile</code>'s name, which is why the three file names are not negotiable &mdash; the private key is <code>&lt;name&gt;</code>, the public key <code>&lt;name&gt;.pub</code>, and the certificate <code>&lt;name&gt;-cert.pub</code>, all in one directory. <code>Match exec</code> runs before ssh reads the key files, so this needs no agent.</p>
+  <p style="color:#6b7280;font-size:13px">The certificate is refreshed automatically when it has expired or expires within a minute. Change that with <code>--grace &lt;time&gt;</code>, or refresh unconditionally with <code>--force</code>. The code is reusable until it expires, so the same command is safe to run from cron or a systemd timer.</p>
+
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Request detail</h3>
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Request ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .RequestID }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Enrollment ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .EnrollmentID }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Requested from</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .RequestSourceIP }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Approved at</td><td style="padding:4px 0">{{ datetime .ApprovedAt }}</td></tr>
+  </table>
+
+  {{ if .ServerURL }}<p style="font-size:13px">Every redemption of this code is logged. <a href="{{ .ServerURL }}/logs/me" style="color:#1d4ed8">Review it</a>.</p>{{ end }}
+
+  <p style="margin-top:28px;padding-top:14px;border-top:1px solid #e5e7eb;color:#9099a8;font-size:12px">
+    You are receiving this because "Service enrollment created" is enabled in your
+    {{ if .ServerURL }}<a href="{{ .ServerURL }}/preferences" style="color:#6b7280">notification preferences</a>{{ else }}notification preferences{{ end }}.
+  </p>
+</div>

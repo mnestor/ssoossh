@@ -89,6 +89,18 @@ func fullFixtures() map[string]any {
 			DecidedForwardedFor:      "198.51.100.7, 10.0.0.1",
 			DecidedAt:                &issuedAt,
 		},
+		"notification_preferences": webtypes.NotificationPreferencesResponse{
+			MailEnabled: true,
+			Address:     "alice@example.org",
+			Kinds: []webtypes.NotificationKindResponse{
+				{
+					Kind:        "service_enrollment_created",
+					Title:       "Service enrollment created",
+					Description: "Sent when you approve a service certificate request.",
+					Enabled:     true,
+				},
+			},
+		},
 		"certificate": webtypes.CertificateResponse{
 			ID:           "6d5c4b3a-2f1e-4d0c-9b8a-7f6e5d4c3b2a",
 			Type:         model.CertificateTypeService,
@@ -122,10 +134,11 @@ func fullFixtures() map[string]any {
 // reaches production.
 func zeroFixtures() map[string]any {
 	return map[string]any{
-		"current_user":        webtypes.CurrentUserResponse{},
-		"certificate_options": webtypes.CertificateOptionsResponse{},
-		"request_detail":      webtypes.RequestDetailResponse{},
-		"certificate":         webtypes.CertificateResponse{},
+		"current_user":             webtypes.CurrentUserResponse{},
+		"certificate_options":      webtypes.CertificateOptionsResponse{},
+		"request_detail":           webtypes.RequestDetailResponse{},
+		"certificate":              webtypes.CertificateResponse{},
+		"notification_preferences": webtypes.NotificationPreferencesResponse{},
 	}
 }
 

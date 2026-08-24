@@ -42,6 +42,11 @@ type Config struct {
 
 	CertOptions CertificateOptions `mapstructure:"cert_options"`
 
+	// Mail configures outbound email notifications: the relay, the sender,
+	// and the local template overrides. Disabled by default; see
+	// MailConfig and docs/email-notifications.md.
+	Mail MailConfig `mapstructure:"mail"`
+
 	// Branding optionally customizes the login page and web UI with
 	// organization-specific information. All fields are optional; empty values
 	// are treated as "no branding configured". See BrandingSettings.

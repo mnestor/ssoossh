@@ -260,6 +260,15 @@ components:
       required:
       - logged_out
       type: object
+    openapidoc.NotificationPreferencesEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.NotificationPreferencesResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
     openapidoc.RequestDetailEnvelope:
       properties:
         data:
@@ -560,6 +569,52 @@ components:
       required:
       - retrievals
       type: object
+    webtypes.NotificationKindResponse:
+      properties:
+        description:
+          description: Description is the sentence explaining when this one fires.
+          type: string
+        enabled:
+          description: |-
+            Enabled is this user's answer, or the kind's default when they have
+            never given one.
+          type: boolean
+        kind:
+          description: Kind is the stable identifier, the key the update body uses.
+          type: string
+        title:
+          description: Title is the short label shown beside the toggle.
+          type: string
+      required:
+      - description
+      - kind
+      - title
+      type: object
+    webtypes.NotificationPreferencesResponse:
+      properties:
+        address:
+          description: |-
+            Address is where notifications would be sent, from the users table.
+            Empty when the identity provider releases no email claim — the other
+            reason nothing arrives, and equally worth showing.
+          type: string
+        kinds:
+          description: |-
+            Kinds is every notification the server knows how to send, in a
+            stable order.
+          items:
+            $ref: '#/components/schemas/webtypes.NotificationKindResponse'
+          type: array
+          uniqueItems: false
+        mail_enabled:
+          description: |-
+            MailEnabled reports whether the server can send mail at all. False
+            means the toggles are still recorded but nothing is delivered, which
+            the page says out loud rather than leaving the user to infer.
+          type: boolean
+      required:
+      - kinds
+      type: object
     webtypes.RequestDetailResponse:
       properties:
         already_closed:
@@ -642,6 +697,19 @@ components:
       - status
       - type
       - valid_seconds
+      type: object
+    webtypes.UpdateNotificationPreferencesBody:
+      properties:
+        kinds:
+          additionalProperties:
+            type: boolean
+          description: |-
+            Kinds maps a notification kind to whether it should be sent. An
+            unknown key is rejected rather than ignored: silently dropping it
+            would report success for a preference that was never stored.
+          type: object
+      required:
+      - kinds
       type: object
     webtypes.VersionResponse:
       properties:
@@ -1366,6 +1434,83 @@ paths:
       security:
       - sessionCookie: []
       summary: The caller's own identity
+      tags:
+      - web
+  /api/users/me/notifications:
+    get:
+      description: |-
+        Every notification kind this server knows how to send, with the
+        caller's answer for each. Kinds the caller has never answered report
+        the kind's own default. Also reports whether the server is configured
+        to send mail at all, and the address it would send to.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NotificationPreferencesEnvelope'
+          description: The caller's notification preferences
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The session has no user record
+      security:
+      - sessionCookie: []
+      summary: The caller's own notification preferences
+      tags:
+      - web
+    put:
+      description: |-
+        Sets the caller's answer for each notification kind named in the body,
+        leaving every other kind unchanged. An unrecognized kind is rejected
+        rather than ignored, and nothing is stored when one is present.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/webtypes.UpdateNotificationPreferencesBody'
+                description: The kinds to change
+                summary: request
+        description: The kinds to change
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.NotificationPreferencesEnvelope'
+          description: The preferences after saving
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Malformed body or an unrecognized notification kind
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The session has no user record
+      security:
+      - sessionCookie: []
+      summary: Update the caller's own notification preferences
       tags:
       - web
   /api/version:
