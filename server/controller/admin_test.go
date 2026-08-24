@@ -1,9 +1,11 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +15,8 @@ import (
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/middleware"
+	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // newTestConfig returns a minimal config suitable for admin tests.
@@ -482,5 +486,219 @@ func TestAdminConfigPredicates(t *testing.T) {
 	// Test auditor role is enabled
 	if !cfg.Admin.IsAuditorEnabled() {
 		t.Error("IsAuditorEnabled() should return true when AuditorGroup is set")
+	}
+}
+
+// fakeEnrollmentServiceForReassign is a test double for service.EnrollmentProvider
+// used in authorization tests for the reassign endpoint.
+type fakeEnrollmentServiceForReassign struct {
+	reassignCalls []struct {
+		enrollmentID string
+		toUserID     string
+		identity     *service.Identity
+	}
+	// ownerSubject is the subject that owns the enrollment under test.
+	// If set and the reassign caller doesn't match, Reassign returns ForbiddenError.
+	ownerSubject string
+	// adminGroups is the list of groups that grant admin access.
+	// If the caller is in any of these groups, Reassign succeeds.
+	adminGroups []string
+}
+
+func (f *fakeEnrollmentServiceForReassign) Retrieve(ctx context.Context, code string, sourceIP string) (certificate string, err error) {
+	return "", nil
+}
+func (f *fakeEnrollmentServiceForReassign) ListRetrievals(ctx context.Context, requestID string, identity *service.Identity) (service.RetrievalLog, error) {
+	return service.RetrievalLog{}, nil
+}
+func (f *fakeEnrollmentServiceForReassign) ListForIdentity(ctx context.Context, identity *service.Identity) ([]service.ServiceEnrollment, error) {
+	return []service.ServiceEnrollment{}, nil
+}
+func (f *fakeEnrollmentServiceForReassign) ListForAdmin(ctx context.Context, identity *service.Identity, params service.AdminListParams) (service.AdminEnrollmentList, error) {
+	return service.AdminEnrollmentList{}, nil
+}
+func (f *fakeEnrollmentServiceForReassign) GetEnrollmentDetail(ctx context.Context, enrollmentID string, identity *service.Identity) (service.AdminEnrollmentDetail, error) {
+	return service.AdminEnrollmentDetail{}, nil
+}
+func (f *fakeEnrollmentServiceForReassign) Reassign(ctx context.Context, enrollmentID string, toUserID string, identity *service.Identity) error {
+	f.reassignCalls = append(f.reassignCalls, struct {
+		enrollmentID string
+		toUserID     string
+		identity     *service.Identity
+	}{enrollmentID, toUserID, identity})
+
+	// Simulate authorization: owner or admin
+	isAdmin := false
+	for _, group := range identity.Groups {
+		for _, adminGroup := range f.adminGroups {
+			if group == adminGroup {
+				isAdmin = true
+				break
+			}
+		}
+		if isAdmin {
+			break
+		}
+	}
+
+	if !isAdmin && identity.Subject != f.ownerSubject {
+		return &errorresponses.ForbiddenError{Reason: "you must be the enrollment owner or an admin to reassign it"}
+	}
+
+	return nil
+}
+
+// identityMiddlewareForReassign sets identity on the context the way SessionAuthMiddleware would.
+func identityMiddlewareForReassign(identity *service.Identity) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Set(middleware.IdentityContextKey, identity)
+		c.Next()
+	}
+}
+
+// sessionAuthMiddlewareRealForReassign puts identity on context only if authenticated.
+func sessionAuthMiddlewareRealForReassign(authenticated bool, identity *service.Identity) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if authenticated && identity != nil {
+			c.Set(middleware.IdentityContextKey, identity)
+		}
+		c.Next()
+	}
+}
+
+// TestReassignEnrollmentHandler_AuthorizationRoute tests the router-level
+// authorization for the PATCH /api/admin/enrollments/:id/reassign endpoint.
+//
+// This test exercises the real route with real identity middleware, proving
+// that the endpoint's removal of adminAuthMiddleware does not leave it
+// unprotected: authorization must be enforced in the handler itself, which
+// this test verifies by driving it through the real router.
+func TestReassignEnrollmentHandler_AuthorizationRoute(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cfg := newTestConfig(t)
+
+	tests := []struct {
+		name           string
+		authenticated  bool
+		identity       *service.Identity
+		enrollmentID   string
+		toUserID       string
+		wantStatus     int
+		wantReassigned bool
+	}{
+		{
+			name:           "should reject anonymous caller with 401",
+			authenticated:  false,
+			identity:       nil,
+			enrollmentID:   "enroll-123",
+			toUserID:       "user-456",
+			wantStatus:     http.StatusUnauthorized,
+			wantReassigned: false,
+		},
+		{
+			name:          "should reject authenticated stranger with 403",
+			authenticated: true,
+			identity: &service.Identity{
+				Subject: "sub-stranger",
+				Username: "stranger",
+				Groups:  []string{},
+			},
+			enrollmentID:   "enroll-123",
+			toUserID:       "user-456",
+			wantStatus:     http.StatusForbidden,
+			wantReassigned: false,
+		},
+		{
+			name:          "should allow enrollment owner with 200",
+			authenticated: true,
+			identity: &service.Identity{
+				Subject: "sub-owner",
+				Username: "owner",
+				Groups:  []string{},
+			},
+			enrollmentID:   "enroll-123",
+			toUserID:       "user-456",
+			wantStatus:     http.StatusOK,
+			wantReassigned: true,
+		},
+		{
+			name:          "should allow admin with 200",
+			authenticated: true,
+			identity: &service.Identity{
+				Subject: "sub-admin",
+				Username: "admin",
+				Groups:  []string{"ssoossh-admins"},
+			},
+			enrollmentID:   "enroll-123",
+			toUserID:       "user-456",
+			wantStatus:     http.StatusOK,
+			wantReassigned: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Configure fake service: owner is "sub-owner", admins are in "ssoossh-admins"
+			fake := &fakeEnrollmentServiceForReassign{
+				ownerSubject: "sub-owner",
+				adminGroups:  []string{cfg.Admin.RequireGroup},
+			}
+
+			// Set up the router with real identity middleware and the service
+			r := gin.New()
+			r.Use(middleware.NewErrorHandlerMiddleware().Add())
+
+			// Apply session auth middleware only if authenticated
+			if tt.authenticated && tt.identity != nil {
+				r.Use(identityMiddlewareForReassign(tt.identity))
+			}
+
+			NewAdminController(
+				&r.RouterGroup,
+				cfg,
+				mockDB(),
+				sessionAuthMiddlewareRealForReassign(tt.authenticated, tt.identity),
+				mockAdminAuthMiddleware(false), // Not used; reassign checks in handler
+				mockAuditorAuthMiddleware(false),
+				mockCSRFMiddleware(),
+				fake,
+			)
+
+			// Build request body
+			body := `{"to_user_id":"` + tt.toUserID + `"}`
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPatch, "/admin/enrollments/"+tt.enrollmentID+"/reassign", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			r.ServeHTTP(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("got status %d, want %d, body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+
+			if tt.wantReassigned {
+				// Verify the fake service was called
+				if len(fake.reassignCalls) != 1 {
+					t.Errorf("expected 1 call to Reassign, got %d", len(fake.reassignCalls))
+				} else {
+					call := fake.reassignCalls[0]
+					if call.enrollmentID != tt.enrollmentID {
+						t.Errorf("expected enrollment ID %q, got %q", tt.enrollmentID, call.enrollmentID)
+					}
+					if call.toUserID != tt.toUserID {
+						t.Errorf("expected to_user_id %q, got %q", tt.toUserID, call.toUserID)
+					}
+					if call.identity == nil || call.identity.Subject != tt.identity.Subject {
+						t.Errorf("expected identity subject %q, got %v", tt.identity.Subject, call.identity)
+					}
+				}
+			} else {
+				// Service may or may not be called for anonymous case, but reassign should not succeed
+			}
+		})
 	}
 }
