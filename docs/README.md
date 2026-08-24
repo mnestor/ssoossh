@@ -25,6 +25,7 @@ long-lived keys. Self-hosted, homelab-friendly, early development.
 | [email-notifications.md](email-notifications.md) | Outbound email: the SMTP relay, what each notification contains, template overrides, adding a notification kind |
 | [client-settings-enforcement.md](client-settings-enforcement.md) | Locking down client settings: `enforce` file, Windows Group Policy, macOS managed preferences, precedence |
 | [certificate-lifetime-policy.md](certificate-lifetime-policy.md) | Lifetime and options derived from issuance context: group tiers, source rules, the footguns |
+| [claim-driven-certificate-policy.md](claim-driven-certificate-policy.md) | Design record, not built: driving lifetime, extensions, and type gating from numeric OIDC claims |
 | [pam.d-sudo.example](pam.d-sudo.example) | Annotated `pam.d` stack for `sudo`/`su` |
 | [man/](man/) | Man pages (`.1` client, `.5` config formats, `.8` server) |
 | [DEPENDENCY-SCANNING.md](DEPENDENCY-SCANNING.md) | How dependencies are scanned and kept current |
