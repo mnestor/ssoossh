@@ -170,6 +170,24 @@ components:
       required:
       - data
       type: object
+    openapidoc.CertificateDetailEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.CertificateResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.CertificateListAdminEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.CertificateListAdminResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
     openapidoc.CertificateListEnvelope:
       properties:
         data:
@@ -333,6 +351,19 @@ components:
             OrgName is the organization name displayed in the web UI (e.g., "Acme Corp").
             Empty disables organization-specific branding.
           type: string
+      type: object
+    webtypes.CertificateListAdminResponse:
+      properties:
+        certificates:
+          items:
+            $ref: '#/components/schemas/webtypes.CertificateResponse'
+          type: array
+          uniqueItems: false
+        page_meta:
+          $ref: '#/components/schemas/webtypes.PageMeta'
+      required:
+      - certificates
+      - page_meta
       type: object
     webtypes.CertificateListResponse:
       properties:
@@ -670,6 +701,36 @@ components:
       required:
       - kinds
       type: object
+    webtypes.PageMeta:
+      properties:
+        limit:
+          description: |-
+            Limit is the page size actually served, which may be smaller than the
+            one asked for (see paging.MaxLimit).
+          type: integer
+        offset:
+          description: Offset is how many rows were skipped to reach this page.
+          type: integer
+        page:
+          description: |-
+            Page is the 1-based number of this page, and PageCount how many pages
+            Total fills at this size. Both are derivable from the three fields
+            above, and are sent anyway so every list UI computes them the same way
+            — including the "an empty list is page 1 of 1" boundary.
+          type: integer
+        page_count:
+          type: integer
+        total:
+          description: Total is how many rows match the request's filter, across all
+            pages.
+          type: integer
+      required:
+      - limit
+      - offset
+      - page
+      - page_count
+      - total
+      type: object
     webtypes.RequestDetailResponse:
       properties:
         already_closed:
@@ -917,10 +978,11 @@ paths:
       description: |-
         Returns issued certificates across all users, useful for audits,
         incident review, and tracking "who issued this?". Supports
-        filtering and pagination.
+        searching over key ID, principals, serial number, fingerprint, and owner
+        username/email, filtering by type and expiration status, and offset pagination.
       parameters:
-      - description: Number of results (default 50)
-        example: 50
+      - description: Number of results (default 25, max 100)
+        example: 25
         in: query
         name: limit
         schema:
@@ -931,13 +993,37 @@ paths:
         name: offset
         schema:
           type: integer
+      - description: Search term (max 200 chars)
+        example: alice
+        in: query
+        name: q
+        schema:
+          type: string
+      - description: Filter by certificate type (user/service/pam)
+        example: user
+        in: query
+        name: type
+        schema:
+          type: string
+      - description: Filter by expiration (live/expired)
+        example: live
+        in: query
+        name: status
+        schema:
+          type: string
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/gin.H'
-          description: Certificate history
+                $ref: '#/components/schemas/openapidoc.CertificateListAdminEnvelope'
+          description: Certificates and page metadata
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Invalid parameters
         "401":
           content:
             application/json:
@@ -1170,6 +1256,49 @@ paths:
       security:
       - sessionCookie: []
       summary: The caller's issued-certificate history
+      tags:
+      - web
+  /api/certs/{id}:
+    get:
+      description: |-
+        Returns a single certificate by ID if the caller is authorized:
+        the user who approved the underlying request, or someone with auditor-level access.
+        Returns 404 uniformly for "not found" and "not authorized" to not leak existence.
+      parameters:
+      - description: Certificate ID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.CertificateDetailEnvelope'
+          description: Certificate details
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Invalid certificate ID
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Certificate not found or not accessible
+      security:
+      - sessionCookie: []
+      summary: View a certificate's full details
       tags:
       - web
   /api/certs/pam:
