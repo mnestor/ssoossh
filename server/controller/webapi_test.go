@@ -58,6 +58,18 @@ func (m *mockUserDatabase) GetUser(subject string, dest *model.User) error {
 	return nil
 }
 
+// GetByID answers the certificate-detail lookup, matching on id and
+// recording the caller so a test can assert the service was scoped to them.
+func (f *fakeCertificateService) GetByID(_ context.Context, id string, identity *service.Identity, cfg *config.Config) (service.CertificateWithDecision, error) {
+	f.gotSubject = identity.Subject
+	for _, c := range f.certs {
+		if c.ID == id {
+			return service.CertificateWithDecision{Certificate: c, Decision: nil}, nil
+		}
+	}
+	return service.CertificateWithDecision{}, &errorresponses.NotFoundError{Resource: "certificate"}
+}
+
 // identityMiddleware stands in for SessionAuthMiddleware, putting identity
 // on the context the way a logged-in session would.
 func identityMiddleware(identity *service.Identity) gin.HandlerFunc {
@@ -386,7 +398,7 @@ func TestCertificateListHandler_ShouldReturnTheCallersCertificates(t *testing.T)
 	}}}
 
 	r := gin.New()
-	NewCertificateController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}))
+	NewCertificateController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs", nil))
@@ -423,7 +435,7 @@ func TestCertificateListHandler_ShouldRenderNoCertificatesAsAnEmptyArray(t *test
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	NewCertificateController(&r.RouterGroup, &fakeCertificateService{}, identityMiddleware(&service.Identity{Subject: "sub-alice"}))
+	NewCertificateController(&r.RouterGroup, &fakeCertificateService{}, identityMiddleware(&service.Identity{Subject: "sub-alice"}), nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs", nil))
@@ -452,7 +464,7 @@ func TestCertificateListHandler_ShouldRejectWithoutAnIdentityOnContext(t *testin
 		c.Next()
 		gotErrors = len(c.Errors)
 	})
-	NewCertificateController(&r.RouterGroup, &fakeCertificateService{}, passthrough)
+	NewCertificateController(&r.RouterGroup, &fakeCertificateService{}, passthrough, nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs", nil))
@@ -475,7 +487,7 @@ func TestCertificateListHandler_ShouldRegisterErrorWhenTheServiceFails(t *testin
 	})
 	NewCertificateController(&r.RouterGroup,
 		&fakeCertificateService{err: errors.New("simulated failure")},
-		identityMiddleware(&service.Identity{Subject: "sub-alice"}))
+		identityMiddleware(&service.Identity{Subject: "sub-alice"}), nil)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs", nil))
@@ -745,8 +757,12 @@ func TestWebReadEndpoints_ShouldFailClosedWithoutASession(t *testing.T) {
 			r.Use(sessions.Sessions("ssoossh_session", cookie.NewStore([]byte("test-secret"))))
 			sessionAuth := middleware.NewSessionAuthMiddleware(5*time.Minute, time.Hour).Add()
 
+			// Both signatures grew on separate branches: the user controller
+			// took a database for extra-field hydration, the certificate
+			// controller took a config for the detail endpoint's
+			// approver-or-auditor rule.
 			NewUserController(&r.RouterGroup, &config.Config{}, sessionAuth, &mockUserDatabase{})
-			NewCertificateController(&r.RouterGroup, &fakeCertificateService{}, sessionAuth)
+			NewCertificateController(&r.RouterGroup, &fakeCertificateService{}, sessionAuth, nil)
 			NewCertRequestController(&r.RouterGroup, &fakeCertRequestService{}, sessionAuth, passthrough, nil)
 
 			w := httptest.NewRecorder()

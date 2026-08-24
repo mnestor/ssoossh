@@ -13,6 +13,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/middleware"
+	"github.com/mnestor/ssoossh/server/model"
 )
 
 // newTestConfig returns a minimal config suitable for admin tests.
@@ -343,21 +344,28 @@ func TestDisableUserHandler_RequiresAdminAuth(t *testing.T) {
 	}
 }
 
-// TestCertificateHistoryHandler_ShouldReturnEmptyList tests placeholder response.
+// TestCertificateHistoryHandler_ShouldReturnEmptyList tests empty certificate list with page metadata.
 func TestCertificateHistoryHandler_ShouldReturnEmptyList(t *testing.T) {
 	t.Parallel()
 
 	gin.SetMode(gin.TestMode)
 	cfg := newTestConfig(t)
 
-	r := gin.New()
-	r.Use(mockSessionAuthMiddleware(true, "user-123"))
-	r.Use(mockAuditorAuthMiddleware(true))
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open in-memory sqlite: %v", err)
+	}
 
+	if err := db.AutoMigrate(&model.Certificate{}, &model.User{}); err != nil {
+		t.Fatalf("migrate tables: %v", err)
+	}
+
+	r := gin.New()
+	r.Use(middleware.NewErrorHandlerMiddleware().Add())
 	NewAdminController(
 		&r.RouterGroup,
 		cfg,
-		mockDB(),
+		db,
 		mockSessionAuthMiddleware(true, "user-123"),
 		mockAdminAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
@@ -374,7 +382,8 @@ func TestCertificateHistoryHandler_ShouldReturnEmptyList(t *testing.T) {
 
 	var resp struct {
 		Data struct {
-			Certificates []any `json:"certificates"`
+			Certificates []any              `json:"certificates"`
+			PageMeta     map[string]any     `json:"page_meta"`
 		} `json:"data"`
 	}
 
@@ -384,6 +393,9 @@ func TestCertificateHistoryHandler_ShouldReturnEmptyList(t *testing.T) {
 
 	if len(resp.Data.Certificates) != 0 {
 		t.Errorf("expected empty certificate list, got %d items", len(resp.Data.Certificates))
+	}
+	if total, ok := resp.Data.PageMeta["total"]; !ok || total != float64(0) {
+		t.Errorf("expected total=0, got %v", total)
 	}
 }
 
@@ -472,5 +484,337 @@ func TestAdminConfigPredicates(t *testing.T) {
 	// Test auditor role is enabled
 	if !cfg.Admin.IsAuditorEnabled() {
 		t.Error("IsAuditorEnabled() should return true when AuditorGroup is set")
+	}
+}
+
+// TestCertificateHistoryHandler_SearchesCertificates tests that search over
+// key ID, principals, serial number, fingerprint, username, and email works.
+func TestCertificateHistoryHandler_SearchesCertificates(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cfg := newTestConfig(t)
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open in-memory sqlite: %v", err)
+	}
+
+	// Migrate tables we need.
+	if err := db.AutoMigrate(&model.User{}, &model.Certificate{}); err != nil {
+		t.Fatalf("migrate tables: %v", err)
+	}
+
+	// Create a user.
+	user := model.User{
+		ID:       "user1",
+		Subject:  "sub1",
+		Username: "alice",
+		Email:    "alice@example.com",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	// Create a certificate.
+	now := time.Now()
+	cert := model.Certificate{
+		ID:                   "cert1",
+		Type:                 model.CertificateTypeUser,
+		UserID:               &user.ID,
+		SerialNumber:         12345,
+		KeyID:                "my-key-id",
+		Principals:           "alice,alice@server",
+		PublicKeyFingerprint: "SHA256:abcdef123456",
+		IssuedAt:             now,
+		ExpiresAt:            now.Add(1 * time.Hour),
+	}
+	if err := db.Create(&cert).Error; err != nil {
+		t.Fatalf("failed to create cert: %v", err)
+	}
+
+	r := gin.New()
+	r.Use(middleware.NewErrorHandlerMiddleware().Add())
+	NewAdminController(
+		&r.RouterGroup,
+		cfg,
+		db,
+		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(false),
+		mockAuditorAuthMiddleware(true),
+		mockCSRFMiddleware(),
+	)
+
+	// Test searching by key ID.
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/certificates/history?q=my-key", nil)
+	r.ServeHTTP(w, req)
+
+	var resp struct {
+		Data struct {
+			Certificates []any `json:"certificates"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if len(resp.Data.Certificates) != 1 {
+		t.Errorf("search by key ID: got %d results, want 1", len(resp.Data.Certificates))
+	}
+
+	// Test searching by username.
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/admin/certificates/history?q=alice", nil)
+	r.ServeHTTP(w, req)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if len(resp.Data.Certificates) != 1 {
+		t.Errorf("search by username: got %d results, want 1", len(resp.Data.Certificates))
+	}
+}
+
+// TestCertificateHistoryHandler_FiltersByType tests certificate type filtering.
+func TestCertificateHistoryHandler_FiltersByType(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cfg := newTestConfig(t)
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open in-memory sqlite: %v", err)
+	}
+
+	if err := db.AutoMigrate(&model.User{}, &model.Certificate{}); err != nil {
+		t.Fatalf("migrate tables: %v", err)
+	}
+
+	user := model.User{
+		ID:       "user1",
+		Subject:  "sub1",
+		Username: "alice",
+		Email:    "alice@example.com",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	now := time.Now()
+	// Create one user cert.
+	cert1 := model.Certificate{
+		ID:           "cert1",
+		Type:         model.CertificateTypeUser,
+		UserID:       &user.ID,
+		SerialNumber: 1000,
+		IssuedAt:     now,
+		ExpiresAt:    now.Add(1 * time.Hour),
+	}
+	if err := db.Create(&cert1).Error; err != nil {
+		t.Fatalf("failed to create cert1: %v", err)
+	}
+
+	// Create one service cert.
+	cert2 := model.Certificate{
+		ID:           "cert2",
+		Type:         model.CertificateTypeService,
+		UserID:       &user.ID,
+		SerialNumber: 1001,
+		IssuedAt:     now,
+		ExpiresAt:    now.Add(1 * time.Hour),
+	}
+	if err := db.Create(&cert2).Error; err != nil {
+		t.Fatalf("failed to create cert2: %v", err)
+	}
+
+	r := gin.New()
+	r.Use(middleware.NewErrorHandlerMiddleware().Add())
+	NewAdminController(
+		&r.RouterGroup,
+		cfg,
+		db,
+		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(false),
+		mockAuditorAuthMiddleware(true),
+		mockCSRFMiddleware(),
+	)
+
+	// Filter by user type.
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/certificates/history?type=user", nil)
+	r.ServeHTTP(w, req)
+
+	var resp struct {
+		Data struct {
+			Certificates []map[string]any `json:"certificates"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if len(resp.Data.Certificates) != 1 {
+		t.Errorf("filter by user type: got %d results, want 1", len(resp.Data.Certificates))
+	}
+	if typ, ok := resp.Data.Certificates[0]["type"]; !ok || typ != "user" {
+		t.Errorf("filtered result should have type=user")
+	}
+}
+
+// TestCertificateHistoryHandler_FiltersByStatus tests expiration status filtering.
+func TestCertificateHistoryHandler_FiltersByStatus(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cfg := newTestConfig(t)
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open in-memory sqlite: %v", err)
+	}
+
+	if err := db.AutoMigrate(&model.User{}, &model.Certificate{}); err != nil {
+		t.Fatalf("migrate tables: %v", err)
+	}
+
+	user := model.User{
+		ID:       "user1",
+		Subject:  "sub1",
+		Username: "alice",
+		Email:    "alice@example.com",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	now := time.Now()
+	// Create one live cert.
+	cert1 := model.Certificate{
+		ID:           "cert1",
+		Type:         model.CertificateTypeUser,
+		UserID:       &user.ID,
+		SerialNumber: 1000,
+		IssuedAt:     now.Add(-1 * time.Hour),
+		ExpiresAt:    now.Add(1 * time.Hour),
+	}
+	if err := db.Create(&cert1).Error; err != nil {
+		t.Fatalf("failed to create cert1: %v", err)
+	}
+
+	// Create one expired cert.
+	cert2 := model.Certificate{
+		ID:           "cert2",
+		Type:         model.CertificateTypeUser,
+		UserID:       &user.ID,
+		SerialNumber: 1001,
+		IssuedAt:     now.Add(-2 * time.Hour),
+		ExpiresAt:    now.Add(-1 * time.Hour),
+	}
+	if err := db.Create(&cert2).Error; err != nil {
+		t.Fatalf("failed to create cert2: %v", err)
+	}
+
+	r := gin.New()
+	r.Use(middleware.NewErrorHandlerMiddleware().Add())
+	NewAdminController(
+		&r.RouterGroup,
+		cfg,
+		db,
+		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(false),
+		mockAuditorAuthMiddleware(true),
+		mockCSRFMiddleware(),
+	)
+
+	// Filter for live certs only.
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/certificates/history?status=live", nil)
+	r.ServeHTTP(w, req)
+
+	var resp struct {
+		Data struct {
+			Certificates []any `json:"certificates"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if len(resp.Data.Certificates) != 1 {
+		t.Errorf("filter by live status: got %d results, want 1", len(resp.Data.Certificates))
+	}
+}
+
+// TestCertificateHistoryHandler_Pagination tests offset-based pagination.
+func TestCertificateHistoryHandler_Pagination(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cfg := newTestConfig(t)
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open in-memory sqlite: %v", err)
+	}
+
+	if err := db.AutoMigrate(&model.User{}, &model.Certificate{}); err != nil {
+		t.Fatalf("migrate tables: %v", err)
+	}
+
+	user := model.User{
+		ID:       "user1",
+		Subject:  "sub1",
+		Username: "alice",
+		Email:    "alice@example.com",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("failed to create user: %v", err)
+	}
+
+	now := time.Now()
+	// Create 10 certificates.
+	for i := 0; i < 10; i++ {
+		cert := model.Certificate{
+			ID:           "cert" + string(rune(i)),
+			Type:         model.CertificateTypeUser,
+			UserID:       &user.ID,
+			SerialNumber: uint64(1000 + i),
+			IssuedAt:     now.Add(-time.Duration(i) * time.Hour),
+			ExpiresAt:    now.Add(time.Duration(1-i) * time.Hour),
+		}
+		if err := db.Create(&cert).Error; err != nil {
+			t.Fatalf("failed to create cert: %v", err)
+		}
+	}
+
+	r := gin.New()
+	r.Use(middleware.NewErrorHandlerMiddleware().Add())
+	NewAdminController(
+		&r.RouterGroup,
+		cfg,
+		db,
+		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(false),
+		mockAuditorAuthMiddleware(true),
+		mockCSRFMiddleware(),
+	)
+
+	// Request first page with limit=5.
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/certificates/history?limit=5&offset=0", nil)
+	r.ServeHTTP(w, req)
+
+	var resp struct {
+		Data struct {
+			Certificates []any      `json:"certificates"`
+			PageMeta     map[string]any `json:"page_meta"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if len(resp.Data.Certificates) != 5 {
+		t.Errorf("page 1: got %d certs, want 5", len(resp.Data.Certificates))
+	}
+	if total, ok := resp.Data.PageMeta["total"]; !ok || total != float64(10) {
+		t.Errorf("page 1: got total %v, want 10", total)
 	}
 }

@@ -330,6 +330,13 @@ type CertificateListResponse struct {
 	NextCursor   *string               `json:"next_cursor,omitempty"`
 }
 
+// CertificateListAdminResponse is the payload for the admin certificate history
+// endpoint, showing certificates across all users with offset pagination and metadata.
+type CertificateListAdminResponse struct {
+	Certificates []CertificateResponse `json:"certificates" validate:"required"`
+	PageMeta     PageMeta              `json:"page_meta" validate:"required"`
+}
+
 // BrandingResponse is optional branding for the login page and web UI.
 // All fields are optional; empty values mean no branding is configured.
 // This endpoint is unauthenticated, so only values safe for public display

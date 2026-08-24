@@ -8,7 +8,9 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
+	"github.com/mnestor/ssoossh/server/utils/paging"
 	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
@@ -168,20 +170,127 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 // @Summary     View certificate history across all users (auditor-only)
 // @Description Returns issued certificates across all users, useful for audits,
 // @Description incident review, and tracking "who issued this?". Supports
-// @Description filtering and pagination.
+// @Description searching over key ID, principals, serial number, fingerprint, and owner
+// @Description username/email, filtering by type and expiration status, and offset pagination.
 // @Tags        admin
 // @Produce     json
-// @Param       limit query int false "Number of results (default 50)" example(50)
+// @Param       limit query int false "Number of results (default 25, max 100)" example(25)
 // @Param       offset query int false "Number of results to skip (default 0)" example(0)
-// @Success     200 {object} gin.H "Certificate history"
+// @Param       q query string false "Search term (max 200 chars)" example(alice)
+// @Param       type query string false "Filter by certificate type (user/service/pam)" example(user)
+// @Param       status query string false "Filter by expiration (live/expired)" example(live)
+// @Success     200 {object} openapidoc.CertificateListWithMetaEnvelope "Certificates and page metadata"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid parameters"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
 // @Security    sessionCookie
 // @Router      /api/admin/certificates/history [get]
 func (a *adminController) certificateHistoryHandler(g *gin.Context) {
-	// TODO: implement certificate history query with filtering and pagination.
-	// This is a placeholder that documents the interface.
-	respondData(g, gin.H{"certificates": []any{}})
+	// Parse pagination and search parameters.
+	params, err := paging.Parse(g.Request.URL.Query())
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	// Parse certificate type filter (optional).
+	certTypeFilter := g.Query("type")
+	statusFilter := g.Query("status")
+
+	// Build the query: select certificates with their owner's username/email.
+	query := a.db.WithContext(g.Request.Context()).
+		Model(&model.Certificate{}).
+		Select(`certificates.id, certificates.type, certificates.serial_number,
+			certificates.key_id, certificates.principals, certificates.public_key_fingerprint,
+			certificates.issued_at, certificates.expires_at, certificates.user_id,
+			users.username, users.email`).
+		Joins("LEFT JOIN users ON certificates.user_id = users.id")
+
+	// Apply search filter across key ID, principals, serial, fingerprint, username, email.
+	if params.Query != "" {
+		whereClause, args := paging.Filter(params.Query,
+			"certificates.key_id",
+			"certificates.principals",
+			"certificates.public_key_fingerprint",
+			"users.username",
+			"users.email",
+			"CAST(certificates.serial_number AS TEXT)",
+		)
+		if whereClause != "" {
+			query = query.Where(whereClause, args...)
+		}
+	}
+
+	// Apply type filter (optional).
+	if certTypeFilter != "" {
+		query = query.Where("certificates.type = ?", certTypeFilter)
+	}
+
+	// Apply status filter (optional): live=not expired, expired=expired.
+	now := time.Now()
+	if statusFilter == "live" {
+		query = query.Where("certificates.expires_at > ?", now)
+	} else if statusFilter == "expired" {
+		query = query.Where("certificates.expires_at <= ?", now)
+	}
+
+	// Apply deterministic ordering to prevent pagination issues.
+	query = query.Order("certificates.issued_at DESC, certificates.id DESC")
+
+	// Count total matching rows before paging.
+	total, err := paging.Count(query)
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	// Apply pagination window.
+	query = paging.Apply(query, params)
+
+	// Fetch the results.
+	type certRow struct {
+		ID                   string
+		Type                 model.CertificateType
+		SerialNumber         uint64
+		KeyID                string
+		Principals           string
+		PublicKeyFingerprint string
+		IssuedAt             time.Time
+		ExpiresAt            time.Time
+		UserID               *string
+		Username             *string
+		Email                *string
+	}
+
+	var rows []certRow
+	if err := query.Scan(&rows).Error; err != nil {
+		handleError(g, err)
+		return
+	}
+
+	// Convert to response format.
+	certs := make([]webtypes.CertificateResponse, 0, len(rows))
+	for _, r := range rows {
+		cert := webtypes.CertificateResponse{
+			ID:           r.ID,
+			Type:         r.Type,
+			SerialNumber: r.SerialNumber,
+			KeyID:        r.KeyID,
+			Principals:   r.Principals,
+			Fingerprint:  r.PublicKeyFingerprint,
+			IssuedAt:     r.IssuedAt,
+			ExpiresAt:    r.ExpiresAt,
+		}
+		certs = append(certs, cert)
+	}
+
+	// Build response with page metadata.
+	resp := webtypes.CertificateListAdminResponse{
+		Certificates: certs,
+		PageMeta:     newPageMeta(params, total),
+	}
+
+	respondData(g, resp)
 }
 
 // adminEnrollmentModel is a minimal GORM model used for admin operations on enrollments.
