@@ -178,10 +178,23 @@ discrete.
 - **UserMenu**: The header's identity control — who you are acting as, with sign-out behind it. Closes on outside click and on Escape, which returns focus to the trigger.
 - **OptionDiffList**: Shows granted vs. trimmed options (extensions, critical options) with strike-through for trimmed items.
 - **ApprovalView**: Composite component rendering a full certificate-request approval form.
-- **CertDetailModal**: Read-only certificate details in a modal, triggered by clicking a row in Dashboard or History. A service certificate also states where it was fetched from — the source address of the `service retrieve` that produced it, distinct from the approval's own IP — and links to the service code behind it. The open certificate lives in `page.state` via shallow routing, with a matching `?modal=<id>` in the address bar so a specific certificate is linkable without leaving the list behind it. It has to be both: SvelteKit's `pushState` updates `page.state` and the address bar but never reassigns `page.url`, so state drives the open modal and the search parameter is only the fallback a pasted link arrives with. Every close path — the button, Escape, the backdrop — goes through the dialog's own `close` event, which is what keeps that parameter in step with what is on screen.
+- **CertDetailModal**: Read-only certificate details in a modal for quick preview when clicking a row in Dashboard or History. Shallow routing (via `page.state` and `?modal=<id>`) allows the modal to remain open while navigating within the page. A service certificate also states where it was fetched from — the source address of the `service retrieve` that produced it, distinct from the approval's own IP — and links to the service code behind it. Includes a "View full details →" link that navigates to the canonical certificate detail page at `/certs/<id>`. The open certificate lives in `page.state` via shallow routing, with a matching `?modal=<id>` in the address bar so a specific certificate is linkable without leaving the list behind it. It has to be both: SvelteKit's `pushState` updates `page.state` and the address bar but never reassigns `page.url`, so state drives the open modal and the search parameter is only the fallback a pasted link arrives with. Every close path — the button, Escape, the backdrop — goes through the dialog's own `close` event, which is what keeps that parameter in step with what is on screen.
+- **Certificate Detail Page**: The canonical view of a single certificate at `/certs/<id>`. Accessible to the user who approved the underlying request and to auditors/admins. Shows all certificate metadata, decision audit record (who approved/denied, when, from where, and their groups), and for service certificates, the retrieval log and service code link. Returns 404 (uniformly for both "not found" and "not authorized") to prevent existence leakage. The full details justify a dedicated page rather than a modal — more room, more context, no scrolling within a dialog.
 - **ConsentModal**: Blocking login consent notice, shown above the login form until accepted.
 - **Pager**: Offset pagination for the paged admin and auditor lists. The server sends the window it served (`webtypes.PageMeta`) and the pager asks for another one by offset, so neither side re-derives page arithmetic per list. Renders nothing when one page holds everything, keeps the first and last page reachable behind an ellipsis on long runs, and marks the current page with `aria-current`. Built from plain buttons rather than `Button`, which carries neither `aria-current` nor a per-page accessible name.
 - **SearchInput**: The debounced search box those lists are filtered with. Reports the trimmed term once the typing settles, and only when it settled on something new, so a stray space does not re-run a query. Enter reports immediately; the clear button reports an empty term without waiting out the debounce. `value` seeds the box and is not watched afterwards — a page that needs to reset the term remounts it with a key.
+
+### The admin certificate issuance list
+
+`src/routes/admin/certificates/+page.svelte` lists all issued certificates
+across all users, searchable and filterable by certificate type, expiration
+status, and any of: key ID, principals, serial number, fingerprint, owner
+username, or owner email. Offset-paginated using `Pager` and filtered with
+`SearchInput`, drawing data from `/api/admin/certificates/history`.
+
+Each `CertRow` is clickable and navigates to the canonical certificate detail
+page at `/certs/<id>`. Orphaned certificates (whose owner was deleted) still
+appear in the list via LEFT JOIN, so an auditor can track them.
 
 ### The service codes screen
 

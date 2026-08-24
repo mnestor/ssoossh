@@ -7,7 +7,6 @@ import (
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/middleware"
-	"github.com/mnestor/ssoossh/server/service"
 )
 
 // TestRouterConstruction_CertificatesAndCertRequestsDoNotCollide verifies
