@@ -38,8 +38,10 @@ func TestCertificateDetail_ApproverCanViewCertificate(t *testing.T) {
 	browser.Click(t, `[data-testid="sign-in-button"]`)
 	// Complete the IdP login as alice
 	browser.CompleteIdPLogin(t, "alice")
-	// Now navigate to the cert page again; this time we should get the cert details
-	browser.Navigate(t, certDetailURL, `[data-testid="cert-details"]`)
+	// Wait for the post-login redirect chain to settle. After completing IdP login,
+	// the browser is redirected back to the cert page. Wait for cert-details to
+	// appear before continuing.
+	browser.WaitVisible(t, `[data-testid="cert-details"]`)
 	browser.WaitVisible(t, `[data-testid="cert-serial-number"]`)
 	browser.WaitVisible(t, `[data-testid="cert-key-id"]`)
 }
@@ -71,9 +73,10 @@ func TestCertificateDetail_UnrelatedUserIsRefused(t *testing.T) {
 	browser.Click(t, `[data-testid="sign-in-button"]`)
 	// Complete login as bob (a user who is not the owner)
 	browser.CompleteIdPLogin(t, "bob")
-	// Now navigate to the cert page as the authenticated bob; this time we should
-	// get access-denied because bob is not authorized to view this certificate
-	browser.Navigate(t, certDetailURL, `[data-testid="access-denied"]`)
+	// Wait for the post-login redirect chain to settle. After completing IdP login,
+	// bob should be redirected back to the cert page, but since bob is not authorized
+	// to view this certificate, the page should show access-denied.
+	browser.WaitVisible(t, `[data-testid="access-denied"]`)
 	browser.AssertNotPresent(t, `[data-testid="cert-details"]`)
 }
 
@@ -104,8 +107,10 @@ func TestCertificateDetail_AuditorCanViewCertificate(t *testing.T) {
 	browser.Click(t, `[data-testid="sign-in-button"]`)
 	// Complete login as an auditor (with auditor group)
 	browser.CompleteIdPLoginWithGroups(t, "auditor", []string{"ssoossh-auditors"})
-	// Now navigate to the cert page again; this time we should get the cert details
-	browser.Navigate(t, certDetailURL, `[data-testid="cert-details"]`)
+	// Wait for the post-login redirect chain to settle. After completing IdP login,
+	// the browser is redirected back to the cert page. Wait for cert-details to
+	// appear before continuing.
+	browser.WaitVisible(t, `[data-testid="cert-details"]`)
 	browser.WaitVisible(t, `[data-testid="cert-serial-number"]`)
 }
 
