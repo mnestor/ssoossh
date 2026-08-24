@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/service"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
@@ -18,10 +19,11 @@ import (
 // the other controllers these are browser-facing redirects, not JSON API
 // calls, so they're expected to be mounted outside the /api group (see
 // bootstrap/router.go).
-func NewAuthController(group *gin.RouterGroup, authService service.AuthProvider, csrfMiddleware gin.HandlerFunc) {
+func NewAuthController(group *gin.RouterGroup, authService service.AuthProvider, csrfMiddleware gin.HandlerFunc, c *config.Config) {
 	a := &authController{authService: authService}
 	group.GET("/login", a.loginHandler)
 	group.GET("/callback", a.callbackHandler)
+	group.GET("/disabled", disabledPageHandler(c))
 
 	// Logout is state-changing and session-authorized, so it needs the same
 	// CSRF guard as approve/deny — a forced logout is a nuisance rather than
@@ -164,6 +166,11 @@ func (a *authController) callbackHandler(g *gin.Context) {
 
 	identity, err := a.authService.HandleCallback(g.Request.Context(), code, nonce, pkceVerifier)
 	if err != nil {
+		// Check if the user is disabled and redirect to the disabled page
+		if _, ok := err.(*errorresponses.UserDisabledError); ok {
+			g.Redirect(http.StatusFound, "/auth/disabled")
+			return
+		}
 		handleError(g, err)
 		return
 	}
