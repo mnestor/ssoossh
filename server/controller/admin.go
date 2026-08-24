@@ -31,11 +31,15 @@ func NewAdminController(
 ) {
 	a := &adminController{config: c, db: db, enrollmentService: enrollmentService}
 
-	// Admin routes (write operations)
+	// Admin routes (write operations, require admin group)
 	adminGroup := group.Group("/admin", sessionAuthMiddleware, adminAuthMiddleware, csrfMiddleware)
 	adminGroup.PATCH("/enrollments/:id/expire", a.expireEnrollmentHandler)
 	adminGroup.PATCH("/users/:id/disable", a.disableUserHandler)
-	adminGroup.PATCH("/enrollments/:id/reassign", a.reassignEnrollmentHandler)
+
+	// Reassignment routes (self-authorizing: owners reassign their own, admins reassign any)
+	// Authorization is checked in the handler itself, so only sessionAuthMiddleware is needed.
+	reassignGroup := group.Group("/admin", sessionAuthMiddleware, csrfMiddleware)
+	reassignGroup.PATCH("/enrollments/:id/reassign", a.reassignEnrollmentHandler)
 
 	// Auditor routes (read-only operations)
 	auditorGroup := group.Group("/admin", sessionAuthMiddleware, auditorAuthMiddleware)
