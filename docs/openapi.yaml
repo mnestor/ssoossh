@@ -663,6 +663,13 @@ components:
       properties:
         admin_auditor_group:
           type: string
+        admin_contact_email:
+          type: string
+        admin_disable_grace_period:
+          description: Admin user management
+          type: string
+        admin_disabled_message:
+          type: string
         admin_require_group:
           description: Admin authorization
           type: string
@@ -716,6 +723,7 @@ components:
           description: Server connection and TLS settings
           type: string
       required:
+      - admin_disable_grace_period
       - cert_approval_ttl
       - cert_client_timeout
       - cert_pam_valid_duration

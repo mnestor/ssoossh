@@ -75,8 +75,11 @@ func (a *adminController) effectiveConfigHandler(g *gin.Context) {
 		DBProvider:  string(a.config.DB.Provider),
 		ProviderURL: a.config.AuthConfig.ProviderURL,
 
-		AdminRequireGroup: a.config.Admin.RequireGroup,
-		AdminAuditorGroup: a.config.Admin.AuditorGroup,
+		AdminRequireGroup:       a.config.Admin.RequireGroup,
+		AdminAuditorGroup:       a.config.Admin.AuditorGroup,
+		AdminDisableGracePeriod: a.config.Admin.DisableGracePeriod.String(),
+		AdminContactEmail:       a.config.Admin.ContactEmail,
+		AdminDisabledMessage:    a.config.Admin.DisabledMessage,
 
 		LoggingLevel: a.config.Logging.Level,
 

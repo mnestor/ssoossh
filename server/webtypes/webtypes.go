@@ -362,6 +362,11 @@ type EffectiveConfigResponse struct {
 	AdminRequireGroup string `json:"admin_require_group,omitempty"`
 	AdminAuditorGroup string `json:"admin_auditor_group,omitempty"`
 
+	// Admin user management
+	AdminDisableGracePeriod string `json:"admin_disable_grace_period" validate:"required"`
+	AdminContactEmail       string `json:"admin_contact_email,omitempty"`
+	AdminDisabledMessage    string `json:"admin_disabled_message,omitempty"`
+
 	// Logging configuration
 	LoggingLevel string `json:"logging_level" validate:"required"`
 

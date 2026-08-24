@@ -175,6 +175,40 @@ func (b *Browser) CompleteIdPLogin(t *testing.T, username string) {
 	}
 }
 
+// CompleteIdPLoginWithGroups fills and submits the harness IdP's real login form
+// (data-testid="idp-username"/"idp-groups"/"idp-submit" — see idp.go's renderLoginForm)
+// with username and groups, then follows the resulting redirect chain back into the
+// server. Call after navigating to a URL that reaches /auth/login.
+func (b *Browser) CompleteIdPLoginWithGroups(t *testing.T, username string, groups []string) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
+	defer cancel()
+
+	actions := []chromedp.Action{
+		chromedp.WaitVisible(`[data-testid="idp-login-form"]`, chromedp.ByQuery),
+		chromedp.SendKeys(`[data-testid="idp-username"]`, username, chromedp.ByQuery),
+	}
+
+	// Add each group as a separate input (the form field is repeatable)
+	for _, group := range groups {
+		actions = append(actions,
+			chromedp.SendKeys(`[data-testid="idp-groups"]`, group, chromedp.ByQuery),
+			chromedp.SendKeys(`[data-testid="idp-groups"]`, "\t", chromedp.ByQuery), // Tab to next field
+		)
+	}
+
+	// Submit the form
+	actions = append(actions,
+		chromedp.Click(`[data-testid="idp-submit"]`, chromedp.ByQuery),
+	)
+
+	if err := chromedp.Run(ctx, actions...); err != nil {
+		b.screenshotOnFailure(t)
+		t.Fatalf("harness: completing the IdP login form with groups failed: %v", err)
+	}
+}
+
 // screenshotOnFailure best-effort captures a screenshot and the current URL
 // to the test's artifact directory — debugging a browser failure from an
 // assertion message alone isn't realistic.

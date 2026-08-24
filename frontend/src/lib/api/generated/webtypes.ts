@@ -397,6 +397,12 @@ export interface EffectiveConfigResponse {
 	admin_require_group?: string;
 	admin_auditor_group?: string;
 	/**
+	 * Admin user management
+	 */
+	admin_disable_grace_period: string;
+	admin_contact_email?: string;
+	admin_disabled_message?: string;
+	/**
 	 * Logging configuration
 	 */
 	logging_level: string;
