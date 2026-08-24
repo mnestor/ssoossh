@@ -168,6 +168,12 @@ type CertificateListEnvelope struct {
 	Error *string                          `json:"error"`
 }
 
+// CertificateListAdminEnvelope is GET /api/admin/certificates/history's body.
+type CertificateListAdminEnvelope struct {
+	Data  webtypes.CertificateListAdminResponse `json:"data" validate:"required"`
+	Error *string                               `json:"error"`
+}
+
 // BrandingEnvelope is GET /api/branding's body.
 type BrandingEnvelope struct {
 	Data  webtypes.BrandingResponse `json:"data" validate:"required"`

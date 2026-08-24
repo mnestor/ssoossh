@@ -179,7 +179,7 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 // @Param       q query string false "Search term (max 200 chars)" example(alice)
 // @Param       type query string false "Filter by certificate type (user/service/pam)" example(user)
 // @Param       status query string false "Filter by expiration (live/expired)" example(live)
-// @Success     200 {object} openapidoc.CertificateListWithMetaEnvelope "Certificates and page metadata"
+// @Success     200 {object} openapidoc.CertificateListAdminEnvelope "Certificates and page metadata"
 // @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid parameters"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
