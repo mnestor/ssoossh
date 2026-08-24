@@ -82,8 +82,20 @@ func TestCertificateDetail_UnrelatedUserIsRefused(t *testing.T) {
 
 // TestCertificateDetail_AuditorCanViewCertificate tests that an auditor
 // can view any certificate detail page.
+// auditorGroup is the group the harness server is told grants auditor
+// access, and the group the browser logs in carrying. Naming it once keeps
+// the two halves from drifting apart, which is a failure that looks exactly
+// like a slow page.
+const auditorGroup = "ssoossh-auditors"
+
 func TestCertificateDetail_AuditorCanViewCertificate(t *testing.T) {
-	f := newFixture(t)
+	// The server has to be told which group grants auditor access. With
+	// admin.auditor_group unset -- the product default and what every other
+	// test here runs with -- config.AdminConfig.GrantsAuditor denies every
+	// caller, so logging in carrying this group would prove nothing.
+	f := newFixture(t, func(o *harness.ServerOptions) {
+		o.AuditorGroup = auditorGroup
+	})
 	browser := harness.StartBrowser(t)
 
 	// Start a login and approve a certificate request as alice
@@ -106,7 +118,7 @@ func TestCertificateDetail_AuditorCanViewCertificate(t *testing.T) {
 	// Click the sign-in button
 	browser.Click(t, `[data-testid="sign-in-button"]`)
 	// Complete login as an auditor (with auditor group)
-	browser.CompleteIdPLoginWithGroups(t, "auditor", []string{"ssoossh-auditors"})
+	browser.CompleteIdPLoginWithGroups(t, "auditor", []string{auditorGroup})
 	// Wait for the post-login redirect chain to settle. After completing IdP login,
 	// the browser is redirected back to the cert page. Wait for cert-details to
 	// appear before continuing.

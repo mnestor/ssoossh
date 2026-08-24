@@ -33,11 +33,15 @@ type fixture struct {
 func newFixture(t *testing.T, opts ...func(*harness.ServerOptions)) *fixture {
 	t.Helper()
 
-	idp := harness.NewIdentityProvider(t)
+	// Variadic options rather than a second constructor: most tests want the
+	// defaults and say newFixture(t), while a test exercising an admin or
+	// auditor surface has to name the groups the server recognises.
 	serverOpts := harness.ServerOptions{}
-	for _, opt := range opts {
-		opt(&serverOpts)
+	for _, apply := range opts {
+		apply(&serverOpts)
 	}
+
+	idp := harness.NewIdentityProvider(t)
 	srv := harness.StartServer(t, idp, serverOpts)
 	agent := harness.StartAgent(t)
 	_, ssoosshBin := harness.Binaries(t)
