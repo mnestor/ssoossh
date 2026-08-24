@@ -5,6 +5,8 @@ package harness
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/binary"
+	"io"
 	"net"
 	"os/exec"
 	"path/filepath"
@@ -157,4 +159,100 @@ func (a *Agent) AddUnrelatedKey(t *testing.T, comment string) ssh.PublicKey {
 func ListAgentKeys(t *testing.T, a *Agent) ([]ssh.PublicKey, error) {
 	t.Helper()
 	return a.AllKeys(t), nil
+}
+
+// StartBrokenAgent starts a socket server that accepts connections and
+// properly handles the SSH agent protocol for List (returning an empty list),
+// but fails on Add operations. This is used to test preflight fallback behavior
+// when an agent is reachable but cannot store keys.
+// Returns the socket path that should be used as SSH_AUTH_SOCK.
+func StartBrokenAgent(t *testing.T) string {
+	t.Helper()
+
+	socket := filepath.Join(t.TempDir(), "broken-agent.sock")
+
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatalf("harness: failed to listen on %s: %v", socket, err)
+	}
+
+	// Start the server in a goroutine.
+	// It accepts connections and handles the SSH agent protocol.
+	// For List(), it returns an empty key list (agent looks empty).
+	// For Add(), it closes the connection to fail the operation.
+	go func() {
+		defer func() {
+			_ = listener.Close() //nolint:errcheck
+		}()
+
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return // Listener closed
+			}
+			// Handle the connection in a goroutine.
+			go handleBrokenAgentConn(conn)
+		}
+	}()
+
+	t.Cleanup(func() {
+		_ = listener.Close() //nolint:errcheck
+	})
+
+	return socket
+}
+
+// handleBrokenAgentConn handles one connection to the broken agent.
+// It responds to SSH_AGENTC_REQUEST_IDENTITIES (11) with an empty list,
+// and closes the connection on any Add or other operation.
+func handleBrokenAgentConn(conn net.Conn) {
+	defer func() {
+		_ = conn.Close() //nolint:errcheck
+	}()
+
+	for {
+		// Read message length (4 bytes, big-endian).
+		var msgLen uint32
+		if err := binary.Read(conn, binary.BigEndian, &msgLen); err != nil {
+			if err != io.EOF {
+				_ = err //nolint:errcheck
+			}
+			return // Connection closed or error
+		}
+
+		if msgLen > 256*1024 { // Safety limit
+			return
+		}
+
+		// Read message type and payload.
+		msg := make([]byte, msgLen)
+		if _, err := io.ReadFull(conn, msg); err != nil {
+			return // Connection closed or error
+		}
+
+		if len(msg) == 0 {
+			return // Invalid message
+		}
+
+		msgType := msg[0]
+
+		// SSH_AGENTC_REQUEST_IDENTITIES is 11 (list keys request).
+		if msgType == 11 {
+			// Respond with SSH_AGENT_IDENTITIES_ANSWER (12) containing 0 keys.
+			// Format: 1 byte for type + 4 bytes for number of keys (0).
+			response := []byte{12, 0, 0, 0, 0} // Type 12, 0 keys (as uint32)
+			if err := binary.Write(conn, binary.BigEndian, uint32(len(response))); err != nil {
+				return
+			}
+			if _, err := conn.Write(response); err != nil {
+				return
+			}
+			continue // Process next message
+		}
+
+		// For any Add request or other operation, close the connection
+		// to simulate a broken agent. This will cause the client's Add
+		// operation to fail.
+		return
+	}
 }

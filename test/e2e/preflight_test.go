@@ -48,48 +48,28 @@ func TestPreflight_ShouldSucceedWithHealthyAgent(t *testing.T) {
 	}
 }
 
-// TestPreflight_ShouldFallbackToFilesWhenAgentIsUnwritable tests that when
-// the configured key storage path is unwritable but fallback_file_agent is
-// true, the login uses file storage as a fallback and succeeds.
-func TestPreflight_ShouldFallbackToFilesWhenAgentIsUnwritable(t *testing.T) {
+// TestPreflight_ShouldFallbackToFilesWhenAgentFailsPreflight tests that when
+// the live agent fails the preflight and fallback_file_agent is true, the
+// login falls back to file storage and succeeds.
+func TestPreflight_ShouldFallbackToFilesWhenAgentFailsPreflight(t *testing.T) {
 	f := newFixture(t)
 
 	home := t.TempDir()
 
-	// Create an unwritable directory where keys would go, to simulate the
-	// file agent failing the preflight.
-	keyDir := harness.KeyFileDir(home, keyFilename)
-	if err := os.MkdirAll(keyDir, 0o000); err != nil {
-		t.Fatalf("setup: failed to create unwritable directory: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = os.Chmod(keyDir, 0o755) // Restore for cleanup
-	})
-
-	// Start login with a healthy agent but file storage unwritable and fallback enabled.
-	// The preflight will fail on file agent, but since use_agent is true (default) and
-	// fallback is enabled, it should fall back to... wait, it would fall back to file agent,
-	// which is still unwritable.
-	//
-	// Better approach: use use_agent: false to force file storage, make it unwritable,
-	// then the preflight fails. But then there's no fallback to test.
-	//
-	// Let me reconsider the test: the fallback scenario is when the live agent is broken
-	// but files are writable. Since we can't easily break a running agent, I'll test the
-	// file-only path instead.
-
-	// Use file storage only (use_agent: false), confirm it works.
-	home2 := t.TempDir()
+	// Start a client with a broken agent but fallback enabled and file storage writable.
+	brokenSocket := harness.StartBrokenAgent(t)
 	login := harness.StartClient(t, f.SsoosshBin, harness.ClientOptions{
 		Args:     []string{"ssh", "login", "--server", f.Server.BaseURL},
-		Home:     home2,
-		UserYAML: "use_agent: false\nfallback_file_agent: true\n",
-		Unset:    []string{"SSH_AUTH_SOCK"},
+		Home:     home,
+		UserYAML: "use_agent: true\nfallback_file_agent: true\n",
+		Env:      map[string]string{"SSH_AUTH_SOCK": brokenSocket},
 	})
 
+	// With fallback enabled, the approval URL should appear
+	// (preflight fails on agent but succeeds on file fallback).
 	approvalURL := login.ApprovalURL(t, waitFor)
 	if !strings.Contains(approvalURL, "/approve/") {
-		t.Fatalf("got %q, expected an approval URL", approvalURL)
+		t.Fatalf("expected approval URL despite broken agent (due to fallback), got: %q", approvalURL)
 	}
 
 	requestID := requestIDFromApprovalURL(t, approvalURL)
@@ -97,15 +77,62 @@ func TestPreflight_ShouldFallbackToFilesWhenAgentIsUnwritable(t *testing.T) {
 	approve(t, client, f.Server.BaseURL, requestID, "alice", nil)
 
 	if err := login.Wait(t, waitFor); err != nil {
-		t.Fatalf("ssh login failed after approval: %v\nstderr:\n%s", err, login.Stderr())
+		t.Fatalf("ssh login failed after approval with fallback: %v\nstderr:\n%s", err, login.Stderr())
 	}
 
-	// Assert certificate ended up in files.
-	privateKey, publicKey, certificate := harness.KeyFilePaths(home2, keyFilename)
+	// Assert the fallback message was printed (usually to stderr).
+	combined := login.Stderr() + login.Stdout()
+	if !strings.Contains(combined, "falling back") && !strings.Contains(combined, "fallback") {
+		t.Errorf("expected fallback message in output, stderr: %s, stdout: %s", login.Stderr(), login.Stdout())
+	}
+
+	// Assert certificate ended up in files, not the agent.
+	privateKey, publicKey, certificate := harness.KeyFilePaths(home, keyFilename)
 	for _, path := range []string{privateKey, publicKey, certificate} {
 		if _, err := os.Stat(path); err != nil {
-			t.Errorf("expected %s to exist after file-backed login: %v", path, err)
+			t.Errorf("expected %s to exist after fallback login: %v", path, err)
 		}
+	}
+
+	// Assert agent is empty (nothing went into the broken agent).
+	agentKeys := f.Agent.AllKeys(t)
+	if len(agentKeys) > 0 {
+		t.Errorf("expected no keys in agent after fallback, but found %d", len(agentKeys))
+	}
+}
+
+// TestPreflight_ShouldAbortBeforeApprovalWhenAgentFailsAndFallbackDisabled
+// tests that when the agent fails the preflight and fallback_file_agent is
+// false, the login aborts BEFORE the approval URL is printed and BEFORE a
+// certificate request is created server-side.
+func TestPreflight_ShouldAbortBeforeApprovalWhenAgentFailsAndFallbackDisabled(t *testing.T) {
+	f := newFixture(t)
+
+	// Start a client with a broken agent and fallback disabled.
+	brokenSocket := harness.StartBrokenAgent(t)
+	login := harness.StartClient(t, f.SsoosshBin, harness.ClientOptions{
+		Args:     []string{"ssh", "login", "--server", f.Server.BaseURL},
+		Home:     t.TempDir(),
+		UserYAML: "use_agent: true\nfallback_file_agent: false\n",
+		Env:      map[string]string{"SSH_AUTH_SOCK": brokenSocket},
+	})
+
+	// The login should fail before the approval URL is printed.
+	if err := login.Wait(t, waitFor); err == nil {
+		t.Fatal("expected login to fail with broken agent and fallback disabled")
+	}
+
+	stdout := login.Stdout()
+	stderr := login.Stderr()
+
+	// ASSERT 1: Approval URL was NOT printed (preflight failed BEFORE request creation).
+	if strings.Contains(stdout, "/approve/") {
+		t.Error("approval URL was printed despite agent failing and fallback disabled; preflight should have aborted first")
+	}
+
+	// ASSERT 2: Error message names the fallback setting.
+	if !strings.Contains(stderr, "fallback") && !strings.Contains(stderr, "disabled") {
+		t.Errorf("error did not mention fallback or disabled: %s", stderr)
 	}
 }
 
