@@ -16,6 +16,14 @@ declare global {
 			 * parameter so a pasted link opens the certificate it names.
 			 */
 			modalCertId?: string | null;
+
+			/**
+			 * The service enrollment whose detail modal is open, on the same
+			 * terms as modalCertId. A separate key rather than a shared one
+			 * because the two lists hold different things: a shared key would
+			 * let a ?modal= id from one page resolve against the other.
+			 */
+			modalEnrollmentId?: string | null;
 		}
 		// interface Platform {}
 	}

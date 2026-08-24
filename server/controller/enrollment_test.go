@@ -25,13 +25,17 @@ import (
 
 // fakeEnrollmentService is a test double for service.EnrollmentProvider.
 type fakeEnrollmentService struct {
-	certificate  string
-	retrievals   []model.EnrollmentRetrieval
-	err          error
-	gotCode      string
-	gotSourceIP  string
-	gotRequestID string
-	gotIdentity  *service.Identity
+	certificate string
+	retrievals  []model.EnrollmentRetrieval
+	// retrievalTotal overrides the reported total, for the truncated case
+	// where the log holds more rows than the page returns.
+	retrievalTotal int
+	enrollments    []service.ServiceEnrollment
+	err            error
+	gotCode        string
+	gotSourceIP    string
+	gotRequestID   string
+	gotIdentity    *service.Identity
 }
 
 func (f *fakeEnrollmentService) Retrieve(_ context.Context, code string, sourceIP string) (string, error) {
@@ -43,13 +47,25 @@ func (f *fakeEnrollmentService) Retrieve(_ context.Context, code string, sourceI
 	return f.certificate, nil
 }
 
-func (f *fakeEnrollmentService) ListRetrievals(_ context.Context, requestID string, identity *service.Identity) ([]model.EnrollmentRetrieval, error) {
+func (f *fakeEnrollmentService) ListRetrievals(_ context.Context, requestID string, identity *service.Identity) (service.RetrievalLog, error) {
 	f.gotRequestID = requestID
+	f.gotIdentity = identity
+	if f.err != nil {
+		return service.RetrievalLog{}, f.err
+	}
+	total := f.retrievalTotal
+	if total == 0 {
+		total = len(f.retrievals)
+	}
+	return service.RetrievalLog{Retrievals: f.retrievals, Total: total}, nil
+}
+
+func (f *fakeEnrollmentService) ListForIdentity(_ context.Context, identity *service.Identity) ([]service.ServiceEnrollment, error) {
 	f.gotIdentity = identity
 	if f.err != nil {
 		return nil, f.err
 	}
-	return f.retrievals, nil
+	return f.enrollments, nil
 }
 
 func newEnrollmentTestRouter(svc *fakeEnrollmentService) *gin.Engine {
@@ -167,6 +183,33 @@ func TestRetrievalsHandler_ShouldReturnTheLogNewestFirst(t *testing.T) {
 	}
 	if got.Retrievals[0].SourceIP != "203.0.113.9" || got.Retrievals[0].CertificateSerial != 42 || !got.Retrievals[0].Succeeded {
 		t.Errorf("retrieval row does not match: %+v", got.Retrievals[0])
+	}
+}
+
+// The count is what lets the panel say it is showing a slice rather than
+// implying the page is the whole history.
+func TestRetrievalsHandler_ShouldReportTheTotalAlongsideThePage(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeEnrollmentService{
+		retrievals: []model.EnrollmentRetrieval{
+			{RetrievedAt: time.Now(), SourceIP: "203.0.113.9", CertificateSerial: 42, Succeeded: true},
+		},
+		retrievalTotal: 8760,
+	}
+	r := newRetrievalsTestRouter(svc, &service.Identity{Subject: "sub-1"})
+
+	req := httptest.NewRequest(http.MethodGet, "/certs/requests/req-1/retrievals", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var got webtypes.EnrollmentRetrievalsResponse
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+	if got.Total != 8760 {
+		t.Errorf("got total %d, want 8760", got.Total)
+	}
+	if len(got.Retrievals) != 1 {
+		t.Errorf("got %d rows, want the page the service returned", len(got.Retrievals))
 	}
 }
 
@@ -323,5 +366,170 @@ func TestRetrieveHandler_ShouldReportTheRealJSONErrorBehindTheCodeRateLimiter(t 
 	}
 	if strings.Contains(w.Body.String(), "EOF") {
 		t.Errorf("error still reports a drained body rather than the caller's JSON: %s", w.Body.String())
+	}
+}
+
+// newEnrollmentsTestRouter wires the enrollment-list route behind a
+// middleware that injects identity, mirroring what sessionAuth guarantees in
+// production.
+func newEnrollmentsTestRouter(svc *fakeEnrollmentService, identity *service.Identity) *gin.Engine {
+	return newRetrievalsTestRouter(svc, identity)
+}
+
+// sampleServiceEnrollment is one fully-populated enrollment as the service
+// layer hands it over, code included — which is exactly what the response
+// must not carry.
+func sampleServiceEnrollment() service.ServiceEnrollment {
+	requestID := "req-1"
+	certDuration := int64(3600)
+	redeemedAt := time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC)
+	lastRetrievedAt := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
+
+	return service.ServiceEnrollment{
+		Enrollment: model.Enrollment{
+			ID:                         "enr-1",
+			Code:                       "super-secret-code",
+			PublicKey:                  "ssh-ed25519 AAAA svc",
+			KeyID:                      "svc-deploy@example.org",
+			CertificateRequestID:       &requestID,
+			CreatedAt:                  time.Date(2026, 8, 19, 9, 0, 0, 0, time.UTC),
+			ExpiresAt:                  time.Date(2026, 11, 17, 9, 0, 0, 0, time.UTC),
+			CertificateDurationSeconds: &certDuration,
+			RedeemedAt:                 &redeemedAt,
+		},
+		Principals:      []string{"svc-deploy"},
+		Options:         service.RequestedOptions{Extensions: []string{"permit-pty"}},
+		Fingerprint:     "SHA256:abc123",
+		RetrievalCount:  7,
+		LastRetrievedAt: &lastRetrievedAt,
+	}
+}
+
+func TestEnrollmentsHandler_ShouldReturnTheApprovedEnrollments(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeEnrollmentService{enrollments: []service.ServiceEnrollment{sampleServiceEnrollment()}}
+	r := newEnrollmentsTestRouter(svc, &service.Identity{Subject: "sub-1"})
+
+	req := httptest.NewRequest(http.MethodGet, "/certs/service/enrollments", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var got webtypes.ServiceEnrollmentsResponse
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+	if len(got.Enrollments) != 1 {
+		t.Fatalf("got %d enrollments, want 1", len(got.Enrollments))
+	}
+	if got.Enrollments[0].ID != "enr-1" {
+		t.Errorf("got enrollment ID %q, want %q", got.Enrollments[0].ID, "enr-1")
+	}
+}
+
+// The whole reason this endpoint exists is that the code cannot be shown.
+// A field added later that happens to carry it would be a silent regression
+// from "printed once" to "readable from any authenticated browser".
+func TestEnrollmentsHandler_ShouldNeverReturnTheCode(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeEnrollmentService{enrollments: []service.ServiceEnrollment{sampleServiceEnrollment()}}
+	r := newEnrollmentsTestRouter(svc, &service.Identity{Subject: "sub-1"})
+
+	req := httptest.NewRequest(http.MethodGet, "/certs/service/enrollments", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if bytes.Contains(w.Body.Bytes(), []byte("super-secret-code")) {
+		t.Errorf("the enrollment code reached the wire, body: %s", w.Body.String())
+	}
+}
+
+func TestEnrollmentsHandler_ShouldReportTheCertificateLifetime(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeEnrollmentService{enrollments: []service.ServiceEnrollment{sampleServiceEnrollment()}}
+	r := newEnrollmentsTestRouter(svc, &service.Identity{Subject: "sub-1"})
+
+	req := httptest.NewRequest(http.MethodGet, "/certs/service/enrollments", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var got webtypes.ServiceEnrollmentsResponse
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+	if got.Enrollments[0].CertificateValidSeconds == nil {
+		t.Fatalf("expected a certificate lifetime, got nil")
+	}
+	if *got.Enrollments[0].CertificateValidSeconds != 3600 {
+		t.Errorf("got certificate lifetime %d, want 3600", *got.Enrollments[0].CertificateValidSeconds)
+	}
+}
+
+// A row written before the code and certificate lifetimes were split has no
+// stored duration, and reporting the code's window in its place would
+// misstate what a redemption hands out.
+func TestEnrollmentsHandler_ShouldOmitTheLifetimeForALegacyRow(t *testing.T) {
+	t.Parallel()
+
+	enrollment := sampleServiceEnrollment()
+	enrollment.Enrollment.CertificateDurationSeconds = nil
+	svc := &fakeEnrollmentService{enrollments: []service.ServiceEnrollment{enrollment}}
+	r := newEnrollmentsTestRouter(svc, &service.Identity{Subject: "sub-1"})
+
+	req := httptest.NewRequest(http.MethodGet, "/certs/service/enrollments", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var got webtypes.ServiceEnrollmentsResponse
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+	if got.Enrollments[0].CertificateValidSeconds != nil {
+		t.Errorf("got certificate lifetime %d, want it omitted", *got.Enrollments[0].CertificateValidSeconds)
+	}
+}
+
+func TestEnrollmentsHandler_ShouldReturnAnEmptyListAsAnEmptyArray(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeEnrollmentService{}
+	r := newEnrollmentsTestRouter(svc, &service.Identity{Subject: "sub-1"})
+
+	req := httptest.NewRequest(http.MethodGet, "/certs/service/enrollments", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if !bytes.Contains(w.Body.Bytes(), []byte(`"enrollments":[]`)) {
+		t.Errorf("expected an empty array, not null, body: %s", w.Body.String())
+	}
+}
+
+func TestEnrollmentsHandler_ShouldFailClosedWithoutAnIdentity(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeEnrollmentService{}
+	r := newEnrollmentsTestRouter(svc, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/certs/service/enrollments", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("got status %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestEnrollmentsHandler_ShouldSurfaceAServiceError(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeEnrollmentService{err: errors.New("nope")}
+	r := newEnrollmentsTestRouter(svc, &service.Identity{Subject: "sub-1"})
+
+	req := httptest.NewRequest(http.MethodGet, "/certs/service/enrollments", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code == http.StatusOK {
+		t.Fatalf("expected the service error to surface, got status %d", w.Code)
 	}
 }

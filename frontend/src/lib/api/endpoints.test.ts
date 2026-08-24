@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { approveRequest, denyRequest, getRequestDetail, loginURL, logout } from './endpoints';
+import {
+	approveRequest,
+	denyRequest,
+	getRequestDetail,
+	listServiceEnrollments,
+	loginURL,
+	logout
+} from './endpoints';
 
 /** okFetch installs a fetch that answers everything with an empty envelope.
  * Typed as the real fetch so recorded calls carry its argument types. */
@@ -68,6 +75,14 @@ describe('request-id encoding', () => {
 		const fetchMock = okFetch();
 		await denyRequest('abc');
 		expect(firstCall(fetchMock).init.method).toBe('POST');
+	});
+});
+
+describe('listServiceEnrollments', () => {
+	it('should get the enrollment list under the api prefix', async () => {
+		const fetchMock = okFetch();
+		await listServiceEnrollments();
+		expect(firstCall(fetchMock).url).toBe('/api/certs/service/enrollments');
 	});
 });
 

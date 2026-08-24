@@ -83,9 +83,96 @@ type EnrollmentRetrievalResponse struct {
 }
 
 // EnrollmentRetrievalsResponse is the retrieval log for one service
-// certificate request's enrollment.
+// certificate request's enrollment: the most recent page of it, plus how
+// many rows exist in total.
+//
+// Bounded because it is not a small list. Codes are reusable and live as
+// long as cert_options.service.enrollment_duration (a year by default), so
+// an hourly cron leaves thousands of rows and a five-minute one leaves six
+// figures. Returning all of them would put the whole history in one
+// response body and in the DOM at once.
 type EnrollmentRetrievalsResponse struct {
 	Retrievals []EnrollmentRetrievalResponse `json:"retrievals" validate:"required"`
+
+	// Total counts every logged redemption, not just the ones returned, so
+	// the UI can say what it is showing a slice of rather than implying the
+	// page is the whole history.
+	Total int `json:"total" validate:"required"`
+}
+
+// ServiceEnrollmentResponse describes one approved service enrollment
+// without its code.
+//
+// The code is deliberately absent and must stay that way: `service enroll`
+// prints it once, the server stores it only to match a redemption against,
+// and a page that handed it back would turn a browser session into a way to
+// mint service certificates. What this answers instead is "what did I
+// approve, what will it hand out, and how long does it last" — the facts
+// needed to decide whether a code should be renewed, reassigned, or left to
+// expire.
+type ServiceEnrollmentResponse struct {
+	ID string `json:"id" validate:"required"`
+
+	// CertificateRequestID is the request this enrollment was approved
+	// from, and the id the retrieval log at
+	// /api/certs/requests/{id}/retrievals is keyed on. Omitted for an
+	// enrollment with no request linked to it.
+	CertificateRequestID string `json:"certificate_request_id,omitempty"`
+
+	// Principals is what every certificate this code produces carries. For
+	// a service enrollment that is the single service account the approver
+	// picked, fixed at approval time and never re-derived at redemption.
+	Principals []string `json:"principals" validate:"required"`
+
+	// KeyID is likewise fixed at approval and lands verbatim in every
+	// certificate, which is what a target host's logs record.
+	KeyID string `json:"key_id" validate:"required"`
+
+	// PublicKeyFingerprint identifies the keypair the code is bound to.
+	// `service retrieve` never sends a public key, so a code lifted without
+	// this keypair produces nothing usable.
+	//
+	// Empty if the stored key could not be parsed — a display gap, not a
+	// reason to withhold the rest of the row.
+	PublicKeyFingerprint string `json:"public_key_fingerprint,omitempty"`
+
+	// Options are the certificate options fixed at approval, already
+	// narrowed by server config: what a redemption actually grants, not
+	// what the client asked for.
+	Options CertificateOptionsResponse `json:"options" validate:"required"`
+
+	// CertificateValidSeconds is how long each redeemed certificate is
+	// valid for, measured from its own redemption rather than from
+	// approval. Omitted for an enrollment created before the code and
+	// certificate lifetimes were split, where ExpiresAt bounded both.
+	CertificateValidSeconds *int `json:"certificate_valid_seconds,omitempty"`
+
+	// CreatedAt is when the enrollment was approved.
+	CreatedAt time.Time `json:"created_at" validate:"required"`
+
+	// ExpiresAt bounds the code, not the certificates it produces: past it
+	// `service retrieve` stops redeeming, and the unattended job behind it
+	// needs a fresh enrollment.
+	ExpiresAt time.Time `json:"expires_at" validate:"required"`
+
+	// FirstRedeemedAt is the first successful redemption, absent for a code
+	// that has never produced a certificate.
+	FirstRedeemedAt *time.Time `json:"first_redeemed_at,omitempty"`
+
+	// LastRetrievedAt is the most recent redemption attempt, successful or
+	// not. Together with RetrievalCount it is how the approver tells a code
+	// still driving a cron job from one nothing has used in months.
+	LastRetrievedAt *time.Time `json:"last_retrieved_at,omitempty"`
+
+	// RetrievalCount counts every logged redemption attempt, including
+	// those that failed at signing — someone held the code either way.
+	RetrievalCount int `json:"retrieval_count" validate:"required"`
+}
+
+// ServiceEnrollmentsResponse is the caller's own approved service
+// enrollments, newest first.
+type ServiceEnrollmentsResponse struct {
+	Enrollments []ServiceEnrollmentResponse `json:"enrollments" validate:"required"`
 }
 
 // CertificateOptionsResponse is one side of the requested/granted pair the
@@ -162,6 +249,26 @@ type CertificateResponse struct {
 	Fingerprint  string                `json:"public_key_fingerprint" validate:"required"`
 	IssuedAt     time.Time             `json:"issued_at" validate:"required"`
 	ExpiresAt    time.Time             `json:"expires_at" validate:"required"`
+
+	// RetrievedSourceIP is the address the `service retrieve` call came
+	// from — the machine the unattended job actually ran on. Present only
+	// on a service certificate.
+	//
+	// It answers a different question from DecidedSourceIP below, which for
+	// a service certificate is the approver's browser at enrollment time
+	// and is therefore identical across every certificate the code mints.
+	// This one is this certificate's own origin.
+	RetrievedSourceIP string `json:"retrieved_source_ip,omitempty"`
+
+	// RetrievedAt is when that redemption happened. Distinct from IssuedAt
+	// only by the width of the signing round trip, and carried because the
+	// retrieval log is timestamped by it — matching a certificate to a line
+	// in that log means comparing like with like.
+	RetrievedAt *time.Time `json:"retrieved_at,omitempty"`
+
+	// EnrollmentID is the service code this certificate was redeemed from,
+	// so the UI can link to it. Present only on a service certificate.
+	EnrollmentID string `json:"enrollment_id,omitempty"`
 
 	DecidedByOutcome         string     `json:"decided_by_outcome,omitempty"`
 	DecidedBySubject         string     `json:"decided_by_subject,omitempty"`

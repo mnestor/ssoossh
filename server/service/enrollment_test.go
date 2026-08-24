@@ -503,13 +503,13 @@ func TestListRetrievals_Authorization(t *testing.T) {
 		t.Parallel()
 		_, enrollment, requestID, _ := setup(t)
 
-		rows, err := enrollment.ListRetrievals(context.Background(),
+		log, err := enrollment.ListRetrievals(context.Background(),
 			requestID, &Identity{Subject: "sub-approver"})
 		if err != nil {
 			t.Fatalf("ListRetrievals() error = %v", err)
 		}
-		if len(rows) != 1 || rows[0].SourceIP != "203.0.113.9" {
-			t.Errorf("got %v, want the seeded retrieval", rows)
+		if len(log.Retrievals) != 1 || log.Retrievals[0].SourceIP != "203.0.113.9" {
+			t.Errorf("got %v, want the seeded retrieval", log.Retrievals)
 		}
 	})
 
@@ -518,13 +518,13 @@ func TestListRetrievals_Authorization(t *testing.T) {
 		svc, enrollment, requestID, _ := setup(t)
 		seedUser(t, svc.db, "sub-auditor")
 
-		rows, err := enrollment.ListRetrievals(context.Background(),
+		log, err := enrollment.ListRetrievals(context.Background(),
 			requestID, &Identity{Subject: "sub-auditor", Groups: []string{"auditors"}})
 		if err != nil {
 			t.Fatalf("ListRetrievals() error = %v", err)
 		}
-		if len(rows) != 1 {
-			t.Errorf("got %d rows, want 1", len(rows))
+		if len(log.Retrievals) != 1 {
+			t.Errorf("got %d rows, want 1", len(log.Retrievals))
 		}
 	})
 
@@ -550,6 +550,335 @@ func TestListRetrievals_Authorization(t *testing.T) {
 		var notFound *errorresponses.NotFoundError
 		if !errors.As(err, &notFound) {
 			t.Errorf("ListRetrievals() error = %v, want NotFoundError", err)
+		}
+	})
+}
+
+// TestListForIdentity covers the read behind the web UI's service-codes
+// page: which rows an identity sees, what is decoded onto them, and what a
+// row with no retrievals reports.
+func TestListForIdentity(t *testing.T) {
+	t.Parallel()
+
+	// setup returns the services plus the two seeded identities, so each
+	// subtest can assert the scoping boundary between them.
+	setup := func(t *testing.T) (*CertRequestService, *EnrollmentService, string, string) {
+		t.Helper()
+		svc := newTestCertRequestServiceWithConfig(t, &config.Config{})
+		enrollment := newTestEnrollmentService(t, svc)
+		mine := seedUser(t, svc.db, "sub-mine")
+		theirs := seedUser(t, svc.db, "sub-theirs")
+		return svc, enrollment, mine, theirs
+	}
+
+	t.Run("should return only the caller's own enrollments", func(t *testing.T) {
+		t.Parallel()
+		svc, enrollment, mine, theirs := setup(t)
+		seedEnrollment(t, svc, model.Enrollment{
+			Code: "code-mine", PublicKey: "k", Principals: `["svc-mine"]`,
+			UserID: mine, ExpiresAt: time.Now().Add(time.Hour),
+		})
+		seedEnrollment(t, svc, model.Enrollment{
+			Code: "code-theirs", PublicKey: "k", Principals: `["svc-theirs"]`,
+			UserID: theirs, ExpiresAt: time.Now().Add(time.Hour),
+		})
+
+		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine"})
+		if err != nil {
+			t.Fatalf("ListForIdentity() error = %v", err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("got %d enrollments, want 1", len(rows))
+		}
+		if rows[0].Principals[0] != "svc-mine" {
+			t.Errorf("got principal %q, want %q", rows[0].Principals[0], "svc-mine")
+		}
+	})
+
+	t.Run("should order newest first", func(t *testing.T) {
+		t.Parallel()
+		svc, enrollment, mine, _ := setup(t)
+		now := time.Now()
+		seedEnrollment(t, svc, model.Enrollment{
+			Code: "code-old", PublicKey: "k", Principals: `["svc-old"]`, UserID: mine,
+			CreatedAt: now.Add(-2 * time.Hour), ExpiresAt: now.Add(time.Hour),
+		})
+		seedEnrollment(t, svc, model.Enrollment{
+			Code: "code-new", PublicKey: "k", Principals: `["svc-new"]`, UserID: mine,
+			CreatedAt: now, ExpiresAt: now.Add(time.Hour),
+		})
+
+		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine"})
+		if err != nil {
+			t.Fatalf("ListForIdentity() error = %v", err)
+		}
+		if len(rows) != 2 {
+			t.Fatalf("got %d enrollments, want 2", len(rows))
+		}
+		if rows[0].Principals[0] != "svc-new" {
+			t.Errorf("got %q first, want the newest enrollment", rows[0].Principals[0])
+		}
+	})
+
+	// A code that has stopped working is exactly what the approver needs to
+	// see to decide whether the job behind it still needs one.
+	t.Run("should include expired enrollments", func(t *testing.T) {
+		t.Parallel()
+		svc, enrollment, mine, _ := setup(t)
+		seedEnrollment(t, svc, model.Enrollment{
+			Code: "code-dead", PublicKey: "k", Principals: `["svc-dead"]`,
+			UserID: mine, ExpiresAt: time.Now().Add(-time.Hour),
+		})
+
+		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine"})
+		if err != nil {
+			t.Fatalf("ListForIdentity() error = %v", err)
+		}
+		if len(rows) != 1 {
+			t.Errorf("got %d enrollments, want the expired one included", len(rows))
+		}
+	})
+
+	t.Run("should summarize the retrieval log", func(t *testing.T) {
+		t.Parallel()
+		svc, enrollment, mine, _ := setup(t)
+		enrollmentID := uuid.NewString()
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: enrollmentID, Code: "code-used", PublicKey: "k",
+			Principals: `["svc-used"]`, UserID: mine, ExpiresAt: time.Now().Add(time.Hour),
+		})
+		newest := time.Now().Truncate(time.Second)
+		for i, at := range []time.Time{newest.Add(-2 * time.Hour), newest.Add(-time.Hour), newest} {
+			if err := svc.db.Create(&model.EnrollmentRetrieval{
+				ID: uuid.NewString(), EnrollmentID: enrollmentID,
+				SourceIP: "203.0.113.9", CertificateSerial: uint64(i + 1),
+				RetrievedAt: at, Succeeded: true,
+			}).Error; err != nil {
+				t.Fatalf("failed to seed retrieval: %v", err)
+			}
+		}
+
+		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine"})
+		if err != nil {
+			t.Fatalf("ListForIdentity() error = %v", err)
+		}
+		if rows[0].RetrievalCount != 3 {
+			t.Errorf("got retrieval count %d, want 3", rows[0].RetrievalCount)
+		}
+		if rows[0].LastRetrievedAt == nil {
+			t.Fatalf("expected a last-retrieved timestamp")
+		}
+		if !rows[0].LastRetrievedAt.UTC().Equal(newest.UTC()) {
+			t.Errorf("got last retrieval %v, want %v", rows[0].LastRetrievedAt.UTC(), newest.UTC())
+		}
+	})
+
+	t.Run("should report a never-redeemed code as unused", func(t *testing.T) {
+		t.Parallel()
+		svc, enrollment, mine, _ := setup(t)
+		seedEnrollment(t, svc, model.Enrollment{
+			Code: "code-fresh", PublicKey: "k", Principals: `["svc-fresh"]`,
+			UserID: mine, ExpiresAt: time.Now().Add(time.Hour),
+		})
+
+		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine"})
+		if err != nil {
+			t.Fatalf("ListForIdentity() error = %v", err)
+		}
+		if rows[0].RetrievalCount != 0 {
+			t.Errorf("got retrieval count %d, want 0", rows[0].RetrievalCount)
+		}
+		if rows[0].LastRetrievedAt != nil {
+			t.Errorf("got last retrieval %v, want nil", rows[0].LastRetrievedAt)
+		}
+	})
+
+	t.Run("should decode the stored option set", func(t *testing.T) {
+		t.Parallel()
+		svc, enrollment, mine, _ := setup(t)
+		seedEnrollment(t, svc, model.Enrollment{
+			Code: "code-opts", PublicKey: "k", Principals: `["svc-opts"]`, UserID: mine,
+			OptionSet: `{"extensions":["permit-pty"],"force_command":"/usr/bin/true"}`,
+			ExpiresAt: time.Now().Add(time.Hour),
+		})
+
+		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine"})
+		if err != nil {
+			t.Fatalf("ListForIdentity() error = %v", err)
+		}
+		if rows[0].Options.ForceCommand != "/usr/bin/true" {
+			t.Errorf("got force command %q, want %q", rows[0].Options.ForceCommand, "/usr/bin/true")
+		}
+	})
+
+	t.Run("should fingerprint the bound public key", func(t *testing.T) {
+		t.Parallel()
+		svc, enrollment, mine, _ := setup(t)
+		kp, err := keypair.NewEd25519KeyPair()
+		if err != nil {
+			t.Fatalf("failed to generate keypair: %v", err)
+		}
+		authorizedKey, err := kp.MarshalAuthorizedKey()
+		if err != nil {
+			t.Fatalf("failed to marshal public key: %v", err)
+		}
+		seedEnrollment(t, svc, model.Enrollment{
+			Code: "code-fp", PublicKey: authorizedKey, Principals: `["svc-fp"]`,
+			UserID: mine, ExpiresAt: time.Now().Add(time.Hour),
+		})
+
+		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine"})
+		if err != nil {
+			t.Fatalf("ListForIdentity() error = %v", err)
+		}
+		parsed, _, _, _, err := ssh.ParseAuthorizedKey([]byte(authorizedKey))
+		if err != nil {
+			t.Fatalf("failed to parse the seeded key: %v", err)
+		}
+		if rows[0].Fingerprint != ssh.FingerprintSHA256(parsed) {
+			t.Errorf("got fingerprint %q, want %q", rows[0].Fingerprint, ssh.FingerprintSHA256(parsed))
+		}
+	})
+
+	// One unreadable column is not a reason to withhold the dates beside
+	// it: the page exists to say when a code was approved and when it dies.
+	t.Run("should still return a row whose stored JSON does not parse", func(t *testing.T) {
+		t.Parallel()
+		svc, enrollment, mine, _ := setup(t)
+		seedEnrollment(t, svc, model.Enrollment{
+			Code: "code-broken", PublicKey: "not-a-key", Principals: "{{{",
+			OptionSet: "{{{", UserID: mine, ExpiresAt: time.Now().Add(time.Hour),
+		})
+
+		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine"})
+		if err != nil {
+			t.Fatalf("ListForIdentity() error = %v", err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("got %d enrollments, want 1", len(rows))
+		}
+		if len(rows[0].Principals) != 0 || rows[0].Fingerprint != "" {
+			t.Errorf("expected the unreadable fields empty, got %+v", rows[0])
+		}
+		if rows[0].Enrollment.ExpiresAt.IsZero() {
+			t.Errorf("expected the readable fields intact, got a zero expiry")
+		}
+	})
+
+	t.Run("should return an empty list for an identity with no users row", func(t *testing.T) {
+		t.Parallel()
+		_, enrollment, _, _ := setup(t)
+
+		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-unknown"})
+		if err != nil {
+			t.Fatalf("ListForIdentity() error = %v", err)
+		}
+		if len(rows) != 0 {
+			t.Errorf("got %d enrollments, want none", len(rows))
+		}
+	})
+}
+
+// A reusable code redeemed from cron accumulates thousands of rows over its
+// life. The panel that reads them wants the recent end and a count, not a
+// year of history in one response.
+func TestListRetrievals_Truncation(t *testing.T) {
+	t.Parallel()
+
+	// seedLog builds an enrollment with count redemptions, the newest last,
+	// and returns the request id the log is fetched by.
+	seedLog := func(t *testing.T, count int) (*EnrollmentService, string) {
+		t.Helper()
+		svc := newTestCertRequestServiceWithConfig(t, &config.Config{})
+		enrollment := newTestEnrollmentService(t, svc)
+
+		requestID := uuid.NewString()
+		approverID := seedUser(t, svc.db, "sub-approver")
+		if err := svc.db.Create(&model.CertificateRequest{
+			ID: requestID, Type: model.CertificateTypeService,
+			PublicKey: "ssh-ed25519 AAAA...", UserID: &approverID,
+			Status: model.CertificateRequestStatusEnrolled, CreatedAt: time.Now(),
+		}).Error; err != nil {
+			t.Fatalf("failed to seed request: %v", err)
+		}
+		enrollmentID := uuid.NewString()
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: enrollmentID, Code: "code-" + enrollmentID, PublicKey: "k",
+			Principals: `["svc-a"]`, UserID: approverID,
+			CertificateRequestID: &requestID, ExpiresAt: time.Now().Add(time.Hour),
+		})
+
+		base := time.Now().Add(-time.Duration(count) * time.Minute).Truncate(time.Second)
+		for i := range count {
+			if err := svc.db.Create(&model.EnrollmentRetrieval{
+				ID: uuid.NewString(), EnrollmentID: enrollmentID,
+				SourceIP: "203.0.113.9", CertificateSerial: uint64(i + 1),
+				RetrievedAt: base.Add(time.Duration(i) * time.Minute), Succeeded: true,
+			}).Error; err != nil {
+				t.Fatalf("failed to seed retrieval: %v", err)
+			}
+		}
+		return enrollment, requestID
+	}
+
+	t.Run("should cap the page at the retrieval page size", func(t *testing.T) {
+		t.Parallel()
+		enrollment, requestID := seedLog(t, RetrievalPageSize+25)
+
+		log, err := enrollment.ListRetrievals(context.Background(),
+			requestID, &Identity{Subject: "sub-approver"})
+		if err != nil {
+			t.Fatalf("ListRetrievals() error = %v", err)
+		}
+		if len(log.Retrievals) != RetrievalPageSize {
+			t.Errorf("got %d rows, want %d", len(log.Retrievals), RetrievalPageSize)
+		}
+	})
+
+	// A full page says only "at least this many", so the count has to be its
+	// own query — it is the difference between the two that gets rendered.
+	t.Run("should report the untruncated total", func(t *testing.T) {
+		t.Parallel()
+		enrollment, requestID := seedLog(t, RetrievalPageSize+25)
+
+		log, err := enrollment.ListRetrievals(context.Background(),
+			requestID, &Identity{Subject: "sub-approver"})
+		if err != nil {
+			t.Fatalf("ListRetrievals() error = %v", err)
+		}
+		if log.Total != RetrievalPageSize+25 {
+			t.Errorf("got total %d, want %d", log.Total, RetrievalPageSize+25)
+		}
+	})
+
+	t.Run("should return the newest redemptions rather than the oldest", func(t *testing.T) {
+		t.Parallel()
+		enrollment, requestID := seedLog(t, RetrievalPageSize+25)
+
+		log, err := enrollment.ListRetrievals(context.Background(),
+			requestID, &Identity{Subject: "sub-approver"})
+		if err != nil {
+			t.Fatalf("ListRetrievals() error = %v", err)
+		}
+		// Serials ascend with time in the fixture, so the newest row carries
+		// the highest one.
+		if log.Retrievals[0].CertificateSerial != uint64(RetrievalPageSize+25) {
+			t.Errorf("got serial %d first, want the newest redemption",
+				log.Retrievals[0].CertificateSerial)
+		}
+	})
+
+	t.Run("should report a total matching the page when nothing is truncated", func(t *testing.T) {
+		t.Parallel()
+		enrollment, requestID := seedLog(t, 3)
+
+		log, err := enrollment.ListRetrievals(context.Background(),
+			requestID, &Identity{Subject: "sub-approver"})
+		if err != nil {
+			t.Fatalf("ListRetrievals() error = %v", err)
+		}
+		if log.Total != 3 || len(log.Retrievals) != 3 {
+			t.Errorf("got %d of %d, want 3 of 3", len(log.Retrievals), log.Total)
 		}
 	})
 }

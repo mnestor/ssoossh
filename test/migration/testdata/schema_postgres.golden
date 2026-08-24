@@ -79,6 +79,7 @@ table enrollment_retrievals
   column succeeded type=boolean nullable=false default=false
   fk enrollment_id -> enrollments.id
   index enrollment_retrievals_pkey CREATE UNIQUE INDEX enrollment_retrievals_pkey ON public.enrollment_retrievals USING btree (id)
+  index idx_enrollment_retrievals_certificate_serial CREATE INDEX idx_enrollment_retrievals_certificate_serial ON public.enrollment_retrievals USING btree (certificate_serial)
   index idx_enrollment_retrievals_enrollment_id CREATE INDEX idx_enrollment_retrievals_enrollment_id ON public.enrollment_retrievals USING btree (enrollment_id)
 table enrollments
   column certificate_duration_seconds type=bigint nullable=true default=<none>

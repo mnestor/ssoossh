@@ -104,6 +104,9 @@ local principal-mapping tooling (`host mapping`, `host principals`) for
   key, `/api/ca` returns the full set, and clients and PAM trust a
   certificate signed by any of them, which covers key rotation and
   independent signers with distinct keys.
+- A **Service codes** view of the enrollments you approved that never shows
+  a code: the account each one mints for, what a redemption grants, when it
+  stops being redeemable, and how often anything has used it.
 - OpenAPI spec and TypeScript types are generated from the code with CI
   drift checks.
 

@@ -21,7 +21,12 @@ import (
 func newTestCertificateService(t *testing.T, svc *CertRequestService) *CertificateService {
 	t.Helper()
 
-	if err := svc.db.AutoMigrate(&model.Certificate{}, &model.CertificateRequest{}, &model.CertificateRequestDecision{}); err != nil {
+	// EnrollmentRetrieval is in the list because ListForIdentity LEFT JOINs
+	// it to find where a service certificate was fetched from. The join is
+	// on every row, service or not, so the table has to exist even for a
+	// test that only seeds user certificates.
+	if err := svc.db.AutoMigrate(&model.Certificate{}, &model.CertificateRequest{},
+		&model.CertificateRequestDecision{}, &model.EnrollmentRetrieval{}); err != nil {
 		t.Fatalf("failed to migrate certificate tables: %v", err)
 	}
 	return NewCertificateService(svc.db)
@@ -518,5 +523,106 @@ func TestCertificateService_CertificateWithoutDecision(t *testing.T) {
 	// Verify decision is nil.
 	if got[0].Decision != nil {
 		t.Errorf("got Decision = %+v, want nil", got[0].Decision)
+	}
+}
+
+// The serial is the only thing a service certificate and the redemption
+// that produced it share: EnrollmentService.Retrieve allocates it onto the
+// retrieval row and sends the same value to the signer.
+func TestCertificateService_ServiceCertificateRetrieval(t *testing.T) {
+	t.Parallel()
+
+	// seed inserts a service certificate and, unless skipRetrieval, the
+	// retrieval row carrying its serial.
+	seed := func(t *testing.T, skipRetrieval bool) (*CertificateService, string, string) {
+		t.Helper()
+		svc := newTestCertRequestService(t, time.Minute)
+		certs := newTestCertificateService(t, svc)
+		userID := seedUser(t, svc.db, "sub-alice")
+
+		const serial = uint64(7777)
+		cert := model.Certificate{
+			ID: uuid.NewString(), Type: model.CertificateTypeService,
+			UserID: &userID, SerialNumber: serial,
+			IssuedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour),
+		}
+		if err := svc.db.Create(&cert).Error; err != nil {
+			t.Fatalf("failed to seed certificate: %v", err)
+		}
+
+		enrollmentID := uuid.NewString()
+		if !skipRetrieval {
+			if err := svc.db.Create(&model.EnrollmentRetrieval{
+				ID: uuid.NewString(), EnrollmentID: enrollmentID,
+				SourceIP: "198.51.100.44", CertificateSerial: serial,
+				RetrievedAt: time.Now(), Succeeded: true,
+			}).Error; err != nil {
+				t.Fatalf("failed to seed retrieval: %v", err)
+			}
+		}
+		return certs, enrollmentID, "sub-alice"
+	}
+
+	t.Run("should report the address the certificate was retrieved from", func(t *testing.T) {
+		t.Parallel()
+		certs, _, subject := seed(t, false)
+
+		rows, _, err := certs.ListForIdentity(context.Background(), &Identity{Subject: subject}, nil, 25)
+		if err != nil {
+			t.Fatalf("ListForIdentity() error = %v", err)
+		}
+		if rows[0].Retrieval == nil {
+			t.Fatalf("expected a retrieval, got nil")
+		}
+		if rows[0].Retrieval.SourceIP != "198.51.100.44" {
+			t.Errorf("got source IP %q, want %q", rows[0].Retrieval.SourceIP, "198.51.100.44")
+		}
+	})
+
+	// The enrollment id is what lets the UI link a certificate back to the
+	// code it came from.
+	t.Run("should name the enrollment the certificate was redeemed from", func(t *testing.T) {
+		t.Parallel()
+		certs, enrollmentID, subject := seed(t, false)
+
+		rows, _, err := certs.ListForIdentity(context.Background(), &Identity{Subject: subject}, nil, 25)
+		if err != nil {
+			t.Fatalf("ListForIdentity() error = %v", err)
+		}
+		if rows[0].Retrieval.EnrollmentID != enrollmentID {
+			t.Errorf("got enrollment %q, want %q", rows[0].Retrieval.EnrollmentID, enrollmentID)
+		}
+	})
+
+	t.Run("should leave the retrieval nil when no row carries the serial", func(t *testing.T) {
+		t.Parallel()
+		certs, _, subject := seed(t, true)
+
+		rows, _, err := certs.ListForIdentity(context.Background(), &Identity{Subject: subject}, nil, 25)
+		if err != nil {
+			t.Fatalf("ListForIdentity() error = %v", err)
+		}
+		if rows[0].Retrieval != nil {
+			t.Errorf("got retrieval %+v, want nil", rows[0].Retrieval)
+		}
+	})
+}
+
+// A user certificate has no redemption behind it at all, and the join must
+// not invent one by colliding on a serial.
+func TestCertificateService_ShouldLeaveANonServiceCertificateWithoutARetrieval(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Minute)
+	certs := newTestCertificateService(t, svc)
+	userID := seedUser(t, svc.db, "sub-alice")
+	seedCertificate(t, svc, &userID, 4242, time.Now())
+
+	rows, _, err := certs.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 25)
+	if err != nil {
+		t.Fatalf("ListForIdentity() error = %v", err)
+	}
+	if rows[0].Retrieval != nil {
+		t.Errorf("got retrieval %+v, want nil for a user certificate", rows[0].Retrieval)
 	}
 }

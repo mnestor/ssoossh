@@ -90,10 +90,108 @@ export interface EnrollmentRetrievalResponse {
 }
 /**
  * EnrollmentRetrievalsResponse is the retrieval log for one service
- * certificate request's enrollment.
+ * certificate request's enrollment: the most recent page of it, plus how
+ * many rows exist in total.
+ * Bounded because it is not a small list. Codes are reusable and live as
+ * long as cert_options.service.enrollment_duration (a year by default), so
+ * an hourly cron leaves thousands of rows and a five-minute one leaves six
+ * figures. Returning all of them would put the whole history in one
+ * response body and in the DOM at once.
  */
 export interface EnrollmentRetrievalsResponse {
 	retrievals: EnrollmentRetrievalResponse[];
+	/**
+	 * Total counts every logged redemption, not just the ones returned, so
+	 * the UI can say what it is showing a slice of rather than implying the
+	 * page is the whole history.
+	 */
+	total: number /* int */;
+}
+/**
+ * ServiceEnrollmentResponse describes one approved service enrollment
+ * without its code.
+ * The code is deliberately absent and must stay that way: `service enroll`
+ * prints it once, the server stores it only to match a redemption against,
+ * and a page that handed it back would turn a browser session into a way to
+ * mint service certificates. What this answers instead is "what did I
+ * approve, what will it hand out, and how long does it last" — the facts
+ * needed to decide whether a code should be renewed, reassigned, or left to
+ * expire.
+ */
+export interface ServiceEnrollmentResponse {
+	id: string;
+	/**
+	 * CertificateRequestID is the request this enrollment was approved
+	 * from, and the id the retrieval log at
+	 * /api/certs/requests/{id}/retrievals is keyed on. Omitted for an
+	 * enrollment with no request linked to it.
+	 */
+	certificate_request_id?: string;
+	/**
+	 * Principals is what every certificate this code produces carries. For
+	 * a service enrollment that is the single service account the approver
+	 * picked, fixed at approval time and never re-derived at redemption.
+	 */
+	principals: string[];
+	/**
+	 * KeyID is likewise fixed at approval and lands verbatim in every
+	 * certificate, which is what a target host's logs record.
+	 */
+	key_id: string;
+	/**
+	 * PublicKeyFingerprint identifies the keypair the code is bound to.
+	 * `service retrieve` never sends a public key, so a code lifted without
+	 * this keypair produces nothing usable.
+	 * Empty if the stored key could not be parsed — a display gap, not a
+	 * reason to withhold the rest of the row.
+	 */
+	public_key_fingerprint?: string;
+	/**
+	 * Options are the certificate options fixed at approval, already
+	 * narrowed by server config: what a redemption actually grants, not
+	 * what the client asked for.
+	 */
+	options: CertificateOptionsResponse;
+	/**
+	 * CertificateValidSeconds is how long each redeemed certificate is
+	 * valid for, measured from its own redemption rather than from
+	 * approval. Omitted for an enrollment created before the code and
+	 * certificate lifetimes were split, where ExpiresAt bounded both.
+	 */
+	certificate_valid_seconds?: number /* int */;
+	/**
+	 * CreatedAt is when the enrollment was approved.
+	 */
+	created_at: string;
+	/**
+	 * ExpiresAt bounds the code, not the certificates it produces: past it
+	 * `service retrieve` stops redeeming, and the unattended job behind it
+	 * needs a fresh enrollment.
+	 */
+	expires_at: string;
+	/**
+	 * FirstRedeemedAt is the first successful redemption, absent for a code
+	 * that has never produced a certificate.
+	 */
+	first_redeemed_at?: string;
+	/**
+	 * LastRetrievedAt is the most recent redemption attempt, successful or
+	 * not. Together with RetrievalCount it is how the approver tells a code
+	 * still driving a cron job from one nothing has used in months.
+	 */
+	last_retrieved_at?: string;
+	/**
+	 * RetrievalCount counts every logged redemption attempt, including
+	 * those that failed at signing — someone held the code either way.
+	 */
+	retrieval_count: number /* int */;
+}
+/**
+ * ServiceEnrollmentsResponse is the caller's own approved service
+ * enrollments, newest first.
+ */
+export interface ServiceEnrollmentsResponse {
+	enrollments: ServiceEnrollmentResponse[];
 }
 /**
  * CertificateOptionsResponse is one side of the requested/granted pair the
@@ -168,6 +266,28 @@ export interface CertificateResponse {
 	public_key_fingerprint: string;
 	issued_at: string;
 	expires_at: string;
+	/**
+	 * RetrievedSourceIP is the address the `service retrieve` call came
+	 * from — the machine the unattended job actually ran on. Present only
+	 * on a service certificate.
+	 * It answers a different question from DecidedSourceIP below, which for
+	 * a service certificate is the approver's browser at enrollment time
+	 * and is therefore identical across every certificate the code mints.
+	 * This one is this certificate's own origin.
+	 */
+	retrieved_source_ip?: string;
+	/**
+	 * RetrievedAt is when that redemption happened. Distinct from IssuedAt
+	 * only by the width of the signing round trip, and carried because the
+	 * retrieval log is timestamped by it — matching a certificate to a line
+	 * in that log means comparing like with like.
+	 */
+	retrieved_at?: string;
+	/**
+	 * EnrollmentID is the service code this certificate was redeemed from,
+	 * so the UI can link to it. Present only on a service certificate.
+	 */
+	enrollment_id?: string;
 	decided_by_outcome?: string;
 	decided_by_subject?: string;
 	decided_by_username?: string;

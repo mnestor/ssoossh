@@ -442,6 +442,48 @@ func TestRunServiceEnroll_ShouldStaySilentWhenTheServerOmitsTheDetail(t *testing
 	}
 }
 
+// The recipe is meant to be pasted, not edited. The service account is the
+// certificate's sole principal, so it is also the only user the Match block
+// can usefully key on.
+func TestRunServiceEnroll_ShouldMatchOnTheApprovedServiceAccount(t *testing.T) {
+	client := &fakeAPIClient{result: &api.CertificateResult{
+		Status:         api.StatusEnrolled,
+		Code:           "code-123",
+		ServiceAccount: "svc-deploy",
+	}}
+	root, keyPath := enrollFixture(t, client)
+	var out bytes.Buffer
+
+	if err := runServiceEnroll(context.Background(), root, &out, keyPath, false); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "Match user svc-deploy exec") {
+		t.Errorf("expected the recipe to match on svc-deploy, got:\n%s", got)
+	}
+	if strings.Contains(got, "Match user USERNAME") {
+		t.Errorf("expected the placeholder to be gone, got:\n%s", got)
+	}
+}
+
+// A server older than the service_account field leaves nothing to
+// substitute, and there is no second source for the principal here. The
+// placeholder is what tells the operator to fill it in themselves.
+func TestRunServiceEnroll_ShouldKeepThePlaceholderWhenNoAccountIsReported(t *testing.T) {
+	client := &fakeAPIClient{result: &api.CertificateResult{Status: api.StatusEnrolled, Code: "code-123"}}
+	root, keyPath := enrollFixture(t, client)
+	var out bytes.Buffer
+
+	if err := runServiceEnroll(context.Background(), root, &out, keyPath, false); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "Match user USERNAME exec") {
+		t.Errorf("expected the USERNAME placeholder, got:\n%s", out.String())
+	}
+}
+
 func TestApproximateDuration(t *testing.T) {
 	t.Parallel()
 

@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { CertificateRecord } from '$lib/api/types';
 import CertDetailModal from './CertDetailModal.svelte';
@@ -95,74 +95,57 @@ describe('CertDetailModal', () => {
 		).toBeInTheDocument();
 	});
 
-	describe('retrieval log', () => {
-		afterEach(() => {
-			vi.unstubAllGlobals();
-		});
-
-		/** stubRetrievals answers the log fetch with rows (or an error status). */
-		function stubRetrievals(rows: unknown[] | null, status = 200) {
-			const fetchMock = vi.fn(() =>
-				Promise.resolve(
-					new Response(
-						JSON.stringify(
-							rows === null
-								? { data: null, error: 'forbidden' }
-								: { data: { retrievals: rows }, error: null }
-						),
-						{ status, headers: { 'Content-Type': 'application/json' } }
-					)
-				)
-			);
-			vi.stubGlobal('fetch', fetchMock);
-			return fetchMock;
+	// The origin of a service certificate replaces the retrieval log this
+	// panel used to try to fetch. That fetch was keyed on the certificate's
+	// own id against an endpoint that resolves request ids, so it never
+	// matched and the section never rendered; the source IP now arrives on
+	// the certificate itself.
+	describe('where a service certificate was fetched', () => {
+		/** serviceCert is a service certificate carrying its retrieval origin. */
+		function serviceCert(overrides: Partial<CertificateRecord> = {}): CertificateRecord {
+			return cert({
+				type: 'service',
+				retrieved_source_ip: '198.51.100.44',
+				retrieved_at: '2026-08-22T09:59:00Z',
+				enrollment_id: 'enr-1',
+				...overrides
+			});
 		}
 
-		it('should list each redemption with when, where, and its serial', async () => {
-			stubRetrievals([
-				{
-					retrieved_at: '2026-08-23T12:00:00Z',
-					source_ip: '203.0.113.9',
-					certificate_serial: 4242,
-					succeeded: true
-				},
-				{
-					retrieved_at: '2026-08-23T12:00:00Z',
-					source_ip: '203.0.113.10',
-					certificate_serial: 4243,
-					succeeded: false
-				}
-			]);
-			render(CertDetailModal, { cert: cert({ type: 'service' }), onclosed: vi.fn() });
-
-			expect(await screen.findByText('203.0.113.9')).toBeInTheDocument();
-			expect(screen.getByText('203.0.113.10')).toBeInTheDocument();
-			expect(screen.getByText('4242')).toBeInTheDocument();
-			// The failed redemption is marked; the successful one is not.
-			expect(screen.getAllByText('Failed')).toHaveLength(1);
+		it('should show the address the certificate was retrieved from', () => {
+			render(CertDetailModal, { cert: serviceCert(), onclosed: vi.fn() });
+			expect(screen.getByText('198.51.100.44')).toBeInTheDocument();
 		});
 
-		it('should say so when the enrollment was never retrieved', async () => {
-			stubRetrievals([]);
-			render(CertDetailModal, { cert: cert({ type: 'service' }), onclosed: vi.fn() });
-
-			expect(await screen.findByText('Never retrieved.')).toBeInTheDocument();
+		it('should link to the service code it was redeemed from', () => {
+			render(CertDetailModal, { cert: serviceCert(), onclosed: vi.fn() });
+			expect(screen.getByRole('link', { name: /View the code this came from/ })).toHaveAttribute(
+				'href',
+				'/service-codes?modal=enr-1'
+			);
 		});
 
-		it('should hide the section when the caller may not see the log', async () => {
-			const fetchMock = stubRetrievals(null, 403);
+		// An older certificate, or one whose retrieval row has gone, carries
+		// no origin — and a section headed "where it was fetched" with nothing
+		// under it is worse than no section.
+		it('should omit the section when no origin was reported', () => {
 			render(CertDetailModal, { cert: cert({ type: 'service' }), onclosed: vi.fn() });
-
-			await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
-			await Promise.resolve();
-			expect(screen.queryByText('Retrievals')).not.toBeInTheDocument();
+			expect(screen.queryByText('Where it was fetched')).not.toBeInTheDocument();
 		});
 
-		it('should not fetch a log for non-service certificates', () => {
-			const fetchMock = stubRetrievals([]);
+		it('should omit the section for a non-service certificate', () => {
 			render(CertDetailModal, { cert: cert(), onclosed: vi.fn() });
+			expect(screen.queryByText('Where it was fetched')).not.toBeInTheDocument();
+		});
 
+		// The panel is rendered from the certificate it was handed. Reaching
+		// for the network here is what produced the dead code this replaced.
+		it('should not fetch anything to render a service certificate', () => {
+			const fetchMock = vi.fn();
+			vi.stubGlobal('fetch', fetchMock);
+			render(CertDetailModal, { cert: serviceCert(), onclosed: vi.fn() });
 			expect(fetchMock).not.toHaveBeenCalled();
+			vi.unstubAllGlobals();
 		});
 	});
 });

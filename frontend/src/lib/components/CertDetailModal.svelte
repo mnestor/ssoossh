@@ -1,7 +1,6 @@
 <script lang="ts">
-	import { listRetrievals } from '$lib/api/endpoints';
-	import { ApiError } from '$lib/api/client';
-	import type { CertificateRecord, EnrollmentRetrievalsResponse } from '$lib/api/types';
+	import { resolve } from '$app/paths';
+	import type { CertificateRecord } from '$lib/api/types';
 	import { formatDateTime, formatDuration } from '$lib/format';
 	import DetailRow from './DetailRow.svelte';
 	import Icon from './Icon.svelte';
@@ -18,7 +17,6 @@
 	let { cert, onclosed }: Props = $props();
 	let dialogEl = $state<HTMLDialogElement | undefined>(undefined);
 	let copied = $state(false);
-	let retrievals = $state<EnrollmentRetrievalsResponse | null>(null);
 
 	// Keyed on the certificate so opening a different row re-opens the
 	// dialog: the component is kept mounted across rows, and an effect that
@@ -28,43 +26,6 @@
 		if (dialogEl && !dialogEl.open) {
 			dialogEl.showModal();
 		}
-	});
-
-	// Fetch retrieval log for service-type certificates. The cert.id serves as
-	// a proxy for the request ID until the server includes request_id in the
-	// certificate response.
-	$effect(() => {
-		retrievals = null;
-
-		if (cert.type !== 'service') {
-			return;
-		}
-
-		const controller = new AbortController();
-
-		listRetrievals(cert.id, controller.signal)
-			.then((result) => {
-				// Guard against stale responses if cert changes while loading.
-				if (cert.id !== cert.id) {
-					return;
-				}
-				retrievals = result;
-			})
-			.catch((cause) => {
-				if (controller.signal.aborted) {
-					return;
-				}
-				// 404 means no enrollment exists for this cert; 403 means we're not
-				// authorized. Both are expected in some cases and shouldn't show an error.
-				if (cause instanceof ApiError && (cause.isNotFound || cause.isForbidden)) {
-					retrievals = null;
-				} else {
-					// For unexpected errors, also don't show anything — the modal still works
-					retrievals = null;
-				}
-			});
-
-		return () => controller.abort();
 	});
 
 	// Every close path — the button, Escape, the backdrop — arrives here,
@@ -196,34 +157,31 @@
 			</dl>
 		</div>
 
-		{#if cert.type === 'service' && retrievals}
+		{#if cert.retrieved_source_ip}
+			<!-- Only a service certificate has one. The address here is the
+			     machine that ran `service retrieve`, which is a different
+			     question from the decision banner above: that names the human
+			     who approved the code, months earlier and from a browser, and
+			     is identical on every certificate the code has ever minted. -->
 			<div>
-				<SectionLabel>Retrievals</SectionLabel>
-				{#if retrievals.retrievals.length === 0}
-					<p class="text-[13px] text-ink-muted">Never retrieved.</p>
-				{:else}
-					<dl class="divide-y divide-border-subtle">
-						<!-- Keyed by position: reusable codes mean two redemptions can
-						     land in the same second, and a keyed each throws on a
-						     duplicate key rather than rendering it. -->
-						{#each retrievals.retrievals as retrieval, index (index)}
-							<div class="flex items-center justify-between gap-3 py-3">
-								<div>
-									<div class="text-[13px]">{formatDateTime(retrieval.retrieved_at)}</div>
-									<div class="mt-1 flex items-center gap-1.5">
-										<MonoChip>{retrieval.source_ip}</MonoChip>
-										{#if !retrieval.succeeded}
-											<span class="text-[11px] font-semibold text-danger">Failed</span>
-										{/if}
-									</div>
-								</div>
-								<span class="text-[11px] text-ink-muted">
-									Serial <span class="font-mono">{retrieval.certificate_serial}</span>
-								</span>
-							</div>
-						{/each}
-					</dl>
-				{/if}
+				<SectionLabel>Where it was fetched</SectionLabel>
+				<dl class="divide-y divide-border-subtle">
+					<DetailRow label="Source address" mono>{cert.retrieved_source_ip}</DetailRow>
+					{#if cert.retrieved_at}
+						<DetailRow label="Retrieved at">{formatDateTime(cert.retrieved_at)}</DetailRow>
+					{/if}
+					{#if cert.enrollment_id}
+						<DetailRow label="Service code">
+							<a
+								href="{resolve('/service-codes')}?modal={cert.enrollment_id}"
+								class="inline-flex items-center gap-1.5 text-accent underline-offset-2 hover:underline"
+							>
+								View the code this came from
+								<Icon name="arrow-right" size="xs" />
+							</a>
+						</DetailRow>
+					{/if}
+				</dl>
 			</div>
 		{/if}
 	</div>

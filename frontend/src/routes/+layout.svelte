@@ -58,7 +58,8 @@
 	// exists fails the build instead of 404ing in production.
 	const navItems = [
 		{ route: '/dashboard', label: 'Dashboard' },
-		{ route: '/logs/me', label: 'History' }
+		{ route: '/logs/me', label: 'History' },
+		{ route: '/service-codes', label: 'Service codes' }
 	] as const;
 
 	function closeNav() {

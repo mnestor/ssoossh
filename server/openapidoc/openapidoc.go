@@ -136,6 +136,12 @@ type EnrollmentRetrievalsEnvelope struct {
 	Error *string                               `json:"error"`
 }
 
+// ServiceEnrollmentsEnvelope is GET /api/certs/service/enrollments's body.
+type ServiceEnrollmentsEnvelope struct {
+	Data  webtypes.ServiceEnrollmentsResponse `json:"data" validate:"required"`
+	Error *string                             `json:"error"`
+}
+
 // CurrentUserEnvelope is GET /api/users/me's body.
 type CurrentUserEnvelope struct {
 	Data  webtypes.CurrentUserResponse `json:"data" validate:"required"`

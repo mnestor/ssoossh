@@ -11,6 +11,7 @@ import (
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/ssh"
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/internal/serial"
@@ -25,7 +26,8 @@ import (
 // production implementation.
 type EnrollmentProvider interface {
 	Retrieve(ctx context.Context, code string, sourceIP string) (certificate string, err error)
-	ListRetrievals(ctx context.Context, requestID string, identity *Identity) ([]model.EnrollmentRetrieval, error)
+	ListRetrievals(ctx context.Context, requestID string, identity *Identity) (RetrievalLog, error)
+	ListForIdentity(ctx context.Context, identity *Identity) ([]ServiceEnrollment, error)
 }
 
 // EnrollmentService redeems an approved model.Enrollment (created by
@@ -230,38 +232,261 @@ func (s *EnrollmentService) awaitSignedCertificate(ctx context.Context, messages
 	}
 }
 
+// ServiceEnrollment is one enrollment as the web UI reads it: the row, the
+// two JSON columns already decoded, the bound key's fingerprint, and a
+// summary of its retrieval log.
+//
+// Enrollment.Code is carried because this is the database row, but nothing
+// converting a ServiceEnrollment to a response may put it on the wire — see
+// webtypes.ServiceEnrollmentResponse.
+type ServiceEnrollment struct {
+	Enrollment model.Enrollment
+
+	// Principals and Options are Enrollment's JSON columns, decoded. Both
+	// are left empty when the stored JSON does not parse: a listing exists
+	// to show what was approved, and one unreadable column is not a reason
+	// to withhold the created/expires dates beside it.
+	Principals []string
+	Options    RequestedOptions
+
+	// Fingerprint is the SHA256 fingerprint of Enrollment.PublicKey,
+	// computed on read rather than stored — the row keeps the
+	// authorized_keys text, and only the display wants the short form.
+	// Empty when the key does not parse.
+	Fingerprint string
+
+	// RetrievalCount is every logged redemption attempt, successes and
+	// signing failures alike. LastRetrievedAt is the most recent of them,
+	// nil for a code that has never been redeemed.
+	RetrievalCount  int
+	LastRetrievedAt *time.Time
+}
+
+// ListForIdentity returns the enrollments identity approved, newest first.
+//
+// Scoped by the users row behind the OIDC subject, the same rule as
+// CertificateService.ListForIdentity and for the same reason: an enrollment
+// is found by its owner, never by naming a service account or a code, so
+// there is no parameter here with which to ask for someone else's. An
+// identity with no users row owns no enrollments, which is an empty list
+// rather than an error.
+//
+// Expired enrollments are included. A code that has stopped working is
+// exactly what the approver needs to see to decide whether the job behind
+// it still needs one.
+func (s *EnrollmentService) ListForIdentity(ctx context.Context, identity *Identity) ([]ServiceEnrollment, error) {
+	var user model.User
+	if err := s.db.WithContext(ctx).First(&user, "subject = ?", identity.Subject).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return []ServiceEnrollment{}, nil
+		}
+		return nil, fmt.Errorf("failed to look up the requesting user: %w", err)
+	}
+
+	var rows []model.Enrollment
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ?", user.ID).
+		Order("created_at DESC").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("failed to list enrollments: %w", err)
+	}
+	if len(rows) == 0 {
+		return []ServiceEnrollment{}, nil
+	}
+
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+
+	counts, err := s.retrievalCounts(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	latest, err := s.latestRetrievals(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]ServiceEnrollment, 0, len(rows))
+	for _, row := range rows {
+		enrollment := ServiceEnrollment{
+			Enrollment:     row,
+			Principals:     decodeEnrollmentPrincipals(row),
+			Options:        decodeEnrollmentOptions(row),
+			Fingerprint:    enrollmentFingerprint(row),
+			RetrievalCount: counts[row.ID],
+		}
+		if at, ok := latest[row.ID]; ok {
+			retrievedAt := at
+			enrollment.LastRetrievedAt = &retrievedAt
+		}
+		out = append(out, enrollment)
+	}
+	return out, nil
+}
+
+// retrievalCounts counts the logged redemptions of each enrollment in
+// enrollmentIDs, in one grouped query rather than one query per row.
+// Enrollments with no retrievals are simply absent from the map, which
+// reads back as the zero count.
+func (s *EnrollmentService) retrievalCounts(ctx context.Context, enrollmentIDs []string) (map[string]int, error) {
+	var rows []struct {
+		EnrollmentID string
+		Total        int
+	}
+	if err := s.db.WithContext(ctx).
+		Model(&model.EnrollmentRetrieval{}).
+		Select("enrollment_id, COUNT(*) AS total").
+		Where("enrollment_id IN ?", enrollmentIDs).
+		Group("enrollment_id").
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("failed to count enrollment retrievals: %w", err)
+	}
+
+	counts := make(map[string]int, len(rows))
+	for _, row := range rows {
+		counts[row.EnrollmentID] = row.Total
+	}
+	return counts, nil
+}
+
+// latestRetrievals returns the newest retrieval timestamp for each
+// enrollment in enrollmentIDs.
+//
+// Whole rows are selected rather than a MAX(retrieved_at) aggregate so that
+// retrieved_at arrives as its declared column type on both supported
+// drivers: an aggregate expression has no declared type, and sqlite hands
+// one back as text that will not scan into a time.Time. The correlated
+// subquery does the same work at a size bounded by the caller's own
+// enrollments.
+func (s *EnrollmentService) latestRetrievals(ctx context.Context, enrollmentIDs []string) (map[string]time.Time, error) {
+	var rows []model.EnrollmentRetrieval
+	if err := s.db.WithContext(ctx).
+		Where("enrollment_id IN ?", enrollmentIDs).
+		Where(`retrieved_at = (
+			SELECT MAX(inner_retrievals.retrieved_at) FROM enrollment_retrievals AS inner_retrievals
+			WHERE inner_retrievals.enrollment_id = enrollment_retrievals.enrollment_id
+		)`).
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("failed to find the latest enrollment retrievals: %w", err)
+	}
+
+	// Two redemptions sharing the newest timestamp both come back; they
+	// carry the same instant, so which one wins the map slot is immaterial.
+	latest := make(map[string]time.Time, len(rows))
+	for _, row := range rows {
+		latest[row.EnrollmentID] = row.RetrievedAt
+	}
+	return latest, nil
+}
+
+// decodeEnrollmentPrincipals decodes the enrollment's principals column.
+// A row written before principals were fixed at approval time has none, and
+// one that will not parse is logged rather than returned as an error: this
+// is a read for display, and the rest of the row is still worth showing.
+func decodeEnrollmentPrincipals(row model.Enrollment) []string {
+	if row.Principals == "" {
+		return nil
+	}
+	var principals []string
+	if err := json.Unmarshal([]byte(row.Principals), &principals); err != nil {
+		slog.Error("failed to decode enrollment principals", "enrollment_id", row.ID, "error", err)
+		return nil
+	}
+	return principals
+}
+
+// decodeEnrollmentOptions decodes the enrollment's option set, on the same
+// terms as decodeEnrollmentPrincipals.
+func decodeEnrollmentOptions(row model.Enrollment) RequestedOptions {
+	if row.OptionSet == "" {
+		return RequestedOptions{}
+	}
+	var opts RequestedOptions
+	if err := json.Unmarshal([]byte(row.OptionSet), &opts); err != nil {
+		slog.Error("failed to decode enrollment option set", "enrollment_id", row.ID, "error", err)
+		return RequestedOptions{}
+	}
+	return opts
+}
+
+// enrollmentFingerprint renders the bound public key's SHA256 fingerprint,
+// or empty if it does not parse. Only the display wants it, so an
+// unparseable key costs the fingerprint line and nothing else.
+func enrollmentFingerprint(row model.Enrollment) string {
+	publicKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(row.PublicKey)) //nolint:dogsled // ParseAuthorizedKey's comment/options/rest returns say nothing about a fingerprint.
+	if err != nil {
+		slog.Error("failed to parse enrollment public key", "enrollment_id", row.ID, "error", err)
+		return ""
+	}
+	return ssh.FingerprintSHA256(publicKey)
+}
+
+// RetrievalLog is one enrollment's redemption history: the newest page of
+// it, and how many rows exist in total. The two differ whenever the code
+// has been redeemed more than RetrievalPageSize times.
+type RetrievalLog struct {
+	Retrievals []model.EnrollmentRetrieval
+	Total      int
+}
+
+// RetrievalPageSize bounds how many redemptions ListRetrievals returns.
+//
+// The log is unbounded in the database and can be very large: codes are
+// reusable for cert_options.service.enrollment_duration (a year by
+// default), so an hourly renewal leaves ~8,760 rows and a five-minute one
+// leaves ~105,000. Reading a whole year of them to render a panel is not
+// something to do by accident, and the recent end is the part anyone opens
+// it for — "is this thing still running, and from where".
+const RetrievalPageSize = 100
+
 // ListRetrievals returns the retrieval log for the enrollment created from
-// certificate request requestID, newest first.
+// certificate request requestID, newest first, capped at
+// RetrievalPageSize rows. The total is reported alongside so a caller can
+// say what it is showing a slice of.
 //
 // Authorization: the enrollment's approving user, or an identity with
 // auditor-level access (config.AdminConfig.GrantsAuditor). Checked here
 // rather than in a route middleware because the approver rule depends on
 // the row being read. Fails closed with Forbidden for anyone else.
-func (s *EnrollmentService) ListRetrievals(ctx context.Context, requestID string, identity *Identity) ([]model.EnrollmentRetrieval, error) {
+func (s *EnrollmentService) ListRetrievals(ctx context.Context, requestID string, identity *Identity) (RetrievalLog, error) {
 	var enrollment model.Enrollment
 	if err := s.db.WithContext(ctx).First(&enrollment, "certificate_request_id = ?", requestID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, &errorresponses.NotFoundError{Resource: fmt.Sprintf("enrollment for request %q", requestID)}
+			return RetrievalLog{}, &errorresponses.NotFoundError{Resource: fmt.Sprintf("enrollment for request %q", requestID)}
 		}
-		return nil, fmt.Errorf("failed to look up enrollment: %w", err)
+		return RetrievalLog{}, fmt.Errorf("failed to look up enrollment: %w", err)
 	}
 
 	if !s.config.Admin.GrantsAuditor(identity.Groups) {
 		var user model.User
 		err := s.db.WithContext(ctx).First(&user, "subject = ?", identity.Subject).Error
 		if err != nil || user.ID != enrollment.UserID {
-			return nil, &errorresponses.ForbiddenError{Reason: "retrieval log belongs to another user"}
+			return RetrievalLog{}, &errorresponses.ForbiddenError{Reason: "retrieval log belongs to another user"}
 		}
+	}
+
+	// Counted separately rather than inferred from the page: a full page
+	// says only "at least this many", and the difference between the two is
+	// exactly what the caller renders.
+	var total int64
+	if err := s.db.WithContext(ctx).
+		Model(&model.EnrollmentRetrieval{}).
+		Where("enrollment_id = ?", enrollment.ID).
+		Count(&total).Error; err != nil {
+		return RetrievalLog{}, fmt.Errorf("failed to count enrollment retrievals: %w", err)
 	}
 
 	var retrievals []model.EnrollmentRetrieval
 	if err := s.db.WithContext(ctx).
 		Where("enrollment_id = ?", enrollment.ID).
 		Order("retrieved_at DESC").
+		Limit(RetrievalPageSize).
 		Find(&retrievals).Error; err != nil {
-		return nil, fmt.Errorf("failed to list enrollment retrievals: %w", err)
+		return RetrievalLog{}, fmt.Errorf("failed to list enrollment retrievals: %w", err)
 	}
-	return retrievals, nil
+	return RetrievalLog{Retrievals: retrievals, Total: int(total)}, nil
 }
 
 // markRetrievalSucceeded records delivery on the retrieval row and stamps

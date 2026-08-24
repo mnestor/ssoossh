@@ -12,10 +12,30 @@ import (
 )
 
 // CertificateWithDecision combines a Certificate with its related decision
-// record (if any). Used internally to avoid fetching decisions separately.
+// record (if any) and, for a service certificate, the redemption that
+// produced it. Used internally to avoid fetching either separately.
 type CertificateWithDecision struct {
 	Certificate model.Certificate
 	Decision    *model.CertificateRequestDecision
+
+	// Retrieval is set only for a service certificate, and names the machine
+	// that actually fetched it. Nil for every other type, and for a service
+	// certificate whose retrieval row has gone.
+	Retrieval *CertificateRetrieval
+}
+
+// CertificateRetrieval is where a service certificate came from: the
+// `service retrieve` redemption that produced it.
+//
+// This is a different question from the decision record beside it. A
+// service certificate's decision is the *enrollment approval* — a human in
+// a browser, possibly months earlier — and every certificate the code mints
+// shares it. The retrieval is this one certificate's own origin, which for
+// an unattended job is the only address that says where it ran.
+type CertificateRetrieval struct {
+	EnrollmentID string
+	SourceIP     string
+	RetrievedAt  time.Time
 }
 
 // CertificateProvider reads the issued-certificate audit trail.
@@ -121,6 +141,9 @@ func (s *CertificateService) ListForIdentity(ctx context.Context, identity *Iden
 		DecisionOtherAccounts        *string
 		DecisionServiceAccounts      *string
 		DecisionDecidedAt            *time.Time
+		RetrievalEnrollmentID        *string
+		RetrievalSourceIP            *string
+		RetrievalRetrievedAt         *time.Time
 	}
 
 	var results []rawRow
@@ -147,9 +170,20 @@ func (s *CertificateService) ListForIdentity(ctx context.Context, identity *Iden
 			certificate_request_decisions.groups as decision_groups,
 			certificate_request_decisions.other_accounts as decision_other_accounts,
 			certificate_request_decisions.service_accounts as decision_service_accounts,
-			certificate_request_decisions.decided_at as decision_decided_at`).
+			certificate_request_decisions.decided_at as decision_decided_at,
+			enrollment_retrievals.enrollment_id as retrieval_enrollment_id,
+			enrollment_retrievals.source_ip as retrieval_source_ip,
+			enrollment_retrievals.retrieved_at as retrieval_retrieved_at`).
 		Joins("LEFT JOIN certificate_requests ON certificates.certificate_request_id = certificate_requests.id").
 		Joins("LEFT JOIN certificate_request_decisions ON certificate_requests.id = certificate_request_decisions.certificate_request_id").
+		// Joined on the serial rather than a foreign key, because that is the
+		// only thing the two rows share: EnrollmentService.Retrieve allocates
+		// the serial, writes it to the retrieval row, and sends the same value
+		// to the signer, which is what ends up on the certificate. Serials are
+		// uniquely indexed on certificates and only service redemptions write
+		// enrollment_retrievals, so this matches at most one row and stays null
+		// for every user and PAM certificate.
+		Joins("LEFT JOIN enrollment_retrievals ON enrollment_retrievals.certificate_serial = certificates.serial_number").
 		Order("certificates.issued_at DESC, certificates.id DESC").
 		Limit(limit + 1).
 		Scan(&results).Error; err != nil {
@@ -201,9 +235,22 @@ func (s *CertificateService) ListForIdentity(ctx context.Context, identity *Iden
 			}
 		}
 
+		// Keyed on the enrollment id: a retrieval row always has one, so its
+		// presence is what says the join matched, the same way decision_id
+		// does above.
+		var retrieval *CertificateRetrieval
+		if r.RetrievalEnrollmentID != nil {
+			retrieval = &CertificateRetrieval{
+				EnrollmentID: *r.RetrievalEnrollmentID,
+				SourceIP:     *r.RetrievalSourceIP,
+				RetrievedAt:  *r.RetrievalRetrievedAt,
+			}
+		}
+
 		out = append(out, CertificateWithDecision{
 			Certificate: cert,
 			Decision:    decision,
+			Retrieval:   retrieval,
 		})
 	}
 

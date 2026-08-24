@@ -278,6 +278,15 @@ components:
       required:
       - data
       type: object
+    openapidoc.ServiceEnrollmentsEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.ServiceEnrollmentsResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
     openapidoc.VersionEnvelope:
       properties:
         data:
@@ -329,6 +338,10 @@ components:
       - certificates
       type: object
     webtypes.CertificateOptionsResponse:
+      description: |-
+        Options are the certificate options fixed at approval, already
+        narrowed by server config: what a redemption actually grants, not
+        what the client asked for.
       properties:
         extensions:
           items:
@@ -383,6 +396,11 @@ components:
           type: string
         decided_user_agent:
           type: string
+        enrollment_id:
+          description: |-
+            EnrollmentID is the service code this certificate was redeemed from,
+            so the UI can link to it. Present only on a service certificate.
+          type: string
         expires_at:
           type: string
         id:
@@ -394,6 +412,24 @@ components:
         principals:
           type: string
         public_key_fingerprint:
+          type: string
+        retrieved_at:
+          description: |-
+            RetrievedAt is when that redemption happened. Distinct from IssuedAt
+            only by the width of the signing round trip, and carried because the
+            retrieval log is timestamped by it — matching a certificate to a line
+            in that log means comparing like with like.
+          type: string
+        retrieved_source_ip:
+          description: |-
+            RetrievedSourceIP is the address the `service retrieve` call came
+            from — the machine the unattended job actually ran on. Present only
+            on a service certificate.
+
+            It answers a different question from DecidedSourceIP below, which for
+            a service certificate is the approver's browser at enrollment time
+            and is therefore identical across every certificate the code mints.
+            This one is this certificate's own origin.
           type: string
         serial_number:
           type: integer
@@ -557,8 +593,15 @@ components:
             $ref: '#/components/schemas/webtypes.EnrollmentRetrievalResponse'
           type: array
           uniqueItems: false
+        total:
+          description: |-
+            Total counts every logged redemption, not just the ones returned, so
+            the UI can say what it is showing a slice of rather than implying the
+            page is the whole history.
+          type: integer
       required:
       - retrievals
+      - total
       type: object
     webtypes.RequestDetailResponse:
       properties:
@@ -642,6 +685,93 @@ components:
       - status
       - type
       - valid_seconds
+      type: object
+    webtypes.ServiceEnrollmentResponse:
+      properties:
+        certificate_request_id:
+          description: |-
+            CertificateRequestID is the request this enrollment was approved
+            from, and the id the retrieval log at
+            /api/certs/requests/{id}/retrievals is keyed on. Omitted for an
+            enrollment with no request linked to it.
+          type: string
+        certificate_valid_seconds:
+          description: |-
+            CertificateValidSeconds is how long each redeemed certificate is
+            valid for, measured from its own redemption rather than from
+            approval. Omitted for an enrollment created before the code and
+            certificate lifetimes were split, where ExpiresAt bounded both.
+          type: integer
+        created_at:
+          description: CreatedAt is when the enrollment was approved.
+          type: string
+        expires_at:
+          description: |-
+            ExpiresAt bounds the code, not the certificates it produces: past it
+            `service retrieve` stops redeeming, and the unattended job behind it
+            needs a fresh enrollment.
+          type: string
+        first_redeemed_at:
+          description: |-
+            FirstRedeemedAt is the first successful redemption, absent for a code
+            that has never produced a certificate.
+          type: string
+        id:
+          type: string
+        key_id:
+          description: |-
+            KeyID is likewise fixed at approval and lands verbatim in every
+            certificate, which is what a target host's logs record.
+          type: string
+        last_retrieved_at:
+          description: |-
+            LastRetrievedAt is the most recent redemption attempt, successful or
+            not. Together with RetrievalCount it is how the approver tells a code
+            still driving a cron job from one nothing has used in months.
+          type: string
+        options:
+          $ref: '#/components/schemas/webtypes.CertificateOptionsResponse'
+        principals:
+          description: |-
+            Principals is what every certificate this code produces carries. For
+            a service enrollment that is the single service account the approver
+            picked, fixed at approval time and never re-derived at redemption.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        public_key_fingerprint:
+          description: |-
+            PublicKeyFingerprint identifies the keypair the code is bound to.
+            `service retrieve` never sends a public key, so a code lifted without
+            this keypair produces nothing usable.
+
+            Empty if the stored key could not be parsed — a display gap, not a
+            reason to withhold the rest of the row.
+          type: string
+        retrieval_count:
+          description: |-
+            RetrievalCount counts every logged redemption attempt, including
+            those that failed at signing — someone held the code either way.
+          type: integer
+      required:
+      - created_at
+      - expires_at
+      - id
+      - key_id
+      - options
+      - principals
+      - retrieval_count
+      type: object
+    webtypes.ServiceEnrollmentsResponse:
+      properties:
+        enrollments:
+          items:
+            $ref: '#/components/schemas/webtypes.ServiceEnrollmentResponse'
+          type: array
+          uniqueItems: false
+      required:
+      - enrollments
       type: object
     webtypes.VersionResponse:
       properties:
@@ -1193,9 +1323,10 @@ paths:
   /api/certs/requests/{id}/retrievals:
     get:
       description: |-
-        Every redemption of the enrollment created from this service request —
+        Redemptions of the enrollment created from this service request —
         when, from where, and whether a certificate was issued. Codes are
-        reusable, so the log accumulates one row per redemption. Visible to the
+        reusable, so the log accumulates one row per redemption; the newest 100
+        are returned and "total" reports how many exist. Visible to the
         enrollment's approving user and to auditors.
       parameters:
       - description: The certificate request's UUID
@@ -1267,6 +1398,36 @@ paths:
       summary: Create a service enrollment request
       tags:
       - client
+  /api/certs/service/enrollments:
+    get:
+      description: |-
+        What each enrollment code will hand out and how long it stays
+        redeemable: the principals and options fixed at approval, the keypair it
+        is bound to, when it was approved, when it stops working, and how often
+        it has been redeemed.
+
+        The code itself is never returned. `service enroll` prints it once, and
+        a browser session is not a way to mint service certificates.
+
+        Scoped by the caller's users row, with no parameter to widen it.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ServiceEnrollmentsEnvelope'
+          description: Approved enrollments, newest first
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+      security:
+      - sessionCookie: []
+      summary: The caller's approved service enrollments
+      tags:
+      - web
   /api/certs/service/retrieve:
     post:
       description: |-

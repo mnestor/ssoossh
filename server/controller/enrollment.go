@@ -15,7 +15,7 @@ import (
 )
 
 // NewEnrollmentController registers the service-certificate retrieval
-// route and the web UI's retrieval-log route on group. When
+// route and the web UI's enrollment-list and retrieval-log routes on group. When
 // retrieveRateLimitMiddleware is provided, it is applied to the
 // /certs/service/retrieve endpoint to protect against code brute-forcing.
 func NewEnrollmentController(group *gin.RouterGroup, enrollmentService service.EnrollmentProvider, retrieveRateLimitMiddleware gin.HandlerFunc, sessionAuthMiddleware gin.HandlerFunc) {
@@ -24,6 +24,8 @@ func NewEnrollmentController(group *gin.RouterGroup, enrollmentService service.E
 	group.POST("/certs/service/retrieve", orPassThrough(retrieveRateLimitMiddleware), e.retrieveHandler)
 
 	group.GET("/certs/requests/:id/retrievals", sessionAuthMiddleware, e.retrievalsHandler)
+
+	group.GET("/certs/service/enrollments", sessionAuthMiddleware, e.listHandler)
 }
 
 // enrollmentController handles the service-enrollment HTTP routes.
@@ -69,9 +71,10 @@ func (e *enrollmentController) retrieveHandler(g *gin.Context) {
 // request's enrollment, newest first.
 //
 // @Summary     A service enrollment's retrieval log
-// @Description Every redemption of the enrollment created from this service request —
+// @Description Redemptions of the enrollment created from this service request —
 // @Description when, from where, and whether a certificate was issued. Codes are
-// @Description reusable, so the log accumulates one row per redemption. Visible to the
+// @Description reusable, so the log accumulates one row per redemption; the newest 100
+// @Description are returned and "total" reports how many exist. Visible to the
 // @Description enrollment's approving user and to auditors.
 // @Tags        web
 // @Produce     json
@@ -89,16 +92,17 @@ func (e *enrollmentController) retrievalsHandler(g *gin.Context) {
 		return
 	}
 
-	rows, err := e.enrollmentService.ListRetrievals(g.Request.Context(), g.Param("id"), identity)
+	log, err := e.enrollmentService.ListRetrievals(g.Request.Context(), g.Param("id"), identity)
 	if err != nil {
 		handleError(g, err)
 		return
 	}
 
 	resp := webtypes.EnrollmentRetrievalsResponse{
-		Retrievals: make([]webtypes.EnrollmentRetrievalResponse, 0, len(rows)),
+		Retrievals: make([]webtypes.EnrollmentRetrievalResponse, 0, len(log.Retrievals)),
+		Total:      log.Total,
 	}
-	for _, r := range rows {
+	for _, r := range log.Retrievals {
 		resp.Retrievals = append(resp.Retrievals, webtypes.EnrollmentRetrievalResponse{
 			RetrievedAt:       r.RetrievedAt,
 			SourceIP:          r.SourceIP,
@@ -107,6 +111,42 @@ func (e *enrollmentController) retrievalsHandler(g *gin.Context) {
 		})
 	}
 	respondData(g, resp)
+}
+
+// listHandler handles GET /api/certs/service/enrollments (web UI, behind
+// sessionAuthMiddleware): the caller's own approved service enrollments,
+// newest first.
+//
+// @Summary     The caller's approved service enrollments
+// @Description What each enrollment code will hand out and how long it stays
+// @Description redeemable: the principals and options fixed at approval, the keypair it
+// @Description is bound to, when it was approved, when it stops working, and how often
+// @Description it has been redeemed.
+// @Description
+// @Description The code itself is never returned. `service enroll` prints it once, and
+// @Description a browser session is not a way to mint service certificates.
+// @Description
+// @Description Scoped by the caller's users row, with no parameter to widen it.
+// @Tags        web
+// @Produce     json
+// @Success     200 {object} openapidoc.ServiceEnrollmentsEnvelope "Approved enrollments, newest first"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
+// @Security    sessionCookie
+// @Router      /api/certs/service/enrollments [get]
+func (e *enrollmentController) listHandler(g *gin.Context) {
+	identity, ok := middleware.Identity(g)
+	if !ok {
+		handleError(g, &errorresponses.UnauthorizedError{})
+		return
+	}
+
+	enrollments, err := e.enrollmentService.ListForIdentity(g.Request.Context(), identity)
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	respondData(g, newServiceEnrollmentsResponse(enrollments))
 }
 
 // ExtractEnrollmentCodeForRateLimit reads the enrollment code from the

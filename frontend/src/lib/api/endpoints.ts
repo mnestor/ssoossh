@@ -7,7 +7,8 @@ import type {
 	CurrentUser,
 	DenyResult,
 	EnrollmentRetrievalsResponse,
-	RequestDetail
+	RequestDetail,
+	ServiceEnrollmentsResponse
 } from './types';
 
 /** GET /api/users/me. */
@@ -94,6 +95,19 @@ export function listRetrievals(
 			signal
 		}
 	);
+}
+
+/**
+ * GET /api/certs/service/enrollments — the caller's own approved service
+ * enrollments, newest first.
+ *
+ * Never the codes themselves: `service enroll` prints a code once and the
+ * server will not hand it back, so this describes what each one grants and
+ * how long it lasts. Scoped server-side to the caller, with no parameter to
+ * widen it.
+ */
+export function listServiceEnrollments(signal?: AbortSignal): Promise<ServiceEnrollmentsResponse> {
+	return request<ServiceEnrollmentsResponse>('/certs/service/enrollments', { signal });
 }
 
 /**

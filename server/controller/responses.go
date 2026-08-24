@@ -153,6 +153,54 @@ func decodeDecisionStringList(field, raw string) []string {
 	return out
 }
 
+// newServiceEnrollmentsResponse converts the caller's enrollments to their
+// wire shape.
+//
+// Enrollment.Code is present on every row this walks and is deliberately
+// not read: see webtypes.ServiceEnrollmentResponse for why the page that
+// consumes this must never be able to show it.
+func newServiceEnrollmentsResponse(enrollments []service.ServiceEnrollment) webtypes.ServiceEnrollmentsResponse {
+	out := webtypes.ServiceEnrollmentsResponse{
+		Enrollments: make([]webtypes.ServiceEnrollmentResponse, 0, len(enrollments)),
+	}
+	for _, e := range enrollments {
+		out.Enrollments = append(out.Enrollments, newServiceEnrollmentResponse(e))
+	}
+	return out
+}
+
+// newServiceEnrollmentResponse converts one enrollment to its wire shape.
+func newServiceEnrollmentResponse(e service.ServiceEnrollment) webtypes.ServiceEnrollmentResponse {
+	resp := webtypes.ServiceEnrollmentResponse{
+		ID:                   e.Enrollment.ID,
+		Principals:           orEmpty(e.Principals),
+		KeyID:                e.Enrollment.KeyID,
+		PublicKeyFingerprint: e.Fingerprint,
+		Options:              newCertificateOptionsResponse(e.Options),
+		CreatedAt:            e.Enrollment.CreatedAt,
+		ExpiresAt:            e.Enrollment.ExpiresAt,
+		FirstRedeemedAt:      e.Enrollment.RedeemedAt,
+		LastRetrievedAt:      e.LastRetrievedAt,
+		RetrievalCount:       e.RetrievalCount,
+	}
+
+	if e.Enrollment.CertificateRequestID != nil {
+		resp.CertificateRequestID = *e.Enrollment.CertificateRequestID
+	}
+
+	// Left absent for a row predating the split between the code's lifetime
+	// and the certificate's, where ExpiresAt bounded both — the same
+	// distinction EnrollmentService.Retrieve honors. Reporting the code's
+	// window as the certificate's would be a lie about what a redemption
+	// hands out.
+	if e.Enrollment.CertificateDurationSeconds != nil {
+		seconds := int(*e.Enrollment.CertificateDurationSeconds)
+		resp.CertificateValidSeconds = &seconds
+	}
+
+	return resp
+}
+
 // newCertificateOptionsResponse converts resolved options to their wire
 // shape, normalizing nil slices to empty ones.
 func newCertificateOptionsResponse(o service.RequestedOptions) webtypes.CertificateOptionsResponse {
@@ -183,6 +231,16 @@ func newCertificateResponsesWithDecisions(certsWithDecisions []service.Certifica
 		// Populate decision fields if a decision record exists.
 		if cd.Decision != nil {
 			setDecisionFieldsOnCertificate(&resp, cd.Decision)
+		}
+
+		// Only a service certificate has one. It is what says where this
+		// particular certificate was fetched from, as opposed to where the
+		// code it came from was approved.
+		if cd.Retrieval != nil {
+			retrievedAt := cd.Retrieval.RetrievedAt
+			resp.RetrievedSourceIP = cd.Retrieval.SourceIP
+			resp.RetrievedAt = &retrievedAt
+			resp.EnrollmentID = cd.Retrieval.EnrollmentID
 		}
 
 		out = append(out, resp)

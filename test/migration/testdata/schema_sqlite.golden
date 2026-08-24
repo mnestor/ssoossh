@@ -78,6 +78,7 @@ table enrollment_retrievals
   column source_ip type=TEXT nullable=false pk=false default=''
   column succeeded type=INTEGER nullable=false pk=false default=0
   fk enrollment_id -> enrollments.id on_delete=NO ACTION on_update=NO ACTION
+  index idx_enrollment_retrievals_certificate_serial unique=false columns=certificate_serial
   index idx_enrollment_retrievals_enrollment_id unique=false columns=enrollment_id
   index sqlite_autoindex_enrollment_retrievals_1 unique=true columns=id
 table enrollments

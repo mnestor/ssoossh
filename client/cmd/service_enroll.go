@@ -231,8 +231,23 @@ func printEnrollmentGuidance(out io.Writer, enrolled enrolledCode, keyPath strin
 	certAbs := absOrAsGiven(certificatePathFor(keyPath))
 	pubAbs := absOrAsGiven(publicKeyPathFor(keyPath))
 
+	// `Match user` names the account being connected to on the far side,
+	// and for these certificates that is always the service account the
+	// approver picked: it is the certificate's sole principal, so ssh
+	// cannot present the certificate as anyone else. Substituting it means
+	// the recipe can be pasted as printed rather than edited first.
+	//
+	// A server older than the field reports no account, and there is
+	// nothing here to derive one from, so the placeholder stays — an
+	// operator editing "USERNAME" is a better outcome than a recipe that
+	// silently matches nothing.
+	matchUser := "USERNAME"
+	if enrolled.serviceAccount != "" {
+		matchUser = enrolled.serviceAccount
+	}
+
 	fmt.Fprintln(out, "\nTo automatically refresh the certificate from ssh_config before each connection add to your ~/.ssh/config")
-	fmt.Fprintf(out, "  Match user USERNAME exec 'ssoossh service retrieve --code %s --key %s'\n", code, keyAbs)
+	fmt.Fprintf(out, "  Match user %s exec 'ssoossh service retrieve --code %s --key %s'\n", matchUser, code, keyAbs)
 	fmt.Fprintf(out, "    IdentityFile %s\n", keyAbs)
 	fmt.Fprintln(out, "    IdentitiesOnly yes")
 	fmt.Fprintf(out, "\nNo CertificateFile line is needed - ssh derives %s from\n", certAbs)

@@ -48,6 +48,8 @@ func fullFixtures() map[string]any {
 		NoTouchRequired: true,
 	}
 
+	certificateValidSeconds := 28800
+
 	return map[string]any{
 		"current_user": webtypes.CurrentUserResponse{
 			Subject:         "9c1f0f8e-1d0a-4a37-9d1e-2f6a1b4c5d6e",
@@ -89,6 +91,34 @@ func fullFixtures() map[string]any {
 			DecidedForwardedFor:      "198.51.100.7, 10.0.0.1",
 			DecidedAt:                &issuedAt,
 		},
+		"enrollment_retrievals": webtypes.EnrollmentRetrievalsResponse{
+			Retrievals: []webtypes.EnrollmentRetrievalResponse{{
+				RetrievedAt:       issuedAt,
+				SourceIP:          "198.51.100.44",
+				CertificateSerial: 7346115228134082560,
+				Succeeded:         true,
+			}},
+			// Deliberately larger than the page: the truncated case is the
+			// one the frontend has to render differently.
+			Total: 8760,
+		},
+		"service_enrollment": webtypes.ServiceEnrollmentResponse{
+			ID:                   "3a2b1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d",
+			CertificateRequestID: "0b4f2b1a-7c3d-4e5f-8a9b-0c1d2e3f4a5b",
+			Principals:           []string{"svc-backup"},
+			KeyID:                "svc-backup/0b4f2b1a",
+			PublicKeyFingerprint: "SHA256:2Fd4rIWZ8kQnGx0mJvKp1YhLcTzXbA3sNeR5uW7oPqM",
+			Options:              options,
+			// A pointer so the zero fixture can show the field vanishing:
+			// an enrollment predating the lifetime split reports no
+			// certificate duration at all.
+			CertificateValidSeconds: &certificateValidSeconds,
+			CreatedAt:               issuedAt,
+			ExpiresAt:               issuedAt.Add(90 * 24 * time.Hour),
+			FirstRedeemedAt:         &issuedAt,
+			LastRetrievedAt:         &issuedAt,
+			RetrievalCount:          17,
+		},
 		"certificate": webtypes.CertificateResponse{
 			ID:           "6d5c4b3a-2f1e-4d0c-9b8a-7f6e5d4c3b2a",
 			Type:         model.CertificateTypeService,
@@ -98,6 +128,10 @@ func fullFixtures() map[string]any {
 			Fingerprint:  "SHA256:2Fd4rIWZ8kQnGx0mJvKp1YhLcTzXbA3sNeR5uW7oPqM",
 			IssuedAt:     issuedAt,
 			ExpiresAt:    issuedAt.Add(8 * time.Hour),
+
+			RetrievedSourceIP: "198.51.100.44",
+			RetrievedAt:       &issuedAt,
+			EnrollmentID:      "3a2b1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d",
 
 			DecidedByOutcome:         "approved",
 			DecidedBySubject:         "9c1f0f8e-1d0a-4a37-9d1e-2f6a1b4c5d6e",
@@ -122,10 +156,12 @@ func fullFixtures() map[string]any {
 // reaches production.
 func zeroFixtures() map[string]any {
 	return map[string]any{
-		"current_user":        webtypes.CurrentUserResponse{},
-		"certificate_options": webtypes.CertificateOptionsResponse{},
-		"request_detail":      webtypes.RequestDetailResponse{},
-		"certificate":         webtypes.CertificateResponse{},
+		"current_user":          webtypes.CurrentUserResponse{},
+		"certificate_options":   webtypes.CertificateOptionsResponse{},
+		"request_detail":        webtypes.RequestDetailResponse{},
+		"certificate":           webtypes.CertificateResponse{},
+		"service_enrollment":    webtypes.ServiceEnrollmentResponse{},
+		"enrollment_retrievals": webtypes.EnrollmentRetrievalsResponse{},
 	}
 }
 

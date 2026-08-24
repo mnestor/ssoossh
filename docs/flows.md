@@ -227,6 +227,20 @@ redeems. The expiry bounds the *code*
 (`cert_options.service.enrollment_duration`), not those certificates, which
 get their own lifetime at each redemption.
 
+Because the account comes back with the code, the printed `ssh_config`
+recipe names it: the `Match user` block keys on the service account rather
+than a `USERNAME` placeholder the operator has to fill in. A server too old
+to report the account leaves the placeholder in place, since there is
+nothing on the client side to derive it from.
+
+Afterwards the approver can see what they granted, without the code, at
+**Service codes** in the web UI (`GET /api/certs/service/enrollments`): one
+row per approved enrollment, opening into which account it mints for, the
+options and certificate lifetime fixed at approval, the keypair it is bound
+to, when it stops being redeemable, and its redemption log. The code is not
+part of that answer and there is no endpoint that returns one — it exists on
+the wire exactly once, in the approval event above.
+
 ### 4c. Unattended reissue
 
 ```mermaid
@@ -248,6 +262,14 @@ sequenceDiagram
 The public key is not resubmitted, so a stolen code cannot be paired with
 an attacker's own keypair. The same keypair is used every time: no new
 key, no browser, no user.
+
+Each redemption is logged, and the serial ties the two halves together: it
+is allocated before the signing job is queued, written to the
+`enrollment_retrievals` row, and lands on the issued certificate. That is
+what lets the certificate history report the address a service certificate
+was actually fetched from — a different fact from the approval's source IP,
+which belongs to the human who approved the code and is identical on every
+certificate it mints.
 
 ---
 

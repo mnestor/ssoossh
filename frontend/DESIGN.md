@@ -142,6 +142,7 @@ screen is for, not for consistency's sake:
 | Login                        | `380px`           | one action; a wider column makes it look unfinished       |
 | Approval, error, cert detail | `560px` / `600px` | a field list read top to bottom                           |
 | Dashboard, history           | `680px`           | rows with a subject on the left and a status on the right |
+| Service codes                | `680px`           | the same rows, each opened out into its own field list    |
 
 Each column opens with a `PageHeading`: an accent eyebrow naming the area
 ("Activity", "History", "Certificate request") above the page's `h1`. The
@@ -166,6 +167,8 @@ discrete.
 - **PageHeading**: The eyebrow + `h1` pair every screen opens with, with an optional right-aligned action (the dashboard's "View all history →").
 - **SectionLabel**: The small muted uppercase label that opens a group of fields inside a card. Quieter than `PageHeading`'s eyebrow, which takes the accent.
 - **CertRow**: One certificate as a standalone, clickable card — type badge, subject, what happened and when, principals, and the decision badge.
+- **ServiceCodeRow**: One approved service enrollment as the same kind of card — the account the code mints for, when it was approved and what it hands out, how often it has been redeemed, and an active/expired pill. Never the code.
+- **ServiceCodeDetailModal**: The enrollment in full behind a row: what a redemption grants, the options fixed at approval, the code's own dates, and its redemption log. The server caps that log at its newest 100 rows and reports the true total, so the panel says what it is showing a slice of rather than letting the last row read as the first redemption. Read-only, and structurally unable to show a code.
 - **TypeBadge**: The certificate type as a fixed 26×26 square. Fixed rather than content-sized so rows align vertically whatever the type is called, and always shown: on a row the type is the primary identifier, not decoration.
 - **TypeChip**: The labelled form of `TypeBadge`, for detail views with room to name the type.
 - **MonoChip**: One monospace value as a bordered chip — a principal, an IP. Chips rather than a comma-separated string so set boundaries are unambiguous.
@@ -173,8 +176,33 @@ discrete.
 - **UserMenu**: The header's identity control — who you are acting as, with sign-out behind it. Closes on outside click and on Escape, which returns focus to the trigger.
 - **OptionDiffList**: Shows granted vs. trimmed options (extensions, critical options) with strike-through for trimmed items.
 - **ApprovalView**: Composite component rendering a full certificate-request approval form.
-- **CertDetailModal**: Read-only certificate details in a modal, triggered by clicking a row in Dashboard or History. The open certificate lives in `page.state` via shallow routing, with a matching `?modal=<id>` in the address bar so a specific certificate is linkable without leaving the list behind it. It has to be both: SvelteKit's `pushState` updates `page.state` and the address bar but never reassigns `page.url`, so state drives the open modal and the search parameter is only the fallback a pasted link arrives with. Every close path — the button, Escape, the backdrop — goes through the dialog's own `close` event, which is what keeps that parameter in step with what is on screen.
+- **CertDetailModal**: Read-only certificate details in a modal, triggered by clicking a row in Dashboard or History. A service certificate also states where it was fetched from — the source address of the `service retrieve` that produced it, distinct from the approval's own IP — and links to the service code behind it. The open certificate lives in `page.state` via shallow routing, with a matching `?modal=<id>` in the address bar so a specific certificate is linkable without leaving the list behind it. It has to be both: SvelteKit's `pushState` updates `page.state` and the address bar but never reassigns `page.url`, so state drives the open modal and the search parameter is only the fallback a pasted link arrives with. Every close path — the button, Escape, the backdrop — goes through the dialog's own `close` event, which is what keeps that parameter in step with what is on screen.
 - **ConsentModal**: Blocking login consent notice, shown above the login form until accepted.
+
+### The service codes screen
+
+`src/routes/service-codes/+page.svelte` lists the enrollments the signed-in
+identity has approved, and never the codes themselves — the server has no
+endpoint that returns one, by design (see
+`webtypes.ServiceEnrollmentResponse`).
+
+It is built the same way as the certificate history: a stack of
+`ServiceCodeRow` cards, each opening `ServiceCodeDetailModal` through the
+same shallow-routing arrangement (`page.state.modalEnrollmentId`, with
+`?modal=<id>` as the fallback a pasted link arrives with). The two keys are
+separate rather than shared, so a `?modal=` id belonging to one list cannot
+resolve against the other.
+
+A row carries what someone scanning the list is looking for: the account the
+code mints for, when it was approved, what a redemption hands out, how often
+anything has redeemed it, and whether it still works. The panel behind it
+adds the key ID, the bound key's fingerprint, the options fixed at approval,
+the code's dates, and the full redemption log fetched from
+`/api/certs/requests/{id}/retrievals`.
+
+Live codes come first and expired ones follow under their own section label
+rather than dropping off the page: a job that stopped working is explained by
+the code beneath it, and hiding the row hides the explanation.
 
 ## Dark Mode
 
