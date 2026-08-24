@@ -40,6 +40,14 @@ type ServerOptions struct {
 	// under the cert_options key the template already renders, and a
 	// duplicate top-level key is a YAML error — hence PAMRequireGroup below.
 	ExtraConfigYAML string
+	// AdminRequireGroup and AuditorGroup set admin.require_group and
+	// admin.auditor_group. Both fail closed: with neither set,
+	// config.AdminConfig.GrantsAuditor denies every caller, so a test that
+	// logs in carrying an "auditor" group still gets refused. A test
+	// exercising an admin or auditor surface has to name the groups here.
+	AdminRequireGroup string
+	AuditorGroup      string
+
 	// PAMRequireGroup sets cert_options.pam.require_group, which fails
 	// closed: unset (the default) means the server issues no PAM
 	// certificates at all (see CertOptionsPAM.RequireGroup).
@@ -148,6 +156,8 @@ func newServerConfig(t *testing.T, idp *IdentityProvider, opts ServerOptions) (c
 		SSHKeyPEM:            sshKeyPEM,
 		ValidDuration:        opts.ValidDuration,
 		Extensions:           opts.Extensions,
+		AdminRequireGroup:    opts.AdminRequireGroup,
+		AuditorGroup:         opts.AuditorGroup,
 		PAMRequireGroup:      opts.PAMRequireGroup,
 		DSN:                  dsn,
 		UserKeyIDTemplate:    opts.UserKeyIDTemplate,
@@ -313,6 +323,8 @@ type serverConfigData struct {
 	SSHKeyPEM            string
 	ValidDuration        string
 	Extensions           []string
+	AdminRequireGroup    string
+	AuditorGroup         string
 	PAMRequireGroup      string
 	DSN                  string
 	UserKeyIDTemplate    string
@@ -402,6 +414,20 @@ func renderServerConfig(d serverConfigData) string {
 	if d.PAMRequireGroup != "" {
 		fmt.Fprintf(&b, "  pam:\n")
 		fmt.Fprintf(&b, "    require_group: %q\n", d.PAMRequireGroup)
+	}
+
+	// admin is a top-level key, so it closes the cert_options tree above.
+	// Emitted only when a test names a group: leaving the block out entirely
+	// is what the product default looks like, and writing empty strings
+	// would instead assert that "" is a group name.
+	if d.AdminRequireGroup != "" || d.AuditorGroup != "" {
+		fmt.Fprintf(&b, "admin:\n")
+		if d.AdminRequireGroup != "" {
+			fmt.Fprintf(&b, "  require_group: %q\n", d.AdminRequireGroup)
+		}
+		if d.AuditorGroup != "" {
+			fmt.Fprintf(&b, "  auditor_group: %q\n", d.AuditorGroup)
+		}
 	}
 
 	return b.String()

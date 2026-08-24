@@ -29,11 +29,19 @@ type fixture struct {
 
 // newFixture starts an IdP and a ssoosshd instance pointed at it, and a
 // private ssh-agent, all torn down via t.Cleanup.
-func newFixture(t *testing.T) *fixture {
+func newFixture(t *testing.T, opts ...func(*harness.ServerOptions)) *fixture {
 	t.Helper()
 
+	// Variadic options rather than a second constructor: most tests want the
+	// defaults and say newFixture(t), while a test exercising an admin or
+	// auditor surface has to name the groups the server recognises.
+	serverOpts := harness.ServerOptions{}
+	for _, apply := range opts {
+		apply(&serverOpts)
+	}
+
 	idp := harness.NewIdentityProvider(t)
-	srv := harness.StartServer(t, idp, harness.ServerOptions{})
+	srv := harness.StartServer(t, idp, serverOpts)
 	agent := harness.StartAgent(t)
 	_, ssoosshBin := harness.Binaries(t)
 
