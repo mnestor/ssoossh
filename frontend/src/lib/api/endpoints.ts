@@ -8,6 +8,7 @@ import type {
 	CertificateListResponse,
 	CurrentUser,
 	DenyResult,
+	EnrollmentRetrievalResponse,
 	EnrollmentRetrievalsResponse,
 	NotificationPreferences,
 	RequestDetail,
@@ -202,12 +203,12 @@ export function getAdminEnrollmentDetail(
 	signal?: AbortSignal
 ): Promise<{
 	enrollment: AdminEnrollment;
-	retrievals: EnrollmentRetrievalsResponse;
+	retrievals: EnrollmentRetrievalResponse[];
 	retrieval_total: number;
 }> {
 	return request<{
 		enrollment: AdminEnrollment;
-		retrievals: EnrollmentRetrievalsResponse;
+		retrievals: EnrollmentRetrievalResponse[];
 		retrieval_total: number;
 	}>(`/admin/enrollments/${encodeURIComponent(id)}`, { signal });
 }

@@ -19,11 +19,12 @@ export type {
 	CertificateOptionsResponse as CertificateOptions,
 	CertificateResponse as CertificateRecord,
 	CurrentUserResponse as CurrentUser,
+	EnrollmentRetrievalResponse,
+	EnrollmentRetrievalsResponse,
 	NotificationKindResponse as NotificationKind,
 	NotificationPreferencesResponse as NotificationPreferences,
 	PageMeta,
 	RequestDetailResponse as RequestDetail,
-	EnrollmentRetrievalsResponse,
 	ServiceEnrollmentResponse as ServiceEnrollment,
 	ServiceEnrollmentsResponse
 } from './generated/webtypes';
