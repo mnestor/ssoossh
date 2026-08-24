@@ -10,6 +10,7 @@ import (
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/server/utils/paging"
 	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
@@ -47,6 +48,21 @@ func orEmpty[T any](s []T) []T {
 		return []T{}
 	}
 	return s
+}
+
+// newPageMeta converts a page request and its total row count to the wire
+// shape every paged admin/auditor list carries. Page and PageCount are
+// derived here rather than in each list UI so the boundaries — an empty list,
+// a total that is an exact multiple of the page size — read the same way
+// everywhere.
+func newPageMeta(p paging.Params, total int64) webtypes.PageMeta {
+	return webtypes.PageMeta{
+		Total:     total,
+		Limit:     p.Limit,
+		Offset:    p.Offset,
+		Page:      p.PageNumber(),
+		PageCount: p.PageCount(total),
+	}
 }
 
 // newCurrentUserResponse converts the session identity to its wire shape.

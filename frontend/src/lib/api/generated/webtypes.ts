@@ -25,6 +25,38 @@ The authoritative human-readable contract is docs/openapi.yaml.
 */
 
 /**
+ * PageMeta describes the window a paged list endpoint served, so a UI can
+ * render page numbers and decide whether "next" is reachable. Shared by every
+ * admin and auditor list; see server/utils/paging for the parameters that
+ * produce it.
+ * Total is the count of rows matching the search, not the count on this page:
+ * it is what "page 3 of 12" is computed from. It stays accurate to the
+ * filtered set, so a search that narrows the list narrows Total with it.
+ */
+export interface PageMeta {
+	/**
+	 * Total is how many rows match the request's filter, across all pages.
+	 */
+	total: number /* int64 */;
+	/**
+	 * Limit is the page size actually served, which may be smaller than the
+	 * one asked for (see paging.MaxLimit).
+	 */
+	limit: number /* int */;
+	/**
+	 * Offset is how many rows were skipped to reach this page.
+	 */
+	offset: number /* int */;
+	/**
+	 * Page is the 1-based number of this page, and PageCount how many pages
+	 * Total fills at this size. Both are derivable from the three fields
+	 * above, and are sent anyway so every list UI computes them the same way
+	 * — including the "an empty list is page 1 of 1" boundary.
+	 */
+	page: number /* int */;
+	page_count: number /* int */;
+}
+/**
  * CurrentUserResponse is the authenticated identity, for the UI to render
  * who it is acting as and decide what to show.
  * Groups are included because the UI needs them to anticipate what the

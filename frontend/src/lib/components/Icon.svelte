@@ -22,7 +22,8 @@
 		Cog,
 		Server,
 		Clock,
-		Loader
+		Loader,
+		Search
 	} from '@lucide/svelte';
 
 	interface Props {
@@ -65,7 +66,8 @@
 		cog: Cog,
 		server: Server,
 		clock: Clock,
-		loader: Loader
+		loader: Loader,
+		search: Search
 	};
 
 	const IconComponent = $derived(iconComponents[name]);

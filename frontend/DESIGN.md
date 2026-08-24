@@ -93,6 +93,7 @@ The `iconComponents` map in `src/lib/components/Icon.svelte` includes:
 
 **Utility:**
 
+- `search` — the search box on a paged list
 - `zap` — generic or all-category indicator
 
 ### Size Scale
@@ -178,6 +179,8 @@ discrete.
 - **ApprovalView**: Composite component rendering a full certificate-request approval form.
 - **CertDetailModal**: Read-only certificate details in a modal, triggered by clicking a row in Dashboard or History. A service certificate also states where it was fetched from — the source address of the `service retrieve` that produced it, distinct from the approval's own IP — and links to the service code behind it. The open certificate lives in `page.state` via shallow routing, with a matching `?modal=<id>` in the address bar so a specific certificate is linkable without leaving the list behind it. It has to be both: SvelteKit's `pushState` updates `page.state` and the address bar but never reassigns `page.url`, so state drives the open modal and the search parameter is only the fallback a pasted link arrives with. Every close path — the button, Escape, the backdrop — goes through the dialog's own `close` event, which is what keeps that parameter in step with what is on screen.
 - **ConsentModal**: Blocking login consent notice, shown above the login form until accepted.
+- **Pager**: Offset pagination for the paged admin and auditor lists. The server sends the window it served (`webtypes.PageMeta`) and the pager asks for another one by offset, so neither side re-derives page arithmetic per list. Renders nothing when one page holds everything, keeps the first and last page reachable behind an ellipsis on long runs, and marks the current page with `aria-current`. Built from plain buttons rather than `Button`, which carries neither `aria-current` nor a per-page accessible name.
+- **SearchInput**: The debounced search box those lists are filtered with. Reports the trimmed term once the typing settles, and only when it settled on something new, so a stray space does not re-run a query. Enter reports immediately; the clear button reports an empty term without waiting out the debounce. `value` seeds the box and is not watched afterwards — a page that needs to reset the term remounts it with a key.
 
 ### The service codes screen
 

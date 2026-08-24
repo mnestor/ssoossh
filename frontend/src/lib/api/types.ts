@@ -19,6 +19,7 @@ export type {
 	CurrentUserResponse as CurrentUser,
 	NotificationKindResponse as NotificationKind,
 	NotificationPreferencesResponse as NotificationPreferences,
+	PageMeta,
 	RequestDetailResponse as RequestDetail,
 	EnrollmentRetrievalsResponse,
 	ServiceEnrollmentResponse as ServiceEnrollment,
