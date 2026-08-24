@@ -32,13 +32,20 @@ func TestCertificateDetail_ApproverCanViewCertificate(t *testing.T) {
 	// Navigate to the certificate detail page using the certificate ID
 	// The certificate ID should be available from the login.AwaitCertificate response
 	certDetailURL := f.Server.BaseURL + "/certs/" + cert.ID
+	// Navigate to cert page; it will redirect to login since we're not authenticated yet
+	browser.Navigate(t, certDetailURL, `[data-testid="login-view"]`)
+	// Click the sign-in button
+	browser.Click(t, `[data-testid="sign-in-button"]`)
+	// Complete the IdP login as alice
+	browser.CompleteIdPLogin(t, "alice")
+	// Now navigate to the cert page again; this time we should get the cert details
 	browser.Navigate(t, certDetailURL, `[data-testid="cert-details"]`)
 	browser.WaitVisible(t, `[data-testid="cert-serial-number"]`)
 	browser.WaitVisible(t, `[data-testid="cert-key-id"]`)
 }
 
 // TestCertificateDetail_UnrelatedUserIsRefused tests that an unrelated user
-// cannot view a certificate detail page.
+// cannot view a certificate detail page, even when authenticated.
 func TestCertificateDetail_UnrelatedUserIsRefused(t *testing.T) {
 	f := newFixture(t)
 	browser := harness.StartBrowser(t)
@@ -58,12 +65,15 @@ func TestCertificateDetail_UnrelatedUserIsRefused(t *testing.T) {
 
 	// Try to access the certificate as a different user (bob)
 	certDetailURL := f.Server.BaseURL + "/certs/" + cert.ID
+	// Navigate to cert page; it will redirect to login since we're not authenticated yet
 	browser.Navigate(t, certDetailURL, `[data-testid="login-view"]`)
+	// Click the sign-in button
 	browser.Click(t, `[data-testid="sign-in-button"]`)
+	// Complete login as bob (a user who is not the owner)
 	browser.CompleteIdPLogin(t, "bob")
-
-	// Should see access denied
-	browser.WaitVisible(t, `[data-testid="access-denied"]`)
+	// Now navigate to the cert page as the authenticated bob; this time we should
+	// get access-denied because bob is not authorized to view this certificate
+	browser.Navigate(t, certDetailURL, `[data-testid="access-denied"]`)
 	browser.AssertNotPresent(t, `[data-testid="cert-details"]`)
 }
 
@@ -88,13 +98,14 @@ func TestCertificateDetail_AuditorCanViewCertificate(t *testing.T) {
 
 	// Access the certificate as an auditor
 	certDetailURL := f.Server.BaseURL + "/certs/" + cert.ID
+	// Navigate to cert page; it will redirect to login since we're not authenticated yet
 	browser.Navigate(t, certDetailURL, `[data-testid="login-view"]`)
+	// Click the sign-in button
 	browser.Click(t, `[data-testid="sign-in-button"]`)
 	// Complete login as an auditor (with auditor group)
 	browser.CompleteIdPLoginWithGroups(t, "auditor", []string{"ssoossh-auditors"})
-
-	// Should see certificate details
-	browser.WaitVisible(t, `[data-testid="cert-details"]`)
+	// Now navigate to the cert page again; this time we should get the cert details
+	browser.Navigate(t, certDetailURL, `[data-testid="cert-details"]`)
 	browser.WaitVisible(t, `[data-testid="cert-serial-number"]`)
 }
 
