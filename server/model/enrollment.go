@@ -82,3 +82,24 @@ type EnrollmentRetrieval struct {
 
 // TableName overrides GORM's default pluralization to match the migration.
 func (EnrollmentRetrieval) TableName() string { return "enrollment_retrievals" }
+
+// EnrollmentReassignment is an audit record of one enrollment ownership
+// transfer. An enrollment can be reassigned multiple times, so this is an
+// append-only log. See docs/flows.md "Reassigning an enrollment" for the
+// full use case.
+//
+// The distinction between FromUserID and ReassignedByUserID matters: when
+// an owner reassigns their own code, they are the same person; when an admin
+// reassigns someone else's code, they differ. Both are recorded so auditors
+// can tell self-service from admin-initiated transfer.
+type EnrollmentReassignment struct {
+	ID                 string    `gorm:"column:id;primaryKey"`
+	EnrollmentID       string    `gorm:"column:enrollment_id"`
+	FromUserID         string    `gorm:"column:from_user_id"`
+	ToUserID           string    `gorm:"column:to_user_id"`
+	ReassignedByUserID string    `gorm:"column:reassigned_by_user_id"`
+	ReassignedAt       time.Time `gorm:"column:reassigned_at"`
+}
+
+// TableName overrides GORM's default pluralization to match the migration.
+func (EnrollmentReassignment) TableName() string { return "enrollment_reassignments" }

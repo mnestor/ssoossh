@@ -8,6 +8,7 @@
 DROP TABLE IF EXISTS server_secrets;
 DROP TABLE IF EXISTS ca_signer_keys;
 DROP TABLE IF EXISTS notification_preferences;
+DROP TABLE IF EXISTS enrollment_reassignments;
 DROP TABLE IF EXISTS enrollment_retrievals;
 DROP TABLE IF EXISTS enrollments;
 DROP TABLE IF EXISTS certificate_request_decisions;

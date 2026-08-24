@@ -239,6 +239,29 @@ CREATE TABLE enrollment_retrievals (
 );
 CREATE INDEX idx_enrollment_retrievals_enrollment_id ON enrollment_retrievals(enrollment_id);
 
+-- One row per enrollment reassignment. An enrollment can be reassigned
+-- multiple times, so this is an append-only audit log. Unlike enrollments
+-- (busy pipeline table), this carries only an audit record: scalar columns
+-- for indexability, no foreign key constraints that would block enrollment
+-- cleanup under a future retention policy.
+--
+-- The distinction between from_user_id and reassigned_by_user_id matters:
+-- an owner reassigning their own enrollment has them both pointing to the
+-- same user, while an admin reassigning someone else's has them as different
+-- people. Both are recorded so auditors can distinguish self-service
+-- reassignment from admin-initiated transfer.
+CREATE TABLE enrollment_reassignments (
+    id TEXT PRIMARY KEY NOT NULL,
+    enrollment_id TEXT NOT NULL,
+    from_user_id TEXT NOT NULL,
+    to_user_id TEXT NOT NULL,
+    reassigned_by_user_id TEXT NOT NULL,
+    reassigned_at TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX idx_enrollment_reassignments_enrollment_id ON enrollment_reassignments(enrollment_id);
+CREATE INDEX idx_enrollment_reassignments_reassigned_by ON enrollment_reassignments(reassigned_by_user_id);
+CREATE INDEX idx_enrollment_reassignments_reassigned_at ON enrollment_reassignments(reassigned_at);
+
 -- One row per (user, notification kind) the user has made an explicit
 -- choice about. Absence means the kind's registered default, which is what
 -- lets a new notification kind ship without a schema change or a backfill

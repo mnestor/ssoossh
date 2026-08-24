@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
@@ -29,6 +30,9 @@ type EnrollmentProvider interface {
 	Retrieve(ctx context.Context, code string, sourceIP string) (certificate string, err error)
 	ListRetrievals(ctx context.Context, requestID string, identity *Identity) (RetrievalLog, error)
 	ListForIdentity(ctx context.Context, identity *Identity) ([]ServiceEnrollment, error)
+	ListForAdmin(ctx context.Context, identity *Identity, params AdminListParams) (AdminEnrollmentList, error)
+	GetEnrollmentDetail(ctx context.Context, enrollmentID string, identity *Identity) (AdminEnrollmentDetail, error)
+	Reassign(ctx context.Context, enrollmentID string, toUserID string, identity *Identity) error
 }
 
 // EnrollmentService redeems an approved model.Enrollment (created by
@@ -510,6 +514,44 @@ type RetrievalLog struct {
 	Total      int
 }
 
+// AdminListParams are the query parameters for listing enrollments as an admin.
+type AdminListParams struct {
+	Limit  int
+	Offset int
+	Query  string
+}
+
+// AdminEnrollmentList is a paged view of all enrollments across users,
+// visible to auditors.
+type AdminEnrollmentList struct {
+	Enrollments []AdminEnrollmentRow
+	Total       int64
+}
+
+// AdminEnrollmentRow is one enrollment in the admin list, with approver info
+// and retrieval summary.
+type AdminEnrollmentRow struct {
+	Enrollment model.Enrollment
+	Approver   model.User
+	Principals []string
+	Options    RequestedOptions
+
+	Fingerprint     string
+	RetrievalCount  int
+	LastRetrievedAt *time.Time
+}
+
+// AdminEnrollmentDetail is one enrollment in full, with the full retrieval log.
+type AdminEnrollmentDetail struct {
+	Enrollment   model.Enrollment
+	Approver     model.User
+	Principals   []string
+	Options      RequestedOptions
+	Fingerprint  string
+	Retrievals   RetrievalLog
+	Reassignments []model.EnrollmentReassignment
+}
+
 // RetrievalPageSize bounds how many redemptions ListRetrievals returns.
 //
 // The log is unbounded in the database and can be very large: codes are
@@ -589,4 +631,300 @@ func (s *EnrollmentService) markRetrievalSucceeded(ctx context.Context, enrollme
 		slog.Error("failed to stamp enrollment redemption",
 			"enrollment_id", enrollmentID, "error", err)
 	}
+}
+
+// ListForAdmin returns a paged, searchable list of all enrollments across
+// all users, visible to auditors.
+//
+// Scoped by the config's auditor group (config.Admin.GrantsAuditor).
+// Fails closed with Forbidden for non-auditors.
+//
+// Search matches case-insensitively against:
+// - Approving user's username and email
+// - Enrollment principals
+// - Enrollment key ID
+// - Certificate request ID
+func (s *EnrollmentService) ListForAdmin(ctx context.Context, identity *Identity, params AdminListParams) (AdminEnrollmentList, error) {
+	if !s.config.Admin.GrantsAuditor(identity.Groups) {
+		return AdminEnrollmentList{}, &errorresponses.ForbiddenError{Reason: "auditor access required"}
+	}
+
+	query := s.db.WithContext(ctx)
+
+	// Apply search filter if provided
+	if params.Query != "" {
+		// Build a filter matching any of: user username/email, principals, keyid, request id
+		whereSQL := `
+			LOWER(users.username) LIKE ? ESCAPE '\' OR
+			LOWER(users.email) LIKE ? ESCAPE '\' OR
+			LOWER(enrollments.principals) LIKE ? ESCAPE '\' OR
+			LOWER(enrollments.key_id) LIKE ? ESCAPE '\' OR
+			LOWER(enrollments.certificate_request_id) LIKE ? ESCAPE '\'
+		`
+		pattern := "%" + escapeLikePattern(params.Query) + "%"
+		query = query.Where(whereSQL, pattern, pattern, pattern, pattern, pattern)
+	}
+
+	// Count total matching rows before windowing
+	var total int64
+	if err := query.Model(&model.Enrollment{}).
+		Joins("LEFT JOIN users ON enrollments.user_id = users.id").
+		Count(&total).Error; err != nil {
+		return AdminEnrollmentList{}, fmt.Errorf("failed to count enrollments: %w", err)
+	}
+
+	// Fetch the windowed page
+	var enrollments []model.Enrollment
+	if err := query.
+		Joins("LEFT JOIN users ON enrollments.user_id = users.id").
+		Order("enrollments.created_at DESC").
+		Limit(params.Limit).
+		Offset(params.Offset).
+		Find(&enrollments).Error; err != nil {
+		return AdminEnrollmentList{}, fmt.Errorf("failed to list enrollments: %w", err)
+	}
+
+	if len(enrollments) == 0 {
+		return AdminEnrollmentList{Total: total}, nil
+	}
+
+	// Load approver user info for all enrollments
+	userIDs := make([]string, 0, len(enrollments))
+	for _, e := range enrollments {
+		userIDs = append(userIDs, e.UserID)
+	}
+
+	var users []model.User
+	if err := s.db.WithContext(ctx).Where("id IN ?", userIDs).Find(&users).Error; err != nil {
+		return AdminEnrollmentList{}, fmt.Errorf("failed to load approver users: %w", err)
+	}
+	userByID := make(map[string]model.User, len(users))
+	for _, u := range users {
+		userByID[u.ID] = u
+	}
+
+	// Load retrieval counts and last timestamps
+	enrollmentIDs := make([]string, 0, len(enrollments))
+	for _, e := range enrollments {
+		enrollmentIDs = append(enrollmentIDs, e.ID)
+	}
+
+	counts, err := s.retrievalCounts(ctx, enrollmentIDs)
+	if err != nil {
+		return AdminEnrollmentList{}, err
+	}
+	latest, err := s.latestRetrievals(ctx, enrollmentIDs)
+	if err != nil {
+		return AdminEnrollmentList{}, err
+	}
+
+	// Build response
+	rows := make([]AdminEnrollmentRow, 0, len(enrollments))
+	for _, e := range enrollments {
+		row := AdminEnrollmentRow{
+			Enrollment:     e,
+			Approver:       userByID[e.UserID],
+			Principals:     decodeEnrollmentPrincipals(e),
+			Options:        decodeEnrollmentOptions(e),
+			Fingerprint:    enrollmentFingerprint(e),
+			RetrievalCount: counts[e.ID],
+		}
+		if at, ok := latest[e.ID]; ok {
+			retrievedAt := at
+			row.LastRetrievedAt = &retrievedAt
+		}
+		rows = append(rows, row)
+	}
+
+	return AdminEnrollmentList{Enrollments: rows, Total: total}, nil
+}
+
+// GetEnrollmentDetail returns a single enrollment with full details and
+// retrieval log, visible to auditors and the enrollment's approving user.
+//
+// Scoped by the config's auditor group (config.Admin.GrantsAuditor) or
+// ownership (matching the enrollment's user_id). Fails closed with Forbidden
+// for anyone else, and with NotFound for an unknown enrollment ID.
+func (s *EnrollmentService) GetEnrollmentDetail(ctx context.Context, enrollmentID string, identity *Identity) (AdminEnrollmentDetail, error) {
+	var enrollment model.Enrollment
+	if err := s.db.WithContext(ctx).First(&enrollment, "id = ?", enrollmentID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return AdminEnrollmentDetail{}, &errorresponses.NotFoundError{Resource: fmt.Sprintf("enrollment %q", enrollmentID)}
+		}
+		return AdminEnrollmentDetail{}, fmt.Errorf("failed to look up enrollment: %w", err)
+	}
+
+	// Check authorization: auditor or owner
+	if !s.config.Admin.GrantsAuditor(identity.Groups) {
+		var user model.User
+		err := s.db.WithContext(ctx).First(&user, "subject = ?", identity.Subject).Error
+		if err != nil || user.ID != enrollment.UserID {
+			return AdminEnrollmentDetail{}, &errorresponses.ForbiddenError{Reason: "enrollment belongs to another user"}
+		}
+	}
+
+	// Load approver info
+	var approver model.User
+	if err := s.db.WithContext(ctx).First(&approver, "id = ?", enrollment.UserID).Error; err != nil {
+		return AdminEnrollmentDetail{}, fmt.Errorf("failed to load approver user: %w", err)
+	}
+
+	// Load retrieval log
+	var retrievals []model.EnrollmentRetrieval
+	if err := s.db.WithContext(ctx).
+		Where("enrollment_id = ?", enrollmentID).
+		Order("retrieved_at DESC").
+		Limit(RetrievalPageSize).
+		Find(&retrievals).Error; err != nil {
+		return AdminEnrollmentDetail{}, fmt.Errorf("failed to load retrievals: %w", err)
+	}
+
+	var total int64
+	if err := s.db.WithContext(ctx).
+		Model(&model.EnrollmentRetrieval{}).
+		Where("enrollment_id = ?", enrollmentID).
+		Count(&total).Error; err != nil {
+		return AdminEnrollmentDetail{}, fmt.Errorf("failed to count retrievals: %w", err)
+	}
+
+	// Load reassignment history
+	var reassignments []model.EnrollmentReassignment
+	if err := s.db.WithContext(ctx).
+		Where("enrollment_id = ?", enrollmentID).
+		Order("reassigned_at DESC").
+		Find(&reassignments).Error; err != nil {
+		return AdminEnrollmentDetail{}, fmt.Errorf("failed to load reassignments: %w", err)
+	}
+
+	return AdminEnrollmentDetail{
+		Enrollment:    enrollment,
+		Approver:      approver,
+		Principals:    decodeEnrollmentPrincipals(enrollment),
+		Options:       decodeEnrollmentOptions(enrollment),
+		Fingerprint:   enrollmentFingerprint(enrollment),
+		Retrievals:    RetrievalLog{Retrievals: retrievals, Total: int(total)},
+		Reassignments: reassignments,
+	}, nil
+}
+
+// Reassign changes the ownership of an enrollment to a new user. The
+// enrollment's key ID, principals, options, and expiry remain unchanged —
+// only the user_id is updated. An audit record is created to track the
+// transfer.
+//
+// Scoped by: owner (the current user_id) or admin group membership.
+// Eligible target: a user whose service_accounts contains the enrollment's
+// principal.
+//
+// Returns Forbidden for non-owners and non-admins, InvalidRequest for an
+// ineligible target, and NotFound for an unknown enrollment.
+func (s *EnrollmentService) Reassign(ctx context.Context, enrollmentID string, toUserID string, identity *Identity) error {
+	// Load the enrollment
+	var enrollment model.Enrollment
+	if err := s.db.WithContext(ctx).First(&enrollment, "id = ?", enrollmentID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &errorresponses.NotFoundError{Resource: fmt.Sprintf("enrollment %q", enrollmentID)}
+		}
+		return fmt.Errorf("failed to look up enrollment: %w", err)
+	}
+
+	// Check authorization: owner or admin
+	// Admin is determined by RequireGroup membership
+	var isAdmin bool
+	if s.config.Admin.IsAdminEnabled() {
+		for _, group := range identity.Groups {
+			if group == s.config.Admin.RequireGroup {
+				isAdmin = true
+				break
+			}
+		}
+	}
+
+	if !isAdmin {
+		var user model.User
+		err := s.db.WithContext(ctx).First(&user, "subject = ?", identity.Subject).Error
+		if err != nil || user.ID != enrollment.UserID {
+			return &errorresponses.ForbiddenError{Reason: "you must be the enrollment owner or an admin to reassign it"}
+		}
+	}
+
+	// Load the target user
+	var targetUser model.User
+	if err := s.db.WithContext(ctx).First(&targetUser, "id = ?", toUserID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &errorresponses.InvalidRequestError{Reason: fmt.Sprintf("target user %q does not exist", toUserID)}
+		}
+		return fmt.Errorf("failed to look up target user: %w", err)
+	}
+
+	// Check eligibility: target user's service_accounts must contain the enrollment's principal
+	principals := decodeEnrollmentPrincipals(enrollment)
+	if len(principals) == 0 {
+		return fmt.Errorf("enrollment has no principals; cannot determine eligibility")
+	}
+	principal := principals[0] // Service enrollments have exactly one principal
+
+	// Parse target user's service_accounts JSON
+	var serviceAccounts []string
+	if err := json.Unmarshal([]byte(targetUser.ServiceAccounts), &serviceAccounts); err != nil {
+		return fmt.Errorf("failed to parse target user service accounts: %w", err)
+	}
+
+	// Check if principal is in the target's service accounts
+	var hasAccount bool
+	for _, account := range serviceAccounts {
+		if account == principal {
+			hasAccount = true
+			break
+		}
+	}
+	if !hasAccount {
+		return &errorresponses.InvalidRequestError{
+			Reason: fmt.Sprintf("target user does not have service account %q", principal),
+		}
+	}
+
+	// Get the reassigner's user ID
+	var reassigner model.User
+	if !isAdmin {
+		// Owner reassigning themselves; use the same ID
+		reassigner = model.User{ID: enrollment.UserID}
+	} else {
+		// Admin reassigning; load their user ID from the subject
+		if err := s.db.WithContext(ctx).First(&reassigner, "subject = ?", identity.Subject).Error; err != nil {
+			return fmt.Errorf("failed to load reassigner user: %w", err)
+		}
+	}
+
+	// Create audit record
+	auditRecord := model.EnrollmentReassignment{
+		ID:                 uuid.NewString(),
+		EnrollmentID:       enrollmentID,
+		FromUserID:         enrollment.UserID,
+		ToUserID:           toUserID,
+		ReassignedByUserID: reassigner.ID,
+		ReassignedAt:       time.Now(),
+	}
+
+	// Update the enrollment's user_id
+	if err := s.db.WithContext(ctx).Model(&enrollment).Update("user_id", toUserID).Error; err != nil {
+		return fmt.Errorf("failed to update enrollment: %w", err)
+	}
+
+	// Create the audit record
+	if err := s.db.WithContext(ctx).Create(&auditRecord).Error; err != nil {
+		return fmt.Errorf("failed to create reassignment audit record: %w", err)
+	}
+
+	return nil
+}
+
+// escapeLikePattern escapes wildcards in a search term for LIKE comparison.
+// This is duplicated from paging.escapeLike because that function is not
+// exported. The implementation is identical.
+func escapeLikePattern(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, "%", `\%`)
+	s = strings.ReplaceAll(s, "_", `\_`)
+	return s
 }

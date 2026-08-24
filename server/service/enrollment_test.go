@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -904,3 +905,406 @@ func seedEnrollment(t *testing.T, svc *CertRequestService, row model.Enrollment)
 		t.Fatalf("failed to seed enrollment: %v", err)
 	}
 }
+
+// TestListForAdmin tests the admin list of enrollments across all users.
+func TestListForAdmin(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should list all enrollments newest first to an auditor", func(t *testing.T) {
+		t.Parallel()
+		auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
+		svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		// Seed two enrollments by different users, with the second created later
+		user1ID := seedUser(t, svc.db, "sub-user1")
+		user2ID := seedUser(t, svc.db, "sub-user2")
+
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: user1ID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+		time.Sleep(10 * time.Millisecond) // Ensure creation order is obvious
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment2", Code: "code2", PublicKey: "key2", UserID: user2ID,
+			Principals: `["svc-b"]`, KeyID: "key2", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		// Migrate user models so we can load them
+		if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+			t.Fatalf("failed to migrate users: %v", err)
+		}
+
+		list, err := enrollment.ListForAdmin(context.Background(),
+			&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
+			AdminListParams{Limit: 25, Offset: 0, Query: ""})
+		if err != nil {
+			t.Fatalf("ListForAdmin() error = %v", err)
+		}
+
+		if len(list.Enrollments) != 2 || list.Total != 2 {
+			t.Errorf("got %d of %d, want 2 of 2", len(list.Enrollments), list.Total)
+		}
+		if list.Enrollments[0].Enrollment.ID != "enrollment2" {
+			t.Errorf("first enrollment is %q, want newest (enrollment2)", list.Enrollments[0].Enrollment.ID)
+		}
+	})
+
+	t.Run("should search enrollments by approver username", func(t *testing.T) {
+		t.Parallel()
+		auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
+		svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		// Seed users with specific usernames
+		if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+			t.Fatalf("failed to migrate users: %v", err)
+		}
+		user1 := model.User{
+			ID: uuid.NewString(), Subject: "sub-alice", Username: "alice", Email: "alice@example.com",
+			CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}
+		user2 := model.User{
+			ID: uuid.NewString(), Subject: "sub-bob", Username: "bob", Email: "bob@example.com",
+			CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}
+		if err := svc.db.Create(&user1).Error; err != nil {
+			t.Fatalf("failed to seed user1: %v", err)
+		}
+		if err := svc.db.Create(&user2).Error; err != nil {
+			t.Fatalf("failed to seed user2: %v", err)
+		}
+
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: user1.ID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment2", Code: "code2", PublicKey: "key2", UserID: user2.ID,
+			Principals: `["svc-b"]`, KeyID: "key2", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		// Search for alice
+		list, err := enrollment.ListForAdmin(context.Background(),
+			&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
+			AdminListParams{Limit: 25, Offset: 0, Query: "alice"})
+		if err != nil {
+			t.Fatalf("ListForAdmin() error = %v", err)
+		}
+
+		if len(list.Enrollments) != 1 || list.Enrollments[0].Enrollment.ID != "enrollment1" {
+			t.Errorf("search for 'alice' got %d enrollments, want 1 (enrollment1)", len(list.Enrollments))
+		}
+	})
+
+	t.Run("should refuse non-auditors", func(t *testing.T) {
+		t.Parallel()
+		auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
+		svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		_, err := enrollment.ListForAdmin(context.Background(),
+			&Identity{Subject: "sub-user", Groups: []string{}},
+			AdminListParams{Limit: 25, Offset: 0, Query: ""})
+
+		var forbidden *errorresponses.ForbiddenError
+		if !errors.As(err, &forbidden) {
+			t.Errorf("ListForAdmin() error = %v, want ForbiddenError", err)
+		}
+	})
+
+	t.Run("should return empty list for no matches", func(t *testing.T) {
+		t.Parallel()
+		auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
+		svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		// Seed one enrollment
+		user1ID := seedUser(t, svc.db, "sub-user1")
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: user1ID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+			t.Fatalf("failed to migrate users: %v", err)
+		}
+
+		// Search for something that doesn't match
+		list, err := enrollment.ListForAdmin(context.Background(),
+			&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
+			AdminListParams{Limit: 25, Offset: 0, Query: "nonexistent"})
+		if err != nil {
+			t.Fatalf("ListForAdmin() error = %v", err)
+		}
+
+		if len(list.Enrollments) != 0 {
+			t.Errorf("got %d enrollments for non-matching search, want 0", len(list.Enrollments))
+		}
+	})
+}
+
+// TestGetEnrollmentDetail tests retrieval of a single enrollment with full details.
+func TestGetEnrollmentDetail(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should allow the enrollment owner to view details", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		ownerID := seedUser(t, svc.db, "sub-owner")
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		detail, err := enrollment.GetEnrollmentDetail(context.Background(),
+			"enrollment1", &Identity{Subject: "sub-owner"})
+		if err != nil {
+			t.Fatalf("GetEnrollmentDetail() error = %v", err)
+		}
+
+		if detail.Enrollment.ID != "enrollment1" {
+			t.Errorf("got enrollment %q, want enrollment1", detail.Enrollment.ID)
+		}
+	})
+
+	t.Run("should allow an auditor to view details", func(t *testing.T) {
+		t.Parallel()
+		auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
+		svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		ownerID := seedUser(t, svc.db, "sub-owner")
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		detail, err := enrollment.GetEnrollmentDetail(context.Background(),
+			"enrollment1", &Identity{Subject: "sub-auditor", Groups: []string{"auditors"}})
+		if err != nil {
+			t.Fatalf("GetEnrollmentDetail() error = %v", err)
+		}
+
+		if detail.Enrollment.ID != "enrollment1" {
+			t.Errorf("got enrollment %q, want enrollment1", detail.Enrollment.ID)
+		}
+	})
+
+	t.Run("should refuse an unrelated user", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		ownerID := seedUser(t, svc.db, "sub-owner")
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		_, err := enrollment.GetEnrollmentDetail(context.Background(),
+			"enrollment1", &Identity{Subject: "sub-other"})
+
+		var forbidden *errorresponses.ForbiddenError
+		if !errors.As(err, &forbidden) {
+			t.Errorf("GetEnrollmentDetail() error = %v, want ForbiddenError", err)
+		}
+	})
+
+	t.Run("should return NotFound for unknown enrollment", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		_, err := enrollment.GetEnrollmentDetail(context.Background(),
+			"unknown-id", &Identity{Subject: "sub-auditor"})
+
+		var notFound *errorresponses.NotFoundError
+		if !errors.As(err, &notFound) {
+			t.Errorf("GetEnrollmentDetail() error = %v, want NotFoundError", err)
+		}
+	})
+}
+
+// TestReassign tests enrollment ownership transfer.
+func TestReassign(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should allow the owner to reassign their own enrollment", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		if err := svc.db.AutoMigrate(&model.User{}, &model.EnrollmentReassignment{}); err != nil {
+			t.Fatalf("failed to migrate: %v", err)
+		}
+
+		ownerID := seedUser(t, svc.db, "sub-owner")
+		targetID := seedUser(t, svc.db, "sub-target")
+
+		// Set up target user with the service account
+		if err := svc.db.Model(&model.User{}).Where("id = ?", targetID).
+			Update("service_accounts", `["svc-a"]`).Error; err != nil {
+			t.Fatalf("failed to update target user: %v", err)
+		}
+
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		err := enrollment.Reassign(context.Background(),
+			"enrollment1", targetID, &Identity{Subject: "sub-owner"})
+		if err != nil {
+			t.Fatalf("Reassign() error = %v", err)
+		}
+
+		// Verify the enrollment's user_id changed
+		var updated model.Enrollment
+		if err := svc.db.First(&updated, "id = ?", "enrollment1").Error; err != nil {
+			t.Fatalf("failed to fetch updated enrollment: %v", err)
+		}
+		if updated.UserID != targetID {
+			t.Errorf("enrollment user_id is %q, want %q", updated.UserID, targetID)
+		}
+
+		// Verify an audit record was created
+		var audit model.EnrollmentReassignment
+		if err := svc.db.First(&audit, "enrollment_id = ?", "enrollment1").Error; err != nil {
+			t.Fatalf("failed to fetch audit record: %v", err)
+		}
+		if audit.FromUserID != ownerID || audit.ToUserID != targetID || audit.ReassignedByUserID != ownerID {
+			t.Errorf("audit record incorrect: from=%q, to=%q, by=%q",
+				audit.FromUserID, audit.ToUserID, audit.ReassignedByUserID)
+		}
+	})
+
+	t.Run("should refuse a non-owner and non-admin", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		ownerID := seedUser(t, svc.db, "sub-owner")
+		otherID := seedUser(t, svc.db, "sub-other")
+
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		err := enrollment.Reassign(context.Background(),
+			"enrollment1", otherID, &Identity{Subject: "sub-other"})
+
+		var forbidden *errorresponses.ForbiddenError
+		if !errors.As(err, &forbidden) {
+			t.Errorf("Reassign() error = %v, want ForbiddenError", err)
+		}
+	})
+
+	t.Run("should refuse a target without the required service account", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+			t.Fatalf("failed to migrate: %v", err)
+		}
+
+		ownerID := seedUser(t, svc.db, "sub-owner")
+		targetID := seedUser(t, svc.db, "sub-target")
+
+		// Target has no service accounts
+		if err := svc.db.Model(&model.User{}).Where("id = ?", targetID).
+			Update("service_accounts", `[]`).Error; err != nil {
+			t.Fatalf("failed to update target user: %v", err)
+		}
+
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		err := enrollment.Reassign(context.Background(),
+			"enrollment1", targetID, &Identity{Subject: "sub-owner"})
+
+		var invalid *errorresponses.InvalidRequestError
+		if !errors.As(err, &invalid) {
+			t.Errorf("Reassign() error = %v, want InvalidRequestError", err)
+		}
+	})
+
+	t.Run("should never expose the code in any response or error", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		ownerID := seedUser(t, svc.db, "sub-owner")
+		targetID := seedUser(t, svc.db, "sub-other")
+		secretCode := "super-secret-enrollment-code"
+
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: secretCode, PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		// Try to reassign as unrelated user; error message should not contain the code
+		err := enrollment.Reassign(context.Background(),
+			"enrollment1", targetID, &Identity{Subject: "sub-other"})
+
+		if err != nil && strings.Contains(err.Error(), secretCode) {
+			t.Errorf("Reassign() error contains code: %v", err)
+		}
+	})
+}
+
+// TestCodeExposureInListForAdmin ensures codes are never returned in admin lists.
+func TestCodeExposureInListForAdmin(t *testing.T) {
+	t.Parallel()
+
+	auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
+	svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
+	enrollment := newTestEnrollmentService(t, svc)
+
+	ownerID := seedUser(t, svc.db, "sub-owner")
+	secretCode := "super-secret-code-12345"
+
+	seedEnrollment(t, svc, model.Enrollment{
+		ID: "enrollment1", Code: secretCode, PublicKey: "key1", UserID: ownerID,
+		Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+		CreatedAt: time.Now(),
+	})
+
+	if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+		t.Fatalf("failed to migrate users: %v", err)
+	}
+
+	// List should never return the code
+	list, err := enrollment.ListForAdmin(context.Background(),
+		&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
+		AdminListParams{Limit: 25, Offset: 0, Query: ""})
+	if err != nil {
+		t.Fatalf("ListForAdmin() error = %v", err)
+	}
+
+	// The AdminEnrollmentRow struct doesn't expose Code; just verify the response type doesn't include it
+	for _, row := range list.Enrollments {
+		if strings.Contains(row.Enrollment.Code, secretCode) {
+			t.Errorf("ListForAdmin() returned enrollment with code exposed")
+		}
+	}
+}
+
