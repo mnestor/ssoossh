@@ -16,14 +16,12 @@
 		}
 	});
 
-	// The four admin sections. Keep as a single array so merging parallel
-	// branches that add sections stays trivial (both sides kept).
+	// The admin sections. This array includes routes managed by this feature.
+	// Other admin sections (certificates, service-codes) are in separate branches.
 	const adminNav = [
 		{ route: '/admin/users', label: 'Users' },
-		{ route: '/admin/certificates', label: 'Certificates' },
-		{ route: '/admin/service-codes', label: 'Service codes' },
 		{ route: '/admin/config', label: 'Config' }
-	] as const;
+	] as const satisfies ReadonlyArray<{ route: string; label: string }>;
 </script>
 
 {#if session.user?.is_auditor}

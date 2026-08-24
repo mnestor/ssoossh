@@ -11,11 +11,16 @@
 	let actionBusy = $state(false);
 	let showDisableConfirm = $state(false);
 
-	const userId = page.params.id;
+	const userId = page.params.id ?? '';
 
 	async function loadUser() {
 		busy = true;
 		error = null;
+		if (!userId) {
+			error = 'No user ID provided';
+			busy = false;
+			return;
+		}
 		try {
 			user = await getAdminUser(userId);
 		} catch (cause) {
