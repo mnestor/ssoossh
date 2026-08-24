@@ -382,8 +382,8 @@ func TestCertificateHistoryHandler_ShouldReturnEmptyList(t *testing.T) {
 
 	var resp struct {
 		Data struct {
-			Certificates []any              `json:"certificates"`
-			PageMeta     map[string]any     `json:"page_meta"`
+			Certificates []any          `json:"certificates"`
+			PageMeta     map[string]any `json:"page_meta"`
 		} `json:"data"`
 	}
 
@@ -804,7 +804,7 @@ func TestCertificateHistoryHandler_Pagination(t *testing.T) {
 
 	var resp struct {
 		Data struct {
-			Certificates []any      `json:"certificates"`
+			Certificates []any          `json:"certificates"`
 			PageMeta     map[string]any `json:"page_meta"`
 		} `json:"data"`
 	}

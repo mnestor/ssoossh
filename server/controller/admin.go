@@ -228,9 +228,10 @@ func (a *adminController) certificateHistoryHandler(g *gin.Context) {
 
 	// Apply status filter (optional): live=not expired, expired=expired.
 	now := time.Now()
-	if statusFilter == "live" {
+	switch statusFilter {
+	case "live":
 		query = query.Where("certificates.expires_at > ?", now)
-	} else if statusFilter == "expired" {
+	case "expired":
 		query = query.Where("certificates.expires_at <= ?", now)
 	}
 
