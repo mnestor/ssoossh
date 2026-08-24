@@ -1275,3 +1275,91 @@ func TestReassign(t *testing.T) {
 		}
 	})
 }
+
+// TestListForAdmin_PagingWithSearch tests that search applies server-side and returns correct totals.
+func TestListForAdmin_PagingWithSearch(t *testing.T) {
+	t.Parallel()
+
+	auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
+	svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
+	enrollment := newTestEnrollmentService(t, svc)
+
+	if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+		t.Fatalf("failed to migrate users: %v", err)
+	}
+
+	// Create two users
+	alice := model.User{
+		ID:        uuid.NewString(),
+		Subject:   "sub-alice",
+		Username:  "alice",
+		Email:     "alice@example.com",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	bob := model.User{
+		ID:        uuid.NewString(),
+		Subject:   "sub-bob",
+		Username:  "bob",
+		Email:     "bob@example.com",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := svc.db.Create(&alice).Error; err != nil {
+		t.Fatalf("failed to seed alice: %v", err)
+	}
+	if err := svc.db.Create(&bob).Error; err != nil {
+		t.Fatalf("failed to seed bob: %v", err)
+	}
+
+	// Seed 10 enrollments for alice
+	for i := 0; i < 10; i++ {
+		seedEnrollment(t, svc, model.Enrollment{
+			ID:         uuid.NewString(),
+			Code:       uuid.NewString(),
+			PublicKey:  "key1",
+			UserID:     alice.ID,
+			Principals: `["svc-a"]`,
+			KeyID:      "key1",
+			ExpiresAt:  time.Now().Add(time.Hour),
+			CreatedAt:  time.Now(),
+		})
+	}
+
+	// Seed 20 enrollments for bob
+	for i := 0; i < 20; i++ {
+		seedEnrollment(t, svc, model.Enrollment{
+			ID:         uuid.NewString(),
+			Code:       uuid.NewString(),
+			PublicKey:  "key2",
+			UserID:     bob.ID,
+			Principals: `["svc-b"]`,
+			KeyID:      "key2",
+			ExpiresAt:  time.Now().Add(time.Hour),
+			CreatedAt:  time.Now(),
+		})
+	}
+
+	// Search for "alice" should find only 10 enrollments, not the full 30
+	list, err := enrollment.ListForAdmin(context.Background(),
+		&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
+		AdminListParams{Limit: 25, Offset: 0, Query: "alice"})
+	if err != nil {
+		t.Fatalf("ListForAdmin() error = %v", err)
+	}
+
+	if list.Total != 10 {
+		t.Errorf("ListForAdmin() Total = %d, want 10 (alice's enrollments only)", list.Total)
+	}
+	if len(list.Enrollments) != 10 {
+		t.Errorf("ListForAdmin() returned %d enrollments, want 10", len(list.Enrollments))
+	}
+
+	// Verify all returned enrollments are alice's
+	for _, row := range list.Enrollments {
+		if row.Approver.Username != "alice" {
+			t.Errorf("got enrollment approved by %q, expected alice", row.Approver.Username)
+		}
+	}
+}
+
