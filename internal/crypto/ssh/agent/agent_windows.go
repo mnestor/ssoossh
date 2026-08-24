@@ -4,8 +4,10 @@
 package agent
 
 import (
+	"net"
 	"os"
 
+	"github.com/Microsoft/go-winio"
 	"github.com/kbolino/pageant"
 
 	"golang.org/x/crypto/ssh/agent"
@@ -61,4 +63,12 @@ func NewWSLAgent() (Agent, error) {
 		sock = defaultWSLAgentPipe
 	}
 	return dialAgent(sock, BackendWSLAgent)
+}
+
+// dialSocket connects to a Windows named pipe, the transport both the native
+// OpenSSH agent and the WSL relay expose. Go's net package has no named-pipe
+// network, so this goes through go-winio rather than net.Dial. See dialAgent
+// in agent.go.
+func dialSocket(sock string) (net.Conn, error) {
+	return winio.DialPipe(sock, nil)
 }

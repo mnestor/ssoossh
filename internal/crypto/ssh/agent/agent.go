@@ -266,9 +266,11 @@ func (a *SshAgent) Certificates() ([]*ssh.Certificate, error) {
 // named pipe path — and wraps the connection as an SshAgent reporting the
 // given backend. Shared by the OpenSSH-agent and WSL-relay constructors on
 // both Unix (agent_unix.go) and Windows (agent_windows.go); Pageant is
-// dialed differently and does not use this helper.
+// dialed differently and does not use this helper. The transport differs per
+// platform, so the dial itself lives in dialSocket (agent_unix.go /
+// agent_windows.go).
 func dialAgent(sock, backend string) (Agent, error) {
-	conn, err := net.Dial("unix", sock) //nolint:gosec // local ssh-agent socket/named-pipe path, not attacker-influenced network input
+	conn, err := dialSocket(sock)
 	if err != nil {
 		return nil, err
 	}

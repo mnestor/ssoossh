@@ -5,6 +5,7 @@ package agent
 
 import (
 	"errors"
+	"net"
 	"os"
 )
 
@@ -22,4 +23,10 @@ func NewOpenSSHAgent() (Agent, error) {
 		return nil, errors.New("SSH_AUTH_SOCK is not set")
 	}
 	return dialAgent(sock, BackendOpenSSHAgent)
+}
+
+// dialSocket connects to a Unix domain socket path, the transport every
+// ssh-agent uses on Unix. See dialAgent in agent.go.
+func dialSocket(sock string) (net.Conn, error) {
+	return net.Dial("unix", sock) //nolint:gosec // local ssh-agent socket path, not attacker-influenced network input
 }
