@@ -67,6 +67,12 @@ type ServerOptions struct {
 	// "authentication:" key, and the later one wins, silently discarding
 	// client_id and provider_url.
 	ServiceAccountsField string
+
+	// AdminRequireGroup sets admin.require_group. Empty leaves it unset,
+	// which disables admin access (group-based authorization is not enforced).
+	AdminRequireGroup string
+	// AuditorGroup sets admin.auditor_group. Empty leaves it unset.
+	AuditorGroup string
 }
 
 // Server is a running ssoosshd subprocess.
@@ -153,6 +159,8 @@ func newServerConfig(t *testing.T, idp *IdentityProvider, opts ServerOptions) (c
 		UserKeyIDTemplate:    opts.UserKeyIDTemplate,
 		ExtraClaimFields:     opts.ExtraClaimFields,
 		ServiceAccountsField: opts.ServiceAccountsField,
+		AdminRequireGroup:    opts.AdminRequireGroup,
+		AuditorGroup:         opts.AuditorGroup,
 	}) + opts.ExtraConfigYAML
 
 	configPath = filepath.Join(t.TempDir(), "ssoosshd.yaml")
@@ -318,6 +326,8 @@ type serverConfigData struct {
 	UserKeyIDTemplate    string
 	ExtraClaimFields     map[string]string
 	ServiceAccountsField string
+	AdminRequireGroup    string
+	AuditorGroup         string
 }
 
 // renderServerConfig builds the ssoosshd config YAML from d directly (not
@@ -402,6 +412,17 @@ func renderServerConfig(d serverConfigData) string {
 	if d.PAMRequireGroup != "" {
 		fmt.Fprintf(&b, "  pam:\n")
 		fmt.Fprintf(&b, "    require_group: %q\n", d.PAMRequireGroup)
+	}
+
+	// Render admin block only if at least one setting is configured.
+	if d.AdminRequireGroup != "" || d.AuditorGroup != "" {
+		fmt.Fprintf(&b, "admin:\n")
+		if d.AdminRequireGroup != "" {
+			fmt.Fprintf(&b, "  require_group: %q\n", d.AdminRequireGroup)
+		}
+		if d.AuditorGroup != "" {
+			fmt.Fprintf(&b, "  auditor_group: %q\n", d.AuditorGroup)
+		}
 	}
 
 	return b.String()
