@@ -327,9 +327,7 @@ describe('AdminServiceCodeDetailModal', () => {
 			await user.click(expireButton);
 
 			await waitFor(() => {
-				expect(
-					screen.getByText(/prevent further certificate retrievals/)
-				).toBeInTheDocument();
+				expect(screen.getByText(/prevent further certificate retrievals/)).toBeInTheDocument();
 			});
 		});
 
