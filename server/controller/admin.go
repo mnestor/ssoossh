@@ -334,7 +334,7 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 // @Tags        admin
 // @Produce     json
 // @Param       id path string true "User ID"
-// @Param       body webtypes.DisableUserRequestBody false "Disable reason"
+// @Param       body body webtypes.DisableUserRequestBody false "Disable reason"
 // @Success     200 {object} webtypes.DisableUserConsequences "Consequences of disabling"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin"
@@ -413,7 +413,7 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 // @Tags        admin
 // @Produce     json
 // @Param       id path string true "User ID"
-// @Param       body webtypes.ReEnableUserRequestBody false "Re-enable reason"
+// @Param       body body webtypes.ReEnableUserRequestBody false "Re-enable reason"
 // @Success     200 {object} gin.H "User re-enabled"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin"
