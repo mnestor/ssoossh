@@ -5,22 +5,30 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/service"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
-// NewCertificateController registers the certificate-history route on
+// NewCertificateController registers the certificate-history and certificate-detail routes on
 // group, behind sessionAuthMiddleware.
-func NewCertificateController(group *gin.RouterGroup, certificateService service.CertificateProvider, sessionAuthMiddleware gin.HandlerFunc) {
-	cc := &certificateController{certificateService: certificateService}
+func NewCertificateController(
+	group *gin.RouterGroup,
+	certificateService service.CertificateProvider,
+	sessionAuthMiddleware gin.HandlerFunc,
+	cfg *config.Config,
+) {
+	cc := &certificateController{certificateService: certificateService, config: cfg}
 
 	group.GET("/certs", sessionAuthMiddleware, cc.listHandler)
+	group.GET("/certs/:id", sessionAuthMiddleware, cc.detailHandler)
 }
 
-// certificateController handles the issued-certificate history routes.
+// certificateController handles the issued-certificate history and detail routes.
 type certificateController struct {
 	certificateService service.CertificateProvider
+	config             *config.Config
 }
 
 // Scoping is the service's job (see CertificateService.ListForIdentity) and
@@ -78,4 +86,42 @@ func (cc *certificateController) listHandler(g *gin.Context) {
 	}
 
 	respondData(g, newCertificateListResponse(certs, nextCursor))
+}
+
+// detailHandler handles GET /api/certs/:id: returns a single certificate by ID
+// if the caller is authorized to view it.
+//
+// @Summary     View a certificate's full details
+// @Description Returns a single certificate by ID if the caller is authorized:
+// @Description the user who approved the underlying request, or someone with auditor-level access.
+// @Description Returns 404 uniformly for "not found" and "not authorized" to not leak existence.
+// @Tags        web
+// @Produce     json
+// @Param       id path string true "Certificate ID"
+// @Success     200 {object} openapidoc.CertificateDetailEnvelope "Certificate details"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid certificate ID"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "Certificate not found or not accessible"
+// @Security    sessionCookie
+// @Router      /api/certs/{id} [get]
+func (cc *certificateController) detailHandler(g *gin.Context) {
+	identity, ok := middleware.Identity(g)
+	if !ok {
+		handleError(g, &errorresponses.UnauthorizedError{})
+		return
+	}
+
+	id := g.Param("id")
+	if id == "" {
+		handleError(g, &errorresponses.InvalidRequestError{Reason: "certificate ID is required"})
+		return
+	}
+
+	certWithDecision, err := cc.certificateService.GetByID(g.Request.Context(), id, identity, cc.config)
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	respondData(g, newCertificateResponseFromWithDecision(certWithDecision))
 }

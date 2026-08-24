@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
 )
 
@@ -624,5 +625,160 @@ func TestCertificateService_ShouldLeaveANonServiceCertificateWithoutARetrieval(t
 	}
 	if rows[0].Retrieval != nil {
 		t.Errorf("got retrieval %+v, want nil for a user certificate", rows[0].Retrieval)
+	}
+}
+
+// TestCertificateService_GetByID_ApproverCanRead tests that the approver can read a certificate.
+func TestCertificateService_GetByID_ApproverCanRead(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	certSvc := newTestCertificateService(t, svc)
+
+	userID := seedUser(t, svc.db, "sub-alice")
+	cert := seedCertificate(t, svc, &userID, 1000, time.Now())
+
+	result, err := certSvc.GetByID(context.Background(), cert.ID, &Identity{Subject: "sub-alice"}, nil)
+	if err != nil {
+		t.Fatalf("approver should be able to read their certificate: %v", err)
+	}
+
+	if result.Certificate.ID != cert.ID {
+		t.Errorf("got certificate ID %q, want %q", result.Certificate.ID, cert.ID)
+	}
+}
+
+// TestCertificateService_GetByID_UnrelatedUserCannot tests that an unrelated user cannot read a certificate.
+func TestCertificateService_GetByID_UnrelatedUserCannot(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	certSvc := newTestCertificateService(t, svc)
+
+	userID := seedUser(t, svc.db, "sub-alice")
+	_ = seedUser(t, svc.db, "sub-bob")
+	cert := seedCertificate(t, svc, &userID, 1000, time.Now())
+
+	// Bob tries to read Alice's certificate
+	_, err := certSvc.GetByID(context.Background(), cert.ID, &Identity{Subject: "sub-bob"}, nil)
+	if err == nil {
+		t.Fatal("unrelated user should not be able to read certificate")
+	}
+	if err.Error() != "certificate not found" {
+		t.Errorf("got error %q, want uniform 404", err)
+	}
+}
+
+// TestCertificateService_GetByID_AuditorCanRead tests that an auditor can read any certificate.
+func TestCertificateService_GetByID_AuditorCanRead(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	certSvc := newTestCertificateService(t, svc)
+
+	userID := seedUser(t, svc.db, "sub-alice")
+	cert := seedCertificate(t, svc, &userID, 1000, time.Now())
+
+	cfg := &config.Config{
+		Admin: config.AdminConfig{
+			AuditorGroup: "auditors",
+		},
+	}
+
+	result, err := certSvc.GetByID(context.Background(), cert.ID, &Identity{
+		Subject: "sub-auditor",
+		Groups:  []string{"auditors"},
+	}, cfg)
+	if err != nil {
+		t.Fatalf("auditor should be able to read certificate: %v", err)
+	}
+
+	if result.Certificate.ID != cert.ID {
+		t.Errorf("got certificate ID %q, want %q", result.Certificate.ID, cert.ID)
+	}
+}
+
+// TestCertificateService_GetByID_AdminCanRead tests that an admin can read any certificate.
+func TestCertificateService_GetByID_AdminCanRead(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	certSvc := newTestCertificateService(t, svc)
+
+	userID := seedUser(t, svc.db, "sub-alice")
+	cert := seedCertificate(t, svc, &userID, 1000, time.Now())
+
+	cfg := &config.Config{
+		Admin: config.AdminConfig{
+			RequireGroup: "admins",
+		},
+	}
+
+	result, err := certSvc.GetByID(context.Background(), cert.ID, &Identity{
+		Subject: "sub-admin",
+		Groups:  []string{"admins"},
+	}, cfg)
+	if err != nil {
+		t.Fatalf("admin should be able to read certificate: %v", err)
+	}
+
+	if result.Certificate.ID != cert.ID {
+		t.Errorf("got certificate ID %q, want %q", result.Certificate.ID, cert.ID)
+	}
+}
+
+// TestCertificateService_GetByID_UnknownCertificate tests that an unknown certificate returns 404.
+func TestCertificateService_GetByID_UnknownCertificate(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	certSvc := newTestCertificateService(t, svc)
+
+	seedUser(t, svc.db, "sub-alice")
+
+	_, err := certSvc.GetByID(context.Background(), "nonexistent", &Identity{Subject: "sub-alice"}, nil)
+	if err == nil {
+		t.Fatal("reading unknown certificate should fail")
+	}
+	if err.Error() != "certificate not found" {
+		t.Errorf("got error %q, want NotFoundError", err)
+	}
+}
+
+// TestCertificateService_GetByID_NullUserID tests that an auditor can read orphaned certificates.
+func TestCertificateService_GetByID_NullUserID(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	certSvc := newTestCertificateService(t, svc)
+
+	// Create a certificate with null UserID (orphaned)
+	cert := seedCertificate(t, svc, nil, 1000, time.Now())
+
+	cfg := &config.Config{
+		Admin: config.AdminConfig{
+			AuditorGroup: "auditors",
+		},
+	}
+
+	// An auditor can read it
+	result, err := certSvc.GetByID(context.Background(), cert.ID, &Identity{
+		Subject: "sub-auditor",
+		Groups:  []string{"auditors"},
+	}, cfg)
+	if err != nil {
+		t.Fatalf("auditor should be able to read orphaned certificate: %v", err)
+	}
+
+	if result.Certificate.ID != cert.ID {
+		t.Errorf("got certificate ID %q, want %q", result.Certificate.ID, cert.ID)
+	}
+
+	// An unrelated user cannot read it
+	_, err = certSvc.GetByID(context.Background(), cert.ID, &Identity{
+		Subject: "sub-alice",
+	}, nil)
+	if err == nil {
+		t.Fatal("unrelated user should not be able to read orphaned certificate")
 	}
 }

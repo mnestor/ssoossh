@@ -8,7 +8,9 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // CertificateWithDecision combines a Certificate with its related decision
@@ -48,6 +50,13 @@ type CertificateProvider interface {
 	// Returns certificates, the next cursor (or nil if no more pages), and any error.
 	// Scoped by the requesting identity's user row.
 	ListForIdentity(ctx context.Context, identity *Identity, after *string, limit int) ([]CertificateWithDecision, *string, error)
+
+	// GetByID returns the certificate identified by id if the caller has permission to read it.
+	// Authorization: the certificate's approving user (the one whose users.id matches
+	// certificate.user_id), or any identity with auditor-level access. Returns 404
+	// uniformly for both "certificate does not exist" and "caller does not have
+	// permission", so the response does not leak existence to an unauthorized caller.
+	GetByID(ctx context.Context, id string, identity *Identity, cfg *config.Config) (CertificateWithDecision, error)
 }
 
 // CertificateService serves the per-user certificate history the web UI
@@ -255,4 +264,153 @@ func (s *CertificateService) ListForIdentity(ctx context.Context, identity *Iden
 	}
 
 	return out, nextCursor, nil
+}
+
+// GetByID returns a single certificate by its ID if the caller is authorized to read it.
+//
+// Authorization: the certificate's approving user (identity whose users row ID matches
+// the certificate's UserID), or any identity whose groups grant auditor-level access
+// (config.AdminConfig.GrantsAuditor). Returns NotFoundError uniformly for both
+// "certificate does not exist" and "caller lacks permission", which keeps unauthorized
+// callers from probing for certificate existence. Follows the pattern established by
+// EnrollmentService.ListRetrievals, but with unified error handling to prevent
+// existence leakage.
+func (s *CertificateService) GetByID(ctx context.Context, id string, identity *Identity, cfg *config.Config) (CertificateWithDecision, error) {
+	// Fetch the certificate and its related decision via LEFT JOIN, same as ListForIdentity.
+	type rawRow struct {
+		CertID                       string
+		CertType                     model.CertificateType
+		CertUserID                   *string
+		CertCertificateRequestID     *string
+		CertSerialNumber             uint64
+		CertKeyID                    string
+		CertPrincipals               string
+		CertPublicKeyFingerprint     string
+		CertIssuedAt                 time.Time
+		CertExpiresAt                time.Time
+		DecisionID                   *string
+		DecisionCertificateRequestID *string
+		DecisionOutcome              *model.CertificateRequestDecisionOutcome
+		DecisionSubject              *string
+		DecisionUsername             *string
+		DecisionEmail                *string
+		DecisionSourceIP             *string
+		DecisionUserAgent            *string
+		DecisionAcceptLanguage       *string
+		DecisionForwardedFor         *string
+		DecisionGroups               *string
+		DecisionOtherAccounts        *string
+		DecisionServiceAccounts      *string
+		DecisionDecidedAt            *time.Time
+		RetrievalEnrollmentID        *string
+		RetrievalSourceIP            *string
+		RetrievalRetrievedAt         *time.Time
+	}
+
+	var result rawRow
+	if err := s.db.WithContext(ctx).
+		Model(&model.Certificate{}).
+		Select(`certificates.id as cert_id, certificates.type as cert_type,
+			certificates.user_id as cert_user_id,
+			certificates.certificate_request_id as cert_certificate_request_id,
+			certificates.serial_number as cert_serial_number,
+			certificates.key_id as cert_key_id, certificates.principals as cert_principals,
+			certificates.public_key_fingerprint as cert_public_key_fingerprint,
+			certificates.issued_at as cert_issued_at,
+			certificates.expires_at as cert_expires_at,
+			certificate_request_decisions.id as decision_id,
+			certificate_request_decisions.certificate_request_id as decision_certificate_request_id,
+			certificate_request_decisions.outcome as decision_outcome,
+			certificate_request_decisions.subject as decision_subject,
+			certificate_request_decisions.username as decision_username,
+			certificate_request_decisions.email as decision_email,
+			certificate_request_decisions.source_ip as decision_source_ip,
+			certificate_request_decisions.user_agent as decision_user_agent,
+			certificate_request_decisions.accept_language as decision_accept_language,
+			certificate_request_decisions.forwarded_for as decision_forwarded_for,
+			certificate_request_decisions.groups as decision_groups,
+			certificate_request_decisions.other_accounts as decision_other_accounts,
+			certificate_request_decisions.service_accounts as decision_service_accounts,
+			certificate_request_decisions.decided_at as decision_decided_at,
+			enrollment_retrievals.enrollment_id as retrieval_enrollment_id,
+			enrollment_retrievals.source_ip as retrieval_source_ip,
+			enrollment_retrievals.retrieved_at as retrieval_retrieved_at`).
+		Joins("LEFT JOIN certificate_requests ON certificates.certificate_request_id = certificate_requests.id").
+		Joins("LEFT JOIN certificate_request_decisions ON certificate_requests.id = certificate_request_decisions.certificate_request_id").
+		Joins("LEFT JOIN enrollment_retrievals ON enrollment_retrievals.certificate_serial = certificates.serial_number").
+		Where("certificates.id = ?", id).
+		Scan(&result).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return CertificateWithDecision{}, &errorresponses.NotFoundError{Resource: "certificate"}
+		}
+		return CertificateWithDecision{}, fmt.Errorf("failed to look up certificate: %w", err)
+	}
+
+	// Check if we got a row. If not, return 404.
+	if result.CertID == "" {
+		return CertificateWithDecision{}, &errorresponses.NotFoundError{Resource: "certificate"}
+	}
+
+	// Authorization: check if the caller is the approver or has auditor-level access.
+	// If cfg is nil (for tests), only allow the approver.
+	isAuditor := cfg != nil && cfg.Admin.GrantsAuditor(identity.Groups)
+	if !isAuditor {
+		// Not an auditor: check if they're the owner (via users row).
+		var user model.User
+		err := s.db.WithContext(ctx).First(&user, "subject = ?", identity.Subject).Error
+		if err != nil || (result.CertUserID == nil || user.ID != *result.CertUserID) {
+			// Certificate belongs to someone else, or caller has no user row.
+			// Return uniform 404 to not leak existence.
+			return CertificateWithDecision{}, &errorresponses.NotFoundError{Resource: "certificate"}
+		}
+	}
+
+	// Authorized: construct and return the response.
+	cert := model.Certificate{
+		ID:                   result.CertID,
+		Type:                 result.CertType,
+		UserID:               result.CertUserID,
+		CertificateRequestID: result.CertCertificateRequestID,
+		SerialNumber:         result.CertSerialNumber,
+		KeyID:                result.CertKeyID,
+		Principals:           result.CertPrincipals,
+		PublicKeyFingerprint: result.CertPublicKeyFingerprint,
+		IssuedAt:             result.CertIssuedAt,
+		ExpiresAt:            result.CertExpiresAt,
+	}
+
+	var decision *model.CertificateRequestDecision
+	if result.DecisionID != nil {
+		decision = &model.CertificateRequestDecision{
+			ID:                   *result.DecisionID,
+			CertificateRequestID: *result.DecisionCertificateRequestID,
+			Outcome:              *result.DecisionOutcome,
+			Subject:              *result.DecisionSubject,
+			Username:             *result.DecisionUsername,
+			Email:                *result.DecisionEmail,
+			SourceIP:             *result.DecisionSourceIP,
+			UserAgent:            *result.DecisionUserAgent,
+			AcceptLanguage:       *result.DecisionAcceptLanguage,
+			ForwardedFor:         *result.DecisionForwardedFor,
+			Groups:               *result.DecisionGroups,
+			OtherAccounts:        *result.DecisionOtherAccounts,
+			ServiceAccounts:      *result.DecisionServiceAccounts,
+			DecidedAt:            *result.DecisionDecidedAt,
+		}
+	}
+
+	var retrieval *CertificateRetrieval
+	if result.RetrievalEnrollmentID != nil {
+		retrieval = &CertificateRetrieval{
+			EnrollmentID: *result.RetrievalEnrollmentID,
+			SourceIP:     *result.RetrievalSourceIP,
+			RetrievedAt:  *result.RetrievalRetrievedAt,
+		}
+	}
+
+	return CertificateWithDecision{
+		Certificate: cert,
+		Decision:    decision,
+		Retrieval:   retrieval,
+	}, nil
 }

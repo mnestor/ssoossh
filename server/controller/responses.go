@@ -326,3 +326,31 @@ func newCertificateListResponse(certsWithDecisions []service.CertificateWithDeci
 		NextCursor:   nextCursor,
 	}
 }
+
+// newCertificateResponseFromWithDecision converts a single certificate+decision pair
+// to its wire shape for the detail endpoint.
+func newCertificateResponseFromWithDecision(cd service.CertificateWithDecision) webtypes.CertificateResponse {
+	resp := webtypes.CertificateResponse{
+		ID:           cd.Certificate.ID,
+		Type:         cd.Certificate.Type,
+		SerialNumber: cd.Certificate.SerialNumber,
+		KeyID:        cd.Certificate.KeyID,
+		Principals:   cd.Certificate.Principals,
+		Fingerprint:  cd.Certificate.PublicKeyFingerprint,
+		IssuedAt:     cd.Certificate.IssuedAt,
+		ExpiresAt:    cd.Certificate.ExpiresAt,
+	}
+
+	if cd.Decision != nil {
+		setDecisionFieldsOnCertificate(&resp, cd.Decision)
+	}
+
+	if cd.Retrieval != nil {
+		retrievedAt := cd.Retrieval.RetrievedAt
+		resp.RetrievedSourceIP = cd.Retrieval.SourceIP
+		resp.RetrievedAt = &retrievedAt
+		resp.EnrollmentID = cd.Retrieval.EnrollmentID
+	}
+
+	return resp
+}
