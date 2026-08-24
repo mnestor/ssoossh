@@ -124,3 +124,44 @@ func (s *CertRequestService) failStranded(ctx context.Context, ids []string) {
 		}
 	}
 }
+
+// SweepDisabledUserEnrollments expires service enrollments for users who were
+// disabled more than the grace period ago. This allows running services time
+// to rotate credentials before new certificates stop being issued, but
+// eventually cuts off the flow to force the transition.
+//
+// An enrollment's expiry bounds the code, not certificates it has already
+// issued: a certificate produced before expiry remains valid until it reaches
+// its own expiration. This is intentional — invalidating existing credentials
+// retroactively would disrupt services and violate the grace period's promise.
+//
+// The query matches enrollments whose owner was disabled at least grace
+// period ago. With multiple instances, one leader-elected instance should
+// run this, but it is safe to run on every instance (idempotent UPDATEs
+// on already-expired rows are no-ops). See docs/dev/multi-instance-safety-plan.md.
+func SweepDisabledUserEnrollments(ctx context.Context, db *gorm.DB, gracePeriod time.Duration) error {
+	if gracePeriod < 0 {
+		return fmt.Errorf("grace period must be non-negative, got %v", gracePeriod)
+	}
+
+	cutoffTime := time.Now().Add(-gracePeriod)
+
+	// Find all enrollments for disabled users whose disable time exceeds the grace period
+	result := db.WithContext(ctx).
+		Model(&model.Enrollment{}).
+		Where("user_id IN (SELECT id FROM users WHERE disabled_at IS NOT NULL AND disabled_at < ?)", cutoffTime).
+		Where("expires_at > ?", time.Now()). // Only update enrollments that haven't already expired
+		Update("expires_at", time.Now())
+
+	if result.Error != nil {
+		return fmt.Errorf("failed to expire enrollments for disabled users: %w", result.Error)
+	}
+
+	if result.RowsAffected > 0 {
+		slog.Info("expired enrollments for disabled users",
+			slog.Int64("count", result.RowsAffected),
+			slog.Duration("grace_period", gracePeriod))
+	}
+
+	return nil
+}

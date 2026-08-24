@@ -171,3 +171,18 @@ func (e *InvalidRequestError) HTTPStatusCode() int { return http.StatusBadReques
 
 // ErrorCode reports the machine-readable error code.
 func (e *InvalidRequestError) ErrorCode() string { return apitypes.ErrorCodeInvalidRequest }
+
+// UserDisabledError indicates the authenticated user has been disabled by
+// an administrator and cannot log in.
+type UserDisabledError struct{}
+
+// Error implements the error interface.
+func (e *UserDisabledError) Error() string {
+	return "User account is disabled"
+}
+
+// HTTPStatusCode reports the HTTP status this error should be rendered as.
+func (e *UserDisabledError) HTTPStatusCode() int { return http.StatusForbidden }
+
+// ErrorCode reports the machine-readable error code.
+func (e *UserDisabledError) ErrorCode() string { return apitypes.ErrorCodeForbidden }

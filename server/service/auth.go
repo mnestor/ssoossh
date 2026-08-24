@@ -21,6 +21,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // Identity is the resolved user identity after OIDC (+ optional LDAP)
@@ -241,6 +242,11 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce str
 		return nil, fmt.Errorf("failed to persist user: %w", err)
 	}
 
+	// Check if the user has been disabled by an admin
+	if err := s.checkUserDisabled(ctx, identity.Subject); err != nil {
+		return nil, err
+	}
+
 	return identity, nil
 }
 
@@ -365,6 +371,45 @@ func extraClaims(claims map[string]any, mapping map[string]string) map[string]ex
 		}
 	}
 	return extras
+}
+
+// checkUserDisabled verifies the user identified by subject is not disabled.
+// If disabled, returns a UserDisabledError that prevents session establishment.
+func (s *AuthService) checkUserDisabled(ctx context.Context, subject string) error {
+	var disabledAt *time.Time
+	if err := s.db.WithContext(ctx).
+		Model(&model.User{}).
+		Select("disabled_at").
+		Where("subject = ?", subject).
+		First(&model.User{}, "subject = ?", subject).
+		Error; err != nil && err != gorm.ErrRecordNotFound {
+		// Log but don't fail on lookup errors; disabled_at lookup failure
+		// shouldn't prevent login if it's a transient db issue. Better to
+		// let the user in and retry later than lock them out.
+		slog.Warn("failed to check if user is disabled",
+			slog.String("subject", subject), slog.Any("error", err))
+		return nil
+	}
+
+	// A more direct query to get just disabled_at
+	result := s.db.WithContext(ctx).
+		Model(&model.User{}).
+		Select("disabled_at").
+		Where("subject = ?", subject).
+		Scan(&disabledAt)
+
+	if result.Error != nil {
+		// Same as above - don't fail on transient errors
+		slog.Warn("failed to check if user is disabled",
+			slog.String("subject", subject), slog.Any("error", result.Error))
+		return nil
+	}
+
+	if disabledAt != nil {
+		return &errorresponses.UserDisabledError{}
+	}
+
+	return nil
 }
 
 // randomToken returns a random, URL-safe string suitable for a one-time use
