@@ -305,6 +305,80 @@ components:
       required:
       - data
       type: object
+    webtypes.AdminEnrollmentResponse:
+      properties:
+        approved_by_email:
+          type: string
+        approved_by_username:
+          description: |-
+            ApprovedByUsername and ApprovedByEmail name the user who approved this
+            enrollment. Present for auditing and tracking which user has the code.
+          type: string
+        certificate_valid_seconds:
+          description: CertificateValidSeconds is how long each redeemed certificate
+            is valid.
+          type: integer
+        created_at:
+          description: CreatedAt is when the enrollment was approved.
+          type: string
+        expires_at:
+          description: ExpiresAt bounds the code.
+          type: string
+        first_redeemed_at:
+          description: |-
+            FirstRedeemedAt is the first successful redemption, absent for a code
+            that has never produced a certificate.
+          type: string
+        id:
+          type: string
+        key_id:
+          description: |-
+            KeyID is likewise fixed at approval and lands verbatim in every
+            certificate.
+          type: string
+        last_retrieved_at:
+          description: LastRetrievedAt is the most recent redemption attempt.
+          type: string
+        options:
+          $ref: '#/components/schemas/webtypes.CertificateOptionsResponse'
+        principals:
+          description: Principals is what every certificate this code produces carries.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        public_key_fingerprint:
+          description: |-
+            PublicKeyFingerprint identifies the keypair the code is bound to.
+            Empty if the stored key could not be parsed.
+          type: string
+        retrieval_count:
+          description: RetrievalCount counts every logged redemption attempt.
+          type: integer
+      required:
+      - approved_by_email
+      - approved_by_username
+      - created_at
+      - expires_at
+      - id
+      - key_id
+      - options
+      - principals
+      - retrieval_count
+      type: object
+    webtypes.AdminEnrollmentsResponse:
+      properties:
+        enrollments:
+          items:
+            $ref: '#/components/schemas/webtypes.AdminEnrollmentResponse'
+          type: array
+          uniqueItems: false
+        meta:
+          $ref: '#/components/schemas/webtypes.PageMeta'
+      required:
+      - enrollments
+      - meta
+      type: object
     webtypes.ApproveRequestBody:
       properties:
         principals:
@@ -658,6 +732,36 @@ components:
       required:
       - kinds
       type: object
+    webtypes.PageMeta:
+      properties:
+        limit:
+          description: |-
+            Limit is the page size actually served, which may be smaller than the
+            one asked for (see paging.MaxLimit).
+          type: integer
+        offset:
+          description: Offset is how many rows were skipped to reach this page.
+          type: integer
+        page:
+          description: |-
+            Page is the 1-based number of this page, and PageCount how many pages
+            Total fills at this size. Both are derivable from the three fields
+            above, and are sent anyway so every list UI computes them the same way
+            — including the "an empty list is page 1 of 1" boundary.
+          type: integer
+        page_count:
+          type: integer
+        total:
+          description: Total is how many rows match the request's filter, across all
+            pages.
+          type: integer
+      required:
+      - limit
+      - offset
+      - page
+      - page_count
+      - total
+      type: object
     webtypes.RequestDetailResponse:
       properties:
         already_closed:
@@ -973,6 +1077,96 @@ paths:
       summary: View effective server configuration (auditor-only)
       tags:
       - admin
+  /api/admin/enrollments:
+    get:
+      description: |-
+        Returns a paged list of all service enrollments across users, searchable
+        by approver name, principals, key ID, or request ID. Visible to auditors.
+      parameters:
+      - description: Page size (default 25, max 100)
+        example: 25
+        in: query
+        name: limit
+        schema:
+          type: integer
+      - description: Rows to skip (default 0)
+        example: 0
+        in: query
+        name: offset
+        schema:
+          type: integer
+      - description: Search query (max 200 chars)
+        example: '"alice"'
+        in: query
+        name: q
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/webtypes.AdminEnrollmentsResponse'
+          description: Paged enrollment list
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as auditor
+      security:
+      - sessionCookie: []
+      summary: List all service enrollments (auditor-only)
+      tags:
+      - admin
+  /api/admin/enrollments/{id}:
+    get:
+      description: |-
+        Returns full details of one enrollment including its retrieval log
+        and reassignment history. Visible to the approver and auditors.
+      parameters:
+      - description: Enrollment ID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/gin.H'
+          description: Full enrollment details
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Enrollment not found
+      security:
+      - sessionCookie: []
+      summary: Get enrollment details (auditor-only)
+      tags:
+      - admin
   /api/admin/enrollments/{id}/expire:
     patch:
       description: |-
@@ -1013,6 +1207,65 @@ paths:
       security:
       - sessionCookie: []
       summary: Expire an enrollment (admin-only)
+      tags:
+      - admin
+  /api/admin/enrollments/{id}/reassign:
+    patch:
+      description: |-
+        Transfers ownership of an enrollment to another user. The new owner
+        must have the required service account. Idempotent.
+      parameters:
+      - description: Enrollment ID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/gin.H'
+                description: New owner user ID (JSON with 'to_user_id' field)
+                summary: request
+        description: New owner user ID (JSON with 'to_user_id' field)
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/gin.H'
+          description: Enrollment reassigned
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Invalid request (ineligible target)
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized (must be owner or admin)
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Enrollment or target user not found
+      security:
+      - sessionCookie: []
+      summary: Reassign an enrollment (admin/owner-only)
       tags:
       - admin
   /api/admin/users/{id}/disable:

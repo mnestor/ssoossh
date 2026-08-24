@@ -214,7 +214,7 @@ func (adminEnrollmentModel) TableName() string {
 // @Param       limit query int false "Page size (default 25, max 100)" example(25)
 // @Param       offset query int false "Rows to skip (default 0)" example(0)
 // @Param       q query string false "Search query (max 200 chars)" example("alice")
-// @Success     200 {object} openapidoc.AdminEnrollmentsEnvelope "Paged enrollment list"
+// @Success     200 {object} webtypes.AdminEnrollmentsResponse "Paged enrollment list"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
 // @Security    sessionCookie
@@ -288,7 +288,7 @@ func (a *adminController) listEnrollmentsHandler(g *gin.Context) {
 // @Tags        admin
 // @Produce     json
 // @Param       id path string true "Enrollment ID"
-// @Success     200 {object} openapidoc.EnrollmentDetailEnvelope "Full enrollment details"
+// @Success     200 {object} gin.H "Full enrollment details"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized"
 // @Failure     404 {object} openapidoc.ErrorEnvelope "Enrollment not found"
@@ -359,7 +359,7 @@ func (a *adminController) getEnrollmentDetailHandler(g *gin.Context) {
 // @Accept      json
 // @Produce     json
 // @Param       id path string true "Enrollment ID"
-// @Param       request body openapidoc.ReassignEnrollmentRequest true "New owner user ID"
+// @Param       request body gin.H true "New owner user ID (JSON with 'to_user_id' field)"
 // @Success     200 {object} gin.H "Enrollment reassigned"
 // @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid request (ineligible target)"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
