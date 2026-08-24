@@ -28,6 +28,7 @@ type services struct {
 	certificate   *service.CertificateService
 	enrollment    *service.EnrollmentService
 	caKeyRegistry *service.CAKeyRegistry
+	notification  *service.NotificationService
 }
 
 // initServices constructs the services using a.config and a.httpClient,
@@ -70,6 +71,16 @@ func (a *app) initServices() (*services, error) {
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
+
+	// Notifications are wired after the group because they are a
+	// dependency *of* two of its members rather than a peer: the
+	// certificate paths publish through this, and publishing is all they
+	// do — rendering and SMTP happen on the broker's own goroutines, so
+	// nothing here puts a mail relay on the request path. See
+	// service.NotificationService.Notify and initNotifications.
+	svc.notification = service.NewNotificationService(a.db, a.pubSub.Publisher, a.config.Mail.Enabled)
+	svc.certRequest.SetNotifier(svc.notification)
+	svc.enrollment.SetNotifier(svc.notification)
 
 	// Validate lifetime policy configuration against reverse-proxy settings.
 	// This is a startup check with logging only; bad config here is not an error.

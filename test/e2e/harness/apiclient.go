@@ -190,3 +190,44 @@ func decideWithBody[T any](client *http.Client, serverBaseURL, requestID, action
 	}
 	return nil
 }
+
+// SetNotificationPreference PUTs one notification kind's setting as
+// whoever client is authenticated as, the same call the preferences page
+// makes.
+//
+// Only the one kind is sent, matching what the page does: the server
+// leaves every other kind alone, so this cannot accidentally reset the
+// defaults a test is relying on.
+func SetNotificationPreference(client *http.Client, serverBaseURL, kind string, enabled bool) error {
+	body, err := json.Marshal(webtypes.UpdateNotificationPreferencesBody{
+		Kinds: map[string]bool{kind: enabled},
+	})
+	if err != nil {
+		return fmt.Errorf("encode notification preferences body: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPut, serverBaseURL+"/api/users/me/notifications", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("build the notification preferences request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	// The browser sends this on a same-origin fetch, and the CSRF
+	// middleware reads it in preference to Origin. Setting it keeps this
+	// helper honest about what the real page does.
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("put notification preferences: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var envelope apitypes.Envelope[webtypes.NotificationPreferencesResponse]
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return fmt.Errorf("decode notification preferences response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("setting notification preferences failed: status %d, error %q", resp.StatusCode, envelope.Error)
+	}
+	return nil
+}

@@ -99,6 +99,16 @@ table enrollments
   index idx_enrollments_code unique=true columns=code
   index idx_enrollments_user_id unique=false columns=user_id
   index sqlite_autoindex_enrollments_1 unique=true columns=id
+table notification_preferences
+  column created_at type=DATETIME nullable=false pk=false default=<none>
+  column enabled type=INTEGER nullable=false pk=false default=0
+  column id type=TEXT nullable=false pk=true default=<none>
+  column kind type=TEXT nullable=false pk=false default=<none>
+  column updated_at type=DATETIME nullable=false pk=false default=<none>
+  column user_id type=TEXT nullable=false pk=false default=<none>
+  fk user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
+  index idx_notification_preferences_user_kind unique=true columns=user_id,kind
+  index sqlite_autoindex_notification_preferences_1 unique=true columns=id
 table server_secrets
   column created_at type=DATETIME nullable=false pk=false default=<none>
   column name type=TEXT nullable=false pk=true default=<none>

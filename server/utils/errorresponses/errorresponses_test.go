@@ -165,6 +165,7 @@ func TestErrorCode_ShouldReportTheWireCodeForEachError(t *testing.T) {
 		{name: "certificate unavailable", err: &CertificateUnavailableError{}, wantCode: apitypes.ErrorCodeUnavailable, wantStatus: http.StatusGone},
 		{name: "not implemented", err: &NotImplementedError{}, wantCode: apitypes.ErrorCodeNotImplemented, wantStatus: http.StatusNotImplemented},
 		{name: "forbidden", err: &ForbiddenError{}, wantCode: apitypes.ErrorCodeForbidden, wantStatus: http.StatusForbidden},
+		{name: "invalid request", err: &InvalidRequestError{Reason: "unknown notification kind \"nope\""}, wantCode: apitypes.ErrorCodeInvalidRequest, wantStatus: http.StatusBadRequest},
 	}
 
 	for _, tt := range tests {
@@ -178,6 +179,27 @@ func TestErrorCode_ShouldReportTheWireCodeForEachError(t *testing.T) {
 			// A code the client cannot branch on is no better than none.
 			if tt.err.ErrorCode() == "" {
 				t.Error("ErrorCode() is empty")
+			}
+		})
+	}
+}
+
+// InvalidRequestError's message is returned to the caller, so an empty
+// Reason has to still say something rather than rendering as "".
+func TestInvalidRequestError_ShouldDescribeItself(t *testing.T) {
+	tests := []struct {
+		name string
+		err  InvalidRequestError
+		want string
+	}{
+		{name: "with a reason", err: InvalidRequestError{Reason: "kinds must be an object"}, want: "kinds must be an object"},
+		{name: "without a reason", err: InvalidRequestError{}, want: "invalid request"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.err.Error(); got != tt.want {
+				t.Errorf("Error() = %q, want %q", got, tt.want)
 			}
 		})
 	}

@@ -1,0 +1,7 @@
+{{- if not .Succeeded -}}
+Service enrollment redemption FAILED{{ if .ServiceAccount }} for {{ .ServiceAccount }}{{ end }}
+{{- else if .FirstRedemption -}}
+Service enrollment first redeemed{{ if .ServiceAccount }} for {{ .ServiceAccount }}{{ end }}
+{{- else -}}
+Service enrollment redeemed{{ if .ServiceAccount }} for {{ .ServiceAccount }}{{ end }}
+{{- end -}}

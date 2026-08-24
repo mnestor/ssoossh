@@ -17,6 +17,8 @@ export type {
 	CertificateOptionsResponse as CertificateOptions,
 	CertificateResponse as CertificateRecord,
 	CurrentUserResponse as CurrentUser,
+	NotificationKindResponse as NotificationKind,
+	NotificationPreferencesResponse as NotificationPreferences,
 	RequestDetailResponse as RequestDetail,
 	EnrollmentRetrievalsResponse,
 	ServiceEnrollmentResponse as ServiceEnrollment,

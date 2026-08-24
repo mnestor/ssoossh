@@ -1,0 +1,12 @@
+{
+  "mail_enabled": true,
+  "address": "alice@example.org",
+  "kinds": [
+    {
+      "kind": "service_enrollment_created",
+      "title": "Service enrollment created",
+      "description": "Sent when you approve a service certificate request.",
+      "enabled": true
+    }
+  ]
+}

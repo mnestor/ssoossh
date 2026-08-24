@@ -1,0 +1,45 @@
+{{ if .Succeeded -}}
+An enrollment code you approved was redeemed for a certificate.
+{{- else -}}
+An enrollment code you approved was presented and accepted, but the
+certificate could not be signed. The redemption failed; the reason is in the
+server log. If an unattended job depends on this, it is currently without a
+valid certificate.
+{{- end }}
+{{ if .FirstRedemption }}
+This was the first redemption of this code, which is what an operator setting
+up a new job expects to see once. Every later one is routine.
+{{ end }}
+REDEMPTION
+
+  Redeemed at           {{ datetime .RetrievedAt }}
+  From address          {{ .SourceIP }}
+  Service account       {{ .ServiceAccount }}
+  Result                {{ if .Succeeded }}certificate issued{{ else }}signing failed{{ end }}
+
+If you do not recognize that address, the code is in hands you did not intend.
+It stays redeemable until it expires, so treat this as a credential to revoke
+rather than something to watch.
+
+CERTIFICATE ISSUED
+
+  Serial                {{ .CertificateSerial }}
+  Key ID                {{ .KeyID }}
+  Principals            {{ join .Principals ", " }}
+  Valid until           {{ datetime .CertificateExpiresAt }}
+
+ENROLLMENT
+
+  Enrollment ID         {{ .EnrollmentID }}
+{{ if .RequestID }}  Request ID            {{ .RequestID }}
+{{ end }}  Retrieval ID          {{ .RetrievalID }}
+  Code expires          {{ datetime .CodeExpiresAt }} (in {{ until .CodeExpiresAt }})
+
+The code is reusable until it expires, so an unattended job will keep
+redeeming it. Enroll again before then to keep that job running.
+{{ if .ServerURL }}
+The full redemption log for this enrollment is at
+{{ .ServerURL }}/logs/me
+{{ end }}
+You are receiving this because "Service enrollment redeemed" is enabled in your
+notification preferences{{ if .ServerURL }} at {{ .ServerURL }}/preferences{{ end }}.

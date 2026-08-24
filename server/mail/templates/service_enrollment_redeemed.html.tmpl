@@ -1,0 +1,51 @@
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1c1e21;max-width:640px">
+  {{ if .Succeeded }}
+  <p>An enrollment code you approved was redeemed for a certificate.</p>
+  {{ else }}
+  <p style="background:#fdeced;border-left:3px solid #c0392b;padding:10px 14px;margin:0 0 18px">
+    An enrollment code you approved was presented and accepted, but the certificate could not be
+    signed. The redemption <strong>failed</strong>; the reason is in the server log. If an
+    unattended job depends on this, it is currently without a valid certificate.
+  </p>
+  {{ end }}
+
+  {{ if .FirstRedemption }}
+  <p style="background:#eef5ff;border-left:3px solid #1d4ed8;padding:10px 14px;margin:18px 0">
+    This was the <strong>first</strong> redemption of this code, which is what an operator setting
+    up a new job expects to see once. Every later one is routine.
+  </p>
+  {{ end }}
+
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Redemption</h3>
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Redeemed at</td><td style="padding:4px 0">{{ datetime .RetrievedAt }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">From address</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .SourceIP }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Service account</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .ServiceAccount }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Result</td><td style="padding:4px 0">{{ if .Succeeded }}certificate issued{{ else }}signing failed{{ end }}</td></tr>
+  </table>
+  <p style="color:#6b7280;font-size:13px">If you do not recognize that address, the code is in hands you did not intend. It stays redeemable until it expires, so treat this as a credential to revoke rather than something to watch.</p>
+
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Certificate issued</h3>
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Serial</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .CertificateSerial }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Key ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .KeyID }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Principals</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ join .Principals ", " }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Valid until</td><td style="padding:4px 0">{{ datetime .CertificateExpiresAt }}</td></tr>
+  </table>
+
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Enrollment</h3>
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Enrollment ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .EnrollmentID }}</td></tr>
+    {{ if .RequestID }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Request ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .RequestID }}</td></tr>{{ end }}
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Retrieval ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .RetrievalID }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Code expires</td><td style="padding:4px 0">{{ datetime .CodeExpiresAt }} (in {{ until .CodeExpiresAt }})</td></tr>
+  </table>
+  <p style="color:#6b7280;font-size:13px">The code is reusable until it expires, so an unattended job will keep redeeming it. Enroll again before then to keep that job running.</p>
+
+  {{ if .ServerURL }}<p style="font-size:13px">The full <a href="{{ .ServerURL }}/logs/me" style="color:#1d4ed8">redemption log</a> for this enrollment.</p>{{ end }}
+
+  <p style="margin-top:28px;padding-top:14px;border-top:1px solid #e5e7eb;color:#9099a8;font-size:12px">
+    You are receiving this because "Service enrollment redeemed" is enabled in your
+    {{ if .ServerURL }}<a href="{{ .ServerURL }}/preferences" style="color:#6b7280">notification preferences</a>{{ else }}notification preferences{{ end }}.
+  </p>
+</div>

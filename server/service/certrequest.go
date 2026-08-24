@@ -23,6 +23,7 @@ import (
 	"github.com/mnestor/ssoossh/server/certmsg"
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/server/notify"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
@@ -156,6 +157,11 @@ type CertRequestService struct {
 	subscriber message.Subscriber
 	engine     *lifetimePolicyEngine
 
+	// notifier reports enrollment creation to the approving user. Never
+	// nil — SetNotifier is optional, and the zero value discards, so a
+	// deployment with mail off needs no branch at the call site.
+	notifier Notifier
+
 	mu sync.Mutex
 	// resolved caches the outcome for any requestID notifyWaiter has fired
 	// for, so a Wait call arriving after resolution (a late reconnect, or
@@ -193,7 +199,18 @@ func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publ
 		subscriber: subscriber,
 		engine:     engine,
 		resolved:   make(map[string]WaitOutcome),
+		notifier:   discardNotifications{},
 	}, nil
+}
+
+// SetNotifier attaches the notification publisher. Called from bootstrap
+// after both services exist; a service constructed without it discards
+// notifications rather than panicking, which is what keeps every existing
+// test and the mail-disabled deployment working unchanged.
+func (s *CertRequestService) SetNotifier(n Notifier) {
+	if n != nil {
+		s.notifier = n
+	}
 }
 
 // ValidateStartupConfig checks the lifetime policy configuration against the
@@ -748,6 +765,8 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 	}
 
 	token := uuid.NewString()
+	enrollmentID := uuid.NewString()
+	fingerprint, keyType := describeAuthorizedKey(req.PublicKey)
 	now := time.Now()
 	certDurationSeconds := int64(effectiveDuration / time.Second)
 	// The code's own lifetime, not the certificate's. These were one value
@@ -792,7 +811,7 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 
 		// Create the enrollment record with both computed lifetimes.
 		enrollment := &model.Enrollment{
-			ID:                         uuid.NewString(),
+			ID:                         enrollmentID,
 			Code:                       token,
 			PublicKey:                  req.PublicKey,
 			OptionSet:                  string(narrowedJSON),
@@ -817,6 +836,12 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 		return err
 	}
 
+	// Read only now that the transaction has committed: req.UserID is bound
+	// by Approve, and the guarded UPDATE inside the transaction is what
+	// establishes that this call came through it rather than racing past a
+	// request that is no longer pending.
+	enrollmentUserID := *req.UserID
+
 	// No signer round trip for enrollment — notify the wake topic directly
 	// from here, unlike the user/PAM queue-and-wait path.
 	s.notifyWaiter(req.ID, WaitOutcome{
@@ -826,7 +851,50 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 		ExpiresAt:      expiresAt,
 	})
 
+	// Queued, not sent: the caller is a browser waiting on the approval,
+	// and it must not wait on a mail relay. Emitted after the waiter is
+	// woken for the same reason — the operator's terminal gets its code
+	// first, whatever the notification path does next.
+	//
+	// Deliberately without the code. It is a bearer credential shown once
+	// in the terminal that ran `service enroll`; everything else the
+	// operator was told is here. See notify.ServiceEnrollmentCreated.
+	s.notifier.Notify(ctx, notify.KindServiceEnrollmentCreated, enrollmentUserID, &notify.ServiceEnrollmentCreated{
+		ServiceAccount:       serviceAccount,
+		RequestID:            req.ID,
+		EnrollmentID:         enrollmentID,
+		KeyID:                keyID,
+		Principals:           principals,
+		PublicKeyFingerprint: fingerprint,
+		PublicKeyType:        keyType,
+		Extensions:           narrowed.Extensions,
+		ForceCommand:         narrowed.ForceCommand,
+		SourceAddresses:      narrowed.SourceAddresses,
+		NoTouchRequired:      narrowed.NoTouchRequired,
+		RequestSourceIP:      req.SourceIP,
+		ApprovedAt:           now,
+		ApprovedByUsername:   identity.Username,
+		CodeExpiresAt:        expiresAt,
+		CertificateLifetime:  effectiveDuration,
+		ServerURL:            s.config.HTTP.PublicOrigin(),
+	})
+
 	return nil
+}
+
+// describeAuthorizedKey summarizes a public key for a notification: its
+// algorithm and SHA256 fingerprint, never the key itself.
+//
+// Errors are swallowed into empty strings on purpose. The key already
+// passed parsing on its way into the request, and a notification that
+// omits a fingerprint is worth more than an approval that fails because
+// its notification could not be decorated.
+func describeAuthorizedKey(authorizedKey string) (fingerprint, keyType string) {
+	parsed, _, _, _, err := ssh.ParseAuthorizedKey([]byte(authorizedKey)) //nolint:dogsled // the comment/options/rest returns say nothing about the key.
+	if err != nil {
+		return "", ""
+	}
+	return ssh.FingerprintSHA256(parsed), parsed.Type()
 }
 
 // checkServiceAccountLinkage enforces service account linkage on a

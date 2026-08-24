@@ -142,3 +142,32 @@ func (e *UnauthorizedError) HTTPStatusCode() int { return http.StatusUnauthorize
 
 // ErrorCode reports the machine-readable error code.
 func (e *UnauthorizedError) ErrorCode() string { return apitypes.ErrorCodeUnauthenticated }
+
+// InvalidRequestError indicates the caller sent something the server can
+// read but will not act on: a malformed body, or a value outside the set
+// the endpoint accepts.
+//
+// It is distinct from the bare bind error the older handlers pass through,
+// which carries no status and therefore renders as a 500. A client that
+// mistyped a field should be told it was their input, not that the server
+// broke.
+//
+// Reason is returned to the caller, so keep it about the shape of the
+// request rather than about server state.
+type InvalidRequestError struct {
+	Reason string
+}
+
+// Error implements the error interface.
+func (e *InvalidRequestError) Error() string {
+	if e.Reason == "" {
+		return "invalid request"
+	}
+	return e.Reason
+}
+
+// HTTPStatusCode reports the HTTP status this error should be rendered as.
+func (e *InvalidRequestError) HTTPStatusCode() int { return http.StatusBadRequest }
+
+// ErrorCode reports the machine-readable error code.
+func (e *InvalidRequestError) ErrorCode() string { return apitypes.ErrorCodeInvalidRequest }

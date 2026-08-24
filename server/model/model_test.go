@@ -263,3 +263,12 @@ func TestServerSecretStructure(t *testing.T) {
 func ptrString(s string) *string {
 	return &s
 }
+
+// TestNotificationPreferenceTableName should return the correct GORM table
+// name.
+func TestNotificationPreferenceTableName(t *testing.T) {
+	p := NotificationPreference{}
+	if got := p.TableName(); got != "notification_preferences" {
+		t.Errorf("NotificationPreference.TableName() = %q, want %q", got, "notification_preferences")
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message"
 
 	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/notify"
 )
 
 // newTestPubSub builds a gochannel PubSub for tests, closing it on test cleanup.
@@ -183,6 +184,14 @@ func TestSubjectCalculator_ShouldReturnQueueGroupForSignTopics(t *testing.T) {
 			name:           "certrequest.signed should have signed-listeners queue group",
 			topic:          "certrequest.signed",
 			wantQueueGroup: "signed-listeners",
+		},
+		{
+			// Without a queue group every instance would deliver the same
+			// notification, and the recipient would get one copy of the
+			// mail per running server.
+			name:           "notification.send should have notifiers queue group",
+			topic:          notify.Topic,
+			wantQueueGroup: "notifiers",
 		},
 		{
 			name:           "wait topic should have no queue group",

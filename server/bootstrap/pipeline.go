@@ -3,12 +3,14 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
 
 	"github.com/mnestor/ssoossh/internal/fipsmode"
 	"github.com/mnestor/ssoossh/server/certmsg"
+	"github.com/mnestor/ssoossh/server/mail"
 	"github.com/mnestor/ssoossh/server/service"
 	"github.com/mnestor/ssoossh/server/signer"
 )
@@ -41,6 +43,15 @@ func (a *app) initPipeline(mode ServerMode) error {
 		service.NewSignedReplyHandler(a.db, a.svc.certRequest).Register(a.pubSub.Router, a.pubSub.Subscriber)
 	}
 
+	// Full and API modes: deliver notifications. Registered only when mail
+	// is configured — an unconsumed topic would otherwise collect events
+	// nothing ever drains.
+	if mode == ServerModeFull || mode == ServerModeAPI {
+		if err := a.initNotifications(); err != nil {
+			return err
+		}
+	}
+
 	// Full and API modes: register the CA key listener
 	if mode == ServerModeFull || mode == ServerModeAPI {
 		service.NewCAKeyListener(a.svc.caKeyRegistry).Register(a.pubSub.Router, a.pubSub.Subscriber)
@@ -54,6 +65,57 @@ func (a *app) initPipeline(mode ServerMode) error {
 			return fmt.Errorf("failed to publish CA key request at startup: %w", err)
 		}
 	}
+
+	return nil
+}
+
+// initNotifications registers the notification delivery consumer: it
+// renders each queued event and hands it to the SMTP relay.
+//
+// Everything expensive about a notification happens here, on the broker's
+// goroutines, and nothing about it happens on the request path — an
+// approval or a redemption publishes an event and returns. A relay that is
+// slow, greylisting, or down delays nothing a browser or an unattended job
+// is waiting on.
+//
+// Templates are parsed and executed against a zero payload during
+// NewRenderer, and the relay configuration is built once here, so a broken
+// override or an unusable relay fails startup rather than producing mail
+// that silently stops arriving.
+func (a *app) initNotifications() error {
+	if !a.config.Mail.Enabled {
+		slog.Info("mail notifications are disabled (mail.enabled is false)")
+		return nil
+	}
+
+	// Advice about a configuration that is valid but weaker than it should
+	// be — a plaintext or unauthenticated relay reached over a network.
+	// Warned rather than refused: the local-relay deployment legitimately
+	// needs neither. See config.MailConfig.Warnings.
+	for _, warning := range a.config.Mail.Warnings() {
+		slog.Warn(warning)
+	}
+
+	renderer, err := mail.NewRenderer(a.config.Mail.TemplateDir, a.config.Mail.SubjectPrefix)
+	if err != nil {
+		return fmt.Errorf("failed to load the notification templates: %w", err)
+	}
+	if overrides := renderer.Overrides(); len(overrides) > 0 {
+		slog.Info("using local notification template overrides",
+			"template_dir", a.config.Mail.TemplateDir, "templates", overrides)
+	}
+
+	sender, err := mail.NewSMTPSender(&a.config.Mail)
+	if err != nil {
+		return fmt.Errorf("failed to configure the mail relay: %w", err)
+	}
+
+	service.NewNotificationHandler(a.db, renderer, sender).Register(a.pubSub.Router, a.pubSub.Subscriber)
+
+	slog.Info("mail notifications enabled",
+		"relay", fmt.Sprintf("%s:%d", a.config.Mail.SMTP.Host, a.config.Mail.SMTP.Port),
+		"tls", a.config.Mail.SMTP.TLS,
+		"auth", a.config.Mail.SMTP.Auth)
 
 	return nil
 }

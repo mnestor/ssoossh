@@ -66,6 +66,15 @@ describe('UserMenu', () => {
 		expect(screen.getByRole('menuitem', { name: 'Account' })).toHaveAttribute('href', '/account');
 	});
 
+	it('should link to the preferences page', async () => {
+		render(UserMenu, { label: 'alice@example.com', onsignout: vi.fn() });
+		await userEvent.click(screen.getByRole('button'));
+		expect(screen.getByRole('menuitem', { name: 'Preferences' })).toHaveAttribute(
+			'href',
+			'/preferences'
+		);
+	});
+
 	it('should close the menu when the account link is chosen', async () => {
 		render(UserMenu, { label: 'alice@example.com', onsignout: vi.fn() });
 		await userEvent.click(screen.getByRole('button'));

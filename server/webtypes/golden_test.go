@@ -91,6 +91,18 @@ func fullFixtures() map[string]any {
 			DecidedForwardedFor:      "198.51.100.7, 10.0.0.1",
 			DecidedAt:                &issuedAt,
 		},
+		"notification_preferences": webtypes.NotificationPreferencesResponse{
+			MailEnabled: true,
+			Address:     "alice@example.org",
+			Kinds: []webtypes.NotificationKindResponse{
+				{
+					Kind:        "service_enrollment_created",
+					Title:       "Service enrollment created",
+					Description: "Sent when you approve a service certificate request.",
+					Enabled:     true,
+				},
+			},
+		},
 		"enrollment_retrievals": webtypes.EnrollmentRetrievalsResponse{
 			Retrievals: []webtypes.EnrollmentRetrievalResponse{{
 				RetrievedAt:       issuedAt,
@@ -156,12 +168,13 @@ func fullFixtures() map[string]any {
 // reaches production.
 func zeroFixtures() map[string]any {
 	return map[string]any{
-		"current_user":          webtypes.CurrentUserResponse{},
-		"certificate_options":   webtypes.CertificateOptionsResponse{},
-		"request_detail":        webtypes.RequestDetailResponse{},
-		"certificate":           webtypes.CertificateResponse{},
-		"service_enrollment":    webtypes.ServiceEnrollmentResponse{},
-		"enrollment_retrievals": webtypes.EnrollmentRetrievalsResponse{},
+		"current_user":             webtypes.CurrentUserResponse{},
+		"certificate_options":      webtypes.CertificateOptionsResponse{},
+		"request_detail":           webtypes.RequestDetailResponse{},
+		"certificate":              webtypes.CertificateResponse{},
+		"service_enrollment":       webtypes.ServiceEnrollmentResponse{},
+		"enrollment_retrievals":    webtypes.EnrollmentRetrievalsResponse{},
+		"notification_preferences": webtypes.NotificationPreferencesResponse{},
 	}
 }
 

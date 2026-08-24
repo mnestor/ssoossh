@@ -406,6 +406,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	controller.NewCertRequestController(apiGroup, a.svc.certRequest, sessionAuth, csrf, certRequestRateLimit)
 
 	controller.NewUserController(apiGroup, a.config, sessionAuth)
+	controller.NewNotificationController(apiGroup, a.svc.notification, sessionAuth, csrf)
 	controller.NewCertificateController(apiGroup, a.svc.certificate, sessionAuth)
 
 	// Build per-code rate limit middleware for service certificate redemption.

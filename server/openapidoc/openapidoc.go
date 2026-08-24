@@ -148,6 +148,13 @@ type CurrentUserEnvelope struct {
 	Error *string                      `json:"error"`
 }
 
+// NotificationPreferencesEnvelope is the body of both
+// GET and PUT /api/users/me/notifications.
+type NotificationPreferencesEnvelope struct {
+	Data  webtypes.NotificationPreferencesResponse `json:"data" validate:"required"`
+	Error *string                                  `json:"error"`
+}
+
 // RequestDetailEnvelope is GET /api/certs/requests/{id}'s body.
 type RequestDetailEnvelope struct {
 	Data  webtypes.RequestDetailResponse `json:"data" validate:"required"`
