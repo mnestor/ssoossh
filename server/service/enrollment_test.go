@@ -14,6 +14,8 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 
+	"gorm.io/gorm"
+
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
@@ -1434,16 +1436,22 @@ func TestListForAdmin_SearchFilteringPinnedToSQL(t *testing.T) {
 		})
 	}
 
-	// Query with a search term that matches alice. The key behavioral claim
-	// is: Total must be 1000 (all matching rows) and the returned list must
-	// contain only 10 rows. If filtering happened in-memory, we would load all
-	// 1000 rows from the database, filter to alice's 1000, then slice to [0:10].
-	// If filtering happened in SQL, we would ask the database for only the
-	// matching rows starting at offset 0 with limit 10, and the database would
-	// return exactly 10 rows (not 1000). In either case, the public contract
-	// of ListForAdmin is the same: Total=1000, Enrollments=[10 rows]. However,
-	// the SQL-driven path can be verified by observing the WHERE clause
-	// contains LIKE, which this test does.
+	// Record the SQL every query actually issues. This is the whole point of
+	// the test: Total=1000 with 10 rows returned is what BOTH implementations
+	// produce, so the return values cannot tell them apart. Only the statement
+	// text can -- an in-memory filter selects every row and narrows in Go, so
+	// its SQL carries no LIKE predicate at all.
+	var executed []string
+	if err := svc.db.Callback().Query().After("gorm:query").
+		Register("test:record_sql", func(tx *gorm.DB) {
+			executed = append(executed, tx.Statement.SQL.String())
+		}); err != nil {
+		t.Fatalf("failed to register the SQL recorder: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = svc.db.Callback().Query().Remove("test:record_sql")
+	})
+
 	list, err := enrollment.ListForAdmin(context.Background(),
 		&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
 		AdminListParams{Limit: 10, Offset: 0, Query: "alice"})
@@ -1463,5 +1471,20 @@ func TestListForAdmin_SearchFilteringPinnedToSQL(t *testing.T) {
 		if row.Approver.Username != "alice" {
 			t.Errorf("got enrollment approved by %q, expected alice", row.Approver.Username)
 		}
+	}
+
+	// The assertion that actually pins the behaviour. Without a LIKE in the
+	// statement the search never reached the database, whatever the returned
+	// rows look like.
+	var sawLike bool
+	for _, stmt := range executed {
+		if strings.Contains(strings.ToUpper(stmt), "LIKE") {
+			sawLike = true
+			break
+		}
+	}
+	if !sawLike {
+		t.Errorf("no executed statement carried a LIKE predicate, so the search was not done in SQL; statements were:\n%s",
+			strings.Join(executed, "\n"))
 	}
 }
