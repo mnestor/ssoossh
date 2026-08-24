@@ -230,7 +230,7 @@
 			<div class="fixed inset-0 flex items-center justify-center bg-black/50 p-4">
 				<div class="w-full max-w-md rounded-lg bg-surface p-6 shadow-lg">
 					<h3 class="mb-4 text-lg font-semibold text-ink">Disable User?</h3>
-					<p class="mb-4 text-sm text-ink-muted">
+					<p data-testid="disable-consequences" class="mb-4 text-sm text-ink-muted">
 						This will prevent <strong>{user.username}</strong> from authenticating immediately.
 						Their <strong>{disableConsequences.service_enrollment_count}</strong>
 						active service enrollment(s) will expire at

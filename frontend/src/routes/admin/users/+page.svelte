@@ -54,7 +54,13 @@
 		<div class="rounded-lg border border-danger-surface bg-danger-surface p-4 text-sm text-danger">
 			{error}
 		</div>
-	{:else if users?.users}
+		<!--
+		Length, not the array itself: an empty array is truthy, so testing
+		`users?.users` renders a table of headers with no rows for a search
+		that matched nothing, and the "No users found" branch below can never
+		be reached on a successful response.
+	-->
+	{:else if users?.users?.length}
 		<div class="overflow-x-auto">
 			<table class="w-full text-sm">
 				<thead>
