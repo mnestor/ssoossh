@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -375,37 +376,28 @@ func extraClaims(claims map[string]any, mapping map[string]string) map[string]ex
 
 // checkUserDisabled verifies the user identified by subject is not disabled.
 // If disabled, returns a UserDisabledError that prevents session establishment.
+// Fails closed: this is an authorization decision. A database error must NOT
+// establish a session, because a transient blip must not admit a user an admin
+// has explicitly disabled. A non-existent user row (first login) is NOT an error
+// and must succeed.
 func (s *AuthService) checkUserDisabled(ctx context.Context, subject string) error {
-	var disabledAt *time.Time
-	if err := s.db.WithContext(ctx).
-		Model(&model.User{}).
-		Select("disabled_at").
-		Where("subject = ?", subject).
-		First(&model.User{}, "subject = ?", subject).
-		Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		// Log but don't fail on lookup errors; disabled_at lookup failure
-		// shouldn't prevent login if it's a transient db issue. Better to
-		// let the user in and retry later than lock them out.
-		slog.Warn("failed to check if user is disabled",
-			slog.String("subject", subject), slog.Any("error", err))
-		return nil
-	}
-
-	// A more direct query to get just disabled_at
+	var disabledAt sql.NullTime
 	result := s.db.WithContext(ctx).
 		Model(&model.User{}).
 		Select("disabled_at").
 		Where("subject = ?", subject).
 		Scan(&disabledAt)
 
-	if result.Error != nil {
-		// Same as above - don't fail on transient errors
+	// No row for this subject is not an error — first-time login. Only a
+	// genuine query failure fails closed.
+	if result.Error != nil && !errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		// Log the error for debugging, then fail closed
 		slog.Warn("failed to check if user is disabled",
 			slog.String("subject", subject), slog.Any("error", result.Error))
-		return nil
+		return &errorresponses.UserDisabledError{}
 	}
 
-	if disabledAt != nil {
+	if disabledAt.Valid {
 		return &errorresponses.UserDisabledError{}
 	}
 
