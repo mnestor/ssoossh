@@ -204,6 +204,23 @@ type AdminConfig struct {
 	// disabling them. Fails closed: no identity, or membership in neither
 	// group, denies.
 	AuditorGroup string `mapstructure:"auditor_group"`
+
+	// DisableGracePeriod is how long after a user is disabled before their
+	// service enrollments expire. This gives running services time to notice
+	// and rotate credentials before the certificates stop working. After this
+	// duration expires (see service.SweepDisabledUserEnrollments), no new
+	// certificates can be issued from the enrollment.
+	DisableGracePeriod time.Duration `mapstructure:"disable_grace_period"`
+
+	// ContactEmail is the email address shown on the account-disabled page
+	// so a disabled user can contact support. Empty disables the display
+	// (no mailto link on the page).
+	ContactEmail string `mapstructure:"contact_email"`
+
+	// DisabledMessage is free-text shown on the account-disabled page below
+	// the contact email. Useful for explaining why the account was disabled
+	// or what the user should do next.
+	DisabledMessage string `mapstructure:"disabled_message"`
 }
 
 // IsAdminEnabled reports whether admin authorization is configured
