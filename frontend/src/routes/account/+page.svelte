@@ -51,7 +51,7 @@
 		<Card
 			title="Identity"
 			description="Who the server sees this session as."
-			data-testid="account-identity-card"
+			testid="account-identity-card"
 		>
 			<dl data-testid="identity-fields">
 				<DetailRow label="Username" mono icon="user">{user.username}</DetailRow>
