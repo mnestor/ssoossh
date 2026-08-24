@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/glebarez/sqlite"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/config"
@@ -71,10 +71,10 @@ func routerWithAuth(t *testing.T, cfg *config.Config, db *gorm.DB, identity *ser
 		&r.RouterGroup,
 		cfg,
 		db,
-		identityMiddleware(identity),                       // sessionAuthMiddleware
-		middleware.NewAdminAuthMiddleware(cfg).Add(),       // adminAuthMiddleware (real)
-		middleware.NewAuditorAuthMiddleware(cfg).Add(),     // auditorAuthMiddleware (real)
-		func(c *gin.Context) { c.Next() },                  // csrfMiddleware (passthrough for tests)
+		identityMiddleware(identity), // sessionAuthMiddleware
+		middleware.NewAdminAuthMiddleware(cfg).Add(),   // adminAuthMiddleware (real)
+		middleware.NewAuditorAuthMiddleware(cfg).Add(), // auditorAuthMiddleware (real)
+		func(c *gin.Context) { c.Next() },              // csrfMiddleware (passthrough for tests)
 	)
 
 	return r
@@ -118,7 +118,6 @@ func TestAdminUsersListHandler_PlainUserDenied(t *testing.T) {
 		t.Errorf("GET /admin/users as plain user: got %d, want %d", w.Code, http.StatusForbidden)
 	}
 }
-
 
 // TestAdminGetUserHandler_AnonymousUserDenied tests GET /api/admin/users/:id
 // denies anonymous.
@@ -410,12 +409,12 @@ func TestAdminEnableUserHandler_AuditorDenied(t *testing.T) {
 	cfg := newTestConfig(t)
 	db := newTestDB(t)
 	testUser := model.User{
-		ID:        "user-1",
-		Subject:   "sub-alice",
-		Username:  "alice",
-		Email:     "alice@example.com",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:         "user-1",
+		Subject:    "sub-alice",
+		Username:   "alice",
+		Email:      "alice@example.com",
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
 		DisabledAt: &time.Time{},
 	}
 	if err := db.Create(&testUser).Error; err != nil {
@@ -446,12 +445,12 @@ func TestAdminEnableUserHandler_AdminAllowed(t *testing.T) {
 	db := newTestDB(t)
 	disabledTime := time.Now().Add(-time.Hour)
 	testUser := model.User{
-		ID:        "user-1",
-		Subject:   "sub-alice",
-		Username:  "alice",
-		Email:     "alice@example.com",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:         "user-1",
+		Subject:    "sub-alice",
+		Username:   "alice",
+		Email:      "alice@example.com",
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
 		DisabledAt: &disabledTime,
 	}
 	if err := db.Create(&testUser).Error; err != nil {
@@ -484,7 +483,6 @@ func TestAdminEnableUserHandler_AdminAllowed(t *testing.T) {
 		t.Errorf("PATCH /admin/users/:id/enable as admin: got %d, want %d", w.Code, http.StatusOK)
 	}
 }
-
 
 // TestAdminGetUserHandler_NotFound tests GET /api/admin/users/:id returns 404
 // for an unknown user ID.
@@ -647,12 +645,12 @@ func TestAdminEnableUserHandler_Idempotent(t *testing.T) {
 	db := newTestDB(t)
 	disabledTime := time.Now().Add(-time.Hour)
 	testUser := model.User{
-		ID:        "user-1",
-		Subject:   "sub-alice",
-		Username:  "alice",
-		Email:     "alice@example.com",
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:         "user-1",
+		Subject:    "sub-alice",
+		Username:   "alice",
+		Email:      "alice@example.com",
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
 		DisabledAt: &disabledTime,
 	}
 	if err := db.Create(&testUser).Error; err != nil {
@@ -755,8 +753,8 @@ func TestAdminDisableUserHandler_ConsequencesIncludeEnrollmentCount(t *testing.T
 
 	var resp struct {
 		Data struct {
-			ServiceEnrollmentCount int   `json:"service_enrollment_count"`
-			GracePeriodSeconds     int64 `json:"grace_period_seconds"`
+			ServiceEnrollmentCount int       `json:"service_enrollment_count"`
+			GracePeriodSeconds     int64     `json:"grace_period_seconds"`
 			ExpireAtTimestamp      time.Time `json:"expire_at_timestamp"`
 		} `json:"data"`
 	}
