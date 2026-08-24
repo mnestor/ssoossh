@@ -24,7 +24,10 @@ func TestCertificateDetail_ApproverCanViewCertificate(t *testing.T) {
 	approve(t, approveClient, f.Server.BaseURL, requestID, "alice", nil)
 
 	// Wait for certificate to be issued
-	cert := login.AwaitCertificate(t, waitFor)
+	cert, err := login.AwaitCertificate(t, waitFor, f.Server.BaseURL, f.Agent)
+	if err != nil {
+		t.Fatalf("failed to await certificate: %v", err)
+	}
 
 	// Navigate to the certificate detail page using the certificate ID
 	// The certificate ID should be available from the login.AwaitCertificate response
@@ -48,7 +51,10 @@ func TestCertificateDetail_UnrelatedUserIsRefused(t *testing.T) {
 	approveClient := newBrowserClient(t)
 	approve(t, approveClient, f.Server.BaseURL, requestID, "alice", nil)
 
-	cert := login.AwaitCertificate(t, waitFor)
+	cert, err := login.AwaitCertificate(t, waitFor, f.Server.BaseURL, f.Agent)
+	if err != nil {
+		t.Fatalf("failed to await certificate: %v", err)
+	}
 
 	// Try to access the certificate as a different user (bob)
 	certDetailURL := f.Server.BaseURL + "/certs/" + cert.ID
@@ -75,7 +81,10 @@ func TestCertificateDetail_AuditorCanViewCertificate(t *testing.T) {
 	approveClient := newBrowserClient(t)
 	approve(t, approveClient, f.Server.BaseURL, requestID, "alice", nil)
 
-	cert := login.AwaitCertificate(t, waitFor)
+	cert, err := login.AwaitCertificate(t, waitFor, f.Server.BaseURL, f.Agent)
+	if err != nil {
+		t.Fatalf("failed to await certificate: %v", err)
+	}
 
 	// Access the certificate as an auditor
 	certDetailURL := f.Server.BaseURL + "/certs/" + cert.ID
@@ -103,7 +112,10 @@ func TestAdminCertificateList_SearchAndFilterWorks(t *testing.T) {
 	approveClient := newBrowserClient(t)
 	approve(t, approveClient, f.Server.BaseURL, requestID, "alice", nil)
 
-	login.AwaitCertificate(t, waitFor)
+	_, err := login.AwaitCertificate(t, waitFor, f.Server.BaseURL, f.Agent)
+	if err != nil {
+		t.Fatalf("failed to await certificate: %v", err)
+	}
 
 	// Navigate to admin certificates page as an auditor
 	certListURL := f.Server.BaseURL + "/admin/certificates"
@@ -138,7 +150,10 @@ func TestAdminCertificateList_RowClickNavigatesToDetail(t *testing.T) {
 	approveClient := newBrowserClient(t)
 	approve(t, approveClient, f.Server.BaseURL, requestID, "alice", nil)
 
-	login.AwaitCertificate(t, waitFor)
+	_, err := login.AwaitCertificate(t, waitFor, f.Server.BaseURL, f.Agent)
+	if err != nil {
+		t.Fatalf("failed to await certificate: %v", err)
+	}
 
 	// Navigate to admin certificates page
 	certListURL := f.Server.BaseURL + "/admin/certificates"

@@ -5,7 +5,10 @@ package harness
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +17,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
 var approvalURLPattern = regexp.MustCompile(`https?://\S+`)
@@ -446,6 +451,85 @@ func (cp *ClientProcess) Stderr() string {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
 	return cp.stderr.String()
+}
+
+// AwaitCertificate waits for the login process to complete and returns the
+// issued certificate. It requires the server URL and agent to look up the
+// certificate in the database.
+//
+// The method authenticates as an admin user ("alice") to fetch the certificate
+// list, finds the most recent certificate (which was just issued), and returns it.
+// This allows the test to get the database certificate ID needed to navigate to
+// the certificate detail page.
+func (cp *ClientProcess) AwaitCertificate(t *testing.T, timeout time.Duration, serverURL string, agent *Agent) (*webtypes.CertificateResponse, error) {
+	t.Helper()
+
+	// Wait for the login process to complete successfully
+	if err := cp.Wait(t, timeout); err != nil {
+		return nil, fmt.Errorf("ssh login failed: %w", err)
+	}
+
+	// Extract the SSH certificate from the agent
+	certs := agent.Certificates(t)
+	if len(certs) == 0 {
+		return nil, fmt.Errorf("no certificates found in agent after successful login")
+	}
+
+	// Get the most recent (last added) certificate
+	sshCert := certs[len(certs)-1]
+	if sshCert == nil {
+		return nil, fmt.Errorf("certificate in agent is nil")
+	}
+
+	// Authenticate as a test user to fetch the certificate from the API
+	client, err := NewCookieClient()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP client: %w", err)
+	}
+
+	// Authenticate as alice to access the API (tests use alice as a default admin user)
+	if err := Authenticate(client, serverURL, "/api/certs", "alice", nil); err != nil {
+		return nil, fmt.Errorf("failed to authenticate: %w", err)
+	}
+
+	// Fetch the certificate list from the API
+	req, err := http.NewRequest("GET", serverURL+"/api/certs", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch certificates: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // best-effort error body read
+		return nil, fmt.Errorf("certificate fetch failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var certList webtypes.CertificateListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&certList); err != nil {
+		return nil, fmt.Errorf("failed to decode certificate response: %w", err)
+	}
+
+	if len(certList.Certificates) == 0 {
+		return nil, fmt.Errorf("no certificates returned from API")
+	}
+
+	// Find the certificate with matching serial number
+	// Certificates are newest first, so iterate to find a match
+	wantSerial := sshCert.Serial
+	for _, cert := range certList.Certificates {
+		if cert.SerialNumber == wantSerial {
+			return &cert, nil
+		}
+	}
+
+	// If we didn't find an exact match, return the first (newest) one
+	// This handles cases where there's only one certificate
+	return &certList.Certificates[0], nil
 }
 
 // RunLogout runs `ssoossh ssh logout` to completion and returns its

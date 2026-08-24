@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
@@ -72,10 +72,11 @@ describe('Admin certificates page', () => {
 			expect(screen.getByText(/type|filter/i)).toBeInTheDocument();
 		});
 
-		it('should display pager', async () => {
+		it('should not display pager when single page', async () => {
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
-			expect(screen.getByText(/page/i)).toBeInTheDocument();
+			const pagers = screen.queryAllByTestId('pager');
+			expect(pagers).toHaveLength(0);
 		});
 
 		it('should trigger search on input', async () => {
@@ -83,7 +84,7 @@ describe('Admin certificates page', () => {
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
 
-			const searchInput = screen.getByRole('textbox', { name: /search/i });
+			const searchInput = screen.getByRole('searchbox', { name: /search/i });
 			await user.type(searchInput, 'alice');
 
 			// Should trigger a refetch (exact behavior depends on implementation)
@@ -151,6 +152,12 @@ describe('Admin certificates page', () => {
 			mockFetch(response);
 		});
 
+		it('should display pager when multiple pages exist', async () => {
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(screen.getByTestId('pager')).toBeInTheDocument();
+		});
+
 		it('should show next button when more pages exist', async () => {
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
@@ -199,7 +206,10 @@ describe('Admin certificates page', () => {
 		it('should show type filter options', async () => {
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
-			expect(screen.getByText(/user|service|pam/i)).toBeInTheDocument();
+			const typeFilter = screen.getByTestId('type-filter');
+			expect(within(typeFilter).getByText(/user/i)).toBeInTheDocument();
+			expect(within(typeFilter).getByText(/service/i)).toBeInTheDocument();
+			expect(within(typeFilter).getByText(/pam/i)).toBeInTheDocument();
 		});
 
 		it('should trigger refetch when type filter changes', async () => {

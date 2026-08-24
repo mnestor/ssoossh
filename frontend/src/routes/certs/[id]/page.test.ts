@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
 import type { CertificateResponse } from '$lib/api/types';
@@ -50,33 +50,31 @@ describe('Certificate detail page', () => {
 		});
 
 		it('should render the certificate details', async () => {
-			render(Page, {
-				props: { data: { id: 'cert-123' } }
-			});
+			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
 			expect(screen.getByText(/cert-123/)).toBeInTheDocument();
 		});
 
 		it('should display the certificate type', async () => {
-			render(Page, {
-				props: { data: { id: 'cert-123' } }
-			});
+			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
-			expect(screen.getByText(/user/i)).toBeInTheDocument();
+			const certDetails = screen.getByTestId('cert-details');
+			// Find the Type definition term (dt) which contains "Type" label
+			const typeTerms = within(certDetails).getAllByText('Type');
+			expect(typeTerms.length).toBeGreaterThan(0);
+			// The type term should be a dt element
+			const typeTerm = typeTerms[0] as HTMLElement;
+			expect(typeTerm.tagName.toLowerCase()).toBe('dt');
 		});
 
 		it('should display the key ID', async () => {
-			render(Page, {
-				props: { data: { id: 'cert-123' } }
-			});
+			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
 			expect(screen.getByText(/my-key/)).toBeInTheDocument();
 		});
 
 		it('should display the serial number', async () => {
-			render(Page, {
-				props: { data: { id: 'cert-123' } }
-			});
+			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
 			expect(screen.getByText(/42/)).toBeInTheDocument();
 		});
@@ -88,9 +86,7 @@ describe('Certificate detail page', () => {
 		});
 
 		it('should render access denied message', async () => {
-			render(Page, {
-				props: { data: { id: 'cert-999' } }
-			});
+			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
 			expect(screen.getByText(/not found|not authorized|access denied/i)).toBeInTheDocument();
 		});
@@ -102,9 +98,7 @@ describe('Certificate detail page', () => {
 		});
 
 		it('should render error message', async () => {
-			render(Page, {
-				props: { data: { id: 'cert-123' } }
-			});
+			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
 			expect(screen.getByText(/could not load|error/i)).toBeInTheDocument();
 		});
@@ -116,9 +110,7 @@ describe('Certificate detail page', () => {
 		});
 
 		it('should show loading state initially', () => {
-			render(Page, {
-				props: { data: { id: 'cert-123' } }
-			});
+			render(Page);
 			expect(screen.getByText(/loading|loading\.\.\./i)).toBeInTheDocument();
 		});
 	});

@@ -209,6 +209,46 @@ func (b *Browser) CompleteIdPLoginWithExtraClaims(t *testing.T, username string,
 	}
 }
 
+// CompleteIdPLoginWithGroups fills and submits the harness IdP's real login form
+// with username and group claims, then follows the resulting redirect chain back
+// into the server. Call after navigating to a URL that reaches /auth/login.
+//
+// groups are the group memberships to include in the ID token claims. They are
+// submitted via the groups form field (see idp.go's renderLoginForm and
+// handleAuthorize). The current test suite only uses single-group scenarios, so
+// this implementation sends the first group only; expanding to multiple groups
+// would require modifying the form to have multiple repeatable inputs.
+func (b *Browser) CompleteIdPLoginWithGroups(t *testing.T, username string, groups []string) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
+	defer cancel()
+
+	// Build the actions: fill username and groups, then submit
+	actions := []chromedp.Action{
+		chromedp.WaitVisible(`[data-testid="idp-login-form"]`, chromedp.ByQuery),
+		chromedp.SendKeys(`[data-testid="idp-username"]`, username, chromedp.ByQuery),
+	}
+
+	// Send groups: if any are provided, fill the groups field with the first one.
+	// HTML forms with a single input can only send one value, so we send the first
+	// group from the list. The IdP handler (idp.go:143-149) reads r.PostForm["groups"]
+	// which returns a []string, so it's designed for multiple groups, but the
+	// form currently only supports one input field. If multiple groups are needed,
+	// the form would need to create additional input fields.
+	if len(groups) > 0 {
+		actions = append(actions, chromedp.SendKeys(`[data-testid="idp-groups"]`, groups[0], chromedp.ByQuery))
+	}
+
+	// Click submit
+	actions = append(actions, chromedp.Click(`[data-testid="idp-submit"]`, chromedp.ByQuery))
+
+	if err := chromedp.Run(ctx, actions...); err != nil {
+		b.screenshotOnFailure(t)
+		t.Fatalf("harness: completing the IdP login form with groups failed: %v", err)
+	}
+}
+
 // screenshotOnFailure best-effort captures a screenshot and the current URL
 // to the test's artifact directory — debugging a browser failure from an
 // assertion message alone isn't realistic.
