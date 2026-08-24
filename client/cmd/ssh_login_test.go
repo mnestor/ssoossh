@@ -437,13 +437,17 @@ func TestRunLogin_ShouldLeaveOtherIdentitiesAlone(t *testing.T) {
 // TestRunLogin_ShouldNotFailWhenPruningDoes: a stale certificate that could
 // not be removed is worth mentioning, not worth failing a login that already
 // produced a usable certificate.
+//
+// The preflight does one successful Remove (for the probe keypair cleanup),
+// then pruning attempts a second Remove (for the old certificate). By setting
+// removeErrAfterCount to 1, we allow the preflight to succeed but make pruning fail.
 func TestRunLogin_ShouldNotFailWhenPruningDoes(t *testing.T) {
 	ours := newTestCA(t)
 	old := newTestCert(t, ours, "alice", 8*time.Hour)
 	ag := &stubAgent{
-		identities: []xssh.PublicKey{old},
-		cas:        []xssh.PublicKey{ours.public},
-		removeErr:  errors.New("agent refused"),
+		identities:          []xssh.PublicKey{old},
+		cas:                 []xssh.PublicKey{ours.public},
+		removeErrAfterCount: 1, // Allow preflight Remove, fail on pruning Remove
 	}
 
 	fresh := newTestCert(t, ours, "alice", time.Hour)

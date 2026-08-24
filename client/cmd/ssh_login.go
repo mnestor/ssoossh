@@ -254,6 +254,52 @@ func printEffectiveExtensions(out io.Writer, effective []string, allDefault []st
 	fmt.Fprintf(out, ")\n\n")
 }
 
+// runLoginPreflight verifies key storage will work, with optional fallback logic.
+// It probes the resolved agent to ensure it can store and release a keypair,
+// and if the probe fails with fallback enabled, attempts to use file storage instead.
+func runLoginPreflight(root *RootCommand, cfg *config.Config, out io.Writer) error {
+	agent := root.Agent()
+	var preflightErr error
+	if agent.Type() == sshagent.AgentTypeSsh {
+		preflightErr = probeAgentPreflight(agent)
+	} else if agent.Type() == sshagent.AgentTypeFile {
+		preflightErr = probeFileAgentPreflightWithPath(cfg.Filename)
+	}
+	// For any other agent type (e.g., test fakes), skip the preflight
+
+	if preflightErr == nil {
+		return nil
+	}
+
+	slog.Debug("agent preflight failed", "error", preflightErr)
+
+	// If preflight failed and fallback is configured, try the file agent
+	if cfg.UseAgent && cfg.FallbackFileAgent {
+		slog.Warn("agent preflight failed, attempting fallback to file storage", "error", preflightErr)
+		fallbackErr := probeFileAgentPreflightWithPath(cfg.Filename)
+		if fallbackErr != nil {
+			return fmt.Errorf("agent storage check failed and fallback also failed: primary error: %w, fallback error: %w", preflightErr, fallbackErr)
+		}
+		fileAgent, err := root.newFileAgent(cfg.Filename)
+		if err != nil {
+			return fmt.Errorf("agent storage check failed and fallback is unavailable: %w (fallback error: %w)", preflightErr, err)
+		}
+		if setCAErr := fileAgent.SetCA(cfg.CAPubkey); setCAErr != nil {
+			return fmt.Errorf("agent storage check failed and fallback setup failed: %w (setup error: %w)", preflightErr, setCAErr)
+		}
+		// Fallback succeeded, replace the agent
+		root.ssh = fileAgent
+		fmt.Fprintf(out, "Agent storage check failed, falling back to file-based key storage.\n")
+		return nil
+	}
+
+	// No fallback or fallback disabled
+	if cfg.UseAgent && !cfg.FallbackFileAgent {
+		return fmt.Errorf("cannot verify agent key storage will work: %w (fallback is disabled)", preflightErr)
+	}
+	return fmt.Errorf("cannot verify key storage will work: %w", preflightErr)
+}
+
 // runLogin obtains a usable certificate and loads it into the agent (or key
 // files), reusing a valid one when there is one. It returns an error — and
 // so a non-zero exit status — for every outcome that does not end with a
@@ -268,6 +314,13 @@ func runLogin(ctx context.Context, root *RootCommand, out io.Writer, force bool)
 				principalList(cert), expiryPhrase(cert))
 			return nil
 		}
+	}
+
+	// Preflight: verify the resolved key storage will accept and release a key
+	// before we request a certificate. This prevents the "approve then lose it"
+	// hazard where a human approves but the certificate vanishes because storage fails.
+	if err := runLoginPreflight(root, cfg, out); err != nil {
+		return err
 	}
 
 	// The resolved algorithm and size are policy (FIPS steering, per-type

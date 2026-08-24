@@ -29,6 +29,11 @@ type stubAgent struct {
 	removeAllCalled bool
 	added           *keypair.SSHKeypair
 	removeErr       error
+	addErr          error
+	// removeErrAfterCount makes Remove fail after N successful removals.
+	// Used to test that pruning failures don't fail logins after preflight succeeds.
+	removeErrAfterCount int
+	removeCallCount     int
 
 	// listErr makes List fail, which callers have to survive: a listing
 	// failure is not a reason to lose a certificate the user already holds.
@@ -77,15 +82,35 @@ func (s *stubAgent) List(filterByCA bool) ([]*xssh.PublicKey, error) {
 	return out, nil
 }
 
-func (s *stubAgent) Add(key any) error { return nil }
+func (s *stubAgent) Add(key any) error {
+	if s.addErr != nil {
+		return s.addErr
+	}
+	return nil
+}
 
 func (s *stubAgent) Remove(key xssh.PublicKey) error {
-	if s.removeErr != nil {
-		return s.removeErr
+	// Check if we should fail this removal based on the count.
+	// This allows tests to make the preflight succeed (1 removal for probe cleanup)
+	// but subsequent pruning fail (2+ removals).
+	if s.removeErr != nil || (s.removeErrAfterCount > 0 && s.removeCallCount >= s.removeErrAfterCount) {
+		s.removeCallCount++
+		if s.removeErr != nil {
+			return s.removeErr
+		}
+		return errors.New("remove count exceeded")
 	}
+	s.removeCallCount++
+
 	for i, held := range s.identities {
 		if bytes.Equal(held.Marshal(), key.Marshal()) {
 			s.identities = append(s.identities[:i], s.identities[i+1:]...)
+			// If we're removing what was last added, clear the added field.
+			// This is important for the probe: after probing with AddKeypair/Remove,
+			// ag.added should not still point to the probe keypair.
+			if s.added != nil && bytes.Equal(s.added.Public().Marshal(), key.Marshal()) {
+				s.added = nil
+			}
 			return nil
 		}
 	}
@@ -124,9 +149,15 @@ func (s *stubAgent) Certificates() ([]*xssh.Certificate, error) {
 }
 
 func (s *stubAgent) AddKeypair(kp *keypair.SSHKeypair) error {
+	if s.addErr != nil {
+		return s.addErr
+	}
 	s.added = kp
 	if cert := kp.Certificate(); cert != nil {
 		s.identities = append(s.identities, cert)
+	} else {
+		// Even if there's no certificate, add the public key
+		s.identities = append(s.identities, kp.Public())
 	}
 	return nil
 }
