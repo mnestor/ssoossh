@@ -36,14 +36,14 @@ func TestServiceCodes_AdminListSearch(t *testing.T) {
 	// Navigate to admin service codes page
 	browser.Navigate(t, f.Server.BaseURL+"/admin/service-codes", `[data-testid="search-enrollments"]`)
 
-	// Verify page loaded with list empty state (no enrollments in fresh database)
-	browser.WaitVisible(t, `text="No service enrollment codes found"`)
-
-	// Verify search input exists
+	// A fresh database has no enrollments, so this is the empty state.
+	browser.WaitVisible(t, `[data-testid="enrollments-empty"]`)
 	browser.WaitVisible(t, `[data-testid="search-enrollments"]`)
 
-	// Verify pager exists
-	browser.WaitVisible(t, `[data-testid="enrollments-pager"]`)
+	// Pager renders nothing when a single page holds everything, which is
+	// its documented contract -- asserting it is present on an empty list
+	// would assert the opposite of what the component does.
+	browser.AssertNotPresent(t, `[data-testid="enrollments-pager"]`)
 }
 
 // TestServiceCodes_AdminPageRequiresAdminGroup verifies that accessing the admin
@@ -65,10 +65,11 @@ func TestServiceCodes_AdminPageRequiresAdminGroup(t *testing.T) {
 	browser.CompleteIdPLogin(t, "alice")
 	browser.WaitVisible(t, `[data-testid="approval-view"]`)
 
-	// Try to navigate to admin service codes page
-	// Without admin group, should redirect to login or show 403
-	browser.Navigate(t, f.Server.BaseURL+"/admin/service-codes", `[data-testid="sign-in-button"]`)
-	browser.WaitVisible(t, `[data-testid="sign-in-button"]`)
+	// An authenticated user without auditor access stays on the page and is
+	// told why. Bouncing them to login would be a loop: they are already
+	// signed in, and signing in again cannot grant admin.
+	browser.Navigate(t, f.Server.BaseURL+"/admin/service-codes", `[data-testid="admin-access-denied"]`)
+	browser.AssertNotPresent(t, `[data-testid="search-enrollments"]`)
 }
 
 // TestServiceCodes_OwnerPageLoads verifies that the owner's service codes page
@@ -89,8 +90,8 @@ func TestServiceCodes_OwnerPageLoads(t *testing.T) {
 	browser.WaitVisible(t, `[data-testid="approval-view"]`)
 
 	// Navigate to owner's service codes page
-	browser.Navigate(t, f.Server.BaseURL+"/service-codes", `text="Service enrollment codes"`)
+	browser.Navigate(t, f.Server.BaseURL+"/service-codes", `[data-testid="service-codes-heading"]`)
 
 	// Verify the page loaded
-	browser.WaitVisible(t, `text="Service enrollment codes"`)
+	browser.WaitVisible(t, `[data-testid="service-codes-heading"]`)
 }

@@ -85,7 +85,7 @@
 	{:else if !hasLoaded}
 		<p class="text-sm text-ink-muted">Loading…</p>
 	{:else if enrollments.length === 0}
-		<p class="text-sm text-ink-muted">
+		<p data-testid="enrollments-empty" class="text-sm text-ink-muted">
 			No service enrollment codes found
 			{#if searchQuery}
 				matching your search.
