@@ -70,6 +70,7 @@ http.service_code_rate_limit.limit = 1
 http.tls.cipher_suites = []
 http.tls.curves = []
 http.tls.min_version = TLS1.3
+http.tls.reload_interval = 0
 http.trusted_proxies = []
 http.unix_socket = 
 ldap.base_dn = 

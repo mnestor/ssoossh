@@ -5,64 +5,58 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 )
 
-// CertificateInfo holds a certificate/private-key pair, either inline as
-// PEM or as paths to PEM files, for binding into a config struct (e.g. via
-// mapstructure tags) and later resolving with LoadX509KeyPair.
+// CertificateInfo names a certificate/private-key pair as paths to PEM files
+// on disk, for binding into a config struct (e.g. via mapstructure tags) and
+// resolving with LoadX509KeyPair.
+//
+// Paths only: an earlier version also accepted the PEM inline in the config
+// file, which was dropped because it cannot be rotated. A file can be
+// rewritten by whatever renews it and re-read by CertSource without a
+// restart; PEM pasted into the config file can only change when the config
+// file does, and the config file is read once at startup.
 type CertificateInfo struct {
-	// Certificate and PrivateKey hold a PEM-encoded certificate (chain)
-	// and private key inline in the configuration. Both must be set for
-	// the pair to be used; it takes precedence over
-	// CertificateFile/PrivateKeyFile.
-	Certificate string `mapstructure:"certificate"`
-	PrivateKey  string `mapstructure:"private_key"`
-
 	// CertificateFile and PrivateKeyFile point to PEM files on disk. Both
-	// must be set, and they are only consulted when the inline pair above
-	// is incomplete. The files are read once at startup, so rotating them
-	// on disk requires a restart.
+	// must be set. Their contents are re-read on reload (see CertSource);
+	// the paths themselves are fixed for the process's lifetime.
 	CertificateFile string `mapstructure:"certificate_file"`
 	PrivateKeyFile  string `mapstructure:"private_key_file"`
 }
 
 // HasKeyPair reports whether a complete certificate/private-key pair is
-// configured — inline PEM, or PEM file paths.
+// configured.
 func (t CertificateInfo) HasKeyPair() bool {
-	return (t.Certificate != "" && t.PrivateKey != "") ||
-		(t.CertificateFile != "" && t.PrivateKeyFile != "")
+	return t.CertificateFile != "" && t.PrivateKeyFile != ""
 }
 
 // LoadX509KeyPair resolves this CertificateInfo into a usable
-// tls.Certificate, trying the inline PEM pair, then the PEM file pair —
-// the same precedence as HasKeyPair. Returns an error if neither is
-// configured or the configured material can't be parsed.
+// tls.Certificate. Returns an error if no pair is configured or the files
+// can't be read or parsed.
+//
+// tls.LoadX509KeyPair parses both halves and checks that they match before
+// returning, so a pair caught half-written fails here rather than being
+// served — which is what lets CertSource.Reload treat any failure as
+// "keep the previous certificate".
 func (t CertificateInfo) LoadX509KeyPair() (tls.Certificate, error) {
-	switch {
-	case t.Certificate != "" && t.PrivateKey != "":
-		cert, err := tls.X509KeyPair([]byte(t.Certificate), []byte(t.PrivateKey))
-		if err != nil {
-			return tls.Certificate{}, fmt.Errorf("parsing inline certificate/private_key: %w", err)
-		}
-		return cert, nil
-	case t.CertificateFile != "" && t.PrivateKeyFile != "":
-		cert, err := tls.LoadX509KeyPair(t.CertificateFile, t.PrivateKeyFile)
-		if err != nil {
-			return tls.Certificate{}, fmt.Errorf("loading certificate_file/private_key_file: %w", err)
-		}
-		return cert, nil
-	default:
+	if !t.HasKeyPair() {
 		return tls.Certificate{}, errors.New("no certificate/private key pair configured")
 	}
+
+	cert, err := tls.LoadX509KeyPair(t.CertificateFile, t.PrivateKeyFile)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("loading certificate_file/private_key_file: %w", err)
+	}
+
+	return cert, nil
 }
 
 // TLSConfig configures TLS for an HTTP(S) server.
 //
-// A certificate and key can be provided either inline as PEM
-// (Certificate/PrivateKey) or as paths to PEM files
-// (CertificateFile/PrivateKeyFile). The inline pair is checked first, and a
-// pair is only used when both of its members are set; if neither pair is
-// complete, callers typically run without TLS instead.
+// The certificate and key are given as paths to PEM files
+// (CertificateFile/PrivateKeyFile); both must be set. If the pair is
+// incomplete, callers typically run without TLS instead.
 //
 // CipherSuites, TLSMinVersion, and CurveNames are resolved by this
 // package's CipherSuites, MinVersion, and Curve functions: an unrecognized
@@ -96,6 +90,16 @@ type TLSConfig struct {
 	// ...). Empty means Go's defaults; note that naming any curve replaces
 	// those defaults entirely rather than adding to them.
 	CurveNames []string `mapstructure:"curves"`
+
+	// ReloadInterval is how often the certificate files are re-read on a
+	// timer, in addition to SIGHUP which always reloads. Zero or negative
+	// disables the timer, leaving SIGHUP as the only trigger.
+	//
+	// The timer exists for deployments where nothing signals the process:
+	// a Kubernetes secret remount is the motivating case, since it replaces
+	// a directory symlink rather than writing the files in place, so a
+	// filesystem watch on the paths never fires.
+	ReloadInterval time.Duration `mapstructure:"reload_interval"`
 }
 
 // fipsApprovedCipherSuites are the AES-GCM suites FIPS 140-3 approves:
@@ -147,15 +151,19 @@ func requireFIPSApprovedCurves(ids []tls.CurveID) error {
 	return nil
 }
 
-// Build resolves this TLSConfig into a usable *tls.Config: it loads the
-// certificate/key pair and resolves CipherSuites, TLSMinVersion, and
-// CurveNames via this package's CipherSuites, MinVersion, and Curve
-// functions. If no certificate/key pair is configured, Build returns
-// (nil, nil) rather than an error -- callers use that nil to mean "TLS
-// doesn't apply here" (see bootstrap.configureAppServerTransport). Build
-// still returns an error if a certificate/key pair is partially configured
-// but invalid, or if any of the three fields above name something
+// Build resolves this TLSConfig into a usable *tls.Config and the CertSource
+// backing it: it loads the certificate/key pair and resolves CipherSuites,
+// TLSMinVersion, and CurveNames via this package's CipherSuites, MinVersion,
+// and Curve functions. If no certificate/key pair is configured, Build
+// returns (nil, nil, nil) rather than an error -- callers use that nil to
+// mean "TLS doesn't apply here" (see bootstrap.configureAppServerTransport).
+// Build still returns an error if a certificate/key pair is configured but
+// unloadable, or if any of the three fields above name something
 // unrecognized.
+//
+// The returned config resolves its certificate through GetCertificate rather
+// than a pinned Certificates list, so the caller can hand the CertSource to a
+// reload trigger and have renewals reach live listeners. See CertSource.
 //
 // When fipsEnabled is true, an explicitly configured CipherSuites or
 // CurveNames must resolve entirely within the FIPS-approved sets above
@@ -165,46 +173,46 @@ func requireFIPSApprovedCurves(ids []tls.CurveID) error {
 // tls.Config.ServerName is deliberately left unset: it's a client-side
 // field servers ignore, so enforcing a specific server name is a caller
 // concern, not this package's.
-func (t TLSConfig) Build(fipsEnabled bool) (*tls.Config, error) {
+func (t TLSConfig) Build(fipsEnabled bool) (*tls.Config, *CertSource, error) {
 	if !t.HasKeyPair() {
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	cert, err := t.LoadX509KeyPair()
+	source, err := NewCertSource(t.CertificateInfo)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	cipherSuites, err := CipherSuites(t.CipherSuites)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	minVersion, err := MinVersion(t.TLSMinVersion)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	curves, err := Curve(t.CurveNames)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if fipsEnabled {
 		if cipherSuites == nil {
 			cipherSuites = fipsApprovedCipherSuites
 		} else if err := requireFIPSApprovedCipherSuites(cipherSuites); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if curves == nil {
 			curves = fipsApprovedCurves
 		} else if err := requireFIPSApprovedCurves(curves); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
 	return &tls.Config{
-		Certificates:     []tls.Certificate{cert},
+		GetCertificate:   source.GetCertificate,
 		MinVersion:       minVersion,
 		CurvePreferences: curves,
 		CipherSuites:     cipherSuites,
-	}, nil
+	}, source, nil
 }

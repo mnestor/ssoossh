@@ -78,7 +78,7 @@ func TestInitRouter_ShouldServeRequestsWhenTracesEnabled(t *testing.T) {
 func TestInitRouter_ShouldSendHstsHeaderWheneverConfiguredRegardlessOfTLS(t *testing.T) {
 	t.Parallel()
 
-	certPEM, keyPEM := newTestTLSCertPEM(t)
+	certFile, keyFile := writeCertPair(t, t.TempDir(), "hsts-test")
 
 	tests := []struct {
 		name      string
@@ -86,21 +86,12 @@ func TestInitRouter_ShouldSendHstsHeaderWheneverConfiguredRegardlessOfTLS(t *tes
 		want      string
 	}{
 		{
-			name: "should send hsts header when inline certificate and hsts value configured",
-			configure: func(c *config.Config) {
-				c.HTTP.TLS.Certificate = certPEM
-				c.HTTP.TLS.PrivateKey = keyPEM
-				c.HTTP.Hsts = "max-age=31536000; includeSubDomains"
-			},
-			want: "max-age=31536000; includeSubDomains",
-		},
-		{
 			name: "should send hsts header when certificate files and hsts value configured",
 			configure: func(c *config.Config) {
 				// initRouter only checks that a file pair is configured; the
 				// files are first read later, in startAppServer.
-				c.HTTP.TLS.CertificateFile = "cert.pem"
-				c.HTTP.TLS.PrivateKeyFile = "key.pem"
+				c.HTTP.TLS.CertificateFile = certFile
+				c.HTTP.TLS.PrivateKeyFile = keyFile
 				c.HTTP.Hsts = "max-age=63072000"
 			},
 			want: "max-age=63072000",
@@ -118,15 +109,15 @@ func TestInitRouter_ShouldSendHstsHeaderWheneverConfiguredRegardlessOfTLS(t *tes
 		{
 			name: "should not send hsts header when hsts value is empty",
 			configure: func(c *config.Config) {
-				c.HTTP.TLS.Certificate = certPEM
-				c.HTTP.TLS.PrivateKey = keyPEM
+				c.HTTP.TLS.CertificateFile = certFile
+				c.HTTP.TLS.PrivateKeyFile = keyFile
 			},
 			want: "",
 		},
 		{
-			name: "should send hsts header when certificate is configured without a key but hsts value is set",
+			name: "should send hsts header when a certificate file is configured without a key file but hsts value is set",
 			configure: func(c *config.Config) {
-				c.HTTP.TLS.Certificate = certPEM
+				c.HTTP.TLS.CertificateFile = certFile
 				c.HTTP.Hsts = "max-age=31536000; includeSubDomains"
 			},
 			want: "max-age=31536000; includeSubDomains",
@@ -267,11 +258,11 @@ func TestServerRun_ShouldServeHTTPUntilContextCanceled(t *testing.T) {
 func TestServerRun_ShouldServeTLSWhenInlineCertificateConfigured(t *testing.T) {
 	t.Parallel()
 
-	certPEM, keyPEM := newTestTLSCertPEM(t)
+	certFile, keyFile := writeCertPair(t, t.TempDir(), "ssoosshd-test")
 
 	c := &config.Config{}
-	c.HTTP.TLS.Certificate = certPEM
-	c.HTTP.TLS.PrivateKey = keyPEM
+	c.HTTP.TLS.CertificateFile = certFile
+	c.HTTP.TLS.PrivateKeyFile = keyFile
 	c.HTTP.TLS.TLSMinVersion = "TLS1.3" // match the shipped default posture
 
 	a := newTestApp(t, c)
@@ -299,18 +290,18 @@ func TestServerRun_ShouldServeTLSWhenInlineCertificateConfigured(t *testing.T) {
 		t.Errorf("got negotiated TLS version 0x%04x, want TLS 1.3", resp.TLS.Version)
 	}
 	if !srv.useTLS {
-		t.Error("expected useTLS to remain true when an inline certificate is configured")
+		t.Error("expected useTLS to remain true when a certificate is configured")
 	}
 }
 
 func TestServerRun_ShouldReturnErrorWhenCipherSuitesIncompatibleWithHTTP2(t *testing.T) {
 	t.Parallel()
 
-	certPEM, keyPEM := newTestTLSCertPEM(t)
+	certFile, keyFile := writeCertPair(t, t.TempDir(), "http2-test")
 
 	c := &config.Config{}
-	c.HTTP.TLS.Certificate = certPEM
-	c.HTTP.TLS.PrivateKey = keyPEM
+	c.HTTP.TLS.CertificateFile = certFile
+	c.HTTP.TLS.PrivateKeyFile = keyFile
 	c.HTTP.TLS.TLSMinVersion = "TLS1.2"
 	// An explicit list without an HTTP/2-required AES_128_GCM suite makes
 	// ServeTLS fail during net/http's automatic HTTP/2 setup; Run must
@@ -389,9 +380,19 @@ func TestServerRun_ShouldErrorWhenAlreadyRunning(t *testing.T) {
 func TestServerRun_ShouldErrorWhenTLSCertificateInvalid(t *testing.T) {
 	t.Parallel()
 
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "server.crt")
+	keyFile := filepath.Join(dir, "server.key")
+	if err := os.WriteFile(certFile, []byte("not a certificate"), 0o600); err != nil {
+		t.Fatalf("write certificate: %v", err)
+	}
+	if err := os.WriteFile(keyFile, []byte("not a key"), 0o600); err != nil {
+		t.Fatalf("write key: %v", err)
+	}
+
 	c := &config.Config{}
-	c.HTTP.TLS.Certificate = "not a certificate"
-	c.HTTP.TLS.PrivateKey = "not a key"
+	c.HTTP.TLS.CertificateFile = certFile
+	c.HTTP.TLS.PrivateKeyFile = keyFile
 
 	a := newTestApp(t, c)
 	srv, err := a.initRouter()
@@ -447,15 +448,18 @@ func TestStartAppServer_ShouldLoadCertificateFromFiles(t *testing.T) {
 	if !srv.useTLS {
 		t.Error("expected useTLS to remain true when certificate files are configured")
 	}
-	if len(srv.appSrv.TLSConfig.Certificates) != 1 {
-		t.Errorf("expected 1 loaded certificate, got %d", len(srv.appSrv.TLSConfig.Certificates))
+	if srv.appSrv.TLSConfig.GetCertificate == nil {
+		t.Fatal("expected the TLS config to resolve its certificate per handshake")
+	}
+	if _, err := srv.appSrv.TLSConfig.GetCertificate(&tls.ClientHelloInfo{}); err != nil {
+		t.Errorf("expected a loaded certificate, got %v", err)
 	}
 }
 
 func TestStartAppServer_ShouldErrorWhenTLSSettingsInvalid(t *testing.T) {
 	t.Parallel()
 
-	certPEM, keyPEM := newTestTLSCertPEM(t)
+	certFile, keyFile := writeCertPair(t, t.TempDir(), "invalid-settings-test")
 
 	tests := []struct {
 		name   string
@@ -481,8 +485,8 @@ func TestStartAppServer_ShouldErrorWhenTLSSettingsInvalid(t *testing.T) {
 
 			c := &config.Config{}
 			c.HTTP.Address = "127.0.0.1"
-			c.HTTP.TLS.Certificate = certPEM
-			c.HTTP.TLS.PrivateKey = keyPEM
+			c.HTTP.TLS.CertificateFile = certFile
+			c.HTTP.TLS.PrivateKeyFile = keyFile
 			c.HTTP.TLS.TLSMinVersion = "TLS1.2"
 			tt.mutate(c)
 

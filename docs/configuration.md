@@ -64,6 +64,38 @@ http:
     private_key_file: /etc/ssoossh/tls/server.key
 ```
 
+Paths only — PEM pasted inline is not accepted, because it cannot be
+rotated without rewriting this file.
+
+#### Renewing the certificate
+
+ssoosshd re-reads both files on `SIGHUP` and serves the new certificate on
+connections accepted after it. Nothing restarts and no connection drops.
+Wire it into whatever renews the certificate:
+
+```
+# certbot
+certbot renew --deploy-hook 'systemctl reload ssoosshd'
+
+# systemd unit
+ExecReload=/bin/kill -HUP $MAINPID
+```
+
+Where nothing can signal the process, poll instead:
+
+```yaml
+http:
+  tls:
+    reload_interval: 1h
+```
+
+That is the case for a Kubernetes secret mount, which is replaced as a
+directory symlink rather than written in place — a signal is not available
+and a filesystem watch on the paths would never fire.
+
+A reload that fails is logged at `WARN` and the previous certificate keeps
+serving, so catching the files mid-rewrite costs nothing.
+
 **B) a reverse proxy terminates TLS** and forwards plain HTTP. Remove
 `tls` and set:
 

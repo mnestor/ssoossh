@@ -28,6 +28,7 @@ import (
 
 	"github.com/mnestor/ssoossh/internal/version"
 	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/config/tlsutils"
 	"github.com/mnestor/ssoossh/server/controller"
 	"github.com/mnestor/ssoossh/server/frontend"
 	"github.com/mnestor/ssoossh/server/logging"
@@ -59,6 +60,11 @@ type Server struct {
 	useTLS      bool
 	appListener net.Listener
 	serveErr    chan error // receives the Serve/ServeTLS error unless it's a clean shutdown
+
+	// certSource backs the TLS config's GetCertificate callback and is what
+	// a reload swaps. nil when no certificate is configured, which is also
+	// how Run decides whether to start the reload watcher at all.
+	certSource *tlsutils.CertSource
 }
 
 // initRouter builds the Gin engine and middleware chain using a.config and
@@ -488,6 +494,23 @@ func (s *Server) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to start app server: %w", err)
 	}
 
+	// Certificate reload only means something when this process terminates
+	// TLS itself; behind a TLS-terminating proxy there is no certificate
+	// here to reload.
+	if s.certSource != nil {
+		// The watcher gets its own cancel rather than plain ctx so it stops
+		// whenever Run returns, not only when the caller cancels. Run also
+		// returns when the server fails on its own (see s.serveErr below),
+		// and a watcher still selecting on an uncanceled ctx would hang the
+		// deferred wg.Wait above forever. Declared after that defer, so it
+		// runs before it.
+		watchCtx, stopWatch := context.WithCancel(ctx)
+		defer stopWatch()
+
+		s.wg.Add(1)
+		go s.watchCertificate(watchCtx)
+	}
+
 	s.wg.Add(1)
 	defer func() {
 		// Handle graceful shutdown
@@ -569,7 +592,7 @@ func (s *Server) startAppServer(ctx context.Context) error {
 // a usable certificate was found.
 func (s *Server) configureAppServerTransport() error {
 	var err error
-	s.appSrv.TLSConfig, err = s.config.HTTP.TLS.Build(s.config.FIPSEnabled())
+	s.appSrv.TLSConfig, s.certSource, err = s.config.HTTP.TLS.Build(s.config.FIPSEnabled())
 	if err != nil {
 		return err
 	}

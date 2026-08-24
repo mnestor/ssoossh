@@ -29,18 +29,8 @@ func TestTLSConfigHasKeyPair_ShouldRequireACompletePair(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "should be true when inline certificate and key are set",
-			tls:  TLSConfig{CertificateInfo: CertificateInfo{Certificate: "cert", PrivateKey: "key"}},
-			want: true,
-		},
-		{
 			name: "should be true when certificate and key files are set",
 			tls:  TLSConfig{CertificateInfo: CertificateInfo{CertificateFile: "cert.pem", PrivateKeyFile: "key.pem"}},
-			want: true,
-		},
-		{
-			name: "should be true when inline pair is complete and file pair is partial",
-			tls:  TLSConfig{CertificateInfo: CertificateInfo{Certificate: "cert", PrivateKey: "key", CertificateFile: "cert.pem"}},
 			want: true,
 		},
 		{
@@ -49,18 +39,13 @@ func TestTLSConfigHasKeyPair_ShouldRequireACompletePair(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "should be false when inline certificate lacks a key",
-			tls:  TLSConfig{CertificateInfo: CertificateInfo{Certificate: "cert"}},
+			name: "should be false when the certificate file lacks a key file",
+			tls:  TLSConfig{CertificateInfo: CertificateInfo{CertificateFile: "cert.pem"}},
 			want: false,
 		},
 		{
-			name: "should be false when key file lacks a certificate file",
+			name: "should be false when the key file lacks a certificate file",
 			tls:  TLSConfig{CertificateInfo: CertificateInfo{PrivateKeyFile: "key.pem"}},
-			want: false,
-		},
-		{
-			name: "should be false when both pairs are partial",
-			tls:  TLSConfig{CertificateInfo: CertificateInfo{Certificate: "cert", PrivateKeyFile: "key.pem"}},
 			want: false,
 		},
 	}
@@ -116,23 +101,15 @@ func TestCertificateInfo_LoadX509KeyPair(t *testing.T) {
 
 	certPEM, keyPEM, _ := generateTestCert(t)
 
-	certFile := filepath.Join(t.TempDir(), "cert.pem")
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "cert.pem")
 	if err := os.WriteFile(certFile, certPEM, 0o600); err != nil {
 		t.Fatalf("failed to write cert file: %v", err)
 	}
-	keyFile := filepath.Join(t.TempDir(), "key.pem")
+	keyFile := filepath.Join(dir, "key.pem")
 	if err := os.WriteFile(keyFile, keyPEM, 0o600); err != nil {
 		t.Fatalf("failed to write key file: %v", err)
 	}
-
-	t.Run("should load an inline PEM pair", func(t *testing.T) {
-		t.Parallel()
-
-		info := CertificateInfo{Certificate: string(certPEM), PrivateKey: string(keyPEM)}
-		if _, err := info.LoadX509KeyPair(); err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
 
 	t.Run("should load a PEM file pair", func(t *testing.T) {
 		t.Parallel()
@@ -143,17 +120,16 @@ func TestCertificateInfo_LoadX509KeyPair(t *testing.T) {
 		}
 	})
 
-	t.Run("should prefer the inline pair over a file pair", func(t *testing.T) {
+	t.Run("should populate the leaf so callers can inspect the certificate", func(t *testing.T) {
 		t.Parallel()
 
-		info := CertificateInfo{
-			Certificate:     string(certPEM),
-			PrivateKey:      string(keyPEM),
-			CertificateFile: "/does/not/exist.pem",
-			PrivateKeyFile:  "/does/not/exist.key",
+		info := CertificateInfo{CertificateFile: certFile, PrivateKeyFile: keyFile}
+		cert, err := info.LoadX509KeyPair()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
-		if _, err := info.LoadX509KeyPair(); err != nil {
-			t.Errorf("unexpected error: %v", err)
+		if cert.Leaf == nil {
+			t.Error("expected a parsed Leaf on the loaded certificate")
 		}
 	})
 
@@ -165,19 +141,10 @@ func TestCertificateInfo_LoadX509KeyPair(t *testing.T) {
 		}
 	})
 
-	t.Run("should error on an incomplete inline pair", func(t *testing.T) {
+	t.Run("should error on an incomplete pair", func(t *testing.T) {
 		t.Parallel()
 
-		if _, err := (CertificateInfo{Certificate: string(certPEM)}).LoadX509KeyPair(); err == nil {
-			t.Error("expected an error, got nil")
-		}
-	})
-
-	t.Run("should error when the inline pair fails to parse", func(t *testing.T) {
-		t.Parallel()
-
-		info := CertificateInfo{Certificate: "not a cert", PrivateKey: "not a key"}
-		if _, err := info.LoadX509KeyPair(); err == nil {
+		if _, err := (CertificateInfo{CertificateFile: certFile}).LoadX509KeyPair(); err == nil {
 			t.Error("expected an error, got nil")
 		}
 	})
@@ -192,25 +159,44 @@ func TestCertificateInfo_LoadX509KeyPair(t *testing.T) {
 	})
 }
 
+// writeTestPair writes a fresh self-signed pair into a temp dir and returns
+// the CertificateInfo naming it, for the Build tests below.
+func writeTestPair(t *testing.T) CertificateInfo {
+	t.Helper()
+
+	certPEM, keyPEM, _ := generateTestCert(t)
+	dir := t.TempDir()
+	info := CertificateInfo{
+		CertificateFile: filepath.Join(dir, "cert.pem"),
+		PrivateKeyFile:  filepath.Join(dir, "key.pem"),
+	}
+	if err := os.WriteFile(info.CertificateFile, certPEM, 0o600); err != nil {
+		t.Fatalf("failed to write cert file: %v", err)
+	}
+	if err := os.WriteFile(info.PrivateKeyFile, keyPEM, 0o600); err != nil {
+		t.Fatalf("failed to write key file: %v", err)
+	}
+
+	return info
+}
+
 func TestTLSConfig_Build_ShouldResolveEveryFieldIntoTheStdConfig(t *testing.T) {
 	t.Parallel()
 
-	certPEM, keyPEM, _ := generateTestCert(t)
-
 	cfg := TLSConfig{
-		CertificateInfo: CertificateInfo{Certificate: string(certPEM), PrivateKey: string(keyPEM)},
+		CertificateInfo: writeTestPair(t),
 		CipherSuites:    []string{"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"},
 		TLSMinVersion:   "TLS1.3",
 		CurveNames:      []string{"X25519"},
 	}
 
-	got, err := cfg.Build(false)
+	got, _, err := cfg.Build(false)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if len(got.Certificates) != 1 {
-		t.Errorf("got %d certificates, want 1", len(got.Certificates))
+	if got.GetCertificate == nil {
+		t.Error("expected GetCertificate to be set so renewals reach live listeners")
 	}
 	if got.MinVersion != tls.VersionTLS13 {
 		t.Errorf("got MinVersion %d, want %d", got.MinVersion, tls.VersionTLS13)
@@ -229,10 +215,8 @@ func TestTLSConfig_Build_ShouldResolveEveryFieldIntoTheStdConfig(t *testing.T) {
 func TestTLSConfig_Build_ShouldLeaveCipherSuitesAndCurvesNilWhenEmpty(t *testing.T) {
 	t.Parallel()
 
-	certPEM, keyPEM, _ := generateTestCert(t)
-
-	got, err := TLSConfig{
-		CertificateInfo: CertificateInfo{Certificate: string(certPEM), PrivateKey: string(keyPEM)},
+	got, _, err := TLSConfig{
+		CertificateInfo: writeTestPair(t),
 		TLSMinVersion:   "TLS1.3",
 	}.Build(false)
 	if err != nil {
@@ -250,8 +234,7 @@ func TestTLSConfig_Build_ShouldLeaveCipherSuitesAndCurvesNilWhenEmpty(t *testing
 func TestTLSConfig_Build_ShouldError(t *testing.T) {
 	t.Parallel()
 
-	certPEM, keyPEM, _ := generateTestCert(t)
-	validCert := CertificateInfo{Certificate: string(certPEM), PrivateKey: string(keyPEM)}
+	validCert := writeTestPair(t)
 
 	tests := []struct {
 		name string
@@ -279,7 +262,7 @@ func TestTLSConfig_Build_ShouldError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := tt.cfg.Build(false); err == nil {
+			if _, _, err := tt.cfg.Build(false); err == nil {
 				t.Error("expected an error, got nil")
 			}
 		})
@@ -291,25 +274,27 @@ func TestTLSConfig_Build_ShouldReturnNilConfigAndNilErrorWhenNoCertificateConfig
 
 	cfg := TLSConfig{TLSMinVersion: "TLS1.3"}
 
-	tlsConfig, err := cfg.Build(false)
+	tlsConfig, source, err := cfg.Build(false)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 	if tlsConfig != nil {
 		t.Errorf("expected a nil *tls.Config when no certificate/key pair is configured, got %+v", tlsConfig)
 	}
+	if source != nil {
+		t.Error("expected a nil *CertSource when no certificate/key pair is configured")
+	}
 }
 
 func TestTLSConfig_Build_FIPS(t *testing.T) {
 	t.Parallel()
 
-	certPEM, keyPEM, _ := generateTestCert(t)
-	validCert := CertificateInfo{Certificate: string(certPEM), PrivateKey: string(keyPEM)}
+	validCert := writeTestPair(t)
 
 	t.Run("should default cipher suites and curves to the FIPS-approved sets when unset", func(t *testing.T) {
 		t.Parallel()
 
-		got, err := TLSConfig{CertificateInfo: validCert, TLSMinVersion: "TLS1.3"}.Build(true)
+		got, _, err := TLSConfig{CertificateInfo: validCert, TLSMinVersion: "TLS1.3"}.Build(true)
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
@@ -340,7 +325,7 @@ func TestTLSConfig_Build_FIPS(t *testing.T) {
 			CipherSuites:    []string{"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"},
 			CurveNames:      []string{"CurveP384"},
 		}
-		if _, err := cfg.Build(true); err != nil {
+		if _, _, err := cfg.Build(true); err != nil {
 			t.Errorf("expected no error for an approved cipher suite and curve, got %v", err)
 		}
 	})
@@ -353,7 +338,7 @@ func TestTLSConfig_Build_FIPS(t *testing.T) {
 			TLSMinVersion:   "TLS1.3",
 			CipherSuites:    []string{"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"},
 		}
-		if _, err := cfg.Build(true); err == nil {
+		if _, _, err := cfg.Build(true); err == nil {
 			t.Error("expected ChaCha20-Poly1305 to be rejected under FIPS")
 		}
 	})
@@ -366,7 +351,7 @@ func TestTLSConfig_Build_FIPS(t *testing.T) {
 			TLSMinVersion:   "TLS1.3",
 			CurveNames:      []string{"X25519"},
 		}
-		if _, err := cfg.Build(true); err == nil {
+		if _, _, err := cfg.Build(true); err == nil {
 			t.Error("expected X25519 to be rejected under FIPS")
 		}
 	})
@@ -380,7 +365,7 @@ func TestTLSConfig_Build_FIPS(t *testing.T) {
 			CipherSuites:    []string{"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"},
 			CurveNames:      []string{"X25519"},
 		}
-		if _, err := cfg.Build(false); err != nil {
+		if _, _, err := cfg.Build(false); err != nil {
 			t.Errorf("expected no FIPS restriction when fipsEnabled is false, got %v", err)
 		}
 	})

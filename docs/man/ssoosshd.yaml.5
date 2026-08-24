@@ -384,17 +384,48 @@ proxy sets its own policy instead. Example:
 .RB \(dq "max-age=31536000; includeSubDomains" \(dq .
 Default: unset.
 .TP
-.B http.tls.certificate " / " http.tls.private_key
-Inline PEM certificate (chain) and private key. Both must be set together;
-takes precedence over the
-.B _file
-variants below.
-.TP
 .B http.tls.certificate_file " / " http.tls.private_key_file
-Paths to PEM certificate and private key files, read once at startup.
-Consulted only when the inline pair above is incomplete. If neither pair is
-complete, the server runs without TLS: plain HTTP with HTTP/2 cleartext
-(h2c) enabled.
+Paths to PEM certificate and private key files. Both must be set together.
+If the pair is incomplete, the server runs without TLS: plain HTTP with
+HTTP/2 cleartext (h2c) enabled.
+.IP
+The contents are re-read on
+.BR SIGHUP ,
+and on a timer when
+.B http.tls.reload_interval
+is set, so a renewed certificate is served without a restart. The paths
+themselves are fixed for the process's lifetime.
+.IP
+Inline PEM
+.RB ( http.tls.certificate " / " http.tls.private_key )
+was accepted by earlier versions and has been removed: it cannot be rotated
+without rewriting and rereading this file. Move the material into files and
+point these keys at them.
+.TP
+.BI http.tls.reload_interval: " duration"
+How often to re-read the certificate and key files, picking up a renewed
+certificate without a restart.
+.B 0
+(the default) disables the timer;
+.B SIGHUP
+always reloads regardless.
+.IP
+Set this when nothing signals the process on renewal — a Kubernetes secret
+remount is the motivating case, since the mount is replaced as a directory
+symlink rather than written in place, so neither a signal nor a filesystem
+watch on the paths would notice. With
+.BR certbot (1)
+or systemd, prefer
+.B SIGHUP
+via
+.B --deploy-hook
+or
+.BR ExecReload= .
+.IP
+A reload that fails, including the half-written window where a certificate
+has been replaced but its key has not, is logged at
+.B WARN
+and the previously loaded certificate keeps serving.
 .TP
 .BI http.tls.min_version: " string"
 Minimum TLS protocol version:

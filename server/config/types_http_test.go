@@ -112,9 +112,12 @@ func TestPublicOriginShouldResolveTheBrowserVisibleOrigin(t *testing.T) {
 func TestIsTLSShouldReportTheBrowserVisibleScheme(t *testing.T) {
 	t.Parallel()
 
-	// A syntactically valid keypair is not needed — HasKeyPair only checks
-	// that both halves are present.
-	withKeyPair := tlsutils.TLSConfig{CertificateInfo: tlsutils.CertificateInfo{Certificate: "cert", PrivateKey: "key"}}
+	// The files need not exist — HasKeyPair only checks that both paths are
+	// set, and IsTLS asks nothing more than that.
+	withKeyPair := tlsutils.TLSConfig{CertificateInfo: tlsutils.CertificateInfo{
+		CertificateFile: "server.crt",
+		PrivateKeyFile:  "server.key",
+	}}
 
 	tests := []struct {
 		name string

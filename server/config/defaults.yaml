@@ -357,17 +357,30 @@ http:
   hsts: "max-age=31536000; includeSubDomains"
 
   tls:
-    # Certificate material, inline (certificate / private_key) or by path
-    # (certificate_file / private_key_file). With none of the four set the
+    # Certificate material, by path. Both must be set; with neither set the
     # server runs without TLS — do not do that outside local development.
-    # certificate: |
-    #   -----BEGIN CERTIFICATE-----
-    #   -----END CERTIFICATE-----
-    # private_key: |
-    #   -----BEGIN PRIVATE KEY-----
-    #   -----END PRIVATE KEY-----
+    #
+    # Paths only. Pasting the PEM inline was supported once and was removed:
+    # a file can be rewritten by whatever renews it and re-read without a
+    # restart (see reload_interval below), while PEM in this file can only
+    # change when this file does, and this file is read once at startup.
     # certificate_file: /etc/ssoossh/tls/server.crt
     # private_key_file: /etc/ssoossh/tls/server.key
+
+    # How often to re-read the two files above, picking up a renewed
+    # certificate without a restart. 0 disables the timer; SIGHUP always
+    # reloads regardless of this setting.
+    #
+    # Set this when nothing signals the process on renewal. A Kubernetes
+    # secret remount is the case that needs it: the mount is replaced as a
+    # directory symlink rather than written in place, so neither a signal
+    # nor a filesystem watch on the paths above would notice. With certbot
+    # or systemd, prefer SIGHUP (certbot --deploy-hook, or ExecReload=) and
+    # leave this at 0.
+    #
+    # A reload that fails — a half-written pair, a missing file — is logged
+    # and the previous certificate keeps serving.
+    reload_interval: 0
 
     # Minimum negotiated version. Loose forms all resolve the same way:
     # "TLS1.2", "tls12", "VersionTLS12", "TLS-1-2". One of TLS1.0, TLS1.1

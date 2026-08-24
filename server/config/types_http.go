@@ -159,7 +159,7 @@ type HTTPSettings struct {
 
 	// Hsts (HTTP Strict-Transport-Security) is sent in the Strict-Transport-Security
 	// header on every response, but only when the server terminates TLS itself
-	// (i.e., TLS.Certificate or TLS.CertificateFile is configured). Browsers
+	// (i.e., TLS.CertificateFile and TLS.PrivateKeyFile are configured). Browsers
 	// ignore HSTS over plain HTTP. Empty disables the header, useful when a
 	// TLS-terminating reverse proxy in front sets its own policy. Typical
 	// values include "max-age=31536000; includeSubDomains".
