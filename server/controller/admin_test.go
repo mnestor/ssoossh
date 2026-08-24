@@ -836,3 +836,171 @@ func TestAdminDisableUserHandler_ConsequencesShowExpireTime(t *testing.T) {
 			resp.Data.ExpireAtTimestamp, expectedMin, expectedMax)
 	}
 }
+
+// TestListUsersHandler_AgainstARealDatabase exercises the directory against a
+// real schema rather than a mock handle.
+//
+// The authorization tests above answer "who may call this" and deliberately
+// use a mock database, so they pass whatever the query does. That left the
+// query itself unexercised, and it was broken: the count ran on a handle with
+// no model, so every call failed with gorm's "Table not set" and the
+// directory never listed anyone. These cases are the ones that would have
+// caught it.
+func TestListUsersHandler_AgainstARealDatabase(t *testing.T) {
+	seed := []model.User{
+		{ID: "u-alice", Subject: "sub-alice", Username: "alice", Email: "alice@corp.example"},
+		{ID: "u-bob", Subject: "sub-bob", Username: "bob", Email: "bob@corp.example"},
+		{ID: "u-carol", Subject: "sub-carol", Username: "carol", Email: "carol@other.example"},
+	}
+
+	tests := []struct {
+		name      string
+		query     string
+		wantCount int
+		wantTotal float64
+	}{
+		{
+			name:      "should list every user when nothing is searched for",
+			query:     "",
+			wantCount: 3,
+			wantTotal: 3,
+		},
+		{
+			name:      "should narrow to the users a search matches",
+			query:     "?q=corp",
+			wantCount: 2,
+			wantTotal: 2,
+		},
+		{
+			name:      "should report a total that counts matches, not the page",
+			query:     "?limit=1",
+			wantCount: 1,
+			wantTotal: 3,
+		},
+		{
+			name:      "should return an empty page for a search matching nobody",
+			query:     "?q=nobody-by-that-name",
+			wantCount: 0,
+			wantTotal: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newTestDB(t)
+			for i := range seed {
+				if err := db.Create(&seed[i]).Error; err != nil {
+					t.Fatalf("seed %s: %v", seed[i].Username, err)
+				}
+			}
+
+			cfg := newTestConfig(t)
+			identity := &service.Identity{
+				Subject:  "sub-admin",
+				Username: "admin",
+				Groups:   []string{cfg.Admin.RequireGroup},
+			}
+			r := routerWithAuth(t, cfg, db, identity)
+
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/users"+tt.query, nil))
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("GET /admin/users%s = %d, want 200, body: %s", tt.query, w.Code, w.Body.String())
+			}
+
+			var resp struct {
+				Data struct {
+					Users []map[string]any `json:"users"`
+					Meta  map[string]any   `json:"meta"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decode: %v, body: %s", err, w.Body.String())
+			}
+
+			if len(resp.Data.Users) != tt.wantCount {
+				t.Errorf("returned %d users, want %d", len(resp.Data.Users), tt.wantCount)
+			}
+			if got, _ := resp.Data.Meta["total"].(float64); got != tt.wantTotal {
+				t.Errorf("meta.total = %v, want %v", got, tt.wantTotal)
+			}
+		})
+	}
+}
+
+// TestGetUserHandler_AgainstARealDatabase exercises the detail endpoint
+// against a real schema, for the same reason as the directory test above: the
+// authorization cases run on a mock handle and cannot see a broken query.
+func TestGetUserHandler_AgainstARealDatabase(t *testing.T) {
+	db := newTestDB(t)
+	seeded := model.User{
+		ID:              "u-alice",
+		Subject:         "sub-alice",
+		Username:        "alice",
+		Email:           "alice@corp.example",
+		OtherAccounts:   `["a.smith"]`,
+		ServiceAccounts: `["svc-deploy"]`,
+		ExtraFields:     `{"employee_id":"E-40921"}`,
+	}
+	if err := db.Create(&seeded).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	cfg := newTestConfig(t)
+	identity := &service.Identity{
+		Subject:  "sub-admin",
+		Username: "admin",
+		Groups:   []string{cfg.Admin.RequireGroup},
+	}
+	r := routerWithAuth(t, cfg, db, identity)
+
+	t.Run("should return the stored identity", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/users/u-alice", nil))
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET /admin/users/u-alice = %d, want 200, body: %s", w.Code, w.Body.String())
+		}
+		var resp struct {
+			Data map[string]any `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if resp.Data["username"] != "alice" {
+			t.Errorf("username = %v, want alice", resp.Data["username"])
+		}
+	})
+
+	t.Run("should decode the JSON-encoded account lists", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/users/u-alice", nil))
+
+		var resp struct {
+			Data struct {
+				OtherAccounts   []string       `json:"other_accounts"`
+				ServiceAccounts []string       `json:"service_accounts"`
+				ExtraFields     map[string]any `json:"extra_fields"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if len(resp.Data.OtherAccounts) != 1 || resp.Data.OtherAccounts[0] != "a.smith" {
+			t.Errorf("other_accounts = %v, want [a.smith]", resp.Data.OtherAccounts)
+		}
+		if resp.Data.ExtraFields["employee_id"] != "E-40921" {
+			t.Errorf("extra_fields = %v, want employee_id E-40921", resp.Data.ExtraFields)
+		}
+	})
+
+	t.Run("should answer 404 for a user that does not exist", func(t *testing.T) {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/users/nobody", nil))
+
+		if w.Code != http.StatusNotFound {
+			t.Errorf("GET /admin/users/nobody = %d, want 404, body: %s", w.Code, w.Body.String())
+		}
+	})
+}

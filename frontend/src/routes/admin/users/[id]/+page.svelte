@@ -17,7 +17,11 @@
 	let showDisableConfirm = $state(false);
 	let disableConsequences: DisableUserConsequences | null = $state(null);
 
-	const userId = page.params.id ?? '';
+	// $derived, not a plain const: on a client-side navigation the component
+	// initialises before the router has populated params, so capturing the
+	// value once yields an empty id. The approval page at
+	// routes/approve/[id] reads it the same way for the same reason.
+	const userId = $derived(page.params.id ?? '');
 
 	async function loadUser() {
 		busy = true;
@@ -129,7 +133,12 @@
 						{actionBusy ? 'Enabling...' : 'Re-enable'}
 					</Button>
 				{:else}
-					<Button variant="danger" disabled={actionBusy || !config} onclick={openDisableConfirm}>
+					<Button
+						variant="danger"
+						testid="disable-user"
+						disabled={actionBusy || !config}
+						onclick={openDisableConfirm}
+					>
 						{actionBusy ? 'Disabling...' : 'Disable'}
 					</Button>
 				{/if}
@@ -153,7 +162,7 @@
 					<p>{new Date(user.updated_at).toLocaleString()}</p>
 				</div>
 				{#if user.disabled_at}
-					<div>
+					<div data-testid="user-disabled-badge">
 						<p class="text-xs font-semibold text-danger">Disabled At</p>
 						<p>{new Date(user.disabled_at).toLocaleString()}</p>
 					</div>
@@ -248,7 +257,12 @@
 						>
 							Cancel
 						</Button>
-						<Button variant="danger" disabled={actionBusy} onclick={handleDisable}>
+						<Button
+							variant="danger"
+							testid="confirm-disable"
+							disabled={actionBusy}
+							onclick={handleDisable}
+						>
 							{actionBusy ? 'Disabling...' : 'Disable'}
 						</Button>
 					</div>

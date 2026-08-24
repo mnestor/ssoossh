@@ -48,6 +48,7 @@
 		label="Search users"
 		placeholder="username, email, or subject..."
 		onsearch={handleSearch}
+		testid="search-users"
 	/>
 
 	{#if error}

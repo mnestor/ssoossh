@@ -104,6 +104,27 @@ func (b *Browser) WaitVisible(t *testing.T, selector string) {
 	}
 }
 
+// Text returns the visible text of the first node matching selector. Useful
+// where the assertion is about a value the page rendered rather than about
+// an element existing -- "the contact address is the configured one", not
+// "there is a contact address".
+func (b *Browser) Text(t *testing.T, selector string) string {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
+	defer cancel()
+
+	var text string
+	if err := chromedp.Run(ctx,
+		chromedp.WaitVisible(selector, chromedp.ByQuery),
+		chromedp.Text(selector, &text, chromedp.ByQuery),
+	); err != nil {
+		b.screenshotOnFailure(t)
+		t.Fatalf("harness: reading the text of %s failed: %v", selector, err)
+	}
+	return text
+}
+
 // AssertNotPresent fails the test if selector matches any node.
 func (b *Browser) AssertNotPresent(t *testing.T, selector string) {
 	t.Helper()

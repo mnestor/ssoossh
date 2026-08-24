@@ -168,9 +168,14 @@ func (a *adminController) listUsersHandler(g *gin.Context) {
 		return
 	}
 
-	// Search over username, email, and subject
+	// Search over username, email, and subject.
+	//
+	// Model() rather than relying on the destination type: Count runs before
+	// any Find, so without a model named here gorm has no table to count and
+	// fails with "Table not set". The Find below would have inferred it from
+	// the slice, which is why this only broke on the count.
 	whereSQL, args := paging.Filter(params.Query, "username", "email", "subject")
-	q := a.db.WithContext(g.Request.Context())
+	q := a.db.WithContext(g.Request.Context()).Model(&model.User{})
 	if whereSQL != "" {
 		q = q.Where(whereSQL, args...)
 	}
