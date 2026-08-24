@@ -181,9 +181,7 @@ func StartBrokenAgent(t *testing.T) string {
 	// For List(), it returns an empty key list (agent looks empty).
 	// For Add(), it closes the connection to fail the operation.
 	go func() {
-		defer func() {
-			_ = listener.Close() //nolint:errcheck
-		}()
+		defer listener.Close()
 
 		for {
 			conn, err := listener.Accept()
@@ -196,7 +194,7 @@ func StartBrokenAgent(t *testing.T) string {
 	}()
 
 	t.Cleanup(func() {
-		_ = listener.Close() //nolint:errcheck
+		listener.Close()
 	})
 
 	return socket
@@ -206,18 +204,13 @@ func StartBrokenAgent(t *testing.T) string {
 // It responds to SSH_AGENTC_REQUEST_IDENTITIES (11) with an empty list,
 // and closes the connection on any Add or other operation.
 func handleBrokenAgentConn(conn net.Conn) {
-	defer func() {
-		_ = conn.Close() //nolint:errcheck
-	}()
+	defer conn.Close()
 
 	for {
 		// Read message length (4 bytes, big-endian).
 		var msgLen uint32
 		if err := binary.Read(conn, binary.BigEndian, &msgLen); err != nil {
-			if err != io.EOF {
-				_ = err //nolint:errcheck
-			}
-			return // Connection closed or error
+			return // Connection closed or error (not covered: handles all error types)
 		}
 
 		if msgLen > 256*1024 { // Safety limit
@@ -227,7 +220,7 @@ func handleBrokenAgentConn(conn net.Conn) {
 		// Read message type and payload.
 		msg := make([]byte, msgLen)
 		if _, err := io.ReadFull(conn, msg); err != nil {
-			return // Connection closed or error
+			return // Connection closed or error (not covered: handles all error types)
 		}
 
 		if len(msg) == 0 {
@@ -241,7 +234,9 @@ func handleBrokenAgentConn(conn net.Conn) {
 			// Respond with SSH_AGENT_IDENTITIES_ANSWER (12) containing 0 keys.
 			// Format: 1 byte for type + 4 bytes for number of keys (0).
 			response := []byte{12, 0, 0, 0, 0} // Type 12, 0 keys (as uint32)
-			if err := binary.Write(conn, binary.BigEndian, uint32(len(response))); err != nil {
+			// respLen is always 5 bytes, safe to cast to uint32 for protocol write.
+			respLen := uint32(5)
+			if err := binary.Write(conn, binary.BigEndian, respLen); err != nil {
 				return
 			}
 			if _, err := conn.Write(response); err != nil {
