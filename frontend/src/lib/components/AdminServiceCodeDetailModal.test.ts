@@ -277,7 +277,6 @@ describe('AdminServiceCodeDetailModal', () => {
 	describe('admin actions', () => {
 		it('should have a reassignment field that accepts user IDs', async () => {
 			mockDetail(enrollment());
-			const user = userEvent.setup();
 			render(AdminServiceCodeDetailModal, {
 				enrollment: enrollment(),
 				now,
