@@ -11,9 +11,10 @@ import (
 // NewUserController registers the current-user route on group, behind
 // sessionAuthMiddleware.
 //
-// There is deliberately no route to list or read *other* users. Nothing in
-// the UI needs one yet, and an endpoint that enumerates identities is worth
-// adding on demand with an authorization rule rather than by default.
+// Auditor-scoped endpoints to list and read other users (for the admin
+// directory) live in the admin controller, not here: those require explicit
+// auditor authorization, while this endpoint is scoped to each user's own
+// identity.
 func NewUserController(group *gin.RouterGroup, c *config.Config, sessionAuthMiddleware gin.HandlerFunc) {
 	uc := &userController{config: c}
 
