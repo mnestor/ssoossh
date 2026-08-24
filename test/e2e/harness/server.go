@@ -40,6 +40,22 @@ type ServerOptions struct {
 	// under the cert_options key the template already renders, and a
 	// duplicate top-level key is a YAML error — hence PAMRequireGroup below.
 	ExtraConfigYAML string
+	// AdminRequireGroup and AuditorGroup set admin.require_group and
+	// admin.auditor_group. Both fail closed: with neither set,
+	// config.AdminConfig.GrantsAuditor denies every caller, so a test that
+	// logs in carrying an "auditor" group still gets refused. A test
+	// exercising an admin or auditor surface has to name the groups here.
+	AdminRequireGroup string
+	AuditorGroup      string
+
+	// AdminDisableGracePeriod sets admin.disable_grace_period (e.g., "30m").
+	// Empty uses the product default.
+	AdminDisableGracePeriod string
+	// AdminContactEmail sets admin.contact_email. Empty disables the display.
+	AdminContactEmail string
+	// AdminDisabledMessage sets admin.disabled_message. Empty disables the display.
+	AdminDisabledMessage string
+
 	// PAMRequireGroup sets cert_options.pam.require_group, which fails
 	// closed: unset (the default) means the server issues no PAM
 	// certificates at all (see CertOptionsPAM.RequireGroup).
@@ -67,12 +83,6 @@ type ServerOptions struct {
 	// "authentication:" key, and the later one wins, silently discarding
 	// client_id and provider_url.
 	ServiceAccountsField string
-
-	// AdminRequireGroup sets admin.require_group. Empty leaves it unset,
-	// which disables admin access (group-based authorization is not enforced).
-	AdminRequireGroup string
-	// AuditorGroup sets admin.auditor_group. Empty leaves it unset.
-	AuditorGroup string
 }
 
 // Server is a running ssoosshd subprocess.
@@ -144,23 +154,26 @@ func newServerConfig(t *testing.T, idp *IdentityProvider, opts ServerOptions) (c
 	sshKeyPEM, caPublicKey := generateCAKey(t)
 
 	configYAML := renderServerConfig(serverConfigData{
-		PublicURL:            baseURL,
-		ServerName:           "127.0.0.1",
-		Address:              "127.0.0.1",
-		Port:                 port,
-		ClientID:             harnessClientID,
-		ClientSecret:         harnessClientSecret,
-		ProviderURL:          idp.URL(),
-		SSHKeyPEM:            sshKeyPEM,
-		ValidDuration:        opts.ValidDuration,
-		Extensions:           opts.Extensions,
-		PAMRequireGroup:      opts.PAMRequireGroup,
-		DSN:                  dsn,
-		UserKeyIDTemplate:    opts.UserKeyIDTemplate,
-		ExtraClaimFields:     opts.ExtraClaimFields,
-		ServiceAccountsField: opts.ServiceAccountsField,
-		AdminRequireGroup:    opts.AdminRequireGroup,
-		AuditorGroup:         opts.AuditorGroup,
+		PublicURL:               baseURL,
+		ServerName:              "127.0.0.1",
+		Address:                 "127.0.0.1",
+		Port:                    port,
+		ClientID:                harnessClientID,
+		ClientSecret:            harnessClientSecret,
+		ProviderURL:             idp.URL(),
+		SSHKeyPEM:               sshKeyPEM,
+		ValidDuration:           opts.ValidDuration,
+		Extensions:              opts.Extensions,
+		AdminRequireGroup:       opts.AdminRequireGroup,
+		AuditorGroup:            opts.AuditorGroup,
+		AdminDisableGracePeriod: opts.AdminDisableGracePeriod,
+		AdminContactEmail:       opts.AdminContactEmail,
+		AdminDisabledMessage:    opts.AdminDisabledMessage,
+		PAMRequireGroup:         opts.PAMRequireGroup,
+		DSN:                     dsn,
+		UserKeyIDTemplate:       opts.UserKeyIDTemplate,
+		ExtraClaimFields:        opts.ExtraClaimFields,
+		ServiceAccountsField:    opts.ServiceAccountsField,
 	}) + opts.ExtraConfigYAML
 
 	configPath = filepath.Join(t.TempDir(), "ssoosshd.yaml")
@@ -311,23 +324,26 @@ func generateCAKey(t *testing.T) (privatePEM, publicAuthorizedKey string) {
 }
 
 type serverConfigData struct {
-	PublicURL            string
-	ServerName           string
-	Address              string
-	Port                 int
-	ClientID             string
-	ClientSecret         string
-	ProviderURL          string
-	SSHKeyPEM            string
-	ValidDuration        string
-	Extensions           []string
-	PAMRequireGroup      string
-	DSN                  string
-	UserKeyIDTemplate    string
-	ExtraClaimFields     map[string]string
-	ServiceAccountsField string
-	AdminRequireGroup    string
-	AuditorGroup         string
+	PublicURL               string
+	ServerName              string
+	Address                 string
+	Port                    int
+	ClientID                string
+	ClientSecret            string
+	ProviderURL             string
+	SSHKeyPEM               string
+	ValidDuration           string
+	Extensions              []string
+	AdminRequireGroup       string
+	AuditorGroup            string
+	AdminDisableGracePeriod string
+	AdminContactEmail       string
+	AdminDisabledMessage    string
+	PAMRequireGroup         string
+	DSN                     string
+	UserKeyIDTemplate       string
+	ExtraClaimFields        map[string]string
+	ServiceAccountsField    string
 }
 
 // renderServerConfig builds the ssoosshd config YAML from d directly (not
@@ -414,16 +430,35 @@ func renderServerConfig(d serverConfigData) string {
 		fmt.Fprintf(&b, "    require_group: %q\n", d.PAMRequireGroup)
 	}
 
-	// Render admin block only if at least one setting is configured.
-	if d.AdminRequireGroup != "" || d.AuditorGroup != "" {
-		fmt.Fprintf(&b, "admin:\n")
-		if d.AdminRequireGroup != "" {
-			fmt.Fprintf(&b, "  require_group: %q\n", d.AdminRequireGroup)
-		}
-		if d.AuditorGroup != "" {
-			fmt.Fprintf(&b, "  auditor_group: %q\n", d.AuditorGroup)
-		}
-	}
+	renderAdminConfig(&b, d)
 
 	return b.String()
+}
+
+// renderAdminConfig writes the admin block if any admin option is set.
+func renderAdminConfig(b *strings.Builder, d serverConfigData) {
+	// admin is a top-level key, so it closes the cert_options tree above.
+	// Emitted when a test configures any admin option: leaving the block out
+	// entirely is what the product default looks like, and writing empty
+	// strings would instead assert that "" is a value.
+	if d.AdminRequireGroup == "" && d.AuditorGroup == "" && d.AdminDisableGracePeriod == "" && d.AdminContactEmail == "" && d.AdminDisabledMessage == "" {
+		return
+	}
+
+	fmt.Fprintf(b, "admin:\n")
+	if d.AdminRequireGroup != "" {
+		fmt.Fprintf(b, "  require_group: %q\n", d.AdminRequireGroup)
+	}
+	if d.AuditorGroup != "" {
+		fmt.Fprintf(b, "  auditor_group: %q\n", d.AuditorGroup)
+	}
+	if d.AdminDisableGracePeriod != "" {
+		fmt.Fprintf(b, "  disable_grace_period: %q\n", d.AdminDisableGracePeriod)
+	}
+	if d.AdminContactEmail != "" {
+		fmt.Fprintf(b, "  contact_email: %q\n", d.AdminContactEmail)
+	}
+	if d.AdminDisabledMessage != "" {
+		fmt.Fprintf(b, "  disabled_message: %q\n", d.AdminDisabledMessage)
+	}
 }
