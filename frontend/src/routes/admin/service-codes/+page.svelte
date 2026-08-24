@@ -2,14 +2,13 @@
 	import { pushState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { listAdminEnrollments } from '$lib/api/endpoints';
-	import type { AdminEnrollment, AdminEnrollmentsResponse } from '$lib/api/types';
+	import type { AdminEnrollment } from '$lib/api/types';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import Pager from '$lib/components/Pager.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import ServiceCodeRow from '$lib/components/ServiceCodeRow.svelte';
-	import { isExpired } from '$lib/format';
 
 	let enrollments = $state<AdminEnrollment[]>([]);
 	let loadError = $state<string | null>(null);
@@ -63,10 +62,6 @@
 	function onPageChange(offset: number) {
 		currentOffset = offset;
 	}
-
-	// Separate live and expired enrollments
-	const live = $derived(enrollments.filter((e) => !isExpired(e.expires_at, now)));
-	const dead = $derived(enrollments.filter((e) => isExpired(e.expires_at, now)));
 </script>
 
 <svelte:head>
@@ -101,7 +96,12 @@
 	{:else}
 		<div class="flex flex-col gap-2.5">
 			{#each enrollments as enrollment (enrollment.id)}
-				<ServiceCodeRow {enrollment} {now} onclick={() => openDetail(enrollment.id)} testid="enrollment-row" />
+				<ServiceCodeRow
+					{enrollment}
+					{now}
+					onclick={() => openDetail(enrollment.id)}
+					testid="enrollment-row"
+				/>
 			{/each}
 		</div>
 

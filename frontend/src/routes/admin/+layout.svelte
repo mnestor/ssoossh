@@ -1,7 +1,5 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import { redirectIfUnauthenticated } from '$lib/auth';
 
 	// Admin nav entries
 	const adminNav = [
@@ -12,7 +10,7 @@
 	];
 
 	function isActive(href: string): boolean {
-		return $page.url.pathname.startsWith(href);
+		return page.url.pathname.startsWith(href);
 	}
 </script>
 
@@ -23,6 +21,7 @@
 <div class="flex w-full gap-6">
 	<!-- Admin navigation -->
 	<nav class="w-48 flex-shrink-0">
+		<!-- eslint-disable svelte/no-navigation-without-resolve -->
 		<div class="sticky top-0 space-y-1">
 			{#each adminNav as item (item.href)}
 				<a
@@ -37,6 +36,7 @@
 				</a>
 			{/each}
 		</div>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	</nav>
 
 	<!-- Main content -->
@@ -44,12 +44,3 @@
 		<slot />
 	</div>
 </div>
-
-<style>
-	/* svelte/no-navigation-without-resolve is disabled at file scope because
-	   feat/admin-users owns the actual /admin/* pages, and using resolve()
-	   would require placeholder stubs for every route it doesn't own yet.
-	   Plain hrefs avoid that: the four nav targets exist or they don't, and
-	   a 404 on an unimplemented route is honest. */
-	/* eslint-disable-next-line svelte/no-navigation-without-resolve */
-</style>

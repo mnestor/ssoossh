@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { ApiError } from '$lib/api/client';
-	import { expireEnrollment, getAdminEnrollmentDetail, reassignEnrollment } from '$lib/api/endpoints';
+	import {
+		expireEnrollment,
+		getAdminEnrollmentDetail,
+		reassignEnrollment
+	} from '$lib/api/endpoints';
 	import type { AdminEnrollment } from '$lib/api/types';
 	import { expiryLabel, formatDateTime, formatDuration, isExpired } from '$lib/format';
 	import Alert from './Alert.svelte';
@@ -135,7 +139,9 @@
 		}
 	}
 
-	const subject = $derived(enrollment.principals.length > 0 ? enrollment.principals.join(', ') : 'unknown account');
+	const subject = $derived(
+		enrollment.principals.length > 0 ? enrollment.principals.join(', ') : 'unknown account'
+	);
 	const expired = $derived(isExpired(enrollment.expires_at, now));
 	const shortId = $derived(enrollment.id.slice(0, 5));
 	const certificateLifetime = $derived(
@@ -148,9 +154,9 @@
 	);
 	const hasOptions = $derived(
 		enrollment.options.extensions.length > 0 ||
-		!!enrollment.options.force_command ||
-		!!enrollment.options.source_addresses?.length ||
-		enrollment.options.no_touch_required
+			!!enrollment.options.force_command ||
+			!!enrollment.options.source_addresses?.length ||
+			enrollment.options.no_touch_required
 	);
 </script>
 
@@ -259,7 +265,9 @@
 			<div>
 				<SectionLabel>The code itself</SectionLabel>
 				<dl class="divide-y divide-border-subtle">
-					<DetailRow label="Approved by">{enrollment.approved_by_username} ({enrollment.approved_by_email})</DetailRow>
+					<DetailRow label="Approved by"
+						>{enrollment.approved_by_username} ({enrollment.approved_by_email})</DetailRow
+					>
 					<DetailRow label="Approved">{formatDateTime(enrollment.created_at)}</DetailRow>
 					<DetailRow label={expired ? 'Stopped working' : 'Stops working'} icon="clock">
 						{formatDateTime(enrollment.expires_at)}
@@ -312,7 +320,8 @@
 					</label>
 					<p class="text-[13px] text-ink-muted">
 						Transfer ownership to another user. They must have access to the service account
-						<strong class="font-mono">{subject}</strong>. This enables team continuity when someone leaves.
+						<strong class="font-mono">{subject}</strong>. This enables team continuity when someone
+						leaves.
 					</p>
 					<div class="flex gap-2">
 						<input
@@ -346,14 +355,18 @@
 						{:else}
 							<div class="space-y-2 rounded-lg bg-danger-surface p-3">
 								<p class="text-[13px] text-ink">
-									Expiring this code will prevent further certificate retrievals. Certificates already issued
-									will continue to work until they expire on their own.
+									Expiring this code will prevent further certificate retrievals. Certificates
+									already issued will continue to work until they expire on their own.
 								</p>
 								<div class="flex gap-2">
 									<Button variant="danger" disabled={expiring} onclick={handleExpire}>
 										{expiring ? 'Expiring…' : 'Confirm expiry'}
 									</Button>
-									<Button variant="ghost" disabled={expiring} onclick={() => (expireConfirm = false)}>
+									<Button
+										variant="ghost"
+										disabled={expiring}
+										onclick={() => (expireConfirm = false)}
+									>
 										Cancel
 									</Button>
 								</div>
