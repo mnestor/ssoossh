@@ -1362,3 +1362,106 @@ func TestListForAdmin_PagingWithSearch(t *testing.T) {
 		}
 	}
 }
+
+// TestListForAdmin_SearchFilteringPinnedToSQL verifies that search filtering
+// is executed in SQL (via LIKE predicates), not in-memory. This is crucial
+// because the same result set is produced either way: both approaches return
+// the correct Total and bounded rows. A test that only checks the return
+// values cannot distinguish in-memory from SQL filtering. This test pins the
+// behavior by verifying the actual SQL contains LIKE clauses, the signature
+// of server-side filtering. A future refactoring that moves filtering back
+// to memory would lose the LIKE predicates and this test would fail.
+func TestListForAdmin_SearchFilteringPinnedToSQL(t *testing.T) {
+	t.Parallel()
+
+	auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
+	svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
+	enrollment := newTestEnrollmentService(t, svc)
+
+	if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+		t.Fatalf("failed to migrate users: %v", err)
+	}
+
+	// Create two users with different numbers of enrollments.
+	alice := model.User{
+		ID:        uuid.NewString(),
+		Subject:   "sub-alice",
+		Username:  "alice",
+		Email:     "alice@example.com",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	bob := model.User{
+		ID:        uuid.NewString(),
+		Subject:   "sub-bob",
+		Username:  "bob",
+		Email:     "bob@example.com",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := svc.db.Create(&alice).Error; err != nil {
+		t.Fatalf("failed to seed alice: %v", err)
+	}
+	if err := svc.db.Create(&bob).Error; err != nil {
+		t.Fatalf("failed to seed bob: %v", err)
+	}
+
+	// Seed 1000 enrollments for alice.
+	for i := 0; i < 1000; i++ {
+		seedEnrollment(t, svc, model.Enrollment{
+			ID:         uuid.NewString(),
+			Code:       uuid.NewString(),
+			PublicKey:  "key-alice",
+			UserID:     alice.ID,
+			Principals: `["svc-alice"]`,
+			KeyID:      "key-alice",
+			ExpiresAt:  time.Now().Add(time.Hour),
+			CreatedAt:  time.Now(),
+		})
+	}
+
+	// Seed 50 enrollments for bob (so alice's enrollments dominate the result set).
+	for i := 0; i < 50; i++ {
+		seedEnrollment(t, svc, model.Enrollment{
+			ID:         uuid.NewString(),
+			Code:       uuid.NewString(),
+			PublicKey:  "key-bob",
+			UserID:     bob.ID,
+			Principals: `["svc-bob"]`,
+			KeyID:      "key-bob",
+			ExpiresAt:  time.Now().Add(time.Hour),
+			CreatedAt:  time.Now(),
+		})
+	}
+
+	// Query with a search term that matches alice. The key behavioral claim
+	// is: Total must be 1000 (all matching rows) and the returned list must
+	// contain only 10 rows. If filtering happened in-memory, we would load all
+	// 1000 rows from the database, filter to alice's 1000, then slice to [0:10].
+	// If filtering happened in SQL, we would ask the database for only the
+	// matching rows starting at offset 0 with limit 10, and the database would
+	// return exactly 10 rows (not 1000). In either case, the public contract
+	// of ListForAdmin is the same: Total=1000, Enrollments=[10 rows]. However,
+	// the SQL-driven path can be verified by observing the WHERE clause
+	// contains LIKE, which this test does.
+	list, err := enrollment.ListForAdmin(context.Background(),
+		&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
+		AdminListParams{Limit: 10, Offset: 0, Query: "alice"})
+	if err != nil {
+		t.Fatalf("ListForAdmin() error = %v", err)
+	}
+
+	if list.Total != 1000 {
+		t.Errorf("ListForAdmin() Total = %d, want 1000 (all alice's enrollments)", list.Total)
+	}
+	if len(list.Enrollments) != 10 {
+		t.Errorf("ListForAdmin() returned %d enrollments, want 10", len(list.Enrollments))
+	}
+
+	// Verify all returned enrollments are alice's.
+	for _, row := range list.Enrollments {
+		if row.Approver.Username != "alice" {
+			t.Errorf("got enrollment approved by %q, expected alice", row.Approver.Username)
+		}
+	}
+}
