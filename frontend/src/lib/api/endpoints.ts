@@ -2,12 +2,18 @@ import { isInternalPath } from '$lib/paths';
 
 import { ApiError, request } from './client';
 import type {
+	AdminUserDetail,
+	AdminUsersListResponse,
 	ApproveResult,
 	CertificateListResponse,
 	CurrentUser,
 	DenyResult,
+	DisableUserConsequences,
+	DisableUserRequestBody,
+	EffectiveConfigResponse,
 	EnrollmentRetrievalsResponse,
 	NotificationPreferences,
+	ReEnableUserRequestBody,
 	RequestDetail,
 	ServiceEnrollmentsResponse
 } from './types';
@@ -130,6 +136,68 @@ export function listRetrievals(
  */
 export function listServiceEnrollments(signal?: AbortSignal): Promise<ServiceEnrollmentsResponse> {
 	return request<ServiceEnrollmentsResponse>('/certs/service/enrollments', { signal });
+}
+
+/**
+ * GET /api/admin/config — the effective server configuration (auditor-only).
+ */
+export function getAdminConfig(signal?: AbortSignal): Promise<EffectiveConfigResponse> {
+	return request<EffectiveConfigResponse>('/admin/config', { signal });
+}
+
+/**
+ * GET /api/admin/users — paginated list of all users (auditor-only).
+ */
+export function getAdminUsers(options?: {
+	q?: string;
+	limit?: number;
+	offset?: number;
+}): Promise<AdminUsersListResponse> {
+	const params = new URLSearchParams();
+	if (options?.q) {
+		params.append('q', options.q);
+	}
+	if (options?.limit) {
+		params.append('limit', options.limit.toString());
+	}
+	if (options?.offset) {
+		params.append('offset', options.offset.toString());
+	}
+	const url = params.toString() ? `/admin/users?${params.toString()}` : '/admin/users';
+	return request<AdminUsersListResponse>(url);
+}
+
+/**
+ * GET /api/admin/users/:id — detailed info for one user (auditor-only).
+ */
+export function getAdminUser(id: string): Promise<AdminUserDetail> {
+	return request<AdminUserDetail>(`/admin/users/${encodeURIComponent(id)}`);
+}
+
+/**
+ * PATCH /api/admin/users/:id/disable — disable a user (admin-only).
+ */
+export function disableUser(
+	id: string,
+	body?: DisableUserRequestBody
+): Promise<DisableUserConsequences> {
+	return request<DisableUserConsequences>(`/admin/users/${encodeURIComponent(id)}/disable`, {
+		method: 'PATCH',
+		body
+	});
+}
+
+/**
+ * PATCH /api/admin/users/:id/enable — re-enable a user (admin-only).
+ */
+export function enableUser(
+	id: string,
+	body?: ReEnableUserRequestBody
+): Promise<{ enabled: boolean }> {
+	return request<{ enabled: boolean }>(`/admin/users/${encodeURIComponent(id)}/enable`, {
+		method: 'PATCH',
+		body
+	});
 }
 
 /**

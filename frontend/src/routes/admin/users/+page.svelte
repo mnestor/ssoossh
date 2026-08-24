@@ -4,7 +4,7 @@
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import Pager from '$lib/components/Pager.svelte';
 	import { getAdminUsers } from '$lib/api/endpoints';
-	import type { AdminUsersListResponse, PageMeta } from '$lib/api/types';
+	import type { AdminUsersListResponse } from '$lib/api/types';
 
 	let users: AdminUsersListResponse | null = $state(null);
 	let error: string | null = $state(null);
@@ -44,7 +44,11 @@
 		<p class="text-sm text-ink-muted">Directory of all users with disable controls</p>
 	</div>
 
-	<SearchInput label="Search users" placeholder="username, email, or subject..." onsearch={handleSearch} />
+	<SearchInput
+		label="Search users"
+		placeholder="username, email, or subject..."
+		onsearch={handleSearch}
+	/>
 
 	{#if error}
 		<div class="rounded-lg border border-danger-surface bg-danger-surface p-4 text-sm text-danger">
@@ -88,7 +92,7 @@
 			</table>
 		</div>
 
-		<Pager meta={users.meta} onpage={handlePage} busy={busy} />
+		<Pager meta={users.meta} onpage={handlePage} {busy} />
 	{:else if busy}
 		<div class="py-8 text-center text-ink-muted">Loading...</div>
 	{:else}

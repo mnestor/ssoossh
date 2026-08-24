@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
 	import { getAdminUser, disableUser, enableUser } from '$lib/api/endpoints';
 	import Button from '$lib/components/Button.svelte';
 	import type { AdminUserDetail } from '$lib/api/types';
@@ -73,7 +72,11 @@
 						{actionBusy ? 'Enabling...' : 'Re-enable'}
 					</Button>
 				{:else}
-					<Button variant="danger" disabled={actionBusy} onclick={() => (showDisableConfirm = true)}>
+					<Button
+						variant="danger"
+						disabled={actionBusy}
+						onclick={() => (showDisableConfirm = true)}
+					>
 						{actionBusy ? 'Disabling...' : 'Disable'}
 					</Button>
 				{/if}
@@ -108,7 +111,7 @@
 				<div class="mt-4">
 					<p class="text-xs font-semibold text-ink-muted">Other Accounts</p>
 					<div class="flex flex-wrap gap-2">
-						{#each user.other_accounts as acct}
+						{#each user.other_accounts as acct (acct)}
 							<span class="rounded bg-surface px-2 py-1 text-sm">{acct}</span>
 						{/each}
 					</div>
@@ -119,7 +122,7 @@
 				<div class="mt-4">
 					<p class="text-xs font-semibold text-ink-muted">Service Accounts</p>
 					<div class="flex flex-wrap gap-2">
-						{#each user.service_accounts as acct}
+						{#each user.service_accounts as acct (acct)}
 							<span class="rounded bg-surface px-2 py-1 text-sm">{acct}</span>
 						{/each}
 					</div>
@@ -142,15 +145,19 @@
 		<!-- Disable confirmation modal -->
 		{#if showDisableConfirm}
 			<div class="fixed inset-0 flex items-center justify-center bg-black/50 p-4">
-				<div class="rounded-lg bg-surface p-6 shadow-lg max-w-md w-full">
+				<div class="w-full max-w-md rounded-lg bg-surface p-6 shadow-lg">
 					<h3 class="mb-4 text-lg font-semibold text-ink">Disable User?</h3>
 					<p class="mb-4 text-sm text-ink-muted">
 						This will prevent <strong>{user.username}</strong> from authenticating immediately.
 						Their <strong>{user.service_enrollment_count}</strong> active service enrollment(s) will expire
 						after the configured grace period, allowing running services time to rotate credentials.
 					</p>
-					<div class="flex gap-2 justify-end">
-						<Button variant="ghost" disabled={actionBusy} onclick={() => (showDisableConfirm = false)}>
+					<div class="flex justify-end gap-2">
+						<Button
+							variant="ghost"
+							disabled={actionBusy}
+							onclick={() => (showDisableConfirm = false)}
+						>
 							Cancel
 						</Button>
 						<Button variant="danger" disabled={actionBusy} onclick={handleDisable}>
