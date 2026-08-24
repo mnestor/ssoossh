@@ -63,7 +63,7 @@ describe('Admin certificates page', () => {
 		it('should display search input', async () => {
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
-			expect(screen.getByRole('textbox', { name: /search/i })).toBeInTheDocument();
+			expect(screen.getByRole('searchbox', { name: /search/i })).toBeInTheDocument();
 		});
 
 		it('should display type filter', async () => {

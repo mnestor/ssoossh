@@ -17,6 +17,8 @@
 		now?: Date;
 		/** Replaces the decision badge on the right, for a different summary. */
 		trailing?: Snippet;
+		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
+		testid?: string;
 		onclick: () => void;
 	}
 
@@ -25,6 +27,7 @@
 		event = 'certificate requested',
 		now = new Date(),
 		trailing,
+		testid,
 		onclick
 	}: Props = $props();
 
@@ -60,6 +63,7 @@
 <button
 	type="button"
 	{onclick}
+	data-testid={testid}
 	class="flex w-full items-center justify-between gap-4 rounded-[10px] border border-border-subtle bg-surface px-5 py-3.5 text-left transition hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 >
 	<span class="flex min-w-0 items-center gap-3">

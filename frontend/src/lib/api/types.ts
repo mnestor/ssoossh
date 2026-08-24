@@ -14,7 +14,9 @@ export type { CertificateType, CertificateRequestStatus as RequestStatus } from 
 
 export type {
 	CertificateListResponse,
+	CertificateListAdminResponse,
 	CertificateOptionsResponse as CertificateOptions,
+	CertificateResponse,
 	CertificateResponse as CertificateRecord,
 	CurrentUserResponse as CurrentUser,
 	NotificationKindResponse as NotificationKind,

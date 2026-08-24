@@ -3,7 +3,9 @@ import { isInternalPath } from '$lib/paths';
 import { ApiError, request } from './client';
 import type {
 	ApproveResult,
+	CertificateListAdminResponse,
 	CertificateListResponse,
+	CertificateResponse,
 	CurrentUser,
 	DenyResult,
 	EnrollmentRetrievalsResponse,
@@ -100,6 +102,50 @@ export function listCertificates(
 	}
 	const url = params.toString() ? `/certs?${params.toString()}` : '/certs';
 	return request<CertificateListResponse>(url, { signal });
+}
+
+/** GET /api/certs/:id — a single certificate's full details. */
+export function getCertificateDetail(
+	id: string,
+	signal?: AbortSignal
+): Promise<CertificateResponse> {
+	return request<CertificateResponse>(`/certs/${encodeURIComponent(id)}`, { signal });
+}
+
+/**
+ * GET /api/admin/certificates/history — cross-user certificate history for auditor review.
+ * Supports search, filtering by type and status, and offset pagination.
+ */
+export function listAdminCertificates(
+	signal?: AbortSignal,
+	options?: {
+		offset?: number;
+		limit?: number;
+		q?: string;
+		type?: string;
+		status?: string;
+	}
+): Promise<CertificateListAdminResponse> {
+	const params = new URLSearchParams();
+	if (options?.offset !== undefined) {
+		params.append('offset', options.offset.toString());
+	}
+	if (options?.limit !== undefined) {
+		params.append('limit', options.limit.toString());
+	}
+	if (options?.q) {
+		params.append('q', options.q);
+	}
+	if (options?.type) {
+		params.append('type', options.type);
+	}
+	if (options?.status) {
+		params.append('status', options.status);
+	}
+	const url = params.toString()
+		? `/admin/certificates/history?${params.toString()}`
+		: '/admin/certificates/history';
+	return request<CertificateListAdminResponse>(url, { signal });
 }
 
 /**

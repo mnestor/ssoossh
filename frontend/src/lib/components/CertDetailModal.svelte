@@ -184,5 +184,15 @@
 				</dl>
 			</div>
 		{/if}
+
+		<div class="border-t border-border-subtle pt-5">
+			<a
+				href={resolve(`/certs/${cert.id}`)}
+				class="inline-flex items-center gap-1.5 text-sm font-medium text-accent underline-offset-2 hover:underline"
+			>
+				View full details
+				<Icon name="arrow-right" size="xs" />
+			</a>
+		</div>
 	</div>
 </dialog>
