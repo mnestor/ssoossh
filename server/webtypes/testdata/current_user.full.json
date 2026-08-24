@@ -12,5 +12,9 @@
   "service_accounts": [
     "svc-deploy"
   ],
+  "extra": {
+    "department": "Engineering",
+    "employee_id": "E-12345"
+  },
   "is_auditor": true
 }

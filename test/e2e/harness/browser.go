@@ -4,6 +4,7 @@ package harness
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -172,6 +173,39 @@ func (b *Browser) CompleteIdPLogin(t *testing.T, username string) {
 	); err != nil {
 		b.screenshotOnFailure(t)
 		t.Fatalf("harness: completing the IdP login form failed: %v", err)
+	}
+}
+
+// CompleteIdPLoginWithExtraClaims is like CompleteIdPLogin but also sets extra
+// claims by injecting them into a hidden form field before submission.
+// extraClaims is a map of claim names to values; it will be JSON-encoded and
+// sent to the IdP's extra_claims form field.
+func (b *Browser) CompleteIdPLoginWithExtraClaims(t *testing.T, username string, extraClaims map[string]any) {
+	t.Helper()
+
+	// Marshal extraClaims to JSON and escape for use in JavaScript.
+	extraJSON, err := json.Marshal(extraClaims)
+	if err != nil {
+		t.Fatalf("harness: failed to marshal extra claims: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
+	defer cancel()
+	if err := chromedp.Run(ctx,
+		chromedp.WaitVisible(`[data-testid="idp-login-form"]`, chromedp.ByQuery),
+		chromedp.SendKeys(`[data-testid="idp-username"]`, username, chromedp.ByQuery),
+		// Inject a hidden extra_claims field into the form before submission.
+		chromedp.Evaluate(fmt.Sprintf(`
+			var input = document.createElement('input');
+			input.type = 'hidden';
+			input.name = 'extra_claims';
+			input.value = '%s';
+			document.querySelector('[data-testid="idp-login-form"]').appendChild(input);
+		`, string(extraJSON)), nil),
+		chromedp.Click(`[data-testid="idp-submit"]`, chromedp.ByQuery),
+	); err != nil {
+		b.screenshotOnFailure(t)
+		t.Fatalf("harness: completing the IdP login form with extra claims failed: %v", err)
 	}
 }
 

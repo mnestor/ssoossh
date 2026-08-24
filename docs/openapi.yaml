@@ -458,6 +458,17 @@ components:
       properties:
         email:
           type: string
+        extra:
+          additionalProperties: {}
+          description: |-
+            Extra holds operator-configured extra fields captured at login from
+            OIDC claims (see config.OAuthFields.Extra). Each value is either a
+            string or an array of strings, reflecting the claim shape at login.
+            Missing or null values in this field are rendered as "MISSING" by key
+            ID templates, so this presence is important for debugging when
+            debugging a key ID template that expected a claim that did not arrive.
+            The frontend should display missing values visibly rather than hiding them.
+          type: object
         groups:
           items:
             type: string
@@ -497,6 +508,7 @@ components:
           type: string
       required:
       - email
+      - extra
       - groups
       - is_auditor
       - other_accounts
@@ -1573,12 +1585,8 @@ paths:
       - client
   /api/users/me:
     get:
-      description: |-
-        Sourced from the session, not the users table — the session is what
-        authorizes requests, so reporting anything else would let the UI display
-        an identity the server would not act on.
-
-        There is deliberately no endpoint to read other users.
+      description: Sourced primarily from the session, with extra fields hydrated
+        from the users table.
       responses:
         "200":
           content:

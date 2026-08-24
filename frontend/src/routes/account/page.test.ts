@@ -13,6 +13,11 @@ function aliceUser(overrides: Partial<CurrentUser> = {}): CurrentUser {
 		groups: ['ssh-users', 'ops'],
 		other_accounts: ['alice.adm'],
 		service_accounts: ['svc-backup', 'svc-deploy'],
+		extra: {
+			employee_id: 'E-40921',
+			cost_center: 'CC-7781',
+			teams: ['team-a', 'team-b']
+		},
 		is_auditor: false,
 		...overrides
 	};
@@ -72,10 +77,12 @@ describe('Account page', () => {
 			expect(screen.getByText('svc-deploy')).toBeInTheDocument();
 		});
 
-		it('should list every other account', async () => {
+		it('should show the username as primary principal and other accounts together', async () => {
 			mockFetch(aliceUser());
 			render(Page);
-			expect(await screen.findByText('alice.adm')).toBeInTheDocument();
+			// Both should appear in the principals section
+			expect(await screen.findByText('(primary)')).toBeInTheDocument();
+			expect(screen.getByText('alice.adm')).toBeInTheDocument();
 		});
 
 		it('should list every group', async () => {
@@ -97,6 +104,45 @@ describe('Account page', () => {
 			render(Page);
 			expect(await screen.findByText('Auditor')).toBeInTheDocument();
 		});
+
+		it('should show scalar extra fields', async () => {
+			mockFetch(aliceUser({ extra: { employee_id: 'E-40921' } }));
+			render(Page);
+			expect(await screen.findByText('E-40921')).toBeInTheDocument();
+		});
+
+		it('should show list-valued extra fields as chips', async () => {
+			mockFetch(aliceUser({ extra: { teams: ['team-a', 'team-b'] } }));
+			render(Page);
+			expect(await screen.findByText('team-a')).toBeInTheDocument();
+			expect(screen.getByText('team-b')).toBeInTheDocument();
+		});
+
+		it('should show both scalar and list extra fields together', async () => {
+			mockFetch(
+				aliceUser({
+					extra: {
+						employee_id: 'E-40921',
+						cost_center: 'CC-7781',
+						teams: ['team-a', 'team-b']
+					}
+				})
+			);
+			render(Page);
+			expect(await screen.findByText('E-40921')).toBeInTheDocument();
+			expect(screen.getByText('CC-7781')).toBeInTheDocument();
+			expect(screen.getByText('team-a')).toBeInTheDocument();
+			expect(screen.getByText('team-b')).toBeInTheDocument();
+		});
+	});
+
+	describe('when extra fields are empty or absent', () => {
+		it('should handle empty extra object', async () => {
+			mockFetch(aliceUser({ extra: {} }));
+			render(Page);
+			// Page should render without errors even with no extra fields.
+			expect(await screen.findByText('sub-alice')).toBeInTheDocument();
+		});
 	});
 
 	describe('when the identity has no linked accounts', () => {
@@ -109,7 +155,7 @@ describe('Account page', () => {
 		it('should explain that no alternate accounts are linked', async () => {
 			mockFetch(aliceUser({ other_accounts: [] }));
 			render(Page);
-			expect(await screen.findByText(/No alternate accounts are linked/)).toBeInTheDocument();
+			expect(await screen.findByText(/only your primary username/i)).toBeInTheDocument();
 		});
 
 		it('should explain that the identity carries no groups', async () => {

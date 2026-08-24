@@ -141,6 +141,7 @@ screen is for, not for consistency's sake:
 | Screen                       | Width             | Why                                                       |
 | ---------------------------- | ----------------- | --------------------------------------------------------- |
 | Login                        | `380px`           | one action; a wider column makes it look unfinished       |
+| Account                      | `680px`           | metadata cards showing identity and principals            |
 | Approval, error, cert detail | `560px` / `600px` | a field list read top to bottom                           |
 | Dashboard, history           | `680px`           | rows with a subject on the left and a status on the right |
 | Service codes                | `680px`           | the same rows, each opened out into its own field list    |

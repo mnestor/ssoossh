@@ -77,6 +77,15 @@ type CurrentUserResponse struct {
 	// the approval page's picker is populated from them.
 	ServiceAccounts []string `json:"service_accounts" validate:"required"`
 
+	// Extra holds operator-configured extra fields captured at login from
+	// OIDC claims (see config.OAuthFields.Extra). Each value is either a
+	// string or an array of strings, reflecting the claim shape at login.
+	// Missing or null values in this field are rendered as "MISSING" by key
+	// ID templates, so this presence is important for debugging when
+	// debugging a key ID template that expected a claim that did not arrive.
+	// The frontend should display missing values visibly rather than hiding them.
+	Extra map[string]any `json:"extra" validate:"required"`
+
 	// IsAuditor reports whether this session holds auditor-level access
 	// (config.AdminConfig.GrantsAuditor), so the UI can show
 	// auditor-only affordances like other users' retrieval logs. Display

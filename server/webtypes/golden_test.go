@@ -58,7 +58,11 @@ func fullFixtures() map[string]any {
 			Groups:          []string{"engineering", "sre"},
 			OtherAccounts:   []string{"alice.adm"},
 			ServiceAccounts: []string{"svc-deploy"},
-			IsAuditor:       true,
+			Extra: map[string]any{
+				"employee_id": "E-12345",
+				"department":  "Engineering",
+			},
+			IsAuditor: true,
 		},
 		"certificate_options": options,
 		"request_detail": webtypes.RequestDetailResponse{

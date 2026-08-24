@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
@@ -68,8 +69,11 @@ func newPageMeta(p paging.Params, total int64) webtypes.PageMeta {
 // newCurrentUserResponse converts the session identity to its wire shape.
 // IsAuditor is display-only: the server re-checks GrantsAuditor on every
 // auditor-scoped read, so the UI hiding or showing an affordance changes
-// nothing about what this session can actually fetch.
-func newCurrentUserResponse(identity *service.Identity, c *config.Config) webtypes.CurrentUserResponse {
+// nothing about what this session can actually fetch. Extra is hydrated from
+// the users table by subject, since it is a stored attribute independent of
+// the session. Malformed JSON degrades to empty rather than erroring.
+func newCurrentUserResponse(identity *service.Identity, c *config.Config, db any, subject string) webtypes.CurrentUserResponse {
+	extra := hydratExtraFields(db, subject)
 	return webtypes.CurrentUserResponse{
 		Subject:         identity.Subject,
 		Username:        identity.Username,
@@ -77,8 +81,58 @@ func newCurrentUserResponse(identity *service.Identity, c *config.Config) webtyp
 		Groups:          orEmpty(identity.Groups),
 		OtherAccounts:   orEmpty(identity.OtherAccounts),
 		ServiceAccounts: orEmpty(identity.ServiceAccounts),
+		Extra:           extra,
 		IsAuditor:       c.Admin.GrantsAuditor(identity.Groups),
 	}
+}
+
+// hydratExtraFields queries the users table for the given subject and decodes
+// its ExtraFields JSON. Returns an empty map if db is nil, no row exists for
+// the subject, or the JSON is malformed (warning logged). Always returns a
+// non-nil map.
+func hydratExtraFields(db any, subject string) map[string]any {
+	if db == nil {
+		return make(map[string]any)
+	}
+
+	var user model.User
+
+	// Try to call a method on db to load the user. The real *gorm.DB
+	// implementation chains Where().First(); test mocks can do the same.
+	if userGetter, ok := db.(interface {
+		GetUser(string, *model.User) error
+	}); ok {
+		// Test mock interface.
+		if err := userGetter.GetUser(subject, &user); err != nil {
+			return make(map[string]any)
+		}
+	} else if gormDB, ok := db.(*gorm.DB); ok {
+		// Real *gorm.DB.
+		gormDB.Where("subject = ?", subject).First(&user)
+	} else {
+		// Unknown type, return empty.
+		return make(map[string]any)
+	}
+
+	if user.Subject == "" {
+		return make(map[string]any)
+	}
+
+	// Decode the ExtraFields JSON.
+	if user.ExtraFields == "" {
+		return make(map[string]any)
+	}
+
+	var extra map[string]any
+	if err := json.Unmarshal([]byte(user.ExtraFields), &extra); err != nil {
+		slog.Warn("failed to decode user's stored extra fields", slog.String("error", err.Error()))
+		return make(map[string]any)
+	}
+
+	if extra == nil {
+		return make(map[string]any)
+	}
+	return extra
 }
 
 // newRequestDetailResponse converts a service.RequestDetail to its wire

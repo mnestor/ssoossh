@@ -43,6 +43,21 @@ func (f *fakeCertificateService) ListForIdentity(_ context.Context, identity *se
 	return out, nil, f.err
 }
 
+// mockUserDatabase implements a minimal interface for testing CurrentUserHandler's
+// extra fields hydration. It holds the users map indexed by subject.
+type mockUserDatabase struct {
+	users map[string]model.User
+}
+
+// GetUser implements the interface that hydratExtraFields checks for.
+// It returns the user by subject from the mock's users map.
+func (m *mockUserDatabase) GetUser(subject string, dest *model.User) error {
+	if user, ok := m.users[subject]; ok {
+		*dest = user
+	}
+	return nil
+}
+
 // identityMiddleware stands in for SessionAuthMiddleware, putting identity
 // on the context the way a logged-in session would.
 func identityMiddleware(identity *service.Identity) gin.HandlerFunc {
@@ -85,7 +100,7 @@ func TestCurrentUserHandler_ShouldReturnTheSessionIdentity(t *testing.T) {
 	}
 
 	r := gin.New()
-	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(identity))
+	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(identity), &mockUserDatabase{})
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
@@ -122,7 +137,7 @@ func TestCurrentUserHandler_ShouldRenderGroupsAsAnEmptyArray(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(&service.Identity{Subject: "sub-alice"}))
+	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(&service.Identity{Subject: "sub-alice"}), &mockUserDatabase{})
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
@@ -156,13 +171,202 @@ func TestCurrentUserHandler_ShouldRejectWithoutAnIdentityOnContext(t *testing.T)
 		c.Next()
 		gotErrors = len(c.Errors)
 	})
-	NewUserController(&r.RouterGroup, &config.Config{}, passthrough)
+	NewUserController(&r.RouterGroup, &config.Config{}, passthrough, &mockUserDatabase{})
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
 
 	if gotErrors != 1 {
 		t.Fatalf("expected exactly one error when no identity is on the context, got %d", gotErrors)
+	}
+}
+
+// TestCurrentUserHandler_ShouldHydrateExtraFieldsFromTheUsersRow verifies
+// extra fields are fetched from the users table and included in the response.
+func TestCurrentUserHandler_ShouldHydrateExtraFieldsFromTheUsersRow(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	identity := &service.Identity{
+		Subject:  "sub-alice",
+		Username: "alice",
+		Email:    "alice@example.com",
+	}
+
+	// Mock database that returns a user with extra fields.
+	mockUserDB := &mockUserDatabase{
+		users: map[string]model.User{
+			"sub-alice": {
+				Subject:  "sub-alice",
+				Username: "alice",
+				Email:    "alice@example.com",
+				// ExtraFields is JSON: {"employee_id": "E-40921", "cost_center": ["CC-7781"]}
+				ExtraFields: `{"employee_id":"E-40921","cost_center":["CC-7781"]}`,
+			},
+		},
+	}
+
+	r := gin.New()
+	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(identity), mockUserDB)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var got webtypes.CurrentUserResponse
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+
+	if got.Extra == nil {
+		t.Fatalf("got nil Extra field, expected map")
+	}
+
+	// Check scalar extra field.
+	if v, ok := got.Extra["employee_id"]; !ok {
+		t.Errorf("employee_id not in Extra")
+	} else if v != "E-40921" {
+		t.Errorf("got employee_id %v, want %q", v, "E-40921")
+	}
+
+	// Check list extra field.
+	if v, ok := got.Extra["cost_center"]; !ok {
+		t.Errorf("cost_center not in Extra")
+	} else if list, ok := v.([]any); !ok {
+		t.Errorf("cost_center is not a []any, got %T", v)
+	} else if len(list) != 1 || list[0] != "CC-7781" {
+		t.Errorf("got cost_center %v, want [CC-7781]", list)
+	}
+}
+
+// TestCurrentUserHandler_ShouldIncludeEmptyExtraWhenNoUserRowExists
+// verifies that if the database has no row for the session's subject, the
+// extra field is still present but empty.
+func TestCurrentUserHandler_ShouldIncludeEmptyExtraWhenNoUserRowExists(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	identity := &service.Identity{
+		Subject:  "sub-unknown",
+		Username: "unknown",
+		Email:    "unknown@example.com",
+	}
+
+	mockUserDB := &mockUserDatabase{users: map[string]model.User{}}
+
+	r := gin.New()
+	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(identity), mockUserDB)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var got webtypes.CurrentUserResponse
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+
+	if got.Extra == nil {
+		t.Fatalf("got nil Extra field, expected empty map")
+	}
+	if len(got.Extra) != 0 {
+		t.Errorf("got Extra with %d entries, want empty map", len(got.Extra))
+	}
+}
+
+// TestCurrentUserHandler_ShouldHandleMalformedExtraFields verifies that
+// malformed JSON in ExtraFields does not cause a 500 error — the field
+// degrades to empty instead.
+func TestCurrentUserHandler_ShouldHandleMalformedExtraFields(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	identity := &service.Identity{
+		Subject:  "sub-alice",
+		Username: "alice",
+		Email:    "alice@example.com",
+	}
+
+	mockUserDB := &mockUserDatabase{
+		users: map[string]model.User{
+			"sub-alice": {
+				Subject:     "sub-alice",
+				Username:    "alice",
+				Email:       "alice@example.com",
+				ExtraFields: "{invalid json}",
+			},
+		},
+	}
+
+	r := gin.New()
+	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(identity), mockUserDB)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var got webtypes.CurrentUserResponse
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+
+	if got.Extra == nil {
+		t.Fatalf("got nil Extra field, expected empty map")
+	}
+	if len(got.Extra) != 0 {
+		t.Errorf("got Extra with %d entries, want empty map", len(got.Extra))
+	}
+}
+
+// TestCurrentUserHandler_ShouldRenderListValuedExtraFieldAsJSONArray verifies
+// list-valued extra fields round-trip through JSON correctly.
+func TestCurrentUserHandler_ShouldRenderListValuedExtraFieldAsJSONArray(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	identity := &service.Identity{
+		Subject:  "sub-alice",
+		Username: "alice",
+		Email:    "alice@example.com",
+	}
+
+	mockUserDB := &mockUserDatabase{
+		users: map[string]model.User{
+			"sub-alice": {
+				Subject:     "sub-alice",
+				Username:    "alice",
+				Email:       "alice@example.com",
+				ExtraFields: `{"groups":["team-a","team-b"]}`,
+			},
+		},
+	}
+
+	r := gin.New()
+	NewUserController(&r.RouterGroup, &config.Config{}, identityMiddleware(identity), mockUserDB)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var got webtypes.CurrentUserResponse
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+
+	if got.Extra == nil {
+		t.Fatalf("got nil Extra field, expected map")
+	}
+
+	if v, ok := got.Extra["groups"]; !ok {
+		t.Errorf("groups not in Extra")
+	} else if list, ok := v.([]any); !ok {
+		t.Errorf("groups is not a []any, got %T", v)
+	} else if len(list) != 2 || list[0] != "team-a" || list[1] != "team-b" {
+		t.Errorf("got groups %v, want [team-a team-b]", list)
 	}
 }
 
@@ -541,7 +745,7 @@ func TestWebReadEndpoints_ShouldFailClosedWithoutASession(t *testing.T) {
 			r.Use(sessions.Sessions("ssoossh_session", cookie.NewStore([]byte("test-secret"))))
 			sessionAuth := middleware.NewSessionAuthMiddleware(5*time.Minute, time.Hour).Add()
 
-			NewUserController(&r.RouterGroup, &config.Config{}, sessionAuth)
+			NewUserController(&r.RouterGroup, &config.Config{}, sessionAuth, &mockUserDatabase{})
 			NewCertificateController(&r.RouterGroup, &fakeCertificateService{}, sessionAuth)
 			NewCertRequestController(&r.RouterGroup, &fakeCertRequestService{}, sessionAuth, passthrough, nil)
 

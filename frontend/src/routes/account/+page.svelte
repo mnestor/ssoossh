@@ -53,6 +53,24 @@
 				<DetailRow label="Username" mono icon="user">{user.username}</DetailRow>
 				<DetailRow label="Email">{user.email || '—'}</DetailRow>
 				<DetailRow label="Subject" mono>{user.subject}</DetailRow>
+				{#if user.extra}
+					{#each Object.entries(user.extra) as [name, value] (name)}
+						<DetailRow label={name} mono={typeof value === 'string'}>
+							{#if Array.isArray(value)}
+								<span class="flex flex-wrap gap-1.5">
+									{#each value as v (v)}
+										<MonoChip>{v}</MonoChip>
+									{/each}
+								</span>
+							{:else if value === '' || value === null}
+								<!-- Missing extra field: display it visibly so operators can debug missing claims -->
+								<span class="text-ink-muted">MISSING</span>
+							{:else}
+								{value}
+							{/if}
+						</DetailRow>
+					{/each}
+				{/if}
 				{#if user.is_auditor}
 					<DetailRow label="Access">
 						<span
@@ -71,11 +89,22 @@
 		>
 			<div class="flex flex-col gap-5">
 				<div>
-					<SectionLabel>User certificates</SectionLabel>
+					<SectionLabel>Principals for user certificates</SectionLabel>
 					<p class="mb-2 text-[13px] text-ink-muted">
-						User certificates you approve are issued with your username as their principal.
+						Your username and any alternate account names you can use as principals. Your username
+						is the primary identity.
 					</p>
-					<MonoChip>{user.username}</MonoChip>
+					<span class="flex flex-wrap gap-1.5">
+						<MonoChip>{user.username} <span class="text-ink-muted">(primary)</span></MonoChip>
+						{#each user.other_accounts as account (account)}
+							<MonoChip>{account}</MonoChip>
+						{/each}
+					</span>
+					{#if user.other_accounts.length === 0}
+						<p class="mt-2 text-[13px] text-ink-muted">
+							Only your primary username is available; no alternate account names are linked.
+						</p>
+					{/if}
 				</div>
 
 				<div>
@@ -92,24 +121,6 @@
 						</p>
 						<span class="flex flex-wrap gap-1.5">
 							{#each user.service_accounts as account (account)}
-								<MonoChip>{account}</MonoChip>
-							{/each}
-						</span>
-					{/if}
-				</div>
-
-				<div>
-					<SectionLabel>Other accounts</SectionLabel>
-					{#if user.other_accounts.length === 0}
-						<p class="text-[13px] text-ink-muted">
-							No alternate accounts are linked to your identity.
-						</p>
-					{:else}
-						<p class="mb-2 text-[13px] text-ink-muted">
-							Alternate account names your identity is known by on target systems.
-						</p>
-						<span class="flex flex-wrap gap-1.5">
-							{#each user.other_accounts as account (account)}
 								<MonoChip>{account}</MonoChip>
 							{/each}
 						</span>
