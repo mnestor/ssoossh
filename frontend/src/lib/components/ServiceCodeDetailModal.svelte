@@ -220,8 +220,9 @@
 		<div class="flex gap-2.5 rounded-lg bg-surface-muted px-3.5 py-3 text-[13px] leading-normal">
 			<Icon name="user" size="sm" class="mt-px flex-shrink-0 text-ink-muted" />
 			<span>
-				Mints certificates for <strong class="font-mono">{subject}</strong>, its only principal,
-				fixed when you approved it.
+				Mints certificates for <strong class="font-mono" data-testid="service-code-account"
+					>{subject}</strong
+				>, its only principal, fixed when you approved it.
 			</span>
 		</div>
 
