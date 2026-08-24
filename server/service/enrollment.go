@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
@@ -21,6 +20,7 @@ import (
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/notify"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
+	"github.com/mnestor/ssoossh/server/utils/paging"
 )
 
 // EnrollmentProvider redeems an enrollment code into a signed certificate
@@ -649,66 +649,73 @@ func (s *EnrollmentService) ListForAdmin(ctx context.Context, identity *Identity
 		return AdminEnrollmentList{}, &errorresponses.ForbiddenError{Reason: "auditor access required"}
 	}
 
-	// Load all users first (needed for both search and later display)
-	var allUsers []model.User
-	if err := s.db.WithContext(ctx).Find(&allUsers).Error; err != nil {
-		return AdminEnrollmentList{}, fmt.Errorf("failed to load users: %w", err)
-	}
-	userByID := make(map[string]model.User, len(allUsers))
-	for _, u := range allUsers {
-		userByID[u.ID] = u
-	}
+	// Build the query: select enrollments with their owner's username/email.
+	query := s.db.WithContext(ctx).
+		Model(&model.Enrollment{}).
+		Joins("LEFT JOIN users ON enrollments.user_id = users.id")
 
-	// Load all enrollments (search is done in memory for simplicity)
-	var allEnrollments []model.Enrollment
-	if err := s.db.WithContext(ctx).
-		Order("created_at DESC").
-		Find(&allEnrollments).Error; err != nil {
-		return AdminEnrollmentList{}, fmt.Errorf("failed to list enrollments: %w", err)
-	}
-
-	// Filter by search query (case-insensitive, in-memory)
-	var filtered []model.Enrollment
-	pattern := strings.ToLower(params.Query)
-	for _, e := range allEnrollments {
-		if params.Query == "" {
-			// No filter
-			filtered = append(filtered, e)
-		} else {
-			// Check if query matches any searchable field
-			user := userByID[e.UserID]
-			matches := strings.Contains(strings.ToLower(user.Username), pattern) ||
-				strings.Contains(strings.ToLower(user.Email), pattern) ||
-				strings.Contains(strings.ToLower(e.Principals), pattern) ||
-				strings.Contains(strings.ToLower(e.KeyID), pattern) ||
-				(e.CertificateRequestID != nil && strings.Contains(strings.ToLower(*e.CertificateRequestID), pattern))
-			if matches {
-				filtered = append(filtered, e)
-			}
+	// Apply search filter across username, email, principals, key ID, and certificate_request_id.
+	if params.Query != "" {
+		whereClause, args := paging.Filter(params.Query,
+			"users.username",
+			"users.email",
+			"enrollments.principals",
+			"enrollments.key_id",
+			"CAST(COALESCE(enrollments.certificate_request_id, '') AS TEXT)")
+		if whereClause != "" {
+			query = query.Where(whereClause, args...)
 		}
 	}
 
-	total := int64(len(filtered))
+	// Apply deterministic ordering to prevent pagination issues.
+	query = query.Order("enrollments.created_at DESC, enrollments.id DESC")
 
-	// Apply windowing
-	start := params.Offset
-	end := start + params.Limit
-	if start > len(filtered) {
-		start = len(filtered)
-	}
-	if end > len(filtered) {
-		end = len(filtered)
+	// Count total matching rows before paging.
+	total, err := paging.Count(query)
+	if err != nil {
+		return AdminEnrollmentList{}, fmt.Errorf("failed to count enrollments: %w", err)
 	}
 
-	windowed := filtered[start:end]
-	if len(windowed) == 0 {
+	// Apply pagination window.
+	query = paging.Apply(query, paging.Params{Limit: params.Limit, Offset: params.Offset, Query: params.Query})
+
+	// Fetch the results.
+	type enrollmentRow struct {
+		ID                         string
+		Code                       string
+		PublicKey                  string
+		OptionSet                  string
+		KeyID                      string
+		Principals                 string
+		CertificateRequestID       *string
+		UserID                     string
+		CreatedAt                  time.Time
+		ExpiresAt                  time.Time
+		CertificateDurationSeconds *int64
+		RedeemedAt                 *time.Time
+		UserUsername               *string
+		UserEmail                  *string
+	}
+
+	var rows []enrollmentRow
+	if err := query.
+		Select(`enrollments.id, enrollments.code, enrollments.public_key, enrollments.option_set,
+			enrollments.key_id, enrollments.principals, enrollments.certificate_request_id,
+			enrollments.user_id, enrollments.created_at, enrollments.expires_at,
+			enrollments.certificate_duration_seconds, enrollments.redeemed_at,
+			users.username AS user_username, users.email AS user_email`).
+		Scan(&rows).Error; err != nil {
+		return AdminEnrollmentList{}, fmt.Errorf("failed to list enrollments: %w", err)
+	}
+
+	if len(rows) == 0 {
 		return AdminEnrollmentList{Total: total}, nil
 	}
 
 	// Extract enrollment IDs for retrieval counts
-	enrollmentIDs := make([]string, 0, len(windowed))
-	for _, e := range windowed {
-		enrollmentIDs = append(enrollmentIDs, e.ID)
+	enrollmentIDs := make([]string, 0, len(rows))
+	for _, r := range rows {
+		enrollmentIDs = append(enrollmentIDs, r.ID)
 	}
 
 	// Load retrieval counts and timestamps
@@ -722,24 +729,49 @@ func (s *EnrollmentService) ListForAdmin(ctx context.Context, identity *Identity
 	}
 
 	// Build response
-	rows := make([]AdminEnrollmentRow, 0, len(windowed))
-	for _, e := range windowed {
-		row := AdminEnrollmentRow{
-			Enrollment:     e,
-			Approver:       userByID[e.UserID],
-			Principals:     decodeEnrollmentPrincipals(e),
-			Options:        decodeEnrollmentOptions(e),
-			Fingerprint:    enrollmentFingerprint(e),
-			RetrievalCount: counts[e.ID],
+	enrollments := make([]AdminEnrollmentRow, 0, len(rows))
+	for _, r := range rows {
+		enrollment := model.Enrollment{
+			ID:                         r.ID,
+			Code:                       r.Code,
+			PublicKey:                  r.PublicKey,
+			OptionSet:                  r.OptionSet,
+			KeyID:                      r.KeyID,
+			Principals:                 r.Principals,
+			CertificateRequestID:       r.CertificateRequestID,
+			UserID:                     r.UserID,
+			CreatedAt:                  r.CreatedAt,
+			ExpiresAt:                  r.ExpiresAt,
+			CertificateDurationSeconds: r.CertificateDurationSeconds,
+			RedeemedAt:                 r.RedeemedAt,
 		}
-		if at, ok := latest[e.ID]; ok {
+
+		approver := model.User{
+			ID: r.UserID,
+		}
+		if r.UserUsername != nil {
+			approver.Username = *r.UserUsername
+		}
+		if r.UserEmail != nil {
+			approver.Email = *r.UserEmail
+		}
+
+		row := AdminEnrollmentRow{
+			Enrollment:     enrollment,
+			Approver:       approver,
+			Principals:     decodeEnrollmentPrincipals(enrollment),
+			Options:        decodeEnrollmentOptions(enrollment),
+			Fingerprint:    enrollmentFingerprint(enrollment),
+			RetrievalCount: counts[r.ID],
+		}
+		if at, ok := latest[r.ID]; ok {
 			retrievedAt := at
 			row.LastRetrievedAt = &retrievedAt
 		}
-		rows = append(rows, row)
+		enrollments = append(enrollments, row)
 	}
 
-	return AdminEnrollmentList{Enrollments: rows, Total: total}, nil
+	return AdminEnrollmentList{Enrollments: enrollments, Total: total}, nil
 }
 
 // GetEnrollmentDetail returns a single enrollment with full details and
@@ -810,6 +842,45 @@ func (s *EnrollmentService) GetEnrollmentDetail(ctx context.Context, enrollmentI
 	}, nil
 }
 
+// isEligibleForReassignment checks whether a user can be reassigned an
+// enrollment: their service_accounts JSON must contain the enrollment's
+// principal. An error is returned for unparseable JSON; InvalidRequestError
+// for an ineligible user.
+func (s *EnrollmentService) isEligibleForReassignment(ctx context.Context, enrollment model.Enrollment, targetUserID string) error {
+	// Load the target user
+	var targetUser model.User
+	if err := s.db.WithContext(ctx).First(&targetUser, "id = ?", targetUserID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &errorresponses.InvalidRequestError{Reason: fmt.Sprintf("target user %q does not exist", targetUserID)}
+		}
+		return fmt.Errorf("failed to look up target user: %w", err)
+	}
+
+	// Extract the enrollment's principal (service enrollments have exactly one).
+	principals := decodeEnrollmentPrincipals(enrollment)
+	if len(principals) == 0 {
+		return fmt.Errorf("enrollment has no principals; cannot determine eligibility")
+	}
+	principal := principals[0]
+
+	// Parse target user's service_accounts JSON.
+	var serviceAccounts []string
+	if err := json.Unmarshal([]byte(targetUser.ServiceAccounts), &serviceAccounts); err != nil {
+		return fmt.Errorf("failed to parse target user service accounts: %w", err)
+	}
+
+	// Check if the principal is in the target's service accounts.
+	for _, account := range serviceAccounts {
+		if account == principal {
+			return nil // Eligible
+		}
+	}
+
+	return &errorresponses.InvalidRequestError{
+		Reason: fmt.Sprintf("target user does not have service account %q", principal),
+	}
+}
+
 // Reassign changes the ownership of an enrollment to a new user. The
 // enrollment's key ID, principals, options, and expiry remain unchanged —
 // only the user_id is updated. An audit record is created to track the
@@ -851,40 +922,9 @@ func (s *EnrollmentService) Reassign(ctx context.Context, enrollmentID string, t
 		}
 	}
 
-	// Load the target user
-	var targetUser model.User
-	if err := s.db.WithContext(ctx).First(&targetUser, "id = ?", toUserID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return &errorresponses.InvalidRequestError{Reason: fmt.Sprintf("target user %q does not exist", toUserID)}
-		}
-		return fmt.Errorf("failed to look up target user: %w", err)
-	}
-
-	// Check eligibility: target user's service_accounts must contain the enrollment's principal
-	principals := decodeEnrollmentPrincipals(enrollment)
-	if len(principals) == 0 {
-		return fmt.Errorf("enrollment has no principals; cannot determine eligibility")
-	}
-	principal := principals[0] // Service enrollments have exactly one principal
-
-	// Parse target user's service_accounts JSON
-	var serviceAccounts []string
-	if err := json.Unmarshal([]byte(targetUser.ServiceAccounts), &serviceAccounts); err != nil {
-		return fmt.Errorf("failed to parse target user service accounts: %w", err)
-	}
-
-	// Check if principal is in the target's service accounts
-	var hasAccount bool
-	for _, account := range serviceAccounts {
-		if account == principal {
-			hasAccount = true
-			break
-		}
-	}
-	if !hasAccount {
-		return &errorresponses.InvalidRequestError{
-			Reason: fmt.Sprintf("target user does not have service account %q", principal),
-		}
+	// Check eligibility of the target user.
+	if err := s.isEligibleForReassignment(ctx, enrollment, toUserID); err != nil {
+		return err
 	}
 
 	// Get the reassigner's user ID
@@ -921,7 +961,3 @@ func (s *EnrollmentService) Reassign(ctx context.Context, enrollmentID string, t
 
 	return nil
 }
-
-// escapeLikePattern escapes wildcards in a search term for LIKE comparison.
-// This is duplicated from paging.escapeLike because that function is not
-// exported. The implementation is identical.

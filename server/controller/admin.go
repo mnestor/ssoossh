@@ -359,7 +359,7 @@ func (a *adminController) getEnrollmentDetailHandler(g *gin.Context) {
 // @Accept      json
 // @Produce     json
 // @Param       id path string true "Enrollment ID"
-// @Param       body body openapidoc.ReassignEnrollmentRequest true "New owner user ID"
+// @Param       request body openapidoc.ReassignEnrollmentRequest true "New owner user ID"
 // @Success     200 {object} gin.H "Enrollment reassigned"
 // @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid request (ineligible target)"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
