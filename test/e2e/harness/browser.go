@@ -175,6 +175,33 @@ func (b *Browser) CompleteIdPLogin(t *testing.T, username string) {
 	}
 }
 
+// CompleteIdPLoginWithGroups logs the browser in with a username and group claims.
+// The harness IdP's login form accepts a repeatable groups field that gets
+// injected into the ID token's groups claim.
+func (b *Browser) CompleteIdPLoginWithGroups(t *testing.T, username string, groups []string) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
+	defer cancel()
+
+	actions := []chromedp.Action{
+		chromedp.WaitVisible(`[data-testid="idp-login-form"]`, chromedp.ByQuery),
+		chromedp.SendKeys(`[data-testid="idp-username"]`, username, chromedp.ByQuery),
+	}
+
+	// Send each group as a separate value to the repeatable groups field.
+	for _, group := range groups {
+		actions = append(actions, chromedp.SendKeys(`[data-testid="idp-groups"]`, group+"\t", chromedp.ByQuery))
+	}
+
+	actions = append(actions, chromedp.Click(`[data-testid="idp-submit"]`, chromedp.ByQuery))
+
+	if err := chromedp.Run(ctx, actions...); err != nil {
+		b.screenshotOnFailure(t)
+		t.Fatalf("harness: completing the IdP login form with groups failed: %v", err)
+	}
+}
+
 // screenshotOnFailure best-effort captures a screenshot and the current URL
 // to the test's artifact directory — debugging a browser failure from an
 // assertion message alone isn't realistic.
