@@ -5,11 +5,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/model"
-	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
 // TestDisableUserIdempotent verifies disabling an already-disabled user is not an error.
@@ -81,12 +80,12 @@ func TestSweepDisabledUserEnrollmentsDoesNotExpireBeforeGracePeriod(t *testing.T
 
 	// Create an active enrollment
 	enrollment := model.Enrollment{
-		ID:          uuid.NewString(),
-		Code:        uuid.NewString(),
-		PublicKey:   "test-key",
-		UserID:      user.ID,
-		CreatedAt:   now,
-		ExpiresAt:   now.Add(30 * 24 * time.Hour),
+		ID:        uuid.NewString(),
+		Code:      uuid.NewString(),
+		PublicKey: "test-key",
+		UserID:    user.ID,
+		CreatedAt: now,
+		ExpiresAt: now.Add(30 * 24 * time.Hour),
 	}
 	db.Create(&enrollment)
 
@@ -138,7 +137,7 @@ func TestSweepDisabledUserEnrollmentsExpiresAfterGracePeriod(t *testing.T) {
 	}
 }
 
-// Helper functions
+// Helper functions.
 func setupTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

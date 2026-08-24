@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -246,7 +247,7 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 	if err := a.db.WithContext(g.Request.Context()).
 		Where("id = ?", id).
 		First(&user).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			handleError(g, &errorresponses.NotFoundError{Resource: fmt.Sprintf("user %q", id)})
 			return
 		}
@@ -333,7 +334,7 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 // @Tags        admin
 // @Produce     json
 // @Param       id path string true "User ID"
-// @Param       body body webtypes.DisableUserRequestBody false "Disable reason"
+// @Param       body webtypes.DisableUserRequestBody false "Disable reason"
 // @Success     200 {object} webtypes.DisableUserConsequences "Consequences of disabling"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin"
@@ -412,7 +413,7 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 // @Tags        admin
 // @Produce     json
 // @Param       id path string true "User ID"
-// @Param       body body webtypes.ReEnableUserRequestBody false "Re-enable reason"
+// @Param       body webtypes.ReEnableUserRequestBody false "Re-enable reason"
 // @Success     200 {object} gin.H "User re-enabled"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin"

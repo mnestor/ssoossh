@@ -526,7 +526,7 @@ type AdminUserDetail struct {
 
 	// DisabledByUserID and DisabledByUsername identify the admin that
 	// disabled this user. Both omitted if not disabled.
-	DisabledByUserID *string `json:"disabled_by_user_id,omitempty"`
+	DisabledByUserID   *string `json:"disabled_by_user_id,omitempty"`
 	DisabledByUsername *string `json:"disabled_by_username,omitempty"`
 
 	// ServiceEnrollmentCount is how many active (not expired) service

@@ -382,7 +382,7 @@ func (s *AuthService) checkUserDisabled(ctx context.Context, subject string) err
 		Select("disabled_at").
 		Where("subject = ?", subject).
 		First(&model.User{}, "subject = ?", subject).
-		Error; err != nil && err != gorm.ErrRecordNotFound {
+		Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		// Log but don't fail on lookup errors; disabled_at lookup failure
 		// shouldn't prevent login if it's a transient db issue. Better to
 		// let the user in and retry later than lock them out.

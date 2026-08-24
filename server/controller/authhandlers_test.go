@@ -20,6 +20,7 @@ import (
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 
+	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/service"
 )
@@ -61,7 +62,7 @@ func newAuthTestRouter(authSvc service.AuthProvider, csrf gin.HandlerFunc) *gin.
 	r := gin.New()
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
 	r.Use(sessions.Sessions("ssoossh_session", cookie.NewStore([]byte("test-secret"))))
-	NewAuthController(&r.RouterGroup, authSvc, csrf)
+	NewAuthController(&r.RouterGroup, authSvc, csrf, &config.Config{})
 	return r
 }
 
@@ -356,7 +357,7 @@ func TestLoginHandler_ShouldSurfaceASessionWriteError(t *testing.T) {
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
 	r.Use(sessions.Sessions("ssoossh_session", cookie.NewStore([]byte("test-secret"))))
 	r.Use(oversizedSessionSeed)
-	NewAuthController(&r.RouterGroup, svc, passthrough)
+	NewAuthController(&r.RouterGroup, svc, passthrough, &config.Config{})
 
 	w := doRequest(r, httptest.NewRequest(http.MethodGet, "/login", nil), nil)
 
@@ -374,7 +375,7 @@ func TestCallbackHandler_ShouldSurfaceASessionWriteError(t *testing.T) {
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
 	r.Use(sessions.Sessions("ssoossh_session", cookie.NewStore([]byte("test-secret"))))
 	r.Use(oversizedSessionSeed)
-	NewAuthController(&r.RouterGroup, svc, passthrough)
+	NewAuthController(&r.RouterGroup, svc, passthrough, &config.Config{})
 
 	w := doRequest(r, httptest.NewRequest(http.MethodGet, "/callback?code=c&state=s", nil), nil)
 

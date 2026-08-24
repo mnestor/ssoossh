@@ -3,6 +3,7 @@ package controller
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -167,7 +168,8 @@ func (a *authController) callbackHandler(g *gin.Context) {
 	identity, err := a.authService.HandleCallback(g.Request.Context(), code, nonce, pkceVerifier)
 	if err != nil {
 		// Check if the user is disabled and redirect to the disabled page
-		if _, ok := err.(*errorresponses.UserDisabledError); ok {
+		userDisabledError := &errorresponses.UserDisabledError{}
+		if errors.As(err, &userDisabledError) {
 			g.Redirect(http.StatusFound, "/auth/disabled")
 			return
 		}
