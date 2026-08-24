@@ -355,6 +355,14 @@ export interface CertificateListResponse {
 	next_cursor?: string;
 }
 /**
+ * CertificateListAdminResponse is the payload for the admin certificate history
+ * endpoint, showing certificates across all users with offset pagination and metadata.
+ */
+export interface CertificateListAdminResponse {
+	certificates: CertificateResponse[];
+	page_meta: PageMeta;
+}
+/**
  * BrandingResponse is optional branding for the login page and web UI.
  * All fields are optional; empty values mean no branding is configured.
  * This endpoint is unauthenticated, so only values safe for public display
