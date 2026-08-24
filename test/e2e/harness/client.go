@@ -178,6 +178,15 @@ func KeyFilePaths(home, keyFilename string) (privateKey, publicKey, certificate 
 	return base, base + ".pub", base + "-cert.pub"
 }
 
+// KeyFileDir returns the directory where key files for keyFilename under
+// home are stored. Used for testing directory-level permissions or contents.
+func KeyFileDir(home, keyFilename string) string {
+	if filepath.IsAbs(keyFilename) {
+		return filepath.Dir(keyFilename)
+	}
+	return filepath.Join(home, ".ssh")
+}
+
 // clientEnv builds the child environment: the parent's, with HOME pointed
 // at the isolated directory, then o.Unset removed, then o.Env applied last
 // so a test can override anything above it.

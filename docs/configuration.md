@@ -202,8 +202,13 @@ use the agent) defaults sensibly; see
 [client/config/defaults.yaml](../client/config/defaults.yaml). Two worth
 knowing:
 
-- `use_agent: false` stores key files on disk instead of using an
-  ssh-agent. Only the `Match exec` invocation mode works then (see below).
+- `use_agent: true` (default) uses ssh-agent for key storage. If the agent
+  is not reachable and `fallback_file_agent: true` is set (the default),
+  the client automatically falls back to storing keys in files instead. If
+  fallback is disabled (`fallback_file_agent: false`), an unreachable agent
+  causes the login to fail.
+- `use_agent: false` stores key files on disk instead of using an ssh-agent.
+  Only the `Match exec` invocation mode works then (see below).
 - `sshkey.type` / `sshkey.size` select the generated key algorithm.
 
 ### Precedence and fleet enforcement

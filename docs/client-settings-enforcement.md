@@ -59,6 +59,33 @@ mechanisms, admin's choice.
 policy) makes a non-FIPS-approved `sshkey.type` a hard error at startup —
 see `client/config/sshkey.go`.
 
+## Agent preflight verification
+
+Before requesting a certificate, `ssoossh ssh login` verifies the resolved key
+storage will accept and release a key. This preflight runs a real store/remove
+round-trip with a throwaway keypair to catch storage failures before the
+user approves a certificate — preventing the "approve then lose it" hazard
+where the server issues a certificate but the client cannot store it.
+
+The preflight behavior depends on the `use_agent` and `fallback_file_agent`
+settings:
+
+- **`use_agent: true` (default), `fallback_file_agent: true` (default)**:
+  Probes the live agent. If the probe fails and `fallback_file_agent` is
+  enabled, probes file storage as a fallback. If file storage works, the
+  login proceeds using files instead of the agent, and prints "Agent storage
+  check failed, falling back to file-based key storage." to stdout. If both
+  fail, the login aborts before requesting a certificate.
+
+- **`use_agent: true`, `fallback_file_agent: false`**:
+  Probes the live agent. If the probe fails, the login aborts before
+  requesting a certificate, with an error message explaining fallback is
+  disabled.
+
+- **`use_agent: false`**:
+  Probes file-based storage directly. If the probe fails, the login aborts
+  before requesting a certificate.
+
 ## Windows: Group Policy
 
 The client reads `HKLM\SOFTWARE\Policies\com.github.mnestor\ssoossh`,

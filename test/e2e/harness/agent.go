@@ -151,3 +151,10 @@ func (a *Agent) AddUnrelatedKey(t *testing.T, comment string) ssh.PublicKey {
 	}
 	return pub
 }
+
+// ListAgentKeys returns all keys in the agent for asserting the probe key
+// was not left behind after a preflight check.
+func ListAgentKeys(t *testing.T, a *Agent) ([]ssh.PublicKey, error) {
+	t.Helper()
+	return a.AllKeys(t), nil
+}
