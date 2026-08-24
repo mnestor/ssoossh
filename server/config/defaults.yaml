@@ -525,7 +525,7 @@ admin:
   # ones remain valid until they reach their own expiration. Must be
   # non-negative. Set to 0s to expire enrollments immediately on disable,
   # though services may not handle that gracefully.
-  disable_grace_period: 7 days
+  disable_grace_period: 168h
 
   # Email address shown on the account-disabled page so a disabled user can
   # contact for support or reinstatement. Empty disables the display (the
