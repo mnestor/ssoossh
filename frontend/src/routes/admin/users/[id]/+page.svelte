@@ -3,13 +3,14 @@
 	import { page } from '$app/state';
 	import { getAdminUser, disableUser, enableUser } from '$lib/api/endpoints';
 	import Button from '$lib/components/Button.svelte';
-	import type { AdminUserDetail } from '$lib/api/types';
+	import type { AdminUserDetail, DisableUserConsequences } from '$lib/api/types';
 
 	let user: AdminUserDetail | null = $state(null);
 	let error: string | null = $state(null);
 	let busy = $state(false);
 	let actionBusy = $state(false);
 	let showDisableConfirm = $state(false);
+	let disableConsequences: DisableUserConsequences | null = $state(null);
 
 	const userId = page.params.id ?? '';
 
@@ -33,9 +34,10 @@
 	async function handleDisable() {
 		actionBusy = true;
 		try {
-			await disableUser(userId);
+			disableConsequences = await disableUser(userId);
 			await loadUser();
 			showDisableConfirm = false;
+			disableConsequences = null;
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'Failed to disable user';
 		} finally {
@@ -148,20 +150,30 @@
 		</div>
 
 		<!-- Disable confirmation modal -->
-		{#if showDisableConfirm}
+		{#if showDisableConfirm && user}
 			<div class="fixed inset-0 flex items-center justify-center bg-black/50 p-4">
 				<div class="w-full max-w-md rounded-lg bg-surface p-6 shadow-lg">
 					<h3 class="mb-4 text-lg font-semibold text-ink">Disable User?</h3>
 					<p class="mb-4 text-sm text-ink-muted">
 						This will prevent <strong>{user.username}</strong> from authenticating immediately.
-						Their <strong>{user.service_enrollment_count}</strong> active service enrollment(s) will expire
-						after the configured grace period, allowing running services time to rotate credentials.
+						{#if disableConsequences}
+							Their <strong>{disableConsequences.service_enrollment_count}</strong>
+							active service enrollment(s) will expire at
+							<strong>{new Date(disableConsequences.expire_at_timestamp).toLocaleString()}</strong>,
+							allowing running services time to rotate credentials.
+						{:else}
+							Their <strong>{user.service_enrollment_count}</strong> active service enrollment(s) will expire
+							after the configured grace period, allowing running services time to rotate credentials.
+						{/if}
 					</p>
 					<div class="flex justify-end gap-2">
 						<Button
 							variant="ghost"
 							disabled={actionBusy}
-							onclick={() => (showDisableConfirm = false)}
+							onclick={() => {
+								showDisableConfirm = false;
+								disableConsequences = null;
+							}}
 						>
 							Cancel
 						</Button>
