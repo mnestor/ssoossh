@@ -16,10 +16,12 @@
 		}
 	});
 
-	// The admin sections. This array includes routes managed by this feature.
-	// Other admin sections (certificates, service-codes) are in separate branches.
+	// The admin sections. This array includes routes managed by different feature branches.
+	// Each branch owns a subset of these entries and expects all four to be present.
 	const adminNav = [
 		{ route: '/admin/users', label: 'Users' },
+		{ route: '/admin/certificates', label: 'Certificates' },
+		{ route: '/admin/service-codes', label: 'Service codes' },
 		{ route: '/admin/config', label: 'Config' }
 	] as const satisfies ReadonlyArray<{ route: string; label: string }>;
 </script>

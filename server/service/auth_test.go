@@ -146,3 +146,50 @@ func TestCheckUserDisabled_EnabledUserAllowed(t *testing.T) {
 		t.Errorf("checkUserDisabled must allow enabled user, got: %v", err)
 	}
 }
+
+// TestCheckUserDisabled_DatabaseErrorReturnsStatusCheckError verifies that a
+// database query error during the disabled check returns UserStatusCheckError
+// (not UserDisabledError), so the callback handler does not redirect to
+// /auth/disabled but instead renders a generic service failure.
+func TestCheckUserDisabled_DatabaseErrorReturnsStatusCheckError(t *testing.T) {
+	t.Parallel()
+	db := newTestUserDB(t)
+	db.AutoMigrate(&model.User{})
+
+	service := &AuthService{db: db}
+	ctx := context.Background()
+
+	// Create a user with a subject
+	subject := uuid.NewString()
+	user := model.User{
+		ID:       uuid.NewString(),
+		Subject:  subject,
+		Username: "testuser",
+		Email:    "test@example.com",
+	}
+	db.Create(&user)
+
+	// Simulate a database error by closing the connection
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql.DB: %v", err)
+	}
+	sqlDB.Close()
+
+	// Query should fail with UserStatusCheckError, not UserDisabledError
+	err = service.checkUserDisabled(ctx, subject)
+
+	if err == nil {
+		t.Error("checkUserDisabled must fail closed on database error")
+	}
+
+	// Must return UserStatusCheckError, not UserDisabledError
+	var statusCheckErr *errorresponses.UserStatusCheckError
+	var disabledErr *errorresponses.UserDisabledError
+	if !errors.As(err, &statusCheckErr) {
+		t.Errorf("checkUserDisabled returned %T, want UserStatusCheckError", err)
+	}
+	if errors.As(err, &disabledErr) {
+		t.Error("checkUserDisabled should not return UserDisabledError on database error")
+	}
+}
