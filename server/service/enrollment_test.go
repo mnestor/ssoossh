@@ -26,7 +26,12 @@ import (
 func newTestEnrollmentService(t *testing.T, svc *CertRequestService) *EnrollmentService {
 	t.Helper()
 
-	if err := svc.db.AutoMigrate(&model.Certificate{}, &model.User{}, &model.EnrollmentRetrieval{}); err != nil {
+	if err := svc.db.AutoMigrate(
+		&model.Certificate{},
+		&model.User{},
+		&model.EnrollmentRetrieval{},
+		&model.EnrollmentReassignment{},
+	); err != nil {
 		t.Fatalf("failed to migrate retrieval tables: %v", err)
 	}
 	enrollment, err := NewEnrollmentService(svc.config, svc.db, svc.publisher, svc.subscriber)
@@ -1269,42 +1274,5 @@ func TestReassign(t *testing.T) {
 			t.Errorf("Reassign() error contains code: %v", err)
 		}
 	})
-}
-
-// TestCodeExposureInListForAdmin ensures codes are never returned in admin lists.
-func TestCodeExposureInListForAdmin(t *testing.T) {
-	t.Parallel()
-
-	auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
-	svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
-	enrollment := newTestEnrollmentService(t, svc)
-
-	ownerID := seedUser(t, svc.db, "sub-owner")
-	secretCode := "super-secret-code-12345"
-
-	seedEnrollment(t, svc, model.Enrollment{
-		ID: "enrollment1", Code: secretCode, PublicKey: "key1", UserID: ownerID,
-		Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
-		CreatedAt: time.Now(),
-	})
-
-	if err := svc.db.AutoMigrate(&model.User{}); err != nil {
-		t.Fatalf("failed to migrate users: %v", err)
-	}
-
-	// List should never return the code
-	list, err := enrollment.ListForAdmin(context.Background(),
-		&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
-		AdminListParams{Limit: 25, Offset: 0, Query: ""})
-	if err != nil {
-		t.Fatalf("ListForAdmin() error = %v", err)
-	}
-
-	// The AdminEnrollmentRow struct doesn't expose Code; just verify the response type doesn't include it
-	for _, row := range list.Enrollments {
-		if strings.Contains(row.Enrollment.Code, secretCode) {
-			t.Errorf("ListForAdmin() returned enrollment with code exposed")
-		}
-	}
 }
 

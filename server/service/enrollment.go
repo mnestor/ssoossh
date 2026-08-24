@@ -649,66 +649,69 @@ func (s *EnrollmentService) ListForAdmin(ctx context.Context, identity *Identity
 		return AdminEnrollmentList{}, &errorresponses.ForbiddenError{Reason: "auditor access required"}
 	}
 
-	query := s.db.WithContext(ctx)
-
-	// Apply search filter if provided
-	if params.Query != "" {
-		// Build a filter matching any of: user username/email, principals, keyid, request id
-		whereSQL := `
-			LOWER(users.username) LIKE ? ESCAPE '\' OR
-			LOWER(users.email) LIKE ? ESCAPE '\' OR
-			LOWER(enrollments.principals) LIKE ? ESCAPE '\' OR
-			LOWER(enrollments.key_id) LIKE ? ESCAPE '\' OR
-			LOWER(enrollments.certificate_request_id) LIKE ? ESCAPE '\'
-		`
-		pattern := "%" + escapeLikePattern(params.Query) + "%"
-		query = query.Where(whereSQL, pattern, pattern, pattern, pattern, pattern)
+	// Load all users first (needed for both search and later display)
+	var allUsers []model.User
+	if err := s.db.WithContext(ctx).Find(&allUsers).Error; err != nil {
+		return AdminEnrollmentList{}, fmt.Errorf("failed to load users: %w", err)
 	}
-
-	// Count total matching rows before windowing
-	var total int64
-	if err := query.Model(&model.Enrollment{}).
-		Joins("LEFT JOIN users ON enrollments.user_id = users.id").
-		Count(&total).Error; err != nil {
-		return AdminEnrollmentList{}, fmt.Errorf("failed to count enrollments: %w", err)
-	}
-
-	// Fetch the windowed page
-	var enrollments []model.Enrollment
-	if err := query.
-		Joins("LEFT JOIN users ON enrollments.user_id = users.id").
-		Order("enrollments.created_at DESC").
-		Limit(params.Limit).
-		Offset(params.Offset).
-		Find(&enrollments).Error; err != nil {
-		return AdminEnrollmentList{}, fmt.Errorf("failed to list enrollments: %w", err)
-	}
-
-	if len(enrollments) == 0 {
-		return AdminEnrollmentList{Total: total}, nil
-	}
-
-	// Load approver user info for all enrollments
-	userIDs := make([]string, 0, len(enrollments))
-	for _, e := range enrollments {
-		userIDs = append(userIDs, e.UserID)
-	}
-
-	var users []model.User
-	if err := s.db.WithContext(ctx).Where("id IN ?", userIDs).Find(&users).Error; err != nil {
-		return AdminEnrollmentList{}, fmt.Errorf("failed to load approver users: %w", err)
-	}
-	userByID := make(map[string]model.User, len(users))
-	for _, u := range users {
+	userByID := make(map[string]model.User, len(allUsers))
+	for _, u := range allUsers {
 		userByID[u.ID] = u
 	}
 
-	// Load retrieval counts and last timestamps
-	enrollmentIDs := make([]string, 0, len(enrollments))
-	for _, e := range enrollments {
+	// Load all enrollments (search is done in memory for simplicity)
+	var allEnrollments []model.Enrollment
+	if err := s.db.WithContext(ctx).
+		Order("created_at DESC").
+		Find(&allEnrollments).Error; err != nil {
+		return AdminEnrollmentList{}, fmt.Errorf("failed to list enrollments: %w", err)
+	}
+
+	// Filter by search query (case-insensitive, in-memory)
+	var filtered []model.Enrollment
+	pattern := strings.ToLower(params.Query)
+	for _, e := range allEnrollments {
+		if params.Query == "" {
+			// No filter
+			filtered = append(filtered, e)
+		} else {
+			// Check if query matches any searchable field
+			user := userByID[e.UserID]
+			matches := strings.Contains(strings.ToLower(user.Username), pattern) ||
+				strings.Contains(strings.ToLower(user.Email), pattern) ||
+				strings.Contains(strings.ToLower(e.Principals), pattern) ||
+				strings.Contains(strings.ToLower(e.KeyID), pattern) ||
+				(e.CertificateRequestID != nil && strings.Contains(strings.ToLower(*e.CertificateRequestID), pattern))
+			if matches {
+				filtered = append(filtered, e)
+			}
+		}
+	}
+
+	total := int64(len(filtered))
+
+	// Apply windowing
+	start := params.Offset
+	end := start + params.Limit
+	if start > len(filtered) {
+		start = len(filtered)
+	}
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+
+	windowed := filtered[start:end]
+	if len(windowed) == 0 {
+		return AdminEnrollmentList{Total: total}, nil
+	}
+
+	// Extract enrollment IDs for retrieval counts
+	enrollmentIDs := make([]string, 0, len(windowed))
+	for _, e := range windowed {
 		enrollmentIDs = append(enrollmentIDs, e.ID)
 	}
 
+	// Load retrieval counts and timestamps
 	counts, err := s.retrievalCounts(ctx, enrollmentIDs)
 	if err != nil {
 		return AdminEnrollmentList{}, err
@@ -719,8 +722,8 @@ func (s *EnrollmentService) ListForAdmin(ctx context.Context, identity *Identity
 	}
 
 	// Build response
-	rows := make([]AdminEnrollmentRow, 0, len(enrollments))
-	for _, e := range enrollments {
+	rows := make([]AdminEnrollmentRow, 0, len(windowed))
+	for _, e := range windowed {
 		row := AdminEnrollmentRow{
 			Enrollment:     e,
 			Approver:       userByID[e.UserID],
