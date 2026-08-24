@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -13,13 +14,14 @@ import (
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
-// newTestUserDB creates an in-memory test database.
+// newTestUserDB creates an in-memory test database with the users table.
 func newTestUserDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("failed to open test database: %v", err)
 	}
+	db.AutoMigrate(&model.User{})
 	return db
 }
 
@@ -111,7 +113,8 @@ func TestCheckUserDisabled_DisabledUserBlocked(t *testing.T) {
 	if err == nil {
 		t.Error("checkUserDisabled must reject disabled user")
 	}
-	if _, ok := err.(*errorresponses.UserDisabledError); !ok {
+	var userDisabledErr *errorresponses.UserDisabledError
+	if !errors.As(err, &userDisabledErr) {
 		t.Errorf("checkUserDisabled returned %T, want UserDisabledError", err)
 	}
 }
