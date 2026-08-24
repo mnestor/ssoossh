@@ -89,7 +89,7 @@
 		<div data-testid="cert-details" class="flex flex-col gap-5">
 			<div class="flex items-center justify-between gap-3 rounded-lg bg-surface-muted px-4 py-3">
 				<TypeChip type={cert.type} />
-				<span class="text-xs text-ink-muted font-mono">{cert.id}</span>
+				<span class="font-mono text-xs text-ink-muted">{cert.id}</span>
 			</div>
 
 			{#if decidedBy}

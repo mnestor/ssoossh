@@ -68,7 +68,6 @@
 	function handlePage(offset: number) {
 		loadCertificates(offset);
 	}
-
 </script>
 
 <svelte:head><title>Certificates · ssoossh</title></svelte:head>
