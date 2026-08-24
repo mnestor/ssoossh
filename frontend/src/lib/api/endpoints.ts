@@ -2,6 +2,8 @@ import { isInternalPath } from '$lib/paths';
 
 import { ApiError, request } from './client';
 import type {
+	AdminEnrollment,
+	AdminEnrollmentsResponse,
 	ApproveResult,
 	CertificateListResponse,
 	CurrentUser,
@@ -165,4 +167,69 @@ export function loginURL(returnTo?: string): string {
 		return '/auth/login';
 	}
 	return `/auth/login?return_to=${encodeURIComponent(returnTo)}`;
+}
+
+/**
+ * GET /api/admin/enrollments — paged, searchable list of all service
+ * enrollments across users, visible to auditors.
+ */
+export function listAdminEnrollments(
+	signal?: AbortSignal,
+	limit?: number,
+	offset?: number,
+	query?: string
+): Promise<AdminEnrollmentsResponse> {
+	const params = new URLSearchParams();
+	if (limit !== undefined) {
+		params.append('limit', limit.toString());
+	}
+	if (offset !== undefined) {
+		params.append('offset', offset.toString());
+	}
+	if (query) {
+		params.append('q', query);
+	}
+	const url = params.toString() ? `/admin/enrollments?${params.toString()}` : '/admin/enrollments';
+	return request<AdminEnrollmentsResponse>(url, { signal });
+}
+
+/**
+ * GET /api/admin/enrollments/:id — full enrollment details including
+ * retrieval log and reassignment history, visible to auditors and the owner.
+ */
+export function getAdminEnrollmentDetail(
+	id: string,
+	signal?: AbortSignal
+): Promise<{
+	enrollment: AdminEnrollment;
+	retrievals: EnrollmentRetrievalsResponse;
+	retrieval_total: number;
+}> {
+	return request<{
+		enrollment: AdminEnrollment;
+		retrievals: EnrollmentRetrievalsResponse;
+		retrieval_total: number;
+	}>(`/admin/enrollments/${encodeURIComponent(id)}`, { signal });
+}
+
+/**
+ * PATCH /api/admin/enrollments/:id/reassign — transfer ownership of an
+ * enrollment to another user. The new owner must have the required service
+ * account.
+ */
+export function reassignEnrollment(id: string, toUserId: string): Promise<{ reassigned: boolean }> {
+	return request<{ reassigned: boolean }>(`/admin/enrollments/${encodeURIComponent(id)}/reassign`, {
+		method: 'PATCH',
+		body: { to_user_id: toUserId }
+	});
+}
+
+/**
+ * PATCH /api/admin/enrollments/:id/expire — immediately expire an
+ * enrollment, preventing future service certificate retrievals.
+ */
+export function expireEnrollment(id: string): Promise<{ expired: boolean }> {
+	return request<{ expired: boolean }>(`/admin/enrollments/${encodeURIComponent(id)}/expire`, {
+		method: 'PATCH'
+	});
 }

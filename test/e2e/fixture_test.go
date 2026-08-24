@@ -28,12 +28,17 @@ type fixture struct {
 }
 
 // newFixture starts an IdP and a ssoosshd instance pointed at it, and a
-// private ssh-agent, all torn down via t.Cleanup.
-func newFixture(t *testing.T) *fixture {
+// private ssh-agent, all torn down via t.Cleanup. opts allows customizing
+// server configuration.
+func newFixture(t *testing.T, opts ...func(*harness.ServerOptions)) *fixture {
 	t.Helper()
 
 	idp := harness.NewIdentityProvider(t)
-	srv := harness.StartServer(t, idp, harness.ServerOptions{})
+	serverOpts := harness.ServerOptions{}
+	for _, opt := range opts {
+		opt(&serverOpts)
+	}
+	srv := harness.StartServer(t, idp, serverOpts)
 	agent := harness.StartAgent(t)
 	_, ssoosshBin := harness.Binaries(t)
 
