@@ -140,35 +140,6 @@ func (a *adminController) expireEnrollmentHandler(g *gin.Context) {
 	respondData(g, gin.H{"expired": true})
 }
 
-// disableUserHandler handles PATCH /api/admin/users/:id/disable: disables a
-// user, preventing future authentication and expiring their enrollments after
-// a configured grace period.
-//
-// @Summary     Disable a user (admin-only)
-// @Description Marks a user as disabled, preventing authentication and
-// @Description eventually expiring their enrollments after the configured
-// @Description grace period. The operation is idempotent.
-// @Tags        admin
-// @Produce     json
-// @Param       id path string true "User ID"
-// @Success     200 {object} gin.H "User disabled"
-// @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
-// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin"
-// @Failure     404 {object} openapidoc.ErrorEnvelope "User not found"
-// @Security    sessionCookie
-// @Router      /api/admin/users/{id}/disable [patch]
-func (a *adminController) disableUserHandler(g *gin.Context) {
-	id := g.Param("id")
-	if id == "" {
-		handleError(g, fmt.Errorf("user ID is required"))
-		return
-	}
-
-	// TODO: implement user disable logic with grace period for enrollment expiry.
-	// This is a placeholder that documents the interface.
-	handleError(g, fmt.Errorf("user disable is not yet implemented"))
-}
-
 // listUsersHandler handles GET /api/admin/users: returns a paginated,
 // searchable list of all users for auditor review.
 //

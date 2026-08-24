@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	"github.com/mnestor/ssoossh/server/model"
