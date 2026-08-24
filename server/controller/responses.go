@@ -73,7 +73,7 @@ func newPageMeta(p paging.Params, total int64) webtypes.PageMeta {
 // the users table by subject, since it is a stored attribute independent of
 // the session. Malformed JSON degrades to empty rather than erroring.
 func newCurrentUserResponse(identity *service.Identity, c *config.Config, db any, subject string) webtypes.CurrentUserResponse {
-	extra := hydratExtraFields(db, subject)
+	extra := hydrateExtraFields(db, subject)
 	return webtypes.CurrentUserResponse{
 		Subject:         identity.Subject,
 		Username:        identity.Username,
@@ -86,11 +86,11 @@ func newCurrentUserResponse(identity *service.Identity, c *config.Config, db any
 	}
 }
 
-// hydratExtraFields queries the users table for the given subject and decodes
+// hydrateExtraFields queries the users table for the given subject and decodes
 // its ExtraFields JSON. Returns an empty map if db is nil, no row exists for
 // the subject, or the JSON is malformed (warning logged). Always returns a
 // non-nil map.
-func hydratExtraFields(db any, subject string) map[string]any {
+func hydrateExtraFields(db any, subject string) map[string]any {
 	if db == nil {
 		return make(map[string]any)
 	}

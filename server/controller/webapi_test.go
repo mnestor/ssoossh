@@ -49,7 +49,7 @@ type mockUserDatabase struct {
 	users map[string]model.User
 }
 
-// GetUser implements the interface that hydratExtraFields checks for.
+// GetUser implements the interface that hydrateExtraFields checks for.
 // It returns the user by subject from the mock's users map.
 func (m *mockUserDatabase) GetUser(subject string, dest *model.User) error {
 	if user, ok := m.users[subject]; ok {

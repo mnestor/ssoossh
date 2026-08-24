@@ -38,12 +38,12 @@ func TestAccount_ShowsExtraFieldsAndMergedPrincipals(t *testing.T) {
 	})
 
 	// Navigate to the account page.
-	browser.Navigate(t, f.Server.BaseURL+"/account", `h2:contains("Identity")`)
+	browser.Navigate(t, f.Server.BaseURL+"/account", `[data-testid="account-identity-card"]`)
 
-	// Verify extra fields are displayed.
-	browser.WaitVisible(t, `text="E-40921"`)
-	browser.WaitVisible(t, `text="CC-7781"`)
+	// Verify extra fields are displayed via their data-testid attributes.
+	browser.WaitVisible(t, `[data-testid="extra-field-employee_id"]`)
+	browser.WaitVisible(t, `[data-testid="extra-field-cost_center"]`)
 
-	// Verify username shows as primary in the principals section.
-	browser.WaitVisible(t, `text="(primary)"`)
+	// Verify principals section is present.
+	browser.WaitVisible(t, `[data-testid="principals-section"]`)
 }

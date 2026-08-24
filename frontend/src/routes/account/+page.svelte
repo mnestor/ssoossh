@@ -48,27 +48,33 @@
 	{:else if !hasLoaded}
 		<p class="text-sm text-ink-muted">Loading…</p>
 	{:else if user}
-		<Card title="Identity" description="Who the server sees this session as.">
-			<dl>
+		<Card
+			title="Identity"
+			description="Who the server sees this session as."
+			data-testid="account-identity-card"
+		>
+			<dl data-testid="identity-fields">
 				<DetailRow label="Username" mono icon="user">{user.username}</DetailRow>
 				<DetailRow label="Email">{user.email || '—'}</DetailRow>
 				<DetailRow label="Subject" mono>{user.subject}</DetailRow>
 				{#if user.extra}
 					{#each Object.entries(user.extra) as [name, value] (name)}
-						<DetailRow label={name} mono={typeof value === 'string'}>
-							{#if Array.isArray(value)}
-								<span class="flex flex-wrap gap-1.5">
-									{#each value as v (v)}
-										<MonoChip>{v}</MonoChip>
-									{/each}
-								</span>
-							{:else if value === '' || value === null}
-								<!-- Missing extra field: display it visibly so operators can debug missing claims -->
-								<span class="text-ink-muted">MISSING</span>
-							{:else}
-								{value}
-							{/if}
-						</DetailRow>
+						<div data-testid="extra-field-{name}">
+							<DetailRow label={name} mono={typeof value === 'string'}>
+								{#if Array.isArray(value)}
+									<span class="flex flex-wrap gap-1.5">
+										{#each value as v (v)}
+											<MonoChip>{v}</MonoChip>
+										{/each}
+									</span>
+								{:else if value === '' || value === null}
+									<!-- Missing extra field: display it visibly so operators can debug missing claims -->
+									<span class="text-ink-muted">MISSING</span>
+								{:else}
+									{value}
+								{/if}
+							</DetailRow>
+						</div>
 					{/each}
 				{/if}
 				{#if user.is_auditor}
@@ -88,13 +94,13 @@
 			description="The principals the server will put in certificates issued to or approved by you."
 		>
 			<div class="flex flex-col gap-5">
-				<div>
+				<div data-testid="principals-section">
 					<SectionLabel>Principals for user certificates</SectionLabel>
 					<p class="mb-2 text-[13px] text-ink-muted">
 						Your username and any alternate account names you can use as principals. Your username
 						is the primary identity.
 					</p>
-					<span class="flex flex-wrap gap-1.5">
+					<span class="flex flex-wrap gap-1.5" data-testid="principals-list">
 						<MonoChip>{user.username} <span class="text-ink-muted">(primary)</span></MonoChip>
 						{#each user.other_accounts as account (account)}
 							<MonoChip>{account}</MonoChip>
