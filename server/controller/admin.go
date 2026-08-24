@@ -8,7 +8,10 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/middleware"
+	"github.com/mnestor/ssoossh/server/service"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
+	"github.com/mnestor/ssoossh/server/utils/paging"
 	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
@@ -24,24 +27,29 @@ func NewAdminController(
 	adminAuthMiddleware gin.HandlerFunc,
 	auditorAuthMiddleware gin.HandlerFunc,
 	csrfMiddleware gin.HandlerFunc,
+	enrollmentService service.EnrollmentProvider,
 ) {
-	a := &adminController{config: c, db: db}
+	a := &adminController{config: c, db: db, enrollmentService: enrollmentService}
 
 	// Admin routes (write operations)
 	adminGroup := group.Group("/admin", sessionAuthMiddleware, adminAuthMiddleware, csrfMiddleware)
 	adminGroup.PATCH("/enrollments/:id/expire", a.expireEnrollmentHandler)
 	adminGroup.PATCH("/users/:id/disable", a.disableUserHandler)
+	adminGroup.PATCH("/enrollments/:id/reassign", a.reassignEnrollmentHandler)
 
 	// Auditor routes (read-only operations)
 	auditorGroup := group.Group("/admin", sessionAuthMiddleware, auditorAuthMiddleware)
 	auditorGroup.GET("/config", a.effectiveConfigHandler)
 	auditorGroup.GET("/certificates/history", a.certificateHistoryHandler)
+	auditorGroup.GET("/enrollments", a.listEnrollmentsHandler)
+	auditorGroup.GET("/enrollments/:id", a.getEnrollmentDetailHandler)
 }
 
 // adminController handles admin and auditor-scoped HTTP routes.
 type adminController struct {
-	config *config.Config
-	db     *gorm.DB
+	config             *config.Config
+	db                 *gorm.DB
+	enrollmentService  service.EnrollmentProvider
 }
 
 // effectiveConfigHandler handles GET /api/admin/config: returns the server's
@@ -193,4 +201,203 @@ type adminEnrollmentModel struct {
 // TableName specifies the database table name.
 func (adminEnrollmentModel) TableName() string {
 	return "enrollments"
+}
+
+// listEnrollmentsHandler handles GET /api/admin/enrollments: paged, searchable
+// list of all enrollments across users, auditor-scoped.
+//
+// @Summary     List all service enrollments (auditor-only)
+// @Description Returns a paged list of all service enrollments across users, searchable
+// @Description by approver name, principals, key ID, or request ID. Visible to auditors.
+// @Tags        admin
+// @Produce     json
+// @Param       limit query int false "Page size (default 25, max 100)" example(25)
+// @Param       offset query int false "Rows to skip (default 0)" example(0)
+// @Param       q query string false "Search query (max 200 chars)" example("alice")
+// @Success     200 {object} openapidoc.AdminEnrollmentsEnvelope "Paged enrollment list"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
+// @Security    sessionCookie
+// @Router      /api/admin/enrollments [get]
+func (a *adminController) listEnrollmentsHandler(g *gin.Context) {
+	identity, ok := middleware.Identity(g)
+	if !ok {
+		handleError(g, &errorresponses.UnauthorizedError{})
+		return
+	}
+
+	params, err := paging.Parse(g.Request.URL.Query())
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	list, err := a.enrollmentService.ListForAdmin(g.Request.Context(), identity,
+		service.AdminListParams{Limit: params.Limit, Offset: params.Offset, Query: params.Query})
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	// Convert to web types
+	enrollments := make([]webtypes.AdminEnrollmentResponse, 0, len(list.Enrollments))
+	for _, row := range list.Enrollments {
+		resp := webtypes.AdminEnrollmentResponse{
+			ID:                       row.Enrollment.ID,
+			ApprovedByUsername:       row.Approver.Username,
+			ApprovedByEmail:          row.Approver.Email,
+			Principals:               row.Principals,
+			KeyID:                    row.Enrollment.KeyID,
+			PublicKeyFingerprint:     row.Fingerprint,
+			Options:                  convertOptions(row.Options),
+			CreatedAt:                row.Enrollment.CreatedAt,
+			ExpiresAt:                row.Enrollment.ExpiresAt,
+			RetrievalCount:           row.RetrievalCount,
+			LastRetrievedAt:          row.LastRetrievedAt,
+		}
+		if row.Enrollment.RedeemedAt != nil {
+			resp.FirstRedeemedAt = row.Enrollment.RedeemedAt
+		}
+		if row.Enrollment.CertificateDurationSeconds != nil {
+			certSecs := int(*row.Enrollment.CertificateDurationSeconds)
+			resp.CertificateValidSeconds = &certSecs
+		}
+		enrollments = append(enrollments, resp)
+	}
+
+	meta := webtypes.PageMeta{
+		Total:     list.Total,
+		Limit:     params.Limit,
+		Offset:    params.Offset,
+		Page:      params.PageNumber(),
+		PageCount: params.PageCount(list.Total),
+	}
+
+	respondData(g, webtypes.AdminEnrollmentsResponse{
+		Enrollments: enrollments,
+		Meta:        meta,
+	})
+}
+
+// getEnrollmentDetailHandler handles GET /api/admin/enrollments/:id: full
+// enrollment details including retrieval log, auditor-scoped.
+//
+// @Summary     Get enrollment details (auditor-only)
+// @Description Returns full details of one enrollment including its retrieval log
+// @Description and reassignment history. Visible to the approver and auditors.
+// @Tags        admin
+// @Produce     json
+// @Param       id path string true "Enrollment ID"
+// @Success     200 {object} openapidoc.EnrollmentDetailEnvelope "Full enrollment details"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "Enrollment not found"
+// @Security    sessionCookie
+// @Router      /api/admin/enrollments/{id} [get]
+func (a *adminController) getEnrollmentDetailHandler(g *gin.Context) {
+	identity, ok := middleware.Identity(g)
+	if !ok {
+		handleError(g, &errorresponses.UnauthorizedError{})
+		return
+	}
+
+	detail, err := a.enrollmentService.GetEnrollmentDetail(g.Request.Context(),
+		g.Param("id"), identity)
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	// Build retrievals response
+	retrievals := make([]webtypes.EnrollmentRetrievalResponse, 0, len(detail.Retrievals.Retrievals))
+	for _, r := range detail.Retrievals.Retrievals {
+		retrievals = append(retrievals, webtypes.EnrollmentRetrievalResponse{
+			RetrievedAt:       r.RetrievedAt,
+			SourceIP:          r.SourceIP,
+			CertificateSerial: r.CertificateSerial,
+			Succeeded:         r.Succeeded,
+		})
+	}
+
+	resp := webtypes.AdminEnrollmentResponse{
+		ID:                   detail.Enrollment.ID,
+		ApprovedByUsername:   detail.Approver.Username,
+		ApprovedByEmail:      detail.Approver.Email,
+		Principals:           detail.Principals,
+		KeyID:                detail.Enrollment.KeyID,
+		PublicKeyFingerprint: detail.Fingerprint,
+		Options:              convertOptions(detail.Options),
+		CreatedAt:            detail.Enrollment.CreatedAt,
+		ExpiresAt:            detail.Enrollment.ExpiresAt,
+		RetrievalCount:       detail.Retrievals.Total,
+	}
+	if detail.Enrollment.RedeemedAt != nil {
+		resp.FirstRedeemedAt = detail.Enrollment.RedeemedAt
+	}
+	if detail.Enrollment.CertificateDurationSeconds != nil {
+		certSecs := int(*detail.Enrollment.CertificateDurationSeconds)
+		resp.CertificateValidSeconds = &certSecs
+	}
+	if len(detail.Retrievals.Retrievals) > 0 {
+		resp.LastRetrievedAt = &detail.Retrievals.Retrievals[0].RetrievedAt
+	}
+
+	respondData(g, gin.H{
+		"enrollment":  resp,
+		"retrievals":  retrievals,
+		"retrieval_total": detail.Retrievals.Total,
+	})
+}
+
+// reassignEnrollmentHandler handles PATCH /api/admin/enrollments/:id/reassign:
+// transfer ownership of an enrollment to another user (admin-scoped).
+//
+// @Summary     Reassign an enrollment (admin/owner-only)
+// @Description Transfers ownership of an enrollment to another user. The new owner
+// @Description must have the required service account. Idempotent.
+// @Tags        admin
+// @Accept      json
+// @Produce     json
+// @Param       id path string true "Enrollment ID"
+// @Param       body body openapidoc.ReassignEnrollmentRequest true "New owner user ID"
+// @Success     200 {object} gin.H "Enrollment reassigned"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid request (ineligible target)"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized (must be owner or admin)"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "Enrollment or target user not found"
+// @Security    sessionCookie
+// @Router      /api/admin/enrollments/{id}/reassign [patch]
+func (a *adminController) reassignEnrollmentHandler(g *gin.Context) {
+	identity, ok := middleware.Identity(g)
+	if !ok {
+		handleError(g, &errorresponses.UnauthorizedError{})
+		return
+	}
+
+	var body struct {
+		ToUserID string `json:"to_user_id" binding:"required"`
+	}
+	if err := g.ShouldBindJSON(&body); err != nil {
+		handleError(g, err)
+		return
+	}
+
+	err := a.enrollmentService.Reassign(g.Request.Context(),
+		g.Param("id"), body.ToUserID, identity)
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	respondData(g, gin.H{"reassigned": true})
+}
+
+// convertOptions converts a service.RequestedOptions to a webtypes.CertificateOptionsResponse.
+func convertOptions(opts service.RequestedOptions) webtypes.CertificateOptionsResponse {
+	return webtypes.CertificateOptionsResponse{
+		Extensions:      opts.Extensions,
+		ForceCommand:    opts.ForceCommand,
+		SourceAddresses: opts.SourceAddresses,
+		NoTouchRequired: opts.NoTouchRequired,
+	}
 }

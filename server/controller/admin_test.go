@@ -119,6 +119,7 @@ func TestEffectiveConfigHandler_ShouldReturnConfigData(t *testing.T) {
 		mockAdminAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
+		nil,
 	)
 
 	w := httptest.NewRecorder()
@@ -168,6 +169,7 @@ func TestEffectiveConfigHandler_RequiresAuditorAuth(t *testing.T) {
 		mockAdminAuthMiddleware(false),
 		mockAuditorAuthMiddleware(false),
 		mockCSRFMiddleware(),
+		nil,
 	)
 
 	w := httptest.NewRecorder()
@@ -198,6 +200,7 @@ func TestExpireEnrollmentHandler_ShouldRejectMissingID(t *testing.T) {
 		mockAdminAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
+		nil,
 	)
 
 	// Request without :id parameter will not match the route (404)
@@ -229,6 +232,7 @@ func TestExpireEnrollmentHandler_RequiresAdminAuth(t *testing.T) {
 		mockAdminAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
+		nil,
 	)
 
 	w := httptest.NewRecorder()
@@ -270,6 +274,7 @@ func TestExpireEnrollmentHandler_ShouldReturn404ForUnknownID(t *testing.T) {
 		mockAdminAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
+		nil,
 	)
 
 	w := httptest.NewRecorder()
@@ -300,6 +305,7 @@ func TestDisableUserHandler_ShouldReturnErrorWhenNotImplemented(t *testing.T) {
 		mockAdminAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
+		nil,
 	)
 
 	w := httptest.NewRecorder()
@@ -332,6 +338,7 @@ func TestDisableUserHandler_RequiresAdminAuth(t *testing.T) {
 		mockAdminAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
+		nil,
 	)
 
 	w := httptest.NewRecorder()
@@ -362,6 +369,7 @@ func TestCertificateHistoryHandler_ShouldReturnEmptyList(t *testing.T) {
 		mockAdminAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
+		nil,
 	)
 
 	w := httptest.NewRecorder()
@@ -406,6 +414,7 @@ func TestCertificateHistoryHandler_RequiresAuditorAuth(t *testing.T) {
 		mockAdminAuthMiddleware(false),
 		mockAuditorAuthMiddleware(false),
 		mockCSRFMiddleware(),
+		nil,
 	)
 
 	w := httptest.NewRecorder()
@@ -445,6 +454,7 @@ func TestNewAdminController_RoutesAreRegistered(t *testing.T) {
 		mockAdminAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
+		nil,
 	)
 
 	// Basic test: GET /admin/config should be accessible
