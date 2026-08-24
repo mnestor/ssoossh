@@ -47,9 +47,9 @@ func NewAdminController(
 
 // adminController handles admin and auditor-scoped HTTP routes.
 type adminController struct {
-	config             *config.Config
-	db                 *gorm.DB
-	enrollmentService  service.EnrollmentProvider
+	config            *config.Config
+	db                *gorm.DB
+	enrollmentService service.EnrollmentProvider
 }
 
 // effectiveConfigHandler handles GET /api/admin/config: returns the server's
@@ -243,17 +243,17 @@ func (a *adminController) listEnrollmentsHandler(g *gin.Context) {
 	enrollments := make([]webtypes.AdminEnrollmentResponse, 0, len(list.Enrollments))
 	for _, row := range list.Enrollments {
 		resp := webtypes.AdminEnrollmentResponse{
-			ID:                       row.Enrollment.ID,
-			ApprovedByUsername:       row.Approver.Username,
-			ApprovedByEmail:          row.Approver.Email,
-			Principals:               row.Principals,
-			KeyID:                    row.Enrollment.KeyID,
-			PublicKeyFingerprint:     row.Fingerprint,
-			Options:                  convertOptions(row.Options),
-			CreatedAt:                row.Enrollment.CreatedAt,
-			ExpiresAt:                row.Enrollment.ExpiresAt,
-			RetrievalCount:           row.RetrievalCount,
-			LastRetrievedAt:          row.LastRetrievedAt,
+			ID:                   row.Enrollment.ID,
+			ApprovedByUsername:   row.Approver.Username,
+			ApprovedByEmail:      row.Approver.Email,
+			Principals:           row.Principals,
+			KeyID:                row.Enrollment.KeyID,
+			PublicKeyFingerprint: row.Fingerprint,
+			Options:              convertOptions(row.Options),
+			CreatedAt:            row.Enrollment.CreatedAt,
+			ExpiresAt:            row.Enrollment.ExpiresAt,
+			RetrievalCount:       row.RetrievalCount,
+			LastRetrievedAt:      row.LastRetrievedAt,
 		}
 		if row.Enrollment.RedeemedAt != nil {
 			resp.FirstRedeemedAt = row.Enrollment.RedeemedAt
@@ -343,8 +343,8 @@ func (a *adminController) getEnrollmentDetailHandler(g *gin.Context) {
 	}
 
 	respondData(g, gin.H{
-		"enrollment":  resp,
-		"retrievals":  retrievals,
+		"enrollment":      resp,
+		"retrievals":      retrievals,
 		"retrieval_total": detail.Retrievals.Total,
 	})
 }

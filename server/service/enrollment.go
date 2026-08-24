@@ -543,12 +543,12 @@ type AdminEnrollmentRow struct {
 
 // AdminEnrollmentDetail is one enrollment in full, with the full retrieval log.
 type AdminEnrollmentDetail struct {
-	Enrollment   model.Enrollment
-	Approver     model.User
-	Principals   []string
-	Options      RequestedOptions
-	Fingerprint  string
-	Retrievals   RetrievalLog
+	Enrollment    model.Enrollment
+	Approver      model.User
+	Principals    []string
+	Options       RequestedOptions
+	Fingerprint   string
+	Retrievals    RetrievalLog
 	Reassignments []model.EnrollmentReassignment
 }
 
@@ -640,10 +640,10 @@ func (s *EnrollmentService) markRetrievalSucceeded(ctx context.Context, enrollme
 // Fails closed with Forbidden for non-auditors.
 //
 // Search matches case-insensitively against:
-// - Approving user's username and email
-// - Enrollment principals
-// - Enrollment key ID
-// - Certificate request ID
+// - Approving user's username and email.
+// - Enrollment principals.
+// - Enrollment key ID.
+// - Certificate request ID.
 func (s *EnrollmentService) ListForAdmin(ctx context.Context, identity *Identity, params AdminListParams) (AdminEnrollmentList, error) {
 	if !s.config.Admin.GrantsAuditor(identity.Groups) {
 		return AdminEnrollmentList{}, &errorresponses.ForbiddenError{Reason: "auditor access required"}
@@ -925,9 +925,3 @@ func (s *EnrollmentService) Reassign(ctx context.Context, enrollmentID string, t
 // escapeLikePattern escapes wildcards in a search term for LIKE comparison.
 // This is duplicated from paging.escapeLike because that function is not
 // exported. The implementation is identical.
-func escapeLikePattern(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, "%", `\%`)
-	s = strings.ReplaceAll(s, "_", `\_`)
-	return s
-}
