@@ -41,24 +41,22 @@ func (a *app) registerJobs(ctx context.Context) error {
 // stranded requests are cleaned up promptly and in-process ones are caught
 // as they arise.
 //
-// There used to be a second shape here for RequestTTL = 0, which ran the
-// sweep once inline and skipped the recurring pass, because a disabled TTL
-// gives the sweep no bound to derive. That case no longer exists:
-// config.CertificateOptions.Validate rejects a non-positive request_ttl at
-// startup. Removing it also removes a genuine multi-instance hazard — with
-// no bound the sweep treats every signing row as stranded, so a restarting
-// instance would invalidate another instance's live in-flight requests
-// (docs/dev/multi-instance-safety-plan.md, item 2).
+// The sweep always has a bound to derive, because
+// config.CertificateOptions.Validate rejects a non-positive client_timeout
+// at startup. Without one it would treat every signing row as stranded, and
+// a restarting instance would invalidate another instance's live in-flight
+// requests (docs/dev/multi-instance-safety-plan.md, item 2).
 func (a *app) registerSweepJob(ctx context.Context) error {
 	certOptions := a.config.CertOptions
 
-	// Sweeping on the signing-timeout interval keeps detection latency to
-	// about one extra interval. Falls back to RequestTTL (guaranteed
-	// non-zero by config validation) if the timeout is unset, since gocron
-	// rejects a zero interval.
-	interval := certOptions.SigningTimeout
+	// Sweeping on the signing grace keeps detection latency to about one
+	// extra interval — which is why the worst-case client wait spends two
+	// of those shares, and why ApprovalTTL reserves for both. Falls back to
+	// the approval TTL if the grace rounds to nothing, since gocron rejects
+	// a zero interval.
+	interval := certOptions.SigningGrace()
 	if interval <= 0 {
-		interval = certOptions.RequestTTL
+		interval = certOptions.ApprovalTTL()
 	}
 
 	err := a.scheduler.RegisterJob(ctx, sweepJobName, gocron.DurationJob(interval),
@@ -89,11 +87,11 @@ func (a *app) registerSweepJob(ctx context.Context) error {
 // non-leader would silently resume leaking.
 //
 // RunImmediately is pointless here (the cache is empty at startup) and the
-// interval is RequestTTL rather than the signing timeout: entries only
+// interval is the approval TTL rather than the signing grace: entries only
 // become evictable once they are a full TTL old, so sweeping faster than
 // that just walks the map for nothing.
 func (a *app) registerEvictJob(ctx context.Context) error {
-	interval := a.config.CertOptions.RequestTTL
+	interval := a.config.CertOptions.ApprovalTTL()
 
 	err := a.scheduler.RegisterJob(ctx, evictJobName, gocron.DurationJob(interval),
 		a.svc.certRequest.EvictResolved,

@@ -146,7 +146,6 @@
 		<p class="pb-4 text-[13px] text-ink-muted">{cardCopy.description}</p>
 
 		<dl class="divide-y divide-border-subtle">
-			<DetailRow label="Certificate type"><TypeChip type={detail.type} /></DetailRow>
 			<DetailRow label="Principals">
 				{#if detail.principals.length > 0}
 					<span class="flex flex-wrap gap-1.5">

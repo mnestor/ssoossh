@@ -203,10 +203,10 @@ sequenceDiagram
     participant Server as ssoossh server
     participant Client as ssoossh client
 
-    User->>Browser: authenticate and approve (as in 1b)
+    User->>Browser: authenticate and approve,<br/>choosing a service account
     Server->>Server: bind code to this public key<br/>AND the authorized option set
-    Server-->>Client: enrollment code
-    Client->>User: print the code and how to use it
+    Server-->>Client: enrollment code, service account,<br/>code expiry
+    Client->>User: print the code, whose it is,<br/>when it dies, and how to use it
 ```
 
 The code is printed once and stored nowhere. It is a bearer credential —
@@ -215,6 +215,17 @@ enrollment expires — and where it belongs is wherever the unattended job
 will read it, which only the operator knows. So `service enroll` prints it
 along with the exact `service retrieve` command to run, and `service
 retrieve` reads it from `--code` or `$SSOOSSH_ENROLLMENT_CODE`.
+
+The chosen service account and the code's expiry come back on the same
+event as the code, because the operator at the terminal never sees the
+approval screen. Without them the only way to learn which principal the
+certificates carry would be to retrieve one and inspect it, and the only
+statement about the code's lifetime would be "until the enrollment
+expires". The account is set by the approver from their own linked
+accounts, and it is the sole principal of every certificate the code
+redeems. The expiry bounds the *code*
+(`cert_options.service.enrollment_duration`), not those certificates, which
+get their own lifetime at each redemption.
 
 ### 4c. Unattended reissue
 
@@ -288,7 +299,7 @@ Service certificates: `service enroll` requests, a human approves in the
 browser choosing which of their service accounts the certificate is for,
 and the enrollment code redeems certificates unattended via
 `service retrieve` until it expires — every redemption logged for the
-approver and auditors. Host certificates were removed
+approver and auditors. There are no host certificates
 ([decisions.md](decisions.md)); the local principal-mapping commands
 (`host mapping`, `host principals`) support sshd's
 `AuthorizedPrincipalsCommand` without any server side.

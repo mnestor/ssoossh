@@ -25,32 +25,44 @@ import (
 // a one-line bypass of the whole control. Testing those two needs a
 // container with a disposable /etc, not a seam in the product.
 
-// resolvedValue pulls one field out of `ssh config`'s aligned output. The
-// command pads labels with %-22s, so the value is everything after the
-// label on its line.
+// resolvedValue pulls one field out of the --debug report's settings block.
+// The report indents each row and pads labels with %-22s, so the value is
+// everything after the label on its line.
+//
+// The report is the only place resolved settings are printed: `ssh config`
+// prints the ssh_config recipes and nothing else, deliberately, so that
+// there is one answer to "what is in effect" rather than two of differing
+// depth.
 func resolvedValue(t *testing.T, out, label string) string {
 	t.Helper()
 
 	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, label) {
 			return strings.TrimSpace(strings.TrimPrefix(line, label))
 		}
 	}
-	t.Fatalf("no %q line in ssh config output:\n%s", label, out)
+	t.Fatalf("no %q line in the debug report:\n%s", label, out)
 	return ""
 }
 
-// showConfig runs `ssh config` with the given options and returns its
-// stdout, failing the test if the command did not succeed.
+// showConfig returns the --debug report for the given options, failing the
+// test if the command did not succeed.
+//
+// It drives `ssh config`, which is offline: nothing here is testing the CA
+// fetch, and an offline command means these cases resolve their settings
+// without a server having to answer. The report is on stderr — stdout
+// carries certificates and relayed data for other commands, so nothing
+// diagnostic is ever written there.
 func showConfig(t *testing.T, bin string, o harness.ClientOptions) string {
 	t.Helper()
 
-	o.Args = append([]string{"ssh", "config"}, o.Args...)
+	o.Args = append([]string{"ssh", "config", "--debug"}, o.Args...)
 	res := harness.RunClient(t, bin, o)
 	if res.ExitCode != 0 {
-		t.Fatalf("ssh config failed with exit %d\nstderr:\n%s", res.ExitCode, res.Stderr)
+		t.Fatalf("ssh config --debug failed with exit %d\nstderr:\n%s", res.ExitCode, res.Stderr)
 	}
-	return res.Stdout
+	return res.Stderr
 }
 
 // The chain in one test, each layer adding a file that overrides the one
@@ -91,8 +103,9 @@ func TestConfigPrecedence_ShouldLetTheMoreSpecificFileWin(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			opts := tt.opts
-			// The server has to come from somewhere for PreRun to reach the
-			// CA; it is not the setting under test here.
+			// The server is not the setting under test, and `ssh config` is
+			// offline, so it is passed only to keep the resolved value
+			// unsurprising rather than because anything has to answer.
 			opts.Args = []string{"--server", f.Server.BaseURL}
 			opts.Env = map[string]string{"SSH_AUTH_SOCK": f.Agent.Socket}
 
@@ -127,32 +140,37 @@ func TestConfigPrecedence_ShouldLetFlagsBeatEveryFile(t *testing.T) {
 // A config file with no flag at all: the whole point of having config
 // files, and something no test had exercised because every invocation
 // carried --server.
+//
+// Driven through `ca` rather than `ssh config`, which is offline and so
+// could satisfy this test without any server existing. `ca` is the smallest
+// command that actually reaches out, which is what makes "the file was
+// read" and "the file was believed" the same assertion here.
 func TestConfigPrecedence_ShouldReachTheServerNamedOnlyInAConfigFile(t *testing.T) {
 	f := newFixture(t)
 
 	// No --server anywhere on the command line. If the file is not read,
 	// PreRun has no server to fetch the CA from and the command fails.
 	res := harness.RunClient(t, f.SsoosshBin, harness.ClientOptions{
-		Args:     []string{"ssh", "config"},
+		Args:     []string{"ca", "--debug"},
 		UserYAML: fmt.Sprintf("server: %q\n", f.Server.BaseURL),
 		Env:      map[string]string{"SSH_AUTH_SOCK": f.Agent.Socket},
 	})
 
 	if res.ExitCode != 0 {
-		t.Fatalf("ssh config failed with only a config file for the server: exit %d\nstderr:\n%s",
+		t.Fatalf("ca failed with only a config file for the server: exit %d\nstderr:\n%s",
 			res.ExitCode, res.Stderr)
 	}
-	if got := resolvedValue(t, res.Stdout, "Server"); got != f.Server.BaseURL {
+	if got := resolvedValue(t, res.Stderr, "Server"); got != f.Server.BaseURL {
 		t.Errorf("got server %q, want %q", got, f.Server.BaseURL)
 	}
 	// Having actually reached the server is what distinguishes this from
 	// merely parsing the file: the CA is fetched during PreRun.
-	if got := resolvedValue(t, res.Stdout, "CA public key"); got == "(none)" || got == "" {
+	if got := resolvedValue(t, res.Stderr, "CA public key"); got == "(none)" || got == "" {
 		t.Errorf("expected a CA fetched from the configured server, got %q", got)
 	}
 }
 
-// Every setting the resolved-config report exposes, driven from a file.
+// Every setting the --debug report exposes, driven from a file.
 // Individually cheap, and together they are the first proof that these keys
 // survive the round trip from YAML to a running binary at all.
 func TestConfigPrecedence_ShouldApplyEachSettingFromAConfigFile(t *testing.T) {
@@ -218,7 +236,7 @@ func TestConfigPrecedence_ShouldReportAMalformedConfigFileUnderDebug(t *testing.
 		t.Errorf("expected the malformed user file to be reported as an error, got:\n%s", res.Stderr)
 	}
 	// And the setting it would have provided must not have taken effect.
-	if got := resolvedValue(t, res.Stdout, "Key file"); got == "[unterminated" {
+	if got := resolvedValue(t, res.Stderr, "Key file"); got == "[unterminated" {
 		t.Error("a value from the malformed file reached the resolved config")
 	}
 }

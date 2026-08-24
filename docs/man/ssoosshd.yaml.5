@@ -132,14 +132,6 @@ Specified as a Go duration string (e.g.
 Must be greater than zero. Default:
 .BR 2160h " (90 days)."
 .TP
-.BI max_host_cert_lifetime: " duration"
-Maximum lifetime for host certificates, enforced as a defense-in-depth
-check before signing. Retained for the signer's dormant host support;
-nothing issues host certificates. Specified as a Go duration string.
-Default:
-.BR 17544h " (2 years)."
-Must be greater than zero.
-.TP
 .BI max_service_cert_lifetime: " duration"
 Maximum lifetime for service certificates, enforced as a defense-in-depth
 check before signing. Specified as a Go duration string.
@@ -572,18 +564,22 @@ attribute; only takes effect once
 is set.
 .SS cert_options (issuance policy)
 .TP
-.BI cert_options.request_ttl: " duration"
-How long a pending certificate request (user, service, or PAM) stays
-open for approval before it is treated as expired. Shared across every
-type. Default:
-.BR 5m .
-.TP
-.BI cert_options.signing_timeout: " duration"
-How long an approved request may sit awaiting signature before the sweep
-treats it as stranded and fails it. Measured from the request's creation
-time, offset by
-.BR request_ttl ,
-not from approval. Default:
+.BI cert_options.client_timeout: " duration"
+The longest a client waiting on a certificate request goes before the
+server hands it a terminal answer. The server owns this deadline and
+measures it from the request's creation, so a client reconnecting to its
+event stream re-attaches to the original deadline rather than extending
+it. Everything else about request timing derives from it: a signing grace
+of
+.IR client_timeout /10
+bounds how long an approved request may await signature before the
+stranded-request sweep fails it, how often that sweep runs, and how long
+.B service retrieve
+blocks; the remainder is how long a pending request stays open for
+approval, shared across every certificate type. Two signing shares are
+spent in the worst case, one for the stranded cutoff and one for the
+sweep interval that detects it, so the total is exactly this value.
+Must be greater than zero. Default:
 .BR 5m .
 .TP
 .B cert_options.user.*
@@ -629,13 +625,32 @@ which never falls back to it \(em see below).
 Policy for non-interactive service certificates: same
 .BR require_group ", " valid_duration ", " extensions ", " key_id_template
 shape as
-.BR cert_options.user .
+.BR cert_options.user ,
+plus
+.BR enrollment_duration .
 Defaults:
 .B require_group
 empty,
 .B valid_duration
-.BR 8760h " (one year), " extensions
+.BR 8760h " (one year), " enrollment_duration " " 8760h ", " extensions
 empty.
+.RS
+.TP
+.B enrollment_duration
+How long the enrollment code minted at approval stays redeemable,
+independent of
+.BR valid_duration .
+The code is reusable so an unattended job can redeem it from
+.BR cron (8),
+and each redemption issues a fresh certificate of
+.B valid_duration
+measured from that redemption. Set this to how long the service should keep
+renewing unattended, and
+.B valid_duration
+to how long any single certificate may be used. Must be greater than zero;
+.B ssoosshd
+refuses to start otherwise.
+.RE
 .TP
 .B cert_options.pam.*
 Policy for PAM certificates (short-lived certificates a

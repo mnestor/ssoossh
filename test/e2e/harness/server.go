@@ -235,8 +235,13 @@ func (s *Server) shutdown(t *testing.T) {
 	t.Helper()
 
 	if t.Failed() {
-		writeArtifact(t, "ssoosshd-stdout.log", s.stdout.Bytes())
-		writeArtifact(t, "ssoosshd-stderr.log", s.stderr.Bytes())
+		// Keyed by port: a multi-instance test runs several servers under
+		// one test name, and fixed filenames meant the last one to shut
+		// down silently overwrote every other instance's diagnostics --
+		// which is precisely the log you need when the instances disagree.
+		port := s.BaseURL[strings.LastIndex(s.BaseURL, ":")+1:]
+		writeArtifact(t, "ssoosshd-"+port+"-stdout.log", s.stdout.Bytes())
+		writeArtifact(t, "ssoosshd-"+port+"-stderr.log", s.stderr.Bytes())
 	}
 
 	if s.cmd.Process == nil {

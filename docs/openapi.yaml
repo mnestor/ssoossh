@@ -136,13 +136,11 @@ components:
     model.CertificateType:
       enum:
       - user
-      - host
       - service
       - pam
       type: string
       x-enum-varnames:
       - CertificateTypeUser
-      - CertificateTypeHost
       - CertificateTypeService
       - CertificateTypePAM
     openapidoc.ApproveEnvelope:
@@ -275,6 +273,15 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/apitypes.RetrieveResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.VersionEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.VersionResponse'
         error:
           type: string
       required:
@@ -459,11 +466,17 @@ components:
         admin_require_group:
           description: Admin authorization
           type: string
+        cert_approval_ttl:
+          type: string
+        cert_client_timeout:
+          description: |-
+            CertClientTimeout is the configured budget; the two below are what it
+            derives to. Both are surfaced because an operator debugging "why did
+            my request expire" needs the effective numbers, not just the input.
+          type: string
         cert_pam_require_group:
           type: string
         cert_pam_valid_duration:
-          type: string
-        cert_request_ttl:
           type: string
         cert_service_extensions:
           items:
@@ -474,7 +487,7 @@ components:
           type: string
         cert_service_valid_duration:
           type: string
-        cert_signing_timeout:
+        cert_signing_grace:
           type: string
         cert_user_extensions:
           items:
@@ -503,11 +516,12 @@ components:
           description: Server connection and TLS settings
           type: string
       required:
+      - cert_approval_ttl
+      - cert_client_timeout
       - cert_pam_valid_duration
-      - cert_request_ttl
       - cert_service_extensions
       - cert_service_valid_duration
-      - cert_signing_timeout
+      - cert_signing_grace
       - cert_user_extensions
       - cert_user_valid_duration
       - db_provider
@@ -628,6 +642,35 @@ components:
       - status
       - type
       - valid_seconds
+      type: object
+    webtypes.VersionResponse:
+      properties:
+        commit:
+          description: |-
+            Commit is the git revision the build came from. It is what identifies
+            a "development" build, which has no release of its own to point at.
+          type: string
+        github_url:
+          description: |-
+            GithubURL is the project's source repository. Served rather than
+            hardcoded in the frontend so that a fork only has to change
+            internal/version.
+          type: string
+        release_url:
+          description: |-
+            ReleaseURL points at the GitHub release matching Version. Omitted for
+            an untagged build, where there is no release page to link to.
+          type: string
+        version:
+          description: |-
+            Version is the release this binary was built from, without the tag's
+            leading "v" (goreleaser and the Makefile both strip it). Untagged
+            builds report the "development" default from internal/version.
+          type: string
+      required:
+      - commit
+      - github_url
+      - version
       type: object
   securitySchemes:
     sessionCookie:
@@ -1110,9 +1153,11 @@ paths:
 
         The SSE event *name* carries the terminal status (`approved`, `denied`,
         `expired`, `enrolled`, `failed`); each event's data is an envelope whose
-        `data` half carries the certificate or enrollment code. That shape is
-        not in this document: the response body is a stream rather than JSON, so
-        there is nowhere to declare a schema for what individual events carry.
+        `data` half carries the certificate, or the enrollment code together with
+        the service account it was approved for and when the code expires. That
+        shape is not in this document: the response body is a stream rather than
+        JSON, so there is nowhere to declare a schema for what individual events
+        carry.
 
         Unauthenticated: the request ID is the credential.
       parameters:
@@ -1323,6 +1368,23 @@ paths:
       summary: The caller's own identity
       tags:
       - web
+  /api/version:
+    get:
+      description: |-
+        Unauthenticated endpoint that returns the running server's build
+        identity for display in the web UI footer. Values come from the
+        build stamp; an untagged build reports "development" and omits the
+        release URL.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.VersionEnvelope'
+          description: Build identity of the running server
+      summary: Get server version
+      tags:
+      - public
   /auth/callback:
     get:
       description: |-

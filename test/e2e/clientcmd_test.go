@@ -135,12 +135,60 @@ func TestInspect_ShouldReportNothingLoadedWhenTheAgentIsEmpty(t *testing.T) {
 	}
 }
 
-func TestConfig_ShouldReportTheResolvedConfiguration(t *testing.T) {
+// `ssh config` is the wiring harness: the ssh_config recipes and nothing
+// else. Resolved settings live in the --debug report alone, so that there
+// is one answer to "what is in effect" instead of two that can drift.
+func TestConfig_ShouldPrintTheSshConfigRecipes(t *testing.T) {
 	f := newFixture(t)
 
-	res := runClient(t, f, "ssh", "config", "--server", f.Server.BaseURL)
+	res := runClient(t, f, "ssh", "config")
 	if res.ExitCode != 0 {
 		t.Fatalf("expected ssh config to succeed, got exit %d\nstderr:\n%s", res.ExitCode, res.Stderr)
+	}
+
+	for _, want := range []string{"Match host", "exec \"ssoossh ssh login\"", "ProxyCommand ssoossh ssh proxycommand"} {
+		if !strings.Contains(res.Stdout, want) {
+			t.Errorf("expected ssh config output to contain %q, got:\n%s", want, res.Stdout)
+		}
+	}
+	for _, unwanted := range []string{"TLS verification", "CA public key", "Key type"} {
+		if strings.Contains(res.Stdout, unwanted) {
+			t.Errorf("ssh config reported the setting %q; --debug is the only place settings are reported. Got:\n%s",
+				unwanted, res.Stdout)
+		}
+	}
+}
+
+// The recipes have to be readable when there is no server configured at
+// all, which is when someone is most likely to be reading them. `ssh config`
+// is declared offline so root's PreRun never attempts the CA fetch; without
+// that this exits non-zero with a network error instead of answering.
+func TestConfig_ShouldPrintTheRecipesWithNoServerConfigured(t *testing.T) {
+	f := newFixture(t)
+
+	res := harness.RunClient(t, f.SsoosshBin, harness.ClientOptions{
+		Args: []string{"ssh", "config"},
+		// A server that is syntactically fine and answers nothing: if the
+		// command reaches out at all, this fails.
+		UserYAML: "server: https://unreachable.example.invalid\n",
+	})
+
+	if res.ExitCode != 0 {
+		t.Fatalf("ssh config must not need a reachable server, got exit %d\nstderr:\n%s", res.ExitCode, res.Stderr)
+	}
+	if !strings.Contains(res.Stdout, "Match host") {
+		t.Errorf("expected the ssh_config recipes, got:\n%s", res.Stdout)
+	}
+}
+
+// The report is the resolved configuration, and this is the settings block
+// someone is sent to when a login misbehaves.
+func TestDebug_ShouldReportTheResolvedConfiguration(t *testing.T) {
+	f := newFixture(t)
+
+	res := runClient(t, f, "ca", "--server", f.Server.BaseURL, "--debug")
+	if res.ExitCode != 0 {
+		t.Fatalf("expected ca --debug to succeed, got exit %d\nstderr:\n%s", res.ExitCode, res.Stderr)
 	}
 
 	tests := []struct {
@@ -159,13 +207,13 @@ func TestConfig_ShouldReportTheResolvedConfiguration(t *testing.T) {
 		{name: "ca public key", want: "CA public key"},
 	}
 
-	// Whitespace is collapsed because the command aligns its columns with
+	// Whitespace is collapsed because the report aligns its columns with
 	// %-22s, and asserting on the padding would make this a formatting test.
-	got := strings.Join(strings.Fields(res.Stdout), " ")
+	got := strings.Join(strings.Fields(res.Stderr), " ")
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if !strings.Contains(got, tt.want) {
-				t.Errorf("expected ssh config output to contain %q, got:\n%s", tt.want, res.Stdout)
+				t.Errorf("expected the debug report to contain %q, got:\n%s", tt.want, res.Stderr)
 			}
 		})
 	}
@@ -175,12 +223,12 @@ func TestConfig_ShouldReportTheResolvedConfiguration(t *testing.T) {
 // part worth pinning: it exists so two deployments can be compared at a
 // glance, which stops working if it ever prints the whole blob or too
 // little of it to tell two CAs apart.
-func TestConfig_ShouldSummariseTheCAKeyRatherThanPrintingItWhole(t *testing.T) {
+func TestDebug_ShouldSummariseTheCAKeyRatherThanPrintingItWhole(t *testing.T) {
 	f := newFixture(t)
 
-	res := runClient(t, f, "ssh", "config", "--server", f.Server.BaseURL)
+	res := runClient(t, f, "ssh", "inspect", "--server", f.Server.BaseURL, "--debug")
 	if res.ExitCode != 0 {
-		t.Fatalf("expected ssh config to succeed, got exit %d\nstderr:\n%s", res.ExitCode, res.Stderr)
+		t.Fatalf("expected ssh inspect --debug to succeed, got exit %d\nstderr:\n%s", res.ExitCode, res.Stderr)
 	}
 
 	fields := strings.Fields(f.Server.CAPublicKey)
@@ -189,10 +237,11 @@ func TestConfig_ShouldSummariseTheCAKeyRatherThanPrintingItWhole(t *testing.T) {
 	}
 	keyType, material := fields[0], fields[1]
 
-	if !strings.Contains(res.Stdout, keyType) {
-		t.Errorf("expected the CA summary to name the key type %q, got:\n%s", keyType, res.Stdout)
+	report := resolvedValue(t, res.Stderr, "CA public key")
+	if !strings.Contains(report, keyType) {
+		t.Errorf("expected the CA summary to name the key type %q, got %q", keyType, report)
 	}
-	if strings.Contains(res.Stdout, material) {
-		t.Error("ssh config printed the full CA key material; it is meant to be truncated")
+	if strings.Contains(report, material) {
+		t.Error("the debug report printed the full CA key material; it is meant to be truncated")
 	}
 }

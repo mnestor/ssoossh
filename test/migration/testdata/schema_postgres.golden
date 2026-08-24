@@ -1,0 +1,117 @@
+table ca_signer_keys
+  column created_at type=timestamp with time zone nullable=false default=<none>
+  column expires_at type=timestamp with time zone nullable=false default=<none>
+  column fingerprint type=text nullable=false default=<none>
+  column public_key type=text nullable=false default=<none>
+  column updated_at type=timestamp with time zone nullable=false default=<none>
+  index ca_signer_keys_pkey CREATE UNIQUE INDEX ca_signer_keys_pkey ON public.ca_signer_keys USING btree (fingerprint)
+  index idx_ca_signer_keys_expires_at CREATE INDEX idx_ca_signer_keys_expires_at ON public.ca_signer_keys USING btree (expires_at)
+table certificate_request_decisions
+  column accept_language type=text nullable=false default=''::text
+  column certificate_request_id type=text nullable=false default=<none>
+  column decided_at type=timestamp with time zone nullable=false default=<none>
+  column email type=text nullable=false default=''::text
+  column forwarded_for type=text nullable=false default=''::text
+  column groups type=text nullable=false default=''::text
+  column id type=text nullable=false default=<none>
+  column other_accounts type=text nullable=false default=''::text
+  column outcome type=text nullable=false default=<none>
+  column service_accounts type=text nullable=false default=''::text
+  column source_ip type=text nullable=false default=''::text
+  column subject type=text nullable=false default=''::text
+  column user_agent type=text nullable=false default=''::text
+  column username type=text nullable=false default=''::text
+  check chk_certificate_request_decisions_outcome (outcome = ANY (ARRAY['approved'::text, 'denied'::text]))
+  index certificate_request_decisions_certificate_request_id_key CREATE UNIQUE INDEX certificate_request_decisions_certificate_request_id_key ON public.certificate_request_decisions USING btree (certificate_request_id)
+  index certificate_request_decisions_pkey CREATE UNIQUE INDEX certificate_request_decisions_pkey ON public.certificate_request_decisions USING btree (id)
+  index idx_certificate_request_decisions_decided_at CREATE INDEX idx_certificate_request_decisions_decided_at ON public.certificate_request_decisions USING btree (decided_at)
+  index idx_certificate_request_decisions_source_ip CREATE INDEX idx_certificate_request_decisions_source_ip ON public.certificate_request_decisions USING btree (source_ip)
+  index idx_certificate_request_decisions_subject CREATE INDEX idx_certificate_request_decisions_subject ON public.certificate_request_decisions USING btree (subject)
+table certificate_requests
+  column created_at type=timestamp with time zone nullable=false default=<none>
+  column enrollment_token type=text nullable=false default=''::text
+  column failure_reason type=text nullable=false default=''::text
+  column id type=text nullable=false default=<none>
+  column local_hostname type=text nullable=false default=''::text
+  column local_username type=text nullable=false default=''::text
+  column public_key type=text nullable=false default=<none>
+  column requested_options type=text nullable=false default=''::text
+  column resolved_at type=timestamp with time zone nullable=true default=<none>
+  column serial_number type=bigint nullable=true default=<none>
+  column service_account type=text nullable=false default=''::text
+  column source_ip type=text nullable=false default=''::text
+  column status type=text nullable=false default=<none>
+  column type type=text nullable=false default=<none>
+  column user_id type=text nullable=true default=<none>
+  column username type=text nullable=false default=''::text
+  check chk_certificate_requests_status (status = ANY (ARRAY['pending'::text, 'signing'::text, 'approved'::text, 'enrolled'::text, 'denied'::text, 'expired'::text, 'failed'::text]))
+  check chk_certificate_requests_type (type = ANY (ARRAY['user'::text, 'service'::text, 'pam'::text]))
+  fk user_id -> users.id
+  index certificate_requests_pkey CREATE UNIQUE INDEX certificate_requests_pkey ON public.certificate_requests USING btree (id)
+  index idx_certificate_requests_status_created_at CREATE INDEX idx_certificate_requests_status_created_at ON public.certificate_requests USING btree (status, created_at)
+  index idx_certificate_requests_user_id CREATE INDEX idx_certificate_requests_user_id ON public.certificate_requests USING btree (user_id)
+table certificates
+  column certificate_request_id type=text nullable=true default=<none>
+  column critical_options type=text nullable=false default=''::text
+  column expires_at type=timestamp with time zone nullable=false default=<none>
+  column extensions type=text nullable=false default=''::text
+  column id type=text nullable=false default=<none>
+  column issued_at type=timestamp with time zone nullable=false default=<none>
+  column key_id type=text nullable=false default=''::text
+  column principals type=text nullable=false default=''::text
+  column public_key_fingerprint type=text nullable=false default=<none>
+  column serial_number type=bigint nullable=false default=<none>
+  column type type=text nullable=false default=<none>
+  column user_id type=text nullable=true default=<none>
+  check chk_certificates_type (type = ANY (ARRAY['user'::text, 'service'::text, 'pam'::text]))
+  fk certificate_request_id -> certificate_requests.id
+  fk user_id -> users.id
+  index certificates_pkey CREATE UNIQUE INDEX certificates_pkey ON public.certificates USING btree (id)
+  index certificates_serial_number_key CREATE UNIQUE INDEX certificates_serial_number_key ON public.certificates USING btree (serial_number)
+  index idx_certificates_certificate_request_id CREATE INDEX idx_certificates_certificate_request_id ON public.certificates USING btree (certificate_request_id)
+  index idx_certificates_user_id_issued_at CREATE INDEX idx_certificates_user_id_issued_at ON public.certificates USING btree (user_id, issued_at DESC)
+table enrollment_retrievals
+  column certificate_serial type=bigint nullable=false default=<none>
+  column enrollment_id type=text nullable=false default=<none>
+  column id type=text nullable=false default=<none>
+  column retrieved_at type=timestamp with time zone nullable=false default=<none>
+  column source_ip type=text nullable=false default=''::text
+  column succeeded type=boolean nullable=false default=false
+  fk enrollment_id -> enrollments.id
+  index enrollment_retrievals_pkey CREATE UNIQUE INDEX enrollment_retrievals_pkey ON public.enrollment_retrievals USING btree (id)
+  index idx_enrollment_retrievals_enrollment_id CREATE INDEX idx_enrollment_retrievals_enrollment_id ON public.enrollment_retrievals USING btree (enrollment_id)
+table enrollments
+  column certificate_duration_seconds type=bigint nullable=true default=<none>
+  column certificate_request_id type=text nullable=true default=<none>
+  column code type=text nullable=false default=<none>
+  column created_at type=timestamp with time zone nullable=false default=<none>
+  column expires_at type=timestamp with time zone nullable=false default=<none>
+  column id type=text nullable=false default=<none>
+  column key_id type=text nullable=false default=''::text
+  column option_set type=text nullable=false default=''::text
+  column principals type=text nullable=false default=''::text
+  column public_key type=text nullable=false default=<none>
+  column redeemed_at type=timestamp with time zone nullable=true default=<none>
+  column user_id type=text nullable=false default=<none>
+  fk certificate_request_id -> certificate_requests.id
+  fk user_id -> users.id
+  index enrollments_pkey CREATE UNIQUE INDEX enrollments_pkey ON public.enrollments USING btree (id)
+  index idx_enrollments_code CREATE UNIQUE INDEX idx_enrollments_code ON public.enrollments USING btree (code)
+  index idx_enrollments_user_id CREATE INDEX idx_enrollments_user_id ON public.enrollments USING btree (user_id)
+table server_secrets
+  column created_at type=timestamp with time zone nullable=false default=<none>
+  column name type=text nullable=false default=<none>
+  column value type=bytea nullable=false default=<none>
+  index server_secrets_pkey CREATE UNIQUE INDEX server_secrets_pkey ON public.server_secrets USING btree (name)
+table users
+  column created_at type=timestamp with time zone nullable=false default=<none>
+  column email type=text nullable=false default=''::text
+  column extra_fields type=text nullable=false default=''::text
+  column id type=text nullable=false default=<none>
+  column other_accounts type=text nullable=false default=''::text
+  column service_accounts type=text nullable=false default=''::text
+  column subject type=text nullable=false default=<none>
+  column updated_at type=timestamp with time zone nullable=false default=<none>
+  column username type=text nullable=false default=<none>
+  index idx_users_subject CREATE UNIQUE INDEX idx_users_subject ON public.users USING btree (subject)
+  index users_pkey CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)

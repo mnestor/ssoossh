@@ -72,7 +72,7 @@ func writeDebugReport(out io.Writer, cfg *config.Config, ssh agentDescriber, com
 	}
 
 	writeDebugSources(out, cfg.Sources)
-	writeDebugSettings(out, cfg)
+	writeDebugSettings(out, cfg, ssh)
 	writeDebugStorage(out, cfg, ssh)
 }
 
@@ -117,31 +117,118 @@ func writeDebugSources(out io.Writer, sources []config.ConfigSource) {
 	}
 }
 
-// writeDebugSettings prints the settings that came out of the merge.
-func writeDebugSettings(out io.Writer, cfg *config.Config) {
+// writeDebugSettings prints the settings that came out of the merge. This
+// report is the only place they are reported: `ssh config` used to print a
+// shorter version of the same thing, and two commands answering "what is in
+// effect" with different amounts of truth is a maintenance trap rather than
+// a convenience. What surrounds this block here is what made it — the
+// sources the values came from, and the files they name.
+func writeDebugSettings(out io.Writer, cfg *config.Config, ssh agentDescriber) {
 	fmt.Fprintf(out, "\nresolved settings\n")
-	fmt.Fprintf(out, "  %-20s %s\n", "server", orNone(cfg.Server))
-	fmt.Fprintf(out, "  %-20s %s\n", "tls verification", enabledDisabled(!cfg.SkipVerifySSL))
-	fmt.Fprintf(out, "  %-20s %s\n", "fips steering", enabledDisabled(cfg.FIPSEnabled()))
-	fmt.Fprintf(out, "  %-20s %s\n", "open browser", enabledDisabled(cfg.TryOpenBrowser))
 
+	// The key algorithm and size are the interesting half: neither is
+	// necessarily what the file says, since both have defaults that depend
+	// on whether FIPS mode is in effect.
+	//
 	// Reported rather than returned as an error: ResolveSSHKey already
 	// failed the startup if the combination is unusable, so reaching here
 	// with an error means something stranger, and hiding it would defeat
 	// the point of the report.
+	var keyDescription string
 	algorithm, size, _, err := cfg.ResolveSSHKey()
-	if err != nil {
-		fmt.Fprintf(out, "  %-20s unresolvable: %v\n", "key type", err)
-		return
-	}
-	keyDescription := algorithm
-	if size > 0 {
+	switch {
+	case err != nil:
+		keyDescription = fmt.Sprintf("unresolvable: %v", err)
+	case size > 0:
 		keyDescription = fmt.Sprintf("%s (%d)", algorithm, size)
+	default:
+		keyDescription = algorithm
 	}
-	fmt.Fprintf(out, "  %-20s %s\n", "key type", keyDescription)
+
+	for _, row := range [][2]string{
+		{"Server", orNone(cfg.Server)},
+		{"TLS verification", enabledDisabled(!cfg.SkipVerifySSL)},
+		{"Key type", keyDescription},
+		{"FIPS steering", enabledDisabled(cfg.FIPSEnabled())},
+		{"Storage", storageDescription(ssh)},
+		{"Key file", orNone(cfg.Filename)},
+		{"Open browser", enabledDisabled(cfg.TryOpenBrowser)},
+		{"CA public key", orNone(caSummary(cfg.CAPubkey))},
+	} {
+		fmt.Fprintf(out, "  %-22s %s\n", row[0], row[1])
+	}
+
 	if len(cfg.ForbiddenCertificateExtensions) > 0 {
-		fmt.Fprintf(out, "  %-20s %s\n", "forbidden exts", strings.Join(cfg.ForbiddenCertificateExtensions, ", "))
+		fmt.Fprintf(out, "  %-22s %s\n", "Forbidden extensions", strings.Join(cfg.ForbiddenCertificateExtensions, ", "))
 	}
+}
+
+// storageDescription reports where keys actually end up, which is a runtime
+// answer rather than a configured one: `use_agent` and `fallback_file_agent`
+// state a preference, and whether an agent was reachable settles it. Nil
+// covers both "not resolved yet" and "resolution is what failed", which is
+// when this report matters most.
+func storageDescription(ssh agentDescriber) string {
+	if ssh == nil {
+		return "(not initialized)"
+	}
+	return fmt.Sprintf("%s (%s)", ssh.Type(), ssh.Backend())
+}
+
+// caSummary shortens the CA public key to its comment-free key material,
+// truncated: the full base64 blob is several lines of terminal noise and
+// nobody reads it, but enough of it to compare two deployments is useful.
+func caSummary(ca string) string {
+	if ca == "" {
+		return ""
+	}
+	const shown = 24
+	fields := splitFields(ca)
+	if len(fields) < 2 {
+		return truncate(ca, shown)
+	}
+	return fields[0] + " " + truncate(fields[1], shown)
+}
+
+// splitFields splits on whitespace without pulling in strings.Fields's
+// allocation for the common two-field case.
+func splitFields(s string) []string {
+	var fields []string
+	start := -1
+	for i, r := range s {
+		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+			if start >= 0 {
+				fields = append(fields, s[start:i])
+				start = -1
+			}
+			continue
+		}
+		if start < 0 {
+			start = i
+		}
+	}
+	if start >= 0 {
+		fields = append(fields, s[start:])
+	}
+	return fields
+}
+
+// truncate shortens s to at most n runes, marking that it was shortened.
+func truncate(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	return string(runes[:n]) + "…"
+}
+
+// enabledDisabled renders a boolean setting the way a reader of this output
+// thinks about it.
+func enabledDisabled(on bool) string {
+	if on {
+		return "enabled"
+	}
+	return "disabled"
 }
 
 // agentDescriber is the part of agent.Agent this report needs. Narrow on
@@ -156,25 +243,22 @@ type agentDescriber interface {
 // two settings that govern that actually resolved to at runtime. The
 // preference and the outcome are both shown because the interesting bug is
 // when they disagree — use_agent true with a file backend means the agent
-// was unreachable and fallback_file_agent caught it.
+// was unreachable and fallback_file_agent caught it. The outcome is also the
+// settings block's "Storage" line; it is repeated here because the disagreement
+// is only visible when the two sit next to each other.
 func writeDebugStorage(out io.Writer, cfg *config.Config, ssh agentDescriber) {
 	fmt.Fprintf(out, "\nkey storage\n")
-	fmt.Fprintf(out, "  %-20s %t\n", "use_agent", cfg.UseAgent)
-	fmt.Fprintf(out, "  %-20s %t\n", "fallback_file_agent", cfg.FallbackFileAgent)
-
-	if ssh == nil {
-		fmt.Fprintf(out, "  %-20s not resolved\n", "backend")
-	} else {
-		fmt.Fprintf(out, "  %-20s %s (%s)\n", "backend", ssh.Type(), ssh.Backend())
-	}
+	fmt.Fprintf(out, "  %-22s %t\n", "use_agent", cfg.UseAgent)
+	fmt.Fprintf(out, "  %-22s %t\n", "fallback_file_agent", cfg.FallbackFileAgent)
+	fmt.Fprintf(out, "  %-22s %s\n", "resolved backend", storageDescription(ssh))
 	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
-		fmt.Fprintf(out, "  %-20s %s\n", "SSH_AUTH_SOCK", sock)
+		fmt.Fprintf(out, "  %-22s %s\n", "SSH_AUTH_SOCK", sock)
 	} else {
-		fmt.Fprintf(out, "  %-20s unset\n", "SSH_AUTH_SOCK")
+		fmt.Fprintf(out, "  %-22s unset\n", "SSH_AUTH_SOCK")
 	}
 
 	if cfg.Filename == "" {
-		fmt.Fprintf(out, "  %-20s %s\n", "key_filename", "(none)")
+		fmt.Fprintf(out, "  %-22s %s\n", "key_filename", "(none)")
 		return
 	}
 
@@ -183,14 +267,14 @@ func writeDebugStorage(out io.Writer, cfg *config.Config, ssh agentDescriber) {
 	// like (see agent.ResolveKeyPath), so printing the configured string
 	// and stat'ing it would report files as missing that the agent is
 	// using perfectly well.
-	fmt.Fprintf(out, "  %-20s %s\n", "key_filename", cfg.Filename)
+	fmt.Fprintf(out, "  %-22s %s\n", "key_filename", cfg.Filename)
 	resolved, err := agent.ResolveKeyPath(cfg.Filename)
 	if err != nil {
-		fmt.Fprintf(out, "  %-20s unresolvable: %v\n", "resolves to", err)
+		fmt.Fprintf(out, "  %-22s unresolvable: %v\n", "resolves to", err)
 		return
 	}
 	if resolved != cfg.Filename {
-		fmt.Fprintf(out, "  %-20s %s\n", "resolves to", resolved)
+		fmt.Fprintf(out, "  %-22s %s\n", "resolves to", resolved)
 	}
 
 	writeDebugKeyFile(out, "private key", resolved)
@@ -201,7 +285,7 @@ func writeDebugStorage(out io.Writer, cfg *config.Config, ssh agentDescriber) {
 // writeDebugKeyFile prints one of the three key files and whether it is
 // there. path is already resolved by the caller.
 func writeDebugKeyFile(out io.Writer, label, path string) {
-	fmt.Fprintf(out, "  %-20s %s %s\n", label, path, fileState(path))
+	fmt.Fprintf(out, "  %-22s %s %s\n", label, path, fileState(path))
 }
 
 // fileState says whether a path is there, for the file list above. Any

@@ -259,6 +259,42 @@ export interface EffectiveConfigResponse {
 	cert_service_extensions: string[];
 	cert_pam_valid_duration: string;
 	cert_pam_require_group?: string;
-	cert_request_ttl: string;
-	cert_signing_timeout: string;
+	/**
+	 * CertClientTimeout is the configured budget; the two below are what it
+	 * derives to. Both are surfaced because an operator debugging "why did
+	 * my request expire" needs the effective numbers, not just the input.
+	 */
+	cert_client_timeout: string;
+	cert_approval_ttl: string;
+	cert_signing_grace: string;
+}
+/**
+ * VersionResponse is the build identity of the running server, rendered in
+ * the web UI's footer. Like BrandingResponse this endpoint is
+ * unauthenticated, so it carries only what the project's public releases
+ * already state.
+ */
+export interface VersionResponse {
+	/**
+	 * Version is the release this binary was built from, without the tag's
+	 * leading "v" (goreleaser and the Makefile both strip it). Untagged
+	 * builds report the "development" default from internal/version.
+	 */
+	version: string;
+	/**
+	 * Commit is the git revision the build came from. It is what identifies
+	 * a "development" build, which has no release of its own to point at.
+	 */
+	commit: string;
+	/**
+	 * GithubURL is the project's source repository. Served rather than
+	 * hardcoded in the frontend so that a fork only has to change
+	 * internal/version.
+	 */
+	github_url: string;
+	/**
+	 * ReleaseURL points at the GitHub release matching Version. Omitted for
+	 * an untagged build, where there is no release page to link to.
+	 */
+	release_url?: string;
 }

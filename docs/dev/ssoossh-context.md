@@ -48,10 +48,6 @@ means one browser approval per workday, not one per session.
 ## Certificate types
 
 - **User** — interactive SSH. Principals from OIDC claims + LDAP account identifiers.
-- **Host** — server identity. `host sign` for first issuance (OIDC approval chain, so a
-  human vouches for the machine — this is the anti-MITM control); `host renew` afterward,
-  authenticated by the existing valid host certificate. Hosts rotate keys on their own
-  schedule.
 - **Service** — non-interactive (scheduled jobs, file transfer, remote invocation).
   User-type certificate.
 
@@ -71,24 +67,23 @@ means one browser approval per workday, not one per session.
 
 ```
 ssoossh ssh login | logout | proxycommand | inspect | config
-ssoossh host sign | renew | sync | principals
+ssoossh host principals | mapping
 ssoossh service enroll | retrieve
 ssoossh ca
 ```
 
 - `ssh proxycommand` — ensures a valid cert, then relays TCP. Requires an agent.
 - `host principals` — implements sshd's `AuthorizedPrincipalsCommand`. Called on every
-  login attempt, runs as root, **never touches the network**; answers from whatever
-  `host sync` last wrote. The client does not reason about cache staleness — that is the
-  host admin's call via file mtime or `host sync` exit status.
+  login attempt, runs as root, **never touches the network**; answers from the local
+  mapping file, which `host mapping` edits.
 - `ca` — prints the CA public key for `TrustedUserCAKeys` and `@cert-authority` lines.
 
 ## Principal mapping
 
 The certificate asserts identity; the host decides which local accounts that maps to.
 This is what keeps "userX may become root here" from being a statement about every host
-trusting the CA. `host sync` pulls the mapping from the server and writes it locally;
-purely local mapping files remain supported.
+trusting the CA. The mapping is purely local to each machine: there is no server-side
+mapping and nothing syncs it down.
 
 ## Certificate lifetime policy (design in progress)
 
@@ -120,9 +115,6 @@ No nonce needed: the per-attempt keypair provides the freshness. Nothing is reta
 
 ## Open questions
 
-- Whether the server may constrain what a host admin can grant, or the host admin is
-  absolute on their own machine.
-- Renewal grace window for host certificates that expire before `host renew` runs.
 - Whether approval-prompt bypass should apply to the service path or user certs only.
 - Whether proof-of-possession (server challenge, client signs with the private key) is
   worth adding to service `retrieve` — a stolen code currently yields an unusable

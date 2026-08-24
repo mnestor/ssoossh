@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestWaitForOutcome_ShouldDecodeApprovedEvent(t *testing.T) {
@@ -75,6 +76,61 @@ func TestWaitForOutcome_ShouldTreatEnrolledAsTerminal(t *testing.T) {
 	}
 	if result.Code != "token-abc" {
 		t.Errorf("got code %q, want %q", result.Code, "token-abc")
+	}
+}
+
+// TestWaitForOutcome_ShouldCarryEveryFieldOfTheEnrolledPayload is a
+// regression test: the listener used to copy Certificate and Code out of
+// the envelope by hand, so service_account and expires_at decoded correctly
+// and were then dropped on the floor. It is caught here rather than only
+// end to end because a field-by-field copy fails silently.
+func TestWaitForOutcome_ShouldCarryEveryFieldOfTheEnrolledPayload(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeSSEEvent(w, "enrolled", map[string]string{
+			"code":            "token-abc",
+			"service_account": "svc-deploy",
+			"expires_at":      "2026-09-23T14:05:00Z",
+		})
+	}))
+	t.Cleanup(ts.Close)
+
+	result, err := waitForOutcome(context.Background(), nil, ts.URL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ServiceAccount != "svc-deploy" {
+		t.Errorf("got service account %q, want %q", result.ServiceAccount, "svc-deploy")
+	}
+	if result.ExpiresAt == nil {
+		t.Fatal("got no code expiry, want the one on the event")
+	}
+	want := time.Date(2026, 9, 23, 14, 5, 0, 0, time.UTC)
+	if !result.ExpiresAt.Equal(want) {
+		t.Errorf("got code expiry %v, want %v", result.ExpiresAt, want)
+	}
+}
+
+// An outcome with no enrollment behind it must leave the two enrollment
+// fields unset, not carry a zero time the caller has to know to disbelieve.
+func TestWaitForOutcome_ShouldLeaveEnrollmentFieldsUnsetWhenAbsent(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeSSEEvent(w, "approved", map[string]string{"certificate": "ssh-ed25519-cert-v01@openssh.com AAAA..."})
+	}))
+	t.Cleanup(ts.Close)
+
+	result, err := waitForOutcome(context.Background(), nil, ts.URL)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ServiceAccount != "" {
+		t.Errorf("got service account %q, want empty", result.ServiceAccount)
+	}
+	if result.ExpiresAt != nil {
+		t.Errorf("got code expiry %v, want nil", result.ExpiresAt)
 	}
 }
 

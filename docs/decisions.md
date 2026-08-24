@@ -58,9 +58,8 @@ Worth doing eventually; not started because nothing needs it yet.
 
 ## Declined: security decisions with teeth
 
-- **Host certificates.** Removed after being half-built rather than
-  finished. A host certificate asserts "this key speaks for this
-  hostname," but nothing in the design could verify that claim: approval
+- **Host certificates.** A host certificate asserts "this key speaks for
+  this hostname," but nothing in the design could verify that claim: approval
   reduced to a human eyeballing a hostname string an unauthenticated
   requester typed, and every scheme for server-side principal mappings
   had the same hole one layer down. Issuing unverifiable host identity
@@ -104,7 +103,13 @@ Worth doing eventually; not started because nothing needs it yet.
   would fix certificate delivery but not the stranded-request sweep or
   per-process session keys — a configuration that half-works is worse than
   a clear requirement. Multi-instance requires NATS, full stop.
-- **`request_ttl: 0` as "expiry disabled."** Removed outright. Every
-  consumer needed a special case for it and each was a hazard — a sweep
-  with no bound, a cache with no safe eviction age. Startup rejects a
-  non-positive TTL.
+- **A "0 means expiry is disabled" request timeout.** Every consumer
+  would need a special case for it and each is a hazard — a sweep with no
+  bound, a cache with no safe eviction age. Startup rejects a non-positive
+  `cert_options.client_timeout` instead.
+- **Separate knobs for the approval window and the signing grace.** One
+  budget, `cert_options.client_timeout`, with both shares derived from it.
+  Two knobs could not say which phase each bounded, and the number an
+  operator actually cares about — how long a client can hang — was
+  neither of them but their sum, counting the signing share twice because
+  the sweep interval derives from it as well.

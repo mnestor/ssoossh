@@ -91,25 +91,22 @@ The wake topic is the opposite case: it *wants* fan-out semantics scoped to
 one subscriber, since only the instance holding that client cares. Per-request
 subjects already give that naturally.
 
-### 2. The sweep's `RequestTTL = 0` fallback (blocker in that configuration)
+### 2. An unbounded approval window would break the sweep
 
-With `RequestTTL` disabled there's no derivable bound, so the sweep treats
-every `signing` row as stranded. That's safe as a single-process boot pass
-(nothing this process queued can be in flight yet) and actively wrong with
-several instances: a restarting instance B would invalidate instance A's
-live in-flight requests.
+If the approval window could be disabled there would be no derivable bound,
+so the sweep would treat every `signing` row as stranded. That is safe as a
+single-process boot pass (nothing this process queued can be in flight yet)
+and actively wrong with several instances: a restarting instance B would
+invalidate instance A's live in-flight requests.
 
-Options, in preference order:
+Resolved structurally rather than by rule: `cert_options.client_timeout`
+must be positive, and both the approval TTL and the signing grace derive
+from it, so no configuration produces an unbounded window. Every instance
+derives the same bound from the same value.
 
-1. **Add `signing_started_at`.** Removes the derivation, the imprecision,
-   *and* this special case in one column — the sweep gets an absolute bound
-   that's correct regardless of instance count. This is the option deferred
-   in `docs/signing-pipeline.md`, and multi-instance is
-   the argument that tips it.
-2. Require `RequestTTL > 0` when multi-instance is enabled, and fail
-   startup otherwise. Cheap, but pushes a subtle constraint onto operators.
-
-Recommend (1).
+`signing_started_at` would still remove the derivation and its imprecision,
+and is the option deferred in `docs/signing-pipeline.md` — but it is now an
+accuracy improvement, not a fix for a hazard.
 
 ### 3. Duplicate scheduled work (correctness-safe, wasteful)
 
@@ -138,7 +135,8 @@ Once (the central fix) lands, `resolved` is a same-instance fast path rather
 than a source of truth. Two consequences worth handling deliberately:
 
 - ~~It grows unbounded — one entry per request, for process lifetime.~~
-  **Fixed 2026-08-22.** `EvictResolved` ages entries out at `RequestTTL`,
+  **Fixed 2026-08-22.** `EvictResolved` ages entries out at the approval
+  TTL,
   scheduled as its own job. `resolvedAt` is never earlier than the
   request's `created_at`, so an entry that old belongs to a request that
   has itself expired and no client can still be waiting on it. Worth noting
@@ -158,7 +156,8 @@ what remains is mostly transport.
   database before trusting the certificate.
 - ~~2. `signing_started_at` column and sweep rework.~~ **Superseded, and the
   hazard is gone.** Rather than add a column to make the disabled-TTL case
-  safe, `request_ttl` may no longer be zero:
+  safe, the approval TTL may no longer be zero (`cert_options.client_timeout`,
+  which it derives from, must be positive):
   `config.CertificateOptions.Validate` rejects it at startup, and the
   sweep's disabled-TTL branch has been deleted. That removes the
   multi-instance hazard in item 2 at the source — there is no longer a
@@ -188,7 +187,7 @@ let both transports coexist without changing handlers.
 
 1. ~~**Config.**~~ **Done.** `server/config/types_pubsub.go` defines
    `PubSubConfig` with backend selection and mTLS material. `Validate()`
-   enforces credentials at startup. Defaults are in `server/config/_defaults.yaml`.
+   enforces credentials at startup. Defaults are in `server/config/defaults.yaml`.
 2. ~~**The constructor.**~~ **Done.** `server/pubsub.New()` branches on
    `Backend` and calls either `newGoChannel()` or `newNATS()`. Both build a
    shared `message.Router` with the same middleware and `CloseTimeout`.
@@ -200,7 +199,8 @@ let both transports coexist without changing handlers.
    exactly one message each) would require a TLS-configured NATS server; the
    mechanism itself is delegated to watermill-nats/v2.2.0, which has its own tests.
 4. ~~**Durability for the sign queue.**~~ **Done.** `JetStream.Disabled = true`
-   for NATS core (at-most-once). A dropped job costs a full `RequestTTL` wait,
+   for NATS core (at-most-once). A dropped job costs a full `client_timeout`
+   wait,
    acceptable for interactive approval. See `server/pubsub/pubsub.go` for
    documentation of this choice.
 5. ~~**Declare multi-instance explicitly.**~~ **Done.** Added explicit

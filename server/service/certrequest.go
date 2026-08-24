@@ -76,16 +76,31 @@ type CertRequestProvider interface {
 	Detail(ctx context.Context, requestID string, identity *Identity) (*RequestDetail, error)
 	Approve(ctx context.Context, requestID string, identity *Identity, dc DecisionContext, selection ApprovalSelection) error
 	Deny(ctx context.Context, requestID string, identity *Identity, dc DecisionContext) error
-	Wait(ctx context.Context, requestID string) (status model.CertificateRequestStatus, certificate string, code string, err error)
+	Wait(ctx context.Context, requestID string) (WaitOutcome, error)
 }
 
-// requestOutcome is what Approve/Deny/expiry hands to callers blocked in or
-// reconnecting to Wait. code is set instead of certificate for
-// CertificateRequestStatusEnrolled (CertificateTypeService — see Approve).
-type requestOutcome struct {
-	status      model.CertificateRequestStatus
-	certificate string
-	code        string
+// WaitOutcome is what Approve/Deny/expiry hands to callers blocked in or
+// reconnecting to Wait, and what Wait itself returns. Code is set instead
+// of Certificate for CertificateRequestStatusEnrolled (CertificateTypeService
+// — see Approve).
+//
+// Exported fields with one unexported one: the same value is both the
+// cached entry and the return value, so a separate public shape would only
+// be a second thing to keep in step. resolvedAt stays internal because it
+// is bookkeeping for EvictResolved, not part of the answer.
+type WaitOutcome struct {
+	Status      model.CertificateRequestStatus
+	Certificate string
+	Code        string
+
+	// ServiceAccount and ExpiresAt describe an enrollment and are set only
+	// alongside Code. They exist because the operator running
+	// `service enroll` never sees the approval screen: without them the CLI
+	// can print a code but not whose certificate it will produce, or when
+	// it stops working. Both are display detail — a lookup failure leaves
+	// them zero rather than failing the wait.
+	ServiceAccount string
+	ExpiresAt      time.Time
 
 	// resolvedAt is when this outcome was cached, and exists only so
 	// EvictResolved can age entries out. Stamped centrally in notifyWaiter
@@ -94,7 +109,7 @@ type requestOutcome struct {
 	resolvedAt time.Time
 }
 
-// requestOutcomeMessage is requestOutcome's wire shape, published to a
+// requestOutcomeMessage is WaitOutcome's wire shape, published to a
 // request's wake topic (see certmsg.WaitTopic). Wait itself never needs to decode
 // this — the resolved-cache/DB checks at the top of its loop are the
 // actual source of truth, and the message is only a low-latency signal
@@ -105,6 +120,12 @@ type requestOutcomeMessage struct {
 	Status      model.CertificateRequestStatus `json:"status"`
 	Certificate string                         `json:"certificate,omitempty"`
 	Code        string                         `json:"code,omitempty"`
+
+	// The enrollment detail that accompanies Code. Omitted when unset so a
+	// message from an older instance decodes to the same zero values this
+	// side already tolerates.
+	ServiceAccount string     `json:"service_account,omitempty"`
+	ExpiresAt      *time.Time `json:"expires_at,omitempty"`
 }
 
 // CertRequestService manages the pending-approval lifecycle shared by all
@@ -140,7 +161,7 @@ type CertRequestService struct {
 	// for, so a Wait call arriving after resolution (a late reconnect, or
 	// one that was never blocked in the first place) reads the cached
 	// outcome instead of waiting on a wake message that already happened.
-	resolved map[string]requestOutcome
+	resolved map[string]WaitOutcome
 	// TODO: ca signing dependency (reuse/extend CAService — it currently
 	// only exposes GetCAPublicKey, not signing) and the lifetime-policy
 	// computation (see docs/dev/ssoossh-context.md "Certificate lifetime
@@ -171,7 +192,7 @@ func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publ
 		publisher:  publisher,
 		subscriber: subscriber,
 		engine:     engine,
-		resolved:   make(map[string]requestOutcome),
+		resolved:   make(map[string]WaitOutcome),
 	}, nil
 }
 
@@ -295,7 +316,7 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 
 // ttlCutoff returns the CreatedAt threshold before which a still-pending
 // request is treated as expired: created before this instant, no longer
-// approvable. A zero RequestTTL disables expiry (returns the zero Time, so
+// approvable. A zero ApprovalTTL disables expiry (returns the zero Time, so
 // no request's CreatedAt is ever before it).
 //
 // UTC, and it has to be: this value is compared against created_at, which
@@ -303,10 +324,10 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 // rows compares by literal digits rather than by instant. See package
 // dbtime.
 func (s *CertRequestService) ttlCutoff() time.Time {
-	if s.config.CertOptions.RequestTTL <= 0 {
+	if s.config.CertOptions.ApprovalTTL() <= 0 {
 		return time.Time{}
 	}
-	return time.Now().Add(-s.config.CertOptions.RequestTTL).UTC()
+	return time.Now().Add(-s.config.CertOptions.ApprovalTTL()).UTC()
 }
 
 // EvictResolved drops cached outcomes older than the request TTL. Without
@@ -314,21 +335,22 @@ func (s *CertRequestService) ttlCutoff() time.Time {
 // process — and each entry holds a signed certificate, which this design
 // otherwise takes care never to persist anywhere.
 //
-// RequestTTL is the right bound and needs no grace period: resolvedAt is
+// ApprovalTTL is the right bound and needs no grace period: resolvedAt is
 // never earlier than the request's created_at, so an entry older than the
 // TTL belongs to a request that has itself expired. Wait's expiry timer is
 // measured from created_at, so no client can still be waiting on it, and a
 // late reconnect gets the same 410 it would have got anyway.
 //
-// Config guarantees RequestTTL > 0 (CertificateOptions.Validate), so there
-// is no disabled-TTL case to fall back on here.
+// Config guarantees ClientTimeout > 0 (CertificateOptions.Validate), and
+// ApprovalTTL is a fixed fraction of it, so there is no disabled-TTL case
+// to fall back on here.
 //
 // This must run on EVERY instance. The map is process-local memory, so
 // unlike the database sweep it can never be gated behind leader election —
 // electing one leader would leave every other instance leaking. See
 // docs/dev/multi-instance-safety-plan.md item 3.
 func (s *CertRequestService) EvictResolved(_ context.Context) error {
-	cutoff := time.Now().Add(-s.config.CertOptions.RequestTTL)
+	cutoff := time.Now().Add(-s.config.CertOptions.ApprovalTTL())
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -727,7 +749,12 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 
 	token := uuid.NewString()
 	now := time.Now()
-	expiresAt := now.Add(effectiveDuration)
+	certDurationSeconds := int64(effectiveDuration / time.Second)
+	// The code's own lifetime, not the certificate's. These were one value
+	// until it became clear that they pull in opposite directions — see
+	// config.CertOptionsService.EnrollmentDuration. effectiveDuration still
+	// bounds each certificate, applied at redemption rather than here.
+	expiresAt := now.Add(policy.enrollmentDuration)
 
 	decision, err := newDecision(req.ID, model.CertificateRequestDecisionApproved, identity, dc, now)
 	if err != nil {
@@ -763,18 +790,19 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 			return fmt.Errorf("certificate request %q is not pending", req.ID)
 		}
 
-		// Create the enrollment record with the computed lifetime.
+		// Create the enrollment record with both computed lifetimes.
 		enrollment := &model.Enrollment{
-			ID:                   uuid.NewString(),
-			Code:                 token,
-			PublicKey:            req.PublicKey,
-			OptionSet:            string(narrowedJSON),
-			KeyID:                keyID,
-			Principals:           string(principalsJSON),
-			CertificateRequestID: &req.ID,
-			UserID:               *req.UserID, // req.UserID was bound in Approve
-			CreatedAt:            now,
-			ExpiresAt:            expiresAt,
+			ID:                         uuid.NewString(),
+			Code:                       token,
+			PublicKey:                  req.PublicKey,
+			OptionSet:                  string(narrowedJSON),
+			KeyID:                      keyID,
+			Principals:                 string(principalsJSON),
+			CertificateRequestID:       &req.ID,
+			UserID:                     *req.UserID, // req.UserID was bound in Approve
+			CreatedAt:                  now,
+			ExpiresAt:                  expiresAt,
+			CertificateDurationSeconds: &certDurationSeconds,
 		}
 		if err := tx.Create(enrollment).Error; err != nil {
 			return fmt.Errorf("failed to create enrollment: %w", err)
@@ -791,7 +819,12 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 
 	// No signer round trip for enrollment — notify the wake topic directly
 	// from here, unlike the user/PAM queue-and-wait path.
-	s.notifyWaiter(req.ID, requestOutcome{status: model.CertificateRequestStatusEnrolled, code: token})
+	s.notifyWaiter(req.ID, WaitOutcome{
+		Status:         model.CertificateRequestStatusEnrolled,
+		Code:           token,
+		ServiceAccount: serviceAccount,
+		ExpiresAt:      expiresAt,
+	})
 
 	return nil
 }
@@ -1047,7 +1080,7 @@ func (s *CertRequestService) Deny(ctx context.Context, requestID string, identit
 		return err
 	}
 
-	s.notifyWaiter(requestID, requestOutcome{status: model.CertificateRequestStatusDenied})
+	s.notifyWaiter(requestID, WaitOutcome{Status: model.CertificateRequestStatusDenied})
 
 	return nil
 }
@@ -1061,36 +1094,52 @@ func (s *CertRequestService) Deny(ctx context.Context, requestID string, identit
 // cached outcome and the DB rather than assuming a single caller, so an SSE
 // client reconnecting after a dropped connection just re-attaches instead
 // of hitting a stale "no such waiter" error.
-func (s *CertRequestService) Wait(ctx context.Context, requestID string) (status model.CertificateRequestStatus, certificate string, code string, err error) {
+func (s *CertRequestService) Wait(ctx context.Context, requestID string) (WaitOutcome, error) {
+	// Fast path: an outcome already cached needs no broker at all, which
+	// matters for the SSE-reconnect case this method is explicitly safe
+	// for.
+	s.mu.Lock()
+	if outcome, ok := s.resolved[requestID]; ok {
+		s.mu.Unlock()
+		return outcome, nil
+	}
+	s.mu.Unlock()
+
+	// One subscription, taken before the first database read and held for
+	// the whole call.
+	//
+	// Subscribing before the read closes the window where a wake fires
+	// between the two: it lands on this channel instead of being missed.
+	// Holding it across loop iterations closes the same window *between*
+	// iterations, which is the one that actually bit — neither broker
+	// replays. gochannel is deliberately not Persistent (see
+	// server/pubsub/pubsub.go) and core NATS has no replay at all, so a
+	// wake published while nothing is subscribed is gone. Under NATS that
+	// is unrecoverable rather than merely late: the certificate is never
+	// persisted (docs/signing-pipeline.md), so the reconcileStatus read
+	// below can see "approved" on another instance and still have nothing
+	// to hand back, leaving the client blocked until its request expires.
+	messages, err := s.subscriber.Subscribe(ctx, certmsg.WaitTopic(requestID))
+	if err != nil {
+		return WaitOutcome{}, fmt.Errorf("failed to subscribe to certificate request updates: %w", err)
+	}
+
 	for {
 		s.mu.Lock()
 		if outcome, ok := s.resolved[requestID]; ok {
 			s.mu.Unlock()
-			return outcome.status, outcome.certificate, outcome.code, nil
+			return outcome, nil
 		}
 		s.mu.Unlock()
 
-		// Subscribe before the DB read below, not after: the gochannel
-		// pub/sub (server/pubsub) is Persistent, so even if notifyWaiter
-		// publishes between this Subscribe call and the DB read, the
-		// message is still replayed to us — subscribing late here can
-		// only mean seeing the wake message slightly sooner than a
-		// same-process notifyWaiter call could otherwise race, never
-		// missing it. Fresh subscription per loop iteration (not held
-		// across iterations) — see docs/signing-pipeline.md.
-		messages, err := s.subscriber.Subscribe(ctx, certmsg.WaitTopic(requestID))
-		if err != nil {
-			return "", "", "", fmt.Errorf("failed to subscribe to certificate request updates: %w", err)
-		}
-
 		req, err := s.lookupRequest(ctx, requestID)
 		if err != nil {
-			return "", "", "", err
+			return WaitOutcome{}, err
 		}
 
 		block, err := s.reconcileStatus(ctx, requestID, req)
 		if err != nil {
-			return "", "", "", err
+			return WaitOutcome{}, err
 		}
 		if !block {
 			continue
@@ -1104,7 +1153,7 @@ func (s *CertRequestService) Wait(ctx context.Context, requestID string) (status
 		msg, err := s.waitForUpdate(ctx, messages, expireC)
 		stopExpiry()
 		if err != nil {
-			return "", "", "", err
+			return WaitOutcome{}, err
 		}
 
 		// A wake message may carry the outcome directly. Trust it only after
@@ -1114,8 +1163,8 @@ func (s *CertRequestService) Wait(ctx context.Context, requestID string) (status
 		// what lets an SSE client on instance B receive a certificate issued
 		// on instance A. Anything unverified falls through and re-reads the DB.
 		if msg != nil {
-			if status, certificate, code, handled := s.tryHandleWakeMessage(ctx, requestID, msg); handled {
-				return status, certificate, code, nil
+			if outcome, handled := s.tryHandleWakeMessage(ctx, requestID, msg); handled {
+				return outcome, nil
 			}
 		}
 	}
@@ -1133,7 +1182,7 @@ func (s *CertRequestService) Wait(ctx context.Context, requestID string) (status
 // returned channel is nil. Receiving from a nil channel blocks forever, so
 // that case simply never fires and expiry is left to reconcileStatus.
 func (s *CertRequestService) expiryTimer(req model.CertificateRequest) (<-chan time.Time, func()) {
-	ttl := s.config.CertOptions.RequestTTL
+	ttl := s.config.CertOptions.ApprovalTTL()
 	if ttl <= 0 {
 		return nil, func() {}
 	}
@@ -1224,14 +1273,39 @@ func (s *CertRequestService) reconcileStatus(ctx context.Context, requestID stri
 	case model.CertificateRequestStatusEnrolled:
 		// Unlike a certificate, an enrollment token *is* durable — it's on
 		// the row — so a reconnect against a cold cache can be answered in
-		// full from the database.
-		s.notifyWaiter(requestID, requestOutcome{status: req.Status, code: req.EnrollmentToken})
+		// full from the database. The chosen account is on the row too; the
+		// code's expiry lives on the enrollment it created, so that takes a
+		// second read.
+		s.notifyWaiter(requestID, WaitOutcome{
+			Status:         req.Status,
+			Code:           req.EnrollmentToken,
+			ServiceAccount: req.ServiceAccount,
+			ExpiresAt:      s.enrollmentExpiry(ctx, req.EnrollmentToken),
+		})
 		return false, nil
 
 	default: // denied, expired, failed
-		s.notifyWaiter(requestID, requestOutcome{status: req.Status})
+		s.notifyWaiter(requestID, WaitOutcome{Status: req.Status})
 		return false, nil
 	}
+}
+
+// enrollmentExpiry reads when the code minted for an approved enrollment
+// stops being redeemable, for the reconnect path where the in-memory
+// outcome is gone but the row is not. It is display detail on an outcome
+// that is already decided, so a miss or a read failure returns the zero
+// time and the caller simply omits the field — the client still gets its
+// code.
+func (s *CertRequestService) enrollmentExpiry(ctx context.Context, code string) time.Time {
+	if code == "" {
+		return time.Time{}
+	}
+	var enrollment model.Enrollment
+	if err := s.db.WithContext(ctx).First(&enrollment, "code = ?", code).Error; err != nil {
+		slog.Warn("failed to read enrollment expiry for a resolved request", "error", err)
+		return time.Time{}
+	}
+	return enrollment.ExpiresAt
 }
 
 // expire marks requestID expired in the DB, guarded the same way Deny
@@ -1252,7 +1326,7 @@ func (s *CertRequestService) expire(ctx context.Context, requestID string) {
 		return
 	}
 
-	s.notifyWaiter(requestID, requestOutcome{status: model.CertificateRequestStatusExpired})
+	s.notifyWaiter(requestID, WaitOutcome{Status: model.CertificateRequestStatusExpired})
 }
 
 // tryHandleWakeMessage attempts to decode and use a wake message payload,
@@ -1272,17 +1346,17 @@ func (s *CertRequestService) expire(ctx context.Context, requestID string) {
 // Returns the resolved outcome and true if the message carried a terminal
 // status and was verified by the database; otherwise returns false to
 // trigger a fresh DB read in the caller's next loop iteration.
-func (s *CertRequestService) tryHandleWakeMessage(ctx context.Context, requestID string, msg *message.Message) (status model.CertificateRequestStatus, certificate string, code string, handled bool) {
-	var outcome requestOutcomeMessage
-	if err := json.Unmarshal(msg.Payload, &outcome); err != nil {
+func (s *CertRequestService) tryHandleWakeMessage(ctx context.Context, requestID string, msg *message.Message) (outcome WaitOutcome, handled bool) {
+	var msgOutcome requestOutcomeMessage
+	if err := json.Unmarshal(msg.Payload, &msgOutcome); err != nil {
 		// Malformed payload — fall back to DB.
-		return "", "", "", false
+		return WaitOutcome{}, false
 	}
 
 	// Only trust terminal statuses from the message. Signing is not
 	// terminal — the signer hasn't finished yet, and the message is just
 	// a race signal.
-	switch outcome.Status {
+	switch msgOutcome.Status {
 	case model.CertificateRequestStatusApproved,
 		model.CertificateRequestStatusEnrolled,
 		model.CertificateRequestStatusDenied,
@@ -1296,39 +1370,99 @@ func (s *CertRequestService) tryHandleWakeMessage(ctx context.Context, requestID
 		if err != nil {
 			// DB lookup failed or request not found — fall back to
 			// reconcileStatus to handle it through the normal path.
-			return "", "", "", false
+			return WaitOutcome{}, false
+		}
+
+		// The resolving instance publishes this wake *before* it writes
+		// the status (SignedReplyHandler.resolveSuccess documents why), so
+		// the row can still read Signing when the message lands. In one
+		// process that is invisible: notifyWaiter caches the outcome and
+		// Wait returns from the cache before ever reaching here. Across
+		// instances there is no shared cache, so it is the ordinary case
+		// rather than an anomaly, and discarding the message would throw
+		// away the only copy of the certificate — leaving the client
+		// blocked until its request expires. Give the row a bounded moment
+		// to catch up instead. The database still has to confirm the
+		// decision; it is only allowed to be slightly behind.
+		if req.Status != msgOutcome.Status && req.Status == model.CertificateRequestStatusSigning {
+			req = s.awaitStatus(ctx, requestID, msgOutcome.Status, req)
 		}
 
 		// Verify the DB status matches the message status. Accept the
 		// certificate from the message only if the DB confirms the decision.
 		// This is a cheap check — the common case succeeds immediately.
-		if req.Status == outcome.Status {
+		if req.Status == msgOutcome.Status {
 			// Status verified. Cache the outcome and return it directly,
 			// completing the wait without another DB round-trip. This
 			// optimizes both same-instance (typical) and cross-instance
 			// (multi-instance) cases.
-			s.mu.Lock()
-			s.resolved[requestID] = requestOutcome{
-				status:      outcome.Status,
-				certificate: outcome.Certificate,
-				code:        outcome.Code,
-				resolvedAt:  time.Now(),
+			resolved := WaitOutcome{
+				Status:         msgOutcome.Status,
+				Certificate:    msgOutcome.Certificate,
+				Code:           msgOutcome.Code,
+				ServiceAccount: msgOutcome.ServiceAccount,
+				resolvedAt:     time.Now(),
 			}
+			if msgOutcome.ExpiresAt != nil {
+				resolved.ExpiresAt = *msgOutcome.ExpiresAt
+			}
+			s.mu.Lock()
+			s.resolved[requestID] = resolved
 			s.mu.Unlock()
-			return outcome.Status, outcome.Certificate, outcome.Code, true
+			return resolved, true
 		}
 
 		// Status mismatch — the message status doesn't match the DB status.
 		// This shouldn't happen in normal operation, but could indicate a
 		// stale message or concurrent state change. Fall back to the DB.
-		return "", "", "", false
+		return WaitOutcome{}, false
 
 	default:
 		// Non-terminal status (only Signing) — fall through and re-read
 		// the DB. The message is just a signal that something may have
 		// changed; the DB is the authority.
-		return "", "", "", false
+		return WaitOutcome{}, false
 	}
+}
+
+// statusConfirmWindow bounds how long a wake message waits for the database
+// row to catch up with it, and statusConfirmPoll how often it re-reads.
+// Both are sized for a single UPDATE landing on the resolving instance, not
+// for a stalled signer: a row that has not caught up by then is treated as
+// a genuine mismatch.
+const (
+	statusConfirmWindow = 2 * time.Second
+	statusConfirmPoll   = 25 * time.Millisecond
+)
+
+// awaitStatus re-reads requestID until its status reaches want or the
+// confirmation window elapses, returning the freshest row it managed to
+// read. Used only to let a wake message wait out the gap between delivery
+// and the status write; a row that never reaches want is returned as it
+// stands and rejected by the caller, so this can only ever delay a
+// rejection, never turn one into an acceptance the database disagrees with.
+func (s *CertRequestService) awaitStatus(ctx context.Context, requestID string, want model.CertificateRequestStatus, current model.CertificateRequest) model.CertificateRequest {
+	deadline := time.Now().Add(statusConfirmWindow)
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return current
+		case <-time.After(statusConfirmPoll):
+		}
+
+		req, err := s.lookupRequest(ctx, requestID)
+		if err != nil {
+			// A read failure here is not fatal: the caller rejects the
+			// message and Wait's next iteration re-reads the database
+			// anyway.
+			return current
+		}
+		current = req
+		if current.Status == want {
+			return current
+		}
+	}
+	return current
 }
 
 // notifyWaiter caches outcome for requestID (so any Wait call arriving
@@ -1342,18 +1476,28 @@ func (s *CertRequestService) tryHandleWakeMessage(ctx context.Context, requestID
 // the DB-status check the next time anything nudges it (reconnect, or a
 // future poll), same as if the process restarted between the DB write and
 // this publish.
-func (s *CertRequestService) notifyWaiter(requestID string, outcome requestOutcome) {
+func (s *CertRequestService) notifyWaiter(requestID string, outcome WaitOutcome) {
 	outcome.resolvedAt = time.Now()
 
 	s.mu.Lock()
 	s.resolved[requestID] = outcome
 	s.mu.Unlock()
 
-	payload, err := json.Marshal(requestOutcomeMessage{
-		Status:      outcome.status,
-		Certificate: outcome.certificate,
-		Code:        outcome.code,
-	})
+	msgOutcome := requestOutcomeMessage{
+		Status:         outcome.Status,
+		Certificate:    outcome.Certificate,
+		Code:           outcome.Code,
+		ServiceAccount: outcome.ServiceAccount,
+	}
+	// A pointer so an unset expiry is absent from the message rather than
+	// arriving as the zero time, which a consumer would have to know to
+	// disbelieve.
+	if !outcome.ExpiresAt.IsZero() {
+		expiresAt := outcome.ExpiresAt
+		msgOutcome.ExpiresAt = &expiresAt
+	}
+
+	payload, err := json.Marshal(msgOutcome)
 	if err != nil {
 		// not covered: requestOutcomeMessage is a plain struct, so
 		// json.Marshal cannot fail on it.

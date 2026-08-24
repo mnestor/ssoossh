@@ -137,7 +137,7 @@ nfpms:
       signature:
         key_file: private.pgp
     contents:
-      - src: docs/ssoossh.yaml.default
+      - src: client/config/defaults.yaml
         dst: /etc/ssoossh/ssoossh.yaml
         type: "config|noreplace"
       - src: LICENSE
@@ -169,7 +169,7 @@ nfpms:
       signature:
         key_file: private.pgp
     contents:
-      - src: docs/ssoosshd.yaml.default
+      - src: server/config/defaults.yaml
         dst: /etc/ssoossh/ssoosshd.yaml
         type: "config|noreplace"
       - src: LICENSE
@@ -196,7 +196,7 @@ nfpms:
     formats:
       - apk
     contents:
-      - src: docs/ssoosshd.yaml.default
+      - src: server/config/defaults.yaml
         dst: /etc/ssoossh/ssoosshd.yaml
         type: "config|noreplace"
       - src: LICENSE
@@ -216,7 +216,9 @@ archives:
       - linux-build
     name_template: &client_archive_name "ssoossh-client_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files: &client_archive_files
-      - docs/ssoossh.yaml.default
+      - src: client/config/defaults.yaml
+        dst: .
+        strip_parent: true
       - LICENSE
       - NOTICE
       - THIRD-PARTY-LICENSES.md
@@ -228,7 +230,9 @@ archives:
       - server-linux-build
     name_template: "ssoossh-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
-      - docs/ssoosshd.yaml.default
+      - src: server/config/defaults.yaml
+        dst: .
+        strip_parent: true
       - LICENSE
       - NOTICE
       - THIRD-PARTY-LICENSES.md
@@ -240,7 +244,9 @@ archives:
       - server-linux-musl-build
     name_template: "ssoossh-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}_musl"
     files:
-      - docs/ssoosshd.yaml.default
+      - src: server/config/defaults.yaml
+        dst: .
+        strip_parent: true
       - LICENSE
       - NOTICE
       - THIRD-PARTY-LICENSES.md

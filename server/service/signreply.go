@@ -89,9 +89,9 @@ func (h *SignedReplyHandler) resolveSuccess(ctx context.Context, reply certmsg.S
 		return err
 	}
 
-	h.certs.notifyWaiter(reply.RequestID, requestOutcome{
-		status:      model.CertificateRequestStatusApproved,
-		certificate: reply.Certificate,
+	h.certs.notifyWaiter(reply.RequestID, WaitOutcome{
+		Status:      model.CertificateRequestStatusApproved,
+		Certificate: reply.Certificate,
 	})
 
 	if !resolvesRequestRow(reply) {
@@ -117,8 +117,8 @@ func (h *SignedReplyHandler) resolveFailure(ctx context.Context, reply certmsg.S
 		"error", reply.Error,
 	)
 
-	h.certs.notifyWaiter(reply.RequestID, requestOutcome{
-		status: model.CertificateRequestStatusFailed,
+	h.certs.notifyWaiter(reply.RequestID, WaitOutcome{
+		Status: model.CertificateRequestStatusFailed,
 	})
 
 	if !resolvesRequestRow(reply) {

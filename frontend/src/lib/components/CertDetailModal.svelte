@@ -174,8 +174,6 @@
 		<div>
 			<SectionLabel>Details</SectionLabel>
 			<dl class="divide-y divide-border-subtle">
-				<DetailRow label="Certificate type"><TypeChip type={cert.type} /></DetailRow>
-
 				{#if principals.length > 0}
 					<DetailRow label="Principals">
 						<span class="flex flex-wrap gap-1.5">

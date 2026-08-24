@@ -91,8 +91,7 @@ func newTestJob(t *testing.T) certmsg.SigningJob {
 // for most tests.
 func newDefaultTestLimits() SignLimits {
 	return SignLimits{
-		MaxCertLifetime:     time.Hour * 24 * 90,
-		MaxHostCertLifetime: time.Hour * 24 * 365 * 2,
+		MaxCertLifetime: time.Hour * 24 * 90,
 	}
 }
 
@@ -269,7 +268,7 @@ func TestSign_ShouldRejectUnsupportedCertificateTypes(t *testing.T) {
 	ks, _ := newTestKeySource(t)
 
 	for _, certType := range []model.CertificateType{
-		model.CertificateTypeHost,
+		model.CertificateType("host"),
 		model.CertificateType("bogus"),
 	} {
 		job := newTestJob(t)
@@ -523,8 +522,7 @@ func TestSign_Lifetime_ShouldAcceptCertificateExactlyAtCap(t *testing.T) {
 	job.ValidBefore = now.Add(cap)
 
 	limits := SignLimits{
-		MaxCertLifetime:     cap,
-		MaxHostCertLifetime: cap * 10,
+		MaxCertLifetime: cap,
 	}
 
 	reply, err := Sign(context.Background(), ks, job, false, limits)
@@ -549,41 +547,12 @@ func TestSign_Lifetime_ShouldRejectUserCertificateOverCap(t *testing.T) {
 	job.ValidBefore = now.Add(cap + time.Second)
 
 	limits := SignLimits{
-		MaxCertLifetime:     cap,
-		MaxHostCertLifetime: cap * 10,
+		MaxCertLifetime: cap,
 	}
 
 	_, err := Sign(context.Background(), ks, job, false, limits)
 	if err == nil {
 		t.Fatal("expected an error for cert over cap, got nil")
-	}
-	if got := errorCode(err); got != certmsg.ErrCodeLifetimeRejected {
-		t.Errorf("got error code %q, want %q", got, certmsg.ErrCodeLifetimeRejected)
-	}
-}
-
-// TestSign_Lifetime_ShouldRejectHostCertificateOverCap tests that a host cert
-// with lifetime exceeding its cap is rejected with ErrCodeLifetimeRejected.
-func TestSign_Lifetime_ShouldRejectHostCertificateOverCap(t *testing.T) {
-	t.Parallel()
-
-	ks, _ := newTestKeySource(t)
-	job := newTestJob(t)
-	job.Type = model.CertificateTypeHost
-	now := time.Now().Truncate(time.Second)
-	hostCap := time.Hour * 100
-	userCap := time.Hour * 48
-	job.ValidAfter = now
-	job.ValidBefore = now.Add(hostCap + time.Second)
-
-	limits := SignLimits{
-		MaxCertLifetime:     userCap,
-		MaxHostCertLifetime: hostCap,
-	}
-
-	_, err := Sign(context.Background(), ks, job, false, limits)
-	if err == nil {
-		t.Fatal("expected an error for host cert over cap, got nil")
 	}
 	if got := errorCode(err); got != certmsg.ErrCodeLifetimeRejected {
 		t.Errorf("got error code %q, want %q", got, certmsg.ErrCodeLifetimeRejected)
@@ -602,8 +571,7 @@ func TestSign_Lifetime_ShouldRejectInvalidBefore(t *testing.T) {
 	job.ValidBefore = now
 
 	limits := SignLimits{
-		MaxCertLifetime:     time.Hour * 24,
-		MaxHostCertLifetime: time.Hour * 48,
+		MaxCertLifetime: time.Hour * 24,
 	}
 
 	_, err := Sign(context.Background(), ks, job, false, limits)
@@ -612,35 +580,6 @@ func TestSign_Lifetime_ShouldRejectInvalidBefore(t *testing.T) {
 	}
 	if got := errorCode(err); got != certmsg.ErrCodeSignFailed {
 		t.Errorf("got error code %q, want %q", got, certmsg.ErrCodeSignFailed)
-	}
-}
-
-// TestSign_Lifetime_ShouldRejectHostCertificateExactlyAtUserCap tests that a
-// host cert under the user cap (but within host cap) is rejected because it's
-// compared against the host cap specifically.
-func TestSign_Lifetime_ShouldRejectHostCertificateAtUserCapButOverHostCap(t *testing.T) {
-	t.Parallel()
-
-	ks, _ := newTestKeySource(t)
-	job := newTestJob(t)
-	job.Type = model.CertificateTypeHost
-	now := time.Now().Truncate(time.Second)
-	hostCap := time.Hour * 48
-	userCap := time.Hour * 100
-	job.ValidAfter = now
-	job.ValidBefore = now.Add(hostCap + time.Second)
-
-	limits := SignLimits{
-		MaxCertLifetime:     userCap,
-		MaxHostCertLifetime: hostCap,
-	}
-
-	_, err := Sign(context.Background(), ks, job, false, limits)
-	if err == nil {
-		t.Fatal("expected an error for host cert over host cap, got nil")
-	}
-	if got := errorCode(err); got != certmsg.ErrCodeLifetimeRejected {
-		t.Errorf("got error code %q, want %q", got, certmsg.ErrCodeLifetimeRejected)
 	}
 }
 
@@ -659,8 +598,7 @@ func TestSign_Lifetime_ShouldRejectPAMCertificateOverUserCap(t *testing.T) {
 	job.ValidBefore = now.Add(userCap + time.Second)
 
 	limits := SignLimits{
-		MaxCertLifetime:     userCap,
-		MaxHostCertLifetime: time.Hour * 100,
+		MaxCertLifetime: userCap,
 	}
 
 	_, err := Sign(context.Background(), ks, job, false, limits)

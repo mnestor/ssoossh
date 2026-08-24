@@ -167,11 +167,25 @@ type CheckConstraint struct {
 // CheckConstraints queries check constraints.
 func CheckConstraints(t *testing.T, db *gorm.DB, tableName string) []CheckConstraint {
 	t.Helper()
+	// check_clause lives on information_schema.check_constraints, which the
+	// earlier form of this query never joined — and it selected a bare
+	// constraint_name present in both joined views, so Postgres rejected it
+	// as ambiguous before it could return a wrong answer.
+	//
+	// The NOT NULL filter matters as much as the join: Postgres materializes
+	// every NOT NULL as a check constraint whose generated name embeds table
+	// and column OIDs, which differ between databases. Leaving them in makes
+	// any comparison of this output non-reproducible.
 	rows, err := db.Raw(`
-		SELECT constraint_name, check_clause
-		FROM information_schema.constraint_column_usage ccu
-		JOIN information_schema.table_constraints tc ON tc.constraint_name = ccu.constraint_name
-		WHERE tc.constraint_type = 'CHECK' AND tc.table_name = ? AND tc.table_schema = 'public'
+		SELECT tc.constraint_name, cc.check_clause
+		FROM information_schema.table_constraints tc
+		JOIN information_schema.check_constraints cc
+			ON cc.constraint_name = tc.constraint_name
+			AND cc.constraint_schema = tc.constraint_schema
+		WHERE tc.constraint_type = 'CHECK'
+			AND tc.table_name = ?
+			AND tc.table_schema = 'public'
+			AND cc.check_clause NOT LIKE '%IS NOT NULL'
 	`, tableName).Rows()
 	if err != nil {
 		t.Fatalf("failed to query check constraints for %s: %v", tableName, err)

@@ -158,7 +158,9 @@ func TestWriteDebugReport_ShouldReportAnUnresolvedBackend(t *testing.T) {
 	var out bytes.Buffer
 	writeDebugReport(&out, &config.Config{}, nil2Agent(), "ssoossh ssh login", nil)
 
-	if !strings.Contains(out.String(), "not resolved") {
+	// The same wording `ssh config` uses, since both now go through
+	// storageDescription.
+	if !strings.Contains(out.String(), "(not initialized)") {
 		t.Errorf("report does not mark the backend unresolved: %s", out.String())
 	}
 }
@@ -169,6 +171,140 @@ func TestWriteDebugReport_ShouldNameTheResolvedBackend(t *testing.T) {
 
 	if !strings.Contains(out.String(), "file") || !strings.Contains(out.String(), "/home/me/.ssh/id") {
 		t.Errorf("report does not name the resolved backend: %s", out.String())
+	}
+}
+
+// The report is now the only place resolved settings are answered, so
+// everything `ssh config` used to print has to be in it. These moved here
+// from ssh_config_test.go along with the printing.
+
+// The whole point of reporting settings: key type and FIPS steering both
+// have defaults that depend on the environment, so echoing the file back
+// would answer a different question than the one being asked.
+func TestWriteDebugSettings_ShouldPrintResolvedValuesNotConfiguredOnes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		cfg  *config.Config
+		want string
+	}{
+		{
+			name: "should resolve an unset key type to its default",
+			cfg:  &config.Config{Server: "https://ssh.example.com"},
+			want: "ecdsa (384)",
+		},
+		{
+			name: "should report the curve alongside an ecdsa key",
+			cfg: &config.Config{
+				Server: "https://ssh.example.com",
+				SSHKey: config.SSHKeyOptions{Type: config.SSHKeyTypeECDSA, Size: 521},
+			},
+			want: "ecdsa (521)",
+		},
+		{
+			name: "should say so rather than omit an unusable combination",
+			cfg:  &config.Config{SSHKey: config.SSHKeyOptions{Type: config.SSHKeyTypeECDSA, Size: 111}},
+			want: "unresolvable",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var out bytes.Buffer
+			writeDebugSettings(&out, tt.cfg, stubDescriber{kind: "ssh-agent", backend: "stub"})
+			if !strings.Contains(out.String(), tt.want) {
+				t.Errorf("got %q, want it to contain %q", out.String(), tt.want)
+			}
+		})
+	}
+}
+
+// Insecure TLS is the one setting someone might leave on by accident after
+// testing against a self-signed server, so it has to read plainly.
+func TestWriteDebugSettings_ShouldReportInsecureTLSPlainly(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	writeDebugSettings(&out, &config.Config{Server: "https://ssh.example.com", SkipVerifySSL: true}, nil2Agent())
+
+	if !strings.Contains(out.String(), "TLS verification       disabled") {
+		t.Errorf("got %q, want TLS verification reported as disabled", out.String())
+	}
+}
+
+// An unusable key configuration must not swallow the rest of the block: a
+// failed startup is when this report is most wanted, so the settings after
+// the bad one still have to print.
+func TestWriteDebugSettings_ShouldKeepReportingPastAnUnresolvableKey(t *testing.T) {
+	t.Parallel()
+
+	var out bytes.Buffer
+	writeDebugSettings(&out, &config.Config{
+		Server: "https://ssh.example.com",
+		SSHKey: config.SSHKeyOptions{Type: config.SSHKeyTypeECDSA, Size: 111},
+	}, nil2Agent())
+
+	if !strings.Contains(out.String(), "CA public key") {
+		t.Errorf("expected the rest of the settings after an unresolvable key, got:\n%s", out.String())
+	}
+}
+
+func TestStorageDescription_ShouldReportTheResolvedBackend(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		ssh  agentDescriber
+		want string
+	}{
+		{name: "no agent resolved", ssh: nil, want: "(not initialized)"},
+		{name: "an agent resolved", ssh: stubDescriber{kind: "agent", backend: "ssh-agent"}, want: "agent (ssh-agent)"},
+		{name: "file storage resolved", ssh: stubDescriber{kind: "file", backend: "/home/u/.ssh/id_ssoossh"}, want: "file (/home/u/.ssh/id_ssoossh)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := storageDescription(tt.ssh); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// The truncation is the part worth pinning: the summary exists so two
+// deployments can be compared at a glance, which stops working if it prints
+// the whole blob or too little of it to tell two CAs apart.
+func TestCASummary(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		ca   string
+		want string
+	}{
+		{name: "should render nothing when unset", ca: "", want: ""},
+		{
+			name: "should keep the algorithm and shorten the key material",
+			ca:   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJirRcsGXT31qUGNbgTkbI6sxq1SbSLN++XEr705S8ko ca@example",
+			want: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA…",
+		},
+		{
+			name: "should pass a short value through untouched",
+			ca:   "ssh-ed25519 AAAA",
+			want: "ssh-ed25519 AAAA",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := caSummary(tt.ca); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

@@ -42,12 +42,12 @@ import (
 
 // newTestCertRequestService opens an in-memory sqlite DB migrated for
 // model.CertificateRequest and returns a CertRequestService backed by it,
-// with RequestTTL as given (0 disables expiry). The wake-topic broker is a
+// with ClientTimeout as given (0 disables expiry). The wake-topic broker is a
 // real, non-persistent gochannel pair — matching server/pubsub.New exactly
 // (see its Persistent:false doc comment for why) — closed on test cleanup.
-func newTestCertRequestService(t *testing.T, ttl time.Duration) *CertRequestService {
+func newTestCertRequestService(t *testing.T, clientTimeout time.Duration) *CertRequestService {
 	t.Helper()
-	return newTestCertRequestServiceWithOptions(t, config.CertificateOptions{RequestTTL: ttl})
+	return newTestCertRequestServiceWithOptions(t, config.CertificateOptions{ClientTimeout: clientTimeout})
 }
 
 // pgAdminOnce guards creation of the single admin handle used to create
@@ -215,7 +215,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 
 // newTestCertRequestServiceWithOptions is newTestCertRequestService but
 // lets Approve tests control the full per-type policy (Extensions,
-// ValidDuration, RequireGroup), not just RequestTTL.
+// ValidDuration, RequireGroup), not just the request timing.
 func newTestCertRequestServiceWithOptions(t *testing.T, opts config.CertificateOptions) *CertRequestService {
 	t.Helper()
 	return newTestCertRequestServiceWithConfig(t, &config.Config{CertOptions: opts})
@@ -427,7 +427,7 @@ func TestCertRequestService_Wait_ShouldReturnErrorForUnknownID(t *testing.T) {
 
 	svc := newTestCertRequestService(t, 0)
 
-	_, _, _, err := svc.Wait(context.Background(), "does-not-exist")
+	_, err := svc.Wait(context.Background(), "does-not-exist")
 
 	var notFound *errorresponses.NotFoundError
 	if !errors.As(err, &notFound) {
@@ -450,7 +450,8 @@ func TestCertRequestService_Wait_ShouldUnblockOnDeny(t *testing.T) {
 	}
 	done := make(chan waitResult, 1)
 	go func() {
-		status, _, _, err := svc.Wait(context.Background(), requestID)
+		outcome, err := svc.Wait(context.Background(), requestID)
+		status := outcome.Status
 		done <- waitResult{status, err}
 	}()
 
@@ -490,7 +491,8 @@ func TestCertRequestService_Wait_ShouldReturnCachedOutcomeOnLateReconnect(t *tes
 		t.Fatalf("unexpected error denying request: %v", err)
 	}
 
-	status, _, _, err := svc.Wait(context.Background(), requestID)
+	outcome, err := svc.Wait(context.Background(), requestID)
+	status := outcome.Status
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -512,7 +514,7 @@ func TestCertRequestService_Wait_ShouldResumeAfterContextCancellation(t *testing
 	// the request is still pending.
 	cancelCtx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, _, _, err := svc.Wait(cancelCtx, requestID); !errors.Is(err, context.Canceled) {
+	if _, err := svc.Wait(cancelCtx, requestID); !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}
 
@@ -524,7 +526,8 @@ func TestCertRequestService_Wait_ShouldResumeAfterContextCancellation(t *testing
 	}
 	done := make(chan waitResult, 1)
 	go func() {
-		status, _, _, err := svc.Wait(context.Background(), requestID)
+		outcome, err := svc.Wait(context.Background(), requestID)
+		status := outcome.Status
 		done <- waitResult{status, err}
 	}()
 
@@ -572,7 +575,8 @@ func TestCertRequestService_Wait_ShouldReportApprovedCertificateAsUnavailable(t 
 		t.Fatalf("failed to mark request approved: %v", err)
 	}
 
-	_, certificate, _, err := svc.Wait(context.Background(), requestID)
+	outcome, err := svc.Wait(context.Background(), requestID)
+	certificate := outcome.Certificate
 
 	var unavailable *errorresponses.CertificateUnavailableError
 	if !errors.As(err, &unavailable) {
@@ -604,11 +608,23 @@ func TestCertRequestService_Wait_ShouldRebuildEnrollmentTokenFromTheRow(t *testi
 		Updates(map[string]any{
 			"status":           model.CertificateRequestStatusEnrolled,
 			"enrollment_token": "token-abc",
+			"service_account":  "svc-alice",
 		}).Error; err != nil {
 		t.Fatalf("failed to mark request enrolled: %v", err)
 	}
 
-	status, _, code, err := svc.Wait(context.Background(), requestID)
+	expiresAt := time.Now().Add(90 * 24 * time.Hour).UTC().Truncate(time.Second)
+	if err := svc.db.Create(&model.Enrollment{
+		ID:        "enrollment-1",
+		Code:      "token-abc",
+		PublicKey: "ssh-ed25519 AAAA...",
+		ExpiresAt: expiresAt,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed the enrollment: %v", err)
+	}
+
+	outcome, err := svc.Wait(context.Background(), requestID)
+	status, code := outcome.Status, outcome.Code
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -617,6 +633,46 @@ func TestCertRequestService_Wait_ShouldRebuildEnrollmentTokenFromTheRow(t *testi
 	}
 	if code != "token-abc" {
 		t.Errorf("got code %q, want %q", code, "token-abc")
+	}
+	if outcome.ServiceAccount != "svc-alice" {
+		t.Errorf("got service account %q, want %q", outcome.ServiceAccount, "svc-alice")
+	}
+	if !outcome.ExpiresAt.UTC().Truncate(time.Second).Equal(expiresAt) {
+		t.Errorf("got code expiry %v, want %v", outcome.ExpiresAt, expiresAt)
+	}
+}
+
+// TestCertRequestService_Wait_ShouldOmitEnrollmentExpiryWhenTheRowIsGone
+// covers the enrollment having been swept while the request row still says
+// enrolled: the code is the answer, and a missing expiry must not turn a
+// resolved wait into an error.
+func TestCertRequestService_Wait_ShouldOmitEnrollmentExpiryWhenTheRowIsGone(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, 0)
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypeService,
+		PublicKey: "ssh-ed25519 AAAA...",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	if err := svc.db.Model(&model.CertificateRequest{}).
+		Where("id = ?", requestID).
+		Updates(map[string]any{
+			"status":           model.CertificateRequestStatusEnrolled,
+			"enrollment_token": "token-orphan",
+		}).Error; err != nil {
+		t.Fatalf("failed to mark request enrolled: %v", err)
+	}
+
+	outcome, err := svc.Wait(context.Background(), requestID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !outcome.ExpiresAt.IsZero() {
+		t.Errorf("got code expiry %v, want the zero time", outcome.ExpiresAt)
 	}
 }
 
@@ -631,7 +687,8 @@ func TestCertRequestService_Wait_ShouldExpireRequestPastTTL(t *testing.T) {
 
 	time.Sleep(10 * time.Millisecond)
 
-	status, _, _, err := svc.Wait(context.Background(), requestID)
+	outcome, err := svc.Wait(context.Background(), requestID)
+	status := outcome.Status
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -655,8 +712,11 @@ func TestCertRequestService_Wait_ShouldWakeOnTTLTimerFiring(t *testing.T) {
 	// Wait call below, so the request was already past its TTL on the first
 	// reconcileStatus pass, Wait returned without ever blocking on the timer,
 	// and the elapsed assertion failed for load rather than for behaviour.
-	const ttl = 500 * time.Millisecond
-	svc := newTestCertRequestService(t, ttl)
+	// 625ms of budget so the approval share -- the part the timer actually
+	// runs on -- works out to exactly the 500ms this test was tuned for.
+	const clientTimeout = 625 * time.Millisecond
+	svc := newTestCertRequestService(t, clientTimeout)
+	ttl := svc.config.CertOptions.ApprovalTTL()
 	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA...",
@@ -687,7 +747,8 @@ func TestCertRequestService_Wait_ShouldWakeOnTTLTimerFiring(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	status, _, _, err := svc.Wait(ctx, requestID)
+	outcome, err := svc.Wait(ctx, requestID)
+	status := outcome.Status
 	returnedAt := time.Now()
 
 	// The key assertion: the timer fired and Wait woke up, returning StatusExpired,
@@ -725,7 +786,8 @@ func TestCertRequestService_Wait_ShouldReceiveWakeMessageViaPubSub(t *testing.T)
 	}
 	done := make(chan waitResult, 1)
 	go func() {
-		status, _, _, err := svc.Wait(context.Background(), requestID)
+		outcome, err := svc.Wait(context.Background(), requestID)
+		status := outcome.Status
 		done <- waitResult{status, err}
 	}()
 
@@ -771,7 +833,7 @@ func TestCertRequestService_Wait_ShouldReturnCtxErrOnGenuineCancellation(t *test
 		cancel()
 	}()
 
-	_, _, _, err = svc.Wait(ctx, requestID)
+	_, err = svc.Wait(ctx, requestID)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}
@@ -810,7 +872,7 @@ func TestCertRequestService_Wait_ShouldSurfaceASubscribeFailure(t *testing.T) {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
 
-	if _, _, _, err := svc.Wait(context.Background(), requestID); err == nil {
+	if _, err := svc.Wait(context.Background(), requestID); err == nil {
 		t.Error("Wait() error = nil, want error when the subscriber is unreachable")
 	}
 }
@@ -1045,8 +1107,9 @@ func TestCertRequestService_Approve_ShouldEnrollServiceRequestsInsteadOfQueueing
 
 	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
 		Service: config.CertOptionsService{
-			Extensions:    []string{"permit-pty"},
-			ValidDuration: time.Hour,
+			Extensions:         []string{"permit-pty"},
+			ValidDuration:      time.Hour,
+			EnrollmentDuration: 90 * 24 * time.Hour,
 		},
 	})
 
@@ -1065,14 +1128,13 @@ func TestCertRequestService_Approve_ShouldEnrollServiceRequestsInsteadOfQueueing
 	// comes directly from Approve itself (no signer/queue round trip) —
 	// same shape as TestCertRequestService_Wait_ShouldReceiveWakeMessageViaPubSub.
 	type waitResult struct {
-		status model.CertificateRequestStatus
-		code   string
-		err    error
+		outcome WaitOutcome
+		err     error
 	}
 	done := make(chan waitResult, 1)
 	go func() {
-		status, _, code, err := svc.Wait(context.Background(), requestID)
-		done <- waitResult{status, code, err}
+		outcome, err := svc.Wait(context.Background(), requestID)
+		done <- waitResult{outcome, err}
 	}()
 	time.Sleep(50 * time.Millisecond)
 
@@ -1091,11 +1153,21 @@ func TestCertRequestService_Approve_ShouldEnrollServiceRequestsInsteadOfQueueing
 	if res.err != nil {
 		t.Fatalf("unexpected error from Wait: %v", res.err)
 	}
-	if res.status != model.CertificateRequestStatusEnrolled {
-		t.Errorf("got status %q, want %q", res.status, model.CertificateRequestStatusEnrolled)
+	if res.outcome.Status != model.CertificateRequestStatusEnrolled {
+		t.Errorf("got status %q, want %q", res.outcome.Status, model.CertificateRequestStatusEnrolled)
 	}
-	if res.code == "" {
+	if res.outcome.Code == "" {
 		t.Error("expected a non-empty enrollment code")
+	}
+	// The operator running `service enroll` never sees the approval screen,
+	// so the account the approver picked has to come back with the code.
+	if res.outcome.ServiceAccount != "svc-alice" {
+		t.Errorf("got service account %q, want %q", res.outcome.ServiceAccount, "svc-alice")
+	}
+	// enrollment_duration, not valid_duration: the code outlives the
+	// certificates it mints.
+	if untilExpiry := time.Until(res.outcome.ExpiresAt); untilExpiry < 89*24*time.Hour {
+		t.Errorf("got code expiry in %v, want the configured 90 day enrollment_duration", untilExpiry)
 	}
 
 	var req model.CertificateRequest
@@ -1108,8 +1180,8 @@ func TestCertRequestService_Approve_ShouldEnrollServiceRequestsInsteadOfQueueing
 	if req.EnrollmentToken == "" {
 		t.Error("expected EnrollmentToken to be set on the row")
 	}
-	if req.EnrollmentToken != res.code {
-		t.Errorf("expected Wait's code to match the persisted EnrollmentToken, got %q vs %q", res.code, req.EnrollmentToken)
+	if req.EnrollmentToken != res.outcome.Code {
+		t.Errorf("expected Wait's code to match the persisted EnrollmentToken, got %q vs %q", res.outcome.Code, req.EnrollmentToken)
 	}
 
 	var narrowed RequestedOptions
@@ -1134,20 +1206,21 @@ func TestCertRequestService_Approve_ShouldReturnNotFoundForAnUnknownID(t *testin
 	}
 }
 
-// TestCertRequestService_ShouldRejectRetiredHostType pins the host-cert
-// removal at the service boundary: the retired type has no policy and no
-// place in the schema (the type CHECK excludes it), so creating such a
-// request must fail rather than persist a row nothing can ever resolve.
-func TestCertRequestService_ShouldRejectRetiredHostType(t *testing.T) {
+// TestCertRequestService_ShouldRejectAnUnknownType pins the service
+// boundary against a type the policy table has no entry for. Spelled as a
+// string on purpose, since no constant should exist for one: a request body
+// naming an unknown type must fail rather than persist a row nothing can
+// ever resolve.
+func TestCertRequestService_ShouldRejectAnUnknownType(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, time.Hour)
 
 	if _, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
-		Type:      model.CertificateTypeHost,
+		Type:      model.CertificateType("host"),
 		PublicKey: "ssh-ed25519 AAAA... host",
 	}); err == nil {
-		t.Fatal("expected creating a host certificate request to fail: the type is retired")
+		t.Fatal("expected creating a request with an unknown type to fail")
 	}
 }
 
@@ -2026,7 +2099,7 @@ func TestCertRequestService_Approve_ShouldSurfaceAPublishFailure(t *testing.T) {
 }
 
 // TestCertRequestService_Deny_ShouldApplyTheTTLFilterWhenConfigured covers
-// Deny's ttlCutoff branch: with RequestTTL set, a pending-but-expired
+// Deny's ttlCutoff branch: with an approval TTL set, a pending-but-expired
 // request must not be denied by this path — Wait's own lazy expiry owns
 // that transition (see reconcileStatus) — so Deny reports it as already
 // non-pending, same as any other terminal request.
@@ -2073,7 +2146,8 @@ func TestCertRequestService_Wait_ShouldReportATerminalStatusFoundColdInTheDB(t *
 		t.Fatalf("failed to mark the request failed directly in the DB: %v", err)
 	}
 
-	status, _, _, err := svc.Wait(context.Background(), requestID)
+	outcome, err := svc.Wait(context.Background(), requestID)
+	status := outcome.Status
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2135,7 +2209,7 @@ func TestNotifyWaiter_ShouldNotPanicWhenPublishingFails(t *testing.T) {
 		t.Fatalf("failed to construct CertRequestService: %v", err)
 	}
 
-	svc.notifyWaiter("req-1", requestOutcome{status: model.CertificateRequestStatusDenied})
+	svc.notifyWaiter("req-1", WaitOutcome{Status: model.CertificateRequestStatusDenied})
 
 	svc.mu.Lock()
 	_, cached := svc.resolved["req-1"]
@@ -2207,7 +2281,8 @@ func TestCertRequestService_Wait_MultiInstance_ShouldDecodeWakeMessageCertificat
 	}
 	done := make(chan waitResult, 1)
 	go func() {
-		status, certificate, code, err := instanceB.Wait(context.Background(), requestID)
+		outcome, err := instanceB.Wait(context.Background(), requestID)
+		status, certificate, code := outcome.Status, outcome.Certificate, outcome.Code
 		done <- waitResult{status, certificate, code, err}
 	}()
 
@@ -2228,9 +2303,9 @@ func TestCertRequestService_Wait_MultiInstance_ShouldDecodeWakeMessageCertificat
 	}
 
 	testCertificate := "ssh-cert-v01@openssh.com AAAAg..."
-	instanceA.notifyWaiter(requestID, requestOutcome{
-		status:      model.CertificateRequestStatusApproved,
-		certificate: testCertificate,
+	instanceA.notifyWaiter(requestID, WaitOutcome{
+		Status:      model.CertificateRequestStatusApproved,
+		Certificate: testCertificate,
 	})
 
 	// Instance B's Wait should unblock and return the certificate from the
@@ -2497,7 +2572,7 @@ func TestCertRequestService_Approve_ShouldPersistDecisionAuditOnEnrollment(t *te
 	t.Parallel()
 
 	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
-		Service: config.CertOptionsService{ValidDuration: time.Hour},
+		Service: config.CertOptionsService{ValidDuration: time.Hour, EnrollmentDuration: 90 * 24 * time.Hour},
 	})
 
 	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
@@ -2613,7 +2688,7 @@ func TestCertRequestService_ApproveServiceEnrollment_ShouldRollBackWhenDecisionI
 	t.Parallel()
 
 	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
-		Service: config.CertOptionsService{ValidDuration: time.Hour},
+		Service: config.CertOptionsService{ValidDuration: time.Hour, EnrollmentDuration: 90 * 24 * time.Hour},
 	})
 
 	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{

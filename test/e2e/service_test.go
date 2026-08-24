@@ -130,6 +130,21 @@ func TestService_ShouldEnrollThenRetrieveACertificateBoundToTheServiceAccount(t 
 		t.Errorf("expected enroll to print the ssh_config recipe, got:\n%s", out)
 	}
 
+	// The approval happened in a browser this process never saw. Without
+	// the account and the expiry on the enrolled event, the operator's only
+	// route to the principal is to retrieve a certificate and inspect it --
+	// which is what the rest of this test does, and what they should not
+	// have to.
+	if !strings.Contains(out, f.Account) {
+		t.Errorf("expected enroll to name the approved service account %q, got:\n%s", f.Account, out)
+	}
+	if !strings.Contains(out, "The code stops working on ") {
+		t.Errorf("expected enroll to print the code's real expiry, got:\n%s", out)
+	}
+	if strings.Contains(out, "0001-01-01") {
+		t.Errorf("enroll printed the zero time as the code expiry, got:\n%s", out)
+	}
+
 	res := harness.RunClient(t, f.Bin, harness.ClientOptions{
 		Args: []string{"service", "retrieve", "--code", code, "--key", keyPath, "--server", f.Server.BaseURL},
 	})
@@ -366,7 +381,7 @@ func slicesContains(haystack []string, needle string) bool {
 // involved anywhere. This is the documented Match exec story for hosts
 // without an agent, and nothing proved an sshd would accept a certificate
 // obtained that way.
-func TestService_ShouldProduceACertificateSshdAcceptsWithNoAgent(t *testing.T) {
+func TestSSH_ServiceShouldProduceACertificateSshdAcceptsWithNoAgent(t *testing.T) {
 	idp := harness.NewIdentityProvider(t)
 	srv := harness.StartServer(t, idp, harness.ServerOptions{
 		ServiceAccountsField: serviceAccountClaim,

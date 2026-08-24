@@ -183,8 +183,7 @@ func TestCertificateOptionsStructure(t *testing.T) {
 			RequireGroup:  "",
 			ValidDuration: 5 * time.Minute,
 		},
-		RequestTTL:     10 * time.Minute,
-		SigningTimeout: 30 * time.Second,
+		ClientTimeout: 10 * time.Minute,
 	}
 
 	if opts.User.ValidDuration != 30*time.Minute {
@@ -193,11 +192,11 @@ func TestCertificateOptionsStructure(t *testing.T) {
 	if opts.Service.ValidDuration != 24*time.Hour {
 		t.Errorf("Service.ValidDuration mismatch")
 	}
-	if opts.RequestTTL != 10*time.Minute {
-		t.Errorf("RequestTTL mismatch")
+	if opts.ClientTimeout != 10*time.Minute {
+		t.Errorf("ClientTimeout mismatch")
 	}
-	if opts.SigningTimeout != 30*time.Second {
-		t.Errorf("SigningTimeout mismatch")
+	if opts.SigningGrace() != time.Minute {
+		t.Errorf("SigningGrace mismatch")
 	}
 }
 

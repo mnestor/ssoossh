@@ -159,32 +159,7 @@ split.
 Open question: how does "multi-instance mode" get declared — inferred from
 NATS being configured, or an explicit setting?
 
-### 4. Host certificate issuance — completed
-
-Host certificate first issuance is now implemented and complete. The client CLI
-is complete (`host sign/renew/sync/principals`), `HostService.Renew` and
-`HostService.SyncPrincipals` exist for authenticated renewal and principal
-syncing, and `certtypepolicy.go` now routes `CertificateTypeHost` through
-`flowSigning` like user and PAM certificates, with authorization gated on the
-SSH server admin role.
-
-The implementation includes:
-
-- Real approval flow via `CertRequestService.Approve` (not a separate
-  `HostService.Sign`, which was a misunderstanding in the design notes)
-- Authorization check gating issuance on `middleware.SSHServerAdminChecker`
-  before request binding to prevent claiming requests
-- Principal derivation from the request's hostname (validated against the regex
-  pattern in `internal/crypto/ssh`)
-- Empty `host_mappings` table (output-only: written by signreply after signing,
-  consumed by `host sync` — not validated as input since the approver vouches
-  for the hostname and allowlisting would duplicate
-  `cert_options.host.require_group`)
-
-The `host` subcommand's `--help` text describes functionality that is now
-implemented and working.
-
-### 5. Service certificate enrollment — two gaps
+### 4. Service certificate enrollment — two gaps
 
 Mostly built: client commands, `EnrollmentService.Retrieve`,
 `EnrollmentController`, `flow: flowEnrollment` in the policy table, and
@@ -203,10 +178,8 @@ Raised in [dev/changes-next.md](changes-next.md)
 and elsewhere, with no design work behind them yet. Each needs a design pass
 before it is schedulable.
 
-- Admin host-enrollment flow.
-- Per-host certificate policy settings.
-- Ownership reassignment for service and host certificates when the owning
-  user leaves or is disabled, so automation keeps working after they are gone.
+- Ownership reassignment for service certificates when the owning user
+  leaves or is disabled, so automation keeps working after they are gone.
 - Console-login PAM module (code-based, no browser or network needed on the
   console itself). Mentioned as a future direction only.
 - Client-side TLS pinning. Only `insecure_skip_verify` exists today.

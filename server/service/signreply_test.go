@@ -124,7 +124,8 @@ func TestSignedReplyHandler_ShouldDeliverCertificateToWaitingClient(t *testing.T
 	}
 	done := make(chan waitResult, 1)
 	go func() {
-		status, cert, _, err := svc.Wait(context.Background(), requestID)
+		outcome, err := svc.Wait(context.Background(), requestID)
+		status, cert := outcome.Status, outcome.Certificate
 		done <- waitResult{status, cert, err}
 	}()
 	time.Sleep(50 * time.Millisecond)
@@ -195,7 +196,8 @@ func TestSignedReplyHandler_ShouldMarkRequestFailedOnSigningFailure(t *testing.T
 	}
 
 	// The waiting client must get a terminal answer rather than hang.
-	status, _, _, err := svc.Wait(context.Background(), requestID)
+	outcome, err := svc.Wait(context.Background(), requestID)
+	status := outcome.Status
 	if err != nil {
 		t.Fatalf("unexpected error from Wait: %v", err)
 	}

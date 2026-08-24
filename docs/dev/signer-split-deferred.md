@@ -89,7 +89,7 @@ config load or `pubsub.New` construction.
 
 **Decided: NATS core with at-most-once delivery.** A dropped signing job is
 acceptable because the flow is interactive — the person who just approved sees
-the CLI hanging and re-runs login, which costs one `RequestTTL` wait. JetStream
+the CLI hanging and re-runs login, which costs one `client_timeout` wait. JetStream
 durability was considered and deferred as a future hardening: the ack-timing
 discussion in [signing-pipeline.md](../signing-pipeline.md) becomes moot for
 multi-process deployments (the transport's own acks suffice), and durability

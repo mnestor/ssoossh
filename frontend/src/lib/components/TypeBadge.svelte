@@ -15,15 +15,13 @@
 	const icons: Record<CertificateType, string> = {
 		user: 'user',
 		pam: 'terminal',
-		service: 'cog',
-		host: 'server'
+		service: 'cog'
 	};
 
 	const labels: Record<CertificateType, string> = {
 		user: 'User',
 		pam: 'PAM',
-		service: 'Service',
-		host: 'Host'
+		service: 'Service'
 	};
 </script>
 

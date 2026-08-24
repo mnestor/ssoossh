@@ -17,7 +17,7 @@ import (
 // defaultconfig holds the embedded contents of defaults.yaml, loaded into
 // Viper before any config file is merged in.
 //
-//go:embed _defaults.yaml
+//go:embed defaults.yaml
 var defaultconfig string
 
 // NewConfig loads the ssoosshd configuration using Viper.
@@ -80,8 +80,8 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		return nil, err
 	}
 
-	// Same reasoning: a zero request_ttl boots fine and then misbehaves in
-	// the sweep and the resolved-outcome cache, both far from the config.
+	// Same reasoning: a zero client_timeout boots fine and then misbehaves
+	// in the sweep and the resolved-outcome cache, both far from the config.
 	if err := c.CertOptions.Validate(); err != nil {
 		return nil, err
 	}

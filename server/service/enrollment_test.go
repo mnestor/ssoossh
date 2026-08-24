@@ -119,8 +119,11 @@ func TestEnrollmentRetrieve_EndToEnd(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
-		Service:        config.CertOptionsService{ValidDuration: time.Hour},
-		SigningTimeout: 5 * time.Second,
+		Service: config.CertOptionsService{
+			ValidDuration:      time.Hour,
+			EnrollmentDuration: 90 * 24 * time.Hour,
+		},
+		ClientTimeout: 50 * time.Second, // signing grace = 5s
 	})
 	enrollment := newTestEnrollmentService(t, svc)
 	caPub := startTestPipeline(t, svc)
@@ -163,15 +166,17 @@ func TestEnrollmentRetrieve_EndToEnd(t *testing.T) {
 		t.Error("delivered certificate is not bound to the enrolled public key")
 	}
 
-	// The certificate must not outlive the enrollment window fixed at
-	// approval time.
+	// The certificate carries the lifetime fixed at approval, measured from
+	// this redemption — not the code's own, much longer, expiry.
 	var row model.Enrollment
 	if err := svc.db.First(&row).Error; err != nil {
 		t.Fatalf("failed to read back enrollment: %v", err)
 	}
+	assertUnixWithin(t, "certificate ValidBefore", cert.ValidBefore, time.Now().Add(time.Hour), time.Minute)
 	//nolint:gosec // Unix timestamps are non-negative; conversion is safe.
-	if got, want := int64(cert.ValidBefore), row.ExpiresAt.Unix(); got != want {
-		t.Errorf("certificate ValidBefore %d, want enrollment expiry %d", got, want)
+	if int64(cert.ValidBefore) >= row.ExpiresAt.Unix() {
+		t.Errorf("certificate ValidBefore %d is not shorter than the code's expiry %d",
+			cert.ValidBefore, row.ExpiresAt.Unix())
 	}
 	if row.RedeemedAt == nil {
 		t.Error("expected RedeemedAt to be stamped on first redemption")
@@ -211,8 +216,11 @@ func TestEnrollmentRetrieve_ShouldAllowRedeemingTwice(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
-		Service:        config.CertOptionsService{ValidDuration: time.Hour},
-		SigningTimeout: 5 * time.Second,
+		Service: config.CertOptionsService{
+			ValidDuration:      time.Hour,
+			EnrollmentDuration: 90 * 24 * time.Hour,
+		},
+		ClientTimeout: 50 * time.Second, // signing grace = 5s
 	})
 	enrollment := newTestEnrollmentService(t, svc)
 	startTestPipeline(t, svc)
@@ -322,7 +330,7 @@ func TestEnrollmentRetrieve_ShouldReportSigningFailure(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
-		SigningTimeout: 5 * time.Second,
+		ClientTimeout: 50 * time.Second, // signing grace = 5s
 	})
 	enrollment := newTestEnrollmentService(t, svc)
 	startTestPipeline(t, svc)
@@ -353,7 +361,7 @@ func TestEnrollmentRetrieve_ShouldTimeOutWithoutSigner(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
-		SigningTimeout: 100 * time.Millisecond,
+		ClientTimeout: time.Second, // signing grace = 100ms
 	})
 	enrollment := newTestEnrollmentService(t, svc)
 

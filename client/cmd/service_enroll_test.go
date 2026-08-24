@@ -20,16 +20,37 @@ import (
 // should hand back the code only for the enrolled outcome — `service
 // enroll` resolves as an enrollment, never a certificate, so ssh login's
 // approved-shaped check would fail its happy path.
-func TestEnrollmentCode(t *testing.T) {
+func TestEnrollmentOutcome(t *testing.T) {
 	t.Parallel()
 
+	expiresAt := time.Date(2026, 9, 23, 14, 5, 0, 0, time.UTC)
+
 	tests := []struct {
-		name     string
-		result   *api.CertificateResult
-		wantCode string
-		wantErr  string
+		name        string
+		result      *api.CertificateResult
+		wantCode    string
+		wantAccount string
+		wantExpiry  time.Time
+		wantErr     string
 	}{
 		{name: "should return the code when enrolled", result: &api.CertificateResult{Status: api.StatusEnrolled, Code: "code-1"}, wantCode: "code-1"},
+		{
+			name: "should carry the approved service account and code expiry",
+			result: &api.CertificateResult{
+				Status:         api.StatusEnrolled,
+				Code:           "code-2",
+				ServiceAccount: "svc-deploy",
+				ExpiresAt:      &expiresAt,
+			},
+			wantCode:    "code-2",
+			wantAccount: "svc-deploy",
+			wantExpiry:  expiresAt,
+		},
+		{
+			name:     "should leave the account and expiry unset when the server omits them",
+			result:   &api.CertificateResult{Status: api.StatusEnrolled, Code: "code-3"},
+			wantCode: "code-3",
+		},
 		{name: "should reject an enrolled outcome without a code", result: &api.CertificateResult{Status: api.StatusEnrolled}, wantErr: "no code was delivered"},
 		{name: "should reject a denial", result: &api.CertificateResult{Status: api.StatusDenied}, wantErr: "denied"},
 		{name: "should reject an expiry", result: &api.CertificateResult{Status: api.StatusExpired}, wantErr: "expired"},
@@ -41,18 +62,24 @@ func TestEnrollmentCode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			code, err := enrollmentCode(tt.result)
+			enrolled, err := enrollmentOutcome(tt.result)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-					t.Fatalf("enrollmentCode() error = %v, want containing %q", err, tt.wantErr)
+					t.Fatalf("enrollmentOutcome() error = %v, want containing %q", err, tt.wantErr)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("enrollmentCode() error = %v", err)
+				t.Fatalf("enrollmentOutcome() error = %v", err)
 			}
-			if code != tt.wantCode {
-				t.Errorf("enrollmentCode() = %q, want %q", code, tt.wantCode)
+			if enrolled.code != tt.wantCode {
+				t.Errorf("enrollmentOutcome() code = %q, want %q", enrolled.code, tt.wantCode)
+			}
+			if enrolled.serviceAccount != tt.wantAccount {
+				t.Errorf("enrollmentOutcome() serviceAccount = %q, want %q", enrolled.serviceAccount, tt.wantAccount)
+			}
+			if !enrolled.expiresAt.Equal(tt.wantExpiry) {
+				t.Errorf("enrollmentOutcome() expiresAt = %v, want %v", enrolled.expiresAt, tt.wantExpiry)
 			}
 		})
 	}
@@ -363,6 +390,80 @@ func TestRunServiceEnroll_ShouldPrintTheSshConfigGuidance(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected the guidance to contain %q, got:\n%s", want, got)
 		}
+	}
+}
+
+// The account and expiry are the two facts the operator cannot get any other
+// way: the approval happened in a browser they were not looking at, and
+// before this the only route to the principal was retrieving a certificate
+// and inspecting it.
+func TestRunServiceEnroll_ShouldNameTheApprovedAccountAndCodeExpiry(t *testing.T) {
+	expiresAt := time.Now().Add(90 * 24 * time.Hour)
+	client := &fakeAPIClient{result: &api.CertificateResult{
+		Status:         api.StatusEnrolled,
+		Code:           "code-123",
+		ServiceAccount: "svc-deploy",
+		ExpiresAt:      &expiresAt,
+	}}
+	root, keyPath := enrollFixture(t, client)
+	var out bytes.Buffer
+
+	if err := runServiceEnroll(context.Background(), root, &out, keyPath, false); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{"svc-deploy", expiresAt.Local().Format("2006-01-02 15:04:05 MST"), "89 days"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected the output to contain %q, got:\n%s", want, got)
+		}
+	}
+}
+
+// A server older than the two fields sends neither. Printing "approved for
+// """ or an expiry of 0001-01-01 would be worse than saying nothing.
+func TestRunServiceEnroll_ShouldStaySilentWhenTheServerOmitsTheDetail(t *testing.T) {
+	client := &fakeAPIClient{result: &api.CertificateResult{Status: api.StatusEnrolled, Code: "code-123"}}
+	root, keyPath := enrollFixture(t, client)
+	var out bytes.Buffer
+
+	if err := runServiceEnroll(context.Background(), root, &out, keyPath, false); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := out.String()
+	for _, unwanted := range []string{"service account", "stops working", "0001-01-01"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("expected no %q in the output, got:\n%s", unwanted, got)
+		}
+	}
+	if !strings.Contains(got, "The code is reusable, so that is safe to run from cron") {
+		t.Errorf("expected the undated reusability line, got:\n%s", got)
+	}
+}
+
+func TestApproximateDuration(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		d    time.Duration
+		want string
+	}{
+		{name: "should say so when the code is already dead", d: -time.Second, want: "already expired"},
+		{name: "should report seconds under two minutes", d: 90 * time.Second, want: "90 seconds"},
+		{name: "should report minutes under two hours", d: 45 * time.Minute, want: "45 minutes"},
+		{name: "should report hours under two days", d: 30 * time.Hour, want: "30 hours"},
+		{name: "should report days beyond that", d: 90 * 24 * time.Hour, want: "90 days"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := approximateDuration(tt.d); got != tt.want {
+				t.Errorf("approximateDuration(%v) = %q, want %q", tt.d, got, tt.want)
+			}
+		})
 	}
 }
 

@@ -9,6 +9,8 @@
 // dependencies.
 package apitypes
 
+import "time"
+
 // Terminal certificate-request statuses. These are the complete set of SSE
 // event names ssoosshd's events endpoint can send (see
 // server/controller/certrequests.go's eventsHandler, which uses the status
@@ -120,6 +122,19 @@ type CertificateResult struct {
 	// enrollment"). `service retrieve` presents this later to redeem the
 	// actual certificate.
 	Code string `json:"code,omitempty"`
+
+	// ServiceAccount is the account the approver chose, set only alongside
+	// Code. It is the sole principal of every certificate the code
+	// redeems, and the approval happens in a browser the operator running
+	// `service enroll` is not looking at — so without this the CLI can
+	// print a code but not say whose identity it carries.
+	ServiceAccount string `json:"service_account,omitempty"`
+
+	// ExpiresAt is when Code stops being redeemable, set only alongside it.
+	// This bounds the code, not the certificates it produces; those get
+	// their own lifetime at each redemption. A pointer so an outcome that
+	// has no expiry omits the field rather than sending the zero time.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
 // CAResponse is GET /api/ca's response body.

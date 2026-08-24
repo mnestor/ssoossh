@@ -80,8 +80,9 @@ func (a *adminController) effectiveConfigHandler(g *gin.Context) {
 		CertServiceExtensions:    orEmpty(a.config.CertOptions.Service.Extensions),
 		CertPAMValidDuration:     a.config.CertOptions.PAM.ValidDuration.String(),
 		CertPAMRequireGroup:      a.config.CertOptions.PAM.RequireGroup,
-		CertRequestTTL:           a.config.CertOptions.RequestTTL.String(),
-		CertSigningTimeout:       a.config.CertOptions.SigningTimeout.String(),
+		CertClientTimeout:        a.config.CertOptions.ClientTimeout.String(),
+		CertApprovalTTL:          a.config.CertOptions.ApprovalTTL().String(),
+		CertSigningGrace:         a.config.CertOptions.SigningGrace().String(),
 	}
 
 	respondData(g, resp)

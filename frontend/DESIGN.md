@@ -90,7 +90,6 @@ The `iconComponents` map in `src/lib/components/Icon.svelte` includes:
 - `user` — user certificates
 - `terminal` — PAM certificates
 - `cog` — service certificates
-- `server` — host certificates
 
 **Utility:**
 
@@ -160,6 +159,7 @@ discrete.
 - **Button**: Variants: `primary` (accent blue), `danger` (red), `ghost` (outline). Always includes `disabled` state via `opacity-50`. Lays its children out as a centered `inline-flex` row with a gap, so a label plus a trailing icon needs no wrapper. `full` stretches it to the container width, for a screen whose single primary action should span the column (the login button).
 - **BrandMark**: The deployment logo slot — the mark left of the "ssoossh" wordmark in the header and above the login heading. Renders `branding.logo_url` when a deployment sets one (height-constrained, width free, since most organisation logos are wide wordmarks) and ssoossh's own check-in-circle mark otherwise, so the slot is never empty. Takes `size` in pixels; corner rounding follows the size.
 - **Card**: Wraps content in a bordered, shadowed box with optional title/description header and footer slot.
+- **Footer**: The bar closing every page — the running build's version, a link to the release it was cut from, and links back to the project on GitHub. Presentational: the build identity arrives as a prop, so the fetch happens once in the layout. Renders nothing at all while the version is unknown.
 - **Alert**: Variants: `error`, `warning`, `info`. Each includes an icon and a color from the token set.
 - **StatusBadge**: Maps request/certificate statuses (pending, approved, denied, etc.) to colored pills with status-appropriate icons. Rendered capitalised — the wire value is lowercase, the label is not.
 - **DetailRow**: A label–value pair for metadata lists, with optional icon and monospace rendering. A 140px label column at 13px, stacking on narrow viewports.
@@ -218,6 +218,21 @@ interface BrandingConfig {
 	login_notice?: string; // Full-text consent notice, blocks login form
 }
 ```
+
+### Runtime Version Endpoint
+
+The footer's build identity is fetched the same way, from an unauthenticated `/api/version`, and for the same reason: the frontend is prerendered once and served by whatever binary is running, so the version cannot be baked in at build time. It comes from the Go build stamp (`internal/version`), which goreleaser and the Makefile set via ldflags.
+
+The `version.svelte.ts` store handles this:
+
+```ts
+export async function loadVersion(): Promise<void>;
+export function getVersion(): VersionResponse | null;
+```
+
+It fails closed like branding, but to `null` rather than an empty object: the repository URL is served rather than hardcoded, so with no response there is nothing honest to render and the footer is omitted entirely.
+
+A tagged build shows `v0.1.0` linked to its GitHub release. An untagged one has no release to point at, so it shows `development (7a3f9c1)` — the short commit is what identifies that build.
 
 **Header Branding** (`src/routes/+layout.svelte`):
 

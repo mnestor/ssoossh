@@ -90,7 +90,6 @@ type SigningJob struct {
 	RequestID        string                `json:"request_id"`
 	Type             model.CertificateType `json:"type"`
 	PublicKey        string                `json:"public_key"`
-	Hostname         string                `json:"hostname,omitempty"`
 	Principals       []string              `json:"principals"`
 	KeyID            string                `json:"key_id"`
 	RequestedOptions RequestedOptions      `json:"requested_options"`
@@ -144,7 +143,6 @@ type SignedReply struct {
 	Serial               uint64            `json:"serial,omitempty"`
 	KeyID                string            `json:"key_id,omitempty"`
 	Principals           []string          `json:"principals,omitempty"`
-	Hostname             string            `json:"hostname,omitempty"`
 	PublicKeyFingerprint string            `json:"public_key_fingerprint,omitempty"`
 	CriticalOptions      map[string]string `json:"critical_options,omitempty"`
 	Extensions           []string          `json:"extensions,omitempty"`

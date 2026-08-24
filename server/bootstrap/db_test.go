@@ -464,8 +464,9 @@ func TestInitDatabase_ShouldErrorWhenMigrationFails(t *testing.T) {
 // TestMigrationParity_ShouldKeepSqliteAndPostgresSchemaInSync parses both
 // dialect migration files and asserts they define the same tables, columns,
 // constraints, and indexes. Handles dialect-specific differences (INTEGER vs
-// BIGINT, DATETIME vs TIMESTAMPTZ) with explicit normalization so a reader
-// sees exactly what is allowed to differ.
+// BIGINT, DATETIME vs TIMESTAMPTZ, BLOB vs BYTEA, INTEGER 0/1 vs BOOLEAN)
+// with explicit normalization so a reader sees exactly what is allowed to
+// differ.
 func TestMigrationParity_ShouldKeepSqliteAndPostgresSchemaInSync(t *testing.T) {
 	t.Parallel()
 
@@ -602,6 +603,14 @@ func normalizeColumnDef(def string) string {
 	// BLOB and BYTEA are both binary; normalize to BINARY.
 	def = strings.ReplaceAll(def, "BYTEA", "BINARY")
 	def = strings.ReplaceAll(def, "BLOB", "BINARY")
+
+	// SQLite has no boolean type and spells one INTEGER 0/1, where Postgres
+	// uses BOOLEAN FALSE/TRUE. Fold both spellings together, or every
+	// boolean column reads as a dialect divergence. Word-bounded so a
+	// column whose name happens to contain "true" survives.
+	def = strings.ReplaceAll(def, "BOOLEAN", "INT64")
+	def = regexp.MustCompile(`\bFALSE\b`).ReplaceAllString(def, "0")
+	def = regexp.MustCompile(`\bTRUE\b`).ReplaceAllString(def, "1")
 
 	// Normalize multiple spaces.
 	def = regexp.MustCompile(`\s+`).ReplaceAllString(def, " ")

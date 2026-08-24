@@ -176,7 +176,7 @@ frontend-test: ## Frontend unit and a11y tests (vitest)
 
 ##@ Test (tagged suites, not part of `make test`)
 
-.PHONY: test-e2e test-e2e-multi-instance test-memory-leak test-resilience test-load test-migration test-hsm
+.PHONY: test-e2e test-memory-leak test-resilience test-load test-migration test-hsm
 # The HSM key source against a real PKCS#11 token. Behind the `softhsm` tag
 # so `make test` never needs softhsm2 installed; CI installs softhsm2 and
 # opensc for it (see the runner image).
@@ -195,10 +195,10 @@ test-e2e: $(FRONTEND_DIST) ## End-to-end suite (modifies host state, read test/e
 	CGO_ENABLED=1 go test -tags=e2e -count=1 -timeout=10m ./test/e2e/...
 
 # Reproducing tests for known limitations (quarantined -- do not run in CI).
-# These tests verify defects exist; they should fail loudly.
-test-e2e-multi-instance: $(FRONTEND_DIST) ## Quarantined multi-instance repro tests (expected to fail)
-	CGO_ENABLED=1 go test -tags=e2e,multi_instance_test -count=1 -timeout=10m ./test/e2e/...
-
+# These tests verify defects exist; they should fail loudly. The
+# multi-instance repro that used to live here is gone: NATS made the
+# topology real, so those tests assert the working behaviour and run in the
+# normal e2e suite (and in CI's multi-signer job).
 test-memory-leak: ## Memory leak repro tests
 	CGO_ENABLED=1 go test -tags=memory_leak_test -count=1 -timeout=1m ./server/service/... -v -run MemoryLeak
 
@@ -260,9 +260,9 @@ lint: ## golangci-lint over the whole module (merge gate)
 # the tagged suites for the first time surfaced findings that had been
 # accumulating unseen in the one part of the tree nobody linted.
 #
-# One invocation per tag set rather than a single combined one: the tags are
-# mutually exclusive in places (multi_instance_test replaces a file's
-# contents), so a combined run does not typecheck.
+# One invocation per tag set rather than a single combined one: the tags
+# select mutually exclusive views of the tree in places, so a combined run
+# does not typecheck.
 LINT_TAGGED := e2e resilience load dbparity softhsm
 
 .PHONY: lint-tagged

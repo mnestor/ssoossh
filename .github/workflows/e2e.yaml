@@ -148,7 +148,7 @@ jobs:
         # (the default Actions shell has no pipefail).
         run: |
           gotestsum --junitfile=test-results-tier1-${{ matrix.backend }}.xml -- \
-            -buildvcs=false -tags=e2e -count=1 -timeout=5m -skip '^(TestApproval_|TestSSH_|TestPAMStack_|TestMultiSigner_)' ./test/e2e/...
+            -buildvcs=false -tags=e2e -count=1 -timeout=5m -skip '^(TestApproval_|TestSSH_|TestPAMStack_|TestMultiSigner_|TestMultiInstance_)' ./test/e2e/...
 
       - name: Upload diagnostics
         if: failure()
@@ -228,7 +228,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/mnestor/ssoossh-build:latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     # sqlite only. This tier exercises a real sshd, which does not
     # change behaviour with the storage backend -- tier 1 owns the
     # wire and persistence surface where it does, and weekly-extended
@@ -264,7 +264,7 @@ jobs:
         # (see the tier 1 step for why the old pipe form did not).
         run: |
           gotestsum --junitfile=test-results-tier3.xml -- \
-            -buildvcs=false -tags=e2e -count=1 -timeout=10m -run '^TestSSH_' ./test/e2e/...
+            -buildvcs=false -tags=e2e -count=1 -timeout=12m -run '^TestSSH_' ./test/e2e/...
 
       - name: Upload diagnostics
         if: failure()
@@ -344,8 +344,9 @@ jobs:
     name: multi-signer
     needs: [changes, prepare]
     if: needs.changes.outputs.code == 'true'
-    # Bare runner, not the build container: the split-signer scenario needs
-    # the docker daemon for NATS, plus sudo/sshd/PAM like the tier 3 jobs.
+    # Bare runner, not the build container: the split-signer and
+    # multi-instance scenarios need the docker daemon for NATS, plus
+    # sudo/sshd/PAM like the tier 3 jobs.
     # Go comes from setup-go instead of the image; the postgres service
     # publishes its port on localhost because there is no job container
     # network to join.
@@ -388,12 +389,12 @@ jobs:
 
       # gotestsum runs go test itself so a test failure fails the step
       # (see the tier 1 step for why the old pipe form did not).
-      - name: Run multi-signer tests
+      - name: Run multi-signer and multi-instance tests
         env:
           SSOOSSH_E2E_POSTGRES_DSN: postgres://postgres:e2e@localhost:5432/e2e?sslmode=disable
         run: |
           gotestsum --junitfile=test-results-multi-signer.xml -- \
-            -buildvcs=false -tags=e2e -count=1 -timeout=10m -run '^TestMultiSigner_' ./test/e2e/...
+            -buildvcs=false -tags=e2e -count=1 -timeout=10m -run '^(TestMultiSigner_|TestMultiInstance_)' ./test/e2e/...
 
       - name: Upload diagnostics
         if: failure()

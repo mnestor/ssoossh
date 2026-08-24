@@ -2,7 +2,7 @@
 .TH "SSOOSSH" "1" "Aug 2026" "ssoossh" ""
 
 .SH NAME
-ssoossh-ssh-config - Print or validate the effective ssoossh client configuration.
+ssoossh-ssh-config - Print the ssh_config lines that hook ssoossh into your existing ssh.
 
 
 .SH SYNOPSIS
@@ -10,10 +10,40 @@ ssoossh-ssh-config - Print or validate the effective ssoossh client configuratio
 
 
 .SH DESCRIPTION
-Prints the configuration as it was actually resolved — after merging every config file, applying defaults, and deciding the key algorithm — rather than the contents of any one file. Use it to answer "which config is this picking up, and what will it generate?" without running a login.
+Prints the ssh_config recipes that make \fBssh\fR invoke ssoossh, with the rules that decide which one you want. Contacts nothing and reads nothing but this text, so it answers before a server is configured and keeps answering after one stops responding.
 
 .PP
-Loading the configuration is itself the validation: an unusable combination fails before this command prints anything.
+The client is never run on its own — ssh invokes it. Two ways to arrange that:
+
+.PP
+Match exec (recommended). Runs before ssh connects, so a certificate that
+  is already valid is reused and nothing opens a browser until it expires. A
+  non-zero exit blocks the connection. Works with or without an ssh-agent.
+
+.EX
+  Match host bastion.example.com exec "ssoossh ssh login"
+      User youruser
+.EE
+
+.PP
+ProxyCommand. Ensures a valid certificate, then hands off to whatever relay
+  command follows it — useful when reaching the target also needs an HTTP or
+  SOCKS proxy. Requires an ssh-agent: ssh reads IdentityFile and
+  CertificateFile once at startup, so a certificate refreshed on disk after
+  that point goes unused.
+
+.EX
+  Host jump.example.com
+      ProxyCommand ssoossh ssh proxycommand /usr/bin/nc -X connect -x 192.0.2.0:8080 %h %p
+.EE
+
+.PP
+Service accounts are wired up differently, from an enrollment code rather
+than a browser login; \fBssoossh service enroll\fR prints that recipe, with the
+real paths filled in, at the end of a successful enrollment.
+
+.PP
+For what this machine actually resolved — the config files that were merged and what came of each, the settings that resulted, where the key files are and whether they exist — add --debug to the command you are actually running. That is the one place those are reported, so there is no second version of the truth to keep in step with this one.
 
 
 .SH OPTIONS

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/bep/simplecobra"
 	"golang.org/x/crypto/ssh"
@@ -29,6 +30,10 @@ func newServiceEnrollCommand() simplecobra.Commander {
 			"present on disk.\n\n" +
 			"The code is printed once and stored nowhere. Save it where the unattended " +
 			"job that runs `service retrieve` can read it.\n\n" +
+			"The approver picks which of their service accounts the enrollment is for, " +
+			"in their browser. That account is named in this command's output along with " +
+			"when the code stops being redeemable, since it is the sole principal of every " +
+			"certificate the code produces.\n\n" +
 			"The key files follow OpenSSH naming: the private key is <name>, the public " +
 			"key is <name>.pub, and the certificate (once retrieved) is <name>-cert.pub. " +
 			"The three files must be in the same directory for ssh to find them.\n\n" +
@@ -82,23 +87,68 @@ func runServiceEnroll(ctx context.Context, root *RootCommand, out io.Writer, key
 		return describeWaitError(err)
 	}
 
-	code, err := enrollmentCode(result)
+	enrolled, err := enrollmentOutcome(result)
 	if err != nil {
 		return err
 	}
 
 	// Print the code and instructions.
-	fmt.Fprintf(out, "\nYour enrollment code is: %s\n", code)
+	fmt.Fprintf(out, "\nYour enrollment code is: %s\n", enrolled.code)
+	printEnrollmentIdentity(out, enrolled)
 	printEnrollmentCodeAndPaths(out, keyPath)
 
 	if retrieve {
-		if err := retrieveRightAway(ctx, root, out, code, keyPath); err != nil {
+		if err := retrieveRightAway(ctx, root, out, enrolled.code, keyPath); err != nil {
 			return err
 		}
 	}
 
-	printEnrollmentGuidance(out, code, keyPath)
+	printEnrollmentGuidance(out, enrolled, keyPath)
 	return nil
+}
+
+// printEnrollmentIdentity names what the approver actually chose. The
+// approval happens in a browser this operator is not looking at, so without
+// this the only way to learn whose identity the certificates carry is to
+// retrieve one and inspect it.
+//
+// Both lines are conditional: an older server sends neither field, and
+// inventing a placeholder would be worse than saying nothing.
+func printEnrollmentIdentity(out io.Writer, enrolled enrolledCode) {
+	if enrolled.serviceAccount != "" {
+		fmt.Fprintf(out, "It was approved for service account: %s\n", enrolled.serviceAccount)
+		fmt.Fprintf(out, "Every certificate it retrieves carries that as its only principal.\n")
+	}
+	if !enrolled.expiresAt.IsZero() {
+		fmt.Fprintf(out, "The code stops working on %s (in %s).\n",
+			enrolled.expiresAt.Local().Format("2006-01-02 15:04:05 MST"),
+			approximateDuration(time.Until(enrolled.expiresAt)))
+	}
+}
+
+// approximateDuration renders how long is left in the largest unit that
+// still says something useful. time.Duration's own String would print
+// "719h58m12.4s" for a month, which answers the question in a form nobody
+// reads at a glance.
+//
+// Truncated rather than rounded, so a freshly minted 90 day code reads as
+// "89 days": for a credential's remaining life, understating is the safe
+// direction, and the exact timestamp sits on the same line for anyone who
+// needs the real answer.
+func approximateDuration(d time.Duration) string {
+	if d <= 0 {
+		return "already expired"
+	}
+	switch {
+	case d >= 48*time.Hour:
+		return fmt.Sprintf("%d days", int(d.Hours()/24))
+	case d >= 2*time.Hour:
+		return fmt.Sprintf("%d hours", int(d.Hours()))
+	case d >= 2*time.Minute:
+		return fmt.Sprintf("%d minutes", int(d.Minutes()))
+	default:
+		return fmt.Sprintf("%d seconds", int(d.Seconds()))
+	}
 }
 
 // resolveServiceKey decides what to enroll for keyPath and returns the
@@ -175,7 +225,8 @@ func retrieveRightAway(ctx context.Context, root *RootCommand, out io.Writer, co
 // printEnrollmentGuidance prints the ssh_config recipe and the rules that
 // make it work. Paths are absolute so a relative --key is unambiguous about
 // where its files actually landed.
-func printEnrollmentGuidance(out io.Writer, code, keyPath string) {
+func printEnrollmentGuidance(out io.Writer, enrolled enrolledCode, keyPath string) {
+	code := enrolled.code
 	keyAbs := absOrAsGiven(keyPath)
 	certAbs := absOrAsGiven(certificatePathFor(keyPath))
 	pubAbs := absOrAsGiven(publicKeyPathFor(keyPath))
@@ -190,7 +241,13 @@ func printEnrollmentGuidance(out io.Writer, code, keyPath string) {
 	fmt.Fprintln(out, "\nYour certificate will be automatically updated if it is expired or will expire within 1 minute.")
 	fmt.Fprintln(out, "This can be changed by adding --grace <time> to the retrieve call, or forced every time with")
 	fmt.Fprintln(out, "--force. <time> is a number followed by s=seconds, m=minutes, or h=hours.")
-	fmt.Fprintln(out, "\nThe code is reusable, so that is safe to run from cron or a systemd timer.")
+	if enrolled.expiresAt.IsZero() {
+		fmt.Fprintln(out, "\nThe code is reusable, so that is safe to run from cron or a systemd timer.")
+	} else {
+		fmt.Fprintf(out, "\nThe code is reusable until %s, so that is safe to run from cron or a\n",
+			enrolled.expiresAt.Local().Format("2006-01-02 15:04:05 MST"))
+		fmt.Fprintln(out, "systemd timer. Enroll again before then to keep the job running.")
+	}
 	fmt.Fprintln(out, "\nThe code only works with the key it was enrolled against. service retrieve never sends a public")
 	fmt.Fprintf(out, "key, so the certificate it returns is always bound to %s and does nothing\n", pubAbs)
 	fmt.Fprintln(out, "without the corresponding private key.")
@@ -223,7 +280,7 @@ func fileExists(path string) (bool, error) {
 // even when it does not exist yet: the name is fixed by the private key's,
 // and knowing it is what lets the operator write the retrieve command.
 func printEnrollmentCodeAndPaths(out io.Writer, keyPath string) {
-	fmt.Fprintf(out, "ssh key files are:\n")
+	fmt.Fprintf(out, "\nssh key files are:\n")
 	fmt.Fprintf(out, "  Private key: %s\n", absOrAsGiven(keyPath))
 	fmt.Fprintf(out, "  Public key:  %s\n", absOrAsGiven(publicKeyPathFor(keyPath)))
 	fmt.Fprintf(out, "  Certificate: %s\n", absOrAsGiven(certificatePathFor(keyPath)))
@@ -286,28 +343,45 @@ func certificatePathFor(keyPath string) string {
 	return strings.TrimSuffix(keyPath, ".pub") + "-cert.pub"
 }
 
-// enrollmentCode extracts the enrollment code from a resolved service
+// enrolledCode is what an approved enrollment turned out to be: the code
+// itself plus the two things the operator cannot see from the terminal —
+// which account the approver picked, and when the code stops working.
+//
+// serviceAccount and expiresAt are both optional. A server older than the
+// fields sends neither, so every reader must treat the zero value as "not
+// reported" rather than as an answer.
+type enrolledCode struct {
+	code           string
+	serviceAccount string
+	expiresAt      time.Time
+}
+
+// enrollmentOutcome extracts the enrollment from a resolved service
 // request. Unlike ssh login's checkOutcome, the outcome this path wants is
 // "enrolled" — the server mints a code at approval, and the certificate
 // itself is only issued later when `service retrieve` redeems it.
-func enrollmentCode(result *api.CertificateResult) (string, error) {
+func enrollmentOutcome(result *api.CertificateResult) (enrolledCode, error) {
 	if result == nil {
-		return "", errors.New("the enrollment request resolved with no outcome")
+		return enrolledCode{}, errors.New("the enrollment request resolved with no outcome")
 	}
 
 	switch result.Status {
 	case api.StatusEnrolled:
 		if result.Code == "" {
-			return "", errors.New("the request was enrolled but no code was delivered; run service enroll again")
+			return enrolledCode{}, errors.New("the request was enrolled but no code was delivered; run service enroll again")
 		}
-		return result.Code, nil
+		enrolled := enrolledCode{code: result.Code, serviceAccount: result.ServiceAccount}
+		if result.ExpiresAt != nil {
+			enrolled.expiresAt = *result.ExpiresAt
+		}
+		return enrolled, nil
 	case api.StatusDenied:
-		return "", errors.New("the request was denied, so no enrollment was created")
+		return enrolledCode{}, errors.New("the request was denied, so no enrollment was created")
 	case api.StatusExpired:
-		return "", errors.New("the request expired before anyone approved it; run service enroll again")
+		return enrolledCode{}, errors.New("the request expired before anyone approved it; run service enroll again")
 	case api.StatusFailed:
-		return "", errors.New("ssoosshd could not create the enrollment; check the server logs, then run service enroll again")
+		return enrolledCode{}, errors.New("ssoosshd could not create the enrollment; check the server logs, then run service enroll again")
 	default:
-		return "", fmt.Errorf("the server reported an unrecognized outcome %q", result.Status)
+		return enrolledCode{}, fmt.Errorf("the server reported an unrecognized outcome %q", result.Status)
 	}
 }

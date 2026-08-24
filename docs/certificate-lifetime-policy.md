@@ -1,11 +1,8 @@
 # Certificate lifetime & approval policy
 
-> **Note (2026-08-23):** host certificates were removed after this was
-> written ([decisions.md](decisions.md)); references to a Host type,
-> host rules, or `cert_options.host` below are historical rationale, not
-> current behavior. The "service account linkage" open item below is
-> resolved: the approver chooses the account in the web UI and it becomes
-> the certificate principal.
+> **Note:** the "service account linkage" open item below is resolved: the
+> approver chooses the account in the web UI and it becomes the certificate
+> principal.
 
 **Status: implemented.** The policy engine described here exists as
 `server/service/lifetimepolicy.go` (`lifetimePolicyEngine`: group tiers,
@@ -76,15 +73,10 @@ to bound it against. This is that bound.
 
 ### Which certificate types
 
-**User and service only.** Host certificates keep their flat configured
-duration, matching the scope table below.
-
-A host's address is not a useful signal about the host: it is a fixed machine
-on a known network, vouched for by a human through the OIDC approval chain,
-and shortening its certificate because of where it sits would mean re-running
-that human approval every few hours. The `source-address` half is equally
-wrong there — a host certificate identifies a server to connecting clients, so
-pinning it to the address it was requested from restricts nothing useful.
+**User and service only.** PAM certificates keep their fixed lifetime,
+matching the scope table below: they are already the shortest thing the
+server issues, and a PAM authentication is a local event on a machine the
+user is sitting at, so the address adds no signal worth a second mechanism.
 
 Service certificates *are* in scope, but note the interaction with phase 8:
 they are signed at `retrieve`, potentially months after approval and possibly
@@ -136,41 +128,27 @@ every rule.
 
 ### Who owns a rule
 
-Two sources, and the ownership answers the "who may edit this" question
-without needing a global administrator for the common case.
-
 **Global subnet rules** live in the config file, as drafted above. They are the
 deployment-wide statement — "anything off the VPN gets fifteen minutes" — and
-only someone with filesystem access changes them.
+only someone with filesystem access changes them. Today that is the only
+source, which makes "who may edit this" the same question as "who has
+filesystem access on the server".
 
-**Host rules** are attached to an enrolled host certificate and owned by
-whoever enrolled it. The person responsible for a machine says "certificates
-minted by clients running on me are capped at one hour", and they can say it
-without being an administrator of anything else. This is the runtime-editable
-half.
+A second, runtime-editable source is the obvious next step, and the design
+below is written for it — but it needs an owner concept first, which does not
+exist yet. See "Prerequisites".
 
-**A host rule wins outright.** It is not merged with, averaged against, or
-bounded by the subnet rule that also matches — if a host says one hour, a
-trusted-subnet rule saying ten hours cannot raise it:
-
-```text
-config:      192.168.10.0/24        -> 10h
-host rule:   db01 (192.168.10.9)    -> 1h
-
-client at 192.168.10.9   -> 1h    (host rule; the subnet cannot lift it)
-client at 192.168.10.20  -> 10h   (subnet rule; no host claims this address)
-```
-
-That asymmetry is deliberate. Both directions only ever narrow relative to the
-type ceiling, so "most specific wins" and "strictest wins" agree here — but
-stating it as *the host wins* rather than *the minimum wins* is what makes it
-predictable when a future rule type is added.
+When a second source does land, the rule to state up front is that a more
+specific rule **wins outright**: not merged with, averaged against, or bounded
+by the config rule that also matches. Both directions only ever narrow
+relative to the type ceiling, so "most specific wins" and "strictest wins"
+agree today — but saying which source wins, rather than that the minimum
+wins, is what keeps it predictable once there is more than one.
 
 ### Runtime-editable narrowing
 
-Host rules are editable in the web UI by the host's owner. Global subnet rules
-are not editable at all — they stay in the config file. Two independent
-enforcement points, because one is not enough:
+Config-file rules are not editable at runtime at all. For a source that is,
+two independent enforcement points, because one is not enough:
 
 1. **On save**, reject a rule that exceeds the configured ceiling — immediate
    feedback, and the obvious place to catch a mistake.
@@ -184,9 +162,9 @@ worst a compromised admin session achieves is policy reverting to the config
 file's own limits.
 
 The approval page must show a shortened lifetime *and its reason* ("this
-network: 1h", "host db01: 1h") before anyone approves, for the same reason it
-already shows trimmed options: a human authorizing issuance has to see what
-they are authorizing.
+network: 1h") before anyone approves, for the same reason it already shows
+trimmed options: a human authorizing issuance has to see what they are
+authorizing.
 
 **Record the decision, not just the log line.** Which rule applied — and, if
 scoring is ever reintroduced, how the number was reached — belongs on or
@@ -241,12 +219,10 @@ compose as `min(tier, subnet rule, ceiling)`.
 | --- | --- | --- |
 | **User** | (existing `RequireGroup`, if any) | Full tiered policy (see below) |
 | **Service** | Optional group membership **and** account linkage — see below | Tiered, same mechanism as User |
-| **Host** | Optional group (existing `RequireGroup`, already implemented) | Flat, config-set duration, default 1 year |
-| **PAM** | N/A (out of scope — see `docs/signing-pipeline.md`'s deferral of host/service/pam until User is fully working) | Always fixed/time-locked, no tiering at all |
+| **PAM** | N/A (out of scope — see `docs/signing-pipeline.md`'s deferral of service and pam until User is fully working) | Always fixed/time-locked, no tiering at all |
 
-Host and PAM need no new mechanism — Host already has `RequireGroup` +
-flat `ValidDuration`; PAM's fixed lifetime is a constant, not policy. The
-new tiered mechanism below is for User (fully) and Service (reusing the
+PAM needs no new mechanism — its fixed lifetime is a constant, not policy.
+The new tiered mechanism below is for User (fully) and Service (reusing the
 same tier evaluation, with an additional account-linkage gate layered on
 top).
 
@@ -301,9 +277,6 @@ cert_options:
     require_group: ""              # already exists
     require_account_linkage: true  # new — see "Service account linkage" above
     lifetime_policy: {}            # same shape as user's, reused as-is
-  host:
-    require_group: ""              # already exists, unchanged
-    valid_duration: 8760h          # already exists, unchanged (flat, default 1y)
 ```
 
 Notes on this draft:
@@ -373,7 +346,7 @@ Notes on this draft:
    currently returns `(narrowed, validDuration, requireGroup, err)`
    pulling a flat `ValidDuration` straight off config. This plan replaces
    that duration computation with the multi-step algorithm above, scoped
-   to `CertificateTypeUser`/`CertificateTypeService` only (Host keeps its
+   to `CertificateTypeUser`/`CertificateTypeService` only (PAM keeps its
    existing flat lookup unchanged). Likely a new `lifetimePolicy` type/file
    alongside `keyid.go`, not a `resolveCertOptions` in-place expansion,
    given the added complexity.
@@ -469,11 +442,15 @@ enable condition too.
    (`server/config/types_certificates.go:139-141`). `evaluateDuration` does
    not implement that fallback (`server/service/lifetimepolicy.go:139-169`).
    With no tier matched and no `default_duration`, the effective duration is
-   zero, it survives both the `min` against the source rule and the ceiling
-   clamp untouched, and `approveServiceEnrollment` then sets
-   `expiresAt = now` (`server/service/certrequest.go:737`). The enrollment is
-   dead on arrival. Config that only ever wanted a pin has to set an unrelated
-   duration to work at all.
+   zero, and it survives both the `min` against the source rule and the
+   ceiling clamp untouched. `approveServiceEnrollment` records that zero on
+   the enrollment as `certificate_duration_seconds`; the enrollment itself is
+   live (its own expiry comes from `cert_options.service.enrollment_duration`,
+   not from this), but every redemption produces a zero-length span that the
+   signer rejects outright (`server/signer/sign.go:134`). Config that only
+   ever wanted a pin has to set an unrelated duration to work at all. It fails
+   closed, and it fails at redemption rather than at approval, so the operator
+   sees it only when the unattended job first runs.
 6. **`extensions` has the same shape of problem**, less sharply. Per-network
    extension narrowing is a real question, but it too is answered by whichever
    entry won the duration match.

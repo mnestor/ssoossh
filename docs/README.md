@@ -20,8 +20,8 @@ long-lived keys. Self-hosted, homelab-friendly, early development.
 | --- | --- |
 | [configuration.md](configuration.md) | Every configuration surface: `ssoosshd.yaml`, `ssoossh.yaml`, `ssh_config`, `sshd`, PAM |
 | [deployment.md](deployment.md) | Operator runbook: CA key, systemd, `sshd` trust, OIDC provider, reverse proxy, startup modes, multi-instance, PAM |
-| [ssoosshd.yaml.default](ssoosshd.yaml.default) | Annotated server configuration sample |
-| [ssoossh.yaml.default](ssoossh.yaml.default) | Annotated client configuration sample |
+| [server/config/defaults.yaml](../server/config/defaults.yaml) | Annotated server configuration — the built-in defaults, and what ships as `/etc/ssoossh/ssoosshd.yaml` |
+| [client/config/defaults.yaml](../client/config/defaults.yaml) | Annotated client configuration — the built-in defaults, and what ships as `/etc/ssoossh/ssoossh.yaml` |
 | [client-settings-enforcement.md](client-settings-enforcement.md) | Locking down client settings: `enforce` file, Windows Group Policy, macOS managed preferences, precedence |
 | [certificate-lifetime-policy.md](certificate-lifetime-policy.md) | Lifetime and options derived from issuance context: group tiers, source rules, the footguns |
 | [pam.d-sudo.example](pam.d-sudo.example) | Annotated `pam.d` stack for `sudo`/`su` |

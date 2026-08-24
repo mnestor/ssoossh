@@ -6,19 +6,14 @@
 /**
  * CertificateType identifies which of the three certificate types
  * (docs/dev/ssoossh-context.md — "Certificate types") a row represents.
+ * These three are the whole set: anything else is rejected at the service
+ * boundary and by the schema's type CHECK. Host identity is deliberately
+ * not among them (docs/decisions.md).
  */
 export const CertificateTypeUser = "user";
-/**
- * CertificateTypeHost is retired: host certificates were removed (see
- * docs/decisions.md — no secure host verification exists yet). The
- * constant remains only because server/signer and server/certmsg keep
- * dormant host handling (lifetime cap, message fields) that lands with
- * the HSM signer work; nothing creates, stores, or accepts this type.
- */
-export const CertificateTypeHost = "host";
 export const CertificateTypeService = "service";
 export const CertificateTypePAM = "pam";
-export type CertificateType = typeof CertificateTypeUser | typeof CertificateTypeHost | typeof CertificateTypeService | typeof CertificateTypePAM;
+export type CertificateType = typeof CertificateTypeUser | typeof CertificateTypeService | typeof CertificateTypePAM;
 /**
  * CertificateRequestStatus tracks a pending web UI approval that the client
  * is waiting on over SSE.

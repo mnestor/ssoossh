@@ -42,9 +42,9 @@ func TestCobraCommandForManpage_ShouldReturnTheRealRootWhenCalled(t *testing.T) 
 
 // The whole point of generating from the real tree: every command a user can
 // type must appear, at every depth. The hand-built tree this replaced had
-// five top-level stubs and nothing below them, which is how `host` came to be
-// documented as "Manage host certificates" long after host certificates were
-// removed.
+// five top-level stubs and nothing below them, which is how `host` came to
+// be documented as "Manage host certificates", a feature this product does
+// not have.
 func TestCobraCommandForManpage_ShouldExposeEveryCommandInTheTree(t *testing.T) {
 	root, err := CobraCommandForManpage()
 	if err != nil {

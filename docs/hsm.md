@@ -84,7 +84,7 @@ sudo chmod 700 /var/lib/softhsm/tokens/
 
 The PKCS#11 module path varies by distribution. The examples below use `/usr/lib/softhsm/libsofthsm2.so` (standard Debian/Ubuntu location). If your system uses a different path, locate it with `find /usr -name 'libsofthsm2.so'` and substitute accordingly.
 
-Add an `hsm:` block to your `ssoosshd.yaml`. Exactly one of `ssh_key` or `hsm` may be set; both cannot coexist. See `docs/ssoosshd.yaml.default` for additional options.
+Add an `hsm:` block to your `ssoosshd.yaml`. Exactly one of `ssh_key` or `hsm` may be set; both cannot coexist. See `server/config/defaults.yaml` for additional options.
 
 ### Example: Using a Token with PIN
 

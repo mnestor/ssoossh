@@ -16,8 +16,13 @@ import (
 // part that either relays a working connection or does not, had never
 // happened in a test at all.
 //
-// These are tier 3: only a real ssh driving a real sshd exercises
-// ProxyCommand the way production does.
+// The two that drive a real sshd are tier 3, and carry the TestSSH_ prefix
+// to say so: the workflow routes tests to tiers by name prefix, not by file
+// (e2e.yaml runs tier 3 with -run '^TestSSH_'). Only that job installs the
+// tier's prerequisites -- sshd's runtime directory and netcat, which the
+// ProxyCommand line below execs. The two that only exercise the client's
+// own argument handling need neither, so they keep the TestSSHProxy_
+// prefix and stay in tier 1.
 
 // proxyOption builds the ssh -o ProxyCommand line a user would put in their
 // ssh_config, with %h and %p left for ssh to substitute.
@@ -26,7 +31,7 @@ func proxyOption(ssoosshBin, serverURL string) string {
 		ssoosshBin, serverURL)
 }
 
-func TestSSHProxy_ShouldRelayAConnectionSshdAccepts(t *testing.T) {
+func TestSSH_ProxyShouldRelayAConnectionSshdAccepts(t *testing.T) {
 	f := newFixture(t)
 	sshd := harness.StartSSHD(t, f.Server.CAPublicKey)
 
@@ -62,7 +67,7 @@ func TestSSHProxy_ShouldRelayAConnectionSshdAccepts(t *testing.T) {
 // already proves the stream was not corrupted; this pins the reason, so a
 // stray fmt.Println in the login path fails with a message that says what
 // happened rather than an opaque protocol error.
-func TestSSHProxy_ShouldKeepClientChatterOffTheRelayedStream(t *testing.T) {
+func TestSSH_ProxyShouldKeepClientChatterOffTheRelayedStream(t *testing.T) {
 	f := newFixture(t)
 	sshd := harness.StartSSHD(t, f.Server.CAPublicKey)
 

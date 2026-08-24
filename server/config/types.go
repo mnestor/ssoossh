@@ -31,7 +31,7 @@ type Config struct {
 	// auditor-scoped operations. All admin group names are optional; empty
 	// disables the corresponding role. The ssh_server_admin_group key lives
 	// here rather than at top level so all three role-to-group mappings sit
-	// together; feat/host-certs originally declared it at the root.
+	// together.
 	Admin AdminConfig `mapstructure:"admin"`
 
 	// Signer carries everything the signer needs (the CA key and the
@@ -56,7 +56,7 @@ type Config struct {
 	// A pointer so "unset" is distinguishable from "explicitly false":
 	// unset falls back to whether the Go runtime is itself in FIPS 140-3
 	// mode. Nil is the correct default, so no entry is needed in
-	// _defaults.yaml.
+	// defaults.yaml.
 	FIPS *bool `mapstructure:"fips"`
 
 	// MultiInstance declares that the server is part of a multi-instance

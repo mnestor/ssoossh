@@ -1,0 +1,5 @@
+fallback_file_agent = true
+insecure_skip_verify = false
+key_filename = id_ssoossh
+try_open_browser = false
+use_agent = true

@@ -30,22 +30,22 @@ const FailureReasonStranded = "stranded awaiting signature"
 //
 // Nothing records when a request entered the signing state, so its age is
 // derived from creation instead. A request can only be approved between
-// created_at and created_at+RequestTTL (it expires after that), so the
-// latest it can possibly have started signing is created_at+RequestTTL:
+// created_at and created_at+ApprovalTTL (it expires after that), so the
+// latest it can possibly have started signing is created_at+ApprovalTTL:
 //
-//	stranded if created_at < now - (RequestTTL + SigningTimeout)
+//	stranded if created_at < now - (ApprovalTTL + SigningGrace)
 //
 // That bound can never catch a request still legitimately in flight. It
-// errs long — a request approved immediately waits RequestTTL longer than
+// errs long — a request approved immediately waits ApprovalTTL longer than
 // necessary — which is the right direction: the cost is a client waiting
 // longer for bad news, where erring short would cancel certificates that
 // were about to be issued.
 //
-// When RequestTTL is disabled (zero), approval is unbounded and no such
+// When ApprovalTTL is disabled (zero), approval is unbounded and no such
 // derivation is possible, so this reports every signing request as
 // stranded. That's correct at startup, when the in-memory queue is
 // definitionally empty, and wrong at any other time — which is why
-// bootstrap only schedules the periodic pass when RequestTTL is set. See
+// bootstrap only schedules the periodic pass when ApprovalTTL is set. See
 // docs/signing-pipeline.md.
 func (s *CertRequestService) SweepStrandedRequests(ctx context.Context) error {
 	var stranded []model.CertificateRequest
@@ -69,7 +69,7 @@ func (s *CertRequestService) SweepStrandedRequests(ctx context.Context) error {
 }
 
 // strandedCutoff returns the created_at threshold before which a signing
-// request is considered stranded, or the zero Time when RequestTTL is
+// request is considered stranded, or the zero Time when ApprovalTTL is
 // disabled and no bound can be derived (see SweepStrandedRequests).
 //
 // UTC, and it has to be: this value is compared against created_at, which
@@ -78,10 +78,10 @@ func (s *CertRequestService) SweepStrandedRequests(ctx context.Context) error {
 // then skip stranded requests, or fail live ones, whenever the two offsets
 // differ. See package dbtime.
 func (s *CertRequestService) strandedCutoff() time.Time {
-	if s.config.CertOptions.RequestTTL <= 0 {
+	if s.config.CertOptions.ApprovalTTL() <= 0 {
 		return time.Time{}
 	}
-	return time.Now().Add(-(s.config.CertOptions.RequestTTL + s.config.CertOptions.SigningTimeout)).UTC()
+	return time.Now().Add(-(s.config.CertOptions.ApprovalTTL() + s.config.CertOptions.SigningGrace())).UTC()
 }
 
 // failStranded marks every request in ids failed, with a single UPDATE, and
@@ -116,7 +116,7 @@ func (s *CertRequestService) failStranded(ctx context.Context, ids []string) {
 		updatedIDs[req.ID] = true
 		slog.Warn("invalidated stranded certificate request",
 			"request_id", req.ID, "reason", FailureReasonStranded)
-		s.notifyWaiter(req.ID, requestOutcome{status: model.CertificateRequestStatusFailed})
+		s.notifyWaiter(req.ID, WaitOutcome{Status: model.CertificateRequestStatusFailed})
 	}
 	for _, id := range ids {
 		if !updatedIDs[id] {

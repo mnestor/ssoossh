@@ -57,8 +57,8 @@ yarn-error.log*
 /.build/
 
 # Local runtime state and config. Named exactly, not globbed: `ssoossh*.yaml`
-# would swallow the shipped ssoossh.default.yaml and any sample or example
-# config added later. Name local variants *.local.yaml (ignored below).
+# would swallow any sample or example config added later. Name local variants
+# *.local.yaml (ignored below).
 /ssoossh.db*
 /ssoossh.yaml
 /ssoosshd.yaml

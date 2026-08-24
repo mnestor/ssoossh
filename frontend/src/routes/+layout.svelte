@@ -7,11 +7,13 @@
 	import { loadBranding, getBranding } from '$lib/branding.svelte';
 	import BrandMark from '$lib/components/BrandMark.svelte';
 	import Button from '$lib/components/Button.svelte';
+	import Footer from '$lib/components/Footer.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import UserMenu from '$lib/components/UserMenu.svelte';
 	import { session } from '$lib/session.svelte';
 	import { theme } from '$lib/theme.svelte';
+	import { loadVersion, getVersion } from '$lib/version.svelte';
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
@@ -26,6 +28,10 @@
 	// Fails closed — any error treats it as "no branding configured".
 	loadBranding();
 
+	// Same deal for the build identity behind the footer: one unauthenticated
+	// fetch for the whole app, and a failure just leaves the footer off.
+	loadVersion();
+
 	// The theme is already on <html> by now: app.html applies it before first
 	// paint so there is no flash. This picks up the stored preference for the
 	// toggle to render, and starts tracking the OS setting so "system"
@@ -38,6 +44,7 @@
 	$effect(() => theme.apply());
 
 	const branding = $derived(getBranding());
+	const version = $derived(getVersion());
 
 	let signingOut = $state(false);
 	let navOpen = $state(false);
@@ -155,4 +162,6 @@
 	<main class="flex w-full flex-1 flex-col items-center px-6 py-10">
 		{@render children()}
 	</main>
+
+	<Footer {version} />
 </div>

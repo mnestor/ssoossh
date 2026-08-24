@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -44,21 +45,31 @@ func ConnectAndMigrate(t *testing.T, ctx context.Context) (*gorm.DB, string) {
 		t.Skipf("docker daemon unavailable: %v", err)
 	}
 
-	const port = 54329 // fixed: the suite runs sequentially in one package
+	// The port postgres listens on *inside* the container. Fixed is safe:
+	// it is namespaced to that container, or to this process's own
+	// namespace in the joined-network case below.
+	const containerPort = 54329
 	args := []string{"run", "-d", "--rm",
 		"-e", "POSTGRES_PASSWORD=parity",
 		"-e", "POSTGRES_DB=parity",
 	}
+	joinedNetwork := false
 	if _, err := os.Stat("/.dockerenv"); err == nil {
+		joinedNetwork = true
 		self, err := os.Hostname()
 		if err != nil {
 			t.Fatalf("hostname: %v", err)
 		}
 		args = append(args, "--network", "container:"+self)
 	} else {
-		args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", port, port))
+		// Host port 0 makes the daemon pick a free one. A fixed host port
+		// raced this package's own teardown: `docker rm -f` returns before
+		// the daemon releases the published port, so the next test's
+		// `docker run` failed with "port is already allocated" even though
+		// the tests run sequentially.
+		args = append(args, "-p", fmt.Sprintf("127.0.0.1:0:%d", containerPort))
 	}
-	args = append(args, "postgres:17-alpine", "-p", fmt.Sprintf("%d", port))
+	args = append(args, "postgres:17-alpine", "-p", fmt.Sprintf("%d", containerPort))
 
 	out, err := exec.Command("docker", args...).CombinedOutput()
 	if err != nil {
@@ -66,6 +77,13 @@ func ConnectAndMigrate(t *testing.T, ctx context.Context) (*gorm.DB, string) {
 	}
 	id := strings.TrimSpace(string(out))
 	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() }) //nolint:errcheck // best-effort teardown; --rm reaps it regardless.
+
+	// Joining the namespace publishes nothing, so the container port is
+	// reachable as-is; otherwise ask the daemon what it assigned.
+	port := containerPort
+	if !joinedNetwork {
+		port = publishedPort(t, id, containerPort)
+	}
 
 	dsn := fmt.Sprintf("postgres://postgres:parity@127.0.0.1:%d/parity?sslmode=disable", port)
 
@@ -90,4 +108,27 @@ func ConnectAndMigrate(t *testing.T, ctx context.Context) (*gorm.DB, string) {
 		t.Fatalf("apply postgres migrations: %v", err)
 	}
 	return db, id
+}
+
+// publishedPort asks the daemon which host port it bound to the container's
+// published port. `docker port` prints one "host:port" line per binding, and
+// the host half can itself contain colons (an IPv6 bind), so the port is
+// everything after the last one.
+func publishedPort(t *testing.T, id string, containerPort int) int {
+	t.Helper()
+
+	out, err := exec.Command("docker", "port", id, fmt.Sprintf("%d/tcp", containerPort)).CombinedOutput()
+	if err != nil {
+		t.Fatalf("docker port %s: %v\n%s", id, err, out)
+	}
+	line, _, _ := strings.Cut(strings.TrimSpace(string(out)), "\n")
+	i := strings.LastIndex(line, ":")
+	if i < 0 {
+		t.Fatalf("docker port returned %q, want host:port", line)
+	}
+	port, err := strconv.Atoi(line[i+1:])
+	if err != nil {
+		t.Fatalf("docker port returned an unparsable port in %q: %v", line, err)
+	}
+	return port
 }

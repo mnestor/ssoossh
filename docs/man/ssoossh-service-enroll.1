@@ -16,6 +16,9 @@ Enrolls a keypair bound by the server to an enrollment code for later certificat
 The code is printed once and stored nowhere. Save it where the unattended job that runs \fBservice retrieve\fR can read it.
 
 .PP
+The approver picks which of their service accounts the enrollment is for, in their browser. That account is named in this command's output along with when the code stops being redeemable, since it is the sole principal of every certificate the code produces.
+
+.PP
 The key files follow OpenSSH naming: the private key is , the public key is \&.pub, and the certificate (once retrieved) is -cert.pub. The three files must be in the same directory for ssh to find them.
 
 .PP

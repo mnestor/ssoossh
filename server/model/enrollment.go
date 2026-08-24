@@ -29,7 +29,23 @@ type Enrollment struct {
 
 	UserID    string    `gorm:"column:user_id"` // who approved this enrollment
 	CreatedAt time.Time `gorm:"column:created_at"`
+
+	// ExpiresAt bounds the *code*, not the certificates it produces: after
+	// it, `service retrieve` stops redeeming. It comes from
+	// cert_options.service.enrollment_duration.
 	ExpiresAt time.Time `gorm:"column:expires_at"`
+
+	// CertificateDurationSeconds is how long each certificate redeemed from
+	// this enrollment is valid for, fixed at approval time along with KeyID
+	// and Principals (evaluate-at-enrollment-time) but measured from each
+	// redemption.
+	//
+	// A pointer so nil — a row written before the column existed, where
+	// ExpiresAt served as both bounds — stays distinct from a stored zero,
+	// which is an approval that computed a zero-length certificate and must
+	// fail at the signer rather than inherit the code's window. See
+	// EnrollmentService.Retrieve.
+	CertificateDurationSeconds *int64 `gorm:"column:certificate_duration_seconds"`
 
 	// RedeemedAt is set on first successful `service retrieve`. Enrollment
 	// codes are reusable until ExpiresAt — this timestamp is audit detail,

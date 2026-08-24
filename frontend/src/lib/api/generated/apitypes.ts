@@ -155,6 +155,21 @@ export interface CertificateResult {
 	 * actual certificate.
 	 */
 	code?: string;
+	/**
+	 * ServiceAccount is the account the approver chose, set only alongside
+	 * Code. It is the sole principal of every certificate the code
+	 * redeems, and the approval happens in a browser the operator running
+	 * `service enroll` is not looking at — so without this the CLI can
+	 * print a code but not say whose identity it carries.
+	 */
+	service_account?: string;
+	/**
+	 * ExpiresAt is when Code stops being redeemable, set only alongside it.
+	 * This bounds the code, not the certificates it produces; those get
+	 * their own lifetime at each redemption. A pointer so an outcome that
+	 * has no expiry omits the field rather than sending the zero time.
+	 */
+	expires_at?: string;
 }
 /**
  * CAResponse is GET /api/ca's response body.

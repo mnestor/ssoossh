@@ -19,11 +19,10 @@ import (
 // Client is the set of ssoosshd API calls client and pam_ssoossh can make.
 // RestyClient is the production implementation.
 //
-// Deliberately excludes host-certificate renewal and principal-mapping
-// sync: both are gated server-side by HostCertAuthMiddleware, whose
-// transport (custom header vs mTLS) isn't decided yet — see the TODO on
-// server/middleware/host_cert_auth.go. Add those methods once it is,
-// rather than guessing a scheme here.
+// There is no host-certificate or principal-mapping-sync call here:
+// ssoosshd issues no host identity (docs/decisions.md), and principal
+// mapping is purely local to the client (`ssoossh host mapping`), never
+// synced from the server.
 type Client interface {
 	// GetCA returns the CA's public key in authorized_keys format.
 	GetCA(ctx context.Context) (string, error)

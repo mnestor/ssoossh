@@ -16,7 +16,7 @@
 # restart, so every image here is meant to be pinned by an explicit
 # version instead. Set SSOOSSHD_VERSION to one before starting:
 #   mkdir -p config
-#   cp ../docs/ssoosshd.yaml.default config/ssoosshd.yaml   # then edit it
+#   cp ../server/config/defaults.yaml config/ssoosshd.yaml  # then edit it
 #   echo SSOOSSHD_VERSION=v0.2.0 > .env   # a real tag; see the packages
 #                                         # page below for what's published
 #   docker compose up -d                                    # sqlite (default)

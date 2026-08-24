@@ -1,5 +1,14 @@
 BEGIN;
 
+-- The whole schema, in one migration. It was six before, but nothing has
+-- shipped, so there is no deployed database whose history they describe —
+-- and the incremental ones had begun to cost more than they carried: two
+-- tables were already being rebuilt on the SQLite side just to widen a
+-- CHECK, and three columns were reaching tables created a few files
+-- earlier. Collapsing them means the file you read is the schema you get.
+-- Reshape this one freely until the first release; after that, add
+-- migrations rather than editing it.
+--
 -- See server/model for the corresponding GORM structs; a column added here
 -- must also be added to sqlite/20260101000000_init.up.sql and model/.
 --
@@ -20,19 +29,28 @@ CREATE TABLE users (
     email TEXT NOT NULL DEFAULT '',
     other_accounts TEXT NOT NULL DEFAULT '',
     service_accounts TEXT NOT NULL DEFAULT '',
+    -- Operator-configured extra OIDC claim fields captured at login, as a
+    -- JSON map of template name -> string or array of strings ('{}' when
+    -- none are configured). Consumed by key ID templates. See
+    -- config.OAuthFields.Extra.
+    extra_fields TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL
 );
 CREATE UNIQUE INDEX idx_users_subject ON users(subject);
 
+-- Host identity is deliberately absent from every type CHECK below
+-- (docs/decisions.md): no secure way exists today to verify a host's claim
+-- to a hostname, so nothing may issue or store one until something like an
+-- ACME challenge provides that.
+
 CREATE TABLE certificate_requests (
     id TEXT PRIMARY KEY NOT NULL,
     type TEXT NOT NULL
         CONSTRAINT chk_certificate_requests_type
-        CHECK (type IN ('user', 'host', 'service', 'pam')),
+        CHECK (type IN ('user', 'service', 'pam')),
     user_id TEXT REFERENCES users(id),
     public_key TEXT NOT NULL,
-    hostname TEXT NOT NULL DEFAULT '',
     username TEXT NOT NULL DEFAULT '',
     requested_options TEXT NOT NULL DEFAULT '',
     source_ip TEXT NOT NULL DEFAULT '',
@@ -81,7 +99,7 @@ CREATE TABLE certificates (
     id TEXT PRIMARY KEY NOT NULL,
     type TEXT NOT NULL
         CONSTRAINT chk_certificates_type
-        CHECK (type IN ('user', 'host', 'service', 'pam')),
+        CHECK (type IN ('user', 'service', 'pam')),
     user_id TEXT REFERENCES users(id),
     -- The request whose approval authorized this certificate, closing the
     -- audit chain certificate_request -> decision -> certificate. Nullable
@@ -94,7 +112,6 @@ CREATE TABLE certificates (
     -- when user_id resolution fails, this is what makes the row
     -- reattachable instead of permanently orphaned.
     certificate_request_id TEXT REFERENCES certificate_requests(id),
-    hostname TEXT NOT NULL DEFAULT '',
     public_key_fingerprint TEXT NOT NULL,
     -- SerialNumber is pre-allocated at approval time (before signing is
     -- queued), ensuring it's available to persist at request resolution
@@ -175,26 +192,61 @@ CREATE INDEX idx_certificate_request_decisions_source_ip ON certificate_request_
 -- and the one a time-bounded export runs.
 CREATE INDEX idx_certificate_request_decisions_decided_at ON certificate_request_decisions(decided_at);
 
+-- Everything signing needs is fixed here at approval time, never re-derived
+-- when `service retrieve` redeems the code (the evaluate-at-enrollment-time
+-- contract; see docs/certificate-lifetime-policy.md).
 CREATE TABLE enrollments (
     id TEXT PRIMARY KEY NOT NULL,
     code TEXT NOT NULL,
     public_key TEXT NOT NULL,
     option_set TEXT NOT NULL DEFAULT '',
+    -- Key ID and principals, likewise fixed at approval. principals is a
+    -- JSON-encoded []string.
+    key_id TEXT NOT NULL DEFAULT '',
+    principals TEXT NOT NULL DEFAULT '',
+    -- Links back to the approved request, keeping certificates issued at
+    -- retrieval time on the same audit chain as the approval decision.
+    certificate_request_id TEXT REFERENCES certificate_requests(id),
     user_id TEXT NOT NULL REFERENCES users(id),
     created_at TIMESTAMPTZ NOT NULL,
+    -- Bounds the code, not the certificates it produces: past this,
+    -- `service retrieve` stops redeeming. From
+    -- cert_options.service.enrollment_duration.
     expires_at TIMESTAMPTZ NOT NULL,
+    -- How long each certificate redeemed from this enrollment is valid for,
+    -- measured from that redemption rather than from approval. Nullable so
+    -- a missing value stays distinct from a stored zero, which means an
+    -- approval genuinely computed a zero-length certificate and must fail
+    -- at the signer — see EnrollmentService.Retrieve.
+    certificate_duration_seconds BIGINT,
+    -- First successful redemption. Audit detail, not a single-use gate:
+    -- codes stay redeemable until expires_at.
     redeemed_at TIMESTAMPTZ
 );
 CREATE UNIQUE INDEX idx_enrollments_code ON enrollments(code);
 CREATE INDEX idx_enrollments_user_id ON enrollments(user_id);
 
-CREATE TABLE host_mappings (
+-- One row per `service retrieve` redemption, for the approving user and
+-- auditors to read back. Codes are reusable until the enrollment expires,
+-- so an enrollment can have many.
+CREATE TABLE enrollment_retrievals (
     id TEXT PRIMARY KEY NOT NULL,
-    hostname TEXT NOT NULL,
-    principals TEXT NOT NULL DEFAULT '',
+    enrollment_id TEXT NOT NULL REFERENCES enrollments(id),
+    source_ip TEXT NOT NULL DEFAULT '',
+    certificate_serial BIGINT NOT NULL,
+    retrieved_at TIMESTAMPTZ NOT NULL,
+    succeeded BOOLEAN NOT NULL DEFAULT FALSE
+);
+CREATE INDEX idx_enrollment_retrievals_enrollment_id ON enrollment_retrievals(enrollment_id);
+
+CREATE TABLE ca_signer_keys (
+    fingerprint TEXT PRIMARY KEY NOT NULL,
+    public_key TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL
 );
-CREATE UNIQUE INDEX idx_host_mappings_hostname ON host_mappings(hostname);
+CREATE INDEX idx_ca_signer_keys_expires_at ON ca_signer_keys(expires_at);
 
 CREATE TABLE server_secrets (
     name TEXT PRIMARY KEY NOT NULL,

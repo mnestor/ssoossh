@@ -35,7 +35,12 @@ const (
 type certTypePolicy struct {
 	requireGroup  string
 	validDuration time.Duration
-	extensions    []string
+	// enrollmentDuration is how long a flowEnrollment type's code stays
+	// redeemable. Zero for every other type, which mints no code. See
+	// config.CertOptionsService.EnrollmentDuration for why it is not
+	// derived from validDuration.
+	enrollmentDuration time.Duration
+	extensions         []string
 	// noTouchEligible is only true for CertificateTypeService — see
 	// CertRequestService.Approve's doc comment.
 	noTouchEligible bool
@@ -101,13 +106,14 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates) map
 			},
 		},
 		model.CertificateTypeService: {
-			requireGroup:    opts.Service.RequireGroup,
-			validDuration:   opts.Service.ValidDuration,
-			extensions:      opts.Service.Extensions,
-			noTouchEligible: true,
-			keyIDTemplate:   kt.service,
-			principals:      servicePrincipals,
-			flow:            flowEnrollment,
+			requireGroup:       opts.Service.RequireGroup,
+			validDuration:      opts.Service.ValidDuration,
+			enrollmentDuration: opts.Service.EnrollmentDuration,
+			extensions:         opts.Service.Extensions,
+			noTouchEligible:    true,
+			keyIDTemplate:      kt.service,
+			principals:         servicePrincipals,
+			flow:               flowEnrollment,
 			linkage: func(identity *Identity, selection ApprovalSelection) error {
 				return checkServiceAccountLinkage(identity, selection.ServiceAccount)
 			},

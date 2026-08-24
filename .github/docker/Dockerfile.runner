@@ -32,6 +32,11 @@ RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sourc
   && apt-get install -y --no-install-recommends \
     google-chrome-stable nodejs libpam0g-dev openssh-server \
     sudo build-essential git curl unzip jq gh goreleaser \
+    # Both ship on the stock ubuntu-latest runner but not here, and
+    # --no-install-recommends means nothing else drags them in: `file`
+    # backs build.yaml's musl linkage check, netcat backs the e2e
+    # proxycommand tests, which exec /usr/bin/nc.
+    file netcat-openbsd \
     # softhsm2 + opensc (pkcs11-tool) back ssoossh's HSM signing tests
     softhsm2 opensc xz-utils \
   && curl -sL -o /tmp/quill.deb $(curl -s https://api.github.com/repos/anchore/quill/releases/latest | jq -r '.assets[] |select(.name|match("linux_amd64.deb$")) | .browser_download_url') \

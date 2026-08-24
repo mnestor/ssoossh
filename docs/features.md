@@ -34,9 +34,9 @@ in [decisions.md](decisions.md).
 | **PAM** | `sudo`/`su` via `pam_ssoossh` | shipped end to end |
 | **Service** | non-interactive: enroll once, retrieve unattended, every retrieval logged | shipped end to end |
 
-Host certificates were removed rather than finished: without a secure way
-for a host to prove its claim to a hostname, issuing host identity is a
-hole, not a feature — see [decisions.md](decisions.md). The client keeps
+ssoosshd issues no host certificates: without a secure way for a host to
+prove its claim to a hostname, host identity would be a hole rather than a
+feature — see [decisions.md](decisions.md). The client keeps
 local principal-mapping tooling (`host mapping`, `host principals`) for
 `AuthorizedPrincipalsCommand`; it has no server side.
 

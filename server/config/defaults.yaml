@@ -1,0 +1,656 @@
+# ssoosshd configuration.
+#
+# This one file is both the defaults embedded in the binary (server/config,
+# //go:embed defaults.yaml) and the configuration installed at
+# /etc/ssoossh/ssoosshd.yaml. The uncommented values below are therefore the
+# real built-in defaults, not illustrations of them: deleting a line removes
+# the setting rather than restoring anything. Commented-out keys are the ones
+# with no built-in value — they resolve at runtime, or from the zero value of
+# their type — so uncommenting one is a real change even when you write down
+# what it appears to already do.
+#
+# ssoosshd layers this file first, then merges the first configuration file
+# it finds on top:
+#   1. the file named by --config, if given
+#   2. ./ssoosshd.yaml            (current directory — useful in development)
+#   3. ~/.config/ssoosshd.yaml
+#   4. ~/.config/ssoossh/ssoosshd.yaml
+#   5. /etc/ssoosshd.yaml
+#   6. /etc/ssoossh/ssoosshd.yaml (where the package installs this file)
+#
+# Only the first match is read, unlike the client, which merges every
+# location it finds.
+#
+# Durations use Go's time.Duration syntax, e.g. "30s", "10m", "8760h". There
+# is no unit above "h", so multi-day spans are written in hours (1 day = 24h,
+# 90 days = 2160h, 1 year = 8760h).
+
+# ----------------------------------------------------------------------
+# logging - the application's main structured log output. Backed by
+# log/slog, with file rotation via timberjack.
+# ----------------------------------------------------------------------
+logging:
+  # Minimum level to emit. One of: DEBUG, INFO, WARN, ERROR.
+  level: WARN
+
+  # Prefix every log line with the application name and version.
+  include_app_name: true
+  include_app_version: true
+
+  # Emit logs as JSON (structured) instead of human-readable text.
+  # Recommended true in production so logs are machine-parseable.
+  log_json: false
+
+  # Also copy log output to stdout, in addition to any filename below.
+  # Useful under a supervisor (systemd, docker) that captures stdout, or
+  # when filename is left empty.
+  # enable_stdout: false
+
+  # --- The remaining fields come from the embedded timberjack.Logger and
+  # --- control log file rotation. All are optional; with no filename, no
+  # --- file is written and only enable_stdout applies.
+
+  # Path to the log file. Rotated backups are written alongside it. Empty
+  # defaults to a temp-dir file named after the process.
+  # filename: /var/log/ssoossh/ssoosshd.log
+
+  # Megabytes a log file may reach before it is rotated (default 100).
+  # maxsize: 100
+
+  # Days to retain rotated files, by the timestamp in their filename. A
+  # "day" is exactly 24h. 0 (default) never removes on age alone.
+  # maxage: 0
+
+  # How many rotated files to keep. 0 (default) keeps all of them, subject
+  # to maxage still deleting old ones.
+  # maxbackups: 0
+
+  # Use local time instead of UTC in rotated backup filenames.
+  # localtime: false
+
+  # Compression applied to rotated backups: "none", "gzip", or "zstd".
+  # Empty falls back to the deprecated "compress" boolean below.
+  # compression: gzip
+
+  # Deprecated: use "compression". true is equivalent to compression: gzip.
+  # compress: false
+
+  # Maximum time between rotations, independent of size — 24h rotates
+  # daily even if maxsize is never reached. 0 (default) disables it.
+  # rotationinterval: 24h
+
+  # Go time layout for the timestamp appended to rotated filenames. Falls
+  # back to "2006-01-02T15-04-05.000" if invalid.
+  # backuptimeformat: "2006-01-02-15-04-05"
+
+  # Minutes past every hour (0-59) at which to force a rotation, e.g. [0]
+  # for the top of the hour. Applies on top of rotationinterval/maxsize.
+  # rotateAtMinutes: []
+
+  # Times of day ("HH:MM") at which to force a rotation, e.g. ["00:00"].
+  # Applies on top of rotationinterval/maxsize.
+  # rotateAt: []
+
+  # Where the rotation timestamp and reason go in the backup filename.
+  # false (default): name-timestamp-reason.log. true: name.log-timestamp-reason.
+  # appendTimeAfterExt: false
+
+  # Octal permissions for newly created and rotated log files (default
+  # 0640), subject to the process umask.
+  # filemode: 0640
+
+# ----------------------------------------------------------------------
+# ssh_key - the SSH CA private key ssoosshd signs issued certificates
+# with. Inline PEM, not a file path. Exactly one of ssh_key or hsm may be
+# set, and one of them must be: startup fails without a CA key.
+# ----------------------------------------------------------------------
+# ssh_key: |
+#   -----BEGIN OPENSSH PRIVATE KEY-----
+#   -----END OPENSSH PRIVATE KEY-----
+
+# ----------------------------------------------------------------------
+# hsm - source the CA private key from a PKCS#11 token instead of
+# ssh_key. See docs/hsm.md for setup.
+# Supported: ECDSA P-256/384/521, RSA >= 2048.
+# Not supported: Ed25519 — keep ssh_key for an Ed25519 CA.
+# ----------------------------------------------------------------------
+# hsm:
+#   module: /usr/lib/softhsm/libsofthsm2.so
+#   token_label: ssoossh-ca
+#   pin_file: /etc/ssoossh/hsm-pin       # or pin: "1234"
+#   key_label: ssoossh-ca
+#   # key_id: "01"                       # hex CKA_ID, alternative to key_label
+
+# ----------------------------------------------------------------------
+# fips - steer the server toward FIPS 140-3 approved algorithms. Unset
+# (the default, and why this key is commented rather than set to false)
+# follows the Go runtime's own FIPS 140-3 mode, crypto/fips140.Enabled();
+# true or false overrides that detection.
+#
+# When in effect, a non-approved algorithm is a hard error, not a warning:
+#   - a client-submitted public key that isn't ECDSA or RSA, rejected both
+#     when a request is approved and again by the signer itself
+#   - the CA key itself, checked at startup (an ed25519 CA fails to start)
+#   - http.tls.curves / cipher_suites: an explicit list must resolve
+#     entirely within the approved sets (P-256/384/521 curves; AES-GCM
+#     suites, not ChaCha20-Poly1305); left unset, they default to those
+#     sets instead of Go's own defaults
+# ----------------------------------------------------------------------
+# fips:
+
+# ----------------------------------------------------------------------
+# production - stricter defaults and validation. Leave true when actually
+# deploying; some development-only escapes (see
+# http.rate_limit_disable_for_dev) are only honored when this is false.
+# ----------------------------------------------------------------------
+production: true
+
+# ----------------------------------------------------------------------
+# max_*_lifetime - defense-in-depth ceilings enforced by the signer just
+# before minting, independent of the per-type cert_options below. A
+# certificate whose validity span exceeds its ceiling is refused. Each
+# must be greater than zero; there is no "unlimited".
+# ----------------------------------------------------------------------
+# User, service, and PAM certificates. 2160h is 90 days.
+max_cert_lifetime: 2160h
+# Service certificates specifically, which cert_options.service.valid_duration
+# is allowed to be much longer than a user's.
+max_service_cert_lifetime: 17544h
+
+# ----------------------------------------------------------------------
+# traces / metrics - OpenTelemetry export. Everything else is configured
+# through the OpenTelemetry SDK's own environment variables:
+# https://opentelemetry.io/docs/specs/otel/configuration/sdk-environment-variables/
+#
+# For a Prometheus scrape endpoint set OTEL_METRICS_EXPORTER=prometheus,
+# which starts a second HTTP server on its own port:
+#   OTEL_EXPORTER_PROMETHEUS_HOST=localhost  (default 0.0.0.0)
+#   OTEL_EXPORTER_PROMETHEUS_PORT=9464       (default 9464)
+# ----------------------------------------------------------------------
+traces: false
+metrics: false
+
+# ----------------------------------------------------------------------
+# multi_instance - declares that several ssoosshd processes share one
+# database and transport. It enables startup checks that only matter then
+# (http.cookie_key must be set explicitly, since a per-process random key
+# logs users out as they move between instances) and adapts cross-instance
+# message delivery. See deployment.md section 7.
+# ----------------------------------------------------------------------
+multi_instance: false
+
+# ----------------------------------------------------------------------
+# pubsub - the message broker behind the certificate pipeline and
+# approval flow. See deployment.md section 7 for NATS setup and its mTLS
+# requirements.
+# ----------------------------------------------------------------------
+pubsub:
+  # "gochannel" is in-process and suits a single instance. "nats" is
+  # required for multi-instance deployments sharing a database.
+  backend: gochannel
+  nats:
+    # Only consulted when backend is nats, e.g. "nats://nats.example.com:4222".
+    url: ""
+    # mTLS client certificate and key (PEM). Both required when url is set.
+    cert_file: ""
+    key_file: ""
+    # CA certificate verifying the NATS server (PEM). Required when url is set.
+    ca_file: ""
+
+# ----------------------------------------------------------------------
+# db - database connection, pooling, retries, and query logging.
+# ----------------------------------------------------------------------
+db:
+  # One of: sqlite, postgres.
+  provider: sqlite
+
+  # DSN. A file path (or ":memory:") for sqlite; a postgres:// URL or
+  # keyword string for postgres.
+  connection_string: "ssoossh.db"
+
+  # Connection attempts before giving up. 0 or negative fails immediately
+  # on the first error.
+  retry_attempts: 3
+
+  # Wait between attempts. Only used when retry_attempts > 1.
+  retry_interval: 3s
+
+  # Connection pool. In-memory SQLite is always forced to a single open
+  # connection and needs no tuning. For file-backed SQLite, writes
+  # serialize on the write lock whatever the pool size, so modest counts
+  # avoid queue buildup. For PostgreSQL, scale with expected concurrency.
+  # max_open_conns: 0 uses Go's default (typically 2).
+  max_open_conns: 10
+  max_idle_conns: 5
+  conn_max_lifetime: 0
+
+  # Database operation logging. Same shape and rotation options as the
+  # top-level "logging" above — it embeds the same timberjack.Logger, so
+  # filename / maxsize / maxage / maxbackups / localtime / compress /
+  # compression / rotationinterval / backuptimeformat / rotateAtMinutes /
+  # rotateAt / appendTimeAfterExt / filemode all apply here too.
+  logging:
+    level: WARN
+    # Include the source file:line that issued each operation. Useful for
+    # tracking down slow or unexpected queries.
+    add_source: false
+    log_json: false
+    # Set filename to /dev/null to disable database logging entirely.
+    # filename: /dev/null
+
+# ----------------------------------------------------------------------
+# http - the HTTP(S) server: binding, TLS, sessions, rate limiting, and
+# access logging.
+# ----------------------------------------------------------------------
+http:
+  address: 127.0.0.1
+  port: 8080
+
+  # Listen on a Unix domain socket instead of TCP; address and port are
+  # then ignored. Mutually exclusive with proxy_protocol, which is a
+  # TCP-connection concept.
+  unix_socket: ""
+
+  # CIDR ranges of reverse proxies trusted to prefix TCP connections with
+  # a PROXY protocol v1/v2 header, so the real client address survives a
+  # TCP-level proxy. Distinct from trusted_proxies below, which covers
+  # HTTP-level proxies setting X-Forwarded-For. Empty disables PROXY
+  # protocol; once set, connections from anywhere else are rejected.
+  proxy_protocol: []
+
+  # CIDR ranges of reverse proxies trusted to set X-Forwarded-For and
+  # X-Forwarded-Proto. Empty means no proxy is trusted, so the client IP
+  # is always the direct TCP peer and a client-supplied X-Forwarded-For is
+  # ignored. gin's own default is to trust every proxy, so this has to be
+  # set explicitly behind a reverse proxy for approver client-IP logging
+  # (see the key ID template fields) to be accurate.
+  trusted_proxies: []
+
+  # Reject requests addressed to a different Host, or SNI on TLS
+  # connections, with 421 Misdirected Request. Empty disables the check.
+  # /healthz and /ping are registered before it, so load balancer probes
+  # work whatever Host they use.
+  server_name: ""
+
+  # The scheme and host browsers actually reach this deployment at, e.g.
+  # "https://ssh.example.com". Set it whenever that differs from what
+  # address/port/tls describe — which is every reverse-proxy deployment,
+  # since the proxy terminates TLS on 443 while this process listens on
+  # plain HTTP somewhere else. Two things derive from it and cannot be
+  # right without it: the OIDC redirect URI handed to the identity
+  # provider, and the origin the CSRF check compares against. Origin only:
+  # a path, query, or fragment is rejected at startup.
+  # public_url: ""
+
+  # Set true when a reverse proxy terminates TLS and this process serves
+  # plain HTTP. Redundant if public_url is set — its scheme settles the
+  # same question — so configure one or the other, not both.
+  # is_https: false
+
+  # Cookie signing and encryption key for session cookies. Keep it secret;
+  # rotating it invalidates existing sessions. Empty generates a random key
+  # at startup, which multi_instance above refuses.
+  cookie_key: ""
+
+  # Marks the session cookie Secure, so browsers only send it over HTTPS.
+  # Left unset it derives from whether the deployment is HTTPS at all (tls
+  # below, or public_url / is_https when a proxy terminates it). Set it
+  # only to override that inference.
+  cookie_secure:
+
+  # "strict" (default), "lax", or "none". Strict is correct here — nothing
+  # legitimately navigates into this server from another site. Defence in
+  # depth rather than the CSRF control itself: state-changing routes are
+  # guarded by CSRF middleware regardless.
+  cookie_same_site: strict
+
+  # Web sessions have a two-tier lifetime, like a corporate SSO.
+  #
+  # cookie_max_age is the absolute cap, measured from login. Activity never
+  # extends it: past this age the next request is unauthenticated and the
+  # user signs in again. It is also the ceiling on how stale a session's
+  # group claims can get, since groups are read at login and not re-checked
+  # until the next one.
+  #
+  # cookie_idle_timeout is how long a session survives without a request.
+  # It slides: any activity in the second half of the window reissues the
+  # cookie for a fresh window, so a session in active use only ever ends at
+  # cookie_max_age, while an abandoned browser expires after one quiet
+  # window. It must not exceed cookie_max_age; startup refuses that.
+  #
+  # 0 for either does not mean "no expiry" — each falls back to the value
+  # shown here. Set explicit positive durations to mean what they say.
+  cookie_max_age: 9h
+  cookie_idle_timeout: 30m
+
+  # Global rate limit: requests per rate_duration window, per client.
+  rate_limit: 60
+  rate_duration: 1m
+
+  # Disable all rate limiting, global and per-endpoint, for local
+  # development. Only honored when production is false, so it cannot be
+  # switched on in production.
+  rate_limit_disable_for_dev: false
+
+  # Per-endpoint limits on certificate request creation, in requests per
+  # second per client IP. Each is an independent per-IP bucket and applies
+  # in addition to the global rate_limit above — both must be satisfied.
+  # Zero or negative disables that endpoint's limit. Exceeding any limit
+  # gets a 429.
+  cert_request_rate_limit:
+    # POST /api/certs/user — interactive, human-driven.
+    user: 10
+    # POST /api/certs/service/enroll — callable by an unattended service.
+    service_enroll: 5
+    # POST /api/certs/pam — gated on local interaction.
+    pam: 10
+
+  # Rate limit on POST /api/certs/service/retrieve, keyed on the enrollment
+  # code rather than the IP so it also bounds brute-forcing spread across
+  # many addresses. Requests per second per code. Zero or negative disables
+  # it, which is not recommended: code brute-forcing is a real threat.
+  service_code_rate_limit:
+    limit: 1
+
+  # Strict-Transport-Security header value. Only sent when this server
+  # terminates TLS itself. Empty disables the header.
+  hsts: "max-age=31536000; includeSubDomains"
+
+  tls:
+    # Certificate material, inline (certificate / private_key) or by path
+    # (certificate_file / private_key_file). With none of the four set the
+    # server runs without TLS — do not do that outside local development.
+    # certificate: |
+    #   -----BEGIN CERTIFICATE-----
+    #   -----END CERTIFICATE-----
+    # private_key: |
+    #   -----BEGIN PRIVATE KEY-----
+    #   -----END PRIVATE KEY-----
+    # certificate_file: /etc/ssoossh/tls/server.crt
+    # private_key_file: /etc/ssoossh/tls/server.key
+
+    # Minimum negotiated version. Loose forms all resolve the same way:
+    # "TLS1.2", "tls12", "VersionTLS12", "TLS-1-2". One of TLS1.0, TLS1.1
+    # (both deprecated per RFC 8996, and warned about if selected),
+    # TLS1.2, TLS1.3.
+    min_version: TLS1.3
+
+    # Cipher suites by crypto/tls name, most-preferred first. Empty leaves
+    # the choice to Go. Only meaningful for TLS 1.2 and below — TLS 1.3
+    # suite selection is not configurable in Go's stdlib. Duplicates are
+    # deduplicated, keeping the first occurrence's position.
+    #
+    # Under fips (see above) an explicit list must resolve entirely to
+    # approved AES-GCM suites — not ChaCha20-Poly1305, not CBC — or the
+    # server fails to start; left empty it defaults to those suites rather
+    # than Go's own.
+    cipher_suites: []
+    #   - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+    #   - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+    #   - TLS_RSA_WITH_AES_256_GCM_SHA384
+    #   - TLS_RSA_WITH_AES_256_CBC_SHA
+
+    # Curves offered during the handshake, most-preferred first. Loose
+    # forms all resolve the same way: "P256", "p256", "CurveP256", "P-256".
+    # Duplicates are deduplicated, keeping the first occurrence's position.
+    #
+    # Under fips an explicit list must resolve entirely to P-256/384/521 —
+    # not X25519, not X25519MLKEM768 — or the server fails to start; left
+    # empty it defaults to those curves rather than Go's own.
+    curves: []
+    #   - CurveP256
+    #   - CurveP384
+    #   - CurveP521
+
+    # Prefer this server's cipher_suites order over the client's. Only
+    # affects TLS 1.2 and below.
+    # prefer_server_cipher_suites: true
+
+  # Which fields to record for each HTTP request. Everything not listed
+  # here defaults to false, so body logging is opt-in: request and response
+  # bodies may contain sensitive data — see server/CLAUDE.md's "never log
+  # sensitive data" rule before enabling either.
+  #
+  # Rotation and output options match the top-level "logging" section.
+  # Set filename to /dev/null to disable access logging entirely.
+  access_logging:
+    log_user_agent: true
+    log_request_header: true
+    log_client_ip: true
+    log_request_id: false
+    log_request_body: false
+    log_response_body: false
+    log_response_header: false
+    log_span_id: false
+    log_trace_id: false
+    # log_json: false
+    # filename: /dev/null
+
+# ----------------------------------------------------------------------
+# ldap - optional identity enrichment, looked up by the username OIDC
+# resolved.
+#
+# Accepted by the config loader but not yet consumed by the authentication
+# service: setting enabled: true today has no effect. Documented so the gap
+# between "the parser accepts this" and "the server acts on it" is not a
+# surprise. See docs/changes-next.md.
+#
+# Top-level, not nested under http — its mapstructure tags are on Config
+# itself. Nesting it there silently drops every value.
+# ----------------------------------------------------------------------
+ldap:
+  enabled: false
+  url: ""
+  bind_dn: ""
+  bind_password: ""
+  base_dn: ""
+  user_filter: ""
+
+# ----------------------------------------------------------------------
+# authentication - the OIDC provider used to authenticate users. Also
+# top-level rather than nested under http, for the same reason as ldap.
+# ----------------------------------------------------------------------
+authentication:
+  client_id: ""
+  client_secret: ""
+
+  # Base URL of the OIDC provider. Do not append
+  # "/.well-known/openid-configuration" — that is added for you.
+  provider_url: ""
+
+  # Where the provider sends the browser back. Empty derives it from
+  # http.public_url, which is the better place to configure it.
+  redirect_url: ""
+
+  # Space-separated OAuth scopes. "openid" is added automatically.
+  scopes: "profile email"
+
+  # Maps ssoossh's identity concepts to claim names in the provider's ID
+  # token, for providers using non-standard names.
+  fields:
+    # Claim used as the SSH username. Required — no certificate can be
+    # issued without one.
+    username: "preferred_username"
+
+    # Claim holding group membership, consulted against the require_group
+    # settings under cert_options below. Groups feed the lifetime and
+    # authorization decision only; they never appear in a certificate.
+    groups: "groups"
+
+    # Claim to read the user's email from. Empty falls back to the standard
+    # "email" claim; absence is not an error either way.
+    email: "email"
+
+    # Claims holding JSON arrays of alternate account identifiers this
+    # identity is known by, and service accounts it may enroll certificates
+    # for. Empty means not populated from OIDC.
+    other_accounts: ""
+    service_accounts: ""
+
+    # Additional claims captured at login for key ID templates, as a map of
+    # template field name -> claim name. Each is stored on the user record
+    # and referenced as {{.Extra.<name>}}, lists via
+    # {{join .Extra.<name> ";"}}. An absent claim stores empty and renders
+    # as MISSING rather than failing the login. See
+    # docs/certificate-keyid-template.md.
+    # extra:
+    #   dept: "department"
+    #   accounts: "altAccounts"
+
+# ----------------------------------------------------------------------
+# cert_options - issuance rules per certificate type: user, service, pam.
+# ----------------------------------------------------------------------
+cert_options:
+  # The longest a client waiting on a certificate request goes before the
+  # server hands it a terminal answer. The server owns this deadline, and
+  # measures it from the request's creation, so a client that reconnects to
+  # its event stream re-attaches to the original deadline rather than
+  # extending it.
+  #
+  # Everything else about request timing is derived from this one value:
+  #
+  #   signing grace = client_timeout / 10   (30s here)
+  #     the machine's share -- how long an approved request may await
+  #     signature before the stranded-request sweep fails it, how often
+  #     that sweep runs, and how long `service retrieve` blocks
+  #   approval TTL  = client_timeout - 2x signing grace   (4m here)
+  #     the human's share -- how long a pending request stays approvable
+  #
+  # Two signing shares are spent in the worst case, one for the stranded
+  # cutoff and one for the sweep interval that detects it, so the total is
+  # exactly client_timeout. Must be greater than zero.
+  client_timeout: 5m
+
+  # --- user: certificates issued to an interactively authenticated person,
+  # --- for their own SSH sessions.
+  user:
+    # OIDC group an approver must belong to. Empty means any authenticated
+    # user may approve their own request. Worth setting even though
+    # approval is already bound to the requester: that binding answers "is
+    # this your request", this answers "are you allowed certificates at all".
+    require_group: ""
+
+    # How long an issued user certificate remains valid. Kept short — these
+    # act as a short-lived auth token, not a long-lived key.
+    valid_duration: 30s
+
+    # SSH certificate extensions granted to the holder. The client requests
+    # the full interactive set and the server narrows it to this list, so
+    # adding one here is what makes it available at all. The others are
+    # permit-agent-forwarding, permit-port-forwarding, and
+    # permit-X11-forwarding.
+    extensions:
+      - permit-pty
+      - permit-user-rc
+
+    # Key ID template (Go text/template, see
+    # docs/certificate-keyid-template.md). Empty uses the built-in default.
+    # This is also the fallback for service.key_id_template below.
+    key_id_template: ""
+
+  # --- service: certificates for non-interactive accounts and processes —
+  # --- CI runners, service accounts — rather than a human session.
+  service:
+    # OIDC group required before a service certificate will be issued,
+    # e.g. "SSH Service Signers". Empty means no group restriction.
+    require_group: ""
+
+    # How long each issued service certificate remains valid, measured
+    # from the moment it is retrieved.
+    valid_duration: 8760h
+
+    # How long the enrollment code minted at approval stays redeemable.
+    # Deliberately independent of valid_duration above: the code is
+    # reusable so an unattended job can redeem it from cron, and each
+    # redemption gets a fresh certificate of valid_duration. Deriving one
+    # from the other meant shortening the certificate also killed the code
+    # within the same span, forcing a human to re-enroll on every run.
+    #
+    # Set this to how long the service should keep renewing without a
+    # person involved, and valid_duration to how long any single
+    # certificate may be used. Must be greater than zero.
+    enrollment_duration: 8760h
+
+    # SSH certificate extensions granted to the holder. Empty by default:
+    # a service certificate authenticates a process, and permit-pty and
+    # friends are rarely what it needs.
+    extensions: []
+
+    # Empty falls back to cert_options.user.key_id_template.
+    key_id_template: ""
+
+  # --- pam: certificates that authenticate a single local operation, such
+  # --- as a `sudo` call, to pam_ssoossh. Validated once in-process and
+  # --- discarded — never enters an agent, never reused.
+  pam:
+    # Empty denies. Unlike user and service, an unset require_group here
+    # means no PAM certificates are ever issued, not "any authenticated
+    # user" — set it to the group allowed to use pam_ssoossh, e.g.
+    # "SSH Sudoers".
+    #
+    # It is an extra filter an operator may apply, not the authorization
+    # itself: whether the local operation is permitted is the host's own
+    # decision, made by its PAM stack and sudoers policy.
+    require_group: ""
+
+    # Seconds, not hours: the certificate is validated once and thrown
+    # away. Pick it together with the client's skew tolerance (see
+    # pam_ssoossh/checks.go, check 4).
+    valid_duration: 30s
+
+    # Empty by design — permit-pty and friends are meaningless for a
+    # certificate that authenticates one local operation.
+    extensions: []
+
+    # Does NOT fall back to the user template above, unlike service. A sudo
+    # and a login by the same person must stay distinguishable in an sshd
+    # or sudo audit log, so PAM has its own default of "pam:{{.Username}}".
+    key_id_template: ""
+
+# ----------------------------------------------------------------------
+# branding - optional customization of the login page and web UI. Every
+# field is optional and empty means unbranded. The endpoint serving these
+# is unauthenticated, so only put values here that are safe to show
+# publicly.
+# ----------------------------------------------------------------------
+branding:
+  # Organization name shown in the web UI, e.g. "Acme Corp".
+  org_name: ""
+
+  # Filesystem path to the organization's logo. Empty renders the UI
+  # unchanged.
+  #
+  #   Formats:  PNG, JPEG, GIF, WebP, SVG
+  #   Max size: 1 MB
+  #   Rendered: 22px tall in the site header, width scaling with the
+  #             image's aspect ratio up to 160px, then letterboxed. The
+  #             header shows on every page, including before login, so a
+  #             wide wordmark works well. Supply roughly 2-3x the display
+  #             height (44-66px) to stay sharp on high-DPI screens, or an
+  #             SVG, which scales at any density. The 1 MB cap is a safety
+  #             limit, not a target: a file near it is far larger than this
+  #             needs.
+  #
+  # Read ONCE AT STARTUP and validated by content rather than by file
+  # extension. A path that is missing, unreadable, over the cap, or not
+  # actually an image is a startup failure rather than a silently broken
+  # image later — and replacing the file on disk requires a restart.
+  #
+  # Served from /api/branding/logo, same-origin. This takes a path and
+  # never a URL: the login page is unauthenticated, so an external image
+  # would disclose every visitor's IP address and user-agent to a
+  # third-party host before they log in, and would make the login page
+  # depend on that host staying up. Serving it ourselves also lets the
+  # Content-Security-Policy keep img-src at 'self'.
+  #
+  # SVG is accepted, but an SVG is a document and can carry script. In the
+  # page it is loaded in an <img> tag, where script never runs; fetching
+  # /api/branding/logo directly would render it as a document, so that
+  # response carries Content-Security-Policy: default-src 'none' to block
+  # script there too. Supply an SVG you trust — it is served to every
+  # visitor, authenticated or not.
+  logo_path: ""
+
+  # Plain-text message shown on the login page before authentication.
+  # Newlines are supported. Empty disables the notice.
+  login_notice: ""

@@ -21,7 +21,6 @@ import (
 // the sign queue must not get unbounded certificates.
 type SignLimits struct {
 	MaxCertLifetime        time.Duration
-	MaxHostCertLifetime    time.Duration
 	MaxServiceCertLifetime time.Duration
 }
 
@@ -59,7 +58,7 @@ func errorCode(err error) string {
 // entirely in lifetime, options, and who validates them, not in
 // certificate type. Service jobs reach the sign queue from
 // EnrollmentService.Retrieve (approval creates the enrollment; each
-// redemption publishes a job). Host certificates are not issued.
+// redemption publishes a job).
 func certTypeFor(t model.CertificateType) (uint32, error) {
 	switch t {
 	case model.CertificateTypeUser, model.CertificateTypePAM, model.CertificateTypeService:
@@ -138,10 +137,7 @@ func Sign(ctx context.Context, ks CAKeySource, job certmsg.SigningJob, fipsEnabl
 
 	span := job.ValidBefore.Sub(job.ValidAfter)
 	cap := limits.MaxCertLifetime
-	switch job.Type {
-	case model.CertificateTypeHost:
-		cap = limits.MaxHostCertLifetime
-	case model.CertificateTypeService:
+	if job.Type == model.CertificateTypeService {
 		cap = limits.MaxServiceCertLifetime
 	}
 	if span > cap {
@@ -210,7 +206,6 @@ func Sign(ctx context.Context, ks CAKeySource, job certmsg.SigningJob, fipsEnabl
 		Serial:               serial,
 		KeyID:                job.KeyID,
 		Principals:           job.Principals,
-		Hostname:             job.Hostname,
 		PublicKeyFingerprint: ssh.FingerprintSHA256(publicKey),
 		CriticalOptions:      permissions.CriticalOptions,
 		Extensions:           job.RequestedOptions.Extensions,

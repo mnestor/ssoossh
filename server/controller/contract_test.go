@@ -48,8 +48,8 @@ func (s *stubCertRequestService) Deny(_ context.Context, _ string, _ *service.Id
 	return nil
 }
 
-func (s *stubCertRequestService) Wait(_ context.Context, _ string) (model.CertificateRequestStatus, string, string, error) {
-	return model.CertificateRequestStatusApproved, s.cert, "", nil
+func (s *stubCertRequestService) Wait(_ context.Context, _ string) (service.WaitOutcome, error) {
+	return service.WaitOutcome{Status: model.CertificateRequestStatusApproved, Certificate: s.cert}, nil
 }
 
 // mockCAKeyRegistry for testing.

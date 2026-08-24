@@ -26,7 +26,6 @@ afterwards.
 Each has a written plan under `docs/` (see the index in [README.md](README.md)). The service and host client commands fail with a clear message rather than hanging. Several of these (admin/auditor roles, lifetime policy, multi-instance) have since landed on the main branch; see [features.md](features.md) for current status.
 
 - **Service certificates** — non-interactive account certificates
-- **Host certificates** and principal mapping
 - **LDAP enrichment** and account status
 - **Admin and auditor roles**
 - **Certificate lifetime and source-network policy**

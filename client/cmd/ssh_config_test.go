@@ -4,155 +4,74 @@ import (
 	"bytes"
 	"strings"
 	"testing"
-
-	"github.com/mnestor/ssoossh/client/config"
 )
 
-// TestRunConfig_ShouldPrintTheResolvedValuesNotTheConfiguredOnes is the whole
-// point of the command: key type and FIPS steering both have defaults that
-// depend on the environment, so echoing the file back would answer a
-// different question than the one being asked.
-func TestRunConfig_ShouldPrintTheResolvedValuesNotTheConfiguredOnes(t *testing.T) {
-	tests := []struct {
-		name string
-		cfg  *config.Config
-		want string
-	}{
-		{
-			name: "should resolve an unset key type to its default",
-			cfg:  &config.Config{Server: "https://ssh.example.com"},
-			want: "ecdsa (384)",
-		},
-		{
-			name: "should report the curve alongside an ecdsa key",
-			cfg: &config.Config{
-				Server: "https://ssh.example.com",
-				SSHKey: config.SSHKeyOptions{Type: config.SSHKeyTypeECDSA, Size: 521},
-			},
-			want: "ecdsa (521)",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var out bytes.Buffer
-			root := &RootCommand{cfg: tt.cfg, ssh: &stubAgent{}}
-			if err := runConfig(root, &out); err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if !strings.Contains(out.String(), tt.want) {
-				t.Errorf("got %q, want it to contain %q", out.String(), tt.want)
-			}
-		})
-	}
-}
-
-// TestRunConfig_ShouldReportInsecureTLSPlainly matters because it is the one
-// setting someone might leave on by accident after testing against a
-// self-signed server.
-func TestRunConfig_ShouldReportInsecureTLSPlainly(t *testing.T) {
-	root := &RootCommand{
-		cfg: &config.Config{Server: "https://ssh.example.com", SkipVerifySSL: true},
-		ssh: &stubAgent{},
-	}
+// `ssh config` is the wiring harness and nothing else. The recipes are the
+// whole product of the command, so each of the two modes has to be there
+// along with the constraint that decides between them.
+func TestRunConfig_ShouldPrintBothSshConfigRecipes(t *testing.T) {
+	t.Parallel()
 
 	var out bytes.Buffer
-	if err := runConfig(root, &out); err != nil {
+	if err := runConfig(&out); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(out.String(), "TLS verification       disabled") {
-		t.Errorf("got %q, want TLS verification reported as disabled", out.String())
+
+	for _, want := range []string{
+		"Match host bastion.example.com exec",
+		"ProxyCommand ssoossh ssh proxycommand",
+		"Requires an ssh-agent",
+		"ssoossh service enroll",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("expected the guidance to contain %q, got:\n%s", want, out.String())
+		}
 	}
 }
 
-func TestRunConfig_ShouldReportWhereKeysAreActuallyKept(t *testing.T) {
-	root := &RootCommand{
-		cfg: &config.Config{Server: "https://ssh.example.com"},
-		ssh: &stubAgent{},
-	}
+// The command must not report settings: --debug is the only place those are
+// answered, and a second, shorter version here is what made the two drift
+// apart in the first place.
+func TestRunConfig_ShouldNotReportResolvedSettings(t *testing.T) {
+	t.Parallel()
 
 	var out bytes.Buffer
-	if err := runConfig(root, &out); err != nil {
+	if err := runConfig(&out); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// stubAgent reports itself as a live agent with the "stub" backend.
-	if !strings.Contains(out.String(), "ssh-agent (stub)") {
-		t.Errorf("got %q, want the storage actually in use", out.String())
+
+	for _, unwanted := range []string{"TLS verification", "Key type", "CA public key", "Storage"} {
+		if strings.Contains(out.String(), unwanted) {
+			t.Errorf("expected no %q line; --debug reports settings, not this command. Got:\n%s", unwanted, out.String())
+		}
 	}
 }
 
-func TestRunConfig_ShouldFailOnAnUnusableKeyConfiguration(t *testing.T) {
-	root := &RootCommand{
-		cfg: &config.Config{SSHKey: config.SSHKeyOptions{Type: config.SSHKeyTypeECDSA, Size: 111}},
-		ssh: &stubAgent{},
-	}
+// Declared offline so root's PreRun skips the CA fetch. Without it the
+// command cannot answer when no server is configured or the configured one
+// is down, which is exactly when someone reads it.
+func TestSSHConfigCommand_ShouldDeclareItselfOffline(t *testing.T) {
+	t.Parallel()
 
-	var out bytes.Buffer
-	if err := runConfig(root, &out); err == nil {
-		t.Fatal("expected an invalid curve to be reported as an error")
-	}
-}
-
-func TestCASummary(t *testing.T) {
-	tests := []struct {
-		name string
-		ca   string
-		want string
-	}{
-		{name: "should render nothing when unset", ca: "", want: ""},
-		{
-			name: "should keep the algorithm and shorten the key material",
-			ca:   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJirRcsGXT31qUGNbgTkbI6sxq1SbSLN++XEr705S8ko ca@example",
-			want: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA…",
-		},
-		{
-			name: "should pass a short value through untouched",
-			ca:   "ssh-ed25519 AAAA",
-			want: "ssh-ed25519 AAAA",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := caSummary(tt.ca); got != tt.want {
-				t.Errorf("got %q, want %q", got, tt.want)
-			}
-		})
+	if !isOffline(newSSHConfigCommand()) {
+		t.Error("ssh config must be offline: it prints a static recipe and has no reason to reach the server")
 	}
 }
 
-// storageDescription reports where keys actually end up, which is a runtime
-// answer rather than a configured one: use_agent and fallback_file_agent
-// state a preference and whether an agent was reachable settles it. The
-// not-initialized arm is the one that matters -- it is what a reader sees
-// when startup failed, which is when they are most likely to be looking.
-func TestStorageDescription_ShouldReportTheResolvedBackend(t *testing.T) {
-	tests := []struct {
-		name string
-		root *RootCommand
-		want string
-	}{
-		{name: "no agent resolved", root: &RootCommand{}, want: "(not initialized)"},
-		{name: "an agent resolved", root: &RootCommand{ssh: &describingAgent{typ: "agent", backend: "ssh-agent"}}, want: "agent (ssh-agent)"},
-		{name: "file storage resolved", root: &RootCommand{ssh: &describingAgent{typ: "file", backend: "/home/u/.ssh/id_ssoossh"}}, want: "file (/home/u/.ssh/id_ssoossh)"},
-	}
+// The long help embeds the same guidance the command prints, so --help and
+// the generated man page carry the recipes rather than only describing
+// them, and cannot drift from what a plain run says.
+func TestSSHConfigCommand_ShouldPutTheSameGuidanceInItsHelp(t *testing.T) {
+	t.Parallel()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := storageDescription(tt.root); got != tt.want {
-				t.Errorf("got %q, want %q", got, tt.want)
-			}
-		})
+	cmd, ok := newSSHConfigCommand().(*simpleCommand)
+	if !ok {
+		t.Fatalf("newSSHConfigCommand() returned %T, want *simpleCommand", newSSHConfigCommand())
+	}
+	if !strings.Contains(cmd.long, sshConfigGuidance) {
+		t.Errorf("expected the long help to embed the guidance verbatim, got:\n%s", cmd.long)
+	}
+	if !strings.Contains(cmd.long, "--debug") {
+		t.Errorf("expected the long help to send the reader to --debug for settings, got:\n%s", cmd.long)
 	}
 }
-
-// describingAgent is a fakeAgent that answers Type and Backend, which is all
-// storageDescription reads.
-type describingAgent struct {
-	fakeAgent
-	typ     string
-	backend string
-}
-
-func (d *describingAgent) Type() string    { return d.typ }
-func (d *describingAgent) Backend() string { return d.backend }

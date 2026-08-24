@@ -15,10 +15,11 @@
 ## Certificate Rules
 
 - Three types: **User** (interactive SSH; principals from OIDC claims + LDAP
-  account identifiers), **Host** (server identity — `host sign` for first
-  issuance via OIDC approval chain, `host renew` afterward authenticated by
-  the existing valid host cert), **Service** (non-interactive, a User-type
-  cert)
+  account identifiers), **Service** (non-interactive, a User-type cert),
+  **PAM** (a User-type cert issued for a local PAM authentication)
+- There is no host certificate type, and no secure host verification to
+  justify one (docs/decisions.md). `ssoossh host` is local
+  principal-mapping tooling only. Do not add a host type
 - Group membership never appears in a certificate — groups feed the lifetime
   decision only (see root `Hard Constraints`)
 - `verify-required` is never used; `no-touch-required` only applies to

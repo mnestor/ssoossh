@@ -154,7 +154,7 @@ func TestApprove_ExpiredRequestReturnsTimeout(t *testing.T) {
 
 	// Full test would:
 	// 1. Receive approval URL
-	// 2. Wait for RequestTTL to expire without approving
+	// 2. Wait for the approval TTL to expire without approving
 	// 3. Verify SSE delivers "expired" terminal event
 	// 4. Verify login process exits cleanly
 

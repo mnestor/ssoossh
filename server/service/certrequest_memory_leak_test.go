@@ -38,7 +38,7 @@ func TestCertRequestService_ResolvedMapMemoryLeak(t *testing.T) {
 	// Create a service with minimal setup. We only need the resolved map
 	// and the ability to call notifyWaiter.
 	svc := &CertRequestService{
-		resolved: make(map[string]requestOutcome),
+		resolved: make(map[string]WaitOutcome),
 		// notifyWaiter is called directly below, so other fields are not needed.
 	}
 
@@ -52,9 +52,9 @@ func TestCertRequestService_ResolvedMapMemoryLeak(t *testing.T) {
 	const N = 100
 	for i := 0; i < N; i++ {
 		requestID := fmt.Sprintf("test-request-%d", i) // Generate unique IDs
-		outcome := requestOutcome{
-			status:      model.CertificateRequestStatusApproved,
-			certificate: "test-cert-" + requestID, // Simulating certificate material
+		outcome := WaitOutcome{
+			Status:      model.CertificateRequestStatusApproved,
+			Certificate: "test-cert-" + requestID, // Simulating certificate material
 		}
 		// This is how entries get into the resolved map (from notifyWaiter,
 		// lines 1140 and 1175 in certrequest.go).
@@ -103,7 +103,7 @@ func TestCertRequestService_ResolvedMapPersistsAcrossWaits(t *testing.T) {
 	// Run with: go test -tags=memory_leak_test ./server/service -v -run Persists
 
 	svc := &CertRequestService{
-		resolved: make(map[string]requestOutcome),
+		resolved: make(map[string]WaitOutcome),
 	}
 
 	// Simulate a steady stream of requests and resolutions.
@@ -113,9 +113,9 @@ func TestCertRequestService_ResolvedMapPersistsAcrossWaits(t *testing.T) {
 	for round := 0; round < rounds; round++ {
 		for i := 0; i < requestsPerRound; i++ {
 			requestID := fmt.Sprintf("test-request-round%d-id%d", round, i)
-			svc.resolved[requestID] = requestOutcome{
-				status:      model.CertificateRequestStatusApproved,
-				certificate: "test-cert-" + requestID,
+			svc.resolved[requestID] = WaitOutcome{
+				Status:      model.CertificateRequestStatusApproved,
+				Certificate: "test-cert-" + requestID,
 			}
 		}
 

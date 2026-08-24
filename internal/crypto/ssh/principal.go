@@ -6,7 +6,7 @@ import (
 )
 
 // principalRegex validates SSH principal names: alphanumeric, dot, underscore,
-// hyphen only. Hostnames (used in host certificates) can contain dots, which
+// hyphen only. Hostnames can contain dots, which
 // are allowed here; future hostname-specific validation can enforce additional
 // constraints if needed.
 var principalRegex = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)

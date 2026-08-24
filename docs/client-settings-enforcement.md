@@ -6,7 +6,7 @@ the cross-platform `enforce` YAML file. All are guardrails, not a security
 boundary: the client runs as the user, who can always supply their own
 binary. The one setting that's actually enforced beyond the client's own
 cooperation is `cert_options.*.valid_duration` on the server. See
-`docs/ssoossh.yaml.default` for that caveat in full.
+`client/config/defaults.yaml` for that caveat in full.
 
 ## Precedence
 
@@ -118,4 +118,4 @@ No platform-native mechanism — the `enforce` file already matches how
 Linux fleets are normally provisioned (config management tooling dropping
 files under root-owned `/etc`). Point `/etc/ssoossh/ssoossh.yaml` at an
 `enforce:` target the same way on Linux as on the other platforms; see the
-`enforce` comment in `docs/ssoossh.yaml.default`.
+`enforce` comment in `client/config/defaults.yaml`.

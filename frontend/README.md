@@ -45,3 +45,4 @@ corepack pnpm run lint
 - **Static prerendering**: The `@sveltejs/adapter-static` adapter precompiles all routes to static HTML at build time, with a fallback page for dynamic routes.
 - **Self-hosted fonts**: Both sans and monospace typefaces are bundled locally via `@fontsource` packages; no external font requests.
 - **Branding**: Org name, logo URL, and login consent notices are fetched at runtime from an unauthenticated `/api/branding` endpoint, allowing the same prerendered build to serve different deployments.
+- **Version footer**: The footer's version and GitHub links come from an unauthenticated `/api/version` endpoint at runtime, for the same reason: the build stamp belongs to the Go binary serving the page, not to this bundle.

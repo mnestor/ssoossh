@@ -281,9 +281,11 @@ func (cr *certRequestController) createPAMRequestHandler(g *gin.Context) {
 // @Description
 // @Description The SSE event *name* carries the terminal status (`approved`, `denied`,
 // @Description `expired`, `enrolled`, `failed`); each event's data is an envelope whose
-// @Description `data` half carries the certificate or enrollment code. That shape is
-// @Description not in this document: the response body is a stream rather than JSON, so
-// @Description there is nowhere to declare a schema for what individual events carry.
+// @Description `data` half carries the certificate, or the enrollment code together with
+// @Description the service account it was approved for and when the code expires. That
+// @Description shape is not in this document: the response body is a stream rather than
+// @Description JSON, so there is nowhere to declare a schema for what individual events
+// @Description carry.
 // @Description
 // @Description Unauthenticated: the request ID is the credential.
 // @Tags        client
@@ -294,19 +296,30 @@ func (cr *certRequestController) createPAMRequestHandler(g *gin.Context) {
 // @Failure     410 {object} openapidoc.ErrorEnvelope "The certificate was issued but is no longer available. They are never persisted, so a client that missed delivery must re-request."
 // @Router      /api/certs/requests/{id}/events [get]
 func (cr *certRequestController) eventsHandler(g *gin.Context) {
-	status, certificate, code, err := cr.certRequestService.Wait(g.Request.Context(), g.Param("id"))
+	outcome, err := cr.certRequestService.Wait(g.Request.Context(), g.Param("id"))
 	if err != nil {
 		handleError(g, err)
 		return
+	}
+
+	result := apitypes.CertificateResult{
+		Certificate:    outcome.Certificate,
+		Code:           outcome.Code,
+		ServiceAccount: outcome.ServiceAccount,
+	}
+	// Only sent when there is one to send: an approved or denied outcome
+	// has no enrollment behind it, and the zero time on the wire would read
+	// as an expiry in the year 1.
+	if !outcome.ExpiresAt.IsZero() {
+		expiresAt := outcome.ExpiresAt
+		result.ExpiresAt = &expiresAt
 	}
 
 	// Enveloped like every other JSON body this API emits, so a consumer
 	// has one decode path rather than a special case for the stream. It
 	// also leaves somewhere for a per-event error to go: the "failed"
 	// status currently carries no detail.
-	g.SSEvent(string(status), apitypes.Envelope[apitypes.CertificateResult]{
-		Data: apitypes.CertificateResult{Certificate: certificate, Code: code},
-	})
+	g.SSEvent(string(outcome.Status), apitypes.Envelope[apitypes.CertificateResult]{Data: result})
 }
 
 // approveHandler handles POST /api/certs/requests/:id/approve (web UI,

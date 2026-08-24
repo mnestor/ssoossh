@@ -1,0 +1,117 @@
+table ca_signer_keys
+  column created_at type=DATETIME nullable=false pk=false default=<none>
+  column expires_at type=DATETIME nullable=false pk=false default=<none>
+  column fingerprint type=TEXT nullable=false pk=true default=<none>
+  column public_key type=TEXT nullable=false pk=false default=<none>
+  column updated_at type=DATETIME nullable=false pk=false default=<none>
+  index idx_ca_signer_keys_expires_at unique=false columns=expires_at
+  index sqlite_autoindex_ca_signer_keys_1 unique=true columns=fingerprint
+table certificate_request_decisions
+  column accept_language type=TEXT nullable=false pk=false default=''
+  column certificate_request_id type=TEXT nullable=false pk=false default=<none>
+  column decided_at type=DATETIME nullable=false pk=false default=<none>
+  column email type=TEXT nullable=false pk=false default=''
+  column forwarded_for type=TEXT nullable=false pk=false default=''
+  column groups type=TEXT nullable=false pk=false default=''
+  column id type=TEXT nullable=false pk=true default=<none>
+  column other_accounts type=TEXT nullable=false pk=false default=''
+  column outcome type=TEXT nullable=false pk=false default=<none>
+  column service_accounts type=TEXT nullable=false pk=false default=''
+  column source_ip type=TEXT nullable=false pk=false default=''
+  column subject type=TEXT nullable=false pk=false default=''
+  column user_agent type=TEXT nullable=false pk=false default=''
+  column username type=TEXT nullable=false pk=false default=''
+  check CHECK (outcome IN ('approved', 'denied'))
+  index idx_certificate_request_decisions_decided_at unique=false columns=decided_at
+  index idx_certificate_request_decisions_source_ip unique=false columns=source_ip
+  index idx_certificate_request_decisions_subject unique=false columns=subject
+  index sqlite_autoindex_certificate_request_decisions_1 unique=true columns=id
+  index sqlite_autoindex_certificate_request_decisions_2 unique=true columns=certificate_request_id
+table certificate_requests
+  column created_at type=DATETIME nullable=false pk=false default=<none>
+  column enrollment_token type=TEXT nullable=false pk=false default=''
+  column failure_reason type=TEXT nullable=false pk=false default=''
+  column id type=TEXT nullable=false pk=true default=<none>
+  column local_hostname type=TEXT nullable=false pk=false default=''
+  column local_username type=TEXT nullable=false pk=false default=''
+  column public_key type=TEXT nullable=false pk=false default=<none>
+  column requested_options type=TEXT nullable=false pk=false default=''
+  column resolved_at type=DATETIME nullable=true pk=false default=<none>
+  column serial_number type=INTEGER nullable=true pk=false default=<none>
+  column service_account type=TEXT nullable=false pk=false default=''
+  column source_ip type=TEXT nullable=false pk=false default=''
+  column status type=TEXT nullable=false pk=false default=<none>
+  column type type=TEXT nullable=false pk=false default=<none>
+  column user_id type=TEXT nullable=true pk=false default=<none>
+  column username type=TEXT nullable=false pk=false default=''
+  check CHECK (status IN ('pending', 'signing', 'approved', 'enrolled', 'denied', 'expired', 'failed'))
+  check CHECK (type IN ('user', 'service', 'pam'))
+  fk user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
+  index idx_certificate_requests_status_created_at unique=false columns=status,created_at
+  index idx_certificate_requests_user_id unique=false columns=user_id
+  index sqlite_autoindex_certificate_requests_1 unique=true columns=id
+table certificates
+  column certificate_request_id type=TEXT nullable=true pk=false default=<none>
+  column critical_options type=TEXT nullable=false pk=false default=''
+  column expires_at type=DATETIME nullable=false pk=false default=<none>
+  column extensions type=TEXT nullable=false pk=false default=''
+  column id type=TEXT nullable=false pk=true default=<none>
+  column issued_at type=DATETIME nullable=false pk=false default=<none>
+  column key_id type=TEXT nullable=false pk=false default=''
+  column principals type=TEXT nullable=false pk=false default=''
+  column public_key_fingerprint type=TEXT nullable=false pk=false default=<none>
+  column serial_number type=INTEGER nullable=false pk=false default=<none>
+  column type type=TEXT nullable=false pk=false default=<none>
+  column user_id type=TEXT nullable=true pk=false default=<none>
+  check CHECK (type IN ('user', 'service', 'pam'))
+  fk certificate_request_id -> certificate_requests.id on_delete=NO ACTION on_update=NO ACTION
+  fk user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
+  index idx_certificates_certificate_request_id unique=false columns=certificate_request_id
+  index idx_certificates_user_id_issued_at unique=false columns=user_id,issued_at
+  index sqlite_autoindex_certificates_1 unique=true columns=id
+  index sqlite_autoindex_certificates_2 unique=true columns=serial_number
+table enrollment_retrievals
+  column certificate_serial type=INTEGER nullable=false pk=false default=<none>
+  column enrollment_id type=TEXT nullable=false pk=false default=<none>
+  column id type=TEXT nullable=false pk=true default=<none>
+  column retrieved_at type=DATETIME nullable=false pk=false default=<none>
+  column source_ip type=TEXT nullable=false pk=false default=''
+  column succeeded type=INTEGER nullable=false pk=false default=0
+  fk enrollment_id -> enrollments.id on_delete=NO ACTION on_update=NO ACTION
+  index idx_enrollment_retrievals_enrollment_id unique=false columns=enrollment_id
+  index sqlite_autoindex_enrollment_retrievals_1 unique=true columns=id
+table enrollments
+  column certificate_duration_seconds type=INTEGER nullable=true pk=false default=<none>
+  column certificate_request_id type=TEXT nullable=true pk=false default=<none>
+  column code type=TEXT nullable=false pk=false default=<none>
+  column created_at type=DATETIME nullable=false pk=false default=<none>
+  column expires_at type=DATETIME nullable=false pk=false default=<none>
+  column id type=TEXT nullable=false pk=true default=<none>
+  column key_id type=TEXT nullable=false pk=false default=''
+  column option_set type=TEXT nullable=false pk=false default=''
+  column principals type=TEXT nullable=false pk=false default=''
+  column public_key type=TEXT nullable=false pk=false default=<none>
+  column redeemed_at type=DATETIME nullable=true pk=false default=<none>
+  column user_id type=TEXT nullable=false pk=false default=<none>
+  fk certificate_request_id -> certificate_requests.id on_delete=NO ACTION on_update=NO ACTION
+  fk user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
+  index idx_enrollments_code unique=true columns=code
+  index idx_enrollments_user_id unique=false columns=user_id
+  index sqlite_autoindex_enrollments_1 unique=true columns=id
+table server_secrets
+  column created_at type=DATETIME nullable=false pk=false default=<none>
+  column name type=TEXT nullable=false pk=true default=<none>
+  column value type=BLOB nullable=false pk=false default=<none>
+  index sqlite_autoindex_server_secrets_1 unique=true columns=name
+table users
+  column created_at type=DATETIME nullable=false pk=false default=<none>
+  column email type=TEXT nullable=false pk=false default=''
+  column extra_fields type=TEXT nullable=false pk=false default=''
+  column id type=TEXT nullable=false pk=true default=<none>
+  column other_accounts type=TEXT nullable=false pk=false default=''
+  column service_accounts type=TEXT nullable=false pk=false default=''
+  column subject type=TEXT nullable=false pk=false default=<none>
+  column updated_at type=DATETIME nullable=false pk=false default=<none>
+  column username type=TEXT nullable=false pk=false default=<none>
+  index idx_users_subject unique=true columns=subject
+  index sqlite_autoindex_users_1 unique=true columns=id

@@ -160,3 +160,9 @@ type BrandingEnvelope struct {
 	Data  webtypes.BrandingResponse `json:"data" validate:"required"`
 	Error *string                   `json:"error"`
 }
+
+// VersionEnvelope is GET /api/version's body.
+type VersionEnvelope struct {
+	Data  webtypes.VersionResponse `json:"data" validate:"required"`
+	Error *string                  `json:"error"`
+}

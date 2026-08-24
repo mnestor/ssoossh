@@ -162,7 +162,7 @@ func (p *PubSub) buildRouter(wmLogger watermill.LoggerAdapter) error {
 //     one instance holding that request's SSE connection
 //
 // JetStream is disabled (Disabled: true) — only NATS core is used with
-// at-most-once delivery. A dropped job costs the client a full RequestTTL
+// at-most-once delivery. A dropped job costs the client a full client_timeout
 // wait before retrying, which is acceptable for the interactive approval
 // flow. See docs/dev/multi-instance-safety-plan.md for durability reasoning.
 func newNATS(cfg *config.PubSubConfig, wmLogger watermill.LoggerAdapter, sLogger *slog.Logger) (*PubSub, error) {
@@ -186,29 +186,39 @@ func newNATS(cfg *config.PubSubConfig, wmLogger watermill.LoggerAdapter, sLogger
 		return nil, fmt.Errorf("failed to create NATS publisher: %w", err)
 	}
 
-	// Create the subscriber with queue groups
-	sub, err := natslib.NewSubscriber(
-		natslib.SubscriberConfig{
-			URL: cfg.NATS.URL,
-			NatsOptions: []natsgo.Option{
-				natsgo.ClientCert(cfg.NATS.CertFile, cfg.NATS.KeyFile),
-				natsgo.RootCAs(cfg.NATS.CAFile),
-			},
-			QueueGroupPrefix:  "ssoossh", // Prefix for deriving queue group names
-			Unmarshaler:       natslib.JSONMarshaler{},
-			SubjectCalculator: subjectCalculator,
-			SubscribersCount:  1,
-			CloseTimeout:      3 * time.Second,
-			AckWaitTimeout:    30 * time.Second,
-			SubscribeTimeout:  5 * time.Second,
-			JetStream: natslib.JetStreamConfig{
-				Disabled: true,
-			},
-		},
-		wmLogger,
+	// The subscriber runs on a connection this package holds itself, so
+	// Subscribe can be confirmed against the server before it returns (see
+	// confirmingSubscriber). The publisher keeps its own connection:
+	// Subscriber.Close drains whatever connection it was handed, which
+	// would take the publisher down with it if the two shared one.
+	subConn, err := natsgo.Connect(cfg.NATS.URL,
+		natsgo.ClientCert(cfg.NATS.CertFile, cfg.NATS.KeyFile),
+		natsgo.RootCAs(cfg.NATS.CAFile),
 	)
 	if err != nil {
 		_ = pub.Close()
+		return nil, fmt.Errorf("failed to connect to NATS for subscriptions: %w", err)
+	}
+
+	// URL and NatsOptions are deliberately absent: this config is consumed
+	// through GetSubscriberSubscriptionConfig, which carries only the
+	// per-subscribe settings, the connection having already been made.
+	subCfg := natslib.SubscriberConfig{
+		QueueGroupPrefix:  "ssoossh", // Prefix for deriving queue group names
+		Unmarshaler:       natslib.JSONMarshaler{},
+		SubjectCalculator: subjectCalculator,
+		SubscribersCount:  1,
+		CloseTimeout:      3 * time.Second,
+		AckWaitTimeout:    30 * time.Second,
+		SubscribeTimeout:  5 * time.Second,
+		JetStream: natslib.JetStreamConfig{
+			Disabled: true,
+		},
+	}
+	sub, err := natslib.NewSubscriberWithNatsConn(subConn, subCfg.GetSubscriberSubscriptionConfig(), wmLogger)
+	if err != nil {
+		_ = pub.Close()
+		subConn.Close()
 		return nil, fmt.Errorf("failed to create NATS subscriber: %w", err)
 	}
 
@@ -216,10 +226,50 @@ func newNATS(cfg *config.PubSubConfig, wmLogger watermill.LoggerAdapter, sLogger
 
 	return &PubSub{
 		Publisher:      pub,
-		Subscriber:     sub,
+		Subscriber:     &confirmingSubscriber{Subscriber: sub, conn: subConn},
 		natsPublisher:  pub,
 		natsSubscriber: sub,
 	}, nil
+}
+
+// confirmingSubscriber makes Subscribe synchronous with respect to the NATS
+// server.
+//
+// watermill issues the SUB and returns as soon as it is written to the
+// client's outbound buffer, not when the server has processed it. Core NATS
+// has no replay, so anything published in that gap is dropped outright --
+// and for a certificate request a dropped wake is unrecoverable, not merely
+// late: the certificate is deliberately never persisted (see
+// docs/signing-pipeline.md), so the instance that missed it can read
+// "approved" from the database and still have nothing to hand its client,
+// which then blocks until the request expires.
+//
+// Measured at roughly 35ms on a loopback connection, which is wide enough
+// for an approval to land inside it. The cost of closing it is one server
+// round trip per Wait call.
+type confirmingSubscriber struct {
+	message.Subscriber
+	conn *natsgo.Conn
+}
+
+// subscribeConfirmTimeout bounds the confirmation round trip, matching the
+// SubscribeTimeout the subscriber is configured with.
+const subscribeConfirmTimeout = 5 * time.Second
+
+// Subscribe delegates, then flushes the connection so the subscription is
+// registered server-side before the caller is told it is subscribed.
+func (c *confirmingSubscriber) Subscribe(ctx context.Context, topic string) (<-chan *message.Message, error) {
+	messages, err := c.Subscriber.Subscribe(ctx, topic)
+	if err != nil {
+		return nil, err
+	}
+	// FlushTimeout, not FlushWithContext: the subscribe contexts here are
+	// lifetime contexts with no deadline (the router's, or an SSE client's
+	// connection), and FlushWithContext rejects those outright.
+	if err := c.conn.FlushTimeout(subscribeConfirmTimeout); err != nil {
+		return nil, fmt.Errorf("failed to confirm subscription to %q: %w", topic, err)
+	}
+	return messages, nil
 }
 
 // subjectCalculator derives queue groups from topic names to implement

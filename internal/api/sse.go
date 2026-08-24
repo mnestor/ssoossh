@@ -130,8 +130,13 @@ func newCertificateEventSource(ctx context.Context, tlsConfig *tls.Config, event
 					finish(nil, fmt.Errorf("certificate request %s: %s", status, envelope.Error))
 					return
 				}
-				out.Certificate = envelope.Data.Certificate
-				out.Code = envelope.Data.Code
+				// The whole decoded payload, not a field-by-field copy: a
+				// new field on CertificateResult would otherwise decode
+				// correctly here and then be silently dropped on the way
+				// out. Status is reapplied because it comes from the event
+				// name and is excluded from the JSON.
+				*out = envelope.Data
+				out.Status = status
 			}
 			finish(out, nil)
 		}, nil)

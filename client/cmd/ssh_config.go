@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"io"
 
 	"github.com/bep/simplecobra"
@@ -11,114 +10,61 @@ import (
 func newSSHConfigCommand() simplecobra.Commander {
 	return &simpleCommand{
 		name:  "config",
-		short: "Print or validate the effective ssoossh client configuration.",
-		long: "Prints the configuration as it was actually resolved — after merging every " +
-			"config file, applying defaults, and deciding the key algorithm — rather than " +
-			"the contents of any one file. Use it to answer \"which config is this picking " +
-			"up, and what will it generate?\" without running a login.\n\n" +
-			"Loading the configuration is itself the validation: an unusable combination " +
-			"fails before this command prints anything.",
+		short: "Print the ssh_config lines that hook ssoossh into your existing ssh.",
+		// Deliberately offline: this is a recipe, not a report. It answers
+		// the same way whether or not a server is configured, reachable, or
+		// trusted, which is exactly when someone is most likely to be
+		// reading it. See offlineCommander in offline.go.
+		offline: true,
+		long: "Prints the ssh_config recipes that make `ssh` invoke ssoossh, with the " +
+			"rules that decide which one you want. Contacts nothing and reads nothing " +
+			"but this text, so it answers before a server is configured and keeps " +
+			"answering after one stops responding.\n\n" +
+			sshConfigGuidance +
+			"\nFor what this machine actually resolved — the config files that were " +
+			"merged and what came of each, the settings that resulted, where the key " +
+			"files are and whether they exist — add --debug to the command you are " +
+			"actually running. That is the one place those are reported, so there is " +
+			"no second version of the truth to keep in step with this one.",
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
-			return runConfig(root, cd.CobraCommand.OutOrStdout())
+			return runConfig(cd.CobraCommand.OutOrStdout())
 		},
 	}
 }
 
-// runConfig prints the resolved configuration. Reaching here at all means the
-// config loaded and the key settings resolved — simpleCommand.Run fails on
-// root.InitErr() first — so this reports rather than re-validates.
-func runConfig(root *RootCommand, out io.Writer) error {
-	cfg := root.Config()
-
-	// The key algorithm and size are the interesting half: neither is
-	// necessarily what the file says, since both have defaults that depend on
-	// whether FIPS mode is in effect. Warnings are not reprinted here; config
-	// loading emits them once, to the log.
-	algorithm, size, _, err := cfg.ResolveSSHKey()
-	if err != nil {
-		return fmt.Errorf("invalid ssh key configuration: %w", err)
-	}
-
-	keyDescription := algorithm
-	if size > 0 {
-		keyDescription = fmt.Sprintf("%s (%d)", algorithm, size)
-	}
-
-	fmt.Fprintf(out, "%-22s %s\n", "Server", orNone(cfg.Server))
-	fmt.Fprintf(out, "%-22s %s\n", "TLS verification", enabledDisabled(!cfg.SkipVerifySSL))
-	fmt.Fprintf(out, "%-22s %s\n", "Key type", keyDescription)
-	fmt.Fprintf(out, "%-22s %s\n", "FIPS steering", enabledDisabled(cfg.FIPSEnabled()))
-	fmt.Fprintf(out, "%-22s %s\n", "Storage", storageDescription(root))
-	fmt.Fprintf(out, "%-22s %s\n", "Key file", orNone(cfg.Filename))
-	fmt.Fprintf(out, "%-22s %s\n", "Open browser", enabledDisabled(cfg.TryOpenBrowser))
-	fmt.Fprintf(out, "%-22s %s\n", "CA public key", orNone(caSummary(cfg.CAPubkey)))
-
-	return nil
+// runConfig prints the wiring guidance. It takes no root state on purpose:
+// nothing here varies with configuration, which is what lets the command
+// work when configuration is the broken thing.
+func runConfig(out io.Writer) error {
+	_, err := io.WriteString(out, sshConfigGuidance)
+	return err
 }
 
-// storageDescription reports where keys actually end up, which is a runtime
-// answer rather than a configured one: `use_agent` and `fallback_file_agent`
-// state a preference, and whether an agent was reachable settles it.
-func storageDescription(root *RootCommand) string {
-	agent := root.Agent()
-	if agent == nil {
-		return "(not initialized)"
-	}
-	return fmt.Sprintf("%s (%s)", agent.Type(), agent.Backend())
-}
+// sshConfigGuidance is how ssoossh gets hooked into ssh_config, kept here
+// because `ssh config` is where someone looks for it. It is the command's
+// entire output and is embedded in its long help, so a plain run, --help
+// and the man page cannot come to say different things. Mirrors
+// docs/configuration.md, which is the long form with the sshd and PAM ends
+// of the setup that do not belong in a client help page.
+const sshConfigGuidance = `The client is never run on its own — ssh invokes it. Two ways to arrange that:
 
-// caSummary shortens the CA public key to its comment-free key material,
-// truncated: the full base64 blob is several lines of terminal noise and
-// nobody reads it, but enough of it to compare two deployments is useful.
-func caSummary(ca string) string {
-	if ca == "" {
-		return ""
-	}
-	const shown = 24
-	fields := splitFields(ca)
-	if len(fields) < 2 {
-		return truncate(ca, shown)
-	}
-	return fields[0] + " " + truncate(fields[1], shown)
-}
+  Match exec (recommended). Runs before ssh connects, so a certificate that
+  is already valid is reused and nothing opens a browser until it expires. A
+  non-zero exit blocks the connection. Works with or without an ssh-agent.
 
-// splitFields splits on whitespace without pulling in strings.Fields's
-// allocation for the common two-field case.
-func splitFields(s string) []string {
-	var fields []string
-	start := -1
-	for i, r := range s {
-		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
-			if start >= 0 {
-				fields = append(fields, s[start:i])
-				start = -1
-			}
-			continue
-		}
-		if start < 0 {
-			start = i
-		}
-	}
-	if start >= 0 {
-		fields = append(fields, s[start:])
-	}
-	return fields
-}
+      Match host bastion.example.com exec "ssoossh ssh login"
+          User youruser
 
-// truncate shortens s to at most n runes, marking that it was shortened.
-func truncate(s string, n int) string {
-	runes := []rune(s)
-	if len(runes) <= n {
-		return s
-	}
-	return string(runes[:n]) + "…"
-}
+  ProxyCommand. Ensures a valid certificate, then hands off to whatever relay
+  command follows it — useful when reaching the target also needs an HTTP or
+  SOCKS proxy. Requires an ssh-agent: ssh reads IdentityFile and
+  CertificateFile once at startup, so a certificate refreshed on disk after
+  that point goes unused.
 
-// enabledDisabled renders a boolean setting the way a reader of this output
-// thinks about it.
-func enabledDisabled(on bool) string {
-	if on {
-		return "enabled"
-	}
-	return "disabled"
-}
+      Host jump.example.com
+          ProxyCommand ssoossh ssh proxycommand /usr/bin/nc -X connect -x 192.0.2.0:8080 %h %p
+
+Service accounts are wired up differently, from an enrollment code rather
+than a browser login; ` + "`ssoossh service enroll`" + ` prints that recipe, with the
+real paths filled in, at the end of a successful enrollment.
+`

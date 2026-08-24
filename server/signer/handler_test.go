@@ -19,8 +19,7 @@ import (
 // for handler tests.
 func newDefaultTestHandlerLimits() SignLimits {
 	return SignLimits{
-		MaxCertLifetime:     time.Hour * 24 * 90,
-		MaxHostCertLifetime: time.Hour * 24 * 365 * 2,
+		MaxCertLifetime: time.Hour * 24 * 90,
 	}
 }
 

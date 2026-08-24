@@ -8,16 +8,13 @@ package model
 
 // CertificateType identifies which of the three certificate types
 // (docs/dev/ssoossh-context.md — "Certificate types") a row represents.
+// These three are the whole set: anything else is rejected at the service
+// boundary and by the schema's type CHECK. Host identity is deliberately
+// not among them (docs/decisions.md).
 type CertificateType string
 
 const (
-	CertificateTypeUser CertificateType = "user"
-	// CertificateTypeHost is retired: host certificates were removed (see
-	// docs/decisions.md — no secure host verification exists yet). The
-	// constant remains only because server/signer and server/certmsg keep
-	// dormant host handling (lifetime cap, message fields) that lands with
-	// the HSM signer work; nothing creates, stores, or accepts this type.
-	CertificateTypeHost    CertificateType = "host"
+	CertificateTypeUser    CertificateType = "user"
 	CertificateTypeService CertificateType = "service"
 	CertificateTypePAM     CertificateType = "pam"
 )

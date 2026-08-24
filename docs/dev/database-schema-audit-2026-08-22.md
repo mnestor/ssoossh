@@ -21,7 +21,6 @@ Seven tables, all with a `TEXT` primary key holding a UUID string.
 | `certificate_requests` | `id` | `user_id` → `users.id` (nullable) | `(status)` |
 | `certificate_request_decisions` | `id` | `certificate_request_id` → `certificate_requests.id` | `UNIQUE(certificate_request_id)`, `(subject)`, `(source_ip)` |
 | `enrollments` | `id` | `user_id` → `users.id` | `UNIQUE(code)` |
-| `host_mappings` | `id` | — | `UNIQUE(hostname)` |
 | `server_secrets` | `name` | — | — |
 
 The fundamentals the skill checks for are in good shape and are not
@@ -267,14 +266,13 @@ a status string produces a row that no guarded `WHERE status = ?` update
 will ever match again, and it becomes invisible to the sweep.
 
 Separately, several columns are conditionally meaningful by `type`, with
-nothing enforcing the pairing: `user_id` is nullable and documented as "nil
-for host certs"; `hostname` is set only for host rows; `username` only for
-PAM rows; `local_username`/`local_hostname` only for user rows;
+nothing enforcing the pairing: `user_id` is nullable; `username` is set only
+for PAM rows; `local_username`/`local_hostname` only for user rows;
 `enrollment_token` only for enrolled service rows. A `type = 'user'` row
 with `user_id IS NULL` is accepted by the schema, and silently disappears
-from that user's history (see finding 2). A partial CHECK — e.g.
-`CHECK (type = 'host' OR user_id IS NOT NULL)` on `certificates` — would
-turn that into a loud failure at the point of the bad write.
+from that user's history (see finding 2). A CHECK requiring `user_id IS NOT
+NULL` on `certificates` would turn that into a loud failure at the point of
+the bad write.
 
 Both dialects support `CHECK`; SQLite has enforced them since 3.3.
 
@@ -357,15 +355,11 @@ schemas to each other. A test that parses both files and asserts identical
 table and column sets would catch the failure mode the rule exists to
 prevent, and would have caught it before review rather than after.
 
-### 10. Low — two tables have no readers and no writers
+### 10. Low — a table with no readers and no writers
 
-`enrollments` and `host_mappings` are declared, indexed, and foreign-keyed,
-and nothing in the codebase touches either. Excluding tests and comments,
-`model.Enrollment` has zero references and `model.HostMapping` has one, a
-`TODO` at `server/service/host.go:54`.
-
-For `host_mappings` that is straightforwardly "designed, not built", and
-matches the host-certificate status recorded in `docs/dev/changes-next.md`.
+`enrollments` is declared, indexed, and foreign-keyed, and nothing in the
+codebase touches it. Excluding tests and comments, `model.Enrollment` has
+zero references.
 
 `enrollments` is more interesting, because the feature it belongs to is
 half-built and the two halves disagree. `approveServiceEnrollment` does

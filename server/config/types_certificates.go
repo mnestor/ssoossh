@@ -12,24 +12,53 @@ type CertificateOptions struct {
 	Service CertOptionsService `mapstructure:"service"`
 	PAM     CertOptionsPAM     `mapstructure:"pam"`
 
-	// RequestTTL is how long a pending certificate request (user or
-	// service) stays valid for approval before it's treated as expired.
-	// Shared across the types — it's "how stale can an unapproved
-	// request get," not a per-type concept like ValidDuration (the issued
-	// certificate's own lifetime).
-	RequestTTL time.Duration `mapstructure:"request_ttl,string"`
-
-	// SigningTimeout is how long an approved request may sit awaiting
-	// signature before the sweep treats it as stranded and fails it (see
-	// docs/signing-pipeline.md). A healthy signature
-	// takes milliseconds; this only needs to be generous enough for a slow
-	// signing backend (an HSM, say) under load.
+	// ClientTimeout is the whole budget: the longest a client waiting on a
+	// certificate request can go before the server hands it a terminal
+	// answer. Everything else about request timing is derived from it, by
+	// ApprovalTTL and SigningGrace below.
 	//
-	// Note this is not measured from approval — nothing records when a
-	// request entered signing — but from creation, offset by RequestTTL, so
-	// the sweep can never cancel a request that might still be in flight.
-	// See the sweep's doc comment for the arithmetic.
-	SigningTimeout time.Duration `mapstructure:"signing_timeout,string"`
+	// The server owns this deadline rather than the client, and measures it
+	// from the request's creation (see
+	// CertRequestService.expiryTimer), so a client reconnecting to its
+	// event stream re-attaches to the original deadline instead of
+	// extending it. If the client is gone for good, the approval and the
+	// signature it was waiting for are moot anyway.
+	ClientTimeout time.Duration `mapstructure:"client_timeout,string"`
+}
+
+// signingShare is the fraction of ClientTimeout reserved for the machine
+// half of the wait. The rest belongs to the human.
+//
+// A healthy signature takes milliseconds, so this only has to cover a slow
+// signing backend (an HSM under load); a tenth of the budget is generous
+// for that and leaves the approver the bulk of it. Two of these shares are
+// spent in the worst case — one for the stranded cutoff and one for the
+// sweep interval that detects it — which is why ApprovalTTL subtracts twice.
+const signingShare = 10
+
+// SigningGrace is the machine's share of ClientTimeout: how long an
+// approved request may sit awaiting signature before the stranded-request
+// sweep fails it (see docs/signing-pipeline.md), how often that sweep runs,
+// and how long `service retrieve` blocks waiting for its certificate.
+//
+// Not measured from approval — nothing records when a request entered
+// signing — but from creation, offset by ApprovalTTL, so the sweep can
+// never cancel a request that might still be in flight. See the sweep's doc
+// comment for the arithmetic.
+func (c *CertificateOptions) SigningGrace() time.Duration {
+	return c.ClientTimeout / signingShare
+}
+
+// ApprovalTTL is the human's share of ClientTimeout: how long a pending
+// request stays valid for approval before it is treated as expired. Shared
+// across the certificate types — it is "how stale can an unapproved request
+// get", not a per-type concept like ValidDuration (the issued certificate's
+// own lifetime).
+//
+// Whatever is left after reserving the two signing shares the worst case
+// spends, so ApprovalTTL + 2*SigningGrace == ClientTimeout.
+func (c *CertificateOptions) ApprovalTTL() time.Duration {
+	return c.ClientTimeout - 2*c.SigningGrace()
 }
 
 // Validate rejects certificate options the rest of the server cannot derive
@@ -37,14 +66,24 @@ type CertificateOptions struct {
 // than surfacing much later as a sweep that fails live requests or a cache
 // that grows without limit.
 func (c *CertificateOptions) Validate() error {
-	// RequestTTL = 0 used to mean "expiry disabled", and every consumer
-	// carried a fallback for it. Each fallback was a hazard rather than a
-	// feature: the stranded-request sweep has no cutoff to work from and
-	// treats every signing row as stranded, and the resolved-outcome cache
-	// has no age at which an entry is safe to evict. Requiring a positive
-	// value removes both special cases at the source.
-	if c.RequestTTL <= 0 {
-		return fmt.Errorf("cert_options.request_ttl must be greater than zero (the default is 5m): a disabled TTL leaves pending requests unbounded and gives the stranded-request sweep no cutoff")
+	// A non-positive budget has no coherent meaning downstream: the
+	// stranded-request sweep would have no cutoff to work from and would
+	// treat every signing row as stranded, and the resolved-outcome cache
+	// would have no age at which an entry is safe to evict.
+	//
+	// The floor is signingShare rather than zero because SigningGrace
+	// divides by it: a smaller budget rounds the machine's share down to
+	// nothing, which would give the sweep a zero interval and `service
+	// retrieve` a timer that fires immediately.
+	if c.ClientTimeout < signingShare {
+		return fmt.Errorf("cert_options.client_timeout must be greater than zero (the default is 5m): a disabled timeout leaves pending requests unbounded and gives the stranded-request sweep no cutoff")
+	}
+	// Zero here would mint enrollment codes that are already expired, which
+	// surfaces as `service retrieve` reporting an unknown code rather than
+	// anything pointing at the configuration. Rejecting it at startup is the
+	// only place that can name the setting.
+	if c.Service.EnrollmentDuration <= 0 {
+		return fmt.Errorf("cert_options.service.enrollment_duration must be greater than zero (the default is 8760h): a zero lifetime expires every enrollment code the moment it is issued")
 	}
 	return nil
 }
@@ -83,6 +122,23 @@ type CertOptionsService struct {
 	RequireGroup  string        `mapstructure:"require_group"`
 	ValidDuration time.Duration `mapstructure:"valid_duration,string"`
 	Extensions    []string      `mapstructure:"extensions"`
+
+	// EnrollmentDuration is how long the enrollment code minted at approval
+	// stays redeemable — deliberately independent of ValidDuration, which
+	// bounds each certificate the code produces.
+	//
+	// The two answer different questions. ValidDuration is "how long may one
+	// issued certificate be used", and wants to be short. EnrollmentDuration
+	// is "how long may this service keep asking for a fresh one", and wants
+	// to be long: the code is reusable precisely so an unattended job can run
+	// it from cron (see EnrollmentService.Retrieve). Deriving one from the
+	// other collapsed that — shortening a service certificate's lifetime also
+	// killed the code within the same span, so a cron job re-enrolled by hand
+	// on every run.
+	//
+	// Each redemption gets ValidDuration afresh, measured from the redemption,
+	// so a long code never yields a long certificate.
+	EnrollmentDuration time.Duration `mapstructure:"enrollment_duration,string"`
 
 	// KeyIDTemplate; see CertOptions.KeyIDTemplate and
 	// docs/features.md (key ID templating). Empty falls back to

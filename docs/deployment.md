@@ -283,8 +283,8 @@ unreachable:
   (the certificate is never persisted, by design) and must re-request.
 - **NATS messages**: a "sign now" message might be lost if a signer
   crashes mid-processing. Clients see the status stay `signing` and keep
-  waiting; after `request_ttl` elapses the request expires and they
-  re-request.
+  waiting; after `client_timeout` elapses the stranded-request sweep
+  fails it and they re-request.
 - **Session cookies**: persist as long as the shared database is available
   and `cookie_key` is consistent across instances. Instance restart does
   not affect sessions.

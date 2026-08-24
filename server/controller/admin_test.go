@@ -43,13 +43,13 @@ func newTestConfig(t *testing.T) *config.Config {
 				Extensions:    []string{"permit-pty", "permit-agent-forwarding"},
 			},
 			Service: config.CertOptionsService{
-				ValidDuration: 24 * time.Hour,
+				ValidDuration:      24 * time.Hour,
+				EnrollmentDuration: 90 * 24 * time.Hour,
 			},
 			PAM: config.CertOptionsPAM{
 				ValidDuration: 5 * time.Minute,
 			},
-			RequestTTL:     10 * time.Minute,
-			SigningTimeout: 30 * time.Second,
+			ClientTimeout: 10 * time.Minute,
 		},
 	}
 }

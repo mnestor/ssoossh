@@ -71,6 +71,16 @@ test/e2e/
   pam_stack_test.go # tier 3: a real pam_authenticate through pam_ssoossh.so
 ```
 
+The tier a test runs in comes from its **name prefix**, not the file it sits
+in: `.github/workflows/e2e.yaml` selects tier 2 with `-run '^TestApproval_'`,
+tier 3 with `-run '^TestSSH_'` and `-run '^TestPAMStack_'`, and tier 1 takes
+the remainder via `-skip` over the same anchored list. Only the tier's own job
+installs that tier's prerequisites, so a test that drives a real sshd must be
+named `TestSSH_*` wherever it lives -- `keystorage_test.go`, `service_test.go`
+and `proxycommand_test.go` each contribute one that way. A sshd-driving test
+named anything else lands in tier 1, where sshd's runtime directory is never
+created, and fails there.
+
 `test/` is the standard Go location for external test apparatus, and keeps
 this out of `internal/`, which is shared *product* code.
 
@@ -276,29 +286,27 @@ gets quarantined with an issue, not `retries: 3`.
 - A short `test/e2e/README.md`: how to run one tier, how to keep the browser
   visible, where artifacts land.
 
-## Single-instance limitation
+## Multi-instance coverage
 
-**ssoosshd is single-instance today and cannot sit behind a load balancer.**
-When a certificate request is approved on one instance, the approval is
-published only to that instance's in-process message broker (gochannel). A
-second instance approving the same request has a cold resolved cache and returns
-HTTP 410 Gone, because the certificate itself is never persisted to the database.
+ssoosshd runs behind a load balancer once the NATS pubsub backend is
+configured; `docs/dev/multi-instance-safety-plan.md` is the design record and
+is marked implemented. The in-process gochannel broker remains the default
+and remains single-instance: with it, an approval on one instance never
+reaches a waiter on another, and that waiter ends in HTTP 410 Gone because
+the certificate lives only in the approving instance's memory.
 
-This is a known limitation documented in full in `docs/dev/multi-instance-safety-plan.md`.
-The E2E tests run single-instance only. Two tests, quarantined behind build tags,
-document the failure:
+`multi_instance_test.go` covers the working topology — two instances, one
+postgres database, one NATS broker, approval landing on the instance that
+holds no waiter. It carries no build tag: CI runs it in the multi-signer
+job, the one job with both a docker daemon (for NATS) and a postgres
+service. Locally it skips without either.
+
+The resolved-map memory leak repro is still quarantined and still expected
+to fail:
 
 ```bash
-# Reproduces the 410 error across instances (requires Docker):
-go test -tags=e2e,multi_instance_test ./test/e2e -v -run TestMultiInstance
-
-# Verifies the resolved map memory leak:
 go test -tags=memory_leak_test ./server/service -v -run MemoryLeak
 ```
-
-Neither test should pass in the current code — their failure is the evidence
-that the defects exist. Multi-instance support is out of scope for this
-deliverable. It requires solving `docs/dev/multi-instance-safety-plan.md`.
 
 ## Database dialect support
 

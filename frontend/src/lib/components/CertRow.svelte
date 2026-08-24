@@ -11,7 +11,7 @@
 	// table.
 	interface Props {
 		cert: CertificateRecord;
-		/** What the row is about — "certificate requested", "host enrollment requested". */
+		/** What the row is about — "certificate requested", "service enrollment requested". */
 		event?: string;
 		/** Pinned clock, so a list of rows agrees with itself and tests can fix it. */
 		now?: Date;

@@ -51,12 +51,12 @@ describe('CertRow', () => {
 
 	it('should use the event wording it is given', () => {
 		render(CertRow, {
-			cert: cert({ type: 'host' }),
+			cert: cert({ type: 'service' }),
 			now,
-			event: 'host enrollment requested',
+			event: 'service enrollment requested',
 			onclick: vi.fn()
 		});
-		expect(screen.getByText(/host enrollment requested/)).toBeInTheDocument();
+		expect(screen.getByText(/service enrollment requested/)).toBeInTheDocument();
 	});
 
 	it('should list the principals', () => {

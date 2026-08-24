@@ -284,7 +284,8 @@ A healthy, never-restarted process can strand a request:
    exhausted — the alternative on gochannel is an infinite busy-loop. A
    dropped job leaves the row in `signing` with nothing left to resolve it.
 2. `reconcileStatus` applies **no TTL to `signing`** — that branch just says
-   "keep waiting." `RequestTTL` only bounds how long something stays *pending*.
+   "keep waiting." The approval TTL only bounds how long something stays
+   *pending*.
 
 ### Deriving the cutoff without a new column
 
@@ -293,24 +294,26 @@ Nothing records *when* a request entered `signing`. The bound is derived from
 
 ```text
 stranded if:  status = 'signing'
-              AND created_at < now - (RequestTTL + SigningTimeout)
+              AND created_at < now - (ApprovalTTL + SigningGrace)
 ```
 
 A request is approved somewhere between `created_at` and
-`created_at + RequestTTL`, so the latest it can have entered `signing` is
-`created_at + RequestTTL`. This can never invalidate a healthy in-flight
+`created_at + ApprovalTTL`, so the latest it can have entered `signing` is
+`created_at + ApprovalTTL`. This can never invalidate a healthy in-flight
 request.
 
 **Accepted imprecision:** a request approved immediately waits
-`RequestTTL + SigningTimeout` to be swept rather than `SigningTimeout`. Erring
+`ApprovalTTL + SigningGrace` to be swept rather than `SigningGrace`. Erring
 long is the right direction — the cost is a client waiting longer for bad
 news, whereas erring short would cancel certificates about to be issued.
 
-**`RequestTTL = 0` disables expiry**, which removes the upper bound on when
-approval can happen and degenerates the formula — a periodic sweep would
-invalidate requests the instant they entered `signing`. Handling: when
-`RequestTTL <= 0`, run **boot-only** with a startup warning. The boot pass is
-still correct there, because nothing survives a restart.
+Both terms are shares of one configured budget: `ApprovalTTL` and
+`SigningGrace` derive from `cert_options.client_timeout`, which must be
+positive, so there is no configuration in which the formula degenerates and
+no special case for an unbounded approval window. The sweep also runs on the
+`SigningGrace` interval, which is why the worst-case client wait spends two
+of those shares and why `ApprovalTTL` reserves for both — the three add up to
+exactly `client_timeout`.
 
 ### A bulk UPDATE is not sufficient
 
@@ -348,10 +351,10 @@ overwritten.
   audit row can't be traced to what was requested. Needs a migration.
 - `CAService` and the signer both parse `config.SSHKey`. When they split
   across processes, CAService should read a `ca_public_keys` list instead.
-- `signing_started_at` column would remove both the sweep's imprecision and
-  the `RequestTTL = 0` special case. Reconsider if either becomes a practical
-  problem.
-- The sweep's age-threshold approach is already safe for several instances
-  sharing a database. The `RequestTTL = 0` boot-only fallback is **not** — a
-  restarting instance would invalidate another instance's in-flight work. See
+- `signing_started_at` column would remove the sweep's imprecision, which is
+  that a request approved immediately still waits the whole approval share
+  before being swept. Reconsider if that becomes a practical problem.
+- The sweep's age-threshold approach is safe for several instances sharing a
+  database: every instance derives the same bound from the same configured
+  budget. See
   [multi-instance-safety-plan.md](dev/multi-instance-safety-plan.md).

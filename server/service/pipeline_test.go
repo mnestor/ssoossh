@@ -21,7 +21,6 @@ import (
 func newDefaultTestSignerLimits() signer.SignLimits {
 	return signer.SignLimits{
 		MaxCertLifetime:        time.Hour * 24 * 90,
-		MaxHostCertLifetime:    time.Hour * 24 * 365 * 2,
 		MaxServiceCertLifetime: time.Hour * 24 * 365 * 2,
 	}
 }
@@ -123,7 +122,8 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	}
 	done := make(chan waitResult, 1)
 	go func() {
-		status, cert, _, err := svc.Wait(context.Background(), requestID)
+		outcome, err := svc.Wait(context.Background(), requestID)
+		status, cert := outcome.Status, outcome.Certificate
 		done <- waitResult{status, cert, err}
 	}()
 	time.Sleep(50 * time.Millisecond)
@@ -279,7 +279,8 @@ func TestPipeline_EndToEnd_PAM(t *testing.T) {
 	}
 	done := make(chan waitResult, 1)
 	go func() {
-		status, cert, _, err := svc.Wait(context.Background(), requestID)
+		outcome, err := svc.Wait(context.Background(), requestID)
+		status, cert := outcome.Status, outcome.Certificate
 		done <- waitResult{status, cert, err}
 	}()
 	time.Sleep(50 * time.Millisecond)

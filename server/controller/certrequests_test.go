@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -33,10 +34,8 @@ type fakeCertRequestService struct {
 	createErr       error
 	gotParams       service.NewCertRequestParams
 
-	waitStatus model.CertificateRequestStatus
-	waitCert   string
-	waitCode   string
-	waitErr    error
+	waitOutcome service.WaitOutcome
+	waitErr     error
 
 	approveErr error
 	denyErr    error
@@ -85,8 +84,8 @@ func (f *fakeCertRequestService) Deny(_ context.Context, _ string, identity *ser
 	return f.denyErr
 }
 
-func (f *fakeCertRequestService) Wait(_ context.Context, _ string) (model.CertificateRequestStatus, string, string, error) {
-	return f.waitStatus, f.waitCert, f.waitCode, f.waitErr
+func (f *fakeCertRequestService) Wait(_ context.Context, _ string) (service.WaitOutcome, error) {
+	return f.waitOutcome, f.waitErr
 }
 
 func TestCreateUserRequestHandler_ShouldReturnEventsAndApprovalURLs(t *testing.T) {
@@ -352,8 +351,10 @@ func TestEventsHandler_ShouldStreamApprovedOutcome(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	svc := &fakeCertRequestService{
-		waitStatus: model.CertificateRequestStatusApproved,
-		waitCert:   "ssh-ed25519-cert-v01@openssh.com AAAA...",
+		waitOutcome: service.WaitOutcome{
+			Status:      model.CertificateRequestStatusApproved,
+			Certificate: "ssh-ed25519-cert-v01@openssh.com AAAA...",
+		},
 	}
 
 	r := gin.New()
@@ -372,8 +373,71 @@ func TestEventsHandler_ShouldStreamApprovedOutcome(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "event:approved") {
 		t.Errorf("expected an 'approved' SSE event, got body: %s", w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), svc.waitCert) {
+	if !strings.Contains(w.Body.String(), svc.waitOutcome.Certificate) {
 		t.Errorf("expected the certificate in the SSE payload, got body: %s", w.Body.String())
+	}
+}
+
+// TestEventsHandler_ShouldStreamTheEnrollmentIdentityWithTheCode covers what
+// the CLI operator cannot see: the approval happens in someone's browser, so
+// the account it was granted for and the code's own expiry have to travel
+// with the code or nobody ever learns them.
+func TestEventsHandler_ShouldStreamTheEnrollmentIdentityWithTheCode(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	expiresAt := time.Date(2026, 9, 23, 14, 5, 0, 0, time.UTC)
+	svc := &fakeCertRequestService{
+		waitOutcome: service.WaitOutcome{
+			Status:         model.CertificateRequestStatusEnrolled,
+			Code:           "enroll-code-1",
+			ServiceAccount: "svc-deploy",
+			ExpiresAt:      expiresAt,
+		},
+	}
+
+	r := gin.New()
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/certs/requests/req-1/events", nil)
+	r.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "event:enrolled") {
+		t.Errorf("expected an 'enrolled' SSE event, got body: %s", body)
+	}
+	if !strings.Contains(body, `"service_account":"svc-deploy"`) {
+		t.Errorf("expected the approved service account in the SSE payload, got body: %s", body)
+	}
+	if !strings.Contains(body, `"expires_at":"2026-09-23T14:05:00Z"`) {
+		t.Errorf("expected the code's expiry in the SSE payload, got body: %s", body)
+	}
+}
+
+// TestEventsHandler_ShouldOmitTheExpiryWhenThereIsNone keeps the zero time
+// off the wire: a client reading `expires_at` would otherwise be told every
+// approved certificate's enrollment died in the year 1.
+func TestEventsHandler_ShouldOmitTheExpiryWhenThereIsNone(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{
+		waitOutcome: service.WaitOutcome{
+			Status:      model.CertificateRequestStatusApproved,
+			Certificate: "ssh-ed25519-cert-v01@openssh.com AAAA...",
+		},
+	}
+
+	r := gin.New()
+	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/certs/requests/req-1/events", nil)
+	r.ServeHTTP(w, req)
+
+	if strings.Contains(w.Body.String(), "expires_at") {
+		t.Errorf("expected no expires_at field, got body: %s", w.Body.String())
 	}
 }
 

@@ -380,6 +380,10 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	}
 	controller.NewBrandingController(apiGroup, a.config, logoImg)
 
+	// Unauthenticated for the same reason as branding: the footer showing it
+	// is on every page, the login page included.
+	controller.NewVersionController(apiGroup)
+
 	// Build per-endpoint rate limit middleware for certificate request creation.
 	// Each endpoint gets its own rate limiter (per-IP, independent of each other).
 	// These apply in addition to the global rate limit.

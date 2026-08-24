@@ -35,8 +35,11 @@ type EnrollmentProvider interface {
 // keypair (see docs/dev/ssoossh-context.md, "Service enrollment").
 //
 // Codes are reusable until the enrollment expires: unattended jobs retry
-// safely, and every redemption issues a fresh certificate bounded by the
-// enrollment's approval-time expiry. Each redemption is logged as a
+// safely, and every redemption issues a fresh certificate carrying the
+// lifetime fixed at approval, measured from that redemption. The two spans
+// are configured separately (cert_options.service.enrollment_duration and
+// .valid_duration), so a code long enough to live in a crontab does not
+// imply a certificate that lives that long. Each redemption is logged as a
 // model.EnrollmentRetrieval for the approving user and auditors to read
 // back.
 type EnrollmentService struct {
@@ -57,9 +60,10 @@ func NewEnrollmentService(c *config.Config, db *gorm.DB, publisher message.Publi
 // set stored at approval time — never re-deriving policy
 // (evaluate-at-enrollment-time; see docs/certificate-lifetime-policy.md).
 //
-// The certificate is valid from now until the enrollment's own expiry, so a
-// redemption near the end of the enrollment window yields a short
-// certificate rather than one outliving what the approver granted.
+// The certificate is valid from now for the duration fixed at approval, so
+// every redemption yields a full-length certificate — including the last one
+// before the code expires. The code outliving the certificate is the point:
+// that is what lets a cron job keep renewing without a human re-enrolling it.
 //
 // Signing goes through the same queue as every other certificate: a
 // service-type certmsg.SigningJob is published with a fresh per-retrieval
@@ -93,6 +97,22 @@ func (s *EnrollmentService) Retrieve(ctx context.Context, code string, sourceIP 
 	var opts RequestedOptions
 	if err := json.Unmarshal([]byte(enrollment.OptionSet), &opts); err != nil {
 		return "", fmt.Errorf("failed to decode enrollment option set: %w", err)
+	}
+
+	// Rows written before enrollment and certificate lifetimes were split
+	// carry no duration, and their ExpiresAt is the certificate bound the
+	// approver actually agreed to. Honor it rather than guessing a length
+	// for a grant made under the old rules.
+	//
+	// A stored zero is not that case and must not be read as one: a
+	// pin-only lifetime policy computes zero (see
+	// docs/certificate-lifetime-policy.md), and inheriting the code's
+	// window there would turn the one span that must never become a
+	// certificate's into exactly that. Passed through as-is, the signer
+	// rejects the zero-length span and the redemption fails closed.
+	validBefore := enrollment.ExpiresAt
+	if enrollment.CertificateDurationSeconds != nil {
+		validBefore = now.Add(time.Duration(*enrollment.CertificateDurationSeconds) * time.Second)
 	}
 
 	serialNum, err := serial.New()
@@ -132,7 +152,7 @@ func (s *EnrollmentService) Retrieve(ctx context.Context, code string, sourceIP 
 		KeyID:            enrollment.KeyID,
 		RequestedOptions: opts,
 		ValidAfter:       now,
-		ValidBefore:      enrollment.ExpiresAt,
+		ValidBefore:      validBefore,
 		Serial:           serialNum,
 	}
 	payload, err := json.Marshal(job)
@@ -164,7 +184,7 @@ func (s *EnrollmentService) Retrieve(ctx context.Context, code string, sourceIP 
 // and SignedReplyHandler writes that row before it publishes the wake.
 func (s *EnrollmentService) awaitSignedCertificate(ctx context.Context, messages <-chan *message.Message, serialNum uint64) (string, error) {
 	var timeoutC <-chan time.Time
-	if timeout := s.config.CertOptions.SigningTimeout; timeout > 0 {
+	if timeout := s.config.CertOptions.SigningGrace(); timeout > 0 {
 		timer := time.NewTimer(timeout)
 		defer timer.Stop()
 		timeoutC = timer.C

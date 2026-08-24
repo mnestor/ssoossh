@@ -101,17 +101,11 @@ type SignerConfig struct {
 	// Default 2160h (90 days). Must be > 0 (fail-closed).
 	MaxCertLifetime time.Duration `mapstructure:"max_cert_lifetime,string"`
 
-	// MaxHostCertLifetime is the maximum lifetime for host certificates,
-	// enforced as a defense-in-depth check before signing. Default 17544h
-	// (2 years). Must be > 0 (fail-closed).
-	MaxHostCertLifetime time.Duration `mapstructure:"max_host_cert_lifetime,string"`
-
 	// MaxServiceCertLifetime is the maximum lifetime for service
 	// certificates, enforced as a defense-in-depth check before signing.
 	// Service enrollments default to 8760h (cert_options.service
-	// valid_duration), so this cap carries the same headroom over its
-	// default that the host cap does. Default 17544h (2 years). Must be
-	// > 0 (fail-closed).
+	// valid_duration), so this cap carries headroom over its default.
+	// Default 17544h (2 years). Must be > 0 (fail-closed).
 	MaxServiceCertLifetime time.Duration `mapstructure:"max_service_cert_lifetime,string"`
 }
 
@@ -127,9 +121,6 @@ func (s *SignerConfig) Validate() error {
 	}
 	if s.MaxCertLifetime <= 0 {
 		return fmt.Errorf("max_cert_lifetime must be > 0, got %v", s.MaxCertLifetime)
-	}
-	if s.MaxHostCertLifetime <= 0 {
-		return fmt.Errorf("max_host_cert_lifetime must be > 0, got %v", s.MaxHostCertLifetime)
 	}
 	if s.MaxServiceCertLifetime <= 0 {
 		return fmt.Errorf("max_service_cert_lifetime must be > 0, got %v", s.MaxServiceCertLifetime)

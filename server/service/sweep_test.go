@@ -14,10 +14,17 @@ import (
 // writing created_at directly — the alternative (sleeping past a real
 // timeout) would make these tests slow for no extra confidence.
 
-// sweepOptions returns cert options with both bounds set, so the sweep's
-// cutoff is created_at < now - (ttl + signingTimeout).
-func sweepOptions(ttl, signingTimeout time.Duration) config.CertificateOptions {
-	return config.CertificateOptions{RequestTTL: ttl, SigningTimeout: signingTimeout}
+// sweepOptions returns cert options for a whole-budget clientTimeout. The
+// sweep's cutoff is created_at < now - (ApprovalTTL + SigningGrace), both
+// derived from it, so tests that care about the boundary compute it from
+// the options rather than restating a number that the split owns.
+func sweepOptions(clientTimeout time.Duration) config.CertificateOptions {
+	return config.CertificateOptions{ClientTimeout: clientTimeout}
+}
+
+// strandedBound is the age at which sweepOptions' requests become stranded.
+func strandedBound(opts config.CertificateOptions) time.Duration {
+	return opts.ApprovalTTL() + opts.SigningGrace()
 }
 
 // signingRequestAged creates a request, moves it to Signing, and backdates
@@ -60,7 +67,7 @@ func requestByID(t *testing.T, svc *CertRequestService, requestID string) model.
 func TestSweepStrandedRequests_ShouldSurfaceAGenericDBError(t *testing.T) {
 	t.Parallel()
 
-	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(time.Hour, time.Minute))
+	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(time.Hour))
 	closeUnderlyingDB(t, svc.db)
 
 	if err := svc.SweepStrandedRequests(context.Background()); err == nil {
@@ -71,7 +78,7 @@ func TestSweepStrandedRequests_ShouldSurfaceAGenericDBError(t *testing.T) {
 func TestFailStranded_ShouldLogAndReturnOnADBError(t *testing.T) {
 	t.Parallel()
 
-	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(time.Hour, time.Minute))
+	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(time.Hour))
 	requestID := signingRequestAged(t, svc, 3*time.Hour)
 	closeUnderlyingDB(t, svc.db)
 
@@ -81,8 +88,8 @@ func TestFailStranded_ShouldLogAndReturnOnADBError(t *testing.T) {
 func TestSweepStrandedRequests_ShouldFailRequestsPastTheBound(t *testing.T) {
 	t.Parallel()
 
-	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(5*time.Minute, 5*time.Minute))
-	// Bound is ttl+timeout = 10m; 30m is comfortably past it.
+	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(10*time.Minute))
+	// 30m is comfortably past the bound.
 	requestID := signingRequestAged(t, svc, 30*time.Minute)
 
 	if err := svc.SweepStrandedRequests(context.Background()); err != nil {
@@ -107,10 +114,11 @@ func TestSweepStrandedRequests_ShouldFailRequestsPastTheBound(t *testing.T) {
 func TestSweepStrandedRequests_ShouldLeaveInFlightRequestsAlone(t *testing.T) {
 	t.Parallel()
 
-	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(5*time.Minute, 5*time.Minute))
-	// Bound is 10m. 9m is inside it — this request could still have been
+	opts := sweepOptions(10 * time.Minute)
+	svc := newTestCertRequestServiceWithOptions(t, opts)
+	// Inside the bound — this request could still have been
 	// approved recently and be signing right now.
-	requestID := signingRequestAged(t, svc, 9*time.Minute)
+	requestID := signingRequestAged(t, svc, strandedBound(opts)-time.Minute)
 
 	if err := svc.SweepStrandedRequests(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -124,7 +132,7 @@ func TestSweepStrandedRequests_ShouldLeaveInFlightRequestsAlone(t *testing.T) {
 func TestSweepStrandedRequests_ShouldIgnoreRequestsInOtherStatuses(t *testing.T) {
 	t.Parallel()
 
-	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(5*time.Minute, 5*time.Minute))
+	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(10*time.Minute))
 
 	// Every non-signing status, all aged well past the bound.
 	statuses := []model.CertificateRequestStatus{
@@ -164,7 +172,7 @@ func TestSweepStrandedRequests_ShouldIgnoreRequestsInOtherStatuses(t *testing.T)
 func TestSweepStrandedRequests_ShouldWakeAWaitingClient(t *testing.T) {
 	t.Parallel()
 
-	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(5*time.Minute, 5*time.Minute))
+	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(10*time.Minute))
 	requestID := signingRequestAged(t, svc, 30*time.Minute)
 
 	type waitResult struct {
@@ -173,7 +181,8 @@ func TestSweepStrandedRequests_ShouldWakeAWaitingClient(t *testing.T) {
 	}
 	done := make(chan waitResult, 1)
 	go func() {
-		status, _, _, err := svc.Wait(context.Background(), requestID)
+		outcome, err := svc.Wait(context.Background(), requestID)
+		status := outcome.Status
 		done <- waitResult{status, err}
 	}()
 	// Let Wait reach its blocking select before the sweep runs, so the
@@ -203,7 +212,7 @@ func TestSweepStrandedRequests_ShouldWakeAWaitingClient(t *testing.T) {
 func TestSweepStrandedRequests_ShouldNotOverwriteAConcurrentResolution(t *testing.T) {
 	t.Parallel()
 
-	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(5*time.Minute, 5*time.Minute))
+	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(10*time.Minute))
 	requestID := signingRequestAged(t, svc, 30*time.Minute)
 
 	// Stand in for the listener winning the race: the row leaves Signing
@@ -227,7 +236,7 @@ func TestSweepStrandedRequests_ShouldNotOverwriteAConcurrentResolution(t *testin
 func TestSweepStrandedRequests_ShouldFailMultipleRequestsInOneSweep(t *testing.T) {
 	t.Parallel()
 
-	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(5*time.Minute, 5*time.Minute))
+	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(10*time.Minute))
 	first := signingRequestAged(t, svc, 30*time.Minute)
 	second := signingRequestAged(t, svc, 45*time.Minute)
 
@@ -251,7 +260,7 @@ func TestSweepStrandedRequests_ShouldFailMultipleRequestsInOneSweep(t *testing.T
 func TestSweepStrandedRequests_ShouldOnlyOverwriteTheRequestsItActuallyUpdated(t *testing.T) {
 	t.Parallel()
 
-	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(5*time.Minute, 5*time.Minute))
+	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(10*time.Minute))
 	stillStranded := signingRequestAged(t, svc, 30*time.Minute)
 	racedAway := signingRequestAged(t, svc, 45*time.Minute)
 
@@ -274,14 +283,14 @@ func TestSweepStrandedRequests_ShouldOnlyOverwriteTheRequestsItActuallyUpdated(t
 }
 
 // TestSweepStrandedRequests_ShouldSweepEverythingWhenTTLDisabled documents
-// the degenerate configuration: with RequestTTL off there's no bound to
+// the degenerate configuration: with the approval TTL off there's no bound to
 // derive, so every signing request is reported stranded. That's only safe at
 // startup, which is why bootstrap runs this inline and skips the recurring
 // pass in that configuration.
 func TestSweepStrandedRequests_ShouldSweepEverythingWhenTTLDisabled(t *testing.T) {
 	t.Parallel()
 
-	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(0, 5*time.Minute))
+	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(0))
 	// Brand new — would be safely ignored if a bound could be derived.
 	requestID := signingRequestAged(t, svc, 0)
 
@@ -304,7 +313,7 @@ func TestSweepStrandedRequests_ShouldSweepEverythingWhenTTLDisabled(t *testing.T
 func TestStrandedCutoff_ShouldBeExpressedInUTC(t *testing.T) {
 	t.Parallel()
 
-	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(time.Hour, 5*time.Minute))
+	svc := newTestCertRequestServiceWithOptions(t, sweepOptions(time.Hour))
 
 	if got := svc.strandedCutoff().Location(); got != time.UTC {
 		t.Errorf("strandedCutoff() location = %v, want %v", got, time.UTC)

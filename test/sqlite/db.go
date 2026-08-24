@@ -46,10 +46,29 @@ func ConnectAndMigrate(t *testing.T) *gorm.DB {
 	return db
 }
 
+// RunUp applies all pending up migrations to the database. ConnectAndMigrate
+// already does this; RunUp exists for tests that migrate a second time, such
+// as an up/down/up round-trip.
+func RunUp(t *testing.T, db *gorm.DB) error {
+	t.Helper()
+	return doMigrate(db, func(m *migrate.Migrate) error { return m.Up() })
+}
+
+// RunDown applies all down migrations to the database, the SQLite
+// counterpart of test/postgres.RunDown.
+func RunDown(t *testing.T, db *gorm.DB) error {
+	t.Helper()
+	return doMigrate(db, func(m *migrate.Migrate) error { return m.Down() })
+}
+
 // migrateSQLite applies the embedded SQLite migrations to the database.
 func migrateSQLite(t *testing.T, db *gorm.DB) error {
 	t.Helper()
+	return doMigrate(db, func(m *migrate.Migrate) error { return m.Up() })
+}
 
+// doMigrate builds a migrator over db's pool and applies fn.
+func doMigrate(db *gorm.DB, fn func(*migrate.Migrate) error) error {
 	sqlDB, err := db.DB()
 	if err != nil {
 		return fmt.Errorf("failed to get sql.DB: %w", err)
@@ -74,7 +93,7 @@ func migrateSQLite(t *testing.T, db *gorm.DB) error {
 		return fmt.Errorf("failed to create migrate instance: %w", err)
 	}
 
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+	if err := fn(m); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
@@ -160,53 +179,77 @@ type IndexInfo struct {
 	Columns   []string
 }
 
+// quoteIdent renders name as a quoted SQLite identifier. PRAGMA arguments
+// are parsed as part of the statement and cannot be bound, so the three
+// PRAGMA helpers below have to interpolate — the doubled quote keeps that
+// from being an injection point even though every caller passes a name read
+// back out of the schema.
+func quoteIdent(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
+
 // Indexes queries index information for a table.
 func Indexes(t *testing.T, db *gorm.DB, tableName string) []IndexInfo {
 	t.Helper()
-	rows, err := db.Raw("PRAGMA index_list(?)", tableName).Rows()
+
+	// Two phases on purpose: index_list is drained fully before any
+	// index_info runs. Issuing the second PRAGMA while the first result set
+	// is still open takes a different connection out of the pool, and the
+	// nested query came back empty every time — which is why every index
+	// used to report no columns at all.
+	rows, err := db.Raw("PRAGMA index_list(" + quoteIdent(tableName) + ")").Rows()
 	if err != nil {
 		t.Fatalf("failed to query indexes for %s: %v", tableName, err)
 	}
-	defer func() { _ = rows.Close() }()
 
 	var indexes []IndexInfo
-
 	for rows.Next() {
-		var seq, unused, unique int
-		var name, partial string
+		// PRAGMA index_list yields (seq, name, unique, origin, partial).
+		// origin is text ('c', 'u', 'pk') and partial is an integer; the
+		// two were previously read in the wrong order and wrong types,
+		// which the bind-parameter bug above kept from ever surfacing.
+		var seq, unique, partial int
+		var name, origin string
 
-		if err := rows.Scan(&seq, &name, &unused, &unique, &partial); err != nil {
+		if err := rows.Scan(&seq, &name, &unique, &origin, &partial); err != nil {
+			_ = rows.Close()
 			t.Fatalf("failed to scan index row: %v", err)
 		}
-
-		// Query index columns.
-		colRows, err := db.Raw("PRAGMA index_info(?)", name).Rows()
-		if err != nil {
-			t.Fatalf("failed to query index columns for %s: %v", name, err)
-		}
-
-		var columns []string
-		for colRows.Next() {
-			var seqno, cid int
-			var colName *string
-
-			if err := colRows.Scan(&seqno, &cid, &colName); err != nil {
-				t.Fatalf("failed to scan index column row: %v", err)
-			}
-			if colName != nil {
-				columns = append(columns, *colName)
-			}
-		}
-		_ = colRows.Close()
-
-		indexes = append(indexes, IndexInfo{
-			IndexName: name,
-			Unique:    unique != 0,
-			Columns:   columns,
-		})
+		indexes = append(indexes, IndexInfo{IndexName: name, Unique: unique != 0})
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatalf("failed to close index rows for %s: %v", tableName, err)
 	}
 
+	for i := range indexes {
+		indexes[i].Columns = indexColumns(t, db, indexes[i].IndexName)
+	}
 	return indexes
+}
+
+// indexColumns returns the column names an index covers, in index order.
+func indexColumns(t *testing.T, db *gorm.DB, indexName string) []string {
+	t.Helper()
+
+	rows, err := db.Raw("PRAGMA index_info(" + quoteIdent(indexName) + ")").Rows()
+	if err != nil {
+		t.Fatalf("failed to query index columns for %s: %v", indexName, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var columns []string
+	for rows.Next() {
+		var seqno, cid int
+		var colName *string
+
+		if err := rows.Scan(&seqno, &cid, &colName); err != nil {
+			t.Fatalf("failed to scan index column row: %v", err)
+		}
+		if colName != nil {
+			columns = append(columns, *colName)
+		}
+	}
+	return columns
 }
 
 // ForeignKeyInfo holds information about a foreign key constraint.
@@ -224,7 +267,7 @@ type ForeignKeyInfo struct {
 // ForeignKeys queries foreign key constraints for a table.
 func ForeignKeys(t *testing.T, db *gorm.DB, tableName string) []ForeignKeyInfo {
 	t.Helper()
-	rows, err := db.Raw("PRAGMA foreign_key_list(?)", tableName).Rows()
+	rows, err := db.Raw("PRAGMA foreign_key_list(" + quoteIdent(tableName) + ")").Rows()
 	if err != nil {
 		t.Fatalf("failed to query foreign keys for %s: %v", tableName, err)
 	}

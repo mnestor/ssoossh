@@ -155,11 +155,9 @@ These are the minimum scenarios from the mission spec that must be added:
 - Limiter recovers after window expires → request succeeds
 - Verify both limiters are wired and have effect
 
-#### Host Certificates (Tier 1)
-- `host sign` happy path and rejection (bad key, wrong format)
-- `host renew` success and error paths
-- `host sync` synchronizes multiple hosts
-- `host principals` lists principals
+#### Host Principal Mapping (Tier 1)
+- `host principals` lists principals from the local mapping file
+- `host mapping add|remove` edits it, `--file` honoured
 
 #### Service Enrollment (Tier 1)
 - `service enroll` creates enrollment token

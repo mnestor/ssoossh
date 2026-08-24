@@ -12,9 +12,10 @@ exactly those.
 
 No. Your existing `ssh` invokes the ssoossh client through a line or two
 of `ssh_config` ([configuration.md](configuration.md#ssh_config)), and
-from there everything is standard OpenSSH certificate authentication. The
-illustrated [walkthrough.html](walkthrough.html) shows what a login looks
-like.
+from there everything is standard OpenSSH certificate authentication.
+`ssoossh ssh config` prints those lines; it needs no server, so it answers
+before anything is set up. The illustrated
+[walkthrough.html](walkthrough.html) shows what a login looks like.
 
 ### Do I get a browser prompt every time I ssh?
 
@@ -43,6 +44,34 @@ can shorten the issued lifetime (never lengthen it)
 Yes: macOS, Linux, and Windows, including Pageant and the WSL relay. The
 macOS binary is signed and notarized.
 [getting-started.md](getting-started.md) has the install steps.
+
+### It is not working. What do I send you?
+
+Re-run with `-v` and attach the stderr. That is the flag to reach for
+first; `-vv` adds requests and file operations, `-vvv` adds bodies.
+
+```sh
+ssoossh -vv ssh login 2> ssoossh.log
+```
+
+If `ssh` is the one invoking the client, its command line is not yours to
+edit, so use the environment variable instead:
+
+```sh
+SSOOSSH_VERBOSE=2 ssh bastion.example.com 2> ssoossh.log
+```
+
+When the problem looks like the wrong configuration rather than the wrong
+behavior — the wrong server, a config file you expected to be picked up and
+was not, a key file it cannot find — add `--debug` (or `SSOOSSH_DEBUG=1`).
+That prints every config source in merge order with what came of each, the
+settings that resulted, and where the key files resolve to. It prints even
+when startup failed, and it is the only place those settings are reported.
+Details: [configuration.md](configuration.md#diagnostics--v-and---debug).
+
+Both write to stderr only, so neither disturbs a `ProxyCommand` relay or a
+certificate on stdout. Read the log before sending it: at `-vvv` it contains
+request bodies, and it always names your server, username, and file paths.
 
 ### Does the server ever see my private key?
 
@@ -103,11 +132,10 @@ using `pam_ssoossh`; widen `skew-tolerance` only as a last resort.
 
 ### Can my hosts get certificates too?
 
-No. Host certificates were removed rather than finished: nothing could
-verify a host's claim to its hostname, and unverifiable host identity
-from the CA that also signs user access is worse than none — see
-[decisions.md](decisions.md). They may return if a real host-verification
-mechanism (something like an ACME challenge) lands. The client's
+No. Nothing can verify a host's claim to its hostname, and unverifiable
+host identity from the CA that also signs user access is worse than none —
+see [decisions.md](decisions.md). That may change if a real
+host-verification mechanism (something like an ACME challenge) lands. The client's
 `host mapping` and `host principals` commands remain for local
 `AuthorizedPrincipalsCommand` mapping; they never talk to the server.
 
