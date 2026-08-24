@@ -1,5 +1,12 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
+	/* eslint-disable svelte/no-navigation-without-resolve */
+	// The nav below uses plain hrefs rather than resolve(). This nav names all
+	// four admin sections, but each section's page lands on its own feature
+	// branch, and resolve() is typed against the routes that exist in THIS
+	// tree. Using it would force a placeholder page for every absent route,
+	// and a placeholder sharing a path with another branch's real page is a
+	// merge waiting to resolve the wrong way. Same file-level form as
+	// Footer.svelte, whose links are external for a different reason.
 	import { page } from '$app/state';
 	import { session } from '$lib/session.svelte';
 	import { goToLogin } from '$lib/auth';
@@ -34,12 +41,12 @@
 			<nav class="flex flex-col gap-1">
 				{#each adminNav as item (item.route)}
 					<a
-						href={resolve(item.route)}
+						href={item.route}
 						class="rounded px-3 py-2 text-sm transition"
-						class:bg-accent={page.url.pathname === resolve(item.route)}
-						class:text-accent-ink={page.url.pathname === resolve(item.route)}
-						class:text-ink-muted={page.url.pathname !== resolve(item.route)}
-						class:hover:bg-surface={page.url.pathname !== resolve(item.route)}
+						class:bg-accent={page.url.pathname === item.route}
+						class:text-accent-ink={page.url.pathname === item.route}
+						class:text-ink-muted={page.url.pathname !== item.route}
+						class:hover:bg-surface={page.url.pathname !== item.route}
 					>
 						{item.label}
 					</a>
