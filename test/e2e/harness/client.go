@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
@@ -509,10 +510,16 @@ func (cp *ClientProcess) AwaitCertificate(t *testing.T, timeout time.Duration, s
 		return nil, fmt.Errorf("certificate fetch failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var certList webtypes.CertificateListResponse
-	if err := json.NewDecoder(resp.Body).Decode(&certList); err != nil {
+	// Every JSON response is wrapped in the {data, error} envelope (see
+	// server/controller/responses.go). Decoding straight into the payload
+	// type does not fail -- it just leaves every field zero -- so the
+	// envelope has to be named, the same way the rest of this harness does
+	// it.
+	var envelope apitypes.Envelope[webtypes.CertificateListResponse]
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
 		return nil, fmt.Errorf("failed to decode certificate response: %w", err)
 	}
+	certList := envelope.Data
 
 	if len(certList.Certificates) == 0 {
 		return nil, fmt.Errorf("no certificates returned from API")
