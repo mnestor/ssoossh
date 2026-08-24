@@ -10,6 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"
+
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 func TestEndpointRateLimiter_PerIP_ShouldAllowRequestsWithinBurst(t *testing.T) {
@@ -52,7 +54,7 @@ func TestEndpointRateLimiter_PerIP_ShouldRejectRequestsBeyondBurst(t *testing.T)
 	if len(c2.Errors) != 1 {
 		t.Fatalf("expected exactly one error, got %d", len(c2.Errors))
 	}
-	tooManyRequestsError := &TooManyRequestsError{}
+	tooManyRequestsError := &errorresponses.TooManyRequestsError{}
 	if !errors.As(c2.Errors[0].Err, &tooManyRequestsError) {
 		t.Errorf("expected TooManyRequestsError, got %T", c2.Errors[0].Err)
 	}

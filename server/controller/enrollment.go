@@ -10,6 +10,7 @@ import (
 	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
@@ -20,11 +21,7 @@ import (
 func NewEnrollmentController(group *gin.RouterGroup, enrollmentService service.EnrollmentProvider, retrieveRateLimitMiddleware gin.HandlerFunc, sessionAuthMiddleware gin.HandlerFunc) {
 	e := &enrollmentController{enrollmentService: enrollmentService}
 
-	if retrieveRateLimitMiddleware != nil {
-		group.POST("/certs/service/retrieve", retrieveRateLimitMiddleware, e.retrieveHandler)
-	} else {
-		group.POST("/certs/service/retrieve", e.retrieveHandler)
-	}
+	group.POST("/certs/service/retrieve", orPassThrough(retrieveRateLimitMiddleware), e.retrieveHandler)
 
 	group.GET("/certs/requests/:id/retrievals", sessionAuthMiddleware, e.retrievalsHandler)
 }
@@ -88,7 +85,7 @@ func (e *enrollmentController) retrieveHandler(g *gin.Context) {
 func (e *enrollmentController) retrievalsHandler(g *gin.Context) {
 	identity, ok := middleware.Identity(g)
 	if !ok {
-		handleError(g, &middleware.UnauthorizedError{})
+		handleError(g, &errorresponses.UnauthorizedError{})
 		return
 	}
 
@@ -98,7 +95,9 @@ func (e *enrollmentController) retrievalsHandler(g *gin.Context) {
 		return
 	}
 
-	resp := webtypes.EnrollmentRetrievalsResponse{Retrievals: []webtypes.EnrollmentRetrievalResponse{}}
+	resp := webtypes.EnrollmentRetrievalsResponse{
+		Retrievals: make([]webtypes.EnrollmentRetrievalResponse, 0, len(rows)),
+	}
 	for _, r := range rows {
 		resp.Retrievals = append(resp.Retrievals, webtypes.EnrollmentRetrievalResponse{
 			RetrievedAt:       r.RetrievedAt,

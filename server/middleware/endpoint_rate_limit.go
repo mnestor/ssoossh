@@ -5,6 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"
+
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // EndpointRateLimiter applies per-IP rate limiting for specific endpoints.
@@ -40,7 +42,7 @@ func (el *EndpointRateLimiter) PerIP(limit rate.Limit, burst int) gin.HandlerFun
 		allowed := limiter.Allow()
 		setRateLimitHeaders(c, limiter, burst)
 		if !allowed {
-			_ = c.Error(&TooManyRequestsError{}) //nolint:errcheck
+			_ = c.Error(&errorresponses.TooManyRequestsError{}) //nolint:errcheck
 			c.Abort()
 			return
 		}
@@ -84,7 +86,7 @@ func (el *EndpointRateLimiter) CodeBucket(limit rate.Limit, burst int, extractor
 		allowed := limiter.Allow()
 		setRateLimitHeaders(c, limiter, burst)
 		if !allowed {
-			_ = c.Error(&TooManyRequestsError{}) //nolint:errcheck
+			_ = c.Error(&errorresponses.TooManyRequestsError{}) //nolint:errcheck
 			c.Abort()
 			return
 		}

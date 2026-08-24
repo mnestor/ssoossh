@@ -101,14 +101,14 @@ type CertOptionsService struct {
 // but its defaults and fallback behavior deliberately diverge — see each
 // field's comment.
 type CertOptionsPAM struct {
-	// RequireGroup is the OIDC group an approver must belong to for a PAM
-	// certificate to be issued. Unlike CertOptionsUser.RequireGroup, empty
-	// here means no PAM certificates are ever issued rather than "any
-	// authenticated user may approve" — "who may sudo on this host" is a
-	// narrower question than "who may log in", and this option has to fail
-	// closed rather than default open (see docs/features.md's
-	// identical empty-denies rule for admin.require_group). An operator must
-	// set this explicitly to enable PAM issuance at all.
+	// RequireGroup is an optional OIDC group an approver must belong to for
+	// a PAM certificate to be issued, and behaves exactly like
+	// CertOptionsUser.RequireGroup: empty means no group restriction.
+	//
+	// It is an extra filter an operator may apply, not the authorization
+	// itself. Whether the local operation is permitted is the host's own
+	// decision — pam_ssoossh authenticates the user, and the local PAM
+	// stack and sudoers policy authorize them.
 	RequireGroup string `mapstructure:"require_group"`
 
 	// ValidDuration should be seconds, not hours: a PAM certificate is

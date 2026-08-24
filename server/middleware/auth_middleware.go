@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // AdminAuthMiddleware ensures the caller belongs to the configured admin
@@ -23,20 +24,20 @@ func NewAdminAuthMiddleware(c *config.Config) *AdminAuthMiddleware {
 func (m *AdminAuthMiddleware) Add() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if !m.config.Admin.IsAdminEnabled() {
-			_ = c.Error(&ForbiddenError{}) //nolint:errcheck
+			_ = c.Error(&errorresponses.ForbiddenError{}) //nolint:errcheck
 			c.Abort()
 			return
 		}
 
 		identity, ok := Identity(c)
 		if !ok || identity == nil {
-			_ = c.Error(&ForbiddenError{}) //nolint:errcheck
+			_ = c.Error(&errorresponses.ForbiddenError{}) //nolint:errcheck
 			c.Abort()
 			return
 		}
 
 		if !containsString(identity.Groups, m.config.Admin.RequireGroup) {
-			_ = c.Error(&ForbiddenError{}) //nolint:errcheck
+			_ = c.Error(&errorresponses.ForbiddenError{}) //nolint:errcheck
 			c.Abort()
 			return
 		}
@@ -67,13 +68,13 @@ func (m *AuditorAuthMiddleware) Add() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		identity, ok := Identity(c)
 		if !ok || identity == nil {
-			_ = c.Error(&ForbiddenError{}) //nolint:errcheck
+			_ = c.Error(&errorresponses.ForbiddenError{}) //nolint:errcheck
 			c.Abort()
 			return
 		}
 
 		if !m.config.Admin.GrantsAuditor(identity.Groups) {
-			_ = c.Error(&ForbiddenError{}) //nolint:errcheck
+			_ = c.Error(&errorresponses.ForbiddenError{}) //nolint:errcheck
 			c.Abort()
 			return
 		}

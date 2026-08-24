@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // IdentityContextKey is the gin.Context key SessionAuthMiddleware sets the
@@ -81,6 +82,29 @@ func sessionStringSlice(sess sessions.Session, key string) []string {
 func SetOIDCState(c *gin.Context, state string) error {
 	sess := sessions.Default(c)
 	sess.Set(sessionKeyOIDCState, state)
+	return sess.Save()
+}
+
+// SetOIDCLoginState stores the state, nonce and PKCE verifier that a login
+// redirect needs, plus returnURL when one was supplied, in a single session
+// write.
+//
+// The individual setters below each Save(), so setting these one at a time
+// cost one store round trip per value even though they are only ever
+// written together at the start of a login. Writing them as a unit also
+// makes the failure atomic: previously a failure partway through left the
+// earlier values persisted against a login that could never complete.
+//
+// An empty returnURL is not stored, matching the caller's behavior of only
+// setting it for a return_to that passed isSafeReturnURL.
+func SetOIDCLoginState(c *gin.Context, state, nonce, verifier, returnURL string) error {
+	sess := sessions.Default(c)
+	sess.Set(sessionKeyOIDCState, state)
+	sess.Set(sessionKeyOIDCNonce, nonce)
+	sess.Set(sessionKeyOIDCVerifier, verifier)
+	if returnURL != "" {
+		sess.Set(sessionKeyReturnURL, returnURL)
+	}
 	return sess.Save()
 }
 
@@ -237,7 +261,7 @@ func (m *SessionAuthMiddleware) Add() gin.HandlerFunc {
 
 		subject := sessionString(sess, sessionKeyIdentitySubject)
 		if subject == "" {
-			_ = c.Error(&UnauthorizedError{}) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+			_ = c.Error(&errorresponses.UnauthorizedError{}) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 			c.Abort()
 			return
 		}
@@ -252,8 +276,8 @@ func (m *SessionAuthMiddleware) Add() gin.HandlerFunc {
 			// Best-effort clear so the dead session stops round-tripping;
 			// the 401 stands even if the save fails.
 			sess.Clear()
-			_ = sess.Save()                   //nolint:errcheck // the session is already being rejected; a failed clear changes nothing.
-			_ = c.Error(&UnauthorizedError{}) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+			_ = sess.Save()                                  //nolint:errcheck // the session is already being rejected; a failed clear changes nothing.
+			_ = c.Error(&errorresponses.UnauthorizedError{}) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 			c.Abort()
 			return
 		}

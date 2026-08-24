@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // ServerNameMiddleware rejects requests that are not addressed to the
@@ -30,7 +32,7 @@ func (m *ServerNameMiddleware) Add(serverName string) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		if !hostMatches(c.Request.Host, serverName) {
-			_ = c.Error(&MisdirectedRequestError{}) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+			_ = c.Error(&errorresponses.MisdirectedRequestError{}) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 			c.Abort()
 			return
 		}
@@ -39,7 +41,7 @@ func (m *ServerNameMiddleware) Add(serverName string) gin.HandlerFunc {
 		// value is rejected.
 		if tlsState := c.Request.TLS; tlsState != nil &&
 			tlsState.ServerName != "" && !strings.EqualFold(tlsState.ServerName, serverName) {
-			_ = c.Error(&MisdirectedRequestError{}) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+			_ = c.Error(&errorresponses.MisdirectedRequestError{}) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 			c.Abort()
 			return
 		}

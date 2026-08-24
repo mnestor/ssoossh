@@ -114,11 +114,7 @@ func (s *Scheduler) RegisterJob(
 	return nil
 }
 
-type (
-	jobNameKey struct{}
-	jobIDKey   struct{}
-	jobFn      = func(ctx context.Context) error
-)
+type jobFn = func(ctx context.Context) error
 
 // jobWithObservability wraps job with a per-run UUID, an OpenTelemetry
 // span, and start/success/failure log lines, without changing its
@@ -127,10 +123,6 @@ func jobWithObservability(jobName string, job jobFn) jobFn {
 	return func(ctx context.Context) error {
 		// Generate a random job ID
 		jobID := uuid.NewString()
-
-		// Save in the context
-		ctx = context.WithValue(ctx, jobNameKey{}, jobName)
-		ctx = context.WithValue(ctx, jobIDKey{}, jobID)
 
 		// Create a new context with the span
 		var err error

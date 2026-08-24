@@ -923,8 +923,8 @@ paths:
     post:
       description: |-
         Unauthenticated. Username is the local account pam_ssoossh is authenticating —
-        that, not the approver's identity, becomes the certificate's principal. Approving
-        one fails unless `cert_options.pam.require_group` is configured.
+        that, not the approver's identity, becomes the certificate's principal. Set
+        `cert_options.pam.require_group` to restrict who may approve one.
       requestBody:
         content:
           application/json:

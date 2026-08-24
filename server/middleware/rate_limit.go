@@ -8,6 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"
+
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // RateLimitMiddleware applies a per-client-IP token-bucket rate limit.
@@ -44,7 +46,7 @@ func (m *RateLimitMiddleware) Add(limit rate.Limit, burst int) gin.HandlerFunc {
 		allowed := limiter.Allow()
 		setRateLimitHeaders(c, limiter, burst)
 		if !allowed {
-			_ = c.Error(&TooManyRequestsError{}) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
+			_ = c.Error(&errorresponses.TooManyRequestsError{}) //nolint:errcheck // c.Error only registers the error for the error-handler middleware and echoes it back; it never fails.
 			c.Abort()
 			return
 		}

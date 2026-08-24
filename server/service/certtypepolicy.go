@@ -51,6 +51,10 @@ type certTypePolicy struct {
 	// principals" open question.
 	principals func(pamUsername string, identity *Identity, selected []string) []string
 	flow       certApprovalFlow
+	// linkage is the per-type check tying a certificate's principals to
+	// accounts the approver actually holds, or nil for a type with no such
+	// tie. Called by checkApproverAuthorization after the group check.
+	linkage func(identity *Identity, selection ApprovalSelection) error
 }
 
 // narrowRequestedOptions narrows requested against p's server-config bound.
@@ -92,6 +96,9 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates) map
 			keyIDTemplate: kt.user,
 			principals:    userPrincipals,
 			flow:          flowSigning,
+			linkage: func(identity *Identity, selection ApprovalSelection) error {
+				return checkUserPrincipalLinkage(identity, selection.Principals)
+			},
 		},
 		model.CertificateTypeService: {
 			requireGroup:    opts.Service.RequireGroup,
@@ -101,6 +108,9 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates) map
 			keyIDTemplate:   kt.service,
 			principals:      servicePrincipals,
 			flow:            flowEnrollment,
+			linkage: func(identity *Identity, selection ApprovalSelection) error {
+				return checkServiceAccountLinkage(identity, selection.ServiceAccount)
+			},
 		},
 		model.CertificateTypePAM: {
 			requireGroup:  opts.PAM.RequireGroup,

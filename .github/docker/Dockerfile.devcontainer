@@ -25,6 +25,8 @@ ARG VERSION=local
 ARG GOLANGCI_LINT_VERSION=2.13.1
 ARG ACTIONLINT_VERSION=v1.7.12
 ARG GOTESTSUM_VERSION=v1.13.0
+ARG GOVULNCHECK_VERSION=v1.7.0
+ARG REDOCLY_VERSION=1.28.1
 LABEL \
   org.opencontainers.image.source="https://github.com/mnestor/ssoossh" \
   org.opencontainers.image.description="Go development container for github.com/mnestor/ssoossh, for Visual Studio Code Remote Containers development"
@@ -56,8 +58,12 @@ RUN install -d -m 0755 /etc/apt/keyrings \
   && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
   && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
   && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
+  && curl -sSfL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
+  && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
   && apt-get update \
   && apt-get -y install --no-install-recommends \
+  google-chrome-stable \
+  docker-cli \
   dnsutils \
   goreleaser \
   jq \
@@ -69,8 +75,9 @@ RUN install -d -m 0755 /etc/apt/keyrings \
   gh \
   && gh release download  --repo anchore/quill -p '*amd64.deb' -O /tmp/quill.deb \ 
   && dpkg -i /tmp/quill.deb \
-  && rm -rf /var/lib/apt/lists/* /tmp/quill.deb
-  
+  && rm -rf /var/lib/apt/lists/* /tmp/quill.deb \
+  && mkdir -p /usr/lib/node_modules && chown vscode:vscode -R /usr/lib/node_modules
+
 USER vscode
 
 # ssoossh's devcontainer configs bind-mount host tooling config onto these
@@ -92,8 +99,10 @@ RUN curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(go env GOPAT
   && curl -fsSL https://claude.ai/install.sh | bash \
   && curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash \
   && curl -fsSL https://get.pnpm.io/install.sh | ENV="$HOME/.bashrc" SHELL="$(which bash)" bash - \
-  && go install github.com/princjef/gomarkdoc/cmd/gomarkdoc@latest \
-  && go install github.com/caarlos0/svu/v3@latest \
-  && go install golang.org/x/lint/golint@latest \
-  && go install gotest.tools/gotestsum@${GOTESTSUM_VERSION} \
-  && go install github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION}
+  && npm install -g @redocly/cli@${REDOCLY_VERSION} \
+  && /usr/local/go/bin/go install github.com/princjef/gomarkdoc/cmd/gomarkdoc@latest \
+  && /usr/local/go/bin/go install github.com/caarlos0/svu/v3@latest \
+  && /usr/local/go/bin/go install golang.org/x/lint/golint@latest \
+  && /usr/local/go/bin/go install gotest.tools/gotestsum@${GOTESTSUM_VERSION} \
+  && /usr/local/go/bin/go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION} \
+  && /usr/local/go/bin/go install github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION} \

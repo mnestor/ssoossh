@@ -5,6 +5,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/middleware"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // NewUserController registers the current-user route on group, behind
@@ -48,7 +49,7 @@ type userController struct {
 func (uc *userController) currentUserHandler(g *gin.Context) {
 	identity, ok := middleware.Identity(g)
 	if !ok {
-		handleError(g, &middleware.UnauthorizedError{})
+		handleError(g, &errorresponses.UnauthorizedError{})
 		return
 	}
 

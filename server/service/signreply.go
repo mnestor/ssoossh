@@ -94,12 +94,7 @@ func (h *SignedReplyHandler) resolveSuccess(ctx context.Context, reply certmsg.S
 		certificate: reply.Certificate,
 	})
 
-	// A service reply resolves a retrieval, not a certificate request: its
-	// RequestID is an enrollment_retrievals row (see
-	// EnrollmentService.Retrieve), and the original request row went
-	// terminal (Enrolled) back at approval — there is nothing to move out
-	// of Signing.
-	if reply.Type == model.CertificateTypeService {
+	if !resolvesRequestRow(reply) {
 		return nil
 	}
 
@@ -126,8 +121,7 @@ func (h *SignedReplyHandler) resolveFailure(ctx context.Context, reply certmsg.S
 		status: model.CertificateRequestStatusFailed,
 	})
 
-	// See resolveSuccess: a service reply has no request row in Signing.
-	if reply.Type == model.CertificateTypeService {
+	if !resolvesRequestRow(reply) {
 		return nil
 	}
 
@@ -135,6 +129,18 @@ func (h *SignedReplyHandler) resolveFailure(ctx context.Context, reply certmsg.S
 	// a benign zero-rows race comes back as nil. See resolveSuccess.
 	return h.markResolved(ctx, reply.RequestID, model.CertificateRequestStatusFailed,
 		fmt.Sprintf("%s: %s", reply.ErrorCode, reply.Error))
+}
+
+// resolvesRequestRow reports whether reply has a certificate_requests row
+// waiting in Signing for it to move to a terminal state.
+//
+// A service reply does not: it resolves a retrieval instead, its RequestID
+// being an enrollment_retrievals row (see EnrollmentService.Retrieve), and
+// the original request row already went terminal (Enrolled) back at
+// approval. Both the success and failure paths ask this, so the rule lives
+// here rather than being restated at each.
+func resolvesRequestRow(reply certmsg.SignedReply) bool {
+	return reply.Type != model.CertificateTypeService
 }
 
 // recordCertificate writes the audit row for an issued certificate.

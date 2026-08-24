@@ -126,3 +126,19 @@ func (e *ForbiddenError) HTTPStatusCode() int { return http.StatusForbidden }
 
 // ErrorCode reports the machine-readable error code.
 func (e *ForbiddenError) ErrorCode() string { return apitypes.ErrorCodeForbidden }
+
+// UnauthorizedError indicates a request is missing, or presented an
+// incorrect, credential — as opposed to ForbiddenError, which says the
+// caller is known but not permitted.
+type UnauthorizedError struct{}
+
+// Error implements the error interface.
+func (e *UnauthorizedError) Error() string {
+	return "Unauthorized"
+}
+
+// HTTPStatusCode reports the HTTP status this error should be rendered as.
+func (e *UnauthorizedError) HTTPStatusCode() int { return http.StatusUnauthorized }
+
+// ErrorCode reports the machine-readable error code.
+func (e *UnauthorizedError) ErrorCode() string { return apitypes.ErrorCodeUnauthenticated }

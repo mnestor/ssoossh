@@ -602,10 +602,11 @@
   ## --- (e.g. a `sudo` call) to pam_ssoossh, validated once in-process
   ## --- and then discarded. Never enters an agent, never reused.
   # pam:
-    ## OIDC group required before ssoosshd will issue a PAM certificate to
-    ## the caller. Unlike every other require_group above, empty here
-    ## means PAM certificates are NEVER issued rather than "anyone may" —
-    ## this must be set explicitly to enable the feature at all.
+    ## Optional OIDC group required before ssoosshd will issue a PAM
+    ## certificate to the caller. Behaves like every other require_group
+    ## above: empty means no group restriction. It is an extra filter, not
+    ## the authorization itself — the host's own PAM stack and sudoers
+    ## policy decide whether the local operation is permitted.
     # require_group: "SSH Sudoers"
 
     ## How long an issued PAM certificate remains valid. Seconds, not

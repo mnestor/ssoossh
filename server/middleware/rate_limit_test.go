@@ -15,6 +15,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/time/rate"
+
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // newTestRequest builds a gin.Context/ResponseRecorder pair for a GET
@@ -71,7 +73,7 @@ func TestRateLimitMiddleware_ShouldRejectRequestsBeyondBurst(t *testing.T) {
 	if len(c2.Errors) != 1 {
 		t.Fatalf("expected exactly one error to be attached, got %d", len(c2.Errors))
 	}
-	tooManyRequestsError := &TooManyRequestsError{}
+	tooManyRequestsError := &errorresponses.TooManyRequestsError{}
 	if !errors.As(c2.Errors[0].Err, &tooManyRequestsError) {
 		t.Errorf("expected TooManyRequestsError, got %T", c2.Errors[0].Err)
 	}

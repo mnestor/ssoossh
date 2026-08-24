@@ -11,6 +11,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // NewAuthController registers OIDC login/callback routes on group. Unlike
@@ -98,33 +99,15 @@ func (a *authController) loginHandler(g *gin.Context) {
 		return
 	}
 
-	if err := middleware.SetOIDCState(g, state); err != nil {
+	// Written as one session save: these values are only meaningful
+	// together, and saving each in turn cost a store round trip apiece.
+	var returnTo string
+	if candidate := g.Query("return_to"); isSafeReturnURL(candidate) {
+		returnTo = candidate
+	}
+	if err := middleware.SetOIDCLoginState(g, state, nonce, pkceVerifier, returnTo); err != nil {
 		handleError(g, err)
 		return
-	}
-	if err := middleware.SetOIDCNonce(g, nonce); err != nil {
-		handleError(g, err)
-		// not covered: oversizedSessionSeed breaks only the first Save()
-		// in the chain (SetOIDCState's, which is tested), so the later
-		// ones stay unreached. Covering them needs a sessions.Store fake
-		// that fails on the Nth Save.
-		return
-	}
-	if err := middleware.SetOIDCVerifier(g, pkceVerifier); err != nil {
-		handleError(g, err)
-		// not covered: oversizedSessionSeed breaks only the first Save()
-		// in the chain (SetOIDCState's, which is tested), so the later
-		// ones stay unreached. Covering them needs a sessions.Store fake
-		// that fails on the Nth Save.
-		return
-	}
-	if returnTo := g.Query("return_to"); isSafeReturnURL(returnTo) {
-		if err := middleware.SetReturnURL(g, returnTo); err != nil {
-			handleError(g, err)
-			// not covered: same as SetOIDCNonce above, one Save() call
-			// further down the chain.
-			return
-		}
 	}
 
 	g.Redirect(http.StatusFound, authURL)
@@ -155,7 +138,7 @@ func (a *authController) callbackHandler(g *gin.Context) {
 		return
 	}
 	if expectedState == "" || state != expectedState {
-		handleError(g, &middleware.UnauthorizedError{})
+		handleError(g, &errorresponses.UnauthorizedError{})
 		return
 	}
 

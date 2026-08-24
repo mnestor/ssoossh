@@ -7,6 +7,7 @@ import (
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
@@ -17,6 +18,27 @@ type CertRequestRateLimitMiddleware struct {
 	User          gin.HandlerFunc
 	ServiceEnroll gin.HandlerFunc
 	PAM           gin.HandlerFunc
+}
+
+// orPassThrough returns h, or a handler that does nothing when h is nil, so
+// a route registers once with a guaranteed middleware argument instead of
+// once per branch of a nil check. A handler that returns without calling
+// c.Next() is a pass-through in gin: the engine's own Next loop advances to
+// the next handler either way.
+func orPassThrough(h gin.HandlerFunc) gin.HandlerFunc {
+	if h != nil {
+		return h
+	}
+	return func(*gin.Context) {}
+}
+
+// rateLimits returns the per-endpoint middleware to apply, tolerating a nil
+// receiver so callers that disabled rate limiting entirely need no branch.
+func (m *CertRequestRateLimitMiddleware) rateLimits() (user, serviceEnroll, pam gin.HandlerFunc) {
+	if m == nil {
+		return orPassThrough(nil), orPassThrough(nil), orPassThrough(nil)
+	}
+	return orPassThrough(m.User), orPassThrough(m.ServiceEnroll), orPassThrough(m.PAM)
 }
 
 // NewCertRequestController registers the certificate-request routes on
@@ -36,26 +58,10 @@ func NewCertRequestController(group *gin.RouterGroup, certRequestService service
 	// unguessable capability token), which is also why GET .../events below
 	// doesn't need its own auth: the ID is the credential.
 
-	// Register /certs/user with optional rate limit middleware
-	if rateLimitMiddleware != nil && rateLimitMiddleware.User != nil {
-		group.POST("/certs/user", rateLimitMiddleware.User, cr.createUserRequestHandler)
-	} else {
-		group.POST("/certs/user", cr.createUserRequestHandler)
-	}
-
-	// Register /certs/service/enroll with optional rate limit middleware
-	if rateLimitMiddleware != nil && rateLimitMiddleware.ServiceEnroll != nil {
-		group.POST("/certs/service/enroll", rateLimitMiddleware.ServiceEnroll, cr.createServiceEnrollRequestHandler)
-	} else {
-		group.POST("/certs/service/enroll", cr.createServiceEnrollRequestHandler)
-	}
-
-	// Register /certs/pam with optional rate limit middleware
-	if rateLimitMiddleware != nil && rateLimitMiddleware.PAM != nil {
-		group.POST("/certs/pam", rateLimitMiddleware.PAM, cr.createPAMRequestHandler)
-	} else {
-		group.POST("/certs/pam", cr.createPAMRequestHandler)
-	}
+	userLimit, serviceEnrollLimit, pamLimit := rateLimitMiddleware.rateLimits()
+	group.POST("/certs/user", userLimit, cr.createUserRequestHandler)
+	group.POST("/certs/service/enroll", serviceEnrollLimit, cr.createServiceEnrollRequestHandler)
+	group.POST("/certs/pam", pamLimit, cr.createPAMRequestHandler)
 
 	// GET .../events is the actual SSE connection: a real long-lived
 	// text/event-stream response the client (or its HTTP client's SSE
@@ -233,8 +239,8 @@ func (cr *certRequestController) createServiceEnrollRequestHandler(g *gin.Contex
 //
 // @Summary     Create a PAM certificate request
 // @Description Unauthenticated. Username is the local account pam_ssoossh is authenticating —
-// @Description that, not the approver's identity, becomes the certificate's principal. Approving
-// @Description one fails unless `cert_options.pam.require_group` is configured.
+// @Description that, not the approver's identity, becomes the certificate's principal. Set
+// @Description `cert_options.pam.require_group` to restrict who may approve one.
 // @Tags        client
 // @Accept      json
 // @Produce     json
@@ -328,7 +334,7 @@ func (cr *certRequestController) eventsHandler(g *gin.Context) {
 func (cr *certRequestController) approveHandler(g *gin.Context) {
 	identity, ok := middleware.Identity(g)
 	if !ok {
-		handleError(g, &middleware.UnauthorizedError{})
+		handleError(g, &errorresponses.UnauthorizedError{})
 		return
 	}
 
@@ -374,7 +380,7 @@ func (cr *certRequestController) approveHandler(g *gin.Context) {
 func (cr *certRequestController) denyHandler(g *gin.Context) {
 	identity, ok := middleware.Identity(g)
 	if !ok {
-		handleError(g, &middleware.UnauthorizedError{})
+		handleError(g, &errorresponses.UnauthorizedError{})
 		return
 	}
 
@@ -415,7 +421,7 @@ func (cr *certRequestController) denyHandler(g *gin.Context) {
 func (cr *certRequestController) detailHandler(g *gin.Context) {
 	identity, ok := middleware.Identity(g)
 	if !ok {
-		handleError(g, &middleware.UnauthorizedError{})
+		handleError(g, &errorresponses.UnauthorizedError{})
 		return
 	}
 

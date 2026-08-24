@@ -7,6 +7,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // NewCertificateController registers the certificate-history route on
@@ -47,7 +48,7 @@ type certificateController struct {
 func (cc *certificateController) listHandler(g *gin.Context) {
 	identity, ok := middleware.Identity(g)
 	if !ok {
-		handleError(g, &middleware.UnauthorizedError{})
+		handleError(g, &errorresponses.UnauthorizedError{})
 		return
 	}
 

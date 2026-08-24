@@ -565,22 +565,15 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 // every check here shares one requirement — it must run before
 // bindRequester, so a caller who cannot approve never claims the request.
 func checkApproverAuthorization(certType model.CertificateType, policy *certTypePolicy, identity *Identity, selection ApprovalSelection) error {
-	// PAM is the one type where an unset requireGroup denies rather than
-	// opens: "who may sudo" is deliberately narrower than "who may log in",
-	// so a deployment that hasn't configured cert_options.pam.require_group
-	// issues no PAM certificates at all (see CertOptionsPAM.RequireGroup).
-	if certType == model.CertificateTypePAM && policy.requireGroup == "" {
-		return fmt.Errorf("pam certificate issuance requires cert_options.pam.require_group to be configured")
-	}
+	// Both rules below come from the policy table rather than a switch here,
+	// so adding a certificate type means filling in newCertTypePolicies
+	// rather than remembering to extend this function.
 	if policy.requireGroup != "" && !slices.Contains(identity.Groups, policy.requireGroup) {
 		return fmt.Errorf("identity is not authorized to approve %s certificates", certType)
 	}
 
-	if certType == model.CertificateTypeService {
-		return checkServiceAccountLinkage(identity, selection.ServiceAccount)
-	}
-	if certType == model.CertificateTypeUser {
-		return checkUserPrincipalLinkage(identity, selection.Principals)
+	if policy.linkage != nil {
+		return policy.linkage(identity, selection)
 	}
 	return nil
 }
@@ -999,7 +992,7 @@ func intersectStrings(requested, permitted []string) []string {
 		allowed[p] = true
 	}
 
-	var out []string
+	out := make([]string, 0, len(requested))
 	for _, r := range requested {
 		if allowed[r] {
 			out = append(out, r)

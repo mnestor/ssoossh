@@ -974,35 +974,6 @@ func TestCertRequestService_Approve_ShouldRejectWhenIdentityLacksRequiredGroup(t
 	}
 }
 
-// TestCertRequestService_Approve_ShouldDenyPAMWhenRequireGroupUnconfigured
-// pins the one deliberate divergence from every other certificate type: an
-// unset cert_options.pam.require_group denies rather than opens, because
-// "who may sudo" has to fail closed (see CertOptionsPAM.RequireGroup). The
-// identity here has no groups at all, so this also proves the rejection
-// isn't just an ordinary group-membership failure in disguise.
-func TestCertRequestService_Approve_ShouldDenyPAMWhenRequireGroupUnconfigured(t *testing.T) {
-	t.Parallel()
-
-	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
-		PAM: config.CertOptionsPAM{ValidDuration: 30 * time.Second},
-	})
-
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
-		Type:      model.CertificateTypePAM,
-		PublicKey: "ssh-ed25519 AAAA...",
-		Username:  "mnestor",
-	})
-	if err != nil {
-		t.Fatalf("unexpected error creating request: %v", err)
-	}
-
-	identity := &Identity{Username: "mike.nestor", Subject: "sub-1"}
-	seedUser(t, svc.db, identity.Subject)
-	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{}); err == nil {
-		t.Fatal("expected an error approving a PAM request with no configured require_group, got nil")
-	}
-}
-
 // TestCertRequestService_Approve_ShouldQueuePAMRequestWithLocalUsernameAsPrincipal
 // is the assertion the phase 4 plan calls out by name: the issued
 // certificate must name the local account the module authenticated
@@ -1518,6 +1489,75 @@ func TestCertRequestService_Approve_ShouldEnforceRequireGroupOnUserCertificates(
 			err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{})
 			if tt.wantErr && err == nil {
 				t.Error("expected approve to be rejected by require_group")
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// TestCertRequestService_Approve_ShouldTreatPAMRequireGroupAsOptional
+// pins cert_options.pam.require_group as an optional extra filter that
+// behaves like every other type's: empty restricts nobody. ssoosshd only
+// authenticates the user for a PAM certificate; whether the local
+// operation is permitted is the host's own PAM and sudoers decision, so an
+// unset group here must not deny issuance.
+func TestCertRequestService_Approve_ShouldTreatPAMRequireGroupAsOptional(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		requireGroup string
+		groups       []string
+		wantErr      bool
+	}{
+		{
+			name:         "should allow any approver when require_group is unset",
+			requireGroup: "",
+			groups:       nil,
+			wantErr:      false,
+		},
+		{
+			name:         "should allow a member of the configured group",
+			requireGroup: "sudoers",
+			groups:       []string{"sudoers"},
+			wantErr:      false,
+		},
+		{
+			name:         "should refuse a non-member of the configured group",
+			requireGroup: "sudoers",
+			groups:       []string{"other"},
+			wantErr:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+				PAM: config.CertOptionsPAM{
+					RequireGroup:  tt.requireGroup,
+					ValidDuration: 30 * time.Second,
+				},
+			})
+
+			requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+				Type:      model.CertificateTypePAM,
+				PublicKey: "ssh-ed25519 AAAA...",
+				Username:  "mnestor",
+			})
+			if err != nil {
+				t.Fatalf("unexpected error creating request: %v", err)
+			}
+
+			identity := &Identity{Username: "mike.nestor", Subject: "sub-pam-gate", Groups: tt.groups}
+			seedUser(t, svc.db, identity.Subject)
+
+			err = svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{})
+			if tt.wantErr && err == nil {
+				t.Error("expected approve to be rejected by the configured pam require_group")
 			}
 			if !tt.wantErr && err != nil {
 				t.Errorf("unexpected error: %v", err)

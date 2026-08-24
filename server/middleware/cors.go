@@ -45,18 +45,20 @@ func (m *CorsMiddleware) Add() gin.HandlerFunc {
 	}
 }
 
-// isCorsPath reports whether path is one of the OIDC/well-known endpoints
-// that need to be reachable cross-origin.
+// corsPaths is the set of OIDC/well-known endpoints that need to be
+// reachable cross-origin. Kept as one data declaration rather than arms of a
+// switch so adding an endpoint is a single-line change in an obvious place.
+var corsPaths = map[string]struct{}{
+	"/api/oidc/token":                   {},
+	"/api/oidc/userinfo":                {},
+	"/oidc/end-session":                 {},
+	"/api/oidc/introspect":              {},
+	"/.well-known/jwks.json":            {},
+	"/.well-known/openid-configuration": {},
+}
+
+// isCorsPath reports whether path is one of the endpoints in corsPaths.
 func isCorsPath(path string) bool {
-	switch path {
-	case "/api/oidc/token",
-		"/api/oidc/userinfo",
-		"/oidc/end-session",
-		"/api/oidc/introspect",
-		"/.well-known/jwks.json",
-		"/.well-known/openid-configuration":
-		return true
-	default:
-		return false
-	}
+	_, ok := corsPaths[path]
+	return ok
 }
