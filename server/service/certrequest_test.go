@@ -3101,3 +3101,56 @@ func TestTTLCutoff_ShouldBeExpressedInUTC(t *testing.T) {
 		t.Errorf("ttlCutoff() location = %v, want %v", got, time.UTC)
 	}
 }
+
+// EvictResolved is what bounds the resolved cache. It runs on every
+// instance (the map is process-local, so it can never be gated behind
+// leader election), and if it stopped evicting, the only symptom would be a
+// process that grows for as long as it runs -- which is exactly the kind of
+// leak no test notices unless one asserts on it directly.
+//
+// The cutoff is ApprovalTTL, not ClientTimeout: an outcome is only useful
+// to a client still inside its own approval window.
+func TestEvictResolved_ShouldDropOnlyOutcomesOlderThanApprovalTTL(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Minute)
+	ttl := svc.config.CertOptions.ApprovalTTL()
+	if ttl <= 0 {
+		t.Fatalf("ApprovalTTL() = %v, want a positive window to test against", ttl)
+	}
+
+	svc.mu.Lock()
+	svc.resolved["stale"] = WaitOutcome{resolvedAt: time.Now().Add(-ttl - time.Second)}
+	svc.resolved["justInside"] = WaitOutcome{resolvedAt: time.Now().Add(-ttl / 2)}
+	svc.resolved["fresh"] = WaitOutcome{resolvedAt: time.Now()}
+	svc.mu.Unlock()
+
+	if err := svc.EvictResolved(context.Background()); err != nil {
+		t.Fatalf("EvictResolved() error = %v", err)
+	}
+
+	svc.mu.Lock()
+	defer svc.mu.Unlock()
+
+	if _, ok := svc.resolved["stale"]; ok {
+		t.Error("an outcome older than ApprovalTTL survived eviction")
+	}
+	for _, id := range []string{"justInside", "fresh"} {
+		if _, ok := svc.resolved[id]; !ok {
+			t.Errorf("%s was evicted while still inside ApprovalTTL", id)
+		}
+	}
+}
+
+// Eviction has to be safe to run when there is nothing to evict: the
+// scheduler calls it on a fixed interval from boot, long before any request
+// has resolved.
+func TestEvictResolved_ShouldSucceedOnAnEmptyCache(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Minute)
+
+	if err := svc.EvictResolved(context.Background()); err != nil {
+		t.Fatalf("EvictResolved() on an empty cache: %v", err)
+	}
+}

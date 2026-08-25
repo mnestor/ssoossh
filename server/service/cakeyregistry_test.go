@@ -4,11 +4,14 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ThreeDotsLabs/watermill"
 	"github.com/ThreeDotsLabs/watermill/message"
+	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/mnestor/ssoossh/server/certmsg"
@@ -331,5 +334,94 @@ func TestCAKeyListener_ShouldHandleAnnounceMessage(t *testing.T) {
 
 	if len(keys) != 1 {
 		t.Errorf("expected 1 key after listener processing, got %d", len(keys))
+	}
+}
+
+// SweepExpired is the shape the job scheduler calls: context in, error out,
+// row count discarded. It is a thin wrapper, but it is the only entry point
+// the scheduler uses -- if it stopped deleting, nothing else would notice,
+// because DeleteExpired's own tests call DeleteExpired.
+func TestCAKeyRegistry_SweepExpired_ShouldDeleteExpiredKeys(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	reg := newTestCAKeyRegistry(t, 50*time.Millisecond)
+
+	if err := reg.Upsert(ctx, certmsg.CAKeyAnnounce{
+		PublicKey:   generateTestPublicKey(t),
+		AnnouncedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	if err := reg.SweepExpired(ctx); err != nil {
+		t.Fatalf("SweepExpired() error = %v", err)
+	}
+
+	keys, err := reg.ActiveKeys(ctx)
+	if err != nil {
+		t.Fatalf("ActiveKeys() error = %v", err)
+	}
+	if len(keys) != 0 {
+		t.Errorf("expected the expired key to be swept, got %d remaining", len(keys))
+	}
+}
+
+// Register is the wiring between the announce topic and handle. The
+// handler-level test calls handle directly, so nothing else proves the
+// listener is actually subscribed to CAKeyAnnounceTopic -- a wrong topic
+// name here would leave every instance's registry silently empty.
+func TestCAKeyListener_Register_ShouldConsumeFromTheAnnounceTopic(t *testing.T) {
+	t.Parallel()
+
+	reg := newTestCAKeyRegistry(t, time.Hour)
+
+	logger := watermill.NewSlogLogger(slog.Default())
+	channel := gochannel.NewGoChannel(gochannel.Config{}, logger)
+	t.Cleanup(func() { _ = channel.Close() })
+
+	router, err := message.NewRouter(message.RouterConfig{CloseTimeout: time.Second}, logger)
+	if err != nil {
+		t.Fatalf("NewRouter() error = %v", err)
+	}
+	NewCAKeyListener(reg).Register(router, channel)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		if err := router.Run(ctx); err != nil {
+			t.Errorf("router stopped with an error: %v", err)
+		}
+	}()
+	<-router.Running()
+
+	ann := certmsg.CAKeyAnnounce{
+		PublicKey:   generateTestPublicKey(t),
+		AnnouncedAt: time.Now(),
+	}
+	payload, err := ann.Marshal()
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	if err := channel.Publish(certmsg.CAKeyAnnounceTopic, message.NewMessage("1", payload)); err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+
+	deadline := time.After(3 * time.Second)
+	for {
+		keys, err := reg.ActiveKeys(context.Background())
+		if err != nil {
+			t.Fatalf("ActiveKeys() error = %v", err)
+		}
+		if len(keys) == 1 {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("announced key never reached the registry via %s", certmsg.CAKeyAnnounceTopic)
+		case <-time.After(20 * time.Millisecond):
+		}
 	}
 }

@@ -451,3 +451,130 @@ func TestIdentity_ShouldReportFalseForTheWrongType(t *testing.T) {
 		t.Error("expected Identity() to report false for a value of the wrong type")
 	}
 }
+
+// SetOIDCLoginState is the single write the login handler makes, and its
+// whole point is atomicity: it replaced a sequence of separate Set calls
+// where a failure partway through left state and nonce persisted against a
+// login that could never complete. One call has to populate everything the
+// callback later pops.
+func TestSetOIDCLoginState_ShouldStoreEveryValueTheCallbackPops(t *testing.T) {
+	t.Parallel()
+
+	setResp := doSessionRequest(t, func(c *gin.Context) {
+		if err := SetOIDCLoginState(c, "state-1", "nonce-1", "verifier-1", "/certs"); err != nil {
+			t.Fatalf("SetOIDCLoginState() error = %v", err)
+		}
+	}, nil)
+
+	var state, nonce, verifier, returnURL string
+	doSessionRequest(t, func(c *gin.Context) {
+		var err error
+		if state, err = PopOIDCState(c); err != nil {
+			t.Fatalf("PopOIDCState() error = %v", err)
+		}
+		if nonce, err = PopOIDCNonce(c); err != nil {
+			t.Fatalf("PopOIDCNonce() error = %v", err)
+		}
+		if verifier, err = PopOIDCVerifier(c); err != nil {
+			t.Fatalf("PopOIDCVerifier() error = %v", err)
+		}
+		if returnURL, err = PopReturnURL(c); err != nil {
+			t.Fatalf("PopReturnURL() error = %v", err)
+		}
+	}, setResp)
+
+	for _, tc := range []struct{ name, got, want string }{
+		{"state", state, "state-1"},
+		{"nonce", nonce, "nonce-1"},
+		{"verifier", verifier, "verifier-1"},
+		{"returnURL", returnURL, "/certs"},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s = %q, want %q", tc.name, tc.got, tc.want)
+		}
+	}
+}
+
+// An empty returnURL is deliberately not stored, matching the caller, which
+// only passes one for a return_to that passed isSafeReturnURL. Storing ""
+// would be indistinguishable from "never set" on the way out, but it would
+// overwrite a value from an earlier attempt on the way in.
+func TestSetOIDCLoginState_ShouldNotStoreAnEmptyReturnURL(t *testing.T) {
+	t.Parallel()
+
+	priorResp := doSessionRequest(t, func(c *gin.Context) {
+		if err := SetReturnURL(c, "/certs"); err != nil {
+			t.Fatalf("SetReturnURL() error = %v", err)
+		}
+	}, nil)
+
+	setResp := doSessionRequest(t, func(c *gin.Context) {
+		if err := SetOIDCLoginState(c, "state-2", "nonce-2", "verifier-2", ""); err != nil {
+			t.Fatalf("SetOIDCLoginState() error = %v", err)
+		}
+	}, priorResp)
+
+	var returnURL string
+	doSessionRequest(t, func(c *gin.Context) {
+		var err error
+		if returnURL, err = PopReturnURL(c); err != nil {
+			t.Fatalf("PopReturnURL() error = %v", err)
+		}
+	}, setResp)
+
+	if returnURL != "/certs" {
+		t.Errorf("PopReturnURL() = %q, want the earlier %q left untouched", returnURL, "/certs")
+	}
+}
+
+// The PKCE verifier is single-use for the same reason state and nonce are:
+// a verifier that survives its exchange could be replayed against a second
+// authorization code.
+func TestSetAndPopOIDCVerifier(t *testing.T) {
+	t.Parallel()
+
+	setResp := doSessionRequest(t, func(c *gin.Context) {
+		if err := SetOIDCVerifier(c, "verifier-1"); err != nil {
+			t.Fatalf("SetOIDCVerifier() error = %v", err)
+		}
+	}, nil)
+
+	var got string
+	popResp := doSessionRequest(t, func(c *gin.Context) {
+		var err error
+		if got, err = PopOIDCVerifier(c); err != nil {
+			t.Fatalf("PopOIDCVerifier() error = %v", err)
+		}
+	}, setResp)
+
+	if got != "verifier-1" {
+		t.Errorf("PopOIDCVerifier() = %q, want %q", got, "verifier-1")
+	}
+
+	var second string
+	doSessionRequest(t, func(c *gin.Context) {
+		var err error
+		if second, err = PopOIDCVerifier(c); err != nil {
+			t.Fatalf("PopOIDCVerifier() error = %v", err)
+		}
+	}, popResp)
+	if second != "" {
+		t.Errorf("second PopOIDCVerifier() = %q, want empty (already consumed)", second)
+	}
+}
+
+func TestPopOIDCVerifier_ShouldReturnEmptyWhenNeverSet(t *testing.T) {
+	t.Parallel()
+
+	var got string
+	doSessionRequest(t, func(c *gin.Context) {
+		var err error
+		if got, err = PopOIDCVerifier(c); err != nil {
+			t.Fatalf("PopOIDCVerifier() error = %v", err)
+		}
+	}, nil)
+
+	if got != "" {
+		t.Errorf("PopOIDCVerifier() = %q, want empty", got)
+	}
+}

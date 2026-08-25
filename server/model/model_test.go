@@ -272,3 +272,28 @@ func TestNotificationPreferenceTableName(t *testing.T) {
 		t.Errorf("NotificationPreference.TableName() = %q, want %q", got, "notification_preferences")
 	}
 }
+
+// The models that arrived with the CA-key and enrollment-audit work. Grouped
+// into one table rather than three more near-identical functions: the whole
+// contract is "this name matches the migration", and a table makes the next
+// model an added line rather than an added function -- which is the shape
+// that actually gets remembered.
+func TestTableName_ShouldMatchTheMigrationForAuditAndKeyModels(t *testing.T) {
+	tests := []struct {
+		name  string
+		model interface{ TableName() string }
+		want  string
+	}{
+		{name: "CASignerKey", model: CASignerKey{}, want: "ca_signer_keys"},
+		{name: "EnrollmentRetrieval", model: EnrollmentRetrieval{}, want: "enrollment_retrievals"},
+		{name: "EnrollmentReassignment", model: EnrollmentReassignment{}, want: "enrollment_reassignments"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.model.TableName(); got != tt.want {
+				t.Errorf("%s.TableName() = %q, want %q", tt.name, got, tt.want)
+			}
+		})
+	}
+}

@@ -166,6 +166,9 @@ func TestErrorCode_ShouldReportTheWireCodeForEachError(t *testing.T) {
 		{name: "not implemented", err: &NotImplementedError{}, wantCode: apitypes.ErrorCodeNotImplemented, wantStatus: http.StatusNotImplemented},
 		{name: "forbidden", err: &ForbiddenError{}, wantCode: apitypes.ErrorCodeForbidden, wantStatus: http.StatusForbidden},
 		{name: "invalid request", err: &InvalidRequestError{Reason: "unknown notification kind \"nope\""}, wantCode: apitypes.ErrorCodeInvalidRequest, wantStatus: http.StatusBadRequest},
+		{name: "unauthorized", err: &UnauthorizedError{}, wantCode: apitypes.ErrorCodeUnauthenticated, wantStatus: http.StatusUnauthorized},
+		{name: "user disabled", err: &UserDisabledError{}, wantCode: apitypes.ErrorCodeForbidden, wantStatus: http.StatusForbidden},
+		{name: "user status check", err: &UserStatusCheckError{}, wantCode: apitypes.ErrorCodeUnavailable, wantStatus: http.StatusServiceUnavailable},
 	}
 
 	for _, tt := range tests {
@@ -202,5 +205,55 @@ func TestInvalidRequestError_ShouldDescribeItself(t *testing.T) {
 				t.Errorf("Error() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// The three login-path errors carry no fields, so their message *is* their
+// whole contract — and two of them are 403s that must not be confused with
+// each other. UserDisabledError says the account was turned off, which is a
+// statement of fact about the user; UserStatusCheckError says the server
+// could not tell, which is a statement about the server. Rendering the
+// second as the first would tell someone their account was disabled when
+// nobody ever determined that.
+func TestLoginPathErrors_ShouldDescribeThemselves(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "unauthorized", err: &UnauthorizedError{}, want: "Unauthorized"},
+		{name: "user disabled", err: &UserDisabledError{}, want: "User account is disabled"},
+		{name: "user status check", err: &UserStatusCheckError{}, want: "Unable to verify account status"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := tt.err.Error(); got != tt.want {
+				t.Errorf("Error() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// Fail-closed means the two disabled-user outcomes are never the same
+// response. UserStatusCheckError is a 503 precisely so a transient database
+// failure does not render as "your account is disabled".
+func TestUserStatusCheckError_ShouldNotRenderAsUserDisabled(t *testing.T) {
+	t.Parallel()
+
+	check := &UserStatusCheckError{}
+	disabled := &UserDisabledError{}
+
+	if check.HTTPStatusCode() == disabled.HTTPStatusCode() {
+		t.Errorf("UserStatusCheckError and UserDisabledError both render as %d; "+
+			"a failed status check must not be reported as a disabled account",
+			check.HTTPStatusCode())
+	}
+	if check.Error() == disabled.Error() {
+		t.Errorf("both errors say %q", check.Error())
 	}
 }

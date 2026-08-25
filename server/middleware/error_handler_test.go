@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
@@ -87,5 +88,48 @@ func TestErrorHandlerMiddleware_ShouldNotOverwriteAResponseAlreadyWritten(t *tes
 
 	if w.Code != http.StatusCreated {
 		t.Errorf("got status %d, want the already-written %d", w.Code, http.StatusCreated)
+	}
+}
+
+// statusToErrorCode is the fallback for errors that do not implement
+// errorCoder -- the bare errors older handlers still pass through. It is the
+// only thing standing between such an error and a response with no
+// machine-readable code, so every status the API actually returns needs to
+// map to something a client can branch on, and anything unrecognised has to
+// fall through to the internal-error code rather than to "".
+func TestStatusToErrorCode_ShouldMapEveryStatusTheAPIReturns(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		status int
+		want   string
+	}{
+		{name: "bad request", status: http.StatusBadRequest, want: apitypes.ErrorCodeInvalidRequest},
+		{name: "unauthorized", status: http.StatusUnauthorized, want: apitypes.ErrorCodeUnauthenticated},
+		{name: "forbidden", status: http.StatusForbidden, want: apitypes.ErrorCodeForbidden},
+		{name: "not found", status: http.StatusNotFound, want: apitypes.ErrorCodeNotFound},
+		{name: "gone", status: http.StatusGone, want: apitypes.ErrorCodeUnavailable},
+		{name: "too many requests", status: http.StatusTooManyRequests, want: apitypes.ErrorCodeRateLimited},
+		{name: "not implemented", status: http.StatusNotImplemented, want: apitypes.ErrorCodeNotImplemented},
+		// The default arm. A status with no specific mapping must still
+		// produce a code, not an empty string.
+		{name: "internal server error", status: http.StatusInternalServerError, want: apitypes.ErrorCodeInternalError},
+		{name: "unrecognised status", status: http.StatusTeapot, want: apitypes.ErrorCodeInternalError},
+		{name: "service unavailable", status: http.StatusServiceUnavailable, want: apitypes.ErrorCodeInternalError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := statusToErrorCode(tt.status)
+			if got != tt.want {
+				t.Errorf("statusToErrorCode(%d) = %q, want %q", tt.status, got, tt.want)
+			}
+			if got == "" {
+				t.Errorf("statusToErrorCode(%d) returned an empty code", tt.status)
+			}
+		})
 	}
 }

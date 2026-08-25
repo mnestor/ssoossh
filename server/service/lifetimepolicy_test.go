@@ -1,7 +1,10 @@
 package service
 
 import (
+	"bytes"
+	"log/slog"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
@@ -668,5 +671,89 @@ func TestNewLifetimePolicyEngine(t *testing.T) {
 				tt.check(t, engine)
 			}
 		})
+	}
+}
+
+// The footgun this warns about is silent by construction: with source-network
+// policy configured and no trusted_proxies, every request carries the
+// reverse proxy's address, so *everyone* matches the proxy's tier and gets
+// the most generous one. Nothing fails, nothing errors -- the only signal a
+// deployment ever gets is this warning, so it has to actually fire.
+//
+// Not parallel: it swaps the default slog logger, which is process-global.
+func TestValidateStartupConfig_ShouldWarnAboutSourcePolicyWithoutTrustedProxies(t *testing.T) {
+	sourcePolicy := config.CertificateOptions{
+		User: config.CertOptionsUser{
+			LifetimePolicy: config.LifetimePolicy{
+				SourcePolicy: []config.SourcePolicyEntry{
+					{CIDR: "10.0.0.0/8", MaxDuration: time.Hour},
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name           string
+		opts           config.CertificateOptions
+		trustedProxies []string
+		wantWarning    bool
+	}{
+		{name: "source policy with no trusted proxies", opts: sourcePolicy, trustedProxies: nil, wantWarning: true},
+		{name: "source policy with trusted proxies", opts: sourcePolicy, trustedProxies: []string{"10.0.0.1"}, wantWarning: false},
+		{name: "no source policy at all", opts: config.CertificateOptions{}, trustedProxies: nil, wantWarning: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			engine, err := newLifetimePolicyEngine(tt.opts)
+			if err != nil {
+				t.Fatalf("newLifetimePolicyEngine() error = %v", err)
+			}
+
+			var buf bytes.Buffer
+			prior := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+			t.Cleanup(func() { slog.SetDefault(prior) })
+
+			engine.validateStartupConfig(tt.trustedProxies)
+
+			warned := strings.Contains(buf.String(), "http.trusted_proxies")
+			if warned != tt.wantWarning {
+				t.Errorf("warned = %v, want %v (log was %q)", warned, tt.wantWarning, buf.String())
+			}
+		})
+	}
+}
+
+// ValidateStartupConfig is the exported entry point bootstrap calls, and the
+// only thing that supplies the engine with the *server's* trusted_proxies.
+// Reading that from the wrong config field would leave the warning firing
+// (or not) independently of how the deployment is actually set up.
+func TestValidateStartupConfig_ShouldPassTheServersTrustedProxies(t *testing.T) {
+	cfg := &config.Config{
+		CertOptions: config.CertificateOptions{
+			ClientTimeout: time.Minute,
+			User: config.CertOptionsUser{
+				LifetimePolicy: config.LifetimePolicy{
+					SourcePolicy: []config.SourcePolicyEntry{
+						{CIDR: "10.0.0.0/8", MaxDuration: time.Hour},
+					},
+				},
+			},
+		},
+	}
+	cfg.HTTP.TrustedProxies = nil
+
+	svc := newTestCertRequestServiceWithConfig(t, cfg)
+
+	var buf bytes.Buffer
+	prior := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prior) })
+
+	svc.ValidateStartupConfig()
+
+	if !strings.Contains(buf.String(), "http.trusted_proxies") {
+		t.Errorf("expected the trusted_proxies warning with none configured, log was %q", buf.String())
 	}
 }

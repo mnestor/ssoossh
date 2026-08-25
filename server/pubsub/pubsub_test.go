@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -218,5 +220,84 @@ func TestSubjectCalculator_ShouldReturnQueueGroupForSignTopics(t *testing.T) {
 				t.Errorf("got QueueGroup %q, want %q", detail.QueueGroup, tt.wantQueueGroup)
 			}
 		})
+	}
+}
+
+// An unset backend has to mean gochannel, not "no backend". Config files
+// written before the NATS backend existed omit the field entirely, and a
+// single-instance deployment is never expected to set it -- so the default
+// is what most deployments actually run on.
+func TestNew_ShouldDefaultToGoChannelWhenBackendIsUnset(t *testing.T) {
+	t.Parallel()
+
+	ps, err := New(&config.PubSubConfig{}, slog.Default())
+	if err != nil {
+		t.Fatalf("New() with an unset backend: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := ps.Close(context.Background()); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+
+	if ps.channel == nil {
+		t.Error("expected the gochannel backend to be built for an unset backend")
+	}
+	if ps.natsPublisher != nil || ps.natsSubscriber != nil {
+		t.Error("expected no NATS backend for an unset backend")
+	}
+
+	// Usable, not merely non-nil: the default has to produce a working pair.
+	messages, err := ps.Subscriber.Subscribe(context.Background(), "default.probe")
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	if err := ps.Publisher.Publish("default.probe", message.NewMessage("1", []byte("hi"))); err != nil {
+		t.Fatalf("Publish() error = %v", err)
+	}
+	select {
+	case msg := <-messages:
+		msg.Ack()
+	case <-time.After(2 * time.Second):
+		t.Fatal("published message never arrived on the default backend")
+	}
+}
+
+// A NATS backend that cannot reach its broker has to fail New outright.
+// The alternative -- returning a PubSub whose transport is not actually
+// connected -- would let ssoosshd finish booting and then silently drop
+// every sign job, which is the failure mode multi-instance deployments can
+// least afford to discover in production.
+//
+// Uses a port nothing is listening on, so this needs no broker: it is the
+// failure path that is being asserted, not the connection.
+func TestNew_ShouldFailWhenTheNATSBrokerIsUnreachable(t *testing.T) {
+	t.Parallel()
+
+	// Bind and immediately release, so the port is real but closed.
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserving a port: %v", err)
+	}
+	addr := l.Addr().String()
+	if err := l.Close(); err != nil {
+		t.Fatalf("closing the reserved listener: %v", err)
+	}
+
+	cfg := &config.PubSubConfig{Backend: config.PubSubBackendNATS}
+	cfg.NATS.URL = "nats://" + addr
+
+	ps, err := New(cfg, slog.Default())
+	if err == nil {
+		if ps != nil {
+			_ = ps.Close(context.Background())
+		}
+		t.Fatal("New() with an unreachable broker returned no error")
+	}
+	if ps != nil {
+		t.Errorf("New() returned a non-nil PubSub alongside an error: %+v", ps)
+	}
+	if !strings.Contains(err.Error(), "NATS") {
+		t.Errorf("error = %v, want it to name NATS as the failing transport", err)
 	}
 }
