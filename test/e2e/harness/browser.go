@@ -202,6 +202,59 @@ func (b *Browser) ClickIfPresent(t *testing.T, selector string) bool {
 	return clicked
 }
 
+// loginSettleInterval is how often waitForLoginRedirects samples the page
+// while the post-login chain is in flight.
+const loginSettleInterval = 50 * time.Millisecond
+
+// waitForLoginRedirects blocks until the post-login redirect chain (IdP ->
+// /auth/callback -> application) has stopped moving.
+//
+// chromedp's Click returns as soon as the form is submitted, not when the
+// navigation it triggers has finished. A test that logs in and then
+// navigates somewhere else — the natural shape for "log in, then go to
+// /account" — races the in-flight chain, and Chrome aborts the newer
+// navigation with net::ERR_ABORTED naming the destination rather than the
+// race. Tests that follow a login with WaitVisible on the post-login page
+// hide this by accident; this makes the helper mean what its name says.
+//
+// Settled means the document has finished loading, the IdP's login form is
+// gone, and the location has held still across consecutive samples. A
+// transient error means an execution context was torn down mid-navigation,
+// which is evidence the chain is still moving: reset and keep waiting. The
+// caller's context bounds the whole thing.
+func waitForLoginRedirects(ctx context.Context) error {
+	const stableSamples = 2
+
+	var last string
+	stable := 0
+	for {
+		var current string
+		var done bool
+		err := chromedp.Run(ctx,
+			chromedp.Location(&current),
+			chromedp.Evaluate(`document.readyState === 'complete' && document.querySelector('[data-testid="idp-login-form"]') === null`, &done),
+		)
+		switch {
+		case err != nil:
+			stable = 0
+		case done && current == last:
+			stable++
+			if stable >= stableSamples {
+				return nil
+			}
+		default:
+			stable = 0
+		}
+		last = current
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("redirect chain still in flight at %s: %w", last, ctx.Err())
+		case <-time.After(loginSettleInterval):
+		}
+	}
+}
+
 // CompleteIdPLogin fills and submits the harness IdP's real login form
 // (data-testid="idp-username"/"idp-submit" — see idp.go's renderLoginForm)
 // with username, then follows the resulting redirect chain back into the
@@ -218,6 +271,11 @@ func (b *Browser) CompleteIdPLogin(t *testing.T, username string) {
 	); err != nil {
 		b.screenshotOnFailure(t)
 		t.Fatalf("harness: completing the IdP login form failed: %v", err)
+	}
+
+	if err := waitForLoginRedirects(ctx); err != nil {
+		b.screenshotOnFailure(t)
+		t.Fatalf("harness: the post-login redirect chain did not settle: %v", err)
 	}
 }
 
@@ -251,6 +309,11 @@ func (b *Browser) CompleteIdPLoginWithExtraClaims(t *testing.T, username string,
 	); err != nil {
 		b.screenshotOnFailure(t)
 		t.Fatalf("harness: completing the IdP login form with extra claims failed: %v", err)
+	}
+
+	if err := waitForLoginRedirects(ctx); err != nil {
+		b.screenshotOnFailure(t)
+		t.Fatalf("harness: the post-login redirect chain did not settle: %v", err)
 	}
 }
 
@@ -291,6 +354,11 @@ func (b *Browser) CompleteIdPLoginWithGroups(t *testing.T, username string, grou
 	if err := chromedp.Run(ctx, actions...); err != nil {
 		b.screenshotOnFailure(t)
 		t.Fatalf("harness: completing the IdP login form with groups failed: %v", err)
+	}
+
+	if err := waitForLoginRedirects(ctx); err != nil {
+		b.screenshotOnFailure(t)
+		t.Fatalf("harness: the post-login redirect chain did not settle: %v", err)
 	}
 }
 

@@ -37,13 +37,11 @@ func TestAccount_ShowsExtraFieldsAndMergedPrincipals(t *testing.T) {
 		"cost_center": "CC-7781",
 	})
 
-	// Wait for the post-login redirect chain to settle before navigating
-	// away. Clicking the IdP's submit button starts a chain (IdP -> callback
-	// -> approval page) that chromedp does not block on, and navigating into
-	// the middle of it aborts the new navigation with ERR_ABORTED.
-	browser.WaitVisible(t, `[data-testid="approval-view"]`)
-
-	// Navigate to the account page.
+	// Navigate straight to the account page. No wait in between: the login
+	// helper does not return until the post-login redirect chain (IdP ->
+	// callback -> approval page) has settled, so this is safe. It did not
+	// used to be, and this navigation is what proves it -- see
+	// waitForLoginRedirects in harness/browser.go.
 	browser.Navigate(t, f.Server.BaseURL+"/account", `[data-testid="account-identity-card"]`)
 
 	// Verify extra fields are displayed via their data-testid attributes.
