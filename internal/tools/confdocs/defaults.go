@@ -25,7 +25,7 @@ type Defaults struct {
 
 // LoadDefaults reads and flattens defaults.yaml.
 func LoadDefaults(path string) (*Defaults, error) {
-	raw, err := os.ReadFile(path) //nolint:gosec // a repo path passed by the generator
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}

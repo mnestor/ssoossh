@@ -94,34 +94,15 @@ func firstSentence(doc []string) string {
 		text = strings.TrimSpace(text[i+1:])
 	}
 
-	// Doc comments open with a verb by convention ("Configures the ...").
-	// The heading wants the noun phrase.
-	for _, verb := range []string{"Configures ", "Holds ", "Carries ", "Groups ", "Selects ", "Records ", "Optionally configures "} {
-		if strings.HasPrefix(text, verb) {
-			text = strings.TrimPrefix(text, verb)
-			break
-		}
-	}
-
-	text = strings.TrimSpace(text)
+	text = strings.TrimSpace(stripLeadingVerb(text))
 	if text == "" {
 		return ""
 	}
 
 	// Too long for a heading: keep the first clause, or give up.
-	if len(text) > glossMax {
-		cut := -1
-		for _, sep := range []string{", ", "; "} {
-			if i := strings.Index(text, sep); i > 0 && i <= glossMax {
-				if cut < 0 || i < cut {
-					cut = i
-				}
-			}
-		}
-		if cut < 0 {
-			return ""
-		}
-		text = text[:cut]
+	text = clauseCut(text)
+	if text == "" {
+		return ""
 	}
 
 	// Cutting at a comma can land inside a parenthetical, leaving the gloss
@@ -136,6 +117,44 @@ func firstSentence(doc []string) string {
 		text = strings.ToLower(text[:1]) + text[1:]
 	}
 	return text
+}
+
+// glossVerbs are the verbs a doc comment opens with by convention
+// ("Configures the ..."); a heading wants the noun phrase that follows. The
+// order is the order they are tried in, and the first match wins.
+var glossVerbs = []string{"Configures ", "Holds ", "Carries ", "Groups ", "Selects ", "Records ", "Optionally configures "}
+
+// stripLeadingVerb removes the opening verb from a gloss, if it has one.
+func stripLeadingVerb(text string) string {
+	for _, verb := range glossVerbs {
+		if strings.HasPrefix(text, verb) {
+			return strings.TrimPrefix(text, verb)
+		}
+	}
+	return text
+}
+
+// clauseCut shortens a gloss too long for a heading to its first clause.
+// Returns empty when no clause boundary falls early enough to cut at, which
+// is the caller's signal to drop the gloss and leave the key to stand alone.
+func clauseCut(text string) string {
+	if len(text) <= glossMax {
+		return text
+	}
+	cut := -1
+	for _, sep := range []string{", ", "; "} {
+		i := strings.Index(text, sep)
+		if i <= 0 || i > glossMax {
+			continue
+		}
+		if cut < 0 || i < cut {
+			cut = i
+		}
+	}
+	if cut < 0 {
+		return ""
+	}
+	return text[:cut]
 }
 
 // glossMax is the longest section gloss worth putting in parentheses.
@@ -290,8 +309,10 @@ var qualifiedCache sync.Map
 
 // qualified builds the pattern matching word used as a Go qualifier.
 func qualified(word string) *regexp.Regexp {
-	if re, ok := qualifiedCache.Load(word); ok {
-		return re.(*regexp.Regexp)
+	if cached, ok := qualifiedCache.Load(word); ok {
+		if re, ok := cached.(*regexp.Regexp); ok {
+			return re
+		}
 	}
 	re := regexp.MustCompile(regexp.QuoteMeta(word) + `\.[A-Za-z_]`)
 	qualifiedCache.Store(word, re)

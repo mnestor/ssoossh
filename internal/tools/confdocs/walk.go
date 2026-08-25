@@ -20,7 +20,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
+	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -97,15 +97,12 @@ func Walk(dirs []string, root string) ([]*Section, error) {
 	packages := map[string]*pkg{}
 
 	for _, dir := range dirs {
-		fset := token.NewFileSet()
-		parsed, err := parser.ParseDir(fset, dir, func(fi fs.FileInfo) bool {
-			return !strings.HasSuffix(fi.Name(), "_test.go")
-		}, parser.ParseComments)
+		parsed, err := parseDir(dir)
 		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", dir, err)
+			return nil, err
 		}
-		for name, p := range parsed {
-			collect(packages, name, p)
+		for name, files := range parsed {
+			collect(packages, name, files)
 		}
 	}
 
@@ -122,8 +119,40 @@ func Walk(dirs []string, root string) ([]*Section, error) {
 	return sections(packages, base, st)
 }
 
+// parseDir parses the non-test Go files in dir, grouped by package name.
+//
+// go/parser.ParseDir did this in one call but is deprecated, and the
+// replacement it points at (golang.org/x/tools/go/packages) type-checks the
+// module to answer a question this generator never asks: it reads
+// declarations and doc comments, never types. Reading the directory keeps
+// that cost, and a direct dependency on x/tools, out of the build. Files
+// arrive in name order rather than the map order ParseDir returned, so a
+// package split across several files now walks the same way every run.
+func parseDir(dir string) (map[string][]*ast.File, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", dir, err)
+	}
+
+	fset := token.NewFileSet()
+	out := map[string][]*ast.File{}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
+		if err != nil {
+			return nil, fmt.Errorf("parse %s: %w", path, err)
+		}
+		out[file.Name.Name] = append(out[file.Name.Name], file)
+	}
+	return out, nil
+}
+
 // collect records every struct type and named type in a parsed package.
-func collect(packages map[string]*pkg, name string, p *ast.Package) {
+func collect(packages map[string]*pkg, name string, files []*ast.File) {
 	target, ok := packages[name]
 	if !ok {
 		target = &pkg{
@@ -134,31 +163,37 @@ func collect(packages map[string]*pkg, name string, p *ast.Package) {
 		packages[name] = target
 	}
 
-	for _, file := range p.Files {
+	for _, file := range files {
 		for _, decl := range file.Decls {
 			gd, ok := decl.(*ast.GenDecl)
 			if !ok || gd.Tok != token.TYPE {
 				continue
 			}
-			for _, spec := range gd.Specs {
-				ts, ok := spec.(*ast.TypeSpec)
-				if !ok {
-					continue
-				}
-				// A single-spec declaration carries its doc on the GenDecl.
-				doc := ts.Doc
-				if doc == nil {
-					doc = gd.Doc
-				}
-				target.docs[ts.Name.Name] = doc
-
-				if st, ok := ts.Type.(*ast.StructType); ok {
-					target.structs[ts.Name.Name] = st
-					continue
-				}
-				target.aliases[ts.Name.Name] = ts.Type
-			}
+			target.record(gd)
 		}
+	}
+}
+
+// record stores the types declared by one `type` declaration, which may be a
+// parenthesised group of several.
+func (p *pkg) record(gd *ast.GenDecl) {
+	for _, spec := range gd.Specs {
+		ts, ok := spec.(*ast.TypeSpec)
+		if !ok {
+			continue
+		}
+		// A single-spec declaration carries its doc on the GenDecl.
+		doc := ts.Doc
+		if doc == nil {
+			doc = gd.Doc
+		}
+		p.docs[ts.Name.Name] = doc
+
+		if st, ok := ts.Type.(*ast.StructType); ok {
+			p.structs[ts.Name.Name] = st
+			continue
+		}
+		p.aliases[ts.Name.Name] = ts.Type
 	}
 }
 
@@ -205,22 +240,8 @@ func sections(packages map[string]*pkg, base string, root *ast.StructType) ([]*S
 // build converts one AST field into a Field, recursing into struct types.
 // Returns nil for a field mapstructure ignores.
 func build(packages map[string]*pkg, base string, f *ast.Field, prefix string) (*Field, error) {
-	// An embedded field carries no name of its own. Its keys land in the
-	// enclosing struct's namespace but belong to another module, so it is
-	// documented as a single group -- and only when we have written a doc
-	// comment saying what that group is.
 	if len(f.Names) == 0 {
-		_, embeddedName, _ := typeName(f.Type)
-		doc := docLines(f.Doc, embeddedName)
-		if len(doc) == 0 {
-			return nil, nil
-		}
-		return &Field{
-			Key:      embeddedName,
-			GoName:   embeddedName,
-			Doc:      doc,
-			Embedded: true,
-		}, nil
+		return buildEmbedded(f), nil
 	}
 	name := f.Names[0].Name
 	if !ast.IsExported(name) {
@@ -232,13 +253,7 @@ func build(packages map[string]*pkg, base string, f *ast.Field, prefix string) (
 		return nil, nil
 	}
 
-	path := key
-	if prefix != "" && key != "" {
-		path = prefix + "." + key
-	}
-	if squash {
-		path = ""
-	}
+	path := fieldPath(prefix, key, squash)
 
 	out := &Field{
 		Path:    path,
@@ -259,16 +274,11 @@ func build(packages map[string]*pkg, base string, f *ast.Field, prefix string) (
 			if squash {
 				childPrefix = prefix
 			}
-			for _, cf := range st.Fields.List {
-				child, err := build(packages, pkgName, cf, childPrefix)
-				if err != nil {
-					return nil, err
-				}
-				if child == nil {
-					continue
-				}
-				out.Children = append(out.Children, child)
+			children, err := buildChildren(packages, pkgName, st, childPrefix)
+			if err != nil {
+				return nil, err
 			}
+			out.Children = children
 			// The field's comment and the type's comment are both prose
 			// about this key, and each routinely carries something the
 			// other does not -- the LDAP field says what it is for, the
@@ -289,6 +299,54 @@ func build(packages map[string]*pkg, base string, f *ast.Field, prefix string) (
 		return nil, fmt.Errorf("%s (%s): %w", path, name, err)
 	}
 	out.Type = rendered
+	return out, nil
+}
+
+// buildEmbedded documents an embedded field as a single group. Such a field
+// carries no name of its own: its keys land in the enclosing struct's
+// namespace but belong to another module, so it is documented as one group,
+// and only when we have written a doc comment saying what that group is.
+// Returns nil when we have not.
+func buildEmbedded(f *ast.Field) *Field {
+	_, name, _ := typeName(f.Type)
+	doc := docLines(f.Doc, name)
+	if len(doc) == 0 {
+		return nil
+	}
+	return &Field{
+		Key:      name,
+		GoName:   name,
+		Doc:      doc,
+		Embedded: true,
+	}
+}
+
+// fieldPath is the dotted config path for key under prefix. A squashed struct
+// has no path of its own -- its children carry the parent's.
+func fieldPath(prefix, key string, squash bool) string {
+	if squash {
+		return ""
+	}
+	if prefix == "" || key == "" {
+		return key
+	}
+	return prefix + "." + key
+}
+
+// buildChildren converts the fields of a struct type, skipping the ones
+// mapstructure ignores.
+func buildChildren(packages map[string]*pkg, pkgName string, st *ast.StructType, prefix string) ([]*Field, error) {
+	var out []*Field
+	for _, cf := range st.Fields.List {
+		child, err := build(packages, pkgName, cf, prefix)
+		if err != nil {
+			return nil, err
+		}
+		if child == nil {
+			continue
+		}
+		out = append(out, child)
+	}
 	return out, nil
 }
 

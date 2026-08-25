@@ -41,7 +41,7 @@ func RequireDocs(sections []*Section) error {
 // WriteManPage splices the generated OPTIONS body into path, replacing only
 // the region between the markers. Reports whether the file changed.
 func WriteManPage(path string, sections []*Section, defaults *Defaults) (bool, error) {
-	before, err := os.ReadFile(path) //nolint:gosec // a repo path passed by the generator
+	before, err := os.ReadFile(path)
 	if err != nil {
 		return false, fmt.Errorf("read %s: %w", path, err)
 	}
@@ -54,7 +54,12 @@ func WriteManPage(path string, sections []*Section, defaults *Defaults) (bool, e
 	if next == string(before) {
 		return false, nil
 	}
-	if err := os.WriteFile(path, []byte(next), 0o600); err != nil {
+	// genconfdocs passes one of two path constants and nothing else reaches
+	// this function, but gosec's taint analysis only sees an exported
+	// parameter. filepath.Clean and an explicit traversal guard were both
+	// tried here and neither is recognised as a sanitiser, so the finding is
+	// suppressed rather than papered over with a check that does nothing.
+	if err := os.WriteFile(path, []byte(next), 0o600); err != nil { //nolint:gosec // path is a build-time constant from genconfdocs
 		return false, fmt.Errorf("write %s: %w", path, err)
 	}
 	return true, nil

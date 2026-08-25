@@ -26,7 +26,7 @@ const yamlWidth = 74
 // line under it. That is how ssh_key, hsm, and fips appear: documented in
 // place, shown by example, and left unset.
 func WriteDefaults(path string, sections []*Section) (bool, error) {
-	before, err := os.ReadFile(path) //nolint:gosec // a repo path passed by the generator
+	before, err := os.ReadFile(path)
 	if err != nil {
 		return false, fmt.Errorf("read %s: %w", path, err)
 	}
@@ -45,47 +45,9 @@ func WriteDefaults(path string, sections []*Section) (bool, error) {
 	b.WriteString(fileHeader())
 
 	for _, s := range sections {
-		refs := CrossRefsIn(sections, s.Key)
-		if s.Key == "" {
-			// The scalars at the root of the file.
-			for _, f := range s.Fields {
-				if err := writeYAMLField(&b, f, values, refs, "", 0); err != nil {
-					return false, err
-				}
-				b.WriteString("\n")
-			}
-			continue
+		if err := writeSection(&b, s, values, CrossRefsIn(sections, s.Key)); err != nil {
+			return false, err
 		}
-
-		writeComment(&b, s.Doc, refs, s.Key, 0)
-
-		// Same reason as a struct field: a section header with nothing set
-		// beneath it would parse as a null key the file never had. hsm and
-		// queue are documented this way and left unset.
-		set := false
-		for _, f := range s.Fields {
-			if hasValue(f, values) {
-				set = true
-				break
-			}
-		}
-		if !set {
-			for _, f := range s.Fields {
-				if err := writeYAMLField(&b, f, values, refs, s.Key, 1); err != nil {
-					return false, err
-				}
-			}
-			b.WriteString("\n")
-			continue
-		}
-
-		fmt.Fprintf(&b, "%s:\n", s.Key)
-		for _, f := range s.Fields {
-			if err := writeYAMLField(&b, f, values, refs, s.Key, 1); err != nil {
-				return false, err
-			}
-		}
-		b.WriteString("\n")
 	}
 
 	next := []byte(strings.TrimRight(b.String(), "\n") + "\n")
@@ -96,6 +58,47 @@ func WriteDefaults(path string, sections []*Section) (bool, error) {
 		return false, fmt.Errorf("write %s: %w", path, err)
 	}
 	return true, nil
+}
+
+// writeSection emits one section: its comment, its key, and its fields.
+func writeSection(b *strings.Builder, s *Section, values map[string]*yaml.Node, refs map[string]string) error {
+	if s.Key == "" {
+		// The scalars at the root of the file.
+		for _, f := range s.Fields {
+			if err := writeYAMLField(b, f, values, refs, "", 0); err != nil {
+				return err
+			}
+			b.WriteString("\n")
+		}
+		return nil
+	}
+
+	writeComment(b, s.Doc, refs, s.Key, 0)
+
+	// Same reason as a struct field: a section header with nothing set
+	// beneath it would parse as a null key the file never had. hsm and
+	// queue are documented this way -- comment emitted, key withheld -- and
+	// left unset.
+	if sectionHasValue(s, values) {
+		fmt.Fprintf(b, "%s:\n", s.Key)
+	}
+	for _, f := range s.Fields {
+		if err := writeYAMLField(b, f, values, refs, s.Key, 1); err != nil {
+			return err
+		}
+	}
+	b.WriteString("\n")
+	return nil
+}
+
+// sectionHasValue reports whether the file being replaced set any key in s.
+func sectionHasValue(s *Section, values map[string]*yaml.Node) bool {
+	for _, f := range s.Fields {
+		if hasValue(f, values) {
+			return true
+		}
+	}
+	return false
 }
 
 // writeYAMLField emits one key: its comment, then its value if the file being
