@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -603,9 +604,7 @@ func TestNewConfig_ShouldFailWhenTheExplicitConfigFileIsMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for a --config file that does not exist")
 	}
-	if !strings.Contains(err.Error(), missing) {
-		t.Errorf("expected the error to name the file, got %v", err)
-	}
+	assertErrorNamesFile(t, err, missing)
 }
 
 // Malformed is the other half: viper skips a file it cannot parse, so
@@ -618,7 +617,18 @@ func TestNewConfig_ShouldFailWhenTheExplicitConfigFileIsMalformed(t *testing.T) 
 	if err == nil {
 		t.Fatal("expected an error for a --config file that cannot be parsed")
 	}
-	if !strings.Contains(err.Error(), path) {
+	assertErrorNamesFile(t, err, path)
+}
+
+// assertErrorNamesFile checks that err quotes path the way newConfig writes
+// it. The match has to go through strconv.Quote because newConfig formats
+// the path with %q: on Windows that escapes every separator, so a Contains
+// against the raw `C:\Users\...` never fires even though the error names
+// the file perfectly well.
+func assertErrorNamesFile(t *testing.T, err error, path string) {
+	t.Helper()
+
+	if !strings.Contains(err.Error(), strconv.Quote(path)) {
 		t.Errorf("expected the error to name the file, got %v", err)
 	}
 }

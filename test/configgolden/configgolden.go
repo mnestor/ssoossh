@@ -95,8 +95,17 @@ func Assert(t *testing.T, pkg, name, got string) {
 		t.Fatalf("failed to read %s (run `go test %s -update` to create it): %v", path, pkg, err)
 	}
 	if got != string(want) {
-		t.Errorf("effective configuration changed.\n--- want (%s)\n%s\n--- got\n%s\n\n"+
+		// Line endings are the one difference the diff above cannot show:
+		// both halves print identically and the reader is left hunting a
+		// value that did not change. Git for Windows rewrites LF to CRLF on
+		// checkout unless .gitattributes stops it, so say so outright.
+		hint := ""
+		if strings.ReplaceAll(string(want), "\r\n", "\n") == got {
+			hint = fmt.Sprintf("\n%s has CRLF line endings and the rendered configuration has LF; "+
+				"nothing else differs. Check that .gitattributes keeps this file LF on checkout.\n", path)
+		}
+		t.Errorf("effective configuration changed.\n--- want (%s)\n%s\n--- got\n%s\n%s\n"+
 			"Comment-only edits must not reach this golden. If the change is intended, "+
-			"run `go test %s -update`.", path, want, got, pkg)
+			"run `go test %s -update`.", path, want, got, hint, pkg)
 	}
 }

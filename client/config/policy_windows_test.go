@@ -3,6 +3,8 @@
 package config
 
 import (
+	"math"
+	"strings"
 	"testing"
 
 	"golang.org/x/sys/windows/registry"
@@ -67,5 +69,54 @@ func TestLoadPolicyFrom_ShouldReadStringAndDwordValues(t *testing.T) {
 	sshkey, _ := policy["sshkey"].(map[string]any)
 	if sshkey["size"] != 384 {
 		t.Errorf("got sshkey.size %#v, want 384", sshkey["size"])
+	}
+}
+
+// GetIntegerValue reads REG_QWORD as well as REG_DWORD, so a policy value
+// can carry more than the int a setting is held as. Converting it anyway
+// would land a negative number in the config as a key size, which is worse
+// than refusing: the point of a policy key is that what it says applies.
+func TestLoadPolicyFrom_ShouldRefuseAnIntegerTooWideForTheSetting(t *testing.T) {
+	path := withTestPolicyKey(t)
+	key, err := registry.OpenKey(registry.CURRENT_USER, path, registry.SET_VALUE)
+	if err != nil {
+		t.Fatalf("open test key: %v", err)
+	}
+	defer key.Close()
+
+	if err := key.SetQWordValue("SSHKeySize", math.MaxInt32+1); err != nil {
+		t.Fatalf("set SSHKeySize: %v", err)
+	}
+
+	policy, err := loadPolicyFrom(registry.CURRENT_USER, path)
+	if err == nil {
+		t.Fatalf("expected an out-of-range value to be an error, got policy %#v", policy)
+	}
+	if !strings.Contains(err.Error(), "SSHKeySize") {
+		t.Errorf("got %q, want it to name the registry value", err.Error())
+	}
+}
+
+// The guard must reject only what genuinely will not fit. A QWORD holding a
+// real key size is a legitimate way for an administrator to write one.
+func TestLoadPolicyFrom_ShouldReadAQwordThatFits(t *testing.T) {
+	path := withTestPolicyKey(t)
+	key, err := registry.OpenKey(registry.CURRENT_USER, path, registry.SET_VALUE)
+	if err != nil {
+		t.Fatalf("open test key: %v", err)
+	}
+	defer key.Close()
+
+	if err := key.SetQWordValue("SSHKeySize", 521); err != nil {
+		t.Fatalf("set SSHKeySize: %v", err)
+	}
+
+	policy, err := loadPolicyFrom(registry.CURRENT_USER, path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	sshkey, _ := policy["sshkey"].(map[string]any)
+	if sshkey["size"] != 521 {
+		t.Errorf("got sshkey.size %#v, want 521", sshkey["size"])
 	}
 }

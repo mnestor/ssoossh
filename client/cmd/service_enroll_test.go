@@ -219,8 +219,8 @@ func TestGenerateServiceKeypair(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat private key: %v", err)
 	}
-	if got := info.Mode().Perm(); got != 0600 {
-		t.Errorf("private key mode = %o, want 0600", got)
+	if got, want := info.Mode().Perm(), wantPerm(0600); got != want {
+		t.Errorf("private key mode = %o, want %o", got, want)
 	}
 
 	pubData, err := os.ReadFile(publicKeyPathFor(keyPath))
@@ -314,8 +314,8 @@ func TestWriteFileAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if got := info.Mode().Perm(); got != 0644 {
-		t.Errorf("mode = %o, want 0644", got)
+	if got, want := info.Mode().Perm(), wantPerm(0644); got != want {
+		t.Errorf("mode = %o, want %o", got, want)
 	}
 
 	entries, err := os.ReadDir(dir)

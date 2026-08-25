@@ -58,7 +58,13 @@ jobs:
       #
       # PAM is the authorization decision for sudo. It is the last part of
       # this repo that should be invisible to coverage.
+      #
+      # `!cancelled()` for the same reason the two steps below carry it: a
+      # failure in the run above used to skip this one, which left the floors
+      # step with no PAM profile to read and killed it on a missing file
+      # instead of reporting the coverage it did have.
       - name: Run PAM tests
+        if: ${{ !cancelled() }}
         run: CGO_ENABLED=1 go test -buildvcs=false -v -tags=pam -covermode=atomic -coverprofile=coverage-pam.txt ./pam_ssoossh/...
 
       # The ratchet. Coverage regressions are about direction, not position:
@@ -76,7 +82,14 @@ jobs:
           # takes both files, so appending the PAM profile to the main one
           # would count those packages twice.
           cp coverage.txt coverage-combined.txt
-          tail -n +2 coverage-pam.txt >> coverage-combined.txt
+          # The PAM profile is absent only when that step failed to build or
+          # produce one. Say so, and still check every other floor rather than
+          # dying here on `tail`; pam_ssoossh then reports as MISSING.
+          if [ -f coverage-pam.txt ]; then
+            tail -n +2 coverage-pam.txt >> coverage-combined.txt
+          else
+            echo "coverage-pam.txt is missing; the PAM step produced no profile"
+          fi
           ./scripts/check-coverage-floors.sh coverage-combined.txt
 
       # `!cancelled()` on this step too, not just the upload: a failing
@@ -106,3 +119,9 @@ jobs:
           # Codecov merges them; they cover disjoint packages, so there is
           # no double counting.
           files: ./coverage.txt,./coverage-pam.txt
+          # `files` adds to what the uploader finds on its own, it does not
+          # replace it: without this the search picked up the
+          # coverage-combined.txt the floors step leaves in the workspace and
+          # uploaded every package a second time -- the double count the
+          # comment above that copy exists to prevent.
+          disable_search: true

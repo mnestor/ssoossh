@@ -73,16 +73,18 @@ pre-pr: fmt lint-fix check-generated ci-required ## Format, autofix, then run ev
 # The edit-loop subset: the checks that compile or typecheck Go, and nothing
 # that needs a container, the host, or a coverage run.
 #
-# `lint-tagged` is the reason this target exists rather than people running
-# `lint` and `test` by hand. `lint` passes no build tags and `test` does not
-# build the tagged suites, so a suite behind `e2e`, `resilience`, `load`,
-# `dbparity`, `softhsm` or `natsintegration` can fail to compile outright
-# while both report success. Any hand-assembled subset that omits
-# `lint-tagged` will believe it has coverage it does not have.
+# `lint-tagged` and `lint-cross` are the reason this target exists rather
+# than people running `lint` and `test` by hand. `lint` passes no build tags
+# and `test` does not build the tagged suites, so a suite behind `e2e`,
+# `resilience`, `load`, `dbparity`, `softhsm` or `natsintegration` can fail
+# to compile outright while both report success. `lint` also runs with the
+# host GOOS, so nothing here sees the Windows or macOS build at all. Any
+# hand-assembled subset that omits either will believe it has coverage it
+# does not have.
 #
 # This is NOT a substitute for `pre-pr`, which is the merge gate. Verify with
 # `pre-pr` before opening a PR -- never with a subset. See CONTRIBUTING.md.
-verify: lint lint-tagged test check-generated ## Fast subset for the edit loop -- still compiles the tagged suites
+verify: lint lint-tagged lint-cross test check-generated ## Fast subset for the edit loop -- still compiles the tagged suites
 
 ##@ Build
 
@@ -242,7 +244,7 @@ test-migration: ## SQLite/Postgres migration parity checks
 
 ##@ Format and lint
 
-.PHONY: fmt fmt-check lint-fix lint lint-server lint-client lint-pam lint-internal
+.PHONY: fmt fmt-check lint-fix lint lint-cross lint-server lint-client lint-pam lint-internal
 .PHONY: frontend-lint frontend-check actionlint check-gitignore
 # `go list ./...` rather than `.`, and it matters: a git worktree checked out
 # under .claude/worktrees/ is a nested module, so plain `gofmt -w .` would
@@ -294,6 +296,29 @@ lint-tagged: ## golangci-lint over the build-tagged suites lint(1) cannot see
 	@for tag in $(LINT_TAGGED); do \
 		echo "golangci-lint --build-tags=$$tag"; \
 		CGO_ENABLED=1 golangci-lint run --build-tags=$$tag ./... || exit 1; \
+	done
+
+# `lint` above runs with the host GOOS, so every file behind a `windows` or
+# `darwin` constraint is invisible to it and findings accumulated in the one
+# part of the tree that only ever runs on somebody else's machine. A G115
+# integer-overflow bug sat in client/config/policy_windows.go this way, on a
+# value an administrator sets through Group Policy.
+#
+# The scope is the same tree client-matrix.yaml tests, for the same reason:
+# those are the only packages where GOOS changes what gets compiled. `./...`
+# is not usable here -- server/signer imports crypto11, whose type
+# information needs cgo, and there is no cross-compiling cgo toolchain.
+#
+# One GOARCH per GOOS is enough. The shipped amd64 and arm64 targets are
+# both 64-bit, so they differ in nothing golangci-lint can see.
+LINT_CROSS_PACKAGES ?= ./client/... ./internal/crypto/ssh/agent/... ./internal/fileperm/...
+LINT_CROSS_GOOS ?= windows darwin
+
+.PHONY: lint-cross
+lint-cross: ## golangci-lint the Windows and macOS builds lint(1) cannot see
+	@for goos in $(LINT_CROSS_GOOS); do \
+		echo "golangci-lint GOOS=$$goos"; \
+		GOOS=$$goos GOARCH=amd64 CGO_ENABLED=0 golangci-lint run $(LINT_CROSS_PACKAGES) || exit 1; \
 	done
 
 lint-server:
@@ -495,7 +520,7 @@ security: govulncheck pnpm-audit semgrep ## Run every security scanner
 # reverses its up; it was wired into no workflow whatsoever. The e2e tier-1
 # matrix proves the app works on both backends, which is a different claim
 # from the schemas agreeing.
-ci-required: fmt-check check-gitignore lint lint-tagged frontend-lint frontend-check frontend-test actionlint check-generated build pam test-pam lint-pam cover-ci cover-floors test-migration semgrep ## Every blocking check CI runs
+ci-required: fmt-check check-gitignore lint lint-tagged lint-cross frontend-lint frontend-check frontend-test actionlint check-generated build pam test-pam lint-pam cover-ci cover-floors test-migration semgrep ## Every blocking check CI runs
 
 # Advisory: govulncheck and pnpm audit report to the PR summary rather than
 # blocking, because both can surface a dependency you cannot fix in the same

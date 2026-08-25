@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -332,18 +333,22 @@ func TestFileState_ShouldDistinguishPresentMissingAndUnreadable(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	// A path whose parent is not a directory: stat fails with something
-	// other than "not exist", which is the third branch.
-	notADir := filepath.Join(present, "child")
+	// A path holding a NUL byte is rejected before any syscall, on every
+	// platform, so stat fails with something other than "not exist" --
+	// the third branch. The obvious alternative, a path whose parent is a
+	// regular file, is not portable: Unix reports ENOTDIR but Windows
+	// reports ERROR_PATH_NOT_FOUND, which os.IsNotExist folds into
+	// "missing" and sends the reader looking in the wrong place.
+	unreadable := filepath.Join(dir, "not\x00a\x00path")
 
 	tests := []struct {
 		name string
 		path string
 		want string
 	}{
-		{name: "present reports size and mode", path: present, want: "exists, 5 bytes, mode 600"},
+		{name: "present reports size and mode", path: present, want: fmt.Sprintf("exists, 5 bytes, mode %o", wantPerm(0o600))},
 		{name: "missing says so", path: filepath.Join(dir, "absent"), want: "(missing)"},
-		{name: "any other error is shown as-is", path: notADir, want: "unreadable"},
+		{name: "any other error is shown as-is", path: unreadable, want: "unreadable"},
 	}
 
 	for _, tt := range tests {

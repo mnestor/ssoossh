@@ -71,9 +71,16 @@ func ConnectAndMigrate(t *testing.T, ctx context.Context) (*gorm.DB, string) {
 	}
 	args = append(args, "postgres:17-alpine", "-p", fmt.Sprintf("%d", containerPort))
 
-	out, err := exec.Command("docker", args...).CombinedOutput()
+	// Capture the container ID from stdout alone: on a cache miss docker
+	// run writes pull progress to stderr while still exiting 0, and a
+	// CombinedOutput capture would corrupt the ID with that noise -- the
+	// same trap the NATS harnesses hit (test/e2e/harness/nats.go).
+	run := exec.Command("docker", args...)
+	var runErr strings.Builder
+	run.Stderr = &runErr
+	out, err := run.Output()
 	if err != nil {
-		t.Fatalf("docker run postgres: %v\n%s", err, out)
+		t.Fatalf("docker run postgres: %v\n%s", err, runErr.String())
 	}
 	id := strings.TrimSpace(string(out))
 	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() }) //nolint:errcheck // best-effort teardown; --rm reaps it regardless.

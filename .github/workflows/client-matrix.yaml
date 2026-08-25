@@ -74,5 +74,10 @@ jobs:
       # -coverprofile — coverage is codecover.yaml's job, and merging
       # partial per-OS profiles here would double-count or false-fail on
       # files behind build tags.
+      #
+      # internal/fileperm is here because its Windows half is the only
+      # thing standing between a private key and every account on the
+      # machine, and the Linux leg cannot compile that file at all, let
+      # alone check the access list it writes.
       - name: Run client and agent tests
-        run: go test -count=1 ./client/... ./internal/crypto/ssh/agent/...
+        run: go test -count=1 ./client/... ./internal/crypto/ssh/agent/... ./internal/fileperm/...

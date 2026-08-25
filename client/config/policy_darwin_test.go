@@ -26,7 +26,11 @@ func writePlist(t *testing.T, path, contents string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+	// 0600 rather than the 0644 a real managed plist carries: the loader
+	// never looks at the mode, the test reads the file back as the same
+	// user, and a world-readable fixture is the one thing here that would
+	// trip gosec's G306 on the macOS lint pass.
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatalf("write plist: %v", err)
 	}
 }

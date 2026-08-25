@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -95,6 +96,15 @@ func TestRunHostPrincipals_ShouldFailWhenTheMappingIsMalformed(t *testing.T) {
 // An unreadable file is not the same as a missing one: reporting it as
 // "no principals" would hide a permissions mistake behind a denied login.
 func TestRunHostPrincipals_ShouldFailWhenTheMappingCannotBeRead(t *testing.T) {
+	// Windows has no POSIX permission bits to take the read away with:
+	// os.Chmod there only toggles the read-only attribute, so a 0000 file
+	// still reads back fine and the condition cannot be built. Nothing is
+	// lost by skipping -- this command is sshd's
+	// AuthorizedPrincipalsCommand, which is a Unix-only path.
+	if runtime.GOOS == "windows" {
+		t.Skip("windows cannot make a file unreadable through the file mode")
+	}
+
 	path := filepath.Join(t.TempDir(), "principals.json")
 	if err := os.WriteFile(path, []byte(`{"deploy":["alice"]}`), 0o000); err != nil {
 		t.Fatalf("write mapping: %v", err)

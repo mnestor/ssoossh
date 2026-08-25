@@ -61,7 +61,8 @@
     "link-claude-json": "ln -sf /home/vscode/.claude/.claude.json.host /home/vscode/.claude.json",
     "cbm-start": "codebase-memory-mcp daemon start",
     "cbm-index": "codebase-memory-mcp cli index_repository --repo_path /workspace/${localWorkspaceFolderBasename}",
-    "cbm-auto-index": "codebase-memory-mcp config set auto_index true"
+    "cbm-auto-index": "codebase-memory-mcp config set auto_index true",
+    "workspace-ownership": "sudo chown vscode:vscode /workspace"
   },
   // Configure tool-specific properties.
   "customizations": {

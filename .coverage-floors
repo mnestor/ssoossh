@@ -25,6 +25,7 @@ internal/crypto/ssh            100.0
 internal/crypto/ssh/agent       93.0
 internal/crypto/ssh/keypair     92.0
 internal/errs                  100.0
+internal/fileperm              100.0
 internal/fipsmode              100.0
 internal/principalsmap         100.0
 internal/serial                 79.0

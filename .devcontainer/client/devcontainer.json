@@ -35,7 +35,8 @@
   "shutdownAction": "none",
   "postCreateCommand": {
     "allow-git": "git config --global --add safe.directory /workspace/${localWorkspaceFolderBasename}",
-    "link-claude-json": "ln -sf /home/vscode/.claude/.claude.json.host /home/vscode/.claude.json"
+    "link-claude-json": "ln -sf /home/vscode/.claude/.claude.json.host /home/vscode/.claude.json",
+    "workspace-ownership": "sudo chown vscode:vscode /workspace"
   },
   // Configure tool-specific properties.
   "customizations": {

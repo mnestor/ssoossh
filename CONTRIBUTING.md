@@ -174,40 +174,44 @@ the frontend lint, typecheck, and semgrep scan.
 If you want to run one piece at a time, `make ci-required` is the list:
 
 ```
-fmt-check check-gitignore lint lint-tagged frontend-lint frontend-check
-frontend-test actionlint check-generated build pam test-pam lint-pam
-cover-ci cover-floors test-migration semgrep
+fmt-check check-gitignore lint lint-tagged lint-cross frontend-lint
+frontend-check frontend-test actionlint check-generated build pam test-pam
+lint-pam cover-ci cover-floors test-migration semgrep
 ```
 
 **Verify with `make pre-pr`, never with a hand-assembled subset.** `make lint`
 passes no build tags and `make test` does not build the tagged suites, so a
 test behind `e2e`, `resilience`, `load`, `dbparity`, `softhsm` or
 `natsintegration` can fail to compile entirely while `lint`, `test`,
-`check-generated` and every frontend gate report success. `lint-tagged` is the
-target that compiles them, and it is the one a hand-assembled list leaves out.
+`check-generated` and every frontend gate report success. `make lint` also
+runs with your own GOOS, so nothing in that list sees the Windows or macOS
+build. `lint-tagged` and `lint-cross` are the two targets that close those
+gaps, and they are the two a hand-assembled list leaves out.
 
-For the edit loop, `make verify` is a deliberate subset that keeps
-`lint-tagged` in:
+For the edit loop, `make verify` is a deliberate subset that keeps both in:
 
 ```
-make verify   # lint, lint-tagged, test, check-generated
+make verify   # lint, lint-tagged, lint-cross, test, check-generated
 ```
 
-It is faster than `pre-pr` and still compiles the tagged suites. It is not a
-merge gate: `pre-pr` is.
+It is faster than `pre-pr`, still compiles the tagged suites, and still
+typechecks the Windows and macOS builds. It is not a merge gate: `pre-pr` is.
 
 **Deliberately not in `pre-pr`:** `test-e2e` (modifies host state, so it stays
 opt-in), `test-load` (weekly in CI, not per-PR), and the macOS and Windows
-client legs, which need those operating systems. If your change touches
-`client/` or `internal/crypto/ssh/agent/`, CI will run those two legs for you
-and they are the ones most likely to surprise you — path handling, agent
-sockets, and keychain behavior differ per platform.
+client legs, which need those operating systems. `lint-cross` typechecks those
+builds without them, but only `client-matrix` can run them. If your change
+touches `client/` or `internal/crypto/ssh/agent/`, CI will run those two legs
+for you and they are the ones most likely to surprise you — path handling,
+agent sockets, file modes, and keychain behavior all differ per platform. See
+[docs/dev/cross-platform-testing.md](docs/dev/cross-platform-testing.md) for
+the differences that have actually broken a build.
 
 ### What CI blocks on
 
 | Workflow | Blocking | Notes |
 | --- | --- | --- |
-| `lint` | yes | Go lint, frontend lint and svelte-check, actionlint, .gitignore invariants |
+| `lint` | yes | Go lint: the host build, pam, and the Windows and macOS builds. Plus frontend lint and svelte-check, actionlint, .gitignore invariants |
 | `codecover` | yes | Unit suite plus the Codecov upload |
 | `build` | yes | On PRs: generated-artifact staleness plus a single-target snapshot build. The full signed multi-platform pipeline runs on tags, weekly, and manual dispatch |
 | `e2e` | yes | Four tiers. sqlite only except tier 1, which runs both backends |

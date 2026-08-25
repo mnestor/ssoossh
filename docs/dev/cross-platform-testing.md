@@ -1,321 +1,162 @@
 # Cross-Platform Client Testing
 
-This document describes testing strategy for ssoossh client across macOS, Windows, and Linux platforms.
+The client is the only part of ssoossh that runs on machines we do not
+operate, so it is the only part with a platform matrix. This describes what
+that matrix covers, what it deliberately does not, and the platform
+differences a test in `client/` has to be written around.
 
-**Currently Implemented:**
-- ✅ Compilation verification for all 6 platform/arch combinations (via `make cross-compile-verify`)
-- ✅ Fixture-based tests for macOS plist and Windows registry logic (runs on Linux)
-- ✅ Agent socket path validation and SSH_AUTH_SOCK parsing (runs on Linux)
-- ✅ CI workflows defined for native hardware testing
+## Where the tests run
 
-**Status:** Unit tests execute and pass. CI workflows are defined and ready to run on real hardware.
-
-## Platforms Supported
-
-| Platform | Architecture | Tested In | Notes |
-| --- | --- | --- | --- |
-| Linux | amd64, arm64 | CI on all pushes | Primary development platform |
-| macOS | amd64, arm64 | client-matrix.yaml on PR/main | Native tests on real hardware |
-| Windows | amd64, arm64 | client-matrix.yaml on PR/main | Native tests on real hardware |
-
-## What Gets Tested Where
-
-### Compilation Verification (All Platforms, All Architectures)
-
-Every platform is compile-verified on Linux without running tests, using cross-compilation:
-
-```bash
-make cross-compile-verify   # Verifies linux-amd64, linux-arm64, darwin-amd64, darwin-arm64, windows-amd64, windows-arm64 compile
-```
-
-This catches:
-- Syntax errors
-- Type mismatches
-- Missing imports
-- Build tag conflicts
-
-**Coverage**: 100% of code for each platform/arch combination.
-
-**Limitation**: Compilation succeeds does not mean code runs correctly; it only proves the syntax is valid and types match.
-
-### Unit Tests — Linux (CI, Every Push)
-
-Linux CI runs `go test ./client/... ./internal/...` on every push.
-
-**Testable on Linux:**
-
-| Code | Test Location | Status |
+| Leg | Workflow | Runs |
 | --- | --- | --- |
-| Policy path logic (pure logic) | `client/config/policy_platform_test.go` | Covered with fixtures |
-| Fallback policy (Linux returns empty) | `client/config/policy_test.go` | Covered |
-| SSH agent protocol (platform-agnostic) | `internal/crypto/ssh/agent/certificate_test.go` | Covered |
-| Agent socket discovery (logic drivable with fixtures) | `internal/crypto/ssh/agent/agent_platform_test.go` | Covered with fixtures |
-| File agent (always available) | `internal/crypto/ssh/agent/fileagent_test.go` | Covered |
+| Linux | `codecover.yaml` | `CGO_ENABLED=1 go test ./...` plus the `pam` suite, on every PR. Owns coverage, the Codecov upload, and the `.coverage-floors` ratchet. |
+| macOS | `client-matrix.yaml` | `go test -count=1 ./client/... ./internal/crypto/ssh/agent/... ./internal/fileperm/...` on `macos-latest` (darwin/arm64). |
+| Windows | `client-matrix.yaml` | The same command on `windows-latest` (windows/amd64). |
 
-**Cannot test on Linux:**
+`client-matrix.yaml` has no Linux leg and collects no coverage. Both are
+deliberate: `codecover.yaml` carries no path gate at all and so runs the
+whole unit suite on every PR, which makes a Linux leg here a second run of
+something that already ran; and merging partial per-OS profiles would
+double-count or false-fail on files behind build tags. It also has no
+goreleaser job -- `build.yaml` owns release-pipeline validation.
 
-| Code | Why | Tested Where |
+Static analysis of the other two builds does not need their machines.
+`lint.yaml` runs `make lint-cross`, a golangci-lint pass over the `windows`
+and `darwin` builds of the same three package trees, on the same ubuntu
+container as every other lint job. It is a merge gate, and it covers ground
+the matrix never will: a lint finding is not a test failure, so a suite can
+be green on Windows with an integer-overflow bug sitting in a file only that
+leg compiles. That is exactly what happened to `policy_windows.go`.
+
+The matrix is path-gated on `client/**`, `cmd/ssoossh/**`, `internal/**`,
+`go.mod`, `go.sum`, and the workflow file. macOS minutes bill at ten times
+the Linux rate, so a PR that touches none of those skips both legs, and a
+skipped job still satisfies a required check.
+
+### Why those three package trees
+
+One unfiltered run per OS is the whole job, so the list is short on purpose:
+
+- `./client/...` is everything that only ever runs on a user's machine.
+- `./internal/crypto/ssh/agent/...` is the agent, whose Windows half talks
+  to Pageant and whose Unix half talks to a socket. Neither can stand in for
+  the other.
+- `./internal/fileperm/...` is the only thing keeping a private key away
+  from every other account on a Windows box, and the Linux leg cannot
+  compile that file at all, let alone check the access list it writes.
+
+## Tests that exist on one platform only
+
+These are behind build tags, so the Linux leg never compiles them and their
+lines never appear in a coverage profile. They are covered where they run,
+not excluded.
+
+| File | Tag | What it needs |
 | --- | --- | --- |
-| `policy_darwin.go` (macOS plist parsing) | No plist parser on Linux; requires macOS SDK | macOS in client-matrix.yaml |
-| `policy_windows.go` (Windows registry lookup) | No registry on Linux | Windows in client-matrix.yaml |
-| `agent_windows.go` (Pageant integration) | No Pageant on Linux; Pageant-specific IPC | Windows in client-matrix.yaml |
-| macOS launchd socket discovery | Requires launchd daemon | macOS in client-matrix.yaml |
-| WSL relay (`agent.go` WSL detection) | Requires Windows with WSL2 | Windows in client-matrix.yaml |
+| `client/config/policy_darwin_test.go` | `darwin` | Real plist parsing, with `managedPreferencesDir` pointed at a temp directory so the test needs no MDM enrollment. |
+| `client/config/policy_windows_test.go` | `windows` | A real registry key, created under `HKCU\Software\ssoossh-policy-test\` and deleted on cleanup, so no administrator rights are needed. |
+| `internal/fileperm/fileperm_windows_test.go` | `windows` | Reads the DACL back off a file to prove it names the three intended trustees and no longer inherits. |
+| `internal/crypto/ssh/agent/agent_unix_test.go` | the Unix GOOS list | A Unix domain socket for `SSH_AUTH_SOCK`. |
 
-## Fixture-Driven Testing
+`internal/crypto/ssh/agent/agent_integration_test.go` is behind
+`//go:build integration` and is not part of any of the three legs.
 
-### macOS plist Fixtures
+## Platform differences a client test has to survive
 
-Location: `client/config/testdata/`
+Every one of these has already turned a green Linux run into a red Windows
+one. They are properties of the platform, not of the code under test.
 
-Fixtures for plist parsing (pure logic, testable on any platform):
+**File modes are not access control on Windows.** `os.Chmod` there writes
+one bit, the read-only attribute. Go reports every writable file as `0666`
+whatever mode it was created with, so `want 0600` fails on Windows for a
+file that was written correctly. Use `wantPerm` (`client/cmd/permissions_test.go`)
+rather than a bare octal literal. The real protection is
+`internal/fileperm`, which writes an explicit access list; assert on that
+when what you mean is "only the owner can read this".
 
-```
-testdata/macos_policy_valid.plist       # Valid policy plist
-testdata/macos_policy_empty.plist       # Empty plist (no policies)
-testdata/macos_policy_malformed.plist   # Malformed XML
-testdata/macos_policy_wrong_type.plist  # Expected field has wrong type
-testdata/macos_policy_nested.plist      # Unexpectedly nested structure
-```
+**`os.Chmod` cannot take a read away.** A `0000` file still reads back fine
+on Windows, so a test that needs an unreadable file has to skip there. See
+`TestRunHostPrincipals_ShouldFailWhenTheMappingCannotBeRead`.
 
-Tests in `client/config/policy_platform_test.go`:
-- Load each fixture
-- Parse it (or expect error)
-- Verify values or error type
+**`os.IsNotExist` swallows more than it does on Unix.** A path under a
+regular file gives `ENOTDIR` on Unix but `ERROR_PATH_NOT_FOUND` on Windows,
+which `os.IsNotExist` reports as missing. To provoke a stat error that is
+reliably neither "exists" nor "missing", put a NUL byte in the path: that
+fails validation before any syscall on every platform.
 
-**Platform requirement**: Fixture-based tests run on Linux. Actual plist parsing with real macOS SDK runs on macOS in CI.
+**`filepath.IsAbs("/dev/null")` is false on Windows.** A leading slash is
+not a volume name, so a Unix absolute path used as a fixture resolves
+somewhere under the user profile and quietly works. `/dev/null` as a
+"guaranteed unwritable path" passed on Windows and let a test's forbidden
+network call go out.
 
-### Windows Registry Fixtures
+**`%q` escapes a Windows path.** `strings.Contains(err.Error(), path)`
+against an error formatted with `%q` matches on Unix and never on Windows,
+because `C:\Users\...` comes back as `C:\\Users\\...`. Compare against
+`strconv.Quote(path)`.
 
-Location: `client/config/testdata/`
+**Git rewrites line endings on checkout.** Git for Windows defaults to
+`core.autocrlf=true`, which turns a golden file into CRLF while the value
+the code renders stays LF. The diff then prints identically on both sides.
+`.gitattributes` pins `*.golden` to `eol=lf`; `test/configgolden` says so
+outright if it ever happens again.
 
-Fixtures for registry value extraction (pure logic, testable on any platform):
+## What cross-compilation is and is not verified
 
-```
-testdata/windows_registry_valid.json    # Valid registry structure
-testdata/windows_registry_empty.json    # Empty registry (no values)
-testdata/windows_registry_malformed.json # Malformed JSON
-testdata/windows_registry_wrong_type.json # Expected field has wrong type
-```
+`build.yaml`'s goreleaser jobs build all six shipped targets, but
+`build-most` does not run on pull requests. On a PR the compile coverage is
+what the three legs give natively:
 
-Tests in `client/config/policy_platform_test.go`:
-- Load each fixture
-- Parse it (or expect error)
-- Verify values or error type
+| Target | Compiled on a PR |
+| --- | --- |
+| linux/amd64 | Yes, by `codecover.yaml` and `build.yaml`'s single-target check |
+| darwin/arm64 | Yes, by the macOS leg |
+| windows/amd64 | Yes, by the Windows leg |
+| linux/arm64, darwin/amd64, windows/arm64 | No, only on push, tag, and schedule |
 
-**Platform requirement**: Fixture-based tests run on Linux. Actual registry access runs on Windows in CI.
+The three that miss a PR differ from a covered target only by architecture,
+never by GOOS, so a build tag or a platform API cannot break in one without
+breaking the leg beside it. Nothing here needs another matrix axis.
 
-## CI Workflow: client-matrix.yaml
-
-The `client-matrix.yaml` workflow runs the full client test suite on native hardware:
-
-```yaml
-matrix:
-  os: [ubuntu-latest, macos-latest, windows-latest]
-  arch: [amd64, arm64]  # windows-latest is only amd64
-
-jobs:
-  build:
-    - Compile for all platforms/archs (cross-compile on linux, native on others)
-    - Run full test suite: go test ./client/... ./internal/...
-    - Capture coverage per platform
-  
-  coverage:
-    - Merge coverage from all platforms
-    - Report combined coverage
-```
-
-### Platform-Native Tests
-
-Each platform runs its native test suite:
-
-**Linux (ubuntu-latest)**:
-- Compiles natively
-- Runs all unit tests
-- Includes platform-fixture tests for macOS/Windows (testing pure logic)
-- Agent tests with real unix socket agent
-- Policy tests (always returns empty, fallback)
-
-**macOS (macos-latest)**:
-- Compiles natively
-- Runs all unit tests
-- Policy tests parse real macOS plist (if installed)
-- Agent tests with real launchd agent
-- Agent integration test: connects to system SSH agent
-
-**Windows (windows-latest, amd64 only)**:
-- Compiles natively
-- Runs all unit tests
-- Policy tests access real Windows registry (HKCU\Software\ssoossh if set)
-- Agent tests with real Pageant (if installed)
-- Agent integration test: connects to Pageant
-- WSL relay detection and connection (if WSL2 installed)
-
-### Cross-Compile Verification
-
-On linux-ubuntu (only):
+## Running it locally
 
 ```bash
-GOOS=linux GOARCH=amd64 go build ./...   # Verify linux-amd64
-GOOS=linux GOARCH=arm64 go build ./...   # Verify linux-arm64
-GOOS=darwin GOARCH=amd64 go build ./...  # Verify darwin-amd64 (cross-compile)
-GOOS=darwin GOARCH=arm64 go build ./...  # Verify darwin-arm64 (cross-compile)
-GOOS=windows GOARCH=amd64 go build ./... # Verify windows-amd64 (cross-compile)
-GOOS=windows GOARCH=arm64 go build ./... # Verify windows-arm64 (cross-compile)
+make lint-cross                         # golangci-lint the windows and darwin builds
+make test-client                        # the client suite for your platform
+go test ./internal/fileperm/            # the package the matrix adds
+GOOS=windows go test -c -o /dev/null ./client/cmd   # one package, without the lint pass
 ```
 
-Each `go build` succeeds, but the executable is not tested (it's a cross-compile).
+`make lint-cross` is the one to reach for. `make lint` runs with your own
+GOOS, so it never sees a file behind a `windows` or `darwin` constraint;
+`lint-cross` runs golangci-lint over both cross builds and is a merge gate
+in `lint.yaml`. It needs no Windows or macOS machine, because typechecking a
+cross build does not run anything. It is scoped to the same three package
+trees the matrix tests, since those hold every platform-constrained file in
+the repo.
 
-## Coverage Map
+What that still cannot tell you is whether the code behaves. Compiling and
+linting the Windows build proves nothing about the mode a file comes back
+with or what `os.IsNotExist` decides. Only the matrix catches the
+differences listed above.
 
-| Component | Code | Linux | macOS | Windows | Coverage |
-| --- | --- | --- | --- | --- | --- |
-| **Client Config** | `client/config/config.go` | ✅ | ✅ | ✅ | 100% |
-| | `client/config/policy.go` (fallback) | ✅ | ✅ | ✅ | 100% |
-| | `policy_other.go` (Linux fallback) | ✅ | ✅ via build tag | ✅ via build tag | 100% |
-| | `policy_darwin.go` (macOS) | 🔸 fixture | ✅ | 🔸 fixture | 100% (fixtures + native) |
-| | `policy_windows.go` (Windows) | 🔸 fixture | 🔸 fixture | ✅ | 100% (fixtures + native) |
-| | `plist.go` (macOS plist parse) | 🔸 fixture | ✅ | 🔸 fixture | 100% (fixtures + native) |
-| **SSH Agent** | `agent.go` (dispatcher) | ✅ | ✅ | ✅ | 100% |
-| | `agent_unix.go` | ✅ | ✅ | ✅ (cross-compile check) | 100% (tested on mac/linux) |
-| | `agent_windows.go` | 🔸 mock | 🔸 mock | ✅ | 100% (tested on windows) |
-| | `certificate.go` | ✅ | ✅ | ✅ | 100% |
-| | `fileagent.go` | ✅ | ✅ | ✅ | 100% |
-| **SSH Agent — Integration** | agent lifecycle | ✅ mocked | ✅ real | ✅ real | 100% (with real agents) |
+## Known gaps
 
-Legend:
-- ✅ Fully tested natively on this platform
-- 🔸 Tested with fixtures on this platform; natively tested on target platform
-- ✗ Not tested on this platform (platform-specific code with no fallback)
+- Pageant (`internal/crypto/ssh/agent/agent_windows.go`) has no
+  `//go:build windows` test. The Windows leg compiles it and nothing
+  exercises it; the hosted runner has no Pageant to talk to.
+- `TestWindowsRegistryFixture` and `TestRegistryFixtureJSON` in
+  `client/config/policy_platform_test.go` build a registry-shaped literal
+  and assert on that literal. They call no product code and prove nothing
+  about `policy_windows.go`, which is covered by
+  `policy_windows_test.go` on the Windows leg instead.
+- The WSL relay path needs a Windows host with WSL2 and is not exercised
+  anywhere.
 
-## Specific Platform Behaviors
+## See also
 
-### Linux
-
-**ssh-agent**: Discovered via `SSH_AUTH_SOCK` environment variable pointing to a Unix domain socket.
-
-**Tests**:
-- `agent_unix_test.go`: Mock socket communication
-- `agent_integration_test.go`: Real ssh-agent (started by test)
-- Policy: Returns empty (fallback)
-
-**Code paths**:
-- `agent.go` → `agent_unix.go` (SSH_AUTH_SOCK)
-- `policy.go` → `policy_other.go` (empty fallback)
-
-### macOS
-
-**ssh-agent**: Discovered via `SSH_AUTH_SOCK` (same as Linux), which typically points to launchd socket.
-
-**Tests**:
-- `agent_unix_test.go` + `agent_unix_integration_test.go`: Real system SSH agent
-- `policy_darwin_test.go`: Real macOS plist parsing
-- `plist_test.go`: Real plist parsing
-
-**Code paths**:
-- `agent.go` → `agent_unix.go` (SSH_AUTH_SOCK)
-- `policy.go` → `policy_darwin.go` (reads `~/Library/Preferences/com.example.ssoossh.plist`)
-
-**Tested in client-matrix.yaml on `macos-latest`**.
-
-### Windows
-
-**Pageant**: Discovered by finding the Pageant window class and using Windows IPC (WM_COPYDATA) to send/receive messages.
-
-**Tests**:
-- `agent_windows_test.go`: Real Pageant (if running)
-- `agent_platform_test.go`: Mock Pageant window for basic scenarios
-- `policy_windows_test.go`: Real Windows registry access (if registry key exists)
-
-**Code paths**:
-- `agent.go` → `agent_windows.go` (Pageant window class)
-- `policy.go` → `policy_windows.go` (reads `HKCU\Software\ssoossh`)
-
-**WSL Relay**: If on Windows with WSL2, can relay to Windows Pageant via `/run/wsl/distro_name/sock` special socket.
-
-**Tested in client-matrix.yaml on `windows-latest`** (amd64 only; arm64 Windows hosts are rare).
-
-## How to Run Tests Locally
-
-### Compile Verification (Any Platform)
-
-Verify all platforms compile on your current machine:
-
-```bash
-make cross-compile-verify
-```
-
-If you're on Linux, this will cross-compile for macOS and Windows (with false positives possible if you're missing headers).
-
-### Full Test Suite (Current Platform)
-
-Run all tests that are native to your current platform:
-
-```bash
-make test-client       # or: go test ./client/...
-```
-
-### Specific Platform Tests (With Fixtures)
-
-Run fixture-based tests to verify policy parsing logic (these run on any platform):
-
-```bash
-go test ./client/config -run TestMacOSPolicyPathLogic
-go test ./client/config -run TestWindowsPolicyPathLogic
-```
-
-These use pre-created fixtures and do not require macOS or Windows.
-
-### Native macOS Tests (On macOS Only)
-
-Connect to real SSH agent and registry (if configured):
-
-```bash
-go test -v ./client/config ./internal/crypto/ssh/agent/
-```
-
-### Native Windows Tests (On Windows Only)
-
-Connect to real Pageant (if running) and registry:
-
-```bash
-go test -v ./client/config ./internal/crypto/ssh/agent/
-```
-
-## Coverage Report
-
-Coverage is measured per-platform in CI and merged into a single report.
-
-Current targets:
-- **Minimum per-file**: 80% (relaxed in some platform-specific code)
-- **Critical paths**: >90% (policy selection, agent discovery, certificate validation)
-
-See `.github/workflows/client-matrix.yaml` for exact coverage thresholds and merge gate rules.
-
-## Residual Gaps
-
-**Genuinely untestable on Linux:**
-
-1. Real Pageant integration (Windows only; requires WM_COPYDATA IPC)
-2. Real macOS plist parsing with live `NSPropertyListSerialization` (requires macOS SDK)
-3. Real Windows registry access (requires Windows registry access)
-4. WSL relay socket to Windows Pageant (requires Windows with WSL2)
-
-These **are** tested on their respective platforms in `client-matrix.yaml`.
-
-**Not tested anywhere** (acceptable limitations):
-
-- Cross-platform agent behavior under extreme load (agent crashes, rapid auth attempts)
-- Policy lookups during OS major version transitions
-- Registry/plist corruption recovery
-
-These are rare enough and specific enough that they're classified as known limitations.
-
-## See Also
-
-- `.github/workflows/client-matrix.yaml` — CI workflow definition
-- `.github/workflows/build.yaml` — Cross-compile build verification
-- `client/config/policy_platform_test.go` — Platform-specific policy tests (fixtures)
-- `internal/crypto/ssh/agent/agent_platform_test.go` — Platform-specific agent tests (fixtures)
-- `docs/dev/e2e-testing-plan.md` — End-to-end testing overview
-- `CLAUDE.md` — Project testing standards
+- `.github/workflows/client-matrix.yaml` -- the macOS and Windows test legs
+- `.github/workflows/lint.yaml` -- the cross-GOOS lint gate (`make lint-cross`)
+- `.github/workflows/codecover.yaml` -- the Linux leg, coverage, and the floors
+- `client/cmd/permissions_test.go` -- `wantPerm`
+- `internal/fileperm/` -- what `0600` means on Windows

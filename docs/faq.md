@@ -80,6 +80,22 @@ key; the private key goes nowhere except your local ssh-agent or a local
 file. This is one of the project's hard invariants
 ([decisions.md](decisions.md#security-invariants)).
 
+### How is the private key protected when it is written to a file?
+
+On macOS and Linux it is written `0600`, readable only by you and root.
+
+Windows has no such thing as a file mode, so the client sets an access
+list on the file instead: the account that generated the key, LocalSystem,
+and Administrators, with the entries inherited from the containing folder
+switched off. That is the same set OpenSSH for Windows requires before it
+will use a key, and it is the closest equivalent to `0600`, where root can
+read the file and nobody else can.
+
+One consequence worth knowing for service accounts: the account that runs
+`ssoossh service enroll` is the account named on the key. If a service then
+runs as a different, non-administrator user, grant that user access to the
+key file explicitly, exactly as you would with `chown` on Linux.
+
 ## sshd host admins
 
 ### What do I have to configure on my hosts?

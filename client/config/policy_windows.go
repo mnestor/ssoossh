@@ -5,6 +5,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 
 	"golang.org/x/sys/windows/registry"
 )
@@ -87,9 +88,19 @@ func loadPolicyFrom(root registry.Key, path string) (map[string]any, error) {
 		}
 		if dwordAsBool[canonical] {
 			flat[canonical] = v != 0
-		} else {
-			flat[canonical] = int(v)
+			continue
 		}
+		// GetIntegerValue reads REG_QWORD as well as REG_DWORD, so the
+		// value can be wider than the int the settings that consume it are
+		// held as. A bare int(v) turns one that does not fit into a
+		// negative number, which would arrive at the config looking like a
+		// plausible key size. An administrator who pushed a value this far
+		// out of range is told, rather than quietly overridden -- the whole
+		// point of a policy key is that what it says is what applies.
+		if v > math.MaxInt32 {
+			return nil, fmt.Errorf("registry value %s under %s is %d, which is out of range for %s", name, path, v, canonical)
+		}
+		flat[canonical] = int(v)
 	}
 	for name, canonical := range policyMultiStringValues {
 		if v, _, err := key.GetStringsValue(name); err == nil {

@@ -12,6 +12,7 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
+	"github.com/mnestor/ssoossh/internal/fileperm"
 )
 
 // FileAgent implements the Agent interface using SSH key files on disk:
@@ -371,6 +372,12 @@ func (f *FileAgent) AddKeypair(kp *keypair.SSHKeypair) error {
 func writeAndVerify(path string, data []byte, perm os.FileMode) error {
 	if err := os.WriteFile(path, data, perm); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
+	}
+	// os.WriteFile applies perm only when it creates the file, so a key
+	// rewritten over one left too open would keep the old mode; and on
+	// Windows the mode is not access control at all. Restrict settles both.
+	if err := fileperm.Restrict(path, perm); err != nil {
+		return fmt.Errorf("protect %s: %w", path, err)
 	}
 	fi, err := os.Stat(path)
 	if err != nil {

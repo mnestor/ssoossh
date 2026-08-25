@@ -59,6 +59,16 @@ jobs:
       - name: golangci-lint (pam)
         run: make lint-pam
 
+      # The Windows and macOS builds, which the step above cannot see: it
+      # runs with the runner's GOOS, so every file behind a `windows` or
+      # `darwin` constraint is invisible to it. That is how a G115
+      # integer-overflow bug sat unreported in policy_windows.go, on a value
+      # an administrator sets through Group Policy. No Windows or macOS
+      # runner is involved -- golangci-lint typechecks a cross build, so this
+      # is two more invocations on this same ubuntu container.
+      - name: golangci-lint (windows, macos)
+        run: make lint-cross
+
   frontend:
     name: frontend
     runs-on: ubuntu-latest

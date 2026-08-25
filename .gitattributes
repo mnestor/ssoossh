@@ -1,0 +1,6 @@
+# Goldens are compared byte for byte against text the code renders, which is
+# always LF. Git for Windows checks out with core.autocrlf=true by default,
+# so without this the golden on disk is CRLF while the rendered side is not,
+# and client-matrix's Windows leg fails on a diff whose two halves print
+# identically.
+*.golden text eol=lf

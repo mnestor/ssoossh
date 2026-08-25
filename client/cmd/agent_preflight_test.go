@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -226,22 +227,33 @@ func TestRunLogin_PreflightShouldSucceedWithUseAgentFalse(t *testing.T) {
 }
 
 // TestRunLogin_PreflightShouldFailBeforeRequestWhenFileAgentAddFails tests
-// that when file agent cannot write (due to permissions or unwritable path),
-// preflight fails and no request is created.
+// that when file-based key storage cannot be written, preflight fails and no
+// request is created.
 func TestRunLogin_PreflightShouldFailBeforeRequestWhenFileAgentAddFails(t *testing.T) {
-	// We test this by creating a config with an unwritable path
 	t.Parallel()
 
 	ours := newTestCA(t)
-	// Use /dev/null as the key path - writing to it will fail
+
+	// The probe writes beside the configured key file, so the failure has to
+	// come from the directory it writes into. A parent that is a regular file
+	// fails every write below it with ENOTDIR, for every user. Permission bits
+	// would not: codecover.yaml runs the suite as root inside a container,
+	// where an "unwritable" directory is still writable, the probe passed, and
+	// the request this test forbids went out.
+	notADir := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(notADir, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+	keyPath := filepath.Join(notADir, "id_ecdsa")
+
 	cfg := &config.Config{
 		UseAgent: false,
-		Filename: "/dev/null",
+		Filename: keyPath,
 	}
 
-	fileAgent, err := sshagent.NewFileAgent("/dev/null")
+	fileAgent, err := sshagent.NewFileAgent(keyPath)
 	if err != nil {
-		t.Skipf("could not set up file agent: %v", err)
+		t.Fatalf("NewFileAgent() error: %v", err)
 	}
 	if err := fileAgent.SetCA(string(xssh.MarshalAuthorizedKey(ours.public))); err != nil {
 		t.Fatalf("SetCA() error: %v", err)
@@ -252,10 +264,8 @@ func TestRunLogin_PreflightShouldFailBeforeRequestWhenFileAgentAddFails(t *testi
 
 	var out bytes.Buffer
 	err = runLogin(context.Background(), root, &out, false)
-
 	if err == nil {
-		// Skip if we can't construct the failing condition
-		t.Skip("preflight succeeded (path may be writable)")
+		t.Fatal("expected preflight to fail when the key directory cannot be created")
 	}
 
 	if len(client.createdWith) != 0 {
