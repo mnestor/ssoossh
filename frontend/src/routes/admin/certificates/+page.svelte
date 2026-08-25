@@ -14,6 +14,7 @@
 	let searchQuery = $state('');
 	let typeFilter = $state('');
 	let statusFilter = $state('');
+	let offset = $state(0);
 	let loadError = $state<string | null>(null);
 	let isLoading = $state(false);
 	let hasLoaded = $state(false);
@@ -33,16 +34,25 @@
 	// there to arbitrate.
 	let latestLoad = 0;
 
-	async function loadCertificates(offset = 0) {
+	// Takes what to fetch rather than reading it. The effect below is the one
+	// place that touches the filter state, which is what keeps its dependency
+	// list deliberate instead of a consequence of where the first await
+	// happens to fall.
+	async function loadCertificates(query: {
+		offset: number;
+		q: string;
+		type: string;
+		status: string;
+	}) {
 		const load = ++latestLoad;
 		isLoading = true;
 		try {
 			const result = await listAdminCertificates(undefined, {
-				offset,
+				offset: query.offset,
 				limit: 25,
-				q: searchQuery || undefined,
-				type: typeFilter || undefined,
-				status: statusFilter || undefined
+				q: query.q || undefined,
+				type: query.type || undefined,
+				status: query.status || undefined
 			});
 			if (load !== latestLoad) {
 				return;
@@ -67,28 +77,39 @@
 		}
 	}
 
-	// Initial load
+	// The only loader. Reading the four inputs here is what subscribes this
+	// effect to them, so it covers the first load and every change alike.
+	//
+	// The handlers below therefore only move state. They used to also call
+	// loadCertificates directly, which looked like the explicit version of
+	// the same thing but was a second trigger: this effect already tracked
+	// the filters, because loadCertificates read them synchronously before
+	// its first await. Every search and every filter click issued two
+	// identical requests, one from the handler and one from the effect
+	// re-running.
 	$effect(() => {
-		loadCertificates(0);
+		loadCertificates({ offset, q: searchQuery, type: typeFilter, status: statusFilter });
 	});
 
+	// Narrowing the results while looking at page 4 should show the first
+	// page of the new set, not whatever lands at that offset.
 	function handleSearch(query: string) {
 		searchQuery = query;
-		loadCertificates(0);
+		offset = 0;
 	}
 
 	function handleTypeFilter(type: string) {
 		typeFilter = typeFilter === type ? '' : type;
-		loadCertificates(0);
+		offset = 0;
 	}
 
 	function handleStatusFilter(status: string) {
 		statusFilter = statusFilter === status ? '' : status;
-		loadCertificates(0);
+		offset = 0;
 	}
 
-	function handlePage(offset: number) {
-		loadCertificates(offset);
+	function handlePage(next: number) {
+		offset = next;
 	}
 </script>
 

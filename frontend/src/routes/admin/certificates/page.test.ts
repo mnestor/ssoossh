@@ -320,3 +320,51 @@ describe('when a slow request finishes after a newer one', () => {
 		expect(screen.queryByText(/stale-result/)).not.toBeInTheDocument();
 	});
 });
+
+describe('when a filter or search changes', () => {
+	beforeEach(() => {
+		mockFetch({
+			certificates: [],
+			page_meta: { total: 100, limit: 25, offset: 0, page: 1, page_count: 4 }
+		});
+	});
+
+	/** requestsAfter counts the fetches one interaction causes. */
+	async function requestsAfter(interact: () => Promise<void>) {
+		render(Page);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		const fetchMock = vi.mocked(globalThis.fetch);
+		fetchMock.mockClear();
+
+		await interact();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		return fetchMock.mock.calls.length;
+	}
+
+	it('should issue one request when the search term changes', async () => {
+		const user = userEvent.setup();
+		const calls = await requestsAfter(async () => {
+			await user.type(screen.getByRole('searchbox', { name: /search/i }), 'beta{Enter}');
+		});
+		expect(calls).toBe(1);
+	});
+
+	it('should issue one request when the type filter changes', async () => {
+		const user = userEvent.setup();
+		const calls = await requestsAfter(async () => {
+			const typeFilter = screen.getByTestId('type-filter');
+			await user.click(within(typeFilter).getByRole('button', { name: /^service$/i }));
+		});
+		expect(calls).toBe(1);
+	});
+
+	it('should issue one request when paging', async () => {
+		const user = userEvent.setup();
+		const calls = await requestsAfter(async () => {
+			await user.click(screen.getByRole('button', { name: /next/i }));
+		});
+		expect(calls).toBe(1);
+	});
+});
