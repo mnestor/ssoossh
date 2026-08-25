@@ -32,6 +32,24 @@ Requires a built web UI (`make frontend`) — the harness builds the
 `ssoosshd`/`ssoossh` binaries itself on first use, so no separate build step
 is needed locally.
 
+## Running two of these at once
+
+Don't — and `make test-e2e` now stops you, by taking an flock on
+`/tmp/ssoossh-e2e.lock`. A second run waits instead of interfering.
+
+Worktrees isolate the filesystem, not the host, and this suite reaches the
+host in several places: the `ssoossh-e2e` local account, `sshd` under sudo,
+PAM service files in `/etc/pam.d`, and container ports. Those are now
+individually collision-safe — PAM service names carry a pid and a counter,
+NATS ports are allocated rather than hardcoded, and the account creation
+tolerates losing the race — but the lock is the belt to those braces, because
+the interference used to be silent rather than loud: two runs sharing a PAM
+service file meant one run authenticating against the other's server.
+
+`make test-e2e-unlocked` skips the lock if you genuinely want a parallel run.
+CI never goes through either target — `e2e.yaml` invokes `gotestsum` on
+`./test/e2e/...` directly, and each job has the host to itself.
+
 ## What tier 3 does to this machine
 
 `TestSSH_*` (harness/sshd.go) creates a dedicated local account
