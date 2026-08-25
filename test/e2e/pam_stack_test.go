@@ -23,17 +23,20 @@ const pamApprover = "pam-operator"
 
 // newPAMStackFixture starts an IdP and a ssoosshd with PAM issuance enabled,
 // builds pam_ssoossh.so and the pamtest driver, and installs a dedicated
-// /etc/pam.d/<serviceName> stack wiring the module to this fixture's server
-// and CA. Returns the server (for approval calls) and the pamtest binary.
-func newPAMStackFixture(t *testing.T, serviceName string) (*harness.Server, string) {
+// /etc/pam.d stack wiring the module to this fixture's server and CA.
+// Returns the server (for approval calls), the pamtest binary, and the
+// service name actually installed -- InstallPAMService adds a per-run
+// suffix so concurrent e2e runs on one host cannot share a service file,
+// so the returned name is the one to hand pamtest, never the base.
+func newPAMStackFixture(t *testing.T, serviceName string) (*harness.Server, string, string) {
 	t.Helper()
 
 	idp := harness.NewIdentityProvider(t)
 	srv := harness.StartServer(t, idp, harness.ServerOptions{PAMRequireGroup: pamApproverGroup})
 	modulePath, pamtestPath := harness.PAMArtifacts(t)
-	harness.InstallPAMService(t, serviceName, modulePath, srv)
+	service := harness.InstallPAMService(t, serviceName, modulePath, srv)
 
-	return srv, pamtestPath
+	return srv, pamtestPath, service
 }
 
 // TestPAMStack_ShouldAuthenticateWhenApproved drives a real PAM transaction:
@@ -42,8 +45,7 @@ func newPAMStackFixture(t *testing.T, serviceName string) (*harness.Server, stri
 // a browser identity in the required group approves, and the module's four
 // checks pass against the issued certificate.
 func TestPAMStack_ShouldAuthenticateWhenApproved(t *testing.T) {
-	const service = "ssoossh-e2e-pam-approve"
-	srv, pamtestBin := newPAMStackFixture(t, service)
+	srv, pamtestBin, service := newPAMStackFixture(t, "ssoossh-e2e-pam-approve")
 
 	pt := harness.StartPamtest(t, pamtestBin, service)
 	requestID := requestIDFromApprovalURL(t, pt.ApprovalURL(t))
@@ -63,8 +65,7 @@ func TestPAMStack_ShouldAuthenticateWhenApproved(t *testing.T) {
 // ("Authentication failure" from Linux-PAM's pam_strerror) and pamtest must
 // exit non-zero.
 func TestPAMStack_ShouldRefuseWhenDenied(t *testing.T) {
-	const service = "ssoossh-e2e-pam-deny"
-	srv, pamtestBin := newPAMStackFixture(t, service)
+	srv, pamtestBin, service := newPAMStackFixture(t, "ssoossh-e2e-pam-deny")
 
 	pt := harness.StartPamtest(t, pamtestBin, service)
 	requestID := requestIDFromApprovalURL(t, pt.ApprovalURL(t))

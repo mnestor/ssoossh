@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -89,24 +90,50 @@ func requirePAMBuildEnv(t *testing.T) {
 	}
 }
 
-// InstallPAMService writes /etc/pam.d/<name> loading modulePath (by
-// absolute path, so nothing is copied into the system module directory)
-// against srv, trusting srv's own CA. See InstallPAMServiceWithCA.
-func InstallPAMService(t *testing.T, name, modulePath string, srv *Server) {
+// InstallPAMService writes a PAM service loading modulePath (by absolute
+// path, so nothing is copied into the system module directory) against srv,
+// trusting srv's own CA. It returns the service name actually installed,
+// which is name with a per-run suffix -- see InstallPAMServiceWithCA.
+func InstallPAMService(t *testing.T, name, modulePath string, srv *Server) string {
 	t.Helper()
 
-	InstallPAMServiceWithCA(t, name, modulePath, srv, srv.CAPublicKey)
+	return InstallPAMServiceWithCA(t, name, modulePath, srv, srv.CAPublicKey)
 }
 
-// InstallPAMServiceWithCA writes /etc/pam.d/<name> loading modulePath (by
+// uniquePAMServiceName makes base unique to this process and call.
+//
+// /etc/pam.d is host state, not worktree state, so a fixed service name is
+// shared by every e2e run on the machine. The stanza it holds names *this*
+// run's server URL and a CA file under *this* run's t.TempDir(), so two
+// concurrent runs do not collide loudly -- the second overwrites the first,
+// pointing the first run's authentication at the second run's server, and
+// whichever finishes first removes the file out from under the other. That
+// is a wrong answer rather than an error, so the name carries the pid and a
+// counter and no two runs can ever address the same file.
+func uniquePAMServiceName(base string) string {
+	return fmt.Sprintf("%s-%d-%d", base, os.Getpid(), pamServiceSeq.Add(1))
+}
+
+// pamServiceSeq distinguishes services installed within one process, where
+// the pid alone does not.
+var pamServiceSeq atomic.Uint64
+
+// InstallPAMServiceWithCA writes a PAM service loading modulePath (by
 // absolute path, so nothing is copied into the system module directory)
 // against srv with an explicit trusted CA set — caKeys may hold several
 // authorized_keys-format keys, one per line, the module's documented
 // rotation/multi-signer format. The file is removed in t.Cleanup. A
 // dedicated service name so the real sudo/su stacks are never touched. The
 // account stage is pam_permit: this tier's scope is the auth stage only.
-func InstallPAMServiceWithCA(t *testing.T, name, modulePath string, srv *Server, caKeys string) {
+//
+// The file written is /etc/pam.d/<name>-<pid>-<n>, and that full name is
+// what is returned: pass the RETURN VALUE to pamtest, never the base name,
+// or the transaction looks for a service that was never installed. See
+// uniquePAMServiceName for why the suffix exists.
+func InstallPAMServiceWithCA(t *testing.T, name, modulePath string, srv *Server, caKeys string) string {
 	t.Helper()
+
+	name = uniquePAMServiceName(name)
 
 	caFile := filepath.Join(t.TempDir(), "ca.pub")
 	if err := os.WriteFile(caFile, []byte(strings.TrimSpace(caKeys)+"\n"), 0o644); err != nil { //nolint:gosec // a public key is not a secret
@@ -131,6 +158,8 @@ func InstallPAMServiceWithCA(t *testing.T, name, modulePath string, srv *Server,
 			t.Logf("harness: failed to remove %s: %v\n%s", path, err, out)
 		}
 	})
+
+	return name
 }
 
 // Pamtest is a running pamtest process: a real pam_start/pam_authenticate

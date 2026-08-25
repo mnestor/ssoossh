@@ -178,9 +178,9 @@ func TestMultiSigner_PamAuthenticatesCertsFromEitherSigner(t *testing.T) {
 		{service: "ssoossh-e2e-pam-multi-a", srv: srvA},
 		{service: "ssoossh-e2e-pam-multi-b", srv: srvB},
 	} {
-		harness.InstallPAMServiceWithCA(t, tc.service, modulePath, tc.srv, merged)
+		service := harness.InstallPAMServiceWithCA(t, tc.service, modulePath, tc.srv, merged)
 
-		pt := harness.StartPamtest(t, pamtestBin, tc.service)
+		pt := harness.StartPamtest(t, pamtestBin, service)
 		requestID := requestIDFromApprovalURL(t, pt.ApprovalURL(t))
 		approve(t, newBrowserClient(t), tc.srv.BaseURL, requestID, pamApprover, []string{pamApproverGroup})
 
@@ -201,7 +201,7 @@ func TestMultiSigner_PamAuthenticatesCertsFromEitherSigner(t *testing.T) {
 // signed by one of them and accepted by the client.
 func TestMultiSigner_TwoSplitSignersServeOneAPIInstance(t *testing.T) {
 	idp := harness.NewIdentityProvider(t)
-	nats := harness.StartNATS(t, 42433) // distinct from split_test's 42431
+	nats := harness.StartNATS(t)
 
 	srv := harness.StartServer(t, idp, harness.ServerOptions{
 		Args:            []string{"serve", "api"},
