@@ -86,6 +86,16 @@ pre-pr: fmt lint-fix check-generated ci-required ## Format, autofix, then run ev
 # `pre-pr` before opening a PR -- never with a subset. See CONTRIBUTING.md.
 verify: lint lint-tagged lint-cross test check-generated ## Fast subset for the edit loop -- still compiles the tagged suites
 
+.PHONY: worktree
+# Creating an agent worktree by hand trips over the same three things every
+# time: /workspace is root-owned so git cannot make the directory, a failed
+# attempt leaves the branch behind so the retry fails differently, and the
+# new worktree has no frontend build so ~15 server/bootstrap tests fail on
+# a missing index.html. See docs/dev/parallel-agent-workflow.md.
+worktree: ## Create a ready-to-use agent worktree: make worktree NAME=<name> [BASE=main] [WORKTREE_BRANCH=...]
+	@test -n "$(NAME)" || { echo "usage: make worktree NAME=<name> [BASE=main] [WORKTREE_BRANCH=<branch>]" >&2; exit 2; }
+	WORKTREE_BRANCH="$(WORKTREE_BRANCH)" ./scripts/new-worktree.sh "$(NAME)" "$(or $(BASE),main)"
+
 ##@ Build
 
 .PHONY: all frontend build binaries linux pam frontend-clean
@@ -217,7 +227,28 @@ test-hsm: ## HSM key source tests against softhsm2 (needs softhsm2 + opensc)
 # CGO_ENABLED=1: the e2e test package itself is cgo-free, but the harness
 # builds ssoosshd with the inherited environment, and that build needs cgo
 # (crypto11 -> libpkcs11) like every other server build.
+#
+# Serialised with flock. Worktrees isolate the filesystem, not the host, and
+# this suite touches host state: a local account, sshd under sudo, PAM
+# service files, container ports. docs/dev/parallel-agent-workflow.md has
+# always said "one run at a time" -- this makes that true rather than
+# merely written down, since a second run otherwise interferes silently
+# instead of failing. Concurrent invocations wait rather than error, so a
+# second agent's run is delayed, never corrupted. Set E2E_LOCK= to opt out,
+# or call test-e2e-unlocked directly. CI is unaffected either way: e2e.yaml
+# invokes gotestsum on ./test/e2e/... itself and never goes through here.
+E2E_LOCK ?= /tmp/ssoossh-e2e.lock
+
 test-e2e: $(FRONTEND_DIST) ## End-to-end suite (modifies host state, read test/e2e/README.md first)
+	@if [ -n "$(E2E_LOCK)" ] && command -v flock >/dev/null 2>&1; then \
+		echo "waiting for the e2e lock ($(E2E_LOCK)) if another run holds it"; \
+		flock "$(E2E_LOCK)" $(MAKE) test-e2e-unlocked; \
+	else \
+		$(MAKE) test-e2e-unlocked; \
+	fi
+
+.PHONY: test-e2e-unlocked
+test-e2e-unlocked: ## test-e2e without the serialising lock (for a deliberate parallel run)
 	CGO_ENABLED=1 go test -tags=e2e -count=1 -timeout=10m ./test/e2e/...
 
 # Reproducing tests for known limitations (quarantined -- do not run in CI).
@@ -494,10 +525,12 @@ pnpm-audit: ## Audit frontend dependencies
 # image, same rule packs, same frontend-only scope. The Go side is covered
 # by gosec inside golangci-lint, so pointing semgrep at it too would just
 # re-report the same findings in a second tool.
+# Delegates to scripts/semgrep.sh, which ships the sources into the
+# container with `docker cp` rather than a bind mount. A bind mount resolves
+# on the HOST daemon, so it silently comes up empty from any worktree other
+# than the one the devcontainer was started in -- see the script's header.
 semgrep: ## Semgrep scan of the frontend (merge gate)
-	docker run --rm -v $(CURDIR):/src -w /src semgrep/semgrep:1.174.0 \
-		semgrep scan --error --metrics=off \
-		--config p/typescript --config p/javascript frontend/src
+	./scripts/semgrep.sh frontend/src
 
 security: govulncheck pnpm-audit semgrep ## Run every security scanner
 
