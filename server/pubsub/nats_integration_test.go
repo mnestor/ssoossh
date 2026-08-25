@@ -183,6 +183,8 @@ func startNATS(t *testing.T, pki *testPKI, port int) string {
 	id := strings.TrimSpace(string(out))
 	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", id).Run() })
 
+	//nolint:gosec // both arguments are test-local: pki.dir is t.TempDir() and
+	// id is the container ID docker create just printed.
 	if out, err := exec.Command("docker", "cp", pki.dir+"/.", id+":/certs").CombinedOutput(); err != nil {
 		t.Fatalf("docker cp certs: %v\n%s", err, out)
 	}

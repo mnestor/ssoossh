@@ -69,6 +69,21 @@ help: ## Show this help
 # generated-artifact gates, then lint and the unit suite. See CONTRIBUTING.md.
 pre-pr: fmt lint-fix check-generated ci-required ## Format, autofix, then run every merge gate CI runs
 
+.PHONY: verify
+# The edit-loop subset: the checks that compile or typecheck Go, and nothing
+# that needs a container, the host, or a coverage run.
+#
+# `lint-tagged` is the reason this target exists rather than people running
+# `lint` and `test` by hand. `lint` passes no build tags and `test` does not
+# build the tagged suites, so a suite behind `e2e`, `resilience`, `load`,
+# `dbparity`, `softhsm` or `natsintegration` can fail to compile outright
+# while both report success. Any hand-assembled subset that omits
+# `lint-tagged` will believe it has coverage it does not have.
+#
+# This is NOT a substitute for `pre-pr`, which is the merge gate. Verify with
+# `pre-pr` before opening a PR -- never with a subset. See CONTRIBUTING.md.
+verify: lint lint-tagged test check-generated ## Fast subset for the edit loop -- still compiles the tagged suites
+
 ##@ Build
 
 .PHONY: all frontend build binaries linux pam frontend-clean
@@ -88,10 +103,19 @@ all: frontend binaries
 frontend: ## Build the web UI into server/frontend/dist
 	cd frontend && CI=true pnpm install --frozen-lockfile && CI=true pnpm build
 
-# Rebuilds the UI only when it is missing. Use `make frontend` to force one.
+# The bundle, and everything that goes into it. The sources are listed as
+# real prerequisites rather than the bundle being a bare "build it if it is
+# missing" target: the server embeds this bundle, so a stale one means a
+# browser test asserts against markup from whenever the UI was last built.
+# That failure presents as a selector timeout, which is indistinguishable
+# from a wrong selector -- see docs/dev/agent-workflow-friction.md.
+# Use `make frontend` to force a rebuild regardless.
 FRONTEND_DIST := server/frontend/dist/index.html
+FRONTEND_SRC := $(shell find frontend/src frontend/static -type f 2>/dev/null) \
+	frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml \
+	frontend/svelte.config.js frontend/vite.config.ts frontend/tsconfig.json
 
-$(FRONTEND_DIST):
+$(FRONTEND_DIST): $(FRONTEND_SRC)
 	$(MAKE) frontend
 
 # CGO_ENABLED=1 because server/signer's HSM key source reaches libpkcs11
@@ -263,7 +287,7 @@ lint: ## golangci-lint over the whole module (merge gate)
 # One invocation per tag set rather than a single combined one: the tags
 # select mutually exclusive views of the tree in places, so a combined run
 # does not typecheck.
-LINT_TAGGED := e2e resilience load dbparity softhsm
+LINT_TAGGED := e2e resilience load dbparity softhsm natsintegration
 
 .PHONY: lint-tagged
 lint-tagged: ## golangci-lint over the build-tagged suites lint(1) cannot see
