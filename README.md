@@ -15,28 +15,11 @@ the OIDC provider.
 
 ## Is it AI slop?
 
-Let's get this out of the way: maybe? This idea has been bouncing around
-in my head for years, and I've taken a few stabs at writing it. Attempt #1
-worked but the codebase disgusted me. Attempt #2 was at work, while I was
-learning Go; it came out reasonably well and a small group of us ran it in
-production for the last two years. I liked it enough to want it at home,
-so I started attempt #3 there, rewriting everything from scratch. It was
-a stripped-down version but making progress, and then I switched my home
-IdP to [pocket-id](https://github.com/pocket-id/pocket-id). Go with a
-frontend, exactly the shape I needed, and I liked their structure. So:
-attempt #4.
+Okay, let’s get this out of the way: maybe? This idea has been floating around in my head for years, and I’ve tried writing it a few times. The first attempt worked, but the codebase wasn’t great. The second attempt was at work while I was learning Go; it turned out pretty well, and a small group of us ran it in production for the last two years. I liked it enough to want it at home, so I started the third attempt there, rewriting everything from scratch. It was a simpler version, but it was moving forward, and then I switched my home IDP to [pocket-id](https://github.com/pocket-id/pocket-id). Go with a frontend, exactly what I needed, and I liked their structure. So, that’s attempt #4.
 
-I was decently into #4 when leadership at work started pushing us to use
-AI more. I'd built a few small Go binaries with it and was surprised how
-well they came out: same conventions I'd set up, choices I agreed with.
-So I threw Claude at #4 once I had a decent structure in place. Now I
-have tests I hadn't yet figured out how to write in Go, and every feature
-I wanted in the first version is implemented.
+I was pretty into #4 when leadership at work started pushing us to use AI more. I’d built a few small Go binaries with it and was surprised how well they came out: the same conventions I’d set up, choices I agreed with. So, I threw Claude at #4 once I had a decent structure in place. Now I have tests I hadn’t yet figured out how to write in Go, and every feature I wanted in the first version is implemented.
 
-Hopefully I've guarded well against the slop. I haven't reviewed
-everything, the tests especially, but I've made multiple review passes,
-and when my own edits broke things the tests caught it. That's a good
-sign they're real.
+Hopefully, I’ve guarded well against the slop. I haven’t reviewed everything, especially the tests, but I’ve made multiple review passes, and when my own edits broke things, the tests caught it. That’s a good sign they’re real.
 
 ## The problem
 

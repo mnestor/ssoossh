@@ -33,7 +33,7 @@ keys. Self-hosted, homelab-friendly, early development.
 | [certificate-lifetime-policy.md](operations/certificate-lifetime-policy.md) | Lifetime and options derived from group membership and source network |
 | [email-notifications.md](operations/email-notifications.md) | Outbound email: SMTP relay, notification contents, template overrides |
 | [client-settings-enforcement.md](operations/client-settings-enforcement.md) | Locking down client settings: `enforce` file, Windows Group Policy, macOS managed preferences |
-| [certificate-keyid-template.md](internals/certificate-keyid-template.md) | The key ID template written into every certificate |
+| [certificate-keyid-template.md](operations/certificate-keyid-template.md) | The key ID template written into every certificate |
 | [hsm.md](operations/hsm.md) | Keeping the CA key in a PKCS#11 token |
 
 Also here: the annotated defaults that ship as `/etc/ssoossh/*.yaml` —
