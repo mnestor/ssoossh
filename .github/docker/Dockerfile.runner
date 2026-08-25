@@ -7,8 +7,10 @@ LABEL org.opencontainers.image.description="ubuntu image with build tools and ce
 ARG DEBIAN_FRONTEND=noninteractive
 # zig cross-compiles ssoosshd's cgo (PKCS#11) build against a pinned glibc
 # floor and musl; keep in sync with the zig version pinned in ssoossh's
-# release workflow.
-ARG ZIG_VERSION=0.14.0
+# release workflow. 0.16 is a floor: earlier zig cc took -dynamic on a musl
+# target and linked libc statically anyway, and a static musl binary cannot
+# dlopen a PKCS#11 module.
+ARG ZIG_VERSION=0.16.0
 # Tools baked in so CI steps don't fetch them on every run. Each is pinned,
 # and each pin is the one the workflow that used to install it asked for:
 #   golangci-lint  was golangci/golangci-lint-action's `version:` in lint.yaml
@@ -43,8 +45,8 @@ RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sourc
   && dpkg -i /tmp/quill.deb \
   && curl -fsSL https://get.pnpm.io/install.sh | ENV="$HOME/.bashrc" SHELL="$(which bash)" bash - \
   && curl -sL https://go.dev/dl/go1.26.6.linux-amd64.tar.gz | tar -C /usr/local -xz \
-  && curl -sL https://ziglang.org/download/${ZIG_VERSION}/zig-linux-x86_64-${ZIG_VERSION}.tar.xz | tar -C /usr/local -xJ \
-  && ln -s /usr/local/zig-linux-x86_64-${ZIG_VERSION}/zig /usr/local/bin/zig \
+  && curl -sL https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz | tar -C /usr/local -xJ \
+  && ln -s /usr/local/zig-x86_64-linux-${ZIG_VERSION}/zig /usr/local/bin/zig \
   && /usr/local/go/bin/go install gotest.tools/gotestsum@v1.13.0 \
   && /usr/local/go/bin/go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION} \
   && /usr/local/go/bin/go install github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION} \

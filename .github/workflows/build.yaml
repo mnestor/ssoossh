@@ -216,13 +216,21 @@ jobs:
       - name: Build web UI
         run: make frontend
 
+      # 0.16 is a floor, not a preference: earlier zig cc accepted -dynamic
+      # on a musl target and linked libc statically anyway, and a static musl
+      # binary cannot dlopen a PKCS#11 module (see .goreleaser.yml). Keep in
+      # sync with ZIG_VERSION in .github/docker/Dockerfile.runner. The
+      # tarball name changed shape in 0.15 (zig-x86_64-linux-, not
+      # zig-linux-x86_64-).
       - name: Set up Zig
+        env:
+          ZIG_VERSION: "0.16.0"
         run: |
           mkdir -p /tmp/zig
           cd /tmp/zig
-          wget -q https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz
-          tar -xf zig-linux-x86_64-0.14.0.tar.xz
-          echo "/tmp/zig/zig-linux-x86_64-0.14.0" >> $GITHUB_PATH
+          wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz"
+          tar -xf "zig-x86_64-linux-${ZIG_VERSION}.tar.xz"
+          echo "/tmp/zig/zig-x86_64-linux-${ZIG_VERSION}" >> "$GITHUB_PATH"
 
       - uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
         id: secrets
@@ -274,29 +282,47 @@ jobs:
             exit 1
           fi
 
-      - name: Verify musl build is dynamically linked (Alpine)
+      # Both arches, not just amd64: a toolchain that quietly drops -dynamic
+      # (see .goreleaser.yml) drops it for arm64 too, and an Alpine package
+      # whose PKCS#11 support is dead on arrival looks identical from here.
+      - name: Verify musl builds are dynamically linked
         run: |
           set -euo pipefail
-          MUSL_BINARY="dist/server-linux-musl-build_linux_amd64_v1/ssoosshd"
-          if [ ! -f "$MUSL_BINARY" ]; then
-            echo "✗ musl binary not found at $MUSL_BINARY"
-            exit 1
-          fi
-          FILE_OUTPUT=$(file "$MUSL_BINARY")
-          echo "File output: $FILE_OUTPUT"
-          if echo "$FILE_OUTPUT" | grep -q "dynamically linked"; then
-            echo "✓ musl binary is dynamically linked (supports dlopen)"
-          else
-            echo "✗ musl binary is statically linked (cannot dlopen PKCS#11 modules)"
+          found=0
+          for MUSL_BINARY in dist/server-linux-musl-build_linux_*/ssoosshd; do
+            [ -f "$MUSL_BINARY" ] || continue
+            found=$((found + 1))
+            FILE_OUTPUT=$(file "$MUSL_BINARY")
+            echo "File output: $FILE_OUTPUT"
+            if echo "$FILE_OUTPUT" | grep -q "dynamically linked"; then
+              echo "✓ $MUSL_BINARY is dynamically linked (supports dlopen)"
+            else
+              echo "✗ $MUSL_BINARY is statically linked (cannot dlopen PKCS#11 modules)"
+              exit 1
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "✗ no musl binaries under dist/server-linux-musl-build_linux_*/"
             exit 1
           fi
 
-      - name: Smoke test musl binary in Alpine
+      # Run the binary rather than docker run alpine: this job runs inside
+      # the build container, which has no docker (resilience.yaml moves the
+      # jobs that need a daemon onto a bare runner). Ubuntu's musl package
+      # installs /lib/ld-musl-x86_64.so.1, the exact interpreter path zig
+      # wrote into the ELF header, so the loader here is the one Alpine
+      # would use. Linking is checked above; this catches a binary that
+      # links but cannot start. Installed here rather than baked into the
+      # runner image on purpose: a release must not depend on that image
+      # having been republished first.
+      - name: Smoke test musl binary
         run: |
           set -euo pipefail
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends musl
           MUSL_BINARY="dist/server-linux-musl-build_linux_amd64_v1/ssoosshd"
-          docker run --rm -v "$(pwd)/$MUSL_BINARY:/ssoosshd:ro" alpine:latest /ssoosshd --version || { echo "✗ musl binary failed to run in Alpine container"; exit 1; }
-          echo "✓ musl binary runs in Alpine container"
+          "$MUSL_BINARY" version || { echo "✗ musl binary failed to run under the musl loader"; exit 1; }
+          echo "✓ musl binary runs under the musl loader"
 
       - name: remove the release, we failed
         if: startsWith(github.ref, 'refs/tags/') && failure()

@@ -48,6 +48,10 @@ type goreleaserConfig struct {
 		ID    string        `yaml:"id"`
 		Files []archiveFile `yaml:"files"`
 	} `yaml:"archives"`
+	Builds []struct {
+		ID  string   `yaml:"id"`
+		Env []string `yaml:"env"`
+	} `yaml:"builds"`
 }
 
 // archiveFile is one entry in an archive's files list. GoReleaser accepts
@@ -543,5 +547,59 @@ func TestPAMPackagesShouldShipEveryPAMManPage(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// muslBuildID is the goreleaser build the Alpine packages and the musl
+// archives are cut from, and muslTarget is the zig target triple suffix it
+// compiles against.
+const (
+	muslBuildID = "server-linux-musl-build"
+	muslTarget  = "-linux-musl"
+)
+
+// should keep the musl server build cgo-enabled and dynamically linked.
+// musl's static libc answers every dlopen with "Dynamic loading not
+// supported", so a statically linked Alpine binary cannot load a PKCS#11
+// module at all: the HSM signer would be dead weight in the package, and
+// nothing about the binary would say so until an operator pointed it at a
+// module. build.yaml checks the linkage of what goreleaser actually
+// produced, but that job does not run on a pull request — this checks the
+// config the pull request is changing.
+func TestMuslServerBuildShouldLinkDynamically(t *testing.T) {
+	t.Parallel()
+
+	cfg := loadGoreleaser(t)
+
+	var env []string
+	found := false
+	for _, build := range cfg.Builds {
+		if build.ID == muslBuildID {
+			found, env = true, build.Env
+		}
+	}
+	if !found {
+		t.Fatalf("no goreleaser build %q; the Alpine packages are built from it", muslBuildID)
+	}
+
+	joined := strings.Join(env, "\n")
+	if !strings.Contains(joined, "CGO_ENABLED=1") {
+		t.Errorf("build %q does not set CGO_ENABLED=1, so it has no PKCS#11 support to link: %q", muslBuildID, joined)
+	}
+
+	targets := 0
+	for rest := joined; ; {
+		i := strings.Index(rest, muslTarget)
+		if i < 0 {
+			break
+		}
+		targets++
+		rest = rest[i+len(muslTarget):]
+		if !strings.HasPrefix(rest, " -dynamic") {
+			t.Errorf("build %q compiles a musl target without -dynamic, which links libc statically: %q", muslBuildID, joined)
+		}
+	}
+	if targets == 0 {
+		t.Errorf("build %q compiles for no musl target at all: %q", muslBuildID, joined)
 	}
 }

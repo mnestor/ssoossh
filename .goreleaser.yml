@@ -54,6 +54,12 @@ builds:
       -X github.com/mnestor/ssoossh/internal/version.Date={{.Date}}
       -X github.com/mnestor/ssoossh/internal/version.BuiltBy={{- if index .Env "github" }}{{.Env.github.runner.name}}{{ else }}goreleaser{{ end }}
 
+  # -dynamic is load-bearing, and so is the zig version behind it: a static
+  # musl binary's dlopen is a stub that always answers "Dynamic loading not
+  # supported", which would leave the Alpine packages unable to load a
+  # PKCS#11 module at all. zig cc only honors -dynamic on musl targets from
+  # 0.16 on; older zig accepted the flag and linked libc statically anyway,
+  # silently. build.yaml re-checks the linkage on every release.
   - id: server-linux-musl-build
     binary: ssoosshd
     dir: ./cmd/ssoosshd
