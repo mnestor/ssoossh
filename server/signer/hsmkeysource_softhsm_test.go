@@ -119,8 +119,13 @@ func provisionToken(t *testing.T, tokenLabel, keyType, keyLabel, keyID string) s
 	run("softhsm2-util", "--init-token", "--free", "--label", tokenLabel,
 		"--pin", "1234", "--so-pin", "123456")
 
-	// Generate the key in this token.
-	run("pkcs11-tool", "--module", softhsmMgr.module, "--login", "--pin", "1234",
+	// Generate the key in this token. --token-label is what pins it here:
+	// without it pkcs11-tool targets the first slot that holds a token, and
+	// SoftHSM2 assigns slot IDs at random on --init-token. From the second
+	// provisioned token onwards that is a coin flip, and losing it puts the
+	// key in the previous test's token, leaving this one empty.
+	run("pkcs11-tool", "--module", softhsmMgr.module,
+		"--token-label", tokenLabel, "--login", "--pin", "1234",
 		"--keypairgen", "--key-type", keyType,
 		"--label", keyLabel, "--id", keyID)
 
