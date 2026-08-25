@@ -86,8 +86,11 @@ type HTTPSettings struct {
 	// redirect URI that silently does not work.
 	PublicURL string `mapstructure:"public_url"`
 
-	// If we don't configure TLS but instead of a reverse proxy setup
-	// that is terminating TLS then we need to set this to true
+	// IsHTTPS records that a reverse proxy terminates TLS while this
+	// process serves plain HTTP, so the deployment is HTTPS as browsers see
+	// it even though this listener is not. Redundant when PublicURL is set —
+	// its scheme settles the same question — so configure one or the other,
+	// not both.
 	IsHTTPS bool `mapstructure:"is_https"`
 
 	// CookieKey is the secret used to sign and encrypt session cookies. If

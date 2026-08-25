@@ -292,7 +292,7 @@ Default:
 .BR empty .
 .TP
 .BI http.is_https: " bool"
-If we don't configure TLS but instead of a reverse proxy setup that is terminating TLS then we need to set this to true
+Records that a reverse proxy terminates TLS while this process serves plain HTTP, so the deployment is HTTPS as browsers see it even though this listener is not. Redundant when public_url is set \(em its scheme settles the same question \(em so configure one or the other, not both.
 Default:
 .BR false .
 .TP

@@ -231,10 +231,12 @@ http:
   # the app under a sub-path would need the frontend's base to move with it,
   # which is not supported, so accepting one here would only produce a
   # redirect URI that silently does not work.
-
-  # If we don't configure TLS but instead of a reverse proxy setup that is
-  # terminating TLS then we need to set this to true
-
+  public_url: ""
+  # Records that a reverse proxy terminates TLS while this process serves
+  # plain HTTP, so the deployment is HTTPS as browsers see it even though this
+  # listener is not. Redundant when public_url is set — its scheme settles
+  # the same question — so configure one or the other, not both.
+  is_https: false
   # The secret used to sign and encrypt session cookies. If empty, a key is
   # generated once and persisted in the server_secrets table, so sessions
   # survive a restart and instances sharing a database share the key.
