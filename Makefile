@@ -394,11 +394,45 @@ check-gitignore: ## Assert the .gitignore invariants hold
 
 ##@ Generated artifacts
 
-.PHONY: check-generated types types-check openapi openapi-check openapi-lint gendocs man-check
-.PHONY: third-party-licenses makefile-docs makefile-docs-check confdocs confdocs-check
 # Every "is the committed output still what the source produces" gate, in
-# one place. All six are merge gates.
-check-generated: types-check openapi-check openapi-lint man-check confdocs-check makefile-docs-check ## Assert every generated artifact is current
+# one place; all of them are merge gates. Adding one means appending it
+# here -- the .PHONY line and check-generated's prerequisites both follow
+# from this list rather than repeating it.
+GENERATED_GATES := types-check openapi-check openapi-lint man-check \
+	confdocs-check makefile-docs-check
+
+.PHONY: check-generated $(GENERATED_GATES)
+.PHONY: types openapi gendocs confdocs makefile-docs third-party-licenses
+check-generated: $(GENERATED_GATES) ## Assert every generated artifact is current
+
+# Asserts that regenerating an artifact changes nothing, by hashing the
+# output either side of a run. Every gate above except openapi-lint (which
+# validates the spec rather than its freshness) asks exactly that, so they
+# share this one rule rather than restating it once each.
+#
+# $(1) -- what to hash: a file, a directory, a glob, or any mix of them
+# $(2) -- the target that regenerates it
+# $(3) -- what has gone stale, in prose. The "run make X" line is added here.
+#
+# `find -type f` rather than a bare sha256sum so a directory (the generated
+# TypeScript) and a glob (the man pages) go through the same rule as a plain
+# file, and `sort` so the answer does not depend on readdir order.
+#
+# Deliberately not `git diff`: that ignores untracked files, so a
+# never-committed generated file would pass while reporting nothing, and it
+# reports a false failure when the correct output is merely staged rather
+# than committed. Hashes answer the question actually being asked -- is what
+# is on disk what the source produces.
+define STALENESS_CHECK
+	@before=$$(find $(1) -type f -exec sha256sum {} + 2>/dev/null | sort); \
+	$(MAKE) --no-print-directory $(2) >/dev/null; \
+	after=$$(find $(1) -type f -exec sha256sum {} + 2>/dev/null | sort); \
+	if [ "$$before" != "$$after" ]; then \
+		echo "$(3)"; \
+		echo "Run 'make $(2)' and commit the result."; \
+		exit 1; \
+	fi
+endef
 
 # Regenerate the frontend's wire types from the Go structs that produce them
 # (see tygo.yaml). The output is committed so that pnpm check/test and an
@@ -407,24 +441,15 @@ check-generated: types-check openapi-check openapi-lint man-check confdocs-check
 types: ## Regenerate frontend wire types from Go structs
 	go tool tygo generate
 
-# Asserts that regenerating changes nothing, by hashing the output either
-# side of a run. Deliberately not `git diff`: that ignores untracked files, so
-# a never-committed generated file would pass while reporting nothing, and it
-# reports a false failure when the correct output is merely staged rather than
-# committed. Hashes answer the question actually being asked -- is what is on
-# disk what the Go source produces.
+# A directory, not a file list: STALENESS_CHECK walks it, so a new generated
+# module is covered without being named here.
 GENERATED_TYPES := frontend/src/lib/api/generated
 
+STALE_TYPES := $(GENERATED_TYPES) is stale: a Go wire type changed without \
+the generated TypeScript being regenerated.
+
 types-check:
-	@before=$$(find $(GENERATED_TYPES) -type f -exec sha256sum {} + 2>/dev/null | sort); \
-	$(MAKE) --no-print-directory types >/dev/null; \
-	after=$$(find $(GENERATED_TYPES) -type f -exec sha256sum {} + 2>/dev/null | sort); \
-	if [ "$$before" != "$$after" ]; then \
-		echo "$(GENERATED_TYPES) is stale: a Go wire type changed without the"; \
-		echo "generated TypeScript being regenerated."; \
-		echo "Run 'make types' and commit the result."; \
-		exit 1; \
-	fi
+	$(call STALENESS_CHECK,$(GENERATED_TYPES),types,$(STALE_TYPES))
 
 # docs/openapi.yaml is generated from the swag annotations on the handlers in
 # server/controller (plus the envelope types in server/openapidoc). Edit those,
@@ -442,17 +467,12 @@ openapi: ## Regenerate docs/openapi.yaml from swag annotations
 	go tool swag init -g openapidoc.go -d $(SWAG_DIRS) --v3.1 --parseInternal --parseDependency -o docs --ot yaml
 	@mv docs/swagger.yaml docs/openapi.yaml
 
-# Same shape as types-check: assert regenerating changes nothing.
+OPENAPI_OUT := docs/openapi.yaml
+STALE_OPENAPI := $(OPENAPI_OUT) is stale: a handler annotation or a wire type \
+changed without the spec being regenerated.
+
 openapi-check:
-	@before=$$(sha256sum docs/openapi.yaml 2>/dev/null); \
-	$(MAKE) --no-print-directory openapi >/dev/null; \
-	after=$$(sha256sum docs/openapi.yaml 2>/dev/null); \
-	if [ "$$before" != "$$after" ]; then \
-		echo "docs/openapi.yaml is stale: a handler annotation or a wire type changed"; \
-		echo "without the spec being regenerated."; \
-		echo "Run 'make openapi' and commit the result."; \
-		exit 1; \
-	fi
+	$(call STALENESS_CHECK,$(OPENAPI_OUT),openapi,$(STALE_OPENAPI))
 
 # Validate docs/openapi.yaml against the OpenAPI 3.1 specification using redocly.
 # This catches structural errors, missing required fields, and other spec violations.
@@ -490,16 +510,12 @@ gendocs: ## Regenerate man pages from the cobra commands
 # deliberately outside this set; a gendocs run leaves them byte-identical.
 GENERATED_MAN := docs/man/ssoossh*.1 docs/man/ssoosshd*.8
 
+STALE_MAN := Man pages are stale: a cobra command's name, description, or \
+subcommand set changed without the pages being regenerated -- a new \
+subcommand means a new page.
+
 man-check:
-	@before=$$(sha256sum $(GENERATED_MAN) 2>/dev/null | sort); \
-	$(MAKE) --no-print-directory gendocs >/dev/null; \
-	after=$$(sha256sum $(GENERATED_MAN) 2>/dev/null | sort); \
-	if [ "$$before" != "$$after" ]; then \
-		echo "Man pages are stale: a cobra command's name, description, or"; \
-		echo "subcommand set changed without the pages being regenerated."; \
-		echo "Run 'make gendocs' and commit the result (including any new page)."; \
-		exit 1; \
-	fi
+	$(call STALENESS_CHECK,$(GENERATED_MAN),gendocs,$(STALE_MAN))
 
 # Two artifacts, one source. The doc comments on the config structs in
 # server/config produce both the ssoosshd.yaml(5) OPTIONS body and the
@@ -508,10 +524,7 @@ man-check:
 # back unchanged; only the prose around them is generated.
 #
 # Those structs are the only place a key's name, type, and meaning are
-# written down. Before this gate the same 127 keys were described by hand in
-# the structs, the man page, and defaults.yaml, and the man page had drifted
-# to the point of omitting five whole sections (admin, mail, branding,
-# pubsub, multi_instance) and a dead key that no struct declared.
+# written down; everything else about a key is derived from them.
 #
 # No cgo: the generator parses server/config rather than importing it, so it
 # never reaches the HSM key source's libpkcs11 binding.
@@ -520,45 +533,30 @@ CONFDOCS_OUT := docs/man/ssoosshd.yaml.5 server/config/defaults.yaml
 confdocs: ## Regenerate the config reference and defaults.yaml comments
 	go run ./internal/tools/genconfdocs
 
-# Same shape as types-check and man-check: assert regenerating changes nothing.
-#
 # defaults.yaml is in the output set, but only its comments are generated --
 # the values are read from the file and written back untouched, and
 # server/config's golden test is what guards those.
+STALE_CONFDOCS := The config reference is stale: a config struct's fields or \
+doc comments changed without docs/man/ssoosshd.yaml.5 and \
+server/config/defaults.yaml being regenerated.
+
 confdocs-check:
-	@before=$$(sha256sum $(CONFDOCS_OUT) 2>/dev/null); \
-	$(MAKE) --no-print-directory confdocs >/dev/null; \
-	after=$$(sha256sum $(CONFDOCS_OUT) 2>/dev/null); \
-	if [ "$$before" != "$$after" ]; then \
-		echo "The config reference is stale: a config struct's fields or doc"; \
-		echo "comments changed without docs/man/ssoosshd.yaml.5 and"; \
-		echo "server/config/defaults.yaml being regenerated."; \
-		echo "Run 'make confdocs' and commit the result."; \
-		exit 1; \
-	fi
+	$(call STALENESS_CHECK,$(CONFDOCS_OUT),confdocs,$(STALE_CONFDOCS))
 
 # Makefile.md's target inventory is generated from this file's own ##@ and
 # ## annotations -- the same data `make help` prints. Only the region between
 # the BEGIN/END GENERATED TARGETS markers is rewritten; the rationale around
 # it (why lint-fix precedes lint, what hides code from the obvious command)
 # is hand-written and adding a target does not invalidate it.
-#
-# This gate exists because the hand-maintained version drifted: `worktree`
-# and `test-e2e-unlocked` were annotated here and missing from the doc.
 makefile-docs: ## Regenerate the target tables in Makefile.md
 	./scripts/gen-makefile-docs.sh Makefile Makefile.md
 
-# Same shape as types-check and man-check: assert regenerating changes nothing.
+MAKEFILE_DOCS_OUT := Makefile.md
+STALE_MAKEFILE_DOCS := $(MAKEFILE_DOCS_OUT) is stale: a target's name or its \
+help description changed without the doc being regenerated.
+
 makefile-docs-check:
-	@before=$$(sha256sum Makefile.md 2>/dev/null); \
-	$(MAKE) --no-print-directory makefile-docs >/dev/null; \
-	after=$$(sha256sum Makefile.md 2>/dev/null); \
-	if [ "$$before" != "$$after" ]; then \
-		echo "Makefile.md is stale: a target's name or ## description changed"; \
-		echo "without the doc being regenerated."; \
-		echo "Run 'make makefile-docs' and commit the result."; \
-		exit 1; \
-	fi
+	$(call STALENESS_CHECK,$(MAKEFILE_DOCS_OUT),makefile-docs,$(STALE_MAKEFILE_DOCS))
 
 # Regenerates THIRD-PARTY-LICENSES.md from the Go module cache. Not committed
 # (see .gitignore) -- goreleaser runs this same script as a before.hook so
