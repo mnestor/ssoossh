@@ -14,8 +14,6 @@ import (
 // a group is invisible: GrantsAuditor simply denies, the page never renders,
 // and the failure looks like a slow selector rather than a mismatch.
 const (
-	adminUsersGroup      = "ssoossh-admins"
-	adminUsersAuditors   = "ssoossh-auditors"
 	adminUsersContact    = "it-help@corp.example"
 	adminUsersMessage    = "Open a ticket at go/access to appeal."
 	adminUsersGracePerio = "2h"
@@ -27,8 +25,8 @@ func newAdminUsersFixture(t *testing.T) *fixture {
 	t.Helper()
 
 	return newFixture(t, func(o *harness.ServerOptions) {
-		o.AdminRequireGroup = adminUsersGroup
-		o.AuditorGroup = adminUsersAuditors
+		o.AdminRequireGroup = e2eAdminGroup
+		o.AuditorGroup = e2eAuditorGroup
 		o.AdminDisableGracePeriod = adminUsersGracePerio
 		o.AdminContactEmail = adminUsersContact
 		o.AdminDisabledMessage = adminUsersMessage
@@ -66,7 +64,7 @@ func TestAdminUsers_DirectoryListsAUserWhoHasLoggedIn(t *testing.T) {
 	signIn(t, f, harness.StartBrowser(t), "bob", nil)
 
 	admin := harness.StartBrowser(t)
-	signIn(t, f, admin, "alice", []string{adminUsersGroup})
+	signIn(t, f, admin, "alice", []string{e2eAdminGroup})
 
 	admin.Navigate(t, f.Server.BaseURL+"/admin/users", `[data-testid="search-users"]`)
 	admin.WaitVisible(t, `[data-testid="search-users"]`)
@@ -95,7 +93,7 @@ func TestAdminUsers_DisabledUserSeesTheDisabledPage(t *testing.T) {
 	signIn(t, f, harness.StartBrowser(t), "bob", nil)
 
 	admin := harness.StartBrowser(t)
-	signIn(t, f, admin, "alice", []string{adminUsersGroup})
+	signIn(t, f, admin, "alice", []string{e2eAdminGroup})
 
 	// Find bob through the directory rather than by constructing his id: the
 	// point is that an admin can get from the list to the action.

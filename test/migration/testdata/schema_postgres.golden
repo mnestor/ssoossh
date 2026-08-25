@@ -70,6 +70,17 @@ table certificates
   index certificates_serial_number_key CREATE UNIQUE INDEX certificates_serial_number_key ON public.certificates USING btree (serial_number)
   index idx_certificates_certificate_request_id CREATE INDEX idx_certificates_certificate_request_id ON public.certificates USING btree (certificate_request_id)
   index idx_certificates_user_id_issued_at CREATE INDEX idx_certificates_user_id_issued_at ON public.certificates USING btree (user_id, issued_at DESC)
+table enrollment_reassignments
+  column enrollment_id type=text nullable=false default=<none>
+  column from_user_id type=text nullable=false default=<none>
+  column id type=text nullable=false default=<none>
+  column reassigned_at type=timestamp with time zone nullable=false default=<none>
+  column reassigned_by_user_id type=text nullable=false default=<none>
+  column to_user_id type=text nullable=false default=<none>
+  index enrollment_reassignments_pkey CREATE UNIQUE INDEX enrollment_reassignments_pkey ON public.enrollment_reassignments USING btree (id)
+  index idx_enrollment_reassignments_enrollment_id CREATE INDEX idx_enrollment_reassignments_enrollment_id ON public.enrollment_reassignments USING btree (enrollment_id)
+  index idx_enrollment_reassignments_reassigned_at CREATE INDEX idx_enrollment_reassignments_reassigned_at ON public.enrollment_reassignments USING btree (reassigned_at)
+  index idx_enrollment_reassignments_reassigned_by CREATE INDEX idx_enrollment_reassignments_reassigned_by ON public.enrollment_reassignments USING btree (reassigned_by_user_id)
 table enrollment_retrievals
   column certificate_serial type=bigint nullable=false default=<none>
   column enrollment_id type=text nullable=false default=<none>

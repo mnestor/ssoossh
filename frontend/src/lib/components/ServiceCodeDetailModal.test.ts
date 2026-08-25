@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';
 
 import type { EnrollmentRetrievalsResponse, ServiceEnrollment } from '$lib/api/types';
 import ServiceCodeDetailModal from './ServiceCodeDetailModal.svelte';
@@ -80,7 +81,10 @@ describe('ServiceCodeDetailModal', () => {
 	it('should name the account the code mints for', () => {
 		mockRetrievals([]);
 		render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
-		expect(screen.getByText('svc-deploy')).toBeInTheDocument();
+		// Scoped to the element that names the account rather than matching
+		// the text anywhere: the reassignment copy below names the same
+		// principal, so a bare text match is ambiguous.
+		expect(screen.getByTestId('service-code-account')).toHaveTextContent('svc-deploy');
 	});
 
 	it('should show the lifetime of the certificates it hands out', () => {
@@ -202,6 +206,39 @@ describe('ServiceCodeDetailModal', () => {
 			render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
 			await screen.findByText('203.0.113.9');
 			expect(screen.queryByText(/most recent of/)).not.toBeInTheDocument();
+		});
+	});
+
+	describe('owner reassignment control', () => {
+		it('should have a free-text username/user-id field', () => {
+			mockRetrievals([]);
+			render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+			const input = screen.getByPlaceholderText('Username or user ID') as HTMLInputElement;
+			expect(input).toBeInTheDocument();
+			expect(input.type).toBe('text');
+		});
+
+		it('should show reassignment description mentioning the service account', () => {
+			mockRetrievals([]);
+			render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+			expect(screen.getByText(/Transfer ownership to another user/)).toBeInTheDocument();
+			// The reassignment label text should mention the account
+			const label = screen.getByText(/Reassign to user/);
+			expect(label.closest('div')).toHaveTextContent('svc-deploy');
+		});
+
+		it('should have a Reassign button initially disabled until a user is entered', async () => {
+			mockRetrievals([]);
+			const user = userEvent.setup();
+			render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+
+			const button = screen.getByRole('button', { name: 'Reassign' });
+			expect(button).toBeDisabled();
+
+			const input = screen.getByPlaceholderText('Username or user ID') as HTMLInputElement;
+			await user.type(input, 'bob');
+
+			expect(button).not.toBeDisabled();
 		});
 	});
 });

@@ -82,19 +82,17 @@ func TestCertificateDetail_UnrelatedUserIsRefused(t *testing.T) {
 
 // TestCertificateDetail_AuditorCanViewCertificate tests that an auditor
 // can view any certificate detail page.
-// auditorGroup is the group the harness server is told grants auditor
+// e2eAuditorGroup is the group the harness server is told grants auditor
 // access, and the group the browser logs in carrying. Naming it once keeps
 // the two halves from drifting apart, which is a failure that looks exactly
 // like a slow page.
-const auditorGroup = "ssoossh-auditors"
-
 func TestCertificateDetail_AuditorCanViewCertificate(t *testing.T) {
 	// The server has to be told which group grants auditor access. With
 	// admin.auditor_group unset -- the product default and what every other
 	// test here runs with -- config.AdminConfig.GrantsAuditor denies every
 	// caller, so logging in carrying this group would prove nothing.
 	f := newFixture(t, func(o *harness.ServerOptions) {
-		o.AuditorGroup = auditorGroup
+		o.AuditorGroup = e2eAuditorGroup
 	})
 	browser := harness.StartBrowser(t)
 
@@ -118,7 +116,7 @@ func TestCertificateDetail_AuditorCanViewCertificate(t *testing.T) {
 	// Click the sign-in button
 	browser.Click(t, `[data-testid="sign-in-button"]`)
 	// Complete login as an auditor (with auditor group)
-	browser.CompleteIdPLoginWithGroups(t, "auditor", []string{auditorGroup})
+	browser.CompleteIdPLoginWithGroups(t, "auditor", []string{e2eAuditorGroup})
 	// Wait for the post-login redirect chain to settle. After completing IdP login,
 	// the browser is redirected back to the cert page. Wait for cert-details to
 	// appear before continuing.
@@ -129,7 +127,12 @@ func TestCertificateDetail_AuditorCanViewCertificate(t *testing.T) {
 // TestAdminCertificateList_SearchAndFilterWorks tests that the admin certificate
 // list page supports search, filtering, and pagination.
 func TestAdminCertificateList_SearchAndFilterWorks(t *testing.T) {
-	f := newFixture(t)
+	// The server has to be told which group grants auditor access:
+	// with admin.auditor_group unset, GrantsAuditor denies every
+	// caller and the admin shell never renders its children.
+	f := newFixture(t, func(o *harness.ServerOptions) {
+		o.AuditorGroup = e2eAuditorGroup
+	})
 	browser := harness.StartBrowser(t)
 
 	// Start a login and create a few certificates
@@ -149,7 +152,7 @@ func TestAdminCertificateList_SearchAndFilterWorks(t *testing.T) {
 	certListURL := f.Server.BaseURL + "/admin/certificates"
 	browser.Navigate(t, certListURL, `[data-testid="login-view"]`)
 	browser.Click(t, `[data-testid="sign-in-button"]`)
-	browser.CompleteIdPLoginWithGroups(t, "auditor", []string{"ssoossh-auditors"})
+	browser.CompleteIdPLoginWithGroups(t, "auditor", []string{e2eAuditorGroup})
 
 	// Should see the certificate list
 	browser.WaitVisible(t, `[data-testid="cert-list"]`)
@@ -160,14 +163,21 @@ func TestAdminCertificateList_SearchAndFilterWorks(t *testing.T) {
 	// Should see type filter
 	browser.WaitVisible(t, `[data-testid="type-filter"]`)
 
-	// Should see pager
-	browser.WaitVisible(t, `[data-testid="pager"]`)
+	// One certificate fits on one page, and Pager deliberately renders
+	// nothing when a single page holds everything. Asserting it is present
+	// here would assert the opposite of the component's contract.
+	browser.AssertNotPresent(t, `[data-testid="pager"]`)
 }
 
 // TestAdminCertificateList_RowClickNavigatesToDetail tests that clicking a row
 // navigates to the certificate detail page.
 func TestAdminCertificateList_RowClickNavigatesToDetail(t *testing.T) {
-	f := newFixture(t)
+	// The server has to be told which group grants auditor access:
+	// with admin.auditor_group unset, GrantsAuditor denies every
+	// caller and the admin shell never renders its children.
+	f := newFixture(t, func(o *harness.ServerOptions) {
+		o.AuditorGroup = e2eAuditorGroup
+	})
 	browser := harness.StartBrowser(t)
 
 	// Start a login and create a certificate
@@ -187,7 +197,7 @@ func TestAdminCertificateList_RowClickNavigatesToDetail(t *testing.T) {
 	certListURL := f.Server.BaseURL + "/admin/certificates"
 	browser.Navigate(t, certListURL, `[data-testid="login-view"]`)
 	browser.Click(t, `[data-testid="sign-in-button"]`)
-	browser.CompleteIdPLoginWithGroups(t, "auditor", []string{"ssoossh-auditors"})
+	browser.CompleteIdPLoginWithGroups(t, "auditor", []string{e2eAuditorGroup})
 
 	browser.WaitVisible(t, `[data-testid="cert-list"]`)
 

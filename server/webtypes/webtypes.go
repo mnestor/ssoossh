@@ -211,6 +211,61 @@ type ServiceEnrollmentsResponse struct {
 	Enrollments []ServiceEnrollmentResponse `json:"enrollments" validate:"required"`
 }
 
+// AdminEnrollmentResponse describes one service enrollment from the auditor's
+// and admin's perspective: the code's state, who approved it, what it grants,
+// when it expires, and how it has been used.
+//
+// Mirrors ServiceEnrollmentResponse but adds ApprovedByUsername and
+// ApprovedByEmail so the admin list can name who approved each code.
+type AdminEnrollmentResponse struct {
+	ID string `json:"id" validate:"required"`
+
+	// ApprovedByUsername and ApprovedByEmail name the user who approved this
+	// enrollment. Present for auditing and tracking which user has the code.
+	ApprovedByUsername string `json:"approved_by_username" validate:"required"`
+	ApprovedByEmail    string `json:"approved_by_email" validate:"required"`
+
+	// Principals is what every certificate this code produces carries.
+	Principals []string `json:"principals" validate:"required"`
+
+	// KeyID is likewise fixed at approval and lands verbatim in every
+	// certificate.
+	KeyID string `json:"key_id" validate:"required"`
+
+	// PublicKeyFingerprint identifies the keypair the code is bound to.
+	// Empty if the stored key could not be parsed.
+	PublicKeyFingerprint string `json:"public_key_fingerprint,omitempty"`
+
+	// Options are the certificate options fixed at approval.
+	Options CertificateOptionsResponse `json:"options" validate:"required"`
+
+	// CertificateValidSeconds is how long each redeemed certificate is valid.
+	CertificateValidSeconds *int `json:"certificate_valid_seconds,omitempty"`
+
+	// CreatedAt is when the enrollment was approved.
+	CreatedAt time.Time `json:"created_at" validate:"required"`
+
+	// ExpiresAt bounds the code.
+	ExpiresAt time.Time `json:"expires_at" validate:"required"`
+
+	// FirstRedeemedAt is the first successful redemption, absent for a code
+	// that has never produced a certificate.
+	FirstRedeemedAt *time.Time `json:"first_redeemed_at,omitempty"`
+
+	// LastRetrievedAt is the most recent redemption attempt.
+	LastRetrievedAt *time.Time `json:"last_retrieved_at,omitempty"`
+
+	// RetrievalCount counts every logged redemption attempt.
+	RetrievalCount int `json:"retrieval_count" validate:"required"`
+}
+
+// AdminEnrollmentsResponse is the paged list of all service enrollments,
+// visible to auditors and admins.
+type AdminEnrollmentsResponse struct {
+	Enrollments []AdminEnrollmentResponse `json:"enrollments" validate:"required"`
+	Meta        PageMeta                  `json:"meta" validate:"required"`
+}
+
 // CertificateOptionsResponse is one side of the requested/granted pair the
 // approval page shows.
 type CertificateOptionsResponse struct {

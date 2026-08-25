@@ -30,6 +30,17 @@ type fixture struct {
 // newFixture starts an IdP and a ssoosshd instance pointed at it, and a
 // private ssh-agent, all torn down via t.Cleanup. opts applies customizations
 // to the server before startup.
+// The group names the e2e server recognises, declared once for the whole
+// package. Three test files grew their own copies on separate branches and
+// two of them collided on auditorGroup at merge; worse, they had picked
+// different strings, so a test could configure one name and log in carrying
+// another. That mismatch is invisible: GrantsAuditor simply denies, the page
+// never renders, and it reads as a slow selector.
+const (
+	e2eAdminGroup   = "ssoossh-admins"
+	e2eAuditorGroup = "ssoossh-auditors"
+)
+
 func newFixture(t *testing.T, opts ...func(*harness.ServerOptions)) *fixture {
 	t.Helper()
 

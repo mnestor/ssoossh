@@ -68,6 +68,24 @@ func (f *fakeEnrollmentService) ListForIdentity(_ context.Context, identity *ser
 	return f.enrollments, nil
 }
 
+func (f *fakeEnrollmentService) ListForAdmin(_ context.Context, _ *service.Identity, _ service.AdminListParams) (service.AdminEnrollmentList, error) {
+	if f.err != nil {
+		return service.AdminEnrollmentList{}, f.err
+	}
+	return service.AdminEnrollmentList{}, nil
+}
+
+func (f *fakeEnrollmentService) GetEnrollmentDetail(_ context.Context, _ string, _ *service.Identity) (service.AdminEnrollmentDetail, error) {
+	if f.err != nil {
+		return service.AdminEnrollmentDetail{}, f.err
+	}
+	return service.AdminEnrollmentDetail{}, nil
+}
+
+func (f *fakeEnrollmentService) Reassign(_ context.Context, _ string, _ string, _ *service.Identity) error {
+	return f.err
+}
+
 func newEnrollmentTestRouter(svc *fakeEnrollmentService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()

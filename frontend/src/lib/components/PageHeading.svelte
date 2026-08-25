@@ -11,12 +11,14 @@
 		title: string;
 		/** Optional trailing control, right-aligned against the title. */
 		action?: Snippet;
+		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
+		testid?: string;
 	}
 
-	let { eyebrow, title, action }: Props = $props();
+	let { eyebrow, title, action, testid }: Props = $props();
 </script>
 
-<div class="flex items-center justify-between gap-4">
+<div data-testid={testid} class="flex items-center justify-between gap-4">
 	<div>
 		<div class="mb-1.5 text-xs font-semibold tracking-[0.06em] text-accent uppercase">
 			{eyebrow}

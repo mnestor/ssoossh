@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/ThreeDotsLabs/watermill/message"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
+
+	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 	"github.com/mnestor/ssoossh/server/config"
@@ -25,7 +28,12 @@ import (
 func newTestEnrollmentService(t *testing.T, svc *CertRequestService) *EnrollmentService {
 	t.Helper()
 
-	if err := svc.db.AutoMigrate(&model.Certificate{}, &model.User{}, &model.EnrollmentRetrieval{}); err != nil {
+	if err := svc.db.AutoMigrate(
+		&model.Certificate{},
+		&model.User{},
+		&model.EnrollmentRetrieval{},
+		&model.EnrollmentReassignment{},
+	); err != nil {
 		t.Fatalf("failed to migrate retrieval tables: %v", err)
 	}
 	enrollment, err := NewEnrollmentService(svc.config, svc.db, svc.publisher, svc.subscriber)
@@ -902,5 +910,581 @@ func seedEnrollment(t *testing.T, svc *CertRequestService, row model.Enrollment)
 	}
 	if err := svc.db.Create(&row).Error; err != nil {
 		t.Fatalf("failed to seed enrollment: %v", err)
+	}
+}
+
+// TestListForAdmin tests the admin list of enrollments across all users.
+func TestListForAdmin(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should list all enrollments newest first to an auditor", func(t *testing.T) {
+		t.Parallel()
+		auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
+		svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		// Seed two enrollments by different users, with the second created later
+		user1ID := seedUser(t, svc.db, "sub-user1")
+		user2ID := seedUser(t, svc.db, "sub-user2")
+
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: user1ID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+		time.Sleep(10 * time.Millisecond) // Ensure creation order is obvious
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment2", Code: "code2", PublicKey: "key2", UserID: user2ID,
+			Principals: `["svc-b"]`, KeyID: "key2", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		// Migrate user models so we can load them
+		if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+			t.Fatalf("failed to migrate users: %v", err)
+		}
+
+		list, err := enrollment.ListForAdmin(context.Background(),
+			&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
+			AdminListParams{Limit: 25, Offset: 0, Query: ""})
+		if err != nil {
+			t.Fatalf("ListForAdmin() error = %v", err)
+		}
+
+		if len(list.Enrollments) != 2 || list.Total != 2 {
+			t.Errorf("got %d of %d, want 2 of 2", len(list.Enrollments), list.Total)
+		}
+		if list.Enrollments[0].Enrollment.ID != "enrollment2" {
+			t.Errorf("first enrollment is %q, want newest (enrollment2)", list.Enrollments[0].Enrollment.ID)
+		}
+	})
+
+	t.Run("should search enrollments by approver username", func(t *testing.T) {
+		t.Parallel()
+		auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
+		svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		// Seed users with specific usernames
+		if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+			t.Fatalf("failed to migrate users: %v", err)
+		}
+		user1 := model.User{
+			ID: uuid.NewString(), Subject: "sub-alice", Username: "alice", Email: "alice@example.com",
+			CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}
+		user2 := model.User{
+			ID: uuid.NewString(), Subject: "sub-bob", Username: "bob", Email: "bob@example.com",
+			CreatedAt: time.Now(), UpdatedAt: time.Now(),
+		}
+		if err := svc.db.Create(&user1).Error; err != nil {
+			t.Fatalf("failed to seed user1: %v", err)
+		}
+		if err := svc.db.Create(&user2).Error; err != nil {
+			t.Fatalf("failed to seed user2: %v", err)
+		}
+
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: user1.ID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment2", Code: "code2", PublicKey: "key2", UserID: user2.ID,
+			Principals: `["svc-b"]`, KeyID: "key2", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		// Search for alice
+		list, err := enrollment.ListForAdmin(context.Background(),
+			&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
+			AdminListParams{Limit: 25, Offset: 0, Query: "alice"})
+		if err != nil {
+			t.Fatalf("ListForAdmin() error = %v", err)
+		}
+
+		if len(list.Enrollments) != 1 || list.Enrollments[0].Enrollment.ID != "enrollment1" {
+			t.Errorf("search for 'alice' got %d enrollments, want 1 (enrollment1)", len(list.Enrollments))
+		}
+	})
+
+	t.Run("should refuse non-auditors", func(t *testing.T) {
+		t.Parallel()
+		auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
+		svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		_, err := enrollment.ListForAdmin(context.Background(),
+			&Identity{Subject: "sub-user", Groups: []string{}},
+			AdminListParams{Limit: 25, Offset: 0, Query: ""})
+
+		var forbidden *errorresponses.ForbiddenError
+		if !errors.As(err, &forbidden) {
+			t.Errorf("ListForAdmin() error = %v, want ForbiddenError", err)
+		}
+	})
+
+	t.Run("should return empty list for no matches", func(t *testing.T) {
+		t.Parallel()
+		auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
+		svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		// Seed one enrollment
+		user1ID := seedUser(t, svc.db, "sub-user1")
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: user1ID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+			t.Fatalf("failed to migrate users: %v", err)
+		}
+
+		// Search for something that doesn't match
+		list, err := enrollment.ListForAdmin(context.Background(),
+			&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
+			AdminListParams{Limit: 25, Offset: 0, Query: "nonexistent"})
+		if err != nil {
+			t.Fatalf("ListForAdmin() error = %v", err)
+		}
+
+		if len(list.Enrollments) != 0 {
+			t.Errorf("got %d enrollments for non-matching search, want 0", len(list.Enrollments))
+		}
+	})
+}
+
+// TestGetEnrollmentDetail tests retrieval of a single enrollment with full details.
+func TestGetEnrollmentDetail(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should allow the enrollment owner to view details", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		ownerID := seedUser(t, svc.db, "sub-owner")
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		detail, err := enrollment.GetEnrollmentDetail(context.Background(),
+			"enrollment1", &Identity{Subject: "sub-owner"})
+		if err != nil {
+			t.Fatalf("GetEnrollmentDetail() error = %v", err)
+		}
+
+		if detail.Enrollment.ID != "enrollment1" {
+			t.Errorf("got enrollment %q, want enrollment1", detail.Enrollment.ID)
+		}
+	})
+
+	t.Run("should allow an auditor to view details", func(t *testing.T) {
+		t.Parallel()
+		auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
+		svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		ownerID := seedUser(t, svc.db, "sub-owner")
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		detail, err := enrollment.GetEnrollmentDetail(context.Background(),
+			"enrollment1", &Identity{Subject: "sub-auditor", Groups: []string{"auditors"}})
+		if err != nil {
+			t.Fatalf("GetEnrollmentDetail() error = %v", err)
+		}
+
+		if detail.Enrollment.ID != "enrollment1" {
+			t.Errorf("got enrollment %q, want enrollment1", detail.Enrollment.ID)
+		}
+	})
+
+	t.Run("should refuse an unrelated user", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		ownerID := seedUser(t, svc.db, "sub-owner")
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		_, err := enrollment.GetEnrollmentDetail(context.Background(),
+			"enrollment1", &Identity{Subject: "sub-other"})
+
+		var forbidden *errorresponses.ForbiddenError
+		if !errors.As(err, &forbidden) {
+			t.Errorf("GetEnrollmentDetail() error = %v, want ForbiddenError", err)
+		}
+	})
+
+	t.Run("should return NotFound for unknown enrollment", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		_, err := enrollment.GetEnrollmentDetail(context.Background(),
+			"unknown-id", &Identity{Subject: "sub-auditor"})
+
+		var notFound *errorresponses.NotFoundError
+		if !errors.As(err, &notFound) {
+			t.Errorf("GetEnrollmentDetail() error = %v, want NotFoundError", err)
+		}
+	})
+}
+
+// TestReassign tests enrollment ownership transfer.
+func TestReassign(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should allow the owner to reassign their own enrollment", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		if err := svc.db.AutoMigrate(&model.User{}, &model.EnrollmentReassignment{}); err != nil {
+			t.Fatalf("failed to migrate: %v", err)
+		}
+
+		ownerID := seedUser(t, svc.db, "sub-owner")
+		targetID := seedUser(t, svc.db, "sub-target")
+
+		// Set up target user with the service account
+		if err := svc.db.Model(&model.User{}).Where("id = ?", targetID).
+			Update("service_accounts", `["svc-a"]`).Error; err != nil {
+			t.Fatalf("failed to update target user: %v", err)
+		}
+
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		err := enrollment.Reassign(context.Background(),
+			"enrollment1", targetID, &Identity{Subject: "sub-owner"})
+		if err != nil {
+			t.Fatalf("Reassign() error = %v", err)
+		}
+
+		// Verify the enrollment's user_id changed
+		var updated model.Enrollment
+		if err := svc.db.First(&updated, "id = ?", "enrollment1").Error; err != nil {
+			t.Fatalf("failed to fetch updated enrollment: %v", err)
+		}
+		if updated.UserID != targetID {
+			t.Errorf("enrollment user_id is %q, want %q", updated.UserID, targetID)
+		}
+
+		// Verify an audit record was created
+		var audit model.EnrollmentReassignment
+		if err := svc.db.First(&audit, "enrollment_id = ?", "enrollment1").Error; err != nil {
+			t.Fatalf("failed to fetch audit record: %v", err)
+		}
+		if audit.FromUserID != ownerID || audit.ToUserID != targetID || audit.ReassignedByUserID != ownerID {
+			t.Errorf("audit record incorrect: from=%q, to=%q, by=%q",
+				audit.FromUserID, audit.ToUserID, audit.ReassignedByUserID)
+		}
+	})
+
+	t.Run("should refuse a non-owner and non-admin", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		ownerID := seedUser(t, svc.db, "sub-owner")
+		otherID := seedUser(t, svc.db, "sub-other")
+
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		err := enrollment.Reassign(context.Background(),
+			"enrollment1", otherID, &Identity{Subject: "sub-other"})
+
+		var forbidden *errorresponses.ForbiddenError
+		if !errors.As(err, &forbidden) {
+			t.Errorf("Reassign() error = %v, want ForbiddenError", err)
+		}
+	})
+
+	t.Run("should refuse a target without the required service account", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+			t.Fatalf("failed to migrate: %v", err)
+		}
+
+		ownerID := seedUser(t, svc.db, "sub-owner")
+		targetID := seedUser(t, svc.db, "sub-target")
+
+		// Target has no service accounts
+		if err := svc.db.Model(&model.User{}).Where("id = ?", targetID).
+			Update("service_accounts", `[]`).Error; err != nil {
+			t.Fatalf("failed to update target user: %v", err)
+		}
+
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		err := enrollment.Reassign(context.Background(),
+			"enrollment1", targetID, &Identity{Subject: "sub-owner"})
+
+		var invalid *errorresponses.InvalidRequestError
+		if !errors.As(err, &invalid) {
+			t.Errorf("Reassign() error = %v, want InvalidRequestError", err)
+		}
+	})
+
+	t.Run("should never expose the code in any response or error", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		ownerID := seedUser(t, svc.db, "sub-owner")
+		targetID := seedUser(t, svc.db, "sub-other")
+		secretCode := "super-secret-enrollment-code"
+
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: secretCode, PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		// Try to reassign as unrelated user; error message should not contain the code
+		err := enrollment.Reassign(context.Background(),
+			"enrollment1", targetID, &Identity{Subject: "sub-other"})
+
+		if err != nil && strings.Contains(err.Error(), secretCode) {
+			t.Errorf("Reassign() error contains code: %v", err)
+		}
+	})
+}
+
+// TestListForAdmin_PagingWithSearch tests that search applies server-side and returns correct totals.
+func TestListForAdmin_PagingWithSearch(t *testing.T) {
+	t.Parallel()
+
+	auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
+	svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
+	enrollment := newTestEnrollmentService(t, svc)
+
+	if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+		t.Fatalf("failed to migrate users: %v", err)
+	}
+
+	// Create two users
+	alice := model.User{
+		ID:        uuid.NewString(),
+		Subject:   "sub-alice",
+		Username:  "alice",
+		Email:     "alice@example.com",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	bob := model.User{
+		ID:        uuid.NewString(),
+		Subject:   "sub-bob",
+		Username:  "bob",
+		Email:     "bob@example.com",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := svc.db.Create(&alice).Error; err != nil {
+		t.Fatalf("failed to seed alice: %v", err)
+	}
+	if err := svc.db.Create(&bob).Error; err != nil {
+		t.Fatalf("failed to seed bob: %v", err)
+	}
+
+	// Seed 10 enrollments for alice
+	for i := 0; i < 10; i++ {
+		seedEnrollment(t, svc, model.Enrollment{
+			ID:         uuid.NewString(),
+			Code:       uuid.NewString(),
+			PublicKey:  "key1",
+			UserID:     alice.ID,
+			Principals: `["svc-a"]`,
+			KeyID:      "key1",
+			ExpiresAt:  time.Now().Add(time.Hour),
+			CreatedAt:  time.Now(),
+		})
+	}
+
+	// Seed 20 enrollments for bob
+	for i := 0; i < 20; i++ {
+		seedEnrollment(t, svc, model.Enrollment{
+			ID:         uuid.NewString(),
+			Code:       uuid.NewString(),
+			PublicKey:  "key2",
+			UserID:     bob.ID,
+			Principals: `["svc-b"]`,
+			KeyID:      "key2",
+			ExpiresAt:  time.Now().Add(time.Hour),
+			CreatedAt:  time.Now(),
+		})
+	}
+
+	// Search for "alice" should find only 10 enrollments, not the full 30
+	list, err := enrollment.ListForAdmin(context.Background(),
+		&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
+		AdminListParams{Limit: 25, Offset: 0, Query: "alice"})
+	if err != nil {
+		t.Fatalf("ListForAdmin() error = %v", err)
+	}
+
+	if list.Total != 10 {
+		t.Errorf("ListForAdmin() Total = %d, want 10 (alice's enrollments only)", list.Total)
+	}
+	if len(list.Enrollments) != 10 {
+		t.Errorf("ListForAdmin() returned %d enrollments, want 10", len(list.Enrollments))
+	}
+
+	// Verify all returned enrollments are alice's
+	for _, row := range list.Enrollments {
+		if row.Approver.Username != "alice" {
+			t.Errorf("got enrollment approved by %q, expected alice", row.Approver.Username)
+		}
+	}
+}
+
+// TestListForAdmin_SearchFilteringPinnedToSQL verifies that search filtering
+// is executed in SQL (via LIKE predicates), not in-memory. This is crucial
+// because the same result set is produced either way: both approaches return
+// the correct Total and bounded rows. A test that only checks the return
+// values cannot distinguish in-memory from SQL filtering. This test pins the
+// behavior by verifying the actual SQL contains LIKE clauses, the signature
+// of server-side filtering. A future refactoring that moves filtering back
+// to memory would lose the LIKE predicates and this test would fail.
+func TestListForAdmin_SearchFilteringPinnedToSQL(t *testing.T) {
+	t.Parallel()
+
+	auditorCfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
+	svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
+	enrollment := newTestEnrollmentService(t, svc)
+
+	if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+		t.Fatalf("failed to migrate users: %v", err)
+	}
+
+	// Create two users with different numbers of enrollments.
+	alice := model.User{
+		ID:        uuid.NewString(),
+		Subject:   "sub-alice",
+		Username:  "alice",
+		Email:     "alice@example.com",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	bob := model.User{
+		ID:        uuid.NewString(),
+		Subject:   "sub-bob",
+		Username:  "bob",
+		Email:     "bob@example.com",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := svc.db.Create(&alice).Error; err != nil {
+		t.Fatalf("failed to seed alice: %v", err)
+	}
+	if err := svc.db.Create(&bob).Error; err != nil {
+		t.Fatalf("failed to seed bob: %v", err)
+	}
+
+	// Seed 1000 enrollments for alice.
+	for i := 0; i < 1000; i++ {
+		seedEnrollment(t, svc, model.Enrollment{
+			ID:         uuid.NewString(),
+			Code:       uuid.NewString(),
+			PublicKey:  "key-alice",
+			UserID:     alice.ID,
+			Principals: `["svc-alice"]`,
+			KeyID:      "key-alice",
+			ExpiresAt:  time.Now().Add(time.Hour),
+			CreatedAt:  time.Now(),
+		})
+	}
+
+	// Seed 50 enrollments for bob (so alice's enrollments dominate the result set).
+	for i := 0; i < 50; i++ {
+		seedEnrollment(t, svc, model.Enrollment{
+			ID:         uuid.NewString(),
+			Code:       uuid.NewString(),
+			PublicKey:  "key-bob",
+			UserID:     bob.ID,
+			Principals: `["svc-bob"]`,
+			KeyID:      "key-bob",
+			ExpiresAt:  time.Now().Add(time.Hour),
+			CreatedAt:  time.Now(),
+		})
+	}
+
+	// Record the SQL every query actually issues. This is the whole point of
+	// the test: Total=1000 with 10 rows returned is what BOTH implementations
+	// produce, so the return values cannot tell them apart. Only the statement
+	// text can -- an in-memory filter selects every row and narrows in Go, so
+	// its SQL carries no LIKE predicate at all.
+	var executed []string
+	if err := svc.db.Callback().Query().After("gorm:query").
+		Register("test:record_sql", func(tx *gorm.DB) {
+			executed = append(executed, tx.Statement.SQL.String())
+		}); err != nil {
+		t.Fatalf("failed to register the SQL recorder: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = svc.db.Callback().Query().Remove("test:record_sql")
+	})
+
+	list, err := enrollment.ListForAdmin(context.Background(),
+		&Identity{Subject: "sub-auditor", Groups: []string{"auditors"}},
+		AdminListParams{Limit: 10, Offset: 0, Query: "alice"})
+	if err != nil {
+		t.Fatalf("ListForAdmin() error = %v", err)
+	}
+
+	if list.Total != 1000 {
+		t.Errorf("ListForAdmin() Total = %d, want 1000 (all alice's enrollments)", list.Total)
+	}
+	if len(list.Enrollments) != 10 {
+		t.Errorf("ListForAdmin() returned %d enrollments, want 10", len(list.Enrollments))
+	}
+
+	// Verify all returned enrollments are alice's.
+	for _, row := range list.Enrollments {
+		if row.Approver.Username != "alice" {
+			t.Errorf("got enrollment approved by %q, expected alice", row.Approver.Username)
+		}
+	}
+
+	// The assertion that actually pins the behaviour. Without a LIKE in the
+	// statement the search never reached the database, whatever the returned
+	// rows look like.
+	var sawLike bool
+	for _, stmt := range executed {
+		if strings.Contains(strings.ToUpper(stmt), "LIKE") {
+			sawLike = true
+			break
+		}
+	}
+	if !sawLike {
+		t.Errorf("no executed statement carried a LIKE predicate, so the search was not done in SQL; statements were:\n%s",
+			strings.Join(executed, "\n"))
 	}
 }

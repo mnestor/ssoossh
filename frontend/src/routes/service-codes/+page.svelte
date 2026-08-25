@@ -91,7 +91,7 @@
 <svelte:head><title>Service codes · ssoossh</title></svelte:head>
 
 <div class="flex w-full max-w-[680px] flex-col gap-5">
-	<PageHeading eyebrow="Service" title="Service enrollment codes" />
+	<PageHeading eyebrow="Service" title="Service enrollment codes" testid="service-codes-heading" />
 
 	<p class="text-sm text-ink-muted">
 		The codes you have approved for unattended certificate issuance. The codes themselves are not

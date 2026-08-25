@@ -70,6 +70,17 @@ table certificates
   index idx_certificates_user_id_issued_at unique=false columns=user_id,issued_at
   index sqlite_autoindex_certificates_1 unique=true columns=id
   index sqlite_autoindex_certificates_2 unique=true columns=serial_number
+table enrollment_reassignments
+  column enrollment_id type=TEXT nullable=false pk=false default=<none>
+  column from_user_id type=TEXT nullable=false pk=false default=<none>
+  column id type=TEXT nullable=false pk=true default=<none>
+  column reassigned_at type=DATETIME nullable=false pk=false default=<none>
+  column reassigned_by_user_id type=TEXT nullable=false pk=false default=<none>
+  column to_user_id type=TEXT nullable=false pk=false default=<none>
+  index idx_enrollment_reassignments_enrollment_id unique=false columns=enrollment_id
+  index idx_enrollment_reassignments_reassigned_at unique=false columns=reassigned_at
+  index idx_enrollment_reassignments_reassigned_by unique=false columns=reassigned_by_user_id
+  index sqlite_autoindex_enrollment_reassignments_1 unique=true columns=id
 table enrollment_retrievals
   column certificate_serial type=INTEGER nullable=false pk=false default=<none>
   column enrollment_id type=TEXT nullable=false pk=false default=<none>

@@ -423,7 +423,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 		)
 	}
 	controller.NewEnrollmentController(apiGroup, a.svc.enrollment, enrollmentRateLimit, sessionAuth)
-	controller.NewAdminController(apiGroup, a.config, a.db, sessionAuth, adminAuth, auditorAuth, csrf)
+	controller.NewAdminController(apiGroup, a.config, a.db, sessionAuth, adminAuth, auditorAuth, csrf, a.svc.enrollment)
 
 	return nil
 }

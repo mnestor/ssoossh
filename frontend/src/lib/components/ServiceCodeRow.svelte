@@ -13,9 +13,11 @@
 		/** Pinned clock, so a list of rows agrees with itself and tests can fix it. */
 		now?: Date;
 		onclick: () => void;
+		/** Optional test ID for identifying this row in tests. */
+		testid?: string;
 	}
 
-	let { enrollment, now = new Date(), onclick }: Props = $props();
+	let { enrollment, now = new Date(), onclick, testid }: Props = $props();
 
 	// Service enrollments carry a single principal by construction. The join
 	// covers a row that somehow says otherwise, and the fallback one whose
@@ -53,6 +55,7 @@
 <button
 	type="button"
 	{onclick}
+	data-testid={testid}
 	class="flex w-full items-center justify-between gap-4 rounded-[10px] border border-border-subtle bg-surface px-5 py-3.5 text-left transition hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 >
 	<span class="flex min-w-0 items-center gap-3">

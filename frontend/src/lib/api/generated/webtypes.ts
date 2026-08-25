@@ -236,6 +236,73 @@ export interface ServiceEnrollmentsResponse {
 	enrollments: ServiceEnrollmentResponse[];
 }
 /**
+ * AdminEnrollmentResponse describes one service enrollment from the auditor's
+ * and admin's perspective: the code's state, who approved it, what it grants,
+ * when it expires, and how it has been used.
+ * Mirrors ServiceEnrollmentResponse but adds ApprovedByUsername and
+ * ApprovedByEmail so the admin list can name who approved each code.
+ */
+export interface AdminEnrollmentResponse {
+	id: string;
+	/**
+	 * ApprovedByUsername and ApprovedByEmail name the user who approved this
+	 * enrollment. Present for auditing and tracking which user has the code.
+	 */
+	approved_by_username: string;
+	approved_by_email: string;
+	/**
+	 * Principals is what every certificate this code produces carries.
+	 */
+	principals: string[];
+	/**
+	 * KeyID is likewise fixed at approval and lands verbatim in every
+	 * certificate.
+	 */
+	key_id: string;
+	/**
+	 * PublicKeyFingerprint identifies the keypair the code is bound to.
+	 * Empty if the stored key could not be parsed.
+	 */
+	public_key_fingerprint?: string;
+	/**
+	 * Options are the certificate options fixed at approval.
+	 */
+	options: CertificateOptionsResponse;
+	/**
+	 * CertificateValidSeconds is how long each redeemed certificate is valid.
+	 */
+	certificate_valid_seconds?: number /* int */;
+	/**
+	 * CreatedAt is when the enrollment was approved.
+	 */
+	created_at: string;
+	/**
+	 * ExpiresAt bounds the code.
+	 */
+	expires_at: string;
+	/**
+	 * FirstRedeemedAt is the first successful redemption, absent for a code
+	 * that has never produced a certificate.
+	 */
+	first_redeemed_at?: string;
+	/**
+	 * LastRetrievedAt is the most recent redemption attempt.
+	 */
+	last_retrieved_at?: string;
+	/**
+	 * RetrievalCount counts every logged redemption attempt.
+	 */
+	retrieval_count: number /* int */;
+}
+/**
+ * AdminEnrollmentsResponse is the paged list of all service enrollments,
+ * visible to auditors and admins.
+ */
+export interface AdminEnrollmentsResponse {
+	enrollments: AdminEnrollmentResponse[];
+	meta: PageMeta;
+}
+/**
  * CertificateOptionsResponse is one side of the requested/granted pair the
  * approval page shows.
  */

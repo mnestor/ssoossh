@@ -13,6 +13,8 @@
 export type { CertificateType, CertificateRequestStatus as RequestStatus } from './generated/enums';
 
 export type {
+	AdminEnrollmentResponse as AdminEnrollment,
+	AdminEnrollmentsResponse,
 	AdminUserDetail,
 	AdminUserSummary,
 	AdminUsersListResponse,
@@ -25,12 +27,13 @@ export type {
 	DisableUserConsequences,
 	DisableUserRequestBody,
 	EffectiveConfigResponse,
+	EnrollmentRetrievalResponse,
+	EnrollmentRetrievalsResponse,
 	NotificationKindResponse as NotificationKind,
 	NotificationPreferencesResponse as NotificationPreferences,
 	PageMeta,
 	ReEnableUserRequestBody,
 	RequestDetailResponse as RequestDetail,
-	EnrollmentRetrievalsResponse,
 	ServiceEnrollmentResponse as ServiceEnrollment,
 	ServiceEnrollmentsResponse
 } from './generated/webtypes';
