@@ -125,6 +125,30 @@ func (b *Browser) Text(t *testing.T, selector string) string {
 	return text
 }
 
+// Attribute returns one attribute of the first node matching selector, and
+// whether it was present.
+func (b *Browser) Attribute(t *testing.T, selector, name string) (string, bool) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
+	defer cancel()
+
+	var value string
+	var ok bool
+	if err := chromedp.Run(ctx,
+		chromedp.WaitVisible(selector, chromedp.ByQuery),
+		chromedp.AttributeValue(selector, name, &value, &ok, chromedp.ByQuery),
+	); err != nil {
+		b.screenshotOnFailure(t)
+		t.Fatalf("harness: reading %s of %s failed: %v", name, selector, err)
+	}
+	return value, ok
+}
+
+// Ctx exposes the browser context so a diagnostic can drive chromedp
+// directly. Tests should prefer the helpers above.
+func (b *Browser) Ctx() context.Context { return b.ctx }
+
 // AssertNotPresent fails the test if selector matches any node.
 func (b *Browser) AssertNotPresent(t *testing.T, selector string) {
 	t.Helper()

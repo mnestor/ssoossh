@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -1003,4 +1004,82 @@ func TestGetUserHandler_AgainstARealDatabase(t *testing.T) {
 			t.Errorf("GET /admin/users/nobody = %d, want 404, body: %s", w.Code, w.Body.String())
 		}
 	})
+}
+
+// TestGetUserHandler_EmptyAccountListsAreArrays pins the wire contract for a
+// user whose row carries no accounts.
+//
+// AdminUserDetail declares these validate:"required" and the generated
+// TypeScript types them string[], so null is not an allowed value. A nil
+// slice marshals to null, and that is exactly what a freshly-created user
+// produces -- which stopped the detail page rendering at all, while a seeded
+// user with populated arrays passed every test.
+func TestGetUserHandler_EmptyAccountListsAreArrays(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.Create(&model.User{ID: "u-new", Subject: "sub-new", Username: "newcomer"}).Error; err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	cfg := newTestConfig(t)
+	r := routerWithAuth(t, cfg, db, &service.Identity{
+		Subject:  "sub-admin",
+		Username: "admin",
+		Groups:   []string{cfg.Admin.RequireGroup},
+	})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/users/u-new", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /admin/users/u-new = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+
+	body := w.Body.String()
+	for _, field := range []string{"other_accounts", "service_accounts"} {
+		if strings.Contains(body, `"`+field+`":null`) {
+			t.Errorf("%s serialized as null, want an empty array; body: %s", field, body)
+		}
+	}
+}
+
+// TestDisableUserHandler_EmptyBodyIsNotABadRequest pins the status of a
+// disable with no body, which is how the UI calls it.
+//
+// The handler used gin's BindJSON, which is MustBindWith: on an empty body it
+// writes a 400 and aborts before returning the error. The handler then
+// ignored that error, because the body is optional, and wrote its success
+// payload underneath the status gin had already set. The response was a 400
+// carrying {"error": null} -- a shape no client can interpret, and one the
+// browser treated as a failure while the database row had in fact been
+// updated.
+func TestDisableUserHandler_EmptyBodyIsNotABadRequest(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.Create(&model.User{ID: "u-target", Subject: "sub-target", Username: "target"}).Error; err != nil {
+		t.Fatalf("seed target: %v", err)
+	}
+	if err := db.Create(&model.User{ID: "u-admin", Subject: "sub-admin", Username: "admin"}).Error; err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
+
+	cfg := newTestConfig(t)
+	r := routerWithAuth(t, cfg, db, &service.Identity{
+		Subject:  "sub-admin",
+		Username: "admin",
+		Groups:   []string{cfg.Admin.RequireGroup},
+	})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/admin/users/u-target/disable", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("PATCH .../disable with no body = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+
+	// And the row really moved, so a 200 is not merely cosmetic.
+	var stored model.User
+	if err := db.First(&stored, "id = ?", "u-target").Error; err != nil {
+		t.Fatalf("reload target: %v", err)
+	}
+	if stored.DisabledAt == nil {
+		t.Error("the user was not disabled")
+	}
 }

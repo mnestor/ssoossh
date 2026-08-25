@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -300,12 +301,17 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 		Count(&enrollmentCount)
 
 	detail := webtypes.AdminUserDetail{
-		ID:                     user.ID,
-		Username:               user.Username,
-		Email:                  user.Email,
-		Subject:                user.Subject,
-		OtherAccounts:          otherAccounts,
-		ServiceAccounts:        serviceAccounts,
+		ID:       user.ID,
+		Username: user.Username,
+		Email:    user.Email,
+		Subject:  user.Subject,
+		// orEmpty, because these are declared validate:"required" on the wire
+		// type and typed string[] in the generated TypeScript. A user whose
+		// row carries no accounts decodes to a nil slice, which marshals as
+		// null -- and null where an array was promised is what stopped the
+		// detail page rendering at all.
+		OtherAccounts:          orEmpty(otherAccounts),
+		ServiceAccounts:        orEmpty(serviceAccounts),
 		ExtraFields:            extraFields,
 		CreatedAt:              user.CreatedAt,
 		UpdatedAt:              user.UpdatedAt,
@@ -373,10 +379,16 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 		return
 	}
 
-	// Parse optional body for reason
+	// The body is optional, so an absent one is not an error.
+	//
+	// ShouldBindJSON, not BindJSON: the latter is MustBindWith, which writes
+	// a 400 and aborts BEFORE returning the error. Ignoring the returned
+	// error therefore does not undo anything -- the status is already set,
+	// and the handler goes on to write its success payload underneath it,
+	// producing a 400 whose body says {"error": null}. That is exactly what
+	// the browser saw, and why the page never showed the user as disabled.
 	var req webtypes.DisableUserRequestBody
-	if err := g.BindJSON(&req); err != nil && g.ContentType() != "" {
-		// Only treat as error if body was actually provided
+	if err := g.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		handleError(g, &errorresponses.InvalidRequestError{Reason: "invalid request body"})
 		return
 	}

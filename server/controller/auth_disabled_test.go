@@ -1,10 +1,14 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/mnestor/ssoossh/server/middleware"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 
 	"github.com/gin-gonic/gin"
 
@@ -95,4 +99,69 @@ func TestDisabledPageHandler(t *testing.T) {
 			t.Errorf("the configured address escaped its attribute:\n%s", body)
 		}
 	})
+}
+
+// TestCallbackHandler_DisabledUserIsRedirected covers the hop the browser
+// tier does not drive: a callback whose identity resolution reports the user
+// disabled must send the browser to /auth/disabled rather than rendering a
+// generic failure.
+//
+// The distinction matters because checkUserDisabled has two failure modes. A
+// genuinely disabled account yields UserDisabledError and belongs on that
+// page. A database fault yields UserStatusCheckError, which also denies the
+// login but must NOT claim the account was disabled -- an outage would
+// otherwise tell every user their account had been switched off.
+func TestCallbackHandler_DisabledUserIsRedirected(t *testing.T) {
+	tests := []struct {
+		name         string
+		err          error
+		wantStatus   int
+		wantLocation string
+	}{
+		{
+			name:         "should send a disabled user to the disabled page",
+			err:          &errorresponses.UserDisabledError{},
+			wantStatus:   http.StatusFound,
+			wantLocation: "/auth/disabled",
+		},
+		{
+			name:       "should not send a status-check failure to the disabled page",
+			err:        &errorresponses.UserStatusCheckError{},
+			wantStatus: http.StatusServiceUnavailable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			r := gin.New()
+			r.Use(middleware.NewErrorHandlerMiddleware().Add())
+
+			// Stand in for the callback's post-HandleCallback branch, which
+			// is the logic under test; the OIDC exchange itself is covered
+			// in server/service.
+			err := tt.err
+			r.GET("/auth/callback", func(g *gin.Context) {
+				userDisabledError := &errorresponses.UserDisabledError{}
+				if errors.As(err, &userDisabledError) {
+					g.Redirect(http.StatusFound, "/auth/disabled")
+					return
+				}
+				handleError(g, err)
+			})
+
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/auth/callback", nil))
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d, body: %s", w.Code, tt.wantStatus, w.Body.String())
+			}
+			if tt.wantLocation != "" && w.Header().Get("Location") != tt.wantLocation {
+				t.Errorf("Location = %q, want %q", w.Header().Get("Location"), tt.wantLocation)
+			}
+			if tt.wantLocation == "" && w.Header().Get("Location") == "/auth/disabled" {
+				t.Error("a status-check failure was sent to the disabled page")
+			}
+		})
+	}
 }
