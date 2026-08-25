@@ -140,9 +140,21 @@ Every item here cost real time in the manual run.
 
 **Ports.** Do not hardcode. The manual run collided with a VS Code debug build
 squatting on 8080, and a hosted runner is no safer. The IdP gets its port from
-`httptest`; `ssoosshd` and `sshd` get theirs by listening on `:0`, reading the
-port, and closing. That last step has a theoretical reuse race, which is
-acceptable here and much less likely to bite than a fixed port.
+`httptest`; `ssoosshd`, `sshd`, and the NATS broker get theirs from
+`harness.freePort`, which listens on `:0`, reads the port, and closes.
+
+That last step leaves a reuse window, and it cannot be closed: the port goes
+to a subprocess or a container port mapping, neither of which can be handed
+an already-open listener. What `freePort` does close is the case that
+actually bit — the kernel handing the same just-released port to two callers
+in the same process — by recording every port it has issued and retrying.
+Across two concurrent e2e runs the window remains, which is one of the
+reasons `make test-e2e` takes an flock (see
+[parallel-agent-workflow.md](parallel-agent-workflow.md)).
+
+The NATS ports were the exception until 2026-08-25: `StartNATS` took a port
+and every caller passed a hand-picked constant, distinct from each other but
+identical across runs. They are allocated now, like everything else.
 
 **Readiness.** Poll `/healthz` until it answers, with a deadline. Never sleep.
 The server's startup does migrations, OIDC discovery, and pub/sub bootstrap,

@@ -20,7 +20,7 @@ import (
 
 func TestSplitMode_CertificateIsIssuedAcrossProcesses(t *testing.T) {
 	idp := harness.NewIdentityProvider(t)
-	nats := harness.StartNATS(t, 42431)
+	nats := harness.StartNATS(t)
 
 	// API process: web tier + listener, no signer. StartServer waits for
 	// /healthz, which also proves api mode boots against the broker.

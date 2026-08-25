@@ -27,8 +27,7 @@ func startClusteredPair(t *testing.T) (srvA, srvB *harness.Server) {
 	t.Helper()
 
 	dsn := harness.NewPostgresDatabase(t)
-	// Distinct from split_test.go's 42431 and multisigner_test.go's 42433.
-	nats := harness.StartNATS(t, 42435)
+	nats := harness.StartNATS(t)
 	idp := harness.NewIdentityProvider(t)
 
 	opts := harness.ServerOptions{DSN: dsn, ExtraConfigYAML: nats.PubSubYAML()}

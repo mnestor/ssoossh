@@ -37,6 +37,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -141,14 +142,22 @@ func newTestPKI(t *testing.T, dir string) *testPKI {
 // containerized environment is detected the broker joins this process's
 // own network namespace (--network container:<self>), which puts it on our
 // own 127.0.0.1 - also exactly what the server cert's SAN says. On a bare
-// host the ordinary published-port path is used instead. Each test passes
-// a distinct port because a shared namespace cannot remap them.
-func startNATS(t *testing.T, pki *testPKI, port int) string {
+// host the ordinary published-port path is used instead.
+//
+// The port is allocated, not passed in. A shared network namespace cannot
+// remap ports, so every broker in a run needs a distinct one; this used to
+// be satisfied by each test passing a different constant (42421-42423),
+// which held within a run and failed across two, because a container port
+// binds host state rather than worktree state. Two runs on one machine
+// collided deterministically.
+func startNATS(t *testing.T, pki *testPKI) string {
 	t.Helper()
 
 	if err := exec.Command("docker", "info").Run(); err != nil {
 		t.Skipf("docker daemon unavailable: %v", err)
 	}
+
+	port := freeNATSPort(t)
 
 	args := []string{"create"}
 	if _, err := os.Stat("/.dockerenv"); err == nil {
@@ -255,7 +264,7 @@ func drain(ctx context.Context, ch <-chan *message.Message, total *atomic.Int64)
 
 func TestNATSQueueGroups_ShouldDeliverEachSignJobToExactlyOneSubscriber(t *testing.T) {
 	pki := newTestPKI(t, t.TempDir())
-	url := startNATS(t, pki, 42421)
+	url := startNATS(t, pki)
 
 	instanceA := newNATSPubSub(t, url, pki)
 	instanceB := newNATSPubSub(t, url, pki)
@@ -310,7 +319,7 @@ func TestNATSQueueGroups_ShouldDeliverEachSignJobToExactlyOneSubscriber(t *testi
 
 func TestNATSQueueGroups_ShouldDeliverEachSignedReplyToExactlyOneListener(t *testing.T) {
 	pki := newTestPKI(t, t.TempDir())
-	url := startNATS(t, pki, 42423)
+	url := startNATS(t, pki)
 
 	listenerA := newNATSPubSub(t, url, pki)
 	listenerB := newNATSPubSub(t, url, pki)
@@ -357,7 +366,7 @@ func TestNATSQueueGroups_ShouldDeliverEachSignedReplyToExactlyOneListener(t *tes
 
 func TestNATSWaitTopic_ShouldFanOutToTheSubscribedInstance(t *testing.T) {
 	pki := newTestPKI(t, t.TempDir())
-	url := startNATS(t, pki, 42422)
+	url := startNATS(t, pki)
 
 	waiter := newNATSPubSub(t, url, pki)
 	resolver := newNATSPubSub(t, url, pki)
@@ -385,4 +394,44 @@ func TestNATSWaitTopic_ShouldFanOutToTheSubscribedInstance(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("wake never delivered: the wait topic must use plain fan-out, not queue semantics - a queue group here could route the wake to an instance with no waiting client")
 	}
+}
+
+// claimedNATSPorts records every port freeNATSPort has handed out in this
+// process, so a port released back to the kernel is never offered twice
+// before the container that wants it has bound it.
+var claimedNATSPorts sync.Map
+
+// freeNATSPort allocates a loopback port for a broker container.
+//
+// Same close-then-rebind window as the e2e harness's freePort, and the same
+// reason it cannot be closed: a container port mapping cannot be handed an
+// open listener. Within a process no port is ever offered twice; across two
+// concurrent runs the residual race is the kernel handing the same ephemeral
+// port to both at once, which is unlikely rather than the certainty a
+// hardcoded constant guaranteed.
+func freeNATSPort(t *testing.T) int {
+	t.Helper()
+
+	const attempts = 20
+	for range attempts {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("allocating a port: %v", err)
+		}
+		addr, ok := ln.Addr().(*net.TCPAddr)
+		if !ok {
+			_ = ln.Close()
+			t.Fatalf("expected a *net.TCPAddr, got %T", ln.Addr())
+		}
+		port := addr.Port
+		if err := ln.Close(); err != nil {
+			t.Fatalf("releasing the probe listener: %v", err)
+		}
+		if _, taken := claimedNATSPorts.LoadOrStore(port, struct{}{}); !taken {
+			return port
+		}
+	}
+
+	t.Fatalf("could not find an unclaimed ephemeral port in %d attempts", attempts)
+	return 0
 }

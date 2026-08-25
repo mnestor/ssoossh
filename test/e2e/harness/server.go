@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -282,23 +283,57 @@ func (s *Server) shutdown(t *testing.T) {
 	}
 }
 
+// claimedPorts records every port freePort has handed out in this process,
+// so a port released back to the kernel cannot be handed to a second caller
+// that has not bound it yet.
+var claimedPorts sync.Map
+
 // freePort binds an ephemeral TCP port, reads it, and closes the listener
-// immediately so ssoosshd can bind it instead. This has a theoretical
-// reuse race, deliberately accepted (docs/dev/e2e-testing-plan.md, "Ports").
+// immediately so the subprocess that needs it (ssoosshd, sshd, a NATS
+// container) can bind it instead.
+//
+// The close-then-rebind window is unavoidable here: these ports are handed
+// to subprocesses and to container port mappings, neither of which can be
+// passed an already-open listener. What is avoidable is handing the SAME
+// port to two callers, which is the common case in practice -- the kernel
+// will happily return a just-released port to the next :0 bind in the same
+// process, and both callers then race to bind it. claimedPorts makes that
+// impossible within a process; retries cover the case where the kernel
+// keeps returning ports already spoken for.
+//
+// Across processes -- two e2e runs on one host -- the residual race remains
+// and cannot be closed from here. It is now merely unlikely rather than
+// certain, which is the point: nothing in the suite hardcodes a port any
+// more (see StartNATS), so a collision needs the kernel to hand the same
+// ephemeral port to two processes in the same instant. Concurrent e2e runs
+// are still not supported; make test-e2e serialises them (Makefile). See
+// docs/dev/e2e-testing-plan.md, "Ports".
 func freePort(t *testing.T) int {
 	t.Helper()
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("harness: failed to allocate a port: %v", err)
-	}
-	defer ln.Close()
+	const attempts = 20
+	for range attempts {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("harness: failed to allocate a port: %v", err)
+		}
+		addr, ok := ln.Addr().(*net.TCPAddr)
+		if !ok {
+			_ = ln.Close()
+			t.Fatalf("harness: expected a *net.TCPAddr from a tcp listener, got %T", ln.Addr())
+		}
+		port := addr.Port
+		if err := ln.Close(); err != nil {
+			t.Fatalf("harness: failed to release the probe listener: %v", err)
+		}
 
-	addr, ok := ln.Addr().(*net.TCPAddr)
-	if !ok {
-		t.Fatalf("harness: expected a *net.TCPAddr from a tcp listener, got %T", ln.Addr())
+		if _, taken := claimedPorts.LoadOrStore(port, struct{}{}); !taken {
+			return port
+		}
 	}
-	return addr.Port
+
+	t.Fatalf("harness: could not find an unclaimed ephemeral port in %d attempts", attempts)
+	return 0
 }
 
 // generateCAKey returns a fresh ed25519 CA keypair: the OpenSSH-PEM private

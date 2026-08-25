@@ -47,12 +47,20 @@ func (n *NATS) PubSubYAML() string {
 }
 
 // StartNATS generates a throwaway PKI, starts a TLS-verifying nats-server
-// container on port, and blocks until a real mTLS connect would succeed
-// (verified by the server accepting the TLS handshake; the app-level
-// connect is the caller's own code path). Skips only when the docker
-// daemon itself is absent, per the postgres harness convention.
-func StartNATS(t *testing.T, port int) *NATS {
+// container on a free loopback port, and blocks until a real mTLS connect
+// would succeed (verified by the server accepting the TLS handshake; the
+// app-level connect is the caller's own code path). Skips only when the
+// docker daemon itself is absent, per the postgres harness convention.
+//
+// The port is allocated rather than passed in. It used to be a parameter
+// and every caller passed a hand-picked constant (42431, 42433, 42435),
+// chosen to be distinct from each other -- which held within one run and
+// not at all across two, since a container port binds host state, not
+// worktree state. Two e2e runs on one machine collided on it deterministically.
+func StartNATS(t *testing.T) *NATS {
 	t.Helper()
+
+	port := freePort(t)
 
 	if err := exec.Command("docker", "info").Run(); err != nil {
 		t.Skipf("harness: docker daemon unavailable: %v", err)

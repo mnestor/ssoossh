@@ -190,8 +190,16 @@ func ensureTestUser(t *testing.T) {
 		return
 	}
 
+	// Lookup-then-create is not atomic, and the account is host state: two
+	// e2e runs starting together both miss the lookup and both call
+	// useradd, and the loser gets exit 9 ("user already exists"). That is a
+	// success for our purposes -- the account we needed is there -- so it
+	// is treated as one rather than failing a run for winning a race it
+	// should not have been in. Any other failure is still fatal.
 	if out, err := exec.Command("sudo", "useradd", "-m", "-s", "/bin/sh", TestSSHUser).CombinedOutput(); err != nil {
-		t.Fatalf("harness: failed to create test user %s: %v\n%s", TestSSHUser, err, out)
+		if _, lookupErr := user.Lookup(TestSSHUser); lookupErr != nil {
+			t.Fatalf("harness: failed to create test user %s: %v\n%s", TestSSHUser, err, out)
+		}
 	}
 	// A password-locked account is rejected by sshd before any key is even
 	// considered ("User ... not allowed because account is locked"), which

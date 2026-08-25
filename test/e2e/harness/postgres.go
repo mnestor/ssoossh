@@ -5,7 +5,6 @@ package harness
 import (
 	"context"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -72,8 +71,19 @@ func StartPostgres(t *testing.T) {
 		dsn += "?sslmode=disable"
 	}
 
-	// Set the environment variable so the harness server picks it up.
-	os.Setenv("SSOOSSH_E2E_POSTGRES_DSN", dsn)
+	// t.Setenv, not os.Setenv: this is process-global state that outlives
+	// the test that set it, and an unrestored DSN would silently point a
+	// later test at a container that has already been terminated. t.Setenv
+	// also panics if called from a parallel test, which is the correct
+	// outcome -- mutating the environment is not safe there, and a loud
+	// panic beats a test reading another test's DSN.
+	//
+	// Note this helper currently has no callers; the postgres-backed tests
+	// use NewPostgresDatabase (postgresdb.go), which takes the DSN of an
+	// already-running instance from the environment rather than starting
+	// one. Kept because it is the container-per-run path, and fixed rather
+	// than left as a trap for whoever reaches for it next.
+	t.Setenv("SSOOSSH_E2E_POSTGRES_DSN", dsn)
 }
 
 // containsSSLMode checks if the DSN already contains a sslmode parameter.
