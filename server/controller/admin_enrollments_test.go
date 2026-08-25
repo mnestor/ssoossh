@@ -15,11 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
-
 	"github.com/mnestor/ssoossh/server/config"
-	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
@@ -64,31 +60,7 @@ func (s *stubEnrollmentProvider) Reassign(_ context.Context, _ string, _ string,
 	return nil
 }
 
-// routerWithEnrollments is routerWithAuth with a caller-supplied enrollment
-// provider, which routerWithAuth deliberately stubs out.
-func routerWithEnrollments(t *testing.T, cfg *config.Config, db *gorm.DB, identity *service.Identity, prov service.EnrollmentProvider) *gin.Engine {
-	t.Helper()
-	gin.SetMode(gin.TestMode)
-
-	r := gin.New()
-	r.Use(middleware.NewErrorHandlerMiddleware().Add())
-	r.Use(identityMiddleware(identity))
-
-	NewAdminController(
-		&r.RouterGroup,
-		cfg,
-		db,
-		identityMiddleware(identity),
-		middleware.NewAdminAuthMiddleware(cfg).Add(),
-		middleware.NewAuditorAuthMiddleware(cfg).Add(),
-		func(c *gin.Context) { c.Next() },
-		prov,
-	)
-
-	return r
-}
-
-func auditorIdentity(cfg *config.Config) *service.Identity {
+func newAuditorIdentity(cfg *config.Config) *service.Identity {
 	return &service.Identity{
 		Subject:  "sub-auditor",
 		Username: "auditor",
@@ -131,7 +103,7 @@ func TestListEnrollmentsHandler_ShouldMapEveryFieldOntoTheResponse(t *testing.T)
 	}
 
 	cfg := newTestConfig(t)
-	r := routerWithEnrollments(t, cfg, newTestDB(t), auditorIdentity(cfg), prov)
+	r := routerWithEnrollmentService(t, cfg, newTestDB(t), newAuditorIdentity(cfg), prov)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/enrollments?limit=2&offset=2&q=deploy", nil))
@@ -222,7 +194,7 @@ func TestListEnrollmentsHandler_ShouldOmitTimestampsForAnUnredeemedEnrollment(t 
 	}
 
 	cfg := newTestConfig(t)
-	r := routerWithEnrollments(t, cfg, newTestDB(t), auditorIdentity(cfg), prov)
+	r := routerWithEnrollmentService(t, cfg, newTestDB(t), newAuditorIdentity(cfg), prov)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/enrollments", nil))
@@ -255,7 +227,7 @@ func TestListEnrollmentsHandler_ShouldReturnAnArrayWhenThereAreNone(t *testing.T
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	r := routerWithEnrollments(t, cfg, newTestDB(t), auditorIdentity(cfg), &stubEnrollmentProvider{})
+	r := routerWithEnrollmentService(t, cfg, newTestDB(t), newAuditorIdentity(cfg), &stubEnrollmentProvider{})
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/enrollments", nil))
@@ -283,7 +255,7 @@ func TestListEnrollmentsHandler_ShouldSurfaceAServiceError(t *testing.T) {
 
 	cfg := newTestConfig(t)
 	prov := &stubEnrollmentProvider{listErr: &errorresponses.ForbiddenError{Reason: "not an auditor"}}
-	r := routerWithEnrollments(t, cfg, newTestDB(t), auditorIdentity(cfg), prov)
+	r := routerWithEnrollmentService(t, cfg, newTestDB(t), newAuditorIdentity(cfg), prov)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/enrollments", nil))
@@ -299,7 +271,7 @@ func TestListEnrollmentsHandler_ShouldRejectUnparseablePaging(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
-	r := routerWithEnrollments(t, cfg, newTestDB(t), auditorIdentity(cfg), &stubEnrollmentProvider{})
+	r := routerWithEnrollmentService(t, cfg, newTestDB(t), newAuditorIdentity(cfg), &stubEnrollmentProvider{})
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/enrollments?limit=not-a-number", nil))
@@ -339,7 +311,7 @@ func TestGetEnrollmentDetailHandler_ShouldReturnTheEnrollmentAndItsRetrievalLog(
 	}
 
 	cfg := newTestConfig(t)
-	r := routerWithEnrollments(t, cfg, newTestDB(t), auditorIdentity(cfg), prov)
+	r := routerWithEnrollmentService(t, cfg, newTestDB(t), newAuditorIdentity(cfg), prov)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/enrollments/enr-42", nil))
@@ -409,7 +381,7 @@ func TestGetEnrollmentDetailHandler_ShouldReturnAnArrayForANeverRedeemedCode(t *
 	}
 
 	cfg := newTestConfig(t)
-	r := routerWithEnrollments(t, cfg, newTestDB(t), auditorIdentity(cfg), prov)
+	r := routerWithEnrollmentService(t, cfg, newTestDB(t), newAuditorIdentity(cfg), prov)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/enrollments/enr-unused", nil))
@@ -441,7 +413,7 @@ func TestGetEnrollmentDetailHandler_ShouldSurfaceNotFound(t *testing.T) {
 
 	cfg := newTestConfig(t)
 	prov := &stubEnrollmentProvider{detailErr: &errorresponses.NotFoundError{Resource: `enrollment "enr-nope"`}}
-	r := routerWithEnrollments(t, cfg, newTestDB(t), auditorIdentity(cfg), prov)
+	r := routerWithEnrollmentService(t, cfg, newTestDB(t), newAuditorIdentity(cfg), prov)
 
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/enrollments/enr-nope", nil))
@@ -458,7 +430,7 @@ func TestAdminEnrollmentEndpoints_ShouldDenyAPlainUser(t *testing.T) {
 
 	cfg := newTestConfig(t)
 	plain := &service.Identity{Subject: "sub-bob", Username: "bob", Groups: []string{"ssh-users"}}
-	r := routerWithEnrollments(t, cfg, newTestDB(t), plain, &stubEnrollmentProvider{})
+	r := routerWithEnrollmentService(t, cfg, newTestDB(t), plain, &stubEnrollmentProvider{})
 
 	for _, path := range []string{"/admin/enrollments", "/admin/enrollments/enr-1"} {
 		w := httptest.NewRecorder()
