@@ -15,6 +15,8 @@ class FakePage {
 	// reactivity without needing a reactive URL.
 	url = $state(new URL('http://localhost/'));
 	state = $state<App.PageState>({});
+	// params are route parameters extracted from the URL path
+	params = $state<Record<string, string>>({});
 }
 
 export const fakePage = new FakePage();

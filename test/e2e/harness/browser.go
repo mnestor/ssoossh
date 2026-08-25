@@ -105,6 +105,51 @@ func (b *Browser) WaitVisible(t *testing.T, selector string) {
 	}
 }
 
+// Text returns the visible text of the first node matching selector. Useful
+// where the assertion is about a value the page rendered rather than about
+// an element existing -- "the contact address is the configured one", not
+// "there is a contact address".
+func (b *Browser) Text(t *testing.T, selector string) string {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
+	defer cancel()
+
+	var text string
+	if err := chromedp.Run(ctx,
+		chromedp.WaitVisible(selector, chromedp.ByQuery),
+		chromedp.Text(selector, &text, chromedp.ByQuery),
+	); err != nil {
+		b.screenshotOnFailure(t)
+		t.Fatalf("harness: reading the text of %s failed: %v", selector, err)
+	}
+	return text
+}
+
+// Attribute returns one attribute of the first node matching selector, and
+// whether it was present.
+func (b *Browser) Attribute(t *testing.T, selector, name string) (string, bool) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
+	defer cancel()
+
+	var value string
+	var ok bool
+	if err := chromedp.Run(ctx,
+		chromedp.WaitVisible(selector, chromedp.ByQuery),
+		chromedp.AttributeValue(selector, name, &value, &ok, chromedp.ByQuery),
+	); err != nil {
+		b.screenshotOnFailure(t)
+		t.Fatalf("harness: reading %s of %s failed: %v", name, selector, err)
+	}
+	return value, ok
+}
+
+// Ctx exposes the browser context so a diagnostic can drive chromedp
+// directly. Tests should prefer the helpers above.
+func (b *Browser) Ctx() context.Context { return b.ctx }
+
 // AssertNotPresent fails the test if selector matches any node.
 func (b *Browser) AssertNotPresent(t *testing.T, selector string) {
 	t.Helper()

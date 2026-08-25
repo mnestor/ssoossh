@@ -116,6 +116,8 @@ table server_secrets
   index server_secrets_pkey CREATE UNIQUE INDEX server_secrets_pkey ON public.server_secrets USING btree (name)
 table users
   column created_at type=timestamp with time zone nullable=false default=<none>
+  column disabled_at type=timestamp with time zone nullable=true default=<none>
+  column disabled_by_user_id type=text nullable=true default=<none>
   column email type=text nullable=false default=''::text
   column extra_fields type=text nullable=false default=''::text
   column id type=text nullable=false default=<none>
@@ -124,5 +126,6 @@ table users
   column subject type=text nullable=false default=<none>
   column updated_at type=timestamp with time zone nullable=false default=<none>
   column username type=text nullable=false default=<none>
+  fk disabled_by_user_id -> users.id
   index idx_users_subject CREATE UNIQUE INDEX idx_users_subject ON public.users USING btree (subject)
   index users_pkey CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)

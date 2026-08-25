@@ -33,7 +33,7 @@ export class ApiError extends Error {
 
 /** The subset of RequestInit this client accepts. */
 interface RequestOptions {
-	method?: 'GET' | 'POST' | 'PUT';
+	method?: 'GET' | 'POST' | 'PUT' | 'PATCH';
 	body?: unknown;
 	signal?: AbortSignal;
 }

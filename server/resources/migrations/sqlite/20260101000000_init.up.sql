@@ -36,7 +36,13 @@ CREATE TABLE users (
     -- config.OAuthFields.Extra.
     extra_fields TEXT NOT NULL DEFAULT '',
     created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL
+    updated_at DATETIME NOT NULL,
+    -- Admin-initiated user disable: tracks when a user was disabled and by
+    -- which admin. DisabledAt is NULL when the user is not disabled; when
+    -- set, the user cannot authenticate and their enrollments expire after
+    -- the configured grace period (admin.disable_grace_period).
+    disabled_at DATETIME,
+    disabled_by_user_id TEXT REFERENCES users(id)
 );
 CREATE UNIQUE INDEX idx_users_subject ON users(subject);
 

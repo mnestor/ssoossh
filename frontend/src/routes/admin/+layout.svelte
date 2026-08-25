@@ -15,10 +15,14 @@
 	let { children }: { children: Snippet } = $props();
 
 	// Gate the entire admin area on auditor access. The server re-checks
-	// every read, so the client-side gate is display-only and does not
-	// provide security. Redirect to login if not auditor.
+	// every read, so this is display-only and provides no security.
+	//
+	// Only a signed-OUT visitor is sent to login. Someone signed in without
+	// auditor access stays here and gets the explanation below: logging in
+	// again cannot grant admin, so bouncing them to a screen they have
+	// already satisfied is a loop rather than an answer.
 	$effect(() => {
-		if (session.resolved && !session.user?.is_auditor) {
+		if (session.resolved && !session.signedIn) {
 			goToLogin(page.url.pathname);
 		}
 	});
@@ -60,8 +64,11 @@
 		</div>
 	</div>
 {:else if session.resolved}
-	<!-- Not authorized; go to login -->
-	<div class="flex flex-col items-center justify-center gap-4 py-12">
+	<!-- Signed in, but without auditor access. -->
+	<div
+		data-testid="admin-access-denied"
+		class="flex flex-col items-center justify-center gap-4 py-12"
+	>
 		<p class="text-ink-muted">You do not have access to the admin area.</p>
 	</div>
 {:else}

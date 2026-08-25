@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 
 	import Icon from './Icon.svelte';
+	import { session } from '$lib/session.svelte';
 
 	// The header's identity control: who you are acting as, and the one
 	// action that changes it. A menu rather than a bare Sign out button so
@@ -16,6 +17,8 @@
 	}
 
 	let { label, busy = false, onsignout }: Props = $props();
+
+	const isAuditor = $derived(session.user?.is_auditor ?? false);
 
 	let open = $state(false);
 	let root = $state<HTMLElement | undefined>(undefined);
@@ -87,6 +90,17 @@
 			>
 				Preferences
 			</a>
+			{#if isAuditor}
+				<hr class="my-1 border-border-subtle" />
+				<a
+					href={resolve('/admin/users')}
+					role="menuitem"
+					onclick={() => (open = false)}
+					class="block w-full rounded px-3 py-2 text-left text-sm transition hover:bg-surface-muted"
+				>
+					Admin
+				</a>
+			{/if}
 			<button
 				type="button"
 				role="menuitem"

@@ -415,6 +415,12 @@ export interface EffectiveConfigResponse {
 	admin_require_group?: string;
 	admin_auditor_group?: string;
 	/**
+	 * Admin user management
+	 */
+	admin_disable_grace_period: string;
+	admin_contact_email?: string;
+	admin_disabled_message?: string;
+	/**
 	 * Logging configuration
 	 */
 	logging_level: string;
@@ -528,4 +534,150 @@ export interface UpdateNotificationPreferencesBody {
 	 * would report success for a preference that was never stored.
 	 */
 	kinds: { [key: string]: boolean};
+}
+/**
+ * AdminUserSummary is one row in the paginated auditor user list view,
+ * showing identity and disable state but not detailed enrollment history.
+ */
+export interface AdminUserSummary {
+	/**
+	 * ID is the stable user identifier.
+	 */
+	id: string;
+	/**
+	 * Username is the OIDC claim username, possibly changed at each login.
+	 */
+	username: string;
+	/**
+	 * Email is the user's email from OIDC, possibly empty or changed at login.
+	 */
+	email: string;
+	/**
+	 * Subject is the OIDC "sub" claim, stable across logins for this user.
+	 */
+	subject: string;
+	/**
+	 * DisabledAt is when an admin disabled this user. Omitted (null) if not
+	 * disabled.
+	 */
+	disabled_at?: string;
+	/**
+	 * DisabledByUsername is the username of the admin that disabled this user.
+	 * Only populated when DisabledAt is non-null.
+	 */
+	disabled_by_username?: string;
+	/**
+	 * CreatedAt is when the user first authenticated.
+	 */
+	created_at: string;
+	/**
+	 * UpdatedAt is when the user's identity was last refreshed at login.
+	 */
+	updated_at: string;
+}
+/**
+ * AdminUsersListResponse is one page of the auditor user list, with paging info.
+ */
+export interface AdminUsersListResponse {
+	users: AdminUserSummary[];
+	meta: PageMeta;
+}
+/**
+ * AdminUserDetail is the full details of one user for the auditor detail view,
+ * including identity fields, disable state, and enrollment/certificate counts.
+ */
+export interface AdminUserDetail {
+	/**
+	 * ID is the stable user identifier.
+	 */
+	id: string;
+	/**
+	 * Username is the OIDC claim username.
+	 */
+	username: string;
+	/**
+	 * Email is the user's email from OIDC, possibly empty.
+	 */
+	email: string;
+	/**
+	 * Subject is the stable OIDC "sub" claim.
+	 */
+	subject: string;
+	/**
+	 * OtherAccounts are alternate account identifiers from OIDC, decoded
+	 * from the stored JSON array.
+	 */
+	other_accounts: string[];
+	/**
+	 * ServiceAccounts are service accounts from OIDC, decoded from stored JSON.
+	 */
+	service_accounts: string[];
+	/**
+	 * ExtraFields are operator-configured extra claims, decoded from stored JSON map.
+	 */
+	extra_fields: { [key: string]: any};
+	/**
+	 * CreatedAt is when the user first authenticated.
+	 */
+	created_at: string;
+	/**
+	 * UpdatedAt is when the user's identity was last refreshed at login.
+	 */
+	updated_at: string;
+	/**
+	 * DisabledAt is when an admin disabled this user. Omitted if not disabled.
+	 */
+	disabled_at?: string;
+	/**
+	 * DisabledByUserID and DisabledByUsername identify the admin that
+	 * disabled this user. Both omitted if not disabled.
+	 */
+	disabled_by_user_id?: string;
+	disabled_by_username?: string;
+	/**
+	 * ServiceEnrollmentCount is how many active (not expired) service
+	 * enrollments this user has. Shown so an admin can decide whether to
+	 * disable the account.
+	 */
+	service_enrollment_count: number /* int */;
+	/**
+	 * CertificateCount is how many certificates have been issued to this user.
+	 */
+	certificate_count: number /* int */;
+}
+/**
+ * DisableUserConsequences describes what will happen immediately and after
+ * the grace period if a user is disabled, shown in the confirmation dialog.
+ */
+export interface DisableUserConsequences {
+	/**
+	 * GracePeriodSeconds is how long after disable before enrollments expire.
+	 */
+	grace_period_seconds: number /* int64 */;
+	/**
+	 * ExpireAtTimestamp is when the enrollments will actually expire.
+	 */
+	expire_at_timestamp: string;
+	/**
+	 * ServiceEnrollmentCount is how many active enrollments will expire.
+	 */
+	service_enrollment_count: number /* int */;
+}
+/**
+ * DisableUserRequestBody is the request to disable a user, with optional reason.
+ */
+export interface DisableUserRequestBody {
+	/**
+	 * Reason is optional text explaining why the user was disabled, for audit.
+	 */
+	reason?: string;
+}
+/**
+ * ReEnableUserRequestBody is the request to re-enable a user.
+ */
+export interface ReEnableUserRequestBody {
+	/**
+	 * Reason is optional text explaining why the user was re-enabled, for audit.
+	 */
+	reason?: string;
 }

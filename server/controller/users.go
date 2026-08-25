@@ -12,9 +12,11 @@ import (
 // sessionAuthMiddleware. db is used to hydrate extra fields from the users
 // table; the session remains authoritative for subject/username/email/groups/accounts.
 //
-// There is deliberately no route to list or read *other* users. Nothing in
-// the UI needs one yet, and an endpoint that enumerates identities is worth
-// adding on demand with an authorization rule rather than by default.
+// Auditor-scoped endpoints to list and read other users (for the admin
+// directory) live in the admin controller, not here: those require explicit
+// auditor authorization, while this endpoint is scoped to each user's own
+// identity. The comment that used to stand here said no such route existed
+// anywhere, which stopped being true when the directory landed.
 func NewUserController(group *gin.RouterGroup, c *config.Config, sessionAuthMiddleware gin.HandlerFunc, db any) {
 	uc := &userController{config: c, db: db}
 

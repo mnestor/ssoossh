@@ -323,6 +323,136 @@ components:
       required:
       - data
       type: object
+    webtypes.AdminUserDetail:
+      properties:
+        certificate_count:
+          description: CertificateCount is how many certificates have been issued
+            to this user.
+          type: integer
+        created_at:
+          description: CreatedAt is when the user first authenticated.
+          type: string
+        disabled_at:
+          description: DisabledAt is when an admin disabled this user. Omitted if
+            not disabled.
+          type: string
+        disabled_by_user_id:
+          description: |-
+            DisabledByUserID and DisabledByUsername identify the admin that
+            disabled this user. Both omitted if not disabled.
+          type: string
+        disabled_by_username:
+          type: string
+        email:
+          description: Email is the user's email from OIDC, possibly empty.
+          type: string
+        extra_fields:
+          additionalProperties: {}
+          description: ExtraFields are operator-configured extra claims, decoded from
+            stored JSON map.
+          type: object
+        id:
+          description: ID is the stable user identifier.
+          type: string
+        other_accounts:
+          description: |-
+            OtherAccounts are alternate account identifiers from OIDC, decoded
+            from the stored JSON array.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        service_accounts:
+          description: ServiceAccounts are service accounts from OIDC, decoded from
+            stored JSON.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        service_enrollment_count:
+          description: |-
+            ServiceEnrollmentCount is how many active (not expired) service
+            enrollments this user has. Shown so an admin can decide whether to
+            disable the account.
+          type: integer
+        subject:
+          description: Subject is the stable OIDC "sub" claim.
+          type: string
+        updated_at:
+          description: UpdatedAt is when the user's identity was last refreshed at
+            login.
+          type: string
+        username:
+          description: Username is the OIDC claim username.
+          type: string
+      required:
+      - certificate_count
+      - created_at
+      - email
+      - extra_fields
+      - id
+      - other_accounts
+      - service_accounts
+      - service_enrollment_count
+      - subject
+      - updated_at
+      - username
+      type: object
+    webtypes.AdminUserSummary:
+      properties:
+        created_at:
+          description: CreatedAt is when the user first authenticated.
+          type: string
+        disabled_at:
+          description: |-
+            DisabledAt is when an admin disabled this user. Omitted (null) if not
+            disabled.
+          type: string
+        disabled_by_username:
+          description: |-
+            DisabledByUsername is the username of the admin that disabled this user.
+            Only populated when DisabledAt is non-null.
+          type: string
+        email:
+          description: Email is the user's email from OIDC, possibly empty or changed
+            at login.
+          type: string
+        id:
+          description: ID is the stable user identifier.
+          type: string
+        subject:
+          description: Subject is the OIDC "sub" claim, stable across logins for this
+            user.
+          type: string
+        updated_at:
+          description: UpdatedAt is when the user's identity was last refreshed at
+            login.
+          type: string
+        username:
+          description: Username is the OIDC claim username, possibly changed at each
+            login.
+          type: string
+      required:
+      - created_at
+      - email
+      - id
+      - subject
+      - updated_at
+      - username
+      type: object
+    webtypes.AdminUsersListResponse:
+      properties:
+        meta:
+          $ref: '#/components/schemas/webtypes.PageMeta'
+        users:
+          items:
+            $ref: '#/components/schemas/webtypes.AdminUserSummary'
+          type: array
+          uniqueItems: false
+      required:
+      - meta
+      - users
+      type: object
     webtypes.ApproveRequestBody:
       properties:
         principals:
@@ -547,9 +677,41 @@ components:
       - subject
       - username
       type: object
+    webtypes.DisableUserConsequences:
+      properties:
+        expire_at_timestamp:
+          description: ExpireAtTimestamp is when the enrollments will actually expire.
+          type: string
+        grace_period_seconds:
+          description: GracePeriodSeconds is how long after disable before enrollments
+            expire.
+          type: integer
+        service_enrollment_count:
+          description: ServiceEnrollmentCount is how many active enrollments will
+            expire.
+          type: integer
+      required:
+      - expire_at_timestamp
+      - grace_period_seconds
+      - service_enrollment_count
+      type: object
+    webtypes.DisableUserRequestBody:
+      properties:
+        reason:
+          description: Reason is optional text explaining why the user was disabled,
+            for audit.
+          type: string
+      type: object
     webtypes.EffectiveConfigResponse:
       properties:
         admin_auditor_group:
+          type: string
+        admin_contact_email:
+          type: string
+        admin_disable_grace_period:
+          description: Admin user management
+          type: string
+        admin_disabled_message:
           type: string
         admin_require_group:
           description: Admin authorization
@@ -604,6 +766,7 @@ components:
           description: Server connection and TLS settings
           type: string
       required:
+      - admin_disable_grace_period
       - cert_approval_ttl
       - cert_client_timeout
       - cert_pam_valid_duration
@@ -730,6 +893,13 @@ components:
       - page
       - page_count
       - total
+      type: object
+    webtypes.ReEnableUserRequestBody:
+      properties:
+        reason:
+          description: Reason is optional text explaining why the user was re-enabled,
+            for audit.
+          type: string
       type: object
     webtypes.RequestDetailResponse:
       properties:
@@ -1113,6 +1283,102 @@ paths:
       summary: Expire an enrollment (admin-only)
       tags:
       - admin
+  /api/admin/users:
+    get:
+      description: |-
+        Returns a paginated list of users, searchable by username,
+        email, or subject. Useful for user directory and audit.
+      parameters:
+      - description: Page size (default 25, max 100)
+        example: 25
+        in: query
+        name: limit
+        schema:
+          type: integer
+      - description: Results to skip (default 0)
+        example: 0
+        in: query
+        name: offset
+        schema:
+          type: integer
+      - description: Search term
+        example: alice
+        in: query
+        name: q
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/webtypes.AdminUsersListResponse'
+          description: User list
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Invalid paging/search parameters
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as auditor
+      security:
+      - sessionCookie: []
+      summary: List all users (auditor-only)
+      tags:
+      - admin
+  /api/admin/users/{id}:
+    get:
+      description: |-
+        Returns full identity details, disable state, and counts of
+        certificates and service enrollments for one user.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/webtypes.AdminUserDetail'
+          description: User details
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as auditor
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: User not found
+      security:
+      - sessionCookie: []
+      summary: Get user details (auditor-only)
+      tags:
+      - admin
   /api/admin/users/{id}/disable:
     patch:
       description: |-
@@ -1126,13 +1392,21 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/webtypes.DisableUserRequestBody'
+              description: Disable reason
+              summary: request
+        description: Disable reason
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/gin.H'
-          description: User disabled
+                $ref: '#/components/schemas/webtypes.DisableUserConsequences'
+          description: Consequences of disabling
         "401":
           content:
             application/json:
@@ -1154,6 +1428,57 @@ paths:
       security:
       - sessionCookie: []
       summary: Disable a user (admin-only)
+      tags:
+      - admin
+  /api/admin/users/{id}/enable:
+    patch:
+      description: |-
+        Re-enables a previously disabled user. The operation is idempotent.
+        Note: service enrollments that have already expired are not
+        un-expired; the user must request new enrollments.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/webtypes.ReEnableUserRequestBody'
+              description: Re-enable reason
+              summary: request
+        description: Re-enable reason
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/gin.H'
+          description: User re-enabled
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as admin
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: User not found
+      security:
+      - sessionCookie: []
+      summary: Re-enable a user (admin-only)
       tags:
       - admin
   /api/branding:

@@ -498,6 +498,49 @@ authentication:
     #   accounts: "altAccounts"
 
 # ----------------------------------------------------------------------
+# admin - administrative and auditor-scoped authorization and operations.
+# The require_group and auditor_group map to OIDC group claims configured
+# under authentication.fields.groups above. All fields are optional.
+# ----------------------------------------------------------------------
+admin:
+  # OIDC group membership required to perform admin operations: disabling
+  # users, expiring service enrollments. Empty disables admin operations
+  # entirely. Fails closed: no group membership means no admin access.
+  require_group: ""
+
+  # OIDC group membership required to access auditor-scoped read-only
+  # operations: viewing the effective configuration, cross-user certificate
+  # history. Admin group members (require_group above) also hold auditor
+  # access even if this is unset, so leaving it empty narrows auditor
+  # operations to admins rather than disabling them. Fails closed: no group
+  # membership in either group means no auditor access.
+  auditor_group: ""
+
+  # How long after a user is disabled before their service enrollments
+  # expire and stop producing new certificates. This grace period gives
+  # running services time to notice the disabled user and rotate their
+  # credentials before the old enrollment certificates stop working.
+  # After expiry (see service.SweepDisabledUserEnrollments), no new
+  # certificates can be issued from the enrollment, though already-issued
+  # ones remain valid until they reach their own expiration. Must be
+  # non-negative. Set to 0s to expire enrollments immediately on disable,
+  # though services may not handle that gracefully.
+  disable_grace_period: 168h
+
+  # Email address shown on the account-disabled page so a disabled user can
+  # contact for support or reinstatement. Empty disables the display (the
+  # page renders but shows no mailto link). Only the disabled user sees this
+  # page — an authentication failure to anyone else is not an oracle for
+  # account existence.
+  contact_email: ""
+
+  # Free-text message shown on the account-disabled page below the contact
+  # email, explaining why the account was disabled or what the user should
+  # do next. Empty means no additional message. Only the disabled user sees
+  # this page.
+  disabled_message: ""
+
+# ----------------------------------------------------------------------
 # cert_options - issuance rules per certificate type: user, service, pam.
 # ----------------------------------------------------------------------
 cert_options:

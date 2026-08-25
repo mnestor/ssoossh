@@ -29,6 +29,15 @@ type User struct {
 	CreatedAt time.Time `gorm:"column:created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at"`
 
+	// DisabledAt records when the user was disabled by an admin. Nil means
+	// not disabled. Once disabled, the user cannot authenticate and their
+	// service enrollments expire after the configured grace period.
+	DisabledAt *time.Time `gorm:"column:disabled_at"`
+
+	// DisabledByUserID records which admin user disabled this user (foreign
+	// key to users.id). Nil when DisabledAt is nil.
+	DisabledByUserID *string `gorm:"column:disabled_by_user_id"`
+
 	// TODO: LDAP-sourced fields once identity enrichment is implemented.
 }
 

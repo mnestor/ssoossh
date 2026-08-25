@@ -367,7 +367,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	// Browser-facing OIDC login/callback, outside /api since these are
 	// redirects rather than JSON API calls.
 	authGroup := r.Group("/auth")
-	controller.NewAuthController(authGroup, a.svc.auth, csrf)
+	controller.NewAuthController(authGroup, a.svc.auth, csrf, a.config)
 
 	// Set up API routes
 	apiGroup := r.Group("/api")

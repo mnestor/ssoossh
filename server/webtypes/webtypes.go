@@ -378,6 +378,11 @@ type EffectiveConfigResponse struct {
 	AdminRequireGroup string `json:"admin_require_group,omitempty"`
 	AdminAuditorGroup string `json:"admin_auditor_group,omitempty"`
 
+	// Admin user management
+	AdminDisableGracePeriod string `json:"admin_disable_grace_period" validate:"required"`
+	AdminContactEmail       string `json:"admin_contact_email,omitempty"`
+	AdminDisabledMessage    string `json:"admin_disabled_message,omitempty"`
+
 	// Logging configuration
 	LoggingLevel string `json:"logging_level" validate:"required"`
 
@@ -468,4 +473,113 @@ type UpdateNotificationPreferencesBody struct {
 	// unknown key is rejected rather than ignored: silently dropping it
 	// would report success for a preference that was never stored.
 	Kinds map[string]bool `json:"kinds" validate:"required"`
+}
+
+// AdminUserSummary is one row in the paginated auditor user list view,
+// showing identity and disable state but not detailed enrollment history.
+type AdminUserSummary struct {
+	// ID is the stable user identifier.
+	ID string `json:"id" validate:"required"`
+
+	// Username is the OIDC claim username, possibly changed at each login.
+	Username string `json:"username" validate:"required"`
+
+	// Email is the user's email from OIDC, possibly empty or changed at login.
+	Email string `json:"email" validate:"required"`
+
+	// Subject is the OIDC "sub" claim, stable across logins for this user.
+	Subject string `json:"subject" validate:"required"`
+
+	// DisabledAt is when an admin disabled this user. Omitted (null) if not
+	// disabled.
+	DisabledAt *time.Time `json:"disabled_at,omitempty"`
+
+	// DisabledByUsername is the username of the admin that disabled this user.
+	// Only populated when DisabledAt is non-null.
+	DisabledByUsername string `json:"disabled_by_username,omitempty"`
+
+	// CreatedAt is when the user first authenticated.
+	CreatedAt time.Time `json:"created_at" validate:"required"`
+
+	// UpdatedAt is when the user's identity was last refreshed at login.
+	UpdatedAt time.Time `json:"updated_at" validate:"required"`
+}
+
+// AdminUsersListResponse is one page of the auditor user list, with paging info.
+type AdminUsersListResponse struct {
+	Users []AdminUserSummary `json:"users" validate:"required"`
+	Meta  PageMeta           `json:"meta" validate:"required"`
+}
+
+// AdminUserDetail is the full details of one user for the auditor detail view,
+// including identity fields, disable state, and enrollment/certificate counts.
+type AdminUserDetail struct {
+	// ID is the stable user identifier.
+	ID string `json:"id" validate:"required"`
+
+	// Username is the OIDC claim username.
+	Username string `json:"username" validate:"required"`
+
+	// Email is the user's email from OIDC, possibly empty.
+	Email string `json:"email" validate:"required"`
+
+	// Subject is the stable OIDC "sub" claim.
+	Subject string `json:"subject" validate:"required"`
+
+	// OtherAccounts are alternate account identifiers from OIDC, decoded
+	// from the stored JSON array.
+	OtherAccounts []string `json:"other_accounts" validate:"required"`
+
+	// ServiceAccounts are service accounts from OIDC, decoded from stored JSON.
+	ServiceAccounts []string `json:"service_accounts" validate:"required"`
+
+	// ExtraFields are operator-configured extra claims, decoded from stored JSON map.
+	ExtraFields map[string]any `json:"extra_fields" validate:"required"`
+
+	// CreatedAt is when the user first authenticated.
+	CreatedAt time.Time `json:"created_at" validate:"required"`
+
+	// UpdatedAt is when the user's identity was last refreshed at login.
+	UpdatedAt time.Time `json:"updated_at" validate:"required"`
+
+	// DisabledAt is when an admin disabled this user. Omitted if not disabled.
+	DisabledAt *time.Time `json:"disabled_at,omitempty"`
+
+	// DisabledByUserID and DisabledByUsername identify the admin that
+	// disabled this user. Both omitted if not disabled.
+	DisabledByUserID   *string `json:"disabled_by_user_id,omitempty"`
+	DisabledByUsername *string `json:"disabled_by_username,omitempty"`
+
+	// ServiceEnrollmentCount is how many active (not expired) service
+	// enrollments this user has. Shown so an admin can decide whether to
+	// disable the account.
+	ServiceEnrollmentCount int `json:"service_enrollment_count" validate:"required"`
+
+	// CertificateCount is how many certificates have been issued to this user.
+	CertificateCount int `json:"certificate_count" validate:"required"`
+}
+
+// DisableUserConsequences describes what will happen immediately and after
+// the grace period if a user is disabled, shown in the confirmation dialog.
+type DisableUserConsequences struct {
+	// GracePeriodSeconds is how long after disable before enrollments expire.
+	GracePeriodSeconds int64 `json:"grace_period_seconds" validate:"required"`
+
+	// ExpireAtTimestamp is when the enrollments will actually expire.
+	ExpireAtTimestamp time.Time `json:"expire_at_timestamp" validate:"required"`
+
+	// ServiceEnrollmentCount is how many active enrollments will expire.
+	ServiceEnrollmentCount int `json:"service_enrollment_count" validate:"required"`
+}
+
+// DisableUserRequestBody is the request to disable a user, with optional reason.
+type DisableUserRequestBody struct {
+	// Reason is optional text explaining why the user was disabled, for audit.
+	Reason string `json:"reason,omitempty"`
+}
+
+// ReEnableUserRequestBody is the request to re-enable a user.
+type ReEnableUserRequestBody struct {
+	// Reason is optional text explaining why the user was re-enabled, for audit.
+	Reason string `json:"reason,omitempty"`
 }

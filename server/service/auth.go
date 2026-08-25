@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // Identity is the resolved user identity after OIDC (+ optional LDAP)
@@ -241,6 +243,11 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce str
 		return nil, fmt.Errorf("failed to persist user: %w", err)
 	}
 
+	// Check if the user has been disabled by an admin
+	if err := s.checkUserDisabled(ctx, identity.Subject); err != nil {
+		return nil, err
+	}
+
 	return identity, nil
 }
 
@@ -365,6 +372,39 @@ func extraClaims(claims map[string]any, mapping map[string]string) map[string]ex
 		}
 	}
 	return extras
+}
+
+// checkUserDisabled verifies the user identified by subject is not disabled.
+// If disabled, returns a UserDisabledError that prevents session establishment.
+// Fails closed: this is an authorization decision. A database error must NOT
+// establish a session, because a transient blip must not admit a user an admin
+// has explicitly disabled. A non-existent user row (first login) is NOT an error
+// and must succeed. On query failure, returns UserStatusCheckError (503) rather
+// than UserDisabledError (403), since the error is about system state, not user
+// status.
+func (s *AuthService) checkUserDisabled(ctx context.Context, subject string) error {
+	var disabledAt sql.NullTime
+	result := s.db.WithContext(ctx).
+		Model(&model.User{}).
+		Select("disabled_at").
+		Where("subject = ?", subject).
+		Scan(&disabledAt)
+
+	// No row for this subject is not an error — first-time login. Only a
+	// genuine query failure fails closed.
+	if result.Error != nil && !errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		// Log the error for debugging, then fail closed with a service-level error
+		// rather than claiming the user is disabled when we couldn't determine it
+		slog.Warn("failed to check if user is disabled",
+			slog.String("subject", subject), slog.Any("error", result.Error))
+		return &errorresponses.UserStatusCheckError{}
+	}
+
+	if disabledAt.Valid {
+		return &errorresponses.UserDisabledError{}
+	}
+
+	return nil
 }
 
 // randomToken returns a random, URL-safe string suitable for a one-time use

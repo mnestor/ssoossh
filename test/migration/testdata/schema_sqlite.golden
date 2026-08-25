@@ -116,6 +116,8 @@ table server_secrets
   index sqlite_autoindex_server_secrets_1 unique=true columns=name
 table users
   column created_at type=DATETIME nullable=false pk=false default=<none>
+  column disabled_at type=DATETIME nullable=true pk=false default=<none>
+  column disabled_by_user_id type=TEXT nullable=true pk=false default=<none>
   column email type=TEXT nullable=false pk=false default=''
   column extra_fields type=TEXT nullable=false pk=false default=''
   column id type=TEXT nullable=false pk=true default=<none>
@@ -124,5 +126,6 @@ table users
   column subject type=TEXT nullable=false pk=false default=<none>
   column updated_at type=DATETIME nullable=false pk=false default=<none>
   column username type=TEXT nullable=false pk=false default=<none>
+  fk disabled_by_user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
   index idx_users_subject unique=true columns=subject
   index sqlite_autoindex_users_1 unique=true columns=id
