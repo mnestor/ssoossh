@@ -77,6 +77,9 @@ Contributor-facing material lives in [dev/](dev/):
 Plus the working notes: the work queues
 ([changes-now](dev/changes-now.md), [changes-next](dev/changes-next.md)),
 the [database schema audit](dev/database-schema-audit-2026-08-22.md), the
-[mutation-testing findings](dev/mutation-testing-findings.md), and the
+[mutation-testing findings](dev/mutation-testing-findings.md), the
 [parallel agent workflow](dev/parallel-agent-workflow.md) used to develop
-several features at once.
+several features at once, and the
+[workflow friction findings](dev/agent-workflow-friction.md) that run
+produced — gates that reported success for work they never checked, and
+what was changed about each.

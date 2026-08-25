@@ -49,6 +49,39 @@ in cleanup). The real `sudo`/`su` stacks are never touched, and the module
 is loaded by absolute path from a temp directory — nothing is installed
 into the system module directory.
 
+## Writing selectors (tier 2)
+
+The harness runs every selector through
+`chromedp.WaitVisible(..., chromedp.ByQuery)`, which is `document.querySelector`.
+
+- **Plain CSS only.** `:contains()` is a jQuery extension and `text="..."` is
+  Playwright syntax. Neither is valid here; both surface as
+  `DOM Error while querying (-32000)`, which does not obviously mean "your
+  selector is not CSS".
+- **`data-testid` is the convention.** Select on
+  `[data-testid="thing"]`, not on classes or DOM shape — Tailwind classes and
+  element nesting change when the design does, test ids do not.
+- **On a Svelte component, the prop is `testid`, not `data-testid`.** The
+  shared components (`Button`, `Card`, `Alert`, `Pager`, `SearchInput`,
+  `CertRow`, `PageHeading`, `ServiceCodeRow`) each declare a `testid` prop and
+  render `data-testid={testid}` themselves, so `<Card testid="x">` is right and
+  `<Card data-testid="x">` sets an unknown prop that Svelte drops at runtime —
+  the attribute never reaches the DOM and every selector for it fails. Plain
+  HTML elements take `data-testid=` normally, which is what makes it easy to
+  miss. `make frontend-check` catches the mistake (`'"data-testid"' does not
+  exist in type 'Props'`), so run it before concluding you have a selector bug.
+
+## What `lint-tagged` does and does not prove
+
+`make lint-tagged` typechecks this suite; it does **not** execute it. A green
+`lint-tagged` means the e2e tests compile, nothing more. "The e2e tests are
+fine" requires an actual `make test-e2e` run — a passing `lint-tagged`
+alongside no `test-e2e` run looks exactly the same as a passing suite.
+
+`make lint` and `make test` do not compile this suite at all: it is behind the
+`e2e` build tag and neither passes build tags. `lint-tagged` is what compiles
+it, and it is part of `make ci-required`, `make pre-pr`, and `make verify`.
+
 ## Tier 2 / browser debugging
 
 Tier 2 drives the approval page with chromedp. To watch it run instead of

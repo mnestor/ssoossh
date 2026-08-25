@@ -174,9 +174,27 @@ the frontend lint, typecheck, and semgrep scan.
 If you want to run one piece at a time, `make ci-required` is the list:
 
 ```
-fmt-check check-gitignore lint frontend-lint frontend-check actionlint
-check-generated build pam test-pam lint-pam cover-ci semgrep
+fmt-check check-gitignore lint lint-tagged frontend-lint frontend-check
+frontend-test actionlint check-generated build pam test-pam lint-pam
+cover-ci cover-floors test-migration semgrep
 ```
+
+**Verify with `make pre-pr`, never with a hand-assembled subset.** `make lint`
+passes no build tags and `make test` does not build the tagged suites, so a
+test behind `e2e`, `resilience`, `load`, `dbparity`, `softhsm` or
+`natsintegration` can fail to compile entirely while `lint`, `test`,
+`check-generated` and every frontend gate report success. `lint-tagged` is the
+target that compiles them, and it is the one a hand-assembled list leaves out.
+
+For the edit loop, `make verify` is a deliberate subset that keeps
+`lint-tagged` in:
+
+```
+make verify   # lint, lint-tagged, test, check-generated
+```
+
+It is faster than `pre-pr` and still compiles the tagged suites. It is not a
+merge gate: `pre-pr` is.
 
 **Deliberately not in `pre-pr`:** `test-e2e` (modifies host state, so it stays
 opt-in), `test-load` (weekly in CI, not per-PR), and the macOS and Windows

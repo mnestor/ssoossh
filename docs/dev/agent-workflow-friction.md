@@ -1,12 +1,47 @@
 # Reducing the friction a parallel agent run hits
 
-**Status: observations and proposed fixes, nothing built.** Every `file:line`
-anchor below was verified against `5d23809` (2026-08-24) and will drift.
+**Status: acted on 2026-08-25. Six of eight findings are fixed in the tree;
+F8 did not reproduce and was dropped.** Findings below are kept as written,
+each with a **Resolution** line recording what actually happened. The
+`file:line` anchors are as of `5d23809` (2026-08-24) and have already drifted
+once — treat them as descriptions, not coordinates.
 
-> **Before planning from this document**, re-run the checks in
-> [Provenance](#provenance-what-was-verified-and-how). Two of the findings
-> (F4's failing floors, F1's gate composition) are facts about the tree at one
-> moment and are the kind that change without anyone meaning to change them.
+| | Finding | Outcome |
+| --- | --- | --- |
+| F1 | Nothing points you at the complete gate | Fixed — `make verify` added, `CONTRIBUTING.md`'s stale `ci-required` list corrected |
+| F2 | `lint-tagged` proves compilation, not passing | Fixed — stated in `test/e2e/README.md` |
+| F3 | `data-testid` on a component is discarded | Documented — and the premise was wrong: `make frontend-check` already catches it |
+| F4 | The coverage ratchet is red on `main` | Fixed — five packages closed with tests, `server/pubsub` floor lowered deliberately |
+| F5 | `test-e2e` depends on the bundle existing, not being current | Fixed — `$(FRONTEND_DIST)` now has its sources as prerequisites |
+| F6 | `CompleteIdPLogin` returns before its redirects settle | Fixed — all three login helpers now wait |
+| F7 | The selector convention is not written down | Fixed — `test/e2e/README.md` |
+| F8 | `rtk` serves stale git answers | Not reproducible on rtk 0.45.0; dropped |
+
+## What re-verification found that the original draft did not
+
+Re-running the Provenance checks against `1dad7a0`/`717fe7b` before acting
+turned up three things worth recording, because each of them changes what the
+right fix was:
+
+- **F4 had got worse, not stayed still.** Three failing floors had become six:
+  `server/controller` (74.5% vs 84.0), `server/model` (70.0 vs 74.0) and
+  `server/service` (85.4 vs 86.0) had joined the original three, all from
+  admin work merged in the interim. A ratchet nobody can act on does not hold
+  still while it is ignored — it accumulates.
+- **F3's proposed fix would have made things worse.** The premise was that
+  Svelte drops the prop silently. It does at runtime, but `svelte-check`
+  rejects it at compile time (`'"data-testid"' does not exist in type
+  'Props'`) and `make frontend-check` is a blocking merge gate. Spreading rest
+  props — the fix the draft preferred — would have made `data-testid` a legal
+  unknown prop and *removed* that check. The real cause of the lost afternoon
+  was F1: the gate that catches it was never run.
+- **A sixth tagged suite existed that nothing compiled.** `LINT_TAGGED` listed
+  `e2e resilience load dbparity softhsm`, but `server/pubsub` also has a
+  `natsintegration` suite. It was outside every gate — exactly F1's failure
+  mode, one tag further along. Adding it to `LINT_TAGGED` immediately turned
+  up a real `gosec` finding in `nats_integration_test.go` that had been
+  sitting unlinted since the file was written, which is the argument for the
+  change in one line.
 
 This came out of running five feature branches in parallel across a dozen
 agent sittings. It is not a list of things agents got wrong; it is a list of
@@ -59,6 +94,15 @@ all.
 still compiles the tagged suites. The value is in `lint-tagged` never being
 the target someone leaves out.
 
+*Resolution (2026-08-25):* done. `make verify` (`Makefile`) runs lint,
+lint-tagged, test and check-generated for the edit loop, and its comment
+explains why `lint-tagged` is the member that cannot be dropped.
+`CONTRIBUTING.md`'s "run one piece at a time" list was itself stale — it
+omitted `lint-tagged`, `frontend-test`, `cover-floors` and `test-migration`,
+so a reader following it got exactly the subset this finding warns about.
+Corrected, with the "verify with `pre-pr`, never a subset" rule stated
+alongside it.
+
 ### F2. `lint-tagged` proves compilation, not passing
 
 Even when run, `lint-tagged` typechecks the tagged suites; it does not execute
@@ -67,6 +111,8 @@ what "the e2e tests are fine" looks like when they are not.
 
 *Proposed:* a note in `test/e2e/README.md` stating the distinction in one
 line. Cheap, and it removes a genuine ambiguity about what that target means.
+
+*Resolution (2026-08-25):* done, in `test/e2e/README.md`.
 
 ### F3. `data-testid` on a component is silently discarded
 
@@ -84,6 +130,14 @@ dropped prop.
 *Proposed:* either have those components spread rest props so both spellings
 work, or document the rule at the top of `frontend/DESIGN.md`'s component
 section. The first removes the trap; the second only warns about it.
+
+*Resolution (2026-08-25):* documented in `frontend/DESIGN.md` and
+`test/e2e/README.md` — **not** with rest props. The premise needs correcting:
+the prop is dropped silently at runtime, but `svelte-check` rejects it at
+compile time and `make frontend-check` is a blocking merge gate, so the
+mistake is already caught by a gate that was simply never run (F1). Spreading
+rest props would have made `data-testid` a legal unknown prop and removed
+that check, so the documentation explicitly warns against that "fix".
 
 ### F4. The coverage ratchet is already red on `main`
 
@@ -107,6 +161,26 @@ is a strong incentive not to add one.
 reasoning in the diff — which is what `.coverage-floors`' own header says the
 file is for.
 
+*Resolution (2026-08-25):* closed with tests for five of the six packages
+— `server/utils/errorresponses` (75.0 -> 100.0), `server/model` (70.0 ->
+100.0), `server/middleware` (92.3 -> 99.0), `server/service` (85.4 -> 86.7)
+and `server/controller` (74.5 -> 85.1). The controller and enrollment work
+merged in the interim had shipped its authorization paths tested and its
+response mapping not, which is most of what the gap was.
+
+`server/pubsub` could not be closed this way and its floor was lowered 66.0
+-> 64.0 deliberately, with the reasoning in `.coverage-floors`: roughly a
+third of the package is NATS backend code reachable only against a live
+broker, and the suite that does that is behind the `natsintegration` tag and
+needs Docker, so `go test ./...` never builds it. 64.0 is the true ceiling
+for the untagged suite; raising it again means counting `natsintegration` in
+the coverage run, not writing more unit tests. `make cover-floors` passes
+again, which is the point — the ratchet can now answer the question it
+exists to answer.
+
+The `errorresponses` floor of 100.0% was left at 100.0%: the package is
+nothing but small error types, and it is back at 100.0%.
+
 ### F5. `test-e2e` depends on the frontend existing, not on it being current
 
 `Makefile:194` makes `test-e2e` depend on `$(FRONTEND_DIST)`, which is
@@ -120,6 +194,11 @@ selector. Two branches lost a cycle to it.
 
 *Proposed:* have `test-e2e` rebuild the frontend rather than merely require
 it, or have the harness rebuild when the sources are newer than the bundle.
+
+*Resolution (2026-08-25):* done, and more broadly than proposed.
+`$(FRONTEND_DIST)` now lists `frontend/src`, `frontend/static` and the build
+configs as prerequisites, so the bundle rebuilds whenever its sources are
+newer — for every target that depends on it, not just `test-e2e`.
 
 ### F6. `CompleteIdPLogin` returns before its redirect chain settles
 
@@ -137,6 +216,16 @@ and the error names the destination rather than the race.
 the chain to settle before returning. That deletes a whole class of failure
 and makes the helper mean what its name says.
 
+*Resolution (2026-08-25):* done. `waitForLoginRedirects` in
+`test/e2e/harness/browser.go` blocks until the document has finished loading,
+the IdP form is gone, and the location has held still across consecutive
+samples; all three helpers call it, including
+`CompleteIdPLoginWithExtraClaims`, which has the same race and was not named
+in the finding. Verified by reproduction: with the wait disabled, a test that
+logs in and navigates straight to `/account` fails on the destination URL;
+with it, it passes. `account_test.go`'s hand-rolled `WaitVisible` workaround
+was removed, so that test now covers this shape rather than hiding it.
+
 ### F7. The selector convention is not written down anywhere
 
 The harness runs `chromedp.WaitVisible(..., chromedp.ByQuery)`, which is
@@ -151,6 +240,10 @@ surface as `DOM Error while querying (-32000)`, which does not obviously mean
 
 *Proposed:* three lines in `test/e2e/README.md` — CSS only, `data-testid` is
 the convention, and F3's prop-versus-attribute rule.
+
+*Resolution (2026-08-25):* done — three points in `test/e2e/README.md`
+under "Writing selectors": CSS only, `data-testid` is the convention, and
+F3's prop-versus-attribute rule.
 
 ### F8. `rtk` serves stale answers for git, and git is where it matters
 
@@ -170,6 +263,19 @@ change" are the questions that decide whether work is committed or lost.
 
 *Proposed:* drop `git` from the rewrite rules, or fix the caching. This is the
 one finding whose failure mode is losing work rather than losing time.
+
+*Resolution (2026-08-25):* **not reproducible; no change made.** On rtk
+0.45.0, `rtk git status --porcelain=v1`, `rtk git log` and `rtk git diff`
+agreed with `/usr/bin/git` in every case tried: a clean tree, a tree dirtied
+a moment earlier, a reverted tree, and a scratch repository with fresh
+commits. The staleness was observed during the original run rather than
+reproduced, and the rtk version has moved since.
+
+One part of the finding did hold and is worth keeping: `command git` is
+**not** an escape hatch. `rtk rewrite "command git status --porcelain=v1"`
+returns `command rtk git status --porcelain=v1` — the rewrite matches through
+`command`. `/usr/bin/git` by absolute path is the only reliable bypass. If
+the staleness returns, that is the way to confirm it.
 
 ## Not proposed
 

@@ -110,6 +110,33 @@ Icon utilities (`.icon-xs` through `.icon-xl`) are defined in `src/app.css` line
 
 ## Component Patterns
 
+### Test ids: the prop is `testid`, not `data-testid`
+
+Components that the e2e browser tier selects on (`Button`, `Card`, `Alert`,
+`Pager`, `SearchInput`, `CertRow`, `PageHeading`, `ServiceCodeRow`) each
+declare a `testid` prop and render `data-testid={testid}` on their root
+element themselves:
+
+```svelte
+<Card testid="account-identity-card">   <!-- right -->
+<Card data-testid="account-identity-card">  <!-- wrong: silently dropped -->
+```
+
+`data-testid` on a component is an unknown prop. Svelte drops it at runtime
+with no error and no console output — the attribute never reaches the DOM and
+every e2e selector for it fails, which presents as a selector bug rather than
+as a dropped prop. Plain HTML elements take `data-testid=` normally, which is
+what makes this easy to miss two lines away.
+
+`make frontend-check` catches it (`'"data-testid"' does not exist in type
+'Props'`) because the `Props` interfaces are typed, and it is a blocking merge
+gate. If an e2e selector is not matching, run `make frontend-check` before
+concluding the selector is wrong.
+
+Do not "fix" this by spreading rest props onto the root element: that makes
+`data-testid` a legal prop again and removes the typecheck that currently
+catches the mistake.
+
 ### Variant Objects
 
 Variant-bearing components (`Button`, `Alert`, `StatusBadge`, `OptionDiffList`) encode their variant→Tailwind-class mapping as a local `const variants` object literal inside the component file. This is deliberately not abstracted into a shared helper to avoid creating a dependency on a component library; the pattern is readable, self-contained, and requires no wrapper.
