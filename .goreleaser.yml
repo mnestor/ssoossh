@@ -202,7 +202,7 @@ nfpms:
       # refuses an override directory holding a template for a
       # notification kind it does not recognize, so a kind dropped in a
       # later release would stop the server from starting.
-      - src: server/mail/templates/*.tmpl
+      - src: server/resources/mail/*.tmpl
         dst: /usr/share/ssoossh/mail-templates/
 
   - id: server-musl
@@ -243,7 +243,7 @@ nfpms:
       # refuses an override directory holding a template for a
       # notification kind it does not recognize, so a kind dropped in a
       # later release would stop the server from starting.
-      - src: server/mail/templates/*.tmpl
+      - src: server/resources/mail/*.tmpl
         dst: /usr/share/ssoossh/mail-templates/
 
 archives:
@@ -277,7 +277,7 @@ archives:
       - THIRD-PARTY-LICENSES.md
       # Every page — see the client archive above.
       - docs/man/*
-      - src: server/mail/templates/*.tmpl
+      - src: server/resources/mail/*.tmpl
         dst: mail-templates
         strip_parent: true
 
@@ -294,7 +294,7 @@ archives:
       - THIRD-PARTY-LICENSES.md
       # Every page — see the client archive above.
       - docs/man/*
-      - src: server/mail/templates/*.tmpl
+      - src: server/resources/mail/*.tmpl
         dst: mail-templates
         strip_parent: true
 

@@ -9,7 +9,6 @@ package mail
 
 import (
 	"bytes"
-	"embed"
 	"fmt"
 	htmltemplate "html/template"
 	"io/fs"
@@ -21,13 +20,15 @@ import (
 	"time"
 
 	"github.com/mnestor/ssoossh/server/notify"
+	"github.com/mnestor/ssoossh/server/resources"
 )
 
-// embeddedTemplates is the built-in template set, so a default install
-// sends useful mail with no files on disk at all.
-//
-//go:embed templates/*.tmpl
-var embeddedTemplates embed.FS
+// embeddedDir is where the built-in template set lives inside
+// resources.FS, so a default install sends useful mail with no files on
+// disk at all. The files sit under server/resources rather than beside
+// this package because every embedded static resource the server ships is
+// collected there.
+const embeddedDir = "mail"
 
 // Template parts. Each registered notify.Kind has one file per part, named
 // "<kind>.<part>.tmpl" — that flat naming is what makes an override
@@ -269,7 +270,7 @@ func templateBody(name string, overrides map[string]string) (body string, overri
 		return body, true, nil
 	}
 
-	data, err := fs.ReadFile(embeddedTemplates, "templates/"+name)
+	data, err := fs.ReadFile(resources.FS, embeddedDir+"/"+name)
 	if err != nil {
 		// not covered: the embedded set and the registry ship together, and
 		// TestNewRenderer_shouldRenderEveryRegisteredKind fails the build if

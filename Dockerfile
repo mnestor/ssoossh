@@ -45,7 +45,7 @@ COPY --from=build /out/ssoosshd /usr/local/sbin/ssoosshd
 # active template_dir, since a file in an override directory IS an override
 # and would then survive as a stale copy across an upgrade. See
 # docs/email-notifications.md.
-COPY --from=build /src/server/mail/templates/ /usr/share/ssoossh/mail-templates/
+COPY --from=build /src/server/resources/mail/ /usr/share/ssoossh/mail-templates/
 USER nonroot:nonroot
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/sbin/ssoosshd"]

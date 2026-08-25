@@ -190,10 +190,11 @@ func sortedKeys(m map[string]bool) []string {
 	return keys
 }
 
-// mailTemplateDir is the directory server/mail embeds. The packaged copies
-// come from here so an operator writing an override starts from the exact
-// template their binary is rendering.
-const mailTemplateDir = "server/mail/templates"
+// mailTemplateDir is the directory server/mail embeds through
+// server/resources. The packaged copies come from here so an operator
+// writing an override starts from the exact template their binary is
+// rendering.
+const mailTemplateDir = "server/resources/mail"
 
 // serverPackageIDs and serverArchiveIDs are the ssoosshd artifacts. Mail
 // templates and the server man pages belong to these and not to the client.

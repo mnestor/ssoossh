@@ -247,7 +247,7 @@ Reference copies ship with the server, so you do not need a source tree:
 | `.deb` / `.rpm` / `.apk` | `/usr/share/ssoossh/mail-templates/` |
 | Container image | `/usr/share/ssoossh/mail-templates/` |
 | Release archive | `mail-templates/` inside the tarball |
-| Source tree | `server/mail/templates/` |
+| Source tree | `server/resources/mail/` |
 
 Those copies are reference material, never active. They are deliberately not
 installed into an override directory: a file in one *is* an override, so a
@@ -272,7 +272,7 @@ in four steps:
    `DefaultEnabled` decides whether existing deployments start sending
    something nobody asked for, so it is a real decision rather than a
    default.
-4. **Three templates** in `server/mail/templates/`, named
+4. **Three templates** in `server/resources/mail/`, named
    `<kind>.subject.tmpl`, `<kind>.txt.tmpl`, and `<kind>.html.tmpl`.
 
 Then publish the event from wherever the thing happens:
