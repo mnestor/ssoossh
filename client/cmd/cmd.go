@@ -252,7 +252,7 @@ func (r *RootCommand) InitErr() error { return r.initErr }
 
 // newAPIClientFromConfig builds the default api.Client from the loaded
 // client config, mapping config.Config's TLS options into api.Config
-// (internal/ can't import client/config back, see root CLAUDE.md, so the
+// (internal/ can't import client/config back, see docs/internals/invariants.md, so the
 // mapping has to happen on this side).
 func newAPIClientFromConfig(cfg *config.Config) (api.Client, error) {
 	return api.NewClient(api.Config{

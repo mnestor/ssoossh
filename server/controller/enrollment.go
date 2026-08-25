@@ -156,11 +156,11 @@ func (e *enrollmentController) listHandler(g *gin.Context) {
 // to the caller, not the limiter.
 //
 // The restore is the whole point. gin's GetRawData is io.ReadAll over
-// c.Request.Body: it neither buffers nor rewinds, contrary to what this
-// function's comment used to claim. Without putting the body back,
-// retrieveHandler's ShouldBindJSON read an already-drained stream and every
-// redemption failed with a 500 carrying io.EOF, so `service retrieve` could
-// not redeem a code at all wherever the per-code rate limit was configured.
+// c.Request.Body: it neither buffers nor rewinds. Without putting the body
+// back, retrieveHandler's ShouldBindJSON reads an already-drained stream and
+// every redemption fails with a 500 carrying io.EOF, so `service retrieve`
+// cannot redeem a code at all wherever the per-code rate limit is
+// configured.
 func ExtractEnrollmentCodeForRateLimit(c *gin.Context) string {
 	rawData, err := c.GetRawData()
 	if err != nil {

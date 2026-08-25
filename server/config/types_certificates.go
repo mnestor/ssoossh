@@ -19,7 +19,7 @@ type CertificateOptions struct {
 	//
 	// The server owns this deadline rather than the client, and measures it
 	// from the request's creation (see
-	// CertRequestService.expiryTimer), so a client reconnecting to its
+	// the request's creation), so a client reconnecting to its
 	// event stream re-attaches to the original deadline instead of
 	// extending it. If the client is gone for good, the approval and the
 	// signature it was waiting for are moot anyway.
@@ -38,7 +38,7 @@ const signingShare = 10
 
 // SigningGrace is the machine's share of ClientTimeout: how long an
 // approved request may sit awaiting signature before the stranded-request
-// sweep fails it (see docs/signing-pipeline.md), how often that sweep runs,
+// sweep fails it (see docs/internals/signing-pipeline.md), how often that sweep runs,
 // and how long `service retrieve` blocks waiting for its certificate.
 //
 // Not measured from approval — nothing records when a request entered
@@ -97,21 +97,28 @@ type CertOptionsUser struct {
 	// behavior every deployment has had so far.
 	//
 	// Worth setting even though approval is already bound to the requester
-	// (see CertRequestService.Approve): the binding answers "is this your
-	// request", this answers "are you allowed certificates at all".
-	RequireGroup  string        `mapstructure:"require_group"`
-	ValidDuration time.Duration `mapstructure:"valid_duration,string"`
-	Extensions    []string      `mapstructure:"extensions"`
+	// at approval: the binding answers "is this your request", this answers
+	// "are you allowed certificates at all".
+	RequireGroup string `mapstructure:"require_group"`
 
-	// KeyIDTemplate is the fallback for CertOptionsService.KeyIDTemplate
-	// and CertOptions.KeyIDTemplate (host) when either is empty, since
+	// ValidDuration is the ceiling on how long an issued user certificate is
+	// valid. Any lifetime policy only ever narrows from here.
+	ValidDuration time.Duration `mapstructure:"valid_duration,string"`
+
+	// Extensions are the SSH certificate extensions a user certificate may
+	// carry, e.g. permit-pty and permit-user-rc. A request is narrowed to
+	// the intersection of what it asked for and this list.
+	Extensions []string `mapstructure:"extensions"`
+
+	// KeyIDTemplate is the fallback for the service and PAM templates when
+	// either is empty, since
 	// user certificates are the common case. See
-	// docs/features.md (key ID templating).
+	// docs/guide/features.md (key ID templating).
 	KeyIDTemplate string `mapstructure:"key_id_template"`
 
 	// LifetimePolicy configures tiered certificate duration based on OIDC
 	// group membership and source network narrowing — see
-	// docs/certificate-lifetime-policy.md.
+	// docs/operations/certificate-lifetime-policy.md.
 	LifetimePolicy LifetimePolicy `mapstructure:"lifetime_policy"`
 }
 
@@ -119,9 +126,19 @@ type CertOptionsUser struct {
 // group required to request one, how long they're valid for, and which SSH
 // certificate extensions to grant.
 type CertOptionsService struct {
-	RequireGroup  string        `mapstructure:"require_group"`
+	// RequireGroup is the OIDC group a requester must belong to in order to
+	// enroll a service certificate. Empty means any authenticated user may.
+	RequireGroup string `mapstructure:"require_group"`
+
+	// ValidDuration is the ceiling on how long each certificate produced
+	// from an enrollment is valid, bounding every redemption of the code
+	// rather than the code itself.
 	ValidDuration time.Duration `mapstructure:"valid_duration,string"`
-	Extensions    []string      `mapstructure:"extensions"`
+
+	// Extensions are the SSH certificate extensions a service certificate
+	// may carry. A request is narrowed to the intersection of what it asked
+	// for and this list.
+	Extensions []string `mapstructure:"extensions"`
 
 	// EnrollmentDuration is how long the enrollment code minted at approval
 	// stays redeemable — deliberately independent of ValidDuration, which
@@ -131,7 +148,7 @@ type CertOptionsService struct {
 	// issued certificate be used", and wants to be short. EnrollmentDuration
 	// is "how long may this service keep asking for a fresh one", and wants
 	// to be long: the code is reusable precisely so an unattended job can run
-	// it from cron (see EnrollmentService.Retrieve). Deriving one from the
+	// it from cron. Deriving one from the
 	// other collapsed that — shortening a service certificate's lifetime also
 	// killed the code within the same span, so a cron job re-enrolled by hand
 	// on every run.
@@ -140,26 +157,26 @@ type CertOptionsService struct {
 	// so a long code never yields a long certificate.
 	EnrollmentDuration time.Duration `mapstructure:"enrollment_duration,string"`
 
-	// KeyIDTemplate; see CertOptions.KeyIDTemplate and
-	// docs/features.md (key ID templating). Empty falls back to
-	// CertificateOptions.User.KeyIDTemplate.
+	// KeyIDTemplate is the key ID written into service certificates; see
+	// docs/guide/features.md (key ID templating). Empty falls back to
+	// cert_options.user.key_id_template.
 	KeyIDTemplate string `mapstructure:"key_id_template"`
 
 	// LifetimePolicy configures tiered certificate duration based on OIDC
 	// group membership and source network narrowing — see
-	// docs/certificate-lifetime-policy.md.
+	// docs/operations/certificate-lifetime-policy.md.
 	LifetimePolicy LifetimePolicy `mapstructure:"lifetime_policy"`
 }
 
 // CertOptionsPAM configures issuance of PAM certificates: short-lived
 // certificates a pam_ssoossh-authenticated local operation (e.g. `sudo`)
-// validates once and discards. Structurally identical to CertOptionsUser,
+// validates once and discards. Structurally identical to the user options,
 // but its defaults and fallback behavior deliberately diverge — see each
 // field's comment.
 type CertOptionsPAM struct {
 	// RequireGroup is an optional OIDC group an approver must belong to for
 	// a PAM certificate to be issued, and behaves exactly like
-	// CertOptionsUser.RequireGroup: empty means no group restriction.
+	// cert_options.user.require_group: empty means no group restriction.
 	//
 	// It is an extra filter an operator may apply, not the authorization
 	// itself. Whether the local operation is permitted is the host's own
@@ -178,17 +195,17 @@ type CertOptionsPAM struct {
 	// operation and is then thrown away.
 	Extensions []string `mapstructure:"extensions"`
 
-	// KeyIDTemplate does NOT fall back to CertificateOptions.User's the way
-	// CertOptionsService's and CertOptions' (host) do — see
-	// newKeyIDTemplates. A sudo and a login by the same person must stay
-	// distinguishable in an sshd or sudo audit log, so PAM gets its own
-	// hardcoded default (defaultPAMKeyIDTemplate) rather than silently
-	// inheriting the user template.
+	// KeyIDTemplate is the key ID written into PAM certificates. Unlike the
+	// service template, it does NOT fall back to
+	// cert_options.user.key_id_template: a sudo and a login by the same
+	// person must stay distinguishable in an sshd or sudo audit log, so PAM
+	// has its own built-in default instead of silently inheriting the user
+	// template.
 	KeyIDTemplate string `mapstructure:"key_id_template"`
 }
 
 // LifetimePolicy configures certificate issuance duration based on tiered
-// groups and source network policies — see docs/certificate-lifetime-policy.md.
+// groups and source network policies — see docs/operations/certificate-lifetime-policy.md.
 // Empty configuration (all fields at their zero values) means all certificates
 // receive ValidDuration from the enclosing CertOptions* struct.
 type LifetimePolicy struct {
@@ -207,7 +224,7 @@ type LifetimePolicy struct {
 	// duration, and the final effective lifetime is clamped to the ceiling
 	// set by the enclosing CertOptions*.ValidDuration.
 	//
-	// See docs/certificate-lifetime-policy.md section "Which address"
+	// See docs/operations/certificate-lifetime-policy.md section "Which address"
 	// for why the server-observed source IP is used, and why
 	// RequestedOptions.SourceAddresses is never consulted.
 	SourcePolicy []SourcePolicyEntry `mapstructure:"source_policy"`
@@ -223,7 +240,7 @@ type LifetimePolicyTier struct {
 }
 
 // SourcePolicyEntry restricts certificate lifetime and options based on the
-// source IP address of the request. See docs/certificate-lifetime-policy.md
+// source IP address of the request. See docs/operations/certificate-lifetime-policy.md
 // section "Source-network policy" for the full semantics.
 type SourcePolicyEntry struct {
 	// CIDR is the IPv4 or IPv6 network this rule applies to, in CIDR notation
@@ -242,7 +259,7 @@ type SourcePolicyEntry struct {
 
 	// PinSourceAddress, when true, adds a critical "source-address" SSH option
 	// pinning the certificate to this network. Valid only for service certificates;
-	// ignored for user certificates (see docs/certificate-lifetime-policy.md
+	// ignored for user certificates (see docs/operations/certificate-lifetime-policy.md
 	// "Not for user certificates"). The network must be narrow enough to actually
 	// restrict — a /0 or ::/0 with PinSourceAddress=true is a warning sign (the
 	// certificate can be used anywhere, pinning is meaningless). Narrowing is

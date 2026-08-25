@@ -2,9 +2,17 @@ package config
 
 // OAuthConfig configures the OIDC provider used to authenticate users.
 type OAuthConfig struct {
-	ClientID     string `mapstructure:"client_id"`
+	// ClientID is the OAuth2/OIDC client ID registered with the identity
+	// provider. Required.
+	ClientID string `mapstructure:"client_id"`
+
+	// ClientSecret is the OAuth2 client secret.
 	ClientSecret string `mapstructure:"client_secret"`
-	ProviderURL  string `mapstructure:"provider_url"`
+
+	// ProviderURL is the OIDC provider's issuer URL, used for discovery. A
+	// trailing /.well-known/openid-configuration is stripped automatically.
+	// Required.
+	ProviderURL string `mapstructure:"provider_url"`
 
 	// Scopes is a space-separated list of additional scopes to request
 	// alongside the always-included "openid" scope, e.g. "profile email".
@@ -16,19 +24,25 @@ type OAuthConfig struct {
 // provider's ID token. Username is the only required field; the rest are
 // empty by default, meaning "not populated from OIDC".
 type OAuthFields struct {
+	// Username names the claim holding the local account username, e.g.
+	// "preferred_username". Required.
 	Username string `mapstructure:"username"`
 
-	// Groups, OtherAccounts, and ServiceAccounts all name a claim expected
-	// to hold a JSON array of strings, parsed the same way. Groups feeds
-	// the certificate lifetime decision only (never placed in a
-	// certificate, see root CLAUDE.md Hard Constraints). OtherAccounts are
-	// alternate account identifiers this identity is known by on target
-	// systems (e.g. a different username, UPN, or sAMAccountName),
-	// intended to be added to a certificate's principal list alongside
-	// Username. ServiceAccounts are service-account identifiers this
-	// identity is authorized to manage/enroll certificates for.
-	Groups          string `mapstructure:"groups"`
-	OtherAccounts   string `mapstructure:"other_accounts"`
+	// Groups names a claim expected to hold a JSON array of group names. It
+	// feeds the certificate lifetime and require-group decision only; group
+	// membership is never placed in an issued certificate (see
+	// docs/internals/invariants.md).
+	Groups string `mapstructure:"groups"`
+
+	// OtherAccounts names a claim expected to hold a JSON array of alternate
+	// account identifiers this identity is known by on target systems (a
+	// different username, UPN, or sAMAccountName), added to a certificate's
+	// principal list alongside the username claim.
+	OtherAccounts string `mapstructure:"other_accounts"`
+
+	// ServiceAccounts names a claim expected to hold a JSON array of
+	// service-account identifiers this identity is authorized to manage and
+	// enroll certificates for.
 	ServiceAccounts string `mapstructure:"service_accounts"`
 
 	// Email names the claim to read the user's email from. Empty falls

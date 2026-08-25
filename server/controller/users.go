@@ -15,8 +15,7 @@ import (
 // Auditor-scoped endpoints to list and read other users (for the admin
 // directory) live in the admin controller, not here: those require explicit
 // auditor authorization, while this endpoint is scoped to each user's own
-// identity. The comment that used to stand here said no such route existed
-// anywhere, which stopped being true when the directory landed.
+// identity.
 func NewUserController(group *gin.RouterGroup, c *config.Config, sessionAuthMiddleware gin.HandlerFunc, db any) {
 	uc := &userController{config: c, db: db}
 

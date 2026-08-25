@@ -359,7 +359,7 @@ export interface RequestDetailResponse {
 /**
  * CertificateResponse is one row of a user's issued-certificate history.
  * The certificate itself is absent because it is never persisted — these
- * are ephemeral by design (see docs/signing-pipeline.md). This is the audit
+ * are ephemeral by design (see docs/internals/signing-pipeline.md). This is the audit
  * trail, not a place to re-download one.
  * The Decided* fields are populated from the request's decision-audit record
  * (see model.CertificateRequestDecision) if the certificate was issued as a

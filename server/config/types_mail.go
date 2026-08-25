@@ -94,7 +94,7 @@ type MailConfig struct {
 	// file there replaces the embedded template of the same name; anything
 	// absent falls back to the embedded one, so overriding a single
 	// message does not mean vendoring the whole set. See
-	// docs/email-notifications.md.
+	// docs/operations/email-notifications.md.
 	TemplateDir string `mapstructure:"template_dir"`
 
 	// SMTP is the relay connection. See SMTPConfig.
@@ -119,7 +119,7 @@ type SMTPConfig struct {
 	Port int `mapstructure:"port"`
 
 	// TLS is the transport policy — one of off, opportunistic (default),
-	// required, or implicit. See the MailTLS constants.
+	// required, or implicit.
 	TLS string `mapstructure:"tls"`
 
 	// ServerName overrides the name the relay's certificate is verified
@@ -161,7 +161,7 @@ type SMTPConfig struct {
 	// checks it against something specific.
 	HELO string `mapstructure:"helo"`
 
-	// Timeout bounds a single delivery's connect-and-send. Defaults to 15s.
+	// Timeout bounds a single delivery's connect-and-send.
 	// It bounds only the background sender, never a request: nothing a
 	// browser or an unattended job waits on is behind this.
 	Timeout time.Duration `mapstructure:"timeout"`

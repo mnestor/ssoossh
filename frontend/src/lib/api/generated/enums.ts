@@ -5,10 +5,10 @@
 
 /**
  * CertificateType identifies which of the three certificate types
- * (docs/dev/ssoossh-context.md — "Certificate types") a row represents.
+ * (docs/internals/design-brief.md — "Certificate types") a row represents.
  * These three are the whole set: anything else is rejected at the service
  * boundary and by the schema's type CHECK. Host identity is deliberately
- * not among them (docs/decisions.md).
+ * not among them (docs/project/decisions.md).
  */
 export const CertificateTypeUser = "user";
 export const CertificateTypeService = "service";
@@ -22,8 +22,8 @@ export const CertificateRequestStatusPending = "pending";
 /**
  * CertificateRequestStatusSigning means a human approved the request
  * and a signing job was published (see
- * docs/signing-pipeline.md) — not yet terminal. The signer
- * (docs/signing-pipeline.md) and its listener/resolver
+ * docs/internals/signing-pipeline.md) — not yet terminal. The signer
+ * (docs/internals/signing-pipeline.md) and its listener/resolver
  * still need to run before this becomes CertificateRequestStatusApproved.
  * Only used for CertificateTypeUser/CertificateTypePAM — service
  * requests go straight from Pending to CertificateRequestStatusEnrolled,
@@ -35,24 +35,23 @@ export const CertificateRequestStatusApproved = "approved";
  * CertificateRequestStatusEnrolled is CertificateTypeService's terminal
  * approval state: EnrollmentToken is set, and the certificate itself
  * isn't issued until a later `service retrieve` redeems it — see
- * docs/dev/ssoossh-context.md, "Service enrollment".
+ * docs/internals/design-brief.md, "Service enrollment".
  */
 export const CertificateRequestStatusEnrolled = "enrolled";
 export const CertificateRequestStatusDenied = "denied";
 export const CertificateRequestStatusExpired = "expired";
 /**
  * CertificateRequestStatusFailed is terminal: the signer couldn't
- * produce a certificate (see docs/signing-pipeline.md),
+ * produce a certificate (see docs/internals/signing-pipeline.md),
  * or a boot-time sweep invalidated a request left stuck in Signing (see
- * docs/signing-pipeline.md). Distinct from Denied,
+ * docs/internals/signing-pipeline.md). Distinct from Denied,
  * which means a human said no.
  */
 export const CertificateRequestStatusFailed = "failed";
 export type CertificateRequestStatus = typeof CertificateRequestStatusPending | typeof CertificateRequestStatusSigning | typeof CertificateRequestStatusApproved | typeof CertificateRequestStatusEnrolled | typeof CertificateRequestStatusDenied | typeof CertificateRequestStatusExpired | typeof CertificateRequestStatusFailed;
 /**
  * CertificateRequestDecisionOutcome is the decision recorded on a
- * CertificateRequestDecision row — see
- * docs/dev/changes-next.md.
+ * CertificateRequestDecision row.
  */
 export type CertificateRequestDecisionOutcome = string;
 export const CertificateRequestDecisionApproved: CertificateRequestDecisionOutcome = "approved";

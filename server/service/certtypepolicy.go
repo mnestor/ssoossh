@@ -52,7 +52,7 @@ type certTypePolicy struct {
 	// ignores both identity and selection, returning the local account being
 	// authenticated (req.Username at call-time). Service certificates ignore
 	// this field and use the selected service account directly. See
-	// docs/dev/ssoossh-context.md for the "Which LDAP attributes become
+	// docs/internals/design-brief.md for the "Which LDAP attributes become
 	// principals" open question.
 	principals func(pamUsername string, identity *Identity, selected []string) []string
 	flow       certApprovalFlow

@@ -68,8 +68,8 @@ prompt. Option trimming and lifetime policy are diagrams 2 and 3.
 Signing happens asynchronously off a queue after approval. The signer
 holds the CA key and has no database access, so it can run as a separate,
 minimally privileged process
-([signing-pipeline.md](signing-pipeline.md),
-[signer-split-deferred.md](dev/signer-split-deferred.md)).
+([signing-pipeline.md](../internals/signing-pipeline.md),
+[signer-split-deferred.md](../dev/signer-split-deferred.md)).
 
 ```mermaid
 sequenceDiagram
@@ -143,7 +143,7 @@ flowchart TD
 
 The server is the policy decision point; the target host's `sshd`
 enforces the result. Semantics and rationale:
-[certificate-lifetime-policy.md](certificate-lifetime-policy.md).
+[certificate-lifetime-policy.md](../operations/certificate-lifetime-policy.md).
 
 ```mermaid
 flowchart TD
@@ -300,8 +300,8 @@ sequenceDiagram
 ```
 
 Nothing is written to disk. Stack configuration and the lockout warning:
-[deployment.md](deployment.md#8-pam-sudo-and-su);
-[pam.d-sudo.example](pam.d-sudo.example) documents every module argument.
+[deployment.md](../operations/deployment.md#8-pam-sudo-and-su);
+[pam.d-sudo.example](../pam.d-sudo.example) documents every module argument.
 
 ---
 
@@ -322,6 +322,6 @@ browser choosing which of their service accounts the certificate is for,
 and the enrollment code redeems certificates unattended via
 `service retrieve` until it expires — every redemption logged for the
 approver and auditors. There are no host certificates
-([decisions.md](decisions.md)); the local principal-mapping commands
+([decisions.md](../project/decisions.md)); the local principal-mapping commands
 (`host mapping`, `host principals`) support sshd's
 `AuthorizedPrincipalsCommand` without any server side.

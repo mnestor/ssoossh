@@ -109,7 +109,7 @@ func main() {
 // and diffs, so against a hand-built tree it compared the duplicate to
 // itself and always passed. The page drifted until it described `host` as
 // "Manage host certificates" — a feature this product does not have
-// (docs/decisions.md) — and omitted --verbose along with every subcommand
+// (docs/project/decisions.md) — and omitted --verbose along with every subcommand
 // below the top
 // level. clientcmd.CobraCommandForManpage returns the same tree Execute
 // runs, so the diff means something again.

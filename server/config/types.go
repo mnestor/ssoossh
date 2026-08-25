@@ -9,29 +9,45 @@ import (
 // Config is the root ssoosshd configuration, populated from defaults.yaml
 // and the user's config file via NewConfig.
 type Config struct {
-	Logging    AppLogging `mapstructure:"logging"`
-	Traces     bool       `mapstructure:"traces"`
-	Metrics    bool       `mapstructure:"metrics"`
-	Production bool       `mapstructure:"production"`
+	// Logging configures the main application log.
+	Logging AppLogging `mapstructure:"logging"`
 
-	DB    DB           `mapstructure:"db"`
-	HTTP  HTTPSettings `mapstructure:"http"`
-	Queue QueueConfig  `mapstructure:"queue"`
+	// Traces enables OpenTelemetry tracing, adding the otelgin middleware to
+	// the router. Exporter endpoints come from the standard OTEL_*
+	// environment variables.
+	Traces bool `mapstructure:"traces"`
+
+	// Metrics enables OpenTelemetry metrics. Exporter endpoints come from
+	// the standard OTEL_* environment variables.
+	Metrics bool `mapstructure:"metrics"`
+
+	// Production selects gin's release mode rather than debug mode, and
+	// gates the development-only escape hatches: notably
+	// http.rate_limit_disable_for_dev is honored only when this is false, so
+	// rate limiting cannot be switched off in production.
+	Production bool `mapstructure:"production"`
+
+	// DB configures the database connection, pooling, retries, and query
+	// logging.
+	DB DB `mapstructure:"db"`
+
+	// HTTP configures the listener, TLS, sessions, and rate limiting.
+	HTTP HTTPSettings `mapstructure:"http"`
+
+	// Queue carries the log destination for the internal message queue.
+	Queue QueueConfig `mapstructure:"queue"`
 
 	// AuthConfig configures OAuth/OIDC authentication for the server. See
 	// OAuthConfig for details on provider URL, scopes, and field mapping
 	// from OIDC claims to ssoossh identity fields (username, groups).
 	AuthConfig OAuthConfig `mapstructure:"authentication"`
 
-	// LDAP optionally enriches the identity resolved from OIDC with
-	// attributes looked up by username. See LDAPConfig.
+	// LDAP optionally enriches the OIDC identity with directory attributes.
+	// See LDAPConfig.
 	LDAP LDAPConfig `mapstructure:"ldap"`
 
-	// Admin configures role-based authorization for administrative and
-	// auditor-scoped operations. All admin group names are optional; empty
-	// disables the corresponding role. The ssh_server_admin_group key lives
-	// here rather than at top level so all three role-to-group mappings sit
-	// together.
+	// Admin configures administrative and auditor access. Both group names
+	// are optional; empty disables the corresponding role.
 	Admin AdminConfig `mapstructure:"admin"`
 
 	// Signer carries everything the signer needs (the CA key and the
@@ -40,35 +56,36 @@ type Config struct {
 	// same fields. See SignerConfig.
 	Signer SignerConfig `mapstructure:",squash"`
 
+	// CertOptions holds the issuance policy for each certificate type.
 	CertOptions CertificateOptions `mapstructure:"cert_options"`
 
 	// Mail configures outbound email notifications: the relay, the sender,
 	// and the local template overrides. Disabled by default; see
-	// MailConfig and docs/email-notifications.md.
+	// docs/operations/email-notifications.md.
 	Mail MailConfig `mapstructure:"mail"`
 
-	// Branding optionally customizes the login page and web UI with
-	// organization-specific information. All fields are optional; empty values
-	// are treated as "no branding configured". See BrandingSettings.
+	// Branding customizes the login page and web UI. All fields are
+	// optional; empty values mean no branding is configured.
 	Branding BrandingSettings `mapstructure:"branding"`
 
 	// FIPS steers the server toward FIPS 140-3 approved algorithms: the CA
 	// key (checked at startup), client-submitted public keys (checked in
-	// CertRequestService.Approve and again in server/signer), and the TLS
+	// when a request is approved and again by the signer), and the TLS
 	// cipher/curve profile. A non-approved algorithm is a hard error when
 	// this is in effect.
 	//
-	// A pointer so "unset" is distinguishable from "explicitly false":
-	// unset falls back to whether the Go runtime is itself in FIPS 140-3
-	// mode. Nil is the correct default, so no entry is needed in
-	// defaults.yaml.
+	// Unset is distinguishable from an explicit false: unset follows the Go
+	// runtime's own FIPS 140-3 mode, crypto/fips140.Enabled(), which is why
+	// this key ships with no value rather than set to false.
+	//
+	//	fips: true
 	FIPS *bool `mapstructure:"fips"`
 
 	// MultiInstance declares that the server is part of a multi-instance
 	// deployment (multiple ssoosshd processes sharing a database). When
 	// enabled, certain checks are enforced (e.g., cookie_key must be
 	// explicitly set) and behaviors adapt to account for cross-instance
-	// message delivery (e.g., CertRequestService.Wait decodes wake-message
+	// message delivery (a client waiting on one instance is woken by another)
 	// payloads). See docs/dev/multi-instance-safety-plan.md.
 	MultiInstance bool `mapstructure:"multi_instance"`
 }
@@ -150,7 +167,7 @@ type DB struct {
 	// modest: writes serialize on the write lock regardless, so high counts
 	// just queue without benefit. For PostgreSQL, scale with expected
 	// concurrency. This is ignored for in-memory SQLite, which is always
-	// forced to 1 (see bootstrap/db.go's onConnFn).
+	// forced to 1.
 	MaxOpenConns int `mapstructure:"max_open_conns"`
 
 	// MaxIdleConns sets the maximum number of idle connections held open.
@@ -167,20 +184,38 @@ type DB struct {
 }
 
 // LDAPConfig configures optional LDAP identity enrichment, looked up by the
-// username resolved from OIDC (see docs/dev/ssoossh-context.md — "Which LDAP
+// username resolved from OIDC (see docs/internals/design-brief.md — "Which LDAP
 // attributes become principals" is still an open question). Enabled false
 // (the default) skips LDAP entirely; OIDC claims alone are sufficient.
 //
-// TODO: not yet consumed by service.AuthService — fields are a starting
-// guess at what a reference deployment (lldap) needs.
+// The schema is parsed but not yet consumed by the server: setting these has
+// no effect on authentication or on issued certificates today. The fields are
+// a starting guess at what a reference deployment (lldap) needs, documented
+// so the config format is stable ahead of the lookup landing.
 type LDAPConfig struct {
-	Enabled      bool           `mapstructure:"enabled"`
-	URL          string         `mapstructure:"url"`
-	BindDN       string         `mapstructure:"bind_dn"`
-	BindPassword string         `mapstructure:"bind_password"`
-	BaseDN       string         `mapstructure:"base_dn"`
-	UserFilter   string         `mapstructure:"user_filter"`
-	Logging      GenericLogging `mapstructure:"logging"`
+	// Enabled turns on the LDAP lookup once the server consumes it.
+	Enabled bool `mapstructure:"enabled"`
+
+	// URL is the directory server to connect to.
+	URL string `mapstructure:"url"`
+
+	// BindDN is the DN to bind as for the search.
+	BindDN string `mapstructure:"bind_dn"`
+
+	// BindPassword is the password for BindDN.
+	BindPassword string `mapstructure:"bind_password"`
+
+	// BaseDN is the search base for the user lookup.
+	BaseDN string `mapstructure:"base_dn"`
+
+	// UserFilter is the search filter, keyed by the username resolved from
+	// OIDC.
+	UserFilter string `mapstructure:"user_filter"`
+
+	// Logging is an independent log destination for LDAP activity, routed by
+	// a "type=ldap" attribute. The routing is wired up regardless of whether
+	// LDAP enrichment itself is consumed.
+	Logging GenericLogging `mapstructure:"logging"`
 }
 
 // AdminConfig configures role-based authorization for administrative and

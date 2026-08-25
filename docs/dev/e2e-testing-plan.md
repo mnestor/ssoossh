@@ -149,8 +149,7 @@ an already-open listener. What `freePort` does close is the case that
 actually bit — the kernel handing the same just-released port to two callers
 in the same process — by recording every port it has issued and retrying.
 Across two concurrent e2e runs the window remains, which is one of the
-reasons `make test-e2e` takes an flock (see
-[parallel-agent-workflow.md](parallel-agent-workflow.md)).
+reasons `make test-e2e` takes an flock.
 
 The NATS ports were the exception until 2026-08-25: `StartNATS` took a port
 and every caller passed a hand-picked constant, distinct from each other but

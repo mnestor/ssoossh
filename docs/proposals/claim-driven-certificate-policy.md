@@ -18,7 +18,7 @@ derived from it, but it has not been re-checked against the tree since
 >    deployment shape, not on facts about the code. Those are the ones worth
 >    re-opening first, and they are flagged.
 
-This extends [certificate-lifetime-policy.md](../certificate-lifetime-policy.md),
+This extends [certificate-lifetime-policy.md](../operations/certificate-lifetime-policy.md),
 which is implemented. Read that first: it establishes the engine, the
 precedence rules, and the narrowing-only invariant that this design works
 within.

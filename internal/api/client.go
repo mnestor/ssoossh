@@ -20,7 +20,7 @@ import (
 // RestyClient is the production implementation.
 //
 // There is no host-certificate or principal-mapping-sync call here:
-// ssoosshd issues no host identity (docs/decisions.md), and principal
+// ssoosshd issues no host identity (docs/project/decisions.md), and principal
 // mapping is purely local to the client (`ssoossh host mapping`), never
 // synced from the server.
 type Client interface {
@@ -31,8 +31,7 @@ type Client interface {
 	// publicKey (authorized_keys format). localUsername/localHostname are
 	// the requesting client's own OS identity — for a user cert there is no
 	// way to request one except via the local client, so this is who/where
-	// the request actually came from (see
-	// docs/dev/changes-next.md). It returns as soon as
+	// the request actually came from. It returns as soon as
 	// ssoosshd has created the request, so the caller can show
 	// PendingRequest.ApprovalURL to a human before blocking on
 	// AwaitCertificate.
@@ -69,7 +68,7 @@ type Client interface {
 
 // Config configures a RestyClient. Deliberately its own type rather than
 // client/config.Config — internal/ packages can't import back up into
-// client/ (see root CLAUDE.md) — so callers map their own config into
+// client/ (see docs/internals/invariants.md) — so callers map their own config into
 // this.
 type Config struct {
 	// ServerURL is the ssoosshd base URL, e.g. "https://sso.example.com".

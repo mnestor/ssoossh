@@ -41,7 +41,7 @@ func (a *app) registerJobs(ctx context.Context) error {
 
 // registerSweepJob schedules the stranded-request sweep, which fails
 // requests left awaiting a signature that will never arrive (see
-// service.SweepStrandedRequests and docs/signing-pipeline.md).
+// service.SweepStrandedRequests and docs/internals/signing-pipeline.md).
 //
 // A recurring job, run immediately on start as well, so a restart's
 // stranded requests are cleaned up promptly and in-process ones are caught

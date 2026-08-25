@@ -101,7 +101,7 @@ func TestInspect_ShouldReportTheCertificateJustIssued(t *testing.T) {
 	// Type is the assertion that matters most here. runInspect casts each
 	// listed identity to *ssh.Certificate and prints "(not a certificate)"
 	// on failure -- a branch its own comment calls unreachable short of a
-	// backend bug, and the backend bug was real (docs/testing-needs.md).
+	// backend bug, and the backend bug was real (docs/dev/testing-needs.md).
 	// Seeing "user" proves List(true) returned certificates, not bare keys.
 	for _, want := range []string{"Principals", "alice", "Type", "user", "Serial"} {
 		if !strings.Contains(res.Stdout, want) {

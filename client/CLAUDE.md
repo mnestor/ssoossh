@@ -5,13 +5,13 @@
 - Manages ssh keypairs in files or ssh-agent; keypair is regenerated whenever
   a new certificate is needed.
 - Full design context (enrollment flow, principal mapping, open questions):
-  `docs/dev/ssoossh-context.md`
+  `docs/internals/design-brief.md`
 
 # Design rules
 - Viper config loading (~/.config/ssoossh.yaml | ./ssoossh.yaml), CLI
   overrides
-- Never open a listening port — no loopback redirect (see root
-  `Hard Constraints`)
+- Never open a listening port — no loopback redirect (see
+  docs/internals/invariants.md)
 
 ## CLI surface
 
@@ -32,7 +32,7 @@ ssoossh version
   attempt, never touches the network); `host mapping list|add|remove` edits
   the mapping. Both commands accept `--file PATH` for the mapping file
   (default: `/etc/ssoossh/principals.json`). There are no host
-  certificates and no server-side mappings (docs/decisions.md); the mapping
+  certificates and no server-side mappings (docs/project/decisions.md); the mapping
   is purely local.
 - `ssh config` — the wiring harness: prints the `ssh_config` recipes and
   nothing else, as both its output and its long help. Declared `offline`
@@ -62,7 +62,7 @@ for invocations whose command line belongs to `ssh` or cron:
 
 `--debug` implies `-v`, and is hidden from `--help` (a diagnostic aid, not
 part of the advertised surface) but documented in
-`docs/configuration.md#diagnostics--v-and---debug` and `docs/faq.md`.
+`docs/operations/configuration.md#diagnostics--v-and---debug` and `docs/guide/faq.md`.
 Malformed values in either variable read as off — a diagnostic must never
 fail a login. `-v` is what a bug report should ask for.
 

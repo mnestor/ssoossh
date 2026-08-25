@@ -48,7 +48,7 @@ Verdict: **Build now.** Start with SVG branding and keyid templates (proven bug 
 
 **Status:** In progress
 
-Feasibility: High. Test infrastructure (db_test.go with per-test Postgres schemas) already exists. Down migrations are deferred per database-schema-audit-2026-08-22.md, but up migrations are complete. Dialect parity enforcement is open (Item 16), but the schema itself is identical (verified via diff).
+Feasibility: High. Test infrastructure (db_test.go with per-test Postgres schemas) already exists. Down migrations are deferred; up migrations are complete. Dialect parity enforcement is open (Item 16), but the schema itself is identical (verified via diff).
 
 Expected Yield: Medium. Current e2e explicitly excludes Postgres ("worth a nightly run once multi-instance-safety-plan.md is acted on"). SQLite + Postgres test both dialects at the service layer (22 db_test.go migrations + bootstrap tests). The live correctness bug (Item 16: time.Time UTC normalization) was caught by reading both dialects' behavior, not e2e testing. New yield: concurrency patterns under Postgres (connection pooling, FK enforcement under concurrent writes), true multi-instance failover if Item 5 lands.
 
@@ -120,7 +120,7 @@ Verdict: **Build now.** The goroutine leak fix is already in flight. Write a gra
 
 Feasibility: High. Harness already exists (test/e2e/ with idp.go, server.go, client.go). Load tests are straightforward: N concurrent logins, rate limiter throughput, SSE fan-out limit, fd/goroutine leaks under sustained traffic. Soak tests: 1000s logins over 1h, certificate reuse under load.
 
-Expected Yield: High. Validates: (1) rate limiter correctness under concurrency (separate from goroutine leak—this is about token-bucket math), (2) SSE subscription limits (does fan-out break at 100+ waiting clients?), (3) DB connection pool tuning (changes-next.md item 1 is still open—pool defaults are untuned), (4) fd leak detection (pprof against file descriptors). These are load-specific and not testable at unit scale.
+Expected Yield: High. Validates: (1) rate limiter correctness under concurrency (separate from goroutine leak—this is about token-bucket math), (2) SSE subscription limits (does fan-out break at 100+ waiting clients?), (3) DB connection pool tuning (pool defaults are untuned), (4) fd leak detection (pprof against file descriptors). These are load-specific and not testable at unit scale.
 
 Build Cost: Moderate. Load test harness is ~500 lines (concurrent logins + metrics collection). Soak is same harness, different parameters.
 
@@ -132,7 +132,7 @@ Verdict: **Build now; run nightly, not per-PR.** The harness exists and the agen
 
 **Status:** Already addressed
 
-Feasibility: N/A - changes-now.md item 2 already planned
+Feasibility: N/A - already planned
 
 Expected Yield: N/A
 
@@ -140,7 +140,7 @@ Build Cost: N/A
 
 Recurring Cost: N/A
 
-Verdict: **Already queued.** changes-now.md § Security and correctness, item 2: "add global `:focus-visible` outline rule, and `aria-busy`/`aria-live` on approve/deny buttons." This is 3 lines of CSS/HTML. The web UI is approval-focused and needs this for WCAG 2.4.7 compliance. Implement immediately after Item 8 (goroutine fix) merges, do not wait for a separate accessibility testing framework.
+Verdict: **Already queued.** Add a global `:focus-visible` outline rule, and `aria-busy`/`aria-live` on approve/deny buttons. This is 3 lines of CSS/HTML. The web UI is approval-focused and needs this for WCAG 2.4.7 compliance. Implement immediately after Item 8 (goroutine fix) merges, do not wait for a separate accessibility testing framework.
 
 ## 11. Browser Matrix Beyond Chrome
 
@@ -190,13 +190,13 @@ Verdict: **Defer.** The three outputs that matter (CLI help, man pages, generate
 
 Feasibility: High (openapi-check and types-check already in CI; schema parity is open)
 
-Expected Yield: Low. The residual gap: openapi.yaml vs handler implementations are validated by openapi-check. TypeScript types vs Go types validated by types-check (tygo generation + golden test). Residual risk: OpenAPI field descriptions (acknowledged as uneven in deferred.md), example values (not included), and schema parity between Postgres/SQLite (database-schema-audit finding 9, open). The last is non-trivial; the first two are cosmetic.
+Expected Yield: Low. The residual gap: openapi.yaml vs handler implementations are validated by openapi-check. TypeScript types vs Go types validated by types-check (tygo generation + golden test). Residual risk: OpenAPI field descriptions (uneven), example values (not included), and schema parity between Postgres/SQLite (open). The last is non-trivial; the first two are cosmetic.
 
 Build Cost: Low for the cosmetic items (add examples, prose). Medium for schema parity test (parse both .sql files, compare column sets).
 
 Recurring Cost: Low. Parity test is deterministic.
 
-Verdict: **Defer the cosmetic polish (Item 16 in changes-next.md). Pair the parity test with Item 4 (Postgres e2e).** The contract test surface is 80% covered today. The remaining 20% is low-risk and low-cost; do it when Postgres e2e lands.
+Verdict: **Defer the cosmetic polish. Pair the parity test with Postgres e2e.** The contract test surface is 80% covered today. The remaining 20% is low-risk and low-cost; do it when Postgres e2e lands.
 
 ## 15. Release Rehearsal
 
@@ -218,7 +218,7 @@ Verdict: **Defer until first release.** This is a release-readiness check, not a
 
 Feasibility: High (codecover.yaml already runs coverage, and since the exclusion list was removed the number it reports is the real one)
 
-Expected Yield: Low. The real question: is coverage a useful gate, or does it train people to write low-quality tests that hit lines? Evidence: the exclusion list this repo used to carry looked disciplined (every entry had a comment) and was still 51/89 dead, silently excluding nothing; rate_limit_test.go explicitly works around the goroutine leak (line 32-34 comment) rather than fixing it. High coverage numbers can mask weak tests. The 90%+ packages are security-critical (crypto/ssh, middleware, service), so the gate would protect the right places. But changes-now.md and changes-next.md do not mention coverage gating as a blocker.
+Expected Yield: Low. The real question: is coverage a useful gate, or does it train people to write low-quality tests that hit lines? Evidence: the exclusion list this repo used to carry looked disciplined (every entry had a comment) and was still 51/89 dead, silently excluding nothing; rate_limit_test.go explicitly works around the goroutine leak (line 32-34 comment) rather than fixing it. High coverage numbers can mask weak tests. The 90%+ packages are security-critical (crypto/ssh, middleware, service), so the gate would protect the right places. But coverage gating is not currently treated as a blocker.
 
 Build Cost: Trivial. Add a threshold to codecover.yaml.
 

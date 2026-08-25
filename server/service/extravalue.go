@@ -11,7 +11,7 @@ import (
 // has no value — the configured claim was absent at login, or the template
 // references an extra name that was never configured. Key IDs should show
 // an auditable gap rather than silently collapse (see
-// docs/certificate-keyid-template.md).
+// docs/internals/certificate-keyid-template.md).
 const missingPlaceholder = "MISSING"
 
 // extraValue is one configured extra field's value, sourced from an OIDC

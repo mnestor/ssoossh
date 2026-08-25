@@ -7,7 +7,7 @@ import "time"
 // `host sign`, `service enroll`), resolved when a user approves/denies in
 // the web UI or it times out. Approving a CertificateTypeService request
 // creates an Enrollment rather than issuing a certificate immediately — see
-// docs/dev/ssoossh-context.md, "Service enrollment".
+// docs/internals/design-brief.md, "Service enrollment".
 //
 // The SSE endpoint the client is waiting on watches a request by ID.
 // TODO: the pub/sub or channel-based broker backing that watch is not yet
@@ -35,11 +35,11 @@ type CertificateRequest struct {
 
 	// RequestedOptions is JSON-encoded. Server config (config.CertificateOptions)
 	// is the outer bound — the web UI narrows or adjusts, never widens (see
-	// root CLAUDE.md Hard Constraints).
+	// docs/internals/invariants.md).
 	RequestedOptions string `gorm:"column:requested_options"`
 
 	// SourceIP is one of the lifetime-policy signals (see
-	// docs/dev/ssoossh-context.md "Certificate lifetime policy" — client-supplied
+	// docs/internals/design-brief.md "Certificate lifetime policy" — client-supplied
 	// source addresses are unverified input and need a policy ceiling).
 	SourceIP string `gorm:"column:source_ip"`
 
@@ -47,8 +47,7 @@ type CertificateRequest struct {
 	// requests: the OS user and hostname of the client that made the
 	// request. For a user cert there is no way to request one except via
 	// the local client, so local_user@host is the requester identity, not
-	// optional extra context — see
-	// docs/dev/changes-next.md.
+	// optional extra context.
 	LocalUsername string `gorm:"column:local_username"`
 	LocalHostname string `gorm:"column:local_hostname"`
 
@@ -63,8 +62,7 @@ type CertificateRequest struct {
 	// enrollments (they don't produce certificates at approval time) and
 	// host requests (not yet supported). Pre-allocation ensures the serial
 	// is available to persist at resolution without waiting for the signer.
-	// This avoids burning serials on signing failures. See
-	// docs/dev/changes-next.md items 5 and 11 for the rationale.
+	// This avoids burning serials on signing failures.
 	SerialNumber *uint64 `gorm:"column:serial_number"`
 
 	// Status carries a CHECK constraint mirroring the migration's. Every
@@ -83,7 +81,7 @@ type CertificateRequest struct {
 
 	// FailureReason explains a CertificateRequestStatusFailed row: either
 	// the signer's error, or that the invalidation sweep found it stranded
-	// (see docs/signing-pipeline.md). For operators
+	// (see docs/internals/signing-pipeline.md). For operators
 	// reading the database — it isn't returned over the API.
 	FailureReason string `gorm:"column:failure_reason"`
 }

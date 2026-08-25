@@ -47,7 +47,7 @@ const FailureReasonStranded = "stranded awaiting signature"
 // stranded. That's correct at startup, when the in-memory queue is
 // definitionally empty, and wrong at any other time — which is why
 // bootstrap only schedules the periodic pass when ApprovalTTL is set. See
-// docs/signing-pipeline.md.
+// docs/internals/signing-pipeline.md.
 func (s *CertRequestService) SweepStrandedRequests(ctx context.Context) error {
 	var stranded []model.CertificateRequest
 	q := s.db.WithContext(ctx).Where("status = ?", model.CertificateRequestStatusSigning)

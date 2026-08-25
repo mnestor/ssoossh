@@ -26,7 +26,7 @@ import (
 
 // CAKeySource supplies the ssh.Signer certificates are signed with. The
 // indirection is the seam for the CA key eventually living somewhere other
-// than the config file — an ssh-agent connection (per root CLAUDE.md's "CA
+// than the config file — an ssh-agent connection (per docs/internals/invariants.md's "CA
 // key lives in an ssh-agent the server process can reach (v1)"), a PKCS#11
 // token, or a cloud KMS — without touching Sign.
 type CAKeySource interface {

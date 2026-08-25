@@ -44,7 +44,7 @@ func runConfig(out io.Writer) error {
 // because `ssh config` is where someone looks for it. It is the command's
 // entire output and is embedded in its long help, so a plain run, --help
 // and the man page cannot come to say different things. Mirrors
-// docs/configuration.md, which is the long form with the sshd and PAM ends
+// docs/operations/configuration.md, which is the long form with the sshd and PAM ends
 // of the setup that do not belong in a client help page.
 const sshConfigGuidance = `The client is never run on its own — ssh invokes it. Two ways to arrange that:
 

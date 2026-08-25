@@ -5,7 +5,7 @@ about to ask "why doesn't it just…", the answer is probably here. Decisions
 are re-openable — but with a reason the circumstances changed, not by
 re-asking.
 
-What ssoossh *does* do is in [features.md](features.md).
+What ssoossh *does* do is in [features.md](../guide/features.md).
 
 ## Security invariants
 

@@ -7,9 +7,9 @@ remaining default. Those references are the defaults files themselves —
 each is embedded in its binary and installed under `/etc/ssoossh`, so
 there is no separate sample to drift from them:
 
-- [server/config/defaults.yaml](../server/config/defaults.yaml): full server reference
-- [client/config/defaults.yaml](../client/config/defaults.yaml): full client reference
-- [pam.d-sudo.example](pam.d-sudo.example): annotated PAM stack
+- [server/config/defaults.yaml](../../server/config/defaults.yaml): full server reference
+- [client/config/defaults.yaml](../../client/config/defaults.yaml): full client reference
+- [pam.d-sudo.example](../pam.d-sudo.example): annotated PAM stack
 
 For the operational procedures around these settings (generating the CA
 key, systemd, provider setup, the PAM lockout warning), see
@@ -155,7 +155,7 @@ key ID template per certificate type. Nothing reachable over HTTP can
 exceed it. Lifetimes are then narrowed per issuance by group tiers and
 source-network rules; see
 [certificate-lifetime-policy.md](certificate-lifetime-policy.md) for the
-semantics and [server/config/defaults.yaml](../server/config/defaults.yaml)
+semantics and [server/config/defaults.yaml](../../server/config/defaults.yaml)
 for the syntax.
 
 ### Multi-instance and startup modes
@@ -231,7 +231,7 @@ ssoossh --debug ca
 
 Everything else (key storage, key algorithm, TLS verification, whether to
 use the agent) defaults sensibly; see
-[client/config/defaults.yaml](../client/config/defaults.yaml). Two worth
+[client/config/defaults.yaml](../../client/config/defaults.yaml). Two worth
 knowing:
 
 - `use_agent: true` (default) uses ssh-agent for key storage. If the agent
@@ -383,7 +383,7 @@ auth  sufficient  pam_ssoossh.so  server=https://ssoosshd.example.com  trusted-c
 for `TrustedUserCAKeys`. Module arguments (`server`, `trusted-ca-file`,
 `debug`, `insecure-skip-verify`, `skew-tolerance`, `timeout`,
 `principals-map`) are documented in
-[pam.d-sudo.example](pam.d-sudo.example).
+[pam.d-sudo.example](../pam.d-sudo.example).
 
 **Before editing a real PAM stack, read the lockout warning and the
 `sufficient` vs `required` trade-off in

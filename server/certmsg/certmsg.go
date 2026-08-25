@@ -1,7 +1,7 @@
 // Package certmsg holds the message shapes and topic names exchanged over
 // the certificate pipeline's queues: the sign queue (Approve → signer) and
 // the signed-reply topic (signer → listener/resolver). See
-// docs/signing-pipeline.md.
+// docs/internals/signing-pipeline.md.
 //
 // It deliberately depends on nothing but the standard library and
 // server/model's type constants — no gorm, no crypto, no config. That's
@@ -44,7 +44,7 @@ const (
 
 // WaitTopic returns the per-request wake topic CertRequestService.Wait
 // subscribes to and notifyWaiter publishes to. One topic per request, not
-// shared — see docs/signing-pipeline.md.
+// shared — see docs/internals/signing-pipeline.md.
 func WaitTopic(requestID string) string {
 	return "certrequest.wait." + requestID
 }
@@ -52,9 +52,9 @@ func WaitTopic(requestID string) string {
 // RequestedOptions are the client-supplied certificate options carried on a
 // CertificateRequest, narrowed against server config (config.CertOptionsUser
 // / CertOptionsService / CertOptions) before anything reaches the web UI or
-// gets signed — see root CLAUDE.md Hard Constraints ("server config is the
+// gets signed — see docs/internals/invariants.md ("server config is the
 // outer bound"). Field names and semantics follow
-// docs/features.md's issuance section.
+// docs/guide/features.md's issuance section.
 type RequestedOptions struct {
 	// Extensions are the SSH certificate extensions requested (e.g.
 	// "permit-pty", "permit-agent-forwarding"). Fail-open: sshd ignores
@@ -69,14 +69,14 @@ type RequestedOptions struct {
 	// SourceAddresses are the client's own interface addresses, unioned
 	// server-side with the address the request was observed from to form
 	// the SSH "source-address" critical option (see
-	// docs/certificate-lifetime-policy.md —
+	// docs/operations/certificate-lifetime-policy.md —
 	// NAT means neither address alone is sufficient). Unverified client
 	// input; server config is the ceiling on what's actually granted.
 	SourceAddresses []string `json:"source_addresses,omitempty"`
 
 	// NoTouchRequired requests the OpenSSH "no-touch-required" extension.
 	// Only meaningful for service enrollment of a hardware-backed sk- key
-	// (see root CLAUDE.md Hard Constraints) — ignored for client-generated
+	// (see docs/internals/invariants.md) — ignored for client-generated
 	// keys on every other path.
 	NoTouchRequired bool `json:"no_touch_required,omitempty"`
 }
@@ -98,8 +98,7 @@ type SigningJob struct {
 	// Serial is the pre-allocated certificate serial, reserved at approval
 	// time before the signer runs. This ensures the serial is available to
 	// persist at request resolution without waiting for the signer, avoiding
-	// burned serials on signing failures. See docs/dev/changes-next.md items 5
-	// and 11.
+	// burned serials on signing failures.
 	Serial uint64 `json:"serial"`
 }
 
@@ -108,7 +107,7 @@ type SigningJob struct {
 // SignedReply.Error.
 const (
 	// ErrCodeUnsupportedType means the signer doesn't handle this
-	// certificate type yet (see docs/signing-pipeline.md —
+	// certificate type yet (see docs/internals/signing-pipeline.md —
 	// user certificates only for now).
 	ErrCodeUnsupportedType = "unsupported_type"
 	// ErrCodeBadPublicKey means the job's PublicKey didn't parse.

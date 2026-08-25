@@ -178,7 +178,7 @@ func TestEnrollmentRetrieve_ShouldUseExpiryForPreSplitEnrollments(t *testing.T) 
 
 // should refuse rather than fall back to the code's window when the approval
 // computed a zero certificate duration. A pin-only lifetime policy does
-// exactly that (docs/certificate-lifetime-policy.md, footgun 5), and reading
+// exactly that (docs/operations/certificate-lifetime-policy.md, footgun 5), and reading
 // the zero as "no duration stored" would hand out a certificate valid for the
 // whole enrollment window — the one span that must never become a
 // certificate's. The signer refuses a zero-length span, so this fails closed.

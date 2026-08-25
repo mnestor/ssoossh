@@ -19,16 +19,16 @@ import "time"
 //
 // They mirror server/model.CertificateRequestStatus, which is the source of
 // truth for the database. They're duplicated here rather than imported
-// because client/ and pam_ssoossh/ cannot import server/ (see root
-// CLAUDE.md); keeping them in this shared wire-contract package is what
-// stops the two sides from drifting apart as new statuses are added.
+// because client/ and pam_ssoossh/ cannot import server/ (see
+// docs/internals/invariants.md); keeping them in this shared wire-contract
+// package is what stops the two sides drifting apart as statuses are added.
 const (
 	StatusApproved = "approved"
 	StatusDenied   = "denied"
 	StatusExpired  = "expired"
 	// StatusEnrolled resolves a service-enrollment request: the payload
 	// carries CertificateResult.Code (an enrollment token), not a
-	// certificate. See docs/dev/ssoossh-context.md, "Service enrollment".
+	// certificate. See docs/internals/design-brief.md, "Service enrollment".
 	StatusEnrolled = "enrolled"
 	// StatusFailed means the request was approved but signing failed, or a
 	// sweep invalidated it. No certificate will ever arrive for it.
@@ -76,7 +76,7 @@ const (
 
 // RequestedOptions are the certificate options a caller may request.
 // Server config is always the outer bound on what's actually granted (see
-// root CLAUDE.md Hard Constraints) — the server narrows or rejects
+// docs/internals/invariants.md) — the server narrows or rejects
 // anything it doesn't permit, it never grants more than was requested.
 //
 // Deliberately independent of server/service.RequestedOptions: this is the
@@ -118,7 +118,7 @@ type CertificateResult struct {
 	Certificate string `json:"certificate,omitempty"`
 
 	// Code is the enrollment token, set only when Status is "enrolled"
-	// (CertificateTypeService — see docs/dev/ssoossh-context.md, "Service
+	// (CertificateTypeService — see docs/internals/design-brief.md, "Service
 	// enrollment"). `service retrieve` presents this later to redeem the
 	// actual certificate.
 	Code string `json:"code,omitempty"`

@@ -67,7 +67,7 @@ func authenticate(pamh *C.pam_handle_t, flags C.int, argc C.int, args **C.char) 
 	// A human has to open a browser and approve — signal.NotifyContext lets
 	// Ctrl-C at the sudo prompt abandon the request instead of leaving this
 	// blocked on SSE, and the timeout bounds how long a human with no
-	// browser can hang a sudo prompt. See docs/deployment.md's PAM section,
+	// browser can hang a sudo prompt. See docs/operations/deployment.md's PAM section,
 	// "Timeouts and cancellation".
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

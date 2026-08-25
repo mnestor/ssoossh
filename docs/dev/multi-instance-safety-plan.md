@@ -2,8 +2,8 @@
 
 **Status: implemented; kept as the design record.** Every item in the
 "Remaining" list below is done; operator-facing documentation is in
-[deployment.md](../deployment.md#7-running-more-than-one-instance) and
-[configuration.md](../configuration.md#multi-instance-and-startup-modes).
+[deployment.md](../operations/deployment.md#7-running-more-than-one-instance) and
+[configuration.md](../operations/configuration.md#multi-instance-and-startup-modes).
 This was the prerequisite plan for running more than one
 ssoosshd against a shared database. Overlaps heavily with
 `docs/dev/signer-split-deferred.md` — NATS is a *precondition* for most

@@ -2461,8 +2461,8 @@ func decisionFor(t *testing.T, db *gorm.DB, requestID string) model.CertificateR
 }
 
 // TestCertRequestService_Approve_ShouldPersistFullDecisionAudit is the core
-// assertion behind docs/dev/changes-next.md's "keep the
-// entire set of data about a user that approves/rejects a request": every
+// assertion behind keeping the entire set of data about a user who
+// approves or rejects a request: every
 // field on Identity — not just Subject/Username — plus the full connection
 // context, lands in the decision row Approve's signing branch writes.
 func TestCertRequestService_Approve_ShouldPersistFullDecisionAudit(t *testing.T) {
@@ -2911,7 +2911,7 @@ func TestCertRequestService_CreateRequest_ShouldPersistLocalIdentity(t *testing.
 // TestCertRequestService_CreateRequest_ShouldUnionSourceIPIntoSourceAddresses
 // covers Phase 2 problem 2: the server-observed SourceIP is folded into the
 // stored SourceAddresses list rather than left as a second, disconnected
-// value — the union docs/dev/ssoossh-context.md describes for a client behind
+// value — the union docs/internals/design-brief.md describes for a client behind
 // NAT.
 // TestCertRequestService_CreateRequest_ShouldNormalizeSourceAddresses covers
 // the case that took the approval page down: net.IP.String() drops an IPv6

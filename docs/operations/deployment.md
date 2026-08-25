@@ -4,14 +4,14 @@ Operator-facing runbook for bringing up `ssoosshd`, wiring `sshd` and
 `sudo`/`su` to trust it, and pointing it at an OIDC provider.
 
 If you just want the shortest path to a working login, start with
-[getting-started.md](getting-started.md). For what each setting means,
+[getting-started.md](../guide/getting-started.md). For what each setting means,
 across every configuration surface, see
 [configuration.md](configuration.md); this document is the procedures
 around those settings.
 
 Two ways to run `ssoosshd`: the systemd unit below (installed from the
 `.deb`/`.rpm` package), or the Docker Compose deployment at
-[../deploy/docker-compose.yml](../deploy/docker-compose.yml). Both need
+[../deploy/docker-compose.yml](../../deploy/docker-compose.yml). Both need
 the same configuration; this doc mostly matters regardless of which one
 you run.
 
@@ -47,7 +47,7 @@ systemctl daemon-reload
 systemctl enable --now ssoosshd
 ```
 
-See [../deploy/ssoosshd.service](../deploy/ssoosshd.service) for what the
+See [../deploy/ssoosshd.service](../../deploy/ssoosshd.service) for what the
 unit actually sandboxes (`ReadOnlyPaths=/etc/ssoossh`,
 `StateDirectory=ssoossh` for the default sqlite database file, etc.); the
 comments there explain each choice, not repeated here.
@@ -308,13 +308,13 @@ Clients never notice which instance they reached.
   approvals cannot be delivered to waiting clients. Both the signer and
   the listeners must reach NATS for the certificate pipeline to work.
 
-See [multi-instance-safety-plan.md](dev/multi-instance-safety-plan.md) for
-design details and [signer-split-deferred.md](dev/signer-split-deferred.md)
+See [multi-instance-safety-plan.md](../dev/multi-instance-safety-plan.md) for
+design details and [signer-split-deferred.md](../dev/signer-split-deferred.md)
 for how NATS enables running the signer in a separate process.
 
 ## 8. PAM: `sudo` and `su`
 
-[pam.d-sudo.example](pam.d-sudo.example) documents every module argument
+[pam.d-sudo.example](../pam.d-sudo.example) documents every module argument
 in detail (`server`, `trusted-ca-file`, `debug`, `insecure-skip-verify`,
 `skew-tolerance`, `timeout`, `principals-map`); read it before editing a
 real PAM stack. This section is the operational wrapper around it.
@@ -335,7 +335,7 @@ which is also how you'd normally fix a PAM mistake.
 
 ### Stack configuration
 
-Add the line from [pam.d-sudo.example](pam.d-sudo.example) to the `auth`
+Add the line from [pam.d-sudo.example](../pam.d-sudo.example) to the `auth`
 group in `/etc/pam.d/sudo` (and `/etc/pam.d/su`, if wanted), above the
 existing `pam_unix.so` line:
 

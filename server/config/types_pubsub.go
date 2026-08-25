@@ -11,9 +11,9 @@ const (
 	PubSubBackendNATS      = "nats"
 )
 
-// PubSubConfig configures the message broker that carries the certificate
-// pipeline (signing requests, approvals, replies). Selects a backend
-// (gochannel, NATS) and provides backend-specific configuration.
+// PubSubConfig configures the message broker behind the certificate
+// pipeline. It carries signing requests, approvals, and replies, and selects
+// the backend that does so.
 //
 // gochannel (in-process) is the default and suitable for single-instance
 // deployments. NATS is required for multi-instance deployments where

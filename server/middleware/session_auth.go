@@ -154,7 +154,7 @@ func PopOIDCVerifier(c *gin.Context) (string, error) {
 
 // SetReturnURL stores returnURL in the session for a later PopReturnURL
 // call to redirect back to once login completes. The web UI is a JS/AJAX
-// consumer of the API (see root CLAUDE.md), so it — not this server — is
+// consumer of the API (see docs/internals/invariants.md), so it — not this server — is
 // what decides to redirect the browser to /auth/login?return_to=<url> on a
 // 401; this just captures and replays that value.
 func SetReturnURL(c *gin.Context, returnURL string) error {

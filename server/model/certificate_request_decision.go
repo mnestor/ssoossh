@@ -16,8 +16,7 @@ import "time"
 // log entry about one event in that pipeline's history. Keeping it separate
 // means a decider's identity is frozen at decision time and can never be
 // rewritten by a later change to the users table — there is deliberately no
-// UserID foreign key here, only plain copied values. See
-// docs/dev/changes-next.md.
+// UserID foreign key here, only plain copied values.
 type CertificateRequestDecision struct {
 	ID string `gorm:"column:id;primaryKey"`
 
@@ -40,8 +39,7 @@ type CertificateRequestDecision struct {
 	// certificate_requests may be pruned someday. An FK would block pruning
 	// or silently delete audit records via CASCADE, both unacceptable. By
 	// keeping a copied ID (like decider identity), the audit record outlives
-	// the request, and retention can be applied per-table (see
-	// docs/dev/changes-next.md section "First: decide the retention story").
+	// the request, and retention can be applied per-table.
 
 	// Outcome is "approved" or "denied" — see
 	// model.CertificateRequestDecisionOutcome* in enums.go. The CHECK
@@ -72,7 +70,7 @@ type CertificateRequestDecision struct {
 	// UserAgent, AcceptLanguage, and ForwardedFor are a deliberate
 	// allowlist of request headers, not "every header minus a denylist":
 	// Cookie carries the live session token, and neither it nor
-	// Authorization is ever captured here, per server/CLAUDE.md's "never
+	// Authorization is ever captured here, per docs/internals/invariants.md's "never
 	// log sensitive data" rule. ForwardedFor is the raw header, kept
 	// alongside SourceIP because g.ClientIP() already collapses it to one
 	// trusted value — the raw chain preserves forensic detail that

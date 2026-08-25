@@ -73,11 +73,11 @@ type HTTPSettings struct {
 	//
 	// Two things are derived from it and cannot be got right without it: the
 	// OIDC redirect URI handed to the identity provider, and the origin
-	// CsrfMiddleware compares the browser's Origin header against. Both used
+	// the CSRF middleware compares the browser's Origin header against. Both used
 	// to be reconstructed from ServerName plus the *listen* port, which is
 	// only the public port when nothing sits in front.
 	//
-	// Its scheme also settles IsTLS, so a deployment behind a TLS-terminating
+	// Its scheme also settles the derived HTTPS flag, so a deployment behind a TLS-terminating
 	// proxy needs this or IsHTTPS, not both.
 	//
 	// Origin only: a path, query, or fragment is rejected at startup. Serving
@@ -99,7 +99,7 @@ type HTTPSettings struct {
 
 	// CookieSecure marks the session cookie Secure, so browsers only send it
 	// over HTTPS. Unset derives it from whether the deployment is HTTPS at
-	// all (see IsTLS), which keeps plain-HTTP local development working
+	// all (see is_https), which keeps plain-HTTP local development working
 	// while defaulting to on everywhere else. Set it explicitly only to
 	// override that inference.
 	CookieSecure *bool `mapstructure:"cookie_secure"`
@@ -113,7 +113,7 @@ type HTTPSettings struct {
 	// This is defence in depth, not the CSRF control: SameSite does nothing
 	// against an attacker page on a different origin of the *same* site, so
 	// state-changing routes are additionally guarded by
-	// middleware.CsrfMiddleware.
+	// the CSRF middleware.
 	CookieSameSite string `mapstructure:"cookie_same_site"`
 
 	// CookieMaxAge is the absolute ceiling on a session's lifetime, measured
@@ -159,7 +159,7 @@ type HTTPSettings struct {
 
 	// Hsts (HTTP Strict-Transport-Security) is sent in the Strict-Transport-Security
 	// header on every response, but only when the server terminates TLS itself
-	// (i.e., TLS.CertificateFile and TLS.PrivateKeyFile are configured). Browsers
+	// (i.e. tls.certificate_file and tls.private_key_file are set). Browsers
 	// ignore HSTS over plain HTTP. Empty disables the header, useful when a
 	// TLS-terminating reverse proxy in front sets its own policy. Typical
 	// values include "max-age=31536000; includeSubDomains".
@@ -195,7 +195,7 @@ func (h *HTTPSettings) IsTLS() bool {
 // Port, and IsTLS.
 //
 // Returns "" when neither is available — PublicURL unset and ServerName
-// empty. Callers treat that as "the public origin is unknown": CsrfMiddleware
+// empty. Callers treat that as "the public origin is unknown": the CSRF middleware
 // falls back to Sec-Fetch-Site alone rather than comparing against a guess.
 //
 // The inference is kept for deployments with nothing in front, where the

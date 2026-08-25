@@ -103,7 +103,7 @@
 	/** decide records one approve-or-deny decision and reflects the result.
 	 * The certificate itself never appears here — it is signed
 	 * asynchronously and delivered on the waiting client's own SSE stream
-	 * (docs/signing-pipeline.md). */
+	 * (docs/internals/signing-pipeline.md). */
 	async function decide(action: 'approved' | 'denied') {
 		busy = true;
 		actionError = null;

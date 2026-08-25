@@ -22,9 +22,9 @@ dependencies.
  * or it will block forever waiting for an event that never comes.
  * They mirror server/model.CertificateRequestStatus, which is the source of
  * truth for the database. They're duplicated here rather than imported
- * because client/ and pam_ssoossh/ cannot import server/ (see root
- * CLAUDE.md); keeping them in this shared wire-contract package is what
- * stops the two sides from drifting apart as new statuses are added.
+ * because client/ and pam_ssoossh/ cannot import server/ (see
+ * docs/internals/invariants.md); keeping them in this shared wire-contract
+ * package is what stops the two sides drifting apart as statuses are added.
  */
 export const StatusApproved = "approved";
 /**
@@ -35,9 +35,9 @@ export const StatusApproved = "approved";
  * or it will block forever waiting for an event that never comes.
  * They mirror server/model.CertificateRequestStatus, which is the source of
  * truth for the database. They're duplicated here rather than imported
- * because client/ and pam_ssoossh/ cannot import server/ (see root
- * CLAUDE.md); keeping them in this shared wire-contract package is what
- * stops the two sides from drifting apart as new statuses are added.
+ * because client/ and pam_ssoossh/ cannot import server/ (see
+ * docs/internals/invariants.md); keeping them in this shared wire-contract
+ * package is what stops the two sides drifting apart as statuses are added.
  */
 export const StatusDenied = "denied";
 /**
@@ -48,15 +48,15 @@ export const StatusDenied = "denied";
  * or it will block forever waiting for an event that never comes.
  * They mirror server/model.CertificateRequestStatus, which is the source of
  * truth for the database. They're duplicated here rather than imported
- * because client/ and pam_ssoossh/ cannot import server/ (see root
- * CLAUDE.md); keeping them in this shared wire-contract package is what
- * stops the two sides from drifting apart as new statuses are added.
+ * because client/ and pam_ssoossh/ cannot import server/ (see
+ * docs/internals/invariants.md); keeping them in this shared wire-contract
+ * package is what stops the two sides drifting apart as statuses are added.
  */
 export const StatusExpired = "expired";
 /**
  * StatusEnrolled resolves a service-enrollment request: the payload
  * carries CertificateResult.Code (an enrollment token), not a
- * certificate. See docs/dev/ssoossh-context.md, "Service enrollment".
+ * certificate. See docs/internals/design-brief.md, "Service enrollment".
  */
 export const StatusEnrolled = "enrolled";
 /**
@@ -108,7 +108,7 @@ export const ErrorCodeInternalError = "internal_error";
 /**
  * RequestedOptions are the certificate options a caller may request.
  * Server config is always the outer bound on what's actually granted (see
- * root CLAUDE.md Hard Constraints) — the server narrows or rejects
+ * docs/internals/invariants.md) — the server narrows or rejects
  * anything it doesn't permit, it never grants more than was requested.
  * Deliberately independent of server/service.RequestedOptions: this is the
  * wire contract, free to evolve on its own rather than being coupled to
@@ -150,7 +150,7 @@ export interface CertificateResult {
 	certificate?: string;
 	/**
 	 * Code is the enrollment token, set only when Status is "enrolled"
-	 * (CertificateTypeService — see docs/dev/ssoossh-context.md, "Service
+	 * (CertificateTypeService — see docs/internals/design-brief.md, "Service
 	 * enrollment"). `service retrieve` presents this later to redeem the
 	 * actual certificate.
 	 */
@@ -216,7 +216,7 @@ export interface Envelope<T extends any> {
  * and LocalHostname are the requesting client's own OS identity — for a
  * user cert there is no way to request one except via the local client, so
  * this is who/where the request actually came from, not optional extra
- * context (see docs/dev/changes-next.md).
+ * context.
  */
 export interface UserRequestBody {
 	public_key: string;
@@ -228,7 +228,7 @@ export interface UserRequestBody {
  * ServiceEnrollRequestBody is the POST /api/certs/service/enroll request
  * body. PublicKey may be operator-supplied (BYO key, possibly HSM/PKCS#11/
  * encrypted file — the server never sees the private half) or
- * client-generated (see docs/dev/ssoossh-context.md, "Service enrollment").
+ * client-generated (see docs/internals/design-brief.md, "Service enrollment").
  */
 export interface ServiceEnrollRequestBody {
 	public_key: string;
@@ -239,7 +239,7 @@ export interface ServiceEnrollRequestBody {
  * local account pam_ssoossh is authenticating (e.g. who is running `sudo`)
  * — the certificate's principal is this, not whatever the browser identity
  * that later approves the request happens to be called (see
- * docs/features.md, PAM).
+ * docs/guide/features.md, PAM).
  */
 export interface PAMRequestBody {
 	public_key: string;
@@ -264,7 +264,7 @@ export interface CreateRequestResponse {
 /**
  * ApproveResponse is POST /api/certs/requests/:id/approve's response body.
  * It does not carry the certificate — approval only queues a signing job
- * (see docs/signing-pipeline.md); the certificate itself is delivered
+ * (see docs/internals/signing-pipeline.md); the certificate itself is delivered
  * later over the client's own SSE connection (CreateRequestResponse's
  * EventsURL), not returned here to the approving browser.
  */
@@ -291,7 +291,7 @@ export interface DenyResponse {
  * RetrieveRequestBody is the POST /api/certs/service/retrieve request
  * body. Only the code is posted — never a public key, so a stolen code
  * can't be paired with an attacker's keypair (see
- * docs/dev/ssoossh-context.md, "Service enrollment").
+ * docs/internals/design-brief.md, "Service enrollment").
  */
 export interface RetrieveRequestBody {
 	code: string;

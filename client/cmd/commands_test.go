@@ -7,7 +7,7 @@ import (
 )
 
 // commanderNames returns the Name() of each child Commander, for asserting
-// the CLI surface documented in client/CLAUDE.md.
+// the CLI surface documented in docs/man/ssoossh.1.
 func commanderNames(cmds []simplecobra.Commander) []string {
 	names := make([]string, len(cmds))
 	for i, c := range cmds {

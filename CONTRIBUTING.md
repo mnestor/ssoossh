@@ -18,9 +18,9 @@ This transparency helps the maintainer understand the contribution's context and
 
 If you are Claude or another AI assistant working in this repository:
 
-- Read `/home/vscode/.claude/CLAUDE.md` (user's global instructions) and `./CLAUDE.md` (project-specific instructions).
+- Read `./CLAUDE.md` for project-specific instructions.
 - Read `./.claude/rules/` for language-specific conventions (Go, TypeScript).
-- Follow the instructions in `docs/dev/parallel-agent-workflow.md` if multiple agents are working in parallel.
+- Follow `AGENTS.md` if multiple agents are working in parallel.
 - The project uses `rtk` (Rust Token Killer) to minimize token usage; use it in bash commands.
 - Conventional commits are required; keep PRs focused on one concern.
 
@@ -91,7 +91,7 @@ make test-migration      # SQLite/Postgres schema parity
 make test-e2e
 ```
 
-Known coverage gaps are tracked in [docs/testing-needs.md](docs/testing-needs.md),
+Known coverage gaps are tracked in [docs/dev/testing-needs.md](docs/dev/testing-needs.md),
 each with the bug that exposed it. Add to it when you find a gap you are not
 closing in the same change, and delete entries as they are closed rather than
 marking them done.
@@ -119,6 +119,8 @@ and fail the merge gate over punctuation.
 - Errors are wrapped with context: `return fmt.Errorf("operation: %w", err)`.
 - Use `context.Context` as the first parameter for I/O operations.
 - No global state; pass dependencies through structs.
+- No `init()` functions; wire startup explicitly. In tests that need
+  package-wide setup, use `TestMain`.
 - slog for structured logging; slog is the only global allowed.
 - Imports in 3 groups: standard lib, external, local (separated by blank lines).
 - Every function has a comment explaining what it does.
@@ -164,7 +166,7 @@ and fail the merge gate over punctuation.
 | --- | --- | --- |
 | `make fmt` | gofmt plus prettier, in place | Formatting first, so nothing after it reports a formatting problem |
 | `make lint-fix` | `golangci-lint run --fix` | Fixes the mechanical findings before anything checks for them |
-| `make check-generated` | types, OpenAPI, man pages | Catches a generated file you forgot to regenerate and commit |
+| `make check-generated` | types, OpenAPI, man pages, Makefile.md | Catches a generated file you forgot to regenerate and commit |
 | `make ci-required` | every blocking CI check | The actual gate |
 
 Expect the first run to take a while: `ci-required` builds the web UI, runs

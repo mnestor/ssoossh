@@ -14,7 +14,7 @@ import (
 )
 
 // keyIDTemplateData is the set of fields available for substitution in a
-// config.CertOptions*.KeyIDTemplate. See docs/certificate-keyid-template.md
+// config.CertOptions*.KeyIDTemplate. See docs/internals/certificate-keyid-template.md
 // — keep that table in sync with this struct.
 //
 // Extra holds the operator-configured extra claim fields (see
@@ -81,7 +81,7 @@ type keyIDTemplates struct {
 // the common case, so an unset Service template falls back to whatever's
 // configured for User (raw, before defaulting) — only when User's is also
 // unset does each type fall back to its own hardcoded default. See
-// docs/certificate-keyid-template.md.
+// docs/internals/certificate-keyid-template.md.
 func newKeyIDTemplates(opts config.CertificateOptions) (*keyIDTemplates, error) {
 	userSrc := opts.User.KeyIDTemplate
 	if userSrc == "" {
@@ -117,7 +117,7 @@ func newKeyIDTemplates(opts config.CertificateOptions) (*keyIDTemplates, error) 
 
 // parseKeyIDTemplate parses src and immediately executes it once against a
 // zero-value keyIDTemplateData, so a reference to a field that doesn't
-// exist (a typo, or a field docs/certificate-keyid-template.md no longer
+// exist (a typo, or a field docs/internals/certificate-keyid-template.md no longer
 // documents) is caught now rather than at the first real issuance —
 // text/template only validates syntax at Parse time, not field names,
 // which are only resolved against real data at Execute time.

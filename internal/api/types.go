@@ -1,7 +1,7 @@
 // Package api is the ssoosshd HTTP API client shared by client and
-// pam_ssoossh (neither may import the other or server/ directly — see root
-// CLAUDE.md's hard constraint on cross-package imports; this is the
-// internal/ home for what they share). Built on resty.dev/v3.
+// pam_ssoossh (neither may import the other or server/ directly — see
+// docs/internals/invariants.md on package boundaries; this is the internal/
+// home for what they share). Built on resty.dev/v3.
 //
 // The wire shapes themselves (request/response JSON bodies) live in
 // internal/apitypes, not here, so server/controller can share the exact

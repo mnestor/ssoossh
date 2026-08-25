@@ -2,7 +2,7 @@
 // built on Watermill (https://github.com/ThreeDotsLabs/watermill).
 //
 // Supports two backends: gochannel (in-process, single instance) and NATS
-// (required for multi-instance deployments). See docs/signing-pipeline.md
+// (required for multi-instance deployments). See docs/internals/signing-pipeline.md
 // for how the certificate pipeline uses this.
 package pubsub
 
@@ -31,7 +31,7 @@ const routerStartTimeout = 5 * time.Second
 // PubSub holds ssoosshd's message-broker primitives: Publisher/Subscriber
 // (backed by either gochannel for single-instance or NATS for multi-instance)
 // and a Router for the "start once, handle every message as it arrives" style
-// consumers (the signer and listener/resolver in docs/signing-pipeline.md).
+// consumers (the signer and listener/resolver in docs/internals/signing-pipeline.md).
 type PubSub struct {
 	Publisher  message.Publisher
 	Subscriber message.Subscriber
@@ -91,7 +91,7 @@ func newGoChannel(wmLogger watermill.LoggerAdapter) (*PubSub, error) {
 		//     race Persistent would, just via one extra loop iteration
 		//     instead of a replayed message.
 		//  2. It's actively wrong for the future sign queue
-		//     (docs/signing-pipeline.md): gochannel replays a
+		//     (docs/internals/signing-pipeline.md): gochannel replays a
 		//     Persistent topic's *entire* history to every new
 		//     subscriber, not just messages it missed. A signer
 		//     restarting and re-subscribing to the shared sign-queue
@@ -99,7 +99,7 @@ func newGoChannel(wmLogger watermill.LoggerAdapter) (*PubSub, error) {
 		//     including ones long since signed — not just unconsumed
 		//     ones. There's also no eviction: a Persistent topic's
 		//     backlog only ever grows for the life of the process (see
-		//     docs/signing-pipeline.md's now-resolved caveat
+		//     docs/internals/signing-pipeline.md's now-resolved caveat
 		//     about this).
 		//
 		// Safe to leave off in gochannel-only (single-process) mode:
@@ -241,7 +241,7 @@ func newNATS(cfg *config.PubSubConfig, wmLogger watermill.LoggerAdapter, sLogger
 // has no replay, so anything published in that gap is dropped outright --
 // and for a certificate request a dropped wake is unrecoverable, not merely
 // late: the certificate is deliberately never persisted (see
-// docs/signing-pipeline.md), so the instance that missed it can read
+// docs/internals/signing-pipeline.md), so the instance that missed it can read
 // "approved" from the database and still have nothing to hand its client,
 // which then blocks until the request expires.
 //

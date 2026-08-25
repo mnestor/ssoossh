@@ -13,7 +13,7 @@ Transport is Watermill's in-memory `gochannel` in the default single-process
 mode. The split into separate signer and API processes is implemented: with
 `pubsub.backend: nats`, the same pipeline runs across `ssoosshd serve api`
 and `ssoosshd sign` processes — see
-[deployment.md](deployment.md#6-startup-modes-full-api-and-sign).
+[deployment.md](../operations/deployment.md#6-startup-modes-full-api-and-sign).
 
 ## Why it looks like this
 
@@ -63,7 +63,7 @@ there is one type rather than two kept in sync by hand.
 | Topic | Shape | Durability need |
 | --- | --- | --- |
 | `certrequest.wait.<id>` | one per request | none — the database is truth |
-| `certrequest.sign` | shared queue | none — at-most-once by decision, the human retries (see [decisions.md](decisions.md)) |
+| `certrequest.sign` | shared queue | none — at-most-once by decision, the human retries (see [decisions.md](../project/decisions.md)) |
 | `certrequest.signed` | shared reply topic | none — same decision |
 
 The signed-reply topic is shared rather than per-request because only the
@@ -129,7 +129,7 @@ process.
    request terminal.
 6. The client's `Wait` returns; `eventsHandler` sends the terminal SSE event.
 
-See [flows.md](flows.md) §1b for the sequence diagram.
+See [flows.md](../guide/flows.md) §1b for the sequence diagram.
 
 ## Decisions that still constrain the code
 
@@ -357,4 +357,4 @@ overwritten.
 - The sweep's age-threshold approach is safe for several instances sharing a
   database: every instance derives the same bound from the same configured
   budget. See
-  [multi-instance-safety-plan.md](dev/multi-instance-safety-plan.md).
+  [multi-instance-safety-plan.md](../dev/multi-instance-safety-plan.md).

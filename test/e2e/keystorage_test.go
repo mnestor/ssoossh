@@ -13,7 +13,7 @@ import (
 )
 
 // File-based key storage had no end-to-end coverage at all -- the open
-// entry at the top of docs/testing-needs.md. Every harness invocation put a
+// entry at the top of docs/dev/testing-needs.md. Every harness invocation put a
 // live SSH_AUTH_SOCK in the environment and nothing could set
 // use_agent: false, because nothing could write a config file.
 //

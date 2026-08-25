@@ -138,6 +138,3 @@ The post-merge ritual fixes all three.
 5. A rebases onto updated `main`, conflicts in `server/bootstrap/bootstrap.go` are mechanical (both sides' service registration kept), rebase succeeds.
 6. A's PR opens, CI passes, merges. The integrator runs the post-merge ritual again.
 
-## Reference
-
-See `docs/dev/parallel-agent-workflow.md` for more detail, including worked examples and the full post-merge ritual checklist.

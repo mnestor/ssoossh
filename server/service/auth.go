@@ -27,7 +27,7 @@ import (
 
 // Identity is the resolved user identity after OIDC (+ optional LDAP)
 // authentication. Groups are used only for the certificate lifetime
-// decision — never placed in a certificate (see root CLAUDE.md Hard
+// decision — never placed in a certificate (see docs/internals/invariants.md Hard
 // Constraints). OtherAccounts and ServiceAccounts are persisted on
 // model.User and ride the login session (middleware.SetIdentitySession):
 // ServiceAccounts gate service-approval linkage
@@ -252,8 +252,8 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce str
 }
 
 // upsertUser creates or updates the model.User row for identity, keyed by
-// Subject. Group membership is deliberately not persisted here (see root
-// CLAUDE.md Hard Constraints).
+// Subject. Group membership is deliberately not persisted here (see
+// docs/internals/invariants.md).
 func (s *AuthService) upsertUser(ctx context.Context, identity *Identity) error {
 	// not covered (both error branches below): these are []string, so
 	// json.Marshal cannot fail on them.

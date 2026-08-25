@@ -1,4 +1,4 @@
-.TH SSOOSSHD.YAML 5 "2026-08-16" "ssoossh" "File Formats"
+.TH SSOOSSHD.YAML 5 "2026-08-25" "ssoossh" "File Formats"
 .SH NAME
 ssoosshd.yaml \- configuration file for the ssoosshd server
 .SH DESCRIPTION
@@ -6,8 +6,9 @@ ssoosshd.yaml \- configuration file for the ssoosshd server
 is a YAML file configuring
 .BR ssoosshd (8):
 the HTTP(S) listener, TLS, the database, OIDC authentication, optional LDAP
-enrichment, and the certificate-issuance policy for each certificate type
-ssoosshd signs.
+enrichment, administrative and auditor access, web UI branding, outbound
+email, the message broker, and the certificate-issuance policy for each
+certificate type ssoosshd signs.
 .SH LOCATION
 Built-in defaults are loaded first (compiled into the binary; not a file on
 disk), then exactly one config file is merged on top. If
@@ -41,725 +42,796 @@ http:
 .fi
 .RE
 Every key below is top-level (or nested only as shown) in the actual config
-schema; some older example files in this repository nest
+schema.
 .B ldap
 and
 .B authentication
-under
-.BR http: ,
-which does not match the schema and is silently ignored \(em see
-.B NOTES
-below.
+are siblings of
+.BR http ,
+not nested under it; nesting them there is silently ignored by the config
+loader.
+.\" BEGIN GENERATED OPTIONS
 .SS Top level
 .TP
-.BI production: " bool"
-General production-mode flag. Default:
-.BR true .
-.TP
 .BI traces: " bool"
-Enable tracing. Default:
+Enables OpenTelemetry tracing, adding the otelgin middleware to the router. Exporter endpoints come from the standard OTEL_* environment variables.
+Default:
 .BR false .
 .TP
 .BI metrics: " bool"
-Enable metrics. Default:
+Enables OpenTelemetry metrics. Exporter endpoints come from the standard OTEL_* environment variables.
+Default:
 .BR false .
 .TP
+.BI production: " bool"
+Selects gin's release mode rather than debug mode, and gates the development\-only escape hatches: notably http.rate_limit_disable_for_dev is honored only when this is false, so rate limiting cannot be switched off in production.
+Default:
+.BR true .
+.TP
 .BI ssh_key: " string"
-The CA's private key, inline, in OpenSSH private-key PEM format (e.g. the
-output of
-.BR "ssh-keygen -t ed25519" ).
-Mutually exclusive with
-.BR hsm ;
-exactly one must be set for signing modes (full server or signer-only),
-while API-only mode requires neither.
-Supported for all SSH key types (ECDSA, RSA, Ed25519). Never log or
-otherwise expose this value.
-.TP
-.BI hsm: " object"
-Configures a PKCS#11 (Hardware Security Module) key source for the CA
-private key, as an alternative to
-.BR ssh_key .
-Mutually exclusive with
-.BR ssh_key .
-Requires the following sub-fields:
-.RS
-.TP
-.BI module: " string"
-Absolute path to the PKCS#11 shared library (e.g.
-.I /usr/lib/softhsm/libsofthsm2.so
-for SoftHSM2, or the vendor's library for a real HSM).
-.TP
-.BI token_label: " string"
-Name of the PKCS#11 token (e.g. created with
-.BR "softhsm2-util --init-token --label ..." ).
-.TP
-.BI "pin or " pin_file: " string"
-Exactly one of
-.B pin
-(inline, not recommended for production) or
-.B pin_file
-(path to a file containing the user PIN, with restricted permissions).
-.TP
-.BI key_label: " string"
-.B (recommended)
-The PKCS#11 key label (CKA_LABEL), e.g.
-.I ssoossh-ca .
-.TP
-.BI key_id: " string"
-.B (optional)
-Hex-encoded PKCS#11 key ID (CKA_ID), e.g.
-.IR 01 .
-At least one of
-.B key_label
-or
-.B key_id
-must be set; when both are set, both must match the same key.
-.RE
+The SSH CA private key used to sign issued certificates. Inline PEM, not a file path. Exactly one of ssh_key or hsm may be set, and one of them must be: startup fails without a CA key.
 .IP
-Supported algorithms: ECDSA P-256, P-384, P-521; RSA >= 2048.
-Not supported: Ed25519 (Go PKCS#11 limitation); use
-.B ssh_key
-for Ed25519 CAs. Consult
-.B docs/hsm.md
-for SoftHSM2 setup, importing existing keys, and deployment guidance.
+.nf
+ssh_key: |
+.fi
+.nf
+\-\-\-\-\-BEGIN OPENSSH PRIVATE KEY\-\-\-\-\-
+.fi
+.nf
+\-\-\-\-\-END OPENSSH PRIVATE KEY\-\-\-\-\-
+.fi
+Default:
+.BR empty .
 .TP
 .BI max_cert_lifetime: " duration"
-Maximum lifetime for user, service, and PAM certificates, enforced as
-a defense-in-depth check before signing. Any certificate with a validity
-span exceeding this duration is rejected at issuance time.
-Specified as a Go duration string (e.g.
-.IR 2160h " for 90 days, " 8760h " for 1 year)."
-Must be greater than zero. Default:
-.BR 2160h " (90 days)."
+The maximum lifetime for user/service/PAM certificates, enforced as a defense\-in\-depth check before signing. Must be greater than zero; a non\-positive value fails startup.
+Default:
+.BR 2160h .
 .TP
 .BI max_service_cert_lifetime: " duration"
-Maximum lifetime for service certificates, enforced as a defense-in-depth
-check before signing. Specified as a Go duration string.
+The maximum lifetime for service certificates, enforced as a defense\-in\-depth check before signing. Service enrollments default to 8760h (cert_options.service valid_duration), so this cap carries headroom over its default. Must be greater than zero; a non\-positive value fails startup.
 Default:
-.BR 17544h " (2 years)."
-Must be greater than zero.
-.SS logging (main application log)
+.BR 17544h .
+.TP
+.BI fips: " bool"
+Steers the server toward FIPS 140\-3 approved algorithms: the CA key (checked at startup), client\-submitted public keys (checked in when a request is approved and again by the signer), and the TLS cipher/curve profile. A non\-approved algorithm is a hard error when this is in effect.
+.IP
+Unset is distinguishable from an explicit false: unset follows the Go runtime's own FIPS 140\-3 mode, crypto/fips140.Enabled(), which is why this key ships with no value rather than set to false.
+.IP
+.nf
+fips: true
+.fi
+Default:
+.BR false .
+.TP
+.BI multi_instance: " bool"
+Declares that the server is part of a multi\-instance deployment (multiple ssoosshd processes sharing a database). When enabled, certain checks are enforced (e.g., cookie_key must be explicitly set) and behaviors adapt to account for cross\-instance message delivery (a client waiting on one instance is woken by another) payloads). See docs/dev/multi\-instance\-safety\-plan.md.
+Default:
+.BR false .
+.SS logging (the main application log)
+.TP
+.B logging.*
+Log\-file rotation, via the embedded timberjack logger: filename, maxsize, maxage, maxbackups, localtime, compression, rotationinterval, backuptimeformat, rotateatminutes, rotateat, appendtimeafterext, and filemode.
+.IP
+An unset filename means no log file is written and output goes to stdout instead. maxsize is in megabytes (default 100); maxage is in days (default: keep forever); maxbackups caps retained rotated files (default: keep all, subject to maxage); localtime uses local time rather than UTC in rotated filenames; compression is none, gzip, or zstd; rotationinterval is a duration forcing rotation on a schedule in addition to size. The rest tune backup filename formatting and rotation at specific times. See the DeRuina/timberjack package for the per\-field detail.
 .TP
 .BI logging.level: " string"
-Minimum log level: a level name (
-.IR debug ", " info ", " warn ", " error ,
-case-insensitive, optionally with a numeric
-.B +N
-/
-.B -N
-offset) or a raw numeric slog level (e.g.
-.IR -4 ", " 0 ", " 4 ", " 8 ).
-Unrecognized or empty values fall back to
-.BR info .
+The minimum log level: a level name (debug, info, warn, error, case\-insensitive, optionally with a numeric +N or \-N offset) or a raw numeric slog level such as \-4, 0, 4, or 8. An unrecognized or empty value falls back to info.
 Default:
 .BR WARN .
 .TP
 .BI logging.enable_stdout: " bool"
-Also write the main log to stdout even when
-.B logging.filename
-is set. (When
-.B logging.filename
-is unset, or the process is attached to a terminal, stdout is used
-regardless of this setting.) Default:
+Also writes the main log to stdout even when a filename is set. When no filename is set, or the process is attached to a terminal, stdout is used regardless.
+Default:
 .BR false .
 .TP
 .BI logging.include_app_name: " bool"
-Add an
-.B app
-attribute (the string
-.RB \(dq ssoossh \(dq )
-to every log record. Default:
+Adds an "app" attribute, the string "ssoossh", to every log record.
+Default:
 .BR true .
 .TP
 .BI logging.include_app_version: " bool"
-Add a
-.B version
-attribute to every log record. Default:
+Adds a "version" attribute to every log record.
+Default:
 .BR true .
 .TP
 .BI logging.log_json: " bool"
-Write JSON instead of colorized/plain text. Default:
+Writes JSON instead of colorized or plain text.
+Default:
 .BR false .
+.SS db (the database connection, pooling, retries, and query logging)
 .TP
-.BI logging.filename , " logging.maxsize" , " logging.maxage" , " logging.maxbackups" , " logging.localtime" , " logging.compression" , " logging.rotationinterval" , " logging.backuptimeformat" , " logging.rotateatminutes" , " logging.rotateat" , " logging.appendtimeafterext" , " logging.filemode"
-Log-file rotation, via the embedded
-.B timberjack
-logger. Unset
-.B filename
-means no log file is written (output goes to stdout instead, per
-.BR enable_stdout " above); "
-.B maxsize
-is in megabytes (default 100);
-.B maxage
-is in days (default: keep forever);
-.B maxbackups
-caps retained rotated files (default: keep all, subject to
-.BR maxage );
-.B localtime
-uses local time instead of UTC in rotated filenames;
-.B compression
-is
-.IR none ", " gzip ", or " zstd ;
-.B rotationinterval
-is a duration (e.g.
-.IR 24h )
-forcing rotation on a schedule in addition to size; the remaining fields
-tune backup filename formatting and rotation-at-specific-times. See each
-field's doc comment in the
-.B DeRuina/timberjack
-package for full detail.
-.SS db (database)
-.TP
-.BI db.provider: " sqlite" | postgres
-Database backend. Default:
+.BI db.provider: " string"
+Identifies which database backend to use.
+Default:
 .BR sqlite .
 .TP
 .BI db.connection_string: " string"
-For
-.BR sqlite ,
-a file path (or
-.B :memory:
-for in-memory). For
-.BR postgres ,
-a standard
-.B postgres://
-URL or keyword string. Default:
+The connection string / DSN. For SQLite this is a file path (or ":memory:" for in\-memory); for PostgreSQL a standard postgres:// URL or keyword string.
+Default:
 .BR ssoossh.db .
 .TP
+.B db.logging.*
+Log\-file rotation for this destination, via the embedded timberjack logger, with the same keys and meanings as logging.* above. This destination is only split out of the main log once its filename is set; until then its records go to the general log.
+.TP
+.BI db.logging.level: " string"
+The minimum log level for this destination, in the same form as logging.level.
+Default:
+.BR WARN .
+.TP
+.BI db.logging.add_source: " bool"
+Includes the source file and line on each record.
+Default:
+.BR false .
+.TP
+.BI db.logging.log_json: " bool"
+Writes JSON instead of colorized or plain text.
+Default:
+.BR false .
+.TP
 .BI db.retry_attempts: " int"
-Maximum connection attempts before giving up. Zero or negative disables
-retries. Default:
+The maximum number of connection attempts before giving up. Zero or negative disables retries (will fail immediately on the first error). Applies to both SQLite (typically succeeds immediately) and PostgreSQL (may retry on transient network failures).
+Default:
 .BR 3 .
 .TP
 .BI db.retry_interval: " duration"
-Wait between retry attempts; only used when
-.B retry_attempts
-> 1. Default:
+The time to wait between connection retry attempts. Only used if retry_attempts > 1. Applies to both SQLite and PostgreSQL.
+Default:
 .BR 3s .
 .TP
-.B db.logging.*
-Independent log destination for database queries, same fields as
-.B logging.*
-above except it has no
-.B enable_stdout
-/
-.B include_app_name
-/
-.B include_app_version
-(instead:
-.B db.logging.add_source
-adds source file/line to each record; default
-.BR false ).
-Routed by a
-.RB \(dq type=db \(dq
-attribute; only takes effect once
-.B db.logging.filename
-is set.
-.SS http (listener, TLS, sessions, rate limiting)
+.BI db.max_open_conns: " int"
+Sets the maximum number of open connections to the database. Zero means Go's default (typically 2). For file\-backed SQLite, keep this modest: writes serialize on the write lock regardless, so high counts just queue without benefit. For PostgreSQL, scale with expected concurrency. This is ignored for in\-memory SQLite, which is always forced to 1.
+Default:
+.BR 10 .
+.TP
+.BI db.max_idle_conns: " int"
+Sets the maximum number of idle connections held open. Zero means Go's default (typically 2, same as max_open_conns). Keep this proportionate to max_open_conns \(em they are not independent; a high max_open_conns with a low max_idle_conns causes expensive churn.
+Default:
+.BR 5 .
+.TP
+.BI db.conn_max_lifetime: " duration"
+Sets the maximum amount of time a connection can be reused. Zero disables the limit (connections are reused indefinitely). Useful for breaking stale connections in long\-running deployments, but typically not necessary with a well\-behaved database server.
+Default:
+.BR 0 .
+.SS http (the listener, TLS, sessions, and rate limiting)
+.TP
+.B http.access_logging.*
+Log\-file rotation for the access log, via the embedded timberjack logger, with the same keys and meanings as logging.* above. The access log is only split into its own file once its filename is set.
+.TP
+.BI http.access_logging.log_user_agent: " bool"
+Records the request's User\-Agent header.
+Default:
+.BR true .
+.TP
+.BI http.access_logging.log_request_header: " bool"
+Records the full request header set. Verbose, and it captures whatever the client sent.
+Default:
+.BR true .
+.TP
+.BI http.access_logging.log_client_ip: " bool"
+Records the client address, as resolved through http.trusted_proxies.
+Default:
+.BR true .
+.TP
+.BI http.access_logging.log_request_id: " bool"
+Records the per\-request correlation ID.
+Default:
+.BR false .
+.TP
+.BI http.access_logging.log_request_body: " bool"
+Records the request body. Off by default and worth leaving off: request bodies on this server carry public keys and enrollment codes.
+Default:
+.BR false .
+.TP
+.BI http.access_logging.log_response_body: " bool"
+Records the response body. Off by default and worth leaving off: response bodies carry issued certificates and enrollment tokens.
+Default:
+.BR false .
+.TP
+.BI http.access_logging.log_response_header: " bool"
+Records the full response header set.
+Default:
+.BR false .
+.TP
+.BI http.access_logging.log_span_id: " bool"
+Records the OpenTelemetry span ID.
+Default:
+.BR false .
+.TP
+.BI http.access_logging.log_trace_id: " bool"
+Records the OpenTelemetry trace ID.
+Default:
+.BR false .
+.TP
+.BI http.access_logging.log_json: " bool"
+Writes JSON instead of colorized or plain text.
+Default:
+.BR false .
 .TP
 .BI http.address: " string"
-Interface to bind, e.g.
-.I 127.0.0.1
-for local-only or
-.I 0.0.0.0
-for all interfaces. Ignored when
-.B http.unix_socket
-is set. Default:
+The network interface to bind to, e.g. "127.0.0.1" to listen only locally, or "0.0.0.0" for all interfaces. Used with Port to form the server's listen address.
+Default:
 .BR 127.0.0.1 .
 .TP
 .BI http.port: " int"
-TCP port to listen on. 0 tells the OS to pick an unused port (the actual
-port is logged at startup); this is intended for testing. Ignored when
-.B http.unix_socket
-is set. Default:
+The TCP port to listen on, e.g. 80 for HTTP or 443 for HTTPS. Port 0 is reserved for testing and tells the OS to pick an unused port; the actual port is logged on startup. Ignored when unix_socket is set.
+Default:
 .BR 8080 .
 .TP
-.BI http.unix_socket: " path"
-Listen on a Unix domain socket at this path instead of TCP;
-.B address
-/
-.B port
-are then ignored. Mutually exclusive with
-.B http.proxy_protocol
-(PROXY protocol is a TCP concept). Default: unset.
+.BI http.unix_socket: " string"
+when set, is a filesystem path to listen on a Unix domain socket instead of TCP \(em Address and Port are ignored. Mutually exclusive with proxy_protocol (PROXY protocol is a TCP\-connection concept; it has nothing to prefix on a Unix socket).
+Default:
+.BR empty .
 .TP
 .BI http.proxy_protocol: " list"
-CIDR ranges of reverse proxies trusted to prefix connections with a PROXY
-protocol v1/v2 header, so the real client address survives a TCP-level
-proxy. Empty (default) disables PROXY protocol entirely; once set,
-connections from any other source are rejected outright. Ignored when
-.B http.unix_socket
-is set.
+Lists the CIDR ranges of reverse proxies trusted to prefix connections with a PROXY protocol v1/v2 header (so the real client address survives a TCP\-level proxy, as opposed to trusted_proxies below which is for HTTP\-level proxies setting X\-Forwarded\-For). Empty disables PROXY protocol support entirely; connections from any other source are rejected outright once this is set. Ignored (must be empty) when unix_socket is set.
+Default:
+.BR empty .
 .TP
 .BI http.trusted_proxies: " list"
-CIDR ranges of reverse proxies trusted to set
-.B X-Forwarded-For
-/
-.BR X-Forwarded-Proto .
-Empty (default) means no proxy is trusted: the client IP always reflects
-the direct connection, and a client-supplied
-.B X-Forwarded-For
-is ignored.
+Lists the CIDR ranges of reverse proxies trusted to set X\-Forwarded\-For/X\-Forwarded\-Proto, passed to gin's SetTrustedProxies. Empty means no proxy is trusted, so c.ClientIP() always reports the direct connection's address and a client\-supplied X\-Forwarded\-For is ignored.
+.IP
+That only holds because the router passes this to SetTrustedProxies unconditionally \(em gin's own default is to trust every proxy, so skipping the call for an empty list would mean the opposite.
+Default:
+.BR empty .
 .TP
 .BI http.server_name: " string"
-Host name this server answers to. A request addressed to anything else (by
-.B Host
-header, or SNI on a TLS connection) is rejected with
-.B 421
-.RB ( "Misdirected Request" ),
-except the health-check endpoints, which are exempt so probes can reach the
-server by IP. Empty (default) disables the check. Required by the OIDC
-service unless
-.B http.public_url
-is set instead.
+when set, is the host name this server answers to: requests addressed to anything else (by Host header, or SNI on TLS connections) are rejected with 421 Misdirected Request by middleware.ServerNameMiddleware. The health endpoints are registered ahead of the check so probes can reach the server by IP. Empty disables the check. It plays no role in the TLS handshake itself, which is why it does not live in TLSConfig.
+Default:
+.BR empty .
 .TP
-.BI http.public_url: " url"
-The scheme and host browsers actually reach this deployment at, e.g.
-.IR https://ssh.example.com .
-Set this whenever it differs from what
-.BR address / port /TLS
-describe, which is every reverse-proxy deployment. Two things depend on it:
-the OIDC redirect URI handed to the identity provider, and the origin
-compared against the browser's
-.B Origin
-header for CSRF protection. Must be an origin only \(em no path, query, or
-fragment; a trailing slash is tolerated and trimmed. Validated at startup:
-an invalid value fails the server before it starts, rather than surfacing
-later as an identity-provider-side redirect rejection. Default: unset
-(falls back to being derived from
-.BR server_name ", " port ", and TLS status" ).
+.BI http.public_url: " string"
+The scheme and host browsers actually reach this deployment at, e.g. "https://ssh.example.com". Set it whenever that differs from what Address/Port/TLS describe \(em which is every reverse\-proxy deployment, since the proxy terminates TLS on 443 while this process listens on plain HTTP somewhere else.
+.IP
+Two things are derived from it and cannot be got right without it: the OIDC redirect URI handed to the identity provider, and the origin the CSRF middleware compares the browser's Origin header against. Both used to be reconstructed from server_name plus the *listen* port, which is only the public port when nothing sits in front.
+.IP
+Its scheme also settles the derived HTTPS flag, so a deployment behind a TLS\-terminating proxy needs this or is_https, not both.
+.IP
+Origin only: a path, query, or fragment is rejected at startup. Serving the app under a sub\-path would need the frontend's base to move with it, which is not supported, so accepting one here would only produce a redirect URI that silently does not work.
+Default:
+.BR empty .
 .TP
 .BI http.is_https: " bool"
-Set when a reverse proxy in front of this process terminates TLS, so this
-process itself runs plain HTTP but must still be treated as HTTPS for
-session-cookie and redirect-URI purposes. Not needed if
-.B http.public_url
-is already set with an
-.B https://
-scheme. Default:
+If we don't configure TLS but instead of a reverse proxy setup that is terminating TLS then we need to set this to true
+Default:
 .BR false .
 .TP
 .BI http.cookie_key: " string"
-Secret used to sign and encrypt session cookies. If empty (default), a key
-is generated once and persisted in the database, so sessions survive a
-restart and every instance sharing a database shares the key. Set this
-explicitly to key it from outside the database instead.
+The secret used to sign and encrypt session cookies. If empty, a key is generated once and persisted in the server_secrets table, so sessions survive a restart and instances sharing a database share the key. Configure an explicit value to key it from outside the database.
+Default:
+.BR empty .
 .TP
 .BI http.cookie_secure: " bool"
-Marks the session cookie
-.BR Secure .
-Unset (default) derives it from whether the deployment is HTTPS at all (see
-.BR http.public_url / is_https );
-set explicitly only to override that inference.
+Marks the session cookie Secure, so browsers only send it over HTTPS. Unset derives it from whether the deployment is HTTPS at all (see is_https), which keeps plain\-HTTP local development working while defaulting to on everywhere else. Set it explicitly only to override that inference.
+Default:
+.BR empty .
 .TP
-.BI http.cookie_same_site: " strict" | lax | none
-Session cookie
-.B SameSite
-attribute. Default:
-.BR strict ,
-appropriate here since nothing legitimately navigates into this server from
-another site.
+.BI http.cookie_same_site: " string"
+Controls the session cookie's SameSite attribute: "strict" (default), "lax", or "none". Strict is right for this server because nothing legitimately navigates into it from another site \(em the OIDC callback is a redirect the browser follows to a URL this server issued, not a cross\-site form post.
+.IP
+This is defence in depth, not the CSRF control: SameSite does nothing against an attacker page on a different origin of the *same* site, so state\-changing routes are additionally guarded by the CSRF middleware.
+Default:
+.BR strict .
 .TP
 .BI http.cookie_max_age: " duration"
-Session cookie lifetime. Zero uses the session store's own default.
+The absolute ceiling on a session's lifetime, measured from login. Activity does not extend it: once a session is this old the next request is unauthenticated regardless of how recently it was used, and the user signs in again. Zero uses the built\-in default.
+Default:
+.BR 9h .
+.TP
+.BI http.cookie_idle_timeout: " duration"
+How long a session survives without a request. SessionAuthMiddleware slides this window on activity (re\-saving the session past half the window, which reissues the cookie), so an actively\-used session only ever ends at cookie_max_age, while an abandoned browser expires after this much quiet. Zero uses the built\-in default. Must not exceed cookie_max_age \- an idle window longer than the absolute cap cannot ever be reached.
+Default:
+.BR 30m .
 .TP
 .BI http.rate_limit: " int"
-Maximum requests per
-.B http.rate_duration
-per client IP. Zero or negative (default) disables rate limiting.
-Localhost (127.0.0.1, ::1) always bypasses the limit.
+The maximum number of requests per rate_duration allowed per client IP. Zero or negative disables rate limiting entirely. Localhost (127.0.0.1, ::1) bypasses the limit, so health probes and tests from the local frontend are not throttled.
+Default:
+.BR 60 .
 .TP
 .BI http.rate_duration: " duration"
-Time window for
-.BR http.rate_limit .
+The time window for rate limiting calculations. With rate_limit=60 and rate_duration=1m, each IP is allowed 60 requests per minute. Typical values are in seconds to minutes.
+Default:
+.BR 1m .
 .TP
-.BI http.hsts: " string"
-Value of the
-.B Strict-Transport-Security
-header, sent only when this process terminates TLS itself (a certificate is
-configured under
-.BR http.tls ).
-Empty disables the header \(em appropriate when a TLS-terminating reverse
-proxy sets its own policy instead. Example:
-.RB \(dq "max-age=31536000; includeSubDomains" \(dq .
-Default: unset.
-.TP
-.B http.tls.certificate_file " / " http.tls.private_key_file
-Paths to PEM certificate and private key files. Both must be set together.
-If the pair is incomplete, the server runs without TLS: plain HTTP with
-HTTP/2 cleartext (h2c) enabled.
-.IP
-The contents are re-read on
-.BR SIGHUP ,
-and on a timer when
-.B http.tls.reload_interval
-is set, so a renewed certificate is served without a restart. The paths
-themselves are fixed for the process's lifetime.
-.IP
-Inline PEM
-.RB ( http.tls.certificate " / " http.tls.private_key )
-was accepted by earlier versions and has been removed: it cannot be rotated
-without rewriting and rereading this file. Move the material into files and
-point these keys at them.
-.TP
-.BI http.tls.reload_interval: " duration"
-How often to re-read the certificate and key files, picking up a renewed
-certificate without a restart.
-.B 0
-(the default) disables the timer;
-.B SIGHUP
-always reloads regardless.
-.IP
-Set this when nothing signals the process on renewal — a Kubernetes secret
-remount is the motivating case, since the mount is replaced as a directory
-symlink rather than written in place, so neither a signal nor a filesystem
-watch on the paths would notice. With
-.BR certbot (1)
-or systemd, prefer
-.B SIGHUP
-via
-.B --deploy-hook
-or
-.BR ExecReload= .
-.IP
-A reload that fails, including the half-written window where a certificate
-has been replaced but its key has not, is logged at
-.B WARN
-and the previously loaded certificate keeps serving.
-.TP
-.BI http.tls.min_version: " string"
-Minimum TLS protocol version:
-.IR TLS1.0 ", " TLS1.1 ", " TLS1.2 ", or " TLS1.3 .
-Parsing tolerates case and
-.B .
-/
-.B -
-/
-.B _
-/space separators, and
-.BR tls / version
-prefixes (e.g.
-.IR tls12 ", " TLS-1.2 ", " VersionTLS12
-all work).
-.B TLS1.0
-and
-.B TLS1.1
-are accepted but log a deprecation warning (RFC 8996). Default (in the
-shipped
-.IR _defaults.yaml ):
-.BR TLS1.3 .
-.TP
-.BI http.tls.cipher_suites: " list"
-TLS 1.0\-1.2 cipher suite names (Go does not allow configuring TLS 1.3
-suites), matched exactly and case-sensitively against
-.B crypto/tls
-constant names, e.g.
-.BR TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 .
-Empty (default) uses Go's defaults. Any explicit list must include
-.B TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
-or
-.BR TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 ,
-or the server fails to start \(em net/http's automatic HTTP/2 setup
-requires one of them.
-.TP
-.BI http.tls.curves: " list"
-Key-exchange curve/group preference order:
-.IR P256 ", " P384 ", " P521 ", " X25519 ", or " X25519MLKEM768 ,
-with the same tolerant name parsing as
-.BR min_version .
-Empty (default) uses Go's defaults; setting any curve replaces the defaults
-entirely rather than adding to them.
-.TP
-.B http.access_logging.*
-Which fields the HTTP access log records: boolean switches
-.BR log_user_agent ", " log_request_header ", " log_client_ip ", "
-.BR log_request_id ", " log_request_body ", " log_response_body ", "
-.BR log_response_header ", " log_span_id ", and " log_trace_id ,
-plus
-.B log_json
-and the shared
-.B timberjack
-rotation fields (see
-.B logging.*
-above). Access logging has no separate level knob (it is always effectively
-.BR info )
-and never includes source file/line. Routed by a
-.RB \(dq type=accesslog \(dq
-attribute; only takes effect once
-.B http.access_logging.filename
-is set, otherwise it merges into the general log stream. Defaults (shipped
-.IR _defaults.yaml ):
-.BR log_user_agent ", " log_request_header ", and " log_client_ip
-true; the rest false.
-.SS authentication (OIDC)
-.TP
-.BI authentication.client_id: " string"
-.B Required.
-OAuth2/OIDC client ID registered with the identity provider.
-.TP
-.BI authentication.client_secret: " string"
-OAuth2 client secret.
-.TP
-.BI authentication.provider_url: " url"
-.B Required.
-The OIDC provider's issuer URL, used for discovery
-.RI ( /.well-known/openid-configuration
-is stripped automatically if present in the value).
-.TP
-.BI authentication.scopes: " string"
-Space-separated additional scopes requested alongside the always-included
-.B openid
-scope, e.g.
-.RB \(dq "profile email" \(dq .
-Default (Go zero value, i.e. no additional scopes) unless explicitly set
-\(em see
-.B NOTES
-below.
-.TP
-.B authentication.fields.*
-Maps ssoossh identity fields to OIDC ID-token claim names.
-.RS
-.TP
-.BI username: " string"
-.B Required.
-Claim holding the local account username, e.g.
-.RB \(dq preferred_username \(dq .
-.TP
-.BI groups: " string"
-Claim expected to hold a JSON array of group names. Feeds the certificate
-lifetime/require-group decision only; group membership is never placed in
-an issued certificate.
-.TP
-.BI other_accounts: " string"
-Claim expected to hold a JSON array of alternate account identifiers this
-identity is known by on target systems (a different username, UPN, or
-.BR sAMAccountName ),
-added to a certificate's principal list alongside
-.BR username .
-.TP
-.BI service_accounts: " string"
-Claim expected to hold a JSON array of service-account identifiers this
-identity is authorized to manage/enroll certificates for.
-.TP
-.BI email: " string"
-Claim holding the user's email. Empty falls back to the standard
-.B email
-claim opportunistically (not an error if that is absent too).
-.TP
-.BI extra: " map"
-Additional claims to capture at login for key ID templates, as a map of
-template field name to claim name. Each configured claim is stored on the
-user record (scalars as strings, JSON string arrays as lists) and is
-available to
-.B cert_options.*.key_id_template
-as
-.IB {{.Extra. name }}
-(lists joined via
-.IB "{{join .Extra." name " \(dq;\(dq}}" ).
-A claim absent from the ID token stores empty and renders as
-.B MISSING
-in the key ID; login never fails over one. Default: unset.
-.RE
-.SS ldap (optional identity enrichment)
-.B "Schema is parsed but not yet consumed by the server"
-\(em setting these has no effect on issued certificates or authentication
-today. Documented for forward compatibility with the config format only.
-.TP
-.BI ldap.enabled: " bool"
+.BI http.rate_limit_disable_for_dev: " bool"
+Disables all rate limiting (global and per\-endpoint) when true. Only effective when Production=false, so it cannot be silently enabled in production. Used for local development to avoid throttling during testing.
 Default:
 .BR false .
 .TP
-.BI ldap.url , " ldap.bind_dn" , " ldap.bind_password" , " ldap.base_dn" , " ldap.user_filter" : " string"
-Connection and search parameters for a future LDAP lookup keyed by the
-username resolved from OIDC.
+.BI http.cert_request_rate_limit.user: " number"
+The limit for POST /api/certs/user (interactive user cert).
+Default:
+.BR 10 .
 .TP
-.B ldap.logging.*
-Independent log destination for LDAP activity, same shape as
-.B db.logging.*
-above. Routed by a
-.RB \(dq type=ldap \(dq
-attribute; only takes effect once
-.B ldap.logging.filename
-is set. (This routing is wired up regardless of whether LDAP enrichment
-itself is consumed.)
-.SS queue
+.BI http.cert_request_rate_limit.service_enroll: " number"
+The limit for POST /api/certs/service/enroll (service enrollment, unattended).
+Default:
+.BR 5 .
+.TP
+.BI http.cert_request_rate_limit.pam: " number"
+The limit for POST /api/certs/pam (short\-lived PAM cert, gated on local interaction).
+Default:
+.BR 10 .
+.TP
+.BI http.service_code_rate_limit.limit: " number"
+Requests per second per enrollment code. Zero or negative disables this limit.
+Default:
+.BR 1 .
+.TP
+.BI http.hsts: " string"
+(HTTP Strict\-Transport\-Security) is sent in the Strict\-Transport\-Security header on every response, but only when the server terminates TLS itself (i.e. tls.certificate_file and tls.private_key_file are set). Browsers ignore HSTS over plain HTTP. Empty disables the header, useful when a TLS\-terminating reverse proxy in front sets its own policy. Typical values include "max\-age=31536000; includeSubDomains".
+Default:
+.BR max\-age=31536000; includeSubDomains .
+.TP
+.BI http.tls.cipher_suites: " list"
+Restricts the TLS 1.0\-1.2 cipher suites offered (Go does not allow configuring TLS 1.3 suites). Names must exactly match crypto/tls constant names, case\-sensitively, e.g. "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"; the stdlib's insecure suites resolve too. Empty means Go's defaults. Any explicit list must include TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 or TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256: net/http's automatic HTTP/2 setup refuses to serve without one of them, failing the server at startup.
+Default:
+.BR empty .
+.TP
+.BI http.tls.min_version: " string"
+The minimum TLS protocol version: TLS1.0, TLS1.1, TLS1.2, or TLS1.3. Parsing tolerates case, "."/"\-"/"_"/" " separators, and the "tls"/"version" prefixes ("tls12", "TLS\-1.2", and "VersionTLS12" all work). TLS1.0 and TLS1.1 resolve but log a deprecation warning (RFC 8996).
+Default:
+.BR TLS1.3 .
+.TP
+.BI http.tls.curves: " list"
+Restricts the key\-exchange curves/groups offered, in preference order: P256, P384, P521, X25519, or X25519MLKEM768, with the same tolerant parsing as TLSMinVersion ("CurveP256", "p\-256", ...). Empty means Go's defaults; note that naming any curve replaces those defaults entirely rather than adding to them.
+Default:
+.BR empty .
+.TP
+.BI http.tls.reload_interval: " duration"
+How often the certificate files are re\-read on a timer, in addition to SIGHUP which always reloads. Zero or negative disables the timer, leaving SIGHUP as the only trigger.
+.IP
+The timer exists for deployments where nothing signals the process: a Kubernetes secret remount is the motivating case, since it replaces a directory symlink rather than writing the files in place, so a filesystem watch on the paths never fires.
+Default:
+.BR 0 .
+.SS queue (the log destination for the internal message queue)
 .TP
 .B queue.logging.*
-Independent log destination for the internal pub/sub message queue, same
-shape as
-.B db.logging.*
-above. Routed by a
-.RB \(dq type=queue \(dq
-attribute; only takes effect once
-.B queue.logging.filename
-is set.
-.SS cert_options (issuance policy)
+Log\-file rotation for this destination, via the embedded timberjack logger, with the same keys and meanings as logging.* above. This destination is only split out of the main log once its filename is set; until then its records go to the general log.
+.TP
+.BI queue.logging.level: " string"
+The minimum log level for this destination, in the same form as logging.level.
+Default:
+.BR empty .
+.TP
+.BI queue.logging.add_source: " bool"
+Includes the source file and line on each record.
+Default:
+.BR false .
+.TP
+.BI queue.logging.log_json: " bool"
+Writes JSON instead of colorized or plain text.
+Default:
+.BR false .
+.SS authentication (OAuth/OIDC authentication for the server)
+See OAuthConfig for details on provider URL, scopes, and field mapping from OIDC claims to ssoossh identity fields (username, groups).
+.TP
+.BI authentication.client_id: " string"
+The OAuth2/OIDC client ID registered with the identity provider. Required.
+Default:
+.BR empty .
+.TP
+.BI authentication.client_secret: " string"
+The OAuth2 client secret.
+Default:
+.BR empty .
+.TP
+.BI authentication.provider_url: " string"
+The OIDC provider's issuer URL, used for discovery. A trailing /.well\-known/openid\-configuration is stripped automatically. Required.
+Default:
+.BR empty .
+.TP
+.BI authentication.scopes: " string"
+A space\-separated list of additional scopes to request alongside the always\-included "openid" scope, e.g. "profile email".
+Default:
+.BR profile email .
+.TP
+.BI authentication.fields.username: " string"
+Names the claim holding the local account username, e.g. "preferred_username". Required.
+Default:
+.BR preferred_username .
+.TP
+.BI authentication.fields.groups: " string"
+Names a claim expected to hold a JSON array of group names. It feeds the certificate lifetime and require\-group decision only; group membership is never placed in an issued certificate (see docs/internals/invariants.md).
+Default:
+.BR groups .
+.TP
+.BI authentication.fields.other_accounts: " string"
+Names a claim expected to hold a JSON array of alternate account identifiers this identity is known by on target systems (a different username, UPN, or sAMAccountName), added to a certificate's principal list alongside the username claim.
+Default:
+.BR empty .
+.TP
+.BI authentication.fields.service_accounts: " string"
+Names a claim expected to hold a JSON array of service\-account identifiers this identity is authorized to manage and enroll certificates for.
+Default:
+.BR empty .
+.TP
+.BI authentication.fields.email: " string"
+Names the claim to read the user's email from. Empty falls back to the standard "email" claim opportunistically (not an error if absent either way).
+Default:
+.BR email .
+.TP
+.BI authentication.fields.extra: " map"
+Maps additional template field names to claim names. Each configured claim is captured at login (scalars as strings, string arrays as lists), stored on the users row, and made available to key ID templates as {{.Extra.<name>}} (or {{join .Extra.<name> "<sep>"}} for lists). A claim absent from the ID token stores empty and renders as MISSING; login never fails over one. Names with characters beyond letters/digits/underscores need the template's index syntax: {{index .Extra "my\-name"}}.
+.SS ldap (optionally enriches the OIDC identity with directory attributes)
+The schema is parsed but not yet consumed by the server: setting these has no effect on authentication or on issued certificates today. The fields are a starting guess at what a reference deployment (lldap) needs, documented so the config format is stable ahead of the lookup landing.
+.TP
+.BI ldap.enabled: " bool"
+Turns on the LDAP lookup once the server consumes it.
+Default:
+.BR false .
+.TP
+.BI ldap.url: " string"
+The directory server to connect to.
+Default:
+.BR empty .
+.TP
+.BI ldap.bind_dn: " string"
+The DN to bind as for the search.
+Default:
+.BR empty .
+.TP
+.BI ldap.bind_password: " string"
+The password for bind_dn.
+Default:
+.BR empty .
+.TP
+.BI ldap.base_dn: " string"
+The search base for the user lookup.
+Default:
+.BR empty .
+.TP
+.BI ldap.user_filter: " string"
+The search filter, keyed by the username resolved from OIDC.
+Default:
+.BR empty .
+.TP
+.B ldap.logging.*
+Log\-file rotation for this destination, via the embedded timberjack logger, with the same keys and meanings as logging.* above. This destination is only split out of the main log once its filename is set; until then its records go to the general log.
+.TP
+.BI ldap.logging.level: " string"
+The minimum log level for this destination, in the same form as logging.level.
+Default:
+.BR empty .
+.TP
+.BI ldap.logging.add_source: " bool"
+Includes the source file and line on each record.
+Default:
+.BR false .
+.TP
+.BI ldap.logging.log_json: " bool"
+Writes JSON instead of colorized or plain text.
+Default:
+.BR false .
+.SS admin (administrative and auditor access)
+Both group names are optional; empty disables the corresponding role.
+.TP
+.BI admin.require_group: " string"
+The OIDC group a caller must belong to in order to access admin\-scoped operations (expiring enrollments, disabling users). Empty disables admin operations entirely. Fails closed: no identity, no group, or no configured group all deny.
+Default:
+.BR empty .
+.TP
+.BI admin.auditor_group: " string"
+The OIDC group a caller must belong to in order to access auditor\-scoped operations (viewing effective configuration, cross\-user certificate history). Auditor is a child role of admin, so require_group members hold auditor access regardless of this setting; empty therefore narrows auditor operations to admins rather than disabling them. Fails closed: no identity, or membership in neither group, denies.
+Default:
+.BR empty .
+.TP
+.BI admin.disable_grace_period: " duration"
+How long after a user is disabled before their service enrollments expire. This gives running services time to notice and rotate credentials before the certificates stop working. After this duration expires (see service.SweepDisabledUserEnrollments), no new certificates can be issued from the enrollment.
+Default:
+.BR 168h .
+.TP
+.BI admin.contact_email: " string"
+The email address shown on the account\-disabled page so a disabled user can contact support. Empty disables the display (no mailto link on the page).
+Default:
+.BR empty .
+.TP
+.BI admin.disabled_message: " string"
+Free\-text shown on the account\-disabled page below the contact email. Useful for explaining why the account was disabled or what the user should do next.
+Default:
+.BR empty .
+.SS hsm (optionally sources the CA key from a PKCS#11 token instead of ssh_key)
+Exactly one of the two may be set at the config level (API mode has neither; signing modes require one to be set). See docs/operations/hsm.md for setup.  Supported: ECDSA P\-256/384/521, RSA >= 2048. Ed25519 is not supported by PKCS#11 here; keep ssh_key for an Ed25519 CA.  	hsm: 	  module: /usr/lib/softhsm/libsofthsm2.so 	  token_label: ssoossh\-ca 	  pin_file: /etc/ssoossh/hsm\-pin    # or pin: "1234" 	  key_label: ssoossh\-ca 	  # key_id: "01"                    # hex CKA_ID, instead of key_label
+.TP
+.BI hsm.module: " string"
+The absolute path to the PKCS#11 shared library, e.g. /usr/lib/softhsm/libsofthsm2.so. Setting it enables HSM mode.
+Default:
+.BR empty .
+.TP
+.BI hsm.token_label: " string"
+Selects the token (softhsm2\-util \-\-init\-token \-\-label ...).
+Default:
+.BR empty .
+.TP
+.BI hsm.pin: " string"
+The user PIN. Mutually exclusive with PINFile.
+Default:
+.BR empty .
+.TP
+.BI hsm.pin_file: " string"
+A path whose trimmed contents are the user PIN. Preferred over inline PIN so the config file can stay world\-readable\-ish.
+Default:
+.BR empty .
+.TP
+.BI hsm.key_label: " string"
+Selects the key pair by CKA_LABEL. At least one of key_label or key_id is required; when both are set both must match.
+Default:
+.BR empty .
+.TP
+.BI hsm.key_id: " string"
+Selects the key pair by CKA_ID, hex\-encoded (pkcs11\-tool \-\-id).
+Default:
+.BR empty .
+.SS pubsub (the message broker behind the certificate pipeline)
+gochannel is in\-process; NATS is required for multi\-instance and split\-process deployments.  gochannel (in\-process) is the default and suitable for single\-instance deployments. NATS is required for multi\-instance deployments where multiple ssoosshd processes share a database.
+.TP
+.BI pubsub.backend: " string"
+Selects which message\-broker implementation to use. "gochannel" (default) is in\-process, suitable for single\-instance. "nats" is required for multi\-instance deployments.
+Default:
+.BR gochannel .
+.TP
+.BI pubsub.nats.url: " string"
+The NATS server connection string, e.g. "nats://nats.example.com:4222". Empty disables NATS (leaves Backend at gochannel).
+Default:
+.BR empty .
+.TP
+.BI pubsub.nats.cert_file: " string"
+The path to the client certificate for mTLS authentication. Required when URL is set.
+Default:
+.BR empty .
+.TP
+.BI pubsub.nats.key_file: " string"
+The path to the client certificate's private key. Required when URL is set.
+Default:
+.BR empty .
+.TP
+.BI pubsub.nats.ca_file: " string"
+The path to the CA certificate to verify the NATS server. Required when URL is set.
+Default:
+.BR empty .
+.SS cert_options (the issuance policy for each certificate type)
+.TP
+.BI cert_options.user.require_group: " string"
+The OIDC group an approver must belong to. Empty \(em the default \(em means any authenticated user may approve, which is the behavior every deployment has had so far.
+.IP
+Worth setting even though approval is already bound to the requester at approval: the binding answers "is this your request", this answers "are you allowed certificates at all".
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.valid_duration: " duration"
+The ceiling on how long an issued user certificate is valid. Any lifetime policy only ever narrows from here.
+Default:
+.BR 30s .
+.TP
+.BI cert_options.user.extensions: " list"
+The SSH certificate extensions a user certificate may carry, e.g. permit\-pty and permit\-user\-rc. A request is narrowed to the intersection of what it asked for and this list.
+Default:
+.BR permit\-pty, permit\-user\-rc .
+.TP
+.BI cert_options.user.key_id_template: " string"
+The fallback for the service and PAM templates when either is empty, since user certificates are the common case. See docs/guide/features.md (key ID templating).
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.lifetime_policy.default_duration: " duration"
+The duration applied when no tier's group matches. If zero, the enclosing CertOptions*.ValidDuration is used instead.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.user.lifetime_policy.tiers: " list"
+Evaluated in order; the first tier whose group appears in the approver's OIDC groups wins. An empty tiers list means DefaultDuration is always used (or ValidDuration if DefaultDuration is zero).
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.lifetime_policy.source_policy: " list"
+Restricts certificate lifetime based on the request's source IP address. Longest prefix match wins; ties resolve to the stricter rule. Entries are intersected with the tier\-determined duration, and the final effective lifetime is clamped to the ceiling set by the enclosing CertOptions*.ValidDuration.
+.IP
+See docs/operations/certificate\-lifetime\-policy.md section "Which address" for why the server\-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.require_group: " string"
+The OIDC group a requester must belong to in order to enroll a service certificate. Empty means any authenticated user may.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.valid_duration: " duration"
+The ceiling on how long each certificate produced from an enrollment is valid, bounding every redemption of the code rather than the code itself.
+Default:
+.BR 8760h .
+.TP
+.BI cert_options.service.extensions: " list"
+The SSH certificate extensions a service certificate may carry. A request is narrowed to the intersection of what it asked for and this list.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.enrollment_duration: " duration"
+How long the enrollment code minted at approval stays redeemable \(em deliberately independent of ValidDuration, which bounds each certificate the code produces.
+.IP
+The two answer different questions. ValidDuration is "how long may one issued certificate be used", and wants to be short. service.enrollment_duration is "how long may this service keep asking for a fresh one", and wants to be long: the code is reusable precisely so an unattended job can run it from cron. Deriving one from the other collapsed that \(em shortening a service certificate's lifetime also killed the code within the same span, so a cron job re\-enrolled by hand on every run.
+.IP
+Each redemption gets ValidDuration afresh, measured from the redemption, so a long code never yields a long certificate.
+Default:
+.BR 8760h .
+.TP
+.BI cert_options.service.key_id_template: " string"
+The key ID written into service certificates; see docs/guide/features.md (key ID templating). Empty falls back to cert_options.user.key_id_template.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.lifetime_policy.default_duration: " duration"
+The duration applied when no tier's group matches. If zero, the enclosing CertOptions*.ValidDuration is used instead.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.service.lifetime_policy.tiers: " list"
+Evaluated in order; the first tier whose group appears in the approver's OIDC groups wins. An empty tiers list means DefaultDuration is always used (or ValidDuration if DefaultDuration is zero).
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.lifetime_policy.source_policy: " list"
+Restricts certificate lifetime based on the request's source IP address. Longest prefix match wins; ties resolve to the stricter rule. Entries are intersected with the tier\-determined duration, and the final effective lifetime is clamped to the ceiling set by the enclosing CertOptions*.ValidDuration.
+.IP
+See docs/operations/certificate\-lifetime\-policy.md section "Which address" for why the server\-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.require_group: " string"
+An optional OIDC group an approver must belong to for a PAM certificate to be issued, and behaves exactly like cert_options.user.require_group: empty means no group restriction.
+.IP
+It is an extra filter an operator may apply, not the authorization itself. Whether the local operation is permitted is the host's own decision \(em pam_ssoossh authenticates the user, and the local PAM stack and sudoers policy authorize them.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.valid_duration: " duration"
+Should be seconds, not hours: a PAM certificate is validated once, in\-process, and discarded \(em it never enters an agent and is never reused. Pick this together with the client's skew tolerance (see pam_ssoossh/checks.go, check 4).
+Default:
+.BR 30s .
+.TP
+.BI cert_options.pam.extensions: " list"
+Should default to empty. permit\-pty and friends are meaningless for a certificate that authenticates a single local operation and is then thrown away.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.key_id_template: " string"
+The key ID written into PAM certificates. Unlike the service template, it does NOT fall back to cert_options.user.key_id_template: a sudo and a login by the same person must stay distinguishable in an sshd or sudo audit log, so PAM has its own built\-in default instead of silently inheriting the user template.
+Default:
+.BR empty .
 .TP
 .BI cert_options.client_timeout: " duration"
-The longest a client waiting on a certificate request goes before the
-server hands it a terminal answer. The server owns this deadline and
-measures it from the request's creation, so a client reconnecting to its
-event stream re-attaches to the original deadline rather than extending
-it. Everything else about request timing derives from it: a signing grace
-of
-.IR client_timeout /10
-bounds how long an approved request may await signature before the
-stranded-request sweep fails it, how often that sweep runs, and how long
-.B service retrieve
-blocks; the remainder is how long a pending request stays open for
-approval, shared across every certificate type. Two signing shares are
-spent in the worst case, one for the stranded cutoff and one for the
-sweep interval that detects it, so the total is exactly this value.
-Must be greater than zero. Default:
+The whole budget: the longest a client waiting on a certificate request can go before the server hands it a terminal answer. Everything else about request timing is derived from it, by ApprovalTTL and SigningGrace below.
+.IP
+The server owns this deadline rather than the client, and measures it from the request's creation (see the request's creation), so a client reconnecting to its event stream re\-attaches to the original deadline instead of extending it. If the client is gone for good, the approval and the signature it was waiting for are moot anyway.
+Default:
 .BR 5m .
+.SS mail (the relay, the sender, and the local template overrides)
+Disabled by default; see docs/operations/email\-notifications.md.  Disabled is the default. A server that has never been told about a relay should not try to reach one, and notifications are an addition to the certificate flows rather than a part of them \(em every path that emits one works identically when this is off.
 .TP
-.B cert_options.user.*
-Policy for interactive user certificates.
-.RS
-.TP
-.BI require_group: " string"
-OIDC group an approver must belong to. Empty (default) means any
-authenticated user may approve any request \(em this only governs who may
-.I approve
-certificates in general; approval is separately bound to being the
-specific request's own requester or in the approver chain.
-.TP
-.BI valid_duration: " duration"
-Certificate lifetime. Default (shipped
-.IR _defaults.yaml ,
-a development value):
-.BR 30s .
-.TP
-.BI extensions: " list"
-SSH certificate extensions granted, e.g.
-.BR permit-pty ", " permit-agent-forwarding ", " permit-port-forwarding ", "
-.BR permit-X11-forwarding ", " permit-user-rc .
+.BI mail.enabled: " bool"
+Turns outbound mail on. With it false the notification handler is not registered at all, so no event is queued and nothing is rendered.
 Default:
-.BR "[permit-pty, permit-user-rc]" .
+.BR false .
 .TP
-.BI key_id_template: " string"
-Go
-.B text/template
-string executed against issuance context to produce the certificate's key
-ID. Empty uses a built-in default. This is also the fallback used by
-.BR cert_options.service
-when its own
-.B key_id_template
-is empty (but
-.B not
-by
-.BR cert_options.pam ,
-which never falls back to it \(em see below).
-.RE
-.TP
-.B cert_options.service.*
-Policy for non-interactive service certificates: same
-.BR require_group ", " valid_duration ", " extensions ", " key_id_template
-shape as
-.BR cert_options.user ,
-plus
-.BR enrollment_duration .
-Defaults:
-.B require_group
-empty,
-.B valid_duration
-.BR 8760h " (one year), " enrollment_duration " " 8760h ", " extensions
-empty.
-.RS
-.TP
-.B enrollment_duration
-How long the enrollment code minted at approval stays redeemable,
-independent of
-.BR valid_duration .
-The code is reusable so an unattended job can redeem it from
-.BR cron (8),
-and each redemption issues a fresh certificate of
-.B valid_duration
-measured from that redemption. Set this to how long the service should keep
-renewing unattended, and
-.B valid_duration
-to how long any single certificate may be used. Must be greater than zero;
-.B ssoosshd
-refuses to start otherwise.
-.RE
-.TP
-.B cert_options.pam.*
-Policy for PAM certificates (short-lived certificates a
-.BR pam_ssoossh (8)-authenticated
-local operation, e.g.
-.BR sudo (8),
-validates once and discards). Same
-.B require_group / valid_duration / extensions / key_id_template
-shape as
-.BR cert_options.user ,
-but with deliberately different defaults and fallback behavior:
-.RS
-.TP
-.BI require_group: " string"
-Unlike every other
-.BR require_group ,
-.B empty here means no PAM certificates are ever issued
-rather than "any authenticated user may approve." An operator must set
-this explicitly to enable PAM issuance at all \(em "who may sudo on this
-host" is a narrower question than "who may log in."
-.TP
-.BI valid_duration: " duration"
-Should be seconds, not hours: a PAM certificate is validated once,
-in-process, and immediately discarded \(em it never enters an agent and is
-never reused. Pick this together with the PAM module's
-.B skew-tolerance
-argument (see
-.BR pam_ssoossh (8)).
+.BI mail.from: " string"
+The envelope and header sender, e.g. "ssoossh@example.com" or "ssoossh <noreply@example.com>". Required when Enabled.
 Default:
-.BR 30s .
+.BR empty .
 .TP
-.BI extensions: " list"
-Should stay empty: interactive-session extensions like
-.B permit-pty
-are meaningless for a certificate authenticating a single local operation.
-Default: empty.
+.BI mail.reply_to: " string"
+An optional Reply\-To header. Worth setting to a monitored address: these messages report credential activity, and the first thing a recipient does with an unexpected one is try to reply.
+Default:
+.BR empty .
 .TP
-.BI key_id_template: " string"
-Does
-.B not
-fall back to
-.B cert_options.user.key_id_template
-the way service's and host's do. A sudo and an interactive login by the
-same person need to stay distinguishable in an
-.BR sshd (8)
-or
-.BR sudo (8)
-audit log, so an empty value here uses its own hardcoded default instead of
-silently inheriting the user template.
-.RE
+.BI mail.subject_prefix: " string"
+Prepended to every rendered subject, e.g. "[ssoossh] ". Empty adds nothing. Templates can also write their own subject in full; this exists so an operator can tag every message without editing any template.
+Default:
+.BR empty .
+.TP
+.BI mail.template_dir: " string"
+An optional directory of local template overrides. A file there replaces the embedded template of the same name; anything absent falls back to the embedded one, so overriding a single message does not mean vendoring the whole set. See docs/operations/email\-notifications.md.
+Default:
+.BR empty .
+.TP
+.BI mail.smtp.host: " string"
+The relay hostname or address. Required when mail is enabled.
+Default:
+.BR localhost .
+.TP
+.BI mail.smtp.port: " int"
+The relay port: conventionally 25 for a local relay, 587 for submission with STARTTLS, 465 for implicit TLS.
+Default:
+.BR 25 .
+.TP
+.BI mail.smtp.tls: " string"
+The transport policy \(em one of off, opportunistic (default), required, or implicit.
+Default:
+.BR opportunistic .
+.TP
+.BI mail.smtp.server_name: " string"
+Overrides the name the relay's certificate is verified against. Needed only when Host is an address rather than the name on the certificate.
+Default:
+.BR empty .
+.TP
+.BI mail.smtp.ca_file: " string"
+A PEM bundle to verify the relay's certificate against, for a relay using a private CA. Empty uses the system trust store.
+Default:
+.BR empty .
+.TP
+.BI mail.smtp.insecure_skip_verify: " bool"
+Disables verification of the relay's certificate. It turns TLS into obfuscation \(em an attacker who can redirect the connection can also present their own certificate \(em so it exists for a lab with a self\-signed relay and is warned about at startup.
+Default:
+.BR false .
+.TP
+.BI mail.smtp.auth: " string"
+Selects the SASL mechanism \(em one of none (default), auto, plain, login, cram\-md5, scram\-sha\-1, scram\-sha\-256, or xoauth2. "auto" negotiates the strongest mechanism the relay advertises.
+Default:
+.BR none .
+.TP
+.BI mail.smtp.username: " string"
+The SASL username. Required for every mechanism but none.
+Default:
+.BR empty .
+.TP
+.BI mail.smtp.password: " string"
+The SASL password, or the OAuth2 token for xoauth2. Prefer smtp.password_file: this value is a secret sitting in a config file.
+Default:
+.BR empty .
+.TP
+.BI mail.smtp.password_file: " string"
+Reads the password from a file instead, so the secret can be a mounted file or a systemd credential rather than config text. Takes precedence over Password when both are set. Read once at startup; trailing whitespace is trimmed, since an editor's newline is never part of the password.
+Default:
+.BR empty .
+.TP
+.BI mail.smtp.helo: " string"
+The name announced in the EHLO/HELO greeting. Empty lets go\-mail use the local hostname, which is right unless the relay checks it against something specific.
+Default:
+.BR empty .
+.TP
+.BI mail.smtp.timeout: " duration"
+Bounds a single delivery's connect\-and\-send. It bounds only the background sender, never a request: nothing a browser or an unattended job waits on is behind this.
+Default:
+.BR 15s .
+.TP
+.B mail.logging.*
+Log\-file rotation for this destination, via the embedded timberjack logger, with the same keys and meanings as logging.* above. This destination is only split out of the main log once its filename is set; until then its records go to the general log.
+.TP
+.BI mail.logging.level: " string"
+The minimum log level for this destination, in the same form as logging.level.
+Default:
+.BR info .
+.TP
+.BI mail.logging.add_source: " bool"
+Includes the source file and line on each record.
+Default:
+.BR false .
+.TP
+.BI mail.logging.log_json: " bool"
+Writes JSON instead of colorized or plain text.
+Default:
+.BR false .
+.SS branding (customizes the login page and web UI)
+All fields are optional; empty values mean no branding is configured.
+.TP
+.BI branding.org_name: " string"
+The organization name displayed in the web UI (e.g., "Acme Corp"). Empty disables organization\-specific branding.
+Default:
+.BR empty .
+.TP
+.BI branding.logo_path: " string"
+The filesystem path to the organization's logo image. Empty disables the logo.
+.IP
+Accepted types: PNG, JPEG, GIF, WebP, SVG. Maximum size: 1 MB (maxLogoSize in server/controller/logo_image.go). The type is determined from the file's own bytes, not its extension.
+.IP
+Read once at startup and validated then, so a bad path fails the server rather than producing a broken image later; replacing the file needs a restart. Served from /api/branding/logo, always same\-origin, so no third\-party host sees the unauthenticated login page's traffic.
+Default:
+.BR empty .
+.TP
+.BI branding.login_notice: " string"
+A plain\-text message shown on the login page before authentication. Empty disables the notice. Supports newlines for multi\-line text.
+Default:
+.BR empty .
+.\" END GENERATED OPTIONS
 .SH NOTES
-.IP \(bu 2
-The
-.B ldap
-and
-.B authentication
-keys are top-level (siblings of
-.BR http ),
-.B not
-nested under
-.BR http: .
-The
-.B _defaults.yaml
-file compiled into the server currently nests them under
-.B http:
-by mistake, which means their shipped defaults \(em including
-.B authentication.scopes: "profile email"
-and
-.B authentication.fields.username: "preferred_username"
-\(em are silently ignored by the config loader rather than actually
-applied. In practice this rarely matters because
-.BR authentication.provider_url ,
-.BR authentication.client_id ", and"
-.B authentication.fields.username
-are required and must be set explicitly in every real deployment's own
-config file anyway (placed correctly, at the top level, as shown in this
-page); but do not rely on the scopes/field-mapping defaults appearing
-unless your own config file sets them.
 .IP \(bu 2
 An
 .B authentication.redirect_url

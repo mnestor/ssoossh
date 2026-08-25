@@ -1,15 +1,15 @@
 # Getting started
 
 The shortest path to a working `ssh login`. Everything optional is left
-out and linked instead: [configuration.md](configuration.md) explains
-every setting touched here, and [deployment.md](deployment.md) is the
+out and linked instead: [configuration.md](../operations/configuration.md) explains
+every setting touched here, and [deployment.md](../operations/deployment.md) is the
 operator runbook behind each step (CA key generation, `sshd`
 configuration, OIDC provider setup, reverse proxy/TLS, and the
 PAM/`sudo` path, which this page does not cover).
 
 This assumes an `ssoosshd` server is already running and reachable, with a
 CA key configured and an OIDC provider wired up. If it isn't yet, do that
-first: [deployment.md](deployment.md) §1–§5.
+first: [deployment.md](../operations/deployment.md) §1–§5.
 
 If you'd rather see the flow than run it first, the illustrated
 [walkthrough.html](walkthrough.html) shows what steps 3–4 look like from
@@ -43,7 +43,7 @@ ssoossh --server https://ssh.example.com ssh config
 prints the resolved configuration, confirming the server address is
 picked up before you try a real login. To make it permanent, put it in
 `ssoossh.yaml` instead of passing `--server` every time
-([configuration.md](configuration.md#client-ssoosshyaml) has the search
+([configuration.md](../operations/configuration.md#client-ssoosshyaml) has the search
 paths).
 
 ## 3. Wire up `ssh_config`
@@ -53,7 +53,7 @@ Match host bastion.example.com exec "ssoossh ssh login"
     User youruser
 ```
 
-See [configuration.md](configuration.md#ssh_config) for the
+See [configuration.md](../operations/configuration.md#ssh_config) for the
 `ProxyCommand` alternative and when it's needed instead.
 
 ## 4. Log in
@@ -69,11 +69,11 @@ expires.
 
 If it takes more than this to get a certificate, something's wrong,
 either with this page or with the deployment; check
-[deployment.md](deployment.md) for the failure that matches (a redirect
+[deployment.md](../operations/deployment.md) for the failure that matches (a redirect
 URI the identity provider rejects almost always traces back to
 `http.public_url`).
 
 ## What's next
 
-- `sudo`/`su` through PAM: [deployment.md §8](deployment.md#8-pam-sudo-and-su).
-- What's in this release and what isn't: [release-notes.md](release-notes.md).
+- `sudo`/`su` through PAM: [deployment.md §8](../operations/deployment.md#8-pam-sudo-and-su).
+- What's in this release and what isn't: [release-notes.md](../project/release-notes.md).

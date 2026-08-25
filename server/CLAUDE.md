@@ -10,7 +10,7 @@
   or registry-fetched keys (split mode / multi-instance); signing always
   happens behind a keysource interface, never hardcoded to any single backend
 - Full design context (open questions, future plans):
-  `docs/dev/ssoossh-context.md`
+  `docs/internals/design-brief.md`
 
 ## Certificate Rules
 
@@ -18,10 +18,10 @@
   account identifiers), **Service** (non-interactive, a User-type cert),
   **PAM** (a User-type cert issued for a local PAM authentication)
 - There is no host certificate type, and no secure host verification to
-  justify one (docs/decisions.md). `ssoossh host` is local
+  justify one (docs/project/decisions.md). `ssoossh host` is local
   principal-mapping tooling only. Do not add a host type
 - Group membership never appears in a certificate — groups feed the lifetime
-  decision only (see root `Hard Constraints`)
+  decision only (see docs/internals/invariants.md)
 - `verify-required` is never used; `no-touch-required` only applies to
   enrolled `sk-` keys on the service path, never client-generated keys
 

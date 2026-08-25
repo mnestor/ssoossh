@@ -7,7 +7,7 @@ import "time"
 // to key certificate history and enrollments to a stable identifier across
 // logins, since group membership and other claims can change between
 // sessions — group membership itself is never persisted here or placed in
-// a certificate (see root CLAUDE.md Hard Constraints).
+// a certificate (see docs/internals/invariants.md).
 type User struct {
 	ID       string `gorm:"column:id;primaryKey"`
 	Subject  string `gorm:"column:subject;uniqueIndex:idx_users_subject"` // OIDC "sub" claim, unique per provider

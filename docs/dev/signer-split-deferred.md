@@ -4,12 +4,12 @@
 
 Consolidates the original signer-separation design notes and the deferred
 NATS phase of the pipeline plan. The pipeline it builds on is described in
-[signing-pipeline.md](../signing-pipeline.md) and works today, in one process, on
+[signing-pipeline.md](../internals/signing-pipeline.md) and works today, in one process, on
 Watermill's in-memory `gochannel`.
 
 The split shipped as the `ssoosshd serve api` and `ssoosshd sign` startup
 modes; operator-facing documentation is in
-[deployment.md](../deployment.md#6-startup-modes-full-api-and-sign). The
+[deployment.md](../operations/deployment.md#6-startup-modes-full-api-and-sign). The
 seam it runs on is unchanged: `server/certmsg`, `server/signer`'s
 zero-database test, and `server/bootstrap/pipeline.go`. This document is
 kept as the design record.
@@ -91,7 +91,7 @@ config load or `pubsub.New` construction.
 acceptable because the flow is interactive — the person who just approved sees
 the CLI hanging and re-runs login, which costs one `client_timeout` wait. JetStream
 durability was considered and deferred as a future hardening: the ack-timing
-discussion in [signing-pipeline.md](../signing-pipeline.md) becomes moot for
+discussion in [signing-pipeline.md](../internals/signing-pipeline.md) becomes moot for
 multi-process deployments (the transport's own acks suffice), and durability
 gains from JetStream can be added later without breaking the API.
 
@@ -146,7 +146,7 @@ doesn't need most HTTP/OIDC/DB flags and validation.
 
 ## Related
 
-- [signing-pipeline.md](../signing-pipeline.md) — what exists today.
+- [signing-pipeline.md](../internals/signing-pipeline.md) — what exists today.
 - [multi-instance-safety-plan.md](multi-instance-safety-plan.md) — NATS is a
   precondition for running more than one `ssoosshd` against a shared database,
   but does not by itself make the system multi-instance safe.

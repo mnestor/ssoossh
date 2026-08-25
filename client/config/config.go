@@ -46,7 +46,7 @@ const configFlagLabel = "--config"
 // Finally, a platform-native policy source is merged on top of even that:
 // a Windows registry key managed via Group Policy, or macOS managed
 // preferences pushed by MDM. See policy_windows.go / policy_darwin.go /
-// policy_other.go and docs/client-settings-enforcement.md.
+// policy_other.go and docs/operations/client-settings-enforcement.md.
 func NewConfig(cmd *cobra.Command) (*Config, error) {
 	return newConfig(cmd, defaultSearchPaths(), loadPlatformPolicy)
 }

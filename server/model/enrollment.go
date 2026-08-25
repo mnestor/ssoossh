@@ -7,7 +7,7 @@ import "time"
 // approved. After that, `service retrieve` calls present only Code — the
 // server never re-accepts a public key for an existing enrollment, so a
 // stolen code can't be paired with an attacker's keypair (see
-// docs/dev/ssoossh-context.md, "Service enrollment").
+// docs/internals/design-brief.md, "Service enrollment").
 type Enrollment struct {
 	ID        string `gorm:"column:id;primaryKey"`
 	Code      string `gorm:"column:code"`
@@ -85,7 +85,7 @@ func (EnrollmentRetrieval) TableName() string { return "enrollment_retrievals" }
 
 // EnrollmentReassignment is an audit record of one enrollment ownership
 // transfer. An enrollment can be reassigned multiple times, so this is an
-// append-only log. See docs/flows.md "Reassigning an enrollment" for the
+// append-only log. See docs/guide/flows.md "Reassigning an enrollment" for the
 // full use case.
 //
 // The distinction between FromUserID and ReassignedByUserID matters: when

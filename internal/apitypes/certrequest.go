@@ -4,7 +4,7 @@ package apitypes
 // and LocalHostname are the requesting client's own OS identity — for a
 // user cert there is no way to request one except via the local client, so
 // this is who/where the request actually came from, not optional extra
-// context (see docs/dev/changes-next.md).
+// context.
 type UserRequestBody struct {
 	PublicKey        string           `json:"public_key" binding:"required"`
 	LocalUsername    string           `json:"local_username,omitempty"`
@@ -15,7 +15,7 @@ type UserRequestBody struct {
 // ServiceEnrollRequestBody is the POST /api/certs/service/enroll request
 // body. PublicKey may be operator-supplied (BYO key, possibly HSM/PKCS#11/
 // encrypted file — the server never sees the private half) or
-// client-generated (see docs/dev/ssoossh-context.md, "Service enrollment").
+// client-generated (see docs/internals/design-brief.md, "Service enrollment").
 type ServiceEnrollRequestBody struct {
 	PublicKey        string           `json:"public_key" binding:"required"`
 	RequestedOptions RequestedOptions `json:"requested_options,omitempty"`
@@ -25,7 +25,7 @@ type ServiceEnrollRequestBody struct {
 // local account pam_ssoossh is authenticating (e.g. who is running `sudo`)
 // — the certificate's principal is this, not whatever the browser identity
 // that later approves the request happens to be called (see
-// docs/features.md, PAM).
+// docs/guide/features.md, PAM).
 type PAMRequestBody struct {
 	PublicKey        string           `json:"public_key" binding:"required"`
 	Username         string           `json:"username" binding:"required"`
@@ -48,7 +48,7 @@ type CreateRequestResponse struct {
 
 // ApproveResponse is POST /api/certs/requests/:id/approve's response body.
 // It does not carry the certificate — approval only queues a signing job
-// (see docs/signing-pipeline.md); the certificate itself is delivered
+// (see docs/internals/signing-pipeline.md); the certificate itself is delivered
 // later over the client's own SSE connection (CreateRequestResponse's
 // EventsURL), not returned here to the approving browser.
 type ApproveResponse struct {

@@ -307,7 +307,7 @@ jobs:
           gh release delete -y ${TAG}
 
   # Builds the operator-facing Docker Compose deployment's image (see
-  # Dockerfile, deploy/docker-compose.yml, docs/deployment.md) and pushes it
+  # Dockerfile, deploy/docker-compose.yml, docs/operations/deployment.md) and pushes it
   # to ghcr.io/mnestor/ssoosshd so an admin running the compose file never
   # builds the project themselves -- `docker compose up` just pulls. Only
   # the server ships as an image; the client and pam_ssoossh stay

@@ -4,39 +4,111 @@ import "github.com/DeRuina/timberjack"
 
 // AppLogging configures the application's main log output.
 type AppLogging struct {
+	// Log-file rotation, via the embedded timberjack logger:
+	// filename, maxsize, maxage, maxbackups, localtime, compression,
+	// rotationinterval, backuptimeformat, rotateatminutes, rotateat,
+	// appendtimeafterext, and filemode.
+	//
+	// An unset filename means no log file is written and output goes to
+	// stdout instead. maxsize is in megabytes (default 100); maxage is in
+	// days (default: keep forever); maxbackups caps retained rotated files
+	// (default: keep all, subject to maxage); localtime uses local time
+	// rather than UTC in rotated filenames; compression is none, gzip, or
+	// zstd; rotationinterval is a duration forcing rotation on a schedule in
+	// addition to size. The rest tune backup filename formatting and
+	// rotation at specific times. See the DeRuina/timberjack package for the
+	// per-field detail.
 	timberjack.Logger
-	Level             string `mapstructure:"level"`
-	CopyStdout        bool   `mapstructure:"enable_stdout"`
-	IncludeAppName    bool   `mapstructure:"include_app_name"`
-	IncludeAppVersion bool   `mapstructure:"include_app_version"`
-	LogJSON           bool   `mapstructure:"log_json"`
+
+	// Level is the minimum log level: a level name (debug, info, warn,
+	// error, case-insensitive, optionally with a numeric +N or -N offset) or
+	// a raw numeric slog level such as -4, 0, 4, or 8. An unrecognized or
+	// empty value falls back to info.
+	Level string `mapstructure:"level"`
+
+	// CopyStdout also writes the main log to stdout even when a filename is
+	// set. When no filename is set, or the process is attached to a
+	// terminal, stdout is used regardless.
+	CopyStdout bool `mapstructure:"enable_stdout" example:"false"`
+
+	// IncludeAppName adds an "app" attribute, the string "ssoossh", to every
+	// log record.
+	IncludeAppName bool `mapstructure:"include_app_name"`
+
+	// IncludeAppVersion adds a "version" attribute to every log record.
+	IncludeAppVersion bool `mapstructure:"include_app_version"`
+
+	// LogJSON writes JSON instead of colorized or plain text.
+	LogJSON bool `mapstructure:"log_json"`
 }
 
 // GenericLogging configures a named, independently-routed log destination
 // (e.g. database queries, the message queue) — anything that just needs a
 // level, a rotating file, and a JSON/text choice. See server/logging.New,
-// which routes records tagged with a given name to their own GenericLogging
+// which routes records tagged with a given name to their own
 // destination when one is configured.
 type GenericLogging struct {
+	// Log-file rotation for this destination, via the embedded timberjack
+	// logger, with the same keys and meanings as logging.* above. This
+	// destination is only split out of the main log once its filename is
+	// set; until then its records go to the general log.
 	timberjack.Logger
-	Level     string `mapstructure:"level"`
-	AddSource bool   `mapstructure:"add_source"`
-	LogJSON   bool   `mapstructure:"log_json"`
+
+	// Level is the minimum log level for this destination, in the same form
+	// as logging.level.
+	Level string `mapstructure:"level"`
+
+	// AddSource includes the source file and line on each record.
+	AddSource bool `mapstructure:"add_source"`
+
+	// LogJSON writes JSON instead of colorized or plain text.
+	LogJSON bool `mapstructure:"log_json"`
 }
 
-// AccessLogging configures which fields the HTTP access log records.
+// AccessLogging configures which fields the HTTP access log records and
+// where it writes them. The access log is routed separately from the main
+// application log, so its destination and format can differ.
 type AccessLogging struct {
+	// Log-file rotation for the access log, via the embedded timberjack
+	// logger, with the same keys and meanings as logging.* above. The access
+	// log is only split into its own file once its filename is set.
 	timberjack.Logger
-	WithUserAgent      bool `mapstructure:"log_user_agent"`
-	WithRequestHeader  bool `mapstructure:"log_request_header"`
-	WithClientIP       bool `mapstructure:"log_client_ip"`
-	WithRequestID      bool `mapstructure:"log_request_id"`
-	WithRequestBody    bool `mapstructure:"log_request_body"`
-	WithResponseBody   bool `mapstructure:"log_response_body"`
+
+	// WithUserAgent records the request's User-Agent header.
+	WithUserAgent bool `mapstructure:"log_user_agent"`
+
+	// WithRequestHeader records the full request header set. Verbose, and it
+	// captures whatever the client sent.
+	WithRequestHeader bool `mapstructure:"log_request_header"`
+
+	// WithClientIP records the client address, as resolved through
+	// http.trusted_proxies.
+	WithClientIP bool `mapstructure:"log_client_ip"`
+
+	// WithRequestID records the per-request correlation ID.
+	WithRequestID bool `mapstructure:"log_request_id"`
+
+	// WithRequestBody records the request body. Off by default and worth
+	// leaving off: request bodies on this server carry public keys and
+	// enrollment codes.
+	WithRequestBody bool `mapstructure:"log_request_body"`
+
+	// WithResponseBody records the response body. Off by default and worth
+	// leaving off: response bodies carry issued certificates and enrollment
+	// tokens.
+	WithResponseBody bool `mapstructure:"log_response_body"`
+
+	// WithResponseHeader records the full response header set.
 	WithResponseHeader bool `mapstructure:"log_response_header"`
-	WithSpanID         bool `mapstructure:"log_span_id"`
-	WithTraceID        bool `mapstructure:"log_trace_id"`
-	LogJSON            bool `mapstructure:"log_json"`
+
+	// WithSpanID records the OpenTelemetry span ID.
+	WithSpanID bool `mapstructure:"log_span_id"`
+
+	// WithTraceID records the OpenTelemetry trace ID.
+	WithTraceID bool `mapstructure:"log_trace_id"`
+
+	// LogJSON writes JSON instead of colorized or plain text.
+	LogJSON bool `mapstructure:"log_json"`
 }
 
 // LogFilename returns the configured destination filename, or "" if

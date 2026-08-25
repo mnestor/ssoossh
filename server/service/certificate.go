@@ -65,7 +65,7 @@ type CertificateProvider interface {
 //
 // Note the history is metadata, never the certificate itself — certificates
 // are ephemeral and deliberately not persisted (see
-// docs/signing-pipeline.md).
+// docs/internals/signing-pipeline.md).
 type CertificateService struct {
 	db *gorm.DB
 }

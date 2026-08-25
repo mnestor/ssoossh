@@ -19,7 +19,7 @@ const Mask = 1<<63 - 1
 // New returns a random certificate serial. Random rather than a counter so it
 // needs no coordination — the signer has no database, and there may
 // eventually be several signers with independent hardware-backed keys (see
-// docs/certificate-lifetime-policy.md's note on multiple signers).
+// docs/operations/certificate-lifetime-policy.md's note on multiple signers).
 // Serials matter for revocation lists (KRLs).
 //
 // The returned serial is guaranteed to have the high bit clear (Mask applied),

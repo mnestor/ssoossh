@@ -26,7 +26,7 @@ import (
 
 // loginExtensions are the certificate extensions `ssh login` asks for by
 // default. The server narrows this against its own configuration and the web
-// UI shows what survived before anyone approves (see root CLAUDE.md, Hard
+// UI shows what survived before anyone approves (see docs/internals/invariants.md, Hard
 // Constraints), so asking for the full interactive set is a request, not a
 // demand — anything the deployment does not permit is simply trimmed.
 //
@@ -404,8 +404,7 @@ func runLogin(ctx context.Context, root *RootCommand, out io.Writer, force bool)
 // localIdentity returns this machine's local OS username and hostname, for
 // a user-type request's LocalUsername/LocalHostname — the local client is
 // the requester for this certificate type, so this is who/where the
-// request actually came from (see
-// docs/dev/changes-next.md). Best-effort: either value is
+// request actually came from. Best-effort: either value is
 // left empty on a lookup failure rather than failing the login over
 // metadata that isn't a precondition for issuance.
 func localIdentity() (username, hostname string) {

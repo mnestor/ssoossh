@@ -16,7 +16,7 @@ import (
 
 // TestMain puts gin into test mode once for the whole package, avoiding
 // per-test log spam and matching gin's own recommended test setup. This
-// replaces an init() function, which CLAUDE.md disallows.
+// replaces an init() function, which CONTRIBUTING.md disallows.
 func TestMain(m *testing.M) {
 	gin.SetMode(gin.TestMode)
 	os.Exit(m.Run())

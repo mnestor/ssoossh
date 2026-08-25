@@ -7,10 +7,10 @@ package model
 // next `make types`.
 
 // CertificateType identifies which of the three certificate types
-// (docs/dev/ssoossh-context.md — "Certificate types") a row represents.
+// (docs/internals/design-brief.md — "Certificate types") a row represents.
 // These three are the whole set: anything else is rejected at the service
 // boundary and by the schema's type CHECK. Host identity is deliberately
-// not among them (docs/decisions.md).
+// not among them (docs/project/decisions.md).
 type CertificateType string
 
 const (
@@ -27,8 +27,8 @@ const (
 	CertificateRequestStatusPending CertificateRequestStatus = "pending"
 	// CertificateRequestStatusSigning means a human approved the request
 	// and a signing job was published (see
-	// docs/signing-pipeline.md) — not yet terminal. The signer
-	// (docs/signing-pipeline.md) and its listener/resolver
+	// docs/internals/signing-pipeline.md) — not yet terminal. The signer
+	// (docs/internals/signing-pipeline.md) and its listener/resolver
 	// still need to run before this becomes CertificateRequestStatusApproved.
 	// Only used for CertificateTypeUser/CertificateTypePAM — service
 	// requests go straight from Pending to CertificateRequestStatusEnrolled,
@@ -38,14 +38,14 @@ const (
 	// CertificateRequestStatusEnrolled is CertificateTypeService's terminal
 	// approval state: EnrollmentToken is set, and the certificate itself
 	// isn't issued until a later `service retrieve` redeems it — see
-	// docs/dev/ssoossh-context.md, "Service enrollment".
+	// docs/internals/design-brief.md, "Service enrollment".
 	CertificateRequestStatusEnrolled CertificateRequestStatus = "enrolled"
 	CertificateRequestStatusDenied   CertificateRequestStatus = "denied"
 	CertificateRequestStatusExpired  CertificateRequestStatus = "expired"
 	// CertificateRequestStatusFailed is terminal: the signer couldn't
-	// produce a certificate (see docs/signing-pipeline.md),
+	// produce a certificate (see docs/internals/signing-pipeline.md),
 	// or a boot-time sweep invalidated a request left stuck in Signing (see
-	// docs/signing-pipeline.md). Distinct from Denied,
+	// docs/internals/signing-pipeline.md). Distinct from Denied,
 	// which means a human said no.
 	CertificateRequestStatusFailed CertificateRequestStatus = "failed"
 )
@@ -58,8 +58,7 @@ const (
 // status from producing a row no guarded UPDATE can ever match again.
 
 // CertificateRequestDecisionOutcome is the decision recorded on a
-// CertificateRequestDecision row — see
-// docs/dev/changes-next.md.
+// CertificateRequestDecision row.
 type CertificateRequestDecisionOutcome string
 
 const (

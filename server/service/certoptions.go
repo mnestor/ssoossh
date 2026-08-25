@@ -5,7 +5,7 @@ import "github.com/mnestor/ssoossh/server/certmsg"
 // RequestedOptions are the client-supplied certificate options carried on a
 // CertificateRequest, narrowed against server config (config.CertOptionsUser
 // / CertOptionsService / CertOptions) before anything reaches the web UI or
-// gets signed — see root CLAUDE.md Hard Constraints ("server config is the
+// gets signed — see docs/internals/invariants.md ("server config is the
 // outer bound").
 //
 // Aliased to certmsg.RequestedOptions rather than defined here: the signing

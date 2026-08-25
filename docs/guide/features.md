@@ -22,9 +22,9 @@
    the same CA, the same approval, the same policy.
 
 What follows is what it does today, with status marked where a piece is
-still landing. For setup, see [configuration.md](configuration.md) and
-[deployment.md](deployment.md); what ssoossh deliberately does not do is
-in [decisions.md](decisions.md).
+still landing. For setup, see [configuration.md](../operations/configuration.md) and
+[deployment.md](../operations/deployment.md); what ssoossh deliberately does not do is
+in [decisions.md](../project/decisions.md).
 
 ## Certificate types and status
 
@@ -36,7 +36,7 @@ in [decisions.md](decisions.md).
 
 ssoosshd issues no host certificates: without a secure way for a host to
 prove its claim to a hostname, host identity would be a hole rather than a
-feature — see [decisions.md](decisions.md). The client keeps
+feature — see [decisions.md](../project/decisions.md). The client keeps
 local principal-mapping tooling (`host mapping`, `host principals`) for
 `AuthorizedPrincipalsCommand`; it has no server side.
 
@@ -53,14 +53,14 @@ local principal-mapping tooling (`host mapping`, `host principals`) for
   copy, so there is no certificate store to steal.
 - Lifetime derived from issuance context: per-group tiers and
   source-network rules, narrowing-only, longest-prefix wins
-  ([certificate-lifetime-policy.md](certificate-lifetime-policy.md)).
+  ([certificate-lifetime-policy.md](../operations/certificate-lifetime-policy.md)).
 - Key IDs, which are what `sshd` logs and therefore the audit trail, are
   shaped per type by a Go template
   (`{{.Username}}:{{.ClientIP}}:{{.UniqueID}}`...), including
   operator-defined extra OIDC claim fields captured at login
   (`{{.Extra.dept}}`); a bad template fails startup, not the first
   issuance, and a field with no value renders as `MISSING` rather than
-  vanishing ([certificate-keyid-template.md](certificate-keyid-template.md)).
+  vanishing ([certificate-keyid-template.md](../internals/certificate-keyid-template.md)).
 - Every decision recorded append-only: who approved or denied, from where,
   when, and what was actually granted.
 
@@ -75,7 +75,7 @@ local principal-mapping tooling (`host mapping`, `host principals`) for
 - Offline commands (`version`, `principals`) make no network call at all.
 - Fleet-wide settings lockdown via an `enforce` file, Windows Group
   Policy, or macOS managed preferences
-  ([client-settings-enforcement.md](client-settings-enforcement.md)).
+  ([client-settings-enforcement.md](../operations/client-settings-enforcement.md)).
 
 ## Server
 
@@ -94,10 +94,10 @@ local principal-mapping tooling (`host mapping`, `host principals`) for
   balancer with NATS as the message broker (mTLS, per-node identity), with
   the signer optionally split into its own process so the CA key never
   shares memory with the web tier: `serve`, `serve api`, and `sign`
-  startup modes ([deployment.md](deployment.md#6-startup-modes-full-api-and-sign)).
+  startup modes ([deployment.md](../operations/deployment.md#6-startup-modes-full-api-and-sign)).
 - The CA key comes from config or a PKCS#11 token (HSM or SoftHSM2); on
   the token path the private key never leaves the hardware
-  ([hsm.md](hsm.md)), and in split mode the web tier holds no private key
+  ([hsm.md](../operations/hsm.md)), and in split mode the web tier holds no private key
   at all: signers announce their public keys to a registry and the web
   tier serves only those.
 - Multiple CA keys can be active at once. Each signer announces its own
@@ -116,7 +116,7 @@ local principal-mapping tooling (`host mapping`, `host principals`) for
   per-attempt ephemeral keypair, a short-lived certificate, four checks
   (CA signature, key binding, principals, validity window), and nothing
   retained on disk. Fail-closed everywhere
-  ([pam.d-sudo.example](pam.d-sudo.example)).
+  ([pam.d-sudo.example](../pam.d-sudo.example)).
 
 ## Coming later
 
@@ -133,4 +133,4 @@ local principal-mapping tooling (`host mapping`, `host principals`) for
   loosening) policy from the web UI, fully audited.
 - **Host certificates**, only if a secure host-verification mechanism
   (something like an ACME challenge) makes hostname claims provable —
-  see [decisions.md](decisions.md).
+  see [decisions.md](../project/decisions.md).

@@ -194,7 +194,7 @@ nfpms:
         dst: /usr/share/man/man5/ssoosshd.yaml.5
       # The mail notification templates the binary embeds, shipped as
       # reference copies to start an override from (see
-      # docs/email-notifications.md). /usr/share, deliberately not an
+      # docs/operations/email-notifications.md). /usr/share, deliberately not an
       # active mail.template_dir: a file installed into an override
       # directory IS an override, and an upgrade would then either destroy
       # the operator's edits or — with config|noreplace — pin them to a
@@ -235,7 +235,7 @@ nfpms:
         dst: /usr/share/man/man5/ssoosshd.yaml.5
       # The mail notification templates the binary embeds, shipped as
       # reference copies to start an override from (see
-      # docs/email-notifications.md). /usr/share, deliberately not an
+      # docs/operations/email-notifications.md). /usr/share, deliberately not an
       # active mail.template_dir: a file installed into an override
       # directory IS an override, and an upgrade would then either destroy
       # the operator's edits or — with config|noreplace — pin them to a

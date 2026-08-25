@@ -4,7 +4,7 @@ import "time"
 
 // Certificate records an issued SSH certificate for audit / per-user
 // history purposes. The private key is never generated or stored by the
-// server (see root CLAUDE.md Hard Constraints) — only public key
+// server (see docs/internals/invariants.md) — only public key
 // fingerprint and certificate metadata.
 type Certificate struct {
 	ID string `gorm:"column:id;primaryKey"`
@@ -38,14 +38,13 @@ type Certificate struct {
 	// SerialNumber is pre-allocated at approval time (before signing is queued),
 	// ensuring it's available to persist at request resolution without waiting
 	// for the signer. The UNIQUE constraint converts collisions into failed
-	// inserts rather than silently revoking unrelated certificates — see
-	// docs/dev/changes-next.md item 11.
+	// inserts rather than silently revoking unrelated certificates.
 	SerialNumber uint64 `gorm:"column:serial_number;uniqueIndex:idx_certificates_serial_number"`
 
 	// KeyID is the free-form audit-trail string sshd logs on every
 	// authentication, produced by executing the applicable
 	// config.CertOptions*.KeyIDTemplate (see
-	// docs/features.md (key ID templating)).
+	// docs/guide/features.md (key ID templating)).
 	KeyID string `gorm:"column:key_id"`
 
 	// Principals is a comma-separated list. TODO: move to a join table if
@@ -54,7 +53,7 @@ type Certificate struct {
 
 	// CriticalOptions is a JSON-encoded map[string]string of granted SSH
 	// certificate critical options (force-command, source-address — see
-	// docs/features.md, issuance). Unlike Extensions,
+	// docs/guide/features.md, issuance). Unlike Extensions,
 	// sshd rejects the certificate outright if it doesn't understand one
 	// of these, so an empty map here is meaningfully different from an
 	// empty Extensions list.

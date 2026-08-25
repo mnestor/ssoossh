@@ -10,7 +10,7 @@
 // would be a cycle waiting to happen.
 //
 // Adding a notification kind is meant to be a small, local edit. See
-// docs/email-notifications.md ("Adding a notification kind") — in short: a
+// docs/operations/email-notifications.md ("Adding a notification kind") — in short: a
 // Kind constant, a payload struct in payloads.go, a Definition in the
 // registry below, and the two template files. Everything else (preferences
 // storage and UI, the docs table, delivery) is driven off the registry and

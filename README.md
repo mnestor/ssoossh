@@ -8,9 +8,9 @@ Pronounced *sue-sssh*. Self-hosted and homelab-friendly. The reference
 configuration uses [pocket-id](https://github.com/pocket-id/pocket-id) as
 the OIDC provider.
 
-> **Status: early development.** User certificates and `sudo`/`su` through
-> PAM work end to end today. Host and service certificates are designed and
-> have server-side support; their client commands are not wired up yet.
+> **Status: early development.** User, service, and PAM (`sudo`/`su`)
+> certificates all work end to end today. ssoosshd deliberately issues no
+> host certificates — see [docs/project/decisions.md](docs/project/decisions.md).
 > Interfaces and configuration are expected to change.
 
 ## Is it AI slop?
@@ -89,7 +89,7 @@ expires, so one browser approval can cover a workday. The same approval
 flow backs `sudo`/`su` through the `pam_ssoossh` PAM module, where a
 certificate is requested, validated once, and discarded.
 
-[docs/flows.md](docs/flows.md) has the full set of diagrams, step by step.
+[docs/guide/flows.md](docs/guide/flows.md) has the full set of diagrams, step by step.
 
 ## Components
 
@@ -104,29 +104,29 @@ certificate is requested, validated once, and discarded.
 Four pieces make a working login:
 
 1. Run `ssoosshd` with a CA key, a public URL, and an OIDC client:
-   [docs/configuration.md](docs/configuration.md#server-ssoosshdyaml)
+   [docs/operations/configuration.md](docs/operations/configuration.md#server-ssoosshdyaml)
 2. Point the client at the server in `ssoossh.yaml`:
-   [docs/configuration.md](docs/configuration.md#client-ssoosshyaml)
+   [docs/operations/configuration.md](docs/operations/configuration.md#client-ssoosshyaml)
 3. Add a `Match exec "ssoossh ssh login"` line to your `ssh_config`:
-   [docs/configuration.md](docs/configuration.md#ssh_config)
+   [docs/operations/configuration.md](docs/operations/configuration.md#ssh_config)
 4. Trust the CA on each target host with `TrustedUserCAKeys`:
-   [docs/configuration.md](docs/configuration.md#sshd-on-target-hosts)
+   [docs/operations/configuration.md](docs/operations/configuration.md#sshd-on-target-hosts)
 
-[docs/getting-started.md](docs/getting-started.md) walks through them in
-order; [docs/deployment.md](docs/deployment.md) is the operator runbook
+[docs/guide/getting-started.md](docs/guide/getting-started.md) walks through them in
+order; [docs/operations/deployment.md](docs/operations/deployment.md) is the operator runbook
 behind each step.
 
 ## Documentation
 
 | Document | What it covers |
 | --- | --- |
-| [docs/getting-started.md](docs/getting-started.md) | The shortest path to a working `ssh login` |
-| [docs/features.md](docs/features.md) | What ssoossh solves, and everything it does today |
-| [docs/flows.md](docs/flows.md) | Sequence diagrams for every flow |
-| [docs/faq.md](docs/faq.md) | Common questions: users, sshd host admins, server operators |
-| [docs/configuration.md](docs/configuration.md) | Every configuration surface: server, client, `ssh_config`, `sshd`, PAM |
-| [docs/deployment.md](docs/deployment.md) | Operator runbook: CA key, systemd, OIDC provider, reverse proxy, multi-instance, PAM |
-| [docs/decisions.md](docs/decisions.md) | What ssoossh deliberately does not do, and why |
+| [docs/guide/getting-started.md](docs/guide/getting-started.md) | The shortest path to a working `ssh login` |
+| [docs/guide/features.md](docs/guide/features.md) | What ssoossh solves, and everything it does today |
+| [docs/guide/flows.md](docs/guide/flows.md) | Sequence diagrams for every flow |
+| [docs/guide/faq.md](docs/guide/faq.md) | Common questions: users, sshd host admins, server operators |
+| [docs/operations/configuration.md](docs/operations/configuration.md) | Every configuration surface: server, client, `ssh_config`, `sshd`, PAM |
+| [docs/operations/deployment.md](docs/operations/deployment.md) | Operator runbook: CA key, systemd, OIDC provider, reverse proxy, multi-instance, PAM |
+| [docs/project/decisions.md](docs/project/decisions.md) | What ssoossh deliberately does not do, and why |
 
 The full index, including internals and design documents, is at
 [docs/README.md](docs/README.md).

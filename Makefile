@@ -91,7 +91,7 @@ verify: lint lint-tagged lint-cross test check-generated ## Fast subset for the 
 # time: /workspace is root-owned so git cannot make the directory, a failed
 # attempt leaves the branch behind so the retry fails differently, and the
 # new worktree has no frontend build so ~15 server/bootstrap tests fail on
-# a missing index.html. See docs/dev/parallel-agent-workflow.md.
+# a missing index.html. See AGENTS.md.
 worktree: ## Create a ready-to-use agent worktree: make worktree NAME=<name> [BASE=main] [WORKTREE_BRANCH=...]
 	@test -n "$(NAME)" || { echo "usage: make worktree NAME=<name> [BASE=main] [WORKTREE_BRANCH=<branch>]" >&2; exit 2; }
 	WORKTREE_BRANCH="$(WORKTREE_BRANCH)" ./scripts/new-worktree.sh "$(NAME)" "$(or $(BASE),main)"
@@ -120,7 +120,7 @@ frontend: ## Build the web UI into server/frontend/dist
 # missing" target: the server embeds this bundle, so a stale one means a
 # browser test asserts against markup from whenever the UI was last built.
 # That failure presents as a selector timeout, which is indistinguishable
-# from a wrong selector -- see docs/dev/agent-workflow-friction.md.
+# from a wrong selector.
 # Use `make frontend` to force a rebuild regardless.
 FRONTEND_DIST := server/frontend/dist/index.html
 FRONTEND_SRC := $(shell find frontend/src frontend/static -type f 2>/dev/null) \
@@ -230,7 +230,7 @@ test-hsm: ## HSM key source tests against softhsm2 (needs softhsm2 + opensc)
 #
 # Serialised with flock. Worktrees isolate the filesystem, not the host, and
 # this suite touches host state: a local account, sshd under sudo, PAM
-# service files, container ports. docs/dev/parallel-agent-workflow.md has
+# service files, container ports. AGENTS.md has
 # always said "one run at a time" -- this makes that true rather than
 # merely written down, since a second run otherwise interferes silently
 # instead of failing. Concurrent invocations wait rather than error, so a
@@ -395,10 +395,10 @@ check-gitignore: ## Assert the .gitignore invariants hold
 ##@ Generated artifacts
 
 .PHONY: check-generated types types-check openapi openapi-check openapi-lint gendocs man-check
-.PHONY: third-party-licenses
+.PHONY: third-party-licenses makefile-docs makefile-docs-check confdocs confdocs-check
 # Every "is the committed output still what the source produces" gate, in
-# one place. All four are merge gates.
-check-generated: types-check openapi-check openapi-lint man-check ## Assert every generated artifact is current
+# one place. All six are merge gates.
+check-generated: types-check openapi-check openapi-lint man-check confdocs-check makefile-docs-check ## Assert every generated artifact is current
 
 # Regenerate the frontend's wire types from the Go structs that produce them
 # (see tygo.yaml). The output is committed so that pnpm check/test and an
@@ -498,6 +498,65 @@ man-check:
 		echo "Man pages are stale: a cobra command's name, description, or"; \
 		echo "subcommand set changed without the pages being regenerated."; \
 		echo "Run 'make gendocs' and commit the result (including any new page)."; \
+		exit 1; \
+	fi
+
+# Two artifacts, one source. The doc comments on the config structs in
+# server/config produce both the ssoosshd.yaml(5) OPTIONS body and the
+# comments in defaults.yaml -- the file embedded in the binary and shipped as
+# /etc/ssoossh/ssoosshd.yaml. Values in defaults.yaml are read and written
+# back unchanged; only the prose around them is generated.
+#
+# Those structs are the only place a key's name, type, and meaning are
+# written down. Before this gate the same 127 keys were described by hand in
+# the structs, the man page, and defaults.yaml, and the man page had drifted
+# to the point of omitting five whole sections (admin, mail, branding,
+# pubsub, multi_instance) and a dead key that no struct declared.
+#
+# No cgo: the generator parses server/config rather than importing it, so it
+# never reaches the HSM key source's libpkcs11 binding.
+CONFDOCS_OUT := docs/man/ssoosshd.yaml.5 server/config/defaults.yaml
+
+confdocs: ## Regenerate the config reference and defaults.yaml comments
+	go run ./internal/tools/genconfdocs
+
+# Same shape as types-check and man-check: assert regenerating changes nothing.
+#
+# defaults.yaml is in the output set, but only its comments are generated --
+# the values are read from the file and written back untouched, and
+# server/config's golden test is what guards those.
+confdocs-check:
+	@before=$$(sha256sum $(CONFDOCS_OUT) 2>/dev/null); \
+	$(MAKE) --no-print-directory confdocs >/dev/null; \
+	after=$$(sha256sum $(CONFDOCS_OUT) 2>/dev/null); \
+	if [ "$$before" != "$$after" ]; then \
+		echo "The config reference is stale: a config struct's fields or doc"; \
+		echo "comments changed without docs/man/ssoosshd.yaml.5 and"; \
+		echo "server/config/defaults.yaml being regenerated."; \
+		echo "Run 'make confdocs' and commit the result."; \
+		exit 1; \
+	fi
+
+# Makefile.md's target inventory is generated from this file's own ##@ and
+# ## annotations -- the same data `make help` prints. Only the region between
+# the BEGIN/END GENERATED TARGETS markers is rewritten; the rationale around
+# it (why lint-fix precedes lint, what hides code from the obvious command)
+# is hand-written and adding a target does not invalidate it.
+#
+# This gate exists because the hand-maintained version drifted: `worktree`
+# and `test-e2e-unlocked` were annotated here and missing from the doc.
+makefile-docs: ## Regenerate the target tables in Makefile.md
+	./scripts/gen-makefile-docs.sh Makefile Makefile.md
+
+# Same shape as types-check and man-check: assert regenerating changes nothing.
+makefile-docs-check:
+	@before=$$(sha256sum Makefile.md 2>/dev/null); \
+	$(MAKE) --no-print-directory makefile-docs >/dev/null; \
+	after=$$(sha256sum Makefile.md 2>/dev/null); \
+	if [ "$$before" != "$$after" ]; then \
+		echo "Makefile.md is stale: a target's name or ## description changed"; \
+		echo "without the doc being regenerated."; \
+		echo "Run 'make makefile-docs' and commit the result."; \
 		exit 1; \
 	fi
 

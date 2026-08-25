@@ -5,7 +5,7 @@ the Go test suite. `pamtest.c` in this directory is the harness. The e2e
 suite drives the same harness automatically (`TestPAMStack*` in
 `test/e2e/pam_stack_test.go`); this recipe remains for verifying a real
 deployment target by hand. The build environment it assumes is described
-below; see [deployment.md](../../docs/deployment.md)'s PAM section for
+below; see [deployment.md](../../docs/operations/deployment.md)'s PAM section for
 where this fits in verification.
 
 ## Build environment
@@ -94,5 +94,5 @@ browser and confirm `pamtest` reports the matching result.
 
 Only once this is solid against the test service name should the same
 stanza be added to the real `auth` group for `sudo`/`su`, per
-[deployment.md](../../docs/deployment.md)'s lockout warning: keep a second root shell open while editing
+[deployment.md](../../docs/operations/deployment.md)'s lockout warning: keep a second root shell open while editing
 `/etc/pam.d/sudo`.

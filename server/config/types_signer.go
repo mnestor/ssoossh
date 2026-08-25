@@ -84,28 +84,45 @@ func (h *HSMConfig) validate() error {
 // config files are untouched by the split.
 type SignerConfig struct {
 	// SSHKey is the SSH CA private key used to sign issued certificates.
-	// Inline PEM, not a file path.
+	// Inline PEM, not a file path. Exactly one of ssh_key or hsm may be set,
+	// and one of them must be: startup fails without a CA key.
+	//
+	//	ssh_key: |
+	//	  -----BEGIN OPENSSH PRIVATE KEY-----
+	//	  -----END OPENSSH PRIVATE KEY-----
 	SSHKey string `mapstructure:"ssh_key"`
 
 	// HSM optionally sources the CA key from a PKCS#11 token instead of
 	// ssh_key. Exactly one of the two may be set at the config level (API
-	// mode has neither; signing modes require one to be set).
+	// mode has neither; signing modes require one to be set). See
+	// docs/operations/hsm.md for setup.
+	//
+	// Supported: ECDSA P-256/384/521, RSA >= 2048. Ed25519 is not supported
+	// by PKCS#11 here; keep ssh_key for an Ed25519 CA.
+	//
+	//	hsm:
+	//	  module: /usr/lib/softhsm/libsofthsm2.so
+	//	  token_label: ssoossh-ca
+	//	  pin_file: /etc/ssoossh/hsm-pin    # or pin: "1234"
+	//	  key_label: ssoossh-ca
+	//	  # key_id: "01"                    # hex CKA_ID, instead of key_label
 	HSM HSMConfig `mapstructure:"hsm"`
 
-	// PubSub configures the message broker (gochannel in-process, or NATS
-	// for multi-instance and split-process deployments).
+	// PubSub configures the message broker behind the certificate pipeline.
+	// gochannel is in-process; NATS is required for multi-instance and
+	// split-process deployments.
 	PubSub PubSubConfig `mapstructure:"pubsub"`
 
 	// MaxCertLifetime is the maximum lifetime for user/service/PAM
 	// certificates, enforced as a defense-in-depth check before signing.
-	// Default 2160h (90 days). Must be > 0 (fail-closed).
+	// Must be greater than zero; a non-positive value fails startup.
 	MaxCertLifetime time.Duration `mapstructure:"max_cert_lifetime,string"`
 
 	// MaxServiceCertLifetime is the maximum lifetime for service
 	// certificates, enforced as a defense-in-depth check before signing.
 	// Service enrollments default to 8760h (cert_options.service
 	// valid_duration), so this cap carries headroom over its default.
-	// Default 17544h (2 years). Must be > 0 (fail-closed).
+	// Must be greater than zero; a non-positive value fails startup.
 	MaxServiceCertLifetime time.Duration `mapstructure:"max_service_cert_lifetime,string"`
 }
 
