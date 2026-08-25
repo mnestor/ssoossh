@@ -21,27 +21,49 @@
 	const certTypes = ['user', 'service', 'pam'];
 	const statusOptions = ['live', 'expired'];
 
+	// Which load is allowed to write to the page. Nothing cancels a request
+	// in flight, and the search box stays live while one is running, so two
+	// can easily overlap — and they answer in whatever order the server and
+	// the network settle on, not the order they were sent. Without this, a
+	// slower earlier request landing last replaced the list with results for
+	// a term the user had already moved on from.
+	//
+	// Deliberately not $state: nothing renders from it, and the effect below
+	// reads the filters, so making this reactive would feed the loop it is
+	// there to arbitrate.
+	let latestLoad = 0;
+
 	async function loadCertificates(offset = 0) {
+		const load = ++latestLoad;
 		isLoading = true;
-		const controller = new AbortController();
 		try {
-			const result = await listAdminCertificates(controller.signal, {
+			const result = await listAdminCertificates(undefined, {
 				offset,
 				limit: 25,
 				q: searchQuery || undefined,
 				type: typeFilter || undefined,
 				status: statusFilter || undefined
 			});
+			if (load !== latestLoad) {
+				return;
+			}
 			certificates = result.certificates;
 			pageInfo = result.page_meta;
 			hasLoaded = true;
 		} catch (cause) {
-			if (!controller.signal.aborted && !redirectIfUnauthenticated(cause)) {
+			if (load !== latestLoad) {
+				return;
+			}
+			if (!redirectIfUnauthenticated(cause)) {
 				loadError = errorMessage(cause);
 				hasLoaded = true;
 			}
 		} finally {
-			isLoading = false;
+			// Only the newest load owns the spinner; a superseded one
+			// finishing must not clear it while its replacement is still out.
+			if (load === latestLoad) {
+				isLoading = false;
+			}
 		}
 	}
 

@@ -61,6 +61,16 @@ func newTestConfig(t *testing.T) *config.Config {
 // routerWithAuth builds a gin router with identity and real authorization middleware.
 func routerWithAuth(t *testing.T, cfg *config.Config, db *gorm.DB, identity *service.Identity) *gin.Engine {
 	t.Helper()
+	// The enrollment provider arrived with the service-code admin work; the
+	// tests reaching this helper exercise the user and config routes and do
+	// not care which one they get.
+	return routerWithEnrollmentService(t, cfg, db, identity, &fakeEnrollmentServiceForReassign{})
+}
+
+// routerWithEnrollmentService is routerWithAuth with the enrollment provider
+// supplied by the caller, for tests that drive the admin enrollment routes.
+func routerWithEnrollmentService(t *testing.T, cfg *config.Config, db *gorm.DB, identity *service.Identity, enrollments service.EnrollmentProvider) *gin.Engine {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
@@ -78,9 +88,7 @@ func routerWithAuth(t *testing.T, cfg *config.Config, db *gorm.DB, identity *ser
 		middleware.NewAdminAuthMiddleware(cfg).Add(),   // adminAuthMiddleware (real)
 		middleware.NewAuditorAuthMiddleware(cfg).Add(), // auditorAuthMiddleware (real)
 		func(c *gin.Context) { c.Next() },              // csrfMiddleware (passthrough for tests)
-		// The enrollment provider arrived with the service-code admin work;
-		// these tests predate it and exercise the user and config routes.
-		&fakeEnrollmentServiceForReassign{},
+		enrollments,
 	)
 
 	return r

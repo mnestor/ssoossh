@@ -19,6 +19,53 @@ function mockFetch(response: object, status = 200) {
 	);
 }
 
+/**
+ * deferredFetch stubs fetch so each call's response is resolved by the test,
+ * in whatever order it likes. Returned is a `settle(index, response)` that
+ * completes the nth call.
+ */
+function deferredFetch() {
+	const resolvers: ((response: Response) => void)[] = [];
+	vi.stubGlobal(
+		'fetch',
+		vi.fn(
+			() =>
+				new Promise<Response>((resolve) => {
+					resolvers.push(resolve);
+				})
+		)
+	);
+	return {
+		calls: () => resolvers.length,
+		settle: (index: number, body: object) =>
+			resolvers[index](
+				new Response(JSON.stringify({ data: body, error: null }), {
+					status: 200,
+					headers: { 'Content-Type': 'application/json' }
+				})
+			)
+	};
+}
+
+/** listWith builds a single-certificate page whose key ID identifies it. */
+function listWith(keyId: string): CertificateListAdminResponse {
+	return {
+		certificates: [
+			{
+				id: `cert-${keyId}`,
+				type: 'user',
+				serial_number: 1,
+				key_id: keyId,
+				principals: 'alice',
+				public_key_fingerprint: 'fp',
+				issued_at: new Date().toISOString(),
+				expires_at: new Date().toISOString()
+			}
+		],
+		page_meta: { total: 1, limit: 25, offset: 0, page: 1, page_count: 1 }
+	};
+}
+
 beforeEach(() => {
 	vi.clearAllMocks();
 });
@@ -238,5 +285,38 @@ describe('Admin certificates page', () => {
 			render(Page);
 			expect(screen.getByText(/loading|loading\.\.\./i)).toBeInTheDocument();
 		});
+	});
+});
+
+describe('when a slow request finishes after a newer one', () => {
+	it('should keep the newest result rather than the last to arrive', async () => {
+		// The search box is not disabled while a load is in flight, so a
+		// newer search can be in flight alongside an older one. Nothing
+		// cancels the older request, and it used to overwrite the newer list
+		// on arrival — leaving the page showing results for a term the user
+		// had already moved on from.
+		const user = userEvent.setup();
+		const fetches = deferredFetch();
+
+		render(Page);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		const searchInput = screen.getByRole('searchbox', { name: /search/i });
+		await user.type(searchInput, 'beta{Enter}');
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		const total = fetches.calls();
+		expect(total).toBeGreaterThan(1);
+
+		// The newest request answers first; every earlier one lands after it.
+		fetches.settle(total - 1, listWith('newest-result'));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		for (let i = 0; i < total - 1; i++) {
+			fetches.settle(i, listWith('stale-result'));
+		}
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(screen.getByText(/newest-result/)).toBeInTheDocument();
+		expect(screen.queryByText(/stale-result/)).not.toBeInTheDocument();
 	});
 });

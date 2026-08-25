@@ -1,10 +1,12 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -207,6 +209,16 @@ func (a *adminController) listUsersHandler(g *gin.Context) {
 		return
 	}
 
+	// Resolve every "disabled by" name in one query rather than one per
+	// disabled row: this page is up to 100 users, and a lookup inside the
+	// loop below made the directory's cost scale with how much of the
+	// organization had been disabled.
+	disablerNames, err := a.lookupUsernames(g.Request.Context(), disablerIDs(users))
+	if err != nil {
+		handleError(g, fmt.Errorf("failed to resolve who disabled these users: %w", err))
+		return
+	}
+
 	summaries := make([]webtypes.AdminUserSummary, len(users))
 	for i, u := range users {
 		summary := webtypes.AdminUserSummary{
@@ -219,15 +231,11 @@ func (a *adminController) listUsersHandler(g *gin.Context) {
 		}
 		if u.DisabledAt != nil {
 			summary.DisabledAt = u.DisabledAt
-			// Look up the admin that disabled this user
 			if u.DisabledByUserID != nil {
-				var admin model.User
-				if err := a.db.WithContext(g.Request.Context()).
-					Select("username").
-					Where("id = ?", *u.DisabledByUserID).
-					First(&admin).Error; err == nil {
-					summary.DisabledByUsername = admin.Username
-				}
+				// A missing name is left empty, as the per-row lookup did:
+				// the admin's own row may have been pruned, and that is not
+				// a reason to fail the directory.
+				summary.DisabledByUsername = disablerNames[*u.DisabledByUserID]
 			}
 		}
 		summaries[i] = summary
@@ -274,41 +282,15 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 		return
 	}
 
-	// Decode JSON fields
-	var otherAccounts []string
-	if user.OtherAccounts != "" {
-		if err := json.Unmarshal([]byte(user.OtherAccounts), &otherAccounts); err != nil {
-			otherAccounts = []string{}
-		}
+	otherAccounts := decodeStringList(user.OtherAccounts)
+	serviceAccounts := decodeStringList(user.ServiceAccounts)
+	extraFields := decodeStringMap(user.ExtraFields)
+
+	certCount, enrollmentCount, err := a.userCounts(g.Request.Context(), id)
+	if err != nil {
+		handleError(g, err)
+		return
 	}
-
-	var serviceAccounts []string
-	if user.ServiceAccounts != "" {
-		if err := json.Unmarshal([]byte(user.ServiceAccounts), &serviceAccounts); err != nil {
-			serviceAccounts = []string{}
-		}
-	}
-
-	extraFields := make(map[string]any)
-	if user.ExtraFields != "" && user.ExtraFields != "{}" {
-		if err := json.Unmarshal([]byte(user.ExtraFields), &extraFields); err != nil {
-			extraFields = make(map[string]any)
-		}
-	}
-
-	// Count certificates for this user
-	var certCount int64
-	a.db.WithContext(g.Request.Context()).
-		Model(&model.Certificate{}).
-		Where("user_id = ?", id).
-		Count(&certCount)
-
-	// Count active enrollments for this user
-	var enrollmentCount int64
-	a.db.WithContext(g.Request.Context()).
-		Model(&model.Enrollment{}).
-		Where("user_id = ? AND expires_at > ?", id, time.Now()).
-		Count(&enrollmentCount)
 
 	detail := webtypes.AdminUserDetail{
 		ID:       user.ID,
@@ -325,8 +307,8 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 		ExtraFields:            extraFields,
 		CreatedAt:              user.CreatedAt,
 		UpdatedAt:              user.UpdatedAt,
-		ServiceEnrollmentCount: int(enrollmentCount),
-		CertificateCount:       int(certCount),
+		ServiceEnrollmentCount: enrollmentCount,
+		CertificateCount:       certCount,
 	}
 
 	if user.DisabledAt != nil {
@@ -426,10 +408,20 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 
 	expireAt := now.Add(gracePeriod)
 
+	// The disable is already committed, so a failure to count what it
+	// affects cannot fail the request — that would report an error for a
+	// write that succeeded. It is logged instead of silently reported as
+	// zero, which would tell the operator nothing was revoked.
+	enrollmentCount, err := countActiveEnrollments(a.db.WithContext(g.Request.Context()), id)
+	if err != nil {
+		slog.Error("failed to count the enrollments a disable affects; reporting the disable without it",
+			"user_id", id, "error", err)
+	}
+
 	respondData(g, webtypes.DisableUserConsequences{
 		GracePeriodSeconds:     int64(gracePeriod.Seconds()),
 		ExpireAtTimestamp:      expireAt,
-		ServiceEnrollmentCount: countActiveEnrollments(a.db.WithContext(g.Request.Context()), id),
+		ServiceEnrollmentCount: enrollmentCount,
 	})
 }
 
@@ -609,13 +601,106 @@ func (a *adminController) certificateHistoryHandler(g *gin.Context) {
 }
 
 // countActiveEnrollments counts how many active (not yet expired) service
-// enrollments a user has.
-func countActiveEnrollments(db *gorm.DB, userID string) int {
+// enrollments a user has. The error is returned rather than folded into a
+// zero so each caller can decide what a missing count means to it.
+func countActiveEnrollments(db *gorm.DB, userID string) (int, error) {
 	var count int64
-	db.Model(&model.Enrollment{}).
+	if err := db.Model(&model.Enrollment{}).
 		Where("user_id = ? AND expires_at > ?", userID, time.Now()).
-		Count(&count)
-	return int(count)
+		Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
+
+// decodeStringList reads one of the JSON-in-TEXT account columns. A row that
+// cannot be decoded yields an empty list rather than an error: these columns
+// are populated from OIDC claims at login, and one malformed value is not a
+// reason to refuse to show the account at all.
+func decodeStringList(encoded string) []string {
+	var out []string
+	if encoded == "" {
+		return out
+	}
+	if err := json.Unmarshal([]byte(encoded), &out); err != nil {
+		return []string{}
+	}
+	return out
+}
+
+// decodeStringMap is decodeStringList for the extra-claims column, which is a
+// JSON object rather than an array.
+func decodeStringMap(encoded string) map[string]any {
+	out := make(map[string]any)
+	if encoded == "" || encoded == "{}" {
+		return out
+	}
+	if err := json.Unmarshal([]byte(encoded), &out); err != nil {
+		return make(map[string]any)
+	}
+	return out
+}
+
+// userCounts returns how many certificates a user holds and how many active
+// service enrollments they have.
+//
+// Both are part of the detail response, so a failure to run either is
+// returned rather than rendered: zero certificates and "the database did not
+// say" look identical on the page but are different facts about an account,
+// and only one of them is safe to act on.
+func (a *adminController) userCounts(ctx context.Context, userID string) (certificates int, enrollments int, err error) {
+	var certCount int64
+	if err := a.db.WithContext(ctx).
+		Model(&model.Certificate{}).
+		Where("user_id = ?", userID).
+		Count(&certCount).Error; err != nil {
+		return 0, 0, fmt.Errorf("failed to count the user's certificates: %w", err)
+	}
+
+	enrollmentCount, err := countActiveEnrollments(a.db.WithContext(ctx), userID)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to count the user's active enrollments: %w", err)
+	}
+
+	return int(certCount), enrollmentCount, nil
+}
+
+// disablerIDs collects the distinct users named as having disabled someone
+// on this page.
+func disablerIDs(users []model.User) []string {
+	seen := make(map[string]bool)
+	var ids []string
+	for _, u := range users {
+		if u.DisabledAt == nil || u.DisabledByUserID == nil {
+			continue
+		}
+		if id := *u.DisabledByUserID; !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// lookupUsernames resolves ids to usernames in a single query. An id with no
+// surviving row is simply absent from the result.
+func (a *adminController) lookupUsernames(ctx context.Context, ids []string) (map[string]string, error) {
+	names := make(map[string]string, len(ids))
+	if len(ids) == 0 {
+		return names, nil
+	}
+
+	var rows []model.User
+	if err := a.db.WithContext(ctx).
+		Select("id", "username").
+		Where("id IN ?", ids).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		names[r.ID] = r.Username
+	}
+	return names, nil
 }
 
 // adminEnrollmentModel is a minimal GORM model used for admin operations on enrollments.
@@ -675,7 +760,7 @@ func (a *adminController) listEnrollmentsHandler(g *gin.Context) {
 			Principals:           row.Principals,
 			KeyID:                row.Enrollment.KeyID,
 			PublicKeyFingerprint: row.Fingerprint,
-			Options:              convertOptions(row.Options),
+			Options:              newCertificateOptionsResponse(row.Options),
 			CreatedAt:            row.Enrollment.CreatedAt,
 			ExpiresAt:            row.Enrollment.ExpiresAt,
 			RetrievalCount:       row.RetrievalCount,
@@ -752,7 +837,7 @@ func (a *adminController) getEnrollmentDetailHandler(g *gin.Context) {
 		Principals:           detail.Principals,
 		KeyID:                detail.Enrollment.KeyID,
 		PublicKeyFingerprint: detail.Fingerprint,
-		Options:              convertOptions(detail.Options),
+		Options:              newCertificateOptionsResponse(detail.Options),
 		CreatedAt:            detail.Enrollment.CreatedAt,
 		ExpiresAt:            detail.Enrollment.ExpiresAt,
 		RetrievalCount:       detail.Retrievals.Total,
@@ -819,11 +904,3 @@ func (a *adminController) reassignEnrollmentHandler(g *gin.Context) {
 }
 
 // convertOptions converts a service.RequestedOptions to a webtypes.CertificateOptionsResponse.
-func convertOptions(opts service.RequestedOptions) webtypes.CertificateOptionsResponse {
-	return webtypes.CertificateOptionsResponse{
-		Extensions:      opts.Extensions,
-		ForceCommand:    opts.ForceCommand,
-		SourceAddresses: opts.SourceAddresses,
-		NoTouchRequired: opts.NoTouchRequired,
-	}
-}
