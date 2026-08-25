@@ -120,17 +120,12 @@ local principal-mapping tooling (`host mapping`, `host principals`) for
 
 ## Coming later
 
-- **ACME for TLS**, setup acme for public trusted ssl certs on webserver
 - **LDAP enrichment**: additional principals and account identifiers from
   a directory, feeding user disablement sweeps.
-- **Admin user-disable flow**: disable a departed user with a grace period
-  and a preview of which enrollments and unattended jobs it will break.
 - **Approver identity in key IDs**: service-certificate key IDs naming the
   human who approved them.
 - **Cloud KMS signing**, behind the same key-source interface the config
   and PKCS#11 backends use today.
-- **Runtime-editable narrowing policy**: admins tightening (never
-  loosening) policy from the web UI, fully audited.
 - **Host certificates**, only if a secure host-verification mechanism
   (something like an ACME challenge) makes hostname claims provable —
   see [decisions.md](../project/decisions.md).
