@@ -8,8 +8,11 @@ package bootstrap
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/logging"
 	"github.com/mnestor/ssoossh/server/service"
 )
 
@@ -285,4 +289,157 @@ func TestInitEngine_ShouldHonourForwardedForFromATrustedProxy(t *testing.T) {
 	if gotClientIP != "1.2.3.4" {
 		t.Errorf("got ClientIP %q, want 1.2.3.4 from the trusted proxy's header", gotClientIP)
 	}
+}
+
+// captureStdouterrForAccessLog swaps os.Stdout and os.Stderr for pipes, runs
+// fn, and returns what each stream received. Mutates process globals, so
+// callers must not run in parallel.
+func captureStdouterrForAccessLog(t *testing.T, fn func()) (stdout, stderr string) {
+	t.Helper()
+
+	origOut, origErr := os.Stdout, os.Stderr
+	outR, outW, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	errR, errW, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout, os.Stderr = outW, errW
+	defer func() { os.Stdout, os.Stderr = origOut, origErr }()
+
+	fn()
+
+	_ = outW.Close()
+	_ = errW.Close()
+	outB, _ := io.ReadAll(outR)
+	errB, _ := io.ReadAll(errR)
+	return string(outB), string(errB)
+}
+
+// TestInitRouter_ShouldLogRequestsByStatusClass drives real requests through
+// the whole middleware chain and reads the log the way an operator does:
+// off stdout, in a container, with the shipped logging.level of WARN.
+//
+// It covers both halves of what made the access log useless there. The
+// access log needs a level of its own or nothing it emits clears WARN; and
+// sloggin.NewWithConfig does no defaulting, so the Config literal has to set
+// the three levels itself or every record -- a 500 included -- comes out at
+// INFO, below WARN and never copied to stderr.
+//
+// Installs the process logger and swaps stdio; must not run in parallel.
+func TestInitRouter_ShouldLogRequestsByStatusClass(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	c := &config.Config{}
+	c.HTTP.RateLimit = 0
+	c.HTTP.RateDuration = time.Minute
+	// The shipped pairing: a quiet application log, a verbose access log,
+	// and no filename anywhere, so stdout is the only destination.
+	c.Logging.Level = "warn"
+	c.HTTP.AccessLogging.Level = "info"
+
+	// Everything inside the capture, and in this order: the middleware
+	// binds its logger with logging.Tagged at initRouter time, so a logger
+	// installed afterwards would never reach it -- which is why bootstrap
+	// calls logging.New first. gin's own debug route dump does not land in
+	// the pipes: gin.DefaultWriter captured the real os.Stdout at package
+	// init, before this swap.
+	stdout, stderr := captureStdouterrForAccessLog(t, func() {
+		if _, err := logging.New(c); err != nil {
+			t.Fatalf("logging.New() error = %v", err)
+		}
+
+		a := newTestApp(t, c)
+		srv, err := a.initRouter()
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		// Handlers that fail. Registered rather than found among the real
+		// routes because the middleware chain is what is under test, not
+		// the handlers: a real 500 needs a broken dependency to provoke,
+		// and an unrouted path is not a 404 here at all -- the SPA
+		// fallback serves index.html with a 200 for anything unmatched.
+		srv.router.GET("/client-error", func(gc *gin.Context) { gc.Status(http.StatusBadRequest) })
+		srv.router.GET("/boom", func(gc *gin.Context) { gc.Status(http.StatusInternalServerError) })
+
+		// An INFO from the application itself, to show the two logs are
+		// filtered independently rather than the level simply being lowered.
+		slog.Info("app-info-marker")
+
+		for _, path := range []string{"/api/ca", "/client-error", "/boom"} {
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.RemoteAddr = "203.0.113.60:12345"
+			srv.router.ServeHTTP(w, req)
+		}
+	})
+
+	// Matched a line at a time, not as loose substrings of the whole
+	// stream: "level=WARN" appears in this capture whatever the access log
+	// does, because initRouter warns about the unset cookie_secure. The
+	// claim is that the record *for this request* carries that level.
+	tests := []struct {
+		name       string
+		path       string
+		wantLevel  string
+		wantStderr bool
+	}{
+		{
+			name:      "should log a served request at info",
+			path:      "/api/ca",
+			wantLevel: "INFO",
+		},
+		{
+			name:      "should log a client error at warn",
+			path:      "/client-error",
+			wantLevel: "WARN",
+		},
+		{
+			name:       "should log a server error at error, and copy it to stderr",
+			path:       "/boom",
+			wantLevel:  "ERROR",
+			wantStderr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			line := lineContaining(stdout, "path="+tt.path)
+			if line == "" {
+				t.Fatalf("no access log record for %s on stdout; got:\n%s", tt.path, stdout)
+			}
+			if !strings.Contains(line, "level="+tt.wantLevel) {
+				t.Errorf("access log for %s: want level %s, got line:\n%s", tt.path, tt.wantLevel, line)
+			}
+
+			errLine := lineContaining(stderr, "path="+tt.path)
+			if tt.wantStderr && errLine == "" {
+				t.Errorf("expected %s to be copied to stderr as well; got:\n%s", tt.path, stderr)
+			}
+			if !tt.wantStderr && errLine != "" {
+				t.Errorf("expected %s not to reach stderr, got line:\n%s", tt.path, errLine)
+			}
+		})
+	}
+
+	t.Run("should leave the application log at its own level", func(t *testing.T) {
+		if strings.Contains(stdout, "app-info-marker") {
+			t.Errorf("expected the application log to stay at warn; got:\n%s", stdout)
+		}
+	})
+}
+
+// lineContaining returns the first line of s containing sub, or "" if none
+// does. Access log assertions need the level and the path off the same
+// record, not merely both somewhere in the stream.
+func lineContaining(s, sub string) string {
+	for _, line := range strings.Split(s, "\n") {
+		if strings.Contains(line, sub) {
+			return line
+		}
+	}
+	return ""
 }

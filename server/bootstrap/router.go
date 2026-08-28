@@ -134,7 +134,17 @@ func (a *app) initEngine() (*gin.Engine, error) {
 		r.Use(otelgin.Middleware(version.Name))
 	}
 
+	// The three levels are set explicitly because sloggin.NewWithConfig
+	// takes the Config exactly as given: only sloggin.New/DefaultConfig
+	// fill these in, so a literal that omits them leaves all three at the
+	// zero slog.Level, which is INFO. That logged a 500 at INFO -- below
+	// the shipped logging.level of WARN, and never copied to the stderr
+	// error stream -- so a failing request was indistinguishable from a
+	// served one, and invisible besides.
 	r.Use(sloggin.NewWithConfig(logging.Tagged(logging.TagAccessLog), sloggin.Config{
+		DefaultLevel:       slog.LevelInfo,
+		ClientErrorLevel:   slog.LevelWarn,
+		ServerErrorLevel:   slog.LevelError,
 		WithUserAgent:      c.HTTP.AccessLogging.WithUserAgent,
 		WithClientIP:       c.HTTP.AccessLogging.WithClientIP,
 		WithRequestHeader:  c.HTTP.AccessLogging.WithRequestHeader,

@@ -89,15 +89,12 @@ func GetHandler(json bool, isTerminal bool, w io.Writer, opts *slog.HandlerOptio
 	}
 }
 
-// newNamedHandler builds cfg's handler wired for its own dedicated
-// destination, or nil if cfg.src has no filename configured (no dedicated
-// logger for this tag, so records with this tag fall through to the
-// general handler like any other).
+// newNamedHandler builds cfg's handler wired for its own dedicated file.
+// Only called for a tag that has one — namedRoute decides that, and a tag
+// without a file either keeps the general destinations at its own level or
+// falls through to the catch-all like any other record.
 func newNamedHandler(cfg namedLoggerConfig) slog.Handler {
 	filename := cfg.src.LogFilename()
-	if filename == "" {
-		return nil
-	}
 	return GetHandler(cfg.src.LogJSONEnabled(), false, logDestination(filename, cfg.src), &slog.HandlerOptions{
 		AddSource:   cfg.src.LogAddSource(),
 		Level:       LevelFromString(cfg.src.LogLevelString()),

@@ -40,6 +40,7 @@ db.max_open_conns = 10
 db.provider = sqlite
 db.retry_attempts = 3
 db.retry_interval = 3s
+http.access_logging.level = info
 http.access_logging.log_client_ip = true
 http.access_logging.log_request_body = false
 http.access_logging.log_request_header = true

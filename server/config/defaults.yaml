@@ -153,6 +153,17 @@ http:
     # Log-file rotation for the access log, via the embedded timberjack logger,
     # with the same keys and meanings as logging.* above. The access log is only
     # split into its own file once its filename is set.
+    # The minimum log level for the access log, in the same form as
+    # logging.level. Requests are logged at INFO, client errors (4xx) at WARN
+    # and server errors (5xx) at ERROR, so "info" logs every request and "warn"
+    # logs only the failures.
+    #
+    # This is what lets the access log be more verbose than the application log:
+    # the two are filtered independently, and both still reach stdout. Left
+    # empty the access log has no threshold of its own and is filtered at
+    # logging.level along with everything else — which, with the shipped
+    # logging.level of WARN, means no successful request is ever logged.
+    level: info
     # Records the request's User-Agent header.
     log_user_agent: true
     # Records the full request header set. Verbose, and it captures whatever the

@@ -494,3 +494,147 @@ func TestNew_DestinationContractWhenNotATerminal(t *testing.T) {
 		})
 	}
 }
+
+// TestNew_ShouldFilterANamedLoggerAtItsOwnLevelWithoutAFile locks in the
+// middle row of the package-doc table, and with it the deployment this was
+// added for: a container running the shipped logging.level of WARN still
+// wants every request logged. The access log runs at INFO, the application
+// log stays at WARN, and both come out on stdout.
+//
+// The pre-existing shape of the bug is the third case: before a named
+// logger's level applied without a file, setting it did nothing at all and
+// the access log was filtered at WARN with everything else, so no served
+// request was ever logged anywhere.
+//
+// Mutates the default logger and process stdio; must not run in parallel.
+func TestNew_ShouldFilterANamedLoggerAtItsOwnLevelWithoutAFile(t *testing.T) {
+	tests := []struct {
+		name        string
+		mainLevel   string
+		accessLevel string
+		log         func()
+		wantStdout  []string
+		notStdout   []string
+		wantStderr  []string
+		notStderr   []string
+	}{
+		{
+			name:        "should log a request at info while the app log stays at warn",
+			mainLevel:   "warn",
+			accessLevel: "info",
+			log: func() {
+				Tagged(TagAccessLog).Info("request-marker")
+				slog.Info("app-info-marker")
+			},
+			wantStdout: []string{"request-marker"},
+			notStdout:  []string{"app-info-marker"},
+		},
+		{
+			name:        "should keep the type attr, having no dedicated destination",
+			mainLevel:   "warn",
+			accessLevel: "info",
+			log:         func() { Tagged(TagAccessLog).Info("typed-marker") },
+			wantStdout:  []string{"typed-marker", "type=" + TagAccessLog},
+		},
+		{
+			name:        "should filter at the general level when no access level is set",
+			mainLevel:   "warn",
+			accessLevel: "",
+			log:         func() { Tagged(TagAccessLog).Info("unset-marker") },
+			notStdout:   []string{"unset-marker"},
+		},
+		{
+			name:        "should still copy a server error to stderr",
+			mainLevel:   "warn",
+			accessLevel: "info",
+			log:         func() { Tagged(TagAccessLog).Error("five-hundred-marker") },
+			wantStdout:  []string{"five-hundred-marker"},
+			wantStderr:  []string{"five-hundred-marker"},
+		},
+		{
+			name:        "should drop a request below the access log's own level",
+			mainLevel:   "warn",
+			accessLevel: "error",
+			log:         func() { Tagged(TagAccessLog).Info("quiet-marker") },
+			notStdout:   []string{"quiet-marker"},
+			notStderr:   []string{"quiet-marker"},
+		},
+	}
+
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &config.Config{}
+			c.Logging.Level = tt.mainLevel
+			c.HTTP.AccessLogging.Level = tt.accessLevel
+			// No filenames anywhere: stdout is the only main destination,
+			// which is the container case this exists for.
+
+			stdout, stderr := captureStdouterr(t, func() {
+				if _, err := New(c); err != nil {
+					t.Fatalf("New() error = %v", err)
+				}
+				tt.log()
+			})
+
+			for _, want := range tt.wantStdout {
+				if !strings.Contains(stdout, want) {
+					t.Errorf("stdout missing %q; got:\n%s", want, stdout)
+				}
+			}
+			for _, not := range tt.notStdout {
+				if strings.Contains(stdout, not) {
+					t.Errorf("stdout unexpectedly contains %q; got:\n%s", not, stdout)
+				}
+			}
+			for _, want := range tt.wantStderr {
+				if !strings.Contains(stderr, want) {
+					t.Errorf("stderr missing %q; got:\n%s", want, stderr)
+				}
+			}
+			for _, not := range tt.notStderr {
+				if strings.Contains(stderr, not) {
+					t.Errorf("stderr unexpectedly contains %q; got:\n%s", not, stderr)
+				}
+			}
+		})
+	}
+}
+
+// A named logger with both a file and a level keeps the file: the level
+// route must not steal records from the dedicated destination, which is the
+// exclusivity the router's FirstMatch exists to provide.
+//
+// Mutates the default logger; must not run in parallel.
+func TestNew_ShouldPreferAConfiguredFileOverTheLevelRoute(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	dir := t.TempDir()
+	accessLog := filepath.Join(dir, "access.log")
+
+	c := &config.Config{}
+	c.Logging.Level = "warn"
+	c.HTTP.AccessLogging.Filename = accessLog
+	c.HTTP.AccessLogging.Level = "info"
+
+	stdout, _ := captureStdouterr(t, func() {
+		if _, err := New(c); err != nil {
+			t.Fatalf("New() error = %v", err)
+		}
+		Tagged(TagAccessLog).Info("file-marker")
+	})
+
+	data, err := os.ReadFile(accessLog)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", accessLog, err)
+	}
+	if !strings.Contains(string(data), "file-marker") {
+		t.Errorf("expected the access log file to contain the record, got: %s", data)
+	}
+	if strings.Contains(stdout, "file-marker") {
+		t.Errorf("expected the dedicated file to be exclusive, but stdout also got it:\n%s", stdout)
+	}
+}

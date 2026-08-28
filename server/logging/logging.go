@@ -10,7 +10,11 @@
 //	--------------------------------------  -----------------------------------
 //	type=<tag>, tag has a configured file   ONLY that file (exclusive; the
 //	                                        now-redundant "type" attr dropped)
-//	everything else                         ALL of the general destinations:
+//	type=<tag>, no file but a level set     ALL of the general destinations,
+//	                                        filtered at that tag's own level
+//	                                        rather than logging.level
+//	everything else                         ALL of the general destinations,
+//	                                        filtered at logging.level:
 //	  - the main log file                     when logging.filename is set
 //	  - stdout                                when in a terminal, or
 //	                                          logging.enable_stdout, or no main
@@ -18,6 +22,13 @@
 //	                                          somewhere)
 //	  - stderr, ERROR and up only             when NOT in a terminal (the
 //	                                          container/systemd convention)
+//
+// The middle row is what lets the access log run at INFO while the
+// application log stays at WARN, with both on stdout — a container wants its
+// requests logged without every INFO the rest of the process emits. Without
+// it a named logger's level did nothing at all until it was also given a
+// file, which is not what "the minimum log level for this destination"
+// says, and left the shipped config logging no requests anywhere.
 //
 // # Exclusive routes versus broadcast — read before editing
 //
@@ -67,11 +78,11 @@ func New(c *config.Config) (closeFns []func(context.Context) error, err error) {
 
 	router := slogmulti.Router()
 	for _, nl := range namedLoggers(c) {
-		if h := newNamedHandler(nl); h != nil {
+		if h := namedRoute(c, nl, isTerminal); h != nil {
 			router = router.Add(h, slogmulti.AttrValueIs(AttrKeyType, nl.tag))
 		}
 	}
-	router = router.Add(generalFanout(c, isTerminal))
+	router = router.Add(generalFanout(c, isTerminal, LevelFromString(c.Logging.Level)))
 
 	logger := slog.New(router.FirstMatch().Handler())
 	if c.Logging.IncludeAppName {
@@ -102,17 +113,38 @@ func namedLoggers(c *config.Config) []namedLoggerConfig {
 	}
 }
 
-// generalFanout builds the catch-all broadcast handler: the main file,
-// stdout, and the non-terminal stderr error copy, per the destination
-// contract in the package doc. Always returns at least one destination —
-// a process whose config names no file still logs to stdout.
-func generalFanout(c *config.Config, isTerminal bool) slog.Handler {
-	baseLevel := LevelFromString(c.Logging.Level)
+// namedRoute builds the exclusive route for one "type"-tagged sub-logger,
+// or nil when that tag has neither its own file nor its own level and so
+// belongs in the catch-all with everything else.
+//
+// The two cases differ only in where the records land: a tag with a file
+// gets that file alone, while a tag with just a level keeps the general
+// destinations and only moves its threshold. Both are routes, so a record
+// takes one of them or the fanout, never two (see the package doc).
+func namedRoute(c *config.Config, nl namedLoggerConfig, isTerminal bool) slog.Handler {
+	if nl.src.LogFilename() != "" {
+		return newNamedHandler(nl)
+	}
+	if level := nl.src.LogLevelString(); level != "" {
+		return generalFanout(c, isTerminal, LevelFromString(level))
+	}
+	return nil
+}
+
+// generalFanout builds the broadcast handler for the general destinations:
+// the main file, stdout, and the non-terminal stderr error copy, per the
+// destination contract in the package doc. Always returns at least one
+// destination — a process whose config names no file still logs to stdout.
+//
+// level is the threshold to filter at: logging.level for the catch-all, or
+// a named logger's own level for the route built by namedRoute. Only the
+// threshold varies; every caller gets the same set of destinations.
+func generalFanout(c *config.Config, isTerminal bool, level slog.Level) slog.Handler {
 	opts := &slog.HandlerOptions{
-		Level: baseLevel,
+		Level: level,
 		// Source locations only when someone turned the level below INFO:
 		// they are debugging, and file:line is worth the line width.
-		AddSource: baseLevel < slog.LevelInfo,
+		AddSource: level < slog.LevelInfo,
 	}
 
 	var fanout []slog.Handler

@@ -53,11 +53,16 @@ func TestGenericLogging_ShouldReportNothingConfiguredForItsZeroValue(t *testing.
 	}
 }
 
-// Access logging answers two of the four with constants: it has no level
-// knob of its own, and it never includes source file and line. Both are
-// deliberate, and both are invisible from the struct alone.
-func TestAccessLogging_ShouldAnswerLevelAndSourceWithConstants(t *testing.T) {
-	a := &AccessLogging{Logger: timberjack.Logger{Filename: "/var/log/access.log"}, LogJSON: true}
+// Access logging answers one of the four with a constant -- it never
+// includes source file and line -- and reports its own level for the other,
+// which is what lets it run at a different verbosity from the application
+// log. Both are invisible from the struct alone.
+func TestAccessLogging_ShouldReportItsLevelAndNeverAddSource(t *testing.T) {
+	a := &AccessLogging{
+		Logger:  timberjack.Logger{Filename: "/var/log/access.log"},
+		LogJSON: true,
+		Level:   "info",
+	}
 
 	if got := a.LogFilename(); got != "/var/log/access.log" {
 		t.Errorf("LogFilename() = %q, want the configured filename", got)
@@ -66,9 +71,18 @@ func TestAccessLogging_ShouldAnswerLevelAndSourceWithConstants(t *testing.T) {
 		t.Error("LogJSONEnabled() = false, want true")
 	}
 	if got := a.LogLevelString(); got != "info" {
-		t.Errorf("LogLevelString() = %q, want %q -- access logging has no level knob", got, "info")
+		t.Errorf("LogLevelString() = %q, want the configured level %q", got, "info")
 	}
 	if a.LogAddSource() {
 		t.Error("LogAddSource() = true, want false -- access logging never includes source")
+	}
+}
+
+// An unset level is not the same as "info": it is the signal server/logging
+// reads as "this tag has no threshold of its own", which leaves the access
+// log filtered at logging.level along with everything else.
+func TestAccessLogging_ShouldReportAnEmptyLevelWhenUnset(t *testing.T) {
+	if got := (&AccessLogging{}).LogLevelString(); got != "" {
+		t.Errorf("LogLevelString() = %q, want empty for an unconfigured access log", got)
 	}
 }

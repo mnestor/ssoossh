@@ -74,6 +74,18 @@ type AccessLogging struct {
 	// log is only split into its own file once its filename is set.
 	timberjack.Logger
 
+	// Level is the minimum log level for the access log, in the same form as
+	// logging.level. Requests are logged at INFO, client errors (4xx) at
+	// WARN and server errors (5xx) at ERROR, so "info" logs every request
+	// and "warn" logs only the failures.
+	//
+	// This is what lets the access log be more verbose than the application
+	// log: the two are filtered independently, and both still reach stdout.
+	// Left empty the access log has no threshold of its own and is filtered
+	// at logging.level along with everything else — which, with the shipped
+	// logging.level of WARN, means no successful request is ever logged.
+	Level string `mapstructure:"level"`
+
 	// WithUserAgent records the request's User-Agent header.
 	WithUserAgent bool `mapstructure:"log_user_agent"`
 
@@ -138,10 +150,12 @@ func (a *AccessLogging) LogFilename() string { return a.Filename }
 // rather than text. Part of server/logging's loggerSource interface.
 func (a *AccessLogging) LogJSONEnabled() bool { return a.LogJSON }
 
-// LogLevelString always returns "info" — access logging has no separate
-// level knob, unlike GenericLogging. Part of server/logging's loggerSource
-// interface.
-func (a *AccessLogging) LogLevelString() string { return "info" }
+// LogLevelString returns the configured minimum access-log level,
+// unparsed (see server/logging.LevelFromString). Empty means the access log
+// has no threshold of its own; server/logging.namedRoute reads it that way
+// and leaves those records to the general log's level. Part of
+// server/logging's loggerSource interface.
+func (a *AccessLogging) LogLevelString() string { return a.Level }
 
 // LogAddSource always returns false — access logging never includes
 // source file/line. Part of server/logging's loggerSource interface.
