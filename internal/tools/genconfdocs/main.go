@@ -64,11 +64,19 @@ func run(check bool) error {
 		return err
 	}
 
-	man, err := confdocs.WriteManPage(manPage, sections, defaults)
+	// defaults.yaml first: the man page states each key's default, and now
+	// that the structs decide those, the file has to be brought up to date
+	// before it is read back for them. The other order documents the values
+	// from the previous run, and takes two runs to settle.
+	yamlChanged, err := confdocs.WriteDefaults(defaultsIn, sections)
 	if err != nil {
 		return err
 	}
-	yamlChanged, err := confdocs.WriteDefaults(defaultsIn, sections)
+	defaults, err = confdocs.LoadDefaults(defaultsIn)
+	if err != nil {
+		return err
+	}
+	man, err := confdocs.WriteManPage(manPage, sections, defaults)
 	if err != nil {
 		return err
 	}

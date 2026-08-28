@@ -22,7 +22,7 @@ type PubSubConfig struct {
 	// Backend selects which message-broker implementation to use.
 	// "gochannel" (default) is in-process, suitable for single-instance.
 	// "nats" is required for multi-instance deployments.
-	Backend string `mapstructure:"backend"`
+	Backend string `mapstructure:"backend" default:"gochannel"`
 
 	// NATS holds NATS-specific configuration. Required when Backend is "nats".
 	NATS NATSConfig `mapstructure:"nats"`
@@ -35,19 +35,19 @@ type PubSubConfig struct {
 type NATSConfig struct {
 	// URL is the NATS server connection string, e.g. "nats://nats.example.com:4222".
 	// Empty disables NATS (leaves Backend at gochannel).
-	URL string `mapstructure:"url"`
+	URL string `mapstructure:"url" default:""`
 
 	// CertFile is the path to the client certificate for mTLS authentication.
 	// Required when URL is set.
-	CertFile string `mapstructure:"cert_file"`
+	CertFile string `mapstructure:"cert_file" default:""`
 
 	// KeyFile is the path to the client certificate's private key.
 	// Required when URL is set.
-	KeyFile string `mapstructure:"key_file"`
+	KeyFile string `mapstructure:"key_file" default:""`
 
 	// CAFile is the path to the CA certificate to verify the NATS server.
 	// Required when URL is set.
-	CAFile string `mapstructure:"ca_file"`
+	CAFile string `mapstructure:"ca_file" default:""`
 }
 
 // Validate ensures the PubSub configuration is usable: if the NATS backend

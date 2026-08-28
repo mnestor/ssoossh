@@ -75,21 +75,21 @@ type TLSConfig struct {
 	// TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256: net/http's automatic HTTP/2
 	// setup refuses to serve without one of them, failing the server at
 	// startup.
-	CipherSuites []string `mapstructure:"cipher_suites"`
+	CipherSuites []string `mapstructure:"cipher_suites" default:"[]"`
 
 	// TLSMinVersion is the minimum TLS protocol version: TLS1.0, TLS1.1,
 	// TLS1.2, or TLS1.3. Parsing tolerates case, "."/"-"/"_"/" "
 	// separators, and the "tls"/"version" prefixes ("tls12", "TLS-1.2",
 	// and "VersionTLS12" all work). TLS1.0 and TLS1.1 resolve but log a
 	// deprecation warning (RFC 8996).
-	TLSMinVersion string `mapstructure:"min_version"`
+	TLSMinVersion string `mapstructure:"min_version" default:"TLS1.3"`
 
 	// CurveNames restricts the key-exchange curves/groups offered, in
 	// preference order: P256, P384, P521, X25519, or X25519MLKEM768, with
 	// the same tolerant parsing as TLSMinVersion ("CurveP256", "p-256",
 	// ...). Empty means Go's defaults; note that naming any curve replaces
 	// those defaults entirely rather than adding to them.
-	CurveNames []string `mapstructure:"curves"`
+	CurveNames []string `mapstructure:"curves" default:"[]"`
 
 	// ReloadInterval is how often the certificate files are re-read on a
 	// timer, in addition to SIGHUP which always reloads. Zero or negative
@@ -99,7 +99,7 @@ type TLSConfig struct {
 	// a Kubernetes secret remount is the motivating case, since it replaces
 	// a directory symlink rather than writing the files in place, so a
 	// filesystem watch on the paths never fires.
-	ReloadInterval time.Duration `mapstructure:"reload_interval"`
+	ReloadInterval time.Duration `mapstructure:"reload_interval" default:"0"`
 }
 
 // fipsApprovedCipherSuites are the AES-GCM suites FIPS 140-3 approves:

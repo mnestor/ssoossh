@@ -72,12 +72,12 @@ type MailConfig struct {
 	// Enabled turns outbound mail on. With it false the notification
 	// handler is not registered at all, so no event is queued and nothing
 	// is rendered.
-	Enabled bool `mapstructure:"enabled"`
+	Enabled bool `mapstructure:"enabled" default:"false"`
 
 	// From is the envelope and header sender, e.g.
 	// "ssoossh@example.com" or "ssoossh <noreply@example.com>". Required
 	// when Enabled.
-	From string `mapstructure:"from"`
+	From string `mapstructure:"from" default:""`
 
 	// ReplyTo is an optional Reply-To header. Worth setting to a monitored
 	// address: these messages report credential activity, and the first
@@ -88,7 +88,7 @@ type MailConfig struct {
 	// "[ssoossh] ". Empty adds nothing. Templates can also write their own
 	// subject in full; this exists so an operator can tag every message
 	// without editing any template.
-	SubjectPrefix string `mapstructure:"subject_prefix"`
+	SubjectPrefix string `mapstructure:"subject_prefix" default:""`
 
 	// TemplateDir is an optional directory of local template overrides. A
 	// file there replaces the embedded template of the same name; anything
@@ -102,7 +102,7 @@ type MailConfig struct {
 
 	// Logging routes mail delivery logs, same shape as every other
 	// component's logging block.
-	Logging GenericLogging `mapstructure:"logging"`
+	Logging GenericLogging `mapstructure:"logging" default_level:"info"`
 }
 
 // SMTPConfig is the relay ssoosshd hands messages to. It covers both
@@ -112,15 +112,15 @@ type MailConfig struct {
 // TLS, and credentials).
 type SMTPConfig struct {
 	// Host is the relay hostname or address. Required when mail is enabled.
-	Host string `mapstructure:"host"`
+	Host string `mapstructure:"host" default:"localhost"`
 
 	// Port is the relay port: conventionally 25 for a local relay, 587 for
 	// submission with STARTTLS, 465 for implicit TLS.
-	Port int `mapstructure:"port"`
+	Port int `mapstructure:"port" default:"25"`
 
 	// TLS is the transport policy — one of off, opportunistic (default),
 	// required, or implicit.
-	TLS string `mapstructure:"tls"`
+	TLS string `mapstructure:"tls" default:"opportunistic"`
 
 	// ServerName overrides the name the relay's certificate is verified
 	// against. Needed only when Host is an address rather than the name on
@@ -135,12 +135,12 @@ type SMTPConfig struct {
 	// It turns TLS into obfuscation — an attacker who can redirect the
 	// connection can also present their own certificate — so it exists for
 	// a lab with a self-signed relay and is warned about at startup.
-	InsecureSkipVerify bool `mapstructure:"insecure_skip_verify"`
+	InsecureSkipVerify bool `mapstructure:"insecure_skip_verify" default:"false"`
 
 	// Auth selects the SASL mechanism — one of none (default), auto,
 	// plain, login, cram-md5, scram-sha-1, scram-sha-256, or xoauth2.
 	// "auto" negotiates the strongest mechanism the relay advertises.
-	Auth string `mapstructure:"auth"`
+	Auth string `mapstructure:"auth" default:"none"`
 
 	// Username is the SASL username. Required for every mechanism but none.
 	Username string `mapstructure:"username" example:"\"ssoossh@example.com\""`
@@ -164,7 +164,7 @@ type SMTPConfig struct {
 	// Timeout bounds a single delivery's connect-and-send.
 	// It bounds only the background sender, never a request: nothing a
 	// browser or an unattended job waits on is behind this.
-	Timeout time.Duration `mapstructure:"timeout"`
+	Timeout time.Duration `mapstructure:"timeout" default:"15s"`
 
 	// resolvedPassword is the password after PasswordFile has been read,
 	// populated by Validate. Unexported so it cannot arrive from YAML and

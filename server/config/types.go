@@ -15,17 +15,17 @@ type Config struct {
 	// Traces enables OpenTelemetry tracing, adding the otelgin middleware to
 	// the router. Exporter endpoints come from the standard OTEL_*
 	// environment variables.
-	Traces bool `mapstructure:"traces"`
+	Traces bool `mapstructure:"traces" default:"false"`
 
 	// Metrics enables OpenTelemetry metrics. Exporter endpoints come from
 	// the standard OTEL_* environment variables.
-	Metrics bool `mapstructure:"metrics"`
+	Metrics bool `mapstructure:"metrics" default:"false"`
 
 	// Production selects gin's release mode rather than debug mode, and
 	// gates the development-only escape hatches: notably
 	// http.rate_limit_disable_for_dev is honored only when this is false, so
 	// rate limiting cannot be switched off in production.
-	Production bool `mapstructure:"production"`
+	Production bool `mapstructure:"production" default:"true"`
 
 	// DB configures the database connection, pooling, retries, and query
 	// logging.
@@ -87,7 +87,7 @@ type Config struct {
 	// explicitly set) and behaviors adapt to account for cross-instance
 	// message delivery (a client waiting on one instance is woken by another)
 	// payloads). See docs/dev/multi-instance-safety-plan.md.
-	MultiInstance bool `mapstructure:"multi_instance"`
+	MultiInstance bool `mapstructure:"multi_instance" default:"false"`
 }
 
 // BrandingSettings configures optional branding for the login page and web UI.
@@ -97,7 +97,7 @@ type Config struct {
 type BrandingSettings struct {
 	// OrgName is the organization name displayed in the web UI (e.g., "Acme Corp").
 	// Empty disables organization-specific branding.
-	OrgName string `mapstructure:"org_name"`
+	OrgName string `mapstructure:"org_name" default:""`
 
 	// LogoPath is the filesystem path to the organization's logo image.
 	// Empty disables the logo.
@@ -110,11 +110,11 @@ type BrandingSettings struct {
 	// server rather than producing a broken image later; replacing the file
 	// needs a restart. Served from /api/branding/logo, always same-origin,
 	// so no third-party host sees the unauthenticated login page's traffic.
-	LogoPath string `mapstructure:"logo_path"`
+	LogoPath string `mapstructure:"logo_path" default:""`
 
 	// LoginNotice is a plain-text message shown on the login page before authentication.
 	// Empty disables the notice. Supports newlines for multi-line text.
-	LoginNotice string `mapstructure:"login_notice"`
+	LoginNotice string `mapstructure:"login_notice" default:""`
 }
 
 // FIPSEnabled reports whether FIPS steering is in effect. See
@@ -141,26 +141,26 @@ type DBProvider string
 type DB struct {
 	// Provider identifies which database backend to use. See DBProviderSqlite
 	// and DBProviderPostgres.
-	Provider DBProvider `mapstructure:"provider"`
+	Provider DBProvider `mapstructure:"provider" default:"sqlite"`
 
 	// Connection is the connection string / DSN. For SQLite this is a file
 	// path (or ":memory:" for in-memory); for PostgreSQL a standard postgres://
 	// URL or keyword string.
-	Connection string `mapstructure:"connection_string"`
+	Connection string `mapstructure:"connection_string" default:"ssoossh.db"`
 
 	// Logging configures which database queries are logged and where they
 	// are written. See DBLogging for detailed options.
-	Logging GenericLogging `mapstructure:"logging"`
+	Logging GenericLogging `mapstructure:"logging" default_level:"WARN" default_add_source:"false" default_log_json:"false"`
 
 	// RetryAttempts is the maximum number of connection attempts before giving up.
 	// Zero or negative disables retries (will fail immediately on the first error).
 	// Applies to both SQLite (typically succeeds immediately) and PostgreSQL
 	// (may retry on transient network failures).
-	RetryAttempts int `mapstructure:"retry_attempts"`
+	RetryAttempts int `mapstructure:"retry_attempts" default:"3"`
 
 	// RetryInterval is the time to wait between connection retry attempts.
 	// Only used if RetryAttempts > 1. Applies to both SQLite and PostgreSQL.
-	RetryInterval time.Duration `mapstructure:"retry_interval"`
+	RetryInterval time.Duration `mapstructure:"retry_interval" default:"3s"`
 
 	// MaxOpenConns sets the maximum number of open connections to the database.
 	// Zero means Go's default (typically 2). For file-backed SQLite, keep this
@@ -168,19 +168,19 @@ type DB struct {
 	// just queue without benefit. For PostgreSQL, scale with expected
 	// concurrency. This is ignored for in-memory SQLite, which is always
 	// forced to 1.
-	MaxOpenConns int `mapstructure:"max_open_conns"`
+	MaxOpenConns int `mapstructure:"max_open_conns" default:"10"`
 
 	// MaxIdleConns sets the maximum number of idle connections held open.
 	// Zero means Go's default (typically 2, same as MaxOpenConns). Keep this
 	// proportionate to MaxOpenConns — they are not independent; a high
 	// MaxOpenConns with a low MaxIdleConns causes expensive churn.
-	MaxIdleConns int `mapstructure:"max_idle_conns"`
+	MaxIdleConns int `mapstructure:"max_idle_conns" default:"5"`
 
 	// ConnMaxLifetime sets the maximum amount of time a connection can be
 	// reused. Zero disables the limit (connections are reused indefinitely).
 	// Useful for breaking stale connections in long-running deployments, but
 	// typically not necessary with a well-behaved database server.
-	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime"`
+	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime" default:"0"`
 }
 
 // LDAPConfig configures optional LDAP identity enrichment, looked up by the
@@ -194,23 +194,23 @@ type DB struct {
 // so the config format is stable ahead of the lookup landing.
 type LDAPConfig struct {
 	// Enabled turns on the LDAP lookup once the server consumes it.
-	Enabled bool `mapstructure:"enabled"`
+	Enabled bool `mapstructure:"enabled" default:"false"`
 
 	// URL is the directory server to connect to.
-	URL string `mapstructure:"url"`
+	URL string `mapstructure:"url" default:""`
 
 	// BindDN is the DN to bind as for the search.
-	BindDN string `mapstructure:"bind_dn"`
+	BindDN string `mapstructure:"bind_dn" default:""`
 
 	// BindPassword is the password for BindDN.
-	BindPassword string `mapstructure:"bind_password"`
+	BindPassword string `mapstructure:"bind_password" default:""`
 
 	// BaseDN is the search base for the user lookup.
-	BaseDN string `mapstructure:"base_dn"`
+	BaseDN string `mapstructure:"base_dn" default:""`
 
 	// UserFilter is the search filter, keyed by the username resolved from
 	// OIDC.
-	UserFilter string `mapstructure:"user_filter"`
+	UserFilter string `mapstructure:"user_filter" default:""`
 
 	// Logging is an independent log destination for LDAP activity, routed by
 	// a "type=ldap" attribute. The routing is wired up regardless of whether
@@ -229,7 +229,7 @@ type AdminConfig struct {
 	// access admin-scoped operations (expiring enrollments, disabling users).
 	// Empty disables admin operations entirely. Fails closed: no identity, no
 	// group, or no configured group all deny.
-	RequireGroup string `mapstructure:"require_group"`
+	RequireGroup string `mapstructure:"require_group" default:""`
 
 	// AuditorGroup is the OIDC group a caller must belong to in order to
 	// access auditor-scoped operations (viewing effective configuration,
@@ -238,24 +238,24 @@ type AdminConfig struct {
 	// empty therefore narrows auditor operations to admins rather than
 	// disabling them. Fails closed: no identity, or membership in neither
 	// group, denies.
-	AuditorGroup string `mapstructure:"auditor_group"`
+	AuditorGroup string `mapstructure:"auditor_group" default:""`
 
 	// DisableGracePeriod is how long after a user is disabled before their
 	// service enrollments expire. This gives running services time to notice
 	// and rotate credentials before the certificates stop working. After this
 	// duration expires (see service.SweepDisabledUserEnrollments), no new
 	// certificates can be issued from the enrollment.
-	DisableGracePeriod time.Duration `mapstructure:"disable_grace_period"`
+	DisableGracePeriod time.Duration `mapstructure:"disable_grace_period" default:"168h"`
 
 	// ContactEmail is the email address shown on the account-disabled page
 	// so a disabled user can contact support. Empty disables the display
 	// (no mailto link on the page).
-	ContactEmail string `mapstructure:"contact_email"`
+	ContactEmail string `mapstructure:"contact_email" default:""`
 
 	// DisabledMessage is free-text shown on the account-disabled page below
 	// the contact email. Useful for explaining why the account was disabled
 	// or what the user should do next.
-	DisabledMessage string `mapstructure:"disabled_message"`
+	DisabledMessage string `mapstructure:"disabled_message" default:""`
 }
 
 // IsAdminEnabled reports whether admin authorization is configured

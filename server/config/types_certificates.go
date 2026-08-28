@@ -23,7 +23,7 @@ type CertificateOptions struct {
 	// event stream re-attaches to the original deadline instead of
 	// extending it. If the client is gone for good, the approval and the
 	// signature it was waiting for are moot anyway.
-	ClientTimeout time.Duration `mapstructure:"client_timeout,string"`
+	ClientTimeout time.Duration `mapstructure:"client_timeout,string" default:"5m"`
 }
 
 // signingShare is the fraction of ClientTimeout reserved for the machine
@@ -99,22 +99,22 @@ type CertOptionsUser struct {
 	// Worth setting even though approval is already bound to the requester
 	// at approval: the binding answers "is this your request", this answers
 	// "are you allowed certificates at all".
-	RequireGroup string `mapstructure:"require_group"`
+	RequireGroup string `mapstructure:"require_group" default:""`
 
 	// ValidDuration is the ceiling on how long an issued user certificate is
 	// valid. Any lifetime policy only ever narrows from here.
-	ValidDuration time.Duration `mapstructure:"valid_duration,string"`
+	ValidDuration time.Duration `mapstructure:"valid_duration,string" default:"30s"`
 
 	// Extensions are the SSH certificate extensions a user certificate may
 	// carry, e.g. permit-pty and permit-user-rc. A request is narrowed to
 	// the intersection of what it asked for and this list.
-	Extensions []string `mapstructure:"extensions"`
+	Extensions []string `mapstructure:"extensions" default:"[permit-pty, permit-user-rc]"`
 
 	// KeyIDTemplate is the fallback for the service and PAM templates when
 	// either is empty, since
 	// user certificates are the common case. See
 	// docs/guide/features.md (key ID templating).
-	KeyIDTemplate string `mapstructure:"key_id_template"`
+	KeyIDTemplate string `mapstructure:"key_id_template" default:""`
 
 	// LifetimePolicy configures tiered certificate duration based on OIDC
 	// group membership and source network narrowing — see
@@ -128,17 +128,17 @@ type CertOptionsUser struct {
 type CertOptionsService struct {
 	// RequireGroup is the OIDC group a requester must belong to in order to
 	// enroll a service certificate. Empty means any authenticated user may.
-	RequireGroup string `mapstructure:"require_group"`
+	RequireGroup string `mapstructure:"require_group" default:""`
 
 	// ValidDuration is the ceiling on how long each certificate produced
 	// from an enrollment is valid, bounding every redemption of the code
 	// rather than the code itself.
-	ValidDuration time.Duration `mapstructure:"valid_duration,string"`
+	ValidDuration time.Duration `mapstructure:"valid_duration,string" default:"8760h"`
 
 	// Extensions are the SSH certificate extensions a service certificate
 	// may carry. A request is narrowed to the intersection of what it asked
 	// for and this list.
-	Extensions []string `mapstructure:"extensions"`
+	Extensions []string `mapstructure:"extensions" default:"[]"`
 
 	// EnrollmentDuration is how long the enrollment code minted at approval
 	// stays redeemable — deliberately independent of ValidDuration, which
@@ -155,12 +155,12 @@ type CertOptionsService struct {
 	//
 	// Each redemption gets ValidDuration afresh, measured from the redemption,
 	// so a long code never yields a long certificate.
-	EnrollmentDuration time.Duration `mapstructure:"enrollment_duration,string"`
+	EnrollmentDuration time.Duration `mapstructure:"enrollment_duration,string" default:"8760h"`
 
 	// KeyIDTemplate is the key ID written into service certificates; see
 	// docs/guide/features.md (key ID templating). Empty falls back to
 	// cert_options.user.key_id_template.
-	KeyIDTemplate string `mapstructure:"key_id_template"`
+	KeyIDTemplate string `mapstructure:"key_id_template" default:""`
 
 	// LifetimePolicy configures tiered certificate duration based on OIDC
 	// group membership and source network narrowing — see
@@ -182,18 +182,18 @@ type CertOptionsPAM struct {
 	// itself. Whether the local operation is permitted is the host's own
 	// decision — pam_ssoossh authenticates the user, and the local PAM
 	// stack and sudoers policy authorize them.
-	RequireGroup string `mapstructure:"require_group"`
+	RequireGroup string `mapstructure:"require_group" default:""`
 
 	// ValidDuration should be seconds, not hours: a PAM certificate is
 	// validated once, in-process, and discarded — it never enters an agent
 	// and is never reused. Pick this together with the client's skew
 	// tolerance (see pam_ssoossh/checks.go, check 4).
-	ValidDuration time.Duration `mapstructure:"valid_duration,string"`
+	ValidDuration time.Duration `mapstructure:"valid_duration,string" default:"30s"`
 
 	// Extensions should default to empty. permit-pty and friends are
 	// meaningless for a certificate that authenticates a single local
 	// operation and is then thrown away.
-	Extensions []string `mapstructure:"extensions"`
+	Extensions []string `mapstructure:"extensions" default:"[]"`
 
 	// KeyIDTemplate is the key ID written into PAM certificates. Unlike the
 	// service template, it does NOT fall back to
@@ -201,7 +201,7 @@ type CertOptionsPAM struct {
 	// person must stay distinguishable in an sshd or sudo audit log, so PAM
 	// has its own built-in default instead of silently inheriting the user
 	// template.
-	KeyIDTemplate string `mapstructure:"key_id_template"`
+	KeyIDTemplate string `mapstructure:"key_id_template" default:""`
 }
 
 // LifetimePolicy configures certificate issuance duration based on tiered

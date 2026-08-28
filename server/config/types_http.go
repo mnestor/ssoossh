@@ -23,18 +23,18 @@ type HTTPSettings struct {
 	// Address is the network interface to bind to, e.g. "127.0.0.1" to listen
 	// only locally, or "0.0.0.0" for all interfaces. Used with Port to form
 	// the server's listen address.
-	Address string `mapstructure:"address"`
+	Address string `mapstructure:"address" default:"127.0.0.1"`
 
 	// Port is the TCP port to listen on, e.g. 80 for HTTP or 443 for HTTPS.
 	// Port 0 is reserved for testing and tells the OS to pick an unused port;
 	// the actual port is logged on startup. Ignored when UnixSocket is set.
-	Port int `mapstructure:"port"`
+	Port int `mapstructure:"port" default:"8080"`
 
 	// UnixSocket, when set, is a filesystem path to listen on a Unix domain
 	// socket instead of TCP — Address and Port are ignored. Mutually
 	// exclusive with ProxyProtocol (PROXY protocol is a TCP-connection
 	// concept; it has nothing to prefix on a Unix socket).
-	UnixSocket string `mapstructure:"unix_socket"`
+	UnixSocket string `mapstructure:"unix_socket" default:""`
 
 	// ProxyProtocol lists the CIDR ranges of reverse proxies trusted to
 	// prefix connections with a PROXY protocol v1/v2 header (so the real
@@ -43,7 +43,7 @@ type HTTPSettings struct {
 	// X-Forwarded-For). Empty disables PROXY protocol support entirely;
 	// connections from any other source are rejected outright once this is
 	// set. Ignored (must be empty) when UnixSocket is set.
-	ProxyProtocol []string `mapstructure:"proxy_protocol"`
+	ProxyProtocol []string `mapstructure:"proxy_protocol" default:"[]"`
 
 	// TrustedProxies lists the CIDR ranges of reverse proxies trusted to
 	// set X-Forwarded-For/X-Forwarded-Proto, passed to gin's
@@ -54,7 +54,7 @@ type HTTPSettings struct {
 	// That only holds because the router passes this to SetTrustedProxies
 	// unconditionally — gin's own default is to trust every proxy, so
 	// skipping the call for an empty list would mean the opposite.
-	TrustedProxies []string `mapstructure:"trusted_proxies"`
+	TrustedProxies []string `mapstructure:"trusted_proxies" default:"[]"`
 
 	// ServerName, when set, is the host name this server answers to:
 	// requests addressed to anything else (by Host header, or SNI on TLS
@@ -63,7 +63,7 @@ type HTTPSettings struct {
 	// ahead of the check so probes can reach the server by IP. Empty
 	// disables the check. It plays no role in the TLS handshake itself,
 	// which is why it does not live in TLSConfig.
-	ServerName string `mapstructure:"server_name"`
+	ServerName string `mapstructure:"server_name" default:""`
 
 	// PublicURL is the scheme and host browsers actually reach this
 	// deployment at, e.g. "https://ssh.example.com". Set it whenever that
@@ -84,28 +84,28 @@ type HTTPSettings struct {
 	// the app under a sub-path would need the frontend's base to move with it,
 	// which is not supported, so accepting one here would only produce a
 	// redirect URI that silently does not work.
-	PublicURL string `mapstructure:"public_url"`
+	PublicURL string `mapstructure:"public_url" default:""`
 
 	// IsHTTPS records that a reverse proxy terminates TLS while this
 	// process serves plain HTTP, so the deployment is HTTPS as browsers see
 	// it even though this listener is not. Redundant when PublicURL is set —
 	// its scheme settles the same question — so configure one or the other,
 	// not both.
-	IsHTTPS bool `mapstructure:"is_https"`
+	IsHTTPS bool `mapstructure:"is_https" default:"false"`
 
 	// CookieKey is the secret used to sign and encrypt session cookies. If
 	// empty, a key is generated once and persisted in the server_secrets
 	// table, so sessions survive a restart and instances sharing a database
 	// share the key. Configure an explicit value to key it from outside the
 	// database.
-	CookieKey string `mapstructure:"cookie_key"`
+	CookieKey string `mapstructure:"cookie_key" default:""`
 
 	// CookieSecure marks the session cookie Secure, so browsers only send it
 	// over HTTPS. Unset derives it from whether the deployment is HTTPS at
 	// all (see is_https), which keeps plain-HTTP local development working
 	// while defaulting to on everywhere else. Set it explicitly only to
 	// override that inference.
-	CookieSecure *bool `mapstructure:"cookie_secure"`
+	CookieSecure *bool `mapstructure:"cookie_secure" default:"~"`
 
 	// CookieSameSite controls the session cookie's SameSite attribute:
 	// "strict" (default), "lax", or "none". Strict is right for this server
@@ -117,13 +117,13 @@ type HTTPSettings struct {
 	// against an attacker page on a different origin of the *same* site, so
 	// state-changing routes are additionally guarded by
 	// the CSRF middleware.
-	CookieSameSite string `mapstructure:"cookie_same_site"`
+	CookieSameSite string `mapstructure:"cookie_same_site" default:"strict"`
 
 	// CookieMaxAge is the absolute ceiling on a session's lifetime, measured
 	// from login. Activity does not extend it: once a session is this old
 	// the next request is unauthenticated regardless of how recently it was
 	// used, and the user signs in again. Zero uses the built-in default.
-	CookieMaxAge time.Duration `mapstructure:"cookie_max_age"`
+	CookieMaxAge time.Duration `mapstructure:"cookie_max_age" default:"9h"`
 
 	// CookieIdleTimeout is how long a session survives without a request.
 	// SessionAuthMiddleware slides this window on activity (re-saving the
@@ -132,24 +132,24 @@ type HTTPSettings struct {
 	// abandoned browser expires after this much quiet. Zero uses the
 	// built-in default. Must not exceed CookieMaxAge - an idle window
 	// longer than the absolute cap cannot ever be reached.
-	CookieIdleTimeout time.Duration `mapstructure:"cookie_idle_timeout"`
+	CookieIdleTimeout time.Duration `mapstructure:"cookie_idle_timeout" default:"30m"`
 
 	// RateLimit is the maximum number of requests per RateDuration allowed
 	// per client IP. Zero or negative disables rate limiting entirely.
 	// Localhost (127.0.0.1, ::1) bypasses the limit, so health probes and
 	// tests from the local frontend are not throttled.
-	RateLimit int `mapstructure:"rate_limit"`
+	RateLimit int `mapstructure:"rate_limit" default:"60"`
 
 	// RateDuration is the time window for rate limiting calculations. With
 	// RateLimit=60 and RateDuration=1m, each IP is allowed 60 requests per
 	// minute. Typical values are in seconds to minutes.
-	RateDuration time.Duration `mapstructure:"rate_duration"`
+	RateDuration time.Duration `mapstructure:"rate_duration" default:"1m"`
 
 	// RateLimitDisableForDev disables all rate limiting (global and per-endpoint)
 	// when true. Only effective when Production=false, so it cannot be silently
 	// enabled in production. Used for local development to avoid throttling
 	// during testing.
-	RateLimitDisableForDev bool `mapstructure:"rate_limit_disable_for_dev"`
+	RateLimitDisableForDev bool `mapstructure:"rate_limit_disable_for_dev" default:"false"`
 
 	// CertRequestRateLimit holds per-endpoint rate limits for certificate
 	// request creation endpoints. Zero or negative disables the specific limit.
@@ -166,7 +166,7 @@ type HTTPSettings struct {
 	// ignore HSTS over plain HTTP. Empty disables the header, useful when a
 	// TLS-terminating reverse proxy in front sets its own policy. Typical
 	// values include "max-age=31536000; includeSubDomains".
-	Hsts string `mapstructure:"hsts"`
+	Hsts string `mapstructure:"hsts" default:"max-age=31536000; includeSubDomains"`
 
 	// TLS holds the server's TLS configuration: certificate/key material,
 	// cipher suites, protocol versions, and supported curves. See TLSConfig
@@ -260,15 +260,15 @@ func (h *HTTPSettings) parsePublicURL() (*url.URL, error) {
 // instead). These are independent of the global per-IP rate limit — both apply.
 type CertRequestRateLimitSettings struct {
 	// User is the limit for POST /api/certs/user (interactive user cert).
-	User float64 `mapstructure:"user"`
+	User float64 `mapstructure:"user" default:"10"`
 
 	// ServiceEnroll is the limit for POST /api/certs/service/enroll (service
 	// enrollment, unattended).
-	ServiceEnroll float64 `mapstructure:"service_enroll"`
+	ServiceEnroll float64 `mapstructure:"service_enroll" default:"5"`
 
 	// PAM is the limit for POST /api/certs/pam (short-lived PAM cert, gated on
 	// local interaction).
-	PAM float64 `mapstructure:"pam"`
+	PAM float64 `mapstructure:"pam" default:"10"`
 }
 
 // ServiceCodeRateLimitSettings holds the rate limit configuration for service
@@ -277,7 +277,7 @@ type CertRequestRateLimitSettings struct {
 type ServiceCodeRateLimitSettings struct {
 	// Limit is requests per second per enrollment code. Zero or negative
 	// disables this limit.
-	Limit float64 `mapstructure:"limit"`
+	Limit float64 `mapstructure:"limit" default:"1"`
 }
 
 // Validate reports configuration that would fail later, at a point where the

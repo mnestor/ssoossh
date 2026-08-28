@@ -1,8 +1,10 @@
 # ssoosshd configuration.
 #
-# The comments in this file are generated from the doc comments on the
-# config structs in server/config. To change a description, edit the
-# struct field and run `make confdocs`. The values are edited here.
+# This file is generated. Both the comments and the values come from the
+# config structs in server/config: the prose from each field's doc
+# comment, the values from its `default:` tag. To change either, edit the
+# struct field and run `make confdocs`; an edit made here is overwritten
+# by the next run, and CI fails while the two disagree.
 #
 # This is both the defaults embedded in the binary and the annotated
 # file installed as /etc/ssoossh/ssoosshd.yaml. A key documented with
@@ -84,7 +86,7 @@ logging:
   # case-insensitive, optionally with a numeric +N or -N offset) or a raw
   # numeric slog level such as -4, 0, 4, or 8. An unrecognized or empty value
   # falls back to info.
-  level: WARN
+  level: "WARN"
   # Also writes the main log to stdout even when a filename is set. When no
   # filename is set, or the process is attached to a terminal, stdout is used
   # regardless.
@@ -102,7 +104,7 @@ logging:
 # Configures the database connection, pooling, retries, and query logging.
 db:
   # Identifies which database backend to use.
-  provider: sqlite
+  provider: "sqlite"
   # The connection string / DSN. For SQLite this is a file path (or ":memory:"
   # for in-memory); for PostgreSQL a standard postgres:// URL or keyword
   # string.
@@ -116,7 +118,7 @@ db:
     # until then its records go to the general log.
     # The minimum log level for this destination, in the same form as
     # logging.level.
-    level: WARN
+    level: "WARN"
     # Includes the source file and line on each record.
     add_source: false
     # Writes JSON instead of text. Text is meant to be read, not parsed: the
@@ -169,7 +171,7 @@ http:
     # empty the access log has no threshold of its own and is filtered at
     # logging.level along with everything else — which, with the shipped
     # logging.level of WARN, means no successful request is ever logged.
-    level: info
+    level: "info"
     # Records the request's User-Agent header.
     log_user_agent: true
     # Records the full request header set. Verbose, and it captures whatever the
@@ -199,7 +201,7 @@ http:
   # The network interface to bind to, e.g. "127.0.0.1" to listen only locally,
   # or "0.0.0.0" for all interfaces. Used with Port to form the server's
   # listen address.
-  address: 127.0.0.1
+  address: "127.0.0.1"
   # The TCP port to listen on, e.g. 80 for HTTP or 443 for HTTPS. Port 0 is
   # reserved for testing and tells the OS to pick an unused port; the actual
   # port is logged on startup. Ignored when unix_socket is set.
@@ -267,7 +269,7 @@ http:
   # is_https), which keeps plain-HTTP local development working while
   # defaulting to on everywhere else. Set it explicitly only to override that
   # inference.
-  cookie_secure:
+  cookie_secure: ~
   # Controls the session cookie's SameSite attribute: "strict" (default),
   # "lax", or "none". Strict is right for this server because nothing
   # legitimately navigates into it from another site — the OIDC callback is
@@ -277,7 +279,7 @@ http:
   # This is defence in depth, not the CSRF control: SameSite does nothing
   # against an attacker page on a different origin of the *same* site, so
   # state-changing routes are additionally guarded by the CSRF middleware.
-  cookie_same_site: strict
+  cookie_same_site: "strict"
   # The absolute ceiling on a session's lifetime, measured from login.
   # Activity does not extend it: once a session is this old the next request
   # is unauthenticated regardless of how recently it was used, and the user
@@ -356,7 +358,7 @@ http:
     # Parsing tolerates case, "."/"-"/"_"/" " separators, and the
     # "tls"/"version" prefixes ("tls12", "TLS-1.2", and "VersionTLS12" all
     # work). TLS1.0 and TLS1.1 resolve but log a deprecation warning (RFC 8996).
-    min_version: TLS1.3
+    min_version: "TLS1.3"
     # Restricts the key-exchange curves/groups offered, in preference order:
     # P256, P384, P521, X25519, or X25519MLKEM768, with the same tolerant
     # parsing as TLSMinVersion ("CurveP256", "p-256", ...). Empty means Go's
@@ -501,7 +503,7 @@ pubsub:
   # Selects which message-broker implementation to use. "gochannel" (default)
   # is in-process, suitable for single-instance. "nats" is required for
   # multi-instance deployments.
-  backend: gochannel
+  backend: "gochannel"
   # Holds NATS-specific configuration. Required when Backend is "nats".
   nats:
     # The NATS server connection string, e.g. "nats://nats.example.com:4222".
@@ -536,9 +538,7 @@ cert_options:
     # The SSH certificate extensions a user certificate may carry, e.g.
     # permit-pty and permit-user-rc. A request is narrowed to the intersection
     # of what it asked for and this list.
-    extensions:
-      - permit-pty
-      - permit-user-rc
+    extensions: [permit-pty, permit-user-rc]
     # The fallback for the service and PAM templates when either is empty, since
     # user certificates are the common case. See docs/guide/features.md (key ID
     # templating).

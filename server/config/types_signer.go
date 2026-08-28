@@ -116,14 +116,14 @@ type SignerConfig struct {
 	// MaxCertLifetime is the maximum lifetime for user/service/PAM
 	// certificates, enforced as a defense-in-depth check before signing.
 	// Must be greater than zero; a non-positive value fails startup.
-	MaxCertLifetime time.Duration `mapstructure:"max_cert_lifetime,string"`
+	MaxCertLifetime time.Duration `mapstructure:"max_cert_lifetime,string" default:"2160h"`
 
 	// MaxServiceCertLifetime is the maximum lifetime for service
 	// certificates, enforced as a defense-in-depth check before signing.
 	// Service enrollments default to 8760h (cert_options.service
 	// valid_duration), so this cap carries headroom over its default.
 	// Must be greater than zero; a non-positive value fails startup.
-	MaxServiceCertLifetime time.Duration `mapstructure:"max_service_cert_lifetime,string"`
+	MaxServiceCertLifetime time.Duration `mapstructure:"max_service_cert_lifetime,string" default:"17544h"`
 }
 
 // Validate rejects a signer configuration that cannot issue certificates.

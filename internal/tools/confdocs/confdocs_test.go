@@ -3,8 +3,6 @@ package confdocs
 import (
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -90,6 +88,43 @@ func TestWalk_ShouldRenderConfigFacingTypes(t *testing.T) {
 	}
 }
 
+// One struct type behind several config keys is why default_ overrides
+// exist: GenericLogging is db.logging, queue.logging, ldap.logging and
+// mail.logging at once, and those destinations ship different values. The
+// instantiating field carries them, and absence means absence -- a
+// destination with no override renders as prose with no key, the deliberate
+// "unset, falls through to the main log" shape.
+func TestWalk_ShouldApplyPerInstantiationDefaultOverrides(t *testing.T) {
+	t.Parallel()
+
+	defaults := map[string]*Field{}
+	for _, f := range leaves(walkConfig(t)) {
+		defaults[f.Path] = f
+	}
+
+	tests := []struct {
+		path        string
+		wantDefault string
+		wantHas     bool
+	}{
+		{"db.logging.level", "WARN", true},
+		{"mail.logging.level", "info", true},
+		{"queue.logging.level", "", false},
+		{"ldap.logging.level", "", false},
+	}
+	for _, tt := range tests {
+		f := defaults[tt.path]
+		if f == nil {
+			t.Errorf("%s: not produced by the walk", tt.path)
+			continue
+		}
+		if f.HasDefault != tt.wantHas || f.Default != tt.wantDefault {
+			t.Errorf("%s: got default %q (set=%v), want %q (set=%v)",
+				tt.path, f.Default, f.HasDefault, tt.wantDefault, tt.wantHas)
+		}
+	}
+}
+
 // The generated page and defaults.yaml both take their prose from here, so an
 // undocumented field would ship as a bare key name in two places at once.
 func TestRequireDocs_ShouldFindEveryFieldDocumented(t *testing.T) {
@@ -135,54 +170,51 @@ func TestDefaults_ShouldDescribeUnsetKeysAsTheGoZeroValue(t *testing.T) {
 	}
 }
 
-// valuesFrom indexes a small YAML document the way WriteDefaults indexes the
-// file it is replacing, so a test can say exactly which keys are set.
-func valuesFrom(t *testing.T, src string) map[string]*yaml.Node {
-	t.Helper()
-
-	var doc yaml.Node
-	if err := yaml.Unmarshal([]byte(src), &doc); err != nil {
-		t.Fatalf("failed to parse the test document: %v", err)
-	}
-	values := map[string]*yaml.Node{}
-	if len(doc.Content) > 0 {
-		indexValues(doc.Content[0], "", values)
-	}
-	return values
-}
-
-// An unset key used to be written as prose with nothing under it, which reads
-// as the comment for whichever key comes next. The example: tag is what names
-// it, and it is rendered only where the file sets nothing.
-func TestWriteYAMLField_ShouldRenderTheExampleOnlyForAnUnsetKey(t *testing.T) {
+// A key's value comes from its default: tag and nowhere else. A field
+// without one is not written -- its example: tag stands in, commented out,
+// or its doc comment stands alone. That last shape is what regressing here
+// brings back: prose with no key under it, reading as the comment for
+// whichever key comes next.
+func TestWriteYAMLField_ShouldWriteTheDefaultTheExampleOrNothing(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name    string
 		field   *Field
-		file    string
 		want    string
 		notWant string
 	}{
 		{
-			name:  "should comment the key in when the file leaves it unset",
-			field: &Field{Path: "logging.enable_stdout", Key: "enable_stdout", Type: "bool", Doc: []string{"Also writes to stdout."}, Example: "false"},
-			file:  "logging:\n  level: WARN\n",
-			want:  "# enable_stdout: false\n",
+			name:  "should write the default when the field has one",
+			field: &Field{Path: "logging.enable_stdout", Key: "enable_stdout", Type: "bool", Doc: []string{"Also writes to stdout."}, Default: "false", HasDefault: true},
+			want:  "enable_stdout: false\n",
 		},
 		{
-			name:    "should write the live value alone when the file sets it",
-			field:   &Field{Path: "logging.enable_stdout", Key: "enable_stdout", Type: "bool", Doc: []string{"Also writes to stdout."}, Example: "false"},
-			file:    "logging:\n  enable_stdout: true\n",
+			name:  "should quote a string default so YAML cannot retype it",
+			field: &Field{Path: "logging.level", Key: "level", Type: "string", Doc: []string{"The minimum log level."}, Default: "WARN", HasDefault: true},
+			want:  "level: \"WARN\"\n",
+		},
+		{
+			name:    "should prefer the default over the example when both are set",
+			field:   &Field{Path: "logging.enable_stdout", Key: "enable_stdout", Type: "bool", Doc: []string{"Also writes to stdout."}, Default: "true", HasDefault: true, Example: "false"},
 			want:    "enable_stdout: true\n",
 			notWant: "# enable_stdout:",
 		},
 		{
-			name:    "should leave a blank line when an unset key has no example",
+			name:  "should comment the example in when there is no default",
+			field: &Field{Path: "logging.enable_stdout", Key: "enable_stdout", Type: "bool", Doc: []string{"Also writes to stdout."}, Example: "false"},
+			want:  "# enable_stdout: false\n",
+		},
+		{
+			name:    "should leave a blank line when there is neither",
 			field:   &Field{Path: "logging.include_app_name", Key: "include_app_name", Type: "bool", Doc: []string{"Adds an app attribute."}},
-			file:    "logging:\n  level: WARN\n",
 			want:    "# Adds an app attribute.\n\n",
 			notWant: "include_app_name:",
+		},
+		{
+			name:  "should write an empty-string default as a quoted empty string",
+			field: &Field{Path: "http.server_name", Key: "server_name", Type: "string", Doc: []string{"The public host name."}, Default: "", HasDefault: true},
+			want:  "server_name: \"\"\n",
 		},
 	}
 
@@ -191,9 +223,7 @@ func TestWriteYAMLField_ShouldRenderTheExampleOnlyForAnUnsetKey(t *testing.T) {
 			t.Parallel()
 
 			var b strings.Builder
-			if err := writeYAMLField(&b, tt.field, valuesFrom(t, tt.file), nil, "logging", 0); err != nil {
-				t.Fatalf("failed to write the field: %v", err)
-			}
+			writeYAMLField(&b, tt.field, nil, "logging", 0)
 
 			got := b.String()
 			if !strings.Contains(got, tt.want) {
@@ -206,10 +236,10 @@ func TestWriteYAMLField_ShouldRenderTheExampleOnlyForAnUnsetKey(t *testing.T) {
 	}
 }
 
-// A section the file sets nothing under has no key written, so its fields
-// have nothing to sit beneath: emitted anyway they were indented under a
-// header that was not there. hsm is the real one -- documented in full by its
-// own comment, and left unset.
+// A section none of whose keys carry a default has no key written, so its
+// fields have nothing to sit beneath: emitted anyway they were indented
+// under a header that was not there. hsm is the real one -- documented in
+// full by its own comment, and left unset.
 func TestWriteSection_ShouldWithholdFieldsWhenTheKeyIsWithheld(t *testing.T) {
 	t.Parallel()
 
@@ -223,9 +253,7 @@ func TestWriteSection_ShouldWithholdFieldsWhenTheKeyIsWithheld(t *testing.T) {
 	}
 
 	var b strings.Builder
-	if err := writeSection(&b, section, valuesFrom(t, "logging:\n  level: WARN\n"), nil); err != nil {
-		t.Fatalf("failed to write the section: %v", err)
-	}
+	writeSection(&b, section, nil)
 
 	got := b.String()
 	if !strings.Contains(got, "Optionally sources the CA key") {
@@ -238,25 +266,23 @@ func TestWriteSection_ShouldWithholdFieldsWhenTheKeyIsWithheld(t *testing.T) {
 	}
 }
 
-// The counterpart: one value below the section is enough for the header, and
-// then every field is written under it as usual.
-func TestWriteSection_ShouldWriteTheKeyAndFieldsWhenSomethingIsSet(t *testing.T) {
+// The counterpart: one default below the section is enough for the header,
+// and then every field is written under it as usual.
+func TestWriteSection_ShouldWriteTheKeyAndFieldsWhenSomethingHasADefault(t *testing.T) {
 	t.Parallel()
 
 	section := &Section{
 		Key: "hsm",
 		Doc: []string{"Optionally sources the CA key from a PKCS#11 token."},
 		Fields: []*Field{
-			{Path: "hsm.module", Key: "module", Type: "string", Doc: []string{"The absolute path to the PKCS#11 shared library."}},
+			{Path: "hsm.module", Key: "module", Type: "string", Doc: []string{"The absolute path to the PKCS#11 shared library."}, Default: "/usr/lib/libsofthsm2.so", HasDefault: true},
 		},
 	}
 
 	var b strings.Builder
-	if err := writeSection(&b, section, valuesFrom(t, "hsm:\n  module: /usr/lib/libsofthsm2.so\n"), nil); err != nil {
-		t.Fatalf("failed to write the section: %v", err)
-	}
+	writeSection(&b, section, nil)
 
-	if got := b.String(); !strings.Contains(got, "hsm:\n") || !strings.Contains(got, "module: /usr/lib/libsofthsm2.so") {
+	if got := b.String(); !strings.Contains(got, "hsm:\n") || !strings.Contains(got, "module: \"/usr/lib/libsofthsm2.so\"") {
 		t.Errorf("expected the header and the field, got:\n%s", got)
 	}
 }

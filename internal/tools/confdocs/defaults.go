@@ -11,11 +11,12 @@ import (
 // Defaults holds the values from server/config/defaults.yaml, keyed by dotted
 // path.
 //
-// Values stay in that file rather than moving into struct tags: it is the file
-// viper actually loads and the file shipped to /etc/ssoossh, and
-// server/config's golden test already guards every value in it against
-// accidental change. This package only reads it, so a generated man page can
-// state a default without anyone transcribing it a second time.
+// The default: tags on the config structs are what decide these values;
+// WriteDefaults renders them into the file, and this type reads the file
+// back so the man page states each key's default from the same artifact
+// viper loads and /etc/ssoossh ships. Reading the generated file rather
+// than the tags directly keeps the man page honest about what actually
+// shipped: it can never describe a tag that the yaml pass dropped.
 type Defaults struct {
 	values map[string]string
 	// present records which paths defaults.yaml sets at all, so a key it

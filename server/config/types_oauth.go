@@ -4,19 +4,19 @@ package config
 type OAuthConfig struct {
 	// ClientID is the OAuth2/OIDC client ID registered with the identity
 	// provider. Required.
-	ClientID string `mapstructure:"client_id"`
+	ClientID string `mapstructure:"client_id" default:""`
 
 	// ClientSecret is the OAuth2 client secret.
-	ClientSecret string `mapstructure:"client_secret"`
+	ClientSecret string `mapstructure:"client_secret" default:""`
 
 	// ProviderURL is the OIDC provider's issuer URL, used for discovery. A
 	// trailing /.well-known/openid-configuration is stripped automatically.
 	// Required.
-	ProviderURL string `mapstructure:"provider_url"`
+	ProviderURL string `mapstructure:"provider_url" default:""`
 
 	// Scopes is a space-separated list of additional scopes to request
 	// alongside the always-included "openid" scope, e.g. "profile email".
-	Scopes string      `mapstructure:"scopes"`
+	Scopes string      `mapstructure:"scopes" default:"profile email"`
 	Fields OAuthFields `mapstructure:"fields"`
 }
 
@@ -26,29 +26,29 @@ type OAuthConfig struct {
 type OAuthFields struct {
 	// Username names the claim holding the local account username, e.g.
 	// "preferred_username". Required.
-	Username string `mapstructure:"username"`
+	Username string `mapstructure:"username" default:"preferred_username"`
 
 	// Groups names a claim expected to hold a JSON array of group names. It
 	// feeds the certificate lifetime and require-group decision only; group
 	// membership is never placed in an issued certificate (see
 	// docs/internals/invariants.md).
-	Groups string `mapstructure:"groups"`
+	Groups string `mapstructure:"groups" default:"groups"`
 
 	// OtherAccounts names a claim expected to hold a JSON array of alternate
 	// account identifiers this identity is known by on target systems (a
 	// different username, UPN, or sAMAccountName), added to a certificate's
 	// principal list alongside the username claim.
-	OtherAccounts string `mapstructure:"other_accounts"`
+	OtherAccounts string `mapstructure:"other_accounts" default:""`
 
 	// ServiceAccounts names a claim expected to hold a JSON array of
 	// service-account identifiers this identity is authorized to manage and
 	// enroll certificates for.
-	ServiceAccounts string `mapstructure:"service_accounts"`
+	ServiceAccounts string `mapstructure:"service_accounts" default:""`
 
 	// Email names the claim to read the user's email from. Empty falls
 	// back to the standard "email" claim opportunistically (not an error
 	// if absent either way).
-	Email string `mapstructure:"email"`
+	Email string `mapstructure:"email" default:"email"`
 
 	// Extra maps additional template field names to claim names. Each
 	// configured claim is captured at login (scalars as strings, string

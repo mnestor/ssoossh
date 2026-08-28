@@ -24,7 +24,7 @@ type AppLogging struct {
 	// error, case-insensitive, optionally with a numeric +N or -N offset) or
 	// a raw numeric slog level such as -4, 0, 4, or 8. An unrecognized or
 	// empty value falls back to info.
-	Level string `mapstructure:"level"`
+	Level string `mapstructure:"level" default:"WARN"`
 
 	// CopyStdout also writes the main log to stdout even when a filename is
 	// set. When no filename is set, or the process is attached to a
@@ -33,16 +33,16 @@ type AppLogging struct {
 
 	// IncludeAppName adds an "app" attribute, the string "ssoossh", to every
 	// log record.
-	IncludeAppName bool `mapstructure:"include_app_name"`
+	IncludeAppName bool `mapstructure:"include_app_name" default:"true"`
 
 	// IncludeAppVersion adds a "version" attribute to every log record.
-	IncludeAppVersion bool `mapstructure:"include_app_version"`
+	IncludeAppVersion bool `mapstructure:"include_app_version" default:"true"`
 
 	// LogJSON writes JSON instead of text. Text is meant to be read, not
 	// parsed: the message is written as bare prose so quoted values in it
 	// are not escaped, which is not a machine-readable format. Set this
 	// wherever a log collector has to pull fields back out.
-	LogJSON bool `mapstructure:"log_json" example:"false"`
+	LogJSON bool `mapstructure:"log_json" example:"false" default:"false"`
 }
 
 // GenericLogging configures a named, independently-routed log destination
@@ -90,40 +90,40 @@ type AccessLogging struct {
 	// Left empty the access log has no threshold of its own and is filtered
 	// at logging.level along with everything else — which, with the shipped
 	// logging.level of WARN, means no successful request is ever logged.
-	Level string `mapstructure:"level"`
+	Level string `mapstructure:"level" default:"info"`
 
 	// WithUserAgent records the request's User-Agent header.
-	WithUserAgent bool `mapstructure:"log_user_agent"`
+	WithUserAgent bool `mapstructure:"log_user_agent" default:"true"`
 
 	// WithRequestHeader records the full request header set. Verbose, and it
 	// captures whatever the client sent.
-	WithRequestHeader bool `mapstructure:"log_request_header"`
+	WithRequestHeader bool `mapstructure:"log_request_header" default:"true"`
 
 	// WithClientIP records the client address, as resolved through
 	// http.trusted_proxies.
-	WithClientIP bool `mapstructure:"log_client_ip"`
+	WithClientIP bool `mapstructure:"log_client_ip" default:"true"`
 
 	// WithRequestID records the per-request correlation ID.
-	WithRequestID bool `mapstructure:"log_request_id"`
+	WithRequestID bool `mapstructure:"log_request_id" default:"false"`
 
 	// WithRequestBody records the request body. Off by default and worth
 	// leaving off: request bodies on this server carry public keys and
 	// enrollment codes.
-	WithRequestBody bool `mapstructure:"log_request_body"`
+	WithRequestBody bool `mapstructure:"log_request_body" default:"false"`
 
 	// WithResponseBody records the response body. Off by default and worth
 	// leaving off: response bodies carry issued certificates and enrollment
 	// tokens.
-	WithResponseBody bool `mapstructure:"log_response_body"`
+	WithResponseBody bool `mapstructure:"log_response_body" default:"false"`
 
 	// WithResponseHeader records the full response header set.
-	WithResponseHeader bool `mapstructure:"log_response_header"`
+	WithResponseHeader bool `mapstructure:"log_response_header" default:"false"`
 
 	// WithSpanID records the OpenTelemetry span ID.
-	WithSpanID bool `mapstructure:"log_span_id"`
+	WithSpanID bool `mapstructure:"log_span_id" default:"false"`
 
 	// WithTraceID records the OpenTelemetry trace ID.
-	WithTraceID bool `mapstructure:"log_trace_id"`
+	WithTraceID bool `mapstructure:"log_trace_id" default:"false"`
 
 	// LogJSON writes JSON instead of text. Text is meant to be read, not
 	// parsed: the message is written as bare prose so quoted values in it

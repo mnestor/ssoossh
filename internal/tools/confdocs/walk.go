@@ -50,16 +50,31 @@ type Field struct {
 
 	// Example is the value from an `example:"..."` struct tag: the sample
 	// WriteDefaults renders as a commented-out `key: value` line where a
-	// field defaults.yaml leaves unset would otherwise be nothing but
-	// prose. Rendered only in that case -- a field the file sets already
-	// shows its value, and a second one above it would only disagree.
+	// field without a default: tag would otherwise be nothing but prose.
+	// Rendered only in that case -- a field with a default shows its value,
+	// and a second one above it would only disagree.
 	//
-	// A tag on a field whose whole group defaults.yaml leaves unset is
-	// inert: the group is written as its own comment and nothing else, so
-	// there is no key to hang the sample under. Those blocks put their
-	// sample in the group's doc comment instead, the way hsm shows all of
-	// its keys at once.
+	// A tag on a field none of whose group carries a default is inert: the
+	// group is written as its own comment and nothing else, so there is no
+	// key to hang the sample under. Those blocks put their sample in the
+	// group's doc comment instead, the way hsm shows all of its keys at
+	// once.
 	Example string
+
+	// Default is the value from a `default:"..."` struct tag: what
+	// WriteDefaults writes after the key, and so what viper loads and what
+	// ships in /etc/ssoossh/ssoosshd.yaml. The tag is the only statement of
+	// the value; defaults.yaml is generated from it, never read back into
+	// it.
+	//
+	// A field with no tag is not written at all -- its Example stands in, or
+	// its doc comment stands alone.
+	Default string
+
+	// HasDefault separates "no default: tag" from `default:""`, which is a
+	// real value: the empty string for a string key, and YAML null for the
+	// pointer keys that read unset as "infer it".
+	HasDefault bool
 
 	// Children is non-empty when this field is a struct.
 	Children []*Field
@@ -288,6 +303,7 @@ func build(packages map[string]*pkg, base string, f *ast.Field, prefix string) (
 				return nil, err
 			}
 			out.Children = children
+			applyChildDefaults(f.Tag, children)
 			// The field's comment and the type's comment are both prose
 			// about this key, and each routinely carries something the
 			// other does not -- the LDAP field says what it is for, the
@@ -308,7 +324,24 @@ func build(packages map[string]*pkg, base string, f *ast.Field, prefix string) (
 		return nil, fmt.Errorf("%s (%s): %w", path, name, err)
 	}
 	out.Type = rendered
+	out.Default, out.HasDefault = tagLookup(f.Tag, "default")
 	return out, nil
+}
+
+// applyChildDefaults lets the field instantiating a struct set the defaults
+// for that instantiation, through `default_<key>` tags written beside the
+// mapstructure tag. One type behind several keys is the case it exists for:
+// GenericLogging is db.logging, queue.logging, ldap.logging and mail.logging
+// at once, and those four ship different values, so the value cannot live on
+// the type the way it does for a struct with a single home.
+//
+// An override always wins: the instantiation is the more specific statement.
+func applyChildDefaults(tag *ast.BasicLit, children []*Field) {
+	for _, c := range children {
+		if v, ok := tagLookup(tag, "default_"+c.Key); ok {
+			c.Default, c.HasDefault = v, true
+		}
+	}
 }
 
 // buildEmbedded documents an embedded field as a single group. Such a field
@@ -439,11 +472,18 @@ func mapstructureKey(tag *ast.BasicLit) (string, bool, bool) {
 
 // tagValue reads one key out of a struct tag literal.
 func tagValue(tag *ast.BasicLit, key string) string {
+	v, _ := tagLookup(tag, key)
+	return v
+}
+
+// tagLookup reads one key out of a struct tag literal, reporting whether it
+// was there at all. default: needs the distinction that tagValue cannot make:
+// an absent tag means the key is not written, while `default:""` is a value.
+func tagLookup(tag *ast.BasicLit, key string) (string, bool) {
 	if tag == nil {
-		return ""
+		return "", false
 	}
-	unquoted := strings.Trim(tag.Value, "`")
-	return reflect.StructTag(unquoted).Get(key)
+	return reflect.StructTag(strings.Trim(tag.Value, "`")).Lookup(key)
 }
 
 // docLines cleans a doc comment into plain lines: comment markers removed,

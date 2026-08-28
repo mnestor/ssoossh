@@ -4,57 +4,39 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 // yamlWidth is where a generated comment line wraps. Narrow enough that the
 // shipped /etc/ssoossh/ssoosshd.yaml reads comfortably in a terminal.
 const yamlWidth = 74
 
-// WriteDefaults renders server/config/defaults.yaml: the comments from the
-// config structs, and every value taken unchanged from the file it replaces.
+// WriteDefaults renders server/config/defaults.yaml from the config structs:
+// the comments from their doc comments, the values from their default: tags.
 // Reports whether the file changed.
 //
-// Values are read, never invented. This file is what viper loads and what
-// ships to /etc/ssoossh, and server/config's golden test guards its values;
-// generating them from a second source would put two things in charge of one
-// number. The structs supply only the prose.
+// The tag is the only place a default is written down. This file is what
+// viper loads first and what ships to /etc/ssoossh/ssoosshd.yaml, so it has
+// to hold real values -- but holding them is not the same as deciding them,
+// and it used to do both. A value lived here and, for a handful of keys, in a
+// constant beside the field as well, with nothing keeping the two in step.
+// Now the file is output: `make confdocs` writes it, confdocs-check fails CI
+// when it is stale, and server/config's golden test guards what the result
+// loads to.
 //
-// A key the file does not set still gets its comment. Under it goes the
-// field's example: tag, commented out, so the prose names the key it
-// describes and a reader can uncomment a working line; a field with no tag
-// gets a blank line instead. That is how ssh_key, hsm, and fips appear:
-// documented in place, shown by example, and left unset.
-//
-// An example is not a default. It is prose from the struct, like the doc
-// comment beside it, and it is rendered only where the file sets nothing --
-// never above a live value, where it would be a second answer to a question
-// the value already answers.
+// A key with no default: tag is not written. Under its comment goes its
+// example: tag, commented out, or nothing -- see writeYAMLField.
 func WriteDefaults(path string, sections []*Section) (bool, error) {
 	before, err := os.ReadFile(path)
 	if err != nil {
 		return false, fmt.Errorf("read %s: %w", path, err)
 	}
 
-	var doc yaml.Node
-	if err := yaml.Unmarshal(before, &doc); err != nil {
-		return false, fmt.Errorf("parse %s: %w", path, err)
-	}
-
-	values := map[string]*yaml.Node{}
-	if len(doc.Content) > 0 {
-		indexValues(doc.Content[0], "", values)
-	}
-
 	var b strings.Builder
 	b.WriteString(fileHeader())
-
 	for _, s := range sections {
-		if err := writeSection(&b, s, values, CrossRefsIn(sections, s.Key)); err != nil {
-			return false, err
-		}
+		writeSection(&b, s, CrossRefsIn(sections, s.Key))
 	}
 
 	next := []byte(strings.TrimRight(b.String(), "\n") + "\n")
@@ -68,16 +50,14 @@ func WriteDefaults(path string, sections []*Section) (bool, error) {
 }
 
 // writeSection emits one section: its comment, its key, and its fields.
-func writeSection(b *strings.Builder, s *Section, values map[string]*yaml.Node, refs map[string]string) error {
+func writeSection(b *strings.Builder, s *Section, refs map[string]string) {
 	if s.Key == "" {
 		// The scalars at the root of the file.
 		for _, f := range s.Fields {
-			if err := writeYAMLField(b, f, values, refs, "", 0); err != nil {
-				return err
-			}
+			writeYAMLField(b, f, refs, "", 0)
 			b.WriteString("\n")
 		}
-		return nil
+		return
 	}
 
 	writeComment(b, s.Doc, refs, s.Key, 0)
@@ -91,160 +71,98 @@ func writeSection(b *strings.Builder, s *Section, values map[string]*yaml.Node, 
 	// header that is not there, which reads as a run of loose sentences with
 	// no key attached to any of them; the section comment carries the shape
 	// of the block and ssoosshd.yaml(5) carries the per-key detail.
-	if !sectionHasValue(s, values) {
+	if !sectionHasDefault(s) {
 		b.WriteString("\n")
-		return nil
+		return
 	}
 
 	fmt.Fprintf(b, "%s:\n", s.Key)
 	for _, f := range s.Fields {
-		if err := writeYAMLField(b, f, values, refs, s.Key, 1); err != nil {
-			return err
-		}
+		writeYAMLField(b, f, refs, s.Key, 1)
 	}
 	b.WriteString("\n")
-	return nil
 }
 
-// sectionHasValue reports whether the file being replaced set any key in s.
-func sectionHasValue(s *Section, values map[string]*yaml.Node) bool {
+// sectionHasDefault reports whether any key in s has a default to write.
+func sectionHasDefault(s *Section) bool {
 	for _, f := range s.Fields {
-		if hasValue(f, values) {
+		if hasDefault(f) {
 			return true
 		}
 	}
 	return false
 }
 
-// writeYAMLField emits one key: its comment, then its value if the file being
-// replaced had one.
-func writeYAMLField(b *strings.Builder, f *Field, values map[string]*yaml.Node, refs map[string]string, scope string, depth int) error {
+// writeYAMLField emits one key: its comment, then its value if it has a
+// default: tag, then its example: tag commented out if it has one instead.
+func writeYAMLField(b *strings.Builder, f *Field, refs map[string]string, scope string, depth int) {
 	// The rotation options belong to the embedded timberjack logger and have
 	// no key of their own, so only their comment is emitted.
 	if f.Embedded {
 		writeComment(b, f.Doc, refs, scope, depth)
-		return nil
+		return
 	}
 
 	indent := strings.Repeat("  ", depth)
+	writeComment(b, f.Doc, refs, scope, depth)
 
 	if f.IsStruct() {
-		writeComment(b, f.Doc, refs, scope, depth)
 		// A mapping key with nothing under it parses as null, which would add
-		// a key the file never had. When no descendant is set, the comment
-		// documents the group and the key itself stays out.
-		if !hasValue(f, values) {
+		// a key the file never had. When no descendant has a default, the
+		// comment documents the group and the key itself stays out.
+		if !hasDefault(f) {
 			b.WriteString("\n")
-			return nil
+			return
 		}
 		fmt.Fprintf(b, "%s%s:\n", indent, f.Key)
 		for _, c := range f.Children {
-			if err := writeYAMLField(b, c, values, refs, scope, depth+1); err != nil {
-				return err
-			}
+			writeYAMLField(b, c, refs, scope, depth+1)
 		}
-		return nil
+		return
 	}
 
-	writeComment(b, f.Doc, refs, scope, depth)
-
-	node, ok := values[f.Path]
-	if !ok {
+	if !f.HasDefault {
 		// Documented but unset. The example: tag, when the field carries
 		// one, names the key and shows a value that can be uncommented as
 		// it stands. Without one, a blank line at least keeps the comment
 		// from reading as the header for whichever key comes next.
 		if f.Example != "" {
 			fmt.Fprintf(b, "%s# %s: %s\n", indent, f.Key, f.Example)
-			return nil
+			return
 		}
 		b.WriteString("\n")
-		return nil
+		return
 	}
 
-	rendered, err := renderValue(node, depth)
-	if err != nil {
-		return fmt.Errorf("%s: %w", f.Path, err)
-	}
-	fmt.Fprintf(b, "%s%s:%s\n", indent, f.Key, rendered)
-	return nil
+	fmt.Fprintf(b, "%s%s: %s\n", indent, f.Key, renderDefault(f))
 }
 
-// hasValue reports whether f, or anything below it, is set in the file.
-func hasValue(f *Field, values map[string]*yaml.Node) bool {
-	if f.Path != "" {
-		if _, ok := values[f.Path]; ok {
-			return true
-		}
+// hasDefault reports whether f, or anything below it, has a default to write.
+func hasDefault(f *Field) bool {
+	if f.HasDefault {
+		return true
 	}
 	for _, c := range f.Children {
-		if hasValue(c, values) {
+		if hasDefault(c) {
 			return true
 		}
 	}
 	return false
 }
 
-// renderValue encodes one value node, preserving the quoting style it had.
-func renderValue(node *yaml.Node, depth int) (string, error) {
-	// An explicitly empty value ("cookie_secure:") is null, not the empty
-	// string, and re-quoting it would change what viper unmarshals.
-	if node.Kind == yaml.ScalarNode && node.Tag == "!!null" {
-		return "", nil
+// renderDefault turns a default: tag into the YAML that follows the key.
+//
+// A string is quoted, because a bare scalar is retyped on the way back in:
+// "true", "8080", "no" and "~" are all something other than strings to a YAML
+// parser, and a key whose value happens to look like one of them would load
+// as that instead. Every other type is written as the tag has it, which is
+// how a list keeps its brackets, a duration its unit, and the two *bool keys
+// their YAML null -- the tri-state those read as "not set, infer it".
+func renderDefault(f *Field) string {
+	if f.Type == "string" {
+		return strconv.Quote(f.Default)
 	}
-
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(node); err != nil {
-		return "", err
-	}
-	if err := enc.Close(); err != nil {
-		return "", err
-	}
-
-	text := strings.TrimRight(buf.String(), "\n")
-	if text == "" {
-		return ` ""`, nil
-	}
-
-	// A scalar encodes to one line and sits after the colon; a collection
-	// encodes to several and is indented beneath it.
-	lines := strings.Split(text, "\n")
-	if len(lines) == 1 {
-		return " " + lines[0], nil
-	}
-
-	indent := strings.Repeat("  ", depth+1)
-	var b strings.Builder
-	b.WriteString("\n")
-	for _, l := range lines {
-		if strings.TrimSpace(l) == "" {
-			b.WriteString("\n")
-			continue
-		}
-		b.WriteString(indent + l + "\n")
-	}
-	return strings.TrimRight(b.String(), "\n"), nil
-}
-
-// indexValues records every value node in the file by dotted path.
-func indexValues(node *yaml.Node, prefix string, out map[string]*yaml.Node) {
-	if node.Kind != yaml.MappingNode {
-		return
-	}
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		key, value := node.Content[i], node.Content[i+1]
-		path := key.Value
-		if prefix != "" {
-			path = prefix + "." + key.Value
-		}
-		if value.Kind == yaml.MappingNode {
-			indexValues(value, path, out)
-			continue
-		}
-		out[path] = value
-	}
+	return f.Default
 }
 
 // writeComment renders a doc comment as YAML comment lines at the given depth.
@@ -267,9 +185,11 @@ func fileHeader() string {
 	lines := []string{
 		"ssoosshd configuration.",
 		"",
-		"The comments in this file are generated from the doc comments on the",
-		"config structs in server/config. To change a description, edit the",
-		"struct field and run `make confdocs`. The values are edited here.",
+		"This file is generated. Both the comments and the values come from the",
+		"config structs in server/config: the prose from each field's doc",
+		"comment, the values from its `default:` tag. To change either, edit the",
+		"struct field and run `make confdocs`; an edit made here is overwritten",
+		"by the next run, and CI fails while the two disagree.",
 		"",
 		"This is both the defaults embedded in the binary and the annotated",
 		"file installed as /etc/ssoossh/ssoosshd.yaml. A key documented with",
