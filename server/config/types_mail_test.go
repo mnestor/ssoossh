@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -295,6 +296,51 @@ func TestMailConfig_shouldWarnAboutAnUnprotectedRemoteRelay(t *testing.T) {
 				t.Errorf("expected no warnings, got %v", warnings)
 			}
 		})
+	}
+}
+
+// The warnings are split into constant prose plus slog attributes rather
+// than pre-formatted with %q so that a text log does not have to quote the
+// values inside the message, where every handler that treats the message as
+// a string attribute escapes them again. See logging.GetHandler.
+func TestMailConfig_shouldKeepWarningValuesInAttrsNotTheMessage(t *testing.T) {
+	c := validMail()
+	c.SMTP.Host = "10.0.10.1"
+	c.SMTP.TLS = MailTLSOff
+	c.SMTP.Auth = MailAuthNone
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+
+	warnings := c.Warnings()
+	if len(warnings) == 0 {
+		t.Fatal("expected warnings for a plaintext unauthenticated remote relay, got none")
+	}
+
+	for _, w := range warnings {
+		if strings.Contains(w.Msg, `"`) {
+			t.Errorf("warning message carries a quoted value, which logs back escaped: %s", w.Msg)
+		}
+	}
+}
+
+// Every warning names the relay it is about, so an operator running more
+// than one server can tell whose configuration is being complained about
+// from the log line alone.
+func TestMailConfig_shouldAttachTheRelayHostToEveryWarning(t *testing.T) {
+	c := validMail()
+	c.SMTP.Host = "10.0.10.1"
+	c.SMTP.TLS = MailTLSOff
+	c.SMTP.Auth = MailAuthNone
+	c.SMTP.InsecureSkipVerify = true
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+
+	for _, w := range c.Warnings() {
+		if !slices.Contains(w.Attrs, any("mail.smtp.host")) {
+			t.Errorf("warning %q has no mail.smtp.host attribute: %v", w.Msg, w.Attrs)
+		}
 	}
 }
 

@@ -88,12 +88,15 @@ logging:
   # Also writes the main log to stdout even when a filename is set. When no
   # filename is set, or the process is attached to a terminal, stdout is used
   # regardless.
-
+  # enable_stdout: false
   # Adds an "app" attribute, the string "ssoossh", to every log record.
   include_app_name: true
   # Adds a "version" attribute to every log record.
   include_app_version: true
-  # Writes JSON instead of colorized or plain text.
+  # Writes JSON instead of text. Text is meant to be read, not parsed: the
+  # message is written as bare prose so quoted values in it are not escaped,
+  # which is not a machine-readable format. Set this wherever a log collector
+  # has to pull fields back out.
   log_json: false
 
 # Configures the database connection, pooling, retries, and query logging.
@@ -116,7 +119,10 @@ db:
     level: WARN
     # Includes the source file and line on each record.
     add_source: false
-    # Writes JSON instead of colorized or plain text.
+    # Writes JSON instead of text. Text is meant to be read, not parsed: the
+    # message is written as bare prose so quoted values in it are not escaped,
+    # which is not a machine-readable format. Set this wherever a log collector
+    # has to pull fields back out.
     log_json: false
   # The maximum number of connection attempts before giving up. Zero or
   # negative disables retries (will fail immediately on the first error).
@@ -185,8 +191,11 @@ http:
     log_span_id: false
     # Records the OpenTelemetry trace ID.
     log_trace_id: false
-    # Writes JSON instead of colorized or plain text.
-
+    # Writes JSON instead of text. Text is meant to be read, not parsed: the
+    # message is written as bare prose so quoted values in it are not escaped,
+    # which is not a machine-readable format. Set this wherever a log collector
+    # has to pull fields back out.
+    # log_json: false
   # The network interface to bind to, e.g. "127.0.0.1" to listen only locally,
   # or "0.0.0.0" for all interfaces. Used with Port to form the server's
   # listen address.
@@ -365,12 +374,6 @@ http:
     reload_interval: 0
 
 # Carries the log destination for the internal message queue.
-  # Configures a named, independently-routed log destination (e.g. database
-  # queries, the message queue) — anything that just needs a level, a
-  # rotating file, and a JSON/text choice. See server/logging.New, which
-  # routes records tagged with a given name to their own destination when one
-  # is configured.
-
 
 # Configures OAuth/OIDC authentication for the server. See OAuthConfig for
 # details on provider URL, scopes, and field mapping from OIDC claims to
@@ -486,21 +489,6 @@ admin:
 #     pin_file: /etc/ssoossh/hsm-pin    # or pin: "1234"
 #     key_label: ssoossh-ca
 #     # key_id: "01"                    # hex CKA_ID, instead of key_label
-  # The absolute path to the PKCS#11 shared library, e.g.
-  # /usr/lib/softhsm/libsofthsm2.so. Setting it enables HSM mode.
-
-  # Selects the token (softhsm2-util --init-token --label ...).
-
-  # The user PIN. Mutually exclusive with PINFile.
-
-  # A path whose trimmed contents are the user PIN. Preferred over inline PIN
-  # so the config file can stay world-readable-ish.
-
-  # Selects the key pair by CKA_LABEL. At least one of key_label or key_id is
-  # required; when both are set both must match.
-
-  # Selects the key pair by CKA_ID, hex-encoded (pkcs11-tool --id).
-
 
 # Configures the message broker behind the certificate pipeline. gochannel
 # is in-process; NATS is required for multi-instance and split-process
@@ -653,7 +641,7 @@ mail:
   # An optional Reply-To header. Worth setting to a monitored address: these
   # messages report credential activity, and the first thing a recipient does
   # with an unexpected one is try to reply.
-
+  # reply_to: "ssh-admins@example.com"
   # Prepended to every rendered subject, e.g. "[ssoossh] ". Empty adds
   # nothing. Templates can also write their own subject in full; this exists
   # so an operator can tag every message without editing any template.
@@ -662,7 +650,7 @@ mail:
   # the embedded template of the same name; anything absent falls back to the
   # embedded one, so overriding a single message does not mean vendoring the
   # whole set. See docs/operations/email-notifications.md.
-
+  # template_dir: "/etc/ssoossh/mail-templates"
   # The relay connection.
   smtp:
     # The relay hostname or address. Required when mail is enabled.
@@ -675,10 +663,10 @@ mail:
     tls: "opportunistic"
     # Overrides the name the relay's certificate is verified against. Needed
     # only when Host is an address rather than the name on the certificate.
-
+    # server_name: "smtp.example.com"
     # A PEM bundle to verify the relay's certificate against, for a relay using
     # a private CA. Empty uses the system trust store.
-
+    # ca_file: "/etc/ssl/certs/internal-ca.pem"
     # Disables verification of the relay's certificate. It turns TLS into
     # obfuscation — an attacker who can redirect the connection can also
     # present their own certificate — so it exists for a lab with a
@@ -689,19 +677,19 @@ mail:
     # strongest mechanism the relay advertises.
     auth: "none"
     # The SASL username. Required for every mechanism but none.
-
+    # username: "ssoossh@example.com"
     # The SASL password, or the OAuth2 token for xoauth2. Prefer
     # smtp.password_file: this value is a secret sitting in a config file.
-
+    # password: ""
     # Reads the password from a file instead, so the secret can be a mounted
     # file or a systemd credential rather than config text. Takes precedence
     # over Password when both are set. Read once at startup; trailing whitespace
     # is trimmed, since an editor's newline is never part of the password.
-
+    # password_file: "/run/secrets/ssoossh-smtp-password"
     # The name announced in the EHLO/HELO greeting. Empty lets go-mail use the
     # local hostname, which is right unless the relay checks it against
     # something specific.
-
+    # helo: "ssoossh.example.com"
     # Bounds a single delivery's connect-and-send. It bounds only the background
     # sender, never a request: nothing a browser or an unattended job waits on
     # is behind this.
@@ -717,9 +705,12 @@ mail:
     # logging.level.
     level: "info"
     # Includes the source file and line on each record.
-
-    # Writes JSON instead of colorized or plain text.
-
+    # add_source: false
+    # Writes JSON instead of text. Text is meant to be read, not parsed: the
+    # message is written as bare prose so quoted values in it are not escaped,
+    # which is not a machine-readable format. Set this wherever a log collector
+    # has to pull fields back out.
+    # log_json: false
 
 # Customizes the login page and web UI. All fields are optional; empty
 # values mean no branding is configured.

@@ -82,7 +82,7 @@ type MailConfig struct {
 	// ReplyTo is an optional Reply-To header. Worth setting to a monitored
 	// address: these messages report credential activity, and the first
 	// thing a recipient does with an unexpected one is try to reply.
-	ReplyTo string `mapstructure:"reply_to"`
+	ReplyTo string `mapstructure:"reply_to" example:"\"ssh-admins@example.com\""`
 
 	// SubjectPrefix is prepended to every rendered subject, e.g.
 	// "[ssoossh] ". Empty adds nothing. Templates can also write their own
@@ -95,7 +95,7 @@ type MailConfig struct {
 	// absent falls back to the embedded one, so overriding a single
 	// message does not mean vendoring the whole set. See
 	// docs/operations/email-notifications.md.
-	TemplateDir string `mapstructure:"template_dir"`
+	TemplateDir string `mapstructure:"template_dir" example:"\"/etc/ssoossh/mail-templates\""`
 
 	// SMTP is the relay connection. See SMTPConfig.
 	SMTP SMTPConfig `mapstructure:"smtp"`
@@ -125,11 +125,11 @@ type SMTPConfig struct {
 	// ServerName overrides the name the relay's certificate is verified
 	// against. Needed only when Host is an address rather than the name on
 	// the certificate.
-	ServerName string `mapstructure:"server_name"`
+	ServerName string `mapstructure:"server_name" example:"\"smtp.example.com\""`
 
 	// CAFile is a PEM bundle to verify the relay's certificate against,
 	// for a relay using a private CA. Empty uses the system trust store.
-	CAFile string `mapstructure:"ca_file"`
+	CAFile string `mapstructure:"ca_file" example:"\"/etc/ssl/certs/internal-ca.pem\""`
 
 	// InsecureSkipVerify disables verification of the relay's certificate.
 	// It turns TLS into obfuscation — an attacker who can redirect the
@@ -143,23 +143,23 @@ type SMTPConfig struct {
 	Auth string `mapstructure:"auth"`
 
 	// Username is the SASL username. Required for every mechanism but none.
-	Username string `mapstructure:"username"`
+	Username string `mapstructure:"username" example:"\"ssoossh@example.com\""`
 
 	// Password is the SASL password, or the OAuth2 token for xoauth2.
 	// Prefer PasswordFile: this value is a secret sitting in a config file.
-	Password string `mapstructure:"password"`
+	Password string `mapstructure:"password" example:"\"\""`
 
 	// PasswordFile reads the password from a file instead, so the secret
 	// can be a mounted file or a systemd credential rather than config
 	// text. Takes precedence over Password when both are set. Read once at
 	// startup; trailing whitespace is trimmed, since an editor's newline is
 	// never part of the password.
-	PasswordFile string `mapstructure:"password_file"`
+	PasswordFile string `mapstructure:"password_file" example:"\"/run/secrets/ssoossh-smtp-password\""`
 
 	// HELO is the name announced in the EHLO/HELO greeting. Empty lets
 	// go-mail use the local hostname, which is right unless the relay
 	// checks it against something specific.
-	HELO string `mapstructure:"helo"`
+	HELO string `mapstructure:"helo" example:"\"ssoossh.example.com\""`
 
 	// Timeout bounds a single delivery's connect-and-send.
 	// It bounds only the background sender, never a request: nothing a
@@ -283,18 +283,35 @@ func (s *SMTPConfig) resolveCredentials() error {
 	return nil
 }
 
+// Warning is one piece of startup advice, split the way slog wants it: Msg
+// is prose that never varies, and every value it would otherwise have
+// interpolated sits in Attrs as alternating key/value pairs ready to splat
+// into slog.Warn.
+//
+// Kept apart rather than pre-formatted with fmt.Sprintf so the settings and
+// hostnames stay machine-readable under log_json, and so a text log does
+// not have to quote them inside the message: a quoted value inside a msg
+// comes back out backslash-escaped by any handler that treats the message
+// as a string attribute. See logging.GetHandler.
+type Warning struct {
+	// Msg is the constant prose, safe to group by across occurrences.
+	Msg string
+	// Attrs holds the varying values as slog key/value pairs.
+	Attrs []any
+}
+
 // Warnings returns advice about a configuration that is valid but weaker
 // than it should be. These are warnings rather than errors on purpose: TLS
 // and authentication are suggested, not mandatory, because the local-relay
 // deployment legitimately needs neither. Logged once at startup by
 // bootstrap so a plaintext relay is a choice someone made rather than one
 // they drifted into.
-func (c *MailConfig) Warnings() []string {
+func (c *MailConfig) Warnings() []Warning {
 	if !c.Enabled {
 		return nil
 	}
 
-	var warnings []string
+	var warnings []Warning
 
 	// The exemption is loopback specifically. A relay on the same host is
 	// reached over a path no one else is on, so plaintext there protects
@@ -302,24 +319,30 @@ func (c *MailConfig) Warnings() []string {
 	// network, and these messages name accounts, addresses, and key IDs.
 	if !isLoopbackHost(c.SMTP.Host) {
 		if c.SMTP.TLS == MailTLSOff {
-			warnings = append(warnings, fmt.Sprintf(
-				"mail.smtp.tls is %q while relaying to the non-local host %q: notification content and any SMTP credentials cross the network in plaintext; %q or %q is strongly suggested",
-				MailTLSOff, c.SMTP.Host, MailTLSRequired, MailTLSImplicit))
+			warnings = append(warnings, Warning{
+				Msg:   "relaying mail to a non-local host without TLS: notification content and any SMTP credentials cross the network in plaintext; set mail.smtp.tls to required or implicit",
+				Attrs: []any{"mail.smtp.tls", MailTLSOff, "mail.smtp.host", c.SMTP.Host},
+			})
 		}
 		if c.SMTP.TLS == MailTLSOpportunistic {
-			warnings = append(warnings, fmt.Sprintf(
-				"mail.smtp.tls is %q while relaying to the non-local host %q: STARTTLS can be stripped by anyone on the path, so this is not a guarantee of encryption; %q is suggested",
-				MailTLSOpportunistic, c.SMTP.Host, MailTLSRequired))
+			warnings = append(warnings, Warning{
+				Msg:   "relaying mail to a non-local host with opportunistic TLS: STARTTLS can be stripped by anyone on the path, so this is not a guarantee of encryption; set mail.smtp.tls to required",
+				Attrs: []any{"mail.smtp.tls", MailTLSOpportunistic, "mail.smtp.host", c.SMTP.Host},
+			})
 		}
 		if c.SMTP.Auth == MailAuthNone {
-			warnings = append(warnings, fmt.Sprintf(
-				"mail.smtp.auth is %q while relaying to the non-local host %q: the relay is accepting mail from this server unauthenticated, which is usually a misconfiguration on one side or the other",
-				MailAuthNone, c.SMTP.Host))
+			warnings = append(warnings, Warning{
+				Msg:   "relaying mail to a non-local host unauthenticated: the relay is accepting mail from this server without credentials, which is usually a misconfiguration on one side or the other",
+				Attrs: []any{"mail.smtp.auth", MailAuthNone, "mail.smtp.host", c.SMTP.Host},
+			})
 		}
 	}
 
 	if c.SMTP.InsecureSkipVerify {
-		warnings = append(warnings, "mail.smtp.insecure_skip_verify is true: the relay's certificate is not checked, so TLS here obscures the traffic without authenticating who it is going to")
+		warnings = append(warnings, Warning{
+			Msg:   "mail.smtp.insecure_skip_verify is true: the relay's certificate is not checked, so TLS here obscures the traffic without authenticating who it is going to",
+			Attrs: []any{"mail.smtp.host", c.SMTP.Host},
+		})
 	}
 
 	return warnings

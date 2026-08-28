@@ -379,9 +379,13 @@ func TestInitRouter_ShouldLogRequestsByStatusClass(t *testing.T) {
 	})
 
 	// Matched a line at a time, not as loose substrings of the whole
-	// stream: "level=WARN" appears in this capture whatever the access log
-	// does, because initRouter warns about the unset cookie_secure. The
-	// claim is that the record *for this request* carries that level.
+	// stream: a WRN appears in this capture whatever the access log does,
+	// because initRouter warns about the unset cookie_secure. The claim is
+	// that the record *for this request* carries that level.
+	//
+	// wantLevel is tint's three-letter token rather than slog TextHandler's
+	// "level=INFO": both text destinations go through tint so that message
+	// prose is not quoted and re-escaped (see logging.GetHandler).
 	tests := []struct {
 		name       string
 		path       string
@@ -391,17 +395,17 @@ func TestInitRouter_ShouldLogRequestsByStatusClass(t *testing.T) {
 		{
 			name:      "should log a served request at info",
 			path:      "/api/ca",
-			wantLevel: "INFO",
+			wantLevel: "INF",
 		},
 		{
 			name:      "should log a client error at warn",
 			path:      "/client-error",
-			wantLevel: "WARN",
+			wantLevel: "WRN",
 		},
 		{
 			name:       "should log a server error at error, and copy it to stderr",
 			path:       "/boom",
-			wantLevel:  "ERROR",
+			wantLevel:  "ERR",
 			wantStderr: true,
 		},
 	}
@@ -411,8 +415,8 @@ func TestInitRouter_ShouldLogRequestsByStatusClass(t *testing.T) {
 			if line == "" {
 				t.Fatalf("no access log record for %s on stdout; got:\n%s", tt.path, stdout)
 			}
-			if !strings.Contains(line, "level="+tt.wantLevel) {
-				t.Errorf("access log for %s: want level %s, got line:\n%s", tt.path, tt.wantLevel, line)
+			if got := logLevelOf(line); got != tt.wantLevel {
+				t.Errorf("access log for %s: want level %s, got %s in line:\n%s", tt.path, tt.wantLevel, got, line)
 			}
 
 			errLine := lineContaining(stderr, "path="+tt.path)
@@ -430,6 +434,19 @@ func TestInitRouter_ShouldLogRequestsByStatusClass(t *testing.T) {
 			t.Errorf("expected the application log to stay at warn; got:\n%s", stdout)
 		}
 	})
+}
+
+// logLevelOf returns the level token of one tint-formatted record: the
+// second whitespace-separated field, after the timestamp. Read positionally
+// rather than by substring because tint writes the level bare ("WRN", not
+// "level=WARN"), and those three letters could otherwise be matched
+// anywhere in the message or an attribute value.
+func logLevelOf(line string) string {
+	fields := strings.Fields(line)
+	if len(fields) < 2 {
+		return ""
+	}
+	return fields[1]
 }
 
 // lineContaining returns the first line of s containing sub, or "" if none

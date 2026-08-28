@@ -3,6 +3,8 @@ package confdocs
 import (
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -130,6 +132,132 @@ func TestDefaults_ShouldDescribeUnsetKeysAsTheGoZeroValue(t *testing.T) {
 	}
 	if got := d.Describe(&Field{Path: "nope.not.here", Type: "string"}); got != "empty" {
 		t.Errorf("an unset string should describe as empty, got %q", got)
+	}
+}
+
+// valuesFrom indexes a small YAML document the way WriteDefaults indexes the
+// file it is replacing, so a test can say exactly which keys are set.
+func valuesFrom(t *testing.T, src string) map[string]*yaml.Node {
+	t.Helper()
+
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(src), &doc); err != nil {
+		t.Fatalf("failed to parse the test document: %v", err)
+	}
+	values := map[string]*yaml.Node{}
+	if len(doc.Content) > 0 {
+		indexValues(doc.Content[0], "", values)
+	}
+	return values
+}
+
+// An unset key used to be written as prose with nothing under it, which reads
+// as the comment for whichever key comes next. The example: tag is what names
+// it, and it is rendered only where the file sets nothing.
+func TestWriteYAMLField_ShouldRenderTheExampleOnlyForAnUnsetKey(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		field   *Field
+		file    string
+		want    string
+		notWant string
+	}{
+		{
+			name:  "should comment the key in when the file leaves it unset",
+			field: &Field{Path: "logging.enable_stdout", Key: "enable_stdout", Type: "bool", Doc: []string{"Also writes to stdout."}, Example: "false"},
+			file:  "logging:\n  level: WARN\n",
+			want:  "# enable_stdout: false\n",
+		},
+		{
+			name:    "should write the live value alone when the file sets it",
+			field:   &Field{Path: "logging.enable_stdout", Key: "enable_stdout", Type: "bool", Doc: []string{"Also writes to stdout."}, Example: "false"},
+			file:    "logging:\n  enable_stdout: true\n",
+			want:    "enable_stdout: true\n",
+			notWant: "# enable_stdout:",
+		},
+		{
+			name:    "should leave a blank line when an unset key has no example",
+			field:   &Field{Path: "logging.include_app_name", Key: "include_app_name", Type: "bool", Doc: []string{"Adds an app attribute."}},
+			file:    "logging:\n  level: WARN\n",
+			want:    "# Adds an app attribute.\n\n",
+			notWant: "include_app_name:",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var b strings.Builder
+			if err := writeYAMLField(&b, tt.field, valuesFrom(t, tt.file), nil, "logging", 0); err != nil {
+				t.Fatalf("failed to write the field: %v", err)
+			}
+
+			got := b.String()
+			if !strings.Contains(got, tt.want) {
+				t.Errorf("got:\n%s\nwant it to contain:\n%s", got, tt.want)
+			}
+			if tt.notWant != "" && strings.Contains(got, tt.notWant) {
+				t.Errorf("got:\n%s\nwant it not to contain:\n%s", got, tt.notWant)
+			}
+		})
+	}
+}
+
+// A section the file sets nothing under has no key written, so its fields
+// have nothing to sit beneath: emitted anyway they were indented under a
+// header that was not there. hsm is the real one -- documented in full by its
+// own comment, and left unset.
+func TestWriteSection_ShouldWithholdFieldsWhenTheKeyIsWithheld(t *testing.T) {
+	t.Parallel()
+
+	section := &Section{
+		Key: "hsm",
+		Doc: []string{"Optionally sources the CA key from a PKCS#11 token."},
+		Fields: []*Field{
+			{Path: "hsm.module", Key: "module", Type: "string", Doc: []string{"The absolute path to the PKCS#11 shared library."}},
+			{Path: "hsm.pin", Key: "pin", Type: "string", Doc: []string{"The user PIN."}},
+		},
+	}
+
+	var b strings.Builder
+	if err := writeSection(&b, section, valuesFrom(t, "logging:\n  level: WARN\n"), nil); err != nil {
+		t.Fatalf("failed to write the section: %v", err)
+	}
+
+	got := b.String()
+	if !strings.Contains(got, "Optionally sources the CA key") {
+		t.Errorf("the section comment must survive, got:\n%s", got)
+	}
+	for _, unwanted := range []string{"hsm:", "PKCS#11 shared library", "The user PIN"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("got:\n%s\nwant it not to contain %q", got, unwanted)
+		}
+	}
+}
+
+// The counterpart: one value below the section is enough for the header, and
+// then every field is written under it as usual.
+func TestWriteSection_ShouldWriteTheKeyAndFieldsWhenSomethingIsSet(t *testing.T) {
+	t.Parallel()
+
+	section := &Section{
+		Key: "hsm",
+		Doc: []string{"Optionally sources the CA key from a PKCS#11 token."},
+		Fields: []*Field{
+			{Path: "hsm.module", Key: "module", Type: "string", Doc: []string{"The absolute path to the PKCS#11 shared library."}},
+		},
+	}
+
+	var b strings.Builder
+	if err := writeSection(&b, section, valuesFrom(t, "hsm:\n  module: /usr/lib/libsofthsm2.so\n"), nil); err != nil {
+		t.Fatalf("failed to write the section: %v", err)
+	}
+
+	if got := b.String(); !strings.Contains(got, "hsm:\n") || !strings.Contains(got, "module: /usr/lib/libsofthsm2.so") {
+		t.Errorf("expected the header and the field, got:\n%s", got)
 	}
 }
 

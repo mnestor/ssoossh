@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mnestor/ssoossh/server/config"
 )
@@ -143,6 +144,57 @@ func TestGetHandler_ShouldEmitReadableTextWhenIsTerminalTrue(t *testing.T) {
 
 	if !strings.Contains(buf.String(), "terminal message") {
 		t.Errorf("expected terminal-style output to contain the message, got: %s", buf.String())
+	}
+}
+
+// Guards the reason both text paths go through tint rather than
+// slog.NewTextHandler: TextHandler renders the message as a string
+// attribute, so a message containing spaces is wrapped in quotes and every
+// quote inside it comes back out backslash-escaped. Config advice naming a
+// setting's value and wrapped errors naming a path both quote routinely,
+// and having to read them through the escaping is what regressing here
+// would bring back.
+func TestGetHandler_ShouldNotEscapeQuotesInTheMessage(t *testing.T) {
+	t.Parallel()
+
+	const msg = `mail.smtp.auth is "none" while relaying to the non-local host "10.0.10.1"`
+
+	tests := []struct {
+		name       string
+		isTerminal bool
+	}{
+		{"should write the message verbatim to a file or container stream", false},
+		{"should write the message verbatim to a terminal", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var buf bytes.Buffer
+			h := GetHandler(false, tt.isTerminal, &buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+			slog.New(h).Warn(msg)
+
+			if out := buf.String(); !strings.Contains(out, msg) {
+				t.Errorf("expected the message verbatim, got: %s", out)
+			}
+		})
+	}
+}
+
+// The non-terminal text timestamp is RFC3339 with milliseconds on purpose:
+// it is what slog's TextHandler wrote before tint took over that path, so a
+// log file that spans the change still sorts and diffs as one series.
+func TestGetHandler_ShouldTimestampNonTerminalTextAsRFC3339Millis(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	h := GetHandler(false, false, &buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+	slog.New(h).Info("timestamped")
+
+	stamp, _, _ := strings.Cut(buf.String(), " ")
+	if _, err := time.Parse(textTimeFormat, stamp); err != nil {
+		t.Errorf("got timestamp %q, want %s: %v", stamp, textTimeFormat, err)
 	}
 }
 

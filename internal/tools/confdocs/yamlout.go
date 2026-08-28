@@ -22,9 +22,16 @@ const yamlWidth = 74
 // generating them from a second source would put two things in charge of one
 // number. The structs supply only the prose.
 //
-// A key the file does not set still gets its comment, with no `key: value`
-// line under it. That is how ssh_key, hsm, and fips appear: documented in
-// place, shown by example, and left unset.
+// A key the file does not set still gets its comment. Under it goes the
+// field's example: tag, commented out, so the prose names the key it
+// describes and a reader can uncomment a working line; a field with no tag
+// gets a blank line instead. That is how ssh_key, hsm, and fips appear:
+// documented in place, shown by example, and left unset.
+//
+// An example is not a default. It is prose from the struct, like the doc
+// comment beside it, and it is rendered only where the file sets nothing --
+// never above a live value, where it would be a second answer to a question
+// the value already answers.
 func WriteDefaults(path string, sections []*Section) (bool, error) {
 	before, err := os.ReadFile(path)
 	if err != nil {
@@ -79,9 +86,17 @@ func writeSection(b *strings.Builder, s *Section, values map[string]*yaml.Node, 
 	// beneath it would parse as a null key the file never had. hsm and
 	// queue are documented this way -- comment emitted, key withheld -- and
 	// left unset.
-	if sectionHasValue(s, values) {
-		fmt.Fprintf(b, "%s:\n", s.Key)
+	//
+	// The fields go with it. Written anyway they would be indented under a
+	// header that is not there, which reads as a run of loose sentences with
+	// no key attached to any of them; the section comment carries the shape
+	// of the block and ssoosshd.yaml(5) carries the per-key detail.
+	if !sectionHasValue(s, values) {
+		b.WriteString("\n")
+		return nil
 	}
+
+	fmt.Fprintf(b, "%s:\n", s.Key)
 	for _, f := range s.Fields {
 		if err := writeYAMLField(b, f, values, refs, s.Key, 1); err != nil {
 			return err
@@ -135,8 +150,14 @@ func writeYAMLField(b *strings.Builder, f *Field, values map[string]*yaml.Node, 
 
 	node, ok := values[f.Path]
 	if !ok {
-		// Documented but unset. A blank line keeps the comment from reading
-		// as the header for whichever key comes next.
+		// Documented but unset. The example: tag, when the field carries
+		// one, names the key and shows a value that can be uncommented as
+		// it stands. Without one, a blank line at least keeps the comment
+		// from reading as the header for whichever key comes next.
+		if f.Example != "" {
+			fmt.Fprintf(b, "%s# %s: %s\n", indent, f.Key, f.Example)
+			return nil
+		}
 		b.WriteString("\n")
 		return nil
 	}

@@ -68,25 +68,46 @@ func dropAttr(key string) func(groups []string, a slog.Attr) slog.Attr {
 	}
 }
 
+// textTimeFormat is the timestamp layout for non-terminal text output:
+// RFC3339 with milliseconds, which is what slog's own TextHandler wrote
+// before tint took over that path, so old and new archives of the same log
+// file sort and diff against each other unchanged.
+const textTimeFormat = "2006-01-02T15:04:05.000Z07:00"
+
 // GetHandler builds an slog.Handler writing to w: JSON if json is true,
-// otherwise colorized text (via tint) when isTerminal, or plain text
-// otherwise. isTerminal is the caller's responsibility to determine (see
-// terminalDetector) rather than detected internally.
+// otherwise text via tint, colorized with a short clock when isTerminal and
+// plain with a full timestamp when not. isTerminal is the caller's
+// responsibility to determine (see terminalDetector) rather than detected
+// internally.
+//
+// Both text paths go through tint rather than slog.NewTextHandler because
+// tint writes the message as bare prose. TextHandler renders it as an
+// attribute, so a message containing spaces is wrapped in quotes, and every
+// quote inside it then comes out backslash-escaped: config advice naming a
+// setting's value, or a wrapped error naming a path, arrives as
+// msg="mail.smtp.auth is \"none\" ..." and has to be read through the
+// escaping. The tradeoff is that plain text output is no longer logfmt, so
+// anything parsing these logs by machine should set log_json instead.
 func GetHandler(json bool, isTerminal bool, w io.Writer, opts *slog.HandlerOptions) slog.Handler {
-	switch {
-	case json:
+	if json {
 		return slog.NewJSONHandler(w, opts)
-	case isTerminal:
-		return tint.NewTextHandler(w, &tint.Options{
-			NoColor:     !isTerminal,
-			Level:       opts.Level,
-			AddSource:   opts.AddSource,
-			ReplaceAttr: opts.ReplaceAttr,
-			TimeFormat:  time.Stamp,
-		})
-	default:
-		return slog.NewTextHandler(w, opts)
 	}
+
+	// A terminal is being read live, where the date is today and the
+	// column width is worth saving; a file or a container stream is read
+	// later, where it is not.
+	timeFormat := textTimeFormat
+	if isTerminal {
+		timeFormat = time.Stamp
+	}
+
+	return tint.NewTextHandler(w, &tint.Options{
+		NoColor:     !isTerminal,
+		Level:       opts.Level,
+		AddSource:   opts.AddSource,
+		ReplaceAttr: opts.ReplaceAttr,
+		TimeFormat:  timeFormat,
+	})
 }
 
 // newNamedHandler builds cfg's handler wired for its own dedicated file.

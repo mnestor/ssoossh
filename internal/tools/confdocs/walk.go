@@ -48,8 +48,17 @@ type Field struct {
 	// leading "GoName " stripped from the first line.
 	Doc []string
 
-	// Example is the value from an `example:"..."` struct tag: a commented
-	// sample rendered into defaults.yaml above the key.
+	// Example is the value from an `example:"..."` struct tag: the sample
+	// WriteDefaults renders as a commented-out `key: value` line where a
+	// field defaults.yaml leaves unset would otherwise be nothing but
+	// prose. Rendered only in that case -- a field the file sets already
+	// shows its value, and a second one above it would only disagree.
+	//
+	// A tag on a field whose whole group defaults.yaml leaves unset is
+	// inert: the group is written as its own comment and nothing else, so
+	// there is no key to hang the sample under. Those blocks put their
+	// sample in the group's doc comment instead, the way hsm shows all of
+	// its keys at once.
 	Example string
 
 	// Children is non-empty when this field is a struct.

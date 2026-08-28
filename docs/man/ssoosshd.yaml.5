@@ -136,7 +136,7 @@ Default:
 .BR true .
 .TP
 .BI logging.log_json: " bool"
-Writes JSON instead of colorized or plain text.
+Writes JSON instead of text. Text is meant to be read, not parsed: the message is written as bare prose so quoted values in it are not escaped, which is not a machine\-readable format. Set this wherever a log collector has to pull fields back out.
 Default:
 .BR false .
 .SS db (the database connection, pooling, retries, and query logging)
@@ -165,7 +165,7 @@ Default:
 .BR false .
 .TP
 .BI db.logging.log_json: " bool"
-Writes JSON instead of colorized or plain text.
+Writes JSON instead of text. Text is meant to be read, not parsed: the message is written as bare prose so quoted values in it are not escaped, which is not a machine\-readable format. Set this wherever a log collector has to pull fields back out.
 Default:
 .BR false .
 .TP
@@ -251,7 +251,7 @@ Default:
 .BR false .
 .TP
 .BI http.access_logging.log_json: " bool"
-Writes JSON instead of colorized or plain text.
+Writes JSON instead of text. Text is meant to be read, not parsed: the message is written as bare prose so quoted values in it are not escaped, which is not a machine\-readable format. Set this wherever a log collector has to pull fields back out.
 Default:
 .BR false .
 .TP
@@ -407,7 +407,7 @@ Default:
 .BR false .
 .TP
 .BI queue.logging.log_json: " bool"
-Writes JSON instead of colorized or plain text.
+Writes JSON instead of text. Text is meant to be read, not parsed: the message is written as bare prose so quoted values in it are not escaped, which is not a machine\-readable format. Set this wherever a log collector has to pull fields back out.
 Default:
 .BR false .
 .SS authentication (OAuth/OIDC authentication for the server)
@@ -507,7 +507,7 @@ Default:
 .BR false .
 .TP
 .BI ldap.logging.log_json: " bool"
-Writes JSON instead of colorized or plain text.
+Writes JSON instead of text. Text is meant to be read, not parsed: the message is written as bare prose so quoted values in it are not escaped, which is not a machine\-readable format. Set this wherever a log collector has to pull fields back out.
 Default:
 .BR false .
 .SS admin (administrative and auditor access)
@@ -813,7 +813,7 @@ Default:
 .BR false .
 .TP
 .BI mail.logging.log_json: " bool"
-Writes JSON instead of colorized or plain text.
+Writes JSON instead of text. Text is meant to be read, not parsed: the message is written as bare prose so quoted values in it are not escaped, which is not a machine\-readable format. Set this wherever a log collector has to pull fields back out.
 Default:
 .BR false .
 .SS branding (customizes the login page and web UI)

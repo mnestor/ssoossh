@@ -93,7 +93,7 @@ func (a *app) initNotifications() error {
 	// Warned rather than refused: the local-relay deployment legitimately
 	// needs neither. See config.MailConfig.Warnings.
 	for _, warning := range a.config.Mail.Warnings() {
-		slog.Warn(warning)
+		slog.Warn(warning.Msg, warning.Attrs...)
 	}
 
 	renderer, err := mail.NewRenderer(a.config.Mail.TemplateDir, a.config.Mail.SubjectPrefix)

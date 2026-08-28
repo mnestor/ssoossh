@@ -38,8 +38,11 @@ type AppLogging struct {
 	// IncludeAppVersion adds a "version" attribute to every log record.
 	IncludeAppVersion bool `mapstructure:"include_app_version"`
 
-	// LogJSON writes JSON instead of colorized or plain text.
-	LogJSON bool `mapstructure:"log_json"`
+	// LogJSON writes JSON instead of text. Text is meant to be read, not
+	// parsed: the message is written as bare prose so quoted values in it
+	// are not escaped, which is not a machine-readable format. Set this
+	// wherever a log collector has to pull fields back out.
+	LogJSON bool `mapstructure:"log_json" example:"false"`
 }
 
 // GenericLogging configures a named, independently-routed log destination
@@ -59,10 +62,13 @@ type GenericLogging struct {
 	Level string `mapstructure:"level"`
 
 	// AddSource includes the source file and line on each record.
-	AddSource bool `mapstructure:"add_source"`
+	AddSource bool `mapstructure:"add_source" example:"false"`
 
-	// LogJSON writes JSON instead of colorized or plain text.
-	LogJSON bool `mapstructure:"log_json"`
+	// LogJSON writes JSON instead of text. Text is meant to be read, not
+	// parsed: the message is written as bare prose so quoted values in it
+	// are not escaped, which is not a machine-readable format. Set this
+	// wherever a log collector has to pull fields back out.
+	LogJSON bool `mapstructure:"log_json" example:"false"`
 }
 
 // AccessLogging configures which fields the HTTP access log records and
@@ -119,8 +125,11 @@ type AccessLogging struct {
 	// WithTraceID records the OpenTelemetry trace ID.
 	WithTraceID bool `mapstructure:"log_trace_id"`
 
-	// LogJSON writes JSON instead of colorized or plain text.
-	LogJSON bool `mapstructure:"log_json"`
+	// LogJSON writes JSON instead of text. Text is meant to be read, not
+	// parsed: the message is written as bare prose so quoted values in it
+	// are not escaped, which is not a machine-readable format. Set this
+	// wherever a log collector has to pull fields back out.
+	LogJSON bool `mapstructure:"log_json" example:"false"`
 }
 
 // LogFilename returns the configured destination filename, or "" if
