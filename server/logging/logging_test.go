@@ -297,8 +297,8 @@ func TestNew_ShouldReturnACloseFuncPerRotatingLogger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if len(closeFns) != 4 {
-		t.Fatalf("got %d close functions, want 4 (main, accesslog, db, queue)", len(closeFns))
+	if len(closeFns) != 6 {
+		t.Fatalf("got %d close functions, want 6 (main, accesslog, db, queue, ldap, audit)", len(closeFns))
 	}
 	for i, closeFn := range closeFns {
 		if err := closeFn(t.Context()); err != nil {

@@ -506,6 +506,52 @@ admin:
   # do next.
   disabled_message: ""
 
+# Configures the administrative audit stream: how long the database copy is
+# kept and where the durable log is shipped.
+#
+# The stream has two sinks and they are not equals. The Logging destination
+# below is the archive: one JSON line per event, unconditionally, for an
+# external log system to ship and retain. The database table is a bounded
+# cache that exists only to serve the web UI's recent-history views, which
+# is why it is pruned and deliberately not searchable beyond the two indexed
+# subject columns.
+audit:
+  # How long an event stays in the database table. The scheduled sweep deletes
+  # rows older than this. It bounds the UI's history, not the deployment's:
+  # the shipped log is the archive, so a short window here loses nothing that
+  # matters. Zero disables age-based pruning, leaving max_rows as the only
+  # bound.
+  retention: 1440h
+  # Caps the table as a safety valve behind Retention, so a burst of events
+  # cannot grow it without bound inside the retention window. The same sweep
+  # deletes oldest-first past the cap. The default is deliberately high: this
+  # exists to bound pathology, not to be the operative limit. Zero disables
+  # the cap.
+  max_rows: 1000000
+  # How often the retention sweep runs. Pruning is not urgent — the window
+  # is measured in weeks — so this is measured in hours rather than minutes.
+  sweep_interval: 1h
+  # The durable export: a dedicated destination that receives one JSON line
+  # per event, routed by a type=audit attribute like the LDAP and queue logs.
+  # Set its filename to split it into its own rotating file; leave it unset
+  # and the events still reach the general log. A deployment that configures
+  # nothing here loses the archive, not the audit trail's correctness.
+  logging:
+    # Log-file rotation for this destination, via the embedded timberjack
+    # logger, with the same keys and meanings as logging.* above. This
+    # destination is only split out of the main log once its filename is set;
+    # until then its records go to the general log.
+    # The minimum log level for this destination, in the same form as
+    # logging.level.
+
+    # Includes the source file and line on each record.
+    # add_source: false
+    # Writes JSON instead of text. Text is meant to be read, not parsed: the
+    # message is written as bare prose so quoted values in it are not escaped,
+    # which is not a machine-readable format. Set this wherever a log collector
+    # has to pull fields back out.
+    log_json: true
+
 # Optionally sources the CA key from a PKCS#11 token instead of ssh_key.
 # Exactly one of the two may be set at the config level (API mode has
 # neither; signing modes require one to be set). See docs/operations/hsm.md

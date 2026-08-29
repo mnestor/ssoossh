@@ -29,6 +29,7 @@ type services struct {
 	enrollment    *service.EnrollmentService
 	caKeyRegistry *service.CAKeyRegistry
 	notification  *service.NotificationService
+	audit         *service.AuditService
 }
 
 // initServices constructs the services using a.config and a.httpClient,
@@ -42,6 +43,7 @@ type services struct {
 func (a *app) initServices() (*services, error) {
 	svc := &services{}
 	svc.certificate = service.NewCertificateService(a.db)
+	svc.audit = service.NewAuditService(a.config, a.db)
 	svc.caKeyRegistry = service.NewCAKeyRegistry(a.db, 15*time.Minute)
 
 	g := new(errgroup.Group)
@@ -81,6 +83,14 @@ func (a *app) initServices() (*services, error) {
 	svc.notification = service.NewNotificationService(a.db, a.pubSub.Publisher, a.config.Mail.Enabled)
 	svc.certRequest.SetNotifier(svc.notification)
 	svc.enrollment.SetNotifier(svc.notification)
+
+	// The audit recorder is wired the same way and for the same reason: the
+	// services that mutate state append their audit rows in their own
+	// transactions, so they need the recorder rather than the other way
+	// round.
+	svc.certRequest.SetAuditor(svc.audit)
+	svc.enrollment.SetAuditor(svc.audit)
+	svc.auth.SetAuditor(svc.audit)
 
 	// Validate lifetime policy configuration against reverse-proxy settings.
 	// This is a startup check with logging only; bad config here is not an error.

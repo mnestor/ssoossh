@@ -50,6 +50,11 @@ type Config struct {
 	// are optional; empty disables the corresponding role.
 	Admin AdminConfig `mapstructure:"admin"`
 
+	// Audit configures the administrative audit stream: how long the
+	// database copy is kept and where the durable log is shipped. See
+	// AuditConfig.
+	Audit AuditConfig `mapstructure:"audit"`
+
 	// Signer carries everything the signer needs (the CA key and the
 	// broker), squashed so its YAML keys stay top-level. `ssoosshd sign`
 	// is configured entirely by this subset; the full server shares the
@@ -333,4 +338,43 @@ func containsGroup(haystack []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// AuditConfig configures the append-only administrative audit stream: an
+// ordered record of who did what, to whom, and when. See
+// docs/proposals/audit-log.md.
+//
+// The stream has two sinks and they are not equals. The Logging destination
+// below is the archive: one JSON line per event, unconditionally, for an
+// external log system to ship and retain. The database table is a bounded
+// cache that exists only to serve the web UI's recent-history views, which
+// is why it is pruned and deliberately not searchable beyond the two
+// indexed subject columns.
+type AuditConfig struct {
+	// Retention is how long an event stays in the database table. The
+	// scheduled sweep deletes rows older than this. It bounds the UI's
+	// history, not the deployment's: the shipped log is the archive, so a
+	// short window here loses nothing that matters. Zero disables
+	// age-based pruning, leaving MaxRows as the only bound.
+	Retention time.Duration `mapstructure:"retention,string" default:"1440h"`
+
+	// MaxRows caps the table as a safety valve behind Retention, so a burst
+	// of events cannot grow it without bound inside the retention window.
+	// The same sweep deletes oldest-first past the cap. The default is
+	// deliberately high: this exists to bound pathology, not to be the
+	// operative limit. Zero disables the cap.
+	MaxRows int64 `mapstructure:"max_rows" default:"1000000"`
+
+	// SweepInterval is how often the retention sweep runs. Pruning is not
+	// urgent — the window is measured in weeks — so this is measured in
+	// hours rather than minutes.
+	SweepInterval time.Duration `mapstructure:"sweep_interval,string" default:"1h"`
+
+	// Logging is the durable export: a dedicated destination that receives
+	// one JSON line per event, routed by a type=audit attribute like the
+	// LDAP and queue logs. Set its filename to split it into its own
+	// rotating file; leave it unset and the events still reach the general
+	// log. A deployment that configures nothing here loses the archive, not
+	// the audit trail's correctness.
+	Logging GenericLogging `mapstructure:"logging" default_log_json:"true"`
 }

@@ -38,6 +38,13 @@ type User struct {
 	// key to users.id). Nil when DisabledAt is nil.
 	DisabledByUserID *string `gorm:"column:disabled_by_user_id"`
 
+	// DisabledReason is why the user was disabled, required at the API and
+	// recorded here as denormalized current state so the person deciding
+	// whether to re-enable sees it without reading the audit trail. The
+	// audit trail is the history; this is the current state, and it
+	// survives audit pruning. Empty when not disabled.
+	DisabledReason string `gorm:"column:disabled_reason"`
+
 	// TODO: LDAP-sourced fields once identity enrichment is implemented.
 }
 

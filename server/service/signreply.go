@@ -226,6 +226,28 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 		return fmt.Errorf("failed to persist certificate audit record: %w", err)
 	}
 
+	// Shipped log only, never the table: the UI already has certificate
+	// history from the certificates table, so a table copy would be pure
+	// duplication. The archive line is the valuable part — it is the row an
+	// incident reviewer joins against target-host sshd logs.
+	if h.certs != nil {
+		h.certs.auditRecord(ctx, AuditEvent{
+			Action:     AuditCertIssued,
+			Target:     &AuditSubject{UserID: derefOrEmpty(userID)},
+			OccurredAt: reply.ValidAfter,
+			Detail: map[string]any{
+				"request_id":   derefOrEmpty(requestID),
+				"cert_type":    string(reply.Type),
+				"serial":       reply.Serial,
+				"key_id":       reply.KeyID,
+				"principals":   reply.Principals,
+				"fingerprint":  reply.PublicKeyFingerprint,
+				"valid_after":  reply.ValidAfter,
+				"valid_before": reply.ValidBefore,
+			},
+		})
+	}
+
 	return nil
 }
 

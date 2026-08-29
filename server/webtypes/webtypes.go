@@ -610,6 +610,11 @@ type AdminUserDetail struct {
 	DisabledByUserID   *string `json:"disabled_by_user_id,omitempty"`
 	DisabledByUsername *string `json:"disabled_by_username,omitempty"`
 
+	// DisabledReason is why the account was disabled, required at the API
+	// and shown here because this is where it meets the person deciding
+	// whether to re-enable. Omitted if not disabled.
+	DisabledReason string `json:"disabled_reason,omitempty"`
+
 	// ServiceEnrollmentCount is how many active (not expired) service
 	// enrollments this user has. Shown so an admin can decide whether to
 	// disable the account.
@@ -632,14 +637,71 @@ type DisableUserConsequences struct {
 	ServiceEnrollmentCount int `json:"service_enrollment_count" validate:"required"`
 }
 
-// DisableUserRequestBody is the request to disable a user, with optional reason.
+// DisableUserRequestBody is the request to disable a user.
 type DisableUserRequestBody struct {
-	// Reason is optional text explaining why the user was disabled, for audit.
-	Reason string `json:"reason,omitempty"`
+	// Reason explains why the user is being disabled. Required and
+	// server-validated (non-empty, length-capped): the next admin opening
+	// this account needs to learn why it was disabled, and an optional
+	// field does not get filled.
+	Reason string `json:"reason" validate:"required"`
 }
 
 // ReEnableUserRequestBody is the request to re-enable a user.
 type ReEnableUserRequestBody struct {
-	// Reason is optional text explaining why the user was re-enabled, for audit.
+	// Reason explains why the user is being re-enabled, e.g. "cleared with
+	// security, SEC-1234". Required on the same terms as the disable
+	// reason, and as valuable to the person after this one.
+	Reason string `json:"reason" validate:"required"`
+}
+
+// ExpireEnrollmentRequestBody is the request to expire an enrollment.
+type ExpireEnrollmentRequestBody struct {
+	// Reason explains why the enrollment is being expired. Required and
+	// server-validated, like the user containment reasons.
+	Reason string `json:"reason" validate:"required"`
+}
+
+// AuditSubjectResponse is one identity snapshot on an audit event: the
+// values as they stood at event time, never a live lookup. See
+// model.AuditEvent for why an audit row references nothing that can change.
+type AuditSubjectResponse struct {
+	// UserID is the grouping key the timelines are built on. It may be
+	// empty (a system or anonymous actor) and it may no longer match any
+	// row, which does not make the rest of the snapshot less true.
+	UserID   string   `json:"user_id,omitempty"`
+	Subject  string   `json:"subject,omitempty"`
+	Username string   `json:"username,omitempty"`
+	Email    string   `json:"email,omitempty"`
+	Groups   []string `json:"groups,omitempty"`
+}
+
+// AuditEventResponse is one administrative audit event for the UI.
+type AuditEventResponse struct {
+	ID        string    `json:"id" validate:"required"`
+	CreatedAt time.Time `json:"created_at" validate:"required"`
+
+	// Action is the namespaced action name, e.g. "user.disabled". The set
+	// grows without a wire change, so a client must render an unknown
+	// action rather than assume the list is closed.
+	Action string `json:"action" validate:"required"`
+
+	Actor  *AuditSubjectResponse `json:"actor,omitempty"`
+	Target *AuditSubjectResponse `json:"target,omitempty"`
+	// System marks an action taken by the server rather than a person,
+	// which is how a reader tells "nobody" from "not recorded".
+	System bool   `json:"system,omitempty"`
 	Reason string `json:"reason,omitempty"`
+
+	// Detail is the per-action specifics, passed through as decoded JSON so
+	// a new action's fields reach the UI without a wire type change. Never
+	// carries a secret.
+	Detail map[string]any `json:"detail,omitempty"`
+}
+
+// AuditEventsResponse is one page of the audit stream, newest first.
+type AuditEventsResponse struct {
+	Events []AuditEventResponse `json:"events" validate:"required"`
+	Total  int64                `json:"total"`
+	// NextOffset is the offset for the following page, or 0 on the last one.
+	NextOffset int `json:"next_offset,omitempty"`
 }

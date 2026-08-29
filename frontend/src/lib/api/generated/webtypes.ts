@@ -709,6 +709,12 @@ export interface AdminUserDetail {
 	disabled_by_user_id?: string;
 	disabled_by_username?: string;
 	/**
+	 * DisabledReason is why the account was disabled, required at the API
+	 * and shown here because this is where it meets the person deciding
+	 * whether to re-enable. Omitted if not disabled.
+	 */
+	disabled_reason?: string;
+	/**
 	 * ServiceEnrollmentCount is how many active (not expired) service
 	 * enrollments this user has. Shown so an admin can decide whether to
 	 * disable the account.
@@ -738,20 +744,90 @@ export interface DisableUserConsequences {
 	service_enrollment_count: number /* int */;
 }
 /**
- * DisableUserRequestBody is the request to disable a user, with optional reason.
+ * DisableUserRequestBody is the request to disable a user.
  */
 export interface DisableUserRequestBody {
 	/**
-	 * Reason is optional text explaining why the user was disabled, for audit.
+	 * Reason explains why the user is being disabled. Required and
+	 * server-validated (non-empty, length-capped): the next admin opening
+	 * this account needs to learn why it was disabled, and an optional
+	 * field does not get filled.
 	 */
-	reason?: string;
+	reason: string;
 }
 /**
  * ReEnableUserRequestBody is the request to re-enable a user.
  */
 export interface ReEnableUserRequestBody {
 	/**
-	 * Reason is optional text explaining why the user was re-enabled, for audit.
+	 * Reason explains why the user is being re-enabled, e.g. "cleared with
+	 * security, SEC-1234". Required on the same terms as the disable
+	 * reason, and as valuable to the person after this one.
 	 */
+	reason: string;
+}
+/**
+ * ExpireEnrollmentRequestBody is the request to expire an enrollment.
+ */
+export interface ExpireEnrollmentRequestBody {
+	/**
+	 * Reason explains why the enrollment is being expired. Required and
+	 * server-validated, like the user containment reasons.
+	 */
+	reason: string;
+}
+/**
+ * AuditSubjectResponse is one identity snapshot on an audit event: the
+ * values as they stood at event time, never a live lookup. See
+ * model.AuditEvent for why an audit row references nothing that can change.
+ */
+export interface AuditSubjectResponse {
+	/**
+	 * UserID is the grouping key the timelines are built on. It may be
+	 * empty (a system or anonymous actor) and it may no longer match any
+	 * row, which does not make the rest of the snapshot less true.
+	 */
+	user_id?: string;
+	subject?: string;
+	username?: string;
+	email?: string;
+	groups?: string[];
+}
+/**
+ * AuditEventResponse is one administrative audit event for the UI.
+ */
+export interface AuditEventResponse {
+	id: string;
+	created_at: string;
+	/**
+	 * Action is the namespaced action name, e.g. "user.disabled". The set
+	 * grows without a wire change, so a client must render an unknown
+	 * action rather than assume the list is closed.
+	 */
+	action: string;
+	actor?: AuditSubjectResponse;
+	target?: AuditSubjectResponse;
+	/**
+	 * System marks an action taken by the server rather than a person,
+	 * which is how a reader tells "nobody" from "not recorded".
+	 */
+	system?: boolean;
 	reason?: string;
+	/**
+	 * Detail is the per-action specifics, passed through as decoded JSON so
+	 * a new action's fields reach the UI without a wire type change. Never
+	 * carries a secret.
+	 */
+	detail?: { [key: string]: any};
+}
+/**
+ * AuditEventsResponse is one page of the audit stream, newest first.
+ */
+export interface AuditEventsResponse {
+	events: AuditEventResponse[];
+	total: number /* int64 */;
+	/**
+	 * NextOffset is the offset for the following page, or 0 on the last one.
+	 */
+	next_offset?: number /* int */;
 }

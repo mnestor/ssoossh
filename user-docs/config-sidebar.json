@@ -49,6 +49,10 @@
     "slug": "reference/config/admin"
   },
   {
+    "label": "audit",
+    "slug": "reference/config/audit"
+  },
+  {
     "label": "hsm",
     "slug": "reference/config/hsm"
   },

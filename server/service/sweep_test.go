@@ -355,7 +355,7 @@ func TestSweepDisabledUserEnrollments_ShouldNotExpireBeforeGracePeriod(t *testin
 	db.Create(&enrollment)
 
 	// Run the sweep
-	if err := SweepDisabledUserEnrollments(ctx, db, gracePeriod); err != nil {
+	if err := SweepDisabledUserEnrollments(ctx, db, gracePeriod, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -403,7 +403,7 @@ func TestSweepDisabledUserEnrollments_ShouldExpireAfterGracePeriod(t *testing.T)
 	db.Create(&enrollment)
 
 	// Run the sweep
-	if err := SweepDisabledUserEnrollments(ctx, db, gracePeriod); err != nil {
+	if err := SweepDisabledUserEnrollments(ctx, db, gracePeriod, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -459,7 +459,7 @@ func TestSweepDisabledUserEnrollments_ShouldIgnoreAlreadyExpiredEnrollments(t *t
 	db.Where("id = ?", enrollment.ID).First(&beforeSweep)
 
 	// Run the sweep
-	if err := SweepDisabledUserEnrollments(ctx, db, gracePeriod); err != nil {
+	if err := SweepDisabledUserEnrollments(ctx, db, gracePeriod, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -505,7 +505,7 @@ func TestSweepDisabledUserEnrollments_ShouldIgnoreEnabledUsers(t *testing.T) {
 	db.Create(&enrollment)
 
 	// Run the sweep
-	if err := SweepDisabledUserEnrollments(ctx, db, gracePeriod); err != nil {
+	if err := SweepDisabledUserEnrollments(ctx, db, gracePeriod, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -552,7 +552,7 @@ func TestSweepDisabledUserEnrollments_IsIdempotent(t *testing.T) {
 	db.Create(&enrollment)
 
 	// Run the sweep twice
-	if err := SweepDisabledUserEnrollments(ctx, db, gracePeriod); err != nil {
+	if err := SweepDisabledUserEnrollments(ctx, db, gracePeriod, nil); err != nil {
 		t.Fatalf("first sweep failed: %v", err)
 	}
 
@@ -560,7 +560,7 @@ func TestSweepDisabledUserEnrollments_IsIdempotent(t *testing.T) {
 	db.Where("id = ?", enrollment.ID).First(&firstPass)
 	firstExpiresAt := firstPass.ExpiresAt
 
-	if err := SweepDisabledUserEnrollments(ctx, db, gracePeriod); err != nil {
+	if err := SweepDisabledUserEnrollments(ctx, db, gracePeriod, nil); err != nil {
 		t.Fatalf("second sweep failed: %v", err)
 	}
 

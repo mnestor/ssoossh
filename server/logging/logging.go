@@ -1,5 +1,5 @@
 // Package logging sets up the process's slog default from config.Logging
-// plus the "type"-tagged named loggers (access log, db, queue, ldap).
+// plus the "type"-tagged named loggers (access log, db, queue, ldap, audit).
 //
 // # The destination contract
 //
@@ -98,6 +98,12 @@ func New(c *config.Config) (closeFns []func(context.Context) error, err error) {
 		func(context.Context) error { return c.HTTP.AccessLogging.Close() },
 		func(context.Context) error { return c.DB.Logging.Close() },
 		func(context.Context) error { return c.Queue.Logging.Close() },
+		// LDAP and audit are named loggers like the ones above, so their
+		// rotating files need releasing on the same terms. LDAP's was
+		// missing: a deployment that set ldap.logging.filename leaked the
+		// handle and its rotation goroutine across shutdown.
+		func(context.Context) error { return c.LDAP.Logging.Close() },
+		func(context.Context) error { return c.Audit.Logging.Close() },
 	}, nil
 }
 
@@ -110,6 +116,7 @@ func namedLoggers(c *config.Config) []namedLoggerConfig {
 		{tag: TagDB, src: &c.DB.Logging},
 		{tag: TagQueue, src: &c.Queue.Logging},
 		{tag: TagLDAP, src: &c.LDAP.Logging},
+		{tag: TagAudit, src: &c.Audit.Logging},
 	}
 }
 

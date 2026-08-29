@@ -1,10 +1,18 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { getAdminUser, disableUser, enableUser, getAdminConfig } from '$lib/api/endpoints';
+	import {
+		getAdminUser,
+		disableUser,
+		enableUser,
+		getAdminConfig,
+		getUserAudit
+	} from '$lib/api/endpoints';
 	import Button from '$lib/components/Button.svelte';
+	import AuditTimeline from '$lib/components/AuditTimeline.svelte';
 	import type {
 		AdminUserDetail,
+		AuditEvent,
 		DisableUserConsequences,
 		EffectiveConfigResponse
 	} from '$lib/api/types';
@@ -16,6 +24,13 @@
 	let actionBusy = $state(false);
 	let showDisableConfirm = $state(false);
 	let disableConsequences: DisableUserConsequences | null = $state(null);
+	// Both reasons are required by the server, so the buttons stay disabled
+	// until one is typed rather than letting the request fail.
+	let disableReason = $state('');
+	let showEnableConfirm = $state(false);
+	let enableReason = $state('');
+	let auditEvents: AuditEvent[] = $state([]);
+	let auditError: string | null = $state(null);
 
 	// $derived, not a plain const: on a client-side navigation the component
 	// initialises before the router has populated params, so capturing the
@@ -85,10 +100,12 @@
 	async function handleDisable() {
 		actionBusy = true;
 		try {
-			await disableUser(userId);
+			await disableUser(userId, { reason: disableReason });
 			await loadUser();
+			await loadAudit();
 			showDisableConfirm = false;
 			disableConsequences = null;
+			disableReason = '';
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'Failed to disable user';
 		} finally {
@@ -99,8 +116,11 @@
 	async function handleEnable() {
 		actionBusy = true;
 		try {
-			await enableUser(userId);
+			await enableUser(userId, { reason: enableReason });
 			await loadUser();
+			await loadAudit();
+			showEnableConfirm = false;
+			enableReason = '';
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'Failed to enable user';
 		} finally {
@@ -108,9 +128,22 @@
 		}
 	}
 
+	// The timeline is a separate, auditor-scoped read, so its failure is
+	// reported beside it rather than replacing the whole page with an error.
+	async function loadAudit() {
+		try {
+			const page = await getUserAudit(userId, { limit: 25 });
+			auditEvents = page.events;
+			auditError = null;
+		} catch (cause) {
+			auditError = cause instanceof Error ? cause.message : 'Failed to load the audit timeline';
+		}
+	}
+
 	onMount(() => {
 		loadConfig();
 		loadUser();
+		loadAudit();
 	});
 </script>
 
@@ -129,8 +162,13 @@
 			</div>
 			<div class="flex gap-2">
 				{#if user.disabled_at}
-					<Button variant="primary" disabled={actionBusy} onclick={handleEnable}>
-						{actionBusy ? 'Enabling...' : 'Re-enable'}
+					<Button
+						variant="primary"
+						testid="enable-user"
+						disabled={actionBusy}
+						onclick={() => (showEnableConfirm = true)}
+					>
+						Re-enable
 					</Button>
 				{:else}
 					<Button
@@ -165,6 +203,10 @@
 					<div data-testid="user-disabled-badge">
 						<p class="text-xs font-semibold text-danger">Disabled At</p>
 						<p>{new Date(user.disabled_at).toLocaleString()}</p>
+					</div>
+					<div data-testid="user-disabled-reason">
+						<p class="text-xs font-semibold text-danger">Disable Reason</p>
+						<p>{user.disabled_reason || 'No reason recorded'}</p>
 					</div>
 				{/if}
 			</div>
@@ -246,6 +288,21 @@
 						<strong>{new Date(disableConsequences.expire_at_timestamp).toLocaleString()}</strong>,
 						allowing running services time to rotate credentials.
 					</p>
+					<label class="mb-4 block">
+						<span class="mb-1 block text-xs font-semibold text-ink-muted">
+							Reason (required)
+						</span>
+						<textarea
+							data-testid="disable-reason"
+							bind:value={disableReason}
+							rows="3"
+							placeholder="Why is this account being disabled? e.g. offboarded, SEC-1234"
+							class="w-full rounded border border-border-subtle bg-surface-muted p-2 text-sm"
+						></textarea>
+						<span class="mt-1 block text-xs text-ink-muted">
+							Shown to whoever decides whether to re-enable this account.
+						</span>
+					</label>
 					<div class="flex justify-end gap-2">
 						<Button
 							variant="ghost"
@@ -253,6 +310,7 @@
 							onclick={() => {
 								showDisableConfirm = false;
 								disableConsequences = null;
+								disableReason = '';
 							}}
 						>
 							Cancel
@@ -260,7 +318,7 @@
 						<Button
 							variant="danger"
 							testid="confirm-disable"
-							disabled={actionBusy}
+							disabled={actionBusy || disableReason.trim() === ''}
 							onclick={handleDisable}
 						>
 							{actionBusy ? 'Disabling...' : 'Disable'}
@@ -269,5 +327,69 @@
 				</div>
 			</div>
 		{/if}
+
+		<!-- Re-enable confirmation, which exists for its reason field: the
+		     next reader of this account benefits from "cleared with security,
+		     SEC-1234" as much as from why it was disabled. -->
+		{#if showEnableConfirm && user}
+			<div class="fixed inset-0 flex items-center justify-center bg-black/50 p-4">
+				<div class="w-full max-w-md rounded-lg bg-surface p-6 shadow-lg">
+					<h3 class="mb-4 text-lg font-semibold text-ink">Re-enable User?</h3>
+					<p class="mb-4 text-sm text-ink-muted">
+						This restores <strong>{user.username}</strong>'s ability to authenticate. Service
+						enrollments that already expired are not restored.
+					</p>
+					{#if user.disabled_reason}
+						<p class="mb-4 rounded bg-surface-muted p-2 text-sm">
+							<span class="font-semibold text-ink-muted">Disabled because:</span>
+							{user.disabled_reason}
+						</p>
+					{/if}
+					<label class="mb-4 block">
+						<span class="mb-1 block text-xs font-semibold text-ink-muted">
+							Reason (required)
+						</span>
+						<textarea
+							data-testid="enable-reason"
+							bind:value={enableReason}
+							rows="3"
+							placeholder="Why is this account being restored? e.g. cleared with security, SEC-1234"
+							class="w-full rounded border border-border-subtle bg-surface-muted p-2 text-sm"
+						></textarea>
+					</label>
+					<div class="flex justify-end gap-2">
+						<Button
+							variant="ghost"
+							disabled={actionBusy}
+							onclick={() => {
+								showEnableConfirm = false;
+								enableReason = '';
+							}}
+						>
+							Cancel
+						</Button>
+						<Button
+							variant="primary"
+							testid="confirm-enable"
+							disabled={actionBusy || enableReason.trim() === ''}
+							onclick={handleEnable}
+						>
+							{actionBusy ? 'Enabling...' : 'Re-enable'}
+						</Button>
+					</div>
+				</div>
+			</div>
+		{/if}
+
+		<!-- Audit timeline: everything this account did and everything done
+		     to it, from the same rows. -->
+		<div class="rounded-lg border border-border-subtle bg-surface p-4">
+			<h2 class="mb-4 font-semibold text-ink">Audit Timeline</h2>
+			{#if auditError}
+				<p class="text-sm text-danger">{auditError}</p>
+			{:else}
+				<AuditTimeline events={auditEvents} subjectUserId={userId} />
+			{/if}
+		</div>
 	{/if}
 </div>

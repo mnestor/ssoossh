@@ -162,6 +162,10 @@ type CertRequestService struct {
 	// deployment with mail off needs no branch at the call site.
 	notifier Notifier
 
+	// auditor records the cert.* events. Nil until SetAuditor runs, and
+	// left nil in tests that do not exercise auditing.
+	auditor *AuditService
+
 	mu sync.Mutex
 	// resolved caches the outcome for any requestID notifyWaiter has fired
 	// for, so a Wait call arriving after resolution (a late reconnect, or
@@ -216,6 +220,37 @@ func (s *CertRequestService) SetNotifier(n Notifier) {
 	if n != nil {
 		s.notifier = n
 	}
+}
+
+// SetAuditor attaches the audit recorder, on the same terms as
+// SetNotifier: optional, wired at startup, and absent in tests that do not
+// exercise it.
+func (s *CertRequestService) SetAuditor(a *AuditService) { s.auditor = a }
+
+// auditTx appends event inside tx, so an approval and its audit row commit
+// together or not at all. A nil auditor is a no-op.
+func (s *CertRequestService) auditTx(tx *gorm.DB, event AuditEvent) error {
+	if s.auditor == nil {
+		return nil
+	}
+	return s.auditor.RecordTx(tx, event)
+}
+
+// auditLog emits the shipped-log line for an event already written by
+// auditTx, after that transaction has committed.
+func (s *CertRequestService) auditLog(event AuditEvent) {
+	if s.auditor == nil {
+		return
+	}
+	s.auditor.LogOnly(event)
+}
+
+// auditRecord writes an event that has no transaction to ride along with.
+func (s *CertRequestService) auditRecord(ctx context.Context, event AuditEvent) {
+	if s.auditor == nil {
+		return
+	}
+	s.auditor.Record(ctx, event)
 }
 
 // ValidateStartupConfig checks the lifetime policy configuration against the
@@ -332,6 +367,21 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 	if err := s.db.WithContext(ctx).Create(&req).Error; err != nil {
 		return "", fmt.Errorf("failed to persist certificate request: %w", err)
 	}
+
+	// A request is created by an unauthenticated client, so nothing knows
+	// whose it is yet: the event carries no actor and no target, only the
+	// connection detail an incident reviewer would want.
+	s.auditRecord(ctx, AuditEvent{
+		Action:     AuditCertRequested,
+		OccurredAt: req.CreatedAt,
+		Detail: map[string]any{
+			"request_id":     req.ID,
+			"cert_type":      string(req.Type),
+			"source_ip":      req.SourceIP,
+			"local_username": req.LocalUsername,
+			"local_hostname": req.LocalHostname,
+		},
+	})
 
 	return req.ID, nil
 }
@@ -793,6 +843,27 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 		return err
 	}
 
+	// The code itself is deliberately absent: it is a bearer credential,
+	// and the never-log-sensitive-data rule covers audit payloads too.
+	auditEvent := AuditEvent{
+		Action: AuditEnrollmentCodeCreated,
+		// derefOrEmpty, not a dereference: the guarded UPDATE inside the
+		// transaction below is what establishes req.UserID is set, and
+		// this is built before it runs.
+		Actor:      AuditSubjectFromIdentity(identity, derefOrEmpty(req.UserID)),
+		OccurredAt: now,
+		Detail: map[string]any{
+			"request_id":      req.ID,
+			"enrollment_id":   enrollmentID,
+			"service_account": serviceAccount,
+			"key_id":          keyID,
+			"principals":      principals,
+			"source_ip":       req.SourceIP,
+			"expires_at":      expiresAt,
+			"cert_lifetime":   effectiveDuration.String(),
+		},
+	}
+
 	// The status update, enrollment creation, and decision-audit insert are
 	// introduced together by this change, so they're wrapped in one transaction
 	// rather than adding a new inconsistency window while already touching
@@ -840,11 +911,19 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 		if err := tx.Create(decision).Error; err != nil {
 			return fmt.Errorf("failed to record approval decision: %w", err)
 		}
+		// Same transaction as the state change it describes, so an
+		// enrollment without its audit row is unrepresentable.
+		if err := s.auditTx(tx, auditEvent); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
+
+	// Best-effort archive copy, after the row is durable.
+	s.auditLog(auditEvent)
 
 	// Read only now that the transaction has committed: req.UserID is bound
 	// by Approve, and the guarded UPDATE inside the transaction is what
@@ -1035,6 +1114,20 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 		return err
 	}
 
+	auditEvent := AuditEvent{
+		Action:     AuditCertApproved,
+		Actor:      AuditSubjectFromIdentity(identity, derefOrEmpty(req.UserID)),
+		OccurredAt: now,
+		Detail: map[string]any{
+			"request_id":    req.ID,
+			"cert_type":     string(req.Type),
+			"key_id":        keyID,
+			"serial":        serialNum,
+			"source_ip":     req.SourceIP,
+			"cert_lifetime": effectiveDuration.String(),
+		},
+	}
+
 	// See approveServiceEnrollment's comment on why this pair is
 	// transactional but the wider bind/resolve/queue sequence stays out of
 	// scope here.
@@ -1054,11 +1147,16 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 		if err := tx.Create(decision).Error; err != nil {
 			return fmt.Errorf("failed to record approval decision: %w", err)
 		}
+		if err := s.auditTx(tx, auditEvent); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
+
+	s.auditLog(auditEvent)
 
 	// Principals are derived per-type: user uses the approver's selection
 	// (or defaults to their username), PAM uses the local account being
@@ -1100,6 +1198,16 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 	return nil
 }
 
+// derefOrEmpty reads an optional id column into a plain string, for the
+// audit grouping keys where "not yet bound" and "no user" are both simply
+// no key.
+func derefOrEmpty(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
 // intersectStrings returns the elements of requested that also appear in
 // permitted, preserving requested's order. nil/empty permitted yields nil.
 func intersectStrings(requested, permitted []string) []string {
@@ -1135,6 +1243,13 @@ func (s *CertRequestService) Deny(ctx context.Context, requestID string, identit
 		return err
 	}
 
+	auditEvent := AuditEvent{
+		Action:     AuditCertDenied,
+		Actor:      AuditSubjectFromIdentity(identity, ""),
+		OccurredAt: now,
+		Detail:     map[string]any{"request_id": requestID},
+	}
+
 	// See approveServiceEnrollment's comment on why this pair is
 	// transactional but the wider bind/resolve/queue sequence stays out of
 	// scope here.
@@ -1160,11 +1275,16 @@ func (s *CertRequestService) Deny(ctx context.Context, requestID string, identit
 		if err := tx.Create(decision).Error; err != nil {
 			return fmt.Errorf("failed to record denial decision: %w", err)
 		}
+		if err := s.auditTx(tx, auditEvent); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
+
+	s.auditLog(auditEvent)
 
 	s.notifyWaiter(requestID, WaitOutcome{Status: model.CertificateRequestStatusDenied})
 

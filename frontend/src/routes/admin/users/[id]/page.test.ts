@@ -24,13 +24,18 @@ function mockDetail(overrides: Record<string, unknown> = {}) {
 		'fetch',
 		vi.fn((input: RequestInfo | URL) => {
 			const url = String(input);
-			const body = url.includes('/admin/config')
-				? {
-						admin_disable_grace_period: GRACE,
-						admin_contact_email: 'it-help@corp.example',
-						admin_disabled_message: 'Open a ticket at go/access'
-					}
-				: {
+			// The audit timeline is a separate auditor-scoped read the page
+			// makes on mount; answering it here keeps the stub matching the
+			// three calls production makes.
+			const body = url.includes('/audit')
+				? { events: [], total: 0 }
+				: url.includes('/admin/config')
+					? {
+							admin_disable_grace_period: GRACE,
+							admin_contact_email: 'it-help@corp.example',
+							admin_disabled_message: 'Open a ticket at go/access'
+						}
+					: {
 						id: 'user-1',
 						username: 'alice',
 						email: 'alice@corp.example',
@@ -43,10 +48,10 @@ function mockDetail(overrides: Record<string, unknown> = {}) {
 						updated_at: '2026-08-01T10:00:00Z',
 						service_enrollment_count: ENROLLMENTS,
 						certificate_count: 7,
-						disabled_at: undefined,
-						disabled_by_username: undefined,
-						...overrides
-					};
+							disabled_at: undefined,
+							disabled_by_username: undefined,
+							...overrides
+						};
 			return Promise.resolve(
 				new Response(JSON.stringify({ data: body, error: null }), {
 					status: 200,
@@ -140,5 +145,61 @@ describe('Admin user detail', () => {
 		mockDetail({ disabled_at: '2026-08-20T09:00:00Z', disabled_by_username: 'root-admin' });
 		render(Page);
 		expect(await screen.findByText('root-admin')).toBeInTheDocument();
+	});
+
+	// The server requires a non-empty reason, so the button is gated rather
+	// than letting the confirm fail with a 400 the admin has to interpret.
+	it('should not allow confirming a disable until a reason is given', async () => {
+		mockDetail();
+		render(Page);
+		await screen.findByText('alice');
+
+		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
+		await screen.findByText(/Disable User\?/);
+
+		expect(screen.getByTestId('confirm-disable')).toBeDisabled();
+
+		await userEvent.type(screen.getByTestId('disable-reason'), 'offboarded, SEC-1234');
+		expect(screen.getByTestId('confirm-disable')).toBeEnabled();
+	});
+
+	it('should not treat a whitespace-only reason as a reason', async () => {
+		mockDetail();
+		render(Page);
+		await screen.findByText('alice');
+
+		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
+		await screen.findByText(/Disable User\?/);
+		await userEvent.type(screen.getByTestId('disable-reason'), '   ');
+
+		expect(screen.getByTestId('confirm-disable')).toBeDisabled();
+	});
+
+	// The motivating case for the whole audit change: the person deciding
+	// whether to re-enable has to be able to see why it was disabled.
+	it('should show the recorded disable reason on a disabled account', async () => {
+		mockDetail({
+			disabled_at: '2026-08-20T09:00:00Z',
+			disabled_by_username: 'root-admin',
+			disabled_reason: 'offboarded, SEC-1234'
+		});
+		render(Page);
+		expect(await screen.findByTestId('user-disabled-reason')).toHaveTextContent(
+			'offboarded, SEC-1234'
+		);
+	});
+
+	it('should require a reason before re-enabling', async () => {
+		mockDetail({ disabled_at: '2026-08-20T09:00:00Z', disabled_by_username: 'root-admin' });
+		render(Page);
+		await screen.findByText('alice');
+
+		await userEvent.click(screen.getByTestId('enable-user'));
+		await screen.findByText(/Re-enable User\?/);
+
+		expect(screen.getByTestId('confirm-enable')).toBeDisabled();
+
+		await userEvent.type(screen.getByTestId('enable-reason'), 'cleared with security');
+		expect(screen.getByTestId('confirm-enable')).toBeEnabled();
 	});
 });

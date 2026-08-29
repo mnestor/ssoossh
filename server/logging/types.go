@@ -20,6 +20,7 @@ const (
 	TagDB        = "db"
 	TagQueue     = "queue"
 	TagLDAP      = "ldap"
+	TagAudit     = "audit"
 )
 
 // Tagged returns a logger whose records carry the named-logger tag, for

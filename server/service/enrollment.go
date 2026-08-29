@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
@@ -32,7 +33,7 @@ type EnrollmentProvider interface {
 	ListForIdentity(ctx context.Context, identity *Identity) ([]ServiceEnrollment, error)
 	ListForAdmin(ctx context.Context, identity *Identity, params AdminListParams) (AdminEnrollmentList, error)
 	GetEnrollmentDetail(ctx context.Context, enrollmentID string, identity *Identity) (AdminEnrollmentDetail, error)
-	Reassign(ctx context.Context, enrollmentID string, toUserID string, identity *Identity) error
+	Reassign(ctx context.Context, enrollmentID string, toUserID string, reason string, identity *Identity) error
 }
 
 // EnrollmentService redeems an approved model.Enrollment (created by
@@ -58,6 +59,9 @@ type EnrollmentService struct {
 	// notifier reports each redemption to the approving user. Never nil —
 	// see CertRequestService.SetNotifier.
 	notifier Notifier
+
+	// auditor records the enrollment.* events. Nil until SetAuditor runs.
+	auditor *AuditService
 }
 
 // NewEnrollmentService constructs an EnrollmentService signing through the
@@ -78,6 +82,35 @@ func (s *EnrollmentService) SetNotifier(n Notifier) {
 	if n != nil {
 		s.notifier = n
 	}
+}
+
+// SetAuditor attaches the audit recorder. See
+// CertRequestService.SetAuditor.
+func (s *EnrollmentService) SetAuditor(a *AuditService) { s.auditor = a }
+
+// auditTx appends event inside tx, so a reassignment and its audit row
+// commit together or not at all. A nil auditor is a no-op.
+func (s *EnrollmentService) auditTx(tx *gorm.DB, event AuditEvent) error {
+	if s.auditor == nil {
+		return nil
+	}
+	return s.auditor.RecordTx(tx, event)
+}
+
+// auditLog emits the archive line for an event already written by auditTx.
+func (s *EnrollmentService) auditLog(event AuditEvent) {
+	if s.auditor == nil {
+		return
+	}
+	s.auditor.LogOnly(event)
+}
+
+// auditRecord writes an event with no transaction to ride along with.
+func (s *EnrollmentService) auditRecord(ctx context.Context, event AuditEvent) {
+	if s.auditor == nil {
+		return
+	}
+	s.auditor.Record(ctx, event)
 }
 
 // Retrieve signs and returns a service certificate for the enrollment
@@ -208,6 +241,8 @@ func (s *EnrollmentService) Retrieve(ctx context.Context, code string, sourceIP 
 	}
 
 	s.markRetrievalSucceeded(ctx, enrollment.ID, retrieval.ID, now)
+
+	s.auditRedemption(ctx, enrollment, serialNum, sourceIP, now)
 
 	s.notifyRedemption(ctx, enrollment, retrieval, principals, validBefore, firstRedemption, true)
 
@@ -633,6 +668,26 @@ func (s *EnrollmentService) markRetrievalSucceeded(ctx context.Context, enrollme
 	}
 }
 
+// auditRedemption records one redemption. Recorded outside a transaction
+// for the same reason markRetrievalSucceeded's writes are: the certificate
+// is already signed and in the caller's hands, so nothing here may fail the
+// retrieval. The redeeming party is unauthenticated (a code, not a
+// session), so the event carries no actor and targets the enrollment's
+// owner.
+func (s *EnrollmentService) auditRedemption(ctx context.Context, enrollment model.Enrollment, serialNum uint64, sourceIP string, now time.Time) {
+	s.auditRecord(ctx, AuditEvent{
+		Action:     AuditEnrollmentRedeemed,
+		Target:     &AuditSubject{UserID: enrollment.UserID},
+		OccurredAt: now,
+		Detail: map[string]any{
+			"enrollment_id": enrollment.ID,
+			"key_id":        enrollment.KeyID,
+			"serial":        serialNum,
+			"source_ip":     sourceIP,
+		},
+	})
+}
+
 // ListForAdmin returns a paged, searchable list of all enrollments across
 // all users, visible to auditors.
 //
@@ -892,7 +947,46 @@ func (s *EnrollmentService) isEligibleForReassignment(ctx context.Context, enrol
 //
 // Returns Forbidden for non-owners and non-admins, InvalidRequest for an
 // ineligible target, and NotFound for an unknown enrollment.
-func (s *EnrollmentService) Reassign(ctx context.Context, enrollmentID string, toUserID string, identity *Identity) error {
+// authorizeReassignment checks that identity may reassign enrollment —
+// owner or admin — and resolves the reassigner's users row, which the
+// records written afterwards are keyed on.
+//
+// Split out of Reassign because the two questions it answers ("may you"
+// and "who are you") share the admin determination, so keeping them
+// together avoids resolving membership twice.
+func (s *EnrollmentService) authorizeReassignment(ctx context.Context, enrollment model.Enrollment, identity *Identity) (model.User, error) {
+	// Admin is determined by RequireGroup membership.
+	isAdmin := false
+	if s.config.Admin.IsAdminEnabled() {
+		isAdmin = slices.Contains(identity.Groups, s.config.Admin.RequireGroup)
+	}
+
+	if !isAdmin {
+		var user model.User
+		err := s.db.WithContext(ctx).First(&user, "subject = ?", identity.Subject).Error
+		if err != nil || user.ID != enrollment.UserID {
+			return model.User{}, &errorresponses.ForbiddenError{Reason: "you must be the enrollment owner or an admin to reassign it"}
+		}
+		// Owner reassigning their own enrollment; the row is already in hand.
+		return model.User{ID: enrollment.UserID}, nil
+	}
+
+	// Admin reassigning; load their user ID from the subject.
+	var reassigner model.User
+	if err := s.db.WithContext(ctx).First(&reassigner, "subject = ?", identity.Subject).Error; err != nil {
+		return model.User{}, fmt.Errorf("failed to load reassigner user: %w", err)
+	}
+	return reassigner, nil
+}
+
+func (s *EnrollmentService) Reassign(ctx context.Context, enrollmentID string, toUserID string, reason string, identity *Identity) error {
+	// Validated before anything is read or written: a reassignment with no
+	// stated reason is exactly the record that is useless later.
+	reason, err := ValidateAuditReason(AuditEnrollmentReassigned, reason)
+	if err != nil {
+		return &errorresponses.InvalidRequestError{Reason: err.Error()}
+	}
+
 	// Load the enrollment
 	var enrollment model.Enrollment
 	if err := s.db.WithContext(ctx).First(&enrollment, "id = ?", enrollmentID).Error; err != nil {
@@ -902,24 +996,9 @@ func (s *EnrollmentService) Reassign(ctx context.Context, enrollmentID string, t
 		return fmt.Errorf("failed to look up enrollment: %w", err)
 	}
 
-	// Check authorization: owner or admin
-	// Admin is determined by RequireGroup membership
-	var isAdmin bool
-	if s.config.Admin.IsAdminEnabled() {
-		for _, group := range identity.Groups {
-			if group == s.config.Admin.RequireGroup {
-				isAdmin = true
-				break
-			}
-		}
-	}
-
-	if !isAdmin {
-		var user model.User
-		err := s.db.WithContext(ctx).First(&user, "subject = ?", identity.Subject).Error
-		if err != nil || user.ID != enrollment.UserID {
-			return &errorresponses.ForbiddenError{Reason: "you must be the enrollment owner or an admin to reassign it"}
-		}
+	reassigner, err := s.authorizeReassignment(ctx, enrollment, identity)
+	if err != nil {
+		return err
 	}
 
 	// Check eligibility of the target user.
@@ -927,37 +1006,49 @@ func (s *EnrollmentService) Reassign(ctx context.Context, enrollmentID string, t
 		return err
 	}
 
-	// Get the reassigner's user ID
-	var reassigner model.User
-	if !isAdmin {
-		// Owner reassigning themselves; use the same ID
-		reassigner = model.User{ID: enrollment.UserID}
-	} else {
-		// Admin reassigning; load their user ID from the subject
-		if err := s.db.WithContext(ctx).First(&reassigner, "subject = ?", identity.Subject).Error; err != nil {
-			return fmt.Errorf("failed to load reassigner user: %w", err)
-		}
-	}
+	now := time.Now()
 
-	// Create audit record
-	auditRecord := model.EnrollmentReassignment{
+	// The pre-existing special-purpose reassignment table stays as it is —
+	// it feeds its own UI surface — and the general audit event is emitted
+	// alongside it.
+	reassignment := model.EnrollmentReassignment{
 		ID:                 uuid.NewString(),
 		EnrollmentID:       enrollmentID,
 		FromUserID:         enrollment.UserID,
 		ToUserID:           toUserID,
 		ReassignedByUserID: reassigner.ID,
-		ReassignedAt:       time.Now(),
+		ReassignedAt:       now,
 	}
 
-	// Update the enrollment's user_id
-	if err := s.db.WithContext(ctx).Model(&enrollment).Update("user_id", toUserID).Error; err != nil {
-		return fmt.Errorf("failed to update enrollment: %w", err)
+	auditEvent := AuditEvent{
+		Action:     AuditEnrollmentReassigned,
+		Actor:      AuditSubjectFromIdentity(identity, reassigner.ID),
+		Target:     &AuditSubject{UserID: toUserID},
+		Reason:     reason,
+		OccurredAt: now,
+		Detail: map[string]any{
+			"enrollment_id": enrollmentID,
+			"from_user_id":  enrollment.UserID,
+			"to_user_id":    toUserID,
+			"key_id":        enrollment.KeyID,
+		},
 	}
 
-	// Create the audit record
-	if err := s.db.WithContext(ctx).Create(&auditRecord).Error; err != nil {
-		return fmt.Errorf("failed to create reassignment audit record: %w", err)
+	// One transaction for all three writes. The ownership change and its
+	// two records were previously separate statements, so a failure between
+	// them left an enrollment reassigned with nothing saying by whom.
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&enrollment).Update("user_id", toUserID).Error; err != nil {
+			return fmt.Errorf("failed to update enrollment: %w", err)
+		}
+		if err := tx.Create(&reassignment).Error; err != nil {
+			return fmt.Errorf("failed to create reassignment audit record: %w", err)
+		}
+		return s.auditTx(tx, auditEvent)
+	}); err != nil {
+		return err
 	}
 
+	s.auditLog(auditEvent)
 	return nil
 }

@@ -56,7 +56,7 @@ func (s *stubEnrollmentProvider) GetEnrollmentDetail(_ context.Context, id strin
 	return s.detail, s.detailErr
 }
 
-func (s *stubEnrollmentProvider) Reassign(_ context.Context, _ string, _ string, _ *service.Identity) error {
+func (s *stubEnrollmentProvider) Reassign(_ context.Context, _ string, _ string, _ string, _ *service.Identity) error {
 	return nil
 }
 

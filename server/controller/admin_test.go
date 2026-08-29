@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -33,6 +34,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 		&model.User{},
 		&model.Enrollment{},
 		&model.Certificate{},
+		&model.AuditEvent{},
 	); err != nil {
 		t.Fatalf("failed to migrate test database: %v", err)
 	}
@@ -91,6 +93,7 @@ func routerWithEnrollmentService(t *testing.T, cfg *config.Config, db *gorm.DB, 
 		middleware.NewAuditorAuthMiddleware(cfg).Add(), // auditorAuthMiddleware (real)
 		func(c *gin.Context) { c.Next() },              // csrfMiddleware (passthrough for tests)
 		enrollments,
+		service.NewAuditService(cfg, db),
 	)
 
 	return r
@@ -368,7 +371,7 @@ func TestAdminDisableUserHandler_AdminAllowed(t *testing.T) {
 	r := routerWithAuth(t, cfg, db, identity)
 
 	w := httptest.NewRecorder()
-	body := []byte("{}")
+	body := []byte(`{"reason":"test reason"}`)
 	req := httptest.NewRequest(http.MethodPatch, "/admin/users/user-1/disable", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
@@ -418,7 +421,7 @@ func TestAdminDisableUserHandler_SOCAllowed(t *testing.T) {
 	r := routerWithAuth(t, cfg, db, identity)
 
 	w := httptest.NewRecorder()
-	body := []byte("{}")
+	body := []byte(`{"reason":"test reason"}`)
 	req := httptest.NewRequest(http.MethodPatch, "/admin/users/user-1/disable", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
@@ -458,7 +461,7 @@ func TestAdminEnableUserHandler_SOCDenied(t *testing.T) {
 	r := routerWithAuth(t, cfg, db, identity)
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/admin/users/user-1/enable", nil))
+	r.ServeHTTP(w, jsonPatch(t, "/admin/users/user-1/enable", `{"reason":"test reason"}`))
 
 	if w.Code != http.StatusForbidden {
 		t.Errorf("PATCH /admin/users/:id/enable as SOC: got %d, want %d (re-enabling stays admin-only)", w.Code, http.StatusForbidden)
@@ -490,7 +493,7 @@ func TestAdminExpireEnrollmentHandler_SOCAllowed(t *testing.T) {
 	r := routerWithAuth(t, cfg, db, identity)
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/admin/enrollments/enroll-1/expire", nil))
+	r.ServeHTTP(w, jsonPatch(t, "/admin/enrollments/enroll-1/expire", `{"reason":"test reason"}`))
 
 	if w.Code != http.StatusOK {
 		t.Errorf("PATCH /admin/enrollments/:id/expire as SOC: got %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
@@ -523,7 +526,7 @@ func TestAdminExpireEnrollmentHandler_AuditorDenied(t *testing.T) {
 	r := routerWithAuth(t, cfg, db, identity)
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/admin/enrollments/enroll-1/expire", nil))
+	r.ServeHTTP(w, jsonPatch(t, "/admin/enrollments/enroll-1/expire", `{"reason":"test reason"}`))
 
 	if w.Code != http.StatusForbidden {
 		t.Errorf("PATCH /admin/enrollments/:id/expire as auditor: got %d, want %d (auditors are read-only)", w.Code, http.StatusForbidden)
@@ -563,7 +566,7 @@ func TestAdminEnableUserHandler_AnonymousUserDenied(t *testing.T) {
 	r := routerWithAuth(t, cfg, db, nil)
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/admin/users/user-1/enable", nil))
+	r.ServeHTTP(w, jsonPatch(t, "/admin/users/user-1/enable", `{"reason":"test reason"}`))
 
 	if w.Code != http.StatusForbidden {
 		t.Errorf("PATCH /admin/users/:id/enable with no identity: got %d, want %d", w.Code, http.StatusForbidden)
@@ -585,7 +588,7 @@ func TestAdminEnableUserHandler_PlainUserDenied(t *testing.T) {
 	r := routerWithAuth(t, cfg, db, identity)
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/admin/users/user-1/enable", nil))
+	r.ServeHTTP(w, jsonPatch(t, "/admin/users/user-1/enable", `{"reason":"test reason"}`))
 
 	if w.Code != http.StatusForbidden {
 		t.Errorf("PATCH /admin/users/:id/enable as plain user: got %d, want %d", w.Code, http.StatusForbidden)
@@ -620,7 +623,7 @@ func TestAdminEnableUserHandler_AuditorDenied(t *testing.T) {
 	r := routerWithAuth(t, cfg, db, identity)
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/admin/users/user-1/enable", nil))
+	r.ServeHTTP(w, jsonPatch(t, "/admin/users/user-1/enable", `{"reason":"test reason"}`))
 
 	if w.Code != http.StatusForbidden {
 		t.Errorf("PATCH /admin/users/:id/enable as auditor: got %d, want %d (auditors should be read-only)", w.Code, http.StatusForbidden)
@@ -668,7 +671,7 @@ func TestAdminEnableUserHandler_AdminAllowed(t *testing.T) {
 	r := routerWithAuth(t, cfg, db, identity)
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/admin/users/user-1/enable", nil))
+	r.ServeHTTP(w, jsonPatch(t, "/admin/users/user-1/enable", `{"reason":"test reason"}`))
 
 	if w.Code != http.StatusOK {
 		t.Errorf("PATCH /admin/users/:id/enable as admin: got %d, want %d", w.Code, http.StatusOK)
@@ -724,7 +727,7 @@ func TestAdminDisableUserHandler_NotFound(t *testing.T) {
 	r := routerWithAuth(t, cfg, db, identity)
 
 	w := httptest.NewRecorder()
-	body := []byte("{}")
+	body := []byte(`{"reason":"test reason"}`)
 	req := httptest.NewRequest(http.MethodPatch, "/admin/users/nonexistent-id/disable", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
@@ -761,7 +764,7 @@ func TestAdminEnableUserHandler_NotFound(t *testing.T) {
 	r := routerWithAuth(t, cfg, db, identity)
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/admin/users/nonexistent-id/enable", nil))
+	r.ServeHTTP(w, jsonPatch(t, "/admin/users/nonexistent-id/enable", `{"reason":"test reason"}`))
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("PATCH nonexistent user enable: got %d, want %d", w.Code, http.StatusNotFound)
@@ -808,7 +811,7 @@ func TestAdminDisableUserHandler_Idempotent(t *testing.T) {
 
 	// First disable
 	w := httptest.NewRecorder()
-	body := []byte("{}")
+	body := []byte(`{"reason":"test reason"}`)
 	req := httptest.NewRequest(http.MethodPatch, "/admin/users/user-1/disable", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
@@ -818,10 +821,7 @@ func TestAdminDisableUserHandler_Idempotent(t *testing.T) {
 
 	// Second disable (should also succeed, idempotent)
 	w = httptest.NewRecorder()
-	body = []byte("{}")
-	req = httptest.NewRequest(http.MethodPatch, "/admin/users/user-1/disable", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
+	r.ServeHTTP(w, jsonPatch(t, "/admin/users/user-1/disable", `{"reason":"test reason"}`))
 	if w.Code != http.StatusOK {
 		t.Errorf("second disable: got %d, want %d (should be idempotent)", w.Code, http.StatusOK)
 	}
@@ -869,14 +869,14 @@ func TestAdminEnableUserHandler_Idempotent(t *testing.T) {
 
 	// First enable
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/admin/users/user-1/enable", nil))
+	r.ServeHTTP(w, jsonPatch(t, "/admin/users/user-1/enable", `{"reason":"test reason"}`))
 	if w.Code != http.StatusOK {
 		t.Errorf("first enable: got %d, want %d", w.Code, http.StatusOK)
 	}
 
 	// Second enable (should also succeed, idempotent)
 	w = httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/admin/users/user-1/enable", nil))
+	r.ServeHTTP(w, jsonPatch(t, "/admin/users/user-1/enable", `{"reason":"test reason"}`))
 	if w.Code != http.StatusOK {
 		t.Errorf("second enable: got %d, want %d (should be idempotent)", w.Code, http.StatusOK)
 	}
@@ -933,7 +933,7 @@ func TestAdminDisableUserHandler_ConsequencesIncludeEnrollmentCount(t *testing.T
 	r := routerWithAuth(t, cfg, db, identity)
 
 	w := httptest.NewRecorder()
-	body := []byte("{}")
+	body := []byte(`{"reason":"test reason"}`)
 	req := httptest.NewRequest(http.MethodPatch, "/admin/users/user-1/disable", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
@@ -1001,7 +1001,7 @@ func TestAdminDisableUserHandler_ConsequencesShowExpireTime(t *testing.T) {
 
 	before := time.Now()
 	w := httptest.NewRecorder()
-	body := []byte("{}")
+	body := []byte(`{"reason":"test reason"}`)
 	req := httptest.NewRequest(http.MethodPatch, "/admin/users/user-1/disable", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
@@ -1231,17 +1231,72 @@ func TestGetUserHandler_EmptyAccountListsAreArrays(t *testing.T) {
 	}
 }
 
-// TestDisableUserHandler_EmptyBodyIsNotABadRequest pins the status of a
-// disable with no body, which is how the UI calls it.
+// TestDisableUserHandler_ShouldRejectADisableWithNoReason pins the reason
+// requirement. The reason used to be optional and was then silently
+// discarded, so the next admin opening a disabled account had no way to
+// learn why -- the case the audit work exists for. It is now required and
+// server-validated, and a body-less disable is refused rather than
+// performed.
 //
-// The handler used gin's BindJSON, which is MustBindWith: on an empty body it
-// writes a 400 and aborts before returning the error. The handler then
-// ignored that error, because the body is optional, and wrote its success
-// payload underneath the status gin had already set. The response was a 400
-// carrying {"error": null} -- a shape no client can interpret, and one the
-// browser treated as a failure while the database row had in fact been
-// updated.
-func TestDisableUserHandler_EmptyBodyIsNotABadRequest(t *testing.T) {
+// The 400 must also be a well-formed one. The handler once used gin's
+// BindJSON (MustBindWith), which writes a 400 and aborts before returning
+// the error; the handler ignored that error because the body was optional
+// and wrote its success payload underneath the status gin had already set,
+// producing a 400 carrying {"error": null} while the row had in fact been
+// updated. ShouldBindJSON is what keeps the status and the body agreeing.
+func TestDisableUserHandler_ShouldRejectADisableWithNoReason(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.Create(&model.User{ID: "u-target", Subject: "sub-target", Username: "target"}).Error; err != nil {
+		t.Fatalf("seed target: %v", err)
+	}
+	if err := db.Create(&model.User{ID: "u-admin", Subject: "sub-admin", Username: "admin"}).Error; err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
+
+	cfg := newTestConfig(t)
+	r := routerWithAuth(t, cfg, db, &service.Identity{
+		Subject:  "sub-admin",
+		Username: "admin",
+		Groups:   []string{cfg.Admin.RequireGroup},
+	})
+
+	tests := []struct {
+		name string
+		body io.Reader
+	}{
+		{name: "no body at all", body: nil},
+		{name: "body with no reason", body: strings.NewReader(`{}`)},
+		{name: "body with a blank reason", body: strings.NewReader(`{"reason":"   "}`)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPatch, "/admin/users/u-target/disable", tt.body)
+			req.Header.Set("Content-Type", "application/json")
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("PATCH .../disable = %d, want 400, body: %s", w.Code, w.Body.String())
+			}
+
+			// The refusal has to be real: a 400 with the row disabled
+			// anyway is the exact failure the old handler had.
+			var stored model.User
+			if err := db.First(&stored, "id = ?", "u-target").Error; err != nil {
+				t.Fatalf("reload target: %v", err)
+			}
+			if stored.DisabledAt != nil {
+				t.Error("the user was disabled despite the request being refused")
+			}
+		})
+	}
+}
+
+// TestDisableUserHandler_ShouldPersistTheReason covers the motivating case:
+// the reason survives to the users row, where the person deciding whether
+// to re-enable will see it, and to the audit stream.
+func TestDisableUserHandler_ShouldPersistTheReason(t *testing.T) {
 	db := newTestDB(t)
 	if err := db.Create(&model.User{ID: "u-target", Subject: "sub-target", Username: "target"}).Error; err != nil {
 		t.Fatalf("seed target: %v", err)
@@ -1258,20 +1313,52 @@ func TestDisableUserHandler_EmptyBodyIsNotABadRequest(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/admin/users/u-target/disable", nil))
+	req := httptest.NewRequest(http.MethodPatch, "/admin/users/u-target/disable",
+		strings.NewReader(`{"reason":"offboarded, SEC-1234"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("PATCH .../disable with no body = %d, want 200, body: %s", w.Code, w.Body.String())
+		t.Fatalf("PATCH .../disable = %d, want 200, body: %s", w.Code, w.Body.String())
 	}
 
-	// And the row really moved, so a 200 is not merely cosmetic.
 	var stored model.User
 	if err := db.First(&stored, "id = ?", "u-target").Error; err != nil {
 		t.Fatalf("reload target: %v", err)
 	}
 	if stored.DisabledAt == nil {
-		t.Error("the user was not disabled")
+		t.Fatal("the user was not disabled")
 	}
+	if stored.DisabledReason != "offboarded, SEC-1234" {
+		t.Errorf("disabled_reason = %q, want the submitted reason", stored.DisabledReason)
+	}
+
+	// The audit row commits in the same transaction as the disable, so a
+	// successful disable always has one.
+	var events []model.AuditEvent
+	if err := db.Where("target_user_id = ?", "u-target").Find(&events).Error; err != nil {
+		t.Fatalf("load audit events: %v", err)
+	}
+	var found bool
+	for _, e := range events {
+		if strings.Contains(e.Payload, string(service.AuditUserDisabled)) &&
+			strings.Contains(e.Payload, "offboarded, SEC-1234") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no user.disabled audit event carrying the reason; events: %+v", events)
+	}
+}
+
+// jsonPatch builds a PATCH carrying a JSON body, which the containment
+// handlers now require: their reason is server-validated, so a body-less
+// request is refused before it reaches the behavior under test.
+func jsonPatch(t *testing.T, path, body string) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPatch, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	return req
 }
 
 // mockSessionAuthMiddleware is a test double that sets authenticated identity in context.
@@ -1353,6 +1440,7 @@ func TestEffectiveConfigHandler_ShouldReturnConfigData(t *testing.T) {
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
+		nil, // auditor: these cases assert routing and payloads, not auditing
 	)
 
 	w := httptest.NewRecorder()
@@ -1404,6 +1492,7 @@ func TestEffectiveConfigHandler_RequiresAuditorAuth(t *testing.T) {
 		mockAuditorAuthMiddleware(false),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
+		nil, // auditor: these cases assert routing and payloads, not auditing
 	)
 
 	w := httptest.NewRecorder()
@@ -1436,6 +1525,7 @@ func TestExpireEnrollmentHandler_ShouldRejectMissingID(t *testing.T) {
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
+		nil, // auditor: these cases assert routing and payloads, not auditing
 	)
 
 	// Request without :id parameter will not match the route (404)
@@ -1469,6 +1559,7 @@ func TestExpireEnrollmentHandler_RequiresAdminAuth(t *testing.T) {
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
+		nil, // auditor: these cases assert routing and payloads, not auditing
 	)
 
 	w := httptest.NewRecorder()
@@ -1512,10 +1603,11 @@ func TestExpireEnrollmentHandler_ShouldReturn404ForUnknownID(t *testing.T) {
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
+		nil, // auditor: these cases assert routing and payloads, not auditing
 	)
 
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPatch, "/admin/enrollments/does-not-exist/expire", nil)
+	req := jsonPatch(t, "/admin/enrollments/does-not-exist/expire", `{"reason":"test reason"}`)
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusNotFound {
@@ -1544,6 +1636,7 @@ func TestDisableUserHandler_RequiresAdminAuth(t *testing.T) {
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
+		nil, // auditor: these cases assert routing and payloads, not auditing
 	)
 
 	w := httptest.NewRecorder()
@@ -1583,6 +1676,7 @@ func TestCertificateHistoryHandler_ShouldReturnEmptyList(t *testing.T) {
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
+		nil, // auditor: these cases assert routing and payloads, not auditing
 	)
 
 	w := httptest.NewRecorder()
@@ -1633,6 +1727,7 @@ func TestCertificateHistoryHandler_RequiresAuditorAuth(t *testing.T) {
 		mockAuditorAuthMiddleware(false),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
+		nil, // auditor: these cases assert routing and payloads, not auditing
 	)
 
 	w := httptest.NewRecorder()
@@ -1674,6 +1769,7 @@ func TestNewAdminController_RoutesAreRegistered(t *testing.T) {
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
+		nil, // auditor: these cases assert routing and payloads, not auditing
 	)
 
 	// Basic test: GET /admin/config should be accessible
@@ -1762,6 +1858,7 @@ func TestCertificateHistoryHandler_SearchesCertificates(t *testing.T) {
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
+		nil, // auditor: these cases assert routing and payloads, not auditing
 	)
 
 	// Test searching by key ID.
@@ -1858,6 +1955,7 @@ func TestCertificateHistoryHandler_FiltersByType(t *testing.T) {
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
+		nil, // auditor: these cases assert routing and payloads, not auditing
 	)
 
 	// Filter by user type.
@@ -1946,6 +2044,7 @@ func TestCertificateHistoryHandler_FiltersByStatus(t *testing.T) {
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
+		nil, // auditor: these cases assert routing and payloads, not auditing
 	)
 
 	// Filter for live certs only.
@@ -2020,6 +2119,7 @@ func TestCertificateHistoryHandler_Pagination(t *testing.T) {
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
+		nil, // auditor: these cases assert routing and payloads, not auditing
 	)
 
 	// Request first page with limit=5.
@@ -2050,6 +2150,7 @@ type fakeEnrollmentServiceForReassign struct {
 	reassignCalls []struct {
 		enrollmentID string
 		toUserID     string
+		reason       string
 		identity     *service.Identity
 	}
 	// ownerSubject is the subject that owns the enrollment under test.
@@ -2080,12 +2181,13 @@ func (f *fakeEnrollmentServiceForReassign) GetEnrollmentDetail(ctx context.Conte
 	return service.AdminEnrollmentDetail{}, nil
 }
 
-func (f *fakeEnrollmentServiceForReassign) Reassign(ctx context.Context, enrollmentID string, toUserID string, identity *service.Identity) error {
+func (f *fakeEnrollmentServiceForReassign) Reassign(ctx context.Context, enrollmentID string, toUserID string, reason string, identity *service.Identity) error {
 	f.reassignCalls = append(f.reassignCalls, struct {
 		enrollmentID string
 		toUserID     string
+		reason       string
 		identity     *service.Identity
-	}{enrollmentID, toUserID, identity})
+	}{enrollmentID, toUserID, reason, identity})
 
 	// Simulate authorization: owner or admin
 	isAdmin := false
@@ -2230,10 +2332,13 @@ func TestReassignEnrollmentHandler_AuthorizationRoute(t *testing.T) {
 				mockAuditorAuthMiddleware(false),
 				mockCSRFMiddleware(),
 				fake,
+				nil, // auditor: the reassign fake records the call instead
 			)
 
-			// Build request body
-			body := `{"to_user_id":"` + tt.toUserID + `"}`
+			// Build request body. The reason is required by the handler, so
+			// every case supplies one; the missing-reason case is covered
+			// separately.
+			body := `{"to_user_id":"` + tt.toUserID + `","reason":"ownership transfer"}`
 
 			w := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPatch, "/admin/enrollments/"+tt.enrollmentID+"/reassign", strings.NewReader(body))

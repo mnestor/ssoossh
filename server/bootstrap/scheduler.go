@@ -23,6 +23,9 @@ const caKeyExpirySweepJobName = "ca-key-expiry-sweep"
 // disabledUserEnrollmentSweepJobName identifies the disabled user enrollment expiry sweep.
 const disabledUserEnrollmentSweepJobName = "disabled-user-enrollment-sweep"
 
+// auditSweepJobName identifies the audit-event retention sweep.
+const auditSweepJobName = "audit-retention-sweep"
+
 // registerJobs registers the server's scheduled jobs. Called before any
 // service runner starts, so anything it runs inline here happens before the
 // HTTP server accepts a request.
@@ -36,7 +39,51 @@ func (a *app) registerJobs(ctx context.Context) error {
 	if err := a.registerCAKeyExpirySweepJob(ctx); err != nil {
 		return err
 	}
-	return a.registerDisabledUserEnrollmentSweepJob(ctx)
+	if err := a.registerDisabledUserEnrollmentSweepJob(ctx); err != nil {
+		return err
+	}
+	return a.registerAuditSweepJob(ctx)
+}
+
+// registerAuditSweepJob schedules the audit-event retention sweep, which
+// prunes the database copy of the audit stream by age and then by row count
+// (see service.SweepAuditEvents).
+//
+// The table is a bounded cache serving the UI's recent-history views; the
+// shipped type=audit log is the archive. Pruning is therefore never urgent,
+// which is why the interval is measured in hours and the job is not run
+// inline at startup the way the stranded-request sweep is.
+func (a *app) registerAuditSweepJob(ctx context.Context) error {
+	retention := a.config.Audit.Retention
+	maxRows := a.config.Audit.MaxRows
+	if retention <= 0 && maxRows <= 0 {
+		slog.DebugContext(ctx, "audit retention sweep not registered: both audit.retention and audit.max_rows are disabled")
+		return nil
+	}
+
+	interval := a.config.Audit.SweepInterval
+	if interval <= 0 {
+		interval = time.Hour
+	}
+
+	err := a.scheduler.RegisterJob(ctx, auditSweepJobName,
+		gocron.DurationJob(interval),
+		func(jobCtx context.Context) error {
+			return service.SweepAuditEvents(jobCtx, a.db, retention, maxRows)
+		},
+		service.RegisterJobOpts{},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to register the audit retention sweep: %w", err)
+	}
+
+	slog.DebugContext(ctx, "registered audit retention sweep",
+		slog.String("job", auditSweepJobName),
+		slog.Duration("interval", interval),
+		slog.Duration("retention", retention),
+		slog.Int64("max_rows", maxRows),
+	)
+	return nil
 }
 
 // registerSweepJob schedules the stranded-request sweep, which fails
@@ -168,7 +215,7 @@ func (a *app) registerDisabledUserEnrollmentSweepJob(ctx context.Context) error 
 	err := a.scheduler.RegisterJob(ctx, disabledUserEnrollmentSweepJobName,
 		gocron.DurationJob(interval),
 		func(jobCtx context.Context) error {
-			return service.SweepDisabledUserEnrollments(jobCtx, a.db, gracePeriod)
+			return service.SweepDisabledUserEnrollments(jobCtx, a.db, gracePeriod, a.svc.audit)
 		},
 		service.RegisterJobOpts{},
 	)

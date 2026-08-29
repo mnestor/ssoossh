@@ -74,6 +74,23 @@ type AuthService struct {
 	provider     *oidc.Provider
 	verifier     *oidc.IDTokenVerifier
 	oauth2Config *oauth2.Config
+	// auditor records auth.login and auth.login_denied. Set after
+	// construction (see SetAuditor) because it is a peer service, and left
+	// nil in tests that do not exercise auditing.
+	auditor *AuditService
+}
+
+// SetAuditor wires the audit recorder. Called once at startup, before any
+// request is served.
+func (s *AuthService) SetAuditor(a *AuditService) { s.auditor = a }
+
+// audit records one event when an auditor is wired, so every call site can
+// stay a single unconditional line.
+func (s *AuthService) audit(ctx context.Context, event AuditEvent) {
+	if s.auditor == nil {
+		return
+	}
+	s.auditor.Record(ctx, event)
 }
 
 // NewAuthService discovers the OIDC provider at c.AuthConfig.ProviderURL
@@ -243,10 +260,36 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce str
 		return nil, fmt.Errorf("failed to persist user: %w", err)
 	}
 
+	// Resolved after the upsert so the audit events carry the users-row id
+	// their timelines group by. A lookup failure is not worth failing a
+	// login over; the event still records the identity snapshot.
+	var user model.User
+	if err := s.db.WithContext(ctx).First(&user, "subject = ?", identity.Subject).Error; err != nil {
+		slog.Warn("failed to resolve the users row for an audit event",
+			slog.String("subject", identity.Subject), slog.Any("error", err))
+	}
+	subject := AuditSubjectFromIdentity(identity, user.ID)
+
 	// Check if the user has been disabled by an admin
 	if err := s.checkUserDisabled(ctx, identity.Subject); err != nil {
+		// A denied login vanishes entirely without this: the account is
+		// disabled, so nothing else records the attempt.
+		var disabled *errorresponses.UserDisabledError
+		if errors.As(err, &disabled) {
+			s.audit(ctx, AuditEvent{
+				Action: AuditAuthLoginDenied,
+				Actor:  subject,
+				Target: subject,
+				Detail: map[string]any{"reason": "account is disabled"},
+			})
+		}
 		return nil, err
 	}
+
+	// The groups snapshot is the point: membership is never persisted, so
+	// this is the only durable record of what access the identity carried
+	// on a given day.
+	s.audit(ctx, AuditEvent{Action: AuditAuthLogin, Actor: subject, Target: subject})
 
 	return identity, nil
 }

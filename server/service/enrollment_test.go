@@ -1172,7 +1172,7 @@ func TestReassign(t *testing.T) {
 		})
 
 		err := enrollment.Reassign(context.Background(),
-			"enrollment1", targetID, &Identity{Subject: "sub-owner"})
+			"enrollment1", targetID, "test reassignment", &Identity{Subject: "sub-owner"})
 		if err != nil {
 			t.Fatalf("Reassign() error = %v", err)
 		}
@@ -1212,7 +1212,7 @@ func TestReassign(t *testing.T) {
 		})
 
 		err := enrollment.Reassign(context.Background(),
-			"enrollment1", otherID, &Identity{Subject: "sub-other"})
+			"enrollment1", otherID, "test reassignment", &Identity{Subject: "sub-other"})
 
 		var forbidden *errorresponses.ForbiddenError
 		if !errors.As(err, &forbidden) {
@@ -1239,7 +1239,7 @@ func TestReassign(t *testing.T) {
 		})
 
 		err := enrollment.Reassign(context.Background(),
-			"enrollment1", targetID, &Identity{Subject: "sub-soc", Groups: []string{"soc"}})
+			"enrollment1", targetID, "test reassignment", &Identity{Subject: "sub-soc", Groups: []string{"soc"}})
 
 		var forbidden *errorresponses.ForbiddenError
 		if !errors.As(err, &forbidden) {
@@ -1272,7 +1272,7 @@ func TestReassign(t *testing.T) {
 		})
 
 		err := enrollment.Reassign(context.Background(),
-			"enrollment1", targetID, &Identity{Subject: "sub-owner"})
+			"enrollment1", targetID, "test reassignment", &Identity{Subject: "sub-owner"})
 
 		var invalid *errorresponses.InvalidRequestError
 		if !errors.As(err, &invalid) {
@@ -1297,7 +1297,7 @@ func TestReassign(t *testing.T) {
 
 		// Try to reassign as unrelated user; error message should not contain the code
 		err := enrollment.Reassign(context.Background(),
-			"enrollment1", targetID, &Identity{Subject: "sub-other"})
+			"enrollment1", targetID, "test reassignment", &Identity{Subject: "sub-other"})
 
 		if err != nil && strings.Contains(err.Error(), secretCode) {
 			t.Errorf("Reassign() error contains code: %v", err)

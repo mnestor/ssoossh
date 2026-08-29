@@ -1,10 +1,42 @@
 # Audit log
 
-**Status:** proposal. Not scheduled.
+**Status: implemented.** Built 2026-08-29. The operator-facing reference is
+[operations/audit-log.md](../operations/audit-log.md), which is now the
+document to read; this one is kept for the reasoning behind each decision.
 
-**Anchors verified at:** `72fc1bd`, plus the uncommitted SOC-role work in
-the working tree (SOC group, `SOCAuthMiddleware`, admin route split).
-`file:line` references drift; re-check before relying on one.
+**What shipped:** all eight numbered items below, plus the required-reason
+set and both UI surfaces. Specifics worth knowing:
+
+- The `audit_events` table, the `type=audit` slog destination, the scheduled
+  retention sweep (`audit.retention`, `audit.max_rows`), the taxonomy, and
+  the two auditor-scoped read endpoints all landed as designed.
+- `cert.issued` goes to the shipped log only, as specified.
+- Required reasons are enforced on `user.disabled`, `user.enabled`,
+  `enrollment.expired` and `enrollment.reassigned`. The wire types went from
+  optional to required, and the web UI gates each confirm button until a
+  reason is typed.
+- `users.disabled_reason` was added and is surfaced on the admin user detail
+  page, which is where it meets the person deciding whether to re-enable.
+
+**Deviations from this document, and why:**
+
+- **`Reassign` gained a reason parameter**, which changed
+  `service.EnrollmentProvider`. Unavoidable: the reason is required and the
+  service performs the write.
+- **Reassignment became transactional.** It previously performed the
+  ownership change and its record as two separate statements, so a failure
+  between them left an enrollment reassigned with nothing saying by whom.
+  Adding a third write that must commit atomically made fixing it the
+  smaller change.
+- **The disabled-user enrollment sweep now reads before it writes**, so each
+  expiry can be audited individually rather than as one bulk UPDATE that
+  cannot say which enrollments it touched.
+- **`user.auto_disabled` has no producer yet.** It is defined in the
+  taxonomy and rendered by the UI, but nothing in the server disables a user
+  automatically today; the LDAP directory sync is what will emit it.
+- **A pre-existing leak was fixed alongside:** `ldap.logging`'s rotating
+  file handle was never released at shutdown, because the LDAP named logger
+  had no close function. Audit's addition made the omission visible.
 
 Administrative actions in ssoossh leave almost no durable trace. Disabling a
 user records who and when (`users.disabled_at`, `users.disabled_by_user_id`)

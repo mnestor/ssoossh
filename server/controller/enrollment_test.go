@@ -82,7 +82,7 @@ func (f *fakeEnrollmentService) GetEnrollmentDetail(_ context.Context, _ string,
 	return service.AdminEnrollmentDetail{}, nil
 }
 
-func (f *fakeEnrollmentService) Reassign(_ context.Context, _ string, _ string, _ *service.Identity) error {
+func (f *fakeEnrollmentService) Reassign(_ context.Context, _ string, _ string, _ string, _ *service.Identity) error {
 	return f.err
 }
 

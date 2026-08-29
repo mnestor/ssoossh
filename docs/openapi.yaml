@@ -417,6 +417,12 @@ components:
           type: string
         disabled_by_username:
           type: string
+        disabled_reason:
+          description: |-
+            DisabledReason is why the account was disabled, required at the API
+            and shown here because this is where it meets the person deciding
+            whether to re-enable. Omitted if not disabled.
+          type: string
         email:
           description: Email is the user's email from OIDC, possibly empty.
           type: string
@@ -535,6 +541,77 @@ components:
           type: array
           uniqueItems: false
         service_account:
+          type: string
+      type: object
+    webtypes.AuditEventResponse:
+      properties:
+        action:
+          description: |-
+            Action is the namespaced action name, e.g. "user.disabled". The set
+            grows without a wire change, so a client must render an unknown
+            action rather than assume the list is closed.
+          type: string
+        actor:
+          $ref: '#/components/schemas/webtypes.AuditSubjectResponse'
+        created_at:
+          type: string
+        detail:
+          additionalProperties: {}
+          description: |-
+            Detail is the per-action specifics, passed through as decoded JSON so
+            a new action's fields reach the UI without a wire type change. Never
+            carries a secret.
+          type: object
+        id:
+          type: string
+        reason:
+          type: string
+        system:
+          description: |-
+            System marks an action taken by the server rather than a person,
+            which is how a reader tells "nobody" from "not recorded".
+          type: boolean
+        target:
+          $ref: '#/components/schemas/webtypes.AuditSubjectResponse'
+      required:
+      - action
+      - created_at
+      - id
+      type: object
+    webtypes.AuditEventsResponse:
+      properties:
+        events:
+          items:
+            $ref: '#/components/schemas/webtypes.AuditEventResponse'
+          type: array
+          uniqueItems: false
+        next_offset:
+          description: NextOffset is the offset for the following page, or 0 on the
+            last one.
+          type: integer
+        total:
+          type: integer
+      required:
+      - events
+      type: object
+    webtypes.AuditSubjectResponse:
+      properties:
+        email:
+          type: string
+        groups:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        subject:
+          type: string
+        user_id:
+          description: |-
+            UserID is the grouping key the timelines are built on. It may be
+            empty (a system or anonymous actor) and it may no longer match any
+            row, which does not make the rest of the snapshot less true.
+          type: string
+        username:
           type: string
       type: object
     webtypes.BrandingResponse:
@@ -772,9 +849,14 @@ components:
     webtypes.DisableUserRequestBody:
       properties:
         reason:
-          description: Reason is optional text explaining why the user was disabled,
-            for audit.
+          description: |-
+            Reason explains why the user is being disabled. Required and
+            server-validated (non-empty, length-capped): the next admin opening
+            this account needs to learn why it was disabled, and an optional
+            field does not get filled.
           type: string
+      required:
+      - reason
       type: object
     webtypes.EffectiveConfigResponse:
       properties:
@@ -899,6 +981,16 @@ components:
       - retrievals
       - total
       type: object
+    webtypes.ExpireEnrollmentRequestBody:
+      properties:
+        reason:
+          description: |-
+            Reason explains why the enrollment is being expired. Required and
+            server-validated, like the user containment reasons.
+          type: string
+      required:
+      - reason
+      type: object
     webtypes.NotificationKindResponse:
       properties:
         description:
@@ -978,9 +1070,13 @@ components:
     webtypes.ReEnableUserRequestBody:
       properties:
         reason:
-          description: Reason is optional text explaining why the user was re-enabled,
-            for audit.
+          description: |-
+            Reason explains why the user is being re-enabled, e.g. "cleared with
+            security, SEC-1234". Required on the same terms as the disable
+            reason, and as valuable to the person after this one.
           type: string
+      required:
+      - reason
       type: object
     webtypes.RequestDetailResponse:
       properties:
@@ -1224,6 +1320,56 @@ info:
   version: "0.1"
 openapi: 3.1.0
 paths:
+  /api/admin/audit:
+    get:
+      description: |-
+        Returns the administrative audit stream newest first. The
+        database copy is a bounded cache of recent events; the
+        shipped audit log is the archive, and searching happens
+        there rather than here.
+      parameters:
+      - description: Page size (default 25, max 100)
+        example: 25
+        in: query
+        name: limit
+        schema:
+          type: integer
+      - description: Results to skip (default 0)
+        example: 0
+        in: query
+        name: offset
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/webtypes.AuditEventsResponse'
+          description: Audit events
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Invalid paging parameters
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as auditor
+      security:
+      - sessionCookie: []
+      summary: View the recent audit event feed (auditor-only)
+      tags:
+      - admin
   /api/admin/certificates/history:
     get:
       description: |-
@@ -1424,6 +1570,15 @@ paths:
         required: true
         schema:
           type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/webtypes.ExpireEnrollmentRequestBody'
+              description: Expiry reason (required)
+              summary: request
+        description: Expiry reason (required)
+        required: true
       responses:
         "200":
           content:
@@ -1473,9 +1628,10 @@ paths:
               oneOf:
               - type: object
               - $ref: '#/components/schemas/gin.H'
-                description: New owner user ID (JSON with 'to_user_id' field)
+                description: New owner and reason (JSON with 'to_user_id' and 'reason'
+                  fields)
                 summary: request
-        description: New owner user ID (JSON with 'to_user_id' field)
+        description: New owner and reason (JSON with 'to_user_id' and 'reason' fields)
         required: true
       responses:
         "200":
@@ -1609,6 +1765,62 @@ paths:
       summary: Get user details (auditor-only)
       tags:
       - admin
+  /api/admin/users/{id}/audit:
+    get:
+      description: |-
+        Returns the audit events where this user is the actor or the
+        target, newest first. One row serves both sides: a disable
+        shows on the analyst's history and on the disabled account's
+        page.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - description: Page size (default 25, max 100)
+        example: 25
+        in: query
+        name: limit
+        schema:
+          type: integer
+      - description: Results to skip (default 0)
+        example: 0
+        in: query
+        name: offset
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/webtypes.AuditEventsResponse'
+          description: Audit events
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Invalid paging parameters
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as auditor
+      security:
+      - sessionCookie: []
+      summary: View a user's audit timeline (auditor-only)
+      tags:
+      - admin
   /api/admin/users/{id}/disable:
     patch:
       description: |-
@@ -1627,9 +1839,10 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/webtypes.DisableUserRequestBody'
-              description: Disable reason
+              description: Disable reason (required)
               summary: request
-        description: Disable reason
+        description: Disable reason (required)
+        required: true
       responses:
         "200":
           content:
@@ -1678,9 +1891,10 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/webtypes.ReEnableUserRequestBody'
-              description: Re-enable reason
+              description: Re-enable reason (required)
               summary: request
-        description: Re-enable reason
+        description: Re-enable reason (required)
+        required: true
       responses:
         "200":
           content:

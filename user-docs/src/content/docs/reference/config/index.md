@@ -17,6 +17,7 @@ Every `ssoosshd.yaml` key, one page per top-level section. The pages are generat
 | [authentication](/ssoossh/reference/config/authentication/) | OAuth/OIDC authentication for the server |
 | [ldap](/ssoossh/reference/config/ldap/) | optionally enriches the OIDC identity with directory attributes |
 | [admin](/ssoossh/reference/config/admin/) | administrative and auditor access |
+| [audit](/ssoossh/reference/config/audit/) | how long the database copy is kept and where the durable log is shipped |
 | [hsm](/ssoossh/reference/config/hsm/) | optionally sources the CA key from a PKCS#11 token instead of ssh_key |
 | [pubsub](/ssoossh/reference/config/pubsub/) | the message broker behind the certificate pipeline |
 | [cert_options](/ssoossh/reference/config/cert_options/) | the issuance policy for each certificate type |

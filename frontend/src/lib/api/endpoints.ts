@@ -13,6 +13,7 @@ import type {
 	CurrentUser,
 	DenyResult,
 	DisableUserConsequences,
+	AuditEventsResponse,
 	DisableUserRequestBody,
 	EffectiveConfigResponse,
 	EnrollmentRetrievalResponse,
@@ -224,11 +225,15 @@ export function getAdminUser(id: string): Promise<AdminUserDetail> {
 }
 
 /**
- * PATCH /api/admin/users/:id/disable — disable a user (admin-only).
+ * PATCH /api/admin/users/:id/disable — disable a user (admin or SOC).
+ *
+ * The body is required, not optional: the server validates a non-empty
+ * reason, because the next admin opening this account needs to learn why it
+ * was disabled.
  */
 export function disableUser(
 	id: string,
-	body?: DisableUserRequestBody
+	body: DisableUserRequestBody
 ): Promise<DisableUserConsequences> {
 	return request<DisableUserConsequences>(`/admin/users/${encodeURIComponent(id)}/disable`, {
 		method: 'PATCH',
@@ -238,15 +243,47 @@ export function disableUser(
 
 /**
  * PATCH /api/admin/users/:id/enable — re-enable a user (admin-only).
+ * The reason is required, on the same terms as the disable reason.
  */
 export function enableUser(
 	id: string,
-	body?: ReEnableUserRequestBody
+	body: ReEnableUserRequestBody
 ): Promise<{ enabled: boolean }> {
 	return request<{ enabled: boolean }>(`/admin/users/${encodeURIComponent(id)}/enable`, {
 		method: 'PATCH',
 		body
 	});
+}
+
+/**
+ * GET /api/admin/users/:id/audit — one user's audit timeline, as both actor
+ * and target (auditor-scoped).
+ */
+export function getUserAudit(
+	id: string,
+	params: { limit?: number; offset?: number } = {}
+): Promise<AuditEventsResponse> {
+	const query = new URLSearchParams();
+	if (params.limit !== undefined) query.set('limit', String(params.limit));
+	if (params.offset !== undefined) query.set('offset', String(params.offset));
+	const suffix = query.toString() ? `?${query}` : '';
+	return request<AuditEventsResponse>(`/admin/users/${encodeURIComponent(id)}/audit${suffix}`);
+}
+
+/**
+ * GET /api/admin/audit — the recent-activity feed (auditor-scoped).
+ *
+ * Deliberately unsearchable: the database copy is a bounded cache of recent
+ * events, and searching happens in the shipped audit log.
+ */
+export function getAuditFeed(
+	params: { limit?: number; offset?: number } = {}
+): Promise<AuditEventsResponse> {
+	const query = new URLSearchParams();
+	if (params.limit !== undefined) query.set('limit', String(params.limit));
+	if (params.offset !== undefined) query.set('offset', String(params.offset));
+	const suffix = query.toString() ? `?${query}` : '';
+	return request<AuditEventsResponse>(`/admin/audit${suffix}`);
 }
 
 /**

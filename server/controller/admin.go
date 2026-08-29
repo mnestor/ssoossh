@@ -36,8 +36,9 @@ func NewAdminController(
 	auditorAuthMiddleware gin.HandlerFunc,
 	csrfMiddleware gin.HandlerFunc,
 	enrollmentService service.EnrollmentProvider,
+	auditService *service.AuditService,
 ) {
-	a := &adminController{config: c, db: db, enrollmentService: enrollmentService}
+	a := &adminController{config: c, db: db, enrollmentService: enrollmentService, audit: auditService}
 
 	// Admin routes (restorative writes, require admin group)
 	adminGroup := group.Group("/admin", sessionAuthMiddleware, adminAuthMiddleware, csrfMiddleware)
@@ -65,6 +66,8 @@ func NewAdminController(
 	auditorGroup.GET("/certificates/history", a.certificateHistoryHandler)
 	auditorGroup.GET("/enrollments", a.listEnrollmentsHandler)
 	auditorGroup.GET("/enrollments/:id", a.getEnrollmentDetailHandler)
+	auditorGroup.GET("/audit", a.auditFeedHandler)
+	auditorGroup.GET("/users/:id/audit", a.userAuditHandler)
 }
 
 // adminController handles admin and auditor-scoped HTTP routes.
@@ -72,6 +75,37 @@ type adminController struct {
 	config            *config.Config
 	db                *gorm.DB
 	enrollmentService service.EnrollmentProvider
+	// audit records the privileged views and the containment actions this
+	// controller performs. Nil in tests that do not exercise auditing.
+	audit *service.AuditService
+}
+
+// auditRecord records one event when an auditor is wired. Privileged views
+// audit through here, and a failed insert never fails the read it
+// describes — see service.AuditService.Record.
+func (a *adminController) auditRecord(g *gin.Context, event service.AuditEvent) {
+	if a.audit == nil {
+		return
+	}
+	a.audit.Record(g.Request.Context(), event)
+}
+
+// auditActor snapshots the calling identity as an event actor, resolving
+// its users-row id for the timeline grouping key. A lookup miss yields a
+// snapshot without the key rather than no event at all.
+func (a *adminController) auditActor(g *gin.Context) *service.AuditSubject {
+	identity, ok := middleware.Identity(g)
+	if !ok {
+		return nil
+	}
+	var user model.User
+	if err := a.db.WithContext(g.Request.Context()).
+		Select("id").Where("subject = ?", identity.Subject).
+		First(&user).Error; err != nil {
+		slog.Warn("failed to resolve the acting user for an audit event",
+			"subject", identity.Subject, "error", err)
+	}
+	return service.AuditSubjectFromIdentity(identity, user.ID)
 }
 
 // effectiveConfigHandler handles GET /api/admin/config: returns the server's
@@ -89,6 +123,11 @@ type adminController struct {
 // @Security    sessionCookie
 // @Router      /api/admin/config [get]
 func (a *adminController) effectiveConfigHandler(g *gin.Context) {
+	a.auditRecord(g, service.AuditEvent{
+		Action: service.AuditAdminConfigViewed,
+		Actor:  a.auditActor(g),
+	})
+
 	resp := webtypes.EffectiveConfigResponse{
 		ServerName: a.config.HTTP.ServerName,
 		Port:       a.config.HTTP.Port,
@@ -132,6 +171,7 @@ func (a *adminController) effectiveConfigHandler(g *gin.Context) {
 // @Tags        admin
 // @Produce     json
 // @Param       id path string true "Enrollment ID"
+// @Param       request body webtypes.ExpireEnrollmentRequestBody true "Expiry reason (required)"
 // @Success     200 {object} gin.H "Enrollment expired"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin or SOC"
@@ -145,23 +185,71 @@ func (a *adminController) expireEnrollmentHandler(g *gin.Context) {
 		return
 	}
 
-	// Update the enrollment's ExpiresAt to now, which will prevent retrieval
-	// in the enrollment service.
-	result := a.db.WithContext(g.Request.Context()).
-		Model(&adminEnrollmentModel{}).
-		Where("id = ?", id).
-		Update("expires_at", time.Now())
-	if result.Error != nil {
-		handleError(g, result.Error)
+	var req webtypes.ExpireEnrollmentRequestBody
+	if err := g.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		handleError(g, &errorresponses.InvalidRequestError{Reason: "invalid request body"})
 		return
 	}
-	// A valid UPDATE that matched no rows returns a nil error but affects
-	// zero rows: without this the handler would answer {"expired": true} for
-	// an enrollment ID that does not exist, contradicting its own documented
-	// 404 and telling an admin an expiry happened that did not.
-	if result.RowsAffected == 0 {
-		handleError(g, &errorresponses.NotFoundError{Resource: fmt.Sprintf("enrollment %q", id)})
+	reason, err := service.ValidateAuditReason(service.AuditEnrollmentExpired, req.Reason)
+	if err != nil {
+		handleError(g, &errorresponses.InvalidRequestError{Reason: err.Error()})
 		return
+	}
+
+	// Read first so the event can name the enrollment's owner, which is
+	// what puts the expiry on their timeline.
+	var enrollment model.Enrollment
+	if err := a.db.WithContext(g.Request.Context()).First(&enrollment, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			handleError(g, &errorresponses.NotFoundError{Resource: fmt.Sprintf("enrollment %q", id)})
+			return
+		}
+		handleError(g, fmt.Errorf("failed to look up the enrollment being expired: %w", err))
+		return
+	}
+
+	now := time.Now()
+	auditEvent := service.AuditEvent{
+		Action:     service.AuditEnrollmentExpired,
+		Actor:      a.auditActor(g),
+		Target:     &service.AuditSubject{UserID: enrollment.UserID},
+		Reason:     reason,
+		OccurredAt: now,
+		Detail: map[string]any{
+			"enrollment_id": id,
+			"key_id":        enrollment.KeyID,
+		},
+	}
+
+	// Update the enrollment's ExpiresAt to now, which will prevent retrieval
+	// in the enrollment service.
+	err = a.db.WithContext(g.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&adminEnrollmentModel{}).
+			Where("id = ?", id).
+			Update("expires_at", now)
+		if result.Error != nil {
+			return result.Error
+		}
+		// A valid UPDATE that matched no rows returns a nil error but
+		// affects zero rows: without this the handler would answer
+		// {"expired": true} for an enrollment ID that does not exist,
+		// contradicting its own documented 404 and telling an admin an
+		// expiry happened that did not.
+		if result.RowsAffected == 0 {
+			return &errorresponses.NotFoundError{Resource: fmt.Sprintf("enrollment %q", id)}
+		}
+		if a.audit == nil {
+			return nil
+		}
+		return a.audit.RecordTx(tx, auditEvent)
+	})
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	if a.audit != nil {
+		a.audit.LogOnly(auditEvent)
 	}
 
 	respondData(g, gin.H{"expired": true})
@@ -280,6 +368,8 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 		return
 	}
 
+	// Recorded after the lookup below rather than here, so a 404 does not
+	// leave a view event for a user that does not exist.
 	var user model.User
 	if err := a.db.WithContext(g.Request.Context()).
 		Where("id = ?", id).
@@ -291,6 +381,12 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 		handleError(g, fmt.Errorf("failed to get user: %w", err))
 		return
 	}
+
+	a.auditRecord(g, service.AuditEvent{
+		Action: service.AuditAdminUserViewed,
+		Actor:  a.auditActor(g),
+		Target: service.AuditSubjectFromUser(&user),
+	})
 
 	otherAccounts := decodeStringList(user.OtherAccounts)
 	serviceAccounts := decodeStringList(user.ServiceAccounts)
@@ -323,6 +419,7 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 
 	if user.DisabledAt != nil {
 		detail.DisabledAt = user.DisabledAt
+		detail.DisabledReason = user.DisabledReason
 		if user.DisabledByUserID != nil {
 			detail.DisabledByUserID = user.DisabledByUserID
 			// Look up the admin that disabled this user
@@ -350,7 +447,7 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 // @Tags        admin
 // @Produce     json
 // @Param       id path string true "User ID"
-// @Param       request body webtypes.DisableUserRequestBody false "Disable reason"
+// @Param       request body webtypes.DisableUserRequestBody true "Disable reason (required)"
 // @Success     200 {object} webtypes.DisableUserConsequences "Consequences of disabling"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin or SOC"
@@ -395,25 +492,70 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 		return
 	}
 
-	now := time.Now()
-	gracePeriod := a.config.Admin.DisableGracePeriod
-
-	result := a.db.WithContext(g.Request.Context()).
-		Model(&model.User{}).
-		Where("id = ?", id).
-		Updates(map[string]any{
-			"disabled_at":         now,
-			"disabled_by_user_id": currentUser.ID,
-		})
-
-	if result.Error != nil {
-		handleError(g, result.Error)
+	// The API already accepted a reason and silently discarded it. It is
+	// now required and persisted: the next admin opening this account needs
+	// to learn why it was disabled, and an optional field does not get
+	// filled.
+	reason, err := service.ValidateAuditReason(service.AuditUserDisabled, req.Reason)
+	if err != nil {
+		handleError(g, &errorresponses.InvalidRequestError{Reason: err.Error()})
 		return
 	}
 
-	if result.RowsAffected == 0 {
-		handleError(g, &errorresponses.NotFoundError{Resource: fmt.Sprintf("user %q", id)})
+	now := time.Now()
+	gracePeriod := a.config.Admin.DisableGracePeriod
+
+	// The target is snapshotted before the update so the audit event
+	// records the account as it stood when the action was taken.
+	var target model.User
+	if err := a.db.WithContext(g.Request.Context()).First(&target, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			handleError(g, &errorresponses.NotFoundError{Resource: fmt.Sprintf("user %q", id)})
+			return
+		}
+		handleError(g, fmt.Errorf("failed to look up the user being disabled: %w", err))
 		return
+	}
+
+	actor := a.auditActor(g)
+	auditEvent := service.AuditEvent{
+		Action:     service.AuditUserDisabled,
+		Actor:      actor,
+		Target:     service.AuditSubjectFromUser(&target),
+		Reason:     reason,
+		OccurredAt: now,
+		Detail:     map[string]any{"grace_period": gracePeriod.String()},
+	}
+
+	// The disable and its audit row commit together: a containment action
+	// without a record of who took it and why is the one outcome this
+	// exists to prevent.
+	err = a.db.WithContext(g.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.User{}).
+			Where("id = ?", id).
+			Updates(map[string]any{
+				"disabled_at":         now,
+				"disabled_by_user_id": currentUser.ID,
+				"disabled_reason":     reason,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return &errorresponses.NotFoundError{Resource: fmt.Sprintf("user %q", id)}
+		}
+		if a.audit == nil {
+			return nil
+		}
+		return a.audit.RecordTx(tx, auditEvent)
+	})
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	if a.audit != nil {
+		a.audit.LogOnly(auditEvent)
 	}
 
 	expireAt := now.Add(gracePeriod)
@@ -445,7 +587,7 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 // @Tags        admin
 // @Produce     json
 // @Param       id path string true "User ID"
-// @Param       request body webtypes.ReEnableUserRequestBody false "Re-enable reason"
+// @Param       request body webtypes.ReEnableUserRequestBody true "Re-enable reason (required)"
 // @Success     200 {object} gin.H "User re-enabled"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
 // @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin"
@@ -459,25 +601,205 @@ func (a *adminController) enableUserHandler(g *gin.Context) {
 		return
 	}
 
-	result := a.db.WithContext(g.Request.Context()).
-		Model(&model.User{}).
-		Where("id = ?", id).
-		Updates(map[string]any{
-			"disabled_at":         nil,
-			"disabled_by_user_id": nil,
-		})
-
-	if result.Error != nil {
-		handleError(g, result.Error)
+	var req webtypes.ReEnableUserRequestBody
+	if err := g.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		handleError(g, &errorresponses.InvalidRequestError{Reason: "invalid request body"})
 		return
 	}
 
-	if result.RowsAffected == 0 {
-		handleError(g, &errorresponses.NotFoundError{Resource: fmt.Sprintf("user %q", id)})
+	// Required for the same reason the disable reason is: "cleared with
+	// security, SEC-1234" is as valuable to the person after this one.
+	reason, err := service.ValidateAuditReason(service.AuditUserEnabled, req.Reason)
+	if err != nil {
+		handleError(g, &errorresponses.InvalidRequestError{Reason: err.Error()})
 		return
+	}
+
+	// Snapshotted while still disabled, so the event records why it had
+	// been disabled alongside why it is being restored.
+	var target model.User
+	if err := a.db.WithContext(g.Request.Context()).First(&target, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			handleError(g, &errorresponses.NotFoundError{Resource: fmt.Sprintf("user %q", id)})
+			return
+		}
+		handleError(g, fmt.Errorf("failed to look up the user being enabled: %w", err))
+		return
+	}
+
+	auditEvent := service.AuditEvent{
+		Action:     service.AuditUserEnabled,
+		Actor:      a.auditActor(g),
+		Target:     service.AuditSubjectFromUser(&target),
+		Reason:     reason,
+		OccurredAt: time.Now(),
+		Detail:     map[string]any{"previous_disable_reason": target.DisabledReason},
+	}
+
+	err = a.db.WithContext(g.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.User{}).
+			Where("id = ?", id).
+			Updates(map[string]any{
+				"disabled_at":         nil,
+				"disabled_by_user_id": nil,
+				"disabled_reason":     "",
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return &errorresponses.NotFoundError{Resource: fmt.Sprintf("user %q", id)}
+		}
+		if a.audit == nil {
+			return nil
+		}
+		return a.audit.RecordTx(tx, auditEvent)
+	})
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	if a.audit != nil {
+		a.audit.LogOnly(auditEvent)
 	}
 
 	respondData(g, gin.H{"enabled": true})
+}
+
+// auditFeedHandler handles GET /api/admin/audit: the recent-activity feed.
+//
+// @Summary     View the recent audit event feed (auditor-only)
+// @Description Returns the administrative audit stream newest first. The
+// @Description database copy is a bounded cache of recent events; the
+// @Description shipped audit log is the archive, and searching happens
+// @Description there rather than here.
+// @Tags        admin
+// @Produce     json
+// @Param       limit query int false "Page size (default 25, max 100)" example(25)
+// @Param       offset query int false "Results to skip (default 0)" example(0)
+// @Success     200 {object} webtypes.AuditEventsResponse "Audit events"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid paging parameters"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
+// @Security    sessionCookie
+// @Router      /api/admin/audit [get]
+func (a *adminController) auditFeedHandler(g *gin.Context) {
+	params, err := paging.Parse(g.Request.URL.Query())
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+	if a.audit == nil {
+		respondData(g, webtypes.AuditEventsResponse{Events: []webtypes.AuditEventResponse{}})
+		return
+	}
+
+	page, err := a.audit.ListRecent(g.Request.Context(), params.Limit, params.Offset)
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	// One event per visit to the feed, not one per event displayed, which
+	// settles the recursion question.
+	a.auditRecord(g, service.AuditEvent{
+		Action: service.AuditAdminAuditViewed,
+		Actor:  a.auditActor(g),
+		Detail: map[string]any{"scope": "feed", "limit": params.Limit, "offset": params.Offset},
+	})
+
+	respondData(g, auditPageResponse(page))
+}
+
+// userAuditHandler handles GET /api/admin/users/:id/audit: one user's
+// timeline, as both actor and target.
+//
+// @Summary     View a user's audit timeline (auditor-only)
+// @Description Returns the audit events where this user is the actor or the
+// @Description target, newest first. One row serves both sides: a disable
+// @Description shows on the analyst's history and on the disabled account's
+// @Description page.
+// @Tags        admin
+// @Produce     json
+// @Param       id path string true "User ID"
+// @Param       limit query int false "Page size (default 25, max 100)" example(25)
+// @Param       offset query int false "Results to skip (default 0)" example(0)
+// @Success     200 {object} webtypes.AuditEventsResponse "Audit events"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid paging parameters"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as auditor"
+// @Security    sessionCookie
+// @Router      /api/admin/users/{id}/audit [get]
+func (a *adminController) userAuditHandler(g *gin.Context) {
+	id := g.Param("id")
+	if id == "" {
+		handleError(g, fmt.Errorf("user ID is required"))
+		return
+	}
+	params, err := paging.Parse(g.Request.URL.Query())
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+	if a.audit == nil {
+		respondData(g, webtypes.AuditEventsResponse{Events: []webtypes.AuditEventResponse{}})
+		return
+	}
+
+	page, err := a.audit.ListForUser(g.Request.Context(), id, params.Limit, params.Offset)
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	a.auditRecord(g, service.AuditEvent{
+		Action: service.AuditAdminAuditViewed,
+		Actor:  a.auditActor(g),
+		Target: &service.AuditSubject{UserID: id},
+		Detail: map[string]any{"scope": "user_timeline"},
+	})
+
+	respondData(g, auditPageResponse(page))
+}
+
+// auditPageResponse converts a service page into the wire shape. The
+// payload is passed through as already-decoded JSON rather than re-typed
+// field by field, so a new action's detail reaches the UI without a wire
+// type change.
+func auditPageResponse(page *service.AuditPage) webtypes.AuditEventsResponse {
+	out := webtypes.AuditEventsResponse{
+		Events:     make([]webtypes.AuditEventResponse, 0, len(page.Events)),
+		Total:      page.Total,
+		NextOffset: page.NextOffset,
+	}
+	for _, e := range page.Events {
+		out.Events = append(out.Events, webtypes.AuditEventResponse{
+			ID:        e.ID,
+			CreatedAt: e.CreatedAt,
+			Action:    string(e.Event.Action),
+			Actor:     auditSubjectResponse(e.Event.Actor),
+			Target:    auditSubjectResponse(e.Event.Target),
+			System:    e.Event.System,
+			Reason:    e.Event.Reason,
+			Detail:    e.Event.Detail,
+		})
+	}
+	return out
+}
+
+// auditSubjectResponse converts an identity snapshot for the wire.
+func auditSubjectResponse(s *service.AuditSubject) *webtypes.AuditSubjectResponse {
+	if s == nil {
+		return nil
+	}
+	return &webtypes.AuditSubjectResponse{
+		UserID:   s.UserID,
+		Subject:  s.Subject,
+		Username: s.Username,
+		Email:    s.Email,
+		Groups:   s.Groups,
+	}
 }
 
 // certificateHistoryHandler handles GET /api/admin/certificates/history: returns
@@ -829,6 +1151,14 @@ func (a *adminController) getEnrollmentDetailHandler(g *gin.Context) {
 		return
 	}
 
+	// Detail views are audited; list views are not — a row per page of a
+	// directory listing says nothing.
+	a.auditRecord(g, service.AuditEvent{
+		Action: service.AuditAdminEnrollmentViewed,
+		Actor:  a.auditActor(g),
+		Detail: map[string]any{"enrollment_id": g.Param("id")},
+	})
+
 	// Build retrievals response
 	retrievals := make([]webtypes.EnrollmentRetrievalResponse, 0, len(detail.Retrievals.Retrievals))
 	for _, r := range detail.Retrievals.Retrievals {
@@ -880,7 +1210,7 @@ func (a *adminController) getEnrollmentDetailHandler(g *gin.Context) {
 // @Accept      json
 // @Produce     json
 // @Param       id path string true "Enrollment ID"
-// @Param       request body gin.H true "New owner user ID (JSON with 'to_user_id' field)"
+// @Param       request body gin.H true "New owner and reason (JSON with 'to_user_id' and 'reason' fields)"
 // @Success     200 {object} gin.H "Enrollment reassigned"
 // @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid request (ineligible target)"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
@@ -897,6 +1227,9 @@ func (a *adminController) reassignEnrollmentHandler(g *gin.Context) {
 
 	var body struct {
 		ToUserID string `json:"to_user_id" binding:"required"`
+		// Reason is required and server-validated: a transfer of ownership
+		// with nothing saying why is the record that is useless later.
+		Reason string `json:"reason" binding:"required"`
 	}
 	if err := g.ShouldBindJSON(&body); err != nil {
 		handleError(g, err)
@@ -904,7 +1237,7 @@ func (a *adminController) reassignEnrollmentHandler(g *gin.Context) {
 	}
 
 	err := a.enrollmentService.Reassign(g.Request.Context(),
-		g.Param("id"), body.ToUserID, identity)
+		g.Param("id"), body.ToUserID, body.Reason, identity)
 	if err != nil {
 		handleError(g, err)
 		return

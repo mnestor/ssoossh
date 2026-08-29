@@ -121,7 +121,7 @@ func TestDisableUserHandler_ShouldSucceedWhenTheAdvisoryCountFails(t *testing.T)
 	r := routerWithAuth(t, cfg, db, adminIdentity(cfg.Admin.RequireGroup))
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/admin/users/u-alice/disable", nil))
+	r.ServeHTTP(w, jsonPatch(t, "/admin/users/u-alice/disable", `{"reason":"test reason"}`))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("PATCH /admin/users/u-alice/disable = %d, want 200: the disable committed before "+

@@ -140,19 +140,40 @@ func (s *CertRequestService) failStranded(ctx context.Context, ids []string) {
 // period ago. With multiple instances, one leader-elected instance should
 // run this, but it is safe to run on every instance (idempotent UPDATEs
 // on already-expired rows are no-ops). See docs/dev/multi-instance-safety-plan.md.
-func SweepDisabledUserEnrollments(ctx context.Context, db *gorm.DB, gracePeriod time.Duration) error {
+func SweepDisabledUserEnrollments(ctx context.Context, db *gorm.DB, gracePeriod time.Duration, auditor *AuditService) error {
 	if gracePeriod < 0 {
 		return fmt.Errorf("grace period must be non-negative, got %v", gracePeriod)
 	}
 
 	cutoffTime := time.Now().Add(-gracePeriod)
+	now := time.Now()
 
-	// Find all enrollments for disabled users whose disable time exceeds the grace period
+	// Read the affected rows before updating them so each expiry can be
+	// audited individually. The set is small by construction (only
+	// still-live enrollments of users disabled longer ago than the grace
+	// period), and a bulk UPDATE alone could not say which enrollments it
+	// expired or whose they were.
+	var doomed []model.Enrollment
+	if err := db.WithContext(ctx).
+		Where("user_id IN (SELECT id FROM users WHERE disabled_at IS NOT NULL AND disabled_at < ?)", cutoffTime).
+		Where("expires_at > ?", now).
+		Find(&doomed).Error; err != nil {
+		return fmt.Errorf("failed to list the enrollments to expire for disabled users: %w", err)
+	}
+	if len(doomed) == 0 {
+		return nil
+	}
+
+	ids := make([]string, 0, len(doomed))
+	for _, e := range doomed {
+		ids = append(ids, e.ID)
+	}
+
 	result := db.WithContext(ctx).
 		Model(&model.Enrollment{}).
-		Where("user_id IN (SELECT id FROM users WHERE disabled_at IS NOT NULL AND disabled_at < ?)", cutoffTime).
-		Where("expires_at > ?", time.Now()). // Only update enrollments that haven't already expired
-		Update("expires_at", time.Now())
+		Where("id IN ?", ids).
+		Where("expires_at > ?", now). // Only update enrollments that haven't already expired
+		Update("expires_at", now)
 
 	if result.Error != nil {
 		return fmt.Errorf("failed to expire enrollments for disabled users: %w", result.Error)
@@ -162,6 +183,27 @@ func SweepDisabledUserEnrollments(ctx context.Context, db *gorm.DB, gracePeriod 
 		slog.Info("expired enrollments for disabled users",
 			slog.Int64("count", result.RowsAffected),
 			slog.Duration("grace_period", gracePeriod))
+	}
+
+	// Recorded after the update, best-effort: the expiry is the durable
+	// part, and a system action generates its own reason text since no
+	// human is present to supply one.
+	if auditor != nil {
+		reason := fmt.Sprintf("owner disabled more than %s ago, grace period elapsed", gracePeriod)
+		for _, e := range doomed {
+			auditor.Record(ctx, AuditEvent{
+				Action:     AuditEnrollmentExpired,
+				System:     true,
+				Target:     &AuditSubject{UserID: e.UserID},
+				Reason:     reason,
+				OccurredAt: now,
+				Detail: map[string]any{
+					"enrollment_id": e.ID,
+					"key_id":        e.KeyID,
+					"trigger":       "disabled-user-enrollment-sweep",
+				},
+			})
+		}
 	}
 
 	return nil
