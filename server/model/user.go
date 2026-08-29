@@ -38,14 +38,20 @@ type User struct {
 	// key to users.id). Nil when DisabledAt is nil.
 	DisabledByUserID *string `gorm:"column:disabled_by_user_id"`
 
+	// DisabledSource says what performed the disable: admin, soc, or
+	// ldap_sync. It complements DisabledByUserID, which is a users.id and
+	// so cannot represent the system actor (it stays NULL for ldap_sync).
+	// The directory sync clears only disables whose source is exactly
+	// ldap_sync, which is what keeps an operator's disable from being
+	// undone automatically. NULL on rows predating the column.
+	DisabledSource *DisabledSource `gorm:"column:disabled_source"`
+
 	// DisabledReason is why the user was disabled, required at the API and
 	// recorded here as denormalized current state so the person deciding
 	// whether to re-enable sees it without reading the audit trail. The
 	// audit trail is the history; this is the current state, and it
 	// survives audit pruning. Empty when not disabled.
 	DisabledReason string `gorm:"column:disabled_reason"`
-
-	// TODO: LDAP-sourced fields once identity enrichment is implemented.
 }
 
 // TableName overrides GORM's default pluralization to match the migration.

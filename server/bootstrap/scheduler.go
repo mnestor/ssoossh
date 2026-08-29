@@ -26,6 +26,9 @@ const disabledUserEnrollmentSweepJobName = "disabled-user-enrollment-sweep"
 // auditSweepJobName identifies the audit-event retention sweep.
 const auditSweepJobName = "audit-retention-sweep"
 
+// ldapSyncJobName identifies the LDAP directory sync.
+const ldapSyncJobName = "ldap-directory-sync"
+
 // registerJobs registers the server's scheduled jobs. Called before any
 // service runner starts, so anything it runs inline here happens before the
 // HTTP server accepts a request.
@@ -42,7 +45,47 @@ func (a *app) registerJobs(ctx context.Context) error {
 	if err := a.registerDisabledUserEnrollmentSweepJob(ctx); err != nil {
 		return err
 	}
-	return a.registerAuditSweepJob(ctx)
+	if err := a.registerAuditSweepJob(ctx); err != nil {
+		return err
+	}
+	return a.registerLDAPSyncJob(ctx)
+}
+
+// registerLDAPSyncJob schedules the directory sync, which refreshes
+// enrichment data for known users and auto-disables those whose entry has
+// stopped resolving (see service.LDAPService.Sync).
+//
+// Not registered when LDAP is disabled or the interval is zero. Not run
+// inline at startup either: the sync can disable accounts, and doing that
+// during boot — before the process is even serving — makes a
+// misconfiguration maximally hard to interrupt.
+func (a *app) registerLDAPSyncJob(ctx context.Context) error {
+	if a.svc.ldap == nil {
+		return nil
+	}
+	interval := a.config.LDAP.Sync.Interval
+	if interval <= 0 {
+		slog.DebugContext(ctx, "ldap directory sync not registered: ldap.sync.interval is zero")
+		return nil
+	}
+
+	err := a.scheduler.RegisterJob(ctx, ldapSyncJobName,
+		gocron.DurationJob(interval),
+		func(jobCtx context.Context) error {
+			return a.svc.ldap.Sync(jobCtx)
+		},
+		service.RegisterJobOpts{},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to register the LDAP directory sync: %w", err)
+	}
+
+	slog.DebugContext(ctx, "registered LDAP directory sync",
+		slog.String("job", ldapSyncJobName),
+		slog.Duration("interval", interval),
+		slog.Int("disable_after", a.config.LDAP.Sync.DisableAfter),
+	)
+	return nil
 }
 
 // registerAuditSweepJob schedules the audit-event retention sweep, which

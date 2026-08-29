@@ -1,9 +1,39 @@
 # LDAP enrichment, directory sync, and persisted groups
 
-**Status:** proposal. Not scheduled.
+**Status: implemented.** Built 2026-08-29. The operator-facing reference is
+[operations/ldap.md](../operations/ldap.md), which is now the document to
+read; this one is kept for the reasoning behind each decision.
 
-**Anchors verified at:** `f948499`. `file:line` references drift; re-check
-before relying on one.
+**What shipped:** all four principles, the field mapping with searches, both
+tables, the login flow, the sync job, and the invariant amendment.
+`github.com/go-ldap/ldap/v3` is the client.
+
+**The open question is answered.** Group name reduction takes the CN with a
+raw fallback: a value that parses as a DN is reduced to its first RDN value,
+and one that does not is already a name and is kept as-is. No config knob —
+the reference deployment (lldap) and AD both work under that rule, and a
+template can be added later if a directory needs one.
+
+**Deviations from this document, and why:**
+
+- **`extra_groups` stayed under `ldap`.** The proposal flagged the placement
+  as possibly awkward since the allowlist also governs OIDC capture. It is
+  not awkward enough to move yet, and moving it later is a rename rather
+  than a redesign.
+- **Filter escaping is injected, not offered.** The proposal said escaping
+  is applied during rendering rather than exposed as a function; what that
+  meant in practice is that every template action is rewritten to wrap its
+  value, so an operator cannot write an unescaped filter even deliberately.
+- **`ldap.limits` became a config block** rather than fixed constants, since
+  the proposal called the numbers "tunable if a real deployment hits them"
+  and a constant is not tunable.
+- **A startup `Validate` was added**, which the proposal did not call for.
+  LDAP fails open by design, so a typo would otherwise surface as silently
+  degraded enrichment rather than as an error.
+- **Notification fan-out landed as the resolver only.** `GroupRecipients`
+  answers "who should this reach"; no new notification kinds were added,
+  since the proposal scoped those as following the existing registry
+  pattern when someone needs one.
 
 `config.LDAPConfig` (`server/config/types.go`) is parsed but unconsumed, and
 `model.User` ends with a TODO for LDAP-sourced fields. This proposal defines

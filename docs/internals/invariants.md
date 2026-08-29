@@ -50,10 +50,19 @@ separate, minimally-privileged process later.
 
 ## Identity
 
-**Group membership is never persisted and never placed in a certificate.**
-Groups feed the certificate lifetime and policy decision only. They can change
-between sessions, so `model.User` keys history to a stable subject identifier
-rather than storing claims.
+**Group membership never appears in a certificate, and persisted group rows
+are never an authorization input.** Authorization — admin, SOC, auditor, and
+the certificate policy gates — is evaluated from the session identity only.
+Groups can change between sessions, so `model.User` keys history to a stable
+subject identifier rather than storing claims.
+
+`user_groups` is a snapshot for notification fan-out and display: it answers
+"who should this reach", never "may this caller do this". It was added by
+directory sync (see docs/operations/ldap.md), which retired the older,
+stronger wording that group membership is never persisted at all. What
+survives is the half that was load-bearing — nothing reads those rows to
+make a decision, and per-request database hydration of identity fields
+remains out of scope, since the session carries them.
 
 **Session and authorization headers are never captured.** The headers recorded
 on an approval decision are a deliberate allowlist — `User-Agent`,

@@ -188,38 +188,99 @@ type DB struct {
 	ConnMaxLifetime time.Duration `mapstructure:"conn_max_lifetime" default:"0"`
 }
 
-// LDAPConfig configures optional LDAP identity enrichment, looked up by the
-// username resolved from OIDC (see docs/internals/design-brief.md — "Which LDAP
-// attributes become principals" is still an open question). Enabled false
-// (the default) skips LDAP entirely; OIDC claims alone are sufficient.
+// LDAPConfig configures optional LDAP identity enrichment and directory
+// sync. Enabled false (the default) skips LDAP entirely; OIDC claims alone
+// are sufficient for every basic operation.
 //
-// The schema is parsed but not yet consumed by the server: setting these has
-// no effect on authentication or on issued certificates today. The fields are
-// a starting guess at what a reference deployment (lldap) needs, documented
-// so the config format is stable ahead of the lookup landing.
+// LDAP is enrichment, never a requirement. If directory data is available a
+// user gets more — extra principals, fresher groups, auto-disable coverage.
+// If it is not, everything still works. Login therefore **fails open**: an
+// LDAP error during the callback logs to the LDAP destination and proceeds
+// with the OIDC-only identity. There is deliberately no `required` knob.
+//
+// See docs/operations/ldap.md.
 type LDAPConfig struct {
-	// Enabled turns on the LDAP lookup once the server consumes it.
+	// Enabled turns on the login-time lookup and the background sync.
 	Enabled bool `mapstructure:"enabled" default:"false"`
 
-	// URL is the directory server to connect to.
+	// URL is the directory server to connect to, e.g.
+	// ldaps://ldap.example.net.
 	URL string `mapstructure:"url" default:""`
 
-	// BindDN is the DN to bind as for the search.
+	// BindDN is the DN to bind as for the search. Together with
+	// BindPassword this is the implicit "simple" bind mechanism; a
+	// keytab-based SASL GSSAPI alternative is tracked separately and slots
+	// in beside these keys rather than replacing them.
 	BindDN string `mapstructure:"bind_dn" default:""`
 
 	// BindPassword is the password for BindDN.
 	BindPassword string `mapstructure:"bind_password" default:""`
 
-	// BaseDN is the search base for the user lookup.
+	// BaseDN is the search base for the user lookup, and the default base
+	// for field searches that do not name their own.
 	BaseDN string `mapstructure:"base_dn" default:""`
 
-	// UserFilter is the search filter, keyed by the username resolved from
-	// OIDC.
+	// UserFilter is a Go template over the OIDC identity, with the same
+	// idiom as key ID templates: {{.Username}}, {{.Email}}, {{.Subject}},
+	// and {{.Extra.<name>}}. Values are RFC 4515 escaped during rendering
+	// and the operator cannot opt out, because a preferred_username
+	// containing * or ) is otherwise filter injection.
 	UserFilter string `mapstructure:"user_filter" default:""`
 
-	// Logging is an independent log destination for LDAP activity, routed by
-	// a "type=ldap" attribute. The routing is wired up regardless of whether
-	// LDAP enrichment itself is consumed.
+	// Fields maps destinations to the directory sources that populate them,
+	// mirroring OAuthFields with attribute names instead of claim names.
+	//
+	// The reserved names are other_accounts, service_accounts and groups.
+	// Any other key is an extra template field, captured into the same
+	// contract as OAuthFields.Extra: reachable as {{.Extra.<name>}}, stored
+	// empty when absent, and never a reason for login to fail. There is no
+	// separate extra sub-map; LDAP enrichment is extra by definition.
+	//
+	// The merge rule is per field: a configured LDAP field (any attribute
+	// or searches) wins over the OIDC value, and an unconfigured one leaves
+	// the OIDC value untouched. Override rather than union, because union
+	// makes it impossible to retire a stale principal from only one source.
+	// Groups are the exception — both sources persist side by side.
+	//
+	// username, email and subject are rejected here: the subject keys the
+	// user row, the username is what lookups are keyed by, and the OIDC
+	// email claim is the source of truth for users.email.
+	Fields map[string]LDAPField `mapstructure:"fields"`
+
+	// GroupNameAttribute names the attribute to read a group's name from
+	// when a group search is used. When groups arrive as DNs (memberOf,
+	// the common case), each DN is reduced to its first RDN value — the CN
+	// — and a value that does not parse as a DN is kept as-is. The reduced
+	// name is what must match the configured group names.
+	GroupNameAttribute string `mapstructure:"group_name_attribute" default:""`
+
+	// Sync configures the background directory sync. See LDAPSync.
+	Sync LDAPSync `mapstructure:"sync"`
+
+	// Limits caps what one directory can push into the database. See
+	// LDAPLimits.
+	Limits LDAPLimits `mapstructure:"limits"`
+
+	// Timeout bounds each directory operation. The login callback is on a
+	// user-facing path, so this is the entire latency cost enrichment can
+	// add to a login.
+	Timeout time.Duration `mapstructure:"timeout,string" default:"5s"`
+
+	// StartTLS upgrades a plain ldap:// connection to TLS. Irrelevant for
+	// ldaps:// URLs, which are TLS from the start.
+	StartTLS bool `mapstructure:"start_tls" default:"false"`
+
+	// TLSCA is a PEM bundle path to verify the directory's certificate
+	// against. Empty uses the system roots.
+	TLSCA string `mapstructure:"tls_ca" default:""`
+
+	// TLSInsecureSkipVerify disables certificate verification. A homelab
+	// escape hatch, logged loudly at startup; it makes the connection
+	// trivially interceptable and has no place in production.
+	TLSInsecureSkipVerify bool `mapstructure:"tls_insecure_skip_verify" default:"false"`
+
+	// Logging is an independent log destination for LDAP activity, routed
+	// by a "type=ldap" attribute.
 	Logging GenericLogging `mapstructure:"logging"`
 }
 

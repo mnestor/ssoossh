@@ -390,3 +390,39 @@ type NotificationPreferenceProvider interface {
 	PreferencesForIdentity(ctx context.Context, identity *Identity) (NotificationSettings, error)
 	SetPreferencesForIdentity(ctx context.Context, identity *Identity, updates map[notify.Kind]bool) error
 }
+
+// GroupRecipients resolves the users a group-targeted notification should
+// reach: everyone recorded in groupName, from either capture source, who is
+// enabled and has an email address.
+//
+// This is the whole of group fan-out — a recipient resolver, not a new
+// subsystem — and it is what user_groups exists for. The rows are a
+// snapshot for reaching people, never an authorization input (see
+// docs/internals/invariants.md).
+//
+// Accepted limitation: fan-out reaches only users who have logged in at
+// least once, because only they have a row. The server does not create
+// shadow users for directory members who have never authenticated;
+// enumerating a directory to email strangers is a different feature with
+// different consent implications.
+func (s *NotificationService) GroupRecipients(ctx context.Context, groupName string) ([]model.User, error) {
+	if groupName == "" {
+		return nil, nil
+	}
+
+	var users []model.User
+	err := s.db.WithContext(ctx).
+		Joins("JOIN user_groups ON user_groups.user_id = users.id").
+		Where("user_groups.group_name = ?", groupName).
+		// Disabled accounts are excluded: a disable removes fan-out
+		// eligibility, which is also why stale LDAP rows left behind by a
+		// vanished entry cost nothing once the disable lands.
+		Where("users.disabled_at IS NULL").
+		Where("users.email <> ''").
+		Distinct().
+		Find(&users).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve the recipients of group %q: %w", groupName, err)
+	}
+	return users, nil
+}

@@ -42,7 +42,20 @@
   },
   {
     "label": "ldap",
-    "slug": "reference/config/ldap"
+    "items": [
+      {
+        "label": "Overview",
+        "slug": "reference/config/ldap"
+      },
+      {
+        "label": "sync",
+        "slug": "reference/config/ldap/sync"
+      },
+      {
+        "label": "logging",
+        "slug": "reference/config/ldap/logging"
+      }
+    ]
   },
   {
     "label": "admin",

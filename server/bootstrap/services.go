@@ -30,6 +30,9 @@ type services struct {
 	caKeyRegistry *service.CAKeyRegistry
 	notification  *service.NotificationService
 	audit         *service.AuditService
+	// ldap is nil when directory enrichment is disabled, which every
+	// consumer treats as "no enrichment" rather than branching on config.
+	ldap *service.LDAPService
 }
 
 // initServices constructs the services using a.config and a.httpClient,
@@ -44,6 +47,15 @@ func (a *app) initServices() (*services, error) {
 	svc := &services{}
 	svc.certificate = service.NewCertificateService(a.db)
 	svc.audit = service.NewAuditService(a.config, a.db)
+
+	// Parsed here rather than inside the errgroup: a bad filter template is
+	// a startup error, and failing before the concurrent constructors keeps
+	// the message unmixed with theirs.
+	ldapSvc, err := service.NewLDAPService(a.config, a.db)
+	if err != nil {
+		return nil, err
+	}
+	svc.ldap = ldapSvc
 	svc.caKeyRegistry = service.NewCAKeyRegistry(a.db, 15*time.Minute)
 
 	g := new(errgroup.Group)
@@ -91,6 +103,8 @@ func (a *app) initServices() (*services, error) {
 	svc.certRequest.SetAuditor(svc.audit)
 	svc.enrollment.SetAuditor(svc.audit)
 	svc.auth.SetAuditor(svc.audit)
+	svc.ldap.SetAuditor(svc.audit)
+	svc.auth.SetLDAP(svc.ldap)
 
 	// Validate lifetime policy configuration against reverse-proxy settings.
 	// This is a startup check with logging only; bad config here is not an error.

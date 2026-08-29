@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -69,7 +70,14 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 	}
 
 	var c Config
-	if err := v.Unmarshal(&c); err != nil {
+	if err := v.Unmarshal(&c, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
+		// viper's defaults, which Unmarshal replaces wholesale when a hook
+		// is supplied. Dropping either silently breaks every duration and
+		// comma-separated list in the file.
+		mapstructure.StringToTimeDurationHookFunc(),
+		mapstructure.StringToSliceHookFunc(","),
+		ldapFieldShorthandHook,
+	))); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
@@ -99,6 +107,14 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 	// notification that never arrives looks exactly like one that was
 	// never triggered.
 	if err := c.Mail.Validate(); err != nil {
+		return nil, err
+	}
+
+	// Same again for the directory: an LDAP block that cannot work is
+	// better caught here than at the first login, where it would silently
+	// fall back to OIDC-only enrichment (LDAP fails open by design, which
+	// is exactly what would hide a typo).
+	if err := c.LDAP.Validate(); err != nil {
 		return nil, err
 	}
 

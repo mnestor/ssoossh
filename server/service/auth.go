@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -78,7 +79,15 @@ type AuthService struct {
 	// construction (see SetAuditor) because it is a peer service, and left
 	// nil in tests that do not exercise auditing.
 	auditor *AuditService
+
+	// ldap enriches the identity from the directory. Nil when LDAP is
+	// disabled, which is the common case and needs no branch at the call
+	// site beyond the nil check inside Enrich.
+	ldap *LDAPService
 }
+
+// SetLDAP wires directory enrichment. Called once at startup.
+func (s *AuthService) SetLDAP(l *LDAPService) { s.ldap = l }
 
 // SetAuditor wires the audit recorder. Called once at startup, before any
 // request is served.
@@ -268,6 +277,17 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce str
 		slog.Warn("failed to resolve the users row for an audit event",
 			slog.String("subject", identity.Subject), slog.Any("error", err))
 	}
+	// Directory enrichment, before the disabled check so a user disabled by
+	// the sync is evaluated against fresh data. Never fails the login: an
+	// unreachable directory logs and leaves the OIDC identity as it stands.
+	s.ldap.Enrich(ctx, identity, user.ID)
+
+	// OIDC group capture, which is useful even with LDAP disabled: it
+	// gives notifications a fan-out target, just a staler one (per login
+	// rather than per sync). Filtered through the same allowlist, and
+	// never an authorization input — see docs/internals/invariants.md.
+	s.captureOIDCGroups(ctx, identity, user.ID)
+
 	subject := AuditSubjectFromIdentity(identity, user.ID)
 
 	// Check if the user has been disabled by an admin
@@ -458,4 +478,32 @@ func randomToken() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// captureOIDCGroups persists the identity's OIDC groups, filtered through
+// the configured allowlist.
+//
+// Best-effort: a failure here must not fail a login, since these rows feed
+// notification fan-out and display rather than any authorization decision.
+// The write is a replace, so a membership that disappeared is actually
+// gone rather than lingering.
+func (s *AuthService) captureOIDCGroups(ctx context.Context, identity *Identity, userID string) {
+	allowlist := groupAllowlist(s.config)
+	if len(allowlist) == 0 || userID == "" {
+		return
+	}
+
+	names := make([]string, 0, len(identity.Groups))
+	for _, g := range identity.Groups {
+		if slices.Contains(allowlist, g) {
+			names = append(names, g)
+		}
+	}
+
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return replaceGroups(tx, userID, model.GroupSourceOIDC, dedupe(names), time.Now())
+	}); err != nil {
+		slog.Warn("failed to capture OIDC group membership",
+			slog.String("subject", identity.Subject), slog.Any("error", err))
+	}
 }
