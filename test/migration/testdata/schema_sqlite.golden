@@ -1,3 +1,13 @@
+table audit_events
+  column actor_user_id type=TEXT nullable=true pk=false default=<none>
+  column created_at type=DATETIME nullable=false pk=false default=<none>
+  column id type=TEXT nullable=true pk=true default=<none>
+  column payload type=TEXT nullable=false pk=false default=''
+  column target_user_id type=TEXT nullable=true pk=false default=<none>
+  index idx_audit_events_actor unique=false columns=actor_user_id,created_at
+  index idx_audit_events_created_at unique=false columns=created_at
+  index idx_audit_events_target unique=false columns=target_user_id,created_at
+  index sqlite_autoindex_audit_events_1 unique=true columns=id
 table ca_signer_keys
   column created_at type=DATETIME nullable=false pk=false default=<none>
   column expires_at type=DATETIME nullable=false pk=false default=<none>
@@ -16,6 +26,7 @@ table certificate_request_decisions
   column id type=TEXT nullable=false pk=true default=<none>
   column other_accounts type=TEXT nullable=false pk=false default=''
   column outcome type=TEXT nullable=false pk=false default=<none>
+  column policy_explanation type=TEXT nullable=false pk=false default=''
   column service_accounts type=TEXT nullable=false pk=false default=''
   column source_ip type=TEXT nullable=false pk=false default=''
   column subject type=TEXT nullable=false pk=false default=''
@@ -128,10 +139,35 @@ table server_secrets
   column name type=TEXT nullable=false pk=true default=<none>
   column value type=BLOB nullable=false pk=false default=<none>
   index sqlite_autoindex_server_secrets_1 unique=true columns=name
+table user_groups
+  column first_seen_at type=DATETIME nullable=false pk=false default=<none>
+  column group_name type=TEXT nullable=false pk=false default=<none>
+  column id type=TEXT nullable=true pk=true default=<none>
+  column last_seen_at type=DATETIME nullable=false pk=false default=<none>
+  column source type=TEXT nullable=false pk=false default=<none>
+  column user_id type=TEXT nullable=false pk=false default=<none>
+  fk user_id -> users.id on_delete=NO ACTION on_update=CASCADE
+  index idx_user_groups_name unique=false columns=group_name
+  index idx_user_groups_unique unique=true columns=user_id,group_name,source
+  index idx_user_groups_user unique=false columns=user_id
+  index sqlite_autoindex_user_groups_1 unique=true columns=id
+table user_ldap
+  column attributes type=TEXT nullable=false pk=false default=''
+  column consecutive_misses type=INTEGER nullable=false pk=false default=0
+  column created_at type=DATETIME nullable=false pk=false default=<none>
+  column dn type=TEXT nullable=false pk=false default=''
+  column last_seen_at type=DATETIME nullable=true pk=false default=<none>
+  column last_synced_at type=DATETIME nullable=true pk=false default=<none>
+  column updated_at type=DATETIME nullable=false pk=false default=<none>
+  column user_id type=TEXT nullable=true pk=true default=<none>
+  fk user_id -> users.id on_delete=NO ACTION on_update=CASCADE
+  index sqlite_autoindex_user_ldap_1 unique=true columns=user_id
 table users
   column created_at type=DATETIME nullable=false pk=false default=<none>
   column disabled_at type=DATETIME nullable=true pk=false default=<none>
   column disabled_by_user_id type=TEXT nullable=true pk=false default=<none>
+  column disabled_reason type=TEXT nullable=false pk=false default=''
+  column disabled_source type=TEXT nullable=true pk=false default=<none>
   column email type=TEXT nullable=false pk=false default=''
   column extra_fields type=TEXT nullable=false pk=false default=''
   column id type=TEXT nullable=false pk=true default=<none>
