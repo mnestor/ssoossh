@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
+	"strconv"
 	"strings"
 )
 
@@ -24,13 +26,57 @@ type extraValue struct {
 	scalar string
 	list   []string
 	isList bool
+	// num is the scalar parsed as a finite float64, decided once here at
+	// construction rather than at every policy evaluation. It exists
+	// because comparing scores as strings orders them lexicographically —
+	// "9" >= "40" — which would grant the longest lifetimes to the lowest
+	// scores. See Number.
+	num   float64
+	isNum bool
 }
 
-// scalarExtra wraps a scalar claim value.
-func scalarExtra(s string) extraValue { return extraValue{scalar: s} }
+// scalarExtra wraps a scalar claim value. A value that parses as a finite
+// number additionally carries its numeric form, whichever path it arrived
+// by (a JSON number in the ID token, a numeric string from the IdP, or
+// re-hydration from the users row).
+func scalarExtra(s string) extraValue {
+	v := extraValue{scalar: s}
+	if s == "" {
+		return v
+	}
+	if f, err := strconv.ParseFloat(s, 64); err == nil && !math.IsInf(f, 0) && !math.IsNaN(f) {
+		v.num, v.isNum = f, true
+	}
+	return v
+}
 
 // listExtra wraps a list claim value.
 func listExtra(l []string) extraValue { return extraValue{list: l, isList: true} }
+
+// Number returns the value as a finite float64. ok is false for lists,
+// empty scalars, and scalars that do not parse as a number — the absent
+// path a numeric policy condition resolves to the floor.
+func (v extraValue) Number() (f float64, ok bool) { return v.num, v.isNum && !v.isList }
+
+// List returns the value's list form, or nil for scalars — used by
+// membership conditions, which deliberately do not degrade a scalar into a
+// one-element list (a scalar claim under `contains` indicates a config
+// mismatch worth surfacing, not matching).
+func (v extraValue) List() ([]string, bool) {
+	if !v.isList {
+		return nil, false
+	}
+	return v.list, true
+}
+
+// Scalar returns the scalar string form, empty for lists. ok is false when
+// there is no usable scalar value — the absent path.
+func (v extraValue) Scalar() (string, bool) {
+	if v.isList || v.scalar == "" {
+		return "", false
+	}
+	return v.scalar, true
+}
 
 // String renders the value for direct template interpolation: the scalar,
 // a comma-joined list, or missingPlaceholder when empty either way.

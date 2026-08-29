@@ -125,7 +125,8 @@ authentication:
   client_id: "..."
   client_secret: "..."
   # fields.username defaults to preferred_username
-  # fields.groups is needed when cert_options.*.require_group is in use
+  # fields.groups is needed when cert_options.*.require gates on a group
+  # fields.extra declares any claim a require/when condition names
 ```
 
 The one redirect URI the provider needs is
@@ -150,9 +151,10 @@ db:
 ### Certificate options and lifetime policy
 
 `cert_options.*` is the outer bound on what any certificate may carry:
-principals, extensions, `valid_duration`, `require_group` gating, and the
+principals, extensions, `valid_duration`, `require` gating, and the
 key ID template per certificate type. Nothing reachable over HTTP can
-exceed it. Lifetimes are then narrowed per issuance by group tiers and
+exceed it. Lifetimes and extensions are then shaped per issuance by
+condition tiers (group membership or a numeric claim) and narrowed by
 source-network rules; see
 [certificate-lifetime-policy.md](certificate-lifetime-policy.md) for the
 semantics and [server/config/defaults.yaml](../../server/config/defaults.yaml)

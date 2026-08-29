@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	// Key ID templates render plain-text SSH certificate key IDs, never
 	// HTML; html/template's escaping would corrupt them.
 	"text/template" // nosemgrep: go.lang.security.audit.xss.import-text-template.import-text-template
@@ -33,7 +34,11 @@ const (
 // builds one of these per type, once, at construction, instead of every
 // caller re-switching on model.CertificateType.
 type certTypePolicy struct {
-	requireGroup  string
+	// require is the parsed cert_options.<type>.require condition gating
+	// who may approve this certificate type, or nil for no gate. Evaluated
+	// against the approver's identity with its Extra fields hydrated —
+	// Approve resolves the users row before the gate runs.
+	require       *parsedCondition
 	validDuration time.Duration
 	// enrollmentDuration is how long a flowEnrollment type's code stays
 	// redeemable. Zero for every other type, which mints no code. See
@@ -74,8 +79,22 @@ func narrowRequestedOptions(p *certTypePolicy, requested RequestedOptions) Reque
 
 // newCertTypePolicies resolves opts' per-type options against kt's
 // already-parsed key ID templates (see newKeyIDTemplates) into one lookup
-// table keyed by model.CertificateType.
-func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates) map[model.CertificateType]*certTypePolicy {
+// table keyed by model.CertificateType. declaredClaims is
+// authentication.fields.extra, validated against each require condition's
+// claim references; a bad condition is a startup error.
+func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates, declaredClaims map[string]string) (map[model.CertificateType]*certTypePolicy, error) {
+	requireUser, err := parseRequire(opts.User.Require, "cert_options.user.require", declaredClaims)
+	if err != nil {
+		return nil, err
+	}
+	requireService, err := parseRequire(opts.Service.Require, "cert_options.service.require", declaredClaims)
+	if err != nil {
+		return nil, err
+	}
+	requirePAM, err := parseRequire(opts.PAM.Require, "cert_options.pam.require", declaredClaims)
+	if err != nil {
+		return nil, err
+	}
 	// userPrincipals returns the approver's selection for user-type
 	// requests, or defaults to the approver's username if the selection is
 	// empty (preserving existing behavior for direct API callers).
@@ -95,7 +114,7 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates) map
 
 	return map[model.CertificateType]*certTypePolicy{
 		model.CertificateTypeUser: {
-			requireGroup:  opts.User.RequireGroup,
+			require:       requireUser,
 			validDuration: opts.User.ValidDuration,
 			extensions:    opts.User.Extensions,
 			keyIDTemplate: kt.user,
@@ -106,7 +125,7 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates) map
 			},
 		},
 		model.CertificateTypeService: {
-			requireGroup:       opts.Service.RequireGroup,
+			require:            requireService,
 			validDuration:      opts.Service.ValidDuration,
 			enrollmentDuration: opts.Service.EnrollmentDuration,
 			extensions:         opts.Service.Extensions,
@@ -119,7 +138,7 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates) map
 			},
 		},
 		model.CertificateTypePAM: {
-			requireGroup:  opts.PAM.RequireGroup,
+			require:       requirePAM,
 			validDuration: opts.PAM.ValidDuration,
 			extensions:    opts.PAM.Extensions,
 			keyIDTemplate: kt.pam,
@@ -128,5 +147,18 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates) map
 			},
 			flow: flowSigning,
 		},
+	}, nil
+}
+
+// parseRequire parses one type's require gate, or returns nil for an unset
+// one. label names the config key in errors.
+func parseRequire(cond *config.PolicyCondition, label string, declaredClaims map[string]string) (*parsedCondition, error) {
+	if cond.IsZero() {
+		return nil, nil
 	}
+	parsed, err := parseCondition(cond, declaredClaims, false)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", label, err)
+	}
+	return parsed, nil
 }

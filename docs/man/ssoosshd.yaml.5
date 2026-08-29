@@ -636,9 +636,57 @@ Default:
 .SS cert_options (the issuance policy for each certificate type)
 .TP
 .BI cert_options.user.require_group: " string"
-The OIDC group an approver must belong to. Empty \(em the default \(em means any authenticated user may approve, which is the behavior every deployment has had so far.
-.IP
-Worth setting even though approval is already bound to the requester at approval: the binding answers "is this your request", this answers "are you allowed certificates at all".
+Has been replaced by require, which expresses the same group check as `require: {group: <name>}` alongside claim conditions. Setting it is a startup error rather than a silent no\-op, because a gate that silently stopped applying would widen issuance.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.require.group: " string"
+Names an OIDC group the identity must be a member of.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.require.claim: " string"
+Names an extra claim (a key under authentication.fields.extra) the comparator keys below test. The server attaches no meaning to the claim itself; it only compares the value.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.require.at_least: " number"
+Passes when the claim's numeric value is >= this bound (inclusive). May be combined with at_most to express a range.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.user.require.at_most: " number"
+Passes when the claim's numeric value is <= this bound (inclusive). May be combined with at_least to express a range.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.user.require.exactly: " number"
+Passes when the claim's numeric value equals this value. It desugars to at_least and at_most of the same value, so there is no second comparison path. Right for an integer\-valued score; a computed confidence of 39.9999 does not equal 40, so a non\-integral literal here draws a startup warning.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.user.require.equals: " string"
+Passes when the claim's scalar string value equals this string.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.require.one_of: " list"
+Passes when the claim's scalar string value appears in this set.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.require.contains: " string"
+Passes when this value appears in a list\-valued claim. A scalar claim takes the absent path \(em the condition fails, loudly.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.require.all_of: " list"
+Passes when every listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.require.any_of: " list"
+Passes when at least one listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
 Default:
 .BR empty .
 .TP
@@ -658,12 +706,27 @@ Default:
 .BR empty .
 .TP
 .BI cert_options.user.lifetime_policy.default_duration: " duration"
-The duration applied when no tier's group matches. If zero, the enclosing CertOptions*.ValidDuration is used instead.
+The duration applied when no tier matches. It is required whenever any part of the lifetime policy is configured: a zero value is a startup error rather than a zero\-second certificate that fails at signing, several layers from the config line that caused it.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.user.lifetime_policy.on_absent_claim: " string"
+States what a missing or unparseable claim resolves to during condition evaluation. The only accepted value is "floor" (the default): the condition fails and the identity falls through to the floor. It must never mean "skip this condition", which is how a missing claim becomes the most generous outcome, so no other value exists; the key is here to make the posture explicit in config.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.lifetime_policy.default_extensions: " list"
+The SSH certificate extensions granted when no tier matches, or when the winning tier states no grant_extensions of its own. Applies only when tiers are configured: with tiers present, extension grants are opt\-in and start from nothing \(em an empty or omitted list grants no extensions. Every entry must appear in the enclosing type's extensions ceiling, checked at startup. With no tiers configured, the grant axis is inactive and the type's extensions ceiling alone bounds a request.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.lifetime_policy.default_enrollment_duration: " duration"
+The enrollment\-code lifetime applied when no tier matches, clamped to cert_options.service.enrollment_duration. Service certificates only \(em a startup error on any other type. Zero falls back to the enrollment_duration ceiling.
 Default:
 .BR 0 .
 .TP
 .BI cert_options.user.lifetime_policy.tiers: " list"
-Evaluated in order; the first tier whose group appears in the approver's OIDC groups wins. An empty tiers list means DefaultDuration is always used (or ValidDuration if DefaultDuration is zero).
+Evaluated in order; the FIRST tier whose when condition the approver's identity satisfies wins, and the list means what it says \(em tier order is the administrator's job. Numeric thresholds are nested by construction (everyone satisfying at_least 40 also satisfies at_least 30), so write them in descending order; ascending order silently lands every high\-score identity in the shortest tier. An empty tiers list means DefaultDuration is always used.
 Default:
 .BR empty .
 .TP
@@ -675,7 +738,57 @@ Default:
 .BR empty .
 .TP
 .BI cert_options.service.require_group: " string"
-The OIDC group a requester must belong to in order to enroll a service certificate. Empty means any authenticated user may.
+Has been replaced by require (see cert_options.user.require_group). Setting it is a startup error.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.require.group: " string"
+Names an OIDC group the identity must be a member of.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.require.claim: " string"
+Names an extra claim (a key under authentication.fields.extra) the comparator keys below test. The server attaches no meaning to the claim itself; it only compares the value.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.require.at_least: " number"
+Passes when the claim's numeric value is >= this bound (inclusive). May be combined with at_most to express a range.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.service.require.at_most: " number"
+Passes when the claim's numeric value is <= this bound (inclusive). May be combined with at_least to express a range.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.service.require.exactly: " number"
+Passes when the claim's numeric value equals this value. It desugars to at_least and at_most of the same value, so there is no second comparison path. Right for an integer\-valued score; a computed confidence of 39.9999 does not equal 40, so a non\-integral literal here draws a startup warning.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.service.require.equals: " string"
+Passes when the claim's scalar string value equals this string.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.require.one_of: " list"
+Passes when the claim's scalar string value appears in this set.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.require.contains: " string"
+Passes when this value appears in a list\-valued claim. A scalar claim takes the absent path \(em the condition fails, loudly.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.require.all_of: " list"
+Passes when every listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.require.any_of: " list"
+Passes when at least one listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
 Default:
 .BR empty .
 .TP
@@ -704,12 +817,27 @@ Default:
 .BR empty .
 .TP
 .BI cert_options.service.lifetime_policy.default_duration: " duration"
-The duration applied when no tier's group matches. If zero, the enclosing CertOptions*.ValidDuration is used instead.
+The duration applied when no tier matches. It is required whenever any part of the lifetime policy is configured: a zero value is a startup error rather than a zero\-second certificate that fails at signing, several layers from the config line that caused it.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.service.lifetime_policy.on_absent_claim: " string"
+States what a missing or unparseable claim resolves to during condition evaluation. The only accepted value is "floor" (the default): the condition fails and the identity falls through to the floor. It must never mean "skip this condition", which is how a missing claim becomes the most generous outcome, so no other value exists; the key is here to make the posture explicit in config.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.lifetime_policy.default_extensions: " list"
+The SSH certificate extensions granted when no tier matches, or when the winning tier states no grant_extensions of its own. Applies only when tiers are configured: with tiers present, extension grants are opt\-in and start from nothing \(em an empty or omitted list grants no extensions. Every entry must appear in the enclosing type's extensions ceiling, checked at startup. With no tiers configured, the grant axis is inactive and the type's extensions ceiling alone bounds a request.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.lifetime_policy.default_enrollment_duration: " duration"
+The enrollment\-code lifetime applied when no tier matches, clamped to cert_options.service.enrollment_duration. Service certificates only \(em a startup error on any other type. Zero falls back to the enrollment_duration ceiling.
 Default:
 .BR 0 .
 .TP
 .BI cert_options.service.lifetime_policy.tiers: " list"
-Evaluated in order; the first tier whose group appears in the approver's OIDC groups wins. An empty tiers list means DefaultDuration is always used (or ValidDuration if DefaultDuration is zero).
+Evaluated in order; the FIRST tier whose when condition the approver's identity satisfies wins, and the list means what it says \(em tier order is the administrator's job. Numeric thresholds are nested by construction (everyone satisfying at_least 40 also satisfies at_least 30), so write them in descending order; ascending order silently lands every high\-score identity in the shortest tier. An empty tiers list means DefaultDuration is always used.
 Default:
 .BR empty .
 .TP
@@ -721,9 +849,57 @@ Default:
 .BR empty .
 .TP
 .BI cert_options.pam.require_group: " string"
-An optional OIDC group an approver must belong to for a PAM certificate to be issued, and behaves exactly like cert_options.user.require_group: empty means no group restriction.
-.IP
-It is an extra filter an operator may apply, not the authorization itself. Whether the local operation is permitted is the host's own decision \(em pam_ssoossh authenticates the user, and the local PAM stack and sudoers policy authorize them.
+Has been replaced by require (see cert_options.user.require_group). Setting it is a startup error.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.require.group: " string"
+Names an OIDC group the identity must be a member of.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.require.claim: " string"
+Names an extra claim (a key under authentication.fields.extra) the comparator keys below test. The server attaches no meaning to the claim itself; it only compares the value.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.require.at_least: " number"
+Passes when the claim's numeric value is >= this bound (inclusive). May be combined with at_most to express a range.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.pam.require.at_most: " number"
+Passes when the claim's numeric value is <= this bound (inclusive). May be combined with at_least to express a range.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.pam.require.exactly: " number"
+Passes when the claim's numeric value equals this value. It desugars to at_least and at_most of the same value, so there is no second comparison path. Right for an integer\-valued score; a computed confidence of 39.9999 does not equal 40, so a non\-integral literal here draws a startup warning.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.pam.require.equals: " string"
+Passes when the claim's scalar string value equals this string.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.require.one_of: " list"
+Passes when the claim's scalar string value appears in this set.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.require.contains: " string"
+Passes when this value appears in a list\-valued claim. A scalar claim takes the absent path \(em the condition fails, loudly.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.require.all_of: " list"
+Passes when every listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.require.any_of: " list"
+Passes when at least one listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
 Default:
 .BR empty .
 .TP
@@ -739,6 +915,38 @@ Default:
 .TP
 .BI cert_options.pam.key_id_template: " string"
 The key ID written into PAM certificates. Unlike the service template, it does NOT fall back to cert_options.user.key_id_template: a sudo and a login by the same person must stay distinguishable in an sshd or sudo audit log, so PAM has its own built\-in default instead of silently inheriting the user template.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.lifetime_policy.default_duration: " duration"
+The duration applied when no tier matches. It is required whenever any part of the lifetime policy is configured: a zero value is a startup error rather than a zero\-second certificate that fails at signing, several layers from the config line that caused it.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.pam.lifetime_policy.on_absent_claim: " string"
+States what a missing or unparseable claim resolves to during condition evaluation. The only accepted value is "floor" (the default): the condition fails and the identity falls through to the floor. It must never mean "skip this condition", which is how a missing claim becomes the most generous outcome, so no other value exists; the key is here to make the posture explicit in config.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.lifetime_policy.default_extensions: " list"
+The SSH certificate extensions granted when no tier matches, or when the winning tier states no grant_extensions of its own. Applies only when tiers are configured: with tiers present, extension grants are opt\-in and start from nothing \(em an empty or omitted list grants no extensions. Every entry must appear in the enclosing type's extensions ceiling, checked at startup. With no tiers configured, the grant axis is inactive and the type's extensions ceiling alone bounds a request.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.lifetime_policy.default_enrollment_duration: " duration"
+The enrollment\-code lifetime applied when no tier matches, clamped to cert_options.service.enrollment_duration. Service certificates only \(em a startup error on any other type. Zero falls back to the enrollment_duration ceiling.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.pam.lifetime_policy.tiers: " list"
+Evaluated in order; the FIRST tier whose when condition the approver's identity satisfies wins, and the list means what it says \(em tier order is the administrator's job. Numeric thresholds are nested by construction (everyone satisfying at_least 40 also satisfies at_least 30), so write them in descending order; ascending order silently lands every high\-score identity in the shortest tier. An empty tiers list means DefaultDuration is always used.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.lifetime_policy.source_policy: " list"
+Restricts certificate lifetime based on the request's source IP address. Longest prefix match wins; ties resolve to the stricter rule. Entries are intersected with the tier\-determined duration, and the final effective lifetime is clamped to the ceiling set by the enclosing CertOptions*.ValidDuration.
+.IP
+See docs/operations/certificate\-lifetime\-policy.md section "Which address" for why the server\-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
 Default:
 .BR empty .
 .TP

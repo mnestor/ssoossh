@@ -496,13 +496,19 @@ export interface EffectiveConfigResponse {
 	 * Certificate options
 	 */
 	cert_user_valid_duration: string;
-	cert_user_require_group?: string;
 	cert_user_extensions: string[];
+	/**
+	 * CertUserRequire renders cert_options.user.require in the canonical
+	 * condition form (e.g. `all_of(group "SSH Users", claim loc >= 20)`),
+	 * so an operator sees the gate that is actually applied rather than a
+	 * group name that no longer describes it. Empty means no gate.
+	 */
+	cert_user_require?: string;
 	cert_service_valid_duration: string;
-	cert_service_require_group?: string;
 	cert_service_extensions: string[];
+	cert_service_require?: string;
 	cert_pam_valid_duration: string;
-	cert_pam_require_group?: string;
+	cert_pam_require?: string;
 	/**
 	 * CertClientTimeout is the configured budget; the two below are what it
 	 * derives to. Both are surfaced because an operator debugging "why did

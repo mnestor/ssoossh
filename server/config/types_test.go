@@ -119,22 +119,23 @@ func TestCertOptionsUserStructure(t *testing.T) {
 	t.Parallel()
 
 	opts := CertOptionsUser{
-		RequireGroup:  "developers",
+		Require:       &PolicyCondition{Group: "developers"},
 		ValidDuration: 30 * time.Minute,
 		Extensions:    []string{"permit-pty", "permit-agent-forwarding"},
 		KeyIDTemplate: "{{.Username}}-{{.Hostname}}-{{.Timestamp}}",
 		LifetimePolicy: LifetimePolicy{
 			Tiers: []LifetimePolicyTier{
 				{
-					Group:       "admin",
+					Name:        "admin",
+					When:        PolicyCondition{Group: "admin"},
 					MaxDuration: 8 * time.Hour,
 				},
 			},
 		},
 	}
 
-	if opts.RequireGroup != "developers" {
-		t.Errorf("RequireGroup = %q, want %q", opts.RequireGroup, "developers")
+	if opts.Require.Group != "developers" {
+		t.Errorf("Require.Group = %q, want %q", opts.Require.Group, "developers")
 	}
 	if opts.ValidDuration != 30*time.Minute {
 		t.Errorf("ValidDuration = %v, want %v", opts.ValidDuration, 30*time.Minute)

@@ -1,22 +1,38 @@
 # Claim-driven certificate policy
 
-**Status: designed, nothing built.** No code has been written for this. The
-design below is settled to the point where an implementation plan can be
-derived from it. Last re-checked against `f948499` (2026-08-28): all six
-findings were still present, so step 1 of the sequencing stood in full.
+**Status: implemented.** Built 2026-08-29 against `4aa20ec`. The whole
+sequencing below landed in one change: all six findings are closed, the
+condition grammar is in `server/service/policycondition.go`, the engine
+rework in `server/service/lifetimepolicy.go`, and the operator-facing
+semantics are documented in
+[operations/certificate-lifetime-policy.md](../operations/certificate-lifetime-policy.md),
+which is now the reference. This document is kept for the reasoning behind
+each decision, which the reference deliberately does not carry.
 
-> **Before planning from this document, do two things.**
->
-> 1. **Re-run the verification pass** in [Provenance](#provenance-what-was-verified-and-how).
->    Anchors re-checked on 2026-08-28 are as of `f948499`; the rest are as
->    of `023c0a8`. All will drift. Three of the findings are defects that
->    may be fixed independently; if so, the sequencing changes.
-> 2. **Re-read the reasoning, not just the decisions.** Every decision in
->    [Decisions](#decisions-and-the-reasoning-behind-each) carries the
->    argument that produced it, because the argument is the part that ages.
->    Several were made on judgement calls about operator behaviour and
->    deployment shape, not on facts about the code. Those are the ones worth
->    re-opening first, and they are flagged.
+**What shipped, against the sequencing:**
+
+| Step | State |
+| --- | --- |
+| 1. Fix F3 / F4 / F6 | Done. A zero `default_duration` on a configured policy is a startup error; the policy explanation is a JSON document on `certificate_request_decisions.policy_explanation`; source rules took a subtractive `removed_extensions` key and the old `extensions` key is a startup error. |
+| 2. Typed numeric accessor (F1) | Done. `extraValue` parses at construction and exposes `Number()` / `Scalar()` / `List()`. |
+| 3. Hydration ahead of the gate (F2) | Done. `Approve` calls `resolveUser` before `checkApproverAuthorization`; `bindRequester` now takes the resolved row and still runs after the gate. |
+| 4. Condition grammar on tiers | Done, including `grant_extensions` and the startup check against the type's ceiling. |
+| 5. `require` replaces `require_group` | Done, all three types. `require_group` is a startup error naming its replacement. |
+| 6. `max_enrollment_duration` | Done, with `default_enrollment_duration`; both are service-only and a startup error elsewhere. |
+| 7. Document the freshness bound | Done, in the operations reference. |
+
+**Deviations from the design, and why:**
+
+- **`on_absent_claim` accepts only `floor`.** The design named the key and
+  gave it one meaning; rather than accept a value that must never exist, any
+  other value is a startup error. The key still earns its place by stating
+  the posture in config.
+- **The non-integral `exactly` warning was built as designed** (a warning,
+  not an error), and fires at parse time.
+- **Tier ordering is still not validated**, per the decision below. The
+  obligation that created — documentation saying order is significant and
+  thresholds belong in descending order — is discharged in the operations
+  reference and the sample config.
 
 This extends [certificate-lifetime-policy.md](../operations/certificate-lifetime-policy.md),
 which is implemented. Read that first: it establishes the engine, the

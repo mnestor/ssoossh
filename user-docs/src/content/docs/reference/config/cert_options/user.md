@@ -10,10 +10,23 @@ Configures issuance of user certificates: who may approve one, how long they're 
 | Key | Type | Default |
 | --- | --- | --- |
 | [`cert_options.user.require_group`](#require_group) | string | `empty` |
+| [`cert_options.user.require.group`](#requiregroup) | string | `empty` |
+| [`cert_options.user.require.claim`](#requireclaim) | string | `empty` |
+| [`cert_options.user.require.at_least`](#requireat_least) | number | `0` |
+| [`cert_options.user.require.at_most`](#requireat_most) | number | `0` |
+| [`cert_options.user.require.exactly`](#requireexactly) | number | `0` |
+| [`cert_options.user.require.equals`](#requireequals) | string | `empty` |
+| [`cert_options.user.require.one_of`](#requireone_of) | list | `empty` |
+| [`cert_options.user.require.contains`](#requirecontains) | string | `empty` |
+| [`cert_options.user.require.all_of`](#requireall_of) | list | `empty` |
+| [`cert_options.user.require.any_of`](#requireany_of) | list | `empty` |
 | [`cert_options.user.valid_duration`](#valid_duration) | duration | `30s` |
 | [`cert_options.user.extensions`](#extensions) | list | `permit-pty, permit-user-rc` |
 | [`cert_options.user.key_id_template`](#key_id_template) | string | `empty` |
 | [`cert_options.user.lifetime_policy.default_duration`](#lifetime_policydefault_duration) | duration | `0` |
+| [`cert_options.user.lifetime_policy.on_absent_claim`](#lifetime_policyon_absent_claim) | string | `empty` |
+| [`cert_options.user.lifetime_policy.default_extensions`](#lifetime_policydefault_extensions) | list | `empty` |
+| [`cert_options.user.lifetime_policy.default_enrollment_duration`](#lifetime_policydefault_enrollment_duration) | duration | `0` |
 | [`cert_options.user.lifetime_policy.tiers`](#lifetime_policytiers) | list | `empty` |
 | [`cert_options.user.lifetime_policy.source_policy`](#lifetime_policysource_policy) | list | `empty` |
 
@@ -21,9 +34,93 @@ Configures issuance of user certificates: who may approve one, how long they're 
 
 `string`, default `empty`
 
-The OIDC group an approver must belong to. Empty — the default — means any authenticated user may approve, which is the behavior every deployment has had so far.
+Has been replaced by require, which expresses the same group check as `require: {group: <name>}` alongside claim conditions. Setting it is a startup error rather than a silent no-op, because a gate that silently stopped applying would widen issuance.
+
+## `require`
+
+The condition an approver's identity must satisfy to approve a user certificate at all. Unset means any authenticated user may approve, which is the behavior every deployment has had so far.
 
 Worth setting even though approval is already bound to the requester at approval: the binding answers "is this your request", this answers "are you allowed certificates at all".
+
+```yaml
+- group: membership in an OIDC group, exactly the behaviour group tiers
+  had before conditions existed.
+- claim with at_least / at_most: numeric comparison against an extra
+  claim (see authentication.fields.extra). Both keys together express a
+  range; boundaries are inclusive.
+- claim with exactly: numeric equality, shorthand for at_least and
+  at_most set to the same value.
+- claim with equals / one_of: scalar string equality, or membership of
+  the scalar in a fixed set.
+- claim with contains: membership of a value in a list-valued claim.
+- all_of / any_of: conjunction or disjunction over a list of the forms
+  above. One level of nesting only — a nested condition may not itself
+  carry all_of or any_of.
+```
+
+Exactly one of group, claim, all_of, or any_of must be set. A claim condition takes exactly one comparator family. Every claim name referenced must be declared under authentication.fields.extra, checked at startup.
+
+An absent claim is never neutral: a missing or unparseable claim value fails the condition (the floor), loudly, and can never widen what an identity receives. A claim's value is only as fresh as the subject's last login — see authentication.fields.extra.
+
+## `require.group`
+
+`string`, default `empty`
+
+Names an OIDC group the identity must be a member of.
+
+## `require.claim`
+
+`string`, default `empty`
+
+Names an extra claim (a key under authentication.fields.extra) the comparator keys below test. The server attaches no meaning to the claim itself; it only compares the value.
+
+## `require.at_least`
+
+`number`, default `0`
+
+Passes when the claim's numeric value is >= this bound (inclusive). May be combined with at_most to express a range.
+
+## `require.at_most`
+
+`number`, default `0`
+
+Passes when the claim's numeric value is &lt;= this bound (inclusive). May be combined with at_least to express a range.
+
+## `require.exactly`
+
+`number`, default `0`
+
+Passes when the claim's numeric value equals this value. It desugars to at_least and at_most of the same value, so there is no second comparison path. Right for an integer-valued score; a computed confidence of 39.9999 does not equal 40, so a non-integral literal here draws a startup warning.
+
+## `require.equals`
+
+`string`, default `empty`
+
+Passes when the claim's scalar string value equals this string.
+
+## `require.one_of`
+
+`list`, default `empty`
+
+Passes when the claim's scalar string value appears in this set.
+
+## `require.contains`
+
+`string`, default `empty`
+
+Passes when this value appears in a list-valued claim. A scalar claim takes the absent path — the condition fails, loudly.
+
+## `require.all_of`
+
+`list`, default `empty`
+
+Passes when every listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
+
+## `require.any_of`
+
+`list`, default `empty`
+
+Passes when at least one listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
 
 ## `valid_duration`
 
@@ -51,13 +148,31 @@ Configures tiered certificate duration based on OIDC group membership and source
 
 `duration`, default `0`
 
-The duration applied when no tier's group matches. If zero, the enclosing CertOptions*.ValidDuration is used instead.
+The duration applied when no tier matches. It is required whenever any part of the lifetime policy is configured: a zero value is a startup error rather than a zero-second certificate that fails at signing, several layers from the config line that caused it.
+
+## `lifetime_policy.on_absent_claim`
+
+`string`, default `empty`
+
+States what a missing or unparseable claim resolves to during condition evaluation. The only accepted value is "floor" (the default): the condition fails and the identity falls through to the floor. It must never mean "skip this condition", which is how a missing claim becomes the most generous outcome, so no other value exists; the key is here to make the posture explicit in config.
+
+## `lifetime_policy.default_extensions`
+
+`list`, default `empty`
+
+The SSH certificate extensions granted when no tier matches, or when the winning tier states no grant_extensions of its own. Applies only when tiers are configured: with tiers present, extension grants are opt-in and start from nothing — an empty or omitted list grants no extensions. Every entry must appear in the enclosing type's extensions ceiling, checked at startup. With no tiers configured, the grant axis is inactive and the type's extensions ceiling alone bounds a request.
+
+## `lifetime_policy.default_enrollment_duration`
+
+`duration`, default `0`
+
+The enrollment-code lifetime applied when no tier matches, clamped to cert_options.service.enrollment_duration. Service certificates only — a startup error on any other type. Zero falls back to the enrollment_duration ceiling.
 
 ## `lifetime_policy.tiers`
 
 `list`, default `empty`
 
-Evaluated in order; the first tier whose group appears in the approver's OIDC groups wins. An empty tiers list means DefaultDuration is always used (or ValidDuration if DefaultDuration is zero).
+Evaluated in order; the FIRST tier whose when condition the approver's identity satisfies wins, and the list means what it says — tier order is the administrator's job. Numeric thresholds are nested by construction (everyone satisfying at_least 40 also satisfies at_least 30), so write them in descending order; ascending order silently lands every high-score identity in the shortest tier. An empty tiers list means DefaultDuration is always used.
 
 ## `lifetime_policy.source_policy`
 

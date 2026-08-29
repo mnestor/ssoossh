@@ -12,14 +12,22 @@ import (
 	"github.com/mnestor/ssoossh/server/model"
 )
 
-func mustCertTypePolicies(t *testing.T, opts config.CertificateOptions) map[model.CertificateType]*certTypePolicy {
+func mustCertTypePolicies(t *testing.T, opts config.CertificateOptions, declaredClaims ...map[string]string) map[model.CertificateType]*certTypePolicy {
 	t.Helper()
 
 	kt, err := newKeyIDTemplates(opts)
 	if err != nil {
 		t.Fatalf("newKeyIDTemplates() error = %v", err)
 	}
-	return newCertTypePolicies(opts, kt)
+	var claims map[string]string
+	if len(declaredClaims) > 0 {
+		claims = declaredClaims[0]
+	}
+	policies, err := newCertTypePolicies(opts, kt, claims)
+	if err != nil {
+		t.Fatalf("newCertTypePolicies() error = %v", err)
+	}
+	return policies
 }
 
 // TestNewCertTypePolicies_ShouldNarrowPAMExtensionsAndUsePAMDuration
@@ -32,7 +40,10 @@ func TestNewCertTypePolicies_ShouldNarrowPAMExtensionsAndUsePAMDuration(t *testi
 
 	policies := mustCertTypePolicies(t, config.CertificateOptions{
 		User: config.CertOptionsUser{Extensions: []string{"permit-pty"}, ValidDuration: time.Hour},
-		PAM:  config.CertOptionsPAM{RequireGroup: "sudoers", ValidDuration: 30 * time.Second},
+		PAM: config.CertOptionsPAM{
+			Require:       &config.PolicyCondition{Group: "sudoers"},
+			ValidDuration: 30 * time.Second,
+		},
 	})
 	pam := policies[model.CertificateTypePAM]
 
@@ -43,8 +54,8 @@ func TestNewCertTypePolicies_ShouldNarrowPAMExtensionsAndUsePAMDuration(t *testi
 	if pam.validDuration != 30*time.Second {
 		t.Errorf("got ValidDuration %v, want PAM's own 30s, not User's", pam.validDuration)
 	}
-	if pam.requireGroup != "sudoers" {
-		t.Errorf("got RequireGroup %q, want %q", pam.requireGroup, "sudoers")
+	if pam.require == nil || !pam.require.evaluate(&Identity{Groups: []string{"sudoers"}}) {
+		t.Error("expected PAM's require condition to admit a sudoers member")
 	}
 }
 

@@ -186,7 +186,12 @@ func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publ
 		return nil, err
 	}
 
-	engine, err := newLifetimePolicyEngine(c.CertOptions)
+	engine, err := newLifetimePolicyEngine(c.CertOptions, c.AuthConfig.Fields.Extra)
+	if err != nil {
+		return nil, err
+	}
+
+	policies, err := newCertTypePolicies(c.CertOptions, keyIDTmpls, c.AuthConfig.Fields.Extra)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +199,7 @@ func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publ
 	return &CertRequestService{
 		config:     c,
 		db:         db,
-		policies:   newCertTypePolicies(c.CertOptions, keyIDTmpls),
+		policies:   policies,
 		publisher:  publisher,
 		subscriber: subscriber,
 		engine:     engine,
@@ -430,7 +435,11 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 		return nil, fmt.Errorf("failed to look up certificate request: %w", err)
 	}
 
-	if _, err := s.bindRequester(ctx, &req, identity); err != nil {
+	user, err := s.resolveUser(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.bindRequester(ctx, &req, user); err != nil {
 		return nil, err
 	}
 
@@ -559,20 +568,27 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 		return err
 	}
 	narrowed := narrowRequestedOptions(policy, requested)
+
+	// The session-built identity carries no Extra (see
+	// middleware.SessionAuthMiddleware), so claim conditions and the key ID
+	// template's extra fields are hydrated from the approver's users row,
+	// persisted at login. Resolved BEFORE the authorization gate so a
+	// require condition can read claims, and before bindRequester so a
+	// caller who cannot approve never claims the request. identity is
+	// per-request, so mutating it stays local.
+	user, err := s.resolveUser(ctx, identity)
+	if err != nil {
+		return err
+	}
+	identity.Extra = decodeExtraFields(user.ExtraFields)
+
 	if err := checkApproverAuthorization(req.Type, policy, identity, selection); err != nil {
 		return err
 	}
 
-	user, err := s.bindRequester(ctx, &req, identity)
-	if err != nil {
+	if err := s.bindRequester(ctx, &req, user); err != nil {
 		return err
 	}
-
-	// The session-built identity carries no Extra (see
-	// middleware.SessionAuthMiddleware), so the key ID template's extra
-	// fields are hydrated from the approver's users row, persisted at
-	// login. identity is per-request, so mutating it stays local.
-	identity.Extra = decodeExtraFields(user.ExtraFields)
 
 	if s.config.FIPSEnabled() {
 		if err := s.checkFIPSApproved(req.PublicKey); err != nil {
@@ -594,18 +610,20 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 }
 
 // checkApproverAuthorization decides whether identity may approve a request
-// of certType at all: group membership, plus the per-type account linkage
-// that ties the certificate's principals to accounts the approver actually
-// holds.
+// of certType at all: the type's require condition (group membership, claim
+// thresholds), plus the per-type account linkage that ties the
+// certificate's principals to accounts the approver actually holds.
 //
 // Split out of Approve both to keep that function readable and because
 // every check here shares one requirement — it must run before
 // bindRequester, so a caller who cannot approve never claims the request.
+// The require condition additionally needs identity.Extra hydrated, which
+// is why Approve resolves the users row first.
 func checkApproverAuthorization(certType model.CertificateType, policy *certTypePolicy, identity *Identity, selection ApprovalSelection) error {
 	// Both rules below come from the policy table rather than a switch here,
 	// so adding a certificate type means filling in newCertTypePolicies
 	// rather than remembering to extend this function.
-	if policy.requireGroup != "" && !slices.Contains(identity.Groups, policy.requireGroup) {
+	if policy.require != nil && !policy.require.evaluate(identity) {
 		return fmt.Errorf("identity is not authorized to approve %s certificates", certType)
 	}
 
@@ -650,20 +668,17 @@ func (s *CertRequestService) checkFIPSApproved(authorizedKey string) error {
 // is deliberately out of scope here (see docs/security-review-2026-08-11.md
 // finding 2).
 //
-// Returns the resolved users row so Approve can consume its persisted
-// fields (extra_fields) without a second lookup.
-func (s *CertRequestService) bindRequester(ctx context.Context, req *model.CertificateRequest, identity *Identity) (model.User, error) {
-	user, err := s.resolveUser(ctx, identity)
-	if err != nil {
-		return model.User{}, err
-	}
+// Takes the already-resolved users row (see resolveUser): Approve resolves
+// it before the authorization gate, so binding — which claims the request —
+// stays the last step a caller reaches.
+func (s *CertRequestService) bindRequester(ctx context.Context, req *model.CertificateRequest, user model.User) error {
 	userID := user.ID
 
 	if req.UserID != nil {
 		if *req.UserID != userID {
-			return model.User{}, &errorresponses.ForbiddenError{Reason: "certificate request belongs to another user"}
+			return &errorresponses.ForbiddenError{Reason: "certificate request belongs to another user"}
 		}
-		return user, nil
+		return nil
 	}
 
 	// Guarded so two approvals racing on an unclaimed request can't both
@@ -676,7 +691,7 @@ func (s *CertRequestService) bindRequester(ctx context.Context, req *model.Certi
 		// not covered: failing this query and not resolveUser's (which
 		// is tested) needs per-query DB fault injection, which this
 		// codebase has no helper for.
-		return model.User{}, fmt.Errorf("failed to bind certificate request to user: %w", result.Error)
+		return fmt.Errorf("failed to bind certificate request to user: %w", result.Error)
 	}
 
 	if result.RowsAffected == 0 {
@@ -685,15 +700,15 @@ func (s *CertRequestService) bindRequester(ctx context.Context, req *model.Certi
 			// not covered: failing the re-read and not the guarded UPDATE
 			// above it needs per-query DB fault injection, which this
 			// codebase has no helper for.
-			return model.User{}, fmt.Errorf("failed to re-read certificate request after a racing claim: %w", err)
+			return fmt.Errorf("failed to re-read certificate request after a racing claim: %w", err)
 		}
 		if claimed.UserID == nil || *claimed.UserID != userID {
-			return model.User{}, &errorresponses.ForbiddenError{Reason: "certificate request belongs to another user"}
+			return &errorresponses.ForbiddenError{Reason: "certificate request belongs to another user"}
 		}
 	}
 
 	req.UserID = &userID
-	return user, nil
+	return nil
 }
 
 // resolveUser maps identity to its users row, keyed on the OIDC subject.
@@ -714,15 +729,11 @@ func (s *CertRequestService) resolveUser(ctx context.Context, identity *Identity
 // doc comment. narrowed is req's already-resolved, server-config-bounded
 // RequestedOptions. policy is req.Type's certTypePolicy.
 func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req model.CertificateRequest, narrowed RequestedOptions, identity *Identity, policy *certTypePolicy, dc DecisionContext, serviceAccount string) error {
-	// Compute certificate lifetime using the policy engine, and narrow options
-	// based on the matching source policy rule.
-	effectiveDuration, _, err := s.engine.evaluateDuration(req.Type, identity, req.SourceIP, policy.validDuration)
-	if err != nil {
-		return fmt.Errorf("failed to evaluate certificate lifetime: %w", err)
-	}
-
-	// Further narrow requested options based on the source policy rule (if any).
-	narrowed = s.engine.narrowRequestedOptionsWithPolicy(req.Type, identity, req.SourceIP, narrowed)
+	// Compute certificate and enrollment-code lifetimes using the policy
+	// engine, then apply its extension grants and source-rule narrowing.
+	outcome := s.engine.evaluate(req.Type, identity, req.SourceIP, policy.validDuration, policy.enrollmentDuration)
+	effectiveDuration := outcome.duration
+	narrowed = outcome.narrowOptions(narrowed, req.SourceIP)
 
 	narrowedJSON, err := json.Marshal(narrowed)
 	if err != nil {
@@ -769,15 +780,16 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 	certDurationSeconds := int64(effectiveDuration / time.Second)
 	// The code's own lifetime, not the certificate's. These were one value
 	// until it became clear that they pull in opposite directions — see
-	// config.CertOptionsService.EnrollmentDuration. effectiveDuration still
-	// bounds each certificate, applied at redemption rather than here.
-	expiresAt := now.Add(policy.enrollmentDuration)
+	// config.CertOptionsService.EnrollmentDuration. The policy engine tiers
+	// it (max_enrollment_duration) under the enrollment_duration ceiling.
+	// effectiveDuration still bounds each certificate, applied at
+	// redemption rather than here.
+	expiresAt := now.Add(outcome.enrollmentDuration)
 
-	decision, err := newDecision(req.ID, model.CertificateRequestDecisionApproved, identity, dc, now)
+	decision, err := newDecision(req.ID, model.CertificateRequestDecisionApproved, identity, dc, now, &outcome.explanation)
 	if err != nil {
 		// not covered: newDecision can only fail through its own
-		// json.Marshal calls on []string, unreachable at their own
-		// definition.
+		// json.Marshal calls, unreachable at their own definition.
 		return err
 	}
 
@@ -933,10 +945,11 @@ func checkUserPrincipalLinkage(identity *Identity, selected []string) error {
 }
 
 // newDecision builds the immutable audit record for a single Approve/Deny
-// resolution of requestID, snapshotting identity's full six fields and dc's
-// connection context. Plain copied values, not a reference to the users
-// table — see model.CertificateRequestDecision's doc comment for why.
-func newDecision(requestID string, outcome model.CertificateRequestDecisionOutcome, identity *Identity, dc DecisionContext, decidedAt time.Time) (*model.CertificateRequestDecision, error) {
+// resolution of requestID, snapshotting identity's full six fields, dc's
+// connection context, and the policy explanation (nil for a denial, which
+// issues nothing to explain). Plain copied values, not a reference to the
+// users table — see model.CertificateRequestDecision's doc comment for why.
+func newDecision(requestID string, outcome model.CertificateRequestDecisionOutcome, identity *Identity, dc DecisionContext, decidedAt time.Time, explanation *PolicyExplanation) (*model.CertificateRequestDecision, error) {
 	groupsJSON, err := json.Marshal(identity.Groups)
 	if err != nil {
 		// not covered (this branch and the two below): all three are
@@ -950,6 +963,17 @@ func newDecision(requestID string, outcome model.CertificateRequestDecisionOutco
 	serviceAccountsJSON, err := json.Marshal(identity.ServiceAccounts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode decision service accounts: %w", err)
+	}
+
+	var explanationJSON string
+	if explanation != nil {
+		encoded, err := json.Marshal(explanation)
+		if err != nil {
+			// not covered: PolicyExplanation is a plain struct of strings
+			// and slices, so json.Marshal cannot fail on it.
+			return nil, fmt.Errorf("failed to encode policy explanation: %w", err)
+		}
+		explanationJSON = string(encoded)
 	}
 
 	return &model.CertificateRequestDecision{
@@ -966,6 +990,7 @@ func newDecision(requestID string, outcome model.CertificateRequestDecisionOutco
 		UserAgent:            dc.UserAgent,
 		AcceptLanguage:       dc.AcceptLanguage,
 		ForwardedFor:         dc.ForwardedFor,
+		PolicyExplanation:    explanationJSON,
 		DecidedAt:            decidedAt,
 	}, nil
 }
@@ -997,21 +1022,16 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 	now := time.Now()
 
 	// Compute certificate lifetime using the policy engine, which evaluates
-	// tiers and source network rules, and narrows options based on the matching
-	// source policy rule.
-	effectiveDuration, _, err := s.engine.evaluateDuration(req.Type, identity, req.SourceIP, policy.validDuration)
-	if err != nil {
-		return fmt.Errorf("failed to evaluate certificate lifetime: %w", err)
-	}
+	// tiers and source network rules, then apply its extension grants and
+	// source-rule narrowing.
+	outcome := s.engine.evaluate(req.Type, identity, req.SourceIP, policy.validDuration, 0)
+	effectiveDuration := outcome.duration
+	narrowed = outcome.narrowOptions(narrowed, req.SourceIP)
 
-	// Further narrow requested options based on the source policy rule (if any).
-	narrowed = s.engine.narrowRequestedOptionsWithPolicy(req.Type, identity, req.SourceIP, narrowed)
-
-	decision, err := newDecision(req.ID, model.CertificateRequestDecisionApproved, identity, dc, now)
+	decision, err := newDecision(req.ID, model.CertificateRequestDecisionApproved, identity, dc, now, &outcome.explanation)
 	if err != nil {
 		// not covered: newDecision can only fail through its own
-		// json.Marshal calls on []string, unreachable at their own
-		// definition.
+		// json.Marshal calls, unreachable at their own definition.
 		return err
 	}
 
@@ -1107,7 +1127,7 @@ func intersectStrings(requested, permitted []string) []string {
 func (s *CertRequestService) Deny(ctx context.Context, requestID string, identity *Identity, dc DecisionContext) error {
 	now := time.Now()
 
-	decision, err := newDecision(requestID, model.CertificateRequestDecisionDenied, identity, dc, now)
+	decision, err := newDecision(requestID, model.CertificateRequestDecisionDenied, identity, dc, now, nil)
 	if err != nil {
 		// not covered: newDecision can only fail through its own
 		// json.Marshal calls on []string, unreachable at their own

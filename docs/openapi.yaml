@@ -800,7 +800,7 @@ components:
             derives to. Both are surfaced because an operator debugging "why did
             my request expire" needs the effective numbers, not just the input.
           type: string
-        cert_pam_require_group:
+        cert_pam_require:
           type: string
         cert_pam_valid_duration:
           type: string
@@ -809,7 +809,7 @@ components:
             type: string
           type: array
           uniqueItems: false
-        cert_service_require_group:
+        cert_service_require:
           type: string
         cert_service_valid_duration:
           type: string
@@ -820,7 +820,12 @@ components:
             type: string
           type: array
           uniqueItems: false
-        cert_user_require_group:
+        cert_user_require:
+          description: |-
+            CertUserRequire renders cert_options.user.require in the canonical
+            condition form (e.g. `all_of(group "SSH Users", claim loc >= 20)`),
+            so an operator sees the gate that is actually applied rather than a
+            group name that no longer describes it. Empty means no gate.
           type: string
         cert_user_valid_duration:
           description: Certificate options

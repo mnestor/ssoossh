@@ -79,6 +79,14 @@ type CertificateRequestDecision struct {
 	AcceptLanguage string `gorm:"column:accept_language"`
 	ForwardedFor   string `gorm:"column:forwarded_for"`
 
+	// PolicyExplanation is the structured JSON record of the lifetime/
+	// extension policy evaluation behind an approval (see
+	// service.PolicyExplanation): the winning tier, the condition it
+	// matched, the source rule, the ceilings, and the effective values.
+	// Empty for denials, which issue nothing to explain, and for decisions
+	// predating the column.
+	PolicyExplanation string `gorm:"column:policy_explanation"`
+
 	DecidedAt time.Time `gorm:"column:decided_at"`
 }
 

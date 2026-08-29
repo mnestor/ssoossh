@@ -215,7 +215,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 
 // newTestCertRequestServiceWithOptions is newTestCertRequestService but
 // lets Approve tests control the full per-type policy (Extensions,
-// ValidDuration, RequireGroup), not just the request timing.
+// ValidDuration, Require), not just the request timing.
 func newTestCertRequestServiceWithOptions(t *testing.T, opts config.CertificateOptions) *CertRequestService {
 	t.Helper()
 	return newTestCertRequestServiceWithConfig(t, &config.Config{CertOptions: opts})
@@ -281,6 +281,43 @@ func seedUser(t *testing.T, db *gorm.DB, subject string) string {
 	return user.ID
 }
 
+// seedUserWithExtras seeds a users row carrying persisted extra claims, the
+// state login leaves behind and that Approve re-hydrates onto the identity
+// before evaluating any claim condition.
+func seedUserWithExtras(t *testing.T, db *gorm.DB, subject string, extras map[string]extraValue) string {
+	t.Helper()
+
+	encoded, err := json.Marshal(extras)
+	if err != nil {
+		t.Fatalf("failed to encode extras for %q: %v", subject, err)
+	}
+	user := model.User{
+		ID:          uuid.NewString(),
+		Subject:     subject,
+		Username:    "seeded-" + subject,
+		ExtraFields: string(encoded),
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("failed to seed user %q: %v", subject, err)
+	}
+	return user.ID
+}
+
+// bindIdentity resolves identity's users row and binds req to it, the pair
+// Approve performs (resolve ahead of the authorization gate, bind after).
+// Tests predating the split called bindRequester with an identity directly.
+func bindIdentity(t *testing.T, svc *CertRequestService, req *model.CertificateRequest, identity *Identity) error {
+	t.Helper()
+
+	user, err := svc.resolveUser(context.Background(), identity)
+	if err != nil {
+		return err
+	}
+	return svc.bindRequester(context.Background(), req, user)
+}
+
 // TestCertRequestService_ShouldSurfaceGenericDBErrors covers the
 // generic-database-error branch in CreateRequest, Detail, Approve,
 // bindRequester (both its guarded UPDATE and its racing-claim re-read),
@@ -336,8 +373,12 @@ func TestCertRequestService_ShouldSurfaceGenericDBErrors(t *testing.T) {
 		requestID := mustCreateUserRequest(t, svc)
 		closeUnderlyingDB(t, svc.db)
 
+		// bindRequester now takes the already-resolved row (Approve resolves
+		// it ahead of the authorization gate), so the user is built here
+		// rather than read back — which is what leaves the closed
+		// connection failing the guarded UPDATE specifically.
 		req := &model.CertificateRequest{ID: requestID, UserID: nil}
-		if _, err := svc.bindRequester(context.Background(), req, identity); err == nil {
+		if err := svc.bindRequester(context.Background(), req, model.User{ID: "user-alice", Subject: identity.Subject}); err == nil {
 			t.Error("bindRequester() error = nil, want error")
 		}
 	})
@@ -1010,7 +1051,7 @@ func TestCertRequestService_Approve_ShouldRejectWhenIdentityLacksRequiredGroup(t
 	t.Parallel()
 
 	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
-		Service: config.CertOptionsService{RequireGroup: "admins", ValidDuration: time.Hour},
+		Service: config.CertOptionsService{Require: &config.PolicyCondition{Group: "admins"}, ValidDuration: time.Hour},
 	})
 
 	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
@@ -1047,7 +1088,7 @@ func TestCertRequestService_Approve_ShouldQueuePAMRequestWithLocalUsernameAsPrin
 	t.Parallel()
 
 	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
-		PAM: config.CertOptionsPAM{RequireGroup: "sudoers", ValidDuration: 30 * time.Second},
+		PAM: config.CertOptionsPAM{Require: &config.PolicyCondition{Group: "sudoers"}, ValidDuration: 30 * time.Second},
 	})
 
 	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
@@ -1477,7 +1518,7 @@ func TestCertRequestService_Approve_ShouldRejectAnApproverWhoIsNotTheRequester(t
 
 	// Bind it to alice while leaving it pending — the state a request is in
 	// once alice has opened the approval page but not yet decided.
-	if _, err := svc.bindRequester(context.Background(), &model.CertificateRequest{ID: requestID}, alice); err != nil {
+	if err := bindIdentity(t, svc, &model.CertificateRequest{ID: requestID}, alice); err != nil {
 		t.Fatalf("unexpected error binding the request to alice: %v", err)
 	}
 
@@ -1513,35 +1554,35 @@ func TestCertRequestService_Approve_ShouldRejectAnIdentityWithNoUserRecord(t *te
 	}
 }
 
-// TestCertRequestService_Approve_ShouldEnforceRequireGroupOnUserCertificates
-// covers both directions of the newly reachable gate, including the
-// backward-compatible case where an empty value restricts nobody.
-func TestCertRequestService_Approve_ShouldEnforceRequireGroupOnUserCertificates(t *testing.T) {
+// TestCertRequestService_Approve_ShouldEnforceRequireOnUserCertificates
+// covers both directions of the gate, including the case where an unset
+// require restricts nobody.
+func TestCertRequestService_Approve_ShouldEnforceRequireOnUserCertificates(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		requireGroup string
-		groups       []string
-		wantErr      bool
+		name    string
+		require *config.PolicyCondition
+		groups  []string
+		wantErr bool
 	}{
 		{
-			name:         "should allow anyone when require_group is unset",
-			requireGroup: "",
-			groups:       nil,
-			wantErr:      false,
+			name:    "should allow anyone when require is unset",
+			require: nil,
+			groups:  nil,
+			wantErr: false,
 		},
 		{
-			name:         "should allow a member of the required group",
-			requireGroup: "ssh-users",
-			groups:       []string{"other", "ssh-users"},
-			wantErr:      false,
+			name:    "should allow a member of the required group",
+			require: &config.PolicyCondition{Group: "ssh-users"},
+			groups:  []string{"other", "ssh-users"},
+			wantErr: false,
 		},
 		{
-			name:         "should reject a non-member",
-			requireGroup: "ssh-users",
-			groups:       []string{"other"},
-			wantErr:      true,
+			name:    "should reject a non-member",
+			require: &config.PolicyCondition{Group: "ssh-users"},
+			groups:  []string{"other"},
+			wantErr: true,
 		},
 	}
 
@@ -1551,7 +1592,7 @@ func TestCertRequestService_Approve_ShouldEnforceRequireGroupOnUserCertificates(
 
 			opts := config.CertificateOptions{}
 			opts.User.ValidDuration = time.Hour
-			opts.User.RequireGroup = tt.requireGroup
+			opts.User.Require = tt.require
 
 			svc := newTestCertRequestServiceWithOptions(t, opts)
 			identity := &Identity{Username: "alice", Subject: "sub-alice", Groups: tt.groups}
@@ -1561,7 +1602,7 @@ func TestCertRequestService_Approve_ShouldEnforceRequireGroupOnUserCertificates(
 
 			err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{})
 			if tt.wantErr && err == nil {
-				t.Error("expected approve to be rejected by require_group")
+				t.Error("expected approve to be rejected by the require condition")
 			}
 			if !tt.wantErr && err != nil {
 				t.Errorf("unexpected error: %v", err)
@@ -1570,38 +1611,86 @@ func TestCertRequestService_Approve_ShouldEnforceRequireGroupOnUserCertificates(
 	}
 }
 
-// TestCertRequestService_Approve_ShouldTreatPAMRequireGroupAsOptional
-// pins cert_options.pam.require_group as an optional extra filter that
-// behaves like every other type's: empty restricts nobody. ssoosshd only
-// authenticates the user for a PAM certificate; whether the local
-// operation is permitted is the host's own PAM and sudoers decision, so an
-// unset group here must not deny issuance.
-func TestCertRequestService_Approve_ShouldTreatPAMRequireGroupAsOptional(t *testing.T) {
+// A claim condition on the gate is the case that could not be expressed
+// before: the type gate ran ahead of Extra hydration, so it could only ever
+// read groups (finding F2). Approve now resolves the users row first, so a
+// numeric threshold on the gate works from the claim persisted at login.
+func TestCertRequestService_Approve_ShouldGateOnAClaimCondition(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		requireGroup string
-		groups       []string
-		wantErr      bool
+		name    string
+		score   string
+		wantErr bool
+	}{
+		{name: "should admit a score at the threshold", score: "40", wantErr: false},
+		{name: "should admit a score above the threshold", score: "55", wantErr: false},
+		{name: "should refuse a score below the threshold", score: "30", wantErr: true},
+		{name: "should refuse a single-digit score that sorts high as a string", score: "9", wantErr: true},
+		{name: "should refuse an unparseable score", score: "high", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			opts := config.CertificateOptions{}
+			opts.User.ValidDuration = time.Hour
+			opts.User.Require = &config.PolicyCondition{Claim: "loc", AtLeast: float64Ptr(40)}
+
+			cfg := &config.Config{CertOptions: opts}
+			cfg.CertOptions.ClientTimeout = time.Minute
+			cfg.AuthConfig.Fields.Extra = map[string]string{"loc": "level_of_confidence"}
+
+			svc := newTestCertRequestServiceWithConfig(t, cfg)
+			identity := &Identity{Username: "alice", Subject: "sub-alice"}
+			seedUserWithExtras(t, svc.db, identity.Subject, map[string]extraValue{"loc": scalarExtra(tt.score)})
+
+			requestID := mustCreateUserRequest(t, svc)
+
+			err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{})
+			if tt.wantErr && err == nil {
+				t.Error("expected approve to be rejected by the claim condition")
+			}
+			if !tt.wantErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+// TestCertRequestService_Approve_ShouldTreatPAMRequireAsOptional
+// pins cert_options.pam.require as an optional extra filter that behaves
+// like every other type's: unset restricts nobody. ssoosshd only
+// authenticates the user for a PAM certificate; whether the local
+// operation is permitted is the host's own PAM and sudoers decision, so an
+// unset condition here must not deny issuance.
+func TestCertRequestService_Approve_ShouldTreatPAMRequireAsOptional(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		require *config.PolicyCondition
+		groups  []string
+		wantErr bool
 	}{
 		{
-			name:         "should allow any approver when require_group is unset",
-			requireGroup: "",
-			groups:       nil,
-			wantErr:      false,
+			name:    "should allow any approver when require is unset",
+			require: nil,
+			groups:  nil,
+			wantErr: false,
 		},
 		{
-			name:         "should allow a member of the configured group",
-			requireGroup: "sudoers",
-			groups:       []string{"sudoers"},
-			wantErr:      false,
+			name:    "should allow a member of the configured group",
+			require: &config.PolicyCondition{Group: "sudoers"},
+			groups:  []string{"sudoers"},
+			wantErr: false,
 		},
 		{
-			name:         "should refuse a non-member of the configured group",
-			requireGroup: "sudoers",
-			groups:       []string{"other"},
-			wantErr:      true,
+			name:    "should refuse a non-member of the configured group",
+			require: &config.PolicyCondition{Group: "sudoers"},
+			groups:  []string{"other"},
+			wantErr: true,
 		},
 	}
 
@@ -1611,7 +1700,7 @@ func TestCertRequestService_Approve_ShouldTreatPAMRequireGroupAsOptional(t *test
 
 			svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
 				PAM: config.CertOptionsPAM{
-					RequireGroup:  tt.requireGroup,
+					Require:       tt.require,
 					ValidDuration: 30 * time.Second,
 				},
 			})
@@ -1630,7 +1719,7 @@ func TestCertRequestService_Approve_ShouldTreatPAMRequireGroupAsOptional(t *test
 
 			err = svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{})
 			if tt.wantErr && err == nil {
-				t.Error("expected approve to be rejected by the configured pam require_group")
+				t.Error("expected approve to be rejected by the configured pam require condition")
 			}
 			if !tt.wantErr && err != nil {
 				t.Errorf("unexpected error: %v", err)
@@ -1689,14 +1778,14 @@ func TestApprove_ShouldRejectDuplicateBindingAttempt(t *testing.T) {
 
 	// Alice binds the request by directly calling bindRequester
 	req := &model.CertificateRequest{ID: requestID}
-	if _, err := svc.bindRequester(context.Background(), req, alice); err != nil {
+	if err := bindIdentity(t, svc, req, alice); err != nil {
 		t.Fatalf("unexpected error binding to alice: %v", err)
 	}
 
 	// Bob attempts to bind the same request
 	// The WHERE user_id IS NULL guard should prevent this
 	req2 := &model.CertificateRequest{ID: requestID}
-	_, err := svc.bindRequester(context.Background(), req2, bob)
+	err := bindIdentity(t, svc, req2, bob)
 	if err == nil {
 		t.Fatal("expected bob's bindRequester to fail on a request already bound to alice")
 	}
@@ -1986,7 +2075,7 @@ func TestBindRequester_ShouldDetectARacingClaim(t *testing.T) {
 	}
 
 	req := &model.CertificateRequest{ID: requestID, UserID: nil}
-	_, err := svc.bindRequester(context.Background(), req, loser)
+	err := bindIdentity(t, svc, req, loser)
 
 	var forbidden *errorresponses.ForbiddenError
 	if !errors.As(err, &forbidden) {

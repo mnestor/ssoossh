@@ -127,12 +127,24 @@
 					<p>{config.cert_user_valid_duration}</p>
 				</div>
 				<div>
+					<p class="font-mono text-xs text-ink-muted">user_require</p>
+					<p>{config.cert_user_require || '(no gate)'}</p>
+				</div>
+				<div>
 					<p class="font-mono text-xs text-ink-muted">service_valid_duration</p>
 					<p>{config.cert_service_valid_duration}</p>
 				</div>
 				<div>
+					<p class="font-mono text-xs text-ink-muted">service_require</p>
+					<p>{config.cert_service_require || '(no gate)'}</p>
+				</div>
+				<div>
 					<p class="font-mono text-xs text-ink-muted">pam_valid_duration</p>
 					<p>{config.cert_pam_valid_duration}</p>
+				</div>
+				<div>
+					<p class="font-mono text-xs text-ink-muted">pam_require</p>
+					<p>{config.cert_pam_require || '(no gate)'}</p>
 				</div>
 			</div>
 		</div>

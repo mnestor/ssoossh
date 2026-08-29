@@ -85,6 +85,31 @@ func (c *CertificateOptions) Validate() error {
 	if c.Service.EnrollmentDuration <= 0 {
 		return fmt.Errorf("cert_options.service.enrollment_duration must be greater than zero (the default is 8760h): a zero lifetime expires every enrollment code the moment it is issued")
 	}
+
+	// Replaced keys fail loudly rather than being silently ignored: a
+	// require_group that stopped applying would widen who may approve, and
+	// a source-rule extensions list that stopped applying would widen what
+	// a certificate carries.
+	for path, val := range map[string]string{
+		"cert_options.user.require_group":    c.User.RequireGroup,
+		"cert_options.service.require_group": c.Service.RequireGroup,
+		"cert_options.pam.require_group":     c.PAM.RequireGroup,
+	} {
+		if val != "" {
+			return fmt.Errorf("%s has been replaced by require: move `require_group: %q` to `require: {group: %q}`", path, val, val)
+		}
+	}
+	for path, lp := range map[string]LifetimePolicy{
+		"cert_options.user.lifetime_policy":    c.User.LifetimePolicy,
+		"cert_options.service.lifetime_policy": c.Service.LifetimePolicy,
+		"cert_options.pam.lifetime_policy":     c.PAM.LifetimePolicy,
+	} {
+		for i, rule := range lp.SourcePolicy {
+			if len(rule.Extensions) > 0 {
+				return fmt.Errorf("%s.source_policy[%d].extensions has been replaced by removed_extensions: source rules now subtract extensions instead of intersecting them", path, i)
+			}
+		}
+	}
 	return nil
 }
 
@@ -92,14 +117,20 @@ func (c *CertificateOptions) Validate() error {
 // one, how long they're valid for, and which SSH certificate extensions to
 // grant.
 type CertOptionsUser struct {
-	// RequireGroup is the OIDC group an approver must belong to. Empty — the
-	// default — means any authenticated user may approve, which is the
-	// behavior every deployment has had so far.
+	// RequireGroup has been replaced by require, which expresses the same
+	// group check as `require: {group: <name>}` alongside claim conditions.
+	// Setting it is a startup error rather than a silent no-op, because a
+	// gate that silently stopped applying would widen issuance.
+	RequireGroup string `mapstructure:"require_group" default:""`
+
+	// Require is the condition an approver's identity must satisfy to
+	// approve a user certificate at all. Unset means any authenticated user
+	// may approve, which is the behavior every deployment has had so far.
 	//
 	// Worth setting even though approval is already bound to the requester
 	// at approval: the binding answers "is this your request", this answers
 	// "are you allowed certificates at all".
-	RequireGroup string `mapstructure:"require_group" default:""`
+	Require *PolicyCondition `mapstructure:"require"`
 
 	// ValidDuration is the ceiling on how long an issued user certificate is
 	// valid. Any lifetime policy only ever narrows from here.
@@ -126,9 +157,15 @@ type CertOptionsUser struct {
 // group required to request one, how long they're valid for, and which SSH
 // certificate extensions to grant.
 type CertOptionsService struct {
-	// RequireGroup is the OIDC group a requester must belong to in order to
-	// enroll a service certificate. Empty means any authenticated user may.
+	// RequireGroup has been replaced by require (see
+	// cert_options.user.require_group). Setting it is a startup error.
 	RequireGroup string `mapstructure:"require_group" default:""`
+
+	// Require is the condition an approver's identity must satisfy in order
+	// to approve a service enrollment. Unset means any authenticated user
+	// may. Evaluated against the approver — the human vouching — not the
+	// service account receiving the certificate.
+	Require *PolicyCondition `mapstructure:"require"`
 
 	// ValidDuration is the ceiling on how long each certificate produced
 	// from an enrollment is valid, bounding every redemption of the code
@@ -174,15 +211,20 @@ type CertOptionsService struct {
 // but its defaults and fallback behavior deliberately diverge — see each
 // field's comment.
 type CertOptionsPAM struct {
-	// RequireGroup is an optional OIDC group an approver must belong to for
-	// a PAM certificate to be issued, and behaves exactly like
-	// cert_options.user.require_group: empty means no group restriction.
+	// RequireGroup has been replaced by require (see
+	// cert_options.user.require_group). Setting it is a startup error.
+	RequireGroup string `mapstructure:"require_group" default:""`
+
+	// Require is an optional condition an approver's identity must satisfy
+	// for a PAM certificate to be issued — a minimum score to authenticate a
+	// local operation, say sudo behind `claim: loc, at_least: 40`. Unset
+	// means no restriction.
 	//
 	// It is an extra filter an operator may apply, not the authorization
 	// itself. Whether the local operation is permitted is the host's own
 	// decision — pam_ssoossh authenticates the user, and the local PAM
 	// stack and sudoers policy authorize them.
-	RequireGroup string `mapstructure:"require_group" default:""`
+	Require *PolicyCondition `mapstructure:"require"`
 
 	// ValidDuration should be seconds, not hours: a PAM certificate is
 	// validated once, in-process, and discarded — it never enters an agent
@@ -202,20 +244,59 @@ type CertOptionsPAM struct {
 	// has its own built-in default instead of silently inheriting the user
 	// template.
 	KeyIDTemplate string `mapstructure:"key_id_template" default:""`
+
+	// LifetimePolicy takes the same grammar as the other types, though in
+	// practice only the require gate matters for PAM: duration tiers against
+	// a 30-second, validated-once certificate and extension grants against
+	// an empty extensions ceiling have nothing to do. The expected
+	// configuration is require alone, tiers unused.
+	LifetimePolicy LifetimePolicy `mapstructure:"lifetime_policy"`
 }
 
-// LifetimePolicy configures certificate issuance duration based on tiered
-// groups and source network policies — see docs/operations/certificate-lifetime-policy.md.
-// Empty configuration (all fields at their zero values) means all certificates
-// receive ValidDuration from the enclosing CertOptions* struct.
+// LifetimePolicy configures certificate issuance duration and extension
+// grants based on tiered conditions and source network policies — see
+// docs/operations/certificate-lifetime-policy.md. Empty configuration (all
+// fields at their zero values) means all certificates receive ValidDuration
+// from the enclosing CertOptions* struct.
 type LifetimePolicy struct {
-	// DefaultDuration is the duration applied when no tier's group matches.
-	// If zero, the enclosing CertOptions*.ValidDuration is used instead.
+	// DefaultDuration is the duration applied when no tier matches. It is
+	// required whenever any part of the lifetime policy is configured: a
+	// zero value is a startup error rather than a zero-second certificate
+	// that fails at signing, several layers from the config line that
+	// caused it.
 	DefaultDuration time.Duration `mapstructure:"default_duration,string"`
 
-	// Tiers are evaluated in order; the first tier whose group appears in the
-	// approver's OIDC groups wins. An empty tiers list means DefaultDuration
-	// is always used (or ValidDuration if DefaultDuration is zero).
+	// OnAbsentClaim states what a missing or unparseable claim resolves to
+	// during condition evaluation. The only accepted value is "floor" (the
+	// default): the condition fails and the identity falls through to the
+	// floor. It must never mean "skip this condition", which is how a
+	// missing claim becomes the most generous outcome, so no other value
+	// exists; the key is here to make the posture explicit in config.
+	OnAbsentClaim string `mapstructure:"on_absent_claim" default:""`
+
+	// DefaultExtensions are the SSH certificate extensions granted when no
+	// tier matches, or when the winning tier states no grant_extensions of
+	// its own. Applies only when tiers are configured: with tiers present,
+	// extension grants are opt-in and start from nothing — an empty or
+	// omitted list grants no extensions. Every entry must appear in the
+	// enclosing type's extensions ceiling, checked at startup. With no tiers
+	// configured, the grant axis is inactive and the type's extensions
+	// ceiling alone bounds a request.
+	DefaultExtensions []string `mapstructure:"default_extensions"`
+
+	// DefaultEnrollmentDuration is the enrollment-code lifetime applied when
+	// no tier matches, clamped to cert_options.service.enrollment_duration.
+	// Service certificates only — a startup error on any other type. Zero
+	// falls back to the enrollment_duration ceiling.
+	DefaultEnrollmentDuration time.Duration `mapstructure:"default_enrollment_duration,string"`
+
+	// Tiers are evaluated in order; the FIRST tier whose when condition the
+	// approver's identity satisfies wins, and the list means what it says —
+	// tier order is the administrator's job. Numeric thresholds are nested
+	// by construction (everyone satisfying at_least 40 also satisfies
+	// at_least 30), so write them in descending order; ascending order
+	// silently lands every high-score identity in the shortest tier. An
+	// empty tiers list means DefaultDuration is always used.
 	Tiers []LifetimePolicyTier `mapstructure:"tiers"`
 
 	// SourcePolicy restricts certificate lifetime based on the request's
@@ -230,13 +311,35 @@ type LifetimePolicy struct {
 	SourcePolicy []SourcePolicyEntry `mapstructure:"source_policy"`
 }
 
-// LifetimePolicyTier is one OIDC group matching rule in LifetimePolicy.Tiers.
+// LifetimePolicyTier is one condition-matching rule in LifetimePolicy.Tiers.
 type LifetimePolicyTier struct {
-	// Group is the OIDC group whose membership triggers this tier.
-	Group string `mapstructure:"group"`
+	// Name labels the tier for the policy explanation recorded with each
+	// approval decision — the answer to "why one hour".
+	Name string `mapstructure:"name"`
 
-	// MaxDuration is the longest lifetime certificates in this tier can receive.
+	// When is the condition an identity must satisfy to take this tier. It
+	// is required: a tier without one is a startup error. Group tiers from
+	// before the condition grammar move from `group: <name>` to
+	// `when: {group: <name>}`.
+	When PolicyCondition `mapstructure:"when"`
+
+	// MaxDuration is the longest lifetime certificates in this tier can
+	// receive, bounded by the enclosing type's valid_duration ceiling.
 	MaxDuration time.Duration `mapstructure:"max_duration,string"`
+
+	// GrantExtensions are the SSH certificate extensions this tier grants.
+	// Every entry must appear in the enclosing type's extensions ceiling —
+	// a grant outside it is a startup error rather than a silent trim. An
+	// empty or omitted list falls back to the policy's default_extensions.
+	GrantExtensions []string `mapstructure:"grant_extensions"`
+
+	// MaxEnrollmentDuration tiers the enrollment code's own lifetime,
+	// clamped to cert_options.service.enrollment_duration — the lever
+	// against a code outliving the conditions that authorized it, without
+	// re-evaluating anything at retrieve. Service certificates only — a
+	// startup error on any other type. Zero falls back to
+	// default_enrollment_duration.
+	MaxEnrollmentDuration time.Duration `mapstructure:"max_enrollment_duration,string"`
 }
 
 // SourcePolicyEntry restricts certificate lifetime and options based on the
@@ -251,11 +354,18 @@ type SourcePolicyEntry struct {
 	// The final effective duration is min(tier_duration, source_rule_max_duration, type_ceiling).
 	MaxDuration time.Duration `mapstructure:"max_duration,string"`
 
-	// Extensions restricts the SSH certificate extensions to this set. The effective
-	// set is the intersection with the type's configured extensions. An empty list
-	// means no extensions (equivalent to an explicit "no extensions" policy);
-	// omit this field to apply no extension restriction.
+	// Extensions has been replaced by removed_extensions. The old key made
+	// an empty list and an omitted field mean opposite things at one length
+	// check; the subtractive key retires that. Setting it is a startup
+	// error rather than a silently skipped narrowing.
 	Extensions []string `mapstructure:"extensions"`
+
+	// RemovedExtensions are SSH certificate extensions requests from this
+	// network never receive, subtracted after the tier grant. An empty or
+	// omitted list removes nothing — the two spellings agree. Subtractive
+	// on purpose: identity grants, network narrows — being on the office
+	// range is not a reason to receive a capability the tier withheld.
+	RemovedExtensions []string `mapstructure:"removed_extensions"`
 
 	// PinSourceAddress, when true, adds a critical "source-address" SSH option
 	// pinning the certificate to this network. Valid only for service certificates;

@@ -206,7 +206,7 @@ func TestPipeline_EndToEnd_PAM(t *testing.T) {
 
 	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
 		PAM: config.CertOptionsPAM{
-			RequireGroup:  "sudoers",
+			Require:       &config.PolicyCondition{Group: "sudoers"},
 			ValidDuration: 30 * time.Second,
 		},
 	})

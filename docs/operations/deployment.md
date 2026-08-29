@@ -91,7 +91,7 @@ assumes. Any OIDC-compliant provider works the same way.
    callback URL to `<http.public_url>/auth/callback`; this is the one
    redirect URI the client needs. Note the generated client ID and secret.
 3. Create (or import) the user(s) who will log in, and any groups needed
-   for `cert_options.*.require_group` gating (e.g. an "SSH Sudoers" group
+   for `cert_options.*.require` gating (e.g. an "SSH Sudoers" group
    for PAM; see §8 below).
 4. In `ssoosshd.yaml`'s `authentication` section, set `provider_url` to
    pocket-id's base URL and `client_id`/`client_secret` to the values from

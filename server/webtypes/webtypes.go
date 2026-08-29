@@ -443,14 +443,18 @@ type EffectiveConfigResponse struct {
 	LoggingLevel string `json:"logging_level" validate:"required"`
 
 	// Certificate options
-	CertUserValidDuration    string   `json:"cert_user_valid_duration" validate:"required"`
-	CertUserRequireGroup     string   `json:"cert_user_require_group,omitempty"`
-	CertUserExtensions       []string `json:"cert_user_extensions" validate:"required"`
+	CertUserValidDuration string   `json:"cert_user_valid_duration" validate:"required"`
+	CertUserExtensions    []string `json:"cert_user_extensions" validate:"required"`
+	// CertUserRequire renders cert_options.user.require in the canonical
+	// condition form (e.g. `all_of(group "SSH Users", claim loc >= 20)`),
+	// so an operator sees the gate that is actually applied rather than a
+	// group name that no longer describes it. Empty means no gate.
+	CertUserRequire          string   `json:"cert_user_require,omitempty"`
 	CertServiceValidDuration string   `json:"cert_service_valid_duration" validate:"required"`
-	CertServiceRequireGroup  string   `json:"cert_service_require_group,omitempty"`
 	CertServiceExtensions    []string `json:"cert_service_extensions" validate:"required"`
+	CertServiceRequire       string   `json:"cert_service_require,omitempty"`
 	CertPAMValidDuration     string   `json:"cert_pam_valid_duration" validate:"required"`
-	CertPAMRequireGroup      string   `json:"cert_pam_require_group,omitempty"`
+	CertPAMRequire           string   `json:"cert_pam_require,omitempty"`
 	// CertClientTimeout is the configured budget; the two below are what it
 	// derives to. Both are surfaced because an operator debugging "why did
 	// my request expire" needs the effective numbers, not just the input.
