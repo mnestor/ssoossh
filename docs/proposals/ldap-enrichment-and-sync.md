@@ -39,11 +39,12 @@ These were settled up front and shape everything below:
 
 Two concrete needs drive the search:
 
-- **Other principals.** The canonical case: OIDC yields a username, the
-  directory holds the identifiers target systems actually know
-  (`sAMAccountName`, a UPN, legacy account names). These feed the
-  certificate's principal list the same way `OAuthFields.OtherAccounts`
-  does today.
+- **Other principals.** OIDC yields a username, the directory holds the
+  identifiers target systems actually know (`sAMAccountName`, a UPN, an
+  admin or shared account). These feed the certificate's principal list the
+  same way `OAuthFields.OtherAccounts` does today. Directories link a person
+  to their alternate accounts in several shapes, and only the simplest is an
+  attribute on the person's own entry; see "Account linking" below.
 - **Usable groups.** Group membership for the roles and policies the server
   cares about (`admin.require_group`, `soc_group`, `auditor_group`, policy
   group references), kept current between logins by the sync, and usable by
@@ -66,18 +67,34 @@ ldap:
   user_filter: "(&(objectClass=person)(uid={{.Username}}))"
 
   # LDAP attribute names, mirroring config.OAuthFields claim names.
+  # Field mapping, grouped by destination: everything that feeds a field is
+  # declared under it. `attribute` reads the person's own entry (linking
+  # topology 1); `searches` resolve linked accounts that are their own
+  # directory entries (topologies 2-4) and run after the primary lookup.
+  # A bare string is shorthand for `attribute: <string>`.
   fields:
-    other_accounts: "sAMAccountName"   # multi-valued attribute -> principals
-    service_accounts: ""
-    groups: "memberOf"                 # DNs reduced to CN, or a name attribute
-    email: ""
-    extra:                             # attribute capture, same contract as
-      department: "departmentNumber"   # OAuthFields.Extra
+    other_accounts:
+      attribute: "sAMAccountName"    # forward list on the person's entry
+      searches:
+        - name: "admin accounts"
+          base_dn: ""                # empty inherits ldap.base_dn
+          filter: "(&(objectClass=person)(authorizedUser={{.Username}}))"
+          value: "uid"               # attribute naming the linked account
+    service_accounts:
+      searches:
+        - name: "owned service accounts"
+          filter: "(&(objectClass=account)(owner={{.DN}}))"
+          value: "uid"
+    groups: "memberOf"               # DNs reduced to CN, or a name attribute
+    department: "departmentNumber"   # any other key: extra template field,
+                                     # same contract as OAuthFields.Extra
 
   sync:
     interval: 15m          # zero disables the sync job entirely
     disable_after: 3       # consecutive successful-search misses before disable
     reenable: true         # sync may clear its own disables on reappearance
+    extra_groups: []       # persisted in addition to config-derived groups;
+                           # see "user_groups" for the allowlist rule
 
   # Connection hygiene, absent from the current struct.
   timeout: 5s              # per-operation; the callback is a login path
@@ -98,17 +115,77 @@ Notes:
   into template execution, not offered as a function, because a
   `preferred_username` containing `*` or `)` is otherwise filter injection.
 - **Field mapping mirrors `OAuthFields`.** Same field names, attribute names
-  instead of claim names. The merge rule is per field: **a configured LDAP
-  field wins over the OIDC value; an unconfigured (empty) one leaves the OIDC
-  value untouched.** Override rather than union, because union makes it
+  instead of claim names. The account fields additionally take `searches`,
+  declared under the field they feed, so reading one field's block shows
+  every source that populates it. The merge rule is per field: **a
+  configured LDAP field (any `attribute` or `searches`) wins over the OIDC
+  value; an unconfigured (empty) one leaves the OIDC value untouched.** Override rather than union, because union makes it
   impossible to retire a stale principal from only one source. Groups are the
   exception: both sources persist side by side (see storage), and the session
   identity's `Groups` remains the OIDC claim, per the settled decision that
   all six `service.Identity` fields ride the session.
-- **`fields.extra`** follows the `OAuthFields.Extra` contract exactly:
-  captured values land in the same template namespace
-  (`{{.Extra.<name>}}`), missing attributes store empty and render as
-  MISSING, login never fails over one.
+- **The key identity fields are not changeable by LDAP.** Subject, username,
+  and email come from OIDC and nowhere else: the subject keys the user row,
+  the username is what LDAP lookups are keyed *by*, and the OIDC email claim
+  is the source of truth for `users.email` (not unique across users, does
+  not need to be; it is simply ours). Neither the login-time lookup nor the
+  sync ever writes any of the three, so there is no `fields.username` or
+  `fields.email`, and config validation rejects `username`, `email`, and
+  `subject` as keys under `fields` rather than treating them as extra
+  fields, since they could only read as an attempt to override identity.
+- **Any other key under `fields` is an extra template field.** There is no
+  `extra:` sub-map; LDAP enrichment is extra by definition. A key that is
+  not one of the reserved names (`other_accounts`, `service_accounts`,
+  `groups`) captures into the `OAuthFields.Extra` contract: same template
+  namespace (`{{.Extra.<name>}}`), missing attributes store empty and
+  render as MISSING, login never fails over one. Extra fields take the same
+  shapes as the reserved ones (bare string, or `attribute` / `searches`),
+  so a search's result list can feed a template field too. The reserved
+  names are unavailable as extra field names, and `username`, `email`, and
+  `subject` are rejected outright (see the key-identity bullet above).
+
+## Account linking
+
+A person's alternate accounts appear in directories in four shapes, and the
+config must express all of them:
+
+1. **Forward list on the person's entry.** The user's own entry carries a
+   multi-valued attribute of account names. Covered by the field's
+   `attribute` alone; no search.
+2. **Reverse link by username.** The alternate account is its own entry, and
+   it carries a multi-valued attribute of the usernames allowed to use it.
+   Expressed as a `searches` entry under the field whose filter references
+   `{{.Username}}`; each matched entry contributes its `value` attribute.
+3. **Reverse link by another identifier.** Same as 2, but the linking
+   attribute holds some other unique identifier from the main account
+   (an employee number, a UUID) rather than the username. The filter
+   references `{{.Attr.<name>}}`, an attribute of the primary entry. The
+   server collects every attribute name referenced this way across all
+   search templates and requests them in the primary lookup automatically,
+   so nothing needs duplicating as an extra field.
+4. **Reverse links with roles.** The alternate account entry distinguishes
+   its owner from others authorized to use it, via different attributes.
+   Expressed as searches over the same entries with different filters,
+   placed under different fields: an ownership link (`owner={{.DN}}` is a
+   common shape, so the primary entry's DN is in the template context)
+   placed under `service_accounts` grants manage-and-enroll, while an
+   authorized-user link under `other_accounts` grants a usable principal.
+   Which link means which is the operator's call, made by where the search
+   is placed.
+
+Search templates see the OIDC identity fields, `{{.DN}}`, and
+`{{.Attr.<name>}}` from the primary entry, all RFC 4515 escaped like the
+primary filter. Within LDAP, everything under one field unions and dedupes:
+its `attribute` plus each of its `searches`. The per-field override rule
+from "Configuration" then applies to the combined result: configuring any
+LDAP source for a field makes LDAP win over the OIDC claim for it.
+
+Secondary searches are by filter, not DN, so they must re-run at sync time;
+a reverse link can change without the person's own entry changing, which is
+much of what the sync exists to catch. If an individual search fails during
+an otherwise-successful pass, the cached values for its target field are
+kept rather than shrunk: a transient error must not quietly narrow a
+principal list.
 
 ## Storage
 
@@ -148,17 +225,31 @@ thinner certificate.
 | `first_seen_at` / `last_seen_at` |                            |
 
 Unique on (`user_id`, `group_name`, `source`). Rows rather than JSON so
-"everyone in soc" is one indexed query. Store **all** groups from each
-source, not an allowlist of policy groups: rows are cheap, and an allowlist
-would require a backfill every time `admin.soc_group` or a policy changes.
-A cap or allowlist knob can come later if a real deployment has a
-pathological directory.
+"everyone in soc" is one indexed query.
+
+**Only group names the config defines are persisted.** The allowlist is the
+union of every group name the configuration references:
+`admin.require_group`, `admin.soc_group`, `admin.auditor_group`, group names
+appearing in certificate policy, plus the explicit `ldap.sync.extra_groups`
+list for names nothing else references yet (a future notification target,
+say). Membership outside that set is discarded at capture time; the server
+does not mirror the directory's group graph, it records the roles it acts
+on. The allowlist applies to both sources, including OIDC capture when LDAP
+is disabled (the `extra_groups` knob may move out from under `ldap` if that
+placement proves awkward).
+
+A config change that adds a group name self-heals rather than needing a
+backfill: LDAP-sourced rows repopulate at the next sync tick, OIDC-sourced
+rows at each user's next login. Until then the new group simply has no
+members recorded, which fails in the quiet direction (a notification to it
+reaches nobody, and authorization never reads this table anyway).
 
 Write path: OIDC groups are replaced (delete-and-insert for `source=oidc`) at
 every login. LDAP groups are replaced at login (when the lookup succeeds) and
-at every successful sync read. A user with LDAP rows whose entry disappears
-keeps the stale rows until the disable lands; the disable clears fan-out
-eligibility anyway (disabled users are excluded from recipient resolution).
+at every successful sync read, both filtered through the allowlist. A user
+with LDAP rows whose entry disappears keeps the stale rows until the disable
+lands; the disable clears fan-out eligibility anyway (disabled users are
+excluded from recipient resolution).
 
 This table is useful even with LDAP disabled: OIDC group capture alone gives
 notifications a fan-out target, just a staler one (per login instead of per
@@ -192,10 +283,11 @@ session, unchanged.
 
 1. OIDC callback verifies the ID token and builds the identity as today.
 2. If `ldap.enabled`: render `user_filter` from the identity, search under
-   `base_dn`, read the configured attributes.
-   - Success: merge per the field rules, upsert `user_ldap` (DN, attributes,
-     `last_seen_at`, reset `consecutive_misses`), replace `source=ldap` group
-     rows.
+   `base_dn`, read the configured attributes, then run each field's
+   `searches` against the found entry.
+   - Success: merge per the field rules, upsert `user_ldap` (DN, attributes
+     including resolved account lists, `last_seen_at`, reset
+     `consecutive_misses`), replace `source=ldap` group rows.
    - Failure (connect, bind, search error): log to the LDAP destination,
      fall back to stored `user_ldap.attributes` if present, continue. Login
      never blocks on the directory.
@@ -216,8 +308,10 @@ Per user:
 
 1. Read the entry by `dn` (fallback: one filter search to re-anchor a moved
    entry, updating `dn` on success).
-2. **Found:** refresh `attributes` and `source=ldap` group rows, update
-   `last_seen_at`, reset `consecutive_misses`. If the user is disabled with
+2. **Found:** re-run each field's `searches`, refresh `attributes` and
+   `source=ldap` group rows, update `last_seen_at`, reset
+   `consecutive_misses` (per-search failures keep that field's cached
+   values, see "Account linking"). If the user is disabled with
    `disabled_source = ldap_sync` and `sync.reenable` is true, clear the
    disable.
 3. **Not found (search succeeded, no entry):** increment
@@ -235,8 +329,12 @@ attribution:
 - `users.disabled_source`: `admin`, `soc`, or `ldap_sync`. Complements
   `DisabledByUserID`, which is a FK to `users` and cannot represent the
   system actor (it stays NULL for `ldap_sync`).
-- Re-enable rules key off it: the sync only clears disables it created;
-  operator re-enables clear anything, as today.
+- Re-enable rules key off it: the sync only clears disables whose source is
+  exactly `ldap_sync`; operator re-enables clear anything, as today.
+- The column is nullable and the migration performs **no backfill**. Users
+  disabled before the upgrade carry NULL, which the sync's exact-match rule
+  can never touch, the safe direction. Writing `admin` into old rows would
+  behave identically, so the migration takes the cheaper path.
 
 Refresh semantics mid-session: `Identity.Extra` is re-hydrated from the
 `users` row at approval time (`server/service/auth.go`), so extra-field
@@ -276,20 +374,31 @@ implications, and it is out of scope.
   enriches.
 - **Server-side key policy by directory attribute.** Adjacent, previously
   debated and dropped; nothing here depends on it.
+- **Kerberos GSSAPI bind.** Replacing `bind_dn` / `bind_password` with a
+  keytab-based SASL GSSAPI bind is tracked separately in
+  [ldap-gssapi-bind.md](ldap-gssapi-bind.md), which depends on this
+  proposal. Its only demand on this work: the flat bind keys ship as the
+  implicit "simple" mechanism, so a `bind.mechanism` block can slot in
+  later without breaking existing configs.
+
+## Limits
+
+Multi-valued attributes are capped high rather than left unbounded: values
+past the cap are dropped and the truncation is logged to the LDAP
+destination. Starting defaults, tunable if a real deployment hits them:
+1,000 values per multi-valued attribute, 1,000 matched entries per field
+search, 64 KB for the serialized `user_ldap.attributes` JSON. Group
+membership is naturally bounded by the allowlist, so no separate cap there.
+
+The sync's cost scales as (users with a `user_ldap` row) times (1 + number
+of configured field searches) directory operations per tick, which the
+interval should be chosen against. Per-user search results are small; the
+multiplier is the concern, not the payloads.
 
 ## Open questions
 
 - **Group name reduction.** `memberOf` yields DNs; the config needs a rule
   for reducing them to comparable names (take CN, or a per-deployment
   template). lldap and AD differ here; the reference deployment (lldap)
-  should drive the default.
-- **`disabled_source` backfill.** Existing disabled users predate the
-  column. Backfilling `admin` is safe (the sync will then never touch them),
-  and NULL can mean the same thing; pick one in the migration.
-- **Multi-valued attribute limits.** A `memberOf` with thousands of values
-  or a jumbo `attributes` JSON should be capped and logged rather than
-  stored unbounded. Pick caps when writing the migration.
-- **Whether sync refreshes `users.email`** when `fields.email` is
-  configured. Leaning yes (it is just another override-configured field),
-  but email drives notification delivery, so a directory typo has blast
-  radius. Decide before implementation.
+  should drive the default. The allowlist comparison depends on this: the
+  reduced name is what must match the configured group names.

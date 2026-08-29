@@ -1,12 +1,14 @@
 // Command genconfdocs renders the ssoosshd configuration surface from the Go
 // structs in server/config.
 //
-// It writes two artifacts from one walk:
+// It writes three artifacts from one walk:
 //
 //   - docs/man/ssoosshd.yaml.5, the OPTIONS body between the generated-region
 //     markers
 //   - server/config/defaults.yaml, whose comments are regenerated in place
 //     while every value is left exactly as it was
+//   - user-docs/src/content/docs/reference/config/, the documentation site's
+//     configuration reference, one page per section, regenerated wholesale
 //
 // Usage: genconfdocs [-check]
 //
@@ -29,6 +31,7 @@ const (
 	tlsPkg     = "server/config/tlsutils"
 	defaultsIn = "server/config/defaults.yaml"
 	manPage    = "docs/man/ssoosshd.yaml.5"
+	siteDir    = "user-docs/src/content/docs/reference/config"
 )
 
 func main() {
@@ -80,6 +83,10 @@ func run(check bool) error {
 	if err != nil {
 		return err
 	}
+	site, err := confdocs.WriteMarkdown(siteDir, sections, defaults)
+	if err != nil {
+		return err
+	}
 
 	if check {
 		var stale []string
@@ -88,6 +95,9 @@ func run(check bool) error {
 		}
 		if yamlChanged {
 			stale = append(stale, defaultsIn)
+		}
+		if site {
+			stale = append(stale, siteDir)
 		}
 		if len(stale) > 0 {
 			fmt.Fprintf(os.Stderr, "stale, run `make confdocs`: %s\n", strings.Join(stale, ", "))

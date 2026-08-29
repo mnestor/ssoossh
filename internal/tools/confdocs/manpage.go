@@ -283,6 +283,12 @@ func troffProse(doc []string, refs map[string]string, scope string) []string {
 // is the ...") is already removed by docLines, so anything left is a genuine
 // reference to the key.
 func rewriteRefs(line string, refs map[string]string, scope string) string {
+	return rewriteRefsWith(line, refs, scope, func(path string) string { return path })
+}
+
+// rewriteRefsWith is rewriteRefs with the replacement rendered by the caller,
+// so the man page can emit the bare key while Markdown wraps it in backticks.
+func rewriteRefsWith(line string, refs map[string]string, scope string, render func(string) string) string {
 	return goIdent.ReplaceAllStringFunc(line, func(word string) string {
 		path, ok := refs[word]
 		if !ok {
@@ -297,9 +303,9 @@ func rewriteRefs(line string, refs map[string]string, scope string) string {
 		// Inside its own section, the short key reads better than the full
 		// dotted path: "see trusted_proxies" under .SS http.
 		if scope != "" && strings.HasPrefix(path, scope+".") {
-			return strings.TrimPrefix(path, scope+".")
+			return render(strings.TrimPrefix(path, scope+"."))
 		}
-		return path
+		return render(path)
 	})
 }
 

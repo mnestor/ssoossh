@@ -1,0 +1,40 @@
+---
+title: ssoossh
+description: Short-lived SSH certificates from your identity provider.
+template: splash
+hero:
+  tagline: Sign in with your identity provider, get a short-lived SSH certificate. No long-lived keys to distribute, rotate, or revoke.
+  actions:
+    - text: Get started
+      link: ./getting-started/
+      icon: right-arrow
+    - text: Configuration reference
+      link: ./reference/config/
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid stagger>
+	<Card title="OIDC-backed" icon="seti:lock">
+		The server authenticates users against your OpenID Connect provider and
+		signs their SSH public keys into short-lived certificates. Group
+		membership feeds the lifetime decision; it never appears in the
+		certificate itself.
+	</Card>
+	<Card title="Approval workflow" icon="approve-check">
+		Certificate requests are approved and confirmed in a web UI, with
+		per-user certificate history and admin, SOC, and auditor roles mapped
+		from OIDC groups.
+	</Card>
+	<Card title="Client and PAM" icon="laptop">
+		The `ssoossh` client requests certificates from the command line and
+		loads them into your agent; `pam_ssoossh` issues certificates for local
+		PAM authentication.
+	</Card>
+	<Card title="SQLite or PostgreSQL" icon="seti:db">
+		Runs as a single systemd service with SQLite, or against PostgreSQL in
+		multi-instance deployments. CA keys come from an inline SSH key or a
+		PKCS#11/HSM token.
+	</Card>
+</CardGrid>

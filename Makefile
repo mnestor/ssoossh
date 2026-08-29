@@ -517,18 +517,20 @@ subcommand means a new page.
 man-check:
 	$(call STALENESS_CHECK,$(GENERATED_MAN),gendocs,$(STALE_MAN))
 
-# Two artifacts, one source. The doc comments on the config structs in
-# server/config produce both the ssoosshd.yaml(5) OPTIONS body and the
-# comments in defaults.yaml -- the file embedded in the binary and shipped as
-# /etc/ssoossh/ssoosshd.yaml. Values in defaults.yaml are read and written
-# back unchanged; only the prose around them is generated.
+# Three artifacts, one source. The doc comments on the config structs in
+# server/config produce the ssoosshd.yaml(5) OPTIONS body, the comments in
+# defaults.yaml -- the file embedded in the binary and shipped as
+# /etc/ssoossh/ssoosshd.yaml -- and the documentation site's configuration
+# reference pages under user-docs/. Values in defaults.yaml are read and
+# written back unchanged; only the prose around them is generated.
 #
 # Those structs are the only place a key's name, type, and meaning are
 # written down; everything else about a key is derived from them.
 #
 # No cgo: the generator parses server/config rather than importing it, so it
 # never reaches the HSM key source's libpkcs11 binding.
-CONFDOCS_OUT := docs/man/ssoosshd.yaml.5 server/config/defaults.yaml
+CONFDOCS_OUT := docs/man/ssoosshd.yaml.5 server/config/defaults.yaml \
+	user-docs/src/content/docs/reference/config
 
 confdocs: ## Regenerate the config reference and defaults.yaml comments
 	go run ./internal/tools/genconfdocs
@@ -537,8 +539,8 @@ confdocs: ## Regenerate the config reference and defaults.yaml comments
 # the values are read from the file and written back untouched, and
 # server/config's golden test is what guards those.
 STALE_CONFDOCS := The config reference is stale: a config struct's fields or \
-doc comments changed without docs/man/ssoosshd.yaml.5 and \
-server/config/defaults.yaml being regenerated.
+doc comments changed without docs/man/ssoosshd.yaml.5, \
+server/config/defaults.yaml, and the user-docs config pages being regenerated.
 
 confdocs-check:
 	$(call STALENESS_CHECK,$(CONFDOCS_OUT),confdocs,$(STALE_CONFDOCS))
