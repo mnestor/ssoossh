@@ -542,10 +542,9 @@ ldap:
 # optional; empty disables the corresponding role.
 admin:
   # The OIDC group a caller must belong to in order to access admin-scoped
-  # operations (re-enabling users, reassigning any enrollment), plus
-  # everything the SOC and auditor roles below can do. Empty disables admin
-  # operations entirely. Fails closed: no identity, no group, or no configured
-  # group all deny.
+  # operations (re-enabling users), plus everything the SOC and auditor roles
+  # below can do. Empty disables admin operations entirely. Fails closed: no
+  # identity, no group, or no configured group all deny.
   require_group: ""
   # The OIDC group a caller must belong to in order to access SOC-scoped
   # containment operations: disabling users and expiring enrollments. SOC is a
@@ -553,9 +552,8 @@ admin:
   # of this setting; empty therefore narrows SOC operations to admins rather
   # than disabling them. SOC members also hold auditor access (they need the
   # directory and enrollment lists to find what to contain), but deliberately
-  # not the restorative or ownership operations — re-enabling a user and
-  # reassigning an enrollment stay admin-only. Fails closed: no identity, or
-  # membership in neither group, denies.
+  # not the restorative operations — re-enabling a user stays admin-only.
+  # Fails closed: no identity, or membership in neither group, denies.
   soc_group: ""
   # The OIDC group a caller must belong to in order to access auditor-scoped
   # operations (viewing effective configuration, cross-user certificate
@@ -565,12 +563,6 @@ admin:
   # them. Fails closed: no identity, or membership in no granting group,
   # denies.
   auditor_group: ""
-  # How long after a user is disabled before their service enrollments expire.
-  # This gives running services time to notice and rotate credentials before
-  # the certificates stop working. After this duration expires (see
-  # service.SweepDisabledUserEnrollments), no new certificates can be issued
-  # from the enrollment.
-  disable_grace_period: 168h
   # The email address shown on the account-disabled page so a disabled user
   # can contact support. Empty disables the display (no mailto link on the
   # page).

@@ -347,7 +347,8 @@ export function listAdminEnrollments(
 
 /**
  * GET /api/admin/enrollments/:id — full enrollment details including
- * retrieval log and reassignment history, visible to auditors and the owner.
+ * retrieval log and any historical reassignments, visible to auditors and to
+ * holders of the enrollment's service account.
  */
 export function getAdminEnrollmentDetail(
 	id: string,
@@ -362,18 +363,6 @@ export function getAdminEnrollmentDetail(
 		retrievals: EnrollmentRetrievalResponse[];
 		retrieval_total: number;
 	}>(`/admin/enrollments/${encodeURIComponent(id)}`, { signal });
-}
-
-/**
- * PATCH /api/admin/enrollments/:id/reassign — transfer ownership of an
- * enrollment to another user. The new owner must have the required service
- * account.
- */
-export function reassignEnrollment(id: string, toUserId: string): Promise<{ reassigned: boolean }> {
-	return request<{ reassigned: boolean }>(`/admin/enrollments/${encodeURIComponent(id)}/reassign`, {
-		method: 'PATCH',
-		body: { to_user_id: toUserId }
-	});
 }
 
 /**

@@ -491,7 +491,7 @@ func TestListRetrievals_Authorization(t *testing.T) {
 		enrollmentID := uuid.NewString()
 		if err := svc.db.Create(&model.Enrollment{
 			ID: enrollmentID, Code: "code-" + enrollmentID, PublicKey: "k",
-			OptionSet: "{}", Principals: `["svc-a"]`, UserID: approverID,
+			OptionSet: "{}", Principals: `["svc-a"]`, ServiceAccount: "svc-a", UserID: approverID,
 			CertificateRequestID: &requestID,
 			CreatedAt:            time.Now(), ExpiresAt: time.Now().Add(time.Hour),
 		}).Error; err != nil {
@@ -507,12 +507,12 @@ func TestListRetrievals_Authorization(t *testing.T) {
 		return svc, enrollment, requestID, approverID
 	}
 
-	t.Run("should allow the approving user", func(t *testing.T) {
+	t.Run("should allow a holder of the service account", func(t *testing.T) {
 		t.Parallel()
 		_, enrollment, requestID, _ := setup(t)
 
 		log, err := enrollment.ListRetrievals(context.Background(),
-			requestID, &Identity{Subject: "sub-approver"})
+			requestID, &Identity{Subject: "sub-approver", ServiceAccounts: []string{"svc-a"}})
 		if err != nil {
 			t.Fatalf("ListRetrievals() error = %v", err)
 		}
@@ -583,15 +583,15 @@ func TestListForIdentity(t *testing.T) {
 		t.Parallel()
 		svc, enrollment, mine, theirs := setup(t)
 		seedEnrollment(t, svc, model.Enrollment{
-			Code: "code-mine", PublicKey: "k", Principals: `["svc-mine"]`,
+			Code: "code-mine", PublicKey: "k", Principals: `["svc-mine"]`, ServiceAccount: "svc-mine",
 			UserID: mine, ExpiresAt: time.Now().Add(time.Hour),
 		})
 		seedEnrollment(t, svc, model.Enrollment{
-			Code: "code-theirs", PublicKey: "k", Principals: `["svc-theirs"]`,
+			Code: "code-theirs", PublicKey: "k", Principals: `["svc-theirs"]`, ServiceAccount: "svc-theirs",
 			UserID: theirs, ExpiresAt: time.Now().Add(time.Hour),
 		})
 
-		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine"})
+		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine", ServiceAccounts: []string{"svc-mine"}})
 		if err != nil {
 			t.Fatalf("ListForIdentity() error = %v", err)
 		}
@@ -608,15 +608,15 @@ func TestListForIdentity(t *testing.T) {
 		svc, enrollment, mine, _ := setup(t)
 		now := time.Now()
 		seedEnrollment(t, svc, model.Enrollment{
-			Code: "code-old", PublicKey: "k", Principals: `["svc-old"]`, UserID: mine,
+			Code: "code-old", PublicKey: "k", Principals: `["svc-old"]`, ServiceAccount: "svc-old", UserID: mine,
 			CreatedAt: now.Add(-2 * time.Hour), ExpiresAt: now.Add(time.Hour),
 		})
 		seedEnrollment(t, svc, model.Enrollment{
-			Code: "code-new", PublicKey: "k", Principals: `["svc-new"]`, UserID: mine,
+			Code: "code-new", PublicKey: "k", Principals: `["svc-new"]`, ServiceAccount: "svc-new", UserID: mine,
 			CreatedAt: now, ExpiresAt: now.Add(time.Hour),
 		})
 
-		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine"})
+		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine", ServiceAccounts: []string{"svc-new", "svc-old"}})
 		if err != nil {
 			t.Fatalf("ListForIdentity() error = %v", err)
 		}
@@ -634,11 +634,11 @@ func TestListForIdentity(t *testing.T) {
 		t.Parallel()
 		svc, enrollment, mine, _ := setup(t)
 		seedEnrollment(t, svc, model.Enrollment{
-			Code: "code-dead", PublicKey: "k", Principals: `["svc-dead"]`,
+			Code: "code-dead", PublicKey: "k", Principals: `["svc-dead"]`, ServiceAccount: "svc-dead",
 			UserID: mine, ExpiresAt: time.Now().Add(-time.Hour),
 		})
 
-		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine"})
+		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine", ServiceAccounts: []string{"svc-dead"}})
 		if err != nil {
 			t.Fatalf("ListForIdentity() error = %v", err)
 		}
@@ -653,7 +653,7 @@ func TestListForIdentity(t *testing.T) {
 		enrollmentID := uuid.NewString()
 		seedEnrollment(t, svc, model.Enrollment{
 			ID: enrollmentID, Code: "code-used", PublicKey: "k",
-			Principals: `["svc-used"]`, UserID: mine, ExpiresAt: time.Now().Add(time.Hour),
+			Principals: `["svc-used"]`, ServiceAccount: "svc-used", UserID: mine, ExpiresAt: time.Now().Add(time.Hour),
 		})
 		newest := time.Now().Truncate(time.Second)
 		for i, at := range []time.Time{newest.Add(-2 * time.Hour), newest.Add(-time.Hour), newest} {
@@ -666,7 +666,7 @@ func TestListForIdentity(t *testing.T) {
 			}
 		}
 
-		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine"})
+		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine", ServiceAccounts: []string{"svc-used"}})
 		if err != nil {
 			t.Fatalf("ListForIdentity() error = %v", err)
 		}
@@ -685,11 +685,11 @@ func TestListForIdentity(t *testing.T) {
 		t.Parallel()
 		svc, enrollment, mine, _ := setup(t)
 		seedEnrollment(t, svc, model.Enrollment{
-			Code: "code-fresh", PublicKey: "k", Principals: `["svc-fresh"]`,
+			Code: "code-fresh", PublicKey: "k", Principals: `["svc-fresh"]`, ServiceAccount: "svc-fresh",
 			UserID: mine, ExpiresAt: time.Now().Add(time.Hour),
 		})
 
-		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine"})
+		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine", ServiceAccounts: []string{"svc-fresh"}})
 		if err != nil {
 			t.Fatalf("ListForIdentity() error = %v", err)
 		}
@@ -705,12 +705,12 @@ func TestListForIdentity(t *testing.T) {
 		t.Parallel()
 		svc, enrollment, mine, _ := setup(t)
 		seedEnrollment(t, svc, model.Enrollment{
-			Code: "code-opts", PublicKey: "k", Principals: `["svc-opts"]`, UserID: mine,
+			Code: "code-opts", PublicKey: "k", Principals: `["svc-opts"]`, ServiceAccount: "svc-opts", UserID: mine,
 			OptionSet: `{"extensions":["permit-pty"],"force_command":"/usr/bin/true"}`,
 			ExpiresAt: time.Now().Add(time.Hour),
 		})
 
-		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine"})
+		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine", ServiceAccounts: []string{"svc-opts"}})
 		if err != nil {
 			t.Fatalf("ListForIdentity() error = %v", err)
 		}
@@ -731,11 +731,11 @@ func TestListForIdentity(t *testing.T) {
 			t.Fatalf("failed to marshal public key: %v", err)
 		}
 		seedEnrollment(t, svc, model.Enrollment{
-			Code: "code-fp", PublicKey: authorizedKey, Principals: `["svc-fp"]`,
+			Code: "code-fp", PublicKey: authorizedKey, Principals: `["svc-fp"]`, ServiceAccount: "svc-fp",
 			UserID: mine, ExpiresAt: time.Now().Add(time.Hour),
 		})
 
-		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine"})
+		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine", ServiceAccounts: []string{"svc-fp"}})
 		if err != nil {
 			t.Fatalf("ListForIdentity() error = %v", err)
 		}
@@ -750,15 +750,19 @@ func TestListForIdentity(t *testing.T) {
 
 	// One unreadable column is not a reason to withhold the dates beside
 	// it: the page exists to say when a code was approved and when it dies.
+	// The account column is what ownership reads, so a row whose display
+	// JSON is corrupt is still findable by the people who hold it.
 	t.Run("should still return a row whose stored JSON does not parse", func(t *testing.T) {
 		t.Parallel()
 		svc, enrollment, mine, _ := setup(t)
 		seedEnrollment(t, svc, model.Enrollment{
 			Code: "code-broken", PublicKey: "not-a-key", Principals: "{{{",
-			OptionSet: "{{{", UserID: mine, ExpiresAt: time.Now().Add(time.Hour),
+			ServiceAccount: "svc-broken",
+			OptionSet:      "{{{", UserID: mine, ExpiresAt: time.Now().Add(time.Hour),
 		})
 
-		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-mine"})
+		rows, err := enrollment.ListForIdentity(context.Background(),
+			&Identity{Subject: "sub-mine", ServiceAccounts: []string{"svc-broken"}})
 		if err != nil {
 			t.Fatalf("ListForIdentity() error = %v", err)
 		}
@@ -812,7 +816,7 @@ func TestListRetrievals_Truncation(t *testing.T) {
 		enrollmentID := uuid.NewString()
 		seedEnrollment(t, svc, model.Enrollment{
 			ID: enrollmentID, Code: "code-" + enrollmentID, PublicKey: "k",
-			Principals: `["svc-a"]`, UserID: approverID,
+			Principals: `["svc-a"]`, ServiceAccount: "svc-a", UserID: approverID,
 			CertificateRequestID: &requestID, ExpiresAt: time.Now().Add(time.Hour),
 		})
 
@@ -834,7 +838,7 @@ func TestListRetrievals_Truncation(t *testing.T) {
 		enrollment, requestID := seedLog(t, RetrievalPageSize+25)
 
 		log, err := enrollment.ListRetrievals(context.Background(),
-			requestID, &Identity{Subject: "sub-approver"})
+			requestID, &Identity{Subject: "sub-approver", ServiceAccounts: []string{"svc-a"}})
 		if err != nil {
 			t.Fatalf("ListRetrievals() error = %v", err)
 		}
@@ -850,7 +854,7 @@ func TestListRetrievals_Truncation(t *testing.T) {
 		enrollment, requestID := seedLog(t, RetrievalPageSize+25)
 
 		log, err := enrollment.ListRetrievals(context.Background(),
-			requestID, &Identity{Subject: "sub-approver"})
+			requestID, &Identity{Subject: "sub-approver", ServiceAccounts: []string{"svc-a"}})
 		if err != nil {
 			t.Fatalf("ListRetrievals() error = %v", err)
 		}
@@ -864,7 +868,7 @@ func TestListRetrievals_Truncation(t *testing.T) {
 		enrollment, requestID := seedLog(t, RetrievalPageSize+25)
 
 		log, err := enrollment.ListRetrievals(context.Background(),
-			requestID, &Identity{Subject: "sub-approver"})
+			requestID, &Identity{Subject: "sub-approver", ServiceAccounts: []string{"svc-a"}})
 		if err != nil {
 			t.Fatalf("ListRetrievals() error = %v", err)
 		}
@@ -881,7 +885,7 @@ func TestListRetrievals_Truncation(t *testing.T) {
 		enrollment, requestID := seedLog(t, 3)
 
 		log, err := enrollment.ListRetrievals(context.Background(),
-			requestID, &Identity{Subject: "sub-approver"})
+			requestID, &Identity{Subject: "sub-approver", ServiceAccounts: []string{"svc-a"}})
 		if err != nil {
 			t.Fatalf("ListRetrievals() error = %v", err)
 		}
@@ -929,13 +933,13 @@ func TestListForAdmin(t *testing.T) {
 
 		seedEnrollment(t, svc, model.Enrollment{
 			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: user1ID,
-			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			Principals: `["svc-a"]`, ServiceAccount: "svc-a", KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
 			CreatedAt: time.Now(),
 		})
 		time.Sleep(10 * time.Millisecond) // Ensure creation order is obvious
 		seedEnrollment(t, svc, model.Enrollment{
 			ID: "enrollment2", Code: "code2", PublicKey: "key2", UserID: user2ID,
-			Principals: `["svc-b"]`, KeyID: "key2", ExpiresAt: time.Now().Add(time.Hour),
+			Principals: `["svc-b"]`, ServiceAccount: "svc-b", KeyID: "key2", ExpiresAt: time.Now().Add(time.Hour),
 			CreatedAt: time.Now(),
 		})
 
@@ -986,12 +990,12 @@ func TestListForAdmin(t *testing.T) {
 
 		seedEnrollment(t, svc, model.Enrollment{
 			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: user1.ID,
-			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			Principals: `["svc-a"]`, ServiceAccount: "svc-a", KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
 			CreatedAt: time.Now(),
 		})
 		seedEnrollment(t, svc, model.Enrollment{
 			ID: "enrollment2", Code: "code2", PublicKey: "key2", UserID: user2.ID,
-			Principals: `["svc-b"]`, KeyID: "key2", ExpiresAt: time.Now().Add(time.Hour),
+			Principals: `["svc-b"]`, ServiceAccount: "svc-b", KeyID: "key2", ExpiresAt: time.Now().Add(time.Hour),
 			CreatedAt: time.Now(),
 		})
 
@@ -1034,7 +1038,7 @@ func TestListForAdmin(t *testing.T) {
 		user1ID := seedUser(t, svc.db, "sub-user1")
 		seedEnrollment(t, svc, model.Enrollment{
 			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: user1ID,
-			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			Principals: `["svc-a"]`, ServiceAccount: "svc-a", KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
 			CreatedAt: time.Now(),
 		})
 
@@ -1060,7 +1064,7 @@ func TestListForAdmin(t *testing.T) {
 func TestGetEnrollmentDetail(t *testing.T) {
 	t.Parallel()
 
-	t.Run("should allow the enrollment owner to view details", func(t *testing.T) {
+	t.Run("should allow a holder of the service account to view details", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestCertRequestService(t, time.Second)
 		enrollment := newTestEnrollmentService(t, svc)
@@ -1068,12 +1072,12 @@ func TestGetEnrollmentDetail(t *testing.T) {
 		ownerID := seedUser(t, svc.db, "sub-owner")
 		seedEnrollment(t, svc, model.Enrollment{
 			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
-			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			Principals: `["svc-a"]`, ServiceAccount: "svc-a", KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
 			CreatedAt: time.Now(),
 		})
 
 		detail, err := enrollment.GetEnrollmentDetail(context.Background(),
-			"enrollment1", &Identity{Subject: "sub-owner"})
+			"enrollment1", &Identity{Subject: "sub-owner", ServiceAccounts: []string{"svc-a"}})
 		if err != nil {
 			t.Fatalf("GetEnrollmentDetail() error = %v", err)
 		}
@@ -1092,7 +1096,7 @@ func TestGetEnrollmentDetail(t *testing.T) {
 		ownerID := seedUser(t, svc.db, "sub-owner")
 		seedEnrollment(t, svc, model.Enrollment{
 			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
-			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			Principals: `["svc-a"]`, ServiceAccount: "svc-a", KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
 			CreatedAt: time.Now(),
 		})
 
@@ -1115,7 +1119,7 @@ func TestGetEnrollmentDetail(t *testing.T) {
 		ownerID := seedUser(t, svc.db, "sub-owner")
 		seedEnrollment(t, svc, model.Enrollment{
 			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
-			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			Principals: `["svc-a"]`, ServiceAccount: "svc-a", KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
 			CreatedAt: time.Now(),
 		})
 
@@ -1139,168 +1143,6 @@ func TestGetEnrollmentDetail(t *testing.T) {
 		var notFound *errorresponses.NotFoundError
 		if !errors.As(err, &notFound) {
 			t.Errorf("GetEnrollmentDetail() error = %v, want NotFoundError", err)
-		}
-	})
-}
-
-// TestReassign tests enrollment ownership transfer.
-func TestReassign(t *testing.T) {
-	t.Parallel()
-
-	t.Run("should allow the owner to reassign their own enrollment", func(t *testing.T) {
-		t.Parallel()
-		svc := newTestCertRequestService(t, time.Second)
-		enrollment := newTestEnrollmentService(t, svc)
-
-		if err := svc.db.AutoMigrate(&model.User{}, &model.EnrollmentReassignment{}); err != nil {
-			t.Fatalf("failed to migrate: %v", err)
-		}
-
-		ownerID := seedUser(t, svc.db, "sub-owner")
-		targetID := seedUser(t, svc.db, "sub-target")
-
-		// Set up target user with the service account
-		if err := svc.db.Model(&model.User{}).Where("id = ?", targetID).
-			Update("service_accounts", `["svc-a"]`).Error; err != nil {
-			t.Fatalf("failed to update target user: %v", err)
-		}
-
-		seedEnrollment(t, svc, model.Enrollment{
-			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
-			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
-			CreatedAt: time.Now(),
-		})
-
-		err := enrollment.Reassign(context.Background(),
-			"enrollment1", targetID, "test reassignment", &Identity{Subject: "sub-owner"})
-		if err != nil {
-			t.Fatalf("Reassign() error = %v", err)
-		}
-
-		// Verify the enrollment's user_id changed
-		var updated model.Enrollment
-		if err := svc.db.First(&updated, "id = ?", "enrollment1").Error; err != nil {
-			t.Fatalf("failed to fetch updated enrollment: %v", err)
-		}
-		if updated.UserID != targetID {
-			t.Errorf("enrollment user_id is %q, want %q", updated.UserID, targetID)
-		}
-
-		// Verify an audit record was created
-		var audit model.EnrollmentReassignment
-		if err := svc.db.First(&audit, "enrollment_id = ?", "enrollment1").Error; err != nil {
-			t.Fatalf("failed to fetch audit record: %v", err)
-		}
-		if audit.FromUserID != ownerID || audit.ToUserID != targetID || audit.ReassignedByUserID != ownerID {
-			t.Errorf("audit record incorrect: from=%q, to=%q, by=%q",
-				audit.FromUserID, audit.ToUserID, audit.ReassignedByUserID)
-		}
-	})
-
-	t.Run("should refuse a non-owner and non-admin", func(t *testing.T) {
-		t.Parallel()
-		svc := newTestCertRequestService(t, time.Second)
-		enrollment := newTestEnrollmentService(t, svc)
-
-		ownerID := seedUser(t, svc.db, "sub-owner")
-		otherID := seedUser(t, svc.db, "sub-other")
-
-		seedEnrollment(t, svc, model.Enrollment{
-			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
-			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
-			CreatedAt: time.Now(),
-		})
-
-		err := enrollment.Reassign(context.Background(),
-			"enrollment1", otherID, "test reassignment", &Identity{Subject: "sub-other"})
-
-		var forbidden *errorresponses.ForbiddenError
-		if !errors.As(err, &forbidden) {
-			t.Errorf("Reassign() error = %v, want ForbiddenError", err)
-		}
-	})
-
-	t.Run("should refuse a SOC member who is not the owner", func(t *testing.T) {
-		t.Parallel()
-		// Reassignment transfers ownership of a credential, which the SOC
-		// containment role deliberately does not hold — only the admin
-		// group (or the owner) may reassign.
-		socCfg := &config.Config{Admin: config.AdminConfig{RequireGroup: "admins", SOCGroup: "soc"}}
-		svc := newTestCertRequestServiceWithConfig(t, socCfg)
-		enrollment := newTestEnrollmentService(t, svc)
-
-		ownerID := seedUser(t, svc.db, "sub-owner")
-		targetID := seedUser(t, svc.db, "sub-target")
-
-		seedEnrollment(t, svc, model.Enrollment{
-			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
-			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
-			CreatedAt: time.Now(),
-		})
-
-		err := enrollment.Reassign(context.Background(),
-			"enrollment1", targetID, "test reassignment", &Identity{Subject: "sub-soc", Groups: []string{"soc"}})
-
-		var forbidden *errorresponses.ForbiddenError
-		if !errors.As(err, &forbidden) {
-			t.Errorf("Reassign() error = %v, want ForbiddenError", err)
-		}
-	})
-
-	t.Run("should refuse a target without the required service account", func(t *testing.T) {
-		t.Parallel()
-		svc := newTestCertRequestService(t, time.Second)
-		enrollment := newTestEnrollmentService(t, svc)
-
-		if err := svc.db.AutoMigrate(&model.User{}); err != nil {
-			t.Fatalf("failed to migrate: %v", err)
-		}
-
-		ownerID := seedUser(t, svc.db, "sub-owner")
-		targetID := seedUser(t, svc.db, "sub-target")
-
-		// Target has no service accounts
-		if err := svc.db.Model(&model.User{}).Where("id = ?", targetID).
-			Update("service_accounts", `[]`).Error; err != nil {
-			t.Fatalf("failed to update target user: %v", err)
-		}
-
-		seedEnrollment(t, svc, model.Enrollment{
-			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
-			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
-			CreatedAt: time.Now(),
-		})
-
-		err := enrollment.Reassign(context.Background(),
-			"enrollment1", targetID, "test reassignment", &Identity{Subject: "sub-owner"})
-
-		var invalid *errorresponses.InvalidRequestError
-		if !errors.As(err, &invalid) {
-			t.Errorf("Reassign() error = %v, want InvalidRequestError", err)
-		}
-	})
-
-	t.Run("should never expose the code in any response or error", func(t *testing.T) {
-		t.Parallel()
-		svc := newTestCertRequestService(t, time.Second)
-		enrollment := newTestEnrollmentService(t, svc)
-
-		ownerID := seedUser(t, svc.db, "sub-owner")
-		targetID := seedUser(t, svc.db, "sub-other")
-		secretCode := "super-secret-enrollment-code"
-
-		seedEnrollment(t, svc, model.Enrollment{
-			ID: "enrollment1", Code: secretCode, PublicKey: "key1", UserID: ownerID,
-			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
-			CreatedAt: time.Now(),
-		})
-
-		// Try to reassign as unrelated user; error message should not contain the code
-		err := enrollment.Reassign(context.Background(),
-			"enrollment1", targetID, "test reassignment", &Identity{Subject: "sub-other"})
-
-		if err != nil && strings.Contains(err.Error(), secretCode) {
-			t.Errorf("Reassign() error contains code: %v", err)
 		}
 	})
 }
@@ -1348,10 +1190,10 @@ func TestListForAdmin_PagingWithSearch(t *testing.T) {
 			Code:       uuid.NewString(),
 			PublicKey:  "key1",
 			UserID:     alice.ID,
-			Principals: `["svc-a"]`,
-			KeyID:      "key1",
-			ExpiresAt:  time.Now().Add(time.Hour),
-			CreatedAt:  time.Now(),
+			Principals: `["svc-a"]`, ServiceAccount: "svc-a",
+			KeyID:     "key1",
+			ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
 		})
 	}
 
@@ -1362,10 +1204,10 @@ func TestListForAdmin_PagingWithSearch(t *testing.T) {
 			Code:       uuid.NewString(),
 			PublicKey:  "key2",
 			UserID:     bob.ID,
-			Principals: `["svc-b"]`,
-			KeyID:      "key2",
-			ExpiresAt:  time.Now().Add(time.Hour),
-			CreatedAt:  time.Now(),
+			Principals: `["svc-b"]`, ServiceAccount: "svc-b",
+			KeyID:     "key2",
+			ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
 		})
 	}
 
@@ -1442,10 +1284,10 @@ func TestListForAdmin_SearchFilteringPinnedToSQL(t *testing.T) {
 			Code:       uuid.NewString(),
 			PublicKey:  "key-alice",
 			UserID:     alice.ID,
-			Principals: `["svc-alice"]`,
-			KeyID:      "key-alice",
-			ExpiresAt:  time.Now().Add(time.Hour),
-			CreatedAt:  time.Now(),
+			Principals: `["svc-alice"]`, ServiceAccount: "svc-alice",
+			KeyID:     "key-alice",
+			ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
 		})
 	}
 
@@ -1456,10 +1298,10 @@ func TestListForAdmin_SearchFilteringPinnedToSQL(t *testing.T) {
 			Code:       uuid.NewString(),
 			PublicKey:  "key-bob",
 			UserID:     bob.ID,
-			Principals: `["svc-bob"]`,
-			KeyID:      "key-bob",
-			ExpiresAt:  time.Now().Add(time.Hour),
-			CreatedAt:  time.Now(),
+			Principals: `["svc-bob"]`, ServiceAccount: "svc-bob",
+			KeyID:     "key-bob",
+			ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
 		})
 	}
 
@@ -1513,5 +1355,188 @@ func TestListForAdmin_SearchFilteringPinnedToSQL(t *testing.T) {
 	if !sawLike {
 		t.Errorf("no executed statement carried a LIKE predicate, so the search was not done in SQL; statements were:\n%s",
 			strings.Join(executed, "\n"))
+	}
+}
+
+// Ownership is membership in the enrollment's service account, so a code
+// approved by a colleague is the caller's own — this is the change group
+// ownership makes to what the service codes page shows.
+func TestListForIdentity_Ownership(t *testing.T) {
+	t.Parallel()
+
+	setup := func(t *testing.T) (*CertRequestService, *EnrollmentService) {
+		t.Helper()
+		svc := newTestCertRequestServiceWithConfig(t, &config.Config{})
+		return svc, newTestEnrollmentService(t, svc)
+	}
+
+	t.Run("should return a code approved by somebody else for an account I hold", func(t *testing.T) {
+		t.Parallel()
+		svc, enrollment := setup(t)
+		colleague := seedUser(t, svc.db, "sub-colleague")
+		seedEnrollment(t, svc, model.Enrollment{
+			Code: "code-shared", PublicKey: "k", Principals: `["svc-shared"]`,
+			ServiceAccount: "svc-shared", UserID: colleague,
+			ExpiresAt: time.Now().Add(time.Hour),
+		})
+
+		rows, err := enrollment.ListForIdentity(context.Background(),
+			&Identity{Subject: "sub-me", ServiceAccounts: []string{"svc-shared"}})
+		if err != nil {
+			t.Fatalf("ListForIdentity() error = %v", err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("got %d enrollments, want the colleague's code for my account", len(rows))
+		}
+	})
+
+	// The other half of the same rule: approving a code grants nothing that
+	// outlives holding the account it was approved for.
+	t.Run("should not return a code I approved for an account I have lost", func(t *testing.T) {
+		t.Parallel()
+		svc, enrollment := setup(t)
+		me := seedUser(t, svc.db, "sub-me")
+		seedEnrollment(t, svc, model.Enrollment{
+			Code: "code-lost", PublicKey: "k", Principals: `["svc-lost"]`,
+			ServiceAccount: "svc-lost", UserID: me,
+			ExpiresAt: time.Now().Add(time.Hour),
+		})
+
+		rows, err := enrollment.ListForIdentity(context.Background(),
+			&Identity{Subject: "sub-me", ServiceAccounts: []string{"svc-other"}})
+		if err != nil {
+			t.Fatalf("ListForIdentity() error = %v", err)
+		}
+		if len(rows) != 0 {
+			t.Errorf("got %d enrollments, want none for an account no longer held", len(rows))
+		}
+	})
+
+	t.Run("should return an empty list for an identity holding no accounts", func(t *testing.T) {
+		t.Parallel()
+		svc, enrollment := setup(t)
+		seedEnrollment(t, svc, model.Enrollment{
+			Code: "code-any", PublicKey: "k", Principals: `["svc-any"]`,
+			ServiceAccount: "svc-any", ExpiresAt: time.Now().Add(time.Hour),
+		})
+
+		rows, err := enrollment.ListForIdentity(context.Background(), &Identity{Subject: "sub-me"})
+		if err != nil {
+			t.Fatalf("ListForIdentity() error = %v", err)
+		}
+		if len(rows) != 0 {
+			t.Errorf("got %d enrollments, want none", len(rows))
+		}
+	})
+
+	// A row whose principals never parsed carries no account. It has to stay
+	// owned by nobody, or a blank entry in a claim would hand it to whoever
+	// carries one.
+	t.Run("should not hand an accountless row to an identity with a blank account", func(t *testing.T) {
+		t.Parallel()
+		svc, enrollment := setup(t)
+		seedEnrollment(t, svc, model.Enrollment{
+			Code: "code-orphan", PublicKey: "k", Principals: "{{{",
+			ExpiresAt: time.Now().Add(time.Hour),
+		})
+
+		rows, err := enrollment.ListForIdentity(context.Background(),
+			&Identity{Subject: "sub-me", ServiceAccounts: []string{""}})
+		if err != nil {
+			t.Fatalf("ListForIdentity() error = %v", err)
+		}
+		if len(rows) != 0 {
+			t.Errorf("got %d enrollments, want an accountless row owned by nobody", len(rows))
+		}
+	})
+
+	t.Run("should report who approved each code", func(t *testing.T) {
+		t.Parallel()
+		svc, enrollment := setup(t)
+		colleague := seedUser(t, svc.db, "sub-colleague")
+		if err := svc.db.Model(&model.User{}).Where("id = ?", colleague).
+			Update("username", "colleague").Error; err != nil {
+			t.Fatalf("failed to name the approver: %v", err)
+		}
+		seedEnrollment(t, svc, model.Enrollment{
+			Code: "code-shared", PublicKey: "k", Principals: `["svc-shared"]`,
+			ServiceAccount: "svc-shared", UserID: colleague,
+			ExpiresAt: time.Now().Add(time.Hour),
+		})
+
+		rows, err := enrollment.ListForIdentity(context.Background(),
+			&Identity{Subject: "sub-me", ServiceAccounts: []string{"svc-shared"}})
+		if err != nil {
+			t.Fatalf("ListForIdentity() error = %v", err)
+		}
+		if rows[0].ApproverUsername != "colleague" {
+			t.Errorf("got approver %q, want %q", rows[0].ApproverUsername, "colleague")
+		}
+	})
+}
+
+// The per-row reads apply the same rule as the list, so a holder can open a
+// colleague's code and a non-holder cannot open one at all.
+func TestGetEnrollmentDetail_Ownership(t *testing.T) {
+	t.Parallel()
+
+	setup := func(t *testing.T) *EnrollmentService {
+		t.Helper()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1",
+			Principals: `["svc-a"]`, ServiceAccount: "svc-a", KeyID: "key1",
+			ExpiresAt: time.Now().Add(time.Hour),
+		})
+		return enrollment
+	}
+
+	t.Run("should allow a holder who did not approve it", func(t *testing.T) {
+		t.Parallel()
+		enrollment := setup(t)
+
+		if _, err := enrollment.GetEnrollmentDetail(context.Background(), "enrollment1",
+			&Identity{Subject: "sub-stranger", ServiceAccounts: []string{"svc-a"}}); err != nil {
+			t.Errorf("GetEnrollmentDetail() error = %v, want a holder to be allowed", err)
+		}
+	})
+
+	t.Run("should refuse an identity holding a different account", func(t *testing.T) {
+		t.Parallel()
+		enrollment := setup(t)
+
+		_, err := enrollment.GetEnrollmentDetail(context.Background(), "enrollment1",
+			&Identity{Subject: "sub-stranger", ServiceAccounts: []string{"svc-b"}})
+		var forbidden *errorresponses.ForbiddenError
+		if !errors.As(err, &forbidden) {
+			t.Errorf("GetEnrollmentDetail() error = %v, want ForbiddenError", err)
+		}
+	})
+}
+
+// Approval is the only writer of enrollments.service_account, and the
+// column is the whole of ownership: a row written without it would be owned
+// by nobody the moment it was created.
+func TestApproveServiceEnrollment_ShouldRecordTheServiceAccount(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Second)
+	enrollService(t, svc, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ7VqQZ8Rz9k1Q4bF0nQXqLdY2mJ3H8sK5tW6uV9xYzA svc@example")
+
+	var enrollment model.Enrollment
+	if err := svc.db.First(&enrollment).Error; err != nil {
+		t.Fatalf("expected an enrollment row, got error: %v", err)
+	}
+	if enrollment.ServiceAccount != "svc-deploy" {
+		t.Errorf("ServiceAccount = %q, want %q", enrollment.ServiceAccount, "svc-deploy")
+	}
+	// The same account, written twice for two jobs: principals is what
+	// certificates are minted from, service_account is what ownership is
+	// queried by. They must not drift.
+	if principals := decodeEnrollmentPrincipals(enrollment); len(principals) != 1 ||
+		principals[0] != enrollment.ServiceAccount {
+		t.Errorf("principals %v disagree with the service account %q",
+			principals, enrollment.ServiceAccount)
 	}
 }

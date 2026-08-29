@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"slices"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -563,4 +565,146 @@ func TestSetPreferencesForIdentity_shouldRefuseAnIdentityWithNoUserRecord(t *tes
 	if err == nil {
 		t.Error("SetPreferencesForIdentity accepted an identity with no user record")
 	}
+}
+
+// seedHolder adds a user holding accounts, for the service-account fan-out
+// below. Everything a recipient needs is a row with an address and the
+// account in its service_accounts JSON.
+func (f *notificationFixture) seedHolder(t *testing.T, username string, accounts ...string) model.User {
+	t.Helper()
+
+	encoded, err := json.Marshal(accounts)
+	if err != nil {
+		t.Fatalf("failed to encode service accounts: %v", err)
+	}
+	user := model.User{
+		ID:              uuid.NewString(),
+		Subject:         "subject-" + username,
+		Username:        username,
+		Email:           username + "@example.com",
+		ServiceAccounts: string(encoded),
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	if err := f.db.Create(&user).Error; err != nil {
+		t.Fatalf("failed to create the holder %q: %v", username, err)
+	}
+	return user
+}
+
+// recipients returns the addresses n delivered messages went to, sorted so a
+// fan-out's arrival order does not decide whether the test passes.
+func (f *notificationFixture) recipients(t *testing.T, n int) []string {
+	t.Helper()
+
+	msgs := f.waitForMessages(t, n)
+	to := make([]string, 0, len(msgs))
+	for _, msg := range msgs {
+		to = append(to, msg.To)
+	}
+	sort.Strings(to)
+	return to
+}
+
+// The whole of group ownership at delivery: an enrollment belongs to its
+// service account, so a notification about one reaches everybody holding
+// that account rather than the single person who approved it.
+func TestNotifyServiceAccount_shouldDeliverToEveryHolder(t *testing.T) {
+	f := newNotificationFixture(t)
+	f.seedHolder(t, "bob", "deploy-bot")
+	f.seedHolder(t, "carol", "deploy-bot", "backup-bot")
+
+	f.svc.NotifyServiceAccount(context.Background(),
+		notify.KindServiceEnrollmentCreated, "deploy-bot", sampleCreated())
+
+	got := f.recipients(t, 2)
+	want := []string{"bob@example.com", "carol@example.com"}
+	if !slices.Equal(got, want) {
+		t.Errorf("delivered to %v, want %v", got, want)
+	}
+}
+
+// A holder is somebody who holds the account, not somebody whose stored JSON
+// happens to contain the name: the quoted match is what stops "deploy" from
+// reaching the holders of "deploy-bot".
+func TestNotifyServiceAccount_shouldNotDeliverToAHolderOfADifferentAccount(t *testing.T) {
+	f := newNotificationFixture(t)
+	f.seedHolder(t, "bob", "deploy-bot")
+	f.seedHolder(t, "carol", "deploy")
+
+	f.svc.NotifyServiceAccount(context.Background(),
+		notify.KindServiceEnrollmentCreated, "deploy", sampleCreated())
+
+	got := f.recipients(t, 1)
+	if !slices.Equal(got, []string{"carol@example.com"}) {
+		t.Errorf("delivered to %v, want only the holder of the named account", got)
+	}
+}
+
+// Each copy is gated separately, so one holder opting out silences their own
+// mail and nobody else's.
+func TestNotifyServiceAccount_shouldRespectEachHoldersOwnPreference(t *testing.T) {
+	f := newNotificationFixture(t)
+	bob := f.seedHolder(t, "bob", "deploy-bot")
+	f.seedHolder(t, "carol", "deploy-bot")
+
+	if err := f.svc.SetPreferences(context.Background(), bob.ID,
+		map[notify.Kind]bool{notify.KindServiceEnrollmentCreated: false}); err != nil {
+		t.Fatalf("SetPreferences: %v", err)
+	}
+
+	f.svc.NotifyServiceAccount(context.Background(),
+		notify.KindServiceEnrollmentCreated, "deploy-bot", sampleCreated())
+
+	got := f.recipients(t, 1)
+	if !slices.Equal(got, []string{"carol@example.com"}) {
+		t.Errorf("delivered to %v, want only the holder who did not opt out", got)
+	}
+}
+
+// A disabled account has lost its access, so it loses the mail about what
+// that access used to reach — the same rule GroupRecipients applies.
+func TestNotifyServiceAccount_shouldSkipDisabledHolders(t *testing.T) {
+	f := newNotificationFixture(t)
+	bob := f.seedHolder(t, "bob", "deploy-bot")
+	f.seedHolder(t, "carol", "deploy-bot")
+
+	disabledAt := time.Now()
+	if err := f.db.Model(&model.User{}).Where("id = ?", bob.ID).
+		Update("disabled_at", disabledAt).Error; err != nil {
+		t.Fatalf("failed to disable the holder: %v", err)
+	}
+
+	f.svc.NotifyServiceAccount(context.Background(),
+		notify.KindServiceEnrollmentCreated, "deploy-bot", sampleCreated())
+
+	got := f.recipients(t, 1)
+	if !slices.Equal(got, []string{"carol@example.com"}) {
+		t.Errorf("delivered to %v, want only the enabled holder", got)
+	}
+}
+
+// An account whose holders have never logged in is reachable by nobody. That
+// is a quiet outcome rather than an error, and it is the gap the proposed
+// per-enrollment notification address exists to close.
+func TestNotifyServiceAccount_shouldStayQuietWhenNobodyHoldsTheAccount(t *testing.T) {
+	f := newNotificationFixture(t)
+
+	f.svc.NotifyServiceAccount(context.Background(),
+		notify.KindServiceEnrollmentCreated, "nobody-holds-this", sampleCreated())
+
+	f.assertNoMessages(t)
+}
+
+// An enrollment whose stored principals never parsed carries no account, so
+// it is owned by nobody. Publishing an event addressed to "" would fan out
+// to every user whose service_accounts contains an empty string.
+func TestNotifyServiceAccount_shouldRefuseAnEmptyAccount(t *testing.T) {
+	f := newNotificationFixture(t)
+	f.seedHolder(t, "bob", "")
+
+	f.svc.NotifyServiceAccount(context.Background(),
+		notify.KindServiceEnrollmentCreated, "", sampleCreated())
+
+	f.assertNoMessages(t)
 }

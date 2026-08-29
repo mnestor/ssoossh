@@ -1,10 +1,6 @@
 <script lang="ts">
 	import { ApiError } from '$lib/api/client';
-	import {
-		expireEnrollment,
-		getAdminEnrollmentDetail,
-		reassignEnrollment
-	} from '$lib/api/endpoints';
+	import { expireEnrollment, getAdminEnrollmentDetail } from '$lib/api/endpoints';
 	import type { AdminEnrollment } from '$lib/api/types';
 	import { expiryLabel, formatDateTime, formatDuration, isExpired } from '$lib/format';
 	import Alert from './Alert.svelte';
@@ -27,10 +23,6 @@
 	let detailData = $state<any>(null);
 	let detailLoading = $state(true);
 	let detailError = $state<string | null>(null);
-
-	let reassignError = $state<string | null>(null);
-	let reassignToUserId = $state('');
-	let reassigning = $state(false);
 
 	let expireConfirm = $state(false);
 	let expireError = $state<string | null>(null);
@@ -73,45 +65,9 @@
 	});
 
 	function handleClosed() {
-		reassignError = null;
-		reassignToUserId = '';
 		expireConfirm = false;
 		expireError = null;
 		onclosed();
-	}
-
-	async function handleReassign() {
-		if (!reassignToUserId.trim()) {
-			reassignError = 'Please enter a user ID';
-			return;
-		}
-
-		reassigning = true;
-		reassignError = null;
-
-		try {
-			await reassignEnrollment(enrollment.id, reassignToUserId.trim());
-			reassignToUserId = '';
-			// Reload detail to show updated owner
-			const result = await getAdminEnrollmentDetail(enrollment.id);
-			detailData = result;
-		} catch (cause) {
-			if (cause instanceof ApiError) {
-				if (cause.status === 400) {
-					reassignError = cause.message || 'Invalid target user';
-				} else if (cause.status === 403) {
-					reassignError = 'You do not have permission to reassign this enrollment';
-				} else if (cause.status === 404) {
-					reassignError = 'Enrollment not found';
-				} else {
-					reassignError = cause.message;
-				}
-			} else {
-				reassignError = cause instanceof Error ? cause.message : 'Failed to reassign';
-			}
-		} finally {
-			reassigning = false;
-		}
 	}
 
 	async function handleExpire() {
@@ -312,38 +268,6 @@
 			<!-- Admin controls -->
 			<div class="space-y-4 border-t border-border-subtle pt-4">
 				<SectionLabel>Admin actions</SectionLabel>
-
-				<!-- Reassign control -->
-				<div class="space-y-2">
-					<label for="reassign-user-id" class="block text-sm font-medium text-ink">
-						Reassign to user
-					</label>
-					<p class="text-[13px] text-ink-muted">
-						Transfer ownership to another user. They must have access to the service account
-						<strong class="font-mono">{subject}</strong>. This enables team continuity when someone
-						leaves.
-					</p>
-					<div class="flex gap-2">
-						<input
-							id="reassign-user-id"
-							type="text"
-							bind:value={reassignToUserId}
-							placeholder="Username or user ID"
-							disabled={reassigning}
-							class="flex-1 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted"
-						/>
-						<Button
-							variant="primary"
-							disabled={reassigning || !reassignToUserId.trim()}
-							onclick={handleReassign}
-						>
-							{reassigning ? 'Reassigning…' : 'Reassign'}
-						</Button>
-					</div>
-					{#if reassignError}
-						<Alert variant="error" title="Reassignment failed">{reassignError}</Alert>
-					{/if}
-				</div>
 
 				<!-- Expire control -->
 				{#if !expired}

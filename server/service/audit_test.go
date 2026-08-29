@@ -57,7 +57,6 @@ func TestValidateAuditReason(t *testing.T) {
 		{name: "required action with an overlong reason", action: AuditUserDisabled, reason: strings.Repeat("x", maxAuditReasonLength+1), wantErr: true},
 		{name: "required action at exactly the cap", action: AuditUserEnabled, reason: strings.Repeat("x", maxAuditReasonLength), want: strings.Repeat("x", maxAuditReasonLength)},
 		{name: "enrollment expiry requires one", action: AuditEnrollmentExpired, reason: "", wantErr: true},
-		{name: "reassignment requires one", action: AuditEnrollmentReassigned, reason: "", wantErr: true},
 		{name: "an unrequired action accepts nothing", action: AuditAuthLogin, reason: "", want: ""},
 		{name: "an unrequired action keeps what it is given", action: AuditCertApproved, reason: "because", want: "because"},
 	}

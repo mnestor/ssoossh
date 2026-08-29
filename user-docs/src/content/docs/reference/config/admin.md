@@ -12,7 +12,6 @@ Both group names are optional; empty disables the corresponding role.
 | [`admin.require_group`](#require_group) | string | `empty` |
 | [`admin.soc_group`](#soc_group) | string | `empty` |
 | [`admin.auditor_group`](#auditor_group) | string | `empty` |
-| [`admin.disable_grace_period`](#disable_grace_period) | duration | `168h` |
 | [`admin.contact_email`](#contact_email) | string | `empty` |
 | [`admin.disabled_message`](#disabled_message) | string | `empty` |
 
@@ -20,25 +19,19 @@ Both group names are optional; empty disables the corresponding role.
 
 `string`, default `empty`
 
-The OIDC group a caller must belong to in order to access admin-scoped operations (re-enabling users, reassigning any enrollment), plus everything the SOC and auditor roles below can do. Empty disables admin operations entirely. Fails closed: no identity, no group, or no configured group all deny.
+The OIDC group a caller must belong to in order to access admin-scoped operations (re-enabling users), plus everything the SOC and auditor roles below can do. Empty disables admin operations entirely. Fails closed: no identity, no group, or no configured group all deny.
 
 ## `soc_group`
 
 `string`, default `empty`
 
-The OIDC group a caller must belong to in order to access SOC-scoped containment operations: disabling users and expiring enrollments. SOC is a child role of admin, so `require_group` members hold SOC access regardless of this setting; empty therefore narrows SOC operations to admins rather than disabling them. SOC members also hold auditor access (they need the directory and enrollment lists to find what to contain), but deliberately not the restorative or ownership operations — re-enabling a user and reassigning an enrollment stay admin-only. Fails closed: no identity, or membership in neither group, denies.
+The OIDC group a caller must belong to in order to access SOC-scoped containment operations: disabling users and expiring enrollments. SOC is a child role of admin, so `require_group` members hold SOC access regardless of this setting; empty therefore narrows SOC operations to admins rather than disabling them. SOC members also hold auditor access (they need the directory and enrollment lists to find what to contain), but deliberately not the restorative operations — re-enabling a user stays admin-only. Fails closed: no identity, or membership in neither group, denies.
 
 ## `auditor_group`
 
 `string`, default `empty`
 
 The OIDC group a caller must belong to in order to access auditor-scoped operations (viewing effective configuration, cross-user certificate history). Auditor is a child role of both admin and SOC, so `require_group` and SOCGroup members hold auditor access regardless of this setting; empty therefore narrows auditor operations to those roles rather than disabling them. Fails closed: no identity, or membership in no granting group, denies.
-
-## `disable_grace_period`
-
-`duration`, default `168h`
-
-How long after a user is disabled before their service enrollments expire. This gives running services time to notice and rotate credentials before the certificates stop working. After this duration expires (see service.SweepDisabledUserEnrollments), no new certificates can be issued from the enrollment.
 
 ## `contact_email`
 

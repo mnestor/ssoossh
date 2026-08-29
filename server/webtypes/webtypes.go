@@ -142,12 +142,23 @@ type EnrollmentRetrievalsResponse struct {
 // The code is deliberately absent and must stay that way: `service enroll`
 // prints it once, the server stores it only to match a redemption against,
 // and a page that handed it back would turn a browser session into a way to
-// mint service certificates. What this answers instead is "what did I
-// approve, what will it hand out, and how long does it last" — the facts
-// needed to decide whether a code should be renewed, reassigned, or left to
-// expire.
+// mint service certificates. What this answers instead is "what does this
+// code hand out, and how long does it last" — the facts needed to decide
+// whether it should be renewed or left to expire.
 type ServiceEnrollmentResponse struct {
 	ID string `json:"id" validate:"required"`
+
+	// ServiceAccount is the account this code was approved for, and who
+	// owns it: everyone holding the account (see
+	// docs/proposals/enrollment-group-ownership.md). It is what the service
+	// codes page groups by, which is why it is its own field rather than
+	// left to be read out of Principals.
+	ServiceAccount string `json:"service_account" validate:"required"`
+
+	// ApprovedByUsername is who approved this code. Provenance, not
+	// ownership — the reader may well not be them. Empty if that user's
+	// record has since gone.
+	ApprovedByUsername string `json:"approved_by_username,omitempty"`
 
 	// CertificateRequestID is the request this enrollment was approved
 	// from, and the id the retrieval log at
@@ -220,8 +231,14 @@ type ServiceEnrollmentsResponse struct {
 type AdminEnrollmentResponse struct {
 	ID string `json:"id" validate:"required"`
 
+	// ServiceAccount is the account this code was approved for, and who owns
+	// it: everyone holding the account (see
+	// docs/proposals/enrollment-group-ownership.md).
+	ServiceAccount string `json:"service_account" validate:"required"`
+
 	// ApprovedByUsername and ApprovedByEmail name the user who approved this
-	// enrollment. Present for auditing and tracking which user has the code.
+	// enrollment. Provenance, not ownership — the code outlives their access
+	// to it and is not theirs to move.
 	ApprovedByUsername string `json:"approved_by_username" validate:"required"`
 	ApprovedByEmail    string `json:"approved_by_email" validate:"required"`
 
@@ -435,9 +452,8 @@ type EffectiveConfigResponse struct {
 	AdminAuditorGroup string `json:"admin_auditor_group,omitempty"`
 
 	// Admin user management
-	AdminDisableGracePeriod string `json:"admin_disable_grace_period" validate:"required"`
-	AdminContactEmail       string `json:"admin_contact_email,omitempty"`
-	AdminDisabledMessage    string `json:"admin_disabled_message,omitempty"`
+	AdminContactEmail    string `json:"admin_contact_email,omitempty"`
+	AdminDisabledMessage string `json:"admin_disabled_message,omitempty"`
 
 	// Logging configuration
 	LoggingLevel string `json:"logging_level" validate:"required"`
@@ -615,25 +631,30 @@ type AdminUserDetail struct {
 	// whether to re-enable. Omitted if not disabled.
 	DisabledReason string `json:"disabled_reason,omitempty"`
 
-	// ServiceEnrollmentCount is how many active (not expired) service
-	// enrollments this user has. Shown so an admin can decide whether to
-	// disable the account.
+	// ServiceEnrollmentCount is how many live (not expired) service
+	// enrollments this user approved. Provenance, not a consequence of
+	// disabling them: the codes belong to their service accounts and keep
+	// working (see docs/proposals/enrollment-group-ownership.md).
 	ServiceEnrollmentCount int `json:"service_enrollment_count" validate:"required"`
 
 	// CertificateCount is how many certificates have been issued to this user.
 	CertificateCount int `json:"certificate_count" validate:"required"`
 }
 
-// DisableUserConsequences describes what will happen immediately and after
-// the grace period if a user is disabled, shown in the confirmation dialog.
+// DisableUserConsequences describes what disabling a user does, shown in
+// the confirmation dialog.
+//
+// What it mostly describes now is what disabling does *not* do. A service
+// enrollment is owned by every holder of its service account rather than by
+// the person who approved it (see
+// docs/proposals/enrollment-group-ownership.md), so a disable revokes this
+// person's access and nothing else: no enrollment expires, and every
+// unattended job keeps running.
 type DisableUserConsequences struct {
-	// GracePeriodSeconds is how long after disable before enrollments expire.
-	GracePeriodSeconds int64 `json:"grace_period_seconds" validate:"required"`
-
-	// ExpireAtTimestamp is when the enrollments will actually expire.
-	ExpireAtTimestamp time.Time `json:"expire_at_timestamp" validate:"required"`
-
-	// ServiceEnrollmentCount is how many active enrollments will expire.
+	// ServiceEnrollmentCount is how many live enrollments this user
+	// approved. They are unaffected — reported so the dialog can say so
+	// with a number, which is the reassurance an admin disabling a
+	// colleague actually needs.
 	ServiceEnrollmentCount int `json:"service_enrollment_count" validate:"required"`
 }
 

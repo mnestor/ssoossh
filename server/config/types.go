@@ -292,10 +292,10 @@ type LDAPConfig struct {
 // admin group in the identity provider takes effect at their next login.
 type AdminConfig struct {
 	// RequireGroup is the OIDC group a caller must belong to in order to
-	// access admin-scoped operations (re-enabling users, reassigning any
-	// enrollment), plus everything the SOC and auditor roles below can do.
-	// Empty disables admin operations entirely. Fails closed: no identity, no
-	// group, or no configured group all deny.
+	// access admin-scoped operations (re-enabling users), plus everything the
+	// SOC and auditor roles below can do. Empty disables admin operations
+	// entirely. Fails closed: no identity, no group, or no configured group
+	// all deny.
 	RequireGroup string `mapstructure:"require_group" default:""`
 
 	// SOCGroup is the OIDC group a caller must belong to in order to access
@@ -304,10 +304,9 @@ type AdminConfig struct {
 	// SOC access regardless of this setting; empty therefore narrows SOC
 	// operations to admins rather than disabling them. SOC members also hold
 	// auditor access (they need the directory and enrollment lists to find
-	// what to contain), but deliberately not the restorative or ownership
-	// operations — re-enabling a user and reassigning an enrollment stay
-	// admin-only. Fails closed: no identity, or membership in neither group,
-	// denies.
+	// what to contain), but deliberately not the restorative operations —
+	// re-enabling a user stays admin-only. Fails closed: no identity, or
+	// membership in neither group, denies.
 	SOCGroup string `mapstructure:"soc_group" default:""`
 
 	// AuditorGroup is the OIDC group a caller must belong to in order to
@@ -318,13 +317,6 @@ type AdminConfig struct {
 	// to those roles rather than disabling them. Fails closed: no identity,
 	// or membership in no granting group, denies.
 	AuditorGroup string `mapstructure:"auditor_group" default:""`
-
-	// DisableGracePeriod is how long after a user is disabled before their
-	// service enrollments expire. This gives running services time to notice
-	// and rotate credentials before the certificates stop working. After this
-	// duration expires (see service.SweepDisabledUserEnrollments), no new
-	// certificates can be issued from the enrollment.
-	DisableGracePeriod time.Duration `mapstructure:"disable_grace_period" default:"168h"`
 
 	// ContactEmail is the email address shown on the account-disabled page
 	// so a disabled user can contact support. Empty disables the display

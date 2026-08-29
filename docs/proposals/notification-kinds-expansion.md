@@ -1,0 +1,239 @@
+# Proposal: expanding the notification catalogue
+
+Status: proposed. Builds on the email notification machinery on this
+branch (`server/notify`, `server/mail`, the delivery consumer in
+`server/service/notification.go`), which ships with two kinds: service
+enrollment created and service enrollment redeemed.
+
+Amended by
+[enrollment-group-ownership.md](enrollment-group-ownership.md), which is
+**implemented**: service enrollments are owned by every holder of their
+service account, there is no single owning user, and reassignment does not
+exist. That removed one kind originally proposed here
+(`service_enrollment_reassigned`) and replaced the single-recipient
+delivery model.
+
+The fan-out half of "Delivery semantics" below therefore already exists:
+`Notifier.NotifyServiceAccount` publishes an account-addressed event and
+the delivery consumer resolves it to one gated copy per holder. What
+remains unbuilt here is the `notification_email` column and the two kinds
+and their scheduler work.
+
+This proposes four new notification kinds and one mechanism change — a
+per-enrollment notification address. The kinds are, in the order they
+earn their keep:
+
+| Kind | Fires when | Default |
+|---|---|---|
+| `service_enrollment_expiring` | An enrollment code is within the reminder window of `ExpiresAt` | on |
+| `service_enrollment_expired_attempt` | `service retrieve` presents a code that has expired | on |
+| `user_certificate_issued` | An interactive user certificate is signed | off |
+| `pam_certificate_issued` | A PAM certificate is signed for a `sudo`/`su` | off |
+
+Everything here follows the existing four-step "adding a notification
+kind" recipe (docs/email-notifications.md): a `Kind` constant, a payload
+struct, a registry `Definition`, and templates. The sections below cover
+only what each kind needs *beyond* that recipe, plus the one change to
+delivery itself.
+
+## A per-enrollment notification address
+
+Under group ownership, an enrollment-scoped notification with no
+per-enrollment address fans out to every current holder of the service
+account. That is the right default, but it still leaves two gaps the
+address exists to close:
+
+- A service account whose holders have never logged in (a deployment
+  run entirely by people outside ssoossh) has an empty holder set at
+  delivery time, so fan-out reaches nobody.
+- An identity provider that releases no email claim silences every
+  holder's copy, including the ones about unattended jobs that will
+  break. And a large holder set turns every redemption into a
+  mailshot; a team alias is the quieter, more deliberate channel.
+
+The fix is an optional notification address on the enrollment itself:
+
+- A nullable `notification_email` column on `enrollments`. `NULL` means
+  fan-out to all holders; a value makes that address the sole
+  recipient. No backfill needed for existing rows.
+- **Set at approval time.** The browser approval page (flow 4b) gains an
+  optional field, defaulting to empty. This is the moment the approver
+  is already deciding what the enrollment is for; a team alias entered
+  here means every subsequent notification about the enrollment — the
+  created message, redemptions, the expiry reminder — reaches the people
+  who run the job, not just the person who clicked approve.
+- **Editable after the fact.** Any holder of the service account edits
+  it from the service codes page; an admin edits it from the admin
+  console's enrollment view.
+
+### Delivery semantics
+
+Group ownership means there is no single owner to address or to gate,
+so recipient resolution moves entirely to the delivery consumer. One
+`Notify` call still publishes one event, carrying the enrollment ID;
+the consumer resolves it to its sends:
+
+- **Address set:** that address is the sole recipient, sent ungated.
+  With no single owner there is no principled person whose preference
+  could gate it; the address is the account's subscription, entered
+  deliberately at approval or edit time.
+- **Address unset:** one copy per current holder of the enrollment's
+  service account, resolved at delivery time from
+  `users.service_accounts`, each copy gated by that holder's own
+  per-kind preference, each skipped individually when a holder has no
+  email. Holders are known as of their last login; a holder the server
+  has never seen is not reached, which is the address's job to cover.
+- User-scoped kinds (the issued pair below) are untouched: recipient is
+  the identity email, preference is that user's own.
+
+### What does not change
+
+The enrollment code never appears in any message. The existing pair of
+tests — code absent from every rendered message, code absent from every
+payload — extends to each new kind below, so the invariant stays a
+decision rather than an accident.
+
+An address typed into a form is user-supplied input: validate the
+format, and store it as-is otherwise. Whether to restrict the domain
+(e.g. a `mail.notification_address_domains` allowlist, so an
+authenticated user cannot point server mail at arbitrary third parties)
+is an open question below; the proposal's default is no restriction,
+documented.
+
+## `service_enrollment_expiring`
+
+The "created" message already tells the recipient to re-enroll before
+`CodeExpiresAt` to keep an unattended job running. Nothing follows up,
+and the follow-up is the entire value: by the time the date matters, the
+terminal that displayed the code is long gone and the cron job is the
+only thing that remembers the enrollment exists — by failing.
+
+This is the one kind that cannot be emitted from an event path, because
+the event is the *absence* of one. It rides the existing scheduler:
+
+- A sweep job registered in `bootstrap/scheduler.go` alongside the
+  stranded-request and CA-key sweeps, selecting enrollments with
+  `expires_at` inside the reminder window and no reminder claimed.
+- The window comes from config (`mail.expiry_reminder_lead`, suggested
+  default 7 days; `0` disables the job). Read at startup like the other
+  sweep intervals.
+
+### Send-once across instances
+
+Every instance runs the sweep, and the delivery queue group only
+deduplicates *consumption*, not *publication* — two instances sweeping
+the same row would queue two events and the group would faithfully send
+both. The claim therefore lives in the database: an
+`expiry_reminder_sent_at` column on `enrollments`, taken with a guarded
+update —
+
+```
+UPDATE enrollments SET expiry_reminder_sent_at = now
+WHERE id = ? AND expiry_reminder_sent_at IS NULL
+```
+
+— and the event published only when the update reports one row.
+Claim-then-publish means a crash between the two loses the reminder
+rather than duplicating it; for a reminder, at-most-once is the right
+side to fail on.
+
+### Interaction with expiry changes
+
+The disabled-user grace period is gone
+([enrollment-group-ownership.md](enrollment-group-ownership.md)):
+disabling a user no longer moves any enrollment's `expires_at`. But the
+rule it motivated is worth keeping as an invariant, because an admin
+expiring an enrollment directly still moves the date: **any path that
+moves `expires_at` earlier must clear `expiry_reminder_sent_at`**, or a
+reminder already sent for the old horizon suppresses the one that
+matters for the new, closer one.
+
+## `service_enrollment_expired_attempt`
+
+`EnrollmentService.Retrieve` answers an expired code exactly like an
+unknown one — the caller holds a dead capability either way, and the
+distinction belongs to the approver, not the wire. That stays. But at
+the point the server gives that answer, it has already loaded the
+enrollment row: the attempt is fully attributable, and it is the single
+most informative signal this system can send. Either a forgotten job is
+now failing on schedule, or someone is replaying a credential that
+should no longer exist. Both are things the account's holders want to
+hear about once — and today the server says nothing to anyone.
+
+- Emitted from the expired branch of `Retrieve`, before returning the
+  unchanged not-found answer. Attempts with genuinely unknown codes stay
+  silent: there is no row, so there is no one to tell.
+- Payload: the enrollment identity (service account, enrollment ID, key
+  fingerprint), the attempt's source IP and time, and when the code
+  expired.
+
+A broken cron job retries forever, so this needs the same DB-claimed
+dedupe as the reminder, with a window instead of a one-shot: a
+`last_expired_attempt_notified_at` column, claimed with a guarded update
+(`... WHERE last_expired_attempt_notified_at IS NULL OR
+last_expired_attempt_notified_at < ?`) so each enrollment produces at
+most one message per window (suggested: 24h) no matter how hot the retry
+loop or how many instances field it.
+
+Default on: it fires only when something is already wrong, so it is
+quiet for everyone whose jobs work.
+
+## `user_certificate_issued` and `pam_certificate_issued`
+
+The "was this you?" pair. The requester was present for both flows —
+approving in a browser, or typing a password at a PAM prompt — so on the
+happy path these messages confirm what the user already knows. Their
+value is the unhappy path: a certificate minted by a session the user
+does not recognize, from an address they were never at.
+
+- **Default off, both of them.** Interactive certificates are issued per
+  login and PAM certificates per `sudo`; either kind defaulting on would
+  make every existing deployment noisy the day it upgrades, which is
+  precisely the outcome the registry's `DefaultEnabled` comment exists
+  to prevent. Users who want the signal opt in at `/preferences`;
+  security-sensitive deployments can tell their users to.
+- Two kinds, not one with a type field, so the tolerances can differ: a
+  user who runs `sudo` forty times a day and logs in twice can keep the
+  login signal without drowning in the other.
+- Emit point: `SignedReplyHandler.resolveSuccess`, which already handles
+  exactly the non-service types and has the request row (user, source
+  IP, requested options) and the reply (serial, key ID, principals,
+  expiry) in hand. Emitting where the certificate becomes real — rather
+  than at approval — means one emit site covers both types and the
+  message never describes a certificate that failed to sign.
+- Payload: certificate type, key ID, principals, serial, source IP of
+  the request, issued/expires timestamps, and `ServerURL` for the link
+  to the certificate's detail page.
+
+These are user-scoped, not enrollment-scoped: the recipient is the
+identity email, no override applies.
+
+## Sequencing
+
+1. **Next:** the notification address column,
+   `service_enrollment_expiring`, and
+   `service_enrollment_expired_attempt`. All three touch only code that
+   exists today, and the two dedupe columns can share one migration with
+   the address column. The delivery consumer already resolves recipients
+   per event, so the address is a branch in
+   `NotificationHandler.recipients`, not a new mechanism.
+2. **Done, with the group-ownership work
+   ([enrollment-group-ownership.md](enrollment-group-ownership.md)):** the
+   fan-out delivery model. The address-editing surfaces (service codes
+   page, admin enrollment view) go wherever the address column does.
+3. **Any time:** the issued pair; it is independent of everything above.
+
+## Open questions
+
+- **Domain restriction on the notification address.** Unrestricted is
+  simplest and matches the trust already extended to approvers; an
+  allowlist config is cheap to add later without a migration. Proposed:
+  ship unrestricted, documented.
+- **Reminder cardinality.** One reminder per enrollment is proposed. A
+  second, closer-in reminder (say 7 days and 24 hours) doubles the
+  column bookkeeping for unclear gain; revisit if operators ask.
+- ~~**Whose preference gates an overridden send.**~~ Resolved by group
+  ownership: with no single owner there is no preference that could
+  gate the address, so a set address sends ungated (the subscription
+  semantic), and fan-out sends are gated per holder. See "Delivery
+  semantics".

@@ -75,7 +75,7 @@ func TestRouterConstruction_AdminRoutesRegister(t *testing.T) {
 		func(c *gin.Context) { c.Next() }, // csrf
 		// This test asserts the route table builds without conflicting
 		// wildcards, so the provider only has to be non-nil.
-		&fakeEnrollmentServiceForReassign{},
+		&stubEnrollmentProvider{},
 		nil,
 	)
 

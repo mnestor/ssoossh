@@ -330,7 +330,8 @@ components:
         approved_by_username:
           description: |-
             ApprovedByUsername and ApprovedByEmail name the user who approved this
-            enrollment. Present for auditing and tracking which user has the code.
+            enrollment. Provenance, not ownership — the code outlives their access
+            to it and is not theirs to move.
           type: string
         certificate_valid_seconds:
           description: CertificateValidSeconds is how long each redeemed certificate
@@ -373,6 +374,12 @@ components:
         retrieval_count:
           description: RetrievalCount counts every logged redemption attempt.
           type: integer
+        service_account:
+          description: |-
+            ServiceAccount is the account this code was approved for, and who owns
+            it: everyone holding the account (see
+            docs/proposals/enrollment-group-ownership.md).
+          type: string
       required:
       - approved_by_email
       - approved_by_username
@@ -383,6 +390,7 @@ components:
       - options
       - principals
       - retrieval_count
+      - service_account
       type: object
     webtypes.AdminEnrollmentsResponse:
       properties:
@@ -451,9 +459,10 @@ components:
           uniqueItems: false
         service_enrollment_count:
           description: |-
-            ServiceEnrollmentCount is how many active (not expired) service
-            enrollments this user has. Shown so an admin can decide whether to
-            disable the account.
+            ServiceEnrollmentCount is how many live (not expired) service
+            enrollments this user approved. Provenance, not a consequence of
+            disabling them: the codes belong to their service accounts and keep
+            working (see docs/proposals/enrollment-group-ownership.md).
           type: integer
         subject:
           description: Subject is the stable OIDC "sub" claim.
@@ -830,20 +839,14 @@ components:
       type: object
     webtypes.DisableUserConsequences:
       properties:
-        expire_at_timestamp:
-          description: ExpireAtTimestamp is when the enrollments will actually expire.
-          type: string
-        grace_period_seconds:
-          description: GracePeriodSeconds is how long after disable before enrollments
-            expire.
-          type: integer
         service_enrollment_count:
-          description: ServiceEnrollmentCount is how many active enrollments will
-            expire.
+          description: |-
+            ServiceEnrollmentCount is how many live enrollments this user
+            approved. They are unaffected — reported so the dialog can say so
+            with a number, which is the reassurance an admin disabling a
+            colleague actually needs.
           type: integer
       required:
-      - expire_at_timestamp
-      - grace_period_seconds
       - service_enrollment_count
       type: object
     webtypes.DisableUserRequestBody:
@@ -863,8 +866,6 @@ components:
         admin_auditor_group:
           type: string
         admin_contact_email:
-          type: string
-        admin_disable_grace_period:
           description: Admin user management
           type: string
         admin_disabled_message:
@@ -929,7 +930,6 @@ components:
           description: Server connection and TLS settings
           type: string
       required:
-      - admin_disable_grace_period
       - cert_approval_ttl
       - cert_client_timeout
       - cert_pam_valid_duration
@@ -1163,6 +1163,12 @@ components:
       type: object
     webtypes.ServiceEnrollmentResponse:
       properties:
+        approved_by_username:
+          description: |-
+            ApprovedByUsername is who approved this code. Provenance, not
+            ownership — the reader may well not be them. Empty if that user's
+            record has since gone.
+          type: string
         certificate_request_id:
           description: |-
             CertificateRequestID is the request this enrollment was approved
@@ -1229,6 +1235,14 @@ components:
             RetrievalCount counts every logged redemption attempt, including
             those that failed at signing — someone held the code either way.
           type: integer
+        service_account:
+          description: |-
+            ServiceAccount is the account this code was approved for, and who
+            owns it: everyone holding the account (see
+            docs/proposals/enrollment-group-ownership.md). It is what the service
+            codes page groups by, which is why it is its own field rather than
+            left to be read out of Principals.
+          type: string
       required:
       - created_at
       - expires_at
@@ -1237,6 +1251,7 @@ components:
       - options
       - principals
       - retrieval_count
+      - service_account
       type: object
     webtypes.ServiceEnrollmentsResponse:
       properties:
@@ -1520,7 +1535,8 @@ paths:
     get:
       description: |-
         Returns full details of one enrollment including its retrieval log
-        and reassignment history. Visible to the approver and auditors.
+        and any historical reassignments. Visible to auditors and to
+        holders of the enrollment's service account.
       parameters:
       - description: Enrollment ID
         in: path
@@ -1607,66 +1623,6 @@ paths:
       security:
       - sessionCookie: []
       summary: Expire an enrollment (admin or SOC)
-      tags:
-      - admin
-  /api/admin/enrollments/{id}/reassign:
-    patch:
-      description: |-
-        Transfers ownership of an enrollment to another user. The new owner
-        must have the required service account. Idempotent.
-      parameters:
-      - description: Enrollment ID
-        in: path
-        name: id
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              oneOf:
-              - type: object
-              - $ref: '#/components/schemas/gin.H'
-                description: New owner and reason (JSON with 'to_user_id' and 'reason'
-                  fields)
-                summary: request
-        description: New owner and reason (JSON with 'to_user_id' and 'reason' fields)
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/gin.H'
-          description: Enrollment reassigned
-        "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Invalid request (ineligible target)
-        "401":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Not authenticated
-        "403":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Not authorized (must be owner or admin)
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Enrollment or target user not found
-      security:
-      - sessionCookie: []
-      summary: Reassign an enrollment (admin/owner-only)
       tags:
       - admin
   /api/admin/users:
@@ -1824,9 +1780,9 @@ paths:
   /api/admin/users/{id}/disable:
     patch:
       description: |-
-        Marks a user as disabled, preventing authentication and
-        eventually expiring their enrollments after the configured
-        grace period. The operation is idempotent.
+        Marks a user as disabled, preventing authentication. Service
+        enrollments they approved are unaffected. The operation is
+        idempotent.
       parameters:
       - description: User ID
         in: path

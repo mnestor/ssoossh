@@ -243,6 +243,8 @@ func newServiceEnrollmentsResponse(enrollments []service.ServiceEnrollment) webt
 func newServiceEnrollmentResponse(e service.ServiceEnrollment) webtypes.ServiceEnrollmentResponse {
 	resp := webtypes.ServiceEnrollmentResponse{
 		ID:                   e.Enrollment.ID,
+		ServiceAccount:       e.Enrollment.ServiceAccount,
+		ApprovedByUsername:   e.ApproverUsername,
 		Principals:           orEmpty(e.Principals),
 		KeyID:                e.Enrollment.KeyID,
 		PublicKeyFingerprint: e.Fingerprint,

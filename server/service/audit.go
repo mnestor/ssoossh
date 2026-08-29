@@ -47,7 +47,13 @@ const (
 	AuditEnrollmentCodeCreated AuditAction = "enrollment.code_created"
 	AuditEnrollmentRedeemed    AuditAction = "enrollment.redeemed"
 	AuditEnrollmentExpired     AuditAction = "enrollment.expired"
-	AuditEnrollmentReassigned  AuditAction = "enrollment.reassigned"
+
+	// AuditEnrollmentReassigned is no longer emitted: group ownership
+	// removed reassignment (see
+	// docs/proposals/enrollment-group-ownership.md). The constant stays so
+	// events recorded before that still resolve to a name rather than a
+	// raw string in every reader of the log.
+	AuditEnrollmentReassigned AuditAction = "enrollment.reassigned"
 
 	AuditUserDisabled AuditAction = "user.disabled"
 	AuditUserEnabled  AuditAction = "user.enabled"
@@ -132,11 +138,12 @@ type AuditEvent struct {
 // expired enrollment, is the reader this exists for. Optional reason fields
 // do not get filled; required ones cost seconds at action time and are the
 // whole point later.
+//
+// AuditEnrollmentReassigned is absent because nothing emits it any more.
 var reasonRequired = map[AuditAction]bool{
-	AuditUserDisabled:         true,
-	AuditUserEnabled:          true,
-	AuditEnrollmentExpired:    true,
-	AuditEnrollmentReassigned: true,
+	AuditUserDisabled:      true,
+	AuditUserEnabled:       true,
+	AuditEnrollmentExpired: true,
 }
 
 // ValidateAuditReason checks a caller-supplied reason for an action that
@@ -407,9 +414,8 @@ func (s *AuditService) page(ctx context.Context, q *gorm.DB, limit, offset int) 
 // window, then anything past the row cap, oldest first. The shipped log is
 // the archive, so this loses nothing a deployment should be relying on.
 //
-// A package-level function rather than a method, matching
-// SweepDisabledUserEnrollments, so the scheduler can register it without
-// reaching through a service.
+// A package-level function rather than a method, so the scheduler can
+// register it without reaching through a service.
 func SweepAuditEvents(ctx context.Context, db *gorm.DB, retention time.Duration, maxRows int64) error {
 	if retention > 0 {
 		cutoff := time.Now().Add(-retention)

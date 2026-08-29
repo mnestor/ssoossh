@@ -1,24 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import {
-		getAdminUser,
-		disableUser,
-		enableUser,
-		getAdminConfig,
-		getUserAudit
-	} from '$lib/api/endpoints';
+	import { getAdminUser, disableUser, enableUser, getUserAudit } from '$lib/api/endpoints';
 	import Button from '$lib/components/Button.svelte';
 	import AuditTimeline from '$lib/components/AuditTimeline.svelte';
-	import type {
-		AdminUserDetail,
-		AuditEvent,
-		DisableUserConsequences,
-		EffectiveConfigResponse
-	} from '$lib/api/types';
+	import type { AdminUserDetail, AuditEvent, DisableUserConsequences } from '$lib/api/types';
 
 	let user: AdminUserDetail | null = $state(null);
-	let config: EffectiveConfigResponse | null = $state(null);
 	let error: string | null = $state(null);
 	let busy = $state(false);
 	let actionBusy = $state(false);
@@ -55,47 +43,15 @@
 		}
 	}
 
-	async function loadConfig() {
-		try {
-			config = await getAdminConfig();
-		} catch (cause) {
-			console.error('Failed to load admin config:', cause);
-		}
-	}
-
 	async function openDisableConfirm() {
-		// Calculate the real consequences before showing the modal
-		if (!config || !user) return;
+		if (!user) return;
 
-		// Parse grace period and calculate expiry
-		const gracePeriodMs = parseGracePeriod(config.admin_disable_grace_period);
-		const expireAt = new Date(Date.now() + gracePeriodMs);
-
-		disableConsequences = {
-			service_enrollment_count: user.service_enrollment_count,
-			grace_period_seconds: gracePeriodMs / 1000,
-			expire_at_timestamp: expireAt.toISOString()
-		};
+		// What disabling does is now bounded: it revokes this person's
+		// access. The enrollment count is here to say what it leaves alone.
+		disableConsequences = { service_enrollment_count: user.service_enrollment_count };
 		showDisableConfirm = true;
 	}
 
-	function parseGracePeriod(durationStr: string): number {
-		// Parse Go duration format like "30m", "2h", etc.
-		const match = durationStr.match(/^(\d+)(ms|s|m|h)$/);
-		if (!match) return 1800000; // default to 30 minutes
-
-		const value = parseInt(match[1], 10);
-		const unit = match[2];
-
-		const multipliers: Record<string, number> = {
-			ms: 1,
-			s: 1000,
-			m: 60000,
-			h: 3600000
-		};
-
-		return value * (multipliers[unit] || 1);
-	}
 
 	async function handleDisable() {
 		actionBusy = true;
@@ -141,7 +97,6 @@
 	}
 
 	onMount(() => {
-		loadConfig();
 		loadUser();
 		loadAudit();
 	});
@@ -174,7 +129,7 @@
 					<Button
 						variant="danger"
 						testid="disable-user"
-						disabled={actionBusy || !config}
+						disabled={actionBusy}
 						onclick={openDisableConfirm}
 					>
 						{actionBusy ? 'Disabling...' : 'Disable'}
@@ -283,10 +238,13 @@
 					<h3 class="mb-4 text-lg font-semibold text-ink">Disable User?</h3>
 					<p data-testid="disable-consequences" class="mb-4 text-sm text-ink-muted">
 						This will prevent <strong>{user.username}</strong> from authenticating immediately.
-						Their <strong>{disableConsequences.service_enrollment_count}</strong>
-						active service enrollment(s) will expire at
-						<strong>{new Date(disableConsequences.expire_at_timestamp).toLocaleString()}</strong>,
-						allowing running services time to rotate credentials.
+						{#if disableConsequences.service_enrollment_count > 0}
+							The <strong>{disableConsequences.service_enrollment_count}</strong> live service
+							enrollment(s) they approved keep working: those belong to their service accounts, not
+							to this person, and everyone else holding the account keeps them.
+						{:else}
+							They have approved no live service enrollments.
+						{/if}
 					</p>
 					<label class="mb-4 block">
 						<span class="mb-1 block text-xs font-semibold text-ink-muted">

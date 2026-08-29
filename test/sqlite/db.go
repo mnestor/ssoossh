@@ -61,6 +61,18 @@ func RunDown(t *testing.T, db *gorm.DB) error {
 	return doMigrate(db, func(m *migrate.Migrate) error { return m.Down() })
 }
 
+// RunTo migrates to a specific version, in whichever direction that is from
+// where the database currently stands. version is a migration filename's
+// numeric prefix.
+//
+// It exists for testing a migration's data handling rather than its schema:
+// step back to the version before one, write rows as the old schema had
+// them, then RunUp and read back what the migration made of them.
+func RunTo(t *testing.T, db *gorm.DB, version uint) error {
+	t.Helper()
+	return doMigrate(db, func(m *migrate.Migrate) error { return m.Migrate(version) })
+}
+
 // migrateSQLite applies the embedded SQLite migrations to the database.
 func migrateSQLite(t *testing.T, db *gorm.DB) error {
 	t.Helper()

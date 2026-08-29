@@ -1,6 +1,5 @@
 admin.auditor_group = 
 admin.contact_email = 
-admin.disable_grace_period = 168h
 admin.disabled_message = 
 admin.require_group = 
 admin.soc_group = 

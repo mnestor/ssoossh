@@ -12,13 +12,12 @@ vi.mock('$app/state', async () => {
 
 // The disable confirmation is the reason this page has tests: an admin has
 // to be told what disabling actually does BEFORE they confirm it, with the
-// real enrollment count and the real expiry, not placeholder copy. Stubbing
-// fetch rather than the endpoints module keeps those numbers flowing from a
-// server response the way they do in production.
-const GRACE = '2h';
+// real enrollment count and not placeholder copy. Stubbing fetch rather than
+// the endpoints module keeps that number flowing from a server response the
+// way it does in production.
 const ENROLLMENTS = 3;
 
-/** mockDetail answers the detail and config calls this page makes. */
+/** mockDetail answers the detail and audit calls this page makes. */
 function mockDetail(overrides: Record<string, unknown> = {}) {
 	vi.stubGlobal(
 		'fetch',
@@ -26,12 +25,11 @@ function mockDetail(overrides: Record<string, unknown> = {}) {
 			const url = String(input);
 			// The audit timeline is a separate auditor-scoped read the page
 			// makes on mount; answering it here keeps the stub matching the
-			// three calls production makes.
+			// calls production makes.
 			const body = url.includes('/audit')
 				? { events: [], total: 0 }
 				: url.includes('/admin/config')
 					? {
-							admin_disable_grace_period: GRACE,
 							admin_contact_email: 'it-help@corp.example',
 							admin_disabled_message: 'Open a ticket at go/access'
 						}
@@ -91,7 +89,7 @@ describe('Admin user detail', () => {
 		expect(screen.queryByText(/Disable User\?/)).not.toBeInTheDocument();
 	});
 
-	it('should state how many enrollments disabling will expire', async () => {
+	it('should count the enrollments the disable leaves alone', async () => {
 		mockDetail();
 		render(Page);
 		await screen.findByText('alice');
@@ -102,22 +100,31 @@ describe('Admin user detail', () => {
 		// not "some". Scoped to the consequences paragraph because the page
 		// behind the modal also shows an enrollment count.
 		const consequences = await screen.findByTestId('disable-consequences');
-		expect(consequences).toHaveTextContent(`${ENROLLMENTS} active service enrollment`);
+		expect(consequences).toHaveTextContent(`${ENROLLMENTS} live service enrollment`);
 	});
 
-	it('should state when those enrollments expire', async () => {
+	// The consequence that used to be here -- enrollments expiring after a
+	// grace period -- is gone with group ownership. The dialog has to say the
+	// opposite now, or an admin will hesitate to disable a leaver who
+	// approved anything.
+	it('should say the enrollments they approved keep working', async () => {
 		mockDetail();
 		render(Page);
 		await screen.findByText('alice');
 
 		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
 		const consequences = await screen.findByTestId('disable-consequences');
-		// Two hours ahead, per the configured grace period. Asserting the
-		// formatted date would pin a locale, so this checks the page named a
-		// moment in the future rather than showing the epoch or now.
-		const expiry = new Date(Date.now() + 2 * 60 * 60 * 1000);
-		expect(consequences).toHaveTextContent(String(expiry.getFullYear()));
-		expect(consequences).toHaveTextContent(/will expire at/);
+		expect(consequences).toHaveTextContent(/keep working/);
+	});
+
+	it('should say so when they approved no live enrollments', async () => {
+		mockDetail({ service_enrollment_count: 0 });
+		render(Page);
+		await screen.findByText('alice');
+
+		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
+		const consequences = await screen.findByTestId('disable-consequences');
+		expect(consequences).toHaveTextContent(/no live service enrollments/);
 	});
 
 	it('should say the account is blocked immediately', async () => {

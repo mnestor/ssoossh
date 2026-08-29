@@ -24,6 +24,14 @@ declare global {
 			 * let a ?modal= id from one page resolve against the other.
 			 */
 			modalEnrollmentId?: string | null;
+
+			/**
+			 * The service account whose codes are listed, on the same terms as
+			 * modalEnrollmentId. The service codes page is a drill-down --
+			 * accounts, then that account's codes, then one code -- and this is
+			 * the middle level.
+			 */
+			accountName?: string | null;
 		}
 		// interface Platform {}
 	}

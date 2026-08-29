@@ -208,7 +208,7 @@ func TestListUsersHandler_ShouldNotQueryPerDisabledUser(t *testing.T) {
 // fakeEnrollmentServiceWithOptions serves one admin enrollment whose option
 // set carries no extensions, which is how a row with none decodes.
 type fakeEnrollmentServiceWithOptions struct {
-	fakeEnrollmentServiceForReassign
+	stubEnrollmentProvider
 }
 
 func (f *fakeEnrollmentServiceWithOptions) ListForAdmin(_ context.Context, _ *service.Identity, _ service.AdminListParams) (service.AdminEnrollmentList, error) {

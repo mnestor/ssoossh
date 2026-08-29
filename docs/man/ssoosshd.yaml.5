@@ -615,12 +615,12 @@ Default:
 Both group names are optional; empty disables the corresponding role.
 .TP
 .BI admin.require_group: " string"
-The OIDC group a caller must belong to in order to access admin\-scoped operations (re\-enabling users, reassigning any enrollment), plus everything the SOC and auditor roles below can do. Empty disables admin operations entirely. Fails closed: no identity, no group, or no configured group all deny.
+The OIDC group a caller must belong to in order to access admin\-scoped operations (re\-enabling users), plus everything the SOC and auditor roles below can do. Empty disables admin operations entirely. Fails closed: no identity, no group, or no configured group all deny.
 Default:
 .BR empty .
 .TP
 .BI admin.soc_group: " string"
-The OIDC group a caller must belong to in order to access SOC\-scoped containment operations: disabling users and expiring enrollments. SOC is a child role of admin, so require_group members hold SOC access regardless of this setting; empty therefore narrows SOC operations to admins rather than disabling them. SOC members also hold auditor access (they need the directory and enrollment lists to find what to contain), but deliberately not the restorative or ownership operations \(em re\-enabling a user and reassigning an enrollment stay admin\-only. Fails closed: no identity, or membership in neither group, denies.
+The OIDC group a caller must belong to in order to access SOC\-scoped containment operations: disabling users and expiring enrollments. SOC is a child role of admin, so require_group members hold SOC access regardless of this setting; empty therefore narrows SOC operations to admins rather than disabling them. SOC members also hold auditor access (they need the directory and enrollment lists to find what to contain), but deliberately not the restorative operations \(em re\-enabling a user stays admin\-only. Fails closed: no identity, or membership in neither group, denies.
 Default:
 .BR empty .
 .TP
@@ -628,11 +628,6 @@ Default:
 The OIDC group a caller must belong to in order to access auditor\-scoped operations (viewing effective configuration, cross\-user certificate history). Auditor is a child role of both admin and SOC, so require_group and SOCGroup members hold auditor access regardless of this setting; empty therefore narrows auditor operations to those roles rather than disabling them. Fails closed: no identity, or membership in no granting group, denies.
 Default:
 .BR empty .
-.TP
-.BI admin.disable_grace_period: " duration"
-How long after a user is disabled before their service enrollments expire. This gives running services time to notice and rotate credentials before the certificates stop working. After this duration expires (see service.SweepDisabledUserEnrollments), no new certificates can be issued from the enrollment.
-Default:
-.BR 168h .
 .TP
 .BI admin.contact_email: " string"
 The email address shown on the account\-disabled page so a disabled user can contact support. Empty disables the display (no mailto link on the page).

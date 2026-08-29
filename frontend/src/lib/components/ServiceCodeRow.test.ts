@@ -11,6 +11,8 @@ const now = new Date('2026-08-22T12:00:00Z');
 function enrollment(overrides: Partial<ServiceEnrollment> = {}): ServiceEnrollment {
 	return {
 		id: 'enr-1',
+		service_account: 'svc-deploy',
+		approved_by_username: 'alice',
 		certificate_request_id: 'req-1',
 		principals: ['svc-deploy'],
 		key_id: 'svc-deploy/req-1',
@@ -32,9 +34,28 @@ describe('ServiceCodeRow', () => {
 		expect(screen.getByText('svc-deploy')).toBeInTheDocument();
 	});
 
-	it('should fall back to a placeholder when the principals could not be decoded', () => {
-		render(ServiceCodeRow, { enrollment: enrollment({ principals: [] }), now, onclick: vi.fn() });
+	it('should fall back to a placeholder when neither account nor principals decoded', () => {
+		render(ServiceCodeRow, {
+			enrollment: enrollment({ service_account: '', principals: [] }),
+			now,
+			onclick: vi.fn()
+		});
 		expect(screen.getByText('unknown account')).toBeInTheDocument();
+	});
+
+	it('should lead with the key ID when the account is already the heading', () => {
+		render(ServiceCodeRow, {
+			enrollment: enrollment(),
+			now,
+			onclick: vi.fn(),
+			showAccount: false
+		});
+		expect(screen.getByText('svc-deploy/req-1')).toBeInTheDocument();
+	});
+
+	it('should name who approved the code', () => {
+		render(ServiceCodeRow, { enrollment: enrollment(), now, onclick: vi.fn() });
+		expect(screen.getByText(/by alice/)).toBeInTheDocument();
 	});
 
 	it('should report how long ago the code was approved', () => {

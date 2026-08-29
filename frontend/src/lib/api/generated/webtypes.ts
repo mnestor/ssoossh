@@ -155,13 +155,26 @@ export interface EnrollmentRetrievalsResponse {
  * The code is deliberately absent and must stay that way: `service enroll`
  * prints it once, the server stores it only to match a redemption against,
  * and a page that handed it back would turn a browser session into a way to
- * mint service certificates. What this answers instead is "what did I
- * approve, what will it hand out, and how long does it last" — the facts
- * needed to decide whether a code should be renewed, reassigned, or left to
- * expire.
+ * mint service certificates. What this answers instead is "what does this
+ * code hand out, and how long does it last" — the facts needed to decide
+ * whether it should be renewed or left to expire.
  */
 export interface ServiceEnrollmentResponse {
 	id: string;
+	/**
+	 * ServiceAccount is the account this code was approved for, and who
+	 * owns it: everyone holding the account (see
+	 * docs/proposals/enrollment-group-ownership.md). It is what the service
+	 * codes page groups by, which is why it is its own field rather than
+	 * left to be read out of Principals.
+	 */
+	service_account: string;
+	/**
+	 * ApprovedByUsername is who approved this code. Provenance, not
+	 * ownership — the reader may well not be them. Empty if that user's
+	 * record has since gone.
+	 */
+	approved_by_username?: string;
 	/**
 	 * CertificateRequestID is the request this enrollment was approved
 	 * from, and the id the retrieval log at
@@ -245,8 +258,15 @@ export interface ServiceEnrollmentsResponse {
 export interface AdminEnrollmentResponse {
 	id: string;
 	/**
+	 * ServiceAccount is the account this code was approved for, and who owns
+	 * it: everyone holding the account (see
+	 * docs/proposals/enrollment-group-ownership.md).
+	 */
+	service_account: string;
+	/**
 	 * ApprovedByUsername and ApprovedByEmail name the user who approved this
-	 * enrollment. Present for auditing and tracking which user has the code.
+	 * enrollment. Provenance, not ownership — the code outlives their access
+	 * to it and is not theirs to move.
 	 */
 	approved_by_username: string;
 	approved_by_email: string;
@@ -485,7 +505,6 @@ export interface EffectiveConfigResponse {
 	/**
 	 * Admin user management
 	 */
-	admin_disable_grace_period: string;
 	admin_contact_email?: string;
 	admin_disabled_message?: string;
 	/**
@@ -715,9 +734,10 @@ export interface AdminUserDetail {
 	 */
 	disabled_reason?: string;
 	/**
-	 * ServiceEnrollmentCount is how many active (not expired) service
-	 * enrollments this user has. Shown so an admin can decide whether to
-	 * disable the account.
+	 * ServiceEnrollmentCount is how many live (not expired) service
+	 * enrollments this user approved. Provenance, not a consequence of
+	 * disabling them: the codes belong to their service accounts and keep
+	 * working (see docs/proposals/enrollment-group-ownership.md).
 	 */
 	service_enrollment_count: number /* int */;
 	/**
@@ -726,20 +746,21 @@ export interface AdminUserDetail {
 	certificate_count: number /* int */;
 }
 /**
- * DisableUserConsequences describes what will happen immediately and after
- * the grace period if a user is disabled, shown in the confirmation dialog.
+ * DisableUserConsequences describes what disabling a user does, shown in
+ * the confirmation dialog.
+ * What it mostly describes now is what disabling does *not* do. A service
+ * enrollment is owned by every holder of its service account rather than by
+ * the person who approved it (see
+ * docs/proposals/enrollment-group-ownership.md), so a disable revokes this
+ * person's access and nothing else: no enrollment expires, and every
+ * unattended job keeps running.
  */
 export interface DisableUserConsequences {
 	/**
-	 * GracePeriodSeconds is how long after disable before enrollments expire.
-	 */
-	grace_period_seconds: number /* int64 */;
-	/**
-	 * ExpireAtTimestamp is when the enrollments will actually expire.
-	 */
-	expire_at_timestamp: string;
-	/**
-	 * ServiceEnrollmentCount is how many active enrollments will expire.
+	 * ServiceEnrollmentCount is how many live enrollments this user
+	 * approved. They are unaffected — reported so the dialog can say so
+	 * with a number, which is the reassurance an admin disabling a
+	 * colleague actually needs.
 	 */
 	service_enrollment_count: number /* int */;
 }

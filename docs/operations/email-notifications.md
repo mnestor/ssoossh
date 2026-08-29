@@ -1,6 +1,6 @@
 # Email notifications
 
-ssoosshd can email a user when something happens to a credential of theirs.
+ssoosshd can email people when something happens to a credential they hold.
 It is off by default and adds nothing to the certificate flows: every path
 that emits a notification behaves identically with mail disabled.
 
@@ -105,7 +105,11 @@ mail.
 ## What users control
 
 Each user chooses which notifications they receive at `/preferences` in the
-web UI. Choices are stored per (user, kind); a user who has never answered
+web UI. In a service-account fan-out each holder's own choice gates their own
+copy, so one person opting out silences nothing for anyone else, and an
+account whose holders have all opted out sends nothing at all.
+
+Choices are stored per (user, kind); a user who has never answered
 gets the kind's own default, which is what lets a new notification ship
 without a backfill.
 
@@ -275,14 +279,26 @@ in four steps:
 4. **Three templates** in `server/resources/mail/`, named
    `<kind>.subject.tmpl`, `<kind>.txt.tmpl`, and `<kind>.html.tmpl`.
 
-Then publish the event from wherever the thing happens:
+Then publish the event from wherever the thing happens, addressed one of two
+ways:
 
 ```go
+// One person, by users.id.
 s.notifier.Notify(ctx, notify.KindYourNewThing, userID, &notify.YourNewThing{ /* … */ })
+
+// Everyone holding a service account, resolved at delivery.
+s.notifier.NotifyServiceAccount(ctx, notify.KindYourNewThing, account, &notify.YourNewThing{ /* … */ })
 ```
 
-`Notify` never blocks and never returns an error — it queues and returns, so
-no caller's outcome depends on the mail relay.
+Neither blocks or returns an error — both queue and return, so no caller's
+outcome depends on the mail relay.
+
+Which one to use follows from what the notification is about. Anything about
+a service enrollment takes the service-account form: an enrollment is owned
+by every holder of its account rather than by whoever approved it (see
+[enrollment-group-ownership.md](../proposals/enrollment-group-ownership.md)),
+so there is no single user to name. Anything about a person's own
+certificate takes `Notify`.
 
 Nothing else changes. Preferences storage, the preferences page, the API,
 the delivery consumer, and the reference table above are all driven off the

@@ -46,17 +46,11 @@ func NewAdminController(
 
 	// SOC routes (containment writes: admin or SOC group). SOC holds the
 	// operations that revoke access — expiring an enrollment, disabling a
-	// user — and never the ones that restore or transfer it, so a SOC
-	// analyst can contain an incident but not quietly undo a containment or
-	// move a credential to another owner.
+	// user — and never the ones that restore it, so a SOC analyst can
+	// contain an incident but not quietly undo a containment.
 	socGroup := group.Group("/admin", sessionAuthMiddleware, socAuthMiddleware, csrfMiddleware)
 	socGroup.PATCH("/enrollments/:id/expire", a.expireEnrollmentHandler)
 	socGroup.PATCH("/users/:id/disable", a.disableUserHandler)
-
-	// Reassignment routes (self-authorizing: owners reassign their own, admins reassign any)
-	// Authorization is checked in the handler itself, so only sessionAuthMiddleware is needed.
-	reassignGroup := group.Group("/admin", sessionAuthMiddleware, csrfMiddleware)
-	reassignGroup.PATCH("/enrollments/:id/reassign", a.reassignEnrollmentHandler)
 
 	// Auditor routes (read-only operations)
 	auditorGroup := group.Group("/admin", sessionAuthMiddleware, auditorAuthMiddleware)
@@ -136,12 +130,11 @@ func (a *adminController) effectiveConfigHandler(g *gin.Context) {
 		DBProvider:  string(a.config.DB.Provider),
 		ProviderURL: a.config.AuthConfig.ProviderURL,
 
-		AdminRequireGroup:       a.config.Admin.RequireGroup,
-		AdminSOCGroup:           a.config.Admin.SOCGroup,
-		AdminAuditorGroup:       a.config.Admin.AuditorGroup,
-		AdminDisableGracePeriod: a.config.Admin.DisableGracePeriod.String(),
-		AdminContactEmail:       a.config.Admin.ContactEmail,
-		AdminDisabledMessage:    a.config.Admin.DisabledMessage,
+		AdminRequireGroup:    a.config.Admin.RequireGroup,
+		AdminSOCGroup:        a.config.Admin.SOCGroup,
+		AdminAuditorGroup:    a.config.Admin.AuditorGroup,
+		AdminContactEmail:    a.config.Admin.ContactEmail,
+		AdminDisabledMessage: a.config.Admin.DisabledMessage,
 
 		LoggingLevel: a.config.Logging.Level,
 
@@ -437,13 +430,18 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 }
 
 // disableUserHandler handles PATCH /api/admin/users/:id/disable: disables a
-// user, preventing authentication and expiring their enrollments after a
-// configured grace period.
+// user, preventing authentication.
+//
+// Service enrollments are deliberately untouched. They belong to their
+// service accounts rather than to the person who approved them (see
+// docs/proposals/enrollment-group-ownership.md), so the unattended jobs
+// behind them keep running and the account's other holders keep control of
+// them.
 //
 // @Summary     Disable a user (admin or SOC)
-// @Description Marks a user as disabled, preventing authentication and
-// @Description eventually expiring their enrollments after the configured
-// @Description grace period. The operation is idempotent.
+// @Description Marks a user as disabled, preventing authentication. Service
+// @Description enrollments they approved are unaffected. The operation is
+// @Description idempotent.
 // @Tags        admin
 // @Produce     json
 // @Param       id path string true "User ID"
@@ -503,7 +501,6 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 	}
 
 	now := time.Now()
-	gracePeriod := a.config.Admin.DisableGracePeriod
 
 	// The target is snapshotted before the update so the audit event
 	// records the account as it stood when the action was taken.
@@ -524,7 +521,6 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 		Target:     service.AuditSubjectFromUser(&target),
 		Reason:     reason,
 		OccurredAt: now,
-		Detail:     map[string]any{"grace_period": gracePeriod.String()},
 	}
 
 	// The disable and its audit row commit together: a containment action
@@ -558,23 +554,16 @@ func (a *adminController) disableUserHandler(g *gin.Context) {
 		a.audit.LogOnly(auditEvent)
 	}
 
-	expireAt := now.Add(gracePeriod)
-
-	// The disable is already committed, so a failure to count what it
-	// affects cannot fail the request — that would report an error for a
-	// write that succeeded. It is logged instead of silently reported as
-	// zero, which would tell the operator nothing was revoked.
+	// The disable is already committed, so a failure to count cannot fail
+	// the request — that would report an error for a write that succeeded.
+	// It is logged instead of silently reported as zero.
 	enrollmentCount, err := countActiveEnrollments(a.db.WithContext(g.Request.Context()), id)
 	if err != nil {
-		slog.Error("failed to count the enrollments a disable affects; reporting the disable without it",
+		slog.Error("failed to count the enrollments this user approved; reporting the disable without it",
 			"user_id", id, "error", err)
 	}
 
-	respondData(g, webtypes.DisableUserConsequences{
-		GracePeriodSeconds:     int64(gracePeriod.Seconds()),
-		ExpireAtTimestamp:      expireAt,
-		ServiceEnrollmentCount: enrollmentCount,
-	})
+	respondData(g, webtypes.DisableUserConsequences{ServiceEnrollmentCount: enrollmentCount})
 }
 
 // enableUserHandler handles PATCH /api/admin/users/:id/enable: re-enables a
@@ -932,9 +921,15 @@ func (a *adminController) certificateHistoryHandler(g *gin.Context) {
 	respondData(g, resp)
 }
 
-// countActiveEnrollments counts how many active (not yet expired) service
-// enrollments a user has. The error is returned rather than folded into a
-// zero so each caller can decide what a missing count means to it.
+// countActiveEnrollments counts the live (not yet expired) service
+// enrollments a user *approved*. Deliberately keyed on user_id, which is
+// provenance rather than ownership — the codes belong to their service
+// accounts (see docs/proposals/enrollment-group-ownership.md), so this
+// answers "what did this person create", not "what would disabling them
+// take away".
+//
+// The error is returned rather than folded into a zero so each caller can
+// decide what a missing count means to it.
 func countActiveEnrollments(db *gorm.DB, userID string) (int, error) {
 	var count int64
 	if err := db.Model(&model.Enrollment{}).
@@ -1087,6 +1082,7 @@ func (a *adminController) listEnrollmentsHandler(g *gin.Context) {
 	for _, row := range list.Enrollments {
 		resp := webtypes.AdminEnrollmentResponse{
 			ID:                   row.Enrollment.ID,
+			ServiceAccount:       row.Enrollment.ServiceAccount,
 			ApprovedByUsername:   row.Approver.Username,
 			ApprovedByEmail:      row.Approver.Email,
 			Principals:           row.Principals,
@@ -1127,7 +1123,8 @@ func (a *adminController) listEnrollmentsHandler(g *gin.Context) {
 //
 // @Summary     Get enrollment details (auditor-only)
 // @Description Returns full details of one enrollment including its retrieval log
-// @Description and reassignment history. Visible to the approver and auditors.
+// @Description and any historical reassignments. Visible to auditors and to
+// @Description holders of the enrollment's service account.
 // @Tags        admin
 // @Produce     json
 // @Param       id path string true "Enrollment ID"
@@ -1172,6 +1169,7 @@ func (a *adminController) getEnrollmentDetailHandler(g *gin.Context) {
 
 	resp := webtypes.AdminEnrollmentResponse{
 		ID:                   detail.Enrollment.ID,
+		ServiceAccount:       detail.Enrollment.ServiceAccount,
 		ApprovedByUsername:   detail.Approver.Username,
 		ApprovedByEmail:      detail.Approver.Email,
 		Principals:           detail.Principals,
@@ -1198,52 +1196,6 @@ func (a *adminController) getEnrollmentDetailHandler(g *gin.Context) {
 		"retrievals":      retrievals,
 		"retrieval_total": detail.Retrievals.Total,
 	})
-}
-
-// reassignEnrollmentHandler handles PATCH /api/admin/enrollments/:id/reassign:
-// transfer ownership of an enrollment to another user (admin-scoped).
-//
-// @Summary     Reassign an enrollment (admin/owner-only)
-// @Description Transfers ownership of an enrollment to another user. The new owner
-// @Description must have the required service account. Idempotent.
-// @Tags        admin
-// @Accept      json
-// @Produce     json
-// @Param       id path string true "Enrollment ID"
-// @Param       request body gin.H true "New owner and reason (JSON with 'to_user_id' and 'reason' fields)"
-// @Success     200 {object} gin.H "Enrollment reassigned"
-// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid request (ineligible target)"
-// @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
-// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized (must be owner or admin)"
-// @Failure     404 {object} openapidoc.ErrorEnvelope "Enrollment or target user not found"
-// @Security    sessionCookie
-// @Router      /api/admin/enrollments/{id}/reassign [patch]
-func (a *adminController) reassignEnrollmentHandler(g *gin.Context) {
-	identity, ok := middleware.Identity(g)
-	if !ok {
-		handleError(g, &errorresponses.UnauthorizedError{})
-		return
-	}
-
-	var body struct {
-		ToUserID string `json:"to_user_id" binding:"required"`
-		// Reason is required and server-validated: a transfer of ownership
-		// with nothing saying why is the record that is useless later.
-		Reason string `json:"reason" binding:"required"`
-	}
-	if err := g.ShouldBindJSON(&body); err != nil {
-		handleError(g, err)
-		return
-	}
-
-	err := a.enrollmentService.Reassign(g.Request.Context(),
-		g.Param("id"), body.ToUserID, body.Reason, identity)
-	if err != nil {
-		handleError(g, err)
-		return
-	}
-
-	respondData(g, gin.H{"reassigned": true})
 }
 
 // convertOptions converts a service.RequestedOptions to a webtypes.CertificateOptionsResponse.

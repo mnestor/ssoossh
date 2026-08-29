@@ -30,8 +30,10 @@ type User struct {
 	UpdatedAt time.Time `gorm:"column:updated_at"`
 
 	// DisabledAt records when the user was disabled by an admin. Nil means
-	// not disabled. Once disabled, the user cannot authenticate and their
-	// service enrollments expire after the configured grace period.
+	// not disabled. A disabled user cannot authenticate and is excluded
+	// from notification fan-out; their service enrollments are untouched,
+	// belonging to the accounts rather than to them (see
+	// docs/proposals/enrollment-group-ownership.md).
 	DisabledAt *time.Time `gorm:"column:disabled_at"`
 
 	// DisabledByUserID records which admin user disabled this user (foreign

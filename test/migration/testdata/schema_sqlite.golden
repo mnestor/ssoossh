@@ -118,10 +118,12 @@ table enrollments
   column principals type=TEXT nullable=false pk=false default=''
   column public_key type=TEXT nullable=false pk=false default=<none>
   column redeemed_at type=DATETIME nullable=true pk=false default=<none>
+  column service_account type=TEXT nullable=false pk=false default=''
   column user_id type=TEXT nullable=false pk=false default=<none>
   fk certificate_request_id -> certificate_requests.id on_delete=NO ACTION on_update=NO ACTION
   fk user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
   index idx_enrollments_code unique=true columns=code
+  index idx_enrollments_service_account unique=false columns=service_account
   index idx_enrollments_user_id unique=false columns=user_id
   index sqlite_autoindex_enrollments_1 unique=true columns=id
 table notification_preferences

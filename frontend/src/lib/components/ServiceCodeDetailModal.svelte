@@ -1,10 +1,8 @@
 <script lang="ts">
 	import { ApiError } from '$lib/api/client';
-	import { listRetrievals, reassignEnrollment } from '$lib/api/endpoints';
+	import { listRetrievals } from '$lib/api/endpoints';
 	import type { EnrollmentRetrievalsResponse, ServiceEnrollment } from '$lib/api/types';
 	import { expiryLabel, formatDateTime, formatDuration, isExpired } from '$lib/format';
-	import Alert from './Alert.svelte';
-	import Button from './Button.svelte';
 	import DetailRow from './DetailRow.svelte';
 	import Icon from './Icon.svelte';
 	import MonoChip from './MonoChip.svelte';
@@ -15,6 +13,10 @@
 	// deliberately unable to show the code: `service enroll` prints it once
 	// and the server has no endpoint that returns one, so the answer here is
 	// what the code grants and how long it lasts.
+	//
+	// Read-only in the stronger sense too: the code belongs to its service
+	// account, so there is no owner to transfer it to and nothing here to
+	// act on.
 	interface Props {
 		enrollment: ServiceEnrollment;
 		/** Pinned clock, so the remaining lifetime matches the row behind it. */
@@ -27,10 +29,6 @@
 	let dialogEl = $state<HTMLDialogElement | undefined>(undefined);
 	let copied = $state(false);
 	let retrievals = $state<EnrollmentRetrievalsResponse | null>(null);
-
-	let reassignError = $state<string | null>(null);
-	let reassignToUserId = $state('');
-	let reassigning = $state(false);
 
 	// Keyed on the enrollment so opening a different row re-opens the dialog:
 	// the component stays mounted across rows, and an effect depending only on
@@ -80,42 +78,7 @@
 	// which is what keeps the ?modal= parameter in step with the dialog.
 	function handleClosed() {
 		copied = false;
-		reassignError = null;
-		reassignToUserId = '';
 		onclosed();
-	}
-
-	async function handleReassign() {
-		if (!reassignToUserId.trim()) {
-			reassignError = 'Please enter a user ID';
-			return;
-		}
-
-		reassigning = true;
-		reassignError = null;
-
-		try {
-			await reassignEnrollment(enrollment.id, reassignToUserId.trim());
-			reassignToUserId = '';
-			// Close after successful reassignment
-			dialogEl?.close();
-		} catch (cause) {
-			if (cause instanceof ApiError) {
-				if (cause.status === 400) {
-					reassignError = cause.message || 'Invalid target user';
-				} else if (cause.status === 403) {
-					reassignError = 'You do not have permission to reassign this enrollment';
-				} else if (cause.status === 404) {
-					reassignError = 'Enrollment not found';
-				} else {
-					reassignError = cause.message;
-				}
-			} else {
-				reassignError = cause instanceof Error ? cause.message : 'Failed to reassign';
-			}
-		} finally {
-			reassigning = false;
-		}
 	}
 
 	/** copyLink puts this enrollment's own URL on the clipboard — the
@@ -131,8 +94,12 @@
 		}
 	}
 
+	// The service account, which is both the certificate principal and who
+	// owns this code. principals is the fallback for a row from before the
+	// account had its own field.
 	const subject = $derived(
-		enrollment.principals.length > 0 ? enrollment.principals.join(', ') : 'unknown account'
+		enrollment.service_account ||
+			(enrollment.principals.length > 0 ? enrollment.principals.join(', ') : 'unknown account')
 	);
 
 	const expired = $derived(isExpired(enrollment.expires_at, now));
@@ -216,13 +183,14 @@
 
 		<!-- The account leads, the way the decider leads on a certificate:
 		     everything else on the panel is a property of the grant made to
-		     this one account. -->
+		     this one account -- including who can see this panel at all. -->
 		<div class="flex gap-2.5 rounded-lg bg-surface-muted px-3.5 py-3 text-[13px] leading-normal">
 			<Icon name="user" size="sm" class="mt-px flex-shrink-0 text-ink-muted" />
 			<span>
 				Mints certificates for <strong class="font-mono" data-testid="service-code-account"
 					>{subject}</strong
-				>, its only principal, fixed when you approved it.
+				>, its only principal, fixed at approval. Everyone with access to that account sees and
+				manages this code.
 			</span>
 		</div>
 
@@ -275,6 +243,7 @@
 			<SectionLabel>The code itself</SectionLabel>
 			<dl class="divide-y divide-border-subtle">
 				<DetailRow label="Approved">{formatDateTime(enrollment.created_at)}</DetailRow>
+				<DetailRow label="Approved by">{enrollment.approved_by_username || '—'}</DetailRow>
 				<DetailRow label={expired ? 'Stopped working' : 'Stops working'} icon="clock">
 					{formatDateTime(enrollment.expires_at)}
 					<span class="text-ink-muted">({expiryLabel(enrollment.expires_at, now)})</span>
@@ -324,41 +293,5 @@
 				{/if}
 			</div>
 		{/if}
-
-		<!-- Owner reassignment control -->
-		<div class="space-y-4 border-t border-border-subtle pt-4">
-			<SectionLabel>Actions</SectionLabel>
-
-			<div class="space-y-2">
-				<label for="reassign-user-id" class="block text-sm font-medium text-ink">
-					Reassign to user
-				</label>
-				<p class="text-[13px] text-ink-muted">
-					Transfer ownership to another user. They must have access to the service account
-					<strong class="font-mono">{subject}</strong>. This enables team continuity when someone
-					leaves.
-				</p>
-				<div class="flex gap-2">
-					<input
-						id="reassign-user-id"
-						type="text"
-						bind:value={reassignToUserId}
-						placeholder="Username or user ID"
-						disabled={reassigning}
-						class="flex-1 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted"
-					/>
-					<Button
-						variant="primary"
-						disabled={reassigning || !reassignToUserId.trim()}
-						onclick={handleReassign}
-					>
-						{reassigning ? 'Reassigning…' : 'Reassign'}
-					</Button>
-				</div>
-				{#if reassignError}
-					<Alert variant="error" title="Reassignment failed">{reassignError}</Alert>
-				{/if}
-			</div>
-		</div>
 	</div>
 </dialog>

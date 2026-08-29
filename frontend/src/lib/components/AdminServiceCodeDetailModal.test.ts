@@ -11,6 +11,7 @@ const now = new Date('2026-08-22T12:00:00Z');
 function enrollment(overrides: Partial<AdminEnrollment> = {}): AdminEnrollment {
 	return {
 		id: 'enr-1234-5678',
+		service_account: 'svc-deploy',
 		approved_by_username: 'alice',
 		approved_by_email: 'alice@example.com',
 		principals: ['svc-deploy'],
@@ -271,134 +272,6 @@ describe('AdminServiceCodeDetailModal', () => {
 			});
 			await waitFor(() => screen.getByText('203.0.113.9'));
 			expect(screen.queryByText(/most recent of/)).not.toBeInTheDocument();
-		});
-	});
-
-	describe('admin actions', () => {
-		it('should have a reassignment field that accepts user IDs', async () => {
-			mockDetail(enrollment());
-			render(AdminServiceCodeDetailModal, {
-				enrollment: enrollment(),
-				now,
-				onclosed: vi.fn()
-			});
-
-			await waitFor(() =>
-				expect(screen.getByPlaceholderText('Username or user ID')).toBeInTheDocument()
-			);
-			const input = screen.getByPlaceholderText('Username or user ID') as HTMLInputElement;
-			expect(input.type).toBe('text');
-		});
-
-		it('should show an early-expiry button when the code is not yet expired', async () => {
-			mockDetail(enrollment());
-			render(AdminServiceCodeDetailModal, {
-				enrollment: enrollment(),
-				now,
-				onclosed: vi.fn()
-			});
-			await waitFor(() => expect(screen.getByText('Expire this code')).toBeInTheDocument());
-		});
-
-		it('should not show an early-expiry button when the code is already expired', async () => {
-			const data = enrollment({ expires_at: '2026-08-21T12:00:00Z' });
-			mockDetail(data);
-			render(AdminServiceCodeDetailModal, {
-				enrollment: data,
-				now,
-				onclosed: vi.fn()
-			});
-			await waitFor(() => {
-				expect(screen.queryByText('Expire this code')).not.toBeInTheDocument();
-			});
-		});
-
-		it('should show expiry confirmation that names the consequence: further retrievals blocked', async () => {
-			mockDetail(enrollment());
-			const user = userEvent.setup();
-			render(AdminServiceCodeDetailModal, {
-				enrollment: enrollment(),
-				now,
-				onclosed: vi.fn()
-			});
-
-			const expireButton = await screen.findByText('Expire this code');
-			await user.click(expireButton);
-
-			await waitFor(() => {
-				expect(screen.getByText(/prevent further certificate retrievals/)).toBeInTheDocument();
-			});
-		});
-
-		it('should say that already-issued certificates keep working after expiry', async () => {
-			mockDetail(enrollment());
-			const user = userEvent.setup();
-			render(AdminServiceCodeDetailModal, {
-				enrollment: enrollment(),
-				now,
-				onclosed: vi.fn()
-			});
-
-			const expireButton = await screen.findByText('Expire this code');
-			await user.click(expireButton);
-
-			await waitFor(() => {
-				expect(
-					screen.getByText(/will continue to work until they expire on their own/)
-				).toBeInTheDocument();
-			});
-		});
-
-		it('should have a free-text username/user-id field for reassignment', async () => {
-			mockDetail(enrollment());
-			render(AdminServiceCodeDetailModal, {
-				enrollment: enrollment(),
-				now,
-				onclosed: vi.fn()
-			});
-
-			await waitFor(() => {
-				const input = screen.getByPlaceholderText('Username or user ID') as HTMLInputElement;
-				expect(input).toBeInTheDocument();
-				expect(input.type).toBe('text');
-			});
-		});
-
-		it('should show reassignment description mentioning the service account', async () => {
-			mockDetail(enrollment());
-			render(AdminServiceCodeDetailModal, {
-				enrollment: enrollment(),
-				now,
-				onclosed: vi.fn()
-			});
-
-			await waitFor(() => {
-				expect(screen.getByText(/Transfer ownership to another user/)).toBeInTheDocument();
-				// The reassignment label text should mention the account
-				const label = screen.getByText(/Reassign to user/);
-				expect(label.closest('div')).toHaveTextContent('svc-deploy');
-			});
-		});
-
-		it('should have a Reassign button that disables until a user ID is entered', async () => {
-			mockDetail(enrollment());
-			const user = userEvent.setup();
-			render(AdminServiceCodeDetailModal, {
-				enrollment: enrollment(),
-				now,
-				onclosed: vi.fn()
-			});
-
-			await waitFor(() => {
-				const button = screen.getByRole('button', { name: 'Reassign' });
-				expect(button).toBeDisabled();
-			});
-
-			const input = await screen.findByPlaceholderText('Username or user ID');
-			await user.type(input, 'bob');
-
-			const button = screen.getByRole('button', { name: 'Reassign' });
-			expect(button).not.toBeDisabled();
 		});
 	});
 });

@@ -22,12 +22,26 @@ type Enrollment struct {
 	KeyID      string `gorm:"column:key_id"`
 	Principals string `gorm:"column:principals"`
 
+	// ServiceAccount is the account this enrollment was approved for, and
+	// the whole of its ownership: every user holding it owns this
+	// enrollment (see docs/proposals/enrollment-group-ownership.md). It is
+	// Principals' sole element, denormalized out of that JSON string so
+	// ownership is an indexed query in both dialects rather than a
+	// per-dialect JSON expression.
+	//
+	// Empty only on a row whose principals never parsed, which matches no
+	// account and so is owned by nobody — visible to auditors, to no one
+	// else.
+	ServiceAccount string `gorm:"column:service_account"`
+
 	// CertificateRequestID links back to the approved request, keeping
 	// certificates issued at retrieval time on the same audit chain as the
 	// approval decision.
 	CertificateRequestID *string `gorm:"column:certificate_request_id"`
 
-	UserID    string    `gorm:"column:user_id"` // who approved this enrollment
+	// UserID is who approved this enrollment. Audit provenance only: it
+	// grants nothing and is never moved. Ownership is ServiceAccount.
+	UserID    string    `gorm:"column:user_id"`
 	CreatedAt time.Time `gorm:"column:created_at"`
 
 	// ExpiresAt bounds the *code*, not the certificates it produces: after
@@ -84,14 +98,17 @@ type EnrollmentRetrieval struct {
 func (EnrollmentRetrieval) TableName() string { return "enrollment_retrievals" }
 
 // EnrollmentReassignment is an audit record of one enrollment ownership
-// transfer. An enrollment can be reassigned multiple times, so this is an
-// append-only log. See docs/guide/flows.md "Reassigning an enrollment" for the
-// full use case.
+// transfer, from when an enrollment had a single owner that could be moved.
 //
-// The distinction between FromUserID and ReassignedByUserID matters: when
-// an owner reassigns their own code, they are the same person; when an admin
-// reassigns someone else's code, they differ. Both are recorded so auditors
-// can tell self-service from admin-initiated transfer.
+// Historical and read-only: group ownership removed reassignment (see
+// docs/proposals/enrollment-group-ownership.md), so no new rows are ever
+// written. The existing ones are kept and still rendered — they record
+// transfers that really happened, and dropping the table would erase that.
+//
+// The distinction between FromUserID and ReassignedByUserID is why they are
+// both here: an owner moving their own code has them equal, an admin moving
+// someone else's has them differ, and auditors read that to tell
+// self-service from admin-initiated transfer.
 type EnrollmentReassignment struct {
 	ID                 string    `gorm:"column:id;primaryKey"`
 	EnrollmentID       string    `gorm:"column:enrollment_id"`

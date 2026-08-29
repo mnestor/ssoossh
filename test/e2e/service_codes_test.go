@@ -3,6 +3,8 @@
 package e2e
 
 import (
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mnestor/ssoossh/test/e2e/harness"
@@ -89,4 +91,47 @@ func TestServiceCodes_OwnerPageLoads(t *testing.T) {
 
 	// Verify the page loaded
 	browser.WaitVisible(t, `[data-testid="service-codes-heading"]`)
+}
+
+// TestServiceCodes_OwnerDrillsIntoAnAccount walks the page's whole shape in a
+// real browser: the accounts the identity holds, one account's codes, then
+// one code's detail.
+//
+// The account level is the part worth driving end to end. Ownership is
+// membership in the service account rather than a stored owner (see
+// docs/proposals/enrollment-group-ownership.md), so what this proves is that
+// a browser session holding an account reaches a code nothing in that session
+// approved.
+func TestServiceCodes_OwnerDrillsIntoAnAccount(t *testing.T) {
+	// A code approved through the API by alice, who holds the account.
+	svc := newServiceFixture(t)
+	keyPath := filepath.Join(t.TempDir(), "svckey")
+	svc.enroll(t, keyPath)
+
+	// A second identity, holding the same account but having approved
+	// nothing, opens the page.
+	browser := harness.StartBrowser(t)
+	browser.Navigate(t, svc.Server.BaseURL+"/login", `[data-testid="sign-in-button"]`)
+	browser.Click(t, `[data-testid="sign-in-button"]`)
+	browser.CompleteIdPLoginWithExtraClaims(t, "bob",
+		map[string]any{serviceAccountClaim: []string{svc.Account}})
+
+	// Level one: the accounts held, not the codes approved.
+	browser.Navigate(t, svc.Server.BaseURL+"/service-codes", `[data-testid="service-account-row"]`)
+	if got := browser.Text(t, `[data-testid="service-account-row"]`); !strings.Contains(got, svc.Account) {
+		t.Fatalf("the account row does not name %q: %q", svc.Account, got)
+	}
+
+	// Level two: that account's codes, reached by clicking it. The code was
+	// approved by alice and is being read by bob, which is the whole point.
+	browser.Click(t, `[data-testid="service-account-row"]`)
+	browser.WaitVisible(t, `[data-testid="service-codes-back"]`)
+	browser.WaitVisible(t, `[data-testid="service-code-row"]`)
+
+	// Level three: one code's detail panel.
+	browser.Click(t, `[data-testid="service-code-row"]`)
+	browser.WaitVisible(t, `[data-testid="service-code-account"]`)
+	if got := browser.Text(t, `[data-testid="service-code-account"]`); got != svc.Account {
+		t.Errorf("the detail panel names %q, want %q", got, svc.Account)
+	}
 }

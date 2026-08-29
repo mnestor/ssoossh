@@ -20,9 +20,6 @@ const evictJobName = "certrequest-evict-resolved"
 // caKeyExpirySweepJobName identifies the CA signer key expiry sweep.
 const caKeyExpirySweepJobName = "ca-key-expiry-sweep"
 
-// disabledUserEnrollmentSweepJobName identifies the disabled user enrollment expiry sweep.
-const disabledUserEnrollmentSweepJobName = "disabled-user-enrollment-sweep"
-
 // auditSweepJobName identifies the audit-event retention sweep.
 const auditSweepJobName = "audit-retention-sweep"
 
@@ -40,9 +37,6 @@ func (a *app) registerJobs(ctx context.Context) error {
 		return err
 	}
 	if err := a.registerCAKeyExpirySweepJob(ctx); err != nil {
-		return err
-	}
-	if err := a.registerDisabledUserEnrollmentSweepJob(ctx); err != nil {
 		return err
 	}
 	if err := a.registerAuditSweepJob(ctx); err != nil {
@@ -222,54 +216,6 @@ func (a *app) registerCAKeyExpirySweepJob(ctx context.Context) error {
 	slog.DebugContext(ctx, "registered ca signer key expiry sweep",
 		slog.String("job", caKeyExpirySweepJobName),
 		slog.Duration("interval", interval),
-	)
-	return nil
-}
-
-// registerDisabledUserEnrollmentSweepJob schedules the disabled user
-// enrollment expiry sweep, which expires service enrollments for users
-// disabled more than the configured grace period ago.
-//
-// The sweep only runs when the grace period is set (non-zero). If not
-// configured, disabled user enrollments never expire, and the admin must
-// manually expire them or they persist until the standard enrollment
-// expiration.
-//
-// The interval is the grace period itself (a good cadence for expiring
-// enrollments that became eligible), or the approval TTL if the grace period
-// rounds to zero, similar to the stranded request sweep. This run is not
-// immediate since disabled users are typically rare and there's no urgency.
-func (a *app) registerDisabledUserEnrollmentSweepJob(ctx context.Context) error {
-	gracePeriod := a.config.Admin.DisableGracePeriod
-
-	// Only register if grace period is configured (non-zero)
-	if gracePeriod <= 0 {
-		slog.DebugContext(ctx, "disabled user enrollment sweep disabled (admin.disable_grace_period not configured)")
-		return nil
-	}
-
-	// Use the grace period as the sweep interval, but fall back to approval
-	// TTL if it's very short.
-	interval := gracePeriod
-	if interval <= 0 {
-		interval = a.config.CertOptions.ApprovalTTL()
-	}
-
-	err := a.scheduler.RegisterJob(ctx, disabledUserEnrollmentSweepJobName,
-		gocron.DurationJob(interval),
-		func(jobCtx context.Context) error {
-			return service.SweepDisabledUserEnrollments(jobCtx, a.db, gracePeriod, a.svc.audit)
-		},
-		service.RegisterJobOpts{},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to register the disabled user enrollment expiry sweep: %w", err)
-	}
-
-	slog.DebugContext(ctx, "registered disabled user enrollment expiry sweep",
-		slog.String("job", disabledUserEnrollmentSweepJobName),
-		slog.Duration("interval", interval),
-		slog.Duration("grace_period", gracePeriod),
 	)
 	return nil
 }

@@ -85,7 +85,8 @@ closed.
 | `auth.login_denied` | A disabled account attempting to log in, which otherwise vanishes entirely. |
 | `cert.requested`, `cert.approved`, `cert.denied` | |
 | `cert.issued` | **Shipped log only.** The UI already has certificate history from the `certificates` table, so a table copy would be duplication; the archive line is the row an incident reviewer joins against target-host sshd logs. |
-| `enrollment.code_created`, `.redeemed`, `.expired`, `.reassigned` | Never carries the enrollment code: it is a bearer credential, and the never-log-sensitive-data rule covers payloads and log lines alike. |
+| `enrollment.code_created`, `.redeemed`, `.expired` | Never carries the enrollment code: it is a bearer credential, and the never-log-sensitive-data rule covers payloads and log lines alike. |
+| `enrollment.reassigned` | **No longer emitted.** Group ownership removed enrollment transfer (see [enrollment-group-ownership.md](../proposals/enrollment-group-ownership.md)); the action stays defined so events recorded before that still read back with a name. |
 | `user.disabled`, `user.enabled` | |
 | `user.auto_disabled` | A system action, so it carries no actor. |
 | `admin.user_viewed`, `admin.enrollment_viewed`, `admin.config_viewed`, `admin.audit_viewed` | |
@@ -108,16 +109,15 @@ capped at 1000 characters) on the containment and restorative actions:
   re-enable the account must be able to see why it was disabled.
 - `user.enabled` — "cleared with security, SEC-1234" is as valuable to the
   person after that one.
-- `enrollment.expired`, `enrollment.reassigned`.
+- `enrollment.expired`.
 
 Optional reason fields do not get filled; required ones cost seconds at
 action time and are the whole point later. The API refuses the action rather
 than recording one that says nothing, and the web UI keeps the confirm
 button disabled until a reason is typed.
 
-System-initiated events generate their own reason text ("owner disabled more
-than 168h ago, grace period elapsed"), since no human is present to supply
-one. View events carry none.
+System-initiated events generate their own reason text, since no human is
+present to supply one. View events carry none.
 
 The denormalized columns on `users` (`disabled_at`, `disabled_by_user_id`,
 and `disabled_reason`) stay: they render the directory and the re-enable
@@ -138,7 +138,11 @@ members reach through the role hierarchy:
 
 ## Existing special-purpose tables
 
-`enrollment_reassignments` and the enrollment retrieval log already existed
-and already feed their own UI surfaces. They stay as they are; their code
-paths additionally emit general audit events. Folding them into
-`audit_events` is a possible later cleanup, not a prerequisite.
+The enrollment retrieval log already existed and already feeds its own UI
+surface. It stays as it is; its code path additionally emits general audit
+events. Folding it into `audit_events` is a possible later cleanup, not a
+prerequisite.
+
+`enrollment_reassignments` is the same shape but frozen: nothing writes to
+it now that ownership cannot be transferred. The rows it holds record
+transfers that really happened, so the table is kept and still read.

@@ -892,12 +892,16 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 
 		// Create the enrollment record with both computed lifetimes.
 		enrollment := &model.Enrollment{
-			ID:                         enrollmentID,
-			Code:                       token,
-			PublicKey:                  req.PublicKey,
-			OptionSet:                  string(narrowedJSON),
-			KeyID:                      keyID,
+			ID:        enrollmentID,
+			Code:      token,
+			PublicKey: req.PublicKey,
+			OptionSet: string(narrowedJSON),
+			KeyID:     keyID,
+			// The same account is written twice, for two different jobs:
+			// principals is what certificates are minted from,
+			// service_account is what ownership is queried by.
 			Principals:                 string(principalsJSON),
+			ServiceAccount:             serviceAccount,
 			CertificateRequestID:       &req.ID,
 			UserID:                     *req.UserID, // req.UserID was bound in Approve
 			CreatedAt:                  now,
@@ -925,12 +929,6 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 	// Best-effort archive copy, after the row is durable.
 	s.auditLog(auditEvent)
 
-	// Read only now that the transaction has committed: req.UserID is bound
-	// by Approve, and the guarded UPDATE inside the transaction is what
-	// establishes that this call came through it rather than racing past a
-	// request that is no longer pending.
-	enrollmentUserID := *req.UserID
-
 	// No signer round trip for enrollment — notify the wake topic directly
 	// from here, unlike the user/PAM queue-and-wait path.
 	s.notifyWaiter(req.ID, WaitOutcome{
@@ -948,7 +946,11 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 	// Deliberately without the code. It is a bearer credential shown once
 	// in the terminal that ran `service enroll`; everything else the
 	// operator was told is here. See notify.ServiceEnrollmentCreated.
-	s.notifier.Notify(ctx, notify.KindServiceEnrollmentCreated, enrollmentUserID, &notify.ServiceEnrollmentCreated{
+	//
+	// Addressed to the account, not to the approver: everyone holding it
+	// owns the enrollment from the moment it exists, and the people who
+	// run the job are usually not the one person who clicked approve.
+	s.notifier.NotifyServiceAccount(ctx, notify.KindServiceEnrollmentCreated, serviceAccount, &notify.ServiceEnrollmentCreated{
 		ServiceAccount:       serviceAccount,
 		RequestID:            req.ID,
 		EnrollmentID:         enrollmentID,

@@ -15,16 +15,25 @@
 		onclick: () => void;
 		/** Optional test ID for identifying this row in tests. */
 		testid?: string;
+		/**
+		 * False inside one account's own list, where every row shares the
+		 * account and repeating it says nothing. The row then leads with the
+		 * key ID, which is what distinguishes two codes for the same account.
+		 */
+		showAccount?: boolean;
 	}
 
-	let { enrollment, now = new Date(), onclick, testid }: Props = $props();
+	let { enrollment, now = new Date(), onclick, testid, showAccount = true }: Props = $props();
 
 	// Service enrollments carry a single principal by construction. The join
 	// covers a row that somehow says otherwise, and the fallback one whose
 	// stored principals could not be decoded at all.
-	const subject = $derived(
-		enrollment.principals.length > 0 ? enrollment.principals.join(', ') : 'unknown account'
+	const account = $derived(
+		enrollment.service_account ||
+			(enrollment.principals.length > 0 ? enrollment.principals.join(', ') : 'unknown account')
 	);
+
+	const subject = $derived(showAccount ? account : enrollment.key_id || account);
 
 	const expired = $derived(isExpired(enrollment.expires_at, now));
 
@@ -37,8 +46,14 @@
 			: `certificates valid for ${formatDuration(enrollment.certificate_valid_seconds)}`
 	);
 
+	// Who approved it matters now that a code is visible to everyone holding
+	// its account rather than only to the person who made it.
+	const approver = $derived(
+		enrollment.approved_by_username ? ` by ${enrollment.approved_by_username}` : ''
+	);
+
 	const detail = $derived(
-		`approved ${relativeTime(enrollment.created_at, now)} · ${certificateLifetime}`
+		`approved ${relativeTime(enrollment.created_at, now)}${approver} · ${certificateLifetime}`
 	);
 
 	// Usage is the second thing an operator looks for: a code nothing has

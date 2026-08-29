@@ -20,15 +20,24 @@ type capturingNotifier struct {
 }
 
 type capturedNotification struct {
-	Kind    notify.Kind
-	UserID  string
-	Payload any
+	Kind notify.Kind
+	// Exactly one of UserID and ServiceAccount is set, matching the two
+	// ways notify.Event can be addressed.
+	UserID         string
+	ServiceAccount string
+	Payload        any
 }
 
 func (n *capturingNotifier) Notify(_ context.Context, kind notify.Kind, userID string, payload any) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.events = append(n.events, capturedNotification{Kind: kind, UserID: userID, Payload: payload})
+}
+
+func (n *capturingNotifier) NotifyServiceAccount(_ context.Context, kind notify.Kind, serviceAccount string, payload any) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.events = append(n.events, capturedNotification{Kind: kind, ServiceAccount: serviceAccount, Payload: payload})
 }
 
 func (n *capturingNotifier) captured() []capturedNotification {
@@ -56,10 +65,10 @@ func (n *capturingNotifier) only(t *testing.T, kind notify.Kind) capturedNotific
 	return found[0]
 }
 
-// The enrollment-created notification exists to tell the approver what they
-// just authorized, so the payload has to carry the detail that distinguishes
-// one enrollment from another.
-func TestApprove_shouldNotifyTheApproverAboutANewServiceEnrollment(t *testing.T) {
+// The enrollment-created notification tells everyone holding the service
+// account what was just authorized for it, so the payload has to carry the
+// detail that distinguishes one enrollment from another.
+func TestApprove_shouldNotifyTheServiceAccountAboutANewEnrollment(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
@@ -91,8 +100,13 @@ func TestApprove_shouldNotifyTheApproverAboutANewServiceEnrollment(t *testing.T)
 	if err := svc.db.First(&enrollment, "certificate_request_id = ?", requestID).Error; err != nil {
 		t.Fatalf("read enrollment: %v", err)
 	}
-	if event.UserID != enrollment.UserID {
-		t.Errorf("notified user %q, want the approving user %q", event.UserID, enrollment.UserID)
+	// Addressed to the account, not to the approver: everyone holding it
+	// owns the enrollment from the moment it exists.
+	if event.ServiceAccount != "deploy-bot" {
+		t.Errorf("notified service account %q, want %q", event.ServiceAccount, "deploy-bot")
+	}
+	if event.UserID != "" {
+		t.Errorf("notified user %q, want the event addressed to the account only", event.UserID)
 	}
 
 	payload, ok := event.Payload.(*notify.ServiceEnrollmentCreated)
@@ -257,7 +271,7 @@ func containsValue(payload *notify.ServiceEnrollmentCreated, needle string) bool
 // The redemption notification is the one that turns a reusable code into
 // something an operator can actually watch, so it has to name where the
 // redemption came from and what it produced.
-func TestRetrieve_shouldNotifyTheApproverOnEveryRedemption(t *testing.T) {
+func TestRetrieve_shouldNotifyTheServiceAccountOnEveryRedemption(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
@@ -296,8 +310,13 @@ func TestRetrieve_shouldNotifyTheApproverOnEveryRedemption(t *testing.T) {
 	if err := svc.db.First(&enrollment).Error; err != nil {
 		t.Fatalf("read enrollment: %v", err)
 	}
-	if event.UserID != enrollment.UserID {
-		t.Errorf("notified user %q, want the approving user %q", event.UserID, enrollment.UserID)
+	// Addressed to the account, not to the approver: everyone holding it
+	// owns the enrollment, so there is no one user to name.
+	if event.ServiceAccount != enrollment.ServiceAccount {
+		t.Errorf("notified service account %q, want %q", event.ServiceAccount, enrollment.ServiceAccount)
+	}
+	if event.UserID != "" {
+		t.Errorf("notified user %q, want the event addressed to the account only", event.UserID)
 	}
 	if !payload.Succeeded {
 		t.Error("Succeeded is false for a redemption that produced a certificate")

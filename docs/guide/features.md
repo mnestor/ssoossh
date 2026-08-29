@@ -122,9 +122,10 @@ local principal-mapping tooling (`host mapping`, `host principals`) for
 - Your own certificates, each traceable to what produced it: a service
   certificate links back to the code it was redeemed from and shows where
   it was fetched from.
-- A **Service codes** view of the enrollments you approved that never shows
-  a code: the account each one mints for, what a redemption grants, when it
-  stops being redeemable, and how often anything has used it.
+- A **Service codes** view, by service account, that never shows a code: the
+  accounts you hold, the enrollments approved for each, what a redemption
+  grants, when it stops being redeemable, and how often anything has used
+  it. Every holder of an account sees its codes, whoever approved them.
 - Your own activity log.
 - Notification preferences, per kind (see below).
 
@@ -136,36 +137,36 @@ local principal-mapping tooling (`host mapping`, `host principals`) for
   or touch the audit trail.
 - **User directory** with a per-user detail page, and a disable/enable
   lifecycle. Disabling is fail-closed at login — a transient database error
-  denies rather than admits — and where a grace period is configured, a
-  sweep then expires that user's service enrollments, so a running service
-  has time to notice and rotate before its certificates stop working. Leave
-  the grace period unset and nothing sweeps: those enrollments last until
-  an admin expires them or they expire on their own. A disabled person
-  lands on a page that can carry an operator-set message and contact
-  address.
+  denies rather than admits — and it does exactly that and no more: service
+  enrollments the person approved belong to their service accounts, not to
+  them, so unattended jobs keep running and the account's other holders keep
+  control. A disabled person lands on a page that can carry an operator-set
+  message and contact address.
 - **Certificate history across all users**, for "who issued this?": search
   over key ID, principals, serial, fingerprint, and owner, filtered by type
   and by live/expired, paged.
-- **Service code directory** with a detail page, early expiry of an
-  enrollment (idempotent), and reassignment — which is self-authorizing, so
-  an owner can hand off their own enrollment without an admin.
+- **Service code directory** with a detail page and early expiry of an
+  enrollment (idempotent).
 - **Effective configuration** view for auditors: a fixed, deliberately
   chosen set of fields, never the whole file, and never the CA key, client
   secret, cookie signing key, or database password.
 
 ## Notifications
 
-- Optional outbound email, off by default, telling a user when something
-  happens to a credential of theirs: a service enrollment they approved was
-  created, and every redemption of it
-  ([email-notifications.md](../operations/email-notifications.md)).
+- Optional outbound email, off by default, telling people when something
+  happens to a credential they hold: a service enrollment was created for
+  one of their service accounts, and every redemption of it
+  ([email-notifications.md](../operations/email-notifications.md)). An
+  enrollment-scoped notification reaches every holder of the account, since
+  that is who owns the code.
 - Nothing in a certificate flow ever waits on the mail relay. An approval
   or a redemption publishes to the internal queue and returns; rendering
   and SMTP happen on a background consumer, so a relay that is slow,
   greylisting, or down delays only the notification.
 - The enrollment code is in no message and must not be added to one.
 - Each user picks which kinds they receive, read at delivery rather than at
-  publication, so opting out still catches something already queued.
+  publication, so opting out still catches something already queued. In a
+  fan-out each holder's own choice gates their own copy.
   Templates can be overridden, and a bad override fails startup.
 
 ## PAM

@@ -33,7 +33,6 @@ type EnrollmentProvider interface {
 	ListForIdentity(ctx context.Context, identity *Identity) ([]ServiceEnrollment, error)
 	ListForAdmin(ctx context.Context, identity *Identity, params AdminListParams) (AdminEnrollmentList, error)
 	GetEnrollmentDetail(ctx context.Context, enrollmentID string, identity *Identity) (AdminEnrollmentDetail, error)
-	Reassign(ctx context.Context, enrollmentID string, toUserID string, reason string, identity *Identity) error
 }
 
 // EnrollmentService redeems an approved model.Enrollment (created by
@@ -87,23 +86,6 @@ func (s *EnrollmentService) SetNotifier(n Notifier) {
 // SetAuditor attaches the audit recorder. See
 // CertRequestService.SetAuditor.
 func (s *EnrollmentService) SetAuditor(a *AuditService) { s.auditor = a }
-
-// auditTx appends event inside tx, so a reassignment and its audit row
-// commit together or not at all. A nil auditor is a no-op.
-func (s *EnrollmentService) auditTx(tx *gorm.DB, event AuditEvent) error {
-	if s.auditor == nil {
-		return nil
-	}
-	return s.auditor.RecordTx(tx, event)
-}
-
-// auditLog emits the archive line for an event already written by auditTx.
-func (s *EnrollmentService) auditLog(event AuditEvent) {
-	if s.auditor == nil {
-		return
-	}
-	s.auditor.LogOnly(event)
-}
 
 // auditRecord writes an event with no transaction to ride along with.
 func (s *EnrollmentService) auditRecord(ctx context.Context, event AuditEvent) {
@@ -249,8 +231,8 @@ func (s *EnrollmentService) Retrieve(ctx context.Context, code string, sourceIP 
 	return cert, nil
 }
 
-// notifyRedemption queues the redemption notification for the user who
-// approved the enrollment.
+// notifyRedemption queues the redemption notification for everyone holding
+// the enrollment's service account.
 //
 // Queued rather than sent: the caller here is an unattended job waiting on
 // its certificate, and a slow or unreachable mail relay must not delay the
@@ -270,15 +252,8 @@ func (s *EnrollmentService) notifyRedemption(
 		requestID = *enrollment.CertificateRequestID
 	}
 
-	// The service account is the enrollment's sole principal, fixed at
-	// approval time — see CertRequestService.approveServiceEnrollment.
-	serviceAccount := ""
-	if len(principals) > 0 {
-		serviceAccount = principals[0]
-	}
-
-	s.notifier.Notify(ctx, notify.KindServiceEnrollmentRedeemed, enrollment.UserID, &notify.ServiceEnrollmentRedeemed{
-		ServiceAccount:       serviceAccount,
+	s.notifier.NotifyServiceAccount(ctx, notify.KindServiceEnrollmentRedeemed, enrollment.ServiceAccount, &notify.ServiceEnrollmentRedeemed{
+		ServiceAccount:       enrollment.ServiceAccount,
 		RequestID:            requestID,
 		EnrollmentID:         enrollment.ID,
 		RetrievalID:          retrieval.ID,
@@ -378,33 +353,82 @@ type ServiceEnrollment struct {
 	// nil for a code that has never been redeemed.
 	RetrievalCount  int
 	LastRetrievedAt *time.Time
+
+	// ApproverUsername is who approved this enrollment. Shown because a
+	// holder now sees codes their colleagues created and needs to know
+	// which; empty when that user's row has since gone.
+	ApproverUsername string
 }
 
-// ListForIdentity returns the enrollments identity approved, newest first.
+// heldServiceAccounts returns the service accounts identity holds, with
+// empties dropped.
 //
-// Scoped by the users row behind the OIDC subject, the same rule as
-// CertificateService.ListForIdentity and for the same reason: an enrollment
-// is found by its owner, never by naming a service account or a code, so
-// there is no parameter here with which to ask for someone else's. An
-// identity with no users row owns no enrollments, which is an empty list
-// rather than an error.
+// The empties matter: a claim that releases a blank entry would otherwise
+// match every enrollment whose principals never parsed, which is exactly
+// the set that must be owned by nobody.
+func heldServiceAccounts(identity *Identity) []string {
+	held := make([]string, 0, len(identity.ServiceAccounts))
+	for _, account := range identity.ServiceAccounts {
+		if account != "" {
+			held = append(held, account)
+		}
+	}
+	return held
+}
+
+// ownsEnrollment reports whether identity holds enrollment's service
+// account, which is the whole of enrollment ownership — there is no stored
+// owner and no transfer (see
+// docs/proposals/enrollment-group-ownership.md).
+//
+// Answered from the session identity rather than the users row, the same
+// source every other authorization decision in this server reads, so
+// access reflects the accounts the provider released at login.
+func ownsEnrollment(identity *Identity, enrollment model.Enrollment) bool {
+	if enrollment.ServiceAccount == "" {
+		return false
+	}
+	return slices.Contains(identity.ServiceAccounts, enrollment.ServiceAccount)
+}
+
+// ListForIdentity returns the enrollments identity owns, newest first.
+//
+// Scoped by the service accounts on the session: an enrollment is owned by
+// every holder of its service account, so this answers "every code for an
+// account I hold", not "every code I approved". The list therefore includes
+// codes approved by colleagues, and excludes codes the caller approved for
+// an account they have since lost.
+//
+// There is still no parameter here with which to ask for someone else's:
+// the account set comes from the session, never from the caller. An
+// identity holding no service accounts owns no enrollments, which is an
+// empty list rather than an error.
 //
 // Expired enrollments are included. A code that has stopped working is
-// exactly what the approver needs to see to decide whether the job behind
-// it still needs one.
+// exactly what a holder needs to see to decide whether the job behind it
+// still needs one.
 func (s *EnrollmentService) ListForIdentity(ctx context.Context, identity *Identity) ([]ServiceEnrollment, error) {
-	var user model.User
-	if err := s.db.WithContext(ctx).First(&user, "subject = ?", identity.Subject).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return []ServiceEnrollment{}, nil
-		}
-		return nil, fmt.Errorf("failed to look up the requesting user: %w", err)
+	held := heldServiceAccounts(identity)
+	if len(held) == 0 {
+		return []ServiceEnrollment{}, nil
 	}
 
-	var rows []model.Enrollment
+	// The approver's username comes along on a LEFT join rather than a
+	// second query: the page shows it on every row now that a holder sees
+	// codes other people approved, and it is nullable because the join can
+	// miss a user row that has since gone.
+	type enrollmentRow struct {
+		model.Enrollment
+		ApproverUsername *string
+	}
+
+	var rows []enrollmentRow
 	if err := s.db.WithContext(ctx).
-		Where("user_id = ?", user.ID).
-		Order("created_at DESC").
+		Model(&model.Enrollment{}).
+		Joins("LEFT JOIN users ON enrollments.user_id = users.id").
+		Select("enrollments.*, users.username AS approver_username").
+		Where("enrollments.service_account IN ?", held).
+		Order("enrollments.created_at DESC").
 		Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("failed to list enrollments: %w", err)
 	}
@@ -429,11 +453,14 @@ func (s *EnrollmentService) ListForIdentity(ctx context.Context, identity *Ident
 	out := make([]ServiceEnrollment, 0, len(rows))
 	for _, row := range rows {
 		enrollment := ServiceEnrollment{
-			Enrollment:     row,
-			Principals:     decodeEnrollmentPrincipals(row),
-			Options:        decodeEnrollmentOptions(row),
-			Fingerprint:    enrollmentFingerprint(row),
+			Enrollment:     row.Enrollment,
+			Principals:     decodeEnrollmentPrincipals(row.Enrollment),
+			Options:        decodeEnrollmentOptions(row.Enrollment),
+			Fingerprint:    enrollmentFingerprint(row.Enrollment),
 			RetrievalCount: counts[row.ID],
+		}
+		if row.ApproverUsername != nil {
+			enrollment.ApproverUsername = *row.ApproverUsername
 		}
 		if at, ok := latest[row.ID]; ok {
 			retrievedAt := at
@@ -578,12 +605,17 @@ type AdminEnrollmentRow struct {
 
 // AdminEnrollmentDetail is one enrollment in full, with the full retrieval log.
 type AdminEnrollmentDetail struct {
-	Enrollment    model.Enrollment
-	Approver      model.User
-	Principals    []string
-	Options       RequestedOptions
-	Fingerprint   string
-	Retrievals    RetrievalLog
+	Enrollment  model.Enrollment
+	Approver    model.User
+	Principals  []string
+	Options     RequestedOptions
+	Fingerprint string
+	Retrievals  RetrievalLog
+
+	// Reassignments is history and nothing more: ownership can no longer be
+	// transferred, so this list only ever shrinks (as audit rows are
+	// pruned) and is empty for every enrollment created since. See
+	// model.EnrollmentReassignment.
 	Reassignments []model.EnrollmentReassignment
 }
 
@@ -602,10 +634,11 @@ const RetrievalPageSize = 100
 // RetrievalPageSize rows. The total is reported alongside so a caller can
 // say what it is showing a slice of.
 //
-// Authorization: the enrollment's approving user, or an identity with
-// auditor-level access (config.AdminConfig.GrantsAuditor). Checked here
-// rather than in a route middleware because the approver rule depends on
-// the row being read. Fails closed with Forbidden for anyone else.
+// Authorization: a holder of the enrollment's service account, or an
+// identity with auditor-level access (config.AdminConfig.GrantsAuditor).
+// Checked here rather than in a route middleware because the ownership
+// rule depends on the row being read. Fails closed with Forbidden for
+// anyone else.
 func (s *EnrollmentService) ListRetrievals(ctx context.Context, requestID string, identity *Identity) (RetrievalLog, error) {
 	var enrollment model.Enrollment
 	if err := s.db.WithContext(ctx).First(&enrollment, "certificate_request_id = ?", requestID).Error; err != nil {
@@ -615,12 +648,8 @@ func (s *EnrollmentService) ListRetrievals(ctx context.Context, requestID string
 		return RetrievalLog{}, fmt.Errorf("failed to look up enrollment: %w", err)
 	}
 
-	if !s.config.Admin.GrantsAuditor(identity.Groups) {
-		var user model.User
-		err := s.db.WithContext(ctx).First(&user, "subject = ?", identity.Subject).Error
-		if err != nil || user.ID != enrollment.UserID {
-			return RetrievalLog{}, &errorresponses.ForbiddenError{Reason: "retrieval log belongs to another user"}
-		}
+	if !s.config.Admin.GrantsAuditor(identity.Groups) && !ownsEnrollment(identity, enrollment) {
+		return RetrievalLog{}, &errorresponses.ForbiddenError{Reason: "retrieval log belongs to a service account you do not hold"}
 	}
 
 	// Counted separately rather than inferred from the page: a full page
@@ -672,18 +701,24 @@ func (s *EnrollmentService) markRetrievalSucceeded(ctx context.Context, enrollme
 // for the same reason markRetrievalSucceeded's writes are: the certificate
 // is already signed and in the caller's hands, so nothing here may fail the
 // retrieval. The redeeming party is unauthenticated (a code, not a
-// session), so the event carries no actor and targets the enrollment's
-// owner.
+// session), so the event carries no actor.
+//
+// It still targets the approving user, which is now provenance rather than
+// ownership — the enrollment belongs to a service account held by several
+// people. The account itself is in Detail, which is what makes the
+// account-centric question ("everything redeemed for svc-backup") one the
+// log can answer.
 func (s *EnrollmentService) auditRedemption(ctx context.Context, enrollment model.Enrollment, serialNum uint64, sourceIP string, now time.Time) {
 	s.auditRecord(ctx, AuditEvent{
 		Action:     AuditEnrollmentRedeemed,
 		Target:     &AuditSubject{UserID: enrollment.UserID},
 		OccurredAt: now,
 		Detail: map[string]any{
-			"enrollment_id": enrollment.ID,
-			"key_id":        enrollment.KeyID,
-			"serial":        serialNum,
-			"source_ip":     sourceIP,
+			"enrollment_id":   enrollment.ID,
+			"service_account": enrollment.ServiceAccount,
+			"key_id":          enrollment.KeyID,
+			"serial":          serialNum,
+			"source_ip":       sourceIP,
 		},
 	})
 }
@@ -704,17 +739,20 @@ func (s *EnrollmentService) ListForAdmin(ctx context.Context, identity *Identity
 		return AdminEnrollmentList{}, &errorresponses.ForbiddenError{Reason: "auditor access required"}
 	}
 
-	// Build the query: select enrollments with their owner's username/email.
+	// Build the query: select enrollments with their approver's
+	// username/email. A LEFT join, not an ownership link -- the approver is
+	// provenance, and every holder of the service account owns the row.
 	query := s.db.WithContext(ctx).
 		Model(&model.Enrollment{}).
 		Joins("LEFT JOIN users ON enrollments.user_id = users.id")
 
-	// Apply search filter across username, email, principals, key ID, and certificate_request_id.
+	// Apply search filter across approver username and email, service
+	// account, key ID, and certificate_request_id.
 	if params.Query != "" {
 		whereClause, args := paging.Filter(params.Query,
 			"users.username",
 			"users.email",
-			"enrollments.principals",
+			"enrollments.service_account",
 			"enrollments.key_id",
 			"CAST(COALESCE(enrollments.certificate_request_id, '') AS TEXT)")
 		if whereClause != "" {
@@ -742,6 +780,7 @@ func (s *EnrollmentService) ListForAdmin(ctx context.Context, identity *Identity
 		OptionSet                  string
 		KeyID                      string
 		Principals                 string
+		ServiceAccount             string
 		CertificateRequestID       *string
 		UserID                     string
 		CreatedAt                  time.Time
@@ -755,7 +794,8 @@ func (s *EnrollmentService) ListForAdmin(ctx context.Context, identity *Identity
 	var rows []enrollmentRow
 	if err := query.
 		Select(`enrollments.id, enrollments.code, enrollments.public_key, enrollments.option_set,
-			enrollments.key_id, enrollments.principals, enrollments.certificate_request_id,
+			enrollments.key_id, enrollments.principals, enrollments.service_account,
+			enrollments.certificate_request_id,
 			enrollments.user_id, enrollments.created_at, enrollments.expires_at,
 			enrollments.certificate_duration_seconds, enrollments.redeemed_at,
 			users.username AS user_username, users.email AS user_email`).
@@ -793,6 +833,7 @@ func (s *EnrollmentService) ListForAdmin(ctx context.Context, identity *Identity
 			OptionSet:                  r.OptionSet,
 			KeyID:                      r.KeyID,
 			Principals:                 r.Principals,
+			ServiceAccount:             r.ServiceAccount,
 			CertificateRequestID:       r.CertificateRequestID,
 			UserID:                     r.UserID,
 			CreatedAt:                  r.CreatedAt,
@@ -830,11 +871,11 @@ func (s *EnrollmentService) ListForAdmin(ctx context.Context, identity *Identity
 }
 
 // GetEnrollmentDetail returns a single enrollment with full details and
-// retrieval log, visible to auditors and the enrollment's approving user.
+// retrieval log, visible to auditors and to holders of its service account.
 //
 // Scoped by the config's auditor group (config.Admin.GrantsAuditor) or
-// ownership (matching the enrollment's user_id). Fails closed with Forbidden
-// for anyone else, and with NotFound for an unknown enrollment ID.
+// ownership (holding the enrollment's service account). Fails closed with
+// Forbidden for anyone else, and with NotFound for an unknown enrollment ID.
 func (s *EnrollmentService) GetEnrollmentDetail(ctx context.Context, enrollmentID string, identity *Identity) (AdminEnrollmentDetail, error) {
 	var enrollment model.Enrollment
 	if err := s.db.WithContext(ctx).First(&enrollment, "id = ?", enrollmentID).Error; err != nil {
@@ -844,16 +885,13 @@ func (s *EnrollmentService) GetEnrollmentDetail(ctx context.Context, enrollmentI
 		return AdminEnrollmentDetail{}, fmt.Errorf("failed to look up enrollment: %w", err)
 	}
 
-	// Check authorization: auditor or owner
-	if !s.config.Admin.GrantsAuditor(identity.Groups) {
-		var user model.User
-		err := s.db.WithContext(ctx).First(&user, "subject = ?", identity.Subject).Error
-		if err != nil || user.ID != enrollment.UserID {
-			return AdminEnrollmentDetail{}, &errorresponses.ForbiddenError{Reason: "enrollment belongs to another user"}
-		}
+	// Check authorization: auditor, or a holder of the service account
+	if !s.config.Admin.GrantsAuditor(identity.Groups) && !ownsEnrollment(identity, enrollment) {
+		return AdminEnrollmentDetail{}, &errorresponses.ForbiddenError{Reason: "enrollment belongs to a service account you do not hold"}
 	}
 
-	// Load approver info
+	// Load approver info. Provenance, not ownership: it says who created
+	// this code, and the reader may well not be them.
 	var approver model.User
 	if err := s.db.WithContext(ctx).First(&approver, "id = ?", enrollment.UserID).Error; err != nil {
 		return AdminEnrollmentDetail{}, fmt.Errorf("failed to load approver user: %w", err)
@@ -895,160 +933,4 @@ func (s *EnrollmentService) GetEnrollmentDetail(ctx context.Context, enrollmentI
 		Retrievals:    RetrievalLog{Retrievals: retrievals, Total: int(total)},
 		Reassignments: reassignments,
 	}, nil
-}
-
-// isEligibleForReassignment checks whether a user can be reassigned an
-// enrollment: their service_accounts JSON must contain the enrollment's
-// principal. An error is returned for unparseable JSON; InvalidRequestError
-// for an ineligible user.
-func (s *EnrollmentService) isEligibleForReassignment(ctx context.Context, enrollment model.Enrollment, targetUserID string) error {
-	// Load the target user
-	var targetUser model.User
-	if err := s.db.WithContext(ctx).First(&targetUser, "id = ?", targetUserID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return &errorresponses.InvalidRequestError{Reason: fmt.Sprintf("target user %q does not exist", targetUserID)}
-		}
-		return fmt.Errorf("failed to look up target user: %w", err)
-	}
-
-	// Extract the enrollment's principal (service enrollments have exactly one).
-	principals := decodeEnrollmentPrincipals(enrollment)
-	if len(principals) == 0 {
-		return fmt.Errorf("enrollment has no principals; cannot determine eligibility")
-	}
-	principal := principals[0]
-
-	// Parse target user's service_accounts JSON.
-	var serviceAccounts []string
-	if err := json.Unmarshal([]byte(targetUser.ServiceAccounts), &serviceAccounts); err != nil {
-		return fmt.Errorf("failed to parse target user service accounts: %w", err)
-	}
-
-	// Check if the principal is in the target's service accounts.
-	for _, account := range serviceAccounts {
-		if account == principal {
-			return nil // Eligible
-		}
-	}
-
-	return &errorresponses.InvalidRequestError{
-		Reason: fmt.Sprintf("target user does not have service account %q", principal),
-	}
-}
-
-// Reassign changes the ownership of an enrollment to a new user. The
-// enrollment's key ID, principals, options, and expiry remain unchanged —
-// only the user_id is updated. An audit record is created to track the
-// transfer.
-//
-// Scoped by: owner (the current user_id) or admin group membership.
-// Eligible target: a user whose service_accounts contains the enrollment's
-// principal.
-//
-// Returns Forbidden for non-owners and non-admins, InvalidRequest for an
-// ineligible target, and NotFound for an unknown enrollment.
-// authorizeReassignment checks that identity may reassign enrollment —
-// owner or admin — and resolves the reassigner's users row, which the
-// records written afterwards are keyed on.
-//
-// Split out of Reassign because the two questions it answers ("may you"
-// and "who are you") share the admin determination, so keeping them
-// together avoids resolving membership twice.
-func (s *EnrollmentService) authorizeReassignment(ctx context.Context, enrollment model.Enrollment, identity *Identity) (model.User, error) {
-	// Admin is determined by RequireGroup membership.
-	isAdmin := false
-	if s.config.Admin.IsAdminEnabled() {
-		isAdmin = slices.Contains(identity.Groups, s.config.Admin.RequireGroup)
-	}
-
-	if !isAdmin {
-		var user model.User
-		err := s.db.WithContext(ctx).First(&user, "subject = ?", identity.Subject).Error
-		if err != nil || user.ID != enrollment.UserID {
-			return model.User{}, &errorresponses.ForbiddenError{Reason: "you must be the enrollment owner or an admin to reassign it"}
-		}
-		// Owner reassigning their own enrollment; the row is already in hand.
-		return model.User{ID: enrollment.UserID}, nil
-	}
-
-	// Admin reassigning; load their user ID from the subject.
-	var reassigner model.User
-	if err := s.db.WithContext(ctx).First(&reassigner, "subject = ?", identity.Subject).Error; err != nil {
-		return model.User{}, fmt.Errorf("failed to load reassigner user: %w", err)
-	}
-	return reassigner, nil
-}
-
-func (s *EnrollmentService) Reassign(ctx context.Context, enrollmentID string, toUserID string, reason string, identity *Identity) error {
-	// Validated before anything is read or written: a reassignment with no
-	// stated reason is exactly the record that is useless later.
-	reason, err := ValidateAuditReason(AuditEnrollmentReassigned, reason)
-	if err != nil {
-		return &errorresponses.InvalidRequestError{Reason: err.Error()}
-	}
-
-	// Load the enrollment
-	var enrollment model.Enrollment
-	if err := s.db.WithContext(ctx).First(&enrollment, "id = ?", enrollmentID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return &errorresponses.NotFoundError{Resource: fmt.Sprintf("enrollment %q", enrollmentID)}
-		}
-		return fmt.Errorf("failed to look up enrollment: %w", err)
-	}
-
-	reassigner, err := s.authorizeReassignment(ctx, enrollment, identity)
-	if err != nil {
-		return err
-	}
-
-	// Check eligibility of the target user.
-	if err := s.isEligibleForReassignment(ctx, enrollment, toUserID); err != nil {
-		return err
-	}
-
-	now := time.Now()
-
-	// The pre-existing special-purpose reassignment table stays as it is —
-	// it feeds its own UI surface — and the general audit event is emitted
-	// alongside it.
-	reassignment := model.EnrollmentReassignment{
-		ID:                 uuid.NewString(),
-		EnrollmentID:       enrollmentID,
-		FromUserID:         enrollment.UserID,
-		ToUserID:           toUserID,
-		ReassignedByUserID: reassigner.ID,
-		ReassignedAt:       now,
-	}
-
-	auditEvent := AuditEvent{
-		Action:     AuditEnrollmentReassigned,
-		Actor:      AuditSubjectFromIdentity(identity, reassigner.ID),
-		Target:     &AuditSubject{UserID: toUserID},
-		Reason:     reason,
-		OccurredAt: now,
-		Detail: map[string]any{
-			"enrollment_id": enrollmentID,
-			"from_user_id":  enrollment.UserID,
-			"to_user_id":    toUserID,
-			"key_id":        enrollment.KeyID,
-		},
-	}
-
-	// One transaction for all three writes. The ownership change and its
-	// two records were previously separate statements, so a failure between
-	// them left an enrollment reassigned with nothing saying by whom.
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&enrollment).Update("user_id", toUserID).Error; err != nil {
-			return fmt.Errorf("failed to update enrollment: %w", err)
-		}
-		if err := tx.Create(&reassignment).Error; err != nil {
-			return fmt.Errorf("failed to create reassignment audit record: %w", err)
-		}
-		return s.auditTx(tx, auditEvent)
-	}); err != nil {
-		return err
-	}
-
-	s.auditLog(auditEvent)
-	return nil
 }

@@ -120,6 +120,8 @@ func fullFixtures() map[string]any {
 		},
 		"service_enrollment": webtypes.ServiceEnrollmentResponse{
 			ID:                   "3a2b1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d",
+			ServiceAccount:       "svc-backup",
+			ApprovedByUsername:   "alice",
 			CertificateRequestID: "0b4f2b1a-7c3d-4e5f-8a9b-0c1d2e3f4a5b",
 			Principals:           []string{"svc-backup"},
 			KeyID:                "svc-backup/0b4f2b1a",
