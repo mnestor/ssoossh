@@ -275,13 +275,7 @@ func sessionCookieOptions(c *config.Config) (sessions.Options, error) {
 		return sessions.Options{}, err
 	}
 
-	// Secure follows the browser-visible scheme unless overridden. Marking a
-	// cookie Secure over plain HTTP means the browser silently drops it, so
-	// this cannot simply default to true without breaking local development.
-	secure := c.HTTP.IsTLS()
-	if c.HTTP.CookieSecure != nil {
-		secure = *c.HTTP.CookieSecure
-	}
+	secure := resolvedCookieSecure(c)
 	if !secure {
 		slog.Warn("session cookie is not marked Secure, so browsers will send it over plain HTTP; set http.is_https (or http.cookie_secure) once TLS terminates in front of this server")
 	}
@@ -308,6 +302,18 @@ func sessionCookieOptions(c *config.Config) (sessions.Options, error) {
 	}
 
 	return opts, nil
+}
+
+// resolvedCookieSecure is whether cookies should carry the Secure flag:
+// the browser-visible scheme unless overridden. Marking a cookie Secure
+// over plain HTTP means the browser silently drops it, so this cannot
+// simply default to true without breaking local development. Shared by the
+// session cookie and the approval-claim cookie so the two cannot disagree.
+func resolvedCookieSecure(c *config.Config) bool {
+	if c.HTTP.CookieSecure != nil {
+		return *c.HTTP.CookieSecure
+	}
+	return c.HTTP.IsTLS()
 }
 
 // resolvedCookieMaxAge is the session lifetime actually in force: the
@@ -368,6 +374,13 @@ func parseSameSite(name string) (http.SameSite, error) {
 // registerRoutes registers the frontend static assets (if included) and
 // every controller's routes on r, using a.svc.
 func (a *app) registerRoutes(r *gin.Engine) error {
+	// Bind the approval page to the first browser that fetches it. Engine
+	// middleware rather than a route, because /approve/<id> is an SPA path
+	// served by the frontend's NoRoute catch-all registered just below —
+	// gin runs Use'd middleware on NoRoute requests too. See
+	// middleware.ApprovalClaimMiddleware.
+	r.Use(middleware.NewApprovalClaimMiddleware(a.svc.certRequest, resolvedCookieSecure(a.config)).Add())
+
 	err := frontend.RegisterFrontend(r)
 	if errors.Is(err, frontend.ErrFrontendNotIncluded) {
 		slog.Warn("Frontend is not included in the build. Skipping frontend registration.")
@@ -378,6 +391,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	sessionAuth := middleware.NewSessionAuthMiddleware(resolvedCookieIdleTimeout(a.config), resolvedCookieMaxAge(a.config)).Add()
 	csrf := middleware.NewCsrfMiddleware(a.config.HTTP.PublicOrigin()).Add()
 	adminAuth := middleware.NewAdminAuthMiddleware(a.config).Add()
+	socAuth := middleware.NewSOCAuthMiddleware(a.config).Add()
 	auditorAuth := middleware.NewAuditorAuthMiddleware(a.config).Add()
 
 	// Browser-facing OIDC login/callback, outside /api since these are
@@ -439,7 +453,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 		)
 	}
 	controller.NewEnrollmentController(apiGroup, a.svc.enrollment, enrollmentRateLimit, sessionAuth)
-	controller.NewAdminController(apiGroup, a.config, a.db, sessionAuth, adminAuth, auditorAuth, csrf, a.svc.enrollment)
+	controller.NewAdminController(apiGroup, a.config, a.db, sessionAuth, adminAuth, socAuth, auditorAuth, csrf, a.svc.enrollment)
 
 	return nil
 }

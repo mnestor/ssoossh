@@ -17,10 +17,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ThreeDotsLabs/watermill"
+	"github.com/ThreeDotsLabs/watermill/pubsub/gochannel"
 	"github.com/gin-gonic/gin"
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/logging"
+	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
 )
 
@@ -223,6 +226,71 @@ func TestInitRouter_ShouldRegisterHealthzRoute(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("got status %d, want %d", w.Code, http.StatusOK)
+	}
+}
+
+// TestInitRouter_ShouldBindTheApprovalPageToItsFirstClient verifies the
+// approval-claim middleware is actually wired into the engine: the first
+// document GET of /approve/<id> sets the claim cookie, and a second client
+// without it is redirected to the explanation page. The claim logic itself
+// is unit tested in service and middleware; this pins the registration,
+// which is the one thing those tests cannot see.
+func TestInitRouter_ShouldBindTheApprovalPageToItsFirstClient(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	a := newTestApp(t, c)
+
+	// A real CertRequestService over the same migrated DB; the wake-topic
+	// broker is an unused throwaway (nothing waits on a claim).
+	broker := gochannel.NewGoChannel(gochannel.Config{}, watermill.NopLogger{})
+	t.Cleanup(func() { _ = broker.Close() })
+	certRequests, err := service.NewCertRequestService(c, a.db, broker, broker)
+	if err != nil {
+		t.Fatalf("failed to build CertRequestService: %v", err)
+	}
+	a.svc.certRequest = certRequests
+
+	srv, err := a.initRouter()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	seeded := model.CertificateRequest{
+		ID:        "req-wired",
+		Type:      model.CertificateTypeUser,
+		Status:    model.CertificateRequestStatusPending,
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := a.db.Create(&seeded).Error; err != nil {
+		t.Fatalf("failed to seed a certificate request: %v", err)
+	}
+
+	first := httptest.NewRecorder()
+	firstReq := httptest.NewRequest(http.MethodGet, "/approve/req-wired", nil)
+	firstReq.Header.Set("User-Agent", "Mozilla/5.0 (first)")
+	srv.router.ServeHTTP(first, firstReq)
+
+	claimed := false
+	for _, ck := range first.Result().Cookies() {
+		if ck.Name == "ssoossh_approval_claim" {
+			claimed = true
+		}
+	}
+	if !claimed {
+		t.Fatal("expected the first GET of the approval page to set the claim cookie")
+	}
+
+	second := httptest.NewRecorder()
+	secondReq := httptest.NewRequest(http.MethodGet, "/approve/req-wired", nil)
+	secondReq.Header.Set("User-Agent", "Slackbot-LinkExpanding 1.0")
+	srv.router.ServeHTTP(second, secondReq)
+
+	if second.Code != http.StatusFound {
+		t.Fatalf("got status %d for the second client, want %d", second.Code, http.StatusFound)
+	}
+	if got := second.Header().Get("Location"); got != "/approval-unavailable?reason=opened" {
+		t.Errorf("got redirect %q, want the spent-link page", got)
 	}
 }
 

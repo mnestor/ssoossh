@@ -77,6 +77,26 @@ func TestAdminConfigIsAuditorEnabled_ShouldReturnTrueWhenAuditorGroupSet(t *test
 	}
 }
 
+// TestAdminConfigIsSOCEnabled_ShouldReturnFalseWhenSOCGroupEmpty tests SOC disabled.
+func TestAdminConfigIsSOCEnabled_ShouldReturnFalseWhenSOCGroupEmpty(t *testing.T) {
+	t.Parallel()
+
+	admin := &AdminConfig{SOCGroup: ""}
+	if admin.IsSOCEnabled() {
+		t.Error("IsSOCEnabled() should return false when SOCGroup is empty")
+	}
+}
+
+// TestAdminConfigIsSOCEnabled_ShouldReturnTrueWhenSOCGroupSet tests SOC enabled.
+func TestAdminConfigIsSOCEnabled_ShouldReturnTrueWhenSOCGroupSet(t *testing.T) {
+	t.Parallel()
+
+	admin := &AdminConfig{SOCGroup: "ssoossh-soc"}
+	if !admin.IsSOCEnabled() {
+		t.Error("IsSOCEnabled() should return true when SOCGroup is non-empty")
+	}
+}
+
 // TestAdminConfigRolesIndependent tests that roles are independent (not coupled).
 func TestAdminConfigRolesIndependent(t *testing.T) {
 	t.Parallel()
@@ -395,12 +415,114 @@ func TestGrantsAuditor_ShouldDecideAuditorAccess(t *testing.T) {
 			groups: []string{"admins-readonly", "auditors-emeritus"},
 			want:   false,
 		},
+		{
+			name:   "SOC group grants auditor access",
+			cfg:    AdminConfig{RequireGroup: "admins", SOCGroup: "soc", AuditorGroup: "auditors"},
+			groups: []string{"soc"},
+			want:   true,
+		},
+		{
+			name:   "SOC group still grants when auditor is unconfigured",
+			cfg:    AdminConfig{RequireGroup: "admins", SOCGroup: "soc"},
+			groups: []string{"soc"},
+			want:   true,
+		},
+		{
+			name:   "an empty group list entry never matches an unset SOC group",
+			cfg:    AdminConfig{AuditorGroup: "auditors"},
+			groups: []string{""},
+			want:   false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.cfg.GrantsAuditor(tt.groups); got != tt.want {
 				t.Errorf("GrantsAuditor(%v) = %v, want %v", tt.groups, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestGrantsSOC_ShouldDecideSOCAccess exercises the SOC containment-role
+// grant. Admins are a superset of SOC, so admin membership grants access
+// even when soc_group is unset, while auditor membership never does: SOC
+// guards writes (disable, expire) that a read-only role must not reach. It
+// fails closed the same way GrantsAuditor does — an unconfigured group must
+// never match an empty group-list entry.
+func TestGrantsSOC_ShouldDecideSOCAccess(t *testing.T) {
+	tests := []struct {
+		name   string
+		cfg    AdminConfig
+		groups []string
+		want   bool
+	}{
+		{
+			name:   "admin group grants SOC access",
+			cfg:    AdminConfig{RequireGroup: "admins", SOCGroup: "soc"},
+			groups: []string{"admins"},
+			want:   true,
+		},
+		{
+			name:   "SOC group grants SOC access",
+			cfg:    AdminConfig{RequireGroup: "admins", SOCGroup: "soc"},
+			groups: []string{"soc"},
+			want:   true,
+		},
+		{
+			name:   "admin group still grants when SOC is unconfigured",
+			cfg:    AdminConfig{RequireGroup: "admins"},
+			groups: []string{"admins"},
+			want:   true,
+		},
+		{
+			name:   "SOC group alone grants without an admin group",
+			cfg:    AdminConfig{SOCGroup: "soc"},
+			groups: []string{"soc"},
+			want:   true,
+		},
+		{
+			name:   "auditor group never grants SOC access",
+			cfg:    AdminConfig{RequireGroup: "admins", SOCGroup: "soc", AuditorGroup: "auditors"},
+			groups: []string{"auditors"},
+			want:   false,
+		},
+		{
+			name:   "neither group denies",
+			cfg:    AdminConfig{RequireGroup: "admins", SOCGroup: "soc"},
+			groups: []string{"engineering"},
+			want:   false,
+		},
+		{
+			name:   "no groups at all denies",
+			cfg:    AdminConfig{RequireGroup: "admins", SOCGroup: "soc"},
+			groups: nil,
+			want:   false,
+		},
+		{
+			name:   "an empty group list entry never matches an unset SOC group",
+			cfg:    AdminConfig{RequireGroup: "admins"},
+			groups: []string{""},
+			want:   false,
+		},
+		{
+			name:   "nothing configured denies everyone",
+			cfg:    AdminConfig{},
+			groups: []string{"admins", "soc", ""},
+			want:   false,
+		},
+		{
+			name:   "membership is exact, not a prefix",
+			cfg:    AdminConfig{RequireGroup: "admins", SOCGroup: "soc"},
+			groups: []string{"admins-readonly", "soc-emeritus"},
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.GrantsSOC(tt.groups); got != tt.want {
+				t.Errorf("GrantsSOC(%v) = %v, want %v", tt.groups, got, tt.want)
 			}
 		})
 	}

@@ -480,6 +480,7 @@ export interface EffectiveConfigResponse {
 	 * Admin authorization
 	 */
 	admin_require_group?: string;
+	admin_soc_group?: string;
 	admin_auditor_group?: string;
 	/**
 	 * Admin user management

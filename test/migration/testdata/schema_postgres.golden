@@ -28,6 +28,9 @@ table certificate_request_decisions
   index idx_certificate_request_decisions_source_ip CREATE INDEX idx_certificate_request_decisions_source_ip ON public.certificate_request_decisions USING btree (source_ip)
   index idx_certificate_request_decisions_subject CREATE INDEX idx_certificate_request_decisions_subject ON public.certificate_request_decisions USING btree (subject)
 table certificate_requests
+  column claim_token_hash type=text nullable=true default=<none>
+  column claim_user_agent type=text nullable=false default=''::text
+  column claimed_at type=timestamp with time zone nullable=true default=<none>
   column created_at type=timestamp with time zone nullable=false default=<none>
   column enrollment_token type=text nullable=false default=''::text
   column failure_reason type=text nullable=false default=''::text

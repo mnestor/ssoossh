@@ -2,15 +2,15 @@
 
 **Status: designed, nothing built.** No code has been written for this. The
 design below is settled to the point where an implementation plan can be
-derived from it, but it has not been re-checked against the tree since
-`023c0a8` (2026-08-24).
+derived from it. Last re-checked against `f948499` (2026-08-28): all six
+findings were still present, so step 1 of the sequencing stood in full.
 
 > **Before planning from this document, do two things.**
 >
 > 1. **Re-run the verification pass** in [Provenance](#provenance-what-was-verified-and-how).
->    Every `file:line` anchor here is as of `023c0a8` and will drift. Three
->    of the findings are defects that may have been fixed independently; if
->    so, the sequencing changes.
+>    Anchors re-checked on 2026-08-28 are as of `f948499`; the rest are as
+>    of `023c0a8`. All will drift. Three of the findings are defects that
+>    may be fixed independently; if so, the sequencing changes.
 > 2. **Re-read the reasoning, not just the decisions.** Every decision in
 >    [Decisions](#decisions-and-the-reasoning-behind-each) carries the
 >    argument that produced it, because the argument is the part that ages.
@@ -64,8 +64,8 @@ the ordering decision.
 
 | Piece | State | Where |
 | --- | --- | --- |
-| Operator-named extra claims, captured at login | Built. `Extra map[string]string` maps a template name to a claim name. Nothing in the server knows a claim's meaning. | `server/config/types_oauth.go:47` |
-| Numeric claims surviving extraction | Built, but flattened. `float64` is formatted to a decimal string and stored as one. | `server/service/auth.go:329` |
+| Operator-named extra claims, captured at login | Built. `Extra map[string]string` maps a template name to a claim name. Nothing in the server knows a claim's meaning. | `server/config/types_oauth.go:61` |
+| Numeric claims surviving extraction | Built, but flattened. `float64` is formatted to a decimal string and stored as one. | `server/service/auth.go:359` |
 | Tiered lifetime by group, clamped to a ceiling | Built. Ordered tiers, first match wins, `min(tier, source, ceiling)`. | `server/service/lifetimepolicy.go` |
 | Per-type gate, extensions, and approval flow | Built, single-valued. `requireGroup` is one string per certificate type. | `server/service/certtypepolicy.go` |
 | Numeric predicates over a claim | **Absent.** No comparator, no typed accessor, no grammar. | n/a |
@@ -87,9 +87,10 @@ miss:
 
 ## Findings
 
-Six findings, all verified against `023c0a8`. F3, F4 and F6 are pre-existing
-defects independent of this proposal; they are listed here because a more
-dynamic policy amplifies each of them.
+Six findings, all verified against `023c0a8` and re-confirmed present at
+`f948499` (2026-08-28, by reading source; the probes were not re-run). F3,
+F4 and F6 are pre-existing defects independent of this proposal; they are
+listed here because a more dynamic policy amplifies each of them.
 
 ### F1. Scores compare as strings, and the ordering is wrong
 
@@ -114,11 +115,11 @@ caller may approve this certificate type at all:
 
 | Line | Step | Claim state |
 | --- | --- | --- |
-| `certrequest.go:563` | Narrow requested options against the type's extensions | not hydrated |
-| `certrequest.go:564` | `checkApproverAuthorization`, the type gate | **not hydrated** |
-| `certrequest.go:568` | `bindRequester` calls `resolveUser`, reading the users row | row in hand |
-| `certrequest.go:577` | `identity.Extra = decodeExtraFields(user.ExtraFields)` | hydrated |
-| `certrequest.go:721`, `:1004` | `evaluateDuration` | hydrated |
+| `certrequest.go:561` | Narrow requested options against the type's extensions | not hydrated |
+| `certrequest.go:562` | `checkApproverAuthorization`, the type gate | **not hydrated** |
+| `certrequest.go:566` | `bindRequester` calls `resolveUser`, reading the users row | row in hand |
+| `certrequest.go:575` | `identity.Extra = decodeExtraFields(user.ExtraFields)` | hydrated |
+| `certrequest.go:719`, `:1002` | `evaluateDuration` | hydrated |
 
 So lifetime and extension policy can read a claim today. The type gate
 cannot.
@@ -146,11 +147,17 @@ several layers from the config line that caused it. No test covers this case.
 This matters here because claim conditions multiply the number of "nothing
 matched" paths.
 
+Since `856e64b`, config documentation is generated from the struct
+comments, so the false promise is no longer latent in a source file: it
+appears in published docs, twice (`types_certificates.go:213` and `:218`).
+The fix should land through the struct-tag defaults mechanism, not beside
+it.
+
 ### F4. The reason a lifetime was shortened is computed, then discarded
 
 `evaluateDuration` builds a human-readable `narrowingReason`
 (`lifetimepolicy.go:127`) and both call sites throw it away with `_`
-(`certrequest.go:721`, `:1004`). It has zero consumers repo-wide. Nothing on
+(`certrequest.go:719`, `:1002`). It has zero consumers repo-wide. Nothing on
 the approval page or the decision record says why a certificate got the
 lifetime it got, and the API surfaces only the static configured ceiling
 (`webtypes.go:369`), never the effective value.
@@ -180,9 +187,10 @@ will assume the number is doing. See the freshness decisions below.
 ### F6. An empty `extensions` list means opposite things at two levels
 
 At the type level, an empty permitted list denies everything: `intersectStrings`
-returns `nil` when nothing is permitted (`certrequest.go:1088`). At the
-source-rule level the guard is `if len(rule.extensions) > 0`, so an empty
-list skips the intersection entirely and applies **no restriction**.
+returns `nil` when nothing is permitted (`certrequest.go:1085`). At the
+source-rule level the guard is `if len(bestMatch.extensions) > 0`
+(`lifetimepolicy.go:301`), so an empty list skips the intersection entirely
+and applies **no restriction**.
 
 The config comment documents the opposite: "An empty list means no extensions
 (equivalent to an explicit 'no extensions' policy); omit this field to apply
@@ -286,6 +294,21 @@ cert_options:
           when: { claim: loc, at_least: 30 }
           max_duration: 1h
           max_enrollment_duration: 720h    # 30 days, then re-approve
+```
+
+PAM takes the same grammar with nothing added. In practice only the gate
+matters there: duration tiers against a 30-second, validated-once
+certificate and extension grants against an empty `allowed_extensions`
+ceiling have nothing to do, so the expected configuration is `require`
+alone:
+
+```yaml
+cert_options:
+  pam:
+    valid_duration: 30s
+    require:
+      claim: loc
+      at_least: 40
 ```
 
 ### The algebra
@@ -468,18 +491,44 @@ the startup error guarding it. Scoped to the per-type certificate gate;
 `admin.require_group` and `admin.auditor_group` are a different surface and
 are untouched.
 
-### PAM: out of scope entirely
+### PAM: included, reversing the original call **[judgement]**
 
-Not just lifetime tiering; all of it. `CertOptionsPAM` is left exactly as it
-stands, with its own `require_group`, `valid_duration` and `extensions`, none
-of them touched by the condition grammar.
+`require` and `lifetime_policy` apply to PAM as to the other two types.
+`CertOptionsPAM` gains the same keys, and its `require_group` is replaced
+in step 5 alongside the others.
 
-*Reasoning:* PAM exists to mint a certificate carrying the user principal
-plus shared accounts, so a PAM stack can confirm the person is who they claim
-to be. That is an identity assertion, not a capability grant, and policy has
-nothing to shape. An earlier suggestion to extend `require` across PAM for
-consistency was withdrawn: consistency is not a reason to give a type a
-mechanism it has no use for.
+*This reverses the decision recorded 2026-08-24*, which left PAM out
+entirely: the argument was that a PAM certificate is an identity assertion
+rather than a capability grant, so policy has nothing to shape, and that
+consistency alone is not a reason to give a type a mechanism it has no use
+for. Reversed 2026-08-28, for two reasons that outweigh it:
+
+- **Inclusion is subtraction.** PAM already rides `flowSigning`: the same
+  approval gate and the same `evaluateDuration` call serve it today
+  (`certrequest.go:562`, `:1002`); the engine merely has no PAM policy
+  slot, so PAM falls into the no-policy branch. Bringing it in is one
+  `lifetime_policy` field on `CertOptionsPAM` and a third slot in the
+  engine. Keeping it out is a carve-out repeated in the grammar, the
+  config reference and the sequencing, each saying "except PAM".
+- **The gate is the axis operators actually want on PAM.** A minimum score
+  to authenticate a local operation — sudo behind `at_least: 40` — is a
+  policy that cannot be expressed today, and `require_group` on PAM shows
+  the single-condition form of it was already wanted.
+
+*What stays PAM-shaped, with no special case in the model:* duration
+tiering is marginal against a 30-second certificate and extensions are
+meaningless on one (`CertOptionsPAM`'s own field comments say both). The
+existing invariants absorb that: PAM's `allowed_extensions` ceiling
+defaults to empty, so a tier granting an extension for PAM fails startup
+unless the operator widened the ceiling deliberately. The expected
+configuration is `require` alone, tiers unused.
+
+*The part of the old reasoning that survives:* the certificate is still an
+identity assertion, and the host's PAM stack and sudoers policy remain the
+authorization. `require` on PAM is an extra filter the operator may apply,
+not the authorization itself — which is exactly how
+`CertOptionsPAM.RequireGroup` describes itself today
+(`types_certificates.go:177-184`).
 
 ### Service policy stays approver-keyed **[judgement]**
 
@@ -617,10 +666,13 @@ whether the rest is ever built.
    a grant outside `allowed_extensions` is rejected. Tier ordering is
    deliberately not validated. Service certificates inherit this for free,
    since the engine is already called on that path with the approver's
-   identity.
+   identity. PAM is one field short of free: the call site already serves
+   it (`certrequest.go:1002`), but `CertOptionsPAM` needs the
+   `lifetime_policy` key and the engine a PAM policy slot.
 5. **Replace `require_group` with `require`** for the type-gating axis, once
-   conditions have proven out on the lower-risk lifetime path. User and
-   service only; PAM keeps its own `require_group` untouched.
+   conditions have proven out on the lower-risk lifetime path. All three
+   types; PAM's `require_group` is replaced like the others (see the PAM
+   decision).
 6. **Tier the enrollment code's lifetime** with `max_enrollment_duration`, the
    only service-side clock the engine does not already reach.
 7. **Document the freshness bound.** F5 is decided, not deferred. What remains
@@ -648,6 +700,16 @@ left clean; none of them are in the repository.
 | F6, empty-list semantics | A probe across both narrowing levels. Source rule with `extensions: []` returned both requested extensions; type level with an empty permitted list returned `[]`. |
 | Only three certificate types | `server/model/enums.go:17-19`, and `newCertTypePolicies`' map. |
 | Admin model exists | `server/config/types.go:197-233`. |
+
+Re-verified against `f948499` on 2026-08-28 by reading source only; the
+probes were not re-run. All six findings were still present, and the PAM
+reversal rests on facts established then:
+
+| Claim | How it was established |
+| --- | --- |
+| PAM shares the signing path | `flow: flowSigning` in `newCertTypePolicies` (`certtypepolicy.go:129`); the gate and `evaluateDuration` sites at `certrequest.go:562` and `:1002` serve every `flowSigning` type. |
+| PAM has no policy slot | `CertOptionsPAM` carries no `LifetimePolicy` field (`types_certificates.go:176-205`); the engine holds only `userPolicy` and `servicePolicy` (`lifetimepolicy.go:25-26`). |
+| F3's false comment is published | Config docs are generated from struct comments since `856e64b`; the "or ValidDuration if zero" promise appears at `types_certificates.go:213` and `:218`. |
 
 **What to re-verify first when picking this up:** whether F3, F4 and F6 are
 still present. They are independent defects that may have been fixed on their

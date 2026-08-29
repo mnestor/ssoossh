@@ -790,6 +790,8 @@ components:
         admin_require_group:
           description: Admin authorization
           type: string
+        admin_soc_group:
+          type: string
         cert_approval_ttl:
           type: string
         cert_client_timeout:
@@ -1435,7 +1437,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Not authorized as admin
+          description: Not authorized as admin or SOC
         "404":
           content:
             application/json:
@@ -1444,7 +1446,7 @@ paths:
           description: Enrollment not found
       security:
       - sessionCookie: []
-      summary: Expire an enrollment (admin-only)
+      summary: Expire an enrollment (admin or SOC)
       tags:
       - admin
   /api/admin/enrollments/{id}/reassign:
@@ -1641,7 +1643,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: Not authorized as admin
+          description: Not authorized as admin or SOC
         "404":
           content:
             application/json:
@@ -1650,7 +1652,7 @@ paths:
           description: User not found
       security:
       - sessionCookie: []
-      summary: Disable a user (admin-only)
+      summary: Disable a user (admin or SOC)
       tags:
       - admin
   /api/admin/users/{id}/enable:

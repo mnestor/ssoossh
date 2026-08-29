@@ -28,6 +28,9 @@ table certificate_request_decisions
   index sqlite_autoindex_certificate_request_decisions_1 unique=true columns=id
   index sqlite_autoindex_certificate_request_decisions_2 unique=true columns=certificate_request_id
 table certificate_requests
+  column claim_token_hash type=TEXT nullable=true pk=false default=<none>
+  column claim_user_agent type=TEXT nullable=false pk=false default=''
+  column claimed_at type=DATETIME nullable=true pk=false default=<none>
   column created_at type=DATETIME nullable=false pk=false default=<none>
   column enrollment_token type=TEXT nullable=false pk=false default=''
   column failure_reason type=TEXT nullable=false pk=false default=''

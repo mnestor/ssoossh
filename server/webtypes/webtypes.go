@@ -431,6 +431,7 @@ type EffectiveConfigResponse struct {
 
 	// Admin authorization
 	AdminRequireGroup string `json:"admin_require_group,omitempty"`
+	AdminSOCGroup     string `json:"admin_soc_group,omitempty"`
 	AdminAuditorGroup string `json:"admin_auditor_group,omitempty"`
 
 	// Admin user management

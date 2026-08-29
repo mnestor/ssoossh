@@ -1220,6 +1220,33 @@ func TestReassign(t *testing.T) {
 		}
 	})
 
+	t.Run("should refuse a SOC member who is not the owner", func(t *testing.T) {
+		t.Parallel()
+		// Reassignment transfers ownership of a credential, which the SOC
+		// containment role deliberately does not hold — only the admin
+		// group (or the owner) may reassign.
+		socCfg := &config.Config{Admin: config.AdminConfig{RequireGroup: "admins", SOCGroup: "soc"}}
+		svc := newTestCertRequestServiceWithConfig(t, socCfg)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		ownerID := seedUser(t, svc.db, "sub-owner")
+		targetID := seedUser(t, svc.db, "sub-target")
+
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, KeyID: "key1", ExpiresAt: time.Now().Add(time.Hour),
+			CreatedAt: time.Now(),
+		})
+
+		err := enrollment.Reassign(context.Background(),
+			"enrollment1", targetID, &Identity{Subject: "sub-soc", Groups: []string{"soc"}})
+
+		var forbidden *errorresponses.ForbiddenError
+		if !errors.As(err, &forbidden) {
+			t.Errorf("Reassign() error = %v, want ForbiddenError", err)
+		}
+	})
+
 	t.Run("should refuse a target without the required service account", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestCertRequestService(t, time.Second)

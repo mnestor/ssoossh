@@ -50,6 +50,7 @@ func newTestConfig(t *testing.T) *config.Config {
 		},
 		Admin: config.AdminConfig{
 			RequireGroup:       "ssh-admins",
+			SOCGroup:           "ssh-soc",
 			AuditorGroup:       "ssh-auditors",
 			DisableGracePeriod: 30 * time.Minute,
 			ContactEmail:       "admin@example.com",
@@ -86,6 +87,7 @@ func routerWithEnrollmentService(t *testing.T, cfg *config.Config, db *gorm.DB, 
 		db,
 		identityMiddleware(identity), // sessionAuthMiddleware
 		middleware.NewAdminAuthMiddleware(cfg).Add(),   // adminAuthMiddleware (real)
+		middleware.NewSOCAuthMiddleware(cfg).Add(),     // socAuthMiddleware (real)
 		middleware.NewAuditorAuthMiddleware(cfg).Add(), // auditorAuthMiddleware (real)
 		func(c *gin.Context) { c.Next() },              // csrfMiddleware (passthrough for tests)
 		enrollments,
@@ -373,6 +375,181 @@ func TestAdminDisableUserHandler_AdminAllowed(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("PATCH /admin/users/:id/disable as admin: got %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+// TestAdminDisableUserHandler_SOCAllowed tests PATCH /api/admin/users/:id/disable
+// allows a SOC group member who is not an admin: disabling is a containment
+// operation and the core of what the SOC role exists for.
+func TestAdminDisableUserHandler_SOCAllowed(t *testing.T) {
+	t.Parallel()
+
+	cfg := newTestConfig(t)
+	db := newTestDB(t)
+	testUser := model.User{
+		ID:        "user-1",
+		Subject:   "sub-alice",
+		Username:  "alice",
+		Email:     "alice@example.com",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := db.Create(&testUser).Error; err != nil {
+		t.Fatalf("failed to create test user: %v", err)
+	}
+
+	socUser := model.User{
+		ID:        "user-soc",
+		Subject:   "sub-soc",
+		Username:  "soc",
+		Email:     "soc@example.com",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	if err := db.Create(&socUser).Error; err != nil {
+		t.Fatalf("failed to create SOC user: %v", err)
+	}
+
+	identity := &service.Identity{
+		Subject:  "sub-soc",
+		Username: "soc",
+		Groups:   []string{"ssh-soc"}, // SOC group, NOT admin
+	}
+	r := routerWithAuth(t, cfg, db, identity)
+
+	w := httptest.NewRecorder()
+	body := []byte("{}")
+	req := httptest.NewRequest(http.MethodPatch, "/admin/users/user-1/disable", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("PATCH /admin/users/:id/disable as SOC: got %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+// TestAdminEnableUserHandler_SOCDenied tests PATCH /api/admin/users/:id/enable
+// denies a SOC group member: re-enabling is restorative, not containment, so
+// a SOC analyst must not be able to undo a disable.
+func TestAdminEnableUserHandler_SOCDenied(t *testing.T) {
+	t.Parallel()
+
+	cfg := newTestConfig(t)
+	db := newTestDB(t)
+	now := time.Now()
+	disabledUser := model.User{
+		ID:         "user-1",
+		Subject:    "sub-alice",
+		Username:   "alice",
+		Email:      "alice@example.com",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+		DisabledAt: &now,
+	}
+	if err := db.Create(&disabledUser).Error; err != nil {
+		t.Fatalf("failed to create disabled test user: %v", err)
+	}
+
+	identity := &service.Identity{
+		Subject:  "sub-soc",
+		Username: "soc",
+		Groups:   []string{"ssh-soc"}, // SOC group, NOT admin
+	}
+	r := routerWithAuth(t, cfg, db, identity)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/admin/users/user-1/enable", nil))
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("PATCH /admin/users/:id/enable as SOC: got %d, want %d (re-enabling stays admin-only)", w.Code, http.StatusForbidden)
+	}
+}
+
+// TestAdminExpireEnrollmentHandler_SOCAllowed tests PATCH
+// /api/admin/enrollments/:id/expire allows a SOC group member who is not an
+// admin: expiring a credential is the other containment operation SOC holds.
+func TestAdminExpireEnrollmentHandler_SOCAllowed(t *testing.T) {
+	t.Parallel()
+
+	cfg := newTestConfig(t)
+	db := newTestDB(t)
+	enrollment := model.Enrollment{
+		ID:        "enroll-1",
+		UserID:    "user-1",
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	if err := db.Create(&enrollment).Error; err != nil {
+		t.Fatalf("failed to create test enrollment: %v", err)
+	}
+
+	identity := &service.Identity{
+		Subject:  "sub-soc",
+		Username: "soc",
+		Groups:   []string{"ssh-soc"}, // SOC group, NOT admin
+	}
+	r := routerWithAuth(t, cfg, db, identity)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/admin/enrollments/enroll-1/expire", nil))
+
+	if w.Code != http.StatusOK {
+		t.Errorf("PATCH /admin/enrollments/:id/expire as SOC: got %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+// TestAdminExpireEnrollmentHandler_AuditorDenied tests PATCH
+// /api/admin/enrollments/:id/expire denies an auditor: expiring moved from
+// the admin group to the SOC group, and the read-only role must not have
+// picked it up in the move.
+func TestAdminExpireEnrollmentHandler_AuditorDenied(t *testing.T) {
+	t.Parallel()
+
+	cfg := newTestConfig(t)
+	db := newTestDB(t)
+	enrollment := model.Enrollment{
+		ID:        "enroll-1",
+		UserID:    "user-1",
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	if err := db.Create(&enrollment).Error; err != nil {
+		t.Fatalf("failed to create test enrollment: %v", err)
+	}
+
+	identity := &service.Identity{
+		Subject:  "sub-auditor",
+		Username: "auditor",
+		Groups:   []string{"ssh-auditors"}, // Auditor group, NOT admin or SOC
+	}
+	r := routerWithAuth(t, cfg, db, identity)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/admin/enrollments/enroll-1/expire", nil))
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("PATCH /admin/enrollments/:id/expire as auditor: got %d, want %d (auditors are read-only)", w.Code, http.StatusForbidden)
+	}
+}
+
+// TestAdminUsersListHandler_SOCAllowed tests GET /api/admin/users allows a
+// SOC group member: SOC holds auditor-level reads so an analyst can find the
+// user or enrollment they need to contain.
+func TestAdminUsersListHandler_SOCAllowed(t *testing.T) {
+	t.Parallel()
+
+	cfg := newTestConfig(t)
+	db := newTestDB(t)
+	identity := &service.Identity{
+		Subject:  "sub-soc",
+		Username: "soc",
+		Groups:   []string{"ssh-soc"}, // SOC group, NOT admin or auditor
+	}
+	r := routerWithAuth(t, cfg, db, identity)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/users", nil))
+
+	if w.Code != http.StatusOK {
+		t.Errorf("GET /admin/users as SOC: got %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
 	}
 }
 
@@ -1119,6 +1296,18 @@ func mockAdminAuthMiddleware(authorized bool) gin.HandlerFunc {
 	}
 }
 
+// mockSOCAuthMiddleware is a test double for SOC (containment) authorization.
+func mockSOCAuthMiddleware(authorized bool) gin.HandlerFunc {
+	return func(g *gin.Context) {
+		if !authorized {
+			g.JSON(http.StatusForbidden, gin.H{"error": "not authorized"})
+			g.Abort()
+			return
+		}
+		g.Next()
+	}
+}
+
 // mockAuditorAuthMiddleware is a test double for auditor authorization.
 func mockAuditorAuthMiddleware(authorized bool) gin.HandlerFunc {
 	return func(g *gin.Context) {
@@ -1160,6 +1349,7 @@ func TestEffectiveConfigHandler_ShouldReturnConfigData(t *testing.T) {
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
 		mockAdminAuthMiddleware(true),
+		mockSOCAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
@@ -1210,6 +1400,7 @@ func TestEffectiveConfigHandler_RequiresAuditorAuth(t *testing.T) {
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
 		mockAdminAuthMiddleware(false),
+		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(false),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
@@ -1241,6 +1432,7 @@ func TestExpireEnrollmentHandler_ShouldRejectMissingID(t *testing.T) {
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
 		mockAdminAuthMiddleware(true),
+		mockSOCAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
@@ -1273,6 +1465,7 @@ func TestExpireEnrollmentHandler_RequiresAdminAuth(t *testing.T) {
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
 		mockAdminAuthMiddleware(false),
+		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
@@ -1315,6 +1508,7 @@ func TestExpireEnrollmentHandler_ShouldReturn404ForUnknownID(t *testing.T) {
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
 		mockAdminAuthMiddleware(true),
+		mockSOCAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
@@ -1346,6 +1540,7 @@ func TestDisableUserHandler_RequiresAdminAuth(t *testing.T) {
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
 		mockAdminAuthMiddleware(false),
+		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
@@ -1384,6 +1579,7 @@ func TestCertificateHistoryHandler_ShouldReturnEmptyList(t *testing.T) {
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
 		mockAdminAuthMiddleware(true),
+		mockSOCAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
@@ -1433,6 +1629,7 @@ func TestCertificateHistoryHandler_RequiresAuditorAuth(t *testing.T) {
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
 		mockAdminAuthMiddleware(false),
+		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(false),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
@@ -1473,6 +1670,7 @@ func TestNewAdminController_RoutesAreRegistered(t *testing.T) {
 		mockDB(),
 		mockSessionAuthMiddleware(true, "user-123"),
 		mockAdminAuthMiddleware(true),
+		mockSOCAuthMiddleware(true),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
@@ -1560,6 +1758,7 @@ func TestCertificateHistoryHandler_SearchesCertificates(t *testing.T) {
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
 		mockAdminAuthMiddleware(false),
+		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
@@ -1655,6 +1854,7 @@ func TestCertificateHistoryHandler_FiltersByType(t *testing.T) {
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
 		mockAdminAuthMiddleware(false),
+		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
@@ -1742,6 +1942,7 @@ func TestCertificateHistoryHandler_FiltersByStatus(t *testing.T) {
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
 		mockAdminAuthMiddleware(false),
+		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
@@ -1815,6 +2016,7 @@ func TestCertificateHistoryHandler_Pagination(t *testing.T) {
 		db,
 		mockSessionAuthMiddleware(true, "user-123"),
 		mockAdminAuthMiddleware(false),
+		mockSOCAuthMiddleware(false),
 		mockAuditorAuthMiddleware(true),
 		mockCSRFMiddleware(),
 		&fakeEnrollmentServiceForReassign{},
@@ -2024,6 +2226,7 @@ func TestReassignEnrollmentHandler_AuthorizationRoute(t *testing.T) {
 				mockDB(),
 				sessionAuthMiddlewareRealForReassign(tt.authenticated, tt.identity),
 				mockAdminAuthMiddleware(false), // Not used; reassign checks in handler
+				mockSOCAuthMiddleware(false),
 				mockAuditorAuthMiddleware(false),
 				mockCSRFMiddleware(),
 				fake,

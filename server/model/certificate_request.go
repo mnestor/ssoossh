@@ -84,6 +84,22 @@ type CertificateRequest struct {
 	// (see docs/internals/signing-pipeline.md). For operators
 	// reading the database — it isn't returned over the API.
 	FailureReason string `gorm:"column:failure_reason"`
+
+	// ClaimTokenHash binds the /approve/<id> page to the first browser that
+	// fetched it: hex SHA-256 of the claim cookie's value set on that first
+	// GET (never the value itself, so a database read cannot mint a working
+	// cookie). Nil means the page has not been opened yet. This is the
+	// browser-level binding; UserID above is the separate identity-level
+	// binding made on the first authenticated touch. See
+	// CertRequestService.ClaimApprovalPage.
+	ClaimTokenHash *string `gorm:"column:claim_token_hash"`
+
+	// ClaimedAt and ClaimUserAgent exist for ClaimApprovalPage's
+	// cookie-blocked heuristic (same user agent, cookieless, shortly after
+	// the claim means a browser refusing cookies rather than a second
+	// client) and for mismatch logging.
+	ClaimedAt      *time.Time `gorm:"column:claimed_at"`
+	ClaimUserAgent string     `gorm:"column:claim_user_agent"`
 }
 
 // TableName overrides GORM's default pluralization to match the migration.

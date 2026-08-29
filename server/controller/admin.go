@@ -21,27 +21,36 @@ import (
 	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
-// NewAdminController registers admin-scoped authorization and auditor-scoped
-// read-only routes on group. Admin routes require admin group membership.
-// Auditor routes require auditor-level access, which admin group membership
-// also satisfies since auditor is a child role of admin.
+// NewAdminController registers admin-scoped, SOC-scoped, and auditor-scoped
+// routes on group. Admin routes require admin group membership. SOC routes
+// take admin or SOC group membership. Auditor routes require auditor-level
+// access, which admin and SOC membership also satisfy since auditor is a
+// child role of both.
 func NewAdminController(
 	group *gin.RouterGroup,
 	c *config.Config,
 	db *gorm.DB,
 	sessionAuthMiddleware gin.HandlerFunc,
 	adminAuthMiddleware gin.HandlerFunc,
+	socAuthMiddleware gin.HandlerFunc,
 	auditorAuthMiddleware gin.HandlerFunc,
 	csrfMiddleware gin.HandlerFunc,
 	enrollmentService service.EnrollmentProvider,
 ) {
 	a := &adminController{config: c, db: db, enrollmentService: enrollmentService}
 
-	// Admin routes (write operations, require admin group)
+	// Admin routes (restorative writes, require admin group)
 	adminGroup := group.Group("/admin", sessionAuthMiddleware, adminAuthMiddleware, csrfMiddleware)
-	adminGroup.PATCH("/enrollments/:id/expire", a.expireEnrollmentHandler)
-	adminGroup.PATCH("/users/:id/disable", a.disableUserHandler)
 	adminGroup.PATCH("/users/:id/enable", a.enableUserHandler)
+
+	// SOC routes (containment writes: admin or SOC group). SOC holds the
+	// operations that revoke access — expiring an enrollment, disabling a
+	// user — and never the ones that restore or transfer it, so a SOC
+	// analyst can contain an incident but not quietly undo a containment or
+	// move a credential to another owner.
+	socGroup := group.Group("/admin", sessionAuthMiddleware, socAuthMiddleware, csrfMiddleware)
+	socGroup.PATCH("/enrollments/:id/expire", a.expireEnrollmentHandler)
+	socGroup.PATCH("/users/:id/disable", a.disableUserHandler)
 
 	// Reassignment routes (self-authorizing: owners reassign their own, admins reassign any)
 	// Authorization is checked in the handler itself, so only sessionAuthMiddleware is needed.
@@ -89,6 +98,7 @@ func (a *adminController) effectiveConfigHandler(g *gin.Context) {
 		ProviderURL: a.config.AuthConfig.ProviderURL,
 
 		AdminRequireGroup:       a.config.Admin.RequireGroup,
+		AdminSOCGroup:           a.config.Admin.SOCGroup,
 		AdminAuditorGroup:       a.config.Admin.AuditorGroup,
 		AdminDisableGracePeriod: a.config.Admin.DisableGracePeriod.String(),
 		AdminContactEmail:       a.config.Admin.ContactEmail,
@@ -116,7 +126,7 @@ func (a *adminController) effectiveConfigHandler(g *gin.Context) {
 // immediately expires an enrollment, preventing future service certificate
 // retrievals.
 //
-// @Summary     Expire an enrollment (admin-only)
+// @Summary     Expire an enrollment (admin or SOC)
 // @Description Immediately marks an enrollment as expired, preventing future
 // @Description service certificate retrievals. The operation is idempotent.
 // @Tags        admin
@@ -124,7 +134,7 @@ func (a *adminController) effectiveConfigHandler(g *gin.Context) {
 // @Param       id path string true "Enrollment ID"
 // @Success     200 {object} gin.H "Enrollment expired"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
-// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin or SOC"
 // @Failure     404 {object} openapidoc.ErrorEnvelope "Enrollment not found"
 // @Security    sessionCookie
 // @Router      /api/admin/enrollments/{id}/expire [patch]
@@ -333,7 +343,7 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 // user, preventing authentication and expiring their enrollments after a
 // configured grace period.
 //
-// @Summary     Disable a user (admin-only)
+// @Summary     Disable a user (admin or SOC)
 // @Description Marks a user as disabled, preventing authentication and
 // @Description eventually expiring their enrollments after the configured
 // @Description grace period. The operation is idempotent.
@@ -343,7 +353,7 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 // @Param       request body webtypes.DisableUserRequestBody false "Disable reason"
 // @Success     200 {object} webtypes.DisableUserConsequences "Consequences of disabling"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
-// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not authorized as admin or SOC"
 // @Failure     404 {object} openapidoc.ErrorEnvelope "User not found"
 // @Security    sessionCookie
 // @Router      /api/admin/users/{id}/disable [patch]

@@ -46,10 +46,49 @@ func (m *AdminAuthMiddleware) Add() gin.HandlerFunc {
 	}
 }
 
-// AuditorAuthMiddleware ensures the caller holds auditor-level access. Auditor
-// is a child role of admin: membership in the admin group satisfies it, as does
-// membership in the configured auditor group. Fails closed: no identity, or
+// SOCAuthMiddleware ensures the caller holds SOC-level access, which guards
+// the containment operations (disabling users, expiring enrollments). SOC is
+// a child role of admin: membership in the admin group satisfies it, as does
+// membership in the configured SOC group. Fails closed: no identity, or
 // membership in neither group, denies with 403 Forbidden.
+type SOCAuthMiddleware struct {
+	config *config.Config
+}
+
+// NewSOCAuthMiddleware creates a SOCAuthMiddleware.
+func NewSOCAuthMiddleware(c *config.Config) *SOCAuthMiddleware {
+	return &SOCAuthMiddleware{config: c}
+}
+
+// Add returns a gin.HandlerFunc that authorizes SOC-scoped routes. Admins are
+// a superset of SOC: admin group membership grants access even when the SOC
+// group is unconfigured. Otherwise SOC access requires the SOC group to be
+// configured and the caller to belong to it. Fails closed with 403 Forbidden
+// when neither path grants access.
+func (m *SOCAuthMiddleware) Add() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		identity, ok := Identity(c)
+		if !ok || identity == nil {
+			_ = c.Error(&errorresponses.ForbiddenError{}) //nolint:errcheck
+			c.Abort()
+			return
+		}
+
+		if !m.config.Admin.GrantsSOC(identity.Groups) {
+			_ = c.Error(&errorresponses.ForbiddenError{}) //nolint:errcheck
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// AuditorAuthMiddleware ensures the caller holds auditor-level access. Auditor
+// is a child role of admin and SOC: membership in either of those groups
+// satisfies it, as does membership in the configured auditor group. Fails
+// closed: no identity, or membership in none of the groups, denies with 403
+// Forbidden.
 type AuditorAuthMiddleware struct {
 	config *config.Config
 }
@@ -60,10 +99,11 @@ func NewAuditorAuthMiddleware(c *config.Config) *AuditorAuthMiddleware {
 }
 
 // Add returns a gin.HandlerFunc that authorizes auditor-scoped routes. Admins
-// are a superset of auditors: admin group membership grants access even when
-// the auditor group is unconfigured. Otherwise auditor access requires the
-// auditor group to be configured and the caller to belong to it. Fails closed
-// with 403 Forbidden when neither path grants access.
+// and SOC members are supersets of auditors: membership in either group
+// grants access even when the auditor group is unconfigured. Otherwise
+// auditor access requires the auditor group to be configured and the caller
+// to belong to it. Fails closed with 403 Forbidden when no path grants
+// access.
 func (m *AuditorAuthMiddleware) Add() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		identity, ok := Identity(c)

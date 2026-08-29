@@ -226,18 +226,31 @@ type LDAPConfig struct {
 // admin group in the identity provider takes effect at their next login.
 type AdminConfig struct {
 	// RequireGroup is the OIDC group a caller must belong to in order to
-	// access admin-scoped operations (expiring enrollments, disabling users).
+	// access admin-scoped operations (re-enabling users, reassigning any
+	// enrollment), plus everything the SOC and auditor roles below can do.
 	// Empty disables admin operations entirely. Fails closed: no identity, no
 	// group, or no configured group all deny.
 	RequireGroup string `mapstructure:"require_group" default:""`
 
+	// SOCGroup is the OIDC group a caller must belong to in order to access
+	// SOC-scoped containment operations: disabling users and expiring
+	// enrollments. SOC is a child role of admin, so RequireGroup members hold
+	// SOC access regardless of this setting; empty therefore narrows SOC
+	// operations to admins rather than disabling them. SOC members also hold
+	// auditor access (they need the directory and enrollment lists to find
+	// what to contain), but deliberately not the restorative or ownership
+	// operations — re-enabling a user and reassigning an enrollment stay
+	// admin-only. Fails closed: no identity, or membership in neither group,
+	// denies.
+	SOCGroup string `mapstructure:"soc_group" default:""`
+
 	// AuditorGroup is the OIDC group a caller must belong to in order to
 	// access auditor-scoped operations (viewing effective configuration,
-	// cross-user certificate history). Auditor is a child role of admin, so
-	// RequireGroup members hold auditor access regardless of this setting;
-	// empty therefore narrows auditor operations to admins rather than
-	// disabling them. Fails closed: no identity, or membership in neither
-	// group, denies.
+	// cross-user certificate history). Auditor is a child role of both admin
+	// and SOC, so RequireGroup and SOCGroup members hold auditor access
+	// regardless of this setting; empty therefore narrows auditor operations
+	// to those roles rather than disabling them. Fails closed: no identity,
+	// or membership in no granting group, denies.
 	AuditorGroup string `mapstructure:"auditor_group" default:""`
 
 	// DisableGracePeriod is how long after a user is disabled before their
@@ -270,16 +283,38 @@ func (a *AdminConfig) IsAuditorEnabled() bool {
 	return a.AuditorGroup != ""
 }
 
+// IsSOCEnabled reports whether SOC authorization is configured
+// (SOCGroup is non-empty).
+func (a *AdminConfig) IsSOCEnabled() bool {
+	return a.SOCGroup != ""
+}
+
+// GrantsSOC reports whether an identity holding groups has SOC-level
+// access (containment operations: disabling users, expiring enrollments).
+// Admins are a superset of SOC: admin group membership grants access even
+// when the SOC group is unconfigured, so leaving soc_group unset narrows
+// SOC operations to admins rather than locking everyone out. Fails closed:
+// empty groups, or membership in neither configured group, denies. The
+// single authority for this rule — middleware.SOCAuthMiddleware goes
+// through it.
+func (a *AdminConfig) GrantsSOC(groups []string) bool {
+	if a.IsAdminEnabled() && containsGroup(groups, a.RequireGroup) {
+		return true
+	}
+	return a.IsSOCEnabled() && containsGroup(groups, a.SOCGroup)
+}
+
 // GrantsAuditor reports whether an identity holding groups has
-// auditor-level access. Admins are a superset of auditors: admin group
-// membership grants access even when the auditor group is unconfigured, so
-// leaving auditor_group unset narrows auditor operations to admins rather
-// than locking everyone out. Fails closed: empty groups, or membership in
-// neither configured group, denies. The single authority for this rule —
+// auditor-level access. Admins and SOC members are supersets of auditors
+// (via GrantsSOC): membership in either group grants access even when the
+// auditor group is unconfigured, so leaving auditor_group unset narrows
+// auditor operations to those roles rather than locking everyone out.
+// Fails closed: empty groups, or membership in no configured granting
+// group, denies. The single authority for this rule —
 // middleware.AuditorAuthMiddleware and every auditor-visible read go
 // through it.
 func (a *AdminConfig) GrantsAuditor(groups []string) bool {
-	if a.IsAdminEnabled() && containsGroup(groups, a.RequireGroup) {
+	if a.GrantsSOC(groups) {
 		return true
 	}
 	return a.IsAuditorEnabled() && containsGroup(groups, a.AuditorGroup)

@@ -85,6 +85,10 @@
 					<p>{config.admin_require_group || '(not configured)'}</p>
 				</div>
 				<div>
+					<p class="font-mono text-xs text-ink-muted">admin_soc_group</p>
+					<p>{config.admin_soc_group || '(not configured)'}</p>
+				</div>
+				<div>
 					<p class="font-mono text-xs text-ink-muted">admin_auditor_group</p>
 					<p>{config.admin_auditor_group || '(not configured)'}</p>
 				</div>
