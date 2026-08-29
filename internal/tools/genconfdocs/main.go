@@ -8,7 +8,9 @@
 //   - server/config/defaults.yaml, whose comments are regenerated in place
 //     while every value is left exactly as it was
 //   - user-docs/src/content/docs/reference/config/, the documentation site's
-//     configuration reference, one page per section, regenerated wholesale
+//     configuration reference, one page per section (big sections split into
+//     a directory of subpages), regenerated wholesale, plus
+//     user-docs/config-sidebar.json declaring their sidebar order
 //
 // Usage: genconfdocs [-check]
 //
@@ -32,6 +34,7 @@ const (
 	defaultsIn = "server/config/defaults.yaml"
 	manPage    = "docs/man/ssoosshd.yaml.5"
 	siteDir    = "user-docs/src/content/docs/reference/config"
+	sidebarOut = "user-docs/config-sidebar.json"
 )
 
 func main() {
@@ -87,6 +90,10 @@ func run(check bool) error {
 	if err != nil {
 		return err
 	}
+	sidebar, err := confdocs.WriteSidebar(sidebarOut, sections)
+	if err != nil {
+		return err
+	}
 
 	if check {
 		var stale []string
@@ -98,6 +105,9 @@ func run(check bool) error {
 		}
 		if site {
 			stale = append(stale, siteDir)
+		}
+		if sidebar {
+			stale = append(stale, sidebarOut)
 		}
 		if len(stale) > 0 {
 			fmt.Fprintf(os.Stderr, "stale, run `make confdocs`: %s\n", strings.Join(stale, ", "))

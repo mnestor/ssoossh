@@ -58,5 +58,22 @@ type OAuthFields struct {
 	// and renders as MISSING; login never fails over one. Names with
 	// characters beyond letters/digits/underscores need the template's
 	// index syntax: {{index .Extra "my-name"}}.
+	//
+	// For example, capturing a department claim and an account list:
+	//
+	//	authentication:
+	//	  fields:
+	//	    extra:
+	//	      dept: "https://idp.example.com/department"
+	//	      accounts: altAccounts
+	//
+	// then interpolated into a key ID:
+	//
+	//	cert_options:
+	//	  user:
+	//	    key_id_template: '{{.Username}}-{{.Extra.dept}}-{{join .Extra.accounts ";"}}'
+	//
+	// See docs/operations/certificate-keyid-template.md for the full
+	// template field list and the MISSING rendering rules.
 	Extra map[string]string `mapstructure:"extra"`
 }

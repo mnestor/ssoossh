@@ -33,10 +33,10 @@ that file is used. Otherwise the first of these that exists wins:
 An annotated copy of the defaults ships to `/etc/ssoossh/ssoosshd.yaml`, so
 a fresh install starts from a file that documents itself. The same content
 is available as the `ssoosshd.yaml(5)` man page, and as the
-[configuration reference](../reference/config/) on this site -- all three
-are generated from the same source, the server's config structs.
+[configuration reference](/ssoossh/reference/config/) on this site -- all
+three are generated from the same source, the server's config structs.
 
 ## Where to go next
 
-- The [configuration reference](../reference/config/) documents every key,
-  its type, and its default, one page per section.
+- The [configuration reference](/ssoossh/reference/config/) documents every
+  key, its type, and its default, one page per section.

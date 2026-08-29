@@ -530,7 +530,7 @@ man-check:
 # No cgo: the generator parses server/config rather than importing it, so it
 # never reaches the HSM key source's libpkcs11 binding.
 CONFDOCS_OUT := docs/man/ssoosshd.yaml.5 server/config/defaults.yaml \
-	user-docs/src/content/docs/reference/config
+	user-docs/src/content/docs/reference/config user-docs/config-sidebar.json
 
 confdocs: ## Regenerate the config reference and defaults.yaml comments
 	go run ./internal/tools/genconfdocs

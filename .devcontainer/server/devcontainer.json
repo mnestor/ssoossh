@@ -43,7 +43,8 @@
   // another machine while developing.
   "appPort": [
     "0.0.0.0:3001:3001",
-    "0.0.0.0:8080:8080"
+    "0.0.0.0:8080:8080",
+    "0.0.0.0:4321:4321"
   ],
   // Shared user-defined network so client/devcontainer.json can reach this
   // container at http://server:8080 -- without dockerComposeFile there's no

@@ -1,0 +1,101 @@
+[
+  {
+    "label": "Overview",
+    "slug": "reference/config"
+  },
+  {
+    "label": "Top-level keys",
+    "slug": "reference/config/top-level"
+  },
+  {
+    "label": "logging",
+    "slug": "reference/config/logging"
+  },
+  {
+    "label": "db",
+    "slug": "reference/config/db"
+  },
+  {
+    "label": "http",
+    "items": [
+      {
+        "label": "Overview",
+        "slug": "reference/config/http"
+      },
+      {
+        "label": "access_logging",
+        "slug": "reference/config/http/access_logging"
+      },
+      {
+        "label": "tls",
+        "slug": "reference/config/http/tls"
+      }
+    ]
+  },
+  {
+    "label": "queue",
+    "slug": "reference/config/queue"
+  },
+  {
+    "label": "authentication",
+    "slug": "reference/config/authentication"
+  },
+  {
+    "label": "ldap",
+    "slug": "reference/config/ldap"
+  },
+  {
+    "label": "admin",
+    "slug": "reference/config/admin"
+  },
+  {
+    "label": "hsm",
+    "slug": "reference/config/hsm"
+  },
+  {
+    "label": "pubsub",
+    "slug": "reference/config/pubsub"
+  },
+  {
+    "label": "cert_options",
+    "items": [
+      {
+        "label": "Overview",
+        "slug": "reference/config/cert_options"
+      },
+      {
+        "label": "user",
+        "slug": "reference/config/cert_options/user"
+      },
+      {
+        "label": "service",
+        "slug": "reference/config/cert_options/service"
+      },
+      {
+        "label": "pam",
+        "slug": "reference/config/cert_options/pam"
+      }
+    ]
+  },
+  {
+    "label": "mail",
+    "items": [
+      {
+        "label": "Overview",
+        "slug": "reference/config/mail"
+      },
+      {
+        "label": "smtp",
+        "slug": "reference/config/mail/smtp"
+      },
+      {
+        "label": "logging",
+        "slug": "reference/config/mail/logging"
+      }
+    ]
+  },
+  {
+    "label": "branding",
+    "slug": "reference/config/branding"
+  }
+]

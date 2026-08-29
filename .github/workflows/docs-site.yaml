@@ -26,6 +26,10 @@ concurrency:
 
 jobs:
   build:
+    # Pages is not available on private repos without a paid plan, so skip
+    # (rather than fail) until the repo goes public; deploys then start on
+    # their own, no edit needed. `needs: build` skips the deploy job with it.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -460,6 +460,38 @@ Default:
 .TP
 .BI authentication.fields.extra: " map"
 Maps additional template field names to claim names. Each configured claim is captured at login (scalars as strings, string arrays as lists), stored on the users row, and made available to key ID templates as {{.Extra.<name>}} (or {{join .Extra.<name> "<sep>"}} for lists). A claim absent from the ID token stores empty and renders as MISSING; login never fails over one. Names with characters beyond letters/digits/underscores need the template's index syntax: {{index .Extra "my\-name"}}.
+.IP
+For example, capturing a department claim and an account list:
+.IP
+.nf
+authentication:
+.fi
+.nf
+fields:
+.fi
+.nf
+extra:
+.fi
+.nf
+dept: "https://idp.example.com/department"
+.fi
+.nf
+accounts: altAccounts
+.fi
+.IP
+then interpolated into a key ID:
+.IP
+.nf
+cert_options:
+.fi
+.nf
+user:
+.fi
+.nf
+key_id_template: '{{.Username}}\-{{.Extra.dept}}\-{{join .Extra.accounts ";"}}'
+.fi
+.IP
+See docs/operations/certificate\-keyid\-template.md for the full template field list and the MISSING rendering rules.
 .SS ldap (optionally enriches the OIDC identity with directory attributes)
 The schema is parsed but not yet consumed by the server: setting these has no effect on authentication or on issued certificates today. The fields are a starting guess at what a reference deployment (lldap) needs, documented so the config format is stable ahead of the lookup landing.
 .TP
