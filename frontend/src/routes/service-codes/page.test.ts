@@ -59,8 +59,9 @@ function deployCode(overrides: Partial<ServiceEnrollment> = {}): ServiceEnrollme
  * case; a test passes it explicitly to cover an account with no codes, or an
  * identity that has lost one it still has codes for. */
 function mockFetch(enrollments: ServiceEnrollment[], heldAccounts?: string[]) {
-	const service_accounts =
-		heldAccounts ?? [...new Set(enrollments.map((e) => e.service_account).filter(Boolean))];
+	const service_accounts = heldAccounts ?? [
+		...new Set(enrollments.map((e) => e.service_account).filter(Boolean))
+	];
 
 	vi.stubGlobal(
 		'fetch',

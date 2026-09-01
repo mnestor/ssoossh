@@ -52,7 +52,6 @@
 		showDisableConfirm = true;
 	}
 
-
 	async function handleDisable() {
 		actionBusy = true;
 		try {
@@ -239,17 +238,15 @@
 					<p data-testid="disable-consequences" class="mb-4 text-sm text-ink-muted">
 						This will prevent <strong>{user.username}</strong> from authenticating immediately.
 						{#if disableConsequences.service_enrollment_count > 0}
-							The <strong>{disableConsequences.service_enrollment_count}</strong> live service
-							enrollment(s) they approved keep working: those belong to their service accounts, not
-							to this person, and everyone else holding the account keeps them.
+							The <strong>{disableConsequences.service_enrollment_count}</strong> live service enrollment(s)
+							they approved keep working: those belong to their service accounts, not to this person,
+							and everyone else holding the account keeps them.
 						{:else}
 							They have approved no live service enrollments.
 						{/if}
 					</p>
 					<label class="mb-4 block">
-						<span class="mb-1 block text-xs font-semibold text-ink-muted">
-							Reason (required)
-						</span>
+						<span class="mb-1 block text-xs font-semibold text-ink-muted"> Reason (required) </span>
 						<textarea
 							data-testid="disable-reason"
 							bind:value={disableReason}
@@ -304,9 +301,7 @@
 						</p>
 					{/if}
 					<label class="mb-4 block">
-						<span class="mb-1 block text-xs font-semibold text-ink-muted">
-							Reason (required)
-						</span>
+						<span class="mb-1 block text-xs font-semibold text-ink-muted"> Reason (required) </span>
 						<textarea
 							data-testid="enable-reason"
 							bind:value={enableReason}

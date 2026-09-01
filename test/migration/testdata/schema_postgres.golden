@@ -112,8 +112,11 @@ table enrollments
   column code type=text nullable=false default=<none>
   column created_at type=timestamp with time zone nullable=false default=<none>
   column expires_at type=timestamp with time zone nullable=false default=<none>
+  column expiry_reminder_sent_at type=timestamp with time zone nullable=true default=<none>
   column id type=text nullable=false default=<none>
   column key_id type=text nullable=false default=''::text
+  column last_expired_attempt_notified_at type=timestamp with time zone nullable=true default=<none>
+  column notification_email type=text nullable=false default=''::text
   column option_set type=text nullable=false default=''::text
   column principals type=text nullable=false default=''::text
   column public_key type=text nullable=false default=<none>
@@ -124,6 +127,7 @@ table enrollments
   fk user_id -> users.id
   index enrollments_pkey CREATE UNIQUE INDEX enrollments_pkey ON public.enrollments USING btree (id)
   index idx_enrollments_code CREATE UNIQUE INDEX idx_enrollments_code ON public.enrollments USING btree (code)
+  index idx_enrollments_expiry_reminder CREATE INDEX idx_enrollments_expiry_reminder ON public.enrollments USING btree (expiry_reminder_sent_at, expires_at)
   index idx_enrollments_service_account CREATE INDEX idx_enrollments_service_account ON public.enrollments USING btree (service_account)
   index idx_enrollments_user_id CREATE INDEX idx_enrollments_user_id ON public.enrollments USING btree (user_id)
 table notification_preferences

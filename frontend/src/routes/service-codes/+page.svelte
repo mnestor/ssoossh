@@ -57,16 +57,25 @@
 	// Accounts are unioned with the ones actually on the codes, so an
 	// enrollment whose account has since left the identity's claim still
 	// appears rather than vanishing from a page that can still open it.
+	// Deduplicated with includes rather than a Set: svelte/prefer-svelte-reactivity
+	// rejects a built-in Set here, and SvelteSet would imply reactive state this
+	// does not have — the collection is scratch, rebuilt on every evaluation of
+	// the derived and discarded once the array is returned.
 	const accounts = $derived.by(() => {
-		const names = new Set<string>(heldAccounts);
-		for (const enrollment of enrollments) {
-			const account = accountOf(enrollment);
-			if (account) {
-				names.add(account);
+		const names: string[] = [];
+		const add = (name: string) => {
+			if (name && !names.includes(name)) {
+				names.push(name);
 			}
+		};
+		for (const account of heldAccounts) {
+			add(account);
+		}
+		for (const enrollment of enrollments) {
+			add(accountOf(enrollment));
 		}
 
-		return [...names].sort().map((account) => {
+		return names.sort().map((account) => {
 			const codes = enrollments.filter((e) => accountOf(e) === account);
 			const live = codes.filter((e) => !isExpired(e.expires_at, now));
 			const expiries = live.map((e) => e.expires_at).sort();

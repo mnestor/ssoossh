@@ -30,6 +30,7 @@ function signedInUser(isAuditor: boolean) {
 		groups: [],
 		other_accounts: [],
 		service_accounts: [],
+		extra: {},
 		is_auditor: isAuditor
 	};
 }

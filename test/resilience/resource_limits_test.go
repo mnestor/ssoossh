@@ -73,39 +73,44 @@ func TestEdgeCase_CertificateWithExpiredToken(t *testing.T) {
 	// This test documents the requirement; actual expiry checking happens at cert validation.
 }
 
-// TestEdgeCase_ConcurrentApprovalsOfSameLogin validates that if the same
-// approval (same login ID) is approved concurrently from two browser instances,
-// only one certificate is issued (or both attempts fail safely).
+// TestEdgeCase_ConcurrentApprovalsOfSameLogin validates that the same
+// approval (same login ID) opened by a second browser cannot be approved
+// twice. Two browsers used to reach the approval view and race their
+// approve clicks; middleware.ApprovalClaimMiddleware now spends the link on
+// its first open, so the race cannot start — the second client is turned
+// away before sign-in, and the surviving flow issues exactly one
+// certificate. The same-browser double-submit race stays covered by
+// TestEdgeCase_DuplicateApprovalClick above.
 func TestEdgeCase_ConcurrentApprovalsOfSameLogin(t *testing.T) {
 	f := newFixture(t)
 
-	// Start a single login but approve it from two browser instances.
+	// Start a single login; only the claiming browser may approve it.
 	login := harness.StartLogin(t, f.ssoosshBin, f.server.BaseURL, f.agent.Socket)
 	approvalURL := login.ApprovalURL(t, waitFor)
 
-	// Two browser instances approve the same login concurrently.
+	// Browser 1 claims the link and proceeds to the approval view.
 	browser1 := harness.StartBrowser(t)
-	browser2 := harness.StartBrowser(t)
-
-	// Browser 1 starts approval process.
 	browser1.Navigate(t, approvalURL, `[data-testid="sign-in-button"]`)
 	browser1.Click(t, `[data-testid="sign-in-button"]`)
 	browser1.CompleteIdPLogin(t, "alice")
 	browser1.WaitVisible(t, `[data-testid="approval-view"]`)
 
-	// Browser 2 does the same (both trying to approve the same login ID).
-	browser2.Navigate(t, approvalURL, `[data-testid="sign-in-button"]`)
-	browser2.Click(t, `[data-testid="sign-in-button"]`)
-	browser2.CompleteIdPLogin(t, "alice")
-	browser2.WaitVisible(t, `[data-testid="approval-view"]`)
+	// A second client — its own profile and its own user agent, since every
+	// chromedp instance otherwise shares one UA string and would read as the
+	// claiming browser with cookies blocked — lands on the spent-link page
+	// without ever being offered a sign-in.
+	browser2 := harness.StartBrowserWithUserAgent(t, "ssoossh-resilience-second-client/1.0")
+	browser2.Navigate(t, approvalURL, `[data-testid="claim-already-opened"]`)
+	browser2.AssertNotPresent(t, `[data-testid="approve-button"]`)
 
-	// Approve concurrently.
+	// The claiming browser's approval still completes, exactly once.
 	browser1.Click(t, `[data-testid="approve-button"]`)
-	browser2.Click(t, `[data-testid="approve-button"]`)
-
-	// Both attempts should complete without panic. The server should ensure
-	// only one certificate is actually issued for this login.
 	if err := login.Wait(t, waitFor); err != nil {
-		t.Logf("login resolution: %v", err)
+		t.Fatalf("login failed: %v", err)
+	}
+
+	certs := f.agent.Certificates(t)
+	if len(certs) != 1 {
+		t.Errorf("expected exactly one certificate for the claimed approval, got %d", len(certs))
 	}
 }
