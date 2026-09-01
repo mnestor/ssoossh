@@ -1,0 +1,32 @@
+# octocov: PR-time coverage reporting using only the default GITHUB_TOKEN.
+# pull_request runs carry no secrets (see codecover.yaml), so this is the
+# only coverage surface a PR gets; Codecov sees mainline pushes only. The
+# merge gate stays scripts/check-coverage-floors.sh -- octocov reports,
+# it does not fail anything.
+#
+# Reads the combined profile the floors step assembles (main run + PAM
+# run), so the comment shows the same numbers the gate checks.
+coverage:
+  paths:
+    - coverage-combined.txt
+
+# Comment the report on pull requests, with the diff against the latest
+# report stored from main. deletePrevious so successive pushes to a PR
+# replace the comment instead of stacking them.
+comment:
+  if: is_pull_request
+  deletePrevious: true
+
+# Job summary output works even where commenting cannot.
+summary:
+  if: true
+
+# Push runs on main store the report that PR runs diff against.
+report:
+  if: is_default_branch
+  datastores:
+    - artifact://${GITHUB_REPOSITORY}
+
+diff:
+  datastores:
+    - artifact://${GITHUB_REPOSITORY}
