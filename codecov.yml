@@ -1,0 +1,23 @@
+# Codecov receives uploads only from pushes to main (see codecover.yaml):
+# PR runs never load the token, so nothing here posts on pull requests.
+# Codecov is the trend dashboard; the merge gate is .coverage-floors.
+coverage:
+  status:
+    # The floors ratchet owns the regression gate. A Codecov project status
+    # alongside it would be a second gate that can disagree with the one
+    # that shows up in review, so it stays off.
+    project: off
+    # Patch coverage of each main commit against its parent. Informational
+    # by construction -- by the time it computes, the commit is merged --
+    # but it keeps under-tested merges visible on the dashboard.
+    patch:
+      default:
+        target: 80%
+        threshold: 2%
+        informational: true
+
+comment:
+  # Comments require a PR upload, which never happens; kept configured so
+  # nothing surprising posts if uploads are ever re-enabled for PRs.
+  require_changes: true
+  layout: "diff, files"

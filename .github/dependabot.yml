@@ -23,6 +23,15 @@ updates:
       frontend:
         patterns:
           - "*"
+    # typescript-eslint cannot load TS 7 (it refuses at startup:
+    # "typescript-eslint does not support TS 7.0"), which broke `pnpm lint`
+    # for every PR after the 6.0.3 -> 7.0.2 group bump. Hold typescript at
+    # its current major until typescript-eslint supports >=7.1
+    # (https://github.com/typescript-eslint/typescript-eslint/issues/10940),
+    # then drop this ignore.
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"

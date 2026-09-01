@@ -3,9 +3,15 @@ name: codecover
 # Unit test suite plus Codecov upload. Runs on hosted runners; the
 # e2e/pam/resilience suites are tagged out of `./...` so this stays the
 # fast whole-repo unit gate.
+#
+# push-to-main exists for the Codecov upload: PR runs never load secrets
+# (see the upload steps below), so mainline pushes are the only event that
+# feeds the dashboard.
 on:
   workflow_dispatch:
   pull_request:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -97,21 +103,22 @@ jobs:
       # which silently skipped the upload the condition below was meant to
       # keep alive.
       #
-      # The fork clause is the second half of the same problem: a
-      # pull_request from a fork gets no repository secrets, so
-      # OP_SERVICE_ACCOUNT_TOKEN arrives empty and this step fails the job
-      # for a contributor who has no way to fix it. Skip the upload there
-      # instead. workflow_dispatch carries no event.pull_request at all,
-      # which is why event_name is tested first.
+      # No secrets on pull_request runs at all -- not just forks. PR code is
+      # unreviewed by definition, and a workflow that loads tokens while
+      # running it hands those tokens to whatever the PR changed. Uploads
+      # happen only from push-to-main and workflow_dispatch, where the code
+      # has already been reviewed. Codecov therefore sees mainline history
+      # only; the PR-time coverage gate is the floors step above, which
+      # needs no secrets.
       - uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
-        if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
         id: secrets
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           CODECOV_TOKEN: op://Github Actions/CODECOV_TOKEN/credential
 
       - name: Upload coverage reports to Codecov
-        if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           token: ${{ steps.secrets.outputs.CODECOV_TOKEN }}
