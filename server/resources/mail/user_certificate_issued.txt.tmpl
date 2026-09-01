@@ -1,0 +1,41 @@
+An SSH certificate was issued to you. If you just approved a certificate
+request in your browser, this is that certificate and there is nothing to do.
+
+If you did not, someone signed in as you and approved a request. Change
+whatever protects your identity provider account, then tell whoever runs this
+server -- the certificate below is live until it expires and cannot be
+recalled.
+
+CERTIFICATE
+
+  Serial                {{ .Serial }}
+  Key ID                {{ .KeyID }}
+  Principals            {{ join .Principals ", " }}
+  Issued at             {{ datetime .IssuedAt }}
+  Valid until           {{ datetime .ExpiresAt }} (in {{ until .ExpiresAt }})
+  For key               {{ .PublicKeyFingerprint }}
+
+REQUEST
+
+  Requested from        {{ .SourceIP }}
+{{ if or .LocalUsername .LocalHostname }}  Client reported       {{ .LocalUsername }}{{ if and .LocalUsername .LocalHostname }}@{{ end }}{{ .LocalHostname }}
+{{ end }}  Request ID            {{ .RequestID }}
+
+The client-reported name above is whatever the client sent and is not proof of
+anything. The address is what the server observed.
+
+WHAT IT CAN DO
+{{ if .Extensions }}
+  Extensions            {{ join .Extensions ", " }}
+{{ else }}
+  Extensions            none
+{{ end }}{{ if .ForceCommand }}  Forced command        {{ .ForceCommand }}
+{{ end }}{{ if .SourceAddresses }}  Usable from           {{ join .SourceAddresses ", " }}
+{{ else }}  Usable from           anywhere
+{{ end }}{{ if .ServerURL }}
+Your certificate history is at
+{{ .ServerURL }}/certs
+{{ end }}
+You are receiving this because "User certificate issued" is enabled in your
+notification preferences{{ if .ServerURL }} at {{ .ServerURL }}/preferences{{ end }}. It is off by
+default; turn it off there if one message per login is more than you want.

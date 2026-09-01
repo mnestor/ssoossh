@@ -114,6 +114,17 @@ export interface CurrentUserResponse {
 export interface ApproveRequestBody {
 	service_account?: string;
 	principals?: string[];
+	/**
+	 * NotificationEmail optionally points every notification about the
+	 * resulting enrollment at one address instead of fanning out to every
+	 * holder of the service account. Service-type requests only; ignored
+	 * for others. Empty means fan out, which is the default.
+	 * Approval is where this belongs because it is the moment the approver
+	 * is already deciding what the enrollment is for: a team alias entered
+	 * here reaches the people who run the job rather than the one person
+	 * who clicked approve. It stays editable afterwards.
+	 */
+	notification_email?: string;
 }
 /**
  * EnrollmentRetrievalResponse is one redemption of a service enrollment
@@ -240,6 +251,12 @@ export interface ServiceEnrollmentResponse {
 	 * those that failed at signing — someone held the code either way.
 	 */
 	retrieval_count: number /* int */;
+	/**
+	 * NotificationEmail is where notifications about this enrollment go
+	 * instead of to every holder of the service account. Empty means they
+	 * fan out, which is the default. Any holder may change it.
+	 */
+	notification_email?: string;
 }
 /**
  * ServiceEnrollmentsResponse is the caller's own approved service
@@ -247,6 +264,21 @@ export interface ServiceEnrollmentResponse {
  */
 export interface ServiceEnrollmentsResponse {
 	enrollments: ServiceEnrollmentResponse[];
+}
+/**
+ * SetNotificationEmailRequestBody is the request to point an enrollment's
+ * notifications at one address, or to clear it.
+ */
+export interface SetNotificationEmailRequestBody {
+	/**
+	 * NotificationEmail is the address every notification about this
+	 * enrollment goes to. Empty clears it, restoring fan-out to every
+	 * holder of the service account.
+	 * No omitempty: an absent field and an empty one must mean the same
+	 * thing here, because clearing the address is the whole reason to send
+	 * an empty one.
+	 */
+	notification_email: string;
 }
 /**
  * AdminEnrollmentResponse describes one service enrollment from the auditor's
@@ -313,6 +345,13 @@ export interface AdminEnrollmentResponse {
 	 * RetrievalCount counts every logged redemption attempt.
 	 */
 	retrieval_count: number /* int */;
+	/**
+	 * NotificationEmail is where notifications about this enrollment go
+	 * instead of to every holder of the service account. Empty means they
+	 * fan out. Visible to auditors because it decides who hears about a
+	 * credential; changing it needs SOC.
+	 */
+	notification_email?: string;
 }
 /**
  * AdminEnrollmentsResponse is the paged list of all service enrollments,

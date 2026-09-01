@@ -51,25 +51,39 @@ func TestApproval_TrimmedOptionsShownStruckThroughBeforeApproval(t *testing.T) {
 	browser.WaitVisible(t, `[data-testid="approve-button"]`)
 }
 
-func TestApproval_SecondIdentityOpeningSameLinkIsRefused(t *testing.T) {
+// TestApproval_SecondClientOpeningSameLinkIsRefused proves the approval URL
+// is spent by its first open (middleware.ApprovalClaimMiddleware): a
+// different client following the same link never reaches sign-in at all.
+//
+// This supersedes the pre-claim journey where a second person could sign in
+// and was refused by identity binding — that control still exists behind
+// the claim and keeps its unit coverage (bindRequester, the claim service,
+// and the middleware), but a second browser can no longer reach it.
+func TestApproval_SecondClientOpeningSameLinkIsRefused(t *testing.T) {
 	f := newFixture(t)
 
 	login := harness.StartLogin(t, f.SsoosshBin, f.Server.BaseURL, f.Agent.Socket)
 	approvalURL := login.ApprovalURL(t, waitFor)
 
-	// Two independent browsers stand in for two different people: each
-	// chromedp instance gets its own profile, so their cookie jars (and
-	// therefore OIDC sessions) don't share anything.
+	// The first browser claims the link and proceeds normally.
 	first := harness.StartBrowser(t)
 	first.Navigate(t, approvalURL, `[data-testid="sign-in-button"]`)
 	first.Click(t, `[data-testid="sign-in-button"]`)
 	first.CompleteIdPLogin(t, "alice")
 	first.WaitVisible(t, `[data-testid="approval-view"]`)
 
-	second := harness.StartBrowser(t)
-	second.Navigate(t, approvalURL, `[data-testid="sign-in-button"]`)
-	second.Click(t, `[data-testid="sign-in-button"]`)
-	second.CompleteIdPLogin(t, "mallory")
-	second.WaitVisible(t, `[data-testid="load-failure-forbidden"]`)
+	// A different client — its own profile AND its own user agent, since
+	// every chromedp instance otherwise shares one UA string and would read
+	// as the claiming browser with cookies blocked — lands on the
+	// spent-link page without ever being offered a sign-in.
+	second := harness.StartBrowserWithUserAgent(t, "ssoossh-e2e-second-client/1.0")
+	second.Navigate(t, approvalURL, `[data-testid="claim-already-opened"]`)
+	second.AssertNotPresent(t, `[data-testid="sign-in-button"]`)
 	second.AssertNotPresent(t, `[data-testid="approve-button"]`)
+
+	// The same user agent without the claim cookie is read as the claiming
+	// browser refusing cookies, and told so — the other refusal flavor.
+	third := harness.StartBrowser(t)
+	third.Navigate(t, approvalURL, `[data-testid="claim-cookies-blocked"]`)
+	third.AssertNotPresent(t, `[data-testid="approve-button"]`)
 }

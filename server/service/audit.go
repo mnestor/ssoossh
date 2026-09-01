@@ -48,6 +48,18 @@ const (
 	AuditEnrollmentRedeemed    AuditAction = "enrollment.redeemed"
 	AuditEnrollmentExpired     AuditAction = "enrollment.expired"
 
+	// AuditEnrollmentNotificationEmailSet records a change to an
+	// enrollment's notification address. Audited because it redirects every
+	// subsequent notification about a credential to an address of the
+	// setter's choosing — an unremarkable convenience, and also the quiet
+	// way to stop an account's holders hearing about their own code.
+	//
+	// The address itself is in the detail: it is operator-entered
+	// configuration in an admin-only log, not a user secret, and an event
+	// that recorded only "the address changed" would not answer the
+	// question anyone reads it for.
+	AuditEnrollmentNotificationEmailSet AuditAction = "enrollment.notification_email_set"
+
 	// AuditEnrollmentReassigned is no longer emitted: group ownership
 	// removed reassignment (see
 	// docs/proposals/enrollment-group-ownership.md). The constant stays so

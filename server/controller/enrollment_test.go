@@ -20,6 +20,7 @@ import (
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
@@ -36,6 +37,12 @@ type fakeEnrollmentService struct {
 	gotSourceIP    string
 	gotRequestID   string
 	gotIdentity    *service.Identity
+
+	// gotSetEmailID and gotSetEmail record what the notification-address
+	// handler passed through, so a test can assert on the trimming and the
+	// path parameter without a database behind it.
+	gotSetEmailID string
+	gotSetEmail   string
 }
 
 func (f *fakeEnrollmentService) Retrieve(_ context.Context, code string, sourceIP string) (string, error) {
@@ -80,6 +87,11 @@ func (f *fakeEnrollmentService) GetEnrollmentDetail(_ context.Context, _ string,
 		return service.AdminEnrollmentDetail{}, f.err
 	}
 	return service.AdminEnrollmentDetail{}, nil
+}
+
+func (f *fakeEnrollmentService) SetNotificationEmail(_ context.Context, id string, identity *service.Identity, address string) error {
+	f.gotSetEmailID, f.gotSetEmail, f.gotIdentity = id, address, identity
+	return f.err
 }
 
 func (f *fakeEnrollmentService) Reassign(_ context.Context, _ string, _ string, _ string, _ *service.Identity) error {
@@ -420,6 +432,82 @@ func sampleServiceEnrollment() service.ServiceEnrollment {
 		Fingerprint:     "SHA256:abc123",
 		RetrievalCount:  7,
 		LastRetrievedAt: &lastRetrievedAt,
+	}
+}
+
+// The address is trimmed server-side, so the handler has to pass the raw
+// input through and echo back what the service actually stored — a page that
+// assumed its own input would show whitespace the database does not hold.
+func TestSetNotificationEmailHandler_ShouldPassTheAddressThroughAndEchoTheTrimmedValue(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeEnrollmentService{}
+	r := newEnrollmentsTestRouter(svc, &service.Identity{Subject: "sub-1"})
+
+	body, err := json.Marshal(webtypes.SetNotificationEmailRequestBody{NotificationEmail: "  deploys@example.com  "})
+	if err != nil {
+		t.Fatalf("failed to encode request body: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPatch, "/certs/service/enrollments/enr-1/notification-email", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if svc.gotSetEmailID != "enr-1" {
+		t.Errorf("SetNotificationEmail got enrollment %q, want %q", svc.gotSetEmailID, "enr-1")
+	}
+
+	var got webtypes.SetNotificationEmailRequestBody
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+	if got.NotificationEmail != "deploys@example.com" {
+		t.Errorf("echoed %q, want the trimmed address", got.NotificationEmail)
+	}
+}
+
+// An empty body is how the page clears the address, so it must reach the
+// service rather than being rejected as a missing field.
+func TestSetNotificationEmailHandler_ShouldForwardAnEmptyAddressAsAClear(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeEnrollmentService{}
+	r := newEnrollmentsTestRouter(svc, &service.Identity{Subject: "sub-1"})
+
+	req := httptest.NewRequest(http.MethodPatch, "/certs/service/enrollments/enr-1/notification-email",
+		bytes.NewReader([]byte(`{"notification_email":""}`)))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if svc.gotSetEmail != "" {
+		t.Errorf("SetNotificationEmail got %q, want the empty clear", svc.gotSetEmail)
+	}
+}
+
+// A service-layer refusal (not a holder, unknown enrollment, bad address)
+// must reach the caller as its own status rather than a 200.
+func TestSetNotificationEmailHandler_ShouldSurfaceAServiceError(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeEnrollmentService{err: &errorresponses.ForbiddenError{Reason: "not a holder"}}
+	r := newEnrollmentsTestRouter(svc, &service.Identity{Subject: "sub-1"})
+
+	req := httptest.NewRequest(http.MethodPatch, "/certs/service/enrollments/enr-1/notification-email",
+		bytes.NewReader([]byte(`{"notification_email":"deploys@example.com"}`)))
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("got status %d, want %d, body: %s", w.Code, http.StatusForbidden, w.Body.String())
 	}
 }
 

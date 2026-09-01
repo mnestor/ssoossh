@@ -1,0 +1,53 @@
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1c1e21;max-width:640px">
+  <p style="background:#fdeced;border-left:3px solid #c0392b;padding:10px 14px;margin:0 0 18px">
+    An <strong>expired</strong> enrollment code was presented for redemption. It was refused, and no
+    certificate was issued.
+  </p>
+
+  <p>Two things cause this, and they need opposite responses:</p>
+  <ul style="padding-left:20px;margin:0 0 18px">
+    <li style="margin-bottom:8px">
+      <strong>A job you still want is failing.</strong> It has been renewing through this code, the
+      code expired, and every renewal since has failed. Re-enroll it.
+    </li>
+    <li>
+      <strong>A credential you thought was gone is still in circulation.</strong> Nothing you run
+      should be presenting a code that expired. If the address below is not a host you recognize,
+      treat the code as leaked and audit what it was used for while it was still live.
+    </li>
+  </ul>
+
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Attempt</h3>
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Attempted at</td><td style="padding:4px 0">{{ datetime .AttemptedAt }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">From address</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .SourceIP }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Code expired</td><td style="padding:4px 0">{{ datetime .CodeExpiredAt }}</td></tr>
+  </table>
+
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Enrollment</h3>
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Service account</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .ServiceAccount }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Enrollment ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .EnrollmentID }}</td></tr>
+    {{ if .RequestID }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Request ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .RequestID }}</td></tr>{{ end }}
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Key ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .KeyID }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Principals</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ join .Principals ", " }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Enrolled key</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .PublicKeyType }} {{ .PublicKeyFingerprint }}</td></tr>
+  </table>
+
+  <p style="color:#6b7280;font-size:13px">
+    The caller was told only that the code is unknown &mdash; an expired code and a code that never
+    existed answer identically, so whoever holds it learns nothing from the refusal.
+  </p>
+  <p style="color:#6b7280;font-size:13px">
+    You will not get another message about this enrollment for a while, however often the attempt
+    repeats.
+  </p>
+
+  {{ if .ServerURL }}<p style="font-size:13px">Your <a href="{{ .ServerURL }}/service-codes" style="color:#1d4ed8">enrollments</a>.</p>{{ end }}
+
+  <p style="margin-top:28px;padding-top:14px;border-top:1px solid #e5e7eb;color:#9099a8;font-size:12px">
+    You are receiving this because "Expired enrollment code used" is enabled in your
+    {{ if .ServerURL }}<a href="{{ .ServerURL }}/preferences" style="color:#6b7280">notification preferences</a>{{ else }}notification preferences{{ end }},
+    or because this address is set as the enrollment's notification address.
+  </p>
+</div>

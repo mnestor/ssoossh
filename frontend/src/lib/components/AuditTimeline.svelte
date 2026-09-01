@@ -33,6 +33,7 @@
 		'enrollment.code_created': 'created a service enrollment',
 		'enrollment.redeemed': 'redeemed a service enrollment',
 		'enrollment.expired': 'expired a service enrollment',
+		'enrollment.notification_email_set': "changed a service enrollment's notification address",
 		'enrollment.reassigned': 'reassigned a service enrollment',
 		'user.disabled': 'disabled an account',
 		'user.enabled': 're-enabled an account',

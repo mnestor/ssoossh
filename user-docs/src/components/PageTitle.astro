@@ -1,0 +1,48 @@
+---
+// The app's PageHeading, as Starlight's page title: an accent eyebrow
+// naming the area above the page's h1. See frontend/DESIGN.md -- the
+// eyebrow is what makes a page identifiable at a glance without reading
+// the title, so pages that belong to an area set one.
+//
+// Overrides Starlight's own PageTitle, which renders the h1 alone. The
+// eyebrow comes from the page's frontmatter (`eyebrow:`), added to the
+// docs schema in src/content.config.ts; a page without one renders exactly
+// what Starlight would have.
+// Starlight's own PageTitle imports this from a package-internal module
+// that is not exported, so the value is restated here. It is what the skip
+// link and "back to top" target, so it has to keep matching Starlight's
+// constants.ts.
+const PAGE_TITLE_ID = '_top';
+
+const { entry } = Astro.locals.starlightRoute;
+const eyebrow = (entry.data as { eyebrow?: string }).eyebrow;
+---
+
+{eyebrow && <p class="eyebrow">{eyebrow}</p>}
+<h1 id={PAGE_TITLE_ID}>{entry.data.title}</h1>
+
+<style>
+	@layer starlight.core {
+		h1 {
+			margin-top: 1rem;
+			font-size: var(--sl-text-h1);
+			line-height: var(--sl-line-height-headings);
+			font-weight: 600;
+			color: var(--sl-color-white);
+		}
+
+		.eyebrow {
+			margin-top: 1rem;
+			margin-bottom: -0.75rem;
+			color: var(--sl-color-text-accent);
+			font-size: var(--sl-text-xs);
+			font-weight: 600;
+			text-transform: uppercase;
+			letter-spacing: 0.08em;
+		}
+
+		.eyebrow + h1 {
+			margin-top: 0.5rem;
+		}
+	}
+</style>

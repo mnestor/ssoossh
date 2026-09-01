@@ -29,15 +29,16 @@ internal/fileperm              100.0
 internal/fipsmode              100.0
 internal/principalsmap         100.0
 internal/serial                 79.0
+internal/tools/confdocs         83.0
 internal/tools/gendocs          71.0
 internal/tracelog               93.0
 
 pam_ssoossh                     75.0
 
-server/bootstrap                85.0
+server/bootstrap                86.0
 server/certmsg                 100.0
 server/cmd                      76.0
-server/config                   85.0
+server/config                   92.0
 server/config/tlsutils          98.0
 server/controller               84.0
 server/dbtime                   81.0
@@ -47,7 +48,7 @@ server/logging                  97.0
 server/mail                     91.0
 server/middleware               93.0
 server/model                    74.0
-server/notify                   95.0
+server/notify                  100.0
 # Lowered 66.0 -> 64.0 on 2026-08-25. Not a regression in what is tested:
 # the NATS backend (newNATS, confirmingSubscriber.Subscribe, and Close's two
 # NATS branches -- roughly a third of the package) can only run against a
@@ -60,16 +61,22 @@ server/notify                   95.0
 # back means counting the natsintegration suite in the coverage run, not
 # writing more unit tests -- there is no reachable statement left.
 server/pubsub                   64.0
-server/service                  86.0
+server/service                  87.0
 server/signer                   74.0
 server/utils/errorresponses    100.0
+server/utils/paging             93.0
 server/utils/tracing           100.0
 
 # Entrypoints and test-only helpers. main() is a wiring shim in both
-# commands; server/testutil and test/* exist to serve other tests. Listed so
-# a package that grows real logic here has to be given a floor deliberately.
+# commands and genconfdocs; server/testutil and test/* exist to serve other
+# tests. Listed so a package that grows real logic here has to be given a
+# floor deliberately. (Statement-free packages — internal/version,
+# server/openapidoc, server/resources, server/webtypes, and the golden-only
+# test dirs — produce no profile entries and so cannot be listed.)
 cmd/ssoossh                      0.0
 cmd/ssoosshd                     0.0
+internal/tools/genconfdocs       0.0
 server/testutil                  0.0
+test/configgolden                0.0
 test/postgres                    0.0
 test/sqlite                      0.0

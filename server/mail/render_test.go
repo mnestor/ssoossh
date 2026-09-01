@@ -51,6 +51,58 @@ func samplePayload(t *testing.T, kind notify.Kind) any {
 			CodeExpiresAt:        expires,
 			ServerURL:            "https://ssoossh.example.com",
 		}
+	case notify.KindServiceEnrollmentExpiring:
+		return &notify.ServiceEnrollmentExpiring{
+			ServiceAccount:       "deploy-bot",
+			RequestID:            "req-123",
+			EnrollmentID:         "enr-456",
+			KeyID:                "alice@example.com",
+			Principals:           []string{"deploy-bot"},
+			PublicKeyFingerprint: "SHA256:abcdef",
+			PublicKeyType:        "ssh-ed25519",
+			FirstRedeemedAt:      time.Now().Add(-30 * 24 * time.Hour),
+			CodeExpiresAt:        time.Now().Add(7 * 24 * time.Hour),
+			ServerURL:            "https://ssoossh.example.com",
+		}
+	case notify.KindServiceEnrollmentExpiredAttempt:
+		return &notify.ServiceEnrollmentExpiredAttempt{
+			ServiceAccount:       "deploy-bot",
+			RequestID:            "req-123",
+			EnrollmentID:         "enr-456",
+			KeyID:                "alice@example.com",
+			Principals:           []string{"deploy-bot"},
+			PublicKeyFingerprint: "SHA256:abcdef",
+			PublicKeyType:        "ssh-ed25519",
+			SourceIP:             "198.51.100.7",
+			AttemptedAt:          time.Now(),
+			CodeExpiredAt:        time.Now().Add(-24 * time.Hour),
+			ServerURL:            "https://ssoossh.example.com",
+		}
+	case notify.KindUserCertificateIssued, notify.KindPAMCertificateIssued:
+		// One sample for both kinds because they render one payload type.
+		// CertificateType is the only field that distinguishes them, so it
+		// is filled from the kind rather than hardcoded.
+		certType := "user"
+		if kind == notify.KindPAMCertificateIssued {
+			certType = "pam"
+		}
+		return &notify.CertificateIssued{
+			CertificateType:      certType,
+			RequestID:            "req-123",
+			KeyID:                "alice@example.com",
+			Principals:           []string{"alice", "deploy"},
+			Serial:               42,
+			PublicKeyFingerprint: "SHA256:abcdef",
+			LocalUsername:        "alice",
+			LocalHostname:        "workstation",
+			SourceIP:             "198.51.100.7",
+			IssuedAt:             time.Now(),
+			ExpiresAt:            time.Now().Add(8 * time.Hour),
+			Extensions:           []string{"permit-pty"},
+			ForceCommand:         "/usr/bin/true",
+			SourceAddresses:      []string{"198.51.100.0/24"},
+			ServerURL:            "https://ssoossh.example.com",
+		}
 	default:
 		t.Fatalf("no sample payload for kind %q", kind)
 		return nil

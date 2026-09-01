@@ -314,6 +314,15 @@ components:
       required:
       - data
       type: object
+    openapidoc.SetNotificationEmailEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.SetNotificationEmailRequestBody'
+        error:
+          type: string
+      required:
+      - data
+      type: object
     openapidoc.VersionEnvelope:
       properties:
         data:
@@ -357,6 +366,13 @@ components:
           type: string
         last_retrieved_at:
           description: LastRetrievedAt is the most recent redemption attempt.
+          type: string
+        notification_email:
+          description: |-
+            NotificationEmail is where notifications about this enrollment go
+            instead of to every holder of the service account. Empty means they
+            fan out. Visible to auditors because it decides who hears about a
+            credential; changing it needs SOC.
           type: string
         options:
           $ref: '#/components/schemas/webtypes.CertificateOptionsResponse'
@@ -544,6 +560,18 @@ components:
       type: object
     webtypes.ApproveRequestBody:
       properties:
+        notification_email:
+          description: |-
+            NotificationEmail optionally points every notification about the
+            resulting enrollment at one address instead of fanning out to every
+            holder of the service account. Service-type requests only; ignored
+            for others. Empty means fan out, which is the default.
+
+            Approval is where this belongs because it is the moment the approver
+            is already deciding what the enrollment is for: a team alias entered
+            here reaches the people who run the job rather than the one person
+            who clicked approve. It stays editable afterwards.
+          type: string
         principals:
           items:
             type: string
@@ -1210,6 +1238,12 @@ components:
             not. Together with RetrievalCount it is how the approver tells a code
             still driving a cron job from one nothing has used in months.
           type: string
+        notification_email:
+          description: |-
+            NotificationEmail is where notifications about this enrollment go
+            instead of to every holder of the service account. Empty means they
+            fan out, which is the default. Any holder may change it.
+          type: string
         options:
           $ref: '#/components/schemas/webtypes.CertificateOptionsResponse'
         principals:
@@ -1262,6 +1296,19 @@ components:
           uniqueItems: false
       required:
       - enrollments
+      type: object
+    webtypes.SetNotificationEmailRequestBody:
+      properties:
+        notification_email:
+          description: |-
+            NotificationEmail is the address every notification about this
+            enrollment goes to. Empty clears it, restoring fan-out to every
+            holder of the service account.
+
+            No omitempty: an absent field and an empty one must mean the same
+            thing here, because clearing the address is the whole reason to send
+            an empty one.
+          type: string
       type: object
     webtypes.UpdateNotificationPreferencesBody:
       properties:
@@ -2360,6 +2407,75 @@ paths:
       security:
       - sessionCookie: []
       summary: The caller's approved service enrollments
+      tags:
+      - web
+  /api/certs/service/enrollments/{id}/notification-email:
+    patch:
+      description: |-
+        Points every notification about this enrollment at one address instead
+        of fanning out to every holder of its service account. An empty value
+        clears it and restores fan-out.
+
+        This exists for the cases fan-out cannot serve: a service account whose
+        holders have never logged in reaches nobody, an identity provider that
+        releases no email claim silences every holder, and a large holder set
+        turns every redemption into a mailshot where a team alias would do.
+
+        Allowed to any holder of the enrollment's service account, and to SOC
+        operators. Auditor is not enough: it is a read role, and this write
+        redirects every future message about a credential.
+      parameters:
+      - description: The enrollment's UUID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/webtypes.SetNotificationEmailRequestBody'
+                description: The address, or empty to clear it
+                summary: request
+        description: The address, or empty to clear it
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.SetNotificationEmailEnvelope'
+          description: The stored address
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not a valid email address
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not a holder of the service account
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No such enrollment
+      security:
+      - sessionCookie: []
+      summary: Set an enrollment's notification address
       tags:
       - web
   /api/certs/service/retrieve:

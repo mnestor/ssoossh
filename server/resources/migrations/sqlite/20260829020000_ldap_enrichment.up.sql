@@ -5,7 +5,7 @@
 -- enabled. Only known users sync: the server never enumerates the
 -- directory, which keeps the user set self-selecting.
 CREATE TABLE user_ldap (
-    user_id            TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    user_id            TEXT PRIMARY KEY NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     dn                 TEXT NOT NULL DEFAULT '',
     attributes         TEXT NOT NULL DEFAULT '',
     last_seen_at       DATETIME NULL,
@@ -23,7 +23,7 @@ CREATE TABLE user_ldap (
 -- per (user, group, source) so the two capture paths never collide and
 -- either can be replaced without touching the other.
 CREATE TABLE user_groups (
-    id            TEXT PRIMARY KEY,
+    id            TEXT PRIMARY KEY NOT NULL,
     user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     group_name    TEXT NOT NULL,
     source        TEXT NOT NULL,

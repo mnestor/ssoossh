@@ -66,6 +66,34 @@ type Enrollment struct {
 	// not a single-use gate. Per-redemption history is in
 	// EnrollmentRetrieval.
 	RedeemedAt *time.Time `gorm:"column:redeemed_at"`
+
+	// NotificationEmail overrides where notifications about this enrollment
+	// go: set, it is the sole recipient; empty, they fan out to every holder
+	// of ServiceAccount. It exists for the two cases fan-out cannot reach —
+	// an account whose holders have never logged in, and a team alias that
+	// should hear about the job instead of everyone who happens to hold the
+	// account (see docs/proposals/notification-kinds-expansion.md).
+	//
+	// A set address sends ungated: with no single owning user there is no
+	// principled person whose per-kind preference could gate it, and the
+	// address is the account's own subscription, entered deliberately.
+	NotificationEmail string `gorm:"column:notification_email"`
+
+	// ExpiryReminderSentAt claims the one expiry reminder this enrollment
+	// gets. Nil means unclaimed; the sweep takes it with a guarded UPDATE
+	// and publishes only if that reports a row, so every instance can sweep
+	// without any of them duplicating the send.
+	//
+	// Any path that moves ExpiresAt earlier must clear this, or a reminder
+	// already sent for the old horizon suppresses the one that matters for
+	// the new, closer one.
+	ExpiryReminderSentAt *time.Time `gorm:"column:expiry_reminder_sent_at"`
+
+	// LastExpiredAttemptNotifiedAt rate-limits the expired-attempt
+	// notification. A cron job holding a dead code retries on schedule
+	// forever, so this is claimed with a window rather than once: an attempt
+	// notifies only when this is nil or older than the configured window.
+	LastExpiredAttemptNotifiedAt *time.Time `gorm:"column:last_expired_attempt_notified_at"`
 }
 
 // TableName overrides GORM's default pluralization to match the migration.

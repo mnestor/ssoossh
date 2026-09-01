@@ -436,3 +436,55 @@ func TestSpliceMarkers_ShouldFailWhenMarkersAreMissing(t *testing.T) {
 		t.Error("expected an error when the markers are absent")
 	}
 }
+
+// An embedded struct of ours carries real configuration keys in the
+// enclosing struct's namespace. Treating every embedded struct as one
+// opaque group left http.tls.certificate_file and http.tls.private_key_file
+// -- both required to serve TLS -- out of the man page, defaults.yaml, and
+// the docs site at once.
+func TestWalk_ShouldPromoteKeysFromAnEmbeddedStructWeParse(t *testing.T) {
+	t.Parallel()
+
+	paths := map[string]string{}
+	for _, f := range leaves(walkConfig(t)) {
+		paths[f.Path] = f.Type
+	}
+
+	for path, want := range map[string]string{
+		"http.tls.certificate_file": "string",
+		"http.tls.private_key_file": "string",
+	} {
+		got, ok := paths[path]
+		if !ok {
+			t.Errorf("expected the walk to produce the key %q", path)
+			continue
+		}
+		if got != want {
+			t.Errorf("%s: got type %q, want %q", path, got, want)
+		}
+	}
+}
+
+// The timberjack rotation options come from a package the generator does
+// not parse, so they stay a single documented group rather than becoming
+// keys we would be inventing descriptions for.
+func TestWalk_ShouldKeepAThirdPartyEmbeddedStructAsOneGroup(t *testing.T) {
+	t.Parallel()
+
+	var embedded int
+	var walk func([]*Field)
+	walk = func(fields []*Field) {
+		for _, f := range fields {
+			if f.Embedded {
+				embedded++
+			}
+			walk(f.Children)
+		}
+	}
+	for _, s := range walkConfig(t) {
+		walk(s.Fields)
+	}
+	if embedded == 0 {
+		t.Errorf("expected the timberjack logger to still be documented as an embedded group")
+	}
+}

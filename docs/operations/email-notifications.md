@@ -23,8 +23,13 @@ everything else that command printed — the service account, the key
 fingerprint, the expiry, the `ssh_config` recipe — so the message is
 actionable without being redeemable. There is a test asserting the code does
 not appear in a rendered message, and another asserting it never reaches the
-notification payload; both exist so that adding a field later is a decision
-rather than an accident.
+notification payload; both cover every registered kind, so adding a field
+later is a decision rather than an accident.
+
+The rule holds for the two later enrollment kinds too. The expiry reminder
+says to run `ssoossh service enroll` again rather than offering anything to
+reuse, and the expired-attempt report names the enrollment without naming the
+code that was presented.
 
 ## Configuring the relay
 
@@ -102,6 +107,70 @@ each notification. Without that, a recipient would get one copy per running
 server. Nothing else about a multi-instance deployment needs configuring for
 mail.
 
+The queue group deduplicates *consumption*, not *publication*, which matters
+for the two notifications not emitted from a single request path. The expiry
+reminder is found by a sweep every instance runs, and the expired-attempt
+report can be raised by whichever instance fields a retry. Both therefore
+claim their send in the database with a guarded `UPDATE` and publish only if
+that claims a row, so two instances produce one message between them rather
+than one each.
+
+### The two scheduled and rate-limited kinds
+
+```yaml
+mail:
+  # How far ahead of an enrollment code's expiry the reminder goes out.
+  # 0 disables it and the sweep is not registered at all.
+  expiry_reminder_lead: 168h
+  # At most one "expired code used" message per enrollment per window.
+  # 0 disables that notification.
+  expired_attempt_window: 24h
+```
+
+`expiry_reminder_lead` is one reminder per enrollment, ever. Lengthening it
+does not re-remind a code already reminded under the old value; shortening it
+means a code now past the new window never gets one. The sweep runs at a
+fraction of the lead (a 7-day lead sweeps every 7 hours), and skips codes
+that have already expired — a reminder that something expired yesterday helps
+nobody, and the aftermath has its own notification.
+
+`expired_attempt_window` is a rate limit rather than a one-shot, because what
+it reports is a retry loop: a cron job holding a dead code fails on its own
+schedule indefinitely, and the recipient needs to keep hearing that it is
+still happening without hearing it every five minutes.
+
+## Where an enrollment's notifications go
+
+Notifications about a service enrollment — created, redeemed, expiring, and
+expired-code-used — go to **every holder of its service account** by default,
+resolved fresh at delivery from the accounts each user held at their last
+login.
+
+That default leaves two gaps, and an optional per-enrollment **notification
+address** closes both:
+
+- A service account whose holders have never logged in has no rows to fan out
+  to, so the notification reaches nobody.
+- An identity provider that releases no email claim silences every holder's
+  copy, and a large holder set turns every redemption into a mailshot where a
+  team alias would do.
+
+Set the address on the browser approval page when approving the request, or
+afterwards from the service codes page (any holder) or the admin console's
+enrollment view (SOC). Clearing it restores fan-out.
+
+A set address is the sole recipient and is sent **ungated**: with no single
+owning user there is no principled per-kind preference that could gate it,
+and the address is the account's own subscription, entered deliberately. A
+holder who has opted out of a kind still does not get their own copy —
+they simply are not a recipient while an address is set.
+
+There is deliberately no domain allowlist. Anyone who can set the address can
+already approve certificates for the account. Changing it is recorded in the
+audit stream as `enrollment.notification_email_set`, carrying both the old
+and the new value, because redirecting a credential's mail is exactly the
+kind of quiet change an auditor wants to be able to find.
+
 ## What users control
 
 Each user chooses which notifications they receive at `/preferences` in the
@@ -112,6 +181,15 @@ account whose holders have all opted out sends nothing at all.
 Choices are stored per (user, kind); a user who has never answered
 gets the kind's own default, which is what lets a new notification ship
 without a backfill.
+
+The two "was this you?" kinds — `user_certificate_issued` and
+`pam_certificate_issued` — default **off**, and are the only ones that do. An
+interactive certificate is issued per login and a PAM certificate per `sudo`,
+so either defaulting on would make every existing deployment noisy the day it
+upgrades. They are two kinds rather than one with a type field so a user who
+runs `sudo` forty times a day and logs in twice can keep the login signal
+without drowning in the other. A security-sensitive deployment can tell its
+users to turn them on; nothing turns them on for them.
 
 The preference is read at delivery rather than at publication, so a
 notification queued moments before someone opts out is not delivered
@@ -190,6 +268,129 @@ Templates:
 | `.FirstRedemption` | `bool` | True when this was the first time the code was redeemed. |
 | `.CodeExpiresAt` | `time.Time` | When the code itself stops being redeemable. |
 | `.ServerURL` | `string` | The server's public origin, for links back to the retrieval log. |
+
+
+### Service enrollment expiring
+
+`service_enrollment_expiring`
+
+Sent once when one of your enrollment codes is close to expiring, so an unattended job can be re-enrolled before it starts failing.
+
+Default: **on**.
+
+Templates:
+
+- `service_enrollment_expiring.subject.tmpl`
+- `service_enrollment_expiring.txt.tmpl`
+- `service_enrollment_expiring.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.ServiceAccount` | `string` | The service account the expiring enrollment belongs to. |
+| `.RequestID` | `string` | The certificate request the enrollment came from, or empty for an enrollment with no linked request. |
+| `.EnrollmentID` | `string` | The enrollment about to expire. |
+| `.KeyID` | `string` | The SSH certificate key ID fixed at approval time. |
+| `.Principals` | `[]string` | The certificate principals fixed at approval time. |
+| `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the enrolled public key. |
+| `.PublicKeyType` | `string` | SSH algorithm of the enrolled public key, e.g. ssh-ed25519. |
+| `.FirstRedeemedAt` | `time.Time` | When the code was first redeemed, or the zero time if it never was. A code never redeemed is usually a job that was never finished. |
+| `.CodeExpiresAt` | `time.Time` | When the code stops being redeemable. Re-enroll before this. |
+| `.ServerURL` | `string` | The server's public origin, for links back to the enrollment. |
+
+
+### Expired enrollment code used
+
+`service_enrollment_expired_attempt`
+
+Sent when an expired enrollment code is presented for redemption: either a job is still trying to use it, or someone is replaying a credential that should no longer exist.
+
+Default: **on**.
+
+Templates:
+
+- `service_enrollment_expired_attempt.subject.tmpl`
+- `service_enrollment_expired_attempt.txt.tmpl`
+- `service_enrollment_expired_attempt.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.ServiceAccount` | `string` | The service account the expired enrollment belongs to. |
+| `.RequestID` | `string` | The certificate request the enrollment came from, or empty for an enrollment with no linked request. |
+| `.EnrollmentID` | `string` | The enrollment whose expired code was presented. |
+| `.KeyID` | `string` | The SSH certificate key ID fixed at approval time. |
+| `.Principals` | `[]string` | The certificate principals fixed at approval time. |
+| `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the enrolled public key. |
+| `.PublicKeyType` | `string` | SSH algorithm of the enrolled public key, e.g. ssh-ed25519. |
+| `.SourceIP` | `string` | The address the attempt came from. |
+| `.AttemptedAt` | `time.Time` | When the expired code was presented. |
+| `.CodeExpiredAt` | `time.Time` | When the code stopped being redeemable. |
+| `.ServerURL` | `string` | The server's public origin, for links back to the enrollment. |
+
+
+### User certificate issued
+
+`user_certificate_issued`
+
+Sent every time an interactive SSH certificate is signed for you. Off by default: this is one message per login, for people who want to see every one.
+
+Default: **off**.
+
+Templates:
+
+- `user_certificate_issued.subject.tmpl`
+- `user_certificate_issued.txt.tmpl`
+- `user_certificate_issued.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.CertificateType` | `string` | The certificate type, "user" or "pam". |
+| `.RequestID` | `string` | The certificate request this certificate was issued for. |
+| `.KeyID` | `string` | The SSH certificate key ID. |
+| `.Principals` | `[]string` | The accounts this certificate may log in as. |
+| `.Serial` | `uint64` | The certificate serial, matching the entry in your certificate history. |
+| `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the key the certificate was issued for. |
+| `.LocalUsername` | `string` | The local account the client reported, or empty if it reported none. Client-reported, so not evidence. |
+| `.LocalHostname` | `string` | The machine the client reported, or empty if it reported none. Client-reported, so not evidence. |
+| `.SourceIP` | `string` | The address the request was made from. |
+| `.IssuedAt` | `time.Time` | When the certificate becomes valid. |
+| `.ExpiresAt` | `time.Time` | When the certificate stops being valid. |
+| `.Extensions` | `[]string` | SSH certificate extensions granted, after narrowing against server config. |
+| `.ForceCommand` | `string` | The force-command critical option, or empty if none was granted. |
+| `.SourceAddresses` | `[]string` | The source-address critical option, or empty if unrestricted. |
+| `.ServerURL` | `string` | The server's public origin, for links back to the certificate. |
+
+
+### PAM certificate issued
+
+`pam_certificate_issued`
+
+Sent every time a certificate is signed for a local sudo or su on your behalf. Off by default: this is one message per sudo.
+
+Default: **off**.
+
+Templates:
+
+- `pam_certificate_issued.subject.tmpl`
+- `pam_certificate_issued.txt.tmpl`
+- `pam_certificate_issued.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.CertificateType` | `string` | The certificate type, "user" or "pam". |
+| `.RequestID` | `string` | The certificate request this certificate was issued for. |
+| `.KeyID` | `string` | The SSH certificate key ID. |
+| `.Principals` | `[]string` | The accounts this certificate may log in as. |
+| `.Serial` | `uint64` | The certificate serial, matching the entry in your certificate history. |
+| `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the key the certificate was issued for. |
+| `.LocalUsername` | `string` | The local account the client reported, or empty if it reported none. Client-reported, so not evidence. |
+| `.LocalHostname` | `string` | The machine the client reported, or empty if it reported none. Client-reported, so not evidence. |
+| `.SourceIP` | `string` | The address the request was made from. |
+| `.IssuedAt` | `time.Time` | When the certificate becomes valid. |
+| `.ExpiresAt` | `time.Time` | When the certificate stops being valid. |
+| `.Extensions` | `[]string` | SSH certificate extensions granted, after narrowing against server config. |
+| `.ForceCommand` | `string` | The force-command critical option, or empty if none was granted. |
+| `.SourceAddresses` | `[]string` | The source-address critical option, or empty if unrestricted. |
+| `.ServerURL` | `string` | The server's public origin, for links back to the certificate. |
 
 <!-- END GENERATED NOTIFICATION REFERENCE -->
 

@@ -1,0 +1,53 @@
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1c1e21;max-width:640px">
+  <p style="background:#fff8e6;border-left:3px solid #b7791f;padding:10px 14px;margin:0 0 18px">
+    An enrollment code for one of your service accounts expires in
+    <strong>{{ until .CodeExpiresAt }}</strong>. Once it does,
+    <code>ssoossh service retrieve</code> stops issuing certificates for it, and any unattended job
+    that renews through it starts failing.
+  </p>
+
+  <p style="color:#6b7280;font-size:13px">This is the only reminder for this enrollment.</p>
+
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Enrollment</h3>
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Service account</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .ServiceAccount }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Enrollment ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .EnrollmentID }}</td></tr>
+    {{ if .RequestID }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Request ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .RequestID }}</td></tr>{{ end }}
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Key ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .KeyID }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Principals</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ join .Principals ", " }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Enrolled key</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .PublicKeyType }} {{ .PublicKeyFingerprint }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Code expires</td><td style="padding:4px 0">{{ datetime .CodeExpiresAt }} (in {{ until .CodeExpiresAt }})</td></tr>
+    {{ if not .FirstRedeemedAt.IsZero }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">First redeemed</td><td style="padding:4px 0">{{ datetime .FirstRedeemedAt }}</td></tr>{{ end }}
+  </table>
+
+  {{ if .FirstRedeemedAt.IsZero }}
+  <p style="color:#6b7280;font-size:13px">
+    This code has <strong>never been redeemed</strong>. That usually means the job it was created
+    for was never finished, in which case there is nothing to do: letting it expire is the right
+    outcome.
+  </p>
+  {{ else }}
+  <p style="color:#6b7280;font-size:13px">
+    This code has been in use, so something is very likely still renewing through it.
+  </p>
+  {{ end }}
+
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">To keep the job running</h3>
+  <p>
+    Run <code>ssoossh service enroll</code> again on the host that holds the key, and have the new
+    request approved. That mints a new code; the old one keeps working until it expires, so there is
+    no gap if you do it before the date above.
+  </p>
+  <p style="color:#6b7280;font-size:13px">
+    Certificates already issued from this code are unaffected. They stay valid for their own
+    lifetimes, which is why a job can keep running for a while after the code behind it has expired.
+  </p>
+
+  {{ if .ServerURL }}<p style="font-size:13px">Your <a href="{{ .ServerURL }}/service-codes" style="color:#1d4ed8">enrollments</a>.</p>{{ end }}
+
+  <p style="margin-top:28px;padding-top:14px;border-top:1px solid #e5e7eb;color:#9099a8;font-size:12px">
+    You are receiving this because "Service enrollment expiring" is enabled in your
+    {{ if .ServerURL }}<a href="{{ .ServerURL }}/preferences" style="color:#6b7280">notification preferences</a>{{ else }}notification preferences{{ end }},
+    or because this address is set as the enrollment's notification address.
+  </p>
+</div>

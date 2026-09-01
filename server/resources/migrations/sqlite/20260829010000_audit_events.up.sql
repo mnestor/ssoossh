@@ -12,7 +12,7 @@
 -- type=audit log is the archive.
 
 CREATE TABLE audit_events (
-    id             TEXT PRIMARY KEY,
+    id             TEXT PRIMARY KEY NOT NULL,
     created_at     DATETIME NOT NULL,
     actor_user_id  TEXT NULL,
     target_user_id TEXT NULL,

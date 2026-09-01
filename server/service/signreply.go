@@ -15,6 +15,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/certmsg"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/server/notify"
 )
 
 // SignedReplyHandler consumes certmsg.SignedTopic: it writes the audit row,
@@ -85,7 +86,8 @@ func (h *SignedReplyHandler) handle(msg *message.Message) error {
 // to clean up (see docs/internals/signing-pipeline.md), and by then
 // the audit row is already durable.
 func (h *SignedReplyHandler) resolveSuccess(ctx context.Context, reply certmsg.SignedReply) error {
-	if err := h.recordCertificate(ctx, reply); err != nil {
+	origin, err := h.recordCertificate(ctx, reply)
+	if err != nil {
 		return err
 	}
 
@@ -93,6 +95,12 @@ func (h *SignedReplyHandler) resolveSuccess(ctx context.Context, reply certmsg.S
 		Status:      model.CertificateRequestStatusApproved,
 		Certificate: reply.Certificate,
 	})
+
+	// Emitted where the certificate becomes real rather than at approval, so
+	// one site covers both types and no message ever describes a certificate
+	// that failed to sign. Service certificates are excluded here: their
+	// notification is the redemption one, addressed to the enrollment.
+	h.notifyIssued(ctx, reply, origin)
 
 	if !resolvesRequestRow(reply) {
 		return nil
@@ -143,17 +151,38 @@ func resolvesRequestRow(reply certmsg.SignedReply) bool {
 	return reply.Type != model.CertificateTypeService
 }
 
-// recordCertificate writes the audit row for an issued certificate.
-func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certmsg.SignedReply) error {
+// certificateOrigin is what the request row behind an issued certificate
+// says about where it came from: who it is for, which request produced it,
+// and the client-reported context that makes a "was this you?" message
+// recognizable to the person who was there.
+//
+// Every field is best effort. A reply whose request row cannot be read
+// still produces an audit row and a delivered certificate; it just carries
+// no owner, which is why the zero value is usable rather than an error.
+type certificateOrigin struct {
+	UserID    *string
+	RequestID *string
+
+	SourceIP      string
+	LocalUsername string
+	LocalHostname string
+}
+
+// recordCertificate writes the audit row for an issued certificate and
+// returns what the request row said about its origin, which the issued
+// notification needs and would otherwise re-read.
+func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certmsg.SignedReply) (certificateOrigin, error) {
+	var origin certificateOrigin
+
 	criticalOptions, err := json.Marshal(reply.CriticalOptions)
 	if err != nil {
 		// not covered: a map[string]string, so json.Marshal cannot fail.
-		return fmt.Errorf("failed to encode critical options: %w", err)
+		return origin, fmt.Errorf("failed to encode critical options: %w", err)
 	}
 	extensions, err := json.Marshal(reply.Extensions)
 	if err != nil {
 		// not covered: a []string, so json.Marshal cannot fail.
-		return fmt.Errorf("failed to encode extensions: %w", err)
+		return origin, fmt.Errorf("failed to encode extensions: %w", err)
 	}
 
 	// Read the owner off the request rather than carrying it through the
@@ -179,7 +208,12 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 		userID, requestID = h.resolveRetrievalOwner(ctx, reply.RequestID)
 	} else {
 		var req model.CertificateRequest
-		switch err := h.db.WithContext(ctx).Select("user_id").First(&req, "id = ?", reply.RequestID).Error; {
+		// The client-reported columns come back with the owner rather than
+		// in a second read: the issued notification needs them, and this is
+		// the one place the request row is already being loaded.
+		switch err := h.db.WithContext(ctx).
+			Select("user_id", "source_ip", "local_username", "local_hostname").
+			First(&req, "id = ?", reply.RequestID).Error; {
 		case err != nil:
 			slog.Warn("could not resolve the owner of an issued certificate",
 				"request_id", reply.RequestID, "error", err)
@@ -188,13 +222,16 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 			// request ID is what keeps this row reattachable later rather than
 			// permanently orphaned.
 			requestID = &reply.RequestID
+			origin.SourceIP, origin.LocalUsername, origin.LocalHostname = req.SourceIP, req.LocalUsername, req.LocalHostname
 			slog.Warn("issued certificate has no owner: its request was never bound to a user",
 				"request_id", reply.RequestID)
 		default:
 			userID = req.UserID
 			requestID = &reply.RequestID
+			origin.SourceIP, origin.LocalUsername, origin.LocalHostname = req.SourceIP, req.LocalUsername, req.LocalHostname
 		}
 	}
+	origin.UserID, origin.RequestID = userID, requestID
 
 	cert := model.Certificate{
 		ID:                   uuid.NewString(),
@@ -223,7 +260,7 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 			DoNothing: true,
 		}).
 		Create(&cert).Error; err != nil {
-		return fmt.Errorf("failed to persist certificate audit record: %w", err)
+		return origin, fmt.Errorf("failed to persist certificate audit record: %w", err)
 	}
 
 	// Shipped log only, never the table: the UI already has certificate
@@ -248,7 +285,64 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 		})
 	}
 
-	return nil
+	return origin, nil
+}
+
+// notifyIssued queues the "was this you?" message for a user or PAM
+// certificate.
+//
+// Service certificates are skipped: the enrollment path already reports
+// every redemption to the enrollment's recipients, and a second message per
+// redemption addressed to the approver would be noise about a job nobody
+// was present for. Both kinds here default off, so an existing deployment
+// stays as quiet on upgrade as it was before.
+//
+// A reply with no resolvable owner is skipped rather than logged again —
+// recordCertificate has already said so, and there is nobody to tell.
+func (h *SignedReplyHandler) notifyIssued(ctx context.Context, reply certmsg.SignedReply, origin certificateOrigin) {
+	if h.certs == nil || origin.UserID == nil || *origin.UserID == "" {
+		return
+	}
+
+	var kind notify.Kind
+	switch reply.Type {
+	case model.CertificateTypeUser:
+		kind = notify.KindUserCertificateIssued
+	case model.CertificateTypePAM:
+		kind = notify.KindPAMCertificateIssued
+	default:
+		// Service, and any type added later without a notification of its
+		// own. Silent by design rather than by omission.
+		return
+	}
+
+	// The critical options come back from the signer as the map that went
+	// into the certificate, so they are read from there rather than from
+	// the request: what the reader wants confirmed is what the certificate
+	// carries, not what was asked for.
+	forceCommand := reply.CriticalOptions["force-command"]
+	var sourceAddresses []string
+	if joined := reply.CriticalOptions["source-address"]; joined != "" {
+		sourceAddresses = strings.Split(joined, ",")
+	}
+
+	h.certs.notifier.Notify(ctx, kind, *origin.UserID, &notify.CertificateIssued{
+		CertificateType:      string(reply.Type),
+		RequestID:            reply.RequestID,
+		KeyID:                reply.KeyID,
+		Principals:           reply.Principals,
+		Serial:               reply.Serial,
+		PublicKeyFingerprint: reply.PublicKeyFingerprint,
+		LocalUsername:        origin.LocalUsername,
+		LocalHostname:        origin.LocalHostname,
+		SourceIP:             origin.SourceIP,
+		IssuedAt:             reply.ValidAfter,
+		ExpiresAt:            reply.ValidBefore,
+		Extensions:           reply.Extensions,
+		ForceCommand:         forceCommand,
+		SourceAddresses:      sourceAddresses,
+		ServerURL:            h.certs.config.HTTP.PublicOrigin(),
+	})
 }
 
 // resolveRetrievalOwner resolves the audit linkage for a service

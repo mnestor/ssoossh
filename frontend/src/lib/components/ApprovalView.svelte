@@ -38,6 +38,12 @@
 		serviceAccounts?: string[];
 		/** Selected service account for approval (for service-type requests). */
 		selectedServiceAccount?: string | null;
+		/**
+		 * Optional address every notification about the resulting enrollment
+		 * goes to, instead of fanning out to every holder of the service
+		 * account (service-type requests only).
+		 */
+		notificationEmail?: string;
 		/** Principals available to this approver (for user-type requests). */
 		userPrincipals?: string[];
 		/** Selected principals for approval (for user-type requests). */
@@ -53,6 +59,7 @@
 		outcome = null,
 		serviceAccounts = [],
 		selectedServiceAccount = $bindable(),
+		notificationEmail = $bindable(''),
 		userPrincipals = [],
 		// A fallback, like userPrincipals and serviceAccounts above. The prop
 		// is declared optional and the approve button reads
@@ -263,6 +270,27 @@
 											<option value={account}>{account}</option>
 										{/each}
 									</select>
+								</label>
+								<!-- Offered here because this is the moment the approver
+								     is already deciding what the enrollment is for. Left
+								     empty, notifications reach everyone holding the
+								     account; a team alias reaches the people who
+								     actually run the job. Editable later either way. -->
+								<label class="flex flex-col gap-1">
+									<span class="text-[13px] text-ink-muted">Notification address (optional)</span>
+									<input
+										type="email"
+										bind:value={notificationEmail}
+										data-testid="notification-email-input"
+										placeholder="deploys@example.com"
+										aria-describedby="notification-email-help"
+										class="rounded border border-border-subtle bg-surface px-3 py-2 text-[13px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+									/>
+									<span id="notification-email-help" class="text-[11px] text-ink-muted">
+										Where notifications about this enrollment go — redemptions, the expiry reminder,
+										and any use of the code after it expires. Leave empty to notify everyone holding
+										the account.
+									</span>
 								</label>
 							</div>
 						</div>

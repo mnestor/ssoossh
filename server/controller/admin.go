@@ -217,9 +217,19 @@ func (a *adminController) expireEnrollmentHandler(g *gin.Context) {
 	// Update the enrollment's ExpiresAt to now, which will prevent retrieval
 	// in the enrollment service.
 	err = a.db.WithContext(g.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		// expiry_reminder_sent_at is cleared alongside the date, honoring the
+		// rule that any path moving expires_at earlier releases the reminder
+		// claim (see model.Enrollment.ExpiryReminderSentAt). It changes
+		// nothing today — this path expires the code outright, and the sweep
+		// only reminds about codes still in the future — but the invariant
+		// belongs at every write of the column, not only at the ones where
+		// omitting it would currently be visible.
 		result := tx.Model(&adminEnrollmentModel{}).
 			Where("id = ?", id).
-			Update("expires_at", now)
+			Updates(map[string]any{
+				"expires_at":              now,
+				"expiry_reminder_sent_at": nil,
+			})
 		if result.Error != nil {
 			return result.Error
 		}
@@ -1093,6 +1103,7 @@ func (a *adminController) listEnrollmentsHandler(g *gin.Context) {
 			ExpiresAt:            row.Enrollment.ExpiresAt,
 			RetrievalCount:       row.RetrievalCount,
 			LastRetrievedAt:      row.LastRetrievedAt,
+			NotificationEmail:    row.Enrollment.NotificationEmail,
 		}
 		if row.Enrollment.RedeemedAt != nil {
 			resp.FirstRedeemedAt = row.Enrollment.RedeemedAt
@@ -1179,6 +1190,7 @@ func (a *adminController) getEnrollmentDetailHandler(g *gin.Context) {
 		CreatedAt:            detail.Enrollment.CreatedAt,
 		ExpiresAt:            detail.Enrollment.ExpiresAt,
 		RetrievalCount:       detail.Retrievals.Total,
+		NotificationEmail:    detail.Enrollment.NotificationEmail,
 	}
 	if detail.Enrollment.RedeemedAt != nil {
 		resp.FirstRedeemedAt = detail.Enrollment.RedeemedAt

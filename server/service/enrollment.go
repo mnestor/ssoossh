@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	netmail "net/mail"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
@@ -33,6 +35,7 @@ type EnrollmentProvider interface {
 	ListForIdentity(ctx context.Context, identity *Identity) ([]ServiceEnrollment, error)
 	ListForAdmin(ctx context.Context, identity *Identity, params AdminListParams) (AdminEnrollmentList, error)
 	GetEnrollmentDetail(ctx context.Context, enrollmentID string, identity *Identity) (AdminEnrollmentDetail, error)
+	SetNotificationEmail(ctx context.Context, enrollmentID string, identity *Identity, address string) error
 }
 
 // EnrollmentService redeems an approved model.Enrollment (created by
@@ -124,6 +127,12 @@ func (s *EnrollmentService) Retrieve(ctx context.Context, code string, sourceIP 
 		// An expired code answers exactly like an unknown one: the caller
 		// holds a dead capability either way, and the distinction is
 		// visible to the approver in the web UI, not to the wire.
+		//
+		// The owners are told, though, before that answer goes out. By this
+		// point the row is loaded, so the attempt is fully attributable —
+		// and it is either a forgotten job now failing on schedule or a
+		// credential being replayed, both of which they want to hear about.
+		s.notifyExpiredAttempt(ctx, enrollment, sourceIP, now)
 		return "", &errorresponses.NotFoundError{Resource: "enrollment"}
 	}
 
@@ -252,7 +261,7 @@ func (s *EnrollmentService) notifyRedemption(
 		requestID = *enrollment.CertificateRequestID
 	}
 
-	s.notifier.NotifyServiceAccount(ctx, notify.KindServiceEnrollmentRedeemed, enrollment.ServiceAccount, &notify.ServiceEnrollmentRedeemed{
+	s.notifier.NotifyEnrollment(ctx, notify.KindServiceEnrollmentRedeemed, enrollment.ID, enrollment.ServiceAccount, &notify.ServiceEnrollmentRedeemed{
 		ServiceAccount:       enrollment.ServiceAccount,
 		RequestID:            requestID,
 		EnrollmentID:         enrollment.ID,
@@ -268,6 +277,243 @@ func (s *EnrollmentService) notifyRedemption(
 		CodeExpiresAt:        enrollment.ExpiresAt,
 		ServerURL:            s.config.HTTP.PublicOrigin(),
 	})
+}
+
+// notifyExpiredAttempt reports one presentation of an expired code, at most
+// once per enrollment per mail.expired_attempt_window.
+//
+// The rate limit is a claim in the database rather than a counter in
+// memory, for the same reason the expiry reminder's is: every instance
+// fields redemptions, and the delivery queue group deduplicates
+// consumption, not publication. Two instances answering the same retry loop
+// would otherwise queue two events and the group would faithfully send
+// both.
+//
+// Claim-then-publish, so a crash between the two loses a message rather
+// than sending an extra one. For a report of an already-failing job that is
+// the right side to fail on: the next attempt in the loop re-reports it.
+func (s *EnrollmentService) notifyExpiredAttempt(ctx context.Context, enrollment model.Enrollment, sourceIP string, attemptedAt time.Time) {
+	window := s.config.Mail.ExpiredAttemptWindow
+	if window <= 0 {
+		return
+	}
+
+	// Matches an enrollment never notified, or one whose last notification
+	// is older than the window. The same statement is both the check and
+	// the claim, which is what makes it safe across instances.
+	result := s.db.WithContext(ctx).Model(&model.Enrollment{}).
+		Where("id = ?", enrollment.ID).
+		Where("last_expired_attempt_notified_at IS NULL OR last_expired_attempt_notified_at < ?", attemptedAt.Add(-window)).
+		Update("last_expired_attempt_notified_at", attemptedAt)
+	if result.Error != nil {
+		slog.ErrorContext(ctx, "failed to claim the expired-attempt notification",
+			"enrollment_id", enrollment.ID, "error", result.Error)
+		return
+	}
+	if result.RowsAffected == 0 {
+		// Already reported inside this window, by this instance or another.
+		return
+	}
+
+	requestID := ""
+	if enrollment.CertificateRequestID != nil {
+		requestID = *enrollment.CertificateRequestID
+	}
+	fingerprint, keyType := describeAuthorizedKey(enrollment.PublicKey)
+
+	s.notifier.NotifyEnrollment(ctx, notify.KindServiceEnrollmentExpiredAttempt, enrollment.ID, enrollment.ServiceAccount,
+		&notify.ServiceEnrollmentExpiredAttempt{
+			ServiceAccount:       enrollment.ServiceAccount,
+			RequestID:            requestID,
+			EnrollmentID:         enrollment.ID,
+			KeyID:                enrollment.KeyID,
+			Principals:           decodeEnrollmentPrincipals(enrollment),
+			PublicKeyFingerprint: fingerprint,
+			PublicKeyType:        keyType,
+			SourceIP:             sourceIP,
+			AttemptedAt:          attemptedAt,
+			CodeExpiredAt:        enrollment.ExpiresAt,
+			ServerURL:            s.config.HTTP.PublicOrigin(),
+		})
+}
+
+// expiryReminderBatch bounds how many reminders one sweep pass claims.
+//
+// The sweep is a background job with no deadline, and the queue it
+// publishes into is in-process, so the bound is not about throughput: it is
+// about the first pass after an upgrade, when no enrollment has been
+// reminded yet and every one inside the window is eligible at once. The
+// remainder is picked up by the next pass, which is minutes away.
+const expiryReminderBatch = 500
+
+// SweepExpiryReminders sends the one-per-enrollment reminder for codes
+// coming up on expiry, and is the only notification not emitted from an
+// event path — the event here is the absence of one.
+//
+// Registered as a scheduled job (see bootstrap.registerExpiryReminderJob)
+// and disabled entirely when mail.expiry_reminder_lead is zero.
+//
+// Every instance runs this. The send-once guarantee comes from claiming
+// each row with a guarded UPDATE and publishing only when that reports a
+// row, so two instances sweeping the same enrollment produce one reminder
+// between them rather than one each.
+func (s *EnrollmentService) SweepExpiryReminders(ctx context.Context) error {
+	// Registration already skips a zero lead, so in production nothing
+	// reaches here with one. The guard stays because it belongs with the
+	// value it reads rather than only at the registration that happens to be
+	// its one caller today.
+	lead := s.config.Mail.ExpiryReminderLead
+	if lead <= 0 {
+		return nil
+	}
+
+	now := time.Now()
+	var due []model.Enrollment
+	err := s.db.WithContext(ctx).
+		Where("expiry_reminder_sent_at IS NULL").
+		// Already-expired codes are deliberately excluded. A reminder that
+		// something expires "in already elapsed" helps nobody, and the
+		// aftermath has its own notification: an expired code that anything
+		// still presents raises service_enrollment_expired_attempt.
+		Where("expires_at > ?", now).
+		Where("expires_at <= ?", now.Add(lead)).
+		Order("expires_at").
+		Limit(expiryReminderBatch).
+		Find(&due).Error
+	if err != nil {
+		return fmt.Errorf("failed to find enrollments due an expiry reminder: %w", err)
+	}
+
+	for _, enrollment := range due {
+		// Guarded on the column still being NULL, which is the claim: a
+		// second instance that selected the same row loses this update and
+		// publishes nothing.
+		result := s.db.WithContext(ctx).Model(&model.Enrollment{}).
+			Where("id = ? AND expiry_reminder_sent_at IS NULL", enrollment.ID).
+			Update("expiry_reminder_sent_at", now)
+		if result.Error != nil {
+			return fmt.Errorf("failed to claim the expiry reminder for enrollment %q: %w", enrollment.ID, result.Error)
+		}
+		if result.RowsAffected == 0 {
+			continue
+		}
+
+		requestID := ""
+		if enrollment.CertificateRequestID != nil {
+			requestID = *enrollment.CertificateRequestID
+		}
+		fingerprint, keyType := describeAuthorizedKey(enrollment.PublicKey)
+
+		firstRedeemedAt := time.Time{}
+		if enrollment.RedeemedAt != nil {
+			firstRedeemedAt = *enrollment.RedeemedAt
+		}
+
+		s.notifier.NotifyEnrollment(ctx, notify.KindServiceEnrollmentExpiring, enrollment.ID, enrollment.ServiceAccount,
+			&notify.ServiceEnrollmentExpiring{
+				ServiceAccount:       enrollment.ServiceAccount,
+				RequestID:            requestID,
+				EnrollmentID:         enrollment.ID,
+				KeyID:                enrollment.KeyID,
+				Principals:           decodeEnrollmentPrincipals(enrollment),
+				PublicKeyFingerprint: fingerprint,
+				PublicKeyType:        keyType,
+				FirstRedeemedAt:      firstRedeemedAt,
+				CodeExpiresAt:        enrollment.ExpiresAt,
+				ServerURL:            s.config.HTTP.PublicOrigin(),
+			})
+	}
+
+	if len(due) > 0 {
+		slog.InfoContext(ctx, "sent enrollment expiry reminders", "count", len(due), "lead", lead)
+	}
+	return nil
+}
+
+// maxNotificationEmailLength caps a stored notification address. Well past
+// the 254-octet limit RFC 5321 puts on a path, so it rejects only input
+// that was never an address.
+const maxNotificationEmailLength = 320
+
+// validateNotificationEmail trims and format-checks a notification address,
+// returning the value to store. Empty is valid and means "fan out to the
+// account's holders".
+//
+// Shared by the two places an address can be set — approval time and the
+// later edit — so the two cannot come to disagree about what is acceptable.
+// A rejected address is the caller's input, not a server fault, so it
+// renders as a 400.
+//
+// The address is stored as given otherwise. There is no domain allowlist:
+// whoever sets one is already trusted to approve certificates for the
+// account, and an operator who wants a restriction can be given a config
+// knob later without a migration (see
+// docs/proposals/notification-kinds-expansion.md, "Open questions").
+func validateNotificationEmail(address string) (string, error) {
+	address = strings.TrimSpace(address)
+	if address == "" {
+		return "", nil
+	}
+	if len(address) > maxNotificationEmailLength {
+		return "", &errorresponses.InvalidRequestError{
+			Reason: fmt.Sprintf("notification address is %d characters, over the %d limit", len(address), maxNotificationEmailLength),
+		}
+	}
+	if _, err := netmail.ParseAddress(address); err != nil {
+		return "", &errorresponses.InvalidRequestError{
+			Reason: fmt.Sprintf("%q is not a valid email address", address),
+		}
+	}
+	return address, nil
+}
+
+// SetNotificationEmail points every notification about one enrollment at a
+// single address, or clears it so they fan out to the account's holders
+// again.
+//
+// Authorized to a holder of the enrollment's service account or to an SOC
+// operator. Auditor is deliberately not enough: auditor is a read role, and
+// this write silently redirects every future message about a credential.
+func (s *EnrollmentService) SetNotificationEmail(ctx context.Context, enrollmentID string, identity *Identity, address string) error {
+	address, err := validateNotificationEmail(address)
+	if err != nil {
+		return err
+	}
+
+	var enrollment model.Enrollment
+	if err := s.db.WithContext(ctx).First(&enrollment, "id = ?", enrollmentID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &errorresponses.NotFoundError{Resource: fmt.Sprintf("enrollment %q", enrollmentID)}
+		}
+		return fmt.Errorf("failed to look up enrollment: %w", err)
+	}
+
+	if !ownsEnrollment(identity, enrollment) && !s.config.Admin.GrantsSOC(identity.Groups) {
+		return &errorresponses.ForbiddenError{Reason: "enrollment belongs to a service account you do not hold"}
+	}
+
+	if err := s.db.WithContext(ctx).Model(&model.Enrollment{}).
+		Where("id = ?", enrollmentID).
+		Update("notification_email", address).Error; err != nil {
+		return fmt.Errorf("failed to set the notification address of enrollment %q: %w", enrollmentID, err)
+	}
+
+	// Both the old and the new address are recorded: "who stopped this
+	// account's holders hearing about their code, and where did it go
+	// instead" is the question this event exists to answer, and the new
+	// value alone does not answer it.
+	s.auditRecord(ctx, AuditEvent{
+		Action: AuditEnrollmentNotificationEmailSet,
+		Actor:  AuditSubjectFromIdentity(identity, ""),
+		Target: &AuditSubject{UserID: enrollment.UserID},
+		Detail: map[string]any{
+			"enrollment_id":      enrollmentID,
+			"service_account":    enrollment.ServiceAccount,
+			"previous_email":     enrollment.NotificationEmail,
+			"notification_email": address,
+		},
+	})
+	return nil
 }
 
 // awaitSignedCertificate blocks until the retrieval's wake topic carries a

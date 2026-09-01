@@ -25,5 +25,6 @@
   "expires_at": "2026-11-12T09:30:00+02:00",
   "first_redeemed_at": "2026-08-14T09:30:00+02:00",
   "last_retrieved_at": "2026-08-14T09:30:00+02:00",
-  "retrieval_count": 17
+  "retrieval_count": 17,
+  "notification_email": "backups@example.org"
 }

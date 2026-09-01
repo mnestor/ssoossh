@@ -101,9 +101,12 @@ func TestAdminUsers_DisabledUserSeesTheDisabledPage(t *testing.T) {
 	admin.Click(t, `a[href^="/admin/users/"]`)
 
 	// The confirmation has to name the consequence before it is accepted, so
-	// opening it is a distinct step from confirming it.
+	// opening it is a distinct step from confirming it. The reason is
+	// required — the confirm button stays disabled until one is entered —
+	// because the next admin opening this account needs to learn why.
 	admin.Click(t, `[data-testid="disable-user"]`)
 	admin.WaitVisible(t, `[data-testid="disable-consequences"]`)
+	admin.Type(t, `[data-testid="disable-reason"]`, "e2e: offboarding drill")
 	admin.Click(t, `[data-testid="confirm-disable"]`)
 	admin.WaitVisible(t, `[data-testid="user-disabled-badge"]`)
 

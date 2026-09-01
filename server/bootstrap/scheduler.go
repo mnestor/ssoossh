@@ -26,6 +26,21 @@ const auditSweepJobName = "audit-retention-sweep"
 // ldapSyncJobName identifies the LDAP directory sync.
 const ldapSyncJobName = "ldap-directory-sync"
 
+// expiryReminderJobName identifies the enrollment expiry reminder sweep.
+const expiryReminderJobName = "enrollment-expiry-reminder"
+
+// expiryReminderSweepDivisor sets the reminder sweep's interval as a
+// fraction of the configured lead, so a shorter lead is swept
+// proportionally more often and the reminder is never systematically late
+// by more than a small share of the window it announces.
+const expiryReminderSweepDivisor = 24
+
+// minExpiryReminderInterval floors that interval. A very short lead (a lab
+// setting it to an hour) would otherwise produce a sweep every couple of
+// minutes, which is a query per few minutes forever to catch something
+// whose deadline is measured in hours.
+const minExpiryReminderInterval = 15 * time.Minute
+
 // registerJobs registers the server's scheduled jobs. Called before any
 // service runner starts, so anything it runs inline here happens before the
 // HTTP server accepts a request.
@@ -42,7 +57,54 @@ func (a *app) registerJobs(ctx context.Context) error {
 	if err := a.registerAuditSweepJob(ctx); err != nil {
 		return err
 	}
+	if err := a.registerExpiryReminderJob(ctx); err != nil {
+		return err
+	}
 	return a.registerLDAPSyncJob(ctx)
+}
+
+// registerExpiryReminderJob schedules the enrollment expiry reminder sweep,
+// which sends the one-per-enrollment warning that an enrollment code is
+// about to stop working (see service.EnrollmentService.SweepExpiryReminders).
+//
+// Not registered when mail is disabled or mail.expiry_reminder_lead is
+// zero: with no relay there is nowhere for a reminder to go, and the sweep
+// would be a recurring query producing events nothing consumes.
+//
+// Not run inline at startup either. The reminder is about a deadline days
+// away, so nothing is lost by waiting one interval, and a restart loop
+// would otherwise re-run a table scan on every boot.
+func (a *app) registerExpiryReminderJob(ctx context.Context) error {
+	if !a.config.Mail.Enabled {
+		slog.DebugContext(ctx, "enrollment expiry reminder not registered: mail is disabled")
+		return nil
+	}
+	lead := a.config.Mail.ExpiryReminderLead
+	if lead <= 0 {
+		slog.DebugContext(ctx, "enrollment expiry reminder not registered: mail.expiry_reminder_lead is zero")
+		return nil
+	}
+
+	interval := lead / expiryReminderSweepDivisor
+	if interval < minExpiryReminderInterval {
+		interval = minExpiryReminderInterval
+	}
+
+	err := a.scheduler.RegisterJob(ctx, expiryReminderJobName,
+		gocron.DurationJob(interval),
+		a.svc.enrollment.SweepExpiryReminders,
+		service.RegisterJobOpts{},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to register the enrollment expiry reminder sweep: %w", err)
+	}
+
+	slog.DebugContext(ctx, "registered enrollment expiry reminder sweep",
+		slog.String("job", expiryReminderJobName),
+		slog.Duration("interval", interval),
+		slog.Duration("lead", lead),
+	)
+	return nil
 }
 
 // registerLDAPSyncJob schedules the directory sync, which refreshes

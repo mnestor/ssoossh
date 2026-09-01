@@ -338,7 +338,14 @@ func writeMDField(b *strings.Builder, f *Field, defaults *Defaults, refs map[str
 	}
 	b.WriteString(line + "\n\n")
 	writeMDProse(b, f.Doc, refs, scope)
+	if usage := mdUsage(f); usage != "" {
+		b.WriteString("```yaml\n" + usage + "```\n\n")
+	}
 }
+
+// mdEyebrow is the accent label above every generated page's heading, the
+// app's PageHeading pattern (frontend/DESIGN.md) applied to the docs.
+const mdEyebrow = "Configuration"
 
 // writeMDFrontmatter emits the Starlight frontmatter plus the generated
 // marker. Sidebar placement is not frontmatter's job here: the sidebar is
@@ -351,8 +358,40 @@ func writeMDFrontmatter(b *strings.Builder, title, description string) {
 	if description != "" {
 		fmt.Fprintf(b, "description: %s\n", strconv.Quote(description))
 	}
+	fmt.Fprintf(b, "eyebrow: %s\n", strconv.Quote(mdEyebrow))
 	b.WriteString("---\n\n")
 	b.WriteString(mdGenerated + "\n\n")
+}
+
+// mdUsage renders a key in context: the YAML nesting it actually sits in,
+// down to the key and a real value. "Where does this line go?" is the
+// question a dotted path leaves open in a nested config file, and answering
+// it per key is what keeps the reference from being a list of definitions.
+//
+// The value is the field's example: tag when it has one, otherwise its
+// default: tag rendered exactly as defaults.yaml renders it -- so the
+// snippet is always a line that parses, and always says something true.
+// A key with neither is skipped: there is no honest value to show, and its
+// doc comment usually carries its own example.
+func mdUsage(f *Field) string {
+	value := f.Example
+	if value == "" {
+		if !f.HasDefault {
+			return ""
+		}
+		value = renderDefault(f)
+	}
+	if f.Path == "" {
+		return ""
+	}
+
+	parts := strings.Split(f.Path, ".")
+	var b strings.Builder
+	for i, p := range parts[:len(parts)-1] {
+		fmt.Fprintf(&b, "%s%s:\n", strings.Repeat("  ", i), p)
+	}
+	fmt.Fprintf(&b, "%s%s: %s\n", strings.Repeat("  ", len(parts)-1), parts[len(parts)-1], value)
+	return b.String()
 }
 
 // sidebarItem is one Starlight sidebar entry: a page (Slug) or a group

@@ -1,0 +1,47 @@
+<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1c1e21;max-width:640px">
+  <p>
+    An SSH certificate was issued to you. If you just approved a certificate request in your
+    browser, this is that certificate and there is nothing to do.
+  </p>
+  <p style="background:#fdeced;border-left:3px solid #c0392b;padding:10px 14px;margin:0 0 18px">
+    If you did not, someone signed in as you and approved a request. Change whatever protects your
+    identity provider account, then tell whoever runs this server &mdash; the certificate below is
+    live until it expires and cannot be recalled.
+  </p>
+
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Certificate</h3>
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Serial</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .Serial }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Key ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .KeyID }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Principals</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ join .Principals ", " }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Issued at</td><td style="padding:4px 0">{{ datetime .IssuedAt }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Valid until</td><td style="padding:4px 0">{{ datetime .ExpiresAt }} (in {{ until .ExpiresAt }})</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">For key</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .PublicKeyFingerprint }}</td></tr>
+  </table>
+
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Request</h3>
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Requested from</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .SourceIP }}</td></tr>
+    {{ if or .LocalUsername .LocalHostname }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Client reported</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .LocalUsername }}{{ if and .LocalUsername .LocalHostname }}@{{ end }}{{ .LocalHostname }}</td></tr>{{ end }}
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Request ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .RequestID }}</td></tr>
+  </table>
+  <p style="color:#6b7280;font-size:13px">
+    The client-reported name above is whatever the client sent and is not proof of anything. The
+    address is what the server observed.
+  </p>
+
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">What it can do</h3>
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Extensions</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ if .Extensions }}{{ join .Extensions ", " }}{{ else }}none{{ end }}</td></tr>
+    {{ if .ForceCommand }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Forced command</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .ForceCommand }}</td></tr>{{ end }}
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Usable from</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ if .SourceAddresses }}{{ join .SourceAddresses ", " }}{{ else }}anywhere{{ end }}</td></tr>
+  </table>
+
+  {{ if .ServerURL }}<p style="font-size:13px">Your <a href="{{ .ServerURL }}/certs" style="color:#1d4ed8">certificate history</a>.</p>{{ end }}
+
+  <p style="margin-top:28px;padding-top:14px;border-top:1px solid #e5e7eb;color:#9099a8;font-size:12px">
+    You are receiving this because "User certificate issued" is enabled in your
+    {{ if .ServerURL }}<a href="{{ .ServerURL }}/preferences" style="color:#6b7280">notification preferences</a>{{ else }}notification preferences{{ end }}.
+    It is off by default; turn it off there if one message per login is more than you want.
+  </p>
+</div>

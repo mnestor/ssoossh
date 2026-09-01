@@ -406,7 +406,7 @@ func TestCertRequestService_ShouldSurfaceGenericDBErrors(t *testing.T) {
 		}
 		closeUnderlyingDB(t, svc.db)
 		policy, _ := svc.policyFor(model.CertificateTypeService)
-		if err := svc.approveServiceEnrollment(context.Background(), req, RequestedOptions{}, &Identity{Username: "approver", Subject: "sub-approver"}, policy, DecisionContext{}, "svc-account"); err == nil {
+		if err := svc.approveServiceEnrollment(context.Background(), req, RequestedOptions{}, &Identity{Username: "approver", Subject: "sub-approver"}, policy, DecisionContext{}, ApprovalSelection{ServiceAccount: "svc-account"}); err == nil {
 			t.Error("approveServiceEnrollment() error = nil, want error")
 		}
 	})
@@ -2110,7 +2110,7 @@ func TestApproveServiceEnrollment_ShouldRefuseARequestThatIsNoLongerPending(t *t
 		t.Fatalf("failed to load request: %v", err)
 	}
 	policy, _ := svc.policyFor(model.CertificateTypeService)
-	if err := svc.approveServiceEnrollment(context.Background(), req, RequestedOptions{}, &Identity{Username: "approver", Subject: "sub-approver"}, policy, DecisionContext{}, "svc-account"); err == nil {
+	if err := svc.approveServiceEnrollment(context.Background(), req, RequestedOptions{}, &Identity{Username: "approver", Subject: "sub-approver"}, policy, DecisionContext{}, ApprovalSelection{ServiceAccount: "svc-account"}); err == nil {
 		t.Error("approveServiceEnrollment() error = nil, want error for a request that lost the pending race")
 	}
 }

@@ -274,4 +274,65 @@ describe('AdminServiceCodeDetailModal', () => {
 			expect(screen.queryByText(/most recent of/)).not.toBeInTheDocument();
 		});
 	});
+	// Editable from the admin console as well as from the holder's own page,
+	// for the deployment where the account's holders are outside ssoossh
+	// entirely and so have no page of their own to set it on.
+	describe('the notification address', () => {
+		it('should say who hears about the code when no address is set', async () => {
+			mockDetail(enrollment());
+			render(AdminServiceCodeDetailModal, {
+				enrollment: enrollment({ notification_email: '' }),
+				now,
+				onclosed: vi.fn()
+			});
+			await waitFor(() =>
+				expect(screen.getByText(/go to everyone with access to the account/)).toBeInTheDocument()
+			);
+		});
+
+		it('should disable saving until the address changes', async () => {
+			mockDetail(enrollment());
+			render(AdminServiceCodeDetailModal, {
+				enrollment: enrollment({ notification_email: 'deploys@example.com' }),
+				now,
+				onclosed: vi.fn()
+			});
+			await waitFor(() => expect(screen.getByTestId('notification-email-save')).toBeDisabled());
+
+			await userEvent.type(screen.getByTestId('notification-email-input'), 'x');
+			expect(screen.getByTestId('notification-email-save')).toBeEnabled();
+		});
+
+		it('should report the address the server stored', async () => {
+			mockDetail(enrollment());
+			render(AdminServiceCodeDetailModal, {
+				enrollment: enrollment({ notification_email: '' }),
+				now,
+				onclosed: vi.fn()
+			});
+			await waitFor(() => screen.getByTestId('notification-email-input'));
+
+			// Re-stubbed after the detail load so the PATCH gets its own answer.
+			vi.stubGlobal(
+				'fetch',
+				vi.fn(() =>
+					Promise.resolve(
+						new Response(
+							JSON.stringify({ data: { notification_email: 'deploys@example.com' }, error: null }),
+							{ status: 200, headers: { 'Content-Type': 'application/json' } }
+						)
+					)
+				)
+			);
+
+			await userEvent.type(
+				screen.getByTestId('notification-email-input'),
+				'  deploys@example.com  '
+			);
+			await userEvent.click(screen.getByTestId('notification-email-save'));
+
+			expect(await screen.findByTestId('notification-email-saved')).toBeInTheDocument();
+			expect(screen.getByTestId('notification-email-input')).toHaveValue('deploys@example.com');
+		});
+	});
 });

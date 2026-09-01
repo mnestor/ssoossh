@@ -33,11 +33,23 @@ const Topic = "notification.send"
 // deliver to an address a user has since changed, nor to a set of holders
 // that has since changed.
 type Event struct {
-	Kind           Kind            `json:"kind"`
-	UserID         string          `json:"user_id,omitempty"`
-	ServiceAccount string          `json:"service_account,omitempty"`
-	OccurredAt     time.Time       `json:"occurred_at"`
-	Payload        json.RawMessage `json:"payload"`
+	Kind           Kind   `json:"kind"`
+	UserID         string `json:"user_id,omitempty"`
+	ServiceAccount string `json:"service_account,omitempty"`
+
+	// EnrollmentID names the enrollment an account-addressed event is
+	// about, so delivery can check that enrollment's own notification
+	// address before falling back to fanning out over the account. Set only
+	// alongside ServiceAccount; a user-addressed event has no enrollment.
+	//
+	// The ID rather than the address itself, for the same reason no other
+	// address travels in an event: the row is read at delivery, so an event
+	// that waited through a retry backoff honors the address the enrollment
+	// has now rather than the one it had when the event was published.
+	EnrollmentID string `json:"enrollment_id,omitempty"`
+
+	OccurredAt time.Time       `json:"occurred_at"`
+	Payload    json.RawMessage `json:"payload"`
 }
 
 // NewEvent encodes payload into a user-addressed Event for kind.
@@ -49,6 +61,14 @@ func NewEvent(kind Kind, userID string, payload any) (Event, error) {
 // holder of serviceAccount, resolved at delivery.
 func NewServiceAccountEvent(kind Kind, serviceAccount string, payload any) (Event, error) {
 	return newEvent(kind, Event{ServiceAccount: serviceAccount}, payload)
+}
+
+// NewEnrollmentEvent encodes payload into an Event about one enrollment:
+// delivered to that enrollment's notification address if it has one, and
+// otherwise fanned out over serviceAccount exactly like
+// NewServiceAccountEvent.
+func NewEnrollmentEvent(kind Kind, enrollmentID, serviceAccount string, payload any) (Event, error) {
+	return newEvent(kind, Event{ServiceAccount: serviceAccount, EnrollmentID: enrollmentID}, payload)
 }
 
 // newEvent fills in the parts both addressing forms share. It rejects

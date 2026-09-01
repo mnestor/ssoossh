@@ -18,11 +18,17 @@ import (
 // restart; PEM pasted into the config file can only change when the config
 // file does, and the config file is read once at startup.
 type CertificateInfo struct {
-	// CertificateFile and PrivateKeyFile point to PEM files on disk. Both
-	// must be set. Their contents are re-read on reload (see CertSource);
-	// the paths themselves are fixed for the process's lifetime.
-	CertificateFile string `mapstructure:"certificate_file"`
-	PrivateKeyFile  string `mapstructure:"private_key_file"`
+	// CertificateFile is the path to the PEM certificate served to clients.
+	// Required together with PrivateKeyFile; neither alone is a usable pair.
+	// The file's contents are re-read on reload (see CertSource), so a
+	// renewal that rewrites it in place needs no restart; the path itself is
+	// fixed for the process's lifetime.
+	CertificateFile string `mapstructure:"certificate_file" example:"\"/etc/ssoossh/tls/server.crt\""`
+
+	// PrivateKeyFile is the path to the PEM private key matching
+	// CertificateFile. Required together with it, re-read on the same
+	// reload, and its path is likewise fixed for the process's lifetime.
+	PrivateKeyFile string `mapstructure:"private_key_file" example:"\"/etc/ssoossh/tls/server.key\""`
 }
 
 // HasKeyPair reports whether a complete certificate/private-key pair is

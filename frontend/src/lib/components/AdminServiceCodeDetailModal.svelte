@@ -1,7 +1,12 @@
 <script lang="ts">
 	import { ApiError } from '$lib/api/client';
-	import { expireEnrollment, getAdminEnrollmentDetail } from '$lib/api/endpoints';
+	import {
+		expireEnrollment,
+		getAdminEnrollmentDetail,
+		setEnrollmentNotificationEmail
+	} from '$lib/api/endpoints';
 	import type { AdminEnrollment } from '$lib/api/types';
+	import { errorMessage } from '$lib/auth';
 	import { expiryLabel, formatDateTime, formatDuration, isExpired } from '$lib/format';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
@@ -27,6 +32,48 @@
 	let expireConfirm = $state(false);
 	let expireError = $state<string | null>(null);
 	let expiring = $state(false);
+
+	// The notification address, editable here for the deployment where the
+	// account's holders are outside ssoossh entirely and cannot set it
+	// themselves. Reset per enrollment so a draft does not follow the reader
+	// from one code to the next.
+	let emailDraft = $state('');
+	let savingEmail = $state(false);
+	let emailError = $state<string | null>(null);
+	let emailSaved = $state(false);
+	let storedEmail = $state('');
+
+	// Both assignments read the prop, never storedEmail: an effect that read
+	// the state it also writes would re-run on its own save and wipe the
+	// "Saved." line it had just earned.
+	$effect(() => {
+		const address = enrollment.notification_email ?? '';
+		storedEmail = address;
+		emailDraft = address;
+		emailError = null;
+		emailSaved = false;
+	});
+
+	const emailDirty = $derived(emailDraft.trim() !== storedEmail);
+
+	/** saveNotificationEmail stores the address, or clears it when empty. */
+	async function saveNotificationEmail() {
+		savingEmail = true;
+		emailError = null;
+		emailSaved = false;
+		try {
+			const stored = await setEnrollmentNotificationEmail(enrollment.id, emailDraft.trim());
+			// From the answer, not the draft: the server trims, and the panel
+			// should show what is actually stored.
+			storedEmail = stored.notification_email;
+			emailDraft = storedEmail;
+			emailSaved = true;
+		} catch (cause) {
+			emailError = errorMessage(cause);
+		} finally {
+			savingEmail = false;
+		}
+	}
 
 	// Load detail when enrollment changes
 	$effect(() => {
@@ -268,6 +315,53 @@
 			<!-- Admin controls -->
 			<div class="space-y-4 border-t border-border-subtle pt-4">
 				<SectionLabel>Admin actions</SectionLabel>
+
+				<!-- The address is editable here as well as on the holder's own
+				     page, for the deployment where the account's holders are
+				     outside ssoossh entirely and so have no page to set it on.
+				     Changing it is audited. -->
+				<div class="space-y-2">
+					<p class="text-[13px] text-ink-muted">
+						{#if storedEmail}
+							Notifications about this code go to
+							<span class="font-mono">{storedEmail}</span>. Clear the field to send them to everyone
+							with access to the account instead.
+						{:else}
+							Notifications about this code go to everyone with access to the account. Set an
+							address to send them to one place instead.
+						{/if}
+					</p>
+					<div class="flex flex-wrap items-start gap-2">
+						<label class="flex min-w-[220px] flex-1 flex-col gap-1">
+							<span class="sr-only">Notification address</span>
+							<input
+								type="email"
+								bind:value={emailDraft}
+								data-testid="notification-email-input"
+								placeholder="deploys@example.com"
+								disabled={savingEmail}
+								class="rounded border border-border-subtle bg-surface px-3 py-2 text-[13px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+							/>
+						</label>
+						<Button
+							testid="notification-email-save"
+							busy={savingEmail}
+							disabled={!emailDirty}
+							onclick={saveNotificationEmail}
+						>
+							{savingEmail ? 'Saving…' : 'Save address'}
+						</Button>
+					</div>
+					{#if emailError}
+						<Alert variant="error" title="That did not save" testid="notification-email-error">
+							{emailError}
+						</Alert>
+					{:else if emailSaved}
+						<p class="text-[13px] text-granted" data-testid="notification-email-saved">
+							{emailDraft ? 'Saved.' : 'Cleared — notifications go to everyone with access again.'}
+						</p>
+					{/if}
+				</div>
 
 				<!-- Expire control -->
 				{#if !expired}

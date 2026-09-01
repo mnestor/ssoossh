@@ -1,0 +1,37 @@
+A certificate was issued to authenticate a local operation as you -- a `sudo`,
+a `su`, or another PAM-guarded command on the machine below.
+
+If you just ran that command and answered the prompt, this is it and there is
+nothing to do.
+
+If you did not, someone completed a PAM authentication in your name. That
+means they were already at a shell on that machine. Tell whoever runs it.
+
+AUTHENTICATION
+
+  Authenticated as      {{ join .Principals ", " }}
+{{ if or .LocalUsername .LocalHostname }}  Client reported       {{ .LocalUsername }}{{ if and .LocalUsername .LocalHostname }}@{{ end }}{{ .LocalHostname }}
+{{ end }}  Requested from        {{ .SourceIP }}
+  Issued at             {{ datetime .IssuedAt }}
+  Valid until           {{ datetime .ExpiresAt }} (in {{ until .ExpiresAt }})
+
+The client-reported name above is whatever the client sent and is not proof of
+anything. The address is what the server observed.
+
+CERTIFICATE
+
+  Serial                {{ .Serial }}
+  Key ID                {{ .KeyID }}
+  For key               {{ .PublicKeyFingerprint }}
+  Request ID            {{ .RequestID }}
+
+A PAM certificate authorizes one local operation and is deliberately
+short-lived. It is not an SSH login credential, and nothing here can be used
+to open a session.
+{{ if .ServerURL }}
+Your certificate history is at
+{{ .ServerURL }}/certs
+{{ end }}
+You are receiving this because "PAM certificate issued" is enabled in your
+notification preferences{{ if .ServerURL }} at {{ .ServerURL }}/preferences{{ end }}. It is off by
+default; turn it off there if one message per sudo is more than you want.

@@ -38,6 +38,16 @@
 		return enrollment.service_account || enrollment.principals[0] || '';
 	}
 
+	// The panel saves the address; the list holds the copy the panel renders
+	// from, so it has to be told. Patched in place rather than refetched: the
+	// server has already answered with what it stored, and a reload would
+	// discard the reader's scroll position for a value already in hand.
+	function updateNotificationEmail(id: string, notificationEmail: string) {
+		enrollments = enrollments.map((enrollment) =>
+			enrollment.id === id ? { ...enrollment, notification_email: notificationEmail } : enrollment
+		);
+	}
+
 	// One entry per account the identity holds, including accounts with no
 	// codes at all. That zero state is the reason this level exists: an
 	// account with nothing redeemable is exactly the unattended job about to
@@ -185,7 +195,11 @@
 			it hands out and how long it stays redeemable.
 		</p>
 	{:else}
-		<PageHeading eyebrow="Service" title="Service enrollment codes" testid="service-codes-heading" />
+		<PageHeading
+			eyebrow="Service"
+			title="Service enrollment codes"
+			testid="service-codes-heading"
+		/>
 
 		<p class="text-sm text-ink-muted">
 			The service accounts you have access to, and the codes approved for each. A code belongs to
@@ -258,6 +272,11 @@
 	{/if}
 
 	{#if modalEnrollment}
-		<ServiceCodeDetailModal enrollment={modalEnrollment} {now} onclosed={closeDetail} />
+		<ServiceCodeDetailModal
+			enrollment={modalEnrollment}
+			{now}
+			onnotificationemailchanged={(address) => updateNotificationEmail(modalEnrollment.id, address)}
+			onclosed={closeDetail}
+		/>
 	{/if}
 </div>

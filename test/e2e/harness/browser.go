@@ -41,7 +41,22 @@ type Browser struct {
 func StartBrowser(t *testing.T) *Browser {
 	t.Helper()
 
+	return StartBrowserWithUserAgent(t, "")
+}
+
+// StartBrowserWithUserAgent is StartBrowser with a User-Agent override, or
+// the browser's own with "". The approval-claim control compares user
+// agents to tell "the claiming browser without its cookie" from "a
+// different client", and every chromedp instance in one suite otherwise
+// sends the same UA string — which reads as the former. A browser standing
+// in for a genuinely different client must therefore set its own.
+func StartBrowserWithUserAgent(t *testing.T, userAgent string) *Browser {
+	t.Helper()
+
 	opts := append([]chromedp.ExecAllocatorOption{}, chromedp.DefaultExecAllocatorOptions[:]...)
+	if userAgent != "" {
+		opts = append(opts, chromedp.UserAgent(userAgent))
+	}
 	opts = append(opts,
 		// Headless Chrome under a container UID with no user namespace
 		// commonly can't use its setuid sandbox helper; disabling it is
@@ -180,6 +195,23 @@ func (b *Browser) Click(t *testing.T, selector string) {
 	); err != nil {
 		b.screenshotOnFailure(t)
 		t.Fatalf("harness: clicking %s failed: %v", selector, err)
+	}
+}
+
+// Type waits for the element matching selector and types text into it.
+// SendKeys dispatches real key events, which is what a framework-bound
+// field needs to notice the change — setting .value directly would not.
+func (b *Browser) Type(t *testing.T, selector, text string) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(b.ctx, browserWaitFor)
+	defer cancel()
+	if err := chromedp.Run(ctx,
+		chromedp.WaitVisible(selector, chromedp.ByQuery),
+		chromedp.SendKeys(selector, text, chromedp.ByQuery),
+	); err != nil {
+		b.screenshotOnFailure(t)
+		t.Fatalf("harness: typing into %s failed: %v", selector, err)
 	}
 }
 

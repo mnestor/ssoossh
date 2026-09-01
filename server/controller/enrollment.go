@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -26,6 +27,8 @@ func NewEnrollmentController(group *gin.RouterGroup, enrollmentService service.E
 	group.GET("/certs/requests/:id/retrievals", sessionAuthMiddleware, e.retrievalsHandler)
 
 	group.GET("/certs/service/enrollments", sessionAuthMiddleware, e.listHandler)
+
+	group.PATCH("/certs/service/enrollments/:id/notification-email", sessionAuthMiddleware, e.setNotificationEmailHandler)
 }
 
 // enrollmentController handles the service-enrollment HTTP routes.
@@ -147,6 +150,61 @@ func (e *enrollmentController) listHandler(g *gin.Context) {
 	}
 
 	respondData(g, newServiceEnrollmentsResponse(enrollments))
+}
+
+// setNotificationEmailHandler handles PATCH
+// /api/certs/service/enrollments/:id/notification-email (web UI, behind
+// sessionAuthMiddleware).
+//
+// @Summary     Set an enrollment's notification address
+// @Description Points every notification about this enrollment at one address instead
+// @Description of fanning out to every holder of its service account. An empty value
+// @Description clears it and restores fan-out.
+// @Description
+// @Description This exists for the cases fan-out cannot serve: a service account whose
+// @Description holders have never logged in reaches nobody, an identity provider that
+// @Description releases no email claim silences every holder, and a large holder set
+// @Description turns every redemption into a mailshot where a team alias would do.
+// @Description
+// @Description Allowed to any holder of the enrollment's service account, and to SOC
+// @Description operators. Auditor is not enough: it is a read role, and this write
+// @Description redirects every future message about a credential.
+// @Tags        web
+// @Accept      json
+// @Produce     json
+// @Param       id path string true "The enrollment's UUID"
+// @Param       request body webtypes.SetNotificationEmailRequestBody true "The address, or empty to clear it"
+// @Success     200 {object} openapidoc.SetNotificationEmailEnvelope "The stored address"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Not a valid email address"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not a holder of the service account"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "No such enrollment"
+// @Security    sessionCookie
+// @Router      /api/certs/service/enrollments/{id}/notification-email [patch]
+func (e *enrollmentController) setNotificationEmailHandler(g *gin.Context) {
+	identity, ok := middleware.Identity(g)
+	if !ok {
+		handleError(g, &errorresponses.UnauthorizedError{})
+		return
+	}
+
+	var body webtypes.SetNotificationEmailRequestBody
+	if err := g.ShouldBindJSON(&body); err != nil {
+		handleError(g, err)
+		return
+	}
+
+	if err := e.enrollmentService.SetNotificationEmail(g.Request.Context(), g.Param("id"), identity, body.NotificationEmail); err != nil {
+		handleError(g, err)
+		return
+	}
+
+	// The stored value is echoed back rather than a bare acknowledgement:
+	// it is trimmed server-side, so the page needs to be told what was
+	// actually saved instead of assuming its own input.
+	respondData(g, webtypes.SetNotificationEmailRequestBody{
+		NotificationEmail: strings.TrimSpace(body.NotificationEmail),
+	})
 }
 
 // ExtractEnrollmentCodeForRateLimit reads the enrollment code from the

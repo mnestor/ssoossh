@@ -86,6 +86,7 @@ closed.
 | `cert.requested`, `cert.approved`, `cert.denied` | |
 | `cert.issued` | **Shipped log only.** The UI already has certificate history from the `certificates` table, so a table copy would be duplication; the archive line is the row an incident reviewer joins against target-host sshd logs. |
 | `enrollment.code_created`, `.redeemed`, `.expired` | Never carries the enrollment code: it is a bearer credential, and the never-log-sensitive-data rule covers payloads and log lines alike. |
+| `enrollment.notification_email_set` | Carries both the old and the new address. Redirecting where an enrollment's notifications go is also the quiet way to stop an account's holders hearing about their own credential, so "who changed it, and to what" is the question this exists to answer. The address is operator-entered configuration in an admin-only log, not a user secret. |
 | `enrollment.reassigned` | **No longer emitted.** Group ownership removed enrollment transfer (see [enrollment-group-ownership.md](../proposals/enrollment-group-ownership.md)); the action stays defined so events recorded before that still read back with a name. |
 | `user.disabled`, `user.enabled` | |
 | `user.auto_disabled` | A system action, so it carries no actor. |

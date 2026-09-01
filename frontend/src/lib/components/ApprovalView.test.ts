@@ -488,4 +488,36 @@ describe('ApprovalView', () => {
 			expect(checkboxes).toHaveLength(1);
 		});
 	});
+	// The address is offered at approval because that is the moment the
+	// approver is already deciding what the enrollment is for. It is optional,
+	// and only ever a service-type question: no other type produces an
+	// enrollment for it to address.
+	describe('the notification address', () => {
+		it('should offer an optional notification address on a service request', () => {
+			mount({
+				detail: detail({ type: 'service' }),
+				serviceAccounts: ['svc-a'],
+				userPrincipals: []
+			});
+			expect(screen.getByTestId('notification-email-input')).toBeInTheDocument();
+		});
+
+		it('should not offer one on a user request', () => {
+			mount({ detail: detail({ type: 'user' }), userPrincipals: ['alice'] });
+			expect(screen.queryByTestId('notification-email-input')).not.toBeInTheDocument();
+		});
+
+		// Optional means optional: an empty address must not stand between the
+		// approver and the button.
+		it('should not block approval when the address is left empty', async () => {
+			const { onapprove } = mount({
+				detail: detail({ type: 'service' }),
+				serviceAccounts: ['svc-a'],
+				selectedServiceAccount: 'svc-a',
+				userPrincipals: []
+			});
+			await userEvent.click(screen.getByTestId('approve-button'));
+			expect(onapprove).toHaveBeenCalledOnce();
+		});
+	});
 });

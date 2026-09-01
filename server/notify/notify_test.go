@@ -137,6 +137,68 @@ func TestNewEvent_shouldRejectAnUnregisteredKind(t *testing.T) {
 	}
 }
 
+// The two constructors differ only in addressing, and delivery fans out on
+// exactly that: a ServiceAccount event goes to every current holder, a
+// UserID event to one person. An event carrying both would double-send.
+func TestNewServiceAccountEvent_shouldAddressTheAccountNotAUser(t *testing.T) {
+	event, err := NewServiceAccountEvent(KindServiceEnrollmentRedeemed, "deploy-bot", &ServiceEnrollmentRedeemed{ServiceAccount: "deploy-bot"})
+	if err != nil {
+		t.Fatalf("NewServiceAccountEvent: %v", err)
+	}
+	if event.ServiceAccount != "deploy-bot" {
+		t.Errorf("ServiceAccount = %q, want %q", event.ServiceAccount, "deploy-bot")
+	}
+	if event.UserID != "" {
+		t.Errorf("UserID = %q, want it empty on an account-addressed event", event.UserID)
+	}
+	if event.Kind != KindServiceEnrollmentRedeemed {
+		t.Errorf("Kind = %q, want %q", event.Kind, KindServiceEnrollmentRedeemed)
+	}
+	if event.OccurredAt.IsZero() {
+		t.Error("OccurredAt was not stamped")
+	}
+}
+
+func TestNewServiceAccountEvent_shouldRejectAnUnregisteredKind(t *testing.T) {
+	if _, err := NewServiceAccountEvent("nope", "deploy-bot", struct{}{}); err == nil {
+		t.Error("NewServiceAccountEvent accepted an unregistered kind")
+	}
+}
+
+// An enrollment-addressed event carries both: the enrollment so delivery can
+// read its notification address, and the account to fan out over when it has
+// none. Carrying only one would make the fallback impossible.
+func TestNewEnrollmentEvent_shouldCarryBothTheEnrollmentAndTheAccount(t *testing.T) {
+	event, err := NewEnrollmentEvent(KindServiceEnrollmentExpiring, "enr-1", "deploy-bot",
+		&ServiceEnrollmentExpiring{ServiceAccount: "deploy-bot"})
+	if err != nil {
+		t.Fatalf("NewEnrollmentEvent: %v", err)
+	}
+	if event.EnrollmentID != "enr-1" {
+		t.Errorf("EnrollmentID = %q, want %q", event.EnrollmentID, "enr-1")
+	}
+	if event.ServiceAccount != "deploy-bot" {
+		t.Errorf("ServiceAccount = %q, want %q", event.ServiceAccount, "deploy-bot")
+	}
+	if event.UserID != "" {
+		t.Errorf("UserID = %q, want it empty on an enrollment-addressed event", event.UserID)
+	}
+}
+
+func TestNewEnrollmentEvent_shouldRejectAnUnregisteredKind(t *testing.T) {
+	if _, err := NewEnrollmentEvent("nope", "enr-1", "deploy-bot", struct{}{}); err == nil {
+		t.Error("NewEnrollmentEvent accepted an unregistered kind")
+	}
+}
+
+// A payload that cannot encode must fail at the publishing call site, where
+// the originating request can still see the error, not at delivery.
+func TestNewEvent_shouldRejectAnUnencodablePayload(t *testing.T) {
+	if _, err := NewEvent(KindServiceEnrollmentCreated, "user-1", func() {}); err == nil {
+		t.Error("NewEvent accepted a payload json cannot encode")
+	}
+}
+
 func TestDecodePayload_shouldRejectAnUnregisteredKind(t *testing.T) {
 	if _, err := (Event{Kind: "nope", Payload: []byte("{}")}).DecodePayload(); err == nil {
 		t.Error("DecodePayload accepted an unregistered kind")

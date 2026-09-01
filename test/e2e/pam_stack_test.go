@@ -9,10 +9,9 @@ import (
 	"github.com/mnestor/ssoossh/test/e2e/harness"
 )
 
-// pamApproverGroup is the OIDC group cert_options.pam.require_group demands
-// of an approver. PAM issuance fails closed: leaving require_group unset
-// means no PAM certificate is ever issued (see CertOptionsPAM.RequireGroup),
-// so the fixture must configure it explicitly.
+// pamApproverGroup is the OIDC group cert_options.pam.require demands of
+// an approver ({group: pam-approvers}). Unset would mean no restriction;
+// the fixture sets one so the denial test below proves the gate holds.
 const pamApproverGroup = "pam-approvers"
 
 // pamApprover is the browser identity that approves or denies. Deliberately

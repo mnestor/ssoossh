@@ -1,0 +1,41 @@
+An expired enrollment code was presented for redemption. It was refused, and
+no certificate was issued.
+
+Two things cause this, and they need opposite responses:
+
+  - A job you still want is failing. It has been renewing through this code,
+    the code expired, and every renewal since has failed. Re-enroll it.
+
+  - A credential you thought was gone is still in circulation. Nothing you
+    run should be presenting a code that expired. If the address below is not
+    a host you recognize, treat the code as leaked and audit what it was used
+    for while it was still live.
+
+ATTEMPT
+
+  Attempted at          {{ datetime .AttemptedAt }}
+  From address          {{ .SourceIP }}
+  Code expired          {{ datetime .CodeExpiredAt }}
+
+ENROLLMENT
+
+  Service account       {{ .ServiceAccount }}
+  Enrollment ID         {{ .EnrollmentID }}
+{{ if .RequestID }}  Request ID            {{ .RequestID }}
+{{ end }}  Key ID                {{ .KeyID }}
+  Principals            {{ join .Principals ", " }}
+  Enrolled key          {{ .PublicKeyType }} {{ .PublicKeyFingerprint }}
+
+The caller was told only that the code is unknown -- an expired code and a
+code that never existed answer identically, so whoever holds it learns nothing
+from the refusal.
+
+You will not get another message about this enrollment for a while, however
+often the attempt repeats.
+{{ if .ServerURL }}
+Your enrollments are at
+{{ .ServerURL }}/service-codes
+{{ end }}
+You are receiving this because "Expired enrollment code used" is enabled in
+your notification preferences{{ if .ServerURL }} at {{ .ServerURL }}/preferences{{ end }}, or
+because this address is set as the enrollment's notification address.

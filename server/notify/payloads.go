@@ -81,3 +81,114 @@ type ServiceEnrollmentRedeemed struct {
 	CodeExpiresAt time.Time `json:"code_expires_at"`
 	ServerURL     string    `json:"server_url"`
 }
+
+// ServiceEnrollmentExpiring is the payload for
+// KindServiceEnrollmentExpiring: the follow-up the "created" message
+// promises but has no way to send.
+//
+// By the time the expiry date matters, the terminal that displayed the code
+// is long gone and the cron job is the only thing that remembers the
+// enrollment exists — by failing. Everything here is what the recipient
+// needs to decide between re-enrolling and letting it lapse, which is why
+// FirstRedeemedAt is included: a code that has never been redeemed is
+// usually a job that was never finished, and a different decision from one
+// that has been running for months.
+//
+// No code, same as every other kind. Re-enrolling means running
+// `ssoossh service enroll` again, not reusing anything in this message.
+type ServiceEnrollmentExpiring struct {
+	ServiceAccount string   `json:"service_account"`
+	RequestID      string   `json:"request_id,omitempty"`
+	EnrollmentID   string   `json:"enrollment_id"`
+	KeyID          string   `json:"key_id"`
+	Principals     []string `json:"principals"`
+
+	PublicKeyFingerprint string `json:"public_key_fingerprint"`
+	PublicKeyType        string `json:"public_key_type"`
+
+	// FirstRedeemedAt is when the code was first redeemed, zero if it never
+	// was. The first rather than the last because it is on the enrollment
+	// row: the reminder sweep reads one table, and asking it to aggregate
+	// the retrieval log for every expiring row would be a join per reminder
+	// for a detail the recipient can look up.
+	FirstRedeemedAt time.Time `json:"first_redeemed_at,omitempty"`
+
+	CodeExpiresAt time.Time `json:"code_expires_at"`
+	ServerURL     string    `json:"server_url"`
+}
+
+// ServiceEnrollmentExpiredAttempt is the payload for
+// KindServiceEnrollmentExpiredAttempt.
+//
+// `service retrieve` answers an expired code exactly like an unknown one —
+// the caller holds a dead capability either way — but the server has
+// already loaded the row by then, so the attempt is fully attributable.
+// Either a forgotten job is failing on schedule or someone is replaying a
+// credential that should no longer exist, and both are things the account's
+// holders want to hear about.
+//
+// Attempts with genuinely unknown codes send nothing: there is no row, so
+// there is no one to tell.
+type ServiceEnrollmentExpiredAttempt struct {
+	ServiceAccount string   `json:"service_account"`
+	RequestID      string   `json:"request_id,omitempty"`
+	EnrollmentID   string   `json:"enrollment_id"`
+	KeyID          string   `json:"key_id"`
+	Principals     []string `json:"principals"`
+
+	PublicKeyFingerprint string `json:"public_key_fingerprint"`
+	PublicKeyType        string `json:"public_key_type"`
+
+	SourceIP    string    `json:"source_ip"`
+	AttemptedAt time.Time `json:"attempted_at"`
+
+	// CodeExpiredAt is when the code stopped being redeemable, which with
+	// AttemptedAt is what separates "expired an hour ago, nobody noticed"
+	// from "expired last quarter and something is still trying".
+	CodeExpiredAt time.Time `json:"code_expired_at"`
+
+	ServerURL string `json:"server_url"`
+}
+
+// CertificateIssued is the payload for both KindUserCertificateIssued and
+// KindPAMCertificateIssued: the "was this you?" message.
+//
+// The requester was present for both flows — approving in a browser, or
+// typing a password at a PAM prompt — so on the happy path this confirms
+// what the reader already knows. Its value is the unhappy path: a
+// certificate minted by a session they do not recognize, from an address
+// they were never at. That is why SourceIP and the granted option set are
+// here and not just the identity of the certificate.
+//
+// One struct for two kinds because the two describe the same object; the
+// kinds are separate so the preferences can be.
+type CertificateIssued struct {
+	// CertificateType is "user" or "pam", matching the kind. Carried in the
+	// payload as well as the kind so one shared template can name it.
+	CertificateType string `json:"certificate_type"`
+
+	RequestID string `json:"request_id"`
+
+	KeyID      string   `json:"key_id"`
+	Principals []string `json:"principals"`
+	Serial     uint64   `json:"serial"`
+
+	PublicKeyFingerprint string `json:"public_key_fingerprint"`
+
+	// LocalUsername and LocalHostname are the account and machine the
+	// client reported at request time — for PAM, whose `sudo` this
+	// authorized. Client-reported and therefore not evidence, but they are
+	// what makes the message recognizable to the person who was there.
+	LocalUsername string `json:"local_username,omitempty"`
+	LocalHostname string `json:"local_hostname,omitempty"`
+
+	SourceIP  string    `json:"source_ip"`
+	IssuedAt  time.Time `json:"issued_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+
+	Extensions      []string `json:"extensions,omitempty"`
+	ForceCommand    string   `json:"force_command,omitempty"`
+	SourceAddresses []string `json:"source_addresses,omitempty"`
+
+	ServerURL string `json:"server_url"`
+}

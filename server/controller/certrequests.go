@@ -364,8 +364,9 @@ func (cr *certRequestController) approveHandler(g *gin.Context) {
 	}
 
 	selection := service.ApprovalSelection{
-		ServiceAccount: body.ServiceAccount,
-		Principals:     body.Principals,
+		ServiceAccount:    body.ServiceAccount,
+		Principals:        body.Principals,
+		NotificationEmail: body.NotificationEmail,
 	}
 	if err := cr.certRequestService.Approve(g.Request.Context(), g.Param("id"), identity, decisionContext(g), selection); err != nil {
 		handleError(g, err)

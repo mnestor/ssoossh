@@ -211,4 +211,102 @@ describe('ServiceCodeDetailModal', () => {
 			expect(screen.queryByText(/most recent of/)).not.toBeInTheDocument();
 		});
 	});
+	// The address is the one thing on this panel that can be changed, and it
+	// exists for the cases fan-out cannot serve: an account whose holders have
+	// never logged in reaches nobody.
+	describe('the notification address', () => {
+		it('should say who hears about the code when no address is set', () => {
+			mockRetrievals([]);
+			render(ServiceCodeDetailModal, {
+				enrollment: enrollment({ notification_email: '' }),
+				now,
+				onclosed: vi.fn()
+			});
+			expect(screen.getByText(/go to everyone with access to/)).toBeInTheDocument();
+		});
+
+		it('should show the address when one is set', () => {
+			mockRetrievals([]);
+			render(ServiceCodeDetailModal, {
+				enrollment: enrollment({ notification_email: 'deploys@example.com' }),
+				now,
+				onclosed: vi.fn()
+			});
+			expect(screen.getByTestId('notification-email-input')).toHaveValue('deploys@example.com');
+		});
+
+		// Nothing to save until the field differs from what is stored, so the
+		// button cannot fire a no-op PATCH.
+		it('should disable saving until the address changes', async () => {
+			mockRetrievals([]);
+			render(ServiceCodeDetailModal, {
+				enrollment: enrollment({ notification_email: 'deploys@example.com' }),
+				now,
+				onclosed: vi.fn()
+			});
+			expect(screen.getByTestId('notification-email-save')).toBeDisabled();
+
+			await userEvent.type(screen.getByTestId('notification-email-input'), 'x');
+			expect(screen.getByTestId('notification-email-save')).toBeEnabled();
+		});
+
+		// The panel renders what the server stored, not the draft: the server
+		// trims, so echoing the input back would show whitespace it does not hold.
+		it('should report the address the server stored', async () => {
+			const fetchMock = vi.fn(() =>
+				Promise.resolve(
+					new Response(
+						JSON.stringify({ data: { notification_email: 'deploys@example.com' }, error: null }),
+						{ status: 200, headers: { 'Content-Type': 'application/json' } }
+					)
+				)
+			);
+			vi.stubGlobal('fetch', fetchMock);
+
+			const onchanged = vi.fn();
+			render(ServiceCodeDetailModal, {
+				enrollment: enrollment({ notification_email: '', certificate_request_id: undefined }),
+				now,
+				onnotificationemailchanged: onchanged,
+				onclosed: vi.fn()
+			});
+
+			await userEvent.type(
+				screen.getByTestId('notification-email-input'),
+				'  deploys@example.com  '
+			);
+			await userEvent.click(screen.getByTestId('notification-email-save'));
+
+			expect(await screen.findByTestId('notification-email-saved')).toBeInTheDocument();
+			expect(screen.getByTestId('notification-email-input')).toHaveValue('deploys@example.com');
+			expect(onchanged).toHaveBeenCalledWith('deploys@example.com');
+		});
+
+		// A refusal has to be visible: silently failing would leave the reader
+		// believing the credential's mail had been redirected when it had not.
+		it('should surface a refusal from the server', async () => {
+			vi.stubGlobal(
+				'fetch',
+				vi.fn(() =>
+					Promise.resolve(
+						new Response(JSON.stringify({ data: null, error: 'not a valid email address' }), {
+							status: 400,
+							headers: { 'Content-Type': 'application/json' }
+						})
+					)
+				)
+			);
+
+			render(ServiceCodeDetailModal, {
+				enrollment: enrollment({ notification_email: '', certificate_request_id: undefined }),
+				now,
+				onclosed: vi.fn()
+			});
+
+			await userEvent.type(screen.getByTestId('notification-email-input'), 'nope');
+			await userEvent.click(screen.getByTestId('notification-email-save'));
+
+			expect(await screen.findByTestId('notification-email-error')).toBeInTheDocument();
+		});
+	});
 });

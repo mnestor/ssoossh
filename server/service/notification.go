@@ -30,11 +30,17 @@ type Notifier interface {
 	Notify(ctx context.Context, kind notify.Kind, userID string, payload any)
 
 	// NotifyServiceAccount addresses every holder of a service account,
-	// resolved at delivery. Enrollment-scoped notifications use this: a
-	// service enrollment is owned by everyone holding its account, so
-	// there is no single user to name (see
+	// resolved at delivery. A service enrollment is owned by everyone
+	// holding its account, so there is no single user to name (see
 	// docs/proposals/enrollment-group-ownership.md).
 	NotifyServiceAccount(ctx context.Context, kind notify.Kind, serviceAccount string, payload any)
+
+	// NotifyEnrollment addresses one enrollment: its own notification
+	// address if it has one, and otherwise every holder of its service
+	// account. Every enrollment-scoped notification uses this, so that
+	// setting an address on an enrollment redirects all of them and not
+	// some.
+	NotifyEnrollment(ctx context.Context, kind notify.Kind, enrollmentID, serviceAccount string, payload any)
 }
 
 // KindPreference is one notification kind as the preferences page sees it:
@@ -111,6 +117,34 @@ func (s *NotificationService) NotifyServiceAccount(ctx context.Context, kind not
 	}
 	s.publish(ctx, kind, func() (notify.Event, error) {
 		return notify.NewServiceAccountEvent(kind, serviceAccount, payload)
+	})
+}
+
+// NotifyEnrollment queues one notification about an enrollment. Same
+// non-blocking, never-failing contract as Notify — see there for why both
+// properties are deliberate.
+//
+// Whether the enrollment has its own notification address is deliberately
+// not resolved here, for the same reason the account's holders are not: a
+// queued event must reflect the addressing in force when it is delivered,
+// not when it was published.
+func (s *NotificationService) NotifyEnrollment(ctx context.Context, kind notify.Kind, enrollmentID, serviceAccount string, payload any) {
+	if enrollmentID == "" {
+		// No enrollment to read an address off, so this is exactly a
+		// service-account notification and is treated as one.
+		s.NotifyServiceAccount(ctx, kind, serviceAccount, payload)
+		return
+	}
+	if serviceAccount == "" {
+		// An enrollment whose stored principals never parsed. Its address,
+		// if it has one, is still a reachable recipient — an enrollment
+		// owned by nobody is precisely the case an address covers — so this
+		// publishes rather than dropping the way NotifyServiceAccount does.
+		slog.WarnContext(ctx, "notifying an enrollment with no service account: only its notification address can be reached",
+			"kind", kind, "enrollment_id", enrollmentID)
+	}
+	s.publish(ctx, kind, func() (notify.Event, error) {
+		return notify.NewEnrollmentEvent(kind, enrollmentID, serviceAccount, payload)
 	})
 }
 
@@ -377,14 +411,22 @@ func (h *NotificationHandler) handle(msg *message.Message) error {
 	// Preferences are read at delivery, not at publication: an event that
 	// waited through a retry backoff has to respect the answer each
 	// recipient gave in the meantime.
-	wanted := make([]model.User, 0, len(recipients))
-	for _, user := range recipients {
-		enabled, err := (&NotificationService{db: h.db}).enabledFor(ctx, user.ID, event.Kind)
+	wanted := make([]delivery, 0, len(recipients))
+	for _, send := range recipients {
+		if send.UserID == "" {
+			// An enrollment's own notification address. There is no single
+			// owning user whose preference could gate it, and the address
+			// is the account's deliberate subscription — see
+			// model.Enrollment.NotificationEmail.
+			wanted = append(wanted, send)
+			continue
+		}
+		enabled, err := (&NotificationService{db: h.db}).enabledFor(ctx, send.UserID, event.Kind)
 		if err != nil {
 			return err
 		}
 		if enabled {
-			wanted = append(wanted, user)
+			wanted = append(wanted, send)
 		}
 	}
 	if len(wanted) == 0 {
@@ -403,24 +445,62 @@ func (h *NotificationHandler) handle(msg *message.Message) error {
 		return nil
 	}
 
-	for _, user := range wanted {
-		if err := h.sender.Send(ctx, mail.Outgoing{To: user.Email, Rendered: rendered}); err != nil {
+	for _, send := range wanted {
+		if err := h.sender.Send(ctx, mail.Outgoing{To: send.Address, Rendered: rendered}); err != nil {
 			return fmt.Errorf("failed to send the %s notification: %w", event.Kind, err)
 		}
-		slog.InfoContext(ctx, "notification sent", "kind", event.Kind, "user_id", user.ID)
+		// The address itself is never logged: a send to an enrollment's
+		// address is identified by the enrollment instead, which is what an
+		// operator would look it up by anyway.
+		if send.UserID != "" {
+			slog.InfoContext(ctx, "notification sent", "kind", event.Kind, "user_id", send.UserID)
+		} else {
+			slog.InfoContext(ctx, "notification sent to an enrollment's notification address",
+				"kind", event.Kind, "enrollment_id", event.EnrollmentID)
+		}
 	}
 	return nil
 }
 
-// recipients resolves who an event should reach: the one user it names, or
-// every holder of the service account it names.
+// delivery is one resolved send: the address it goes to, and the user whose
+// per-kind preference gates it.
+//
+// UserID empty means ungated — an enrollment's own notification address,
+// which has no owning user to hold a preference. Splitting this out of
+// model.User is what lets the two recipient shapes (a users row, a bare
+// configured address) travel through one delivery loop.
+type delivery struct {
+	Address string
+	UserID  string
+}
+
+// recipients resolves where an event should go: the enrollment's own
+// notification address, every holder of the service account it names, or
+// the one user it names.
 //
 // An empty result is a normal outcome, not an error — a user who has since
 // been deleted, an identity provider that releases no email claim, a
 // service account nobody who has logged in holds — so it is logged and the
 // message acknowledged rather than retried.
-func (h *NotificationHandler) recipients(ctx context.Context, event notify.Event) ([]model.User, error) {
-	if event.ServiceAccount != "" {
+func (h *NotificationHandler) recipients(ctx context.Context, event notify.Event) ([]delivery, error) {
+	// EnrollmentID as well as ServiceAccount, because an enrollment whose
+	// principals never parsed has no account but may still carry an
+	// address — and an event with neither is user-addressed.
+	if event.ServiceAccount != "" || event.EnrollmentID != "" {
+		// The enrollment's own address wins outright when it has one: it was
+		// entered deliberately, at approval or by a holder afterwards, and it
+		// exists precisely for the cases fan-out cannot serve — an account
+		// whose holders have never logged in, an identity provider that
+		// releases no email claim, or a team that wants one alias rather than
+		// a mailshot to every holder.
+		address, err := h.enrollmentAddress(ctx, event)
+		if err != nil {
+			return nil, err
+		}
+		if address != "" {
+			return []delivery{{Address: address}}, nil
+		}
+
 		holders, err := (&NotificationService{db: h.db}).ServiceAccountRecipients(ctx, event.ServiceAccount)
 		if err != nil {
 			return nil, err
@@ -429,7 +509,11 @@ func (h *NotificationHandler) recipients(ctx context.Context, event notify.Event
 			slog.InfoContext(ctx, "no reachable holders for a service account notification",
 				"kind", event.Kind, "service_account", event.ServiceAccount)
 		}
-		return holders, nil
+		sends := make([]delivery, 0, len(holders))
+		for _, user := range holders {
+			sends = append(sends, delivery{Address: user.Email, UserID: user.ID})
+		}
+		return sends, nil
 	}
 
 	var user model.User
@@ -448,7 +532,34 @@ func (h *NotificationHandler) recipients(ctx context.Context, event notify.Event
 			"kind", event.Kind, "user_id", event.UserID)
 		return nil, nil
 	}
-	return []model.User{user}, nil
+	return []delivery{{Address: user.Email, UserID: user.ID}}, nil
+}
+
+// enrollmentAddress reads the notification address of the enrollment an
+// event is about, or "" when the event names no enrollment, the row is
+// gone, or no address is set.
+//
+// A missing row is not an error: an enrollment can be deleted while one of
+// its events is still in the queue, and the right answer then is to fall
+// back to the account's holders rather than to fail the delivery.
+func (h *NotificationHandler) enrollmentAddress(ctx context.Context, event notify.Event) (string, error) {
+	if event.EnrollmentID == "" {
+		return "", nil
+	}
+
+	var enrollment model.Enrollment
+	err := h.db.WithContext(ctx).
+		Select("notification_email").
+		First(&enrollment, "id = ?", event.EnrollmentID).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			slog.DebugContext(ctx, "notification names an enrollment that no longer exists; falling back to the account holders",
+				"kind", event.Kind, "enrollment_id", event.EnrollmentID)
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to look up the notification address of enrollment %q: %w", event.EnrollmentID, err)
+	}
+	return enrollment.NotificationEmail, nil
 }
 
 // discardNotifications is the Notifier a service holds until bootstrap
@@ -462,6 +573,9 @@ func (discardNotifications) Notify(context.Context, notify.Kind, string, any) {}
 
 // NotifyServiceAccount discards the notification.
 func (discardNotifications) NotifyServiceAccount(context.Context, notify.Kind, string, any) {}
+
+// NotifyEnrollment discards the notification.
+func (discardNotifications) NotifyEnrollment(context.Context, notify.Kind, string, string, any) {}
 
 // NotificationPreferenceProvider is the preferences controller's view of
 // NotificationService: read and write the caller's own answers, nothing

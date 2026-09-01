@@ -67,6 +67,12 @@ type DecisionContext struct {
 type ApprovalSelection struct {
 	ServiceAccount string
 	Principals     []string
+
+	// NotificationEmail optionally becomes the resulting enrollment's sole
+	// notification recipient, in place of fanning out to every holder of
+	// ServiceAccount. Service-type requests only; ignored for others. Empty
+	// means fan out. See model.Enrollment.NotificationEmail.
+	NotificationEmail string
 }
 
 // CertRequestProvider manages the pending-approval lifecycle for
@@ -648,7 +654,7 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 
 	switch policy.flow {
 	case flowEnrollment:
-		return s.approveServiceEnrollment(ctx, req, narrowed, identity, policy, dc, selection.ServiceAccount)
+		return s.approveServiceEnrollment(ctx, req, narrowed, identity, policy, dc, selection)
 	case flowSigning:
 		return s.approveForSigning(ctx, req, identity, policy, narrowed, dc, selection.Principals)
 	default:
@@ -778,7 +784,18 @@ func (s *CertRequestService) resolveUser(ctx context.Context, identity *Identity
 // approveServiceEnrollment implements Approve's service branch — see its
 // doc comment. narrowed is req's already-resolved, server-config-bounded
 // RequestedOptions. policy is req.Type's certTypePolicy.
-func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req model.CertificateRequest, narrowed RequestedOptions, identity *Identity, policy *certTypePolicy, dc DecisionContext, serviceAccount string) error {
+func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req model.CertificateRequest, narrowed RequestedOptions, identity *Identity, policy *certTypePolicy, dc DecisionContext, selection ApprovalSelection) error {
+	serviceAccount := selection.ServiceAccount
+
+	// Validated before anything is written, so a typo'd address fails the
+	// approval rather than producing an enrollment whose notifications go
+	// nowhere. Same check the later edit path applies — see
+	// validateNotificationEmail, which owns the reasoning.
+	notificationEmail, err := validateNotificationEmail(selection.NotificationEmail)
+	if err != nil {
+		return err
+	}
+
 	// Compute certificate and enrollment-code lifetimes using the policy
 	// engine, then apply its extension grants and source-rule narrowing.
 	outcome := s.engine.evaluate(req.Type, identity, req.SourceIP, policy.validDuration, policy.enrollmentDuration)
@@ -861,6 +878,11 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 			"source_ip":       req.SourceIP,
 			"expires_at":      expiresAt,
 			"cert_lifetime":   effectiveDuration.String(),
+			// Recorded because it decides who hears about this credential
+			// from here on: empty means every holder of the account, a
+			// value means only that address. Same reasoning as
+			// AuditEnrollmentNotificationEmailSet.
+			"notification_email": notificationEmail,
 		},
 	}
 
@@ -907,6 +929,7 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 			CreatedAt:                  now,
 			ExpiresAt:                  expiresAt,
 			CertificateDurationSeconds: &certDurationSeconds,
+			NotificationEmail:          notificationEmail,
 		}
 		if err := tx.Create(enrollment).Error; err != nil {
 			return fmt.Errorf("failed to create enrollment: %w", err)
@@ -947,10 +970,12 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 	// in the terminal that ran `service enroll`; everything else the
 	// operator was told is here. See notify.ServiceEnrollmentCreated.
 	//
-	// Addressed to the account, not to the approver: everyone holding it
-	// owns the enrollment from the moment it exists, and the people who
-	// run the job are usually not the one person who clicked approve.
-	s.notifier.NotifyServiceAccount(ctx, notify.KindServiceEnrollmentCreated, serviceAccount, &notify.ServiceEnrollmentCreated{
+	// Addressed to the enrollment, not to the approver: everyone holding the
+	// account owns it from the moment it exists, and the people who run the
+	// job are usually not the one person who clicked approve. An address
+	// entered on the approval page narrows that to one recipient, which is
+	// resolved at delivery.
+	s.notifier.NotifyEnrollment(ctx, notify.KindServiceEnrollmentCreated, enrollmentID, serviceAccount, &notify.ServiceEnrollmentCreated{
 		ServiceAccount:       serviceAccount,
 		RequestID:            req.ID,
 		EnrollmentID:         enrollmentID,

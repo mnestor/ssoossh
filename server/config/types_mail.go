@@ -97,6 +97,32 @@ type MailConfig struct {
 	// docs/operations/email-notifications.md.
 	TemplateDir string `mapstructure:"template_dir" example:"\"/etc/ssoossh/mail-templates\""`
 
+	// ExpiryReminderLead is how far ahead of an enrollment code's expiry the
+	// service_enrollment_expiring reminder is sent. Zero disables the sweep
+	// that sends it, and the job is not registered at all.
+	//
+	// A week by default: long enough that someone can schedule the
+	// re-enrollment rather than drop what they are doing, short enough that
+	// the message still describes a real deadline.
+	//
+	// One reminder per enrollment, claimed in the database so every instance
+	// can run the sweep without any of them duplicating the send. Lengthening
+	// this does not re-remind an enrollment already reminded under the old
+	// value; shortening it means an enrollment past the new window never
+	// gets one.
+	ExpiryReminderLead time.Duration `mapstructure:"expiry_reminder_lead" default:"168h"`
+
+	// ExpiredAttemptWindow rate-limits the service_enrollment_expired_attempt
+	// notification to at most one per enrollment per window. Zero disables
+	// that notification entirely.
+	//
+	// A window rather than a one-shot because the thing it reports is a
+	// retry loop: a cron job holding an expired code fails on its own
+	// schedule indefinitely, and the recipient needs to keep hearing that it
+	// is still happening without hearing it every five minutes. A day by
+	// default, so the useful message is "this is still happening today".
+	ExpiredAttemptWindow time.Duration `mapstructure:"expired_attempt_window" default:"24h"`
+
 	// SMTP is the relay connection. See SMTPConfig.
 	SMTP SMTPConfig `mapstructure:"smtp"`
 
@@ -208,6 +234,15 @@ func (c *MailConfig) Validate() error {
 		if !info.IsDir() {
 			return fmt.Errorf("mail.template_dir %q is not a directory", c.TemplateDir)
 		}
+	}
+
+	// Negative rejected rather than clamped: zero already means "off" for
+	// both, so a negative is a typo whose intent cannot be guessed.
+	if c.ExpiryReminderLead < 0 {
+		return fmt.Errorf("mail.expiry_reminder_lead %s is negative: use 0 to disable the reminder", c.ExpiryReminderLead)
+	}
+	if c.ExpiredAttemptWindow < 0 {
+		return fmt.Errorf("mail.expired_attempt_window %s is negative: use 0 to disable the notification", c.ExpiredAttemptWindow)
 	}
 
 	return c.SMTP.validate()

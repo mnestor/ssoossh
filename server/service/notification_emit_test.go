@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/notify"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // capturingNotifier records what the certificate paths ask to be sent,
@@ -21,10 +23,12 @@ type capturingNotifier struct {
 
 type capturedNotification struct {
 	Kind notify.Kind
-	// Exactly one of UserID and ServiceAccount is set, matching the two
-	// ways notify.Event can be addressed.
+	// UserID or ServiceAccount is set, matching the way the notification
+	// was addressed. EnrollmentID accompanies ServiceAccount when the
+	// caller addressed a specific enrollment.
 	UserID         string
 	ServiceAccount string
+	EnrollmentID   string
 	Payload        any
 }
 
@@ -38,6 +42,17 @@ func (n *capturingNotifier) NotifyServiceAccount(_ context.Context, kind notify.
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.events = append(n.events, capturedNotification{Kind: kind, ServiceAccount: serviceAccount, Payload: payload})
+}
+
+func (n *capturingNotifier) NotifyEnrollment(_ context.Context, kind notify.Kind, enrollmentID, serviceAccount string, payload any) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.events = append(n.events, capturedNotification{
+		Kind:           kind,
+		ServiceAccount: serviceAccount,
+		EnrollmentID:   enrollmentID,
+		Payload:        payload,
+	})
 }
 
 func (n *capturingNotifier) captured() []capturedNotification {
@@ -145,6 +160,102 @@ func TestApprove_shouldNotifyTheServiceAccountAboutANewEnrollment(t *testing.T) 
 	}
 	if payload.PublicKeyFingerprint == "" {
 		t.Error("PublicKeyFingerprint is empty")
+	}
+}
+
+// approveServiceRequest drives a service approval with the given selection
+// and returns the enrollment it minted.
+func approveServiceRequest(t *testing.T, svc *CertRequestService, selection ApprovalSelection) (model.Enrollment, error) {
+	t.Helper()
+
+	const publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ7VqQZ8Rz9k1Q4bF0nQXqLdY2mJ3H8sK5tW6uV9xYzA svc@example"
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypeService,
+		PublicKey: publicKey,
+		SourceIP:  "198.51.100.7",
+	})
+	if err != nil {
+		t.Fatalf("CreateRequest: %v", err)
+	}
+
+	identity := &Identity{Username: "alice", Subject: "sub-1", Email: "alice@example.com", ServiceAccounts: []string{"deploy-bot"}}
+	seedUser(t, svc.db, identity.Subject)
+	if err := svc.Approve(context.Background(), requestID, identity,
+		DecisionContext{SourceIP: "198.51.100.7"}, selection); err != nil {
+		return model.Enrollment{}, err
+	}
+
+	var enrollment model.Enrollment
+	if err := svc.db.First(&enrollment, "certificate_request_id = ?", requestID).Error; err != nil {
+		t.Fatalf("read enrollment: %v", err)
+	}
+	return enrollment, nil
+}
+
+// Approval is where the address belongs: it is the moment the approver is
+// already deciding what the enrollment is for, and a team alias entered then
+// covers every later notification about it.
+func TestApprove_shouldStoreTheNotificationAddressOnTheEnrollment(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+		Service: config.CertOptionsService{ValidDuration: time.Hour, EnrollmentDuration: 90 * 24 * time.Hour},
+	})
+
+	enrollment, err := approveServiceRequest(t, svc, ApprovalSelection{
+		ServiceAccount:    "deploy-bot",
+		NotificationEmail: "  deploys@example.com  ",
+	})
+	if err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	if enrollment.NotificationEmail != "deploys@example.com" {
+		t.Errorf("stored %q, want the trimmed address", enrollment.NotificationEmail)
+	}
+}
+
+// A typo'd address would silently send every notification about this
+// credential nowhere, so it fails the approval rather than producing an
+// enrollment nobody hears about.
+func TestApprove_shouldRejectAnInvalidNotificationAddress(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+		Service: config.CertOptionsService{ValidDuration: time.Hour, EnrollmentDuration: 90 * 24 * time.Hour},
+	})
+
+	_, err := approveServiceRequest(t, svc, ApprovalSelection{
+		ServiceAccount:    "deploy-bot",
+		NotificationEmail: "not an address",
+	})
+
+	var invalid *errorresponses.InvalidRequestError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("Approve error = %v, want an InvalidRequestError", err)
+	}
+}
+
+// The created notification is addressed to the enrollment rather than to the
+// account, which is what lets a set address redirect it along with every
+// later message about the same code.
+func TestApprove_shouldAddressTheCreatedNotificationToTheEnrollment(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+		Service: config.CertOptionsService{ValidDuration: time.Hour, EnrollmentDuration: 90 * 24 * time.Hour},
+	})
+	notifier := &capturingNotifier{}
+	svc.SetNotifier(notifier)
+
+	enrollment, err := approveServiceRequest(t, svc, ApprovalSelection{ServiceAccount: "deploy-bot"})
+	if err != nil {
+		t.Fatalf("Approve: %v", err)
+	}
+
+	got := notifier.only(t, notify.KindServiceEnrollmentCreated)
+	if got.EnrollmentID != enrollment.ID {
+		t.Errorf("addressed enrollment %q, want %q", got.EnrollmentID, enrollment.ID)
 	}
 }
 

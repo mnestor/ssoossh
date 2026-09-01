@@ -38,7 +38,8 @@ export type {
 	ReEnableUserRequestBody,
 	RequestDetailResponse as RequestDetail,
 	ServiceEnrollmentResponse as ServiceEnrollment,
-	ServiceEnrollmentsResponse
+	ServiceEnrollmentsResponse,
+	SetNotificationEmailRequestBody
 } from './generated/webtypes';
 
 export type {

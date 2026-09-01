@@ -84,6 +84,12 @@ type Field struct {
 	// individually: the surface belongs to another module, so it is
 	// documented as one group by the doc comment on the embedded field.
 	Embedded bool
+
+	// promoted marks an embedded struct we do parse, whose fields belong to
+	// the enclosing struct's namespace rather than to a key of their own.
+	// buildChildren splices those fields into the parent and drops this
+	// node, so nothing downstream sees a struct with no key.
+	promoted bool
 }
 
 // IsStruct reports whether f groups other keys rather than holding a value.
@@ -265,7 +271,7 @@ func sections(packages map[string]*pkg, base string, root *ast.StructType) ([]*S
 // Returns nil for a field mapstructure ignores.
 func build(packages map[string]*pkg, base string, f *ast.Field, prefix string) (*Field, error) {
 	if len(f.Names) == 0 {
-		return buildEmbedded(f), nil
+		return buildEmbeddedField(packages, base, f, prefix)
 	}
 	name := f.Names[0].Name
 	if !ast.IsExported(name) {
@@ -344,6 +350,35 @@ func applyChildDefaults(tag *ast.BasicLit, children []*Field) {
 	}
 }
 
+// buildEmbeddedField handles a field with no name of its own.
+//
+// An embedded struct we parse (tlsutils.CertificateInfo) is documented key
+// by key: its fields are real configuration keys in the enclosing struct's
+// namespace, and treating the whole thing as one opaque group is how
+// http.tls.certificate_file and http.tls.private_key_file -- both required
+// to serve TLS -- went undocumented in every generated artifact at once.
+//
+// An embedded struct we do not parse (the timberjack logger) keeps the
+// group treatment: its surface belongs to another module, so there are no
+// doc comments of ours to render and the fields are not ours to describe
+// one by one.
+func buildEmbeddedField(packages map[string]*pkg, base string, f *ast.Field, prefix string) (*Field, error) {
+	pkgName, typeName, list := typeName(f.Type)
+	if pkgName == "" {
+		pkgName = base
+	}
+	if p, ok := packages[pkgName]; ok && !list {
+		if st, ok := p.structs[typeName]; ok {
+			children, err := buildChildren(packages, pkgName, st, prefix)
+			if err != nil {
+				return nil, err
+			}
+			return &Field{GoName: typeName, Children: children, promoted: true}, nil
+		}
+	}
+	return buildEmbedded(f), nil
+}
+
 // buildEmbedded documents an embedded field as a single group. Such a field
 // carries no name of its own: its keys land in the enclosing struct's
 // namespace but belong to another module, so it is documented as one group,
@@ -385,6 +420,12 @@ func buildChildren(packages map[string]*pkg, pkgName string, st *ast.StructType,
 			return nil, err
 		}
 		if child == nil {
+			continue
+		}
+		// An embedded struct of ours has no key of its own; its fields are
+		// keys of this struct, so they are spliced in here.
+		if child.promoted {
+			out = append(out, child.Children...)
 			continue
 		}
 		out = append(out, child)

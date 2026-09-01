@@ -21,7 +21,8 @@ import type {
 	NotificationPreferences,
 	ReEnableUserRequestBody,
 	RequestDetail,
-	ServiceEnrollmentsResponse
+	ServiceEnrollmentsResponse,
+	SetNotificationEmailRequestBody
 } from './types';
 
 /** GET /api/users/me. */
@@ -73,17 +74,21 @@ export function approveRequest(
 	options?: {
 		serviceAccount?: string;
 		principals?: string[];
+		notificationEmail?: string;
 	}
 ): Promise<ApproveResult> {
 	// The options object is camelCase for callers; the wire field names are
 	// webtypes.ApproveRequestBody's snake_case json tags. Mapping here rather
 	// than posting `options` verbatim, which would send `serviceAccount` and
 	// silently fail to bind server-side.
-	const hasSelection = !!options && (!!options.serviceAccount || !!options.principals?.length);
+	const hasSelection =
+		!!options &&
+		(!!options.serviceAccount || !!options.principals?.length || !!options.notificationEmail);
 	const body = hasSelection
 		? {
 				...(options.serviceAccount ? { service_account: options.serviceAccount } : {}),
-				...(options.principals?.length ? { principals: options.principals } : {})
+				...(options.principals?.length ? { principals: options.principals } : {}),
+				...(options.notificationEmail ? { notification_email: options.notificationEmail } : {})
 			}
 		: undefined;
 	return request<ApproveResult>(`/certs/requests/${encodeURIComponent(id)}/approve`, {
@@ -186,6 +191,27 @@ export function listRetrievals(
  */
 export function listServiceEnrollments(signal?: AbortSignal): Promise<ServiceEnrollmentsResponse> {
 	return request<ServiceEnrollmentsResponse>('/certs/service/enrollments', { signal });
+}
+
+/**
+ * PATCH /api/certs/service/enrollments/:id/notification-email.
+ *
+ * Points every notification about this enrollment at one address instead of
+ * fanning out to every holder of its service account. An empty string clears
+ * it and restores fan-out, which is why the address is a plain parameter
+ * rather than an optional one.
+ *
+ * Answers with the address as stored — trimmed server-side, so the caller
+ * should render what comes back rather than its own input.
+ */
+export function setEnrollmentNotificationEmail(
+	id: string,
+	notificationEmail: string
+): Promise<SetNotificationEmailRequestBody> {
+	return request<SetNotificationEmailRequestBody>(
+		`/certs/service/enrollments/${encodeURIComponent(id)}/notification-email`,
+		{ method: 'PATCH', body: { notification_email: notificationEmail } }
+	);
 }
 
 /**

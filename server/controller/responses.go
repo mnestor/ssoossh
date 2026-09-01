@@ -254,6 +254,7 @@ func newServiceEnrollmentResponse(e service.ServiceEnrollment) webtypes.ServiceE
 		FirstRedeemedAt:      e.Enrollment.RedeemedAt,
 		LastRetrievedAt:      e.LastRetrievedAt,
 		RetrievalCount:       e.RetrievalCount,
+		NotificationEmail:    e.Enrollment.NotificationEmail,
 	}
 
 	if e.Enrollment.CertificateRequestID != nil {

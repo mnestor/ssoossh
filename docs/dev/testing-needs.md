@@ -41,10 +41,11 @@ the ones a unit test proves only in-process:
 
 ## Uncovered error branches with no injection seam
 
-**Found:** 2026-08-23, while restoring client coverage.
+**Found:** 2026-08-23, while restoring client coverage. LDAP addendum
+2026-08-29.
 
-Three functions have error paths that no test reaches because there is
-nothing to inject a failure through:
+Functions with error paths no test reaches because there is nothing to
+inject a failure through:
 
 - `writeFileAtomic` (`client/cmd/atomicwrite.go:15`, 62.5%) — its write,
   chmod, and close failures. `os.WriteFile` and friends are called directly.
@@ -52,6 +53,11 @@ nothing to inject a failure through:
   `GoChannel` are concrete watermill types, not interfaces. The NATS
   constructor is covered end to end by the multi-signer tier, so the unit
   gap overstates the risk.
+- `ldapConnAdapter.Search`/`.Close` and `dialLDAP`'s StartTLS and bind
+  branches (`server/service/ldapclient.go`) — thin wrappers over a live
+  `*ldap.Conn`. The TLS construction and the fail-before-network branches
+  are unit tested; what remains needs a real directory, the same shape of
+  gap the NATS constructor has.
 
 Deliberately not annotated `not covered:`. Per `.claude/rules/test-go.md`,
 that annotation is for a test that genuinely cannot exist, and "awkward to
@@ -59,18 +65,35 @@ reach" is a gap to write a test for. The honest fix is a seam — a `writeFile
 func(...)` field, or an interface over the transport — which is a design
 change worth making on purpose rather than smuggling in behind a test.
 
-## Frontend state modules are largely untested
+## The frontend has no coverage floor
 
-**Found:** 2026-08-23, on the first frontend coverage measurement.
+**Found:** 2026-08-23; scope narrowed and numbers refreshed 2026-08-29.
 
-Frontend coverage is now collected (`pnpm test:coverage`, uploaded by
-`resilience.yaml`) and sits at 83.8% of statements. The thin spots are all
-client-side state rather than components:
+Frontend coverage is collected (`pnpm test:coverage`, uploaded by
+`resilience.yaml`) and sits at 88.1% of statements. The state modules and
+admin pages that used to be the thin spots are tested now; what remains
+under 80% is:
 
-- `lib/branding.svelte.ts` — 0%.
-- `lib/session.svelte.ts` — 35.7%.
-- `lib/auth.ts` — 66.7%, missing lines 22, 56-64, 77-78.
+- `routes/+error.svelte` — 0% (12 statements).
+- `routes/certs/[id]/+page.svelte` — 69.9%.
+- `routes/logs/me/+page.svelte` — 71.3%.
+- `lib/components/BrandMark.svelte` — 66.7%.
 
-Components are at 97.2%. No floor is set on the frontend yet; the Go side
-has one in `.coverage-floors`, and the same treatment here needs a real
-number to ratchet from, which this is.
+The Go side ratchets per package in `.coverage-floors`; the frontend still
+has no floor at all, so a slide like the 83.8% → 77.8% one the 2026-08-29
+feature merges caused (caught and repaired the same day) fails no gate.
+88.1% is the number to ratchet from — vitest's `coverage.thresholds` in
+`vite.config.ts` is the mechanism.
+
+## The auth navigation wrappers cannot be observed under jsdom
+
+**Found:** 2026-08-29, while closing the auth module gap.
+
+`startLogin`, `goToLogin`, and the redirect half of
+`redirectIfUnauthenticated` (`lib/auth.ts`) end in
+`window.location.assign`, which jsdom implements as a logged no-op and
+refuses to let a test spy on (`Cannot redefine property: assign`). The
+tests call them — the lines execute, and `loginPageURL`'s own cases pin the
+URL construction — but the navigation target is asserted nowhere in unit
+tests; the e2e browser flows are what actually prove the jumps. Observing
+it directly needs a navigation seam or a switch to happy-dom.

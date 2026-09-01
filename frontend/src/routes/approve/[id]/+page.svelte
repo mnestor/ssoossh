@@ -21,6 +21,7 @@
 	let outcome = $state<'approved' | 'denied' | null>(null);
 	let selectedServiceAccount = $state<string | null>(null);
 	let selectedPrincipals = $state<string[]>([]);
+	let notificationEmail = $state('');
 
 	// Build the list of principals the approver holds: username plus other accounts,
 	// deduplicated and in that order.
@@ -111,7 +112,8 @@
 			if (action === 'approved') {
 				await approveRequest(id, {
 					serviceAccount: selectedServiceAccount ?? undefined,
-					principals: selectedPrincipals
+					principals: selectedPrincipals,
+					notificationEmail: notificationEmail.trim() || undefined
 				});
 			} else {
 				await denyRequest(id);
@@ -141,6 +143,7 @@
 		{outcome}
 		serviceAccounts={session.user?.service_accounts ?? []}
 		bind:selectedServiceAccount
+		bind:notificationEmail
 		{userPrincipals}
 		bind:selectedPrincipals
 		onapprove={() => decide('approved')}

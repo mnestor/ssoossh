@@ -1,7 +1,7 @@
 table audit_events
   column actor_user_id type=TEXT nullable=true pk=false default=<none>
   column created_at type=DATETIME nullable=false pk=false default=<none>
-  column id type=TEXT nullable=true pk=true default=<none>
+  column id type=TEXT nullable=false pk=true default=<none>
   column payload type=TEXT nullable=false pk=false default=''
   column target_user_id type=TEXT nullable=true pk=false default=<none>
   index idx_audit_events_actor unique=false columns=actor_user_id,created_at
@@ -112,8 +112,11 @@ table enrollments
   column code type=TEXT nullable=false pk=false default=<none>
   column created_at type=DATETIME nullable=false pk=false default=<none>
   column expires_at type=DATETIME nullable=false pk=false default=<none>
+  column expiry_reminder_sent_at type=DATETIME nullable=true pk=false default=<none>
   column id type=TEXT nullable=false pk=true default=<none>
   column key_id type=TEXT nullable=false pk=false default=''
+  column last_expired_attempt_notified_at type=DATETIME nullable=true pk=false default=<none>
+  column notification_email type=TEXT nullable=false pk=false default=''
   column option_set type=TEXT nullable=false pk=false default=''
   column principals type=TEXT nullable=false pk=false default=''
   column public_key type=TEXT nullable=false pk=false default=<none>
@@ -123,6 +126,7 @@ table enrollments
   fk certificate_request_id -> certificate_requests.id on_delete=NO ACTION on_update=NO ACTION
   fk user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
   index idx_enrollments_code unique=true columns=code
+  index idx_enrollments_expiry_reminder unique=false columns=expiry_reminder_sent_at,expires_at
   index idx_enrollments_service_account unique=false columns=service_account
   index idx_enrollments_user_id unique=false columns=user_id
   index sqlite_autoindex_enrollments_1 unique=true columns=id
@@ -144,7 +148,7 @@ table server_secrets
 table user_groups
   column first_seen_at type=DATETIME nullable=false pk=false default=<none>
   column group_name type=TEXT nullable=false pk=false default=<none>
-  column id type=TEXT nullable=true pk=true default=<none>
+  column id type=TEXT nullable=false pk=true default=<none>
   column last_seen_at type=DATETIME nullable=false pk=false default=<none>
   column source type=TEXT nullable=false pk=false default=<none>
   column user_id type=TEXT nullable=false pk=false default=<none>
@@ -161,7 +165,7 @@ table user_ldap
   column last_seen_at type=DATETIME nullable=true pk=false default=<none>
   column last_synced_at type=DATETIME nullable=true pk=false default=<none>
   column updated_at type=DATETIME nullable=false pk=false default=<none>
-  column user_id type=TEXT nullable=true pk=true default=<none>
+  column user_id type=TEXT nullable=false pk=true default=<none>
   fk user_id -> users.id on_delete=NO ACTION on_update=CASCADE
   index sqlite_autoindex_user_ldap_1 unique=true columns=user_id
 table users

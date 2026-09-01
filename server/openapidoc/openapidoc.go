@@ -142,6 +142,15 @@ type ServiceEnrollmentsEnvelope struct {
 	Error *string                             `json:"error"`
 }
 
+// SetNotificationEmailEnvelope is PATCH
+// /api/certs/service/enrollments/{id}/notification-email's body. It echoes
+// the request shape because the stored value is the trimmed input, which
+// the caller has no other way to learn.
+type SetNotificationEmailEnvelope struct {
+	Data  webtypes.SetNotificationEmailRequestBody `json:"data" validate:"required"`
+	Error *string                                  `json:"error"`
+}
+
 // CurrentUserEnvelope is GET /api/users/me's body.
 type CurrentUserEnvelope struct {
 	Data  webtypes.CurrentUserResponse `json:"data" validate:"required"`

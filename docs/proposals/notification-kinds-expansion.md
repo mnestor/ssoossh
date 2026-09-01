@@ -1,27 +1,45 @@
-# Proposal: expanding the notification catalogue
+# Expanding the notification catalogue
 
-Status: proposed. Builds on the email notification machinery on this
-branch (`server/notify`, `server/mail`, the delivery consumer in
-`server/service/notification.go`), which ships with two kinds: service
-enrollment created and service enrollment redeemed.
+**Status: implemented.** Built 2026-08-29. The operator-facing reference is
+[operations/email-notifications.md](../operations/email-notifications.md),
+which is now the document to read; this one is kept for the reasoning behind
+each decision.
+
+**What shipped:** all four kinds, the `notification_email` column and both
+send-once claims (migration `20260829040000_notification_expansion`), the
+sweep job, and the three surfaces that set the address — the browser
+approval page, the service codes page, and the admin enrollment view.
+Specifics worth knowing, each noted inline below where it differs from the
+proposal:
+
+- The address travels as an **enrollment-addressed event**, not as a branch
+  on the account-addressed one. `notify.Event` gained an `EnrollmentID`, and
+  `Notifier.NotifyEnrollment` replaced `NotifyServiceAccount` at every
+  enrollment-scoped emit site — including the two that already existed — so
+  setting an address redirects *all* of an enrollment's notifications rather
+  than only the new ones.
+- `notification_email` is `TEXT NOT NULL DEFAULT ''` rather than nullable,
+  matching `service_account` beside it. An email address is never
+  legitimately empty, so `''` is an unambiguous "unset" that needs no
+  three-valued logic in the delivery branch.
+- The expired-attempt window is a config key
+  (`mail.expired_attempt_window`, default 24h) rather than the hardcoded
+  suggestion below, on the same reasoning as `mail.expiry_reminder_lead`:
+  the right value depends on how the deployment's jobs retry.
+- The reminder sweep excludes already-expired codes and bounds each pass to
+  500 claims, so the first sweep after an upgrade does not try to remind
+  every enrollment inside the window at once.
+- The issued pair share one `CertificateIssued` payload struct across two
+  registered kinds, since they describe the same object; the kinds stay
+  separate so the preferences can be.
 
 Amended by
-[enrollment-group-ownership.md](enrollment-group-ownership.md), which is
-**implemented**: service enrollments are owned by every holder of their
-service account, there is no single owning user, and reassignment does not
-exist. That removed one kind originally proposed here
+[enrollment-group-ownership.md](enrollment-group-ownership.md), which
+removed one kind originally proposed here
 (`service_enrollment_reassigned`) and replaced the single-recipient
 delivery model.
 
-The fan-out half of "Delivery semantics" below therefore already exists:
-`Notifier.NotifyServiceAccount` publishes an account-addressed event and
-the delivery consumer resolves it to one gated copy per holder. What
-remains unbuilt here is the `notification_email` column and the two kinds
-and their scheduler work.
-
-This proposes four new notification kinds and one mechanism change — a
-per-enrollment notification address. The kinds are, in the order they
-earn their keep:
+The four kinds, in the order they earn their keep:
 
 | Kind | Fires when | Default |
 |---|---|---|
@@ -210,26 +228,30 @@ identity email, no override applies.
 
 ## Sequencing
 
-1. **Next:** the notification address column,
+All of it landed in one change, so the ordering below is now history rather
+than a plan.
+
+1. **Done:** the notification address column,
    `service_enrollment_expiring`, and
-   `service_enrollment_expired_attempt`. All three touch only code that
-   exists today, and the two dedupe columns can share one migration with
-   the address column. The delivery consumer already resolves recipients
-   per event, so the address is a branch in
-   `NotificationHandler.recipients`, not a new mechanism.
+   `service_enrollment_expired_attempt`. The three dedupe and address
+   columns did share one migration, as expected. The address turned out
+   *not* to be a branch in `NotificationHandler.recipients` alone — the
+   consumer had no way to know which enrollment an account-addressed event
+   was about, so `notify.Event` gained an `EnrollmentID` and the emit sites
+   moved to `NotifyEnrollment`.
 2. **Done, with the group-ownership work
    ([enrollment-group-ownership.md](enrollment-group-ownership.md)):** the
-   fan-out delivery model. The address-editing surfaces (service codes
-   page, admin enrollment view) go wherever the address column does.
-3. **Any time:** the issued pair; it is independent of everything above.
+   fan-out delivery model.
+3. **Done:** the issued pair, emitted from
+   `SignedReplyHandler.resolveSuccess` as proposed.
 
 ## Open questions
 
-- **Domain restriction on the notification address.** Unrestricted is
-  simplest and matches the trust already extended to approvers; an
-  allowlist config is cheap to add later without a migration. Proposed:
-  ship unrestricted, documented.
-- **Reminder cardinality.** One reminder per enrollment is proposed. A
+- **Domain restriction on the notification address.** Shipped
+  unrestricted, documented in
+  [operations/email-notifications.md](../operations/email-notifications.md).
+  An allowlist config stays cheap to add later without a migration.
+- **Reminder cardinality.** Shipped as one reminder per enrollment. A
   second, closer-in reminder (say 7 days and 24 hours) doubles the
   column bookkeeping for unclear gain; revisit if operators ask.
 - ~~**Whose preference gates an overridden send.**~~ Resolved by group

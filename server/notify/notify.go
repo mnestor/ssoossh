@@ -30,6 +30,30 @@ const (
 	// KindServiceEnrollmentRedeemed fires on every `service retrieve` that
 	// redeems an enrollment code, successful or not.
 	KindServiceEnrollmentRedeemed Kind = "service_enrollment_redeemed"
+
+	// KindServiceEnrollmentExpiring fires once per enrollment, when its code
+	// comes within mail.expiry_reminder_lead of expiring. The only kind not
+	// emitted from an event path, because the event is the absence of one:
+	// a scheduled sweep finds it instead.
+	KindServiceEnrollmentExpiring Kind = "service_enrollment_expiring"
+
+	// KindServiceEnrollmentExpiredAttempt fires when `service retrieve`
+	// presents a code that has expired — a forgotten job now failing on
+	// schedule, or someone replaying a credential that should no longer
+	// exist. Rate-limited to one per enrollment per
+	// mail.expired_attempt_window.
+	KindServiceEnrollmentExpiredAttempt Kind = "service_enrollment_expired_attempt"
+
+	// KindUserCertificateIssued fires when an interactive user certificate
+	// is signed. Default off: one per login would make every existing
+	// deployment noisy the day it upgrades.
+	KindUserCertificateIssued Kind = "user_certificate_issued"
+
+	// KindPAMCertificateIssued fires when a PAM certificate is signed for a
+	// local `sudo`/`su`. Separate from the user kind, not a type field on
+	// one, so a user who runs `sudo` forty times a day and logs in twice can
+	// keep the login signal without drowning in the other.
+	KindPAMCertificateIssued Kind = "pam_certificate_issued"
 )
 
 // Field documents one variable a template for this kind may reference.
@@ -121,6 +145,82 @@ var definitions = []Definition{
 			{"ServerURL", "string", "The server's public origin, for links back to the retrieval log."},
 		},
 	},
+	{
+		Kind:           KindServiceEnrollmentExpiring,
+		Title:          "Service enrollment expiring",
+		Description:    "Sent once when one of your enrollment codes is close to expiring, so an unattended job can be re-enrolled before it starts failing.",
+		DefaultEnabled: true,
+		NewPayload:     func() any { return &ServiceEnrollmentExpiring{} },
+		Fields: []Field{
+			{"ServiceAccount", "string", "The service account the expiring enrollment belongs to."},
+			{"RequestID", "string", "The certificate request the enrollment came from, or empty for an enrollment with no linked request."},
+			{"EnrollmentID", "string", "The enrollment about to expire."},
+			{"KeyID", "string", "The SSH certificate key ID fixed at approval time."},
+			{"Principals", "[]string", "The certificate principals fixed at approval time."},
+			{"PublicKeyFingerprint", "string", "SHA256 fingerprint of the enrolled public key."},
+			{"PublicKeyType", "string", "SSH algorithm of the enrolled public key, e.g. ssh-ed25519."},
+			{"FirstRedeemedAt", "time.Time", "When the code was first redeemed, or the zero time if it never was. A code never redeemed is usually a job that was never finished."},
+			{"CodeExpiresAt", "time.Time", "When the code stops being redeemable. Re-enroll before this."},
+			{"ServerURL", "string", "The server's public origin, for links back to the enrollment."},
+		},
+	},
+	{
+		Kind:           KindServiceEnrollmentExpiredAttempt,
+		Title:          "Expired enrollment code used",
+		Description:    "Sent when an expired enrollment code is presented for redemption: either a job is still trying to use it, or someone is replaying a credential that should no longer exist.",
+		DefaultEnabled: true,
+		NewPayload:     func() any { return &ServiceEnrollmentExpiredAttempt{} },
+		Fields: []Field{
+			{"ServiceAccount", "string", "The service account the expired enrollment belongs to."},
+			{"RequestID", "string", "The certificate request the enrollment came from, or empty for an enrollment with no linked request."},
+			{"EnrollmentID", "string", "The enrollment whose expired code was presented."},
+			{"KeyID", "string", "The SSH certificate key ID fixed at approval time."},
+			{"Principals", "[]string", "The certificate principals fixed at approval time."},
+			{"PublicKeyFingerprint", "string", "SHA256 fingerprint of the enrolled public key."},
+			{"PublicKeyType", "string", "SSH algorithm of the enrolled public key, e.g. ssh-ed25519."},
+			{"SourceIP", "string", "The address the attempt came from."},
+			{"AttemptedAt", "time.Time", "When the expired code was presented."},
+			{"CodeExpiredAt", "time.Time", "When the code stopped being redeemable."},
+			{"ServerURL", "string", "The server's public origin, for links back to the enrollment."},
+		},
+	},
+	{
+		Kind:           KindUserCertificateIssued,
+		Title:          "User certificate issued",
+		Description:    "Sent every time an interactive SSH certificate is signed for you. Off by default: this is one message per login, for people who want to see every one.",
+		DefaultEnabled: false,
+		NewPayload:     func() any { return &CertificateIssued{} },
+		Fields:         certificateIssuedFields,
+	},
+	{
+		Kind:           KindPAMCertificateIssued,
+		Title:          "PAM certificate issued",
+		Description:    "Sent every time a certificate is signed for a local sudo or su on your behalf. Off by default: this is one message per sudo.",
+		DefaultEnabled: false,
+		NewPayload:     func() any { return &CertificateIssued{} },
+		Fields:         certificateIssuedFields,
+	},
+}
+
+// certificateIssuedFields documents CertificateIssued, shared by the two
+// kinds that render it. Written once rather than twice so the pair cannot
+// drift into documenting the same struct differently.
+var certificateIssuedFields = []Field{
+	{"CertificateType", "string", "The certificate type, \"user\" or \"pam\"."},
+	{"RequestID", "string", "The certificate request this certificate was issued for."},
+	{"KeyID", "string", "The SSH certificate key ID."},
+	{"Principals", "[]string", "The accounts this certificate may log in as."},
+	{"Serial", "uint64", "The certificate serial, matching the entry in your certificate history."},
+	{"PublicKeyFingerprint", "string", "SHA256 fingerprint of the key the certificate was issued for."},
+	{"LocalUsername", "string", "The local account the client reported, or empty if it reported none. Client-reported, so not evidence."},
+	{"LocalHostname", "string", "The machine the client reported, or empty if it reported none. Client-reported, so not evidence."},
+	{"SourceIP", "string", "The address the request was made from."},
+	{"IssuedAt", "time.Time", "When the certificate becomes valid."},
+	{"ExpiresAt", "time.Time", "When the certificate stops being valid."},
+	{"Extensions", "[]string", "SSH certificate extensions granted, after narrowing against server config."},
+	{"ForceCommand", "string", "The force-command critical option, or empty if none was granted."},
+	{"SourceAddresses", "[]string", "The source-address critical option, or empty if unrestricted."},
+	{"ServerURL", "string", "The server's public origin, for links back to the certificate."},
 }
 
 // Definitions returns the registered kinds in preferences-page order. The

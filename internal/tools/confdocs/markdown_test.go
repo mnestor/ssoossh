@@ -366,3 +366,63 @@ func TestMarkdownPages_ShouldEscapeAngleBracketsInProse(t *testing.T) {
 		t.Errorf("expected no raw <name> to survive in prose")
 	}
 }
+
+func TestMarkdownPages_ShouldShowEachKeyInContext(t *testing.T) {
+	t.Parallel()
+
+	pages := mdPages(t)
+	tests := []struct {
+		name string
+		page string
+		want string
+	}{
+		{
+			name: "should nest a section key under its section",
+			page: "http/index.md",
+			want: "```yaml\nhttp:\n  port: 8080\n```",
+		},
+		{
+			name: "should nest a deep key through every level",
+			page: "http/tls.md",
+			want: "```yaml\nhttp:\n  tls:\n    min_version: \"TLS1.3\"\n```",
+		},
+		{
+			name: "should show a top-level key unnested",
+			page: "top-level.md",
+			want: "```yaml\nproduction: true\n```",
+		},
+		{
+			name: "should prefer the example tag over the default",
+			page: "mail/smtp.md",
+			want: "```yaml\nmail:\n  smtp:\n    server_name: \"smtp.example.com\"\n```",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if !strings.Contains(pages[tt.page], tt.want) {
+				t.Errorf("expected %s to contain:\n%s", tt.page, tt.want)
+			}
+		})
+	}
+}
+
+func TestMdUsage_ShouldSkipKeysWithNoHonestValue(t *testing.T) {
+	t.Parallel()
+
+	// No example: tag and no default: tag means there is nothing true to
+	// put after the key, so no snippet is emitted at all.
+	if got := mdUsage(&Field{Path: "authentication.fields.extra", Type: "map"}); got != "" {
+		t.Errorf("expected no usage snippet for a key with no value, got %q", got)
+	}
+}
+
+func TestMarkdownPages_ShouldSetTheEyebrowOnEveryPage(t *testing.T) {
+	t.Parallel()
+
+	for name, page := range mdPages(t) {
+		if !strings.Contains(page, `eyebrow: "Configuration"`) {
+			t.Errorf("expected %s to carry the Configuration eyebrow", name)
+		}
+	}
+}

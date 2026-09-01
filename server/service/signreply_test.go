@@ -273,7 +273,7 @@ func TestSignedReplyHandler_ShouldRecordTheCertificateOwner(t *testing.T) {
 		t.Fatalf("failed to bind the request to a user: %v", err)
 	}
 
-	if err := h.recordCertificate(context.Background(), certmsg.SignedReply{
+	if _, err := h.recordCertificate(context.Background(), certmsg.SignedReply{
 		RequestID:            requestID,
 		Type:                 model.CertificateTypeUser,
 		PublicKeyFingerprint: "SHA256:test",
@@ -309,7 +309,7 @@ func TestSignedReplyHandler_ShouldWarnAndProceedForAnUnknownRequestID(t *testing
 	svc := newTestCertRequestService(t, time.Hour)
 	h := newTestSignedReplyHandler(t, svc)
 
-	if err := h.recordCertificate(context.Background(), certmsg.SignedReply{
+	if _, err := h.recordCertificate(context.Background(), certmsg.SignedReply{
 		RequestID:            "does-not-exist",
 		Type:                 model.CertificateTypeUser,
 		PublicKeyFingerprint: "SHA256:test",
@@ -352,7 +352,7 @@ func TestSignedReplyHandler_ShouldSurfaceACreateFailure(t *testing.T) {
 		ValidBefore: time.Now().Add(time.Hour),
 	}
 
-	if err := h.recordCertificate(context.Background(), reply); err == nil {
+	if _, err := h.recordCertificate(context.Background(), reply); err == nil {
 		t.Error("recordCertificate() error = nil, want error")
 	}
 	if err := h.resolveSuccess(context.Background(), reply); err == nil {
@@ -389,7 +389,7 @@ func TestSignedReplyHandler_ShouldStillRecordACertificateWithNoOwner(t *testing.
 
 	requestID := mustCreateUserRequest(t, svc)
 
-	if err := h.recordCertificate(context.Background(), certmsg.SignedReply{
+	if _, err := h.recordCertificate(context.Background(), certmsg.SignedReply{
 		RequestID:            requestID,
 		Type:                 model.CertificateTypeUser,
 		PublicKeyFingerprint: "SHA256:test",
@@ -428,7 +428,7 @@ func TestSignedReplyHandler_ShouldLinkTheCertificateToItsRequest(t *testing.T) {
 		t.Fatalf("failed to bind the request to a user: %v", err)
 	}
 
-	if err := h.recordCertificate(context.Background(), certmsg.SignedReply{
+	if _, err := h.recordCertificate(context.Background(), certmsg.SignedReply{
 		RequestID:            requestID,
 		Type:                 model.CertificateTypeUser,
 		PublicKeyFingerprint: "SHA256:test",
@@ -461,7 +461,7 @@ func TestSignedReplyHandler_ShouldLinkAnOwnerlessCertificateToItsRequest(t *test
 
 	requestID := mustCreateUserRequest(t, svc)
 
-	if err := h.recordCertificate(context.Background(), certmsg.SignedReply{
+	if _, err := h.recordCertificate(context.Background(), certmsg.SignedReply{
 		RequestID:            requestID,
 		Type:                 model.CertificateTypeUser,
 		PublicKeyFingerprint: "SHA256:test",
@@ -490,7 +490,7 @@ func TestSignedReplyHandler_ShouldLeaveTheRequestLinkNilForAnUnknownRequest(t *t
 	svc := newTestCertRequestService(t, time.Hour)
 	h := newTestSignedReplyHandler(t, svc)
 
-	if err := h.recordCertificate(context.Background(), certmsg.SignedReply{
+	if _, err := h.recordCertificate(context.Background(), certmsg.SignedReply{
 		RequestID:            "does-not-exist",
 		Type:                 model.CertificateTypeUser,
 		PublicKeyFingerprint: "SHA256:test",

@@ -57,9 +57,10 @@ type ServerOptions struct {
 	// AdminDisabledMessage sets admin.disabled_message. Empty disables the display.
 	AdminDisabledMessage string
 
-	// PAMRequireGroup sets cert_options.pam.require_group, which fails
-	// closed: unset (the default) means the server issues no PAM
-	// certificates at all (see CertOptionsPAM.RequireGroup).
+	// PAMRequireGroup sets cert_options.pam.require to a group condition
+	// ({group: <name>}), restricting who may approve a PAM certificate.
+	// Unset leaves the block out: no restriction, the product default (see
+	// CertOptionsPAM.Require).
 	PAMRequireGroup string
 	// DSN points this server at a specific postgres database, so a test can
 	// deliberately share one database across servers (multi-signer HA).
@@ -462,7 +463,8 @@ func renderServerConfig(d serverConfigData) string {
 	// in-process and discarded.
 	if d.PAMRequireGroup != "" {
 		fmt.Fprintf(&b, "  pam:\n")
-		fmt.Fprintf(&b, "    require_group: %q\n", d.PAMRequireGroup)
+		fmt.Fprintf(&b, "    require:\n")
+		fmt.Fprintf(&b, "      group: %q\n", d.PAMRequireGroup)
 	}
 
 	renderAdminConfig(&b, d)

@@ -1,34 +1,77 @@
 <script lang="ts">
 	import { ApiError } from '$lib/api/client';
-	import { listRetrievals } from '$lib/api/endpoints';
+	import { listRetrievals, setEnrollmentNotificationEmail } from '$lib/api/endpoints';
 	import type { EnrollmentRetrievalsResponse, ServiceEnrollment } from '$lib/api/types';
+	import { errorMessage } from '$lib/auth';
 	import { expiryLabel, formatDateTime, formatDuration, isExpired } from '$lib/format';
+	import Alert from './Alert.svelte';
+	import Button from './Button.svelte';
 	import DetailRow from './DetailRow.svelte';
 	import Icon from './Icon.svelte';
 	import MonoChip from './MonoChip.svelte';
 	import SectionLabel from './SectionLabel.svelte';
 	import TypeChip from './TypeChip.svelte';
 
-	// One service enrollment in full, opened from the list. Read-only, and
-	// deliberately unable to show the code: `service enroll` prints it once
-	// and the server has no endpoint that returns one, so the answer here is
-	// what the code grants and how long it lasts.
+	// One service enrollment in full, opened from the list. Deliberately
+	// unable to show the code: `service enroll` prints it once and the server
+	// has no endpoint that returns one, so the answer here is what the code
+	// grants and how long it lasts.
 	//
-	// Read-only in the stronger sense too: the code belongs to its service
-	// account, so there is no owner to transfer it to and nothing here to
-	// act on.
+	// The one thing here that can be changed is where notifications about the
+	// code go. Everything else was fixed at approval, and the code belongs to
+	// its service account, so there is no owner to transfer it to.
 	interface Props {
 		enrollment: ServiceEnrollment;
 		/** Pinned clock, so the remaining lifetime matches the row behind it. */
 		now?: Date;
+		/**
+		 * Called with the stored address after a successful save, so the list
+		 * behind the panel reflects it without a reload.
+		 */
+		onnotificationemailchanged?: (notificationEmail: string) => void;
 		onclosed: () => void;
 	}
 
-	let { enrollment, now = new Date(), onclosed }: Props = $props();
+	let { enrollment, now = new Date(), onnotificationemailchanged, onclosed }: Props = $props();
 
 	let dialogEl = $state<HTMLDialogElement | undefined>(undefined);
 	let copied = $state(false);
 	let retrievals = $state<EnrollmentRetrievalsResponse | null>(null);
+
+	// The address form's own state. emailDraft is reset from the enrollment
+	// whenever a different row is opened, so a draft abandoned on one code
+	// does not follow the reader to the next.
+	let emailDraft = $state('');
+	let savingEmail = $state(false);
+	let emailError = $state<string | null>(null);
+	let emailSaved = $state(false);
+
+	$effect(() => {
+		emailDraft = enrollment.notification_email ?? '';
+		emailError = null;
+		emailSaved = false;
+	});
+
+	const emailDirty = $derived(emailDraft.trim() !== (enrollment.notification_email ?? ''));
+
+	/** saveNotificationEmail stores the address, or clears it when empty. */
+	async function saveNotificationEmail() {
+		savingEmail = true;
+		emailError = null;
+		emailSaved = false;
+		try {
+			const stored = await setEnrollmentNotificationEmail(enrollment.id, emailDraft.trim());
+			// Rendered from the answer rather than the draft: the server trims,
+			// and the panel should show what is actually stored.
+			emailDraft = stored.notification_email;
+			emailSaved = true;
+			onnotificationemailchanged?.(stored.notification_email);
+		} catch (cause) {
+			emailError = errorMessage(cause);
+		} finally {
+			savingEmail = false;
+		}
+	}
 
 	// Keyed on the enrollment so opening a different row re-opens the dialog:
 	// the component stays mounted across rows, and an effect depending only on
@@ -253,6 +296,57 @@
 				</DetailRow>
 				<DetailRow label="Redemptions">{enrollment.retrieval_count}</DetailRow>
 			</dl>
+		</div>
+
+		<!-- The only editable thing on this panel. It exists for the cases
+		     fan-out cannot serve: an account whose holders have never logged
+		     in reaches nobody, and a large holder set turns every redemption
+		     into a mailshot where a team alias would do. -->
+		<div>
+			<SectionLabel>Notifications</SectionLabel>
+			<p class="mb-2 text-[13px] text-ink-muted">
+				{#if enrollment.notification_email}
+					Notifications about this code go to
+					<span class="font-mono">{enrollment.notification_email}</span>. Clear the field to send
+					them to everyone with access to the account instead.
+				{:else}
+					Notifications about this code go to everyone with access to
+					<span class="font-mono">{subject}</span>. Set an address to send them to one place
+					instead.
+				{/if}
+			</p>
+			<div class="flex flex-wrap items-start gap-2">
+				<label class="flex min-w-[220px] flex-1 flex-col gap-1">
+					<span class="sr-only">Notification address</span>
+					<input
+						type="email"
+						bind:value={emailDraft}
+						data-testid="notification-email-input"
+						placeholder="deploys@example.com"
+						disabled={savingEmail}
+						class="rounded border border-border-subtle bg-surface px-3 py-2 text-[13px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+					/>
+				</label>
+				<Button
+					testid="notification-email-save"
+					busy={savingEmail}
+					disabled={!emailDirty}
+					onclick={saveNotificationEmail}
+				>
+					{savingEmail ? 'Saving…' : 'Save'}
+				</Button>
+			</div>
+			{#if emailError}
+				<div class="mt-2">
+					<Alert variant="error" title="That did not save" testid="notification-email-error">
+						{emailError}
+					</Alert>
+				</div>
+			{:else if emailSaved}
+				<p class="mt-2 text-[13px] text-granted" data-testid="notification-email-saved">
+					{emailDraft ? 'Saved.' : 'Cleared — notifications go to everyone with access again.'}
+				</p>
+			{/if}
 		</div>
 
 		{#if retrievals}

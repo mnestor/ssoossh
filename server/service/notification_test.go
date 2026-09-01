@@ -74,7 +74,7 @@ func newNotificationFixtureWithSender(t *testing.T, sender *recordingSender) *no
 	t.Helper()
 
 	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.User{}, &model.NotificationPreference{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.NotificationPreference{}, &model.Enrollment{}); err != nil {
 		t.Fatalf("failed to migrate test tables: %v", err)
 	}
 
@@ -684,8 +684,115 @@ func TestNotifyServiceAccount_shouldSkipDisabledHolders(t *testing.T) {
 	}
 }
 
+// seedEnrollment adds an enrollment row carrying address, which is what the
+// delivery path reads to decide between the address and fan-out.
+func (f *notificationFixture) seedEnrollment(t *testing.T, id, account, address string) {
+	t.Helper()
+
+	enrollment := model.Enrollment{
+		ID:                id,
+		Code:              "code-" + id,
+		ServiceAccount:    account,
+		NotificationEmail: address,
+		CreatedAt:         time.Now(),
+		ExpiresAt:         time.Now().Add(24 * time.Hour),
+	}
+	if err := f.db.Create(&enrollment).Error; err != nil {
+		t.Fatalf("failed to create the enrollment %q: %v", id, err)
+	}
+}
+
+// The address's first job: reaching somebody at all where fan-out reaches
+// nobody, because no holder of the account has ever logged in.
+func TestNotifyEnrollment_shouldDeliverToTheEnrollmentAddressInsteadOfFanningOut(t *testing.T) {
+	f := newNotificationFixture(t)
+	f.seedHolder(t, "bob", "deploy-bot")
+	f.seedEnrollment(t, "enr-1", "deploy-bot", "deploys@example.com")
+
+	f.svc.NotifyEnrollment(context.Background(),
+		notify.KindServiceEnrollmentCreated, "enr-1", "deploy-bot", sampleCreated())
+
+	got := f.recipients(t, 1)
+	if !slices.Equal(got, []string{"deploys@example.com"}) {
+		t.Errorf("delivered to %v, want only the enrollment's own address", got)
+	}
+}
+
+// With no address set the enrollment form behaves exactly like the account
+// form, so setting one is the only thing that changes who hears.
+func TestNotifyEnrollment_shouldFanOutWhenNoAddressIsSet(t *testing.T) {
+	f := newNotificationFixture(t)
+	f.seedHolder(t, "bob", "deploy-bot")
+	f.seedHolder(t, "carol", "deploy-bot")
+	f.seedEnrollment(t, "enr-1", "deploy-bot", "")
+
+	f.svc.NotifyEnrollment(context.Background(),
+		notify.KindServiceEnrollmentCreated, "enr-1", "deploy-bot", sampleCreated())
+
+	got := f.recipients(t, 2)
+	want := []string{"bob@example.com", "carol@example.com"}
+	if !slices.Equal(got, want) {
+		t.Errorf("delivered to %v, want %v", got, want)
+	}
+}
+
+// A set address is the account's own subscription, entered deliberately at
+// approval or by a holder afterwards. With no single owning user there is no
+// principled preference that could gate it, so an opted-out holder does not
+// silence it.
+func TestNotifyEnrollment_shouldSendToTheAddressUngated(t *testing.T) {
+	f := newNotificationFixture(t)
+	bob := f.seedHolder(t, "bob", "deploy-bot")
+	f.seedEnrollment(t, "enr-1", "deploy-bot", "deploys@example.com")
+
+	if err := f.svc.SetPreferences(context.Background(), bob.ID,
+		map[notify.Kind]bool{notify.KindServiceEnrollmentCreated: false}); err != nil {
+		t.Fatalf("SetPreferences: %v", err)
+	}
+
+	f.svc.NotifyEnrollment(context.Background(),
+		notify.KindServiceEnrollmentCreated, "enr-1", "deploy-bot", sampleCreated())
+
+	got := f.recipients(t, 1)
+	if !slices.Equal(got, []string{"deploys@example.com"}) {
+		t.Errorf("delivered to %v, want the address regardless of any holder's preference", got)
+	}
+}
+
+// An enrollment can be deleted while one of its events is still queued. The
+// right answer then is the account's holders, not a failed delivery.
+func TestNotifyEnrollment_shouldFallBackToHoldersWhenTheEnrollmentIsGone(t *testing.T) {
+	f := newNotificationFixture(t)
+	f.seedHolder(t, "bob", "deploy-bot")
+
+	f.svc.NotifyEnrollment(context.Background(),
+		notify.KindServiceEnrollmentCreated, "enr-vanished", "deploy-bot", sampleCreated())
+
+	got := f.recipients(t, 1)
+	if !slices.Equal(got, []string{"bob@example.com"}) {
+		t.Errorf("delivered to %v, want the account's holders", got)
+	}
+}
+
+// An enrollment whose principals never parsed has no service account, so
+// fan-out reaches nobody by construction. Its address is then the only way
+// anyone hears about it, which is why this form publishes rather than
+// dropping the event the way NotifyServiceAccount does.
+func TestNotifyEnrollment_shouldReachTheAddressOfAnAccountlessEnrollment(t *testing.T) {
+	f := newNotificationFixture(t)
+	f.seedEnrollment(t, "enr-orphan", "", "deploys@example.com")
+
+	f.svc.NotifyEnrollment(context.Background(),
+		notify.KindServiceEnrollmentCreated, "enr-orphan", "", sampleCreated())
+
+	got := f.recipients(t, 1)
+	if !slices.Equal(got, []string{"deploys@example.com"}) {
+		t.Errorf("delivered to %v, want the accountless enrollment's own address", got)
+	}
+}
+
 // An account whose holders have never logged in is reachable by nobody. That
-// is a quiet outcome rather than an error, and it is the gap the proposed
+// is a quiet outcome rather than an error, and it is the gap the
 // per-enrollment notification address exists to close.
 func TestNotifyServiceAccount_shouldStayQuietWhenNobodyHoldsTheAccount(t *testing.T) {
 	f := newNotificationFixture(t)

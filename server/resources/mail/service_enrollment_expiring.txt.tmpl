@@ -1,0 +1,41 @@
+An enrollment code for one of your service accounts is about to expire. Once
+it does, `ssoossh service retrieve` stops issuing certificates for it, and any
+unattended job that renews through it starts failing.
+
+This is the only reminder for this enrollment.
+
+ENROLLMENT
+
+  Service account       {{ .ServiceAccount }}
+  Enrollment ID         {{ .EnrollmentID }}
+{{ if .RequestID }}  Request ID            {{ .RequestID }}
+{{ end }}  Key ID                {{ .KeyID }}
+  Principals            {{ join .Principals ", " }}
+  Enrolled key          {{ .PublicKeyType }} {{ .PublicKeyFingerprint }}
+  Code expires          {{ datetime .CodeExpiresAt }} (in {{ until .CodeExpiresAt }})
+{{ if .FirstRedeemedAt.IsZero }}
+This code has never been redeemed. That usually means the job it was created
+for was never finished, in which case there is nothing to do: letting it
+expire is the right outcome.
+{{ else }}
+  First redeemed        {{ datetime .FirstRedeemedAt }}
+
+This code has been in use, so something is very likely still renewing through
+it.
+{{ end }}
+TO KEEP THE JOB RUNNING
+
+Run `ssoossh service enroll` again on the host that holds the key, and have
+the new request approved. That mints a new code; the old one keeps working
+until it expires, so there is no gap if you do it before the date above.
+
+Certificates already issued from this code are unaffected. They stay valid
+for their own lifetimes, which is why a job can keep running for a while
+after the code behind it has expired.
+{{ if .ServerURL }}
+Your enrollments are at
+{{ .ServerURL }}/service-codes
+{{ end }}
+You are receiving this because "Service enrollment expiring" is enabled in your
+notification preferences{{ if .ServerURL }} at {{ .ServerURL }}/preferences{{ end }}, or
+because this address is set as the enrollment's notification address.

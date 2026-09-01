@@ -103,6 +103,17 @@ type CurrentUserResponse struct {
 type ApproveRequestBody struct {
 	ServiceAccount string   `json:"service_account,omitempty"`
 	Principals     []string `json:"principals,omitempty"`
+
+	// NotificationEmail optionally points every notification about the
+	// resulting enrollment at one address instead of fanning out to every
+	// holder of the service account. Service-type requests only; ignored
+	// for others. Empty means fan out, which is the default.
+	//
+	// Approval is where this belongs because it is the moment the approver
+	// is already deciding what the enrollment is for: a team alias entered
+	// here reaches the people who run the job rather than the one person
+	// who clicked approve. It stays editable afterwards.
+	NotificationEmail string `json:"notification_email,omitempty"`
 }
 
 // EnrollmentRetrievalResponse is one redemption of a service enrollment
@@ -214,12 +225,30 @@ type ServiceEnrollmentResponse struct {
 	// RetrievalCount counts every logged redemption attempt, including
 	// those that failed at signing — someone held the code either way.
 	RetrievalCount int `json:"retrieval_count" validate:"required"`
+
+	// NotificationEmail is where notifications about this enrollment go
+	// instead of to every holder of the service account. Empty means they
+	// fan out, which is the default. Any holder may change it.
+	NotificationEmail string `json:"notification_email,omitempty"`
 }
 
 // ServiceEnrollmentsResponse is the caller's own approved service
 // enrollments, newest first.
 type ServiceEnrollmentsResponse struct {
 	Enrollments []ServiceEnrollmentResponse `json:"enrollments" validate:"required"`
+}
+
+// SetNotificationEmailRequestBody is the request to point an enrollment's
+// notifications at one address, or to clear it.
+type SetNotificationEmailRequestBody struct {
+	// NotificationEmail is the address every notification about this
+	// enrollment goes to. Empty clears it, restoring fan-out to every
+	// holder of the service account.
+	//
+	// No omitempty: an absent field and an empty one must mean the same
+	// thing here, because clearing the address is the whole reason to send
+	// an empty one.
+	NotificationEmail string `json:"notification_email"`
 }
 
 // AdminEnrollmentResponse describes one service enrollment from the auditor's
@@ -274,6 +303,12 @@ type AdminEnrollmentResponse struct {
 
 	// RetrievalCount counts every logged redemption attempt.
 	RetrievalCount int `json:"retrieval_count" validate:"required"`
+
+	// NotificationEmail is where notifications about this enrollment go
+	// instead of to every holder of the service account. Empty means they
+	// fan out. Visible to auditors because it decides who hears about a
+	// credential; changing it needs SOC.
+	NotificationEmail string `json:"notification_email,omitempty"`
 }
 
 // AdminEnrollmentsResponse is the paged list of all service enrollments,

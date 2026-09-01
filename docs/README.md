@@ -30,8 +30,10 @@ keys. Self-hosted, homelab-friendly, early development.
 | --- | --- |
 | [configuration.md](operations/configuration.md) | Every configuration surface: `ssoosshd.yaml`, `ssoossh.yaml`, `ssh_config`, `sshd`, PAM |
 | [deployment.md](operations/deployment.md) | Operator runbook: CA key, systemd, `sshd` trust, OIDC provider, reverse proxy, startup modes, multi-instance, PAM |
-| [certificate-lifetime-policy.md](operations/certificate-lifetime-policy.md) | Lifetime and options derived from group membership and source network |
+| [certificate-lifetime-policy.md](operations/certificate-lifetime-policy.md) | Lifetime and options derived from group membership, source network, and claims |
 | [email-notifications.md](operations/email-notifications.md) | Outbound email: SMTP relay, notification contents, template overrides |
+| [ldap.md](operations/ldap.md) | Directory enrichment, the background sync, and persisted groups |
+| [audit-log.md](operations/audit-log.md) | The administrative audit stream: what is recorded, where it goes, how long it is kept |
 | [client-settings-enforcement.md](operations/client-settings-enforcement.md) | Locking down client settings: `enforce` file, Windows Group Policy, macOS managed preferences |
 | [certificate-keyid-template.md](operations/certificate-keyid-template.md) | The key ID template written into every certificate |
 | [hsm.md](operations/hsm.md) | Keeping the CA key in a PKCS#11 token |
@@ -65,19 +67,34 @@ packaging installs it from there.
 
 ## proposals/
 
-Designs for work that has not been built. Everything here is a proposal until
-the code lands; a design record for something already shipped belongs beside
-the feature it describes, or in [dev/](dev/). Each states its status and the
-commit its `file:line` anchors were verified against, because those anchors
-drift.
+Designs, mostly for work that has not been built. Each states its status and
+the commit its `file:line` anchors were verified against, because those
+anchors drift.
+
+**Outstanding.** Nothing below has been built, except where a row says which
+part has.
 
 | Document | What it covers |
 | --- | --- |
-| [certificate-lifetime-policy-rework.md](proposals/certificate-lifetime-policy-rework.md) | Untangling source-address pinning from the lifetime rule, and runtime-editable policy |
-| [claim-driven-certificate-policy.md](proposals/claim-driven-certificate-policy.md) | Driving lifetime, extensions, and type gating from numeric OIDC claims |
-| [config-coordination.md](proposals/config-coordination.md) | Detecting and reporting configuration divergence between instances |
-| [service-retrieval-anomaly-policy.md](proposals/service-retrieval-anomaly-policy.md) | Alerting and locking an enrollment code redeemed from too many source networks |
 | [source-address-restrictions.md](proposals/source-address-restrictions.md) | Approver-chosen source-address pinning and a retrieval allowlist |
+| [service-retrieval-anomaly-policy.md](proposals/service-retrieval-anomaly-policy.md) | Alerting and locking an enrollment code redeemed from too many source networks |
+| [config-coordination.md](proposals/config-coordination.md) | Detecting and reporting configuration divergence between instances |
+| [gui-client-approval-flow.md](proposals/gui-client-approval-flow.md) | Approving for a GUI SSH client, which has no terminal to print the URL to |
+| [certificate-lifetime-policy-rework.md](proposals/certificate-lifetime-policy-rework.md) | Untangling source-address pinning from the lifetime rule, and runtime-editable policy. Partly overtaken: see the doc |
+| [ldap-gssapi-bind.md](proposals/ldap-gssapi-bind.md) | Binding to the directory with a Kerberos keytab instead of a static password |
+| [enhancements.md](proposals/enhancements.md) | Small feature modifications logged for later, each too small for its own doc |
+
+**Built.** Kept for the reasoning behind each decision, which the
+operator-facing references deliberately do not carry. Each names the document
+to read instead.
+
+| Document | Now documented in |
+| --- | --- |
+| [claim-driven-certificate-policy.md](proposals/claim-driven-certificate-policy.md) | [operations/certificate-lifetime-policy.md](operations/certificate-lifetime-policy.md) |
+| [audit-log.md](proposals/audit-log.md) | [operations/audit-log.md](operations/audit-log.md) |
+| [ldap-enrichment-and-sync.md](proposals/ldap-enrichment-and-sync.md) | [operations/ldap.md](operations/ldap.md) |
+| [enrollment-group-ownership.md](proposals/enrollment-group-ownership.md) | [guide/features.md](guide/features.md), "Service certificates" |
+| [notification-kinds-expansion.md](proposals/notification-kinds-expansion.md) | [operations/email-notifications.md](operations/email-notifications.md) |
 
 ## dev/
 
