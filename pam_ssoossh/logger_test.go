@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"log"
 	"log/syslog"
 	"net"
@@ -201,16 +202,49 @@ func TestFileLogger(t *testing.T) {
 	})
 }
 
-// should fall back to a stderr-backed fileLogger, since no syslog daemon is reachable in the test environment.
-func TestInitLogger(t *testing.T) {
-	logger := initLogger("ssoossh-test")
-	t.Cleanup(func() { _ = logger.Close() })
-
-	if logger == nil {
-		t.Fatal("initLogger() returned nil")
+// should set the debug mode on a fileLogger.
+func TestFileLogger_SetDebug(t *testing.T) {
+	l := &fileLogger{l: log.New(&bytes.Buffer{}, "", 0)}
+	l.SetDebug("stdout")
+	if l.debug != "stdout" {
+		t.Errorf("debug = %q, want %q", l.debug, "stdout")
 	}
-	// Exercise the returned Logger through the interface, whichever
-	// concrete type this environment produced.
-	logger.SetDebug("")
-	logger.Infof("initLogger smoke test")
+}
+
+// should pick syslog when a daemon accepts the connection and fall back to
+// stderr when none does. The constructor is injected so the choice does not
+// depend on whether the test host happens to run a syslog daemon.
+func TestInitLogger(t *testing.T) {
+	t.Run("should use syslog when the daemon accepts the connection", func(t *testing.T) {
+		w, conn := newTestSyslogWriter(t)
+		newSyslog := func(syslog.Priority, string) (*syslog.Writer, error) { return w, nil }
+
+		logger := initLogger("ssoossh-test", newSyslog)
+		t.Cleanup(func() { _ = logger.Close() })
+
+		if _, ok := logger.(*syslogLogger); !ok {
+			t.Fatalf("initLogger() returned %T, want *syslogLogger", logger)
+		}
+		logger.Infof("via syslog")
+		if got := readOne(t, conn); !strings.Contains(got, "via syslog") {
+			t.Errorf("received %q, want it to contain %q", got, "via syslog")
+		}
+	})
+
+	t.Run("should fall back to a stderr-backed fileLogger when syslog is unavailable", func(t *testing.T) {
+		newSyslog := func(syslog.Priority, string) (*syslog.Writer, error) {
+			return nil, errors.New("no syslog daemon")
+		}
+
+		logger := initLogger("ssoossh-test", newSyslog)
+		t.Cleanup(func() { _ = logger.Close() })
+
+		fl, ok := logger.(*fileLogger)
+		if !ok {
+			t.Fatalf("initLogger() returned %T, want *fileLogger", logger)
+		}
+		if fl.f != nil {
+			t.Error("fileLogger has a backing file, want nil for the stderr fallback")
+		}
+	})
 }

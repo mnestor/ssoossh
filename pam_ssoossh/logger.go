@@ -76,12 +76,12 @@ func (f *fileLogger) Close() error {
 	return nil
 }
 
-// initLogger tries syslog, then /var/log/<tag>.log, then stderr.
-// debug toggles verbosity but is only advisory here.
-func initLogger(tag string) Logger {
-	if w, err := syslog.New(syslog.LOG_AUTHPRIV, tag); err == nil {
-		// not covered: no syslog daemon listens on /dev/log in the test
-		// environment, so syslog.New only succeeds on a real host.
+// initLogger tries syslog, then /var/log/<tag>.log, then stderr. newSyslog
+// is the syslog constructor, syslog.New in production; it is a parameter so
+// tests can force either outcome instead of depending on whether the host
+// runs a syslog daemon. debug toggles verbosity but is only advisory here.
+func initLogger(tag string, newSyslog func(syslog.Priority, string) (*syslog.Writer, error)) Logger {
+	if w, err := newSyslog(syslog.LOG_AUTHPRIV, tag); err == nil {
 		return &syslogLogger{w: w, debug: ""}
 	}
 

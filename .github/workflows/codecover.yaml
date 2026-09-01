@@ -114,9 +114,13 @@ jobs:
       # octocov reads coverage-combined.txt (see .octocov.yml): on PRs it
       # comments the report with a diff against the baseline stored from
       # main, on main pushes it stores that baseline. Default GITHUB_TOKEN
-      # only, so it runs where the Codecov upload below cannot. Skipped for
-      # fork PRs, where the read-only token cannot comment and octocov
-      # would fail the job over it; the floors gate above still runs there.
+      # only, so it runs where the Codecov upload below cannot.
+      #
+      # The condition reads as "not a PR, or a PR from this repo": it runs
+      # on same-repo PRs (head.repo matches) and on push/dispatch (the
+      # event_name clause). The only thing it excludes is a PR from a
+      # fork, where the read-only token cannot comment and octocov would
+      # fail the job over it; the floors gate above still runs there.
       #
       # `!cancelled()` so a floors failure still gets its coverage comment
       # -- that is the run where the numbers matter most.

@@ -33,7 +33,15 @@ internal/tools/confdocs         83.0
 internal/tools/gendocs          71.0
 internal/tracelog               93.0
 
-pam_ssoossh                     75.0
+# Raised 75.0 -> 85.0 on 2026-09-01 after moving the entry point's Go logic
+# out of the cgo shim into run() and testing it directly. Note for the next
+# time this number moves without a source change: the `go` directive in
+# go.mod moving 1.26 -> 1.27 changed how statements are counted, and cgo
+# files got the worst of it -- pam_ssoossh.go went from 26 to 78 statements
+# with no edit, which dropped this package from 76.7% to 61.4% overnight.
+# The counting is toolchain-defined; the floor tracks whatever the current
+# toolchain reports.
+pam_ssoossh                     85.0
 
 server/bootstrap                86.0
 server/certmsg                 100.0
