@@ -1,0 +1,33 @@
+# Runtime image for ssoosshd, musl/linux-amd64+arm64: ghcr.io/mnestor/ssoosshd
+# (":*-musl" tags). Assembled by goreleaser's dockers_v2 pipe
+# (.goreleaser.yml) straight from the server-linux-musl-build binary that
+# step already compiled and version-stamped -- see Dockerfile for the
+# glibc counterpart and the full explanation this only summarizes.
+#
+# Alpine, not distroless: there is no glibc-free "distroless-musl" base,
+# and a musl-linked binary needs Alpine's musl dynamic loader to run at
+# all. This isn't about matching the *host* OS -- Docker already
+# abstracts that away, so a glibc-based container runs fine on an Alpine
+# host and vice versa. What it's actually for: mounting a PKCS#11 module
+# into the *container* (docs/operations/hsm.md, "Mount the PKCS#11 Module
+# and Token Store") only works if the module's own libc matches the
+# container's -- a glibc-built module (e.g. apt's libsofthsm2.so) can't be
+# dlopen()'d from inside a musl container. Use this image when the
+# PKCS#11 module you're mounting in was itself built against musl.
+#
+# No RUN here, deliberately: goreleaser builds this multi-arch from one
+# amd64 CI runner via buildx, and a Dockerfile with no RUN needs no
+# foreign-arch execution (COPY is a plain filesystem op) -- so the arm64
+# image builds without QEMU. `adduser`/`addgroup` would reintroduce that
+# requirement, so this runs as a bare UID:GID instead, matching
+# distroless/base-debian12:nonroot's own 65532 convention (Dockerfile)
+# rather than creating a passwd entry.
+FROM alpine:3.20
+ARG TARGETARCH
+COPY linux/$TARGETARCH/ssoosshd /usr/local/sbin/ssoosshd
+# See Dockerfile for why this reference copy exists.
+COPY server/resources/mail/ /usr/share/ssoossh/mail-templates/
+USER 65532:65532
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/sbin/ssoosshd"]
+CMD ["-c", "/etc/ssoossh/ssoosshd.yaml"]

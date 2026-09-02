@@ -181,6 +181,9 @@ jobs:
     permissions:
       # goreleaser creates the release and uploads assets on tag pushes.
       contents: write
+      # goreleaser's dockers_v2 pipe pushes ghcr.io/mnestor/ssoosshd on tag
+      # pushes (see .goreleaser.yml).
+      packages: write
     container:
       image: ghcr.io/mnestor/ssoossh-build:latest
     steps:
@@ -231,6 +234,30 @@ jobs:
           wget -q "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz"
           tar -xf "zig-x86_64-linux-${ZIG_VERSION}.tar.xz"
           echo "/tmp/zig/zig-x86_64-linux-${ZIG_VERSION}" >> "$GITHUB_PATH"
+
+      # goreleaser's dockers_v2 pipe shells out to `docker buildx build
+      # --platform linux/amd64,linux/arm64 ... --push` as one call per
+      # image (see .goreleaser.yml) -- that needs a docker-container
+      # buildx builder already active, which is what this action's default
+      # driver sets up; the plain docker driver cannot push a multi-arch
+      # manifest at all. docker itself is on PATH via
+      # .github/docker/Dockerfile.runner; the daemon is the host's, reached
+      # over the /var/run/docker.sock GitHub-hosted runners mount into a
+      # container: job automatically.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      # Tag pushes only, matching every other publish step below -- a
+      # snapshot build never reaches goreleaser's publish phase (it skips
+      # publishing automatically in --snapshot mode), so logging in here
+      # would be dead weight on every other push.
+      - name: Log in to GHCR
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
         id: secrets
@@ -306,15 +333,17 @@ jobs:
             exit 1
           fi
 
-      # Run the binary rather than docker run alpine: this job runs inside
-      # the build container, which has no docker (resilience.yaml moves the
-      # jobs that need a daemon onto a bare runner). Ubuntu's musl package
-      # installs /lib/ld-musl-x86_64.so.1, the exact interpreter path zig
-      # wrote into the ELF header, so the loader here is the one Alpine
-      # would use. Linking is checked above; this catches a binary that
-      # links but cannot start. Installed here rather than baked into the
-      # runner image on purpose: a release must not depend on that image
-      # having been republished first.
+      # Run the binary rather than docker run alpine: even though this job
+      # now has docker (for goreleaser's dockers_v2 step above), installing
+      # Ubuntu's musl package and running the binary directly is simpler
+      # than a throwaway alpine container just for this check, and it
+      # verifies the same thing -- the package installs
+      # /lib/ld-musl-x86_64.so.1, the exact interpreter path zig wrote into
+      # the ELF header, so the loader here is the one Alpine would use.
+      # Linking is checked above; this catches a binary that links but
+      # cannot start. Installed here rather than baked into the runner
+      # image on purpose: a release must not depend on that image having
+      # been republished first.
       - name: Smoke test musl binary
         run: |
           set -euo pipefail
@@ -331,67 +360,3 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           gh release delete -y ${TAG}
-
-  # Builds the operator-facing Docker Compose deployment's image (see
-  # Dockerfile, deploy/docker-compose.yml, docs/operations/deployment.md) and pushes it
-  # to ghcr.io/mnestor/ssoosshd so an admin running the compose file never
-  # builds the project themselves -- `docker compose up` just pulls. Only
-  # the server ships as an image; the client and pam_ssoossh stay
-  # .deb/.rpm/.zip via goreleaser above, since they run on the machine doing
-  # the sshing/sudoing, not in a container.
-  #
-  # Built on every PR too (catches a broken Dockerfile before merge), but
-  # only pushed, and only tagged, on an actual v* release tag -- deliberately
-  # no `latest` and no branch/sha tags. A floating `latest` means an
-  # operator's `docker compose pull` silently changes what's running on
-  # restart; every image this pushes is meant to be pinned by version
-  # instead (see deploy/docker-compose.yml's SSOOSSHD_VERSION). This mirrors
-  # how goreleaser above treats a tag push as the real release and
-  # everything else as a snapshot that publishes nothing.
-  build-image:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # Gated behind build-most so a tag push never publishes an image for a
-    # release whose goreleaser half failed and was deleted.
-    needs: [changes, build-most]
-    if: github.event_name != 'pull_request' && needs.changes.outputs.code == 'true'
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-
-      - name: Log in to GHCR
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Only type=semver rules: on anything but a v* tag push these match
-      # nothing and meta.outputs.tags comes back empty, which is fine below
-      # since push is false whenever that's the case.
-      - name: Docker metadata
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        with:
-          images: ghcr.io/mnestor/ssoosshd
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-
-      - name: Build and push
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          push: ${{ startsWith(github.ref, 'refs/tags/') }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max

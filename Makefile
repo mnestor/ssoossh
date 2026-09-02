@@ -141,6 +141,16 @@ linux: ## Snapshot build for linux/amd64 only
 binaries: ## Snapshot build for every release target
 	$(call BUILDALL)
 
+# Places the binary at linux/$(GOARCH)/ssoosshd, the same layout goreleaser's
+# dockers_v2 docker build context has (Dockerfile / Dockerfile.musl both
+# `COPY linux/$TARGETARCH/ssoosshd`), so `docker build .` or
+# `docker compose build` (deploy/docker-compose.yml) works without
+# goreleaser. Host arch only -- for iterating on the Dockerfile locally,
+# not a release artifact.
+server-linux-build-local: $(FRONTEND_DIST) ## Build ssoosshd for a local `docker build` (see Dockerfile)
+	mkdir -p linux/$(shell go env GOARCH)
+	CGO_ENABLED=1 go build -tags=nomsgpack $(LDFLAGS) -o linux/$(shell go env GOARCH)/ssoosshd ./cmd/ssoosshd
+
 # pam_ssoossh needs libpam headers and cgo, both installed by
 # this repo's .github/docker/Dockerfile.devcontainer. On a bare host,
 # run scripts/build-env-for-pam.sh first.

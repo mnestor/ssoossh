@@ -8,9 +8,11 @@
 # the devcontainer image and is not meant to run ssoosshd at all.
 #
 # Usage — this pulls a published image; nothing on this host needs to be
-# built. The image is built by the build-image job in
-# .github/workflows/build.yaml from the Dockerfile at the repo root, and
-# pushed to ghcr.io/mnestor/ssoosshd only on a v* release tag — there is no
+# built. The image (both this glibc build and the -musl variant; see
+# docs/operations/hsm.md) is assembled by goreleaser's dockers_v2 pipe
+# (.goreleaser.yml) from the Dockerfile at the repo root, as part of the
+# build-most job in .github/workflows/build.yaml, and pushed to
+# ghcr.io/mnestor/ssoosshd only on a v* release tag — there is no
 # `latest` and no branch/sha tag published, deliberately: a floating tag
 # means `docker compose pull` can silently change what's running on a
 # restart, so every image here is meant to be pinned by an explicit
@@ -30,8 +32,13 @@
 # access to it. What versions exist:
 # https://github.com/mnestor/ssoossh/pkgs/container/ssoosshd
 #
-# Developing the Dockerfile itself: `docker compose build` still works
-# here (image: and build: can coexist) and tags the result the same as
+# Developing the Dockerfile itself: unlike before, `docker compose build`
+# is not enough on its own — Dockerfile expects a binary already staged at
+# linux/$TARGETARCH/ssoosshd (goreleaser's build context; see Dockerfile's
+# own header), which a bare `docker build .` has no step to produce. Run
+# `make server-linux-build-local` from the repo root first (builds
+# ssoosshd for your host arch into that same path), then
+# `docker compose build` picks it up and tags the result the same as
 # whatever SSOOSSHD_VERSION resolves to, so `docker compose up`
 # immediately after uses your build instead of pulling.
 #
@@ -62,7 +69,7 @@ services:
       # Only used with the default sqlite provider; harmless (and unused)
       # when the postgres profile is active instead.
       - ssoosshd-data:/var/lib/ssoossh
-    # No container HEALTHCHECK: the runtime image is distroless/static,
+    # No container HEALTHCHECK: the runtime image is distroless/base,
     # which has no shell and no curl/wget to run one with. Verify
     # liveness from the host instead: curl -f http://localhost:8080/healthz
 

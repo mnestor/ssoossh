@@ -50,6 +50,10 @@ yarn-error.log*
 # `make cross-compile-verify` builds these straight into the repo root
 /ssoossh
 /ssoosshd
+# `make server-linux-build-local`: mirrors the linux/$TARGETARCH/ssoosshd
+# layout goreleaser's docker build context has, for a local `docker build .`
+# / `docker compose build` against Dockerfile or Dockerfile.musl.
+/linux/
 # goreleaser, and the macOS signing tool it shells out to
 /dist/
 /quill

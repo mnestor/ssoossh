@@ -311,3 +311,68 @@ archives:
       - macos-build
     files: *client_archive_files
     name_template: *client_archive_name
+
+# Builds and pushes ghcr.io/mnestor/ssoosshd, one multi-arch (linux/amd64 +
+# linux/arm64) manifest per libc, straight from the server-linux-build /
+# server-linux-musl-build binaries above -- no separate compile step, so
+# the image gets the same -X version.Version/Commit/Date/BuiltBy stamp
+# (see internal/version) as every other release artifact for free. `docker
+# buildx build --platform ... --push` runs once per entry
+# (build.yaml sets up a docker-container buildx builder and a GHCR login
+# first); a single entry with two `platforms:` builds and combines both
+# architectures into one manifest itself, no separate docker_manifests:
+# step needed. Like the rest of this file's publish steps, a snapshot
+# build (any push that isn't a v* tag) builds these images locally to
+# catch a broken Dockerfile but never pushes -- goreleaser skips its whole
+# publish phase in --snapshot mode.
+#
+# dockers_v2 (not the older dockers:/docker_manifests:) is what's current
+# in goreleaser v2; see https://goreleaser.com/customization/package/dockers_v2/.
+# sbom is off: a cosign/syft SBOM attachment isn't set up in this project's
+# release pipeline yet, and dockers_v2 defaults it to on.
+dockers_v2:
+  - id: docker-glibc
+    ids:
+      - server-linux-build
+    dockerfile: Dockerfile
+    images:
+      - ghcr.io/mnestor/ssoosshd
+    tags:
+      - "{{ .Version }}"
+      - "{{ .Major }}.{{ .Minor }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    # The binary itself is go:embed-only; this is the same reference copy
+    # of the mail templates the old from-source Dockerfile shipped (see
+    # docs/operations/email-notifications.md) placed into the docker build
+    # context so Dockerfile can COPY it.
+    extra_files:
+      - server/resources/mail
+    labels:
+      org.opencontainers.image.source: "https://github.com/mnestor/ssoossh"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .Commit }}"
+      org.opencontainers.image.licenses: "MIT"
+    sbom: false
+
+  - id: docker-musl
+    ids:
+      - server-linux-musl-build
+    dockerfile: Dockerfile.musl
+    images:
+      - ghcr.io/mnestor/ssoosshd
+    tags:
+      - "{{ .Version }}-musl"
+      - "{{ .Major }}.{{ .Minor }}-musl"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    extra_files:
+      - server/resources/mail
+    labels:
+      org.opencontainers.image.source: "https://github.com/mnestor/ssoossh"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .Commit }}"
+      org.opencontainers.image.licenses: "MIT"
+    sbom: false

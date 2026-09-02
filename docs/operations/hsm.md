@@ -187,7 +187,12 @@ SoftHSM2 is used in CI testing. If deploying to production, consult your HSM ven
 
 ## Docker and Container Deployment
 
-The Docker image is built on `distroless/base` (non-static, to support dynamic linking and dlopen for PKCS#11 modules).
+ghcr.io/mnestor/ssoosshd ships two image variants per version, both dynamically linked to support dlopen for PKCS#11 modules:
+
+- `ghcr.io/mnestor/ssoosshd:<version>` — glibc, built on `distroless/base-debian12`.
+- `ghcr.io/mnestor/ssoosshd:<version>-musl` — musl, built on `alpine`.
+
+Which one to run has nothing to do with the *host* OS — Docker already abstracts that away, so either image runs fine on any host with a container runtime. It matters only for **Option 1** below: a PKCS#11 module is a shared library, and a module built against glibc cannot be `dlopen()`'d from inside a musl (Alpine-based) container, or vice versa. Pick the image variant matching the libc the module you're mounting in was built against.
 
 ### Option 1: Mount the PKCS#11 Module and Token Store
 
@@ -197,7 +202,7 @@ Mount the HSM library and token data into the container:
 docker run -v /usr/lib/softhsm/libsofthsm2.so:/usr/lib/softhsm/libsofthsm2.so:ro \
   -v /var/lib/softhsm/tokens/:/var/lib/softhsm/tokens/:rw \
   -v /etc/ssoossh/ssoosshd.yaml:/etc/ssoosshd.yaml:ro \
-  ssoossh/ssoosshd:latest
+  ghcr.io/mnestor/ssoosshd:<version>
 ```
 
 ### Option 2: Split Signer (Recommended for Production)
@@ -210,7 +215,7 @@ Run the signer (`ssoosshd sign` mode) on the host machine near the HSM (or direc
 
 # In the container
 docker run -e NATS_URL=nats://signer.example.com:4222 \
-  ssoossh/ssoosshd:latest api --config api.yaml
+  ghcr.io/mnestor/ssoosshd:<version> api --config api.yaml
 ```
 
 See `docs/deployment.md` for split-mode details.
@@ -219,9 +224,9 @@ See `docs/deployment.md` for split-mode details.
 
 ssoosshd is now dynamically linked (cgo-enabled) to support PKCS#11 module loading.
 
-- **glibc build** (deb, rpm, tar.gz): glibc >= 2.28 (RHEL 8, Ubuntu 20.04, Debian 11+, etc.). This is the recommended build for most Linux distributions.
-- **musl build** (apk, tar.gz): Alpine and other musl-based systems. Also dynamic, so PKCS#11 modules can be loaded at runtime.
+- **glibc build** (deb, rpm, tar.gz, and the default `ghcr.io/mnestor/ssoosshd:<version>` image): glibc >= 2.28 (RHEL 8, Ubuntu 20.04, Debian 11+, etc.). This is the recommended build for most Linux distributions.
+- **musl build** (apk, tar.gz, and the `ghcr.io/mnestor/ssoosshd:<version>-musl` image): Alpine and other musl-based systems. Also dynamic, so PKCS#11 modules can be loaded at runtime.
 
-Both artifacts support HSM configuration. Client binaries (`ssoossh`) remain statically linked and cross-platform.
+Both are built for linux/amd64 and linux/arm64. All four support HSM configuration. Client binaries (`ssoossh`) remain statically linked and cross-platform.
 
-Choose the build matching your OS package format and C library.
+Choose the build matching your OS package format and C library (for the Docker images, see "Docker and Container Deployment" above -- it's the mounted PKCS#11 module's libc that matters there, not the host's).
