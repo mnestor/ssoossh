@@ -13,7 +13,7 @@
 # `apt-get update && apt-get upgrade` inside the running container
 # whenever you want them refreshed.
 
-FROM mcr.microsoft.com/devcontainers/go:dev-1.26-trixie
+FROM mcr.microsoft.com/devcontainers/base:trixie
 ARG CREATED
 ARG COMMIT
 ARG VERSION=local
@@ -27,6 +27,8 @@ ARG ACTIONLINT_VERSION=v1.7.12
 ARG GOTESTSUM_VERSION=v1.13.0
 ARG GOVULNCHECK_VERSION=v1.7.0
 ARG REDOCLY_VERSION=1.28.1
+ARG GO_VERSION=1.27.0
+
 LABEL \
   org.opencontainers.image.source="https://github.com/mnestor/ssoossh" \
   org.opencontainers.image.description="Go development container for github.com/mnestor/ssoossh, for Visual Studio Code Remote Containers development"
@@ -55,6 +57,7 @@ COPY --from=1password/op:2.39.0 /usr/local/bin/op /usr/local/bin/op
 RUN install -d -m 0755 /etc/apt/keyrings \
   && echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sources.list.d/goreleaser.list \
   && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+  && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${TARGETARCH}.tar.gz" | tar -C /usr/local -xz \
   && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
   && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
   && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
@@ -76,7 +79,10 @@ RUN install -d -m 0755 /etc/apt/keyrings \
   && gh release download  --repo anchore/quill -p '*amd64.deb' -O /tmp/quill.deb \ 
   && dpkg -i /tmp/quill.deb \
   && rm -rf /var/lib/apt/lists/* /tmp/quill.deb \
-  && npm install -g @redocly/cli@${REDOCLY_VERSION}
+  && npm install -g @redocly/cli@${REDOCLY_VERSION} \
+  && mkdir -p /go/bin /go/pkg /go/src \
+  && chown -R vscode:vscode /go \
+  && chmod -R g+w /go
 
 USER vscode
 
@@ -99,9 +105,16 @@ RUN curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(go env GOPAT
   && curl -fsSL https://claude.ai/install.sh | bash \
   && curl -fsSL https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.sh | bash \
   && curl -fsSL https://get.pnpm.io/install.sh | ENV="$HOME/.bashrc" SHELL="$(which bash)" bash - \
+  && /usr/local/go/bin/go install golang.org/x/tools/gopls@latest \
+  && /usr/local/go/bin/go install github.com/go-delve/delve/cmd/dlv@latest \
+  && /usr/local/go/bin/go install honnef.co/go/tools/cmd/staticcheck@latest \
+  && /usr/local/go/bin/go install github.com/cweill/gotests/gotests@latest \
+  && /usr/local/go/bin/go install github.com/fatih/gomodifytags@latest \
+  && /usr/local/go/bin/go install github.com/josharian/impl@latest \
   && /usr/local/go/bin/go install github.com/princjef/gomarkdoc/cmd/gomarkdoc@latest \
   && /usr/local/go/bin/go install github.com/caarlos0/svu/v3@latest \
   && /usr/local/go/bin/go install golang.org/x/lint/golint@latest \
   && /usr/local/go/bin/go install gotest.tools/gotestsum@${GOTESTSUM_VERSION} \
   && /usr/local/go/bin/go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION} \
   && /usr/local/go/bin/go install github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION} \
+  && /usr/local/go/bin/go clean -cache -modcache 
