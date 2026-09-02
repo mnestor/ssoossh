@@ -214,7 +214,7 @@ Three of those need their reasoning recorded, because they look wrong:
   are not sharing a database at all.
 
 **`strict`**: `multi_instance`, `http.cookie_key`, `http.public_url`,
-`http.is_https`, `http.cookie_same_site`, `http.cookie_max_age`,
+`http.cookie_same_site`, `http.cookie_max_age`,
 `http.cookie_idle_timeout`, `authentication.*` except any per-host callback
 detail, `admin.require_group`, `admin.auditor_group`, all of
 `cert_options.*`, `max_cert_lifetime`, `max_service_cert_lifetime`,

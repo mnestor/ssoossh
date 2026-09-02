@@ -30,7 +30,10 @@
   "runArgs": [
     "--network=${localWorkspaceFolderBasename}-dev",
     "--network-alias=client",
-    "--name=${localWorkspaceFolderBasename}-client"
+    "--name=${localWorkspaceFolderBasename}-client",
+    "--cap-add=SYS_PTRACE",
+    "--security-opt",
+    "seccomp=unconfined"
   ],
   "shutdownAction": "none",
   "postCreateCommand": {

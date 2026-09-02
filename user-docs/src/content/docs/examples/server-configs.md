@@ -54,7 +54,6 @@ http:
   public_url: "https://ssh.example.com"
   address: "0.0.0.0"
   port: 443
-  is_https: true
   tls:
     certificate_file: /etc/ssoossh/tls/server.crt
     private_key_file: /etc/ssoossh/tls/server.key
@@ -85,16 +84,14 @@ http:
   public_url: "https://ssh.example.com"
   address: "127.0.0.1"
   port: 8080
-  is_https: true
 
   # The proxy's own address, in CIDR form. Only these hops are believed
   # about X-Forwarded-For / X-Forwarded-Proto.
   trusted_proxies:
     - "127.0.0.1/32"
 
-  # Cookies must be marked secure, because the browser's connection is TLS
-  # even though this listener's is not.
-  cookie_secure: true
+  # The session cookie is marked Secure automatically because public_url is
+  # https; cookie_secure only exists to override that inference.
 
 authentication:
   client_id: "..."

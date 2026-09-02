@@ -522,11 +522,11 @@ export interface BrandingResponse {
  */
 export interface EffectiveConfigResponse {
 	/**
-	 * Server connection and TLS settings
+	 * Server connection settings. PublicURL is the origin browsers reach
+	 * the deployment at; its scheme says whether it is HTTPS.
 	 */
-	server_name: string;
+	public_url: string;
 	port: number /* int */;
-	is_https: boolean;
 	/**
 	 * Database
 	 */

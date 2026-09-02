@@ -106,10 +106,9 @@ func (s *AuthService) audit(ctx context.Context, event AuditEvent) {
 // (its authorization/token/jwks endpoints) and builds an AuthService ready
 // to handle logins. httpClient (may be nil) is used for the discovery
 // request and all subsequent calls to the provider. The OAuth redirect URL
-// is not itself configured — it's inferred from c.HTTP (ServerName, Port,
-// and whether the server is HTTPS either directly or behind a
-// TLS-terminating proxy — see IsHTTPS's doc comment), since everything
-// after the domain is fixed anyway ("/auth/callback").
+// is not itself configured — it's derived from c.HTTP.PublicURL (see
+// HTTPSettings.PublicOrigin), since everything after the origin is fixed
+// anyway ("/auth/callback").
 func NewAuthService(ctx context.Context, c *config.Config, db *gorm.DB, httpClient *http.Client) (*AuthService, error) {
 	authConfig := c.AuthConfig
 
@@ -122,8 +121,8 @@ func NewAuthService(ctx context.Context, c *config.Config, db *gorm.DB, httpClie
 	if authConfig.Fields.Username == "" {
 		return nil, errors.New("authentication.fields.username is required")
 	}
-	if c.HTTP.ServerName == "" {
-		return nil, errors.New("http.server_name is required")
+	if strings.TrimSpace(c.HTTP.PublicURL) == "" {
+		return nil, errors.New("http.public_url is required: set it to the URL browsers reach this server at, e.g. \"https://ssh.example.com\"")
 	}
 
 	if httpClient != nil {
@@ -144,14 +143,14 @@ func NewAuthService(ctx context.Context, c *config.Config, db *gorm.DB, httpClie
 	scopes = append(scopes, strings.Fields(authConfig.Scopes)...)
 
 	// The identity provider matches this against its registered redirect URI
-	// exactly, so it has to be the origin the *browser* uses. Behind a proxy
-	// that is http.public_url; with nothing in front, PublicOrigin infers it
-	// from server_name and the listen port.
+	// exactly, so it has to be the origin the *browser* uses, which is
+	// http.public_url.
 	origin := c.HTTP.PublicOrigin()
 	if origin == "" {
-		// not covered: PublicOrigin only returns "" when ServerName is
-		// also "", which the required-field check above already rejects.
-		return nil, errors.New("cannot build the OIDC redirect URI: set http.public_url to the URL browsers reach this server at, e.g. \"https://ssh.example.com\" (or http.server_name when nothing sits in front of this process)")
+		// not covered: PublicOrigin only returns "" when PublicURL is unset
+		// (rejected above) or unparseable (rejected at startup by
+		// HTTPSettings.Validate).
+		return nil, errors.New("cannot build the OIDC redirect URI: set http.public_url to the URL browsers reach this server at, e.g. \"https://ssh.example.com\"")
 	}
 	redirectURL := origin + "/auth/callback"
 	slog.Debug("oauth setting", slog.String("redirectURL", redirectURL))

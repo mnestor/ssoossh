@@ -944,8 +944,6 @@ components:
         db_provider:
           description: Database
           type: string
-        is_https:
-          type: boolean
         logging_level:
           description: Logging configuration
           type: string
@@ -954,8 +952,10 @@ components:
         provider_url:
           description: OAuth/OIDC
           type: string
-        server_name:
-          description: Server connection and TLS settings
+        public_url:
+          description: |-
+            Server connection settings. PublicURL is the origin browsers reach
+            the deployment at; its scheme says whether it is HTTPS.
           type: string
       required:
       - cert_approval_ttl
@@ -967,11 +967,10 @@ components:
       - cert_user_extensions
       - cert_user_valid_duration
       - db_provider
-      - is_https
       - logging_level
       - port
       - provider_url
-      - server_name
+      - public_url
       type: object
     webtypes.EnrollmentRetrievalResponse:
       properties:

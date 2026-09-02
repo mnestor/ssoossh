@@ -156,11 +156,11 @@ func TestInitRouter_ShouldEnforceRateLimitWhenRateLimitPositive(t *testing.T) {
 	}
 }
 
-func TestInitRouter_ShouldRejectMismatchedHostWhenServerNameConfigured(t *testing.T) {
+func TestInitRouter_ShouldRejectMismatchedHostWhenPublicURLConfigured(t *testing.T) {
 	t.Parallel()
 
 	c := &config.Config{}
-	c.HTTP.ServerName = "ssh.example.com"
+	c.HTTP.PublicURL = "https://ssh.example.com"
 	a := newTestApp(t, c)
 
 	srv, err := a.initRouter()
@@ -185,11 +185,11 @@ func TestInitRouter_ShouldRejectMismatchedHostWhenServerNameConfigured(t *testin
 	}
 }
 
-func TestInitRouter_ShouldKeepHealthEndpointsReachableWhenServerNameConfigured(t *testing.T) {
+func TestInitRouter_ShouldKeepHealthEndpointsReachableWhenPublicURLConfigured(t *testing.T) {
 	t.Parallel()
 
 	c := &config.Config{}
-	c.HTTP.ServerName = "ssh.example.com"
+	c.HTTP.PublicURL = "https://ssh.example.com"
 	a := newTestApp(t, c)
 
 	srv, err := a.initRouter()

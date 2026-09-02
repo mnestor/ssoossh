@@ -101,7 +101,8 @@ serving, so catching the files mid-rewrite costs nothing.
 
 ```yaml
 http:
-  is_https: true
+  # The https:// scheme is what marks the deployment as HTTPS
+  public_url: https://ssh.example.com
   # CIDRs of the proxy, trusted to set X-Forwarded-For/-Proto
   trusted_proxies: ["127.0.0.1/32"]
 ```

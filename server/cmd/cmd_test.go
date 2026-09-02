@@ -115,12 +115,12 @@ func writeServerTestConfig(t *testing.T) string {
 
 	// authentication: is a top-level config key (config.Config.AuthConfig),
 	// a sibling of http: — not nested under it. redirect_url isn't a
-	// config field at all: it's inferred from http.server_name/port/
-	// is_https (see service.NewAuthService's doc comment).
+	// config field at all: it's derived from http.public_url (see
+	// service.NewAuthService's doc comment).
 	content := `http:
   address: 127.0.0.1
   port: 0
-  server_name: ssoossh.example.com
+  public_url: https://ssoossh.example.com
 authentication:
   client_id: test-client
   provider_url: "` + oidcSrv.URL + `"

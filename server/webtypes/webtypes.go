@@ -470,10 +470,10 @@ type BrandingResponse struct {
 // (which may contain credentials) are redacted; other fields are included to
 // give a complete operational picture.
 type EffectiveConfigResponse struct {
-	// Server connection and TLS settings
-	ServerName string `json:"server_name" validate:"required"`
-	Port       int    `json:"port" validate:"required"`
-	IsHTTPS    bool   `json:"is_https" validate:"required"`
+	// Server connection settings. PublicURL is the origin browsers reach
+	// the deployment at; its scheme says whether it is HTTPS.
+	PublicURL string `json:"public_url" validate:"required"`
+	Port      int    `json:"port" validate:"required"`
 
 	// Database
 	DBProvider string `json:"db_provider" validate:"required"`

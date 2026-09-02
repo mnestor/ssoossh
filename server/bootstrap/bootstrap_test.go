@@ -108,8 +108,8 @@ func TestBootstrap_ShouldStartAndShutDownCleanlyWhenContextCanceled(t *testing.T
 	// authentication: is a top-level config key (config.Config.AuthConfig),
 	// a sibling of http: — not nested under it — so this goes in opts.extra,
 	// not opts.httpExtra. redirect_url isn't a config field at all: it's
-	// inferred from http.server_name/port/is_https (see
-	// service.NewAuthService's doc comment).
+	// derived from http.public_url (see service.NewAuthService's doc
+	// comment).
 	extra := fmt.Sprintf(`authentication:
   client_id: test-client
   provider_url: %q
@@ -123,7 +123,7 @@ func TestBootstrap_ShouldStartAndShutDownCleanlyWhenContextCanceled(t *testing.T
 	cancel()
 
 	cc := newBootstrapCommand(t, ctx, writeBootstrapConfig(t, bootstrapConfigOpts{
-		httpExtra: "  server_name: ssoossh.example.com",
+		httpExtra: "  public_url: https://ssoossh.example.com",
 		extra:     extra,
 	}))
 
@@ -189,7 +189,7 @@ func TestBootstrap_ShouldErrorWhenSSHKeyInvalid(t *testing.T) {
 	cc := newBootstrapCommand(t, context.Background(),
 		writeBootstrapConfig(t, bootstrapConfigOpts{
 			sshKey:    "not-a-valid-key",
-			httpExtra: "  server_name: ssoossh.example.com",
+			httpExtra: "  public_url: https://ssoossh.example.com",
 			extra:     extra,
 		}))
 

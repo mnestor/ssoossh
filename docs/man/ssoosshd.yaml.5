@@ -282,26 +282,14 @@ That only holds because the router passes this to SetTrustedProxies unconditiona
 Default:
 .BR empty .
 .TP
-.BI http.server_name: " string"
-when set, is the host name this server answers to: requests addressed to anything else (by Host header, or SNI on TLS connections) are rejected with 421 Misdirected Request by middleware.ServerNameMiddleware. The health endpoints are registered ahead of the check so probes can reach the server by IP. Empty disables the check. It plays no role in the TLS handshake itself, which is why it does not live in TLSConfig.
-Default:
-.BR empty .
-.TP
 .BI http.public_url: " string"
-The scheme and host browsers actually reach this deployment at, e.g. "https://ssh.example.com". Set it whenever that differs from what Address/Port/TLS describe \(em which is every reverse\-proxy deployment, since the proxy terminates TLS on 443 while this process listens on plain HTTP somewhere else.
+The scheme and host browsers actually reach this deployment at, e.g. "https://ssh.example.com". Required: it is the one place the browser\-visible identity of this deployment is written down, and it will differ from what Address/Port/TLS describe in every reverse\-proxy deployment, since the proxy terminates TLS on 443 while this process listens on plain HTTP somewhere else.
 .IP
-Two things are derived from it and cannot be got right without it: the OIDC redirect URI handed to the identity provider, and the origin the CSRF middleware compares the browser's Origin header against. Both used to be reconstructed from server_name plus the *listen* port, which is only the public port when nothing sits in front.
-.IP
-Its scheme also settles the derived HTTPS flag, so a deployment behind a TLS\-terminating proxy needs this or is_https, not both.
+Everything that has to know how the browser sees this server is derived from it: the OIDC redirect URI handed to the identity provider, the origin the CSRF middleware compares the browser's Origin header against, the host name requests must be addressed to (anything else is rejected with 421 Misdirected Request; health endpoints are exempt so probes can reach the server by IP), and whether the deployment is HTTPS at all, which decides the session cookie's Secure attribute.
 .IP
 Origin only: a path, query, or fragment is rejected at startup. Serving the app under a sub\-path would need the frontend's base to move with it, which is not supported, so accepting one here would only produce a redirect URI that silently does not work.
 Default:
 .BR empty .
-.TP
-.BI http.is_https: " bool"
-Records that a reverse proxy terminates TLS while this process serves plain HTTP, so the deployment is HTTPS as browsers see it even though this listener is not. Redundant when public_url is set \(em its scheme settles the same question \(em so configure one or the other, not both.
-Default:
-.BR false .
 .TP
 .BI http.cookie_key: " string"
 The secret used to sign and encrypt session cookies. If empty, a key is generated once and persisted in the server_secrets table, so sessions survive a restart and instances sharing a database share the key. Configure an explicit value to key it from outside the database.
@@ -309,7 +297,7 @@ Default:
 .BR empty .
 .TP
 .BI http.cookie_secure: " bool"
-Marks the session cookie Secure, so browsers only send it over HTTPS. Unset derives it from whether the deployment is HTTPS at all (see is_https), which keeps plain\-HTTP local development working while defaulting to on everywhere else. Set it explicitly only to override that inference.
+Marks the session cookie Secure, so browsers only send it over HTTPS. Unset derives it from whether the deployment is HTTPS at all (the scheme of public_url, or a local TLS keypair), which keeps plain\-HTTP local development working while defaulting to on everywhere else. Set it explicitly only to override that inference.
 Default:
 .BR empty .
 .TP
@@ -1215,11 +1203,8 @@ An
 key appears in some older example configuration in this repository. It is
 not a recognized field \(em the OAuth redirect URI is always derived
 automatically from
-.B http.public_url
-(or
-.B http.server_name
-plus the listen port when nothing sits in front of the process). Setting
-it has no effect.
+.BR http.public_url .
+Setting it has no effect.
 .SH ENVIRONMENT
 .TP
 .B ISTERMINAL

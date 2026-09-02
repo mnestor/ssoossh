@@ -44,9 +44,8 @@ func newTestConfig(t *testing.T) *config.Config {
 	t.Helper()
 	return &config.Config{
 		HTTP: config.HTTPSettings{
-			ServerName: "test-server",
-			Port:       8080,
-			IsHTTPS:    false,
+			PublicURL: "http://test-server",
+			Port:      8080,
 		},
 		Admin: config.AdminConfig{
 			RequireGroup:    "ssh-admins",
@@ -1387,8 +1386,8 @@ func TestEffectiveConfigHandler_ShouldReturnConfigData(t *testing.T) {
 	if resp.Data == nil {
 		t.Fatal("response data should not be nil")
 	}
-	if _, ok := resp.Data["server_name"]; !ok {
-		t.Error("response should contain server_name field")
+	if _, ok := resp.Data["public_url"]; !ok {
+		t.Error("response should contain public_url field")
 	}
 	if _, ok := resp.Data["port"]; !ok {
 		t.Error("response should contain port field")

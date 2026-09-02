@@ -226,20 +226,12 @@ func TestHTTPSettingsStructure(t *testing.T) {
 	t.Parallel()
 
 	settings := HTTPSettings{
-		ServerName: "example.com",
-		Port:       8080,
-		IsHTTPS:    true,
-		PublicURL:  "https://example.com",
+		Port:      8080,
+		PublicURL: "https://example.com",
 	}
 
-	if settings.ServerName != "example.com" {
-		t.Errorf("ServerName mismatch")
-	}
 	if settings.Port != 8080 {
 		t.Errorf("Port mismatch")
-	}
-	if !settings.IsHTTPS {
-		t.Errorf("IsHTTPS should be true")
 	}
 	if settings.PublicURL != "https://example.com" {
 		t.Errorf("PublicURL mismatch")
@@ -309,9 +301,8 @@ func TestConfigStructure(t *testing.T) {
 			Connection: ":memory:",
 		},
 		HTTP: HTTPSettings{
-			ServerName: "localhost",
-			Port:       8080,
-			IsHTTPS:    false,
+			PublicURL: "http://localhost:8080",
+			Port:      8080,
 		},
 		AuthConfig: OAuthConfig{
 			ProviderURL: "https://example.com/.well-known/openid-configuration",

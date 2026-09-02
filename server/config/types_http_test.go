@@ -5,9 +5,9 @@ package config
 // and the thing worth pinning is what a given combination of settings
 // resolves to.
 //
-// PublicOrigin and IsTLS decide the OIDC redirect URI and the session
-// cookie's Secure attribute. Both are things a deployment gets wrong once,
-// silently, and then spends an afternoon on.
+// PublicOrigin, PublicHost, and IsTLS decide the OIDC redirect URI, the
+// Host check, and the session cookie's Secure attribute. All are things a
+// deployment gets wrong once, silently, and then spends an afternoon on.
 
 import (
 	"strings"
@@ -24,7 +24,6 @@ func TestPublicOriginShouldResolveTheBrowserVisibleOrigin(t *testing.T) {
 		http HTTPSettings
 		want string
 	}{
-		// public_url set: it is the answer, whatever the listen config says.
 		{
 			name: "should use public_url when it is set",
 			http: HTTPSettings{PublicURL: "https://ssh.example.com"},
@@ -41,59 +40,35 @@ func TestPublicOriginShouldResolveTheBrowserVisibleOrigin(t *testing.T) {
 			want: "https://ssh.example.com:8443",
 		},
 		// The case this setting exists for: a proxy terminates TLS on 443
-		// while this process listens on plain HTTP somewhere else. Inference
-		// would answer http://ssh.example.com:8080 and break OIDC login.
+		// while this process listens on plain HTTP somewhere else. The
+		// listen port must never leak into the origin.
 		{
 			name: "should ignore the listen port when public_url is set",
-			http: HTTPSettings{PublicURL: "https://ssh.example.com", ServerName: "ssh.example.com", Port: 8080},
+			http: HTTPSettings{PublicURL: "https://ssh.example.com", Port: 8080},
 			want: "https://ssh.example.com",
 		},
 		{
-			name: "should ignore is_https when public_url disagrees with it",
-			http: HTTPSettings{PublicURL: "http://ssh.internal", IsHTTPS: true},
+			name: "should keep an http public_url as http",
+			http: HTTPSettings{PublicURL: "http://ssh.internal"},
 			want: "http://ssh.internal",
 		},
-
-		// public_url unset: fall back to inferring from the listen config,
-		// which is correct only when nothing sits in front.
-		{
-			name: "should omit the default https port when inferring",
-			http: HTTPSettings{ServerName: "ssh.example.com", Port: 443, IsHTTPS: true},
-			want: "https://ssh.example.com",
-		},
-		{
-			name: "should omit the default http port when inferring",
-			http: HTTPSettings{ServerName: "ssh.example.com", Port: 80},
-			want: "http://ssh.example.com",
-		},
-		{
-			name: "should include a non-default port when inferring",
-			http: HTTPSettings{ServerName: "ssh.example.com", Port: 8080},
-			want: "http://ssh.example.com:8080",
-		},
-		{
-			name: "should include a non-default tls port when inferring",
-			http: HTTPSettings{ServerName: "ssh.example.com", Port: 8443, IsHTTPS: true},
-			want: "https://ssh.example.com:8443",
-		},
-		{
-			name: "should omit the port when it is zero",
-			http: HTTPSettings{ServerName: "ssh.example.com"},
-			want: "http://ssh.example.com",
-		},
-
 		// Nothing to go on. Callers read "" as "unknown" rather than guessing.
 		{
-			name: "should return empty when neither public_url nor server_name is set",
+			name: "should return empty when public_url is not set",
 			http: HTTPSettings{Port: 8080},
 			want: "",
 		},
-		// An unparseable value is rejected at startup by Validate; if one
-		// reaches here anyway, falling back beats returning a broken origin.
 		{
-			name: "should fall back to inference when public_url is invalid",
-			http: HTTPSettings{PublicURL: "ssh.example.com", ServerName: "ssh.example.com", Port: 80},
-			want: "http://ssh.example.com",
+			name: "should return empty when public_url is only whitespace",
+			http: HTTPSettings{PublicURL: "   "},
+			want: "",
+		},
+		// An unparseable value is rejected at startup by Validate; if one
+		// reaches here anyway, "unknown" beats returning a broken origin.
+		{
+			name: "should return empty when public_url is invalid",
+			http: HTTPSettings{PublicURL: "ssh.example.com", Port: 80},
+			want: "",
 		},
 	}
 
@@ -103,6 +78,61 @@ func TestPublicOriginShouldResolveTheBrowserVisibleOrigin(t *testing.T) {
 			t.Parallel()
 
 			if got := tt.http.PublicOrigin(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPublicHostShouldResolveTheNameRequestsMustBeAddressedTo(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		http HTTPSettings
+		want string
+	}{
+		{
+			name: "should return the host of public_url",
+			http: HTTPSettings{PublicURL: "https://ssh.example.com"},
+			want: "ssh.example.com",
+		},
+		// The middleware compares names only; behind a proxy the browser's
+		// port and the listen port differ and neither identifies the host.
+		{
+			name: "should drop the port from public_url",
+			http: HTTPSettings{PublicURL: "https://ssh.example.com:8443"},
+			want: "ssh.example.com",
+		},
+		{
+			name: "should keep an ip literal host",
+			http: HTTPSettings{PublicURL: "http://203.0.113.9:8080"},
+			want: "203.0.113.9",
+		},
+		{
+			name: "should unbracket an ipv6 literal host",
+			http: HTTPSettings{PublicURL: "http://[::1]:8080"},
+			want: "::1",
+		},
+		// Empty disables the Host check in middleware.ServerNameMiddleware.
+		{
+			name: "should return empty when public_url is not set",
+			http: HTTPSettings{},
+			want: "",
+		},
+		{
+			name: "should return empty when public_url is invalid",
+			http: HTTPSettings{PublicURL: "ssh.example.com"},
+			want: "",
+		},
+	}
+
+	for i := range tests {
+		tt := &tests[i]
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := tt.http.PublicHost(); got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})
@@ -130,7 +160,7 @@ func TestIsTLSShouldReportTheBrowserVisibleScheme(t *testing.T) {
 		// question even when this process also holds a certificate.
 		{name: "should let an http public_url override a local keypair", http: HTTPSettings{PublicURL: "http://ssh.internal", TLS: withKeyPair}, want: false},
 		{name: "should report true when this process terminates tls", http: HTTPSettings{TLS: withKeyPair}, want: true},
-		{name: "should report true when is_https is set", http: HTTPSettings{IsHTTPS: true}, want: true},
+		{name: "should fall back to the keypair when public_url is invalid", http: HTTPSettings{PublicURL: "ssh.example.com", TLS: withKeyPair}, want: true},
 		{name: "should report false with nothing configured", http: HTTPSettings{}, want: false},
 	}
 

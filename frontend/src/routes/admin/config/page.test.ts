@@ -12,9 +12,8 @@ import Page from './+page.svelte';
 /** effectiveConfig builds a complete auditor config answer. */
 function effectiveConfig(): EffectiveConfigResponse {
 	return {
-		server_name: 'ssh.example.com',
+		public_url: 'https://ssh.example.com:8443',
 		port: 8443,
-		is_https: true,
 		db_provider: 'postgres',
 		provider_url: 'https://idp.example.com',
 		admin_require_group: 'ssh-admins',
@@ -62,7 +61,7 @@ describe('admin config page', () => {
 
 		render(Page);
 
-		expect(await screen.findByText('ssh.example.com')).toBeInTheDocument();
+		expect(await screen.findByText('https://ssh.example.com:8443')).toBeInTheDocument();
 		expect(screen.getByText('8443')).toBeInTheDocument();
 		expect(screen.getByText('postgres')).toBeInTheDocument();
 		expect(screen.getByText('https://idp.example.com')).toBeInTheDocument();

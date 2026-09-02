@@ -67,14 +67,12 @@ http.cookie_max_age = 9h
 http.cookie_same_site = strict
 http.cookie_secure = <nil>
 http.hsts = max-age=31536000; includeSubDomains
-http.is_https = false
 http.port = 8080
 http.proxy_protocol = []
 http.public_url = 
 http.rate_duration = 1m
 http.rate_limit = 60
 http.rate_limit_disable_for_dev = false
-http.server_name = 
 http.service_code_rate_limit.limit = 1
 http.tls.cipher_suites = []
 http.tls.curves = []

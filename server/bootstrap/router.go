@@ -185,7 +185,7 @@ func (a *app) initEngine() (*gin.Engine, error) {
 	// Setup global middleware
 	// The healthz and ping routes above predate these Use calls, so health
 	// probes (often addressed by IP) stay reachable regardless of Host.
-	r.Use(middleware.NewServerNameMiddleware().Add(c.HTTP.ServerName))
+	r.Use(middleware.NewServerNameMiddleware().Add(c.HTTP.PublicHost()))
 	r.Use(middleware.NewCacheControlMiddleware().Add())
 	r.Use(middleware.NewCorsMiddleware().Add())
 	r.Use(middleware.NewCspMiddleware().Add())
@@ -277,7 +277,7 @@ func sessionCookieOptions(c *config.Config) (sessions.Options, error) {
 
 	secure := resolvedCookieSecure(c)
 	if !secure {
-		slog.Warn("session cookie is not marked Secure, so browsers will send it over plain HTTP; set http.is_https (or http.cookie_secure) once TLS terminates in front of this server")
+		slog.Warn("session cookie is not marked Secure, so browsers will send it over plain HTTP; give http.public_url an https:// scheme (or set http.cookie_secure) once TLS terminates in front of this server")
 	}
 
 	// MaxAge must always be set to something positive. Leaving it zero does

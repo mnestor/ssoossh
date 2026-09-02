@@ -40,16 +40,12 @@
 			<h2 class="mb-3 font-semibold text-ink">HTTP</h2>
 			<div class="grid gap-4 text-sm sm:grid-cols-2">
 				<div>
-					<p class="font-mono text-xs text-ink-muted">server_name</p>
-					<p>{config.server_name}</p>
+					<p class="font-mono text-xs text-ink-muted">public_url</p>
+					<p>{config.public_url}</p>
 				</div>
 				<div>
 					<p class="font-mono text-xs text-ink-muted">port</p>
 					<p>{config.port}</p>
-				</div>
-				<div>
-					<p class="font-mono text-xs text-ink-muted">is_https</p>
-					<p>{config.is_https ? 'true' : 'false'}</p>
 				</div>
 			</div>
 		</div>

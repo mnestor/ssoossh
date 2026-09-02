@@ -143,7 +143,7 @@ func newTestAuthConfig(provider *fakeOIDCProvider, clientID string) *config.Conf
 	c.AuthConfig.Fields.Username = "preferred_username"
 	c.AuthConfig.Fields.Email = "email"
 	c.AuthConfig.Fields.Groups = "groups"
-	c.HTTP.ServerName = "ssh.example.com"
+	c.HTTP.PublicURL = "https://ssh.example.com"
 	return c
 }
 
@@ -176,7 +176,7 @@ func TestNewAuthService_ShouldRejectMissingRequiredConfig(t *testing.T) {
 		{name: "should require provider_url", mutate: func(c *config.Config) { c.AuthConfig.ProviderURL = "" }, wantErr: "provider_url"},
 		{name: "should require client_id", mutate: func(c *config.Config) { c.AuthConfig.ClientID = "" }, wantErr: "client_id"},
 		{name: "should require fields.username", mutate: func(c *config.Config) { c.AuthConfig.Fields.Username = "" }, wantErr: "fields.username"},
-		{name: "should require http.server_name", mutate: func(c *config.Config) { c.HTTP.ServerName = "" }, wantErr: "server_name"},
+		{name: "should require http.public_url", mutate: func(c *config.Config) { c.HTTP.PublicURL = "" }, wantErr: "public_url"},
 	}
 
 	for _, tt := range tests {
@@ -218,7 +218,7 @@ func TestNewAuthService_ShouldRejectAnUnreachableProvider(t *testing.T) {
 	c.AuthConfig.ProviderURL = "http://127.0.0.1:1"
 	c.AuthConfig.ClientID = "client-1"
 	c.AuthConfig.Fields.Username = "preferred_username"
-	c.HTTP.ServerName = "ssh.example.com"
+	c.HTTP.PublicURL = "https://ssh.example.com"
 
 	if _, err := NewAuthService(context.Background(), c, newTestUserDB(t), nil); err == nil {
 		t.Error("NewAuthService() error = nil, want an error for an unreachable provider")

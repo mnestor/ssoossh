@@ -2,9 +2,7 @@ package config
 
 import (
 	"fmt"
-	"net"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -56,42 +54,26 @@ type HTTPSettings struct {
 	// skipping the call for an empty list would mean the opposite.
 	TrustedProxies []string `mapstructure:"trusted_proxies" default:"[]"`
 
-	// ServerName, when set, is the host name this server answers to:
-	// requests addressed to anything else (by Host header, or SNI on TLS
-	// connections) are rejected with 421 Misdirected Request by
-	// middleware.ServerNameMiddleware. The health endpoints are registered
-	// ahead of the check so probes can reach the server by IP. Empty
-	// disables the check. It plays no role in the TLS handshake itself,
-	// which is why it does not live in TLSConfig.
-	ServerName string `mapstructure:"server_name" default:""`
-
 	// PublicURL is the scheme and host browsers actually reach this
-	// deployment at, e.g. "https://ssh.example.com". Set it whenever that
-	// differs from what Address/Port/TLS describe — which is every
+	// deployment at, e.g. "https://ssh.example.com". Required: it is the one
+	// place the browser-visible identity of this deployment is written down,
+	// and it will differ from what Address/Port/TLS describe in every
 	// reverse-proxy deployment, since the proxy terminates TLS on 443 while
 	// this process listens on plain HTTP somewhere else.
 	//
-	// Two things are derived from it and cannot be got right without it: the
-	// OIDC redirect URI handed to the identity provider, and the origin
-	// the CSRF middleware compares the browser's Origin header against. Both used
-	// to be reconstructed from ServerName plus the *listen* port, which is
-	// only the public port when nothing sits in front.
-	//
-	// Its scheme also settles the derived HTTPS flag, so a deployment behind a TLS-terminating
-	// proxy needs this or IsHTTPS, not both.
+	// Everything that has to know how the browser sees this server is derived
+	// from it: the OIDC redirect URI handed to the identity provider, the
+	// origin the CSRF middleware compares the browser's Origin header
+	// against, the host name requests must be addressed to (anything else
+	// is rejected with 421 Misdirected Request; health endpoints are exempt
+	// so probes can reach the server by IP), and whether the deployment is
+	// HTTPS at all, which decides the session cookie's Secure attribute.
 	//
 	// Origin only: a path, query, or fragment is rejected at startup. Serving
 	// the app under a sub-path would need the frontend's base to move with it,
 	// which is not supported, so accepting one here would only produce a
 	// redirect URI that silently does not work.
 	PublicURL string `mapstructure:"public_url" default:""`
-
-	// IsHTTPS records that a reverse proxy terminates TLS while this
-	// process serves plain HTTP, so the deployment is HTTPS as browsers see
-	// it even though this listener is not. Redundant when PublicURL is set —
-	// its scheme settles the same question — so configure one or the other,
-	// not both.
-	IsHTTPS bool `mapstructure:"is_https" default:"false"`
 
 	// CookieKey is the secret used to sign and encrypt session cookies. If
 	// empty, a key is generated once and persisted in the server_secrets
@@ -102,9 +84,9 @@ type HTTPSettings struct {
 
 	// CookieSecure marks the session cookie Secure, so browsers only send it
 	// over HTTPS. Unset derives it from whether the deployment is HTTPS at
-	// all (see is_https), which keeps plain-HTTP local development working
-	// while defaulting to on everywhere else. Set it explicitly only to
-	// override that inference.
+	// all (the scheme of public_url, or a local TLS keypair), which keeps
+	// plain-HTTP local development working while defaulting to on
+	// everywhere else. Set it explicitly only to override that inference.
 	CookieSecure *bool `mapstructure:"cookie_secure" default:"~"`
 
 	// CookieSameSite controls the session cookie's SameSite attribute:
@@ -177,53 +159,51 @@ type HTTPSettings struct {
 }
 
 // IsTLS reports whether browsers reach this deployment over HTTPS — because
-// PublicURL says so, because this process terminates TLS itself, or because a
-// reverse proxy in front of it does and the operator said so via IsHTTPS.
+// PublicURL says so, or because this process terminates TLS itself.
 //
 // Shared so everything that has to reason about the browser-visible scheme
 // agrees: the OIDC redirect URL and the session cookie's Secure attribute
 // must not be able to disagree about it.
 //
 // PublicURL wins when set. It describes what the browser sees, which is the
-// question being asked; the other two are proxies for it.
+// question being asked; a local keypair is only a proxy for it.
 func (h *HTTPSettings) IsTLS() bool {
 	if u, err := h.parsePublicURL(); err == nil && u != nil {
 		return u.Scheme == "https"
 	}
-	return h.TLS.HasKeyPair() || h.IsHTTPS
+	return h.TLS.HasKeyPair()
 }
 
 // PublicOrigin returns the scheme://host origin browsers use to reach this
-// deployment: PublicURL when configured, otherwise inferred from ServerName,
-// Port, and IsTLS.
+// deployment, taken from PublicURL with any trailing slash removed.
 //
-// Returns "" when neither is available — PublicURL unset and ServerName
-// empty. Callers treat that as "the public origin is unknown": the CSRF middleware
-// falls back to Sec-Fetch-Site alone rather than comparing against a guess.
-//
-// The inference is kept for deployments with nothing in front, where the
-// listen port really is the public port. It is wrong the moment a proxy is
-// involved, which is what PublicURL exists to fix.
+// Returns "" when PublicURL is unset or unparseable. Callers treat that as
+// "the public origin is unknown": the CSRF middleware falls back to
+// Sec-Fetch-Site alone rather than comparing against a guess. An
+// unparseable value is rejected at startup by Validate, so at runtime ""
+// only ever means unset.
 func (h *HTTPSettings) PublicOrigin() string {
 	if u, err := h.parsePublicURL(); err == nil && u != nil {
 		return u.Scheme + "://" + u.Host
 	}
+	return ""
+}
 
-	if h.ServerName == "" {
-		return ""
+// PublicHost returns the host name from PublicURL without any port, which is
+// the name requests must be addressed to: middleware.ServerNameMiddleware
+// rejects anything else (by Host header, or SNI on TLS connections) with
+// 421 Misdirected Request. The port is dropped because the middleware
+// compares names only — behind a proxy the browser's port and this
+// listener's port differ, and neither says anything about which host the
+// request was meant for.
+//
+// Returns "" when PublicURL is unset or unparseable, which disables the
+// check.
+func (h *HTTPSettings) PublicHost() string {
+	if u, err := h.parsePublicURL(); err == nil && u != nil {
+		return u.Hostname()
 	}
-
-	scheme, defaultPort := "http", 80
-	if h.IsTLS() {
-		scheme, defaultPort = "https", 443
-	}
-
-	host := h.ServerName
-	if h.Port != 0 && h.Port != defaultPort {
-		host = net.JoinHostPort(h.ServerName, strconv.Itoa(h.Port))
-	}
-
-	return scheme + "://" + host
+	return ""
 }
 
 // parsePublicURL parses PublicURL, returning (nil, nil) when it is unset.

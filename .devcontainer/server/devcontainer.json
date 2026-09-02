@@ -54,7 +54,10 @@
   "runArgs": [
     "--network=${localWorkspaceFolderBasename}-dev",
     "--network-alias=server",
-    "--name=${localWorkspaceFolderBasename}-server"
+    "--name=${localWorkspaceFolderBasename}-server",
+    "--cap-add=SYS_PTRACE",
+    "--security-opt",
+    "seccomp=unconfined"
   ],
   "shutdownAction": "none",
   "postCreateCommand": {

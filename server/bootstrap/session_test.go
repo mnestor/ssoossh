@@ -22,7 +22,7 @@ func TestSessionCookieOptions_ShouldHardenTheSessionCookie(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		isHTTPS      bool
+		publicURL    string
 		cookieSecure *bool
 		sameSite     string
 		maxAge       time.Duration
@@ -40,13 +40,13 @@ func TestSessionCookieOptions_ShouldHardenTheSessionCookie(t *testing.T) {
 			// A Secure cookie over plain HTTP is silently dropped by the
 			// browser, so this must follow the deployment, not default on.
 			name:         "should mark the cookie secure when tls terminates in front",
-			isHTTPS:      true,
+			publicURL:    "https://ssh.example.com",
 			wantSecure:   true,
 			wantSameSite: http.SameSiteStrictMode,
 		},
 		{
 			name:         "should let an explicit setting override the inference",
-			isHTTPS:      true,
+			publicURL:    "https://ssh.example.com",
 			cookieSecure: boolPtr(false),
 			wantSecure:   false,
 			wantSameSite: http.SameSiteStrictMode,
@@ -79,7 +79,7 @@ func TestSessionCookieOptions_ShouldHardenTheSessionCookie(t *testing.T) {
 			t.Parallel()
 
 			c := &config.Config{}
-			c.HTTP.IsHTTPS = tt.isHTTPS
+			c.HTTP.PublicURL = tt.publicURL
 			c.HTTP.CookieSecure = tt.cookieSecure
 			c.HTTP.CookieSameSite = tt.sameSite
 			c.HTTP.CookieMaxAge = tt.maxAge

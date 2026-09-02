@@ -123,9 +123,8 @@ func (a *adminController) effectiveConfigHandler(g *gin.Context) {
 	})
 
 	resp := webtypes.EffectiveConfigResponse{
-		ServerName: a.config.HTTP.ServerName,
-		Port:       a.config.HTTP.Port,
-		IsHTTPS:    a.config.HTTP.IsHTTPS,
+		PublicURL: a.config.HTTP.PublicURL,
+		Port:      a.config.HTTP.Port,
 
 		DBProvider:  string(a.config.DB.Provider),
 		ProviderURL: a.config.AuthConfig.ProviderURL,

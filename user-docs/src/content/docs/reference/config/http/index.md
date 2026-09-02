@@ -25,9 +25,7 @@ eyebrow: "Configuration"
 | [`http.unix_socket`](#unix_socket) | string | `empty` |
 | [`http.proxy_protocol`](#proxy_protocol) | list | `empty` |
 | [`http.trusted_proxies`](#trusted_proxies) | list | `empty` |
-| [`http.server_name`](#server_name) | string | `empty` |
 | [`http.public_url`](#public_url) | string | `empty` |
-| [`http.is_https`](#is_https) | bool | `false` |
 | [`http.cookie_key`](#cookie_key) | string | `empty` |
 | [`http.cookie_secure`](#cookie_secure) | bool | `empty` |
 | [`http.cookie_same_site`](#cookie_same_site) | string | `strict` |
@@ -105,43 +103,19 @@ http:
   trusted_proxies: []
 ```
 
-## `server_name`
-
-`string`, default `empty`
-
-when set, is the host name this server answers to: requests addressed to anything else (by Host header, or SNI on TLS connections) are rejected with 421 Misdirected Request by middleware.ServerNameMiddleware. The health endpoints are registered ahead of the check so probes can reach the server by IP. Empty disables the check. It plays no role in the TLS handshake itself, which is why it does not live in TLSConfig.
-
-```yaml
-http:
-  server_name: ""
-```
-
 ## `public_url`
 
 `string`, default `empty`
 
-The scheme and host browsers actually reach this deployment at, e.g. "https://ssh.example.com". Set it whenever that differs from what Address/Port/TLS describe — which is every reverse-proxy deployment, since the proxy terminates TLS on 443 while this process listens on plain HTTP somewhere else.
+The scheme and host browsers actually reach this deployment at, e.g. "https://ssh.example.com". Required: it is the one place the browser-visible identity of this deployment is written down, and it will differ from what Address/Port/TLS describe in every reverse-proxy deployment, since the proxy terminates TLS on 443 while this process listens on plain HTTP somewhere else.
 
-Two things are derived from it and cannot be got right without it: the OIDC redirect URI handed to the identity provider, and the origin the CSRF middleware compares the browser's Origin header against. Both used to be reconstructed from `server_name` plus the *listen* port, which is only the public port when nothing sits in front.
-
-Its scheme also settles the derived HTTPS flag, so a deployment behind a TLS-terminating proxy needs this or `is_https`, not both.
+Everything that has to know how the browser sees this server is derived from it: the OIDC redirect URI handed to the identity provider, the origin the CSRF middleware compares the browser's Origin header against, the host name requests must be addressed to (anything else is rejected with 421 Misdirected Request; health endpoints are exempt so probes can reach the server by IP), and whether the deployment is HTTPS at all, which decides the session cookie's Secure attribute.
 
 Origin only: a path, query, or fragment is rejected at startup. Serving the app under a sub-path would need the frontend's base to move with it, which is not supported, so accepting one here would only produce a redirect URI that silently does not work.
 
 ```yaml
 http:
   public_url: ""
-```
-
-## `is_https`
-
-`bool`, default `false`
-
-Records that a reverse proxy terminates TLS while this process serves plain HTTP, so the deployment is HTTPS as browsers see it even though this listener is not. Redundant when `public_url` is set — its scheme settles the same question — so configure one or the other, not both.
-
-```yaml
-http:
-  is_https: false
 ```
 
 ## `cookie_key`
@@ -159,7 +133,7 @@ http:
 
 `bool`, default `empty`
 
-Marks the session cookie Secure, so browsers only send it over HTTPS. Unset derives it from whether the deployment is HTTPS at all (see is_https), which keeps plain-HTTP local development working while defaulting to on everywhere else. Set it explicitly only to override that inference.
+Marks the session cookie Secure, so browsers only send it over HTTPS. Unset derives it from whether the deployment is HTTPS at all (the scheme of public_url, or a local TLS keypair), which keeps plain-HTTP local development working while defaulting to on everywhere else. Set it explicitly only to override that inference.
 
 ```yaml
 http:
