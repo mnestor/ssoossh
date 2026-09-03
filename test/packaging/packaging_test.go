@@ -208,10 +208,10 @@ var (
 	serverArchiveIDs = []string{"linux-server-archives", "linux-server-musl-archives"}
 )
 
-// pamPackageIDs are the ssoossh-pam artifacts, cgo builds cross-compiled
-// per-arch (linux-pam-build-amd64/-arm64 in .goreleaser.yml), so unlike the
-// client and server there are four nfpm ids, not two.
-var pamPackageIDs = []string{"pam-deb-amd64", "pam-rpm-amd64", "pam-deb-arm64", "pam-rpm-arm64"}
+// pamPackageIDs are the ssoossh-pam artifacts, one nfpm id per arch
+// (linux-pam-build-amd64/-arm64 in .goreleaser.yml), each emitting both a
+// deb and an rpm from the same contents list.
+var pamPackageIDs = []string{"pam-amd64", "pam-arm64"}
 
 // should ship the mail templates the server binary embeds, so an operator
 // who installed a package — and has no source tree — can copy one out as
