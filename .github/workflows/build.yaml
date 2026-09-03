@@ -318,19 +318,6 @@ jobs:
           "$MUSL_BINARY" version || { echo "✗ musl binary failed to run under the musl loader"; exit 1; }
           echo "✓ musl binary runs under the musl loader"
 
-      # This will upload just the .so files we then delete
-      # ugh, hacks until I can pay for goreleaser
-      - name: remove the pam so files, we don't need them
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          TAGNV=$(echo ${TAG} |cut -c2-15)
-          for ARCH in amd64 arm64; do
-            gh release delete-asset -y ${TAG} pam_ssoossh_${TAGNV}_linux_${ARCH}.so
-          done
-
       - name: cleanup
         if: always()
         run: |
