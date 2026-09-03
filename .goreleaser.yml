@@ -76,6 +76,61 @@ builds:
       - arm64
     ldflags: *build-ldflags
 
+  # zig cc cross-compiles both PAM targets from a single amd64 host against
+  # the same glibc floors an old centos7 (amd64) / amazonlinux2 (arm64)
+  # build container used to pin -- verified by objdump/readelf: the
+  # resulting .so's max GLIBC_x.y symbol version matches (2.17 amd64,
+  # <= 2.26 arm64). No native arm64 runner and no QEMU/binfmt needed.
+  #
+  # security/*.h is arch-independent (no per-arch #ifdef content), so one
+  # copy of the headers, installed by Dockerfile.runner /
+  # build-env-for-pam.sh into /opt/pam-include, serves both targets. Kept
+  # out of /usr/include itself -- zig cc ships its own versioned glibc
+  # headers for the pinned floor, and pointing CGO_CFLAGS at the real
+  # /usr/include instead would pull the host's glibc headers in alongside
+  # them and collide (__GLIBC_MINOR__ redefined, etc).
+  #
+  # CGO_LDFLAGS's -L points at the multiarch lib dir the same install put
+  # the (foreign-arch, for arm64) libpam0g-dev into. Both the -dev headers
+  # and the matching libpam0g runtime .so must be present -- a headers-only
+  # install makes the linker silently fall back to statically linking
+  # libpam.a instead of dynamically linking libpam.so.0, which is why
+  # build.yaml's post-build check verifies NEEDED, not just that the build
+  # succeeded.
+  - id: linux-pam-build-amd64
+    binary: pam_ssoossh
+    dir: ./pam_ssoossh/
+    buildmode: "c-shared"
+    goos:
+      - linux
+    goarch:
+      - amd64
+    flags:
+      - -tags=nomsgpack,pam
+    env:
+      - CGO_ENABLED=1
+      - CC=zig cc -target x86_64-linux-gnu.2.17
+      - CGO_CFLAGS=-I/opt/pam-include
+      - CGO_LDFLAGS=-L/usr/lib/x86_64-linux-gnu
+    ldflags: *build-ldflags
+
+  - id: linux-pam-build-arm64
+    binary: pam_ssoossh
+    dir: ./pam_ssoossh/
+    buildmode: "c-shared"
+    goos:
+      - linux
+    goarch:
+      - arm64
+    flags:
+      - -tags=nomsgpack,pam
+    env:
+      - CGO_ENABLED=1
+      - CC=zig cc -target aarch64-linux-gnu.2.26
+      - CGO_CFLAGS=-I/opt/pam-include
+      - CGO_LDFLAGS=-L/usr/lib/aarch64-linux-gnu
+    ldflags: *build-ldflags
+
   - id: linux-build
     binary: &name "ssoossh"
     dir: &dir ./cmd/ssoossh
@@ -252,6 +307,74 @@ nfpms:
       - src: server/resources/mail/*.tmpl
         dst: /usr/share/ssoossh/mail-templates/
 
+  - id: pam-amd64
+    package_name: ssoossh-pam
+    file_name_template: "ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    license: *license
+    maintainer: *maintainer
+    homepage: *website
+    description: &pamDescription "PAM module for sudo/su certificate approval via ssoosshd"
+    ids:
+      - linux-pam-build-amd64
+    libdirs:
+      cshared: '{{- if eq .Format "deb" }}/usr/lib/x86_64-linux-gnu/security{{- else }}/usr/lib64/security{{- end }}'
+    formats:
+      - deb
+      - rpm
+    overrides:
+      deb:
+        dependencies:
+          - "libc6 (>= 2.17)"
+      rpm:
+        dependencies:
+          - "glibc >= 2.17"
+    deb:
+      signature:
+        key_file: private.pgp
+    rpm:
+      signature:
+        key_file: private.pgp
+    contents: &pamContents
+      - src: docs/pam.d-sudo.example
+        dst: /usr/share/doc/ssoossh-pam/examples/sudo
+      - src: LICENSE
+        dst: /usr/share/doc/ssoossh-pam/LICENSE
+      - src: NOTICE
+        dst: /usr/share/doc/ssoossh-pam/NOTICE
+      - src: THIRD-PARTY-LICENSES.md
+        dst: /usr/share/doc/ssoossh-pam/THIRD-PARTY-LICENSES.md
+      - src: docs/man/pam_ssoossh.8
+        dst: /usr/share/man/man8/pam_ssoossh.8
+
+  - id: pam-arm64
+    package_name: ssoossh-pam
+    file_name_template: "ssoossh-pam_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    license: *license
+    maintainer: *maintainer
+    homepage: *website
+    description: *pamDescription
+    ids:
+      - linux-pam-build-arm64
+    overrides:
+      deb:
+        dependencies:
+          - "libc6 (>= 2.26)"
+      rpm:
+        dependencies:
+          - "glibc >= 2.26"
+    libdirs:
+      cshared: '{{- if eq .Format "deb" }}/usr/lib/aarch64-linux-gnu/security{{- else }}/usr/lib64/security{{- end }}'
+    formats:
+      - deb
+      - rpm
+    deb:
+      signature:
+        key_file: private.pgp
+    rpm:
+      signature:
+        key_file: private.pgp
+    contents: *pamContents
+
 archives:
   - id: linux-clients-archives
     ids:
@@ -336,7 +459,7 @@ dockers_v2:
       - server-linux-build
     dockerfile: Dockerfile
     images:
-      - ghcr.io/mnestor/ssoosshd
+      - ghcr.io/mnestor/ssoossh-server
     tags:
       - "{{ .Version }}"
       - "{{ .Major }}.{{ .Minor }}"
@@ -361,7 +484,7 @@ dockers_v2:
       - server-linux-musl-build
     dockerfile: Dockerfile.musl
     images:
-      - ghcr.io/mnestor/ssoosshd
+      - ghcr.io/mnestor/ssoossh-server
     tags:
       - "{{ .Version }}-musl"
       - "{{ .Major }}.{{ .Minor }}-musl"

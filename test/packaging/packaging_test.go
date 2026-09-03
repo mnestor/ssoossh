@@ -45,8 +45,9 @@ type goreleaserConfig struct {
 		} `yaml:"contents"`
 	} `yaml:"nfpms"`
 	Archives []struct {
-		ID    string        `yaml:"id"`
-		Files []archiveFile `yaml:"files"`
+		ID      string        `yaml:"id"`
+		Formats []string      `yaml:"formats"`
+		Files   []archiveFile `yaml:"files"`
 	} `yaml:"archives"`
 	Builds []struct {
 		ID  string   `yaml:"id"`
@@ -159,7 +160,7 @@ func TestRetiredConfigsShouldBeGone(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{".goreleaser.yml", ".goreleaser-pam-amd64.yml", ".goreleaser-pam-arm64.yml"} {
+	for _, name := range []string{".goreleaser.yml"} {
 		path := filepath.Join(root, name)
 		raw, err := os.ReadFile(path)
 		if err != nil {
@@ -206,6 +207,11 @@ var (
 	serverPackageIDs = []string{"server", "server-musl"}
 	serverArchiveIDs = []string{"linux-server-archives", "linux-server-musl-archives"}
 )
+
+// pamPackageIDs are the ssoossh-pam artifacts, cgo builds cross-compiled
+// per-arch (linux-pam-build-amd64/-arm64 in .goreleaser.yml), so unlike the
+// client and server there are four nfpm ids, not two.
+var pamPackageIDs = []string{"pam-deb-amd64", "pam-rpm-amd64", "pam-deb-arm64", "pam-rpm-arm64"}
 
 // should ship the mail templates the server binary embeds, so an operator
 // who installed a package — and has no source tree — can copy one out as
@@ -321,9 +327,8 @@ var manOwners = map[string]manPageOwner{
 	"ssoossh": {packages: []string{"client"}},
 	// The server's root and per-subcommand pages, plus its config page.
 	"ssoosshd": {packages: serverPackageIDs},
-	// Shipped by the PAM packages, configured in .goreleaser-pam-*.yml and
-	// asserted by TestPAMPackagesShouldShipEveryPAMManPage.
-	"pam_ssoossh": {},
+	// The PAM module's own page.
+	"pam_ssoossh": {packages: pamPackageIDs},
 }
 
 // ownerFor returns the owner key for a man page filename.
@@ -420,10 +425,12 @@ func TestPackagesShouldShipEveryManPageTheyOwn(t *testing.T) {
 	}
 }
 
-// should put every man page in every release archive. Unlike the packages,
-// archives are not split by owner: nothing owns a path inside a tarball, so
-// there is no co-installation hazard, and the pam page belongs there too
-// even though its packages are built from a different config.
+// should put every man page in every real release archive. Unlike the
+// packages, archives are not split by owner: nothing owns a path inside a
+// tarball, so there is no co-installation hazard, and the pam page belongs
+// there too. "Real" excludes formats: binary entries (pam-binaries) --
+// goreleaser's raw binary format packages only the one binary, with no
+// files: list at all, so it structurally cannot carry docs/man alongside it.
 func TestArchivesShouldShipEveryManPage(t *testing.T) {
 	t.Parallel()
 
@@ -433,6 +440,9 @@ func TestArchivesShouldShipEveryManPage(t *testing.T) {
 	}
 
 	for _, archive := range cfg.Archives {
+		if slices.Contains(archive.Formats, "binary") {
+			continue
+		}
 		included := map[string]bool{}
 		for _, file := range archive.Files {
 			if !strings.HasPrefix(file.Src, "docs/man/") {
@@ -493,61 +503,6 @@ func expandManGlob(t *testing.T, src string) []string {
 		names = append(names, filepath.Base(match))
 	}
 	return names
-}
-
-// pamGoreleaserConfigs are the separate release configs the PAM module is
-// built from — it is cgo and per-arch, so it does not live in the main one.
-var pamGoreleaserConfigs = []string{".goreleaser-pam-amd64.yml", ".goreleaser-pam-arm64.yml"}
-
-// should ship every pam_* man page from every PAM package. The page is
-// owned by a config the main goreleaser file knows nothing about, so
-// without this the pam entry in manOwners would assert nothing and a second
-// PAM page could ship nowhere.
-func TestPAMPackagesShouldShipEveryPAMManPage(t *testing.T) {
-	t.Parallel()
-
-	var wanted []string
-	for _, name := range manPages(t) {
-		if ownerFor(name) == "pam_ssoossh" {
-			wanted = append(wanted, name)
-		}
-	}
-	if len(wanted) == 0 {
-		t.Fatal("no pam man pages found, but manOwners claims the PAM packages ship some")
-	}
-
-	for _, configName := range pamGoreleaserConfigs {
-		path := filepath.Join(repoRoot(t), configName)
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("failed to read %s: %v", configName, err)
-		}
-
-		var cfg goreleaserConfig
-		if err := yaml.Unmarshal(raw, &cfg); err != nil {
-			t.Fatalf("failed to parse %s: %v", configName, err)
-		}
-		if len(cfg.NFPMs) == 0 {
-			t.Fatalf("%s declares no packages", configName)
-		}
-
-		for _, pkg := range cfg.NFPMs {
-			installed := map[string]bool{}
-			for _, content := range pkg.Contents {
-				if !strings.HasPrefix(content.Src, "docs/man/") {
-					continue
-				}
-				for _, name := range expandManGlob(t, content.Src) {
-					installed[name] = true
-				}
-			}
-			for _, name := range wanted {
-				if !installed[name] {
-					t.Errorf("%s package %q does not install docs/man/%s", configName, pkg.ID, name)
-				}
-			}
-		}
-	}
 }
 
 // muslBuildID is the goreleaser build the Alpine packages and the musl

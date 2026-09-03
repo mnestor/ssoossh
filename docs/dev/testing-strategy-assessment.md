@@ -80,9 +80,9 @@ Feasibility: Medium. PAM module is already 78% covered at the unit level (cgo en
 
 Expected Yield: Low to moderate. Unit tests already exercise principal derivation, TTL enforcement, and extension narrowing on the PAM path. E2E would add: (1) PAM stack integration (is our plugin wired correctly into the stack?), (2) actual `sudo`/`su` acceptance/rejection, (3) credential caching. These are real but narrower than they sound: (1) is a one-time config check, (2) is a yes/no call, (3) is tested by the cache_test.go suite.
 
-Build Cost: Moderate-high. Requires dedicated container image (already referenced as `pam-builder` in build.yaml but may not be maintained). Cross-architecture complexity (amd64 + arm64).
+Build Cost: Moderate. PAM builds alongside the client/server release in build.yaml's build-most job, in the same maintained `ssoossh-build` container the rest of CI uses (zig cc cross-compiles both amd64 and arm64 from it, per .goreleaser.yml's linux-pam-build-* entries), so no dedicated/uncertain-maintenance image is needed here anymore. What e2e would still add on top is root context for the actual `sudo`/`su` PAM stack.
 
-Recurring Cost: CI runners must support container + root. Current build.yaml shows PAM already builds on two architectures; e2e adds container overhead + flake risk if `sudo`/`su` behavior varies across runner images.
+Recurring Cost: CI runners must support container + root. Current build.yaml cross-compiles PAM for both architectures as part of the one release job; e2e adds container overhead + flake risk if `sudo`/`su` behavior varies across runner images.
 
 Verdict: **Defer unless a user reports PAM issuance failure.** The 78% unit coverage already validates the core logic. E2E repeats what's covered. Revisit when the first production deployment reports a PAM integration issue (e.g., sudo not accepting certs, principal mapping bugs).
 

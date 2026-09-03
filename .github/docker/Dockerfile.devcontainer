@@ -43,10 +43,10 @@ ENV PATH=$GOPATH/bin:/usr/local/go/bin:$PATH \
 COPY --from=1password/op:2.39.0 /usr/local/bin/op /usr/local/bin/op
 
 # pam_ssoossh (pam_ssoossh/, `pam` build tag) needs native libpam headers
-# for `make pam`/`make test-pam`. No arm64 cross-compile toolchain here --
-# the pinned-glibc release build runs scripts/pam-build-images/*.Dockerfile
-# in their own containers instead (see ssoossh's
-# docs/release-phase3-pam-build-env.md).
+# for `make pam`/`make test-pam`. No arm64 cross toolchain here -- the
+# pinned-glibc release build (.goreleaser-pam.yml) cross-compiles with zig
+# cc instead, from the CI runner image (see ssoossh's
+# .github/docker/Dockerfile.runner), not this one.
 #
 # node and gh used to come from devcontainer features
 # (ghcr.io/devcontainers/features/node, .../github-cli) in ssoossh's

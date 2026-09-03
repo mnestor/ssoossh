@@ -18,11 +18,11 @@ The reasoning is in [decisions.md](decisions.md).
 
 ## PAM module: glibc floor
 
-The PAM module is built against deliberately old base images so it loads on
-long-lived server distributions:
+The PAM module is cross-compiled with `zig cc` against a deliberately old
+glibc target so it loads on long-lived server distributions:
 
-- **amd64**: built against `centos:7`, floor glibc **2.17**
-- **arm64**: built against `amazonlinux:2`, floor glibc **2.26**
+- **amd64**: `x86_64-linux-gnu.2.17`, floor glibc **2.17**
+- **arm64**: `aarch64-linux-gnu.2.26`, floor glibc **2.26**
 
 ## Client packages
 

@@ -26,14 +26,26 @@ ARG GOVULNCHECK_VERSION=v1.7.0
 ARG REDOCLY_VERSION=1.28.1
 ARG ACTIONLINT_VERSION=v1.7.12
 RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sources.list.d/goreleaser.list \
+  # Registered before the first apt-get update so :arm64 packages below
+  # resolve. Ubuntu's default archive.ubuntu.com/security.ubuntu.com
+  # mirrors carry arm64 packages directly on this release -- no
+  # ports.ubuntu.com juggling needed (verified against this same base
+  # image).
+  && dpkg --add-architecture arm64 \
   && apt-get update && apt-get install -y --no-install-recommends gnupg curl ca-certificates \
   && curl -sSfL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
   && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
   && curl -fsSL https://deb.nodesource.com/setup_26.x | bash - \
   && apt-get update &&  apt-get upgrade -y \
   && apt-get install -y --no-install-recommends \
-    google-chrome-stable nodejs libpam0g-dev openssh-server \
+    google-chrome-stable nodejs openssh-server \
     sudo build-essential git curl unzip jq gh goreleaser \
+    # libpam0g-dev is Multi-Arch: same, so both variants co-install; the
+    # :arm64 one depends on (and so pulls in) the matching libpam0g:arm64
+    # runtime .so -- both are needed for build-pam's zig cross-link step
+    # below to find a real libpam.so.0 instead of silently falling back
+    # to statically linking libpam.a (see .goreleaser-pam.yml).
+    libpam0g-dev libpam0g-dev:arm64 \
     # Both ship on the stock ubuntu-latest runner but not here, and
     # --no-install-recommends means nothing else drags them in: `file`
     # backs build.yaml's musl linkage check, netcat backs the e2e
@@ -54,6 +66,14 @@ RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sourc
   && curl -sL https://go.dev/dl/go1.26.6.linux-amd64.tar.gz | tar -C /usr/local -xz \
   && curl -sL https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz | tar -C /usr/local -xJ \
   && ln -s /usr/local/zig-x86_64-linux-${ZIG_VERSION}/zig /usr/local/bin/zig \
+  # A private copy of just the PAM headers (arch-independent, so one copy
+  # covers both build-pam targets) for CGO_CFLAGS to point at. zig cc
+  # ships its own versioned glibc headers for whichever -target ...gnu.N.NN
+  # floor it's building against; pointing CGO_CFLAGS at the real
+  # /usr/include instead would pull those glibc headers in too and
+  # collide with zig's bundled ones (__GLIBC_MINOR__ redefined, etc).
+  && mkdir -p /opt/pam-include/security \
+  && cp /usr/include/security/*.h /opt/pam-include/security/ \
   && /usr/local/go/bin/go install gotest.tools/gotestsum@v1.13.0 \
   && /usr/local/go/bin/go install golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION} \
   && /usr/local/go/bin/go install github.com/rhysd/actionlint/cmd/actionlint@${ACTIONLINT_VERSION} \
