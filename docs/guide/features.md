@@ -176,6 +176,14 @@ local principal-mapping tooling (`host mapping`, `host principals`) for
   (CA signature, key binding, principals, validity window), and nothing
   retained on disk. Fail-closed everywhere
   ([pam.d-sudo.example](../pam.d-sudo.example)).
+- The certificate names the **approver**: their OIDC username and the other
+  accounts they hold. It does not name the local account the module is
+  authenticating, which an unauthenticated client reports and which is used
+  for display and audit only. Which of the approver's names may assume which
+  local account is the host's decision, made by check 3 against the local
+  `principals-map`, so `sudo` on a machine is authorized by a file only root
+  on that machine can edit
+  ([design](../proposals/pam-principal-source.md)).
 
 ## Coming later
 

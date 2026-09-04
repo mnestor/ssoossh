@@ -349,15 +349,23 @@ type RequestDetailResponse struct {
 	SourceIP      string                         `json:"source_ip" validate:"required"`
 	LocalUsername string                         `json:"local_username,omitempty"`
 	LocalHostname string                         `json:"local_hostname,omitempty"`
-	PublicKey     string                         `json:"public_key" validate:"required"`
-	Principals    []string                       `json:"principals" validate:"required"`
-	ValidSeconds  int                            `json:"valid_seconds" validate:"required"`
-	Requested     CertificateOptionsResponse     `json:"requested" validate:"required"`
-	Granted       CertificateOptionsResponse     `json:"granted" validate:"required"`
-	CreatedAt     time.Time                      `json:"created_at" validate:"required"`
-	ApprovalURL   string                         `json:"approval_url" validate:"required"`
-	IsOwnedByYou  bool                           `json:"is_owned_by_you" validate:"required"`
-	AlreadyClosed bool                           `json:"already_closed" validate:"required"`
+	// TargetAccount is the local account a PAM request is authenticating,
+	// e.g. who `sudo` is being run as. Empty for every other type. It is
+	// reported by an unauthenticated client and never becomes a principal
+	// (see model.CertificateRequest.Username), so the UI must present it as
+	// what is being attempted rather than as what is being granted. Without
+	// it the approver cannot see which account the sudo is for, since the
+	// principals now describe the approver instead.
+	TargetAccount string                     `json:"target_account,omitempty"`
+	PublicKey     string                     `json:"public_key" validate:"required"`
+	Principals    []string                   `json:"principals" validate:"required"`
+	ValidSeconds  int                        `json:"valid_seconds" validate:"required"`
+	Requested     CertificateOptionsResponse `json:"requested" validate:"required"`
+	Granted       CertificateOptionsResponse `json:"granted" validate:"required"`
+	CreatedAt     time.Time                  `json:"created_at" validate:"required"`
+	ApprovalURL   string                     `json:"approval_url" validate:"required"`
+	IsOwnedByYou  bool                       `json:"is_owned_by_you" validate:"required"`
+	AlreadyClosed bool                       `json:"already_closed" validate:"required"`
 
 	DecidedByOutcome         string     `json:"decided_by_outcome,omitempty"`
 	DecidedBySubject         string     `json:"decided_by_subject,omitempty"`

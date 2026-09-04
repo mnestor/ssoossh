@@ -5,6 +5,7 @@
   "source_ip": "198.51.100.7",
   "local_username": "alice",
   "local_hostname": "alice-laptop",
+  "target_account": "root",
   "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample alice@laptop",
   "principals": [
     "alice",

@@ -344,6 +344,46 @@ auth  sufficient  pam_ssoossh.so  server=https://ssoosshd.example.com  trusted-c
 auth  sufficient  pam_unix.so  ...     # existing line, unchanged, stays below
 ```
 
+### Who the certificate names, and why you probably need `principals-map`
+
+An issued PAM certificate carries the **approver's** OIDC username and the
+other accounts they hold. It does not carry the local account the module is
+authenticating: that value comes from an unauthenticated client, so it is
+shown to the approver and written to the audit record, and nothing else.
+
+Check 3 then asks the host whether those principals authorize the local
+account. With no `principals-map`, that is an exact match, so the line above
+works only where every user's OIDC username is identical to the account they
+`sudo` as. Everywhere else, add the map:
+
+```yaml
+# /etc/ssoossh/principals.yaml
+mnestor:
+  - mike.nestor
+  - mnestor
+root:
+  - mike.nestor      # only mike.nestor may sudo to root on this host
+```
+
+```
+auth  sufficient  pam_ssoossh.so  server=...  trusted-ca-file=...  principals-map=/etc/ssoossh/principals.yaml
+```
+
+Two things to know before you turn it on:
+
+- **A configured map is authoritative for every account.** An account with
+  no entry in it is denied. List every account that should be able to
+  authenticate through ssoossh, not just the ones that need a rename.
+- **A map that fails to load falls back to the exact-match check**, logged
+  at warning level on every attempt. That fallback is stricter than the map,
+  so a typo'd path shows up as denied logins rather than as looser access.
+  Grep for the warning if `sudo` starts refusing after a config change.
+
+This is also the file that decides who may `sudo` to `root` on a given
+machine, and only root on that machine can edit it. That is deliberate: it
+keeps "this person may become root here" from being a statement about every
+host that trusts the CA.
+
 `trusted-ca-file` can be the same `/etc/ssh/ca.pub` fetched in §3; it's
 the same authorized_keys-format CA public key either way.
 

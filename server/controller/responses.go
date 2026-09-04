@@ -145,6 +145,7 @@ func newRequestDetailResponse(d *service.RequestDetail) webtypes.RequestDetailRe
 		SourceIP:      d.Request.SourceIP,
 		LocalUsername: d.Request.LocalUsername,
 		LocalHostname: d.Request.LocalHostname,
+		TargetAccount: d.Request.Username,
 		PublicKey:     d.Request.PublicKey,
 		Principals:    orEmpty(d.Principals),
 		ValidSeconds:  int(d.ValidDuration.Seconds()),

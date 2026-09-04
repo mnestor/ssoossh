@@ -72,6 +72,7 @@ func fullFixtures() map[string]any {
 			SourceIP:      "198.51.100.7",
 			LocalUsername: "alice",
 			LocalHostname: "alice-laptop",
+			TargetAccount: "root",
 			PublicKey:     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample alice@laptop",
 			Principals:    []string{"alice", "alice@example.org"},
 			ValidSeconds:  28800,

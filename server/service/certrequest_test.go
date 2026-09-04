@@ -1077,14 +1077,16 @@ func TestCertRequestService_Approve_ShouldRejectWhenIdentityLacksRequiredGroup(t
 	}
 }
 
-// TestCertRequestService_Approve_ShouldQueuePAMRequestWithLocalUsernameAsPrincipal
-// is the assertion the phase 4 plan calls out by name: the issued
-// certificate must name the local account the module authenticated
-// (req.Username), not the approver's OIDC username, with the two set to
-// different values. Also checks the PAM-only defaults: extensions dropped
-// (nothing configured-permitted) and the PAM key ID template rather than
-// the user one.
-func TestCertRequestService_Approve_ShouldQueuePAMRequestWithLocalUsernameAsPrincipal(t *testing.T) {
+// TestCertRequestService_Approve_ShouldQueuePAMRequestWithApproverAccountsAsPrincipals
+// inverts what this test used to assert. The issued certificate must name
+// the approver and the accounts they hold, NOT the local account the module
+// sent (req.Username), with the two set to different values so a regression
+// cannot pass by coincidence. req.Username reaching the certificate meant an
+// unauthenticated caller chose the field the certificate is authorized on;
+// see docs/proposals/pam-principal-source.md. Also checks the PAM-only
+// defaults: extensions dropped (nothing configured-permitted) and the PAM
+// key ID template rather than the user one.
+func TestCertRequestService_Approve_ShouldQueuePAMRequestWithApproverAccountsAsPrincipals(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
@@ -1110,7 +1112,12 @@ func TestCertRequestService_Approve_ShouldQueuePAMRequestWithLocalUsernameAsPrin
 		t.Fatalf("unexpected error subscribing to the sign queue: %v", err)
 	}
 
-	identity := &Identity{Username: "mike.nestor", Subject: "sub-1", Groups: []string{"sudoers"}}
+	identity := &Identity{
+		Username:      "mike.nestor",
+		OtherAccounts: []string{"mnestor"},
+		Subject:       "sub-1",
+		Groups:        []string{"sudoers"},
+	}
 	seedUser(t, svc.db, identity.Subject)
 	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{}); err != nil {
 		t.Fatalf("unexpected error approving request: %v", err)
@@ -1124,14 +1131,14 @@ func TestCertRequestService_Approve_ShouldQueuePAMRequestWithLocalUsernameAsPrin
 		}
 		msg.Ack()
 
-		if len(job.Principals) != 1 || job.Principals[0] != "mnestor" {
-			t.Errorf("expected principals to be [\"mnestor\"] (the local username), got %v", job.Principals)
+		want := []string{"mike.nestor", "mnestor"}
+		if !slices.Equal(job.Principals, want) {
+			t.Errorf("expected principals to be %v (the approver and the accounts they hold), got %v", want, job.Principals)
 		}
-		// KeyID is the audit-log label and stays keyed on the approver's
-		// identity, same as every other type — it's the *principal* that
-		// must diverge to the local username (checked above). This is what
-		// makes "pam:mike.nestor" distinguishable from a login by the same
-		// person in an sshd/sudo audit log (see CertOptionsPAM.KeyIDTemplate).
+		// KeyID and principals now agree: both describe the approver. The
+		// key ID stays "pam:mike.nestor" so a sudo and a login by the same
+		// person remain distinguishable in an sshd/sudo audit log (see
+		// CertOptionsPAM.KeyIDTemplate).
 		if job.KeyID != "pam:mike.nestor" {
 			t.Errorf("got KeyID %q, want %q (PAM's own default template, keyed on the approver)", job.KeyID, "pam:mike.nestor")
 		}
@@ -1140,6 +1147,144 @@ func TestCertRequestService_Approve_ShouldQueuePAMRequestWithLocalUsernameAsPrin
 		}
 	case <-ctx.Done():
 		t.Fatal("timed out waiting for the signing job to be published")
+	}
+}
+
+// TestCertRequestService_Approve_ShouldNotLetAPAMRequestNameItsOwnPrincipal
+// is the regression test for the escalation this change closes. A PAM
+// request is created by an unauthenticated caller, so before the fix a
+// request naming "root" produced a certificate carrying the principal
+// "root" once anyone qualified approved it, and every host trusting the CA
+// accepted it for a root sudo. The certificate must now carry only what the
+// approver holds, whatever the request asked for.
+func TestCertRequestService_Approve_ShouldNotLetAPAMRequestNameItsOwnPrincipal(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+		PAM: config.CertOptionsPAM{Require: &config.PolicyCondition{Group: "sudoers"}, ValidDuration: 30 * time.Second},
+	})
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypePAM,
+		PublicKey: "ssh-ed25519 AAAA...",
+		Username:  "root",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	messages, err := svc.subscriber.Subscribe(ctx, certmsg.SignQueueTopic)
+	if err != nil {
+		t.Fatalf("unexpected error subscribing to the sign queue: %v", err)
+	}
+
+	identity := &Identity{Username: "alice", Subject: "sub-1", Groups: []string{"sudoers"}}
+	seedUser(t, svc.db, identity.Subject)
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{}); err != nil {
+		t.Fatalf("unexpected error approving request: %v", err)
+	}
+
+	select {
+	case msg := <-messages:
+		var job certmsg.SigningJob
+		if err := json.Unmarshal(msg.Payload, &job); err != nil {
+			t.Fatalf("failed to decode signing job: %v", err)
+		}
+		msg.Ack()
+
+		if slices.Contains(job.Principals, "root") {
+			t.Errorf("the request named root and the approver does not hold it, but the certificate carries it: %v", job.Principals)
+		}
+		if !slices.Equal(job.Principals, []string{"alice"}) {
+			t.Errorf(`got principals %v, want ["alice"]`, job.Principals)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for the signing job to be published")
+	}
+}
+
+// TestCertRequestService_Approve_ShouldRefuseToSignWithNoPrincipals covers
+// the guard in approveForSigning. An SSH certificate with an empty
+// ValidPrincipals is valid for every user, so an empty list has to fail the
+// approval rather than pass through the per-principal validation loop, which
+// has nothing to iterate. No production policy can return an empty list
+// today, so the policy is replaced in place to reach the branch.
+func TestCertRequestService_Approve_ShouldRefuseToSignWithNoPrincipals(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+		PAM: config.CertOptionsPAM{Require: &config.PolicyCondition{Group: "sudoers"}, ValidDuration: 30 * time.Second},
+	})
+	svc.policies[model.CertificateTypePAM].principals = func(*Identity, []string) []string { return nil }
+
+	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypePAM,
+		PublicKey: "ssh-ed25519 AAAA...",
+		Username:  "mnestor",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	identity := &Identity{Username: "mike.nestor", Subject: "sub-1", Groups: []string{"sudoers"}}
+	seedUser(t, svc.db, identity.Subject)
+
+	err = svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{})
+	if err == nil {
+		t.Fatal("expected an error approving a request that resolves to no principals, got nil")
+	}
+	if !strings.Contains(err.Error(), "no principals") {
+		t.Errorf("got error %q, want one naming the empty principal list", err)
+	}
+}
+
+// TestHeldAccounts covers the one definition of "accounts the approver
+// holds", which both pamPrincipals and checkUserPrincipalLinkage rely on.
+func TestHeldAccounts(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		identity *Identity
+		want     []string
+	}{
+		{
+			name:     "should return just the username when there are no other accounts",
+			identity: &Identity{Username: "alice"},
+			want:     []string{"alice"},
+		},
+		{
+			name:     "should return the username first, then the other accounts",
+			identity: &Identity{Username: "mike.nestor", OtherAccounts: []string{"mnestor", "mn"}},
+			want:     []string{"mike.nestor", "mnestor", "mn"},
+		},
+		{
+			name:     "should drop an other account that repeats the username",
+			identity: &Identity{Username: "alice", OtherAccounts: []string{"alice", "root"}},
+			want:     []string{"alice", "root"},
+		},
+		{
+			name:     "should drop a repeat within the other accounts",
+			identity: &Identity{Username: "alice", OtherAccounts: []string{"ops", "ops"}},
+			want:     []string{"alice", "ops"},
+		},
+		{
+			name:     "should keep an empty username so validation can reject it by name",
+			identity: &Identity{Username: "", OtherAccounts: []string{"alice"}},
+			want:     []string{"", "alice"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := heldAccounts(tt.identity); !slices.Equal(got, tt.want) {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

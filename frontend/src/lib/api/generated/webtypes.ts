@@ -393,6 +393,16 @@ export interface RequestDetailResponse {
 	source_ip: string;
 	local_username?: string;
 	local_hostname?: string;
+	/**
+	 * TargetAccount is the local account a PAM request is authenticating,
+	 * e.g. who `sudo` is being run as. Empty for every other type. It is
+	 * reported by an unauthenticated client and never becomes a principal
+	 * (see model.CertificateRequest.Username), so the UI must present it as
+	 * what is being attempted rather than as what is being granted. Without
+	 * it the approver cannot see which account the sudo is for, since the
+	 * principals now describe the approver instead.
+	 */
+	target_account?: string;
 	public_key: string;
 	principals: string[];
 	valid_seconds: number /* int */;

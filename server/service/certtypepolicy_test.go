@@ -5,6 +5,7 @@ package service
 // where appropriate. Tests run in parallel (t.Parallel()).
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -110,26 +111,47 @@ func TestNewCertTypePolicies_Principals_ShouldUseUsernameForUserAndServiceCertif
 	policies := mustCertTypePolicies(t, config.CertificateOptions{})
 
 	for _, certType := range []model.CertificateType{model.CertificateTypeUser, model.CertificateTypeService} {
-		got := policies[certType].principals("", &Identity{Username: "alice"}, nil)
+		got := policies[certType].principals(&Identity{Username: "alice"}, nil)
 		if len(got) != 1 || got[0] != "alice" {
 			t.Errorf("for %s: got %v, want [\"alice\"]", certType, got)
 		}
 	}
 }
 
-// TestNewCertTypePolicies_Principals_ShouldUsePAMUsernameNotIdentity is the
-// assertion that catches the wrong reading of
-// the PAM principal-resolution design (docs/guide/features.md, PAM): PAM
-// certificates must name the local account the module authenticated, not
-// the approver's OIDC identity, even when those two names differ.
-func TestNewCertTypePolicies_Principals_ShouldUsePAMUsernameNotIdentity(t *testing.T) {
+// TestNewCertTypePolicies_Principals_ShouldUseApproverAccountsForPAM is the
+// assertion this inverted: a PAM certificate used to name the local account
+// the module sent, which made an unauthenticated caller the author of the
+// field the certificate is authorized on. It now names the approver, and the
+// host's principals-map decides which local account that authorizes. See
+// docs/proposals/pam-principal-source.md.
+func TestNewCertTypePolicies_Principals_ShouldUseApproverAccountsForPAM(t *testing.T) {
 	t.Parallel()
 
 	policies := mustCertTypePolicies(t, config.CertificateOptions{})
 
-	got := policies[model.CertificateTypePAM].principals("mnestor", &Identity{Username: "mike.nestor"}, nil)
-	if len(got) != 1 || got[0] != "mnestor" {
-		t.Errorf("got %v, want [\"mnestor\"]", got)
+	identity := &Identity{Username: "mike.nestor", OtherAccounts: []string{"mnestor", "root"}}
+	got := policies[model.CertificateTypePAM].principals(identity, nil)
+
+	want := []string{"mike.nestor", "mnestor", "root"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+// TestNewCertTypePolicies_Principals_ShouldIgnoreTheSelectionForPAM: a PAM
+// request has no approval-time selection, and a caller passing one must not
+// be able to widen or replace what the approver holds.
+func TestNewCertTypePolicies_Principals_ShouldIgnoreTheSelectionForPAM(t *testing.T) {
+	t.Parallel()
+
+	policies := mustCertTypePolicies(t, config.CertificateOptions{})
+
+	identity := &Identity{Username: "mike.nestor"}
+	got := policies[model.CertificateTypePAM].principals(identity, []string{"root"})
+
+	want := []string{"mike.nestor"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
 	}
 }
 

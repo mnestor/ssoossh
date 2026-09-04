@@ -105,7 +105,10 @@ addresses are unverified input and need a policy ceiling.
 Generates an ephemeral keypair, requests a certificate, then verifies:
 1. signed by the expected CA
 2. public key in the certificate matches the key just sent
-3. principals identify the authenticating user
+3. principals authorize the local account being authenticated. The certificate names the
+   approver (their OIDC username plus the other accounts they hold); the local
+   `principals-map` decides whether that is allowed to become this account, per
+   "Principal mapping" above
 4. inside the validity window — tolerance is a module setting (clock skew is the real
    constraint; log observed skew on failure)
 

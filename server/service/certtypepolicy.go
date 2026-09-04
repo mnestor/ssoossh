@@ -50,16 +50,21 @@ type certTypePolicy struct {
 	// CertRequestService.Approve's doc comment.
 	noTouchEligible bool
 	keyIDTemplate   *template.Template
-	// principals computes a certificate's principal list from per-request
-	// context and the approver's selection (for user-type requests). For
-	// user-type requests, returns the selection (or defaults to
-	// []string{identity.Username} if selection is empty). For PAM requests,
-	// ignores both identity and selection, returning the local account being
-	// authenticated (req.Username at call-time). Service certificates ignore
-	// this field and use the selected service account directly. See
-	// docs/internals/design-brief.md for the "Which LDAP attributes become
-	// principals" open question.
-	principals func(pamUsername string, identity *Identity, selected []string) []string
+	// principals computes a certificate's principal list from the approver's
+	// identity and, for user-type requests, their selection. Every type
+	// derives it from the approver and nothing else: the certificate asserts
+	// who the identity provider vouched for, and the host decides which local
+	// accounts that maps to (docs/internals/design-brief.md, "Principal
+	// mapping"). That is why this takes no per-request context. A PAM
+	// request's req.Username used to be returned here verbatim, which made an
+	// unauthenticated caller the author of the one field the certificate is
+	// authorized on. See docs/proposals/pam-principal-source.md.
+	//
+	// User-type requests return the selection, or default to the approver's
+	// username when none was made. PAM requests always return every account
+	// the approver holds. Service certificates ignore this field and use the
+	// selected service account directly.
+	principals func(identity *Identity, selected []string) []string
 	flow       certApprovalFlow
 	// linkage is the per-type check tying a certificate's principals to
 	// accounts the approver actually holds, or nil for a type with no such
@@ -98,7 +103,7 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates, dec
 	// userPrincipals returns the approver's selection for user-type
 	// requests, or defaults to the approver's username if the selection is
 	// empty (preserving existing behavior for direct API callers).
-	userPrincipals := func(_ string, identity *Identity, selected []string) []string {
+	userPrincipals := func(identity *Identity, selected []string) []string {
 		if len(selected) > 0 {
 			return selected
 		}
@@ -108,8 +113,19 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates, dec
 	// servicePrincipals is the placeholder for service certificates — this
 	// field is never consulted for service types (approveServiceEnrollment
 	// uses selection.ServiceAccount directly), but it exists for symmetry.
-	servicePrincipals := func(_ string, identity *Identity, _ []string) []string {
+	servicePrincipals := func(identity *Identity, _ []string) []string {
 		return []string{identity.Username}
+	}
+
+	// pamPrincipals returns every account the approver holds. There is no
+	// selection to honour: the module names one local account, and the host's
+	// own principals-map decides whether these principals authorize it
+	// (pam_ssoossh/checks.go, check 3). Listing them all lets the host make
+	// that decision without the server modelling host-local state it
+	// deliberately does not have (docs/internals/design-brief.md, "Principal
+	// mapping": nothing syncs the mapping down).
+	pamPrincipals := func(identity *Identity, _ []string) []string {
+		return heldAccounts(identity)
 	}
 
 	return map[model.CertificateType]*certTypePolicy{
@@ -142,10 +158,12 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates, dec
 			validDuration: opts.PAM.ValidDuration,
 			extensions:    opts.PAM.Extensions,
 			keyIDTemplate: kt.pam,
-			principals: func(pamUsername string, _ *Identity, _ []string) []string {
-				return []string{pamUsername}
-			},
-			flow: flowSigning,
+			principals:    pamPrincipals,
+			flow:          flowSigning,
+			// No linkage: pamPrincipals returns the approver's own accounts,
+			// so there is no selection to cross-check against what they hold.
+			// checkUserPrincipalLinkage exists for the user type, where the
+			// approver picks the principals.
 		},
 	}, nil
 }

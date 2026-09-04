@@ -519,10 +519,10 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 		return nil, err
 	}
 
-	// Pass empty principals for the preview: user-type requests default to the
-	// approver's username in the preview (since no selection has been made yet),
-	// and PAM/service don't use this field.
-	principals := policy.principals(req.Username, identity, nil)
+	// Pass no selection for the preview: user-type requests default to the
+	// approver's username (none has been selected yet), PAM returns the
+	// approver's held accounts, and service ignores the field.
+	principals := policy.principals(identity, nil)
 	for _, p := range principals {
 		if err := sshcrypto.ValidatePrincipal(p); err != nil {
 			return nil, fmt.Errorf("invalid principal: %w", err)
@@ -589,15 +589,19 @@ func (s *CertRequestService) lookupDecision(ctx context.Context, requestID strin
 //     a member, or Approve fails without publishing/enrolling anything. PAM
 //     is the one type where an unset RequireGroup denies rather than opens
 //     — see CertOptionsPAM.RequireGroup.
-//   - Principals: User-type requests carry the approver's selection (or
-//     default to the approver's username if none was selected), validated
-//     against the set of accounts the approver holds (username plus
-//     OtherAccounts). PAM's principal is the local account named on the
-//     request (req.Username). Service certificates use the selected
-//     ServiceAccount — required, and it must be one of the approver's own
-//     identity.ServiceAccounts (account linkage: approving for an account
-//     you aren't associated with is refused). Empty/absent Principals on a
-//     user request preserves existing behavior for direct API callers.
+//   - Principals always describe the approver, never the requester's own
+//     claim about themselves. User-type requests carry the approver's
+//     selection (or default to their username if none was selected),
+//     validated against the accounts they hold (username plus
+//     OtherAccounts). PAM requests carry those held accounts outright; the
+//     local account named on the request (req.Username) is context for the
+//     approver and the audit record, and the host's principals-map decides
+//     what the certificate authorizes there. Service certificates use the
+//     selected ServiceAccount — required, and it must be one of the
+//     approver's own identity.ServiceAccounts (account linkage: approving
+//     for an account you aren't associated with is refused). Empty/absent
+//     Principals on a user request preserves existing behavior for direct
+//     API callers.
 func (s *CertRequestService) Approve(ctx context.Context, requestID string, identity *Identity, dc DecisionContext, selection ApprovalSelection) error {
 	var req model.CertificateRequest
 	if err := s.db.WithContext(ctx).First(&req, "id = ?", requestID).Error; err != nil {
@@ -1027,23 +1031,41 @@ func checkServiceAccountLinkage(identity *Identity, serviceAccount string) error
 	return nil
 }
 
-// checkUserPrincipalLinkage enforces principal linkage on a user-type
-// approval: every selected principal must be either the approver's own
-// username or one of their OtherAccounts. Rejects any principal the
-// approver doesn't hold, preventing a caller from handing themselves
-// access they haven't been granted.
-func checkUserPrincipalLinkage(identity *Identity, selected []string) error {
-	// Build the set of principals the approver holds: their username plus
-	// any other accounts.
-	allowed := make(map[string]bool)
-	allowed[identity.Username] = true
+// heldAccounts returns every account name identity holds: their username
+// first, then their OtherAccounts, with repeats dropped and order preserved
+// so a certificate's principal list is stable across approvals.
+//
+// One definition, two callers with opposite jobs: pamPrincipals
+// (certtypepolicy.go) turns it into the principals a PAM certificate
+// carries, and checkUserPrincipalLinkage below rejects a user-type
+// selection that reaches outside it. They must agree on what "holds" means.
+//
+// An empty identity.Username is kept rather than skipped. It cannot produce
+// a usable principal, and leaving it in means ValidatePrincipal rejects the
+// approval by name instead of the list silently shrinking. An empty
+// principal list would be far worse than a bad one: a certificate with no
+// ValidPrincipals is valid for every user, not for none (see the wildcard
+// note in approveForSigning).
+func heldAccounts(identity *Identity) []string {
+	accounts := make([]string, 0, 1+len(identity.OtherAccounts))
+	accounts = append(accounts, identity.Username)
 	for _, account := range identity.OtherAccounts {
-		allowed[account] = true
+		if !slices.Contains(accounts, account) {
+			accounts = append(accounts, account)
+		}
 	}
+	return accounts
+}
 
-	// Every selected principal must be in the allowed set.
+// checkUserPrincipalLinkage enforces principal linkage on a user-type
+// approval: every selected principal must be one the approver holds (see
+// heldAccounts). Rejects any principal the approver doesn't hold,
+// preventing a caller from handing themselves access they haven't been
+// granted.
+func checkUserPrincipalLinkage(identity *Identity, selected []string) error {
+	allowed := heldAccounts(identity)
 	for _, principal := range selected {
-		if !allowed[principal] {
+		if !slices.Contains(allowed, principal) {
 			return &errorresponses.ForbiddenError{Reason: fmt.Sprintf("approver does not hold principal %q", principal)}
 		}
 	}
@@ -1185,11 +1207,24 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 
 	s.auditLog(auditEvent)
 
-	// Principals are derived per-type: user uses the approver's selection
-	// (or defaults to their username), PAM uses the local account being
-	// authenticated. Validate every one before it can be persisted or
+	// Principals are derived per-type, always from the approver: user uses
+	// their selection (or defaults to their username), PAM uses every
+	// account they hold. Validate every one before it can be persisted or
 	// signed into a certificate; the signer re-checks as a backstop.
-	principals := policy.principals(req.Username, identity, selectedPrincipals)
+	principals := policy.principals(identity, selectedPrincipals)
+	// An empty principal list is a wildcard, not an empty grant: a
+	// certificate with no ValidPrincipals is valid for EVERY user. That is
+	// the format's documented behaviour ("by default, generated certificates
+	// are valid for all users or hosts", ssh-keygen(1), CERTIFICATES) and
+	// x/crypto implements it by skipping the principal check when the list
+	// is empty (ssh.CertChecker.CheckCert). So an empty list has to fail the
+	// approval, and the loop below cannot do it: it has nothing to iterate.
+	//
+	// pam_ssoossh's own check 3 would reject such a certificate, but user
+	// certificates from this same path go to a real sshd, which will not.
+	if len(principals) == 0 {
+		return fmt.Errorf("refusing to sign a certificate with no principals for %s request %q", req.Type, req.ID)
+	}
 	for _, p := range principals {
 		if err := sshcrypto.ValidatePrincipal(p); err != nil {
 			return fmt.Errorf("invalid principal: %w", err)

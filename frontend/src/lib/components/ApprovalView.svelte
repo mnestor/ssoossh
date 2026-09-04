@@ -166,6 +166,20 @@
 					<span class="font-sans text-ink-muted">none</span>
 				{/if}
 			</DetailRow>
+			{#if detail.target_account}
+				<!-- PAM only. The account the sudo is being attempted as, reported
+				     by the client rather than proven, and deliberately not one of
+				     the principals above: the certificate names the approver, and
+				     the host's principals-map decides whether that authorizes this
+				     account. Shown because without it the approver cannot see what
+				     they are actually authorizing. -->
+				<DetailRow label="Attempting to act as">
+					<span class="flex flex-wrap items-center gap-1.5">
+						<MonoChip>{detail.target_account}</MonoChip>
+						<span class="font-sans text-ink-muted">reported by the client</span>
+					</span>
+				</DetailRow>
+			{/if}
 			<DetailRow label="Valid for">{formatDuration(detail.valid_seconds)}</DetailRow>
 			<DetailRow label="Requested from">
 				<MonoChip>{detail.source_ip}</MonoChip>

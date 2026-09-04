@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"testing"
 	"time"
 
@@ -195,12 +196,16 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	}
 }
 
-// TestPipeline_EndToEnd_PAM is TestPipeline_EndToEnd's PAM counterpart, and
-// the assertion the PAM server design called out by name: the
+// TestPipeline_EndToEnd_PAM is TestPipeline_EndToEnd's PAM counterpart. The
 // approver's OIDC username ("mike.nestor") and the local account the PAM
 // module is authenticating ("mnestor") are deliberately different, so a
 // certificate that ends up naming the wrong one is caught here rather than
-// only by the narrower resolvePrincipals unit test.
+// only by the narrower certtypepolicy unit tests.
+//
+// This assertion is inverted from what it was: the certificate must name the
+// approver and the accounts they hold, and must NOT be assembled from the
+// local account the request carried. See
+// docs/proposals/pam-principal-source.md.
 func TestPipeline_EndToEnd_PAM(t *testing.T) {
 	t.Parallel()
 
@@ -287,11 +292,14 @@ func TestPipeline_EndToEnd_PAM(t *testing.T) {
 
 	seedUser(t, svc.db, "sub-1")
 	// The approver's OIDC username deliberately differs from the local
-	// account named on the request.
+	// account named on the request, and they hold that account through
+	// OtherAccounts, which is what a real deployment's LDAP enrichment or
+	// OIDC claim provides.
 	if err := svc.Approve(context.Background(), requestID, &Identity{
-		Username: "mike.nestor",
-		Subject:  "sub-1",
-		Groups:   []string{"sudoers"},
+		Username:      "mike.nestor",
+		OtherAccounts: []string{"mnestor"},
+		Subject:       "sub-1",
+		Groups:        []string{"sudoers"},
 	}, DecisionContext{}, ApprovalSelection{}); err != nil {
 		t.Fatalf("unexpected error approving request: %v", err)
 	}
@@ -321,8 +329,9 @@ func TestPipeline_EndToEnd_PAM(t *testing.T) {
 	if cert.CertType != ssh.UserCert {
 		t.Errorf("got CertType %d, want %d (ssh.UserCert)", cert.CertType, ssh.UserCert)
 	}
-	if len(cert.ValidPrincipals) != 1 || cert.ValidPrincipals[0] != "mnestor" {
-		t.Errorf(`got ValidPrincipals %v, want ["mnestor"] (the local account, not the approver's OIDC username)`, cert.ValidPrincipals)
+	wantPrincipals := []string{"mike.nestor", "mnestor"}
+	if !slices.Equal(cert.ValidPrincipals, wantPrincipals) {
+		t.Errorf(`got ValidPrincipals %v, want %v (the approver and the accounts they hold, not the local account the request named)`, cert.ValidPrincipals, wantPrincipals)
 	}
 	if len(cert.Extensions) != 0 {
 		t.Errorf("expected no extensions on a PAM certificate, got %v", cert.Extensions)
@@ -334,7 +343,12 @@ func TestPipeline_EndToEnd_PAM(t *testing.T) {
 			return string(auth.Marshal()) == string(caPub.Marshal())
 		},
 	}
-	if err := checker.CheckCert("mnestor", cert); err != nil {
-		t.Errorf("delivered certificate did not validate: %v", err)
+	// Both names validate: the host's principals-map is what decides which
+	// of them may assume a given local account (pam_ssoossh/checks.go,
+	// check 3), and this certificate has to carry them for it to.
+	for _, principal := range wantPrincipals {
+		if err := checker.CheckCert(principal, cert); err != nil {
+			t.Errorf("delivered certificate did not validate for %q: %v", principal, err)
+		}
 	}
 }

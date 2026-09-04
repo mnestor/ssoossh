@@ -127,7 +127,14 @@ describe('ApprovalView', () => {
 	});
 
 	describe('when the request is a PAM certificate', () => {
-		const pam = detail({ type: 'pam', principals: ['mnestor'] });
+		// The principals name the approver; target_account names the local
+		// account the sudo is being attempted as. They are deliberately
+		// different values here so a test cannot pass by coincidence.
+		const pam = detail({
+			type: 'pam',
+			principals: ['mike.nestor', 'mnestor'],
+			target_account: 'root'
+		});
 
 		it('should not describe it as an SSH certificate request', () => {
 			mount({ detail: pam });
@@ -137,6 +144,26 @@ describe('ApprovalView', () => {
 		it('should explain that this authorizes a local operation, not an SSH session', () => {
 			mount({ detail: pam });
 			expect(screen.getByText(/not an interactive SSH session/)).toBeInTheDocument();
+		});
+
+		it('should show the local account the request is attempting to act as', () => {
+			mount({ detail: pam });
+			expect(screen.getByText('root')).toBeInTheDocument();
+		});
+
+		it('should mark the local account as reported by the client, not proven', () => {
+			mount({ detail: pam });
+			expect(screen.getByText('reported by the client')).toBeInTheDocument();
+		});
+
+		it('should still show the approver accounts as the principals', () => {
+			mount({ detail: pam });
+			expect(screen.getByText('mike.nestor')).toBeInTheDocument();
+		});
+
+		it('should omit the local account row when the request carries none', () => {
+			mount({ detail: detail({ type: 'pam', principals: ['alice'] }) });
+			expect(screen.queryByText('Attempting to act as')).not.toBeInTheDocument();
 		});
 	});
 

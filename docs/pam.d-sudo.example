@@ -31,18 +31,31 @@
 #                            no restart needed. Missing or empty fails every
 #                            login with PAM_NO_MODULE_DATA.
 #
-#   principals-map=PATH     (optional) YAML file mapping a local account
-#                            name to the certificate principals allowed to
-#                            assume it, e.g.:
-#                              alice:
-#                                - alice
-#                                - admin
+#   principals-map=PATH     YAML file mapping a local account name to the
+#                            certificate principals allowed to assume it,
+#                            e.g.:
+#                              mnestor:
+#                                - mike.nestor
+#                                - mnestor
+#                              root:
+#                                - mike.nestor
+#                            Technically optional, needed in practice. An
+#                            issued certificate carries the APPROVER's OIDC
+#                            username and the other accounts they hold; it
+#                            never carries the local account the module is
+#                            authenticating. So unless the approver's OIDC
+#                            username happens to equal that local account,
+#                            this file is what authorizes the two to match.
 #                            Omitted, or a path that fails to load (missing
 #                            file, malformed YAML): the certificate must
 #                            instead carry the exact local account name as
 #                            one of its principals. A configured path that
 #                            fails to load is logged at warning level on
 #                            every attempt.
+#                            Note: once a map is configured it is
+#                            authoritative for every account. An account
+#                            with no entry is denied, so list every account
+#                            that should be able to authenticate here.
 #
 #   skew-tolerance=DURATION (default 2s) clock-skew allowance applied
 #                            symmetrically to both ends of the certificate's
@@ -81,6 +94,9 @@
 #                            through syslog regardless of this setting.
 #
 # auth  sufficient  pam_ssoossh.so  server=https://ssoosshd.example.com  trusted-ca-file=/etc/ssoossh/ca.pub
+#
+# The line above works only where each user's OIDC username is identical to
+# the local account they sudo as. Otherwise add principals-map, below.
 #
 # With the optional settings also set:
 # auth  sufficient  pam_ssoossh.so  server=https://ssoosshd.example.com  trusted-ca-file=/etc/ssoossh/ca.pub  principals-map=/etc/ssoossh/principals.yaml  skew-tolerance=5s  timeout=90s

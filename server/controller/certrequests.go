@@ -237,9 +237,11 @@ func (cr *certRequestController) createServiceEnrollRequestHandler(g *gin.Contex
 // is called.
 //
 // @Summary     Create a PAM certificate request
-// @Description Unauthenticated. Username is the local account pam_ssoossh is authenticating —
-// @Description that, not the approver's identity, becomes the certificate's principal. Set
-// @Description `cert_options.pam.require_group` to restrict who may approve one.
+// @Description Unauthenticated. Username is the local account pam_ssoossh is authenticating,
+// @Description reported by the caller and used for display and audit only. The certificate's
+// @Description principals are the approver's own accounts; the host's principals-map decides
+// @Description whether they authorize that local account. Set `cert_options.pam.require` to
+// @Description restrict who may approve one.
 // @Tags        client
 // @Accept      json
 // @Produce     json

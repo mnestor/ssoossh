@@ -80,6 +80,8 @@ part has.
 | [service-retrieval-anomaly-policy.md](proposals/service-retrieval-anomaly-policy.md) | Alerting and locking an enrollment code redeemed from too many source networks |
 | [config-coordination.md](proposals/config-coordination.md) | Detecting and reporting configuration divergence between instances |
 | [gui-client-approval-flow.md](proposals/gui-client-approval-flow.md) | Approving for a GUI SSH client, which has no terminal to print the URL to |
+| [pam-principal-source.md](proposals/pam-principal-source.md) | Defect: a PAM certificate carries the local account name the requester sent, not the approver. Prerequisite for console login |
+| [console-login-pam.md](proposals/console-login-pam.md) | Console login behind the identity provider: a typed code or terminal QR instead of a URL nobody can copy |
 | [certificate-lifetime-policy-rework.md](proposals/certificate-lifetime-policy-rework.md) | Untangling source-address pinning from the lifetime rule, and runtime-editable policy. Partly overtaken: see the doc |
 | [ldap-gssapi-bind.md](proposals/ldap-gssapi-bind.md) | Binding to the directory with a Kerberos keytab instead of a static password |
 | [enhancements.md](proposals/enhancements.md) | Small feature modifications logged for later, each too small for its own doc |

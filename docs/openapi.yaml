@@ -1169,6 +1169,16 @@ components:
           type: string
         status:
           $ref: '#/components/schemas/model.CertificateRequestStatus'
+        target_account:
+          description: |-
+            TargetAccount is the local account a PAM request is authenticating,
+            e.g. who `sudo` is being run as. Empty for every other type. It is
+            reported by an unauthenticated client and never becomes a principal
+            (see model.CertificateRequest.Username), so the UI must present it as
+            what is being attempted rather than as what is being granted. Without
+            it the approver cannot see which account the sudo is for, since the
+            principals now describe the approver instead.
+          type: string
         type:
           $ref: '#/components/schemas/model.CertificateType'
         valid_seconds:
@@ -2075,9 +2085,11 @@ paths:
   /api/certs/pam:
     post:
       description: |-
-        Unauthenticated. Username is the local account pam_ssoossh is authenticating —
-        that, not the approver's identity, becomes the certificate's principal. Set
-        `cert_options.pam.require_group` to restrict who may approve one.
+        Unauthenticated. Username is the local account pam_ssoossh is authenticating,
+        reported by the caller and used for display and audit only. The certificate's
+        principals are the approver's own accounts; the host's principals-map decides
+        whether they authorize that local account. Set `cert_options.pam.require` to
+        restrict who may approve one.
       requestBody:
         content:
           application/json:
