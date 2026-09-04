@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 
+import { formatDateTime } from '$lib/format';
 import AuditTimeline from './AuditTimeline.svelte';
 import type { AuditEvent } from '$lib/api/types';
 
@@ -81,10 +82,20 @@ describe('AuditTimeline', () => {
 		render(AuditTimeline, {
 			props: { events: [event({ detail: { serial: 42, principals: ['alice', 'a.smith'] } })] }
 		});
-		expect(screen.getByText('serial:')).toBeInTheDocument();
+		// The name is a column of its own, so it carries no trailing colon.
+		expect(screen.getByText('serial')).toBeInTheDocument();
 		expect(screen.getByText('42')).toBeInTheDocument();
 		// A list detail is joined rather than rendered as "[object Object]".
 		expect(screen.getByText('alice, a.smith')).toBeInTheDocument();
+	});
+
+	it('should render the timestamp with its timezone named', () => {
+		render(AuditTimeline, {
+			props: { events: [event({ created_at: '2026-09-04T18:24:27Z' })] }
+		});
+
+		const stamp = screen.getByText(formatDateTime('2026-09-04T18:24:27Z'));
+		expect(stamp).toHaveAttribute('datetime', '2026-09-04T18:24:27Z');
 	});
 
 	it('should render nothing rather than crashing on an unexpected shape', () => {

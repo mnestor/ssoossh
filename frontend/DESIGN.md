@@ -219,8 +219,59 @@ discrete.
 Certificate serials cross the wire as decimal strings, never JSON numbers. They are 63 bits of randomness, so all but a vanishing fraction exceed `Number.MAX_SAFE_INTEGER` and a browser parsing one as a number rounds it silently: `3260700569889958163` reads back as `3260700569889958400`, which matches no certificate and cannot be searched for. The Go side carries both `json:",string"` and `tstype:"string"` — the first decides what is written, the second what tygo tells the browser to expect.
 
 - **ConsentModal**: Blocking login consent notice, shown above the login form until accepted.
+- **AuditTimeline**: The audit feed as a list of sentences — who did what, to whom. Each row puts the sentence on the line and pins the action name and the timestamp together as one muted group to its right, so a long sentence pushes the pair onto its own line intact rather than stranding the time on whichever line it happened to reach. Details render as an aligned two-column field list, so a long request id wraps under the value column rather than under whatever pair preceded it. Unknown actions fall back to the raw namespaced name: the taxonomy grows without a wire change, and a client that rendered only the actions it knew would silently drop the new ones. Timestamps go through `formatDateTime`, zone named, for the reason every audit timestamp does.
 - **Pager**: Offset pagination for the paged admin and auditor lists. The server sends the window it served (`webtypes.PageMeta`) and the pager asks for another one by offset, so neither side re-derives page arithmetic per list. Renders nothing when one page holds everything, keeps the first and last page reachable behind an ellipsis on long runs, and marks the current page with `aria-current`. Built from plain buttons rather than `Button`, which carries neither `aria-current` nor a per-page accessible name.
 - **SearchInput**: The debounced search box those lists are filtered with. Reports the trimmed term once the typing settles, and only when it settled on something new, so a stray space does not re-run a query. Enter reports immediately; the clear button reports an empty term without waiting out the debounce. `value` seeds the box and is not watched afterwards — a page that needs to reset the term remounts it with a key.
+
+### The admin area
+
+`src/routes/admin/+layout.svelte` gates the whole area on auditor access and
+carries the navigation between its five sections. The gate is display-only —
+the server re-checks every read — and a signed-in identity without auditor
+access is told so rather than bounced to a login it has already satisfied.
+
+Navigation is one horizontal tab row at the top of the column, above each
+section's own `PageHeading`. It scrolls sideways on a narrow viewport rather
+than wrapping, so the sections stay one line and an admin page starts where
+every other page starts. A section reads as current for its own path and for
+anything beneath it, so a detail page (`/admin/users/<id>`) keeps its section
+marked; the match is on a path boundary, so `/admin/certificates-archive`
+would not light up `Certificates`.
+
+This layout is the one place in the app that imposes a width — `1100px`,
+shared by the tab row and everything under it. It is the admin area's
+exception to a screen owning its own width: the row has to line up with the
+page beneath it, and these pages range from a 680px card list to a
+full-width table.
+
+The links are plain `href`s rather than `resolve()`. The row names every
+admin section, but the sections land on separate feature branches, and
+`resolve()` is typed against the routes present in the tree it is compiled
+in — using it would force a placeholder page for every absent route, and a
+placeholder sharing a path with another branch's real page is a merge waiting
+to resolve the wrong way.
+
+### The effective configuration screen
+
+`src/routes/admin/config/+page.svelte` renders every configuration key in
+effect on the server, grouped into the sections of the config file, filtered
+by key or by value.
+
+It names no key of its own. The server builds the answer by reflecting over
+its own config struct (`server/config/effective.go`), so the page renders
+whatever arrives: a screen that lists fields by hand is wrong the moment a
+key is added and nobody remembers to add it here, and an operator reading it
+cannot tell an unset key from an unlisted one.
+
+Two rules make the volume readable. Keys sitting at their defaults are hidden
+until "Show unset keys" is checked, because a wall of them buries the handful
+someone actually set. A typed filter overrides that entirely — asking for a
+key by name is asking whether it is set, and answering "no match" to a key
+that exists would be a lie.
+
+Secrets are redacted at their declaration in Go (`secret:"true"`), never by
+this page. A redacted key still reports whether a value is set: "is the
+client secret configured" is an operational question that discloses nothing.
 
 ### The admin certificate issuance list
 
@@ -320,8 +371,23 @@ A tagged build shows `v0.1.0` linked to its GitHub release. An untagged one has 
 **Header Branding** (`src/routes/+layout.svelte`):
 
 - Logo image (if `logo_url` is set) appears before the "ssoossh" wordmark.
-- Org name (if `org_name` is set) appears as a small tag to the right of "ssoossh".
+- Org name (if `org_name` is set) appears as a small tag to the right of "ssoossh", capped at `8rem` and truncated. A deployment that set a name wants it at every width, but an unbounded one would push the controls off a phone's row.
 - Both elements are absent by default, keeping the header minimal when not deployed with branding.
+
+**Header layout** (`src/routes/+layout.svelte`):
+
+The row has two edges and one `ml-auto`. The leading edge carries the mobile
+navigation trigger and the brand; the trailing edge carries the theme toggle
+and the identity. The trigger sits ahead of the brand because that is where a
+navigation control is looked for, and because it leaves the trailing edge to
+the identity. It previously carried an `ml-auto` of its own, which split the
+free space with the trailing group and left it floating mid-header.
+
+Below `sm` the section links collapse into the panel that trigger opens, and
+`UserMenu` collapses its address to a person icon — the address is the widest
+thing in the header and the only one that is not a control, so on a phone it
+crowded out the ones that are. Its accessible name stays the address at every
+width, so the button never becomes an unlabelled icon.
 
 **Login Consent** (`src/routes/login/+page.svelte`):
 

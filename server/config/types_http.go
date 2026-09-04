@@ -80,7 +80,7 @@ type HTTPSettings struct {
 	// table, so sessions survive a restart and instances sharing a database
 	// share the key. Configure an explicit value to key it from outside the
 	// database.
-	CookieKey string `mapstructure:"cookie_key" default:""`
+	CookieKey string `mapstructure:"cookie_key" default:"" secret:"true"`
 
 	// CookieSecure marks the session cookie Secure, so browsers only send it
 	// over HTTPS. Unset derives it from whether the deployment is HTTPS at

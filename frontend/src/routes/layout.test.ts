@@ -95,6 +95,21 @@ describe('root layout', () => {
 		expect(screen.queryByText('Sign in')).not.toBeInTheDocument();
 	});
 
+	// The button is the only way to the section links on a phone, so what it
+	// will do has to be legible from its name rather than from its icon.
+	it('should say whether the mobile menu button opens or closes the menu', async () => {
+		stubAppFetch(alice);
+
+		render(Layout, { children });
+
+		const trigger = await screen.findByRole('button', { name: 'Open navigation menu' });
+		expect(trigger).toHaveAttribute('aria-controls', 'mobile-nav');
+
+		await userEvent.click(trigger);
+
+		expect(screen.getByRole('button', { name: 'Close navigation menu' })).toBeInTheDocument();
+	});
+
 	it('should offer sign-in to a signed-out visitor', async () => {
 		stubAppFetch(null);
 

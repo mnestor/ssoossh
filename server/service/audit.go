@@ -86,7 +86,13 @@ const (
 	// parameters.
 	AuditAdminUserViewed       AuditAction = "admin.user_viewed"
 	AuditAdminEnrollmentViewed AuditAction = "admin.enrollment_viewed"
-	AuditAdminConfigViewed     AuditAction = "admin.config_viewed"
+	// AuditAdminConfigViewed is no longer emitted. The effective-config
+	// screen is read-only and gets reloaded constantly while an operator
+	// works, so the event arrived several times a minute and buried the
+	// decisions this log exists to record. The constant stays so events
+	// recorded before that still resolve to a name rather than a raw
+	// string in every reader of the log.
+	AuditAdminConfigViewed AuditAction = "admin.config_viewed"
 	// AuditAdminAuditViewed is one event per visit to the audit feed, not
 	// one per event displayed — which settles the recursion question.
 	AuditAdminAuditViewed AuditAction = "admin.audit_viewed"

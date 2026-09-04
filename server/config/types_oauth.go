@@ -7,7 +7,7 @@ type OAuthConfig struct {
 	ClientID string `mapstructure:"client_id" default:""`
 
 	// ClientSecret is the OAuth2 client secret.
-	ClientSecret string `mapstructure:"client_secret" default:""`
+	ClientSecret string `mapstructure:"client_secret" default:"" secret:"true"`
 
 	// ProviderURL is the OIDC provider's issuer URL, used for discovery. A
 	// trailing /.well-known/openid-configuration is stripped automatically.

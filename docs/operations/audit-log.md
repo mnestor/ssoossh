@@ -90,7 +90,8 @@ closed.
 | `enrollment.reassigned` | **No longer emitted.** Group ownership removed enrollment transfer (see [enrollment-group-ownership.md](../proposals/enrollment-group-ownership.md)); the action stays defined so events recorded before that still read back with a name. |
 | `user.disabled`, `user.enabled` | |
 | `user.auto_disabled` | A system action, so it carries no actor. |
-| `admin.user_viewed`, `admin.enrollment_viewed`, `admin.config_viewed`, `admin.audit_viewed` | |
+| `admin.user_viewed`, `admin.enrollment_viewed`, `admin.audit_viewed` | |
+| `admin.config_viewed` | **No longer emitted.** The effective-config screen is read-only and is reloaded constantly while an operator works, so the event arrived several times a minute and buried the decisions this log exists to record. The action stays defined so events recorded before that still read back with a name. |
 
 There is no logout event: sessions mostly end by expiry, so an explicit
 logout carries too little signal to keep.

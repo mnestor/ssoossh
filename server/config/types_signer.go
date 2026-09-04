@@ -19,7 +19,7 @@ type HSMConfig struct {
 	// TokenLabel selects the token (softhsm2-util --init-token --label ...).
 	TokenLabel string `mapstructure:"token_label"`
 	// PIN is the user PIN. Mutually exclusive with PINFile.
-	PIN string `mapstructure:"pin"`
+	PIN string `mapstructure:"pin" secret:"true"`
 	// PINFile is a path whose trimmed contents are the user PIN. Preferred
 	// over inline PIN so the config file can stay world-readable-ish.
 	PINFile string `mapstructure:"pin_file"`
@@ -90,7 +90,7 @@ type SignerConfig struct {
 	//	ssh_key: |
 	//	  -----BEGIN OPENSSH PRIVATE KEY-----
 	//	  -----END OPENSSH PRIVATE KEY-----
-	SSHKey string `mapstructure:"ssh_key"`
+	SSHKey string `mapstructure:"ssh_key" secret:"true"`
 
 	// HSM optionally sources the CA key from a PKCS#11 token instead of
 	// ssh_key. Exactly one of the two may be set at the config level (API

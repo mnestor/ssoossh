@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDateTime } from '$lib/format';
 	import type { AuditEvent } from '$lib/api/types';
 
 	interface Props {
@@ -41,6 +42,8 @@
 		'user.auto_disabled': 'was disabled automatically',
 		'admin.user_viewed': 'viewed a user record',
 		'admin.enrollment_viewed': 'viewed an enrollment',
+		// No longer emitted, kept so events recorded before that still read
+		// as a sentence rather than as a raw action name.
 		'admin.config_viewed': 'viewed the effective configuration',
 		'admin.audit_viewed': 'viewed the audit log'
 	};
@@ -84,18 +87,28 @@
 	<ol class="space-y-3" data-testid="audit-timeline">
 		{#each rows as event (event.id)}
 			<li class="border-l-2 border-border-subtle pl-3" data-testid="audit-event">
-				<div class="flex flex-wrap items-baseline gap-x-2">
-					<span class="text-sm text-ink">
+				<!-- The sentence takes the line; the action name and the time
+				     travel together as one muted group pinned to the right of
+				     it. They used to be three siblings in one wrapping row
+				     with the time pushed by ml-auto, so whether the time
+				     landed beside the sentence or alone on the next line came
+				     down to how long the sentence was — the list read as
+				     ragged rather than as a column. Wrapping the pair keeps
+				     them adjacent at any width: side by side when the row
+				     fits, on their own line under the sentence when it does
+				     not. -->
+				<div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+					<p class="text-sm text-ink">
 						<strong>{who(event)}</strong>
 						{describe(event)}
 						{#if onWhom(event)}
 							<strong>{onWhom(event)}</strong>
 						{/if}
-					</span>
-					<span class="font-mono text-xs text-ink-muted">{event.action}</span>
-					<time class="ml-auto text-xs text-ink-muted" datetime={event.created_at}>
-						{new Date(event.created_at).toLocaleString()}
-					</time>
+					</p>
+					<div class="flex items-baseline gap-2 font-mono text-[11px] text-ink-muted">
+						<span>{event.action}</span>
+						<time datetime={event.created_at}>{formatDateTime(event.created_at)}</time>
+					</div>
 				</div>
 
 				{#if event.reason}
@@ -105,13 +118,17 @@
 					</p>
 				{/if}
 
+				<!-- A grid rather than a wrapping run of pairs: every name
+				     lines up in its own column, so a long value wraps under
+				     the value column instead of under whatever pair happened
+				     to precede it, and the block reads as a field list. -->
 				{#if details(event).length > 0}
-					<dl class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
+					<dl
+						class="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 font-mono text-[11px] text-ink-muted"
+					>
 						{#each details(event) as [key, value] (key)}
-							<div class="flex gap-1">
-								<dt class="font-mono">{key}:</dt>
-								<dd class="font-mono break-all">{value}</dd>
-							</div>
+							<dt>{key}</dt>
+							<dd class="break-all text-ink">{value}</dd>
 						{/each}
 					</dl>
 				{/if}

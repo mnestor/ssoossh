@@ -609,68 +609,55 @@ export interface BrandingResponse {
 	login_notice?: string;
 }
 /**
+ * ConfigSetting is one leaf of the server's effective configuration.
+ */
+export interface ConfigSetting {
+	/**
+	 * Key is the dotted configuration key, e.g. "http.tls.min_version" —
+	 * the path an operator would write in their own config file, so a
+	 * value on this screen can be traced back to the line that set it.
+	 */
+	key: string;
+	/**
+	 * Value is what is in effect, rendered as text. Empty means unset: an
+	 * empty string, a nil pointer, or an empty list or map.
+	 */
+	value: string;
+	/**
+	 * Secret marks a key whose value is never sent. Value is the redaction
+	 * placeholder when a secret is configured and empty when none is, so
+	 * an operator can still tell whether one is set.
+	 */
+	secret: boolean;
+}
+/**
+ * ConfigSection groups the settings under one top-level configuration key.
+ */
+export interface ConfigSection {
+	/**
+	 * Name is the top-level key the section covers ("http", "cert_options"),
+	 * or "server" for the switches that sit at the root of the file.
+	 */
+	name: string;
+	/**
+	 * Settings are the section's leaves, in the order they are declared.
+	 */
+	settings: ConfigSetting[];
+}
+/**
  * EffectiveConfigResponse is the auditor view of the server's effective
- * configuration, with sensitive fields redacted. It shows what policy is
- * actually in effect, useful for debugging and audit trails. The CA private
- * key, client secret, cookie signing key, and database connection string
- * (which may contain credentials) are redacted; other fields are included to
- * give a complete operational picture.
+ * configuration, with secrets redacted. It shows what policy is actually in
+ * effect, useful for debugging and audit trails.
+ * Every key is included, because the view is built by reflecting over the
+ * configuration struct rather than by listing fields: a screen whose job is
+ * to state what is in effect is wrong the moment a key is added and nobody
+ * remembers to add it here, and an operator reading it cannot tell an unset
+ * key from an unlisted one. The CA private key, HSM PIN, client secret,
+ * cookie signing key, database connection string, LDAP bind password, and
+ * SMTP password are redacted at their declarations (`secret:"true"`).
  */
 export interface EffectiveConfigResponse {
-	/**
-	 * Server connection settings. PublicURL is the origin browsers reach
-	 * the deployment at; its scheme says whether it is HTTPS.
-	 */
-	public_url: string;
-	port: number /* int */;
-	/**
-	 * Database
-	 */
-	db_provider: string;
-	/**
-	 * OAuth/OIDC
-	 */
-	provider_url: string;
-	/**
-	 * Admin authorization
-	 */
-	admin_require_group?: string;
-	admin_soc_group?: string;
-	admin_auditor_group?: string;
-	/**
-	 * Admin user management
-	 */
-	admin_contact_email?: string;
-	admin_disabled_message?: string;
-	/**
-	 * Logging configuration
-	 */
-	logging_level: string;
-	/**
-	 * Certificate options
-	 */
-	cert_user_valid_duration: string;
-	cert_user_extensions: string[];
-	/**
-	 * CertUserRequire renders cert_options.user.require in the canonical
-	 * condition form (e.g. `all_of(group "SSH Users", claim loc >= 20)`),
-	 * so an operator sees the gate that is actually applied rather than a
-	 * group name that no longer describes it. Empty means no gate.
-	 */
-	cert_user_require?: string;
-	cert_service_valid_duration: string;
-	cert_service_extensions: string[];
-	cert_service_require?: string;
-	cert_pam_valid_duration: string;
-	cert_pam_require?: string;
-	/**
-	 * CertClientTimeout is the configured budget; the two below are what it
-	 * derives to. Both are surfaced because an operator debugging "why did
-	 * my request expire" needs the effective numbers, not just the input.
-	 */
-	cert_client_timeout: string;
-	cert_approval_ttl: string;
-	cert_signing_grace: string;
+	sections: ConfigSection[];
 }
 /**
  * VersionResponse is the build identity of the running server, rendered in

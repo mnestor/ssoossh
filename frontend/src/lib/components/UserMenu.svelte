@@ -8,6 +8,12 @@
 	// action that changes it. A menu rather than a bare Sign out button so
 	// the header states the identity first — on a tool that issues
 	// credentials, "as whom" matters more than "get me out".
+	//
+	// The identity is spelled out from `sm` up and collapses to a person
+	// icon below it. An email address is the widest thing in the header and
+	// the only one that is not a control, so on a phone it crowded out the
+	// things that are. The accessible name stays the address at every width,
+	// so the button never becomes an unlabelled icon.
 	interface Props {
 		/** The signed-in identity, as shown. */
 		label: string;
@@ -62,9 +68,11 @@
 		onclick={() => (open = !open)}
 		aria-expanded={open}
 		aria-haspopup="menu"
+		aria-label={label}
 		class="flex items-center gap-1.5 text-[13px] text-ink-muted transition hover:text-ink"
 	>
-		<span class="max-w-[12rem] truncate">{label}</span>
+		<span class="sm:hidden"><Icon name="user" size="sm" /></span>
+		<span class="hidden max-w-[12rem] truncate sm:inline">{label}</span>
 		<Icon name="chevron-down" size="sm" />
 	</button>
 

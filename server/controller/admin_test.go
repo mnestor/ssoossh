@@ -19,6 +19,7 @@ import (
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/server/webtypes"
 )
 
 // newTestDB creates an in-memory SQLite database with migrations applied.
@@ -1375,22 +1376,96 @@ func TestEffectiveConfigHandler_ShouldReturnConfigData(t *testing.T) {
 	}
 
 	var resp struct {
-		Data map[string]any `json:"data"`
+		Data webtypes.EffectiveConfigResponse `json:"data"`
 	}
 
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal response: %v", err)
 	}
 
-	// Verify response has expected fields (structure is correct)
-	if resp.Data == nil {
-		t.Fatal("response data should not be nil")
+	// The response is grouped by top-level configuration block, and the
+	// values are what the test config actually set.
+	settings := map[string]webtypes.ConfigSetting{}
+	sections := map[string]bool{}
+	for _, section := range resp.Data.Sections {
+		sections[section.Name] = true
+		for _, setting := range section.Settings {
+			settings[setting.Key] = setting
+		}
 	}
-	if _, ok := resp.Data["public_url"]; !ok {
-		t.Error("response should contain public_url field")
+
+	for _, name := range []string{"server", "http", "db", "authentication", "admin", "cert_options", "mail"} {
+		if !sections[name] {
+			t.Errorf("response is missing the %q section", name)
+		}
 	}
-	if _, ok := resp.Data["port"]; !ok {
-		t.Error("response should contain port field")
+	if got := settings["http.public_url"].Value; got != "http://test-server" {
+		t.Errorf("http.public_url = %q, want %q", got, "http://test-server")
+	}
+	if got := settings["http.port"].Value; got != "8080" {
+		t.Errorf("http.port = %q, want %q", got, "8080")
+	}
+	if got := settings["admin.auditor_group"].Value; got != "ssh-auditors" {
+		t.Errorf("admin.auditor_group = %q, want %q", got, "ssh-auditors")
+	}
+}
+
+// TestEffectiveConfigHandler_ShouldRedactSecretsButNotWhetherTheyAreSet
+// pins the one thing this endpoint must never get wrong.
+func TestEffectiveConfigHandler_ShouldRedactSecretsButNotWhetherTheyAreSet(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	cfg := newTestConfig(t)
+	cfg.AuthConfig.ClientSecret = "s3cret"
+	cfg.DB.Connection = "postgres://ssoossh:hunter2@db.example.com/ssoossh"
+
+	r := gin.New()
+	r.Use(mockSessionAuthMiddleware(true, "user-123"))
+	r.Use(mockAuditorAuthMiddleware(true))
+
+	NewAdminController(
+		&r.RouterGroup,
+		cfg,
+		mockDB(),
+		mockSessionAuthMiddleware(true, "user-123"),
+		mockAdminAuthMiddleware(true),
+		mockSOCAuthMiddleware(true),
+		mockAuditorAuthMiddleware(true),
+		mockCSRFMiddleware(),
+		&stubEnrollmentProvider{},
+		nil, // auditor: these cases assert routing and payloads, not auditing
+	)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/config", nil)
+	r.ServeHTTP(w, req)
+
+	if body := w.Body.String(); strings.Contains(body, "s3cret") || strings.Contains(body, "hunter2") {
+		t.Fatal("the response body disclosed a configured secret")
+	}
+
+	var resp struct {
+		Data webtypes.EffectiveConfigResponse `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	settings := map[string]webtypes.ConfigSetting{}
+	for _, section := range resp.Data.Sections {
+		for _, setting := range section.Settings {
+			settings[setting.Key] = setting
+		}
+	}
+
+	// A configured secret reads as set; an unconfigured one reads as unset.
+	// Both are marked, so the view can say which is which.
+	if got := settings["authentication.client_secret"]; got.Value == "" || !got.Secret {
+		t.Errorf("authentication.client_secret = %+v, want a redacted value marked secret", got)
+	}
+	if got := settings["mail.smtp.password"]; got.Value != "" || !got.Secret {
+		t.Errorf("mail.smtp.password = %+v, want an empty value marked secret", got)
 	}
 }
 

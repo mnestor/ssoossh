@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -102,13 +103,17 @@ func (a *adminController) auditActor(g *gin.Context) *service.AuditSubject {
 	return service.AuditSubjectFromIdentity(identity, user.ID)
 }
 
-// effectiveConfigHandler handles GET /api/admin/config: returns the server's
-// effective configuration with sensitive fields redacted.
+// effectiveConfigHandler handles GET /api/admin/config: returns every key of
+// the server's effective configuration, grouped into sections, with secrets
+// redacted.
 //
 // @Summary     View effective server configuration (auditor-only)
-// @Description Returns the server's effective configuration with sensitive
-// @Description fields redacted (CA key, client secret, cookie signing key,
-// @Description database password). Useful for debugging and audit trails.
+// @Description Returns every key of the server's effective configuration,
+// @Description grouped by top-level section, with secrets redacted (CA key,
+// @Description HSM PIN, client secret, cookie signing key, database
+// @Description connection string, LDAP bind password, SMTP password). A
+// @Description redacted key still reports whether a value is set. Useful for
+// @Description debugging and audit trails.
 // @Tags        admin
 // @Produce     json
 // @Success     200 {object} webtypes.EffectiveConfigResponse "Current effective configuration"
@@ -117,40 +122,48 @@ func (a *adminController) auditActor(g *gin.Context) *service.AuditSubject {
 // @Security    sessionCookie
 // @Router      /api/admin/config [get]
 func (a *adminController) effectiveConfigHandler(g *gin.Context) {
-	a.auditRecord(g, service.AuditEvent{
-		Action: service.AuditAdminConfigViewed,
-		Actor:  a.auditActor(g),
-	})
+	// Not audited. The screen is read-only and reloading it is how an
+	// operator uses it, so the event fired several times a minute during
+	// ordinary work and buried the decisions the log exists to record. It
+	// also disclosed nothing: an auditor who can read this can read every
+	// other auditor route, and those are audited where they carry a subject.
+	respondData(g, effectiveConfig(a.config))
+}
 
-	resp := webtypes.EffectiveConfigResponse{
-		PublicURL: a.config.HTTP.PublicURL,
-		Port:      a.config.HTTP.Port,
+// rootSectionName groups the server-wide switches that sit at the root of
+// the config file — production, fips, the CA key, the lifetime ceilings —
+// which have no top-level block of their own to be named after.
+const rootSectionName = "server"
 
-		DBProvider:  string(a.config.DB.Provider),
-		ProviderURL: a.config.AuthConfig.ProviderURL,
+// effectiveConfig groups the configuration's leaves into the sections the
+// auditor view renders, one per top-level configuration block, keeping each
+// section and each setting in declaration order so the screen reads in the
+// same order as the file it describes.
+func effectiveConfig(c *config.Config) webtypes.EffectiveConfigResponse {
+	sections := make([]webtypes.ConfigSection, 0, 16)
+	position := make(map[string]int, 16)
 
-		AdminRequireGroup:    a.config.Admin.RequireGroup,
-		AdminSOCGroup:        a.config.Admin.SOCGroup,
-		AdminAuditorGroup:    a.config.Admin.AuditorGroup,
-		AdminContactEmail:    a.config.Admin.ContactEmail,
-		AdminDisabledMessage: a.config.Admin.DisabledMessage,
+	for _, setting := range c.Effective() {
+		name := rootSectionName
+		if idx := strings.Index(setting.Key, "."); idx > 0 {
+			name = setting.Key[:idx]
+		}
 
-		LoggingLevel: a.config.Logging.Level,
+		at, seen := position[name]
+		if !seen {
+			at = len(sections)
+			position[name] = at
+			sections = append(sections, webtypes.ConfigSection{Name: name})
+		}
 
-		CertUserValidDuration:    a.config.CertOptions.User.ValidDuration.String(),
-		CertUserRequire:          a.config.CertOptions.User.Require.String(),
-		CertUserExtensions:       orEmpty(a.config.CertOptions.User.Extensions),
-		CertServiceValidDuration: a.config.CertOptions.Service.ValidDuration.String(),
-		CertServiceRequire:       a.config.CertOptions.Service.Require.String(),
-		CertServiceExtensions:    orEmpty(a.config.CertOptions.Service.Extensions),
-		CertPAMValidDuration:     a.config.CertOptions.PAM.ValidDuration.String(),
-		CertPAMRequire:           a.config.CertOptions.PAM.Require.String(),
-		CertClientTimeout:        a.config.CertOptions.ClientTimeout.String(),
-		CertApprovalTTL:          a.config.CertOptions.ApprovalTTL().String(),
-		CertSigningGrace:         a.config.CertOptions.SigningGrace().String(),
+		sections[at].Settings = append(sections[at].Settings, webtypes.ConfigSetting{
+			Key:    setting.Key,
+			Value:  setting.Value,
+			Secret: setting.Secret,
+		})
 	}
 
-	respondData(g, resp)
+	return webtypes.EffectiveConfigResponse{Sections: sections}
 }
 
 // expireEnrollmentHandler handles PATCH /api/admin/enrollments/:id/expire:

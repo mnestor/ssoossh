@@ -89,13 +89,33 @@
 
 <div class="flex min-h-screen flex-col">
 	<header class="border-b border-border-subtle bg-surface">
-		<div class="flex items-center gap-4 px-8 py-4">
-			<a href={resolve('/')} class="flex items-center gap-2 font-semibold">
+		<div class="flex items-center gap-3 px-4 py-4 sm:gap-4 sm:px-8">
+			<!-- Leading edge, ahead of the brand: that is where a navigation
+			     trigger is looked for, and it leaves the trailing edge to the
+			     identity. It carried its own ml-auto before, which split the
+			     free space with the trailing group and left the button
+			     floating in the middle of the header. -->
+			{#if session.signedIn}
+				<button
+					onclick={() => (navOpen = !navOpen)}
+					aria-expanded={navOpen}
+					aria-controls="mobile-nav"
+					aria-label={navOpen ? 'Close navigation menu' : 'Open navigation menu'}
+					class="-ml-1 flex shrink-0 p-1 text-ink-muted transition hover:text-ink sm:hidden"
+				>
+					<Icon name={navOpen ? 'x' : 'menu'} size="md" />
+				</button>
+			{/if}
+
+			<a href={resolve('/')} class="flex min-w-0 items-center gap-2 font-semibold">
 				<BrandMark size={22} />
 				<span>ssoossh</span>
+				<!-- Capped rather than dropped on a phone: a deployment that
+				     set a name wants it on every screen, but an unbounded one
+				     would push the controls off the row. -->
 				{#if branding.org_name}
 					<span
-						class="ml-0.5 border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
+						class="ml-0.5 max-w-[8rem] truncate border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
 					>
 						{branding.org_name}
 					</span>
@@ -116,19 +136,11 @@
 						</a>
 					{/each}
 				</nav>
-
-				<!-- Mobile menu button -->
-				<button
-					onclick={() => (navOpen = !navOpen)}
-					aria-expanded={navOpen}
-					aria-label="Toggle navigation menu"
-					class="ml-auto flex sm:hidden"
-				>
-					<Icon name="menu" size="md" />
-				</button>
 			{/if}
 
-			<div class="ml-auto flex items-center gap-3 text-sm">
+			<!-- The trailing edge is the identity and its theme, at every
+			     width, and carries the row's only ml-auto. -->
+			<div class="ml-auto flex shrink-0 items-center gap-3 text-sm">
 				<ThemeToggle />
 				{#if session.user}
 					<UserMenu
@@ -144,7 +156,10 @@
 
 		<!-- Mobile navigation menu (shown when open on mobile) -->
 		{#if session.signedIn && navOpen}
-			<nav class="border-t border-border-subtle bg-surface-muted px-8 py-3 sm:hidden">
+			<nav
+				id="mobile-nav"
+				class="border-t border-border-subtle bg-surface-muted px-4 py-3 sm:hidden"
+			>
 				<ul class="flex flex-col gap-2 text-sm">
 					{#each navItems as item (item.route)}
 						<li>

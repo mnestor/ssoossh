@@ -26,6 +26,8 @@ export type {
 	CertificateOptionsResponse as CertificateOptions,
 	CertificateResponse,
 	CertificateResponse as CertificateRecord,
+	ConfigSection,
+	ConfigSetting,
 	CurrentUserResponse as CurrentUser,
 	DisableUserConsequences,
 	DisableUserRequestBody,

@@ -151,7 +151,7 @@ type DB struct {
 	// Connection is the connection string / DSN. For SQLite this is a file
 	// path (or ":memory:" for in-memory); for PostgreSQL a standard postgres://
 	// URL or keyword string.
-	Connection string `mapstructure:"connection_string" default:"ssoossh.db"`
+	Connection string `mapstructure:"connection_string" default:"ssoossh.db" secret:"true"`
 
 	// Logging configures which database queries are logged and where they
 	// are written. See DBLogging for detailed options.
@@ -214,7 +214,7 @@ type LDAPConfig struct {
 	BindDN string `mapstructure:"bind_dn" default:""`
 
 	// BindPassword is the password for BindDN.
-	BindPassword string `mapstructure:"bind_password" default:""`
+	BindPassword string `mapstructure:"bind_password" default:"" secret:"true"`
 
 	// BaseDN is the search base for the user lookup, and the default base
 	// for field searches that do not name their own.

@@ -10,6 +10,14 @@ describe('UserMenu', () => {
 		expect(screen.getByText('alice@example.com')).toBeInTheDocument();
 	});
 
+	// The address is hidden below the sm breakpoint, where a person icon
+	// stands in for it. The accessible name has to carry it regardless, or
+	// the trigger reads as an unlabelled button on a phone.
+	it('should name the trigger with the identity even when it shows an icon', () => {
+		render(UserMenu, { label: 'alice@example.com', onsignout: vi.fn() });
+		expect(screen.getByRole('button', { name: 'alice@example.com' })).toBeInTheDocument();
+	});
+
 	it('should keep the menu closed until it is opened', () => {
 		render(UserMenu, { label: 'alice@example.com', onsignout: vi.fn() });
 		expect(screen.queryByRole('menu')).not.toBeInTheDocument();

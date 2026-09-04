@@ -173,7 +173,7 @@ type SMTPConfig struct {
 
 	// Password is the SASL password, or the OAuth2 token for xoauth2.
 	// Prefer PasswordFile: this value is a secret sitting in a config file.
-	Password string `mapstructure:"password" example:"\"\""`
+	Password string `mapstructure:"password" example:"\"\"" secret:"true"`
 
 	// PasswordFile reads the password from a file instead, so the secret
 	// can be a mounted file or a systemd credential rather than config

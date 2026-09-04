@@ -926,6 +926,45 @@ components:
       - serial_number
       - type
       type: object
+    webtypes.ConfigSection:
+      properties:
+        name:
+          description: |-
+            Name is the top-level key the section covers ("http", "cert_options"),
+            or "server" for the switches that sit at the root of the file.
+          type: string
+        settings:
+          description: Settings are the section's leaves, in the order they are declared.
+          items:
+            $ref: '#/components/schemas/webtypes.ConfigSetting'
+          type: array
+          uniqueItems: false
+      required:
+      - name
+      - settings
+      type: object
+    webtypes.ConfigSetting:
+      properties:
+        key:
+          description: |-
+            Key is the dotted configuration key, e.g. "http.tls.min_version" —
+            the path an operator would write in their own config file, so a
+            value on this screen can be traced back to the line that set it.
+          type: string
+        secret:
+          description: |-
+            Secret marks a key whose value is never sent. Value is the redaction
+            placeholder when a secret is configured and empty when none is, so
+            an operator can still tell whether one is set.
+          type: boolean
+        value:
+          description: |-
+            Value is what is in effect, rendered as text. Empty means unset: an
+            empty string, a nil pointer, or an empty list or map.
+          type: string
+      required:
+      - key
+      type: object
     webtypes.CurrentUserResponse:
       properties:
         email:
@@ -1014,86 +1053,13 @@ components:
       type: object
     webtypes.EffectiveConfigResponse:
       properties:
-        admin_auditor_group:
-          type: string
-        admin_contact_email:
-          description: Admin user management
-          type: string
-        admin_disabled_message:
-          type: string
-        admin_require_group:
-          description: Admin authorization
-          type: string
-        admin_soc_group:
-          type: string
-        cert_approval_ttl:
-          type: string
-        cert_client_timeout:
-          description: |-
-            CertClientTimeout is the configured budget; the two below are what it
-            derives to. Both are surfaced because an operator debugging "why did
-            my request expire" needs the effective numbers, not just the input.
-          type: string
-        cert_pam_require:
-          type: string
-        cert_pam_valid_duration:
-          type: string
-        cert_service_extensions:
+        sections:
           items:
-            type: string
+            $ref: '#/components/schemas/webtypes.ConfigSection'
           type: array
           uniqueItems: false
-        cert_service_require:
-          type: string
-        cert_service_valid_duration:
-          type: string
-        cert_signing_grace:
-          type: string
-        cert_user_extensions:
-          items:
-            type: string
-          type: array
-          uniqueItems: false
-        cert_user_require:
-          description: |-
-            CertUserRequire renders cert_options.user.require in the canonical
-            condition form (e.g. `all_of(group "SSH Users", claim loc >= 20)`),
-            so an operator sees the gate that is actually applied rather than a
-            group name that no longer describes it. Empty means no gate.
-          type: string
-        cert_user_valid_duration:
-          description: Certificate options
-          type: string
-        db_provider:
-          description: Database
-          type: string
-        logging_level:
-          description: Logging configuration
-          type: string
-        port:
-          type: integer
-        provider_url:
-          description: OAuth/OIDC
-          type: string
-        public_url:
-          description: |-
-            Server connection settings. PublicURL is the origin browsers reach
-            the deployment at; its scheme says whether it is HTTPS.
-          type: string
       required:
-      - cert_approval_ttl
-      - cert_client_timeout
-      - cert_pam_valid_duration
-      - cert_service_extensions
-      - cert_service_valid_duration
-      - cert_signing_grace
-      - cert_user_extensions
-      - cert_user_valid_duration
-      - db_provider
-      - logging_level
-      - port
-      - provider_url
-      - public_url
+      - sections
       type: object
     webtypes.EnrollmentRetrievalResponse:
       properties:
@@ -1691,9 +1657,12 @@ paths:
   /api/admin/config:
     get:
       description: |-
-        Returns the server's effective configuration with sensitive
-        fields redacted (CA key, client secret, cookie signing key,
-        database password). Useful for debugging and audit trails.
+        Returns every key of the server's effective configuration,
+        grouped by top-level section, with secrets redacted (CA key,
+        HSM PIN, client secret, cookie signing key, database
+        connection string, LDAP bind password, SMTP password). A
+        redacted key still reports whether a value is set. Useful for
+        debugging and audit trails.
       responses:
         "200":
           content:
