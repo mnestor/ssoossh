@@ -156,9 +156,12 @@ server-linux-build-local: $(FRONTEND_DIST) ## Build ssoosshd for a local `docker
 # run scripts/build-env-for-pam.sh first.
 # CGO_ENABLED is set here rather than globally so the rest of the tree keeps
 # building cgo-free.
+# -trimpath matches the release build (.goreleaser.yml): it keeps the
+# absolute build path out of the module and takes ~66 KB off .gopclntab,
+# which matters here because every byte of this .so is mapped into sudo.
 pam: ## Build pam_ssoossh.so (cgo, needs libpam headers)
 	mkdir -p .build
-	CGO_ENABLED=1 go build -tags=pam -buildmode=c-shared -o .build/pam_ssoossh.so ./pam_ssoossh/
+	CGO_ENABLED=1 go build -trimpath -tags=pam -buildmode=c-shared -o .build/pam_ssoossh.so ./pam_ssoossh/
 
 frontend-clean: ## Remove the built web UI
 	rm -rf server/frontend/dist

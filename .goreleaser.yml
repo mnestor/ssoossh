@@ -36,7 +36,12 @@ builds:
   - id: server-linux-build
     binary: ssoosshd
     dir: ./cmd/ssoosshd
+    # -trimpath replaces the absolute build path in every path string the
+    # linker records with the module path. It costs nothing, makes the
+    # build reproducible from any checkout directory, and takes ~66 KB off
+    # the PAM module's .gopclntab, which is mapped into sudo.
     flags: &flags
+      - -trimpath
       - -tags=nomsgpack
     env:
       - CGO_ENABLED=1
@@ -106,6 +111,7 @@ builds:
     goarch:
       - amd64
     flags:
+      - -trimpath
       - -tags=nomsgpack,pam
     env:
       - CGO_ENABLED=1
@@ -123,6 +129,7 @@ builds:
     goarch:
       - arm64
     flags:
+      - -trimpath
       - -tags=nomsgpack,pam
     env:
       - CGO_ENABLED=1
