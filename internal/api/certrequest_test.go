@@ -255,9 +255,9 @@ func TestAwaitCertificate_ShouldReturnResponseErrorWhenEventsConnectionFails(t *
 
 // TestAwaitCertificate_ShouldReconnectAfterDroppedEventsConnection
 // simulates the events connection dropping once (server closes without a
-// terminal event) before eventually resolving — resty's SSESource should
-// reconnect on its own per the SSE spec, without any retry logic in this
-// package.
+// terminal event) before eventually resolving. An established stream that
+// drops is not an answer, so waitForOutcome reconnects and keeps waiting —
+// see its doc comment for why that is always correct here.
 func TestAwaitCertificate_ShouldReconnectAfterDroppedEventsConnection(t *testing.T) {
 	t.Parallel()
 
@@ -408,6 +408,7 @@ func TestNewClient_ShouldAssumeHTTPSWhenTheServerURLHasNoScheme(t *testing.T) {
 		{name: "trailing slash", in: "https://ssh.example.com/", want: "https://ssh.example.com"},
 		{name: "explicit http is kept", in: "http://127.0.0.1:8080", want: "http://127.0.0.1:8080"},
 		{name: "surrounding space", in: "  ssh.example.com  ", want: "https://ssh.example.com"},
+		{name: "only space, which NewClient's own emptiness check cannot see", in: "   ", want: ""},
 	}
 
 	for _, tt := range tests {

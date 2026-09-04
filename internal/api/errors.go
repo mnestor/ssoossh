@@ -1,15 +1,14 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
-
-	"resty.dev/v3"
+	"io"
+	"net/http"
 )
 
 // errorBody mirrors server/middleware.ErrorHandlerMiddleware's response
-// shape: {"data": null, "error": "<message>"}. Registered client-wide via
-// resty.Client.SetResultError, so resty auto-unmarshals it into
-// resp.ResultError() for any ordinary (buffered) non-2xx response.
+// shape: {"data": null, "error": "<message>"}.
 type errorBody struct {
 	Error string `json:"error"`
 }
@@ -36,20 +35,39 @@ func (e *ResponseError) IsNotFound() bool {
 	return e != nil && e.StatusCode == 404
 }
 
-// decodeResponseError builds a *ResponseError from resp, whose status is
-// already known to be non-2xx. resty has already unmarshalled the body into
-// resp.ResultError() via the client-wide SetResultError(&errorBody{}) — no
-// call in this package uses SetResponseDoNotParse anymore (the events
-// stream is read separately via resty's SSESource in sse.go, not off a
-// resty.Response), so that's always the case. A body that isn't the
-// expected {"error": "..."} shape (or is empty) still produces a
-// ResponseError, just without a Message.
-func decodeResponseError(resp *resty.Response) *ResponseError {
-	respErr := &ResponseError{StatusCode: resp.StatusCode()}
+// decodeResponseError builds a *ResponseError from a response whose status
+// is already known to be non-2xx, and its body as already read. A body that
+// isn't the expected {"error": "..."} shape (or is empty) still produces a
+// ResponseError, just without a Message: the status alone is worth
+// reporting, and a server that answered with an HTML error page should not
+// turn into a decode error that hides it.
+func decodeResponseError(statusCode int, body []byte) *ResponseError {
+	respErr := &ResponseError{StatusCode: statusCode}
 
-	if body, ok := resp.ResultError().(*errorBody); ok && body != nil {
-		respErr.Message = body.Error
+	var decoded errorBody
+	if err := json.Unmarshal(body, &decoded); err == nil {
+		respErr.Message = decoded.Error
 	}
 
 	return respErr
 }
+
+// responseError is decodeResponseError for a response nobody has read yet —
+// the events stream's failed connect (see sse.go), where the body is still
+// on the wire. Reading it is best-effort for the same reason as above.
+func responseError(resp *http.Response) *ResponseError {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+	if err != nil {
+		// not covered: reaching this needs the connection to fail between
+		// the response header arriving and its (already-buffered, in every
+		// test) error body being read.
+		return &ResponseError{StatusCode: resp.StatusCode}
+	}
+	return decodeResponseError(resp.StatusCode, body)
+}
+
+// maxErrorBodyBytes caps how much of a failed response is read looking for
+// an error message. ssoosshd's error bodies are one short JSON object;
+// anything larger is something else answering, and none of it belongs in
+// sudo's memory.
+const maxErrorBodyBytes = 64 << 10

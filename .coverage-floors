@@ -19,7 +19,7 @@
 
 client/cmd                      87.0
 client/config                   90.0
-internal/api                    83.0
+internal/api                    95.0
 internal/apitypes              100.0
 internal/crypto/ssh            100.0
 internal/crypto/ssh/agent       93.0

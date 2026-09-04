@@ -143,8 +143,9 @@ design.
 The consequence is load-bearing: `Wait` can find a terminal `approved` row
 with nothing cached. It must **not** report success with an empty certificate
 — it returns `errorresponses.CertificateUnavailableError` (**410 Gone**). The
-410 is deliberate: it sits outside resty's SSE retry conditions (0/429/5xx),
-so the client stops rather than reconnect-loops.
+410 is deliberate: the client reconnects only after a stream it had already
+established drops, never after a status the server answered with, so the
+client stops rather than reconnect-loops.
 
 Note the asymmetry: an *enrollment token* is durable (a column on the request
 row), so `enrolled` is rebuilt from the database rather than failing.

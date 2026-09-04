@@ -64,11 +64,10 @@ func NewCertRequestController(group *gin.RouterGroup, certRequestService service
 	group.POST("/certs/pam", pamLimit, cr.createPAMRequestHandler)
 
 	// GET .../events is the actual SSE connection: a real long-lived
-	// text/event-stream response the client (or its HTTP client's SSE
-	// support, e.g. resty's SSESource) connects to and waits on, separate
-	// from the POST above per the SSE spec (an EventSource-style client is
-	// GET-only). It's safe to reconnect any number of times — see
-	// certRequestService.Wait's doc comment.
+	// text/event-stream response the client connects to and waits on,
+	// separate from the POST above per the SSE spec (an EventSource-style
+	// client is GET-only). It's safe to reconnect any number of times —
+	// see certRequestService.Wait's doc comment.
 	group.GET("/certs/requests/:id/events", cr.eventsHandler)
 
 	// Web-UI-facing: approve/deny pending requests. These are authorized by
@@ -264,15 +263,15 @@ func (cr *certRequestController) createPAMRequestHandler(g *gin.Context) {
 }
 
 // eventsHandler handles GET /api/certs/requests/:id/events: the client's
-// (or resty SSESource's) actual SSE connection, separate from the create
-// calls above. Blocks on certRequestService.Wait for :id, then writes a
-// single terminal SSE event (approved/denied/expired) and returns, closing
-// the connection. Blocking on Wait before writing anything means a Wait
-// error (unknown ID, or the client disconnecting — see Wait's doc comment)
-// still gets a normal JSON error response via ErrorHandlerMiddleware
-// instead of needing to be encoded as an SSE event after the fact. Safe to
-// hit repeatedly for the same :id — e.g. resty's SSESource reconnecting
-// after a dropped connection — since Wait itself handles that.
+// actual SSE connection, separate from the create calls above. Blocks on
+// certRequestService.Wait for :id, then writes a single terminal SSE event
+// (approved/denied/expired) and returns, closing the connection. Blocking
+// on Wait before writing anything means a Wait error (unknown ID, or the
+// client disconnecting — see Wait's doc comment) still gets a normal JSON
+// error response via ErrorHandlerMiddleware instead of needing to be
+// encoded as an SSE event after the fact. Safe to hit repeatedly for the
+// same :id — e.g. a client reconnecting after a dropped connection — since
+// Wait itself handles that.
 //
 // @Summary     Wait for a request's outcome (SSE)
 // @Description A real `text/event-stream`, separate from the creating POST because an

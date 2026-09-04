@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/mnestor/ssoossh/internal/apitypes"
 )
@@ -32,7 +33,7 @@ type PendingRequest struct {
 }
 
 // CreateUserRequest implements Client.
-func (c *RestyClient) CreateUserRequest(ctx context.Context, publicKey, localUsername, localHostname string, opts RequestedOptions) (*PendingRequest, error) {
+func (c *HTTPClient) CreateUserRequest(ctx context.Context, publicKey, localUsername, localHostname string, opts RequestedOptions) (*PendingRequest, error) {
 	return c.create(ctx, "/certs/user", apitypes.UserRequestBody{
 		PublicKey:        publicKey,
 		LocalUsername:    localUsername,
@@ -42,7 +43,7 @@ func (c *RestyClient) CreateUserRequest(ctx context.Context, publicKey, localUse
 }
 
 // CreateServiceEnrollment implements Client.
-func (c *RestyClient) CreateServiceEnrollment(ctx context.Context, publicKey string, opts RequestedOptions) (*PendingRequest, error) {
+func (c *HTTPClient) CreateServiceEnrollment(ctx context.Context, publicKey string, opts RequestedOptions) (*PendingRequest, error) {
 	return c.create(ctx, "/certs/service/enroll", apitypes.ServiceEnrollRequestBody{
 		PublicKey:        publicKey,
 		RequestedOptions: opts,
@@ -50,7 +51,7 @@ func (c *RestyClient) CreateServiceEnrollment(ctx context.Context, publicKey str
 }
 
 // CreatePAMRequest implements Client.
-func (c *RestyClient) CreatePAMRequest(ctx context.Context, publicKey, username string, opts RequestedOptions) (*PendingRequest, error) {
+func (c *HTTPClient) CreatePAMRequest(ctx context.Context, publicKey, username string, opts RequestedOptions) (*PendingRequest, error) {
 	return c.create(ctx, "/certs/pam", apitypes.PAMRequestBody{
 		PublicKey:        publicKey,
 		Username:         username,
@@ -59,7 +60,7 @@ func (c *RestyClient) CreatePAMRequest(ctx context.Context, publicKey, username 
 }
 
 // AwaitCertificate implements Client.
-func (c *RestyClient) AwaitCertificate(ctx context.Context, req *PendingRequest) (*CertificateResult, error) {
+func (c *HTTPClient) AwaitCertificate(ctx context.Context, req *PendingRequest) (*CertificateResult, error) {
 	if req == nil || req.eventsURL == "" {
 		return nil, errors.New("cannot wait on a certificate request that this client did not create")
 	}
@@ -72,18 +73,10 @@ func (c *RestyClient) AwaitCertificate(ctx context.Context, req *PendingRequest)
 // AwaitCertificate's job, over a separate connection — POST is not itself a
 // stream under the SSE spec, and the two are separate on the wire for that
 // reason.
-func (c *RestyClient) create(ctx context.Context, path string, body any) (*PendingRequest, error) {
+func (c *HTTPClient) create(ctx context.Context, path string, body any) (*PendingRequest, error) {
 	var created apitypes.Envelope[apitypes.CreateRequestResponse]
-	resp, err := c.http.R().
-		SetContext(ctx).
-		SetBody(body).
-		SetResult(&created).
-		Post(path)
-	if err != nil {
+	if err := c.doJSON(ctx, http.MethodPost, path, body, &created); err != nil {
 		return nil, fmt.Errorf("failed to create certificate request: %w", err)
-	}
-	if resp.StatusCode() >= 300 {
-		return nil, decodeResponseError(resp)
 	}
 
 	return &PendingRequest{

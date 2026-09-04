@@ -8,6 +8,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -59,4 +60,97 @@ func TestNewClient_TLSVerification(t *testing.T) {
 			t.Errorf("unexpected error with SkipVerifySSL set: %v", err)
 		}
 	})
+}
+
+// The transport-level failures below are the ones an operator actually
+// hits — a server that is down, behind a proxy that mangles the response,
+// or misconfigured — so each has to come back as an error the caller can
+// report rather than a zero value that looks like success.
+
+func TestDoJSON_ShouldReturnTheTransportErrorWhenNothingIsListening(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := ts.URL
+	ts.Close()
+
+	c, err := NewClient(Config{ServerURL: url})
+	if err != nil {
+		t.Fatalf("unexpected error building client: %v", err)
+	}
+
+	if _, err := c.GetCA(context.Background()); err == nil {
+		t.Error("expected an error connecting to a closed port, got nil")
+	}
+}
+
+func TestDoJSON_ShouldErrorWhenTheResponseIsNotJSON(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html>hello from a captive portal</html>"))
+	}))
+	t.Cleanup(ts.Close)
+
+	c, err := NewClient(Config{ServerURL: ts.URL})
+	if err != nil {
+		t.Fatalf("unexpected error building client: %v", err)
+	}
+
+	_, err = c.GetCA(context.Background())
+	if err == nil {
+		t.Fatal("expected an error decoding a non-JSON 200, got nil")
+	}
+	if !strings.Contains(err.Error(), "decode response body") {
+		t.Errorf("got %q, want an error naming the failed decode", err)
+	}
+}
+
+// A response that promises more body than it delivers fails while being
+// read, after the status line has already arrived.
+func TestDoJSON_ShouldErrorWhenTheResponseBodyIsTruncated(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", "512")
+		_, _ = w.Write([]byte(`{"data":{"ca":"ssh-ed`))
+		w.(http.Flusher).Flush()    // headers and the partial body reach the client
+		panic(http.ErrAbortHandler) // then drop the connection mid-body
+	}))
+	t.Cleanup(ts.Close)
+
+	c, err := NewClient(Config{ServerURL: ts.URL})
+	if err != nil {
+		t.Fatalf("unexpected error building client: %v", err)
+	}
+
+	_, err = c.GetCA(context.Background())
+	if err == nil {
+		t.Fatal("expected an error reading a truncated body, got nil")
+	}
+	if !strings.Contains(err.Error(), "read response body") {
+		t.Errorf("got %q, want an error naming the failed read", err)
+	}
+}
+
+// normalizeServerURL passes a URL through unvalidated, so a value that no
+// URL parser accepts has to fail when the request is built rather than
+// panicking or sending something malformed.
+func TestDoJSON_ShouldErrorOnAServerURLThatCannotBeARequest(t *testing.T) {
+	t.Parallel()
+
+	c, err := NewClient(Config{ServerURL: "http://exa\x7fmple.com"})
+	if err != nil {
+		t.Fatalf("unexpected error building client: %v", err)
+	}
+
+	_, err = c.GetCA(context.Background())
+	if err == nil {
+		t.Fatal("expected an error for a server URL that cannot be parsed, got nil")
+	}
+	if !strings.Contains(err.Error(), "build GET") {
+		t.Errorf("got %q, want an error naming the request it could not build", err)
+	}
 }
