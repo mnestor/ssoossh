@@ -23,6 +23,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -257,6 +258,40 @@ func TestAuthenticate_ShouldSucceedAgainstAFakeServer(t *testing.T) {
 	}
 	if len(conv.shown) == 0 {
 		t.Error("expected the approval URL to be displayed through the PAM conversation")
+	}
+}
+
+// TestAuthenticate_ShouldLogEveryCheckInOrderWhenDebugIsOn pins the debug
+// narrative an operator gets from a successful attempt: the issued
+// certificate's summary, then each of the four checks, in the order they
+// run. Order matters because a support case reads the log top to bottom to
+// find where an attempt stopped.
+func TestAuthenticate_ShouldLogEveryCheckInOrderWhenDebugIsOn(t *testing.T) {
+	ca := newTestCA(t)
+	caFile := writeAuthorizedKeysFile(t, ca.publicKey())
+
+	ts := newPAMTestServerResolving(t, func(pub ssh.PublicKey, username string) (string, string) {
+		now := time.Now()
+		cert := ca.sign(t, pub, []string{username}, now.Add(-time.Second), now.Add(time.Minute))
+		return "approved", string(ssh.MarshalAuthorizedKey(cert))
+	})
+
+	cfg := config{server: ts.URL, trustedCAFile: caFile, waitTimeout: 5 * time.Second, skewTolerance: 2 * time.Second}
+	log := &recordingLogger{}
+
+	if _, err := Authenticate(context.Background(), log, &fakeConversation{}, "alice", cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	wantInOrder := []string{"issued certificate for alice", "check 1/4", "check 2/4", "check 3/4", "check 4/4"}
+	next := 0
+	for _, line := range log.debugs {
+		if next < len(wantInOrder) && strings.Contains(line, wantInOrder[next]) {
+			next++
+		}
+	}
+	if next != len(wantInOrder) {
+		t.Errorf("debug log is missing %q (or has it out of order); got:\n%s", wantInOrder[next], strings.Join(log.debugs, "\n"))
 	}
 }
 

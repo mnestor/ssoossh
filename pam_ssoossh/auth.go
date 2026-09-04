@@ -94,17 +94,22 @@ func Authenticate(ctx context.Context, log Logger, conv Conversation, user strin
 		return PamAuthErr, fmt.Errorf("the issued certificate could not be parsed: %w", err)
 	}
 	cert := kp.Certificate()
+	log.Debugf("issued certificate for %s: serial %d, key id %q, principals %v, valid %s to %s, signature key %s",
+		user, cert.Serial, cert.KeyId, cert.ValidPrincipals,
+		time.Unix(int64(cert.ValidAfter), 0).UTC().Format(time.RFC3339),  //nolint:gosec // a certificate's ValidAfter is a Unix timestamp set by the server
+		time.Unix(int64(cert.ValidBefore), 0).UTC().Format(time.RFC3339), //nolint:gosec // a certificate's ValidBefore is a Unix timestamp set by the server
+		fingerprint(cert.SignatureKey))
 
-	if err := checkCASignature(kp, cas); err != nil {
+	if err := checkCASignature(log, kp, cas); err != nil {
 		return PamAuthErr, err
 	}
-	if err := checkKeyBinding(cert, kp); err != nil {
+	if err := checkKeyBinding(log, cert, kp); err != nil {
 		return PamAuthErr, err
 	}
-	if err := checkPrincipal(cert, user, cfg.principalsMapPath); err != nil {
+	if err := checkPrincipal(log, cert, user, cfg.principalsMapPath); err != nil {
 		return PamAuthErr, err
 	}
-	if err := checkValidityWindow(cert, time.Now(), cfg.skewTolerance); err != nil {
+	if err := checkValidityWindow(log, cert, time.Now(), cfg.skewTolerance); err != nil {
 		return PamAuthErr, err
 	}
 

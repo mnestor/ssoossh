@@ -17,8 +17,8 @@ import (
 // recordingLogger keeps every line by level so tests can assert on what the
 // entry point logs, not just on the code it returns.
 type recordingLogger struct {
-	debugs, infos, errors []string
-	debug                 string
+	debugs, infos, warnings, errors []string
+	debug                           string
 }
 
 func (r *recordingLogger) Debugf(format string, v ...any) {
@@ -27,8 +27,10 @@ func (r *recordingLogger) Debugf(format string, v ...any) {
 func (r *recordingLogger) Infof(format string, v ...any) {
 	r.infos = append(r.infos, fmt.Sprintf(format, v...))
 }
-func (r *recordingLogger) Noticef(format string, v ...any)  {}
-func (r *recordingLogger) Warningf(format string, v ...any) {}
+func (r *recordingLogger) Noticef(format string, v ...any) {}
+func (r *recordingLogger) Warningf(format string, v ...any) {
+	r.warnings = append(r.warnings, fmt.Sprintf(format, v...))
+}
 func (r *recordingLogger) Errorf(format string, v ...any) {
 	r.errors = append(r.errors, fmt.Sprintf(format, v...))
 }

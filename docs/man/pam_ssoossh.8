@@ -1,4 +1,4 @@
-.TH PAM_SSOOSSH 8 "2026-08-16" "ssoossh" "System Administration Commands"
+.TH PAM_SSOOSSH 8 "2026-09-04" "ssoossh" "System Administration Commands"
 .SH NAME
 pam_ssoossh \- PAM module for OIDC-approved SSH-certificate authentication
 .SH SYNOPSIS
@@ -170,6 +170,17 @@ testing only; do not use it in a production PAM stack.
 Controls the module's own debug-level logging, independent of the
 version-and-outcome logging described under
 .BR LOGGING .
+At debug level the module logs the parsed arguments, the ephemeral
+public key, the approval URL, a summary of the issued certificate
+(serial, key id, principals, validity window, signing CA fingerprint),
+and one line per check under
+.B VALIDATION
+saying what it compared: which trusted CA matched, the bound key's
+fingerprint, how the principal was authorized (exact match, or which
+.B principals-map
+entry allowed it), and the validity window against the current time and
+tolerance. A check that fails logs no debug line; its reason is in the
+error logged regardless of this setting.
 .RS
 .IP \(bu 2
 Absent, or set to

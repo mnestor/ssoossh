@@ -40,7 +40,9 @@
 #                            Omitted, or a path that fails to load (missing
 #                            file, malformed YAML): the certificate must
 #                            instead carry the exact local account name as
-#                            one of its principals.
+#                            one of its principals. A configured path that
+#                            fails to load is logged at warning level on
+#                            every attempt.
 #
 #   skew-tolerance=DURATION (default 2s) clock-skew allowance applied
 #                            symmetrically to both ends of the certificate's
@@ -62,7 +64,13 @@
 #                            testing.
 #
 #   debug                    (default off, i.e. "false"/absent) log at debug
-#                            level. Bare form, or any value other than
+#                            level: the parsed args, the ephemeral public
+#                            key, the approval URL, a summary of the issued
+#                            certificate, and one line per validation check
+#                            saying what it compared (matching CA, bound
+#                            key, how the principal was authorized incl.
+#                            the principals-map entry, validity window vs
+#                            now). Bare form, or any value other than
 #                            "false"/"stdout", logs through syslog (facility
 #                            authpriv, tag "ssoossh"); debug=stdout writes
 #                            debug lines to stdout instead of syslog, mainly
