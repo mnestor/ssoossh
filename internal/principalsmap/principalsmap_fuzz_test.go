@@ -1,14 +1,13 @@
 package principalsmap
 
-import (
-	"testing"
+import "testing"
 
-	"gopkg.in/yaml.v3"
-)
-
-// FuzzPrincipalsMapYAML tests YAML unmarshalling of principals map data.
-// Catches malformed YAML, unexpected types, null values, and edge cases.
-func FuzzPrincipalsMapYAML(f *testing.F) {
+// FuzzPrincipalsMapParse tests the hand-rolled parser that replaced
+// gopkg.in/yaml.v3. Catches malformed input, unexpected shapes, null
+// values, and edge cases. An error is always an acceptable answer — what
+// must never happen is a panic, or a map that parsed "successfully" while
+// carrying something the file did not say.
+func FuzzPrincipalsMapParse(f *testing.F) {
 	// Valid maps
 	f.Add([]byte(`alice:
   - alice
@@ -22,30 +21,51 @@ func FuzzPrincipalsMapYAML(f *testing.F) {
 	// Edge cases
 	f.Add([]byte(`alice: []`))
 	f.Add([]byte(`alice: null`))
+	f.Add([]byte(`alice: ~`))
 	f.Add([]byte(`alice: ""`))
+	f.Add([]byte(`alice: [admin, ops]`))
+	f.Add([]byte("alice:   # trailing comment\n  - admin # and another"))
+	f.Add([]byte("# only a comment"))
+	f.Add([]byte("'alice':\n  - \"admin\""))
+	f.Add([]byte("alice:\r\n  - admin\r\n")) // CRLF
+	f.Add([]byte("alice:\n- admin"))         // zero-indent list
 
-	// Malformed YAML
+	// Malformed
 	f.Add([]byte(`not yaml: [unclosed`))
+	f.Add([]byte("alice:\n\t- tabbed"))
+	f.Add([]byte("alice:\n  admin:\n    - ops")) // nested mapping
+	f.Add([]byte("  - orphaned item"))
+	f.Add([]byte("alice:\n  - admin\nalice:\n  - ops")) // duplicate account
 
 	// Type confusion
 	f.Add([]byte(`alice: admin`)) // string instead of list
 
 	f.Fuzz(func(t *testing.T, data []byte) {
-		var m PrincipalsMap
+		m, err := parse(data)
 
-		// Unmarshal should not panic
-		err := yaml.Unmarshal(data, &m)
-
-		// Error is acceptable for malformed input
+		// Error is acceptable for malformed input.
 		if err != nil {
+			if m != nil {
+				t.Errorf("parse() returned both a map (%#v) and an error (%v)", m, err)
+			}
 			return
 		}
 
-		// If we got a map, structure should be sound. Ranging over a nil
-		// slice is a no-op, so the inner nil check adds nothing.
-		for _, principals := range m {
+		// A parsed map must be sound: no account or principal may be
+		// empty, and every principal it lists must be one Allowed agrees
+		// with — a parser that dropped or mangled an entry would show up
+		// as a disagreement between the two.
+		for account, principals := range m {
+			if account == "" {
+				t.Errorf("parse(%q) accepted an empty account name", data)
+			}
 			for _, p := range principals {
-				_ = p // verify no panic on each principal
+				if p == "" {
+					t.Errorf("parse(%q) accepted an empty principal for account %q", data, account)
+				}
+			}
+			if len(principals) > 0 && !m.Allowed(account, principals) {
+				t.Errorf("parse(%q) produced a map whose own principals %v are not Allowed for %q", data, principals, account)
 			}
 		}
 	})

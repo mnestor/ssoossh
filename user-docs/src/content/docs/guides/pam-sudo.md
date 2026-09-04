@@ -98,7 +98,27 @@ alice:
 
 Omitted -- or a path that fails to load, whether missing or malformed -- means
 the certificate must instead carry the exact local account name as one of its
-principals.
+principals. A file that fails to parse is reported to syslog at warning level,
+naming the line, so a typo does not fail silently.
+
+The module reads a deliberately small subset of YAML rather than linking a
+full parser, because everything it links is mapped into `sudo`. The subset
+covers the shapes a file of this kind is written in:
+
+```yaml
+# a comment
+alice:              # an account, at the start of the line
+  - alice           # a principal allowed to assume it
+  - admin
+bob: [bob, ops]     # an inline list is accepted too
+carol:              # no principals at all: nobody may assume carol.
+                    # "null" and "~" mean the same thing
+```
+
+Values may be wrapped in matching single or double quotes, which are stripped;
+escape sequences inside them are not interpreted. Anything else the wider YAML
+language allows -- nested mappings, anchors, multi-line scalars, several
+documents in one file -- is rejected rather than guessed at.
 
 ### `skew-tolerance=DURATION`
 

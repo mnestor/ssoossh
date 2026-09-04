@@ -131,6 +131,23 @@ path, malformed YAML), the module instead requires an exact match: the
 certificate's principals must literally contain the local account name.
 A typo'd path or a corrupted map file therefore degrades to exact-match
 behavior rather than locking every account out.
+.IP
+The module parses a small subset of YAML rather than linking a full parser,
+because everything it links is mapped into the calling process. The subset
+is: comments, an account name at the start of a line followed by a colon,
+its principals as
+.B "- name"
+lines below it or as an inline
+.BR "[a, b]" ,
+and
+.BR null ,
+.BR ~ ,
+or
+.B []
+for an account that allows nobody. Values may be wrapped in matching quotes,
+which are stripped; escape sequences are not interpreted. Nested mappings,
+anchors, multi-line scalars, and multiple documents are rejected, and the
+rejection is logged at warning level naming the line.
 .TP
 .BI skew-tolerance= DURATION
 Clock-skew allowance applied to both ends of the certificate's validity
