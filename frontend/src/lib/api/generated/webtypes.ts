@@ -160,7 +160,11 @@ export interface ResolveCodeResponse {
 export interface EnrollmentRetrievalResponse {
 	retrieved_at: string;
 	source_ip: string;
-	certificate_serial: number /* uint64 */;
+	/**
+	 * A decimal string on the wire, same as CertificateResponse.SerialNumber
+	 * and for the same reason.
+	 */
+	certificate_serial: string;
 	/**
 	 * Succeeded is false for a redemption that passed code validation but
 	 * failed at signing — still worth surfacing: someone held the code.
@@ -489,7 +493,19 @@ export interface RequestDetailResponse {
 export interface CertificateResponse {
 	id: string;
 	type: CertificateType;
-	serial_number: number /* uint64 */;
+	/**
+	 * SerialNumber is a decimal string, not a JSON number. Serials are 63
+	 * bits of randomness (internal/serial), so all but a vanishing fraction
+	 * exceed JavaScript's Number.MAX_SAFE_INTEGER (2^53-1) and a browser
+	 * parsing one as a number silently rounds it -- 3260700569889958163
+	 * reads back as 3260700569889958400. On an audit record that is a wrong
+	 * answer, and an unsearchable one: the serial an operator reads off
+	 * `ssh-keygen -L` never matches what is on screen.
+	 * Both tags are needed. `json:",string"` decides what Go writes;
+	 * `tstype` decides what tygo tells the browser to expect, which it
+	 * otherwise infers from the Go type and gets wrong.
+	 */
+	serial_number: string;
 	key_id: string;
 	principals: string;
 	public_key_fingerprint: string;
@@ -517,6 +533,25 @@ export interface CertificateResponse {
 	 * so the UI can link to it. Present only on a service certificate.
 	 */
 	enrollment_id?: string;
+	/**
+	 * Extensions are the SSH certificate extensions the certificate was
+	 * signed with (permit-pty, permit-agent-forwarding, ...), decoded from
+	 * the audit row's JSON column rather than passed through as a string:
+	 * the browser should not have to parse JSON out of JSON.
+	 * Populated by the detail endpoint alone. A list row does not display
+	 * them, and carrying them on every row of a hundred-row page would be
+	 * payload nobody reads.
+	 */
+	extensions?: string[];
+	/**
+	 * CriticalOptions are the options fixed into the certificate
+	 * (force-command, source-address). Kept separate from Extensions
+	 * because sshd treats them differently: it rejects a certificate
+	 * carrying a critical option it does not understand, where an unknown
+	 * extension is ignored. Populated by the detail endpoint alone, same as
+	 * Extensions.
+	 */
+	critical_options?: { [key: string]: string};
 	decided_by_outcome?: string;
 	decided_by_subject?: string;
 	decided_by_username?: string;

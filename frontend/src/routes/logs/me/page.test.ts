@@ -98,7 +98,7 @@ describe('Certificate history page', () => {
 					{
 						id: 'cert-1',
 						type: 'user',
-						serial_number: 1,
+						serial_number: '1',
 						principals: 'alice',
 						public_key_fingerprint: 'SHA256:abc123',
 						issued_at: '2026-08-01T10:00:00Z',
@@ -140,7 +140,7 @@ describe('Certificate history page', () => {
 					{
 						id: 'cert-1',
 						type: 'user',
-						serial_number: 1,
+						serial_number: '1',
 						principals: 'alice',
 						public_key_fingerprint: 'SHA256:abc123',
 						issued_at: '2026-08-01T10:00:00Z',

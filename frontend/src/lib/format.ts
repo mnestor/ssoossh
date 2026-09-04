@@ -31,16 +31,32 @@ export function formatDuration(seconds: number): string {
 	return `${remainder}s`;
 }
 
-/** formatDateTime renders an RFC 3339 timestamp in the viewer's locale and
- * timezone. Invalid input renders as an em dash rather than "Invalid Date". */
+/**
+ * formatDateTime renders an RFC 3339 timestamp in the viewer's locale and
+ * timezone. Invalid input renders as an em dash rather than "Invalid Date".
+ *
+ * The zone is named rather than implied. These are audit timestamps that get
+ * compared against something outside the browser — `ssh-keygen -L`, a
+ * client's "valid until 06:24", a log line on the host — and the machine
+ * printing that other line is often in a different zone than the machine
+ * reading this one. Without the zone the two just disagree, and the reader
+ * has no way to tell a timezone offset from a wrong timestamp.
+ */
 export function formatDateTime(value: string): string {
 	const date = new Date(value);
 	if (Number.isNaN(date.getTime())) {
 		return '—';
 	}
+	// Spelled out as components rather than dateStyle/timeStyle: Intl rejects
+	// timeZoneName alongside either style, and the zone is the point. The
+	// components chosen reproduce what medium/short rendered before it.
 	return date.toLocaleString(undefined, {
-		dateStyle: 'medium',
-		timeStyle: 'short'
+		year: 'numeric',
+		month: 'short',
+		day: 'numeric',
+		hour: 'numeric',
+		minute: '2-digit',
+		timeZoneName: 'short'
 	});
 }
 

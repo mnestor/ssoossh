@@ -806,6 +806,17 @@ components:
       type: object
     webtypes.CertificateResponse:
       properties:
+        critical_options:
+          additionalProperties:
+            type: string
+          description: |-
+            CriticalOptions are the options fixed into the certificate
+            (force-command, source-address). Kept separate from Extensions
+            because sshd treats them differently: it rejects a certificate
+            carrying a critical option it does not understand, where an unknown
+            extension is ignored. Populated by the detail endpoint alone, same as
+            Extensions.
+          type: object
         decided_accept_language:
           type: string
         decided_at:
@@ -846,6 +857,20 @@ components:
           type: string
         expires_at:
           type: string
+        extensions:
+          description: |-
+            Extensions are the SSH certificate extensions the certificate was
+            signed with (permit-pty, permit-agent-forwarding, ...), decoded from
+            the audit row's JSON column rather than passed through as a string:
+            the browser should not have to parse JSON out of JSON.
+
+            Populated by the detail endpoint alone. A list row does not display
+            them, and carrying them on every row of a hundred-row page would be
+            payload nobody reads.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
         id:
           type: string
         issued_at:
@@ -875,7 +900,20 @@ components:
             This one is this certificate's own origin.
           type: string
         serial_number:
-          type: integer
+          description: |-
+            SerialNumber is a decimal string, not a JSON number. Serials are 63
+            bits of randomness (internal/serial), so all but a vanishing fraction
+            exceed JavaScript's Number.MAX_SAFE_INTEGER (2^53-1) and a browser
+            parsing one as a number silently rounds it -- 3260700569889958163
+            reads back as 3260700569889958400. On an audit record that is a wrong
+            answer, and an unsearchable one: the serial an operator reads off
+            `ssh-keygen -L` never matches what is on screen.
+
+            Both tags are needed. `json:",string"` decides what Go writes;
+            `tstype` decides what tygo tells the browser to expect, which it
+            otherwise infers from the Go type and gets wrong.
+          example: "0"
+          type: string
         type:
           $ref: '#/components/schemas/model.CertificateType'
       required:
@@ -1060,7 +1098,11 @@ components:
     webtypes.EnrollmentRetrievalResponse:
       properties:
         certificate_serial:
-          type: integer
+          description: |-
+            A decimal string on the wire, same as CertificateResponse.SerialNumber
+            and for the same reason.
+          example: "0"
+          type: string
         retrieved_at:
           type: string
         source_ip:

@@ -12,7 +12,7 @@ function cert(overrides: Partial<CertificateRecord> = {}): CertificateRecord {
 	return {
 		id: 'cert-1',
 		type: 'user',
-		serial_number: 1,
+		serial_number: '1',
 		key_id: 'key-1',
 		principals: 'alice',
 		public_key_fingerprint: 'SHA256:abc',

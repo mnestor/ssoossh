@@ -54,7 +54,7 @@ function listWith(keyId: string): CertificateListAdminResponse {
 			{
 				id: `cert-${keyId}`,
 				type: 'user',
-				serial_number: 1,
+				serial_number: '1',
 				key_id: keyId,
 				principals: 'alice',
 				public_key_fingerprint: 'fp',
@@ -82,7 +82,7 @@ describe('Admin certificates page', () => {
 					{
 						id: 'cert-1',
 						type: 'user',
-						serial_number: 100,
+						serial_number: '100',
 						key_id: 'alice-key',
 						principals: 'alice',
 						public_key_fingerprint: 'SHA256:abc123',
@@ -180,7 +180,7 @@ describe('Admin certificates page', () => {
 					{
 						id: 'cert-1',
 						type: 'user',
-						serial_number: 100,
+						serial_number: '100',
 						key_id: 'key1',
 						principals: 'user1',
 						public_key_fingerprint: 'fp1',
@@ -231,7 +231,7 @@ describe('Admin certificates page', () => {
 					{
 						id: 'cert-1',
 						type: 'user',
-						serial_number: 100,
+						serial_number: '100',
 						key_id: 'key1',
 						principals: 'user1',
 						public_key_fingerprint: 'fp1',

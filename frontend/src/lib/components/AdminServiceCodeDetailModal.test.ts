@@ -65,7 +65,7 @@ function aRedemption(
 	return {
 		retrieved_at: '2026-08-22T10:00:00Z',
 		source_ip: '203.0.113.9',
-		certificate_serial: 42,
+		certificate_serial: '42',
 		succeeded: true,
 		...overrides
 	};

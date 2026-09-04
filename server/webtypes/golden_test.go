@@ -158,6 +158,9 @@ func fullFixtures() map[string]any {
 			RetrievedAt:       &issuedAt,
 			EnrollmentID:      "3a2b1c0d-9e8f-4a7b-8c6d-5e4f3a2b1c0d",
 
+			Extensions:      []string{"permit-pty", "permit-agent-forwarding"},
+			CriticalOptions: map[string]string{"force-command": "/usr/local/bin/audit-shell"},
+
 			DecidedByOutcome:         "approved",
 			DecidedBySubject:         "9c1f0f8e-1d0a-4a37-9d1e-2f6a1b4c5d6e",
 			DecidedByUsername:        "alice",

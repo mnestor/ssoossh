@@ -3,7 +3,7 @@
     {
       "retrieved_at": "2026-08-14T09:30:00+02:00",
       "source_ip": "198.51.100.44",
-      "certificate_serial": 7346115228134082560,
+      "certificate_serial": "7346115228134082560",
       "succeeded": true
     }
   ],

@@ -549,8 +549,15 @@ func principalList(cert *ssh.Certificate) string {
 
 // expiryPhrase renders when a certificate runs out, in both the terms a user
 // thinks in: the wall-clock time and how long that is from now. "valid until
-// 18:04 (7h58m from now)" answers "do I need to log in again before I finish
-// this?" without any arithmetic.
+// 18:04 UTC (7h58m from now)" answers "do I need to log in again before I
+// finish this?" without any arithmetic.
+//
+// The zone is named because this line gets compared against the same
+// certificate's expiry in the web UI, which renders in the browser's zone.
+// When the shell is on a host in one zone and the browser is in another --
+// a container, a bastion, a laptop on the other side of an ocean -- the two
+// times differ by the offset, and without the zone on both there is no way
+// to tell that from a wrong timestamp.
 func expiryPhrase(cert *ssh.Certificate) string {
 	if cert == nil || cert.ValidBefore == 0 {
 		return "with no expiry"
@@ -561,5 +568,5 @@ func expiryPhrase(cert *ssh.Certificate) string {
 	if remaining <= 0 {
 		return "already expired"
 	}
-	return fmt.Sprintf("valid until %s (%s from now)", expires.Local().Format("15:04"), remaining)
+	return fmt.Sprintf("valid until %s (%s from now)", expires.Local().Format("15:04 MST"), remaining)
 }

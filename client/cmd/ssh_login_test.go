@@ -343,6 +343,14 @@ func TestExpiryPhrase(t *testing.T) {
 		{name: "should report no expiry for a nil certificate", cert: nil, want: "no expiry"},
 		{name: "should report an expired certificate", cert: newTestCert(t, ours, "alice", -time.Hour), want: "already expired"},
 		{name: "should report the remaining time", cert: newTestCert(t, ours, "alice", 2*time.Hour), want: "from now"},
+		// The zone is what lets this line be reconciled with the same
+		// certificate's expiry in the web UI, which renders in the browser's
+		// zone rather than this host's.
+		{
+			name: "should name the zone the wall-clock time is in",
+			cert: newTestCert(t, ours, "alice", 2*time.Hour),
+			want: time.Now().Add(2 * time.Hour).Local().Format("MST"),
+		},
 	}
 
 	for _, tt := range tests {

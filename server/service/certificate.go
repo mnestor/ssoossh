@@ -286,6 +286,8 @@ func (s *CertificateService) GetByID(ctx context.Context, id string, identity *I
 		CertKeyID                    string
 		CertPrincipals               string
 		CertPublicKeyFingerprint     string
+		CertCriticalOptions          string
+		CertExtensions               string
 		CertIssuedAt                 time.Time
 		CertExpiresAt                time.Time
 		DecisionID                   *string
@@ -316,6 +318,8 @@ func (s *CertificateService) GetByID(ctx context.Context, id string, identity *I
 			certificates.serial_number as cert_serial_number,
 			certificates.key_id as cert_key_id, certificates.principals as cert_principals,
 			certificates.public_key_fingerprint as cert_public_key_fingerprint,
+			certificates.critical_options as cert_critical_options,
+			certificates.extensions as cert_extensions,
 			certificates.issued_at as cert_issued_at,
 			certificates.expires_at as cert_expires_at,
 			certificate_request_decisions.id as decision_id,
@@ -375,8 +379,13 @@ func (s *CertificateService) GetByID(ctx context.Context, id string, identity *I
 		KeyID:                result.CertKeyID,
 		Principals:           result.CertPrincipals,
 		PublicKeyFingerprint: result.CertPublicKeyFingerprint,
-		IssuedAt:             result.CertIssuedAt,
-		ExpiresAt:            result.CertExpiresAt,
+		// What the certificate actually grants. Read here and not in
+		// ListForIdentity: only the detail page shows them, and they would
+		// otherwise be carried on every row of every history page.
+		CriticalOptions: result.CertCriticalOptions,
+		Extensions:      result.CertExtensions,
+		IssuedAt:        result.CertIssuedAt,
+		ExpiresAt:       result.CertExpiresAt,
 	}
 
 	var decision *model.CertificateRequestDecision

@@ -144,9 +144,11 @@ type ResolveCodeResponse struct {
 // code, for the retrieval log shown to the enrollment's approver and to
 // auditors. Codes are reusable, so an enrollment accumulates these.
 type EnrollmentRetrievalResponse struct {
-	RetrievedAt       time.Time `json:"retrieved_at" validate:"required"`
-	SourceIP          string    `json:"source_ip" validate:"required"`
-	CertificateSerial uint64    `json:"certificate_serial" validate:"required"`
+	RetrievedAt time.Time `json:"retrieved_at" validate:"required"`
+	SourceIP    string    `json:"source_ip" validate:"required"`
+	// A decimal string on the wire, same as CertificateResponse.SerialNumber
+	// and for the same reason.
+	CertificateSerial uint64 `json:"certificate_serial,string" tstype:"string" validate:"required"`
 
 	// Succeeded is false for a redemption that passed code validation but
 	// failed at signing — still worth surfacing: someone held the code.
@@ -442,14 +444,26 @@ type RequestDetailResponse struct {
 // result of an approval decision. They are omitted (zero) for certificates
 // whose originating request could not be found.
 type CertificateResponse struct {
-	ID           string                `json:"id" validate:"required"`
-	Type         model.CertificateType `json:"type" validate:"required"`
-	SerialNumber uint64                `json:"serial_number" validate:"required"`
-	KeyID        string                `json:"key_id" validate:"required"`
-	Principals   string                `json:"principals" validate:"required"`
-	Fingerprint  string                `json:"public_key_fingerprint" validate:"required"`
-	IssuedAt     time.Time             `json:"issued_at" validate:"required"`
-	ExpiresAt    time.Time             `json:"expires_at" validate:"required"`
+	ID   string                `json:"id" validate:"required"`
+	Type model.CertificateType `json:"type" validate:"required"`
+
+	// SerialNumber is a decimal string, not a JSON number. Serials are 63
+	// bits of randomness (internal/serial), so all but a vanishing fraction
+	// exceed JavaScript's Number.MAX_SAFE_INTEGER (2^53-1) and a browser
+	// parsing one as a number silently rounds it -- 3260700569889958163
+	// reads back as 3260700569889958400. On an audit record that is a wrong
+	// answer, and an unsearchable one: the serial an operator reads off
+	// `ssh-keygen -L` never matches what is on screen.
+	//
+	// Both tags are needed. `json:",string"` decides what Go writes;
+	// `tstype` decides what tygo tells the browser to expect, which it
+	// otherwise infers from the Go type and gets wrong.
+	SerialNumber uint64    `json:"serial_number,string" tstype:"string" validate:"required"`
+	KeyID        string    `json:"key_id" validate:"required"`
+	Principals   string    `json:"principals" validate:"required"`
+	Fingerprint  string    `json:"public_key_fingerprint" validate:"required"`
+	IssuedAt     time.Time `json:"issued_at" validate:"required"`
+	ExpiresAt    time.Time `json:"expires_at" validate:"required"`
 
 	// RetrievedSourceIP is the address the `service retrieve` call came
 	// from — the machine the unattended job actually ran on. Present only
@@ -470,6 +484,24 @@ type CertificateResponse struct {
 	// EnrollmentID is the service code this certificate was redeemed from,
 	// so the UI can link to it. Present only on a service certificate.
 	EnrollmentID string `json:"enrollment_id,omitempty"`
+
+	// Extensions are the SSH certificate extensions the certificate was
+	// signed with (permit-pty, permit-agent-forwarding, ...), decoded from
+	// the audit row's JSON column rather than passed through as a string:
+	// the browser should not have to parse JSON out of JSON.
+	//
+	// Populated by the detail endpoint alone. A list row does not display
+	// them, and carrying them on every row of a hundred-row page would be
+	// payload nobody reads.
+	Extensions []string `json:"extensions,omitempty"`
+
+	// CriticalOptions are the options fixed into the certificate
+	// (force-command, source-address). Kept separate from Extensions
+	// because sshd treats them differently: it rejects a certificate
+	// carrying a critical option it does not understand, where an unknown
+	// extension is ignored. Populated by the detail endpoint alone, same as
+	// Extensions.
+	CriticalOptions map[string]string `json:"critical_options,omitempty"`
 
 	DecidedByOutcome         string     `json:"decided_by_outcome,omitempty"`
 	DecidedBySubject         string     `json:"decided_by_subject,omitempty"`

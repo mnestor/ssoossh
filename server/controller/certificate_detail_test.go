@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -120,7 +121,9 @@ func TestCertificateDetailHandler_ShouldRenderTheFullDecisionRecord(t *testing.T
 		want  any
 	}{
 		{"id", "cert-1"},
-		{"serial_number", float64(4242)},
+		// A string, not a number: see
+		// TestCertificateDetailHandler_ShouldWriteTheSerialAsAnExactString.
+		{"serial_number", "4242"},
 		{"key_id", "key-1"},
 		{"public_key_fingerprint", "SHA256:xyz"},
 		{"decided_by_outcome", "approved"},
@@ -279,5 +282,178 @@ func TestCertificateDetailHandler_ShouldRejectAnUnauthenticatedCaller(t *testing
 	}
 	if svc.gotID != "" {
 		t.Errorf("service was called with %q, want no call at all", svc.gotID)
+	}
+}
+
+// The two option columns on the certificate row are what the certificate
+// actually grants on the far side, and the detail page states them. They are
+// stored JSON-encoded, so the endpoint has to decode them: handing the
+// browser a string of JSON would put the parse in the wrong place.
+func TestCertificateDetailHandler_ShouldDecodeTheIssuedOptions(t *testing.T) {
+	t.Parallel()
+
+	svc := &detailCertService{
+		result: service.CertificateWithDecision{
+			Certificate: model.Certificate{
+				ID:              "cert-opts",
+				Type:            model.CertificateTypeUser,
+				Extensions:      `["permit-pty","permit-agent-forwarding"]`,
+				CriticalOptions: `{"force-command":"/usr/bin/backup"}`,
+			},
+		},
+	}
+
+	r := certDetailRouter(t, svc, &service.Identity{Subject: "sub-alice"})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/cert-opts", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /certs/cert-opts = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			Extensions      []string          `json:"extensions"`
+			CriticalOptions map[string]string `json:"critical_options"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v, body: %s", err, w.Body.String())
+	}
+
+	want := []string{"permit-pty", "permit-agent-forwarding"}
+	if len(resp.Data.Extensions) != len(want) {
+		t.Fatalf("extensions = %v, want %v", resp.Data.Extensions, want)
+	}
+	for i := range want {
+		if resp.Data.Extensions[i] != want[i] {
+			t.Errorf("extensions[%d] = %q, want %q", i, resp.Data.Extensions[i], want[i])
+		}
+	}
+
+	if got := resp.Data.CriticalOptions["force-command"]; got != "/usr/bin/backup" {
+		t.Errorf("critical_options[force-command] = %q, want %q", got, "/usr/bin/backup")
+	}
+}
+
+// An empty column is the common case -- a certificate with no critical
+// options -- and must not become a null or a zero value the page renders as
+// a field it cannot explain.
+func TestCertificateDetailHandler_ShouldOmitEmptyIssuedOptions(t *testing.T) {
+	t.Parallel()
+
+	svc := &detailCertService{
+		result: service.CertificateWithDecision{
+			Certificate: model.Certificate{ID: "cert-bare-opts", Type: model.CertificateTypeUser},
+		},
+	}
+
+	r := certDetailRouter(t, svc, &service.Identity{Subject: "sub-alice"})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/cert-bare-opts", nil))
+
+	var resp struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	for _, field := range []string{"extensions", "critical_options"} {
+		if v, present := resp.Data[field]; present {
+			t.Errorf("%s = %v, want absent when the column is empty", field, v)
+		}
+	}
+}
+
+// A column that will not decode is a corrupt audit row. The rest of the
+// record is still the answer someone came for, so the field drops out and
+// the request succeeds rather than 500ing over it.
+func TestCertificateDetailHandler_ShouldTolerateUndecodableIssuedOptions(t *testing.T) {
+	t.Parallel()
+
+	svc := &detailCertService{
+		result: service.CertificateWithDecision{
+			Certificate: model.Certificate{
+				ID:              "cert-corrupt",
+				Type:            model.CertificateTypeUser,
+				KeyID:           "key-corrupt",
+				Extensions:      `not json`,
+				CriticalOptions: `also not json`,
+			},
+		},
+	}
+
+	r := certDetailRouter(t, svc, &service.Identity{Subject: "sub-alice"})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/cert-corrupt", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /certs/cert-corrupt = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if resp.Data["key_id"] != "key-corrupt" {
+		t.Errorf("key_id = %v, want the rest of the record to survive a corrupt option column", resp.Data["key_id"])
+	}
+	for _, field := range []string{"extensions", "critical_options"} {
+		if v, present := resp.Data[field]; present {
+			t.Errorf("%s = %v, want absent when the column will not decode", field, v)
+		}
+	}
+}
+
+// A serial is 63 bits of randomness, so nearly every real one is past
+// JavaScript's Number.MAX_SAFE_INTEGER. It goes on the wire as a decimal
+// string for that reason: parsed as a JSON number it rounds, and the web UI
+// shows a serial matching no certificate anyone can find.
+func TestCertificateDetailHandler_ShouldWriteTheSerialAsAnExactString(t *testing.T) {
+	t.Parallel()
+
+	// The serial from the report that found this: past 2^53, and it rounds
+	// to ...958400 the moment a JSON number holds it.
+	const serial = 3260700569889958163
+
+	svc := &detailCertService{
+		result: service.CertificateWithDecision{
+			Certificate: model.Certificate{
+				ID:           "cert-serial",
+				Type:         model.CertificateTypeUser,
+				SerialNumber: serial,
+			},
+		},
+	}
+
+	r := certDetailRouter(t, svc, &service.Identity{Subject: "sub-alice"})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/cert-serial", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /certs/cert-serial = %d, want 200, body: %s", w.Code, w.Body.String())
+	}
+
+	// Decoded into a string rather than a float64: a number here would come
+	// back rounded, so asserting on it would assert the bug.
+	var resp struct {
+		Data struct {
+			SerialNumber string `json:"serial_number"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("serial_number did not decode as a string: %v, body: %s", err, w.Body.String())
+	}
+
+	if want := strconv.FormatUint(serial, 10); resp.Data.SerialNumber != want {
+		t.Errorf("serial_number = %q, want %q", resp.Data.SerialNumber, want)
 	}
 }

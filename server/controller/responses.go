@@ -361,5 +361,38 @@ func newCertificateResponseFromWithDecision(cd service.CertificateWithDecision) 
 		resp.EnrollmentID = cd.Retrieval.EnrollmentID
 	}
 
+	setIssuedOptionsOnCertificate(&resp, cd.Certificate)
+
 	return resp
+}
+
+// setIssuedOptionsOnCertificate decodes the certificate audit row's two JSON
+// columns onto the wire shape. Only the detail endpoint calls it: these are
+// what the certificate actually grants, which is a question asked of one
+// certificate rather than of a page of them.
+//
+// Best effort on purpose. A column that will not decode is a corrupt audit
+// row, and the rest of the record is still worth showing -- failing the
+// request would hide the certificate entirely over a field nobody navigated
+// here for. The warning is what makes the corruption findable.
+func setIssuedOptionsOnCertificate(resp *webtypes.CertificateResponse, cert model.Certificate) {
+	if cert.Extensions != "" {
+		var extensions []string
+		if err := json.Unmarshal([]byte(cert.Extensions), &extensions); err != nil {
+			slog.Warn("could not decode the extensions on a certificate audit row",
+				"certificate_id", cert.ID, "error", err)
+		} else {
+			resp.Extensions = extensions
+		}
+	}
+
+	if cert.CriticalOptions != "" {
+		var criticalOptions map[string]string
+		if err := json.Unmarshal([]byte(cert.CriticalOptions), &criticalOptions); err != nil {
+			slog.Warn("could not decode the critical options on a certificate audit row",
+				"certificate_id", cert.ID, "error", err)
+		} else {
+			resp.CriticalOptions = criticalOptions
+		}
+	}
 }

@@ -782,3 +782,43 @@ func TestCertificateService_GetByID_NullUserID(t *testing.T) {
 		t.Fatal("unrelated user should not be able to read orphaned certificate")
 	}
 }
+
+// The two option columns are what the certificate actually grants, and the
+// detail page is the only screen that shows them. GetByID selects an
+// explicit column list rather than the whole row, so a column that is not
+// named there arrives empty however faithfully it was written -- which is
+// how these two reached the page as "None" on certificates that plainly
+// carried permit-pty. A stubbed CertificateProvider cannot see that; this
+// reads back through the real query.
+func TestCertificateService_GetByID_ShouldReadTheIssuedOptions(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestService(t, time.Hour)
+	certSvc := newTestCertificateService(t, svc)
+
+	userID := seedUser(t, svc.db, "sub-alice")
+	cert := seedCertificate(t, svc, &userID, 1001, time.Now())
+
+	const (
+		extensions      = `["permit-pty","permit-agent-forwarding"]`
+		criticalOptions = `{"force-command":"/usr/bin/backup"}`
+	)
+	if err := svc.db.Model(&model.Certificate{}).
+		Where("id = ?", cert.ID).
+		Updates(map[string]any{"extensions": extensions, "critical_options": criticalOptions}).
+		Error; err != nil {
+		t.Fatalf("failed to set the option columns: %v", err)
+	}
+
+	result, err := certSvc.GetByID(context.Background(), cert.ID, &Identity{Subject: "sub-alice"}, nil)
+	if err != nil {
+		t.Fatalf("GetByID() error = %v", err)
+	}
+
+	if result.Certificate.Extensions != extensions {
+		t.Errorf("Extensions = %q, want %q", result.Certificate.Extensions, extensions)
+	}
+	if result.Certificate.CriticalOptions != criticalOptions {
+		t.Errorf("CriticalOptions = %q, want %q", result.Certificate.CriticalOptions, criticalOptions)
+	}
+}

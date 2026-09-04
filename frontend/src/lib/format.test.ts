@@ -42,6 +42,13 @@ describe('formatDateTime', () => {
 	it('should render something other than an em dash for a valid timestamp', () => {
 		expect(formatDateTime('2026-08-14T09:00:00Z')).not.toBe('—');
 	});
+
+	// Without a zone, a timestamp here cannot be reconciled with the one the
+	// client prints on another machine: the two differ by an offset and read
+	// as a disagreement.
+	it('should name the timezone it rendered the timestamp in', () => {
+		expect(formatDateTime('2026-08-14T09:00:00Z')).toMatch(/UTC|GMT|[A-Z]{2,5}$/);
+	});
 });
 
 describe('expiryLabel', () => {
