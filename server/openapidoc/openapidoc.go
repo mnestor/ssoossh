@@ -103,10 +103,18 @@ type CAEnvelope struct {
 	Error *string             `json:"error"`
 }
 
-// CreateRequestEnvelope is the body of all three create-a-request endpoints.
+// CreateRequestEnvelope is the body of all four create-a-request endpoints.
 type CreateRequestEnvelope struct {
 	Data  apitypes.CreateRequestResponse `json:"data" validate:"required"`
 	Error *string                        `json:"error"`
+}
+
+// ResolveCodeEnvelope is POST /api/certs/requests/resolve-code's body: the
+// request a typed console code named, now claimed by the submitting
+// session.
+type ResolveCodeEnvelope struct {
+	Data  webtypes.ResolveCodeResponse `json:"data" validate:"required"`
+	Error *string                      `json:"error"`
 }
 
 // RetrieveEnvelope is POST /api/certs/service/retrieve's body.

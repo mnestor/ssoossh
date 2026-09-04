@@ -59,7 +59,12 @@
 	const navItems = [
 		{ route: '/dashboard', label: 'Dashboard' },
 		{ route: '/logs/me', label: 'History' },
-		{ route: '/service-codes', label: 'Service codes' }
+		{ route: '/service-codes', label: 'Service codes' },
+		// The console code box needs an entry point that is not a
+		// transcribed URL: the whole premise is that the machine in front of
+		// the user cannot print a link anyone will copy, so somebody already
+		// signed in has to be able to find this from the app itself.
+		{ route: '/console', label: 'Console login' }
 	] as const;
 
 	function closeNav() {

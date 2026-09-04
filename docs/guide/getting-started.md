@@ -76,4 +76,6 @@ URI the identity provider rejects almost always traces back to
 ## What's next
 
 - `sudo`/`su` through PAM: [deployment.md §8](../operations/deployment.md#8-pam-sudo-and-su).
+- Console login on a machine with no browser:
+  [deployment.md §9](../operations/deployment.md#9-console-login).
 - What's in this release and what isn't: [release-notes.md](../project/release-notes.md).

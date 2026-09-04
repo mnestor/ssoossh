@@ -334,7 +334,7 @@ func TestCertRequestService_ShouldSurfaceGenericDBErrors(t *testing.T) {
 		svc := newTestCertRequestService(t, 0)
 		closeUnderlyingDB(t, svc.db)
 
-		if _, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."}); err == nil {
+		if _, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."}); err == nil {
 			t.Error("CreateRequest() error = nil, want error")
 		}
 	})
@@ -396,7 +396,7 @@ func TestCertRequestService_ShouldSurfaceGenericDBErrors(t *testing.T) {
 	t.Run("approveServiceEnrollment", func(t *testing.T) {
 		t.Parallel()
 		svc := newTestCertRequestService(t, time.Hour)
-		requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeService, PublicKey: "ssh-ed25519 AAAA... svc"})
+		requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeService, PublicKey: "ssh-ed25519 AAAA... svc"})
 		if err != nil {
 			t.Fatalf("unexpected error creating request: %v", err)
 		}
@@ -480,7 +480,7 @@ func TestCertRequestService_Wait_ShouldUnblockOnDeny(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, 0)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
@@ -521,7 +521,7 @@ func TestCertRequestService_Wait_ShouldReturnCachedOutcomeOnLateReconnect(t *tes
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, 0)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
@@ -546,7 +546,7 @@ func TestCertRequestService_Wait_ShouldResumeAfterContextCancellation(t *testing
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, 0)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
@@ -600,7 +600,7 @@ func TestCertRequestService_Wait_ShouldReportApprovedCertificateAsUnavailable(t 
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, 0)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})
@@ -636,7 +636,7 @@ func TestCertRequestService_Wait_ShouldRebuildEnrollmentTokenFromTheRow(t *testi
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, 0)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeService,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})
@@ -691,7 +691,7 @@ func TestCertRequestService_Wait_ShouldOmitEnrollmentExpiryWhenTheRowIsGone(t *t
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, 0)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeService,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})
@@ -721,7 +721,7 @@ func TestCertRequestService_Wait_ShouldExpireRequestPastTTL(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, time.Millisecond)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
@@ -758,7 +758,7 @@ func TestCertRequestService_Wait_ShouldWakeOnTTLTimerFiring(t *testing.T) {
 	const clientTimeout = 625 * time.Millisecond
 	svc := newTestCertRequestService(t, clientTimeout)
 	ttl := svc.config.CertOptions.ApprovalTTL()
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})
@@ -816,7 +816,7 @@ func TestCertRequestService_Wait_ShouldReceiveWakeMessageViaPubSub(t *testing.T)
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, 0)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
@@ -863,7 +863,7 @@ func TestCertRequestService_Wait_ShouldReturnCtxErrOnGenuineCancellation(t *test
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, 0)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
@@ -908,7 +908,7 @@ func TestCertRequestService_Wait_ShouldSurfaceASubscribeFailure(t *testing.T) {
 		t.Fatalf("failed to construct CertRequestService: %v", err)
 	}
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
@@ -928,7 +928,7 @@ func TestCertRequestService_Approve_ShouldNarrowExtensionsAndPublishSigningJob(t
 		},
 	})
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA...",
 		RequestedOptions: RequestedOptions{
@@ -1003,7 +1003,7 @@ func TestCertRequestService_Approve_ShouldHydrateExtraFieldsFromTheUserRow(t *te
 		},
 	})
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})
@@ -1054,7 +1054,7 @@ func TestCertRequestService_Approve_ShouldRejectWhenIdentityLacksRequiredGroup(t
 		Service: config.CertOptionsService{Require: &config.PolicyCondition{Group: "admins"}, ValidDuration: time.Hour},
 	})
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeService,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})
@@ -1093,7 +1093,7 @@ func TestCertRequestService_Approve_ShouldQueuePAMRequestWithApproverAccountsAsP
 		PAM: config.CertOptionsPAM{Require: &config.PolicyCondition{Group: "sudoers"}, ValidDuration: 30 * time.Second},
 	})
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypePAM,
 		PublicKey: "ssh-ed25519 AAAA...",
 		Username:  "mnestor",
@@ -1164,7 +1164,7 @@ func TestCertRequestService_Approve_ShouldNotLetAPAMRequestNameItsOwnPrincipal(t
 		PAM: config.CertOptionsPAM{Require: &config.PolicyCondition{Group: "sudoers"}, ValidDuration: 30 * time.Second},
 	})
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypePAM,
 		PublicKey: "ssh-ed25519 AAAA...",
 		Username:  "root",
@@ -1219,7 +1219,7 @@ func TestCertRequestService_Approve_ShouldRefuseToSignWithNoPrincipals(t *testin
 	})
 	svc.policies[model.CertificateTypePAM].principals = func(*Identity, []string) []string { return nil }
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypePAM,
 		PublicKey: "ssh-ed25519 AAAA...",
 		Username:  "mnestor",
@@ -1299,7 +1299,7 @@ func TestCertRequestService_Approve_ShouldEnrollServiceRequestsInsteadOfQueueing
 		},
 	})
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeService,
 		PublicKey: "ssh-ed25519 AAAA...",
 		RequestedOptions: RequestedOptions{
@@ -1402,7 +1402,7 @@ func TestCertRequestService_ShouldRejectAnUnknownType(t *testing.T) {
 
 	svc := newTestCertRequestService(t, time.Hour)
 
-	if _, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	if _, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateType("host"),
 		PublicKey: "ssh-ed25519 AAAA... host",
 	}); err == nil {
@@ -1439,7 +1439,7 @@ func TestCertRequestService_Approve_ShouldErrorWhenNotPending(t *testing.T) {
 	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
 		User: config.CertOptionsUser{ValidDuration: time.Hour},
 	})
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
@@ -1474,7 +1474,7 @@ func TestCertRequestService_Deny_ShouldErrorWhenNotPending(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, 0)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
@@ -1502,7 +1502,7 @@ func TestCertRequestService_Approve_ShouldRefuseARequestPastTTL(t *testing.T) {
 	// found" error, and the test passes even when TTL enforcement is broken.
 	seedUser(t, svc.db, identity.Subject)
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
@@ -1531,7 +1531,7 @@ func TestCertRequestService_RaceCondition_ApproveThenExpire(t *testing.T) {
 	identity := &Identity{Username: "alice", Subject: "sub-alice"}
 	seedUser(t, svc.db, identity.Subject)
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})
@@ -1577,7 +1577,7 @@ func TestCertRequestService_RaceCondition_ExpireThenApprove(t *testing.T) {
 	identity := &Identity{Username: "alice", Subject: "sub-alice"}
 	seedUser(t, svc.db, identity.Subject)
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})
@@ -1850,7 +1850,7 @@ func TestCertRequestService_Approve_ShouldTreatPAMRequireAsOptional(t *testing.T
 				},
 			})
 
-			requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+			requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 				Type:      model.CertificateTypePAM,
 				PublicKey: "ssh-ed25519 AAAA...",
 				Username:  "mnestor",
@@ -1878,7 +1878,7 @@ func TestCertRequestService_Approve_ShouldTreatPAMRequireAsOptional(t *testing.T
 func mustCreateUserRequest(t *testing.T, svc *CertRequestService) string {
 	t.Helper()
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA test",
 	})
@@ -2010,7 +2010,7 @@ func TestCertRequestService_Detail_ShouldReportRequestedAndNarrowedSeparately(t 
 	identity := &Identity{Username: "alice", Subject: "sub-alice"}
 	seedUser(t, svc.db, identity.Subject)
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA test",
 		RequestedOptions: RequestedOptions{
@@ -2168,7 +2168,7 @@ func TestCreateRequest_ShouldRejectATypeTheSchemaDoesNotAllow(t *testing.T) {
 
 	svc := newTestCertRequestService(t, time.Hour)
 
-	_, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	_, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateType("bogus"),
 		PublicKey: "ssh-ed25519 AAAA...",
 	})
@@ -2241,7 +2241,7 @@ func TestApproveServiceEnrollment_ShouldRefuseARequestThatIsNoLongerPending(t *t
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, time.Hour)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeService, PublicKey: "ssh-ed25519 AAAA... svc"})
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeService, PublicKey: "ssh-ed25519 AAAA... svc"})
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
@@ -2341,7 +2341,7 @@ func TestCertRequestService_Deny_ShouldApplyTheTTLFilterWhenConfigured(t *testin
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, time.Minute)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
@@ -2369,7 +2369,7 @@ func TestCertRequestService_Wait_ShouldReportATerminalStatusFoundColdInTheDB(t *
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, 0)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
@@ -2400,7 +2400,7 @@ func TestExpire_ShouldBeANoOpTheSecondTime(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, 0)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA..."})
 	if err != nil {
 		t.Fatalf("unexpected error creating request: %v", err)
 	}
@@ -2496,7 +2496,7 @@ func TestCertRequestService_Wait_MultiInstance_ShouldDecodeWakeMessageCertificat
 	}
 
 	// Create request on instance A.
-	requestID, err := instanceA.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := instanceA.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})
@@ -2601,7 +2601,7 @@ func TestCertRequestService_Approve_FIPS(t *testing.T) {
 		svc := newTestCertRequestServiceWithConfig(t, &config.Config{CertOptions: certOpts, FIPS: boolPtr(true)})
 
 		_, edKey := generateTestSSHPrivateKey(t)
-		requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 			Type:      model.CertificateTypeUser,
 			PublicKey: edKey,
 		})
@@ -2622,7 +2622,7 @@ func TestCertRequestService_Approve_FIPS(t *testing.T) {
 
 		svc := newTestCertRequestServiceWithConfig(t, &config.Config{CertOptions: certOpts, FIPS: boolPtr(true)})
 
-		requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 			Type:      model.CertificateTypeUser,
 			PublicKey: generateTestECDSAAuthorizedKey(t),
 		})
@@ -2643,7 +2643,7 @@ func TestCertRequestService_Approve_FIPS(t *testing.T) {
 
 		svc := newTestCertRequestServiceWithConfig(t, &config.Config{CertOptions: certOpts, FIPS: boolPtr(true)})
 
-		requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 			Type:      model.CertificateTypeUser,
 			PublicKey: "not a valid public key",
 		})
@@ -2665,7 +2665,7 @@ func TestCertRequestService_Approve_FIPS(t *testing.T) {
 		svc := newTestCertRequestServiceWithConfig(t, &config.Config{CertOptions: certOpts, FIPS: boolPtr(false)})
 
 		_, edKey := generateTestSSHPrivateKey(t)
-		requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 			Type:      model.CertificateTypeUser,
 			PublicKey: edKey,
 		})
@@ -2706,7 +2706,7 @@ func TestCertRequestService_Approve_ShouldPersistFullDecisionAudit(t *testing.T)
 		User: config.CertOptionsUser{ValidDuration: time.Hour},
 	})
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})
@@ -2809,7 +2809,7 @@ func TestCertRequestService_Approve_ShouldPersistDecisionAuditOnEnrollment(t *te
 		Service: config.CertOptionsService{ValidDuration: time.Hour, EnrollmentDuration: 90 * 24 * time.Hour},
 	})
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeService,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})
@@ -2839,7 +2839,7 @@ func TestCertRequestService_Deny_ShouldPersistDecisionAudit(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, 0)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA...",
 	})
 	if err != nil {
@@ -2878,7 +2878,7 @@ func TestCertRequestService_Approve_ShouldRollBackStatusWhenDecisionInsertFails(
 		User: config.CertOptionsUser{ValidDuration: time.Hour},
 	})
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})
@@ -2925,7 +2925,7 @@ func TestCertRequestService_ApproveServiceEnrollment_ShouldRollBackWhenDecisionI
 		Service: config.CertOptionsService{ValidDuration: time.Hour, EnrollmentDuration: 90 * 24 * time.Hour},
 	})
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeService,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})
@@ -2967,7 +2967,7 @@ func TestCertRequestService_Deny_ShouldRollBackStatusWhenDecisionInsertFails(t *
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, 0)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA...",
 	})
 	if err != nil {
@@ -3025,7 +3025,7 @@ func TestCertRequestService_Approve_DecisionAuditShouldBeImmutableToLaterUserCha
 		User: config.CertOptionsUser{ValidDuration: time.Hour},
 	})
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})
@@ -3062,7 +3062,7 @@ func TestCertRequestService_Detail_ShouldReturnNilDecisionForAPendingRequest(t *
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, 0)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA...",
 	})
 	if err != nil {
@@ -3090,7 +3090,7 @@ func TestCertRequestService_Detail_ShouldReturnTheDecisionAfterApproval(t *testi
 		User: config.CertOptionsUser{ValidDuration: time.Hour},
 	})
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})
@@ -3123,7 +3123,7 @@ func TestCertRequestService_CreateRequest_ShouldPersistLocalIdentity(t *testing.
 	t.Parallel()
 
 	svc := newTestCertRequestService(t, 0)
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:          model.CertificateTypeUser,
 		PublicKey:     "ssh-ed25519 AAAA...",
 		LocalUsername: "alice",
@@ -3227,7 +3227,7 @@ func TestCertRequestService_CreateRequest_ShouldNormalizeSourceAddresses(t *test
 			t.Parallel()
 
 			svc := newTestCertRequestService(t, 0)
-			requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+			requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 				Type:      model.CertificateTypeUser,
 				PublicKey: "ssh-ed25519 AAAA...",
 				SourceIP:  tt.sourceIP,
@@ -3261,7 +3261,7 @@ func TestCertRequestService_CreateRequest_ShouldUnionSourceIPIntoSourceAddresses
 		t.Parallel()
 
 		svc := newTestCertRequestService(t, 0)
-		requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 			Type:      model.CertificateTypeUser,
 			PublicKey: "ssh-ed25519 AAAA...",
 			SourceIP:  "203.0.113.9",
@@ -3297,7 +3297,7 @@ func TestCertRequestService_CreateRequest_ShouldUnionSourceIPIntoSourceAddresses
 		t.Parallel()
 
 		svc := newTestCertRequestService(t, 0)
-		requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 			Type:      model.CertificateTypeUser,
 			PublicKey: "ssh-ed25519 AAAA...",
 			SourceIP:  "203.0.113.9",
@@ -3331,8 +3331,8 @@ func TestTTLCutoff_ShouldBeExpressedInUTC(t *testing.T) {
 
 	svc := newTestCertRequestService(t, time.Hour)
 
-	if got := svc.ttlCutoff().Location(); got != time.UTC {
-		t.Errorf("ttlCutoff() location = %v, want %v", got, time.UTC)
+	if got := svc.ttlCutoffFor(model.CertificateTypeUser).Location(); got != time.UTC {
+		t.Errorf("ttlCutoffFor() location = %v, want %v", got, time.UTC)
 	}
 }
 
@@ -3387,4 +3387,17 @@ func TestEvictResolved_ShouldSucceedOnAnEmptyCache(t *testing.T) {
 	if err := svc.EvictResolved(context.Background()); err != nil {
 		t.Fatalf("EvictResolved() on an empty cache: %v", err)
 	}
+}
+
+// createRequestID is CreateRequest for the tests that only ever want the ID
+// out of it. CreateRequest returns a CreatedRequest so a caller can also
+// reach the request's deadline and, for a console request, its user code
+// (see docs/proposals/console-login-pam.md); almost every test here
+// predates that and cares about neither.
+//
+// A method rather than a free function so the call sites read the same as
+// before, and defined in a _test.go file so nothing ships it.
+func (s *CertRequestService) createRequestID(ctx context.Context, p NewCertRequestParams) (string, error) {
+	created, err := s.CreateRequest(ctx, p)
+	return created.ID, err
 }

@@ -27,6 +27,10 @@
         "slug": "reference/config/http/access_logging"
       },
       {
+        "label": "cert_request_rate_limit",
+        "slug": "reference/config/http/cert_request_rate_limit"
+      },
+      {
         "label": "tls",
         "slug": "reference/config/http/tls"
       }
@@ -91,6 +95,10 @@
       {
         "label": "pam",
         "slug": "reference/config/cert_options/pam"
+      },
+      {
+        "label": "console",
+        "slug": "reference/config/cert_options/console"
       }
     ]
   },

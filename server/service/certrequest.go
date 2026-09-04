@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,11 +36,48 @@ import (
 type NewCertRequestParams struct {
 	Type             model.CertificateType
 	PublicKey        string
-	Username         string // set for CertificateTypePAM only — see model.CertificateRequest.Username
+	Username         string // set for CertificateTypePAM/Console only — see model.CertificateRequest.Username
 	SourceIP         string
 	LocalUsername    string // set for CertificateTypeUser only — see model.CertificateRequest.LocalUsername
 	LocalHostname    string // set for CertificateTypeUser only — see model.CertificateRequest.LocalHostname
 	RequestedOptions RequestedOptions
+
+	// Hostname, PAMService, TTY and RemoteHost are the console context an
+	// approver is shown. Set for CertificateTypePAM and
+	// CertificateTypeConsole; every one of them is self-reported by an
+	// unauthenticated caller, truncated here rather than trusted to arrive
+	// bounded, and displayed as a claim rather than as a fact. See
+	// model.CertificateRequest.Hostname.
+	Hostname   string
+	PAMService string
+	TTY        string
+	RemoteHost string
+}
+
+// CreatedRequest is what CreateRequest hands back: the request's ID, the
+// deadline the server will hold it to, and — for a type whose approval
+// travels as a typed code — that code.
+//
+// A struct rather than a bare ID because every client now needs the
+// deadline. Without it the client's own timeout and the server's budget are
+// two numbers an operator has to keep in agreement by hand, and getting it
+// wrong shows up as a client still waiting on a request the server already
+// killed, reported as a generic timeout.
+type CreatedRequest struct {
+	ID string
+
+	// ExpiresAt is when the request stops being approvable, from its own
+	// type's budget (see certTypePolicy.approvalTTL).
+	ExpiresAt time.Time
+
+	// UserCode is the short code a human types into the web UI, in its
+	// normalized form. Empty for every type that does not use one.
+	//
+	// This is the one place it is ever returned. It never reaches an SSE
+	// payload, an audit Detail map, or any response to a caller who has not
+	// authenticated — see docs/proposals/console-login-pam.md, "The code is
+	// not a capability".
+	UserCode string
 }
 
 // DecisionContext is the connection the approving/denying request arrived
@@ -79,8 +117,9 @@ type ApprovalSelection struct {
 // certificate requests. CertRequestService is the production
 // implementation.
 type CertRequestProvider interface {
-	CreateRequest(ctx context.Context, p NewCertRequestParams) (requestID string, err error)
+	CreateRequest(ctx context.Context, p NewCertRequestParams) (CreatedRequest, error)
 	Detail(ctx context.Context, requestID string, identity *Identity) (*RequestDetail, error)
+	ResolveUserCode(ctx context.Context, submitted string, identity *Identity) (requestID string, err error)
 	Approve(ctx context.Context, requestID string, identity *Identity, dc DecisionContext, selection ApprovalSelection) error
 	Deny(ctx context.Context, requestID string, identity *Identity, dc DecisionContext) error
 	Wait(ctx context.Context, requestID string) (WaitOutcome, error)
@@ -172,6 +211,13 @@ type CertRequestService struct {
 	// left nil in tests that do not exercise auditing.
 	auditor *AuditService
 
+	// mintUserCode produces a console user code. A field rather than a
+	// direct call to newUserCode so a test can stage the collision the
+	// retry in persistNewRequest exists for — 40 bits of crypto/rand will
+	// not collide on request, and a retry nothing ever exercises is a
+	// retry nobody knows works. Always set by NewCertRequestService.
+	mintUserCode func() (string, error)
+
 	mu sync.Mutex
 	// resolved caches the outcome for any requestID notifyWaiter has fired
 	// for, so a Wait call arriving after resolution (a late reconnect, or
@@ -207,14 +253,15 @@ func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publ
 	}
 
 	return &CertRequestService{
-		config:     c,
-		db:         db,
-		policies:   policies,
-		publisher:  publisher,
-		subscriber: subscriber,
-		engine:     engine,
-		resolved:   make(map[string]WaitOutcome),
-		notifier:   discardNotifications{},
+		config:       c,
+		db:           db,
+		policies:     policies,
+		publisher:    publisher,
+		subscriber:   subscriber,
+		engine:       engine,
+		resolved:     make(map[string]WaitOutcome),
+		notifier:     discardNotifications{},
+		mintUserCode: newUserCode,
 	}, nil
 }
 
@@ -321,7 +368,32 @@ func normalizeSourceAddresses(addrs []string) []string {
 	return out
 }
 
-func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequestParams) (requestID string, err error) {
+func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequestParams) (CreatedRequest, error) {
+	// Resolved first: it carries the network gate that has to refuse before
+	// anything is persisted, and the budget the returned deadline comes
+	// from. An unknown type is a corrupted caller, not a corrupted row —
+	// every route into here hardcodes a known model.CertificateType.
+	policy, err := s.policyFor(p.Type)
+	if err != nil {
+		return CreatedRequest{}, err
+	}
+
+	// The network gate runs before the keypair is recorded and before any
+	// human is asked anything, which is what "fails before a certificate is
+	// minted" asks for: a request from a disallowed network never reaches a
+	// person at all. The reason deliberately does not say which networks
+	// are allowed — that is deployment topology, and the caller is
+	// unauthenticated.
+	if !policy.permitsSource(p.SourceIP) {
+		slog.Warn("refused a certificate request from outside the type's allowed networks",
+			slog.String("cert_type", string(p.Type)),
+			slog.String("source_ip", p.SourceIP),
+		)
+		return CreatedRequest{}, &errorresponses.ForbiddenError{
+			Reason: fmt.Sprintf("%s certificate requests are not accepted from this network", p.Type),
+		}
+	}
+
 	// Union the server-observed source address into the caller's own
 	// reported SourceAddresses before persisting, so the stored value is
 	// the complete set docs/internals/design-brief.md's lifetime-policy section
@@ -354,7 +426,7 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 	if err != nil {
 		// not covered: RequestedOptions is a plain struct of strings,
 		// bools and slices, so json.Marshal cannot fail on it.
-		return "", fmt.Errorf("failed to encode requested options: %w", err)
+		return CreatedRequest{}, fmt.Errorf("failed to encode requested options: %w", err)
 	}
 
 	req := model.CertificateRequest{
@@ -368,10 +440,18 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 		LocalHostname:    p.LocalHostname,
 		Status:           model.CertificateRequestStatusPending,
 		CreatedAt:        time.Now(),
+		// Truncated here rather than at each of the places that render
+		// them: an unauthenticated caller chooses these, and this value is
+		// persisted, shown on the approval page and kept for audit. Same
+		// reasoning as claimUserAgentMaxLen.
+		Hostname:   truncateContextField(p.Hostname),
+		PAMService: truncateContextField(p.PAMService),
+		TTY:        truncateContextField(p.TTY),
+		RemoteHost: truncateContextField(p.RemoteHost),
 	}
 
-	if err := s.db.WithContext(ctx).Create(&req).Error; err != nil {
-		return "", fmt.Errorf("failed to persist certificate request: %w", err)
+	if err := s.persistNewRequest(ctx, &req, policy); err != nil {
+		return CreatedRequest{}, err
 	}
 
 	// A request is created by an unauthenticated client, so nothing knows
@@ -386,26 +466,150 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 			"source_ip":      req.SourceIP,
 			"local_username": req.LocalUsername,
 			"local_hostname": req.LocalHostname,
+			// The console context, recorded because it is what an incident
+			// reviewer needs to place a login: which machine claimed to be
+			// asking, through which service, at which terminal. Every one
+			// of them is the caller's own claim.
+			//
+			// req.UserCode is deliberately absent. It is a bearer-adjacent
+			// credential and the never-log-sensitive-data rule covers audit
+			// payloads too — the same treatment the enrollment code gets.
+			"hostname":    req.Hostname,
+			"pam_service": req.PAMService,
+			"tty":         req.TTY,
+			"remote_host": req.RemoteHost,
 		},
 	})
 
-	return req.ID, nil
+	return CreatedRequest{
+		ID:        req.ID,
+		ExpiresAt: req.CreatedAt.Add(policy.approvalTTL()),
+		UserCode:  req.UserCode,
+	}, nil
 }
 
-// ttlCutoff returns the CreatedAt threshold before which a still-pending
-// request is treated as expired: created before this instant, no longer
-// approvable. A zero ApprovalTTL disables expiry (returns the zero Time, so
-// no request's CreatedAt is ever before it).
+// maxContextFieldLen bounds each self-reported console context field. A
+// hostname is at most 253 bytes and a tty path far less, so this is
+// generous for every legitimate value and still stops an unauthenticated
+// caller writing arbitrary volume into the table. Same reasoning as
+// claimUserAgentMaxLen.
+const maxContextFieldLen = 256
+
+// truncateContextField bounds one self-reported string. Truncated rather
+// than rejected: a request that fails because a machine has a long hostname
+// is a worse outcome than an approval page showing a clipped one, and the
+// field is context for a human, not an input to any decision.
+func truncateContextField(v string) string {
+	if len(v) > maxContextFieldLen {
+		return v[:maxContextFieldLen]
+	}
+	return v
+}
+
+// userCodeMintAttempts is how many times persistNewRequest re-rolls a code
+// after a uniqueness conflict.
+//
+// The partial unique index covers live rows only, so a collision needs two
+// simultaneously-pending requests to draw the same 40-bit value: at a
+// thousand pending console logins the chance of one is about one in two
+// million per request. Three attempts turns that into a number with no
+// practical meaning, and a fourth would still not be the thing that saved
+// the deployment.
+const userCodeMintAttempts = 3
+
+// persistNewRequest writes req, minting a user code first for a type that
+// uses one and re-rolling it if the live-rows unique index refuses.
+//
+// The retry is what makes the index safe to rely on. Without it a
+// collision would surface to a console as a failed login with a server
+// error, which is both unhelpful and indistinguishable from ssoosshd being
+// down — and the fallback for "ssoosshd is down" is the local password
+// prompt, so the failure mode matters.
+func (s *CertRequestService) persistNewRequest(ctx context.Context, req *model.CertificateRequest, policy *certTypePolicy) error {
+	if !policy.usesUserCode {
+		if err := s.db.WithContext(ctx).Create(req).Error; err != nil {
+			return fmt.Errorf("failed to persist certificate request: %w", err)
+		}
+		return nil
+	}
+
+	var lastErr error
+	for attempt := range userCodeMintAttempts {
+		code, err := s.mintUserCode()
+		if err != nil {
+			// not covered: crypto/rand failure (see .claude/rules/test-go.md).
+			return err
+		}
+		req.UserCode = code
+
+		lastErr = s.db.WithContext(ctx).Create(req).Error
+		if lastErr == nil {
+			return nil
+		}
+		if !isUniqueConstraintViolation(lastErr) {
+			return fmt.Errorf("failed to persist certificate request: %w", lastErr)
+		}
+		slog.Warn("console user code collided with a live request, re-rolling",
+			slog.Int("attempt", attempt+1),
+		)
+	}
+	return fmt.Errorf("failed to persist certificate request after %d user code attempts: %w", userCodeMintAttempts, lastErr)
+}
+
+// isUniqueConstraintViolation reports whether err is a unique-index
+// rejection, which is the only database error persistNewRequest retries.
+//
+// Matched on the driver's message rather than on a typed error: this
+// codebase runs on both SQLite and Postgres and neither driver's error is
+// reachable from here without importing it, so gorm.ErrDuplicatedKey (which
+// only some dialectors translate) is checked first and the message is the
+// fallback. Getting this wrong in the permissive direction costs two extra
+// INSERTs; getting it wrong in the strict direction is what the outer error
+// return already handles.
+func isUniqueConstraintViolation(err error) bool {
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unique constraint") ||
+		strings.Contains(msg, "duplicate key") ||
+		strings.Contains(msg, "constraint failed: unique")
+}
+
+// approvalTTLFor returns how long a request of certType stays approvable.
+//
+// Per type because a type may shorten its own budget — today only console
+// does, and it does so because the approval window is the attacker's
+// working time in the consent-phishing case (see
+// docs/proposals/console-login-pam.md). config guarantees no type exceeds
+// the global budget.
+//
+// An unrecognized type falls back to the global TTL rather than erroring.
+// It can only come from a hand-edited or corrupted row, and the global is
+// the longest budget any type can have, so the fallback can never expire
+// something early — the direction that would matter.
+func (s *CertRequestService) approvalTTLFor(certType model.CertificateType) time.Duration {
+	if policy, ok := s.policies[certType]; ok {
+		return policy.approvalTTL()
+	}
+	return s.config.CertOptions.ApprovalTTL()
+}
+
+// ttlCutoffFor returns the CreatedAt threshold before which a still-pending
+// request of certType is treated as expired: created before this instant,
+// no longer approvable. A zero TTL disables expiry (returns the zero Time,
+// so no request's CreatedAt is ever before it).
 //
 // UTC, and it has to be: this value is compared against created_at, which
 // SQLite compares as a string. A local-offset cutoff against UTC-stored
 // rows compares by literal digits rather than by instant. See package
 // dbtime.
-func (s *CertRequestService) ttlCutoff() time.Time {
-	if s.config.CertOptions.ApprovalTTL() <= 0 {
+func (s *CertRequestService) ttlCutoffFor(certType model.CertificateType) time.Time {
+	ttl := s.approvalTTLFor(certType)
+	if ttl <= 0 {
 		return time.Time{}
 	}
-	return time.Now().Add(-s.config.CertOptions.ApprovalTTL()).UTC()
+	return time.Now().Add(-ttl).UTC()
 }
 
 // EvictResolved drops cached outcomes older than the request TTL. Without
@@ -461,6 +665,12 @@ type RequestDetail struct {
 	// would carry that the requester does not choose.
 	Principals    []string
 	ValidDuration time.Duration
+
+	// ExpiresAt is when the request stops being approvable, from its own
+	// type's budget. The page counts down to it — most usefully for a
+	// console request, whose budget is deliberately the shortest of the
+	// four.
+	ExpiresAt time.Time
 
 	// Decision is the request's audit record — nil for a still-pending
 	// request, since most requests being viewed haven't been decided yet.
@@ -535,6 +745,7 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 		Narrowed:      narrowRequestedOptions(policy, requested),
 		Principals:    principals,
 		ValidDuration: policy.validDuration,
+		ExpiresAt:     req.CreatedAt.Add(policy.approvalTTL()),
 		Decision:      decision,
 	}, nil
 }
@@ -613,7 +824,7 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 	if req.Status != model.CertificateRequestStatusPending {
 		return fmt.Errorf("certificate request %q is not pending", requestID)
 	}
-	if cutoff := s.ttlCutoff(); !cutoff.IsZero() && req.CreatedAt.Before(cutoff) {
+	if cutoff := s.ttlCutoffFor(req.Type); !cutoff.IsZero() && req.CreatedAt.Before(cutoff) {
 		s.expire(ctx, requestID)
 		return fmt.Errorf("certificate request %q is not pending", requestID)
 	}
@@ -1297,6 +1508,16 @@ func intersectStrings(requested, permitted []string) []string {
 func (s *CertRequestService) Deny(ctx context.Context, requestID string, identity *Identity, dc DecisionContext) error {
 	now := time.Now()
 
+	// Read before the guarded UPDATE because the expiry cutoff is a
+	// property of the certificate type (see ttlCutoffFor), and the type
+	// only exists on the row. An unknown ID stops here with the same
+	// not-found Approve gives, rather than reaching the update and coming
+	// back as "not pending", which said the wrong thing.
+	req, err := s.lookupRequest(ctx, requestID)
+	if err != nil {
+		return err
+	}
+
 	decision, err := newDecision(requestID, model.CertificateRequestDecisionDenied, identity, dc, now, nil)
 	if err != nil {
 		// not covered: newDecision can only fail through its own
@@ -1318,7 +1539,7 @@ func (s *CertRequestService) Deny(ctx context.Context, requestID string, identit
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		q := tx.Model(&model.CertificateRequest{}).
 			Where("id = ? AND status = ?", requestID, model.CertificateRequestStatusPending)
-		if cutoff := s.ttlCutoff(); !cutoff.IsZero() {
+		if cutoff := s.ttlCutoffFor(req.Type); !cutoff.IsZero() {
 			q = q.Where("created_at > ?", cutoff)
 		}
 		result := q.Updates(map[string]any{
@@ -1450,7 +1671,7 @@ func (s *CertRequestService) Wait(ctx context.Context, requestID string) (WaitOu
 // returned channel is nil. Receiving from a nil channel blocks forever, so
 // that case simply never fires and expiry is left to reconcileStatus.
 func (s *CertRequestService) expiryTimer(req model.CertificateRequest) (<-chan time.Time, func()) {
-	ttl := s.config.CertOptions.ApprovalTTL()
+	ttl := s.approvalTTLFor(req.Type)
 	if ttl <= 0 {
 		return nil, func() {}
 	}
@@ -1515,7 +1736,7 @@ func (s *CertRequestService) lookupRequest(ctx context.Context, requestID string
 func (s *CertRequestService) reconcileStatus(ctx context.Context, requestID string, req model.CertificateRequest) (block bool, err error) {
 	switch req.Status {
 	case model.CertificateRequestStatusPending:
-		if cutoff := s.ttlCutoff(); !cutoff.IsZero() && req.CreatedAt.Before(cutoff) {
+		if cutoff := s.ttlCutoffFor(req.Type); !cutoff.IsZero() && req.CreatedAt.Before(cutoff) {
 			s.expire(ctx, requestID)
 			return false, nil
 		}
@@ -1524,7 +1745,7 @@ func (s *CertRequestService) reconcileStatus(ctx context.Context, requestID stri
 	case model.CertificateRequestStatusSigning:
 		// Approved and queued for the signer (see
 		// docs/internals/signing-pipeline.md) — not yet resolved. No TTL
-		// applies (TTL is only for "unapproved too long," see ttlCutoff),
+		// applies (TTL is only for "unapproved too long," see ttlCutoffFor),
 		// so wait the same way as pending.
 		return true, nil
 

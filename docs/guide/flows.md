@@ -305,7 +305,67 @@ Nothing is written to disk. Stack configuration and the lockout warning:
 
 ---
 
-## 6. Certificate types at a glance
+## 6. Console login: a code instead of a URL
+
+A console has a human in front of it and no browser, and nothing on the
+screen can be copied. So the machine prints a short code instead of an
+approval URL, and the approver carries it to a device that does have a
+browser.
+
+The module driving the console side is shipped separately; what follows is
+the contract it speaks.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User at the console
+    participant PAM as console PAM module
+    participant Server as ssoossh server
+    participant Browser as User's phone or desk
+
+    User->>PAM: login: alice
+    PAM->>PAM: generate ephemeral keypair
+    PAM->>Server: POST /api/certs/console<br/>public key, account, host, service, tty
+    Server->>Server: refuse if outside<br/>cert_options.console.allowed_networks
+    Server-->>PAM: user_code, /console, /c/&lt;code&gt;, expires_at
+    PAM-->>User: display the code and the URL
+    User->>Browser: type the code at /console
+    Browser->>Server: POST .../requests/resolve-code<br/>(session required)
+    Server->>Server: resolve, then claim for this session
+    Server-->>Browser: redirect to /approve/&lt;id&gt;
+    Browser->>Server: approve, having seen host, service, tty, account
+    Server-->>PAM: certificate, seconds of validity
+    PAM->>PAM: the same four checks as sudo
+    alt valid
+        PAM-->>User: session starts
+    else invalid, expired, or server unreachable
+        PAM-->>User: auth failure (falls through the stack)
+    end
+```
+
+Three things about that diagram are load-bearing rather than incidental:
+
+- **Resolving a code requires a session.** An unauthenticated caller never
+  learns whether a code is live and never receives a request ID — and the
+  request ID is the credential the certificate is delivered against. Step 8
+  is the whole reason the code is safe to display.
+- **Resolving claims the request**, before either party sees any detail, so
+  two people typing the same code is settled at submission rather than at
+  the approval page.
+- **The window is short on purpose.** `cert_options.console.client_timeout`
+  defaults to 2m against the 5m global ceiling. That window is the
+  attacker's working time in the phone-call case: someone starts a login at
+  an unattended console and calls the victim to read them the code.
+
+Which accounts may console into a machine at all is decided in that
+machine's own PAM stack, above the ssoossh line, where it is root-owned and
+costs no network call. Configuration and the lockout rules:
+[deployment.md §9](../operations/deployment.md#9-console-login); full
+reasoning: [console-login-pam.md](../proposals/console-login-pam.md).
+
+---
+
+## 7. Certificate types at a glance
 
 ```mermaid
 flowchart LR
@@ -313,6 +373,7 @@ flowchart LR
     CA --> U["User certificate<br/>interactive SSH<br/>shipped"]
     CA --> S["Service certificate<br/>non-interactive<br/>shipped"]
     CA --> P["PAM certificate<br/>sudo/su<br/>shipped"]
+    CA --> C["Console certificate<br/>login at a console<br/>server shipped"]
     U --> T["Target hosts trust the CA"]
     S --> T
 ```

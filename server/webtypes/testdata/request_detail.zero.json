@@ -3,6 +3,7 @@
   "type": "",
   "status": "",
   "source_ip": "",
+  "expires_at": "0001-01-01T00:00:00Z",
   "public_key": "",
   "principals": null,
   "valid_seconds": 0,

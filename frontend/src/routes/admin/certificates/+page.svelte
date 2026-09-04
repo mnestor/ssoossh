@@ -19,7 +19,7 @@
 	let isLoading = $state(false);
 	let hasLoaded = $state(false);
 
-	const certTypes = ['user', 'service', 'pam'];
+	const certTypes = ['user', 'service', 'pam', 'console'];
 	const statusOptions = ['live', 'expired'];
 
 	// Which load is allowed to write to the page. Nothing cancels a request

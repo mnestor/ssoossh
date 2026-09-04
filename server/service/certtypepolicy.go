@@ -2,6 +2,8 @@ package service
 
 import (
 	"fmt"
+	"net/netip"
+
 	// Key ID templates render plain-text SSH certificate key IDs, never
 	// HTML; html/template's escaping would corrupt them.
 	"text/template" // nosemgrep: go.lang.security.audit.xss.import-text-template.import-text-template
@@ -70,6 +72,64 @@ type certTypePolicy struct {
 	// accounts the approver actually holds, or nil for a type with no such
 	// tie. Called by checkApproverAuthorization after the group check.
 	linkage func(identity *Identity, selection ApprovalSelection) error
+
+	// clientTimeout is this type's whole request-timing budget, already
+	// resolved: the type's own cert_options.<type>.client_timeout when it
+	// sets one, otherwise the global cert_options.client_timeout. Config
+	// guarantees it never exceeds the global (see
+	// config.CertificateOptions.Validate), which is what lets everything
+	// derived from the global — the stranded sweep's cutoff, the
+	// resolved-outcome cache's eviction age, the sweep interval — stay
+	// correct for a request on a shorter budget.
+	clientTimeout time.Duration
+
+	// allowedNetworks refuses request creation from outside these
+	// networks, or is empty for no gate. Only the console type configures
+	// one: the server's half of per-host policy has to rest on the source
+	// address, which the server observes, rather than a hostname an
+	// unauthenticated caller typed.
+	allowedNetworks []netip.Prefix
+
+	// usesUserCode marks a type whose requests carry a short code a human
+	// types into the web UI instead of opening a URL the client printed
+	// (docs/proposals/console-login-pam.md). Console only.
+	usesUserCode bool
+}
+
+// approvalTTL is how long a request of this type stays approvable, the
+// human's share of the type's own budget. See
+// config.CertificateOptions.ApprovalTTL for the split and why the global
+// budget stays the ceiling.
+func (p *certTypePolicy) approvalTTL() time.Duration {
+	return config.ApprovalTTLFor(p.clientTimeout)
+}
+
+// permitsSource reports whether a request from sourceIP may be created for
+// this type. An empty allowedNetworks permits everything, which is the
+// default for every type.
+//
+// An unparseable or empty source address is refused whenever a gate is
+// configured. That is the opposite of matchSourceRule's err-on-the-side-of-
+// permissive handling, deliberately: there the address only tiers a
+// lifetime, here it is the whole of the gate, and a gate that opens when it
+// cannot tell where a request came from is not a gate.
+func (p *certTypePolicy) permitsSource(sourceIP string) bool {
+	if len(p.allowedNetworks) == 0 {
+		return true
+	}
+	addr, err := netip.ParseAddr(sourceIP)
+	if err != nil {
+		return false
+	}
+	// ::ffff:10.0.0.1 matches 10.0.0.0/8, the same normalization the
+	// lifetime policy's source rules apply.
+	addr = addr.Unmap()
+	for _, n := range p.allowedNetworks {
+		if n.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 // narrowRequestedOptions narrows requested against p's server-config bound.
@@ -99,6 +159,20 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates, dec
 	requirePAM, err := parseRequire(opts.PAM.Require, "cert_options.pam.require", declaredClaims)
 	if err != nil {
 		return nil, err
+	}
+	requireConsole, err := parseRequire(opts.Console.Require, "cert_options.console.require", declaredClaims)
+	if err != nil {
+		return nil, err
+	}
+	consoleNetworks, err := parseAllowedNetworks(opts.Console.AllowedNetworks, "cert_options.console.allowed_networks")
+	if err != nil {
+		return nil, err
+	}
+	// Unset inherits the global budget; config has already refused a value
+	// longer than it.
+	consoleTimeout := opts.Console.ClientTimeout
+	if consoleTimeout <= 0 {
+		consoleTimeout = opts.ClientTimeout
 	}
 	// userPrincipals returns the approver's selection for user-type
 	// requests, or defaults to the approver's username if the selection is
@@ -136,6 +210,7 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates, dec
 			keyIDTemplate: kt.user,
 			principals:    userPrincipals,
 			flow:          flowSigning,
+			clientTimeout: opts.ClientTimeout,
 			linkage: func(identity *Identity, selection ApprovalSelection) error {
 				return checkUserPrincipalLinkage(identity, selection.Principals)
 			},
@@ -149,6 +224,7 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates, dec
 			keyIDTemplate:      kt.service,
 			principals:         servicePrincipals,
 			flow:               flowEnrollment,
+			clientTimeout:      opts.ClientTimeout,
 			linkage: func(identity *Identity, selection ApprovalSelection) error {
 				return checkServiceAccountLinkage(identity, selection.ServiceAccount)
 			},
@@ -160,12 +236,51 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates, dec
 			keyIDTemplate: kt.pam,
 			principals:    pamPrincipals,
 			flow:          flowSigning,
+			clientTimeout: opts.ClientTimeout,
 			// No linkage: pamPrincipals returns the approver's own accounts,
 			// so there is no selection to cross-check against what they hold.
 			// checkUserPrincipalLinkage exists for the user type, where the
 			// approver picks the principals.
 		},
+		model.CertificateTypeConsole: {
+			require:       requireConsole,
+			validDuration: opts.Console.ValidDuration,
+			extensions:    opts.Console.Extensions,
+			keyIDTemplate: kt.console,
+			// Same reasoning as PAM, and it matters more here: the module
+			// names the account typed at the `login:` prompt, and the
+			// certificate names the approver's own accounts instead. An
+			// attacker who types `root` at an unattended console gets a
+			// certificate the host's principals-map refuses unless that map
+			// already says the approver may become root.
+			principals:      pamPrincipals,
+			flow:            flowSigning,
+			clientTimeout:   consoleTimeout,
+			allowedNetworks: consoleNetworks,
+			usesUserCode:    true,
+			// No linkage, for the same reason as PAM.
+		},
 	}, nil
+}
+
+// parseAllowedNetworks parses a type's allowed_networks list. label names
+// the config key in errors. config.CertificateOptions.Validate has already
+// rejected an unparseable entry at startup; this repeats the parse because
+// it is what produces the values, and a second error message from the same
+// input costs nothing.
+func parseAllowedNetworks(cidrs []string, label string) ([]netip.Prefix, error) {
+	if len(cidrs) == 0 {
+		return nil, nil
+	}
+	out := make([]netip.Prefix, 0, len(cidrs))
+	for i, c := range cidrs {
+		prefix, err := netip.ParsePrefix(c)
+		if err != nil {
+			return nil, fmt.Errorf("%s[%d]: invalid CIDR %q: %w", label, i, c, err)
+		}
+		out = append(out, prefix)
+	}
+	return out, nil
 }
 
 // parseRequire parses one type's require gate, or returns nil for an unset

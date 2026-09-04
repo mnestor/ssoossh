@@ -306,3 +306,164 @@ func TestEndpointRateLimiter_EvictStaleClients_ShouldDeleteEntriesOlderThanMaxAg
 		t.Error("expected client within maxAge to remain")
 	}
 }
+
+// PerKeys exists for console code submission, where limiting on the source
+// address alone is defeated by having several addresses and limiting on the
+// session alone is defeated by having several accounts. Both axes have to
+// hold, which is what these pin.
+
+func TestEndpointRateLimiter_PerKeys_ShouldAllowRequestsWithinBurst(t *testing.T) {
+	t.Parallel()
+
+	extractor := func(c *gin.Context) []string {
+		return []string{"subject:" + c.GetString("subject"), "ip:" + c.ClientIP()}
+	}
+	handler := NewEndpointRateLimiter().PerKeys(rate.Every(time.Minute), 2, extractor)
+
+	c, w := newTestRequest("203.0.113.100:1111")
+	c.Set("subject", "sub-alice")
+	handler(c)
+
+	if c.IsAborted() {
+		t.Fatal("expected the first request within burst to not be aborted")
+	}
+	if w.Code != http.StatusOK {
+		t.Errorf("got status %d, want default 200 (not aborted)", w.Code)
+	}
+}
+
+func TestEndpointRateLimiter_PerKeys_ShouldRejectRequestsBeyondBurst(t *testing.T) {
+	t.Parallel()
+
+	extractor := func(c *gin.Context) []string {
+		return []string{"subject:" + c.GetString("subject"), "ip:" + c.ClientIP()}
+	}
+	handler := NewEndpointRateLimiter().PerKeys(rate.Every(time.Minute), 1, extractor)
+
+	first, _ := newTestRequest("203.0.113.101:1111")
+	first.Set("subject", "sub-alice")
+	handler(first)
+	if first.IsAborted() {
+		t.Fatal("expected the first request to be allowed")
+	}
+
+	second, _ := newTestRequest("203.0.113.101:1111")
+	second.Set("subject", "sub-alice")
+	handler(second)
+
+	if !second.IsAborted() {
+		t.Fatal("expected the second request beyond burst to be aborted")
+	}
+	tooManyRequests := &errorresponses.TooManyRequestsError{}
+	if len(second.Errors) != 1 || !errors.As(second.Errors[0].Err, &tooManyRequests) {
+		t.Errorf("expected a TooManyRequestsError, got %v", second.Errors)
+	}
+}
+
+// The attack this defends against is one account grinding through a code
+// space from many addresses, so exhausting the session's bucket has to stop
+// the next request even from a fresh address.
+func TestEndpointRateLimiter_PerKeys_ShouldHoldWhenOnlyTheSessionKeyIsExhausted(t *testing.T) {
+	t.Parallel()
+
+	extractor := func(c *gin.Context) []string {
+		return []string{"subject:" + c.GetString("subject"), "ip:" + c.ClientIP()}
+	}
+	handler := NewEndpointRateLimiter().PerKeys(rate.Every(time.Minute), 1, extractor)
+
+	first, _ := newTestRequest("203.0.113.110:1111")
+	first.Set("subject", "sub-alice")
+	handler(first)
+
+	// A different address, the same account: the address bucket is fresh,
+	// the account's is not.
+	second, _ := newTestRequest("198.51.100.9:1111")
+	second.Set("subject", "sub-alice")
+	handler(second)
+
+	if !second.IsAborted() {
+		t.Fatal("expected the request to be held by the session key despite a fresh address")
+	}
+}
+
+// And the mirror: one address grinding across many accounts has to be
+// stopped by the address key.
+func TestEndpointRateLimiter_PerKeys_ShouldHoldWhenOnlyTheAddressKeyIsExhausted(t *testing.T) {
+	t.Parallel()
+
+	extractor := func(c *gin.Context) []string {
+		return []string{"subject:" + c.GetString("subject"), "ip:" + c.ClientIP()}
+	}
+	handler := NewEndpointRateLimiter().PerKeys(rate.Every(time.Minute), 1, extractor)
+
+	first, _ := newTestRequest("203.0.113.120:1111")
+	first.Set("subject", "sub-alice")
+	handler(first)
+
+	second, _ := newTestRequest("203.0.113.120:2222")
+	second.Set("subject", "sub-bob")
+	handler(second)
+
+	if !second.IsAborted() {
+		t.Fatal("expected the request to be held by the address key despite a fresh session")
+	}
+}
+
+// Two identities on two addresses share nothing, so neither should feel the
+// other's traffic.
+func TestEndpointRateLimiter_PerKeys_ShouldIsolateUnrelatedCallers(t *testing.T) {
+	t.Parallel()
+
+	extractor := func(c *gin.Context) []string {
+		return []string{"subject:" + c.GetString("subject"), "ip:" + c.ClientIP()}
+	}
+	handler := NewEndpointRateLimiter().PerKeys(rate.Every(time.Minute), 1, extractor)
+
+	first, _ := newTestRequest("203.0.113.130:1111")
+	first.Set("subject", "sub-alice")
+	handler(first)
+
+	second, _ := newTestRequest("198.51.100.30:1111")
+	second.Set("subject", "sub-bob")
+	handler(second)
+
+	if second.IsAborted() {
+		t.Error("an unrelated caller was held by another's bucket")
+	}
+}
+
+// No keys means nothing to count against — the handler's own check is what
+// rejects such a request, the same contract CodeBucket has.
+func TestEndpointRateLimiter_PerKeys_ShouldSkipLimitWhenTheExtractorReturnsNothing(t *testing.T) {
+	t.Parallel()
+
+	handler := NewEndpointRateLimiter().PerKeys(rate.Every(time.Minute), 0,
+		func(*gin.Context) []string { return nil })
+
+	c, w := newTestRequest("203.0.113.140:1111")
+	handler(c)
+
+	if c.IsAborted() {
+		t.Error("expected no limit to apply when the extractor returns no keys")
+	}
+	if w.Code != http.StatusOK {
+		t.Errorf("got status %d, want 200", w.Code)
+	}
+}
+
+func TestEndpointRateLimiter_PerKeys_ShouldAdvertiseRateLimitHeaders(t *testing.T) {
+	t.Parallel()
+
+	handler := NewEndpointRateLimiter().PerKeys(rate.Every(time.Minute), 3,
+		func(*gin.Context) []string { return []string{"subject:sub-alice"} })
+
+	c, w := newTestRequest("203.0.113.150:1111")
+	handler(c)
+
+	if got := w.Header().Get("RateLimit-Limit"); got != "3" {
+		t.Errorf("got RateLimit-Limit %q, want %q", got, "3")
+	}
+	if got := w.Header().Get("RateLimit-Remaining"); got != "2" {
+		t.Errorf("got RateLimit-Remaining %q, want %q after one request of a burst of three", got, "2")
+	}
+}

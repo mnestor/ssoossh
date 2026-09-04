@@ -69,6 +69,27 @@ eyebrow: "Configuration"
 | [`cert_options.pam.lifetime_policy.default_enrollment_duration`](/ssoossh/reference/config/cert_options/pam/#lifetime_policydefault_enrollment_duration) | duration | `0` |
 | [`cert_options.pam.lifetime_policy.tiers`](/ssoossh/reference/config/cert_options/pam/#lifetime_policytiers) | list | `empty` |
 | [`cert_options.pam.lifetime_policy.source_policy`](/ssoossh/reference/config/cert_options/pam/#lifetime_policysource_policy) | list | `empty` |
+| [`cert_options.console.require.group`](/ssoossh/reference/config/cert_options/console/#requiregroup) | string | `empty` |
+| [`cert_options.console.require.claim`](/ssoossh/reference/config/cert_options/console/#requireclaim) | string | `empty` |
+| [`cert_options.console.require.at_least`](/ssoossh/reference/config/cert_options/console/#requireat_least) | number | `0` |
+| [`cert_options.console.require.at_most`](/ssoossh/reference/config/cert_options/console/#requireat_most) | number | `0` |
+| [`cert_options.console.require.exactly`](/ssoossh/reference/config/cert_options/console/#requireexactly) | number | `0` |
+| [`cert_options.console.require.equals`](/ssoossh/reference/config/cert_options/console/#requireequals) | string | `empty` |
+| [`cert_options.console.require.one_of`](/ssoossh/reference/config/cert_options/console/#requireone_of) | list | `empty` |
+| [`cert_options.console.require.contains`](/ssoossh/reference/config/cert_options/console/#requirecontains) | string | `empty` |
+| [`cert_options.console.require.all_of`](/ssoossh/reference/config/cert_options/console/#requireall_of) | list | `empty` |
+| [`cert_options.console.require.any_of`](/ssoossh/reference/config/cert_options/console/#requireany_of) | list | `empty` |
+| [`cert_options.console.allowed_networks`](/ssoossh/reference/config/cert_options/console/#allowed_networks) | list | `empty` |
+| [`cert_options.console.client_timeout`](/ssoossh/reference/config/cert_options/console/#client_timeout) | duration | `2m` |
+| [`cert_options.console.valid_duration`](/ssoossh/reference/config/cert_options/console/#valid_duration) | duration | `30s` |
+| [`cert_options.console.extensions`](/ssoossh/reference/config/cert_options/console/#extensions) | list | `empty` |
+| [`cert_options.console.key_id_template`](/ssoossh/reference/config/cert_options/console/#key_id_template) | string | `empty` |
+| [`cert_options.console.lifetime_policy.default_duration`](/ssoossh/reference/config/cert_options/console/#lifetime_policydefault_duration) | duration | `0` |
+| [`cert_options.console.lifetime_policy.on_absent_claim`](/ssoossh/reference/config/cert_options/console/#lifetime_policyon_absent_claim) | string | `empty` |
+| [`cert_options.console.lifetime_policy.default_extensions`](/ssoossh/reference/config/cert_options/console/#lifetime_policydefault_extensions) | list | `empty` |
+| [`cert_options.console.lifetime_policy.default_enrollment_duration`](/ssoossh/reference/config/cert_options/console/#lifetime_policydefault_enrollment_duration) | duration | `0` |
+| [`cert_options.console.lifetime_policy.tiers`](/ssoossh/reference/config/cert_options/console/#lifetime_policytiers) | list | `empty` |
+| [`cert_options.console.lifetime_policy.source_policy`](/ssoossh/reference/config/cert_options/console/#lifetime_policysource_policy) | list | `empty` |
 | [`cert_options.client_timeout`](#client_timeout) | duration | `5m` |
 
 ## `client_timeout`

@@ -65,6 +65,12 @@ const (
 	// log, so an unset PAM template identifies the type rather than
 	// silently reading like a user certificate.
 	defaultPAMKeyIDTemplate = "pam:{{.Username}}"
+
+	// defaultConsoleKeyIDTemplate is console's own default, on the same
+	// terms as PAM's: a console login and an SSH login by the same person
+	// have to stay apart in an audit log, and a console session is the
+	// bigger of the two grants.
+	defaultConsoleKeyIDTemplate = "console:{{.Username}}"
 )
 
 // keyIDTemplates holds the parsed per-type key ID templates, built once at
@@ -75,6 +81,7 @@ type keyIDTemplates struct {
 	user    *template.Template
 	service *template.Template
 	pam     *template.Template
+	console *template.Template
 }
 
 // newKeyIDTemplates parses opts' per-type templates. User certificates are
@@ -112,7 +119,18 @@ func newKeyIDTemplates(opts config.CertificateOptions) (*keyIDTemplates, error) 
 		return nil, err
 	}
 
-	return &keyIDTemplates{user: userTmpl, service: serviceTmpl, pam: pamTmpl}, nil
+	// Console does not fall back to userSrc either — see
+	// defaultConsoleKeyIDTemplate.
+	consoleSrc := opts.Console.KeyIDTemplate
+	if consoleSrc == "" {
+		consoleSrc = defaultConsoleKeyIDTemplate
+	}
+	consoleTmpl, err := parseKeyIDTemplate("console", consoleSrc)
+	if err != nil {
+		return nil, err
+	}
+
+	return &keyIDTemplates{user: userTmpl, service: serviceTmpl, pam: pamTmpl, console: consoleTmpl}, nil
 }
 
 // parseKeyIDTemplate parses src and immediately executes it once against a

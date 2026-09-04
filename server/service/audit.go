@@ -37,6 +37,14 @@ const (
 	AuditCertRequested AuditAction = "cert.requested"
 	AuditCertApproved  AuditAction = "cert.approved"
 	AuditCertDenied    AuditAction = "cert.denied"
+	// AuditCertCodeResolved records a console login code being typed into
+	// the web UI and resolving. It is the moment a request created by an
+	// unauthenticated machine acquires a named human, which is the step the
+	// consent-phishing case in docs/proposals/console-login-pam.md turns
+	// on: an approval that follows a phone call looks exactly like one that
+	// does not, except that this event names who was talked into it and
+	// which machine's console they were told about.
+	AuditCertCodeResolved AuditAction = "cert.code_resolved"
 	// AuditCertIssued goes to the shipped log only, never the table — see
 	// tableSkipped. The UI already has certificate history from the
 	// certificates table, so a table copy would be pure duplication; the

@@ -126,9 +126,17 @@ No nonce needed: the per-attempt keypair provides the freshness. Nothing is reta
 
 ## Future
 
-- Console login PAM module: displays a code the user types into the web UI (machine needs
-  server reachability, not a browser). Same four checks. Per-host server setting to
-  disallow or group-restrict console logins, failing before a certificate is minted.
+- Console login: the server half is built — a `console` certificate type,
+  `POST /api/certs/console`, the typed-code resolve endpoint, and the web UI
+  that accepts a code. The module that drives it from a console is written
+  separately in C. What is left is the QR rendering and the deferred push
+  channel; see [console-login-pam.md](../proposals/console-login-pam.md).
+  Note the one correction that design makes to the line this bullet used to
+  carry: the per-host *group* restriction belongs in the host's PAM stack
+  (`pam_succeed_if` above the ssoossh line), not on the wire, because a
+  field an unauthenticated caller sends can be omitted. What the server
+  keeps is the *disallow* half, gated on the source address it observes
+  rather than on a hostname the caller typed.
 
 ## References
 

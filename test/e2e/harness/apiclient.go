@@ -231,3 +231,60 @@ func SetNotificationPreference(client *http.Client, serverBaseURL, kind string, 
 	}
 	return nil
 }
+
+// CreateConsoleRequest posts a console login request the way the console
+// PAM module does: unauthenticated, naming the local account being logged
+// into and the self-reported context the approver is shown.
+//
+// Unauthenticated is the point, not a shortcut. Every create endpoint is
+// open — a machine has no session — which is exactly why the code this
+// answers with must never be resolvable without one.
+func CreateConsoleRequest(serverBaseURL string, req apitypes.ConsoleRequestBody) (apitypes.CreateRequestResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return apitypes.CreateRequestResponse{}, fmt.Errorf("encode console request: %w", err)
+	}
+
+	resp, err := http.Post(serverBaseURL+"/api/certs/console", "application/json", bytes.NewReader(body)) //nolint:noctx // the e2e harness runs against a loopback server with the default client timeout.
+	if err != nil {
+		return apitypes.CreateRequestResponse{}, fmt.Errorf("post console request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var envelope apitypes.Envelope[apitypes.CreateRequestResponse]
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return apitypes.CreateRequestResponse{}, fmt.Errorf("decode console response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return apitypes.CreateRequestResponse{}, fmt.Errorf("create console request failed: status %d, error %q", resp.StatusCode, envelope.Error)
+	}
+	return envelope.Data, nil
+}
+
+// ResolveConsoleCode submits a console user code as whoever client is
+// authenticated as, returning the request it named.
+//
+// The status is reported in the error because the three failure modes are
+// the interesting part: 401 for an unauthenticated caller, 403 for a code
+// already claimed by another session, 410 for one whose request expired.
+func ResolveConsoleCode(client *http.Client, serverBaseURL, code string) (webtypes.ResolveCodeResponse, int, error) {
+	body, err := json.Marshal(webtypes.ResolveCodeRequestBody{Code: code})
+	if err != nil {
+		return webtypes.ResolveCodeResponse{}, 0, fmt.Errorf("encode resolve body: %w", err)
+	}
+
+	resp, err := client.Post(serverBaseURL+"/api/certs/requests/resolve-code", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return webtypes.ResolveCodeResponse{}, 0, fmt.Errorf("post resolve-code: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var envelope apitypes.Envelope[webtypes.ResolveCodeResponse]
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return webtypes.ResolveCodeResponse{}, resp.StatusCode, fmt.Errorf("decode resolve-code response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return webtypes.ResolveCodeResponse{}, resp.StatusCode, fmt.Errorf("resolve-code failed: status %d, error %q", resp.StatusCode, envelope.Error)
+	}
+	return envelope.Data, resp.StatusCode, nil
+}

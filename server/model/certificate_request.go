@@ -17,7 +17,7 @@ type CertificateRequest struct {
 
 	// Type carries a CHECK constraint mirroring the migration's — see
 	// model.Certificate.Type for why the tag is duplicated there.
-	Type CertificateType `gorm:"column:type;check:chk_certificate_requests_type,type IN ('user','service','pam')"`
+	Type CertificateType `gorm:"column:type;check:chk_certificate_requests_type,type IN ('user','service','pam','console')"`
 
 	// UserID is set once the requester authenticates via OIDC. Absent for
 	// an unauthenticated initial "host sign" ask, TODO: confirm host sign
@@ -26,9 +26,10 @@ type CertificateRequest struct {
 
 	PublicKey string `gorm:"column:public_key"`
 
-	// Username is set only for CertificateTypePAM requests: the local
-	// account the PAM module is authenticating (e.g. who is running
-	// `sudo`). It is context, not authority. An unauthenticated client
+	// Username is set only for CertificateTypePAM and
+	// CertificateTypeConsole requests: the local account the PAM module is
+	// authenticating (e.g. who is running `sudo`, or the account typed at
+	// the `login:` prompt). It is context, not authority. An unauthenticated client
 	// chooses it, so it reaches the approval page and the audit record and
 	// stops there; the issued certificate's principals come from the
 	// approver's own identity (see service.newCertTypePolicies,
@@ -106,6 +107,36 @@ type CertificateRequest struct {
 	// client) and for mismatch logging.
 	ClaimedAt      *time.Time `gorm:"column:claimed_at"`
 	ClaimUserAgent string     `gorm:"column:claim_user_agent"`
+
+	// UserCode is the short code a console displays for a human to type
+	// into the web UI, in its normalized form (see
+	// service.NormalizeUserCode). Set only for CertificateTypeConsole
+	// requests, empty for every other type, and unique among rows that are
+	// still approvable — a collision would let one approver's typed code
+	// resolve to a stranger's request.
+	//
+	// It is a lookup key for an already-authenticated approver, never a
+	// capability: resolving one requires a session, and it is never
+	// returned to an unauthenticated caller, written to an SSE payload, or
+	// recorded in an audit Detail map. See
+	// docs/proposals/console-login-pam.md, "The code is not a capability".
+	UserCode string `gorm:"column:user_code"`
+
+	// Hostname, PAMService, TTY and RemoteHost are the console context an
+	// approver needs to tell a login they started from one an attacker
+	// did: which machine, which PAM service (login, gdm, sddm), which
+	// terminal, and — for a request claiming to be a console login —
+	// whether PAM_RHOST says it is not one.
+	//
+	// Every one of them is self-reported by an unauthenticated caller and
+	// must be presented as such. They are bounded on the way in
+	// (see service.maxContextFieldLen) so a caller cannot write arbitrary
+	// volume into the table, the same reasoning as claimUserAgentMaxLen.
+	// Set for CertificateTypePAM and CertificateTypeConsole requests.
+	Hostname   string `gorm:"column:hostname"`
+	PAMService string `gorm:"column:pam_service"`
+	TTY        string `gorm:"column:tty"`
+	RemoteHost string `gorm:"column:remote_host"`
 }
 
 // TableName overrides GORM's default pluralization to match the migration.

@@ -36,7 +36,7 @@ func newTestSignedReplyHandler(t *testing.T, svc *CertRequestService) *SignedRep
 func signingRequest(t *testing.T, svc *CertRequestService) string {
 	t.Helper()
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})
@@ -216,7 +216,7 @@ func TestSignedReplyHandler_ShouldNotOverwriteAnAlreadyResolvedRequest(t *testin
 	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{})
 	h := newTestSignedReplyHandler(t, svc)
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})

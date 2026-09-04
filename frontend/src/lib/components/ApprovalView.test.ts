@@ -23,6 +23,7 @@ function detail(overrides: Partial<RequestDetail> = {}): RequestDetail {
 		requested: options({ extensions: ['permit-pty'] }),
 		granted: options({ extensions: ['permit-pty'] }),
 		created_at: '2026-08-14T09:00:00Z',
+		expires_at: '2026-08-14T09:04:00Z',
 		approval_url: '/approve/f0e1d2c3-0000-4000-8000-000000000000',
 		is_owned_by_you: true,
 		already_closed: false,
@@ -545,6 +546,88 @@ describe('ApprovalView', () => {
 			});
 			await userEvent.click(screen.getByTestId('approve-button'));
 			expect(onapprove).toHaveBeenCalledOnce();
+		});
+	});
+	// A console login is the largest of the four grants: it authorizes a
+	// whole interactive session on a machine the approver cannot see. The
+	// context rows are what let them tell a login they caused from one an
+	// attacker started, and every one of them is self-reported.
+	describe('a console login', () => {
+		/** consoleDetail is a pending console request with full context. */
+		function consoleDetail(overrides: Partial<RequestDetail> = {}): RequestDetail {
+			return detail({
+				type: 'console',
+				target_account: 'root',
+				hostname: 'web01',
+				pam_service: 'login',
+				tty: 'tty1',
+				...overrides
+			});
+		}
+
+		it('should say it is a console login rather than a certificate request', () => {
+			mount({ detail: consoleDetail() });
+			expect(screen.getByText('Approve a console login')).toBeInTheDocument();
+		});
+
+		const contextRows: Array<{ name: string; label: string; value: string }> = [
+			{ name: 'the machine', label: 'Host', value: 'web01' },
+			{ name: 'the PAM service', label: 'Service', value: 'login' },
+			{ name: 'the terminal', label: 'Terminal', value: 'tty1' }
+		];
+
+		for (const { name, label, value } of contextRows) {
+			it(`should show ${name}`, () => {
+				mount({ detail: consoleDetail() });
+				expect(screen.getByText(label)).toBeInTheDocument();
+				expect(screen.getByText(value)).toBeInTheDocument();
+			});
+		}
+
+		it('should mark the context as reported by the client rather than proven', () => {
+			mount({ detail: consoleDetail() });
+			expect(screen.getAllByText('reported by the client').length).toBeGreaterThan(1);
+		});
+
+		it('should omit a context row the client did not send', () => {
+			mount({ detail: consoleDetail({ tty: undefined }) });
+			expect(screen.queryByText('Terminal')).not.toBeInTheDocument();
+		});
+
+		it('should say the account is being logged in as, not acted as', () => {
+			mount({ detail: consoleDetail() });
+			expect(screen.getByText('Logging in as')).toBeInTheDocument();
+		});
+
+		// A console has nobody connecting to it over the network, so a
+		// remote host on a request claiming to be one is worth saying
+		// outright rather than rendering as one more grey row.
+		it('should warn when a console request reports a remote host', () => {
+			mount({ detail: consoleDetail({ remote_host: '198.51.100.7' }) });
+			expect(screen.getByTestId('console-remote-host-warning')).toBeInTheDocument();
+		});
+
+		it('should not warn when a console request reports no remote host', () => {
+			mount({ detail: consoleDetail() });
+			expect(screen.queryByTestId('console-remote-host-warning')).not.toBeInTheDocument();
+		});
+
+		it('should not warn about a remote host on a PAM request, where one is ordinary', () => {
+			mount({ detail: detail({ type: 'pam', remote_host: '198.51.100.7' }) });
+			expect(screen.queryByTestId('console-remote-host-warning')).not.toBeInTheDocument();
+		});
+
+		// The approval window is the shortest of the four, so an approver
+		// who cannot see the clock cannot tell a slow sign-in from a
+		// request that has already died.
+		it('should show how long is left to approve', () => {
+			mount({ detail: consoleDetail() });
+			expect(screen.getByText('Approvable until')).toBeInTheDocument();
+		});
+
+		it('should not show a deadline for a request that is already closed', () => {
+			mount({ detail: consoleDetail({ already_closed: true, status: 'approved' }) });
+			expect(screen.queryByText('Approvable until')).not.toBeInTheDocument();
 		});
 	});
 });

@@ -34,10 +34,13 @@ eyebrow: "Configuration"
 | [`http.rate_limit`](#rate_limit) | int | `60` |
 | [`http.rate_duration`](#rate_duration) | duration | `1m` |
 | [`http.rate_limit_disable_for_dev`](#rate_limit_disable_for_dev) | bool | `false` |
-| [`http.cert_request_rate_limit.user`](#cert_request_rate_limituser) | number | `10` |
-| [`http.cert_request_rate_limit.service_enroll`](#cert_request_rate_limitservice_enroll) | number | `5` |
-| [`http.cert_request_rate_limit.pam`](#cert_request_rate_limitpam) | number | `10` |
+| [`http.cert_request_rate_limit.user`](/ssoossh/reference/config/http/cert_request_rate_limit/#user) | number | `10` |
+| [`http.cert_request_rate_limit.service_enroll`](/ssoossh/reference/config/http/cert_request_rate_limit/#service_enroll) | number | `5` |
+| [`http.cert_request_rate_limit.pam`](/ssoossh/reference/config/http/cert_request_rate_limit/#pam) | number | `10` |
+| [`http.cert_request_rate_limit.console`](/ssoossh/reference/config/http/cert_request_rate_limit/#console) | number | `10` |
 | [`http.service_code_rate_limit.limit`](#service_code_rate_limitlimit) | number | `1` |
+| [`http.console_code_rate_limit.limit`](#console_code_rate_limitlimit) | number | `1` |
+| [`http.console_code_rate_limit.burst`](#console_code_rate_limitburst) | int | `5` |
 | [`http.hsts`](#hsts) | string | `max-age=31536000; includeSubDomains` |
 | [`http.tls.certificate_file`](/ssoossh/reference/config/http/tls/#certificate_file) | string | `empty` |
 | [`http.tls.private_key_file`](/ssoossh/reference/config/http/tls/#private_key_file) | string | `empty` |
@@ -208,46 +211,6 @@ http:
   rate_limit_disable_for_dev: false
 ```
 
-## `cert_request_rate_limit`
-
-Holds per-endpoint rate limits for certificate request creation endpoints. Zero or negative disables the specific limit.
-
-## `cert_request_rate_limit.user`
-
-`number`, default `10`
-
-The limit for POST /api/certs/user (interactive user cert).
-
-```yaml
-http:
-  cert_request_rate_limit:
-    user: 10
-```
-
-## `cert_request_rate_limit.service_enroll`
-
-`number`, default `5`
-
-The limit for POST /api/certs/service/enroll (service enrollment, unattended).
-
-```yaml
-http:
-  cert_request_rate_limit:
-    service_enroll: 5
-```
-
-## `cert_request_rate_limit.pam`
-
-`number`, default `10`
-
-The limit for POST /api/certs/pam (short-lived PAM cert, gated on local interaction).
-
-```yaml
-http:
-  cert_request_rate_limit:
-    pam: 10
-```
-
 ## `service_code_rate_limit`
 
 Holds the rate limit configuration for service enrollment code redemption, keyed on the enrollment code to protect against brute-forcing. Zero or negative disables the specific limit.
@@ -262,6 +225,36 @@ Requests per second per enrollment code. Zero or negative disables this limit.
 http:
   service_code_rate_limit:
     limit: 1
+```
+
+## `console_code_rate_limit`
+
+Holds the rate limit configuration for console user-code submission, keyed on the submitting session and its source address to protect against brute-forcing.
+
+Keyed on the submitting session rather than the source address, and on the address as well, so a single compromised account cannot grind through the code space from many addresses and a single address cannot do it across many accounts. At 40 bits with a handful of live codes even a generous limit leaves an infeasible search; this exists to make that margin independent of how many requests happen to be pending.
+
+## `console_code_rate_limit.limit`
+
+`number`, default `1`
+
+Submissions per second per session and per source address. Zero or negative disables this limit.
+
+```yaml
+http:
+  console_code_rate_limit:
+    limit: 1
+```
+
+## `console_code_rate_limit.burst`
+
+`int`, default `5`
+
+How many submissions may arrive back to back before the per-second rate starts holding them back. Small on purpose: a human typing a code they misread retries once or twice, not ten times.
+
+```yaml
+http:
+  console_code_rate_limit:
+    burst: 5
 ```
 
 ## `hsts`

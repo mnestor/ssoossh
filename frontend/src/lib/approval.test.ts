@@ -29,6 +29,7 @@ function detail(overrides: Partial<RequestDetail> = {}): RequestDetail {
 		requested: options(),
 		granted: options(),
 		created_at: '2026-08-14T09:00:00Z',
+		expires_at: '2026-08-14T09:04:00Z',
 		approval_url: '/approve/f0e1d2c3-0000-4000-8000-000000000000',
 		is_owned_by_you: true,
 		already_closed: false,

@@ -17,13 +17,70 @@ components:
       required:
       - ca
       type: object
+    apitypes.ConsoleRequestBody:
+      properties:
+        hostname:
+          description: |-
+            Same fields, same trust, as PAMRequestBody's — and they matter more
+            here, because a console certificate authorizes a whole session.
+          type: string
+        pam_service:
+          type: string
+        public_key:
+          type: string
+        remote_host:
+          type: string
+        requested_options:
+          $ref: '#/components/schemas/apitypes.RequestedOptions'
+        tty:
+          type: string
+        username:
+          type: string
+      required:
+      - public_key
+      - username
+      type: object
     apitypes.CreateRequestResponse:
       properties:
         approval_url:
           type: string
         events_url:
           type: string
+        expires_at:
+          description: |-
+            ExpiresAt is when this request stops being approvable, from its own
+            type's budget (cert_options.<type>.client_timeout, falling back to
+            cert_options.client_timeout). Populated for every type.
+
+            A client bounds its wait by this rather than by a local guess, and a
+            console displays the time remaining from it. Without it, the client's
+            timeout and the server's budget are two numbers an operator keeps in
+            agreement by hand, and disagreement surfaces as a client still
+            waiting on a request the server already killed. RFC 8628 carries
+            expires_in for the same reason.
+          type: string
         request_id:
+          type: string
+        user_code:
+          description: |-
+            UserCode is the short code a human types into the web UI, grouped
+            for display ("K7M4-QP2X"). Console requests only; empty for every
+            other type, so no existing consumer changes.
+
+            This is the only response it ever appears in. It is not in the SSE
+            stream, not in the request detail, and not in any audit record.
+          type: string
+        verification_url:
+          description: |-
+            VerificationURL is the page that accepts UserCode;
+            VerificationURLComplete embeds the code so a device with a camera or
+            a keyboard can skip the code box entirely. Relative, like the two
+            URLs above, and console requests only.
+
+            Complete is kept short (/c/<code>, not /approve/<uuid>) because it is
+            what a QR code drawn in an 80x24 terminal has to encode.
+          type: string
+        verification_url_complete:
           type: string
       required:
       - approval_url
@@ -39,10 +96,27 @@ components:
       type: object
     apitypes.PAMRequestBody:
       properties:
+        hostname:
+          description: |-
+            The context an approver needs to tell a request they caused from one
+            they did not: which machine, through which PAM service, at which
+            terminal, and — since a real console has no remote host — whether
+            PAM_RHOST says this did not come from a console at all.
+
+            Every one of these is self-reported by an unauthenticated caller and
+            is displayed as a claim, never as a fact. Optional, so a client that
+            does not read PAM items still works.
+          type: string
+        pam_service:
+          type: string
         public_key:
+          type: string
+        remote_host:
           type: string
         requested_options:
           $ref: '#/components/schemas/apitypes.RequestedOptions'
+        tty:
+          type: string
         username:
           type: string
       required:
@@ -138,11 +212,13 @@ components:
       - user
       - service
       - pam
+      - console
       type: string
       x-enum-varnames:
       - CertificateTypeUser
       - CertificateTypeService
       - CertificateTypePAM
+      - CertificateTypeConsole
     openapidoc.ApproveEnvelope:
       properties:
         data:
@@ -291,6 +367,15 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/webtypes.RequestDetailResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.ResolveCodeEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.ResolveCodeResponse'
         error:
           type: string
       required:
@@ -1146,8 +1231,31 @@ components:
           type: string
         decided_user_agent:
           type: string
+        expires_at:
+          description: |-
+            ExpiresAt is when the request stops being approvable, from its own
+            type's budget. The page counts down to it, which matters most for
+            console requests: their budget is deliberately the shortest, and an
+            approver who cannot see the clock cannot tell a slow OIDC login from
+            a request that has already died.
+          type: string
         granted:
           $ref: '#/components/schemas/webtypes.CertificateOptionsResponse'
+        hostname:
+          description: |-
+            The console context the request carried: which machine it claims to
+            be, through which PAM service, at which terminal, and what it
+            reported as the remote host.
+
+            Every one of them is self-reported by an unauthenticated caller and
+            the UI must render them as claims rather than as facts — they are
+            what lets a human notice "I am at my desk, why is there a console
+            login on rack07", not what authorizes anything. A non-empty
+            RemoteHost on a console request is worth flagging outright: a real
+            console has no remote host.
+
+            Set for PAM and console requests; empty for the others.
+          type: string
         id:
           type: string
         is_owned_by_you:
@@ -1156,12 +1264,16 @@ components:
           type: string
         local_username:
           type: string
+        pam_service:
+          type: string
         principals:
           items:
             type: string
           type: array
           uniqueItems: false
         public_key:
+          type: string
+        remote_host:
           type: string
         requested:
           $ref: '#/components/schemas/webtypes.CertificateOptionsResponse'
@@ -1171,13 +1283,16 @@ components:
           $ref: '#/components/schemas/model.CertificateRequestStatus'
         target_account:
           description: |-
-            TargetAccount is the local account a PAM request is authenticating,
-            e.g. who `sudo` is being run as. Empty for every other type. It is
+            TargetAccount is the local account a PAM or console request is
+            authenticating: who `sudo` is being run as, or the account typed at
+            the `login:` prompt. Empty for every other type. It is
             reported by an unauthenticated client and never becomes a principal
             (see model.CertificateRequest.Username), so the UI must present it as
             what is being attempted rather than as what is being granted. Without
             it the approver cannot see which account the sudo is for, since the
             principals now describe the approver instead.
+          type: string
+        tty:
           type: string
         type:
           $ref: '#/components/schemas/model.CertificateType'
@@ -1187,6 +1302,7 @@ components:
       - already_closed
       - approval_url
       - created_at
+      - expires_at
       - granted
       - id
       - is_owned_by_you
@@ -1197,6 +1313,27 @@ components:
       - status
       - type
       - valid_seconds
+      type: object
+    webtypes.ResolveCodeRequestBody:
+      properties:
+        code:
+          type: string
+      required:
+      - code
+      type: object
+    webtypes.ResolveCodeResponse:
+      properties:
+        approval_url:
+          description: |-
+            ApprovalURL is the page to send the browser to. Returned rather than
+            assembled client-side so the one definition of the path stays on the
+            server, alongside the create response's.
+          type: string
+        request_id:
+          type: string
+      required:
+      - approval_url
+      - request_id
       type: object
     webtypes.ServiceEnrollmentResponse:
       properties:
@@ -1467,7 +1604,7 @@ paths:
         name: q
         schema:
           type: string
-      - description: Filter by certificate type (user/service/pam)
+      - description: Filter by certificate type (user/service/pam/console)
         example: user
         in: query
         name: type
@@ -2082,6 +2219,57 @@ paths:
       summary: View a certificate's full details
       tags:
       - web
+  /api/certs/console:
+    post:
+      description: |-
+        Unauthenticated. Returns a short `user_code` for a human to type into the
+        web UI, the page that accepts it, and `expires_at` — the deadline the
+        client should bound its own wait by.
+
+        Username is the local account being logged into, reported by the caller
+        and used for display and audit only. The certificate's principals are the
+        approver's own accounts; the host's principals-map decides whether they
+        authorize that local account. The remaining context fields are equally
+        self-reported and are shown to the approver as claims.
+
+        Set `cert_options.console.require` to restrict who may approve one, and
+        `cert_options.console.allowed_networks` to refuse creation from outside
+        named networks — that refusal happens here, before any human is asked.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/apitypes.ConsoleRequestBody'
+                description: The public key to sign, the local account being logged
+                  into, and the console context
+                summary: request
+        description: The public key to sign, the local account being logged into,
+          and the console context
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.CreateRequestEnvelope'
+          description: Request created
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Malformed body, or a public key that will not parse
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The source address is outside cert_options.console.allowed_networks
+      summary: Create a console login certificate request
+      tags:
+      - client
   /api/certs/pam:
     post:
       description: |-
@@ -2355,6 +2543,80 @@ paths:
       security:
       - sessionCookie: []
       summary: A service enrollment's retrieval log
+      tags:
+      - web
+  /api/certs/requests/resolve-code:
+    post:
+      description: |-
+        Session-authed and CSRF-guarded. Turns the code a human read off a
+        console screen into the request it names, and claims that request for
+        the submitting session.
+
+        **Authentication is not optional here.** An unauthenticated caller must
+        never learn whether a code is live and must never receive a request ID:
+        the ID is the credential the certificate is delivered against.
+
+        The three failure modes are distinct on purpose, because they send the
+        user to three different next actions: 404 no such code (retype it), 410
+        expired (start the login again at the machine), 403 already claimed by
+        another session.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/webtypes.ResolveCodeRequestBody'
+                description: The code as typed
+                summary: request
+        description: The code as typed
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ResolveCodeEnvelope'
+          description: Resolved and claimed
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not a well-formed code
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Claimed by another user, or a cross-origin call
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No live request carries that code
+        "410":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The request expired before the code was submitted
+        "429":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Too many code submissions
+      security:
+      - sessionCookie: []
+      summary: Resolve a console login code
       tags:
       - web
   /api/certs/service/enroll:

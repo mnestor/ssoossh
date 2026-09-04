@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/netip"
 	"time"
 )
 
@@ -11,6 +12,7 @@ type CertificateOptions struct {
 	User    CertOptionsUser    `mapstructure:"user"`
 	Service CertOptionsService `mapstructure:"service"`
 	PAM     CertOptionsPAM     `mapstructure:"pam"`
+	Console CertOptionsConsole `mapstructure:"console"`
 
 	// ClientTimeout is the whole budget: the longest a client waiting on a
 	// certificate request can go before the server hands it a terminal
@@ -46,19 +48,39 @@ const signingShare = 10
 // never cancel a request that might still be in flight. See the sweep's doc
 // comment for the arithmetic.
 func (c *CertificateOptions) SigningGrace() time.Duration {
-	return c.ClientTimeout / signingShare
+	return SigningGraceFor(c.ClientTimeout)
+}
+
+// SigningGraceFor is SigningGrace's arithmetic against an arbitrary budget,
+// so a type carrying its own client_timeout (see
+// CertOptionsConsole.ClientTimeout) splits it the same way the global one
+// is split. One definition, so the two cannot drift.
+func SigningGraceFor(budget time.Duration) time.Duration {
+	return budget / signingShare
 }
 
 // ApprovalTTL is the human's share of ClientTimeout: how long a pending
-// request stays valid for approval before it is treated as expired. Shared
-// across the certificate types — it is "how stale can an unapproved request
-// get", not a per-type concept like ValidDuration (the issued certificate's
-// own lifetime).
+// request stays valid for approval before it is treated as expired.
+//
+// This is the deployment-wide value, derived from the global budget. It is
+// no longer the only one: a type may shorten its own budget (today only
+// cert_options.console.client_timeout does), and a request on such a type
+// expires on ApprovalTTLFor(that budget) instead. The global stays the
+// ceiling, which is what lets everything derived from it here — the
+// stranded-request sweep's cutoff, the resolved-outcome cache's eviction
+// age, the sweep interval — keep computing from the longest possible
+// budget and stay correct for a request on a shorter one.
 //
 // Whatever is left after reserving the two signing shares the worst case
 // spends, so ApprovalTTL + 2*SigningGrace == ClientTimeout.
 func (c *CertificateOptions) ApprovalTTL() time.Duration {
-	return c.ClientTimeout - 2*c.SigningGrace()
+	return ApprovalTTLFor(c.ClientTimeout)
+}
+
+// ApprovalTTLFor is ApprovalTTL's arithmetic against an arbitrary budget.
+// See SigningGraceFor.
+func ApprovalTTLFor(budget time.Duration) time.Duration {
+	return budget - 2*SigningGraceFor(budget)
 }
 
 // Validate rejects certificate options the rest of the server cannot derive
@@ -78,6 +100,32 @@ func (c *CertificateOptions) Validate() error {
 	if c.ClientTimeout < signingShare {
 		return fmt.Errorf("cert_options.client_timeout must be greater than zero (the default is 5m): a disabled timeout leaves pending requests unbounded and gives the stranded-request sweep no cutoff")
 	}
+	// A per-type budget may only shorten the global one. Everything derived
+	// from the global — the stranded-request sweep's cutoff, the
+	// resolved-outcome cache's eviction age, the sweep interval — is
+	// computed from the longest possible budget and stays correct for a
+	// request on a shorter one. A type allowed to exceed it would break
+	// that: the sweep could fail a request still legitimately in flight.
+	if c.Console.ClientTimeout > c.ClientTimeout {
+		return fmt.Errorf("cert_options.console.client_timeout (%s) must not exceed cert_options.client_timeout (%s): the global budget is the ceiling every per-type budget is measured against, and a type may only shorten it", c.Console.ClientTimeout, c.ClientTimeout)
+	}
+	// Same floor and the same reason as the global: SigningGraceFor
+	// divides by signingShare, so a smaller budget rounds the machine's
+	// share down to nothing.
+	if c.Console.ClientTimeout != 0 && c.Console.ClientTimeout < signingShare {
+		return fmt.Errorf("cert_options.console.client_timeout must be greater than zero (the default is 2m), or unset to inherit cert_options.client_timeout")
+	}
+	// Refusing an unparseable CIDR at startup is the only place that can
+	// name the setting. A gate that silently matched nothing would leave
+	// the operator believing console logins were restricted when every one
+	// of them was being refused, or — worse, if the failure were read the
+	// other way — permitted.
+	for i, cidr := range c.Console.AllowedNetworks {
+		if _, err := netip.ParsePrefix(cidr); err != nil {
+			return fmt.Errorf("cert_options.console.allowed_networks[%d]: %q is not a CIDR network (e.g. 10.20.0.0/16): %w", i, cidr, err)
+		}
+	}
+
 	// Zero here would mint enrollment codes that are already expired, which
 	// surfaces as `service retrieve` reporting an unknown code rather than
 	// anything pointing at the configuration. Rejecting it at startup is the
@@ -103,6 +151,7 @@ func (c *CertificateOptions) Validate() error {
 		"cert_options.user.lifetime_policy":    c.User.LifetimePolicy,
 		"cert_options.service.lifetime_policy": c.Service.LifetimePolicy,
 		"cert_options.pam.lifetime_policy":     c.PAM.LifetimePolicy,
+		"cert_options.console.lifetime_policy": c.Console.LifetimePolicy,
 	} {
 		for i, rule := range lp.SourcePolicy {
 			if len(rule.Extensions) > 0 {
@@ -250,6 +299,89 @@ type CertOptionsPAM struct {
 	// a 30-second, validated-once certificate and extension grants against
 	// an empty extensions ceiling have nothing to do. The expected
 	// configuration is require alone, tiers unused.
+	LifetimePolicy LifetimePolicy `mapstructure:"lifetime_policy"`
+}
+
+// CertOptionsConsole configures issuance of console certificates: the
+// certificate that authenticates an interactive console login on a machine
+// with no browser in front of it, where the approval travels as a short
+// code the human reads off the screen and types into the web UI (see
+// docs/proposals/console-login-pam.md).
+//
+// Deliberately its own type rather than a flag on cert_options.pam. A
+// console certificate buys a whole interactive session where a PAM one
+// buys a single local operation, so an operator needs to gate, time, and
+// label the two separately — a `sudo` may be approvable by a colleague
+// when a console login is not, and the two must stay distinguishable in an
+// audit log.
+type CertOptionsConsole struct {
+	// Require is the condition an approver's identity must satisfy to
+	// approve a console login at all. Unset means any authenticated user
+	// may.
+	//
+	// It is not the per-host gate. Restricting which accounts may console
+	// into which machine belongs in the host's own PAM stack
+	// (pam_succeed_if above the ssoossh line), where it is root-owned,
+	// unforgeable, and fails before any network call — a group a module
+	// sent would be untrusted input that stops applying the moment
+	// somebody omits it.
+	Require *PolicyCondition `mapstructure:"require"`
+
+	// AllowedNetworks refuses request creation from outside these CIDRs,
+	// before a keypair is certified and before any human is asked to
+	// approve anything. Empty means no network gate.
+	//
+	// The server's half of per-host policy rests on the source address
+	// rather than the hostname because the address is observed by the
+	// server and the hostname is a string an unauthenticated caller typed
+	// — the same reasoning that got host certificates declined
+	// (docs/project/decisions.md). Behind a reverse proxy this is only
+	// meaningful with http.trusted_proxies set; without it every request
+	// carries the proxy's address.
+	AllowedNetworks []string `mapstructure:"allowed_networks" default:"[]"`
+
+	// ClientTimeout is this type's whole budget: the longest a console
+	// login can sit waiting for a human. Unset (zero) inherits
+	// cert_options.client_timeout. A value LONGER than that global is a
+	// startup error — the global is the ceiling, and a type may only
+	// shorten it.
+	//
+	// Shorter is the point. The approval window is the attacker's working
+	// time in the consent-phishing case the typed code exists to raise the
+	// bar on: someone at an unattended console starts a login and phones
+	// the victim to read them the code. Halving the window halves the time
+	// that call has to succeed in.
+	//
+	// The human's share is client_timeout - 2*(client_timeout/10), so 2m
+	// here gives the approver 96s, not 120s. There is a floor, and it is
+	// not the technical one: below about 90s a first approval that has to
+	// go through an OIDC login starts to fail, people retry, and a flow
+	// people habitually retry is a flow people learn to approve without
+	// reading.
+	ClientTimeout time.Duration `mapstructure:"client_timeout,string" default:"2m"`
+
+	// ValidDuration is the ceiling on how long an issued console
+	// certificate is valid. Seconds, not hours, for the same reason as the
+	// PAM type: it is validated once by the module and discarded, and the
+	// session it authorizes outlives it by design.
+	ValidDuration time.Duration `mapstructure:"valid_duration,string" default:"30s"`
+
+	// Extensions default to empty. permit-pty and friends are meaningless
+	// for a certificate that authenticates one local login and is then
+	// thrown away.
+	Extensions []string `mapstructure:"extensions" default:"[]"`
+
+	// KeyIDTemplate is the key ID written into console certificates. Like
+	// the PAM template and unlike the service one, it does NOT fall back
+	// to cert_options.user.key_id_template: a console login and an SSH
+	// login by the same person must stay distinguishable in an audit log,
+	// so an unset template identifies the type instead.
+	KeyIDTemplate string `mapstructure:"key_id_template" default:""`
+
+	// LifetimePolicy takes the same grammar as the other types. As with
+	// PAM, in practice only the require gate matters: duration tiers
+	// against a 30-second certificate and extension grants against an
+	// empty ceiling have nothing to do.
 	LifetimePolicy LifetimePolicy `mapstructure:"lifetime_policy"`
 }
 

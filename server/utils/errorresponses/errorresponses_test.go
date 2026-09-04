@@ -95,6 +95,37 @@ func TestCertificateUnavailableError_ShouldReturn410FromHttpStatusCode(t *testin
 	}
 }
 
+// ExpiredError is 410 rather than 404 because the resource did exist, and
+// the difference is what tells someone whose console code timed out to
+// start again at the machine rather than retype what they have.
+func TestExpiredError_ShouldNameTheResourceInItsMessage(t *testing.T) {
+	t.Parallel()
+
+	err := &ExpiredError{Resource: "console login request"}
+	want := "this console login request has expired"
+	if got := err.Error(); got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestExpiredError_ShouldFallBackWhenNoResourceIsNamed(t *testing.T) {
+	t.Parallel()
+
+	err := &ExpiredError{}
+	if got := err.Error(); got != "expired" {
+		t.Errorf("got %q, want %q", got, "expired")
+	}
+}
+
+func TestExpiredError_ShouldReturn410FromHttpStatusCode(t *testing.T) {
+	t.Parallel()
+
+	err := &ExpiredError{}
+	if got := err.HTTPStatusCode(); got != http.StatusGone {
+		t.Errorf("got %d, want %d", got, http.StatusGone)
+	}
+}
+
 func TestNotImplementedError_ShouldReturnMessageFromError(t *testing.T) {
 	t.Parallel()
 
@@ -163,6 +194,7 @@ func TestErrorCode_ShouldReportTheWireCodeForEachError(t *testing.T) {
 		{name: "misdirected request", err: &MisdirectedRequestError{}, wantCode: apitypes.ErrorCodeForbidden, wantStatus: http.StatusMisdirectedRequest},
 		{name: "not found", err: &NotFoundError{Resource: "certificate request \"abc\""}, wantCode: apitypes.ErrorCodeNotFound, wantStatus: http.StatusNotFound},
 		{name: "certificate unavailable", err: &CertificateUnavailableError{}, wantCode: apitypes.ErrorCodeUnavailable, wantStatus: http.StatusGone},
+		{name: "expired", err: &ExpiredError{Resource: "console login request"}, wantCode: apitypes.ErrorCodeUnavailable, wantStatus: http.StatusGone},
 		{name: "not implemented", err: &NotImplementedError{}, wantCode: apitypes.ErrorCodeNotImplemented, wantStatus: http.StatusNotImplemented},
 		{name: "forbidden", err: &ForbiddenError{}, wantCode: apitypes.ErrorCodeForbidden, wantStatus: http.StatusForbidden},
 		{name: "invalid request", err: &InvalidRequestError{Reason: "unknown notification kind \"nope\""}, wantCode: apitypes.ErrorCodeInvalidRequest, wantStatus: http.StatusBadRequest},

@@ -6,9 +6,9 @@ package model
 // constant added here reaches frontend/src/lib/api/generated/enums.ts on the
 // next `make types`.
 
-// CertificateType identifies which of the three certificate types
+// CertificateType identifies which of the four certificate types
 // (docs/internals/design-brief.md — "Certificate types") a row represents.
-// These three are the whole set: anything else is rejected at the service
+// These four are the whole set: anything else is rejected at the service
 // boundary and by the schema's type CHECK. Host identity is deliberately
 // not among them (docs/project/decisions.md).
 type CertificateType string
@@ -17,6 +17,14 @@ const (
 	CertificateTypeUser    CertificateType = "user"
 	CertificateTypeService CertificateType = "service"
 	CertificateTypePAM     CertificateType = "pam"
+	// CertificateTypeConsole authenticates an interactive console login
+	// through a PAM module on a machine with no browser in front of it:
+	// the console displays a short code, the approver types it into the
+	// web UI. Distinct from CertificateTypePAM because a console
+	// certificate buys a whole session where a PAM one buys a single
+	// local operation, and an operator needs to gate, time, and audit
+	// those separately (docs/proposals/console-login-pam.md).
+	CertificateTypeConsole CertificateType = "console"
 )
 
 // CertificateRequestStatus tracks a pending web UI approval that the client

@@ -45,23 +45,29 @@ table certificate_requests
   column created_at type=DATETIME nullable=false pk=false default=<none>
   column enrollment_token type=TEXT nullable=false pk=false default=''
   column failure_reason type=TEXT nullable=false pk=false default=''
+  column hostname type=TEXT nullable=false pk=false default=''
   column id type=TEXT nullable=false pk=true default=<none>
   column local_hostname type=TEXT nullable=false pk=false default=''
   column local_username type=TEXT nullable=false pk=false default=''
+  column pam_service type=TEXT nullable=false pk=false default=''
   column public_key type=TEXT nullable=false pk=false default=<none>
+  column remote_host type=TEXT nullable=false pk=false default=''
   column requested_options type=TEXT nullable=false pk=false default=''
   column resolved_at type=DATETIME nullable=true pk=false default=<none>
   column serial_number type=INTEGER nullable=true pk=false default=<none>
   column service_account type=TEXT nullable=false pk=false default=''
   column source_ip type=TEXT nullable=false pk=false default=''
   column status type=TEXT nullable=false pk=false default=<none>
+  column tty type=TEXT nullable=false pk=false default=''
   column type type=TEXT nullable=false pk=false default=<none>
+  column user_code type=TEXT nullable=false pk=false default=''
   column user_id type=TEXT nullable=true pk=false default=<none>
   column username type=TEXT nullable=false pk=false default=''
   check CHECK (status IN ('pending', 'signing', 'approved', 'enrolled', 'denied', 'expired', 'failed'))
-  check CHECK (type IN ('user', 'service', 'pam'))
+  check CHECK (type IN ('user', 'service', 'pam', 'console'))
   fk user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
   index idx_certificate_requests_status_created_at unique=false columns=status,created_at
+  index idx_certificate_requests_user_code unique=true columns=user_code
   index idx_certificate_requests_user_id unique=false columns=user_id
   index sqlite_autoindex_certificate_requests_1 unique=true columns=id
 table certificates
@@ -77,7 +83,7 @@ table certificates
   column serial_number type=INTEGER nullable=false pk=false default=<none>
   column type type=TEXT nullable=false pk=false default=<none>
   column user_id type=TEXT nullable=true pk=false default=<none>
-  check CHECK (type IN ('user', 'service', 'pam'))
+  check CHECK (type IN ('user', 'service', 'pam', 'console'))
   fk certificate_request_id -> certificate_requests.id on_delete=NO ACTION on_update=NO ACTION
   fk user_id -> users.id on_delete=NO ACTION on_update=NO ACTION
   index idx_certificates_certificate_request_id unique=false columns=certificate_request_id

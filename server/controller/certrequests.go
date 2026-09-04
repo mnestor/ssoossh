@@ -18,6 +18,14 @@ type CertRequestRateLimitMiddleware struct {
 	User          gin.HandlerFunc
 	ServiceEnroll gin.HandlerFunc
 	PAM           gin.HandlerFunc
+	Console       gin.HandlerFunc
+
+	// ResolveCode limits console code submission. Unlike the four above it
+	// guards a session-authed endpoint rather than an open one, and it is
+	// keyed on the session and the source address rather than the address
+	// alone — a single compromised account must not be able to grind
+	// through the code space from many addresses.
+	ResolveCode gin.HandlerFunc
 }
 
 // orPassThrough returns h, or a handler that does nothing when h is nil, so
@@ -34,11 +42,11 @@ func orPassThrough(h gin.HandlerFunc) gin.HandlerFunc {
 
 // rateLimits returns the per-endpoint middleware to apply, tolerating a nil
 // receiver so callers that disabled rate limiting entirely need no branch.
-func (m *CertRequestRateLimitMiddleware) rateLimits() (user, serviceEnroll, pam gin.HandlerFunc) {
+func (m *CertRequestRateLimitMiddleware) rateLimits() (user, serviceEnroll, pam, console, resolveCode gin.HandlerFunc) {
 	if m == nil {
-		return orPassThrough(nil), orPassThrough(nil), orPassThrough(nil)
+		return orPassThrough(nil), orPassThrough(nil), orPassThrough(nil), orPassThrough(nil), orPassThrough(nil)
 	}
-	return orPassThrough(m.User), orPassThrough(m.ServiceEnroll), orPassThrough(m.PAM)
+	return orPassThrough(m.User), orPassThrough(m.ServiceEnroll), orPassThrough(m.PAM), orPassThrough(m.Console), orPassThrough(m.ResolveCode)
 }
 
 // NewCertRequestController registers the certificate-request routes on
@@ -58,10 +66,11 @@ func NewCertRequestController(group *gin.RouterGroup, certRequestService service
 	// unguessable capability token), which is also why GET .../events below
 	// doesn't need its own auth: the ID is the credential.
 
-	userLimit, serviceEnrollLimit, pamLimit := rateLimitMiddleware.rateLimits()
+	userLimit, serviceEnrollLimit, pamLimit, consoleLimit, resolveCodeLimit := rateLimitMiddleware.rateLimits()
 	group.POST("/certs/user", userLimit, cr.createUserRequestHandler)
 	group.POST("/certs/service/enroll", serviceEnrollLimit, cr.createServiceEnrollRequestHandler)
 	group.POST("/certs/pam", pamLimit, cr.createPAMRequestHandler)
+	group.POST("/certs/console", consoleLimit, cr.createConsoleRequestHandler)
 
 	// GET .../events is the actual SSE connection: a real long-lived
 	// text/event-stream response the client connects to and waits on,
@@ -77,6 +86,18 @@ func NewCertRequestController(group *gin.RouterGroup, certRequestService service
 	approvalGroup := group.Group("/certs/requests", sessionAuthMiddleware, csrfMiddleware)
 	approvalGroup.POST("/:id/approve", cr.approveHandler)
 	approvalGroup.POST("/:id/deny", cr.denyHandler)
+
+	// Console code submission. Session-authed for the reason the whole
+	// console design rests on: the code must never be an unauthenticated
+	// path to a request ID, and the request ID is the credential the
+	// certificate is delivered against. CSRF-guarded because it is a
+	// state-changing POST — resolving a code claims the request.
+	//
+	// Registered on this group rather than beside the create endpoints
+	// above because it belongs to the approving browser, not to the
+	// waiting client. Note the path is a sibling of ":id", which gin
+	// resolves unambiguously: a literal segment wins over a wildcard.
+	approvalGroup.POST("/resolve-code", resolveCodeLimit, cr.resolveCodeHandler)
 
 	// Web-UI-facing reads. Session-authed but not CSRF-guarded: they change
 	// nothing, and CsrfMiddleware exempts safe methods anyway.
@@ -109,13 +130,35 @@ type certRequestController struct {
 // requestID. See docs/README.md for the /approve/<id> URL convention, and
 // internal/apitypes.CreateRequestResponse's doc comment for why both URLs
 // are relative.
-func newCreateRequestResponse(requestID string) apitypes.CreateRequestResponse {
-	return apitypes.CreateRequestResponse{
-		RequestID:   requestID,
-		EventsURL:   "/api/certs/requests/" + requestID + "/events",
-		ApprovalURL: approvalURL(requestID),
+func newCreateRequestResponse(created service.CreatedRequest) apitypes.CreateRequestResponse {
+	resp := apitypes.CreateRequestResponse{
+		RequestID:   created.ID,
+		EventsURL:   "/api/certs/requests/" + created.ID + "/events",
+		ApprovalURL: approvalURL(created.ID),
+		ExpiresAt:   created.ExpiresAt,
 	}
+
+	// Only a type that mints a code carries the code fields, so every
+	// existing consumer sees exactly what it saw before.
+	if created.UserCode != "" {
+		resp.UserCode = service.FormatUserCode(created.UserCode)
+		resp.VerificationURL = consoleVerificationURL
+		resp.VerificationURLComplete = completeVerificationURL(created.UserCode)
+	}
+	return resp
 }
+
+// consoleVerificationURL is the page that accepts a typed code, and
+// completeVerificationURL is the same page with the code already in the
+// path. One definition each, for the same reason approvalURL has one: the
+// frontend routes on these exact shapes.
+//
+// The complete form is deliberately terse. It is what a console renders as
+// a QR code inside 80 columns, and /approve/<uuid> would not fit at the
+// error-correction level that survives a photograph of a CRT.
+const consoleVerificationURL = "/console"
+
+func completeVerificationURL(code string) string { return "/c/" + code }
 
 // toServiceOptions converts the wire-contract RequestedOptions
 // (internal/apitypes, shared with the client) into the server's internal
@@ -153,13 +196,13 @@ func decisionContext(g *gin.Context) service.DecisionContext {
 // per-route spec — see .claude/rules/server-api.md.
 func (cr *certRequestController) createRequest(g *gin.Context, params service.NewCertRequestParams) {
 	params.SourceIP = g.ClientIP()
-	requestID, err := cr.certRequestService.CreateRequest(g.Request.Context(), params)
+	created, err := cr.certRequestService.CreateRequest(g.Request.Context(), params)
 	if err != nil {
 		handleError(g, err)
 		return
 	}
 
-	respondData(g, newCreateRequestResponse(requestID))
+	respondData(g, newCreateRequestResponse(created))
 }
 
 // createUserRequestHandler handles POST /api/certs/user (`ssh login`):
@@ -260,7 +303,124 @@ func (cr *certRequestController) createPAMRequestHandler(g *gin.Context) {
 		Type:             model.CertificateTypePAM,
 		PublicKey:        body.PublicKey,
 		Username:         body.Username,
+		Hostname:         body.Hostname,
+		PAMService:       body.PAMService,
+		TTY:              body.TTY,
+		RemoteHost:       body.RemoteHost,
 		RequestedOptions: toServiceOptions(body.RequestedOptions),
+	})
+}
+
+// createConsoleRequestHandler handles POST /api/certs/console: creates a
+// pending request for a console login — an interactive session on a machine
+// with no browser in front of it — and returns, alongside the usual
+// events/approval URLs, the short code a human types into the web UI and
+// the deadline the server will hold the request to.
+//
+// The code is the consent-phishing control, not just a UX device. Binding a
+// request to the first authenticated toucher stops one user approving
+// another's pending request, but it does nothing against a user talked into
+// approving a request an attacker created for them; a code that only exists
+// on the console screen raises that from "click this link" to "read me the
+// eight characters in front of you".
+//
+// @Summary     Create a console login certificate request
+// @Description Unauthenticated. Returns a short `user_code` for a human to type into the
+// @Description web UI, the page that accepts it, and `expires_at` — the deadline the
+// @Description client should bound its own wait by.
+// @Description
+// @Description Username is the local account being logged into, reported by the caller
+// @Description and used for display and audit only. The certificate's principals are the
+// @Description approver's own accounts; the host's principals-map decides whether they
+// @Description authorize that local account. The remaining context fields are equally
+// @Description self-reported and are shown to the approver as claims.
+// @Description
+// @Description Set `cert_options.console.require` to restrict who may approve one, and
+// @Description `cert_options.console.allowed_networks` to refuse creation from outside
+// @Description named networks — that refusal happens here, before any human is asked.
+// @Tags        client
+// @Accept      json
+// @Produce     json
+// @Param       request body apitypes.ConsoleRequestBody true "The public key to sign, the local account being logged into, and the console context"
+// @Success     200 {object} openapidoc.CreateRequestEnvelope "Request created"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Malformed body, or a public key that will not parse"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "The source address is outside cert_options.console.allowed_networks"
+// @Router      /api/certs/console [post]
+func (cr *certRequestController) createConsoleRequestHandler(g *gin.Context) {
+	var body apitypes.ConsoleRequestBody
+	if err := g.ShouldBindJSON(&body); err != nil {
+		handleError(g, err)
+		return
+	}
+
+	cr.createRequest(g, service.NewCertRequestParams{
+		Type:             model.CertificateTypeConsole,
+		PublicKey:        body.PublicKey,
+		Username:         body.Username,
+		Hostname:         body.Hostname,
+		PAMService:       body.PAMService,
+		TTY:              body.TTY,
+		RemoteHost:       body.RemoteHost,
+		RequestedOptions: toServiceOptions(body.RequestedOptions),
+	})
+}
+
+// resolveCodeHandler handles POST /api/certs/requests/resolve-code (web UI,
+// behind sessionAuthMiddleware and csrfMiddleware).
+//
+// A POST despite reading like a lookup, for the same reason the approval
+// page's first GET is state-changing: submitting a code claims the request
+// for this session, and claiming at submission rather than at the redirect
+// target is what settles a race between two sessions typing the same code.
+//
+// @Summary     Resolve a console login code
+// @Description Session-authed and CSRF-guarded. Turns the code a human read off a
+// @Description console screen into the request it names, and claims that request for
+// @Description the submitting session.
+// @Description
+// @Description **Authentication is not optional here.** An unauthenticated caller must
+// @Description never learn whether a code is live and must never receive a request ID:
+// @Description the ID is the credential the certificate is delivered against.
+// @Description
+// @Description The three failure modes are distinct on purpose, because they send the
+// @Description user to three different next actions: 404 no such code (retype it), 410
+// @Description expired (start the login again at the machine), 403 already claimed by
+// @Description another session.
+// @Tags        web
+// @Accept      json
+// @Produce     json
+// @Param       request body webtypes.ResolveCodeRequestBody true "The code as typed"
+// @Success     200 {object} openapidoc.ResolveCodeEnvelope "Resolved and claimed"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Not a well-formed code"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Claimed by another user, or a cross-origin call"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "No live request carries that code"
+// @Failure     410 {object} openapidoc.ErrorEnvelope "The request expired before the code was submitted"
+// @Failure     429 {object} openapidoc.ErrorEnvelope "Too many code submissions"
+// @Security    sessionCookie
+// @Router      /api/certs/requests/resolve-code [post]
+func (cr *certRequestController) resolveCodeHandler(g *gin.Context) {
+	identity, ok := middleware.Identity(g)
+	if !ok {
+		handleError(g, &errorresponses.UnauthorizedError{})
+		return
+	}
+
+	var body webtypes.ResolveCodeRequestBody
+	if err := g.ShouldBindJSON(&body); err != nil {
+		handleError(g, err)
+		return
+	}
+
+	requestID, err := cr.certRequestService.ResolveUserCode(g.Request.Context(), body.Code, identity)
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	respondData(g, webtypes.ResolveCodeResponse{
+		RequestID:   requestID,
+		ApprovalURL: approvalURL(requestID),
 	})
 }
 

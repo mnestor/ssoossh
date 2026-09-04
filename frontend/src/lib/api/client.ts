@@ -29,6 +29,17 @@ export class ApiError extends Error {
 	get isNotFound(): boolean {
 		return this.status === 404;
 	}
+
+	/**
+	 * The thing existed and its own deadline passed — a console login code
+	 * whose request timed out, or a certificate that was delivered and is
+	 * gone. Distinct from 404 because it sends the user somewhere different:
+	 * back to the machine to start over, rather than back to the keyboard to
+	 * retype.
+	 */
+	get isGone(): boolean {
+		return this.status === 410;
+	}
 }
 
 /** The subset of RequestInit this client accepts. */

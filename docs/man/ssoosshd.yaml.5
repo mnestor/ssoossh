@@ -348,10 +348,25 @@ The limit for POST /api/certs/pam (short\-lived PAM cert, gated on local interac
 Default:
 .BR 10 .
 .TP
+.BI http.cert_request_rate_limit.console: " number"
+The limit for POST /api/certs/console (console login, gated on someone standing at a keyboard).
+Default:
+.BR 10 .
+.TP
 .BI http.service_code_rate_limit.limit: " number"
 Requests per second per enrollment code. Zero or negative disables this limit.
 Default:
 .BR 1 .
+.TP
+.BI http.console_code_rate_limit.limit: " number"
+Submissions per second per session and per source address. Zero or negative disables this limit.
+Default:
+.BR 1 .
+.TP
+.BI http.console_code_rate_limit.burst: " int"
+How many submissions may arrive back to back before the per\-second rate starts holding them back. Small on purpose: a human typing a code they misread retries once or twice, not ten times.
+Default:
+.BR 5 .
 .TP
 .BI http.hsts: " string"
 (HTTP Strict\-Transport\-Security) is sent in the Strict\-Transport\-Security header on every response, but only when the server terminates TLS itself (i.e. tls.certificate_file and tls.private_key_file are set). Browsers ignore HSTS over plain HTTP. Empty disables the header, useful when a TLS\-terminating reverse proxy in front sets its own policy. Typical values include "max\-age=31536000; includeSubDomains".
@@ -1041,6 +1056,119 @@ Default:
 .BR empty .
 .TP
 .BI cert_options.pam.lifetime_policy.source_policy: " list"
+Restricts certificate lifetime based on the request's source IP address. Longest prefix match wins; ties resolve to the stricter rule. Entries are intersected with the tier\-determined duration, and the final effective lifetime is clamped to the ceiling set by the enclosing CertOptions*.ValidDuration.
+.IP
+See docs/operations/certificate\-lifetime\-policy.md section "Which address" for why the server\-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.require.group: " string"
+Names an OIDC group the identity must be a member of.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.require.claim: " string"
+Names an extra claim (a key under authentication.fields.extra) the comparator keys below test. The server attaches no meaning to the claim itself; it only compares the value.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.require.at_least: " number"
+Passes when the claim's numeric value is >= this bound (inclusive). May be combined with at_most to express a range.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.console.require.at_most: " number"
+Passes when the claim's numeric value is <= this bound (inclusive). May be combined with at_least to express a range.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.console.require.exactly: " number"
+Passes when the claim's numeric value equals this value. It desugars to at_least and at_most of the same value, so there is no second comparison path. Right for an integer\-valued score; a computed confidence of 39.9999 does not equal 40, so a non\-integral literal here draws a startup warning.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.console.require.equals: " string"
+Passes when the claim's scalar string value equals this string.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.require.one_of: " list"
+Passes when the claim's scalar string value appears in this set.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.require.contains: " string"
+Passes when this value appears in a list\-valued claim. A scalar claim takes the absent path \(em the condition fails, loudly.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.require.all_of: " list"
+Passes when every listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.require.any_of: " list"
+Passes when at least one listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.allowed_networks: " list"
+Refuses request creation from outside these CIDRs, before a keypair is certified and before any human is asked to approve anything. Empty means no network gate.
+.IP
+The server's half of per\-host policy rests on the source address rather than the hostname because the address is observed by the server and the hostname is a string an unauthenticated caller typed \(em the same reasoning that got host certificates declined (docs/project/decisions.md). Behind a reverse proxy this is only meaningful with http.trusted_proxies set; without it every request carries the proxy's address.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.client_timeout: " duration"
+This type's whole budget: the longest a console login can sit waiting for a human. Unset (zero) inherits cert_options.client_timeout. A value LONGER than that global is a startup error \(em the global is the ceiling, and a type may only shorten it.
+.IP
+Shorter is the point. The approval window is the attacker's working time in the consent\-phishing case the typed code exists to raise the bar on: someone at an unattended console starts a login and phones the victim to read them the code. Halving the window halves the time that call has to succeed in.
+.IP
+The human's share is client_timeout \- 2*(client_timeout/10), so 2m here gives the approver 96s, not 120s. There is a floor, and it is not the technical one: below about 90s a first approval that has to go through an OIDC login starts to fail, people retry, and a flow people habitually retry is a flow people learn to approve without reading.
+Default:
+.BR 2m .
+.TP
+.BI cert_options.console.valid_duration: " duration"
+The ceiling on how long an issued console certificate is valid. Seconds, not hours, for the same reason as the PAM type: it is validated once by the module and discarded, and the session it authorizes outlives it by design.
+Default:
+.BR 30s .
+.TP
+.BI cert_options.console.extensions: " list"
+Default to empty. permit\-pty and friends are meaningless for a certificate that authenticates one local login and is then thrown away.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.key_id_template: " string"
+The key ID written into console certificates. Like the PAM template and unlike the service one, it does NOT fall back to cert_options.user.key_id_template: a console login and an SSH login by the same person must stay distinguishable in an audit log, so an unset template identifies the type instead.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.lifetime_policy.default_duration: " duration"
+The duration applied when no tier matches. It is required whenever any part of the lifetime policy is configured: a zero value is a startup error rather than a zero\-second certificate that fails at signing, several layers from the config line that caused it.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.console.lifetime_policy.on_absent_claim: " string"
+States what a missing or unparseable claim resolves to during condition evaluation. The only accepted value is "floor" (the default): the condition fails and the identity falls through to the floor. It must never mean "skip this condition", which is how a missing claim becomes the most generous outcome, so no other value exists; the key is here to make the posture explicit in config.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.lifetime_policy.default_extensions: " list"
+The SSH certificate extensions granted when no tier matches, or when the winning tier states no grant_extensions of its own. Applies only when tiers are configured: with tiers present, extension grants are opt\-in and start from nothing \(em an empty or omitted list grants no extensions. Every entry must appear in the enclosing type's extensions ceiling, checked at startup. With no tiers configured, the grant axis is inactive and the type's extensions ceiling alone bounds a request.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.lifetime_policy.default_enrollment_duration: " duration"
+The enrollment\-code lifetime applied when no tier matches, clamped to cert_options.service.enrollment_duration. Service certificates only \(em a startup error on any other type. Zero falls back to the enrollment_duration ceiling.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.console.lifetime_policy.tiers: " list"
+Evaluated in order; the FIRST tier whose when condition the approver's identity satisfies wins, and the list means what it says \(em tier order is the administrator's job. Numeric thresholds are nested by construction (everyone satisfying at_least 40 also satisfies at_least 30), so write them in descending order; ascending order silently lands every high\-score identity in the shortest tier. An empty tiers list means DefaultDuration is always used.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.lifetime_policy.source_policy: " list"
 Restricts certificate lifetime based on the request's source IP address. Longest prefix match wins; ties resolve to the stricter rule. Entries are intersected with the tier\-determined duration, and the final effective lifetime is clamped to the ceiling set by the enclosing CertOptions*.ValidDuration.
 .IP
 See docs/operations/certificate\-lifetime\-policy.md section "Which address" for why the server\-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.

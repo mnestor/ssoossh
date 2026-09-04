@@ -33,7 +33,11 @@ type stubCertRequestService struct {
 	cert      string
 }
 
-func (s *stubCertRequestService) CreateRequest(_ context.Context, _ service.NewCertRequestParams) (string, error) {
+func (s *stubCertRequestService) CreateRequest(_ context.Context, _ service.NewCertRequestParams) (service.CreatedRequest, error) {
+	return service.CreatedRequest{ID: s.requestID}, nil
+}
+
+func (s *stubCertRequestService) ResolveUserCode(_ context.Context, _ string, _ *service.Identity) (string, error) {
 	return s.requestID, nil
 }
 

@@ -6,6 +6,11 @@
   "local_username": "alice",
   "local_hostname": "alice-laptop",
   "target_account": "root",
+  "hostname": "web01",
+  "pam_service": "login",
+  "tty": "tty1",
+  "remote_host": "198.51.100.7",
+  "expires_at": "2026-08-14T09:30:00+02:00",
   "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample alice@laptop",
   "principals": [
     "alice",

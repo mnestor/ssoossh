@@ -14,7 +14,7 @@ type Certificate struct {
 	// schema has (same reasoning as CertificateRequestDecision's `unique`
 	// tag). Adding a CertificateType means updating this tag and both
 	// migrations alongside enums.go.
-	Type CertificateType `gorm:"column:type;check:chk_certificates_type,type IN ('user','service','pam')"`
+	Type CertificateType `gorm:"column:type;check:chk_certificates_type,type IN ('user','service','pam','console')"`
 	// Nil only when the owner could not be resolved at issuance -- the
 	// request was never bound to a user, or the lookup failed. See
 	// SignedReplyHandler.recordCertificate, which logs both cases and

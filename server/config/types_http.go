@@ -142,6 +142,11 @@ type HTTPSettings struct {
 	// against brute-forcing. Zero or negative disables the specific limit.
 	ServiceCodeRateLimit ServiceCodeRateLimitSettings `mapstructure:"service_code_rate_limit"`
 
+	// ConsoleCodeRateLimit holds the rate limit configuration for console
+	// user-code submission, keyed on the submitting session and its source
+	// address to protect against brute-forcing.
+	ConsoleCodeRateLimit ConsoleCodeRateLimitSettings `mapstructure:"console_code_rate_limit"`
+
 	// Hsts (HTTP Strict-Transport-Security) is sent in the Strict-Transport-Security
 	// header on every response, but only when the server terminates TLS itself
 	// (i.e. tls.certificate_file and tls.private_key_file are set). Browsers
@@ -249,6 +254,10 @@ type CertRequestRateLimitSettings struct {
 	// PAM is the limit for POST /api/certs/pam (short-lived PAM cert, gated on
 	// local interaction).
 	PAM float64 `mapstructure:"pam" default:"10"`
+
+	// Console is the limit for POST /api/certs/console (console login,
+	// gated on someone standing at a keyboard).
+	Console float64 `mapstructure:"console" default:"10"`
 }
 
 // ServiceCodeRateLimitSettings holds the rate limit configuration for service
@@ -258,6 +267,26 @@ type ServiceCodeRateLimitSettings struct {
 	// Limit is requests per second per enrollment code. Zero or negative
 	// disables this limit.
 	Limit float64 `mapstructure:"limit" default:"1"`
+}
+
+// ConsoleCodeRateLimitSettings holds the rate limit configuration for
+// console user-code submission (POST /api/certs/requests/resolve-code).
+//
+// Keyed on the submitting session rather than the source address, and on
+// the address as well, so a single compromised account cannot grind through
+// the code space from many addresses and a single address cannot do it
+// across many accounts. At 40 bits with a handful of live codes even a
+// generous limit leaves an infeasible search; this exists to make that
+// margin independent of how many requests happen to be pending.
+type ConsoleCodeRateLimitSettings struct {
+	// Limit is submissions per second per session and per source address.
+	// Zero or negative disables this limit.
+	Limit float64 `mapstructure:"limit" default:"1"`
+
+	// Burst is how many submissions may arrive back to back before the
+	// per-second rate starts holding them back. Small on purpose: a human
+	// typing a code they misread retries once or twice, not ten times.
+	Burst int `mapstructure:"burst" default:"5"`
 }
 
 // Validate reports configuration that would fail later, at a point where the

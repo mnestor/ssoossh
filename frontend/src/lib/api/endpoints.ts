@@ -21,6 +21,7 @@ import type {
 	NotificationPreferences,
 	ReEnableUserRequestBody,
 	RequestDetail,
+	ResolveCodeResult,
 	ServiceEnrollmentsResponse,
 	SetNotificationEmailRequestBody
 } from './types';
@@ -94,6 +95,25 @@ export function approveRequest(
 	return request<ApproveResult>(`/certs/requests/${encodeURIComponent(id)}/approve`, {
 		method: 'POST',
 		body
+	});
+}
+
+/**
+ * POST /api/certs/requests/resolve-code.
+ *
+ * Turns the code a human read off a console screen into the request it
+ * names, and claims that request for this session — which is why it is a
+ * POST despite reading like a lookup, and why a second session submitting
+ * the same code gets 403.
+ *
+ * The code is sent as typed. Case, the display hyphen, stray spaces and
+ * Crockford's decoding aliases (I and L for 1, O for 0) are all normalized
+ * server-side, so this never has to be the place that gets it right.
+ */
+export function resolveConsoleCode(code: string): Promise<ResolveCodeResult> {
+	return request<ResolveCodeResult>('/certs/requests/resolve-code', {
+		method: 'POST',
+		body: { code }
 	});
 }
 

@@ -32,6 +32,7 @@ in [decisions.md](../project/decisions.md).
 | --- | --- | --- |
 | **User** | interactive SSH | shipped end to end |
 | **PAM** | `sudo`/`su` via `pam_ssoossh` | shipped end to end |
+| **Console** | interactive login at a machine with no browser, approved by a typed code | server and web UI shipped; the PAM module for it is being written separately in C |
 | **Service** | non-interactive: enroll once, retrieve unattended, every retrieval logged | shipped end to end |
 
 ssoosshd issues no host certificates: without a secure way for a host to
@@ -185,6 +186,57 @@ local principal-mapping tooling (`host mapping`, `host principals`) for
   on that machine can edit
   ([design](../proposals/pam-principal-source.md)).
 
+## Console login
+
+A console has a human in front of it and no browser: a physical tty, a
+serial console, a BMC or KVM viewer, a VM console. There is nothing on that
+screen to copy, so printing an approval URL nobody can transcribe is not a
+flow.
+
+- The machine calls `POST /api/certs/console` and is answered with an
+  eight-character code (Crockford Base32, shown as `K7M4-QP2X`), the page
+  that accepts it, a `/c/<code>` shortcut for a phone, and `expires_at` —
+  the deadline the server will hold the request to.
+- The approver signs in and types the code at **/console**, or opens the
+  shortcut. Resolving a code needs a session: an unauthenticated caller can
+  never turn a code into a request ID, and the request ID is what the
+  certificate is delivered against. Resolving also claims the request, so a
+  second person typing the same code is refused.
+- **The code is the consent-phishing control**, not just a convenience.
+  Request binding stops one user approving another's pending request; it
+  does nothing about a user talked into approving a request an attacker
+  created for them. A code that exists only on the console screen raises
+  that from "click this link" to "read me the eight characters in front of
+  you".
+- The approval page shows what is being approved: the machine, the PAM
+  service, the terminal, the account being logged into, and the address the
+  server observed. Everything but that last one is self-reported by an
+  unauthenticated caller and is labelled as such. A console login that also
+  reports a remote host is flagged outright — a console has nobody
+  connecting to it over the network.
+- Timing is its own budget. `cert_options.console.client_timeout` defaults
+  to 2m against the global 5m ceiling, because the approval window is the
+  attacker's working time in the phone-call case above. A type may only
+  shorten the global budget, never extend it.
+- `cert_options.console.allowed_networks` refuses a request from outside
+  named networks at creation, before a keypair is certified and before any
+  human is asked. It gates on the source address the server observes rather
+  than a hostname the caller typed, for the same reason host certificates
+  were declined.
+- **Which accounts may console into which machine is the host's decision,
+  not the server's.** Put `pam_succeed_if.so user ingroup ...` above the
+  ssoossh line in `/etc/pam.d/login`: host-side, root-owned, and it fails
+  before any network call. A group sent on the wire would be untrusted
+  input that stops applying the moment someone omits it.
+- As with `sudo`, the certificate names the **approver**, and the host's
+  `principals-map` decides which local account that authorizes. Someone who
+  types `root` at an unattended console gets a certificate their host's map
+  refuses unless it already says that approver may become root.
+
+The module that drives this from the console side is written and shipped
+separately. Server-side design and reasoning:
+[console-login-pam.md](../proposals/console-login-pam.md).
+
 ## Coming later
 
 None of the following is built. Where a design exists it is linked, and
@@ -212,8 +264,14 @@ were verified against — see [proposals/](../proposals/).
   ([design](../proposals/config-coordination.md)).
 - **Cloud KMS signing**, behind the same key-source interface the config
   and PKCS#11 backends use today.
-- **Console-login PAM and QR-code approval**, for a machine with no
-  browser in front of it.
+- **QR-code approval at the console**, so the verification URL can be
+  photographed instead of typed. The server already returns the short
+  `/c/<code>` URL a QR has to encode; drawing it is the console module's
+  half ([design](../proposals/console-login-pam.md)).
+- **Push approval to a registered device**, deferred rather than rejected:
+  request creation is unauthenticated, so an opt-in, per-target-user rate
+  limit has to come first
+  ([design](../proposals/console-login-pam.md)).
 - **Host certificates**, only if a secure host-verification mechanism
   (something like an ACME challenge) makes hostname claims provable —
   see [decisions.md](../project/decisions.md).

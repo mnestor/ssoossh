@@ -14,11 +14,21 @@ import (
 // the fixture sets one so the denial test below proves the gate holds.
 const pamApproverGroup = "pam-approvers"
 
-// pamApprover is the browser identity that approves or denies. Deliberately
-// not "games" (the local account pamtest.c authenticates): the certificate's
-// principal comes from the request's local username, not the approver's
-// identity (see service.Approve), and using distinct names proves it.
-const pamApprover = "pam-operator"
+// pamApprover is the browser identity that approves or denies, and it is
+// "games" — the same local account pamtest.c authenticates — on purpose.
+//
+// A PAM certificate carries the *approver's* accounts, not the local
+// account the module named (see service.newCertTypePolicies, pamPrincipals,
+// and docs/proposals/pam-principal-source.md). The module then re-checks
+// those principals against the host's own decision: with no principals-map
+// configured, check 3 is an exact match, so an approver whose identity does
+// not carry the local account's name is correctly refused.
+//
+// The stanza this fixture installs sets no principals-map, so the approver
+// has to be the account. Mapping one to the other is the principals-map's
+// job and has its own coverage; what this tier proves is that a real
+// pam_authenticate against a real ssoosshd succeeds end to end.
+const pamApprover = "games"
 
 // newPAMStackFixture starts an IdP and a ssoosshd with PAM issuance enabled,
 // builds pam_ssoossh.so and the pamtest driver, and installs a dedicated

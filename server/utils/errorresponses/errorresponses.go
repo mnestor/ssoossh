@@ -86,6 +86,37 @@ func (e *CertificateUnavailableError) HTTPStatusCode() int { return http.StatusG
 // ErrorCode reports the machine-readable error code.
 func (e *CertificateUnavailableError) ErrorCode() string { return apitypes.ErrorCodeUnavailable }
 
+// ExpiredError indicates the thing the caller named did exist and is no
+// longer usable because its own deadline passed — as opposed to
+// NotFoundError, which says it was never here.
+//
+// The distinction is worth a status code of its own because it sends the
+// user somewhere different: a mistyped console code means try again, an
+// expired one means go back to the machine and start the login over.
+//
+// Rendered as 410 Gone for the same reason CertificateUnavailableError is:
+// the resource existed, and 410 is outside the client's SSE retry
+// conditions.
+type ExpiredError struct {
+	// Resource names what expired, e.g. "console login request". Returned
+	// to the caller, so keep it a category rather than an identifier.
+	Resource string
+}
+
+// Error implements the error interface.
+func (e *ExpiredError) Error() string {
+	if e.Resource == "" {
+		return "expired"
+	}
+	return fmt.Sprintf("this %s has expired", e.Resource)
+}
+
+// HTTPStatusCode reports the HTTP status this error should be rendered as.
+func (e *ExpiredError) HTTPStatusCode() int { return http.StatusGone }
+
+// ErrorCode reports the machine-readable error code.
+func (e *ExpiredError) ErrorCode() string { return apitypes.ErrorCodeUnavailable }
+
 // NotImplementedError indicates a route or check exists as a scaffold but
 // its logic hasn't been implemented yet. Handlers/middleware that are still
 // placeholders should fail closed with this rather than silently allowing

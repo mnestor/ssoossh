@@ -432,6 +432,19 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 		if a.config.HTTP.CertRequestRateLimit.PAM > 0 {
 			certRequestRateLimit.PAM = limiter.PerIP(rate.Limit(a.config.HTTP.CertRequestRateLimit.PAM), 1)
 		}
+		if a.config.HTTP.CertRequestRateLimit.Console > 0 {
+			certRequestRateLimit.Console = limiter.PerIP(rate.Limit(a.config.HTTP.CertRequestRateLimit.Console), 1)
+		}
+		// Console code submission, keyed on the session and the source
+		// address together — see middleware.EndpointRateLimiter.PerKeys and
+		// config.ConsoleCodeRateLimitSettings.
+		if a.config.HTTP.ConsoleCodeRateLimit.Limit > 0 {
+			certRequestRateLimit.ResolveCode = limiter.PerKeys(
+				rate.Limit(a.config.HTTP.ConsoleCodeRateLimit.Limit),
+				a.config.HTTP.ConsoleCodeRateLimit.Burst,
+				consoleCodeRateLimitKeys,
+			)
+		}
 	}
 	controller.NewCertRequestController(apiGroup, a.svc.certRequest, sessionAuth, csrf, certRequestRateLimit)
 
@@ -456,6 +469,26 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	controller.NewAdminController(apiGroup, a.config, a.db, sessionAuth, adminAuth, socAuth, auditorAuth, csrf, a.svc.enrollment, a.svc.audit)
 
 	return nil
+}
+
+// consoleCodeRateLimitKeys returns the buckets one console code submission
+// counts against: the submitting identity and the address it arrived from.
+//
+// The session key is the important one. Rate limiting a code-guessing
+// attempt by address alone is defeated by having several addresses, which
+// anyone attacking a 40-bit space already does; counting failures against
+// the account is what makes the margin independent of that.
+//
+// The route is session-authed, so an identity is always present by the time
+// this runs. Returning no keys when it somehow is not leaves the request to
+// the handler's own unauthorized check rather than silently rate-limiting
+// on the address alone.
+func consoleCodeRateLimitKeys(c *gin.Context) []string {
+	identity, ok := middleware.Identity(c)
+	if !ok {
+		return nil
+	}
+	return []string{"subject:" + identity.Subject, "ip:" + c.ClientIP()}
 }
 
 // resolveSessionSecret returns the key that signs and encrypts session

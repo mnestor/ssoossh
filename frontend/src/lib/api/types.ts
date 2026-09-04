@@ -37,6 +37,7 @@ export type {
 	PageMeta,
 	ReEnableUserRequestBody,
 	RequestDetailResponse as RequestDetail,
+	ResolveCodeResponse as ResolveCodeResult,
 	ServiceEnrollmentResponse as ServiceEnrollment,
 	ServiceEnrollmentsResponse,
 	SetNotificationEmailRequestBody

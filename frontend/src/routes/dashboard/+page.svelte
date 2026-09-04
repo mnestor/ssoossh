@@ -49,6 +49,7 @@
 	const rowEvents: Record<string, string> = {
 		user: 'certificate requested',
 		pam: 'certificate requested',
+		console: 'console login',
 		service: 'service key requested'
 	};
 

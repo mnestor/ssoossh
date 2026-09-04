@@ -304,6 +304,9 @@ http:
     # The limit for POST /api/certs/pam (short-lived PAM cert, gated on local
     # interaction).
     pam: 10
+    # The limit for POST /api/certs/console (console login, gated on someone
+    # standing at a keyboard).
+    console: 10
   # Holds the rate limit configuration for service enrollment code redemption,
   # keyed on the enrollment code to protect against brute-forcing. Zero or
   # negative disables the specific limit.
@@ -311,6 +314,24 @@ http:
     # Requests per second per enrollment code. Zero or negative disables this
     # limit.
     limit: 1
+  # Holds the rate limit configuration for console user-code submission, keyed
+  # on the submitting session and its source address to protect against
+  # brute-forcing.
+  #
+  # Keyed on the submitting session rather than the source address, and on the
+  # address as well, so a single compromised account cannot grind through the
+  # code space from many addresses and a single address cannot do it across
+  # many accounts. At 40 bits with a handful of live codes even a generous
+  # limit leaves an infeasible search; this exists to make that margin
+  # independent of how many requests happen to be pending.
+  console_code_rate_limit:
+    # Submissions per second per session and per source address. Zero or
+    # negative disables this limit.
+    limit: 1
+    # How many submissions may arrive back to back before the per-second rate
+    # starts holding them back. Small on purpose: a human typing a code they
+    # misread retries once or twice, not ten times.
+    burst: 5
   # (HTTP Strict-Transport-Security) is sent in the Strict-Transport-Security
   # header on every response, but only when the server terminates TLS itself
   # (i.e. tls.certificate_file and tls.private_key_file are set). Browsers
@@ -925,6 +946,140 @@ cert_options:
     # validated-once certificate and extension grants against an empty
     # extensions ceiling have nothing to do. The expected configuration is
     # require alone, tiers unused.
+    lifetime_policy:
+      # The duration applied when no tier matches. It is required whenever any
+      # part of the lifetime policy is configured: a zero value is a startup error
+      # rather than a zero-second certificate that fails at signing, several
+      # layers from the config line that caused it.
+
+      # States what a missing or unparseable claim resolves to during condition
+      # evaluation. The only accepted value is "floor" (the default): the
+      # condition fails and the identity falls through to the floor. It must never
+      # mean "skip this condition", which is how a missing claim becomes the most
+      # generous outcome, so no other value exists; the key is here to make the
+      # posture explicit in config.
+      on_absent_claim: ""
+      # The SSH certificate extensions granted when no tier matches, or when the
+      # winning tier states no grant_extensions of its own. Applies only when
+      # tiers are configured: with tiers present, extension grants are opt-in and
+      # start from nothing — an empty or omitted list grants no extensions.
+      # Every entry must appear in the enclosing type's extensions ceiling,
+      # checked at startup. With no tiers configured, the grant axis is inactive
+      # and the type's extensions ceiling alone bounds a request.
+
+      # The enrollment-code lifetime applied when no tier matches, clamped to
+      # cert_options.service.enrollment_duration. Service certificates only — a
+      # startup error on any other type. Zero falls back to the
+      # enrollment_duration ceiling.
+
+      # Evaluated in order; the FIRST tier whose when condition the approver's
+      # identity satisfies wins, and the list means what it says — tier order is
+      # the administrator's job. Numeric thresholds are nested by construction
+      # (everyone satisfying at_least 40 also satisfies at_least 30), so write
+      # them in descending order; ascending order silently lands every high-score
+      # identity in the shortest tier. An empty tiers list means DefaultDuration
+      # is always used.
+
+      # Restricts certificate lifetime based on the request's source IP address.
+      # Longest prefix match wins; ties resolve to the stricter rule. Entries are
+      # intersected with the tier-determined duration, and the final effective
+      # lifetime is clamped to the ceiling set by the enclosing
+      # CertOptions*.ValidDuration.
+      #
+      # See docs/operations/certificate-lifetime-policy.md section "Which address"
+      # for why the server-observed source IP is used, and why
+      # RequestedOptions.SourceAddresses is never consulted.
+
+  # Configures issuance of console certificates: the certificate that
+  # authenticates an interactive console login on a machine with no browser in
+  # front of it, where the approval travels as a short code the human reads
+  # off the screen and types into the web UI (see
+  # docs/proposals/console-login-pam.md).
+  #
+  # Deliberately its own type rather than a flag on cert_options.pam. A
+  # console certificate buys a whole interactive session where a PAM one buys
+  # a single local operation, so an operator needs to gate, time, and label
+  # the two separately — a `sudo` may be approvable by a colleague when a
+  # console login is not, and the two must stay distinguishable in an audit
+  # log.
+  console:
+    # The condition an approver's identity must satisfy to approve a console
+    # login at all. Unset means any authenticated user may.
+    #
+    # It is not the per-host gate. Restricting which accounts may console into
+    # which machine belongs in the host's own PAM stack (pam_succeed_if above
+    # the ssoossh line), where it is root-owned, unforgeable, and fails before
+    # any network call — a group a module sent would be untrusted input that
+    # stops applying the moment somebody omits it.
+    #
+    #   - group: membership in an OIDC group, exactly the behaviour group tiers
+    #     had before conditions existed.
+    #   - claim with at_least / at_most: numeric comparison against an extra
+    #     claim (see authentication.fields.extra). Both keys together express a
+    #     range; boundaries are inclusive.
+    #   - claim with exactly: numeric equality, shorthand for at_least and
+    #     at_most set to the same value.
+    #   - claim with equals / one_of: scalar string equality, or membership of
+    #     the scalar in a fixed set.
+    #   - claim with contains: membership of a value in a list-valued claim.
+    #   - all_of / any_of: conjunction or disjunction over a list of the forms
+    #     above. One level of nesting only — a nested condition may not itself
+    #     carry all_of or any_of.
+    #
+    # Exactly one of group, claim, all_of, or any_of must be set. A claim
+    # condition takes exactly one comparator family. Every claim name referenced
+    # must be declared under authentication.fields.extra, checked at startup.
+    #
+    # An absent claim is never neutral: a missing or unparseable claim value
+    # fails the condition (the floor), loudly, and can never widen what an
+    # identity receives. A claim's value is only as fresh as the subject's last
+    # login — see authentication.fields.extra.
+
+    # Refuses request creation from outside these CIDRs, before a keypair is
+    # certified and before any human is asked to approve anything. Empty means
+    # no network gate.
+    #
+    # The server's half of per-host policy rests on the source address rather
+    # than the hostname because the address is observed by the server and the
+    # hostname is a string an unauthenticated caller typed — the same
+    # reasoning that got host certificates declined (docs/project/decisions.md).
+    # Behind a reverse proxy this is only meaningful with http.trusted_proxies
+    # set; without it every request carries the proxy's address.
+    allowed_networks: []
+    # This type's whole budget: the longest a console login can sit waiting for
+    # a human. Unset (zero) inherits cert_options.client_timeout. A value LONGER
+    # than that global is a startup error — the global is the ceiling, and a
+    # type may only shorten it.
+    #
+    # Shorter is the point. The approval window is the attacker's working time
+    # in the consent-phishing case the typed code exists to raise the bar on:
+    # someone at an unattended console starts a login and phones the victim to
+    # read them the code. Halving the window halves the time that call has to
+    # succeed in.
+    #
+    # The human's share is client_timeout - 2*(client_timeout/10), so 2m here
+    # gives the approver 96s, not 120s. There is a floor, and it is not the
+    # technical one: below about 90s a first approval that has to go through an
+    # OIDC login starts to fail, people retry, and a flow people habitually
+    # retry is a flow people learn to approve without reading.
+    client_timeout: 2m
+    # The ceiling on how long an issued console certificate is valid. Seconds,
+    # not hours, for the same reason as the PAM type: it is validated once by
+    # the module and discarded, and the session it authorizes outlives it by
+    # design.
+    valid_duration: 30s
+    # Default to empty. permit-pty and friends are meaningless for a certificate
+    # that authenticates one local login and is then thrown away.
+    extensions: []
+    # The key ID written into console certificates. Like the PAM template and
+    # unlike the service one, it does NOT fall back to
+    # cert_options.user.key_id_template: a console login and an SSH login by the
+    # same person must stay distinguishable in an audit log, so an unset
+    # template identifies the type instead.
+    key_id_template: ""
+    # Takes the same grammar as the other types. As with PAM, in practice only
+    # the require gate matters: duration tiers against a 30-second certificate
+    # and extension grants against an empty ceiling have nothing to do.
     lifetime_policy:
       # The duration applied when no tier matches. It is required whenever any
       # part of the lifetime policy is configured: a zero value is a startup error

@@ -103,7 +103,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 		t.Fatalf("failed to marshal client public key: %v", err)
 	}
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: clientPub,
 		RequestedOptions: RequestedOptions{
@@ -268,7 +268,7 @@ func TestPipeline_EndToEnd_PAM(t *testing.T) {
 		t.Fatalf("failed to marshal client public key: %v", err)
 	}
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypePAM,
 		PublicKey: clientPub,
 		Username:  "mnestor",

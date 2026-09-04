@@ -45,24 +45,30 @@ table certificate_requests
   column created_at type=timestamp with time zone nullable=false default=<none>
   column enrollment_token type=text nullable=false default=''::text
   column failure_reason type=text nullable=false default=''::text
+  column hostname type=text nullable=false default=''::text
   column id type=text nullable=false default=<none>
   column local_hostname type=text nullable=false default=''::text
   column local_username type=text nullable=false default=''::text
+  column pam_service type=text nullable=false default=''::text
   column public_key type=text nullable=false default=<none>
+  column remote_host type=text nullable=false default=''::text
   column requested_options type=text nullable=false default=''::text
   column resolved_at type=timestamp with time zone nullable=true default=<none>
   column serial_number type=bigint nullable=true default=<none>
   column service_account type=text nullable=false default=''::text
   column source_ip type=text nullable=false default=''::text
   column status type=text nullable=false default=<none>
+  column tty type=text nullable=false default=''::text
   column type type=text nullable=false default=<none>
+  column user_code type=text nullable=false default=''::text
   column user_id type=text nullable=true default=<none>
   column username type=text nullable=false default=''::text
   check chk_certificate_requests_status (status = ANY (ARRAY['pending'::text, 'signing'::text, 'approved'::text, 'enrolled'::text, 'denied'::text, 'expired'::text, 'failed'::text]))
-  check chk_certificate_requests_type (type = ANY (ARRAY['user'::text, 'service'::text, 'pam'::text]))
+  check chk_certificate_requests_type (type = ANY (ARRAY['user'::text, 'service'::text, 'pam'::text, 'console'::text]))
   fk user_id -> users.id
   index certificate_requests_pkey CREATE UNIQUE INDEX certificate_requests_pkey ON public.certificate_requests USING btree (id)
   index idx_certificate_requests_status_created_at CREATE INDEX idx_certificate_requests_status_created_at ON public.certificate_requests USING btree (status, created_at)
+  index idx_certificate_requests_user_code CREATE UNIQUE INDEX idx_certificate_requests_user_code ON public.certificate_requests USING btree (user_code) WHERE ((user_code <> ''::text) AND (status = ANY (ARRAY['pending'::text, 'signing'::text])))
   index idx_certificate_requests_user_id CREATE INDEX idx_certificate_requests_user_id ON public.certificate_requests USING btree (user_id)
 table certificates
   column certificate_request_id type=text nullable=true default=<none>
@@ -77,7 +83,7 @@ table certificates
   column serial_number type=bigint nullable=false default=<none>
   column type type=text nullable=false default=<none>
   column user_id type=text nullable=true default=<none>
-  check chk_certificates_type (type = ANY (ARRAY['user'::text, 'service'::text, 'pam'::text]))
+  check chk_certificates_type (type = ANY (ARRAY['user'::text, 'service'::text, 'pam'::text, 'console'::text]))
   fk certificate_request_id -> certificate_requests.id
   fk user_id -> users.id
   index certificates_pkey CREATE UNIQUE INDEX certificates_pkey ON public.certificates USING btree (id)

@@ -32,7 +32,7 @@ func strandedBound(opts config.CertificateOptions) time.Duration {
 func signingRequestAged(t *testing.T, svc *CertRequestService, age time.Duration) string {
 	t.Helper()
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeUser,
 		PublicKey: "ssh-ed25519 AAAA...",
 	})

@@ -417,3 +417,143 @@ NTP not running. Run `chronyd`/`systemd-timesyncd` (or equivalent) on
 every host running `pam_ssoossh`, and raise `skew-tolerance` only as a
 last resort, since it widens the window a stolen certificate would remain
 usable in.
+
+---
+
+## 9. Console login
+
+A `console` certificate authorizes an interactive login at a machine with
+no browser in front of it — a physical tty, a serial console, a BMC or KVM
+viewer, a VM console. The approval travels as a short code the person at
+the keyboard reads off the screen and types into the web UI.
+
+Everything below is server side. The PAM module that drives a console is
+shipped separately from this repo; `pam_ssoossh` does `sudo` and `su`
+only, and must not be added to `/etc/pam.d/login`.
+
+### Server configuration
+
+```yaml
+cert_options:
+  console:
+    # Who may approve a console login at all. This is deployment-wide, not
+    # per host — see below for the per-host half.
+    require:
+      group: staff
+
+    # Refuse a request from outside these networks, at creation, before a
+    # keypair is certified and before any human is asked. Gated on the
+    # address the server observes, not on the hostname the caller sent:
+    # a host cannot prove its name, which is why there are no host
+    # certificates either.
+    #
+    # Behind a reverse proxy this only means anything with
+    # http.trusted_proxies set. Without it every request carries the
+    # proxy's address and the gate either admits everything or nothing.
+    allowed_networks:
+      - 10.20.0.0/16      # the management VLAN
+      - 192.168.50.0/24   # the lab
+
+    # This type's whole budget, and the one setting worth thinking about.
+    # It defaults to 2m against the global cert_options.client_timeout of
+    # 5m, and a value longer than the global is a startup error.
+    #
+    # Short on purpose: the approval window is the attacker's working time
+    # in the case the code exists to defend against — someone starts a
+    # login at an unattended console and phones a colleague to read them
+    # the code. Two minutes gives the approver 96 seconds, which is the
+    # human's share after the signing reserve.
+    #
+    # There is a floor, and it is not the technical one. Below about 90s a
+    # first approval that has to go through an OIDC sign-in starts failing,
+    # people retry, and a flow people habitually retry is a flow they learn
+    # to approve without reading.
+    client_timeout: 2m
+
+    # Validated once by the module and discarded, exactly like the PAM type.
+    valid_duration: 30s
+
+http:
+  cert_request_rate_limit:
+    console: 10           # per second, per source address
+  console_code_rate_limit:
+    limit: 1              # per second, per session AND per source address
+    burst: 5
+```
+
+### Per-host policy belongs in the host's PAM stack
+
+`cert_options.console.require` is one condition for the whole deployment.
+In a fleet that degenerates: `web01` is the web team's, `db07` the DBAs',
+`rack07-bmc` two people in facilities, and a single server-wide group has
+to be the union of all of them, at which point it gates nothing.
+
+The answer is not to send a group to the server. Put the gate in the
+host's own stack, above the ssoossh line:
+
+```
+# /etc/pam.d/login
+auth  [success=ignore default=die]  pam_succeed_if.so  user ingroup console-web01 quiet
+auth  sufficient                    <the console module>  ...
+auth  include                       common-auth
+```
+
+That gate is root-owned on the host, cannot be omitted by whoever is at
+the keyboard, and fails before any keypair, request row, or network call.
+A group field on the wire would be untrusted input from an unauthenticated
+caller: it could only ever narrow, so nobody could use it to widen
+anything, but they could **omit** it and fall back to the server-wide
+condition — a control that silently stops applying exactly when someone is
+attacking it, which is worse than no control at all.
+
+`pam_access` with `/etc/security/access.conf` is the same argument if the
+gate wants to be per-tty or per-origin instead of per-group.
+
+### Lockout safety
+
+The `sudo` warnings in §8 apply with more force here, because the failure
+is at the physical console:
+
+1. **`sufficient`, never `required` or `requisite`.** An ssoosshd outage
+   must fall through to the local stack. A console behind an SSO that
+   needs the network is a console that does not work when the network is
+   the thing that is broken, and console is the break-glass path.
+2. **Keep a working local credential**, and keep it somewhere physical.
+3. **Never edit `/etc/pam.d/login` without a second root session open**,
+   and verify from that session before closing it.
+4. **Keep `root` out** unless deliberately enabled. Root console login is
+   the recovery path that has to keep working when ssoosshd does not, so
+   routing it through ssoosshd is usually a mistake.
+5. **Screen lockers are the same stack.** `sddm`, `swaylock`,
+   `xscreensaver` and friends authenticate through PAM, so adding a module
+   to a shared `common-auth` puts screen unlock behind the network. Wire it
+   per service, never into `common-auth`.
+6. **Accounts must already exist.** ssoossh provisions nothing: the account
+   has to resolve through NSS before `login` will offer it a PAM stack at
+   all. Pair with `principals-map` for the identity-to-account mapping.
+
+### What the approver sees, and what it is worth
+
+The approval page shows the account being logged into, the hostname, the
+PAM service, the tty, and any reported remote host — all of it
+self-reported by an unauthenticated caller and labelled as such — plus the
+source address the server observed and the time the request was made.
+
+Its value is that it lets a human notice "I am at my desk, why is there a
+console login on rack07". A console login that also reports a remote host
+is flagged outright, because a real console has nobody connecting to it
+over the network.
+
+The certificate names the **approver's** accounts, not the account typed at
+the `login:` prompt. Whether those principals authorize that account is the
+host's decision, made against its own root-owned `principals-map`. So
+someone who types `root` at an unattended console gets a certificate the
+host refuses unless the map already says that approver may become root.
+
+What no host-side gate constrains is *who approved*: one person can
+approve a console login for another on a host where both accounts are
+permitted, and nothing refuses it — that is also the legitimate case of an
+operator unlocking a console for a colleague. The audit trail is the
+control there. `cert.code_resolved` records who typed the code and which
+machine they were told about, and the decision record carries their
+subject, username, groups and source.

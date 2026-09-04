@@ -18,7 +18,7 @@
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import TypeChip from '$lib/components/TypeChip.svelte';
-	import { formatDateTime, formatDuration } from '$lib/format';
+	import { expiryLabel, formatDateTime, formatDuration } from '$lib/format';
 
 	// Everything this component shows arrives as props, and both decisions
 	// leave as callbacks. Fetching and posting stay in +page.svelte so this
@@ -74,6 +74,16 @@
 	// Live region for announcing action outcomes to screen readers.
 	let liveMessage = $state('');
 
+	// The approval deadline moves, so it needs a clock that does too. Ten
+	// seconds rather than the thirty the list pages use: a console request's
+	// budget is deliberately the shortest of the four, and a countdown that
+	// lags by half a minute against a two-minute window is worse than none.
+	let now = $state(new Date());
+	$effect(() => {
+		const timer = setInterval(() => (now = new Date()), 10_000);
+		return () => clearInterval(timer);
+	});
+
 	const extensions = $derived(extensionDiff(detail.requested, detail.granted));
 	const criticalOptions = $derived(criticalOptionDiff(detail.requested, detail.granted));
 	const narrowed = $derived(anyTrimmed(extensions) || anyTrimmed(criticalOptions));
@@ -89,6 +99,7 @@
 	});
 
 	const hasDecisionRecord = $derived(!!detail.decided_at);
+	const isConsoleRequest = $derived(detail.type === 'console');
 	const isServiceRequest = $derived(detail.type === 'service');
 	const isUserRequest = $derived(detail.type === 'user');
 	const hasServiceAccounts = $derived(serviceAccounts.length > 0);
@@ -105,18 +116,47 @@
 	// certificate" would misdescribe what's actually being authorized, so
 	// the heading says what this type of certificate is for instead (see
 	// docs/guide/features.md, PAM).
-	const cardCopy = $derived(
-		detail.type === 'pam'
-			? {
-					title: 'Approve a PAM authentication',
-					description:
-						"Review before authorizing this local operation. This certificate is for a single sudo (or other PAM) call on the client's machine, not an interactive SSH session."
-				}
-			: {
-					title: 'Approve a certificate request',
-					description: 'Review exactly what this certificate will grant before authorizing it.'
-				}
+	// A console login is the bigger grant of the two and reads differently:
+	// it authorizes a whole interactive session on the machine, and the
+	// person approving it is being asked to vouch for someone standing at a
+	// keyboard they cannot see.
+	const cardCopy = $derived.by(() => {
+		if (detail.type === 'console') {
+			return {
+				title: 'Approve a console login',
+				description:
+					'Someone is logging in at this machine\u2019s console. Approving grants an interactive session there, not a single command \u2014 so check that the machine, terminal and account below are the ones in front of you.'
+			};
+		}
+		if (detail.type === 'pam') {
+			return {
+				title: 'Approve a PAM authentication',
+				description:
+					"Review before authorizing this local operation. This certificate is for a single sudo (or other PAM) call on the client's machine, not an interactive SSH session."
+			};
+		}
+		return {
+			title: 'Approve a certificate request',
+			description: 'Review exactly what this certificate will grant before authorizing it.'
+		};
+	});
+
+	// Everything the module sent about where the login is happening. Each
+	// value is the caller\u2019s own claim: nothing authenticates a hostname or
+	// a tty, and the row labels say so rather than presenting them as facts.
+	const consoleContext = $derived(
+		[
+			{ label: 'Host', value: detail.hostname },
+			{ label: 'Service', value: detail.pam_service },
+			{ label: 'Terminal', value: detail.tty }
+		].filter((row) => !!row.value)
 	);
+
+	// A console has no remote host. PAM_RHOST arriving non-empty on a
+	// request that claims to be one means it is something else \u2014 an SSH
+	// session, or a caller sending whatever it likes \u2014 and that is worth
+	// saying outright rather than rendering as one more grey row.
+	const remoteHostSuspicious = $derived(isConsoleRequest && !!detail.remote_host);
 
 	// Wording per blocked reason, so the page explains why there is no
 	// button rather than just not having one.
@@ -167,15 +207,34 @@
 				{/if}
 			</DetailRow>
 			{#if detail.target_account}
-				<!-- PAM only. The account the sudo is being attempted as, reported
+				<!-- PAM and console only. The account being logged in as, reported
 				     by the client rather than proven, and deliberately not one of
 				     the principals above: the certificate names the approver, and
 				     the host's principals-map decides whether that authorizes this
 				     account. Shown because without it the approver cannot see what
 				     they are actually authorizing. -->
-				<DetailRow label="Attempting to act as">
+				<DetailRow label={isConsoleRequest ? 'Logging in as' : 'Attempting to act as'}>
 					<span class="flex flex-wrap items-center gap-1.5">
 						<MonoChip>{detail.target_account}</MonoChip>
+						<span class="font-sans text-ink-muted">reported by the client</span>
+					</span>
+				</DetailRow>
+			{/if}
+			{#each consoleContext as row (row.label)}
+				<!-- Self-reported, every one of them. Their value is that they
+				     let a human notice "I am at my desk, why is there a console
+				     login on rack07" — not that they authorize anything. -->
+				<DetailRow label={row.label}>
+					<span class="flex flex-wrap items-center gap-1.5">
+						<MonoChip>{row.value}</MonoChip>
+						<span class="font-sans text-ink-muted">reported by the client</span>
+					</span>
+				</DetailRow>
+			{/each}
+			{#if detail.remote_host && !remoteHostSuspicious}
+				<DetailRow label="Remote host">
+					<span class="flex flex-wrap items-center gap-1.5">
+						<MonoChip>{detail.remote_host}</MonoChip>
 						<span class="font-sans text-ink-muted">reported by the client</span>
 					</span>
 				</DetailRow>
@@ -201,6 +260,16 @@
 				</DetailRow>
 			{/if}
 			<DetailRow label="Requested at">{formatDateTime(detail.created_at)}</DetailRow>
+			{#if detail.expires_at && !detail.already_closed}
+				<!-- The server's deadline, not a guess: a request is approvable
+				     for its own type's budget and is refused after it. Shown so a
+				     slow sign-in is distinguishable from a request that has
+				     already died, which is the difference between "click
+				     approve" and "start again at the machine". -->
+				<DetailRow label="Approvable until">
+					{formatDateTime(detail.expires_at)} ({expiryLabel(detail.expires_at, now)})
+				</DetailRow>
+			{/if}
 			<DetailRow label="Public key" mono>{detail.public_key}</DetailRow>
 		</dl>
 
@@ -218,6 +287,19 @@
 				<SectionLabel>Critical options</SectionLabel>
 				<OptionDiffList entries={criticalOptions} emptyLabel="No critical options requested." />
 			</div>
+
+			{#if remoteHostSuspicious}
+				<Alert
+					variant="warning"
+					title="This does not look like a console"
+					testid="console-remote-host-warning"
+				>
+					The request says it is a console login, but it also reports a remote host (<span
+						class="font-mono">{detail.remote_host}</span
+					>). A console has nobody connecting to it over the network. Treat this as a login you did
+					not start unless you know otherwise.
+				</Alert>
+			{/if}
 
 			{#if narrowed}
 				<Alert variant="warning" title="Less than was requested" testid="narrowed-warning">

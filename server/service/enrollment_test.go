@@ -97,7 +97,7 @@ func startTestPipeline(t *testing.T, svc *CertRequestService) ssh.PublicKey {
 func enrollService(t *testing.T, svc *CertRequestService, publicKey string) string {
 	t.Helper()
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeService,
 		PublicKey: publicKey,
 	})
@@ -393,7 +393,7 @@ func TestApprove_ServiceAccountLinkage(t *testing.T) {
 
 	newRequest := func(t *testing.T, svc *CertRequestService) string {
 		t.Helper()
-		requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+		requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 			Type:      model.CertificateTypeService,
 			PublicKey: "ssh-ed25519 AAAA... svc",
 		})

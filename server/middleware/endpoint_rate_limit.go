@@ -51,6 +51,54 @@ func (el *EndpointRateLimiter) PerIP(limit rate.Limit, burst int) gin.HandlerFun
 	}
 }
 
+// PerKeys enforces one token bucket per key the extractor returns, and
+// requires every one of them to allow the request. A key set that is empty
+// applies no limit at all, on the same terms as CodeBucket: the handler's
+// own validation is what rejects a request nothing could be keyed on.
+//
+// Two axes rather than one is the point where it is used. Console code
+// submission is limited per session and per source address together, so a
+// single compromised account cannot grind through the code space from many
+// addresses and a single address cannot do it across many accounts.
+// Limiting on either alone leaves the other open.
+//
+// A request refused by the second key has already spent a token on the
+// first. That makes the limit marginally stricter than the sum of its
+// parts, which is the harmless direction for a control whose whole job is
+// to bound guessing.
+func (el *EndpointRateLimiter) PerKeys(limit rate.Limit, burst int, extractor func(*gin.Context) []string) gin.HandlerFunc {
+	var buckets = make(map[string]*client)
+	var mu sync.Mutex
+
+	go cleanupClients(&mu, buckets)
+
+	return func(c *gin.Context) {
+		keys := extractor(c)
+		if len(keys) == 0 {
+			c.Next()
+			return
+		}
+
+		allowed := true
+		var last *rate.Limiter
+		for _, key := range keys {
+			limiter := getLimiter(key, limit, burst, &mu, buckets)
+			if !limiter.Allow() {
+				allowed = false
+			}
+			last = limiter
+		}
+		setRateLimitHeaders(c, last, burst)
+		if !allowed {
+			_ = c.Error(&errorresponses.TooManyRequestsError{}) //nolint:errcheck
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
 // CodeBucket applies rate limiting keyed on a field extracted from the request
 // body (typically an enrollment code). It protects against brute-forcing a
 // code across multiple IPs. The extractor function is responsible for reading

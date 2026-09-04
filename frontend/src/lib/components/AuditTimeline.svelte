@@ -30,6 +30,7 @@
 		'cert.requested': 'requested a certificate',
 		'cert.approved': 'approved a certificate',
 		'cert.denied': 'denied a certificate request',
+		'cert.code_resolved': 'opened a console login by its code',
 		'enrollment.code_created': 'created a service enrollment',
 		'enrollment.redeemed': 'redeemed a service enrollment',
 		'enrollment.expired': 'expired a service enrollment',

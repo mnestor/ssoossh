@@ -33,6 +33,7 @@
 		{ value: 'all' as const, label: 'All', icon: 'layout-grid' },
 		{ value: 'user' as const, label: 'User', icon: 'user' },
 		{ value: 'pam' as const, label: 'PAM', icon: 'terminal' },
+		{ value: 'console' as const, label: 'Console', icon: 'monitor' },
 		{ value: 'service' as const, label: 'Service', icon: 'cog' }
 	];
 
@@ -40,6 +41,7 @@
 	const rowEvents: Record<string, string> = {
 		user: 'certificate requested',
 		pam: 'certificate requested',
+		console: 'console login',
 		service: 'service key requested'
 	};
 

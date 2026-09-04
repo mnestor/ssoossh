@@ -29,7 +29,7 @@ func issuedReplyFixture(t *testing.T, certType model.CertificateType) (*SignedRe
 	h := newTestSignedReplyHandler(t, svc)
 
 	userID := seedUser(t, svc.db, "sub-alice")
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:          certType,
 		PublicKey:     "ssh-ed25519 AAAA test",
 		SourceIP:      "198.51.100.7",

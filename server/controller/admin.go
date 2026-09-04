@@ -813,7 +813,7 @@ func auditSubjectResponse(s *service.AuditSubject) *webtypes.AuditSubjectRespons
 // @Param       limit query int false "Number of results (default 25, max 100)" example(25)
 // @Param       offset query int false "Number of results to skip (default 0)" example(0)
 // @Param       q query string false "Search term (max 200 chars)" example(alice)
-// @Param       type query string false "Filter by certificate type (user/service/pam)" example(user)
+// @Param       type query string false "Filter by certificate type (user/service/pam/console)" example(user)
 // @Param       status query string false "Filter by expiration (live/expired)" example(live)
 // @Success     200 {object} openapidoc.CertificateListAdminEnvelope "Certificates and page metadata"
 // @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid parameters"

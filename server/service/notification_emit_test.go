@@ -93,7 +93,7 @@ func TestApprove_shouldNotifyTheServiceAccountAboutANewEnrollment(t *testing.T) 
 	svc.SetNotifier(notifier)
 
 	const publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ7VqQZ8Rz9k1Q4bF0nQXqLdY2mJ3H8sK5tW6uV9xYzA svc@example"
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeService,
 		PublicKey: publicKey,
 		SourceIP:  "198.51.100.7",
@@ -169,7 +169,7 @@ func approveServiceRequest(t *testing.T, svc *CertRequestService, selection Appr
 	t.Helper()
 
 	const publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ7VqQZ8Rz9k1Q4bF0nQXqLdY2mJ3H8sK5tW6uV9xYzA svc@example"
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type:      model.CertificateTypeService,
 		PublicKey: publicKey,
 		SourceIP:  "198.51.100.7",
@@ -271,7 +271,7 @@ func TestApprove_shouldNotPutTheEnrollmentCodeInTheNotification(t *testing.T) {
 	notifier := &capturingNotifier{}
 	svc.SetNotifier(notifier)
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type: model.CertificateTypeService, PublicKey: "ssh-ed25519 AAAA... svc",
 	})
 	if err != nil {
@@ -306,7 +306,7 @@ func TestApprove_shouldNotNotifyForANonServiceRequest(t *testing.T) {
 	notifier := &capturingNotifier{}
 	svc.SetNotifier(notifier)
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type: model.CertificateTypeUser, PublicKey: "ssh-ed25519 AAAA... user",
 	})
 	if err != nil {
@@ -337,7 +337,7 @@ func TestApprove_shouldNotNotifyWhenTheApprovalIsRejected(t *testing.T) {
 	notifier := &capturingNotifier{}
 	svc.SetNotifier(notifier)
 
-	requestID, err := svc.CreateRequest(context.Background(), NewCertRequestParams{
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
 		Type: model.CertificateTypeService, PublicKey: "ssh-ed25519 AAAA... svc",
 	})
 	if err != nil {

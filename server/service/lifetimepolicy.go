@@ -26,6 +26,7 @@ type lifetimePolicyEngine struct {
 	userPolicy    *parsedLifetimePolicy
 	servicePolicy *parsedLifetimePolicy
 	pamPolicy     *parsedLifetimePolicy
+	consolePolicy *parsedLifetimePolicy
 }
 
 // parsedLifetimePolicy is the validated, parsed form of a config.LifetimePolicy,
@@ -89,6 +90,7 @@ func newLifetimePolicyEngine(opts config.CertificateOptions, declaredClaims map[
 		{opts.User.LifetimePolicy, policyParseContext{"cert_options.user.lifetime_policy", declaredClaims, opts.User.Extensions, false}, &engine.userPolicy},
 		{opts.Service.LifetimePolicy, policyParseContext{"cert_options.service.lifetime_policy", declaredClaims, opts.Service.Extensions, true}, &engine.servicePolicy},
 		{opts.PAM.LifetimePolicy, policyParseContext{"cert_options.pam.lifetime_policy", declaredClaims, opts.PAM.Extensions, false}, &engine.pamPolicy},
+		{opts.Console.LifetimePolicy, policyParseContext{"cert_options.console.lifetime_policy", declaredClaims, opts.Console.Extensions, false}, &engine.consolePolicy},
 	}
 	for _, t := range types {
 		if !isLifetimePolicyConfigured(t.policy) {
@@ -473,6 +475,8 @@ func (e *lifetimePolicyEngine) policyFor(certType model.CertificateType) *parsed
 		return e.servicePolicy
 	case model.CertificateTypePAM:
 		return e.pamPolicy
+	case model.CertificateTypeConsole:
+		return e.consolePolicy
 	default:
 		return nil
 	}
@@ -485,7 +489,7 @@ func (e *lifetimePolicyEngine) policyFor(certType model.CertificateType) *parsed
 // requests.
 func (e *lifetimePolicyEngine) validateStartupConfig(trustedProxies []string) {
 	// Check all per-type policies.
-	for _, policy := range []*parsedLifetimePolicy{e.userPolicy, e.servicePolicy, e.pamPolicy} {
+	for _, policy := range []*parsedLifetimePolicy{e.userPolicy, e.servicePolicy, e.pamPolicy, e.consolePolicy} {
 		if policy == nil || len(policy.sourceRules) == 0 {
 			continue
 		}

@@ -1,8 +1,27 @@
 # Console login through ssoossh
 
-**Status: researched, nothing built.** No code has been written for this.
+**Status: the server half is built.** The `console` certificate type,
+`POST /api/certs/console`, the code-resolution endpoint, the per-type
+approval budget, the `allowed_networks` gate, and the `/console` and
+`/c/<code>` pages all exist. The module that drives this from a console is
+being written separately in C, so the `mode=console` argument, the QR
+rendering and `prompt=enter` described below are that module's design and
+not this repo's; `pam_ssoossh` keeps doing `sudo` only.
+
+Three decisions below moved during implementation, and the sections that
+state them are the ones to read rather than this summary:
+
+- The typed-code channel is what shipped. QR (channel 3) and push
+  (channel 4) are still deferred; the server returns the short `/c/<code>`
+  URL a QR would encode.
+- Code submission is rate limited per session *and* per source address
+  (`http.console_code_rate_limit`), not per source address alone.
+- Resolving a code emits `cert.code_resolved`, which the design did not
+  call for. It is the moment an unauthenticated machine's login acquires a
+  named human, which is the step the consent-phishing case turns on.
+
 Every `file:line` anchor below was verified against `a009511` (2026-09-04)
-and will drift.
+and has drifted since.
 
 > **Before planning from this document**, re-run the checks in
 > [Provenance](#provenance-what-was-verified-and-how), and read

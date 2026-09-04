@@ -116,6 +116,30 @@ type ApproveRequestBody struct {
 	NotificationEmail string `json:"notification_email,omitempty"`
 }
 
+// ResolveCodeRequestBody is the body of the console code-submission
+// endpoint: the code a human read off a console screen, in whatever shape
+// they typed it. Case, the display hyphen, stray spaces and Crockford's
+// decoding aliases are all normalized server-side, so the UI never has to
+// clean input before sending it.
+type ResolveCodeRequestBody struct {
+	Code string `json:"code" binding:"required"`
+}
+
+// ResolveCodeResponse is what a resolved console code yields: the request
+// it named, and where to go next.
+//
+// Submitting a code claims the request for the submitting session, so this
+// is a state-changing POST despite reading like a lookup — the same reason
+// the approval page's first GET is state-changing.
+type ResolveCodeResponse struct {
+	RequestID string `json:"request_id" validate:"required"`
+
+	// ApprovalURL is the page to send the browser to. Returned rather than
+	// assembled client-side so the one definition of the path stays on the
+	// server, alongside the create response's.
+	ApprovalURL string `json:"approval_url" validate:"required"`
+}
+
 // EnrollmentRetrievalResponse is one redemption of a service enrollment
 // code, for the retrieval log shown to the enrollment's approver and to
 // auditors. Codes are reusable, so an enrollment accumulates these.
@@ -349,14 +373,40 @@ type RequestDetailResponse struct {
 	SourceIP      string                         `json:"source_ip" validate:"required"`
 	LocalUsername string                         `json:"local_username,omitempty"`
 	LocalHostname string                         `json:"local_hostname,omitempty"`
-	// TargetAccount is the local account a PAM request is authenticating,
-	// e.g. who `sudo` is being run as. Empty for every other type. It is
+	// TargetAccount is the local account a PAM or console request is
+	// authenticating: who `sudo` is being run as, or the account typed at
+	// the `login:` prompt. Empty for every other type. It is
 	// reported by an unauthenticated client and never becomes a principal
 	// (see model.CertificateRequest.Username), so the UI must present it as
 	// what is being attempted rather than as what is being granted. Without
 	// it the approver cannot see which account the sudo is for, since the
 	// principals now describe the approver instead.
-	TargetAccount string                     `json:"target_account,omitempty"`
+	TargetAccount string `json:"target_account,omitempty"`
+
+	// The console context the request carried: which machine it claims to
+	// be, through which PAM service, at which terminal, and what it
+	// reported as the remote host.
+	//
+	// Every one of them is self-reported by an unauthenticated caller and
+	// the UI must render them as claims rather than as facts — they are
+	// what lets a human notice "I am at my desk, why is there a console
+	// login on rack07", not what authorizes anything. A non-empty
+	// RemoteHost on a console request is worth flagging outright: a real
+	// console has no remote host.
+	//
+	// Set for PAM and console requests; empty for the others.
+	Hostname   string `json:"hostname,omitempty"`
+	PAMService string `json:"pam_service,omitempty"`
+	TTY        string `json:"tty,omitempty"`
+	RemoteHost string `json:"remote_host,omitempty"`
+
+	// ExpiresAt is when the request stops being approvable, from its own
+	// type's budget. The page counts down to it, which matters most for
+	// console requests: their budget is deliberately the shortest, and an
+	// approver who cannot see the clock cannot tell a slow OIDC login from
+	// a request that has already died.
+	ExpiresAt time.Time `json:"expires_at" validate:"required"`
+
 	PublicKey     string                     `json:"public_key" validate:"required"`
 	Principals    []string                   `json:"principals" validate:"required"`
 	ValidSeconds  int                        `json:"valid_seconds" validate:"required"`

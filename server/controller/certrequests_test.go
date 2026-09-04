@@ -31,8 +31,14 @@ func passthrough(c *gin.Context) { c.Next() }
 // fakeCertRequestService is a test double for service.CertRequestProvider.
 type fakeCertRequestService struct {
 	createRequestID string
+	createUserCode  string
+	createExpiresAt time.Time
 	createErr       error
 	gotParams       service.NewCertRequestParams
+
+	resolveRequestID string
+	resolveErr       error
+	gotResolveCode   string
 
 	waitOutcome service.WaitOutcome
 	waitErr     error
@@ -50,9 +56,21 @@ type fakeCertRequestService struct {
 	detailErr error
 }
 
-func (f *fakeCertRequestService) CreateRequest(_ context.Context, p service.NewCertRequestParams) (string, error) {
+func (f *fakeCertRequestService) CreateRequest(_ context.Context, p service.NewCertRequestParams) (service.CreatedRequest, error) {
 	f.gotParams = p
-	return f.createRequestID, f.createErr
+	if f.createErr != nil {
+		return service.CreatedRequest{}, f.createErr
+	}
+	return service.CreatedRequest{
+		ID:        f.createRequestID,
+		UserCode:  f.createUserCode,
+		ExpiresAt: f.createExpiresAt,
+	}, nil
+}
+
+func (f *fakeCertRequestService) ResolveUserCode(_ context.Context, submitted string, _ *service.Identity) (string, error) {
+	f.gotResolveCode = submitted
+	return f.resolveRequestID, f.resolveErr
 }
 
 func (f *fakeCertRequestService) Detail(_ context.Context, requestID string, _ *service.Identity) (*service.RequestDetail, error) {
