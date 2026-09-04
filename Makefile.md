@@ -49,6 +49,7 @@ per-component variants (`test-server`, `test-client`, `test-pam`,
 | `make build` | Build all Go packages |
 | `make linux` | Snapshot build for linux/amd64 only |
 | `make binaries` | Snapshot build for every release target |
+| `make server-linux-build-local` | Build ssoosshd for a local `docker build` (see Dockerfile) |
 | `make pam` | Build pam_ssoossh.so (cgo, needs libpam headers) |
 | `make frontend-clean` | Remove the built web UI |
 
