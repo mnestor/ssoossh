@@ -17,6 +17,7 @@ type HostContext struct {
 	RequestingUser        string
 	Process               string
 	CallerUID             *int64
+	CallerGID             *int64
 	CallerPID             *int64
 	CallerPPID            *int64
 	MachineID             string
@@ -41,6 +42,7 @@ func applyHostContext(req *model.CertificateRequest, hc HostContext) error {
 	req.RequestingUser = truncateContextField(hc.RequestingUser)
 	req.Process = truncateContextField(hc.Process)
 	req.CallerUID = hc.CallerUID
+	req.CallerGID = hc.CallerGID
 	req.CallerPID = hc.CallerPID
 	req.CallerPPID = hc.CallerPPID
 	req.MachineID = truncateContextField(hc.MachineID)
@@ -115,6 +117,7 @@ func fullHostContextDetail(req model.CertificateRequest) map[string]any {
 	d["local_username"] = req.LocalUsername
 	d["local_hostname"] = req.LocalHostname
 	d["caller_uid"] = req.CallerUID
+	d["caller_gid"] = req.CallerGID
 	d["caller_pid"] = req.CallerPID
 	d["caller_ppid"] = req.CallerPPID
 	d["os"] = req.OS

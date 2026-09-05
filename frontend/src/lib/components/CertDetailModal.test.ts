@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -100,6 +100,54 @@ describe('CertDetailModal', () => {
 	// own id against an endpoint that resolves request ids, so it never
 	// matched and the section never rendered; the source IP now arrives on
 	// the certificate itself.
+	describe('what asked for the certificate', () => {
+		it('should join the reported account and host into user@host', () => {
+			render(CertDetailModal, {
+				cert: cert({ type: 'pam', reported_username: 'root', reported_hostname: 'web01' }),
+				onclosed: vi.fn()
+			});
+			expect(screen.getByText('root@web01')).toBeInTheDocument();
+		});
+
+		// The user-certificate case: the request carries the local client in
+		// local_username/local_hostname, and the server resolves both types
+		// into the same reported pair (CertificateRequest.ReportedIdentity).
+		it('should show the local client of a user certificate', () => {
+			render(CertDetailModal, {
+				cert: cert({ reported_username: 'alice', reported_hostname: 'alice-laptop' }),
+				onclosed: vi.fn()
+			});
+			expect(screen.getByText('alice@alice-laptop')).toBeInTheDocument();
+		});
+
+		it('should show the command that asked', () => {
+			render(CertDetailModal, {
+				cert: cert({ type: 'pam', reported_process: 'sudo systemctl restart nginx' }),
+				onclosed: vi.fn()
+			});
+			expect(screen.getByText('sudo systemctl restart nginx')).toBeInTheDocument();
+		});
+
+		// "alice@" reads as a truncated address rather than as a missing
+		// hostname, so a half-reported pair is shown as the half it has.
+		it('should show the account alone when no hostname was reported', () => {
+			render(CertDetailModal, {
+				cert: cert({ reported_username: 'alice' }),
+				onclosed: vi.fn()
+			});
+			// Scoped to the section: the fixture's principals list carries an
+			// "alice" chip of its own elsewhere in the dialog.
+			const context = screen.getByTestId('cert-reported-context');
+			expect(within(context).getByText('alice')).toBeInTheDocument();
+			expect(within(context).queryByText('alice@')).not.toBeInTheDocument();
+		});
+
+		it('should omit the section when nothing was reported', () => {
+			render(CertDetailModal, { cert: cert(), onclosed: vi.fn() });
+			expect(screen.queryByText('What asked for it')).not.toBeInTheDocument();
+		});
+	});
+
 	describe('where a service certificate was fetched', () => {
 		/** serviceCert is a service certificate carrying its retrieval origin. */
 		function serviceCert(overrides: Partial<CertificateRecord> = {}): CertificateRecord {

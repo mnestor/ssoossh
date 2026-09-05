@@ -19,19 +19,28 @@ table ca_signer_keys
 table certificate_request_decisions
   column accept_language type=TEXT nullable=false pk=false default=''
   column certificate_request_id type=TEXT nullable=false pk=false default=<none>
+  column client type=TEXT nullable=false pk=false default=''
   column decided_at type=DATETIME nullable=false pk=false default=<none>
   column email type=TEXT nullable=false pk=false default=''
   column forwarded_for type=TEXT nullable=false pk=false default=''
   column granted_options type=TEXT nullable=false pk=false default=''
   column groups type=TEXT nullable=false pk=false default=''
   column id type=TEXT nullable=false pk=true default=<none>
+  column machine_id type=TEXT nullable=false pk=false default=''
   column other_accounts type=TEXT nullable=false pk=false default=''
   column outcome type=TEXT nullable=false pk=false default=<none>
+  column pam_service type=TEXT nullable=false pk=false default=''
   column policy_explanation type=TEXT nullable=false pk=false default=''
   column principals type=TEXT nullable=false pk=false default=''
+  column process type=TEXT nullable=false pk=false default=''
+  column remote_host type=TEXT nullable=false pk=false default=''
+  column reported_hostname type=TEXT nullable=false pk=false default=''
+  column reported_username type=TEXT nullable=false pk=false default=''
+  column requesting_user type=TEXT nullable=false pk=false default=''
   column service_accounts type=TEXT nullable=false pk=false default=''
   column source_ip type=TEXT nullable=false pk=false default=''
   column subject type=TEXT nullable=false pk=false default=''
+  column tty type=TEXT nullable=false pk=false default=''
   column user_agent type=TEXT nullable=false pk=false default=''
   column username type=TEXT nullable=false pk=false default=''
   check CHECK (outcome IN ('approved', 'denied'))
@@ -41,6 +50,7 @@ table certificate_request_decisions
   index sqlite_autoindex_certificate_request_decisions_1 unique=true columns=id
   index sqlite_autoindex_certificate_request_decisions_2 unique=true columns=certificate_request_id
 table certificate_requests
+  column caller_gid type=INTEGER nullable=true pk=false default=<none>
   column caller_pid type=INTEGER nullable=true pk=false default=<none>
   column caller_ppid type=INTEGER nullable=true pk=false default=<none>
   column caller_uid type=INTEGER nullable=true pk=false default=<none>

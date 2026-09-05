@@ -46,6 +46,8 @@
     <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Request ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .RequestID }}</td></tr>
     <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Enrollment ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .EnrollmentID }}</td></tr>
     <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Requested from</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .RequestSourceIP }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Approved by</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ if .ApprovedByUsername }}{{ .ApprovedByUsername }}{{ if .ApprovedByEmail }} &lt;{{ .ApprovedByEmail }}&gt;{{ end }}{{ else }}not recorded{{ end }}</td></tr>
+    {{ if .ApproverSourceIP }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Approved from</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .ApproverSourceIP }}</td></tr>{{ end }}
     <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Approved at</td><td style="padding:4px 0">{{ datetime .ApprovedAt }}</td></tr>
   </table>
 

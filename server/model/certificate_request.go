@@ -148,6 +148,7 @@ type CertificateRequest struct {
 	RequestingUser        string     `gorm:"column:requesting_user"`
 	Process               string     `gorm:"column:process"`
 	CallerUID             *int64     `gorm:"column:caller_uid"`
+	CallerGID             *int64     `gorm:"column:caller_gid"`
 	CallerPID             *int64     `gorm:"column:caller_pid"`
 	CallerPPID            *int64     `gorm:"column:caller_ppid"`
 	MachineID             string     `gorm:"column:machine_id"`

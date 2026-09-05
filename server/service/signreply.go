@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -197,6 +198,12 @@ type certificateOrigin struct {
 	SourceIP      string
 	LocalUsername string
 	LocalHostname string
+
+	// Request is the row itself, kept so the issued notification can carry
+	// the whole host context without reading it a second time. Zero for a
+	// service reply, whose chain runs through an enrollment rather than a
+	// request, and for a lookup that failed.
+	Request model.CertificateRequest
 }
 
 // reportedContext returns the client-reported account and machine behind a
@@ -260,7 +267,13 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 		// both pairs are read.
 		switch err := h.db.WithContext(ctx).
 			Select("type", "user_id", "source_ip", "local_username", "local_hostname", "username", "hostname",
-				"pam_service", "tty", "remote_host", "requesting_user", "process", "machine_id", "client").
+				"pam_service", "tty", "remote_host", "requesting_user", "process", "machine_id", "client",
+				// Only the issued notification reads these; the cert.issued
+				// event carries the compact set above. Read here anyway
+				// because this is the one place the row is already loaded,
+				// and a second query per certificate to fill an email would
+				// be a poor trade.
+				"os", "client_mode", "caller_uid", "caller_gid", "caller_pid", "caller_ppid").
 			First(&req, "id = ?", reply.RequestID).Error; {
 		case err != nil:
 			slog.Warn("could not resolve the owner of an issued certificate",
@@ -272,6 +285,7 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 			requestID = &reply.RequestID
 			origin.SourceIP = req.SourceIP
 			origin.LocalUsername, origin.LocalHostname = reportedContext(req)
+			origin.Request = req
 			slog.Warn("issued certificate has no owner: its request was never bound to a user",
 				"request_id", reply.RequestID)
 		default:
@@ -279,6 +293,7 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 			requestID = &reply.RequestID
 			origin.SourceIP = req.SourceIP
 			origin.LocalUsername, origin.LocalHostname = reportedContext(req)
+			origin.Request = req
 		}
 	}
 	origin.UserID, origin.RequestID = userID, requestID
@@ -385,7 +400,8 @@ func (h *SignedReplyHandler) notifyIssued(ctx context.Context, reply certmsg.Sig
 		sourceAddresses = strings.Split(joined, ",")
 	}
 
-	h.certs.notifier.Notify(ctx, kind, *origin.UserID, &notify.CertificateIssued{
+	req := origin.Request
+	payload := &notify.CertificateIssued{
 		CertificateType:      string(reply.Type),
 		RequestID:            reply.RequestID,
 		KeyID:                reply.KeyID,
@@ -394,14 +410,69 @@ func (h *SignedReplyHandler) notifyIssued(ctx context.Context, reply certmsg.Sig
 		PublicKeyFingerprint: reply.PublicKeyFingerprint,
 		LocalUsername:        origin.LocalUsername,
 		LocalHostname:        origin.LocalHostname,
-		SourceIP:             origin.SourceIP,
-		IssuedAt:             reply.ValidAfter,
-		ExpiresAt:            reply.ValidBefore,
-		Extensions:           reply.Extensions,
-		ForceCommand:         forceCommand,
-		SourceAddresses:      sourceAddresses,
-		ServerURL:            h.certs.config.HTTP.PublicOrigin(),
-	})
+		// The host context as the request reported it, unfiltered: this is
+		// the message that asks "was this you?", and the answer is in the
+		// command and the machine rather than in the serial.
+		RequestingUser:  req.RequestingUser,
+		Process:         req.Process,
+		TTY:             req.TTY,
+		RemoteHost:      req.RemoteHost,
+		PAMService:      req.PAMService,
+		MachineID:       req.MachineID,
+		OS:              req.OS,
+		Client:          req.Client,
+		ClientMode:      req.ClientMode,
+		CallerUID:       req.CallerUID,
+		CallerGID:       req.CallerGID,
+		CallerPID:       req.CallerPID,
+		CallerPPID:      req.CallerPPID,
+		SourceIP:        origin.SourceIP,
+		IssuedAt:        reply.ValidAfter,
+		ExpiresAt:       reply.ValidBefore,
+		Extensions:      reply.Extensions,
+		ForceCommand:    forceCommand,
+		SourceAddresses: sourceAddresses,
+		// An extension, not a critical option: the signer sets
+		// extensions["no-touch-required"] (server/signer/sign.go), so this
+		// reads the list the certificate actually carries rather than the
+		// option that was asked for.
+		NoTouchRequired: slices.Contains(reply.Extensions, "no-touch-required"),
+		ServerURL:       h.certs.config.HTTP.PublicOrigin(),
+	}
+	h.applyApprover(ctx, payload, origin.RequestID)
+
+	h.certs.notifier.Notify(ctx, kind, *origin.UserID, payload)
+}
+
+// applyApprover fills the payload's approval block from the decision record.
+//
+// A separate read rather than a join in recordCertificate: the audit row
+// does not need it, and this runs only once a notification is actually
+// being built, which for the two kinds that default off is rarely.
+//
+// Best effort. A decision that has gone, or one written before the record
+// existed, leaves the block empty -- the shipped templates render that as
+// "not recorded", which is a true statement, where inventing an approver
+// would not be.
+func (h *SignedReplyHandler) applyApprover(ctx context.Context, payload *notify.CertificateIssued, requestID *string) {
+	if requestID == nil || *requestID == "" {
+		return
+	}
+
+	var decision model.CertificateRequestDecision
+	if err := h.db.WithContext(ctx).
+		Select("username", "email", "source_ip", "user_agent", "decided_at").
+		First(&decision, "certificate_request_id = ?", *requestID).Error; err != nil {
+		slog.Warn("could not resolve the approver of an issued certificate for its notification",
+			"request_id", *requestID, "error", err)
+		return
+	}
+
+	payload.ApprovedByUsername = decision.Username
+	payload.ApprovedByEmail = decision.Email
+	payload.ApproverSourceIP = decision.SourceIP
+	payload.ApproverUserAgent = decision.UserAgent
+	payload.ApprovedAt = decision.DecidedAt
 }
 
 // resolveRetrievalOwner resolves the audit linkage for a service

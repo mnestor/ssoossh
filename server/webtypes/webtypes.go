@@ -412,6 +412,7 @@ type RequestDetailResponse struct {
 	RequestingUser        string     `json:"requesting_user,omitempty"`
 	Process               string     `json:"process,omitempty"`
 	CallerUID             *int64     `json:"caller_uid,omitempty"`
+	CallerGID             *int64     `json:"caller_gid,omitempty"`
 	CallerPID             *int64     `json:"caller_pid,omitempty"`
 	CallerPPID            *int64     `json:"caller_ppid,omitempty"`
 	MachineID             string     `json:"machine_id,omitempty"`
@@ -550,6 +551,34 @@ type CertificateResponse struct {
 	DecidedPrincipals        []string                    `json:"decided_principals,omitempty"`
 	DecidedGrantedOptions    *CertificateOptionsResponse `json:"decided_granted_options,omitempty"`
 	DecidedPolicyExplanation string                      `json:"decided_policy_explanation,omitempty"`
+
+	// What asked for this certificate, as the requester reported it, taken
+	// from the decision record's snapshot rather than from the request --
+	// see model.CertificateRequestDecision. Without these the history could
+	// say who approved a certificate and what it granted but not which
+	// machine or command it was for, which is the question an incident
+	// review actually starts from.
+	//
+	// Every one is self-reported by an unauthenticated caller and must be
+	// rendered as a claim, exactly as the approval page renders it (see
+	// RequestDetailResponse). The one field here the server established
+	// itself is DecidedSourceIP above, and that is the approver's, not the
+	// requester's.
+	//
+	// ReportedUsername and ReportedHostname are the "user@host" that asked:
+	// the PAM account and machine for a pam or console certificate, the
+	// local client's for a user one. The rest are PAM and console only, and
+	// empty on a user certificate, which has no service or terminal to
+	// report. All are populated by the detail endpoint alone.
+	ReportedUsername       string `json:"reported_username,omitempty"`
+	ReportedHostname       string `json:"reported_hostname,omitempty"`
+	ReportedService        string `json:"reported_pam_service,omitempty"`
+	ReportedTTY            string `json:"reported_tty,omitempty"`
+	ReportedRemoteHost     string `json:"reported_remote_host,omitempty"`
+	ReportedRequestingUser string `json:"reported_requesting_user,omitempty"`
+	ReportedProcess        string `json:"reported_process,omitempty"`
+	ReportedMachineID      string `json:"reported_machine_id,omitempty"`
+	ReportedClient         string `json:"reported_client,omitempty"`
 }
 
 // CertificateListResponse is the data payload for the cursor-paginated

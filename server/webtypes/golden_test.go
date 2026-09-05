@@ -49,7 +49,7 @@ func fullFixtures() map[string]any {
 	}
 
 	certificateValidSeconds := 28800
-	callerUID, callerPID, callerPPID := int64(1000), int64(4242), int64(4200)
+	callerUID, callerGID, callerPID, callerPPID := int64(1000), int64(1000), int64(4242), int64(4200)
 
 	return map[string]any{
 		"current_user": webtypes.CurrentUserResponse{
@@ -82,6 +82,7 @@ func fullFixtures() map[string]any {
 			RequestingUser:        "alice",
 			Process:               "sudo -i",
 			CallerUID:             &callerUID,
+			CallerGID:             &callerGID,
 			CallerPID:             &callerPID,
 			CallerPPID:            &callerPPID,
 			MachineID:             "3f2c1e0d9b8a7f6e5d4c3b2a19080706",
@@ -193,6 +194,16 @@ func fullFixtures() map[string]any {
 			DecidedPrincipals:        []string{"alice", "alice.other"},
 			DecidedGrantedOptions:    &options,
 			DecidedPolicyExplanation: `{"v":1,"cert_type":"user","policy_configured":false,"ceiling":"8h0m0s","effective_duration":"8h0m0s"}`,
+
+			ReportedUsername:       "root",
+			ReportedHostname:       "rack07.example.org",
+			ReportedService:        "sudo",
+			ReportedTTY:            "pts/3",
+			ReportedRemoteHost:     "203.0.113.9",
+			ReportedRequestingUser: "alice",
+			ReportedProcess:        "sudo systemctl restart nginx",
+			ReportedMachineID:      "9f2c1e7b8a3d4f6099b1c2d3e4f5a6b7",
+			ReportedClient:         "pam_ssoossh-c/v1.2.0",
 		},
 	}
 }

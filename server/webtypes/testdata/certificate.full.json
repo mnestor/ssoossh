@@ -52,5 +52,14 @@
     ],
     "no_touch_required": true
   },
-  "decided_policy_explanation": "{\"v\":1,\"cert_type\":\"user\",\"policy_configured\":false,\"ceiling\":\"8h0m0s\",\"effective_duration\":\"8h0m0s\"}"
+  "decided_policy_explanation": "{\"v\":1,\"cert_type\":\"user\",\"policy_configured\":false,\"ceiling\":\"8h0m0s\",\"effective_duration\":\"8h0m0s\"}",
+  "reported_username": "root",
+  "reported_hostname": "rack07.example.org",
+  "reported_pam_service": "sudo",
+  "reported_tty": "pts/3",
+  "reported_remote_host": "203.0.113.9",
+  "reported_requesting_user": "alice",
+  "reported_process": "sudo systemctl restart nginx",
+  "reported_machine_id": "9f2c1e7b8a3d4f6099b1c2d3e4f5a6b7",
+  "reported_client": "pam_ssoossh-c/v1.2.0"
 }

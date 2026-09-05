@@ -68,7 +68,13 @@ REQUEST DETAIL
   Request ID            {{ .RequestID }}
   Enrollment ID         {{ .EnrollmentID }}
   Requested from        {{ .RequestSourceIP }}
-  Approved at           {{ datetime .ApprovedAt }}
+  Approved by           {{ if .ApprovedByUsername }}{{ .ApprovedByUsername }}{{ if .ApprovedByEmail }} <{{ .ApprovedByEmail }}>{{ end }}{{ else }}not recorded{{ end }}
+{{ if .ApproverSourceIP }}  Approved from         {{ .ApproverSourceIP }}
+{{ end }}  Approved at           {{ datetime .ApprovedAt }}
+
+This code mints certificates unattended until it expires. If the approval above
+was not yours, say so now: the address it was approved from is what says whose
+session was used.
 {{ if .ServerURL }}
 Every redemption of this code is logged. Review it at
 {{ .ServerURL }}/logs/me

@@ -16,6 +16,7 @@ import (
 	"github.com/mnestor/ssoossh/internal/api"
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/agent"
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
+	"github.com/mnestor/ssoossh/internal/hostinfo"
 )
 
 func TestRootCommandPreRun(t *testing.T) {
@@ -191,6 +192,11 @@ type fakeAPIClient struct {
 	// createdWithOpts tracks RequestedOptions for each CreateUserRequest call,
 	// so tests can verify the correct extensions are requested.
 	createdWithOpts []api.RequestedOptions
+	// createdWithContext and createdWithCAs record the host context and the
+	// pinned CA fingerprints each user request carried, so a test can assert
+	// on what the client reported about itself.
+	createdWithContext []hostinfo.HostContext
+	createdWithCAs     [][]string
 	// awaitCalled records whether the wait was reached, so a test can assert
 	// a reused certificate short-circuited before any server call.
 	awaitCalled bool
@@ -207,9 +213,11 @@ type fakeAPIClient struct {
 }
 
 func (f *fakeAPIClient) GetCA(ctx context.Context) (string, error) { return "", nil }
-func (f *fakeAPIClient) CreateUserRequest(ctx context.Context, publicKey, localUsername, localHostname string, opts api.RequestedOptions) (*api.PendingRequest, error) {
+func (f *fakeAPIClient) CreateUserRequest(_ context.Context, hc hostinfo.HostContext, publicKey string, trustedCAFingerprints []string, opts api.RequestedOptions) (*api.PendingRequest, error) {
 	f.createdWith = append(f.createdWith, publicKey)
 	f.createdWithOpts = append(f.createdWithOpts, opts)
+	f.createdWithContext = append(f.createdWithContext, hc)
+	f.createdWithCAs = append(f.createdWithCAs, trustedCAFingerprints)
 	if f.createErr != nil {
 		return nil, f.createErr
 	}
@@ -219,10 +227,10 @@ func (f *fakeAPIClient) CreateUserRequest(ctx context.Context, publicKey, localU
 	return f.pending, nil
 }
 func (f *fakeAPIClient) CreateServiceEnrollment(ctx context.Context, publicKey string, opts api.RequestedOptions) (*api.PendingRequest, error) {
-	return f.CreateUserRequest(ctx, publicKey, "", "", opts)
+	return f.CreateUserRequest(ctx, hostinfo.HostContext{}, publicKey, nil, opts)
 }
 func (f *fakeAPIClient) CreatePAMRequest(ctx context.Context, publicKey, username string, opts api.RequestedOptions) (*api.PendingRequest, error) {
-	return f.CreateUserRequest(ctx, publicKey, "", "", opts)
+	return f.CreateUserRequest(ctx, hostinfo.HostContext{}, publicKey, nil, opts)
 }
 func (f *fakeAPIClient) AwaitCertificate(ctx context.Context, req *api.PendingRequest) (*api.CertificateResult, error) {
 	f.awaitCalled = true

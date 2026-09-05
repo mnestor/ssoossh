@@ -8,6 +8,7 @@
   "requesting_user": "alice",
   "process": "sudo systemctl restart nginx",
   "caller_uid": 1000,
+  "caller_gid": 1000,
   "caller_pid": 4242,
   "caller_ppid": 4200,
   "machine_id": "6b3a1f9c8d2e4a5b9c0d1e2f3a4b5c6d",

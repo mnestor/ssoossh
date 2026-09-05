@@ -462,6 +462,7 @@ export interface RequestDetailResponse {
 	requesting_user?: string;
 	process?: string;
 	caller_uid?: number /* int64 */;
+	caller_gid?: number /* int64 */;
 	caller_pid?: number /* int64 */;
 	caller_ppid?: number /* int64 */;
 	machine_id?: string;
@@ -602,6 +603,33 @@ export interface CertificateResponse {
 	decided_principals?: string[];
 	decided_granted_options?: CertificateOptionsResponse;
 	decided_policy_explanation?: string;
+	/**
+	 * What asked for this certificate, as the requester reported it, taken
+	 * from the decision record's snapshot rather than from the request --
+	 * see model.CertificateRequestDecision. Without these the history could
+	 * say who approved a certificate and what it granted but not which
+	 * machine or command it was for, which is the question an incident
+	 * review actually starts from.
+	 * Every one is self-reported by an unauthenticated caller and must be
+	 * rendered as a claim, exactly as the approval page renders it (see
+	 * RequestDetailResponse). The one field here the server established
+	 * itself is DecidedSourceIP above, and that is the approver's, not the
+	 * requester's.
+	 * ReportedUsername and ReportedHostname are the "user@host" that asked:
+	 * the PAM account and machine for a pam or console certificate, the
+	 * local client's for a user one. The rest are PAM and console only, and
+	 * empty on a user certificate, which has no service or terminal to
+	 * report. All are populated by the detail endpoint alone.
+	 */
+	reported_username?: string;
+	reported_hostname?: string;
+	reported_pam_service?: string;
+	reported_tty?: string;
+	reported_remote_host?: string;
+	reported_requesting_user?: string;
+	reported_process?: string;
+	reported_machine_id?: string;
+	reported_client?: string;
 }
 /**
  * CertificateListResponse is the data payload for the cursor-paginated

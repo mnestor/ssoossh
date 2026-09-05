@@ -2,6 +2,21 @@
   "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleUserKey alice@workstation",
   "local_username": "alice",
   "local_hostname": "workstation.example.org",
+  "requesting_user": "alice",
+  "process": "ssoossh ssh login",
+  "tty": "/dev/pts/3",
+  "remote_host": "198.51.100.7",
+  "caller_uid": 1000,
+  "caller_gid": 1000,
+  "caller_pid": 4242,
+  "caller_ppid": 4200,
+  "machine_id": "6b3a1f9c8d2e4a5b9c0d1e2f3a4b5c6d",
+  "os": "Debian GNU/Linux 13 (trixie) Linux 6.12.0",
+  "client": "ssoossh/1.2.3",
+  "client_time": "2026-09-05T13:04:05+02:00",
+  "trusted_ca_fingerprints": [
+    "SHA256:1yQ0mE2xExampleFingerprintOne"
+  ],
   "requested_options": {
     "extensions": [
       "permit-pty",

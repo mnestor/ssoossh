@@ -528,3 +528,210 @@ func TestAudit_ShouldCarryTheLocalIdentityWhenAUserCertificateIsIssued(t *testin
 		t.Errorf("cert.issued extensions = %v, want [permit-pty]", line["extensions"])
 	}
 }
+
+// The decision row's own copy of the host context. certificate_requests
+// holds the same values, but the certificate history reads the decision:
+// that table is the permanent one, and a certificate must still say what
+// asked for it after its request has been pruned.
+
+// readDecision returns the one decision row for requestID.
+func readDecision(t *testing.T, svc *CertRequestService, requestID string) model.CertificateRequestDecision {
+	t.Helper()
+
+	var decision model.CertificateRequestDecision
+	if err := svc.db.First(&decision, "certificate_request_id = ?", requestID).Error; err != nil {
+		t.Fatalf("failed to read the decision for %s: %v", requestID, err)
+	}
+	return decision
+}
+
+// wantPAMSnapshot is the host context pamRequestWithContext reports, as it
+// should land on the decision row. Shared by the approval and denial tests:
+// a denial records what was refused for exactly the same reason an approval
+// records what was granted.
+func wantPAMSnapshot() map[string]string {
+	return map[string]string{
+		"reported_username": "root",
+		"reported_hostname": "web01",
+		"pam_service":       "sudo",
+		"tty":               "pts/3",
+		"requesting_user":   "alice",
+		"process":           "sudo -i",
+		"machine_id":        "3f2c1e0d9b8a7f6e",
+		"client":            "pam_ssoossh-c/0.3.0",
+	}
+}
+
+// gotSnapshot reads the same keys back off a decision row.
+func gotSnapshot(d model.CertificateRequestDecision) map[string]string {
+	return map[string]string{
+		"reported_username": d.ReportedUsername,
+		"reported_hostname": d.ReportedHostname,
+		"pam_service":       d.PAMService,
+		"tty":               d.TTY,
+		"requesting_user":   d.RequestingUser,
+		"process":           d.Process,
+		"machine_id":        d.MachineID,
+		"client":            d.Client,
+	}
+}
+
+func TestDecision_ShouldSnapshotTheHostContextWhenAPAMRequestIsApproved(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, pamAuditOptions())
+	withAuditTable(t, svc)
+	requestID := pamRequestWithContext(t, svc)
+
+	identity := pamApprover()
+	seedUser(t, svc.db, identity.Subject)
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{SourceIP: "203.0.113.9"},
+		ApprovalSelection{Principals: []string{"mnestor"}}); err != nil {
+		t.Fatalf("unexpected error approving the request: %v", err)
+	}
+
+	got := gotSnapshot(readDecision(t, svc, requestID))
+	for key, want := range wantPAMSnapshot() {
+		if got[key] != want {
+			t.Errorf("decision %s = %q, want %q", key, got[key], want)
+		}
+	}
+}
+
+func TestDecision_ShouldSnapshotTheHostContextWhenAPAMRequestIsDenied(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, pamAuditOptions())
+	withAuditTable(t, svc)
+	requestID := pamRequestWithContext(t, svc)
+
+	identity := pamApprover()
+	seedUser(t, svc.db, identity.Subject)
+	if err := svc.Deny(context.Background(), requestID, identity, DecisionContext{SourceIP: "203.0.113.9"}); err != nil {
+		t.Fatalf("unexpected error denying the request: %v", err)
+	}
+
+	got := gotSnapshot(readDecision(t, svc, requestID))
+	for key, want := range wantPAMSnapshot() {
+		if got[key] != want {
+			t.Errorf("decision %s = %q, want %q", key, got[key], want)
+		}
+	}
+}
+
+// The approver's own username is a different column from the requester's,
+// and the two are easy to conflate: both are "a username on a decision".
+func TestDecision_ShouldKeepTheApproverAndTheRequesterApart(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, pamAuditOptions())
+	withAuditTable(t, svc)
+	requestID := pamRequestWithContext(t, svc)
+
+	identity := pamApprover()
+	seedUser(t, svc.db, identity.Subject)
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{},
+		ApprovalSelection{Principals: []string{"mnestor"}}); err != nil {
+		t.Fatalf("unexpected error approving the request: %v", err)
+	}
+
+	decision := readDecision(t, svc, requestID)
+	if decision.Username != "mike.nestor" {
+		t.Errorf("decision username = %q, want the approver mike.nestor", decision.Username)
+	}
+	if decision.ReportedUsername != "root" {
+		t.Errorf("decision reported_username = %q, want the requester root", decision.ReportedUsername)
+	}
+}
+
+// newDecision resolves "who and where" through ReportedIdentity, so a user
+// certificate reports the local client rather than the empty PAM columns.
+// This is the case the certificate history lost: a user certificate showed
+// who approved it and nothing about the user@host that asked.
+func TestNewDecision_ShouldResolveTheReportedIdentityByCertificateType(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		req          model.CertificateRequest
+		wantUsername string
+		wantHostname string
+	}{
+		{
+			name: "should report the local client when the request is a user one",
+			req: model.CertificateRequest{
+				ID: "req-user", Type: model.CertificateTypeUser,
+				LocalUsername: "alice", LocalHostname: "alice-laptop",
+			},
+			wantUsername: "alice",
+			wantHostname: "alice-laptop",
+		},
+		{
+			name: "should report the PAM account when the request is a PAM one",
+			req: model.CertificateRequest{
+				ID: "req-pam", Type: model.CertificateTypePAM,
+				Username: "root", Hostname: "web01",
+				LocalUsername: "ignored", LocalHostname: "ignored",
+			},
+			wantUsername: "root",
+			wantHostname: "web01",
+		},
+		{
+			name: "should report the PAM account when the request is a console one",
+			req: model.CertificateRequest{
+				ID: "req-console", Type: model.CertificateTypeConsole,
+				Username: "operator", Hostname: "rack07",
+			},
+			wantUsername: "operator",
+			wantHostname: "rack07",
+		},
+		{
+			name: "should report the local client when the request is a service one",
+			req: model.CertificateRequest{
+				ID: "req-service", Type: model.CertificateTypeService,
+				LocalUsername: "ci", LocalHostname: "runner-3",
+			},
+			wantUsername: "ci",
+			wantHostname: "runner-3",
+		},
+		{
+			name:         "should report nothing when the request carried nothing",
+			req:          model.CertificateRequest{ID: "req-bare", Type: model.CertificateTypeUser},
+			wantUsername: "",
+			wantHostname: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			decision, err := newDecision(tt.req, model.CertificateRequestDecisionApproved,
+				&Identity{Subject: "sub-approver"}, DecisionContext{}, time.Now(), nil)
+			if err != nil {
+				t.Fatalf("unexpected error building the decision: %v", err)
+			}
+			if decision.ReportedUsername != tt.wantUsername {
+				t.Errorf("reported_username = %q, want %q", decision.ReportedUsername, tt.wantUsername)
+			}
+			if decision.ReportedHostname != tt.wantHostname {
+				t.Errorf("reported_hostname = %q, want %q", decision.ReportedHostname, tt.wantHostname)
+			}
+		})
+	}
+}
+
+// The request id has to keep coming from the request now that newDecision
+// takes the whole row rather than the id.
+func TestNewDecision_ShouldKeyTheRecordOnTheRequestID(t *testing.T) {
+	t.Parallel()
+
+	decision, err := newDecision(model.CertificateRequest{ID: "req-42", Type: model.CertificateTypeUser},
+		model.CertificateRequestDecisionDenied, &Identity{Subject: "sub-approver"}, DecisionContext{}, time.Now(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error building the decision: %v", err)
+	}
+	if decision.CertificateRequestID != "req-42" {
+		t.Errorf("certificate_request_id = %q, want req-42", decision.CertificateRequestID)
+	}
+}

@@ -13,20 +13,44 @@ be recalled.
 LOGIN
 
   Authenticated as      {{ join .Principals ", " }}
-{{ if or .LocalUsername .LocalHostname }}  Console reported      {{ .LocalUsername }}{{ if and .LocalUsername .LocalHostname }}@{{ end }}{{ .LocalHostname }}
-{{ end }}  Requested from        {{ .SourceIP }}
   Issued at             {{ datetime .IssuedAt }}
   Valid until           {{ datetime .ExpiresAt }} (in {{ until .ExpiresAt }})
 
-The console-reported name above is whatever the machine sent and is not proof
-of anything. The address is what the server observed.
+WHAT ASKED
+{{ if or .LocalUsername .LocalHostname }}  Reported as           {{ .LocalUsername }}{{ if and .LocalUsername .LocalHostname }}@{{ end }}{{ .LocalHostname }}
+{{ end }}{{ if .RequestingUser }}  Invoked by            {{ .RequestingUser }}
+{{ end }}{{ if .Process }}  Command               {{ .Process }}
+{{ end }}{{ if .PAMService }}  PAM service           {{ .PAMService }}
+{{ end }}{{ if .TTY }}  Terminal              {{ .TTY }}
+{{ end }}{{ if .RemoteHost }}  Remote host           {{ .RemoteHost }}
+{{ end }}{{ if .MachineID }}  Machine ID            {{ .MachineID }}
+{{ end }}{{ if .OS }}  Platform              {{ .OS }}
+{{ end }}{{ if .Client }}  Client                {{ .Client }}{{ if .ClientMode }} (mode={{ .ClientMode }}){{ end }}
+{{ end }}{{ if or .CallerUID .CallerPID }}  Process ids           {{ if .CallerUID }}uid {{ .CallerUID }}{{ if .CallerGID }}, gid {{ .CallerGID }}{{ end }}{{ if .CallerPID }}, {{ end }}{{ end }}{{ if .CallerPID }}pid {{ .CallerPID }}{{ if .CallerPPID }}, ppid {{ .CallerPPID }}{{ end }}{{ end }}
+{{ end }}  Requested from        {{ .SourceIP }}
+  Request ID            {{ .RequestID }}
+
+Everything above except the address is what the requesting machine said about
+itself. None of it is verified, and none of it decided anything -- the
+principals came from the approver's own accounts and the lifetime from policy.
+The address is what the server observed.
+
+WHO APPROVED IT
+{{ if .ApprovedByUsername }}  Account               {{ .ApprovedByUsername }}{{ if .ApprovedByEmail }} <{{ .ApprovedByEmail }}>{{ end }}
+{{ end }}{{ if .ApproverSourceIP }}  Approved from         {{ .ApproverSourceIP }}
+{{ end }}{{ if .ApproverUserAgent }}  Browser               {{ .ApproverUserAgent }}
+{{ end }}{{ if not .ApprovedAt.IsZero }}  Approved at           {{ datetime .ApprovedAt }}
+{{ end }}{{ if not .ApprovedByUsername }}  Not recorded. The decision behind this certificate is no longer on file.
+{{ end }}
+If that address is not one you were at, the account that approved this was not
+being used by you.
+
 
 CERTIFICATE
 
   Serial                {{ .Serial }}
   Key ID                {{ .KeyID }}
   For key               {{ .PublicKeyFingerprint }}
-  Request ID            {{ .RequestID }}
 
 A console certificate authorizes one login session on that machine. It is not
 an SSH login credential, and nothing here can be used to open a session

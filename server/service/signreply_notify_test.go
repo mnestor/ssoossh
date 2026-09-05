@@ -274,3 +274,171 @@ func TestCertificateIssuedKinds_shouldDefaultOff(t *testing.T) {
 		}
 	}
 }
+
+// The message has to answer "was this you?", and neither half of that answer
+// was in it before: what asked, and who let it happen.
+
+// issuedReplyWithContext is issuedReplyFixture with the request carrying a
+// full host-context report and a decision record behind it, which is the
+// shape a real approval leaves.
+func issuedReplyWithContext(t *testing.T) (*SignedReplyHandler, *capturingNotifier, *CertRequestService, string) {
+	t.Helper()
+
+	h, notifier, svc, requestID, _ := issuedReplyFixture(t, model.CertificateTypePAM)
+
+	uid, gid, pid, ppid := int64(0), int64(0), int64(4412), int64(4200)
+	if err := svc.db.Model(&model.CertificateRequest{}).Where("id = ?", requestID).
+		Updates(map[string]any{
+			"pam_service": "sudo", "tty": "pts/3", "remote_host": "203.0.113.9",
+			"requesting_user": "bob", "process": "sudo systemctl restart nginx",
+			"machine_id": "3f2c1e0d", "os": "Debian GNU/Linux 13", "client": "pam_ssoossh-c/0.3.0",
+			"client_mode": "auto", "caller_uid": uid, "caller_gid": gid,
+			"caller_pid": pid, "caller_ppid": ppid,
+		}).Error; err != nil {
+		t.Fatalf("failed to write the host context: %v", err)
+	}
+
+	if err := svc.db.Create(&model.CertificateRequestDecision{
+		ID:                   "decision-notify",
+		CertificateRequestID: requestID,
+		Outcome:              model.CertificateRequestDecisionApproved,
+		Username:             "mike.nestor",
+		Email:                "mike@example.org",
+		SourceIP:             "203.0.113.9",
+		UserAgent:            "Mozilla/5.0 (approver)",
+		DecidedAt:            time.Date(2026, 9, 5, 21, 30, 0, 0, time.UTC),
+	}).Error; err != nil {
+		t.Fatalf("failed to write the decision: %v", err)
+	}
+
+	return h, notifier, svc, requestID
+}
+
+// issuedPayload runs the reply and returns the notification's payload.
+func issuedPayload(t *testing.T, h *SignedReplyHandler, notifier *capturingNotifier, requestID string) *notify.CertificateIssued {
+	t.Helper()
+
+	if err := h.resolveSuccess(context.Background(), successfulReply(requestID, model.CertificateTypePAM)); err != nil {
+		t.Fatalf("resolveSuccess: %v", err)
+	}
+	got := notifier.only(t, notify.KindPAMCertificateIssued)
+	payload, ok := got.Payload.(*notify.CertificateIssued)
+	if !ok {
+		t.Fatalf("payload is %T, want *notify.CertificateIssued", got.Payload)
+	}
+	return payload
+}
+
+func TestResolveSuccess_shouldCarryTheHostContextIntoTheNotification(t *testing.T) {
+	t.Parallel()
+
+	h, notifier, _, requestID := issuedReplyWithContext(t)
+	payload := issuedPayload(t, h, notifier, requestID)
+
+	for field, pair := range map[string][2]string{
+		"RequestingUser": {payload.RequestingUser, "bob"},
+		"Process":        {payload.Process, "sudo systemctl restart nginx"},
+		"TTY":            {payload.TTY, "pts/3"},
+		"RemoteHost":     {payload.RemoteHost, "203.0.113.9"},
+		"PAMService":     {payload.PAMService, "sudo"},
+		"MachineID":      {payload.MachineID, "3f2c1e0d"},
+		"OS":             {payload.OS, "Debian GNU/Linux 13"},
+		"Client":         {payload.Client, "pam_ssoossh-c/0.3.0"},
+		"ClientMode":     {payload.ClientMode, "auto"},
+	} {
+		if pair[0] != pair[1] {
+			t.Errorf("%s = %q, want %q", field, pair[0], pair[1])
+		}
+	}
+	// uid 0 is a value, which is why these are pointers: a root sudo must
+	// not report "no uid".
+	if payload.CallerUID == nil || *payload.CallerUID != 0 {
+		t.Errorf("CallerUID = %v, want 0 rather than absent", payload.CallerUID)
+	}
+	if payload.CallerPID == nil || *payload.CallerPID != 4412 {
+		t.Errorf("CallerPID = %v, want 4412", payload.CallerPID)
+	}
+}
+
+// The most security-relevant thing in the message, and the thing it carried
+// none of: on the unhappy path the approver's address is what says whether
+// the reader's own account was used or someone else's.
+func TestResolveSuccess_shouldCarryTheApproverIntoTheNotification(t *testing.T) {
+	t.Parallel()
+
+	h, notifier, _, requestID := issuedReplyWithContext(t)
+	payload := issuedPayload(t, h, notifier, requestID)
+
+	if payload.ApprovedByUsername != "mike.nestor" {
+		t.Errorf("ApprovedByUsername = %q, want mike.nestor", payload.ApprovedByUsername)
+	}
+	if payload.ApprovedByEmail != "mike@example.org" {
+		t.Errorf("ApprovedByEmail = %q, want mike@example.org", payload.ApprovedByEmail)
+	}
+	if payload.ApproverSourceIP != "203.0.113.9" {
+		t.Errorf("ApproverSourceIP = %q, want the approver's address", payload.ApproverSourceIP)
+	}
+	if payload.ApproverUserAgent != "Mozilla/5.0 (approver)" {
+		t.Errorf("ApproverUserAgent = %q, want the approver's browser", payload.ApproverUserAgent)
+	}
+	if payload.ApprovedAt.IsZero() {
+		t.Error("ApprovedAt is zero; the templates read it to tell recorded from not recorded")
+	}
+	// The requester's address and the approver's are different questions and
+	// must not collapse into one.
+	if payload.SourceIP == payload.ApproverSourceIP {
+		t.Errorf("SourceIP and ApproverSourceIP are both %q; they are different addresses", payload.SourceIP)
+	}
+}
+
+// A certificate whose decision has gone still notifies. The approval block
+// stays empty, which the templates render as "not recorded" -- inventing an
+// approver would be worse than saying nothing.
+func TestResolveSuccess_shouldNotifyWithoutADecisionRecord(t *testing.T) {
+	t.Parallel()
+
+	h, notifier, _, requestID, _ := issuedReplyFixture(t, model.CertificateTypePAM)
+	payload := issuedPayload(t, h, notifier, requestID)
+
+	if payload.ApprovedByUsername != "" || payload.ApproverSourceIP != "" {
+		t.Errorf("approval block = %q/%q, want empty when no decision survives",
+			payload.ApprovedByUsername, payload.ApproverSourceIP)
+	}
+	if !payload.ApprovedAt.IsZero() {
+		t.Errorf("ApprovedAt = %v, want zero when no decision survives", payload.ApprovedAt)
+	}
+}
+
+// no-touch-required is an extension, not a critical option: reading it from
+// the wrong half of the reply would report every certificate as touch-free.
+func TestResolveSuccess_shouldReportNoTouchRequiredFromTheExtensions(t *testing.T) {
+	t.Parallel()
+
+	h, notifier, _, requestID, _ := issuedReplyFixture(t, model.CertificateTypePAM)
+
+	reply := successfulReply(requestID, model.CertificateTypePAM)
+	reply.Extensions = []string{"permit-pty", "no-touch-required"}
+	if err := h.resolveSuccess(context.Background(), reply); err != nil {
+		t.Fatalf("resolveSuccess: %v", err)
+	}
+
+	got := notifier.only(t, notify.KindPAMCertificateIssued)
+	payload, ok := got.Payload.(*notify.CertificateIssued)
+	if !ok {
+		t.Fatalf("payload is %T, want *notify.CertificateIssued", got.Payload)
+	}
+	if !payload.NoTouchRequired {
+		t.Error("NoTouchRequired is false, want true when the extension was granted")
+	}
+}
+
+func TestResolveSuccess_shouldNotReportNoTouchRequiredWhenItWasNotGranted(t *testing.T) {
+	t.Parallel()
+
+	h, notifier, _, requestID, _ := issuedReplyFixture(t, model.CertificateTypePAM)
+	payload := issuedPayload(t, h, notifier, requestID)
+
+	if payload.NoTouchRequired {
+		t.Error("NoTouchRequired is true, want false when the extension was not granted")
+	}
+}

@@ -1084,7 +1084,7 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 	// redemption rather than here.
 	expiresAt := now.Add(outcome.enrollmentDuration)
 
-	decision, err := newDecision(req.ID, model.CertificateRequestDecisionApproved, identity, dc, now, &outcome.explanation)
+	decision, err := newDecision(req, model.CertificateRequestDecisionApproved, identity, dc, now, &outcome.explanation)
 	if err != nil {
 		// not covered: newDecision can only fail through its own
 		// json.Marshal calls, unreachable at their own definition.
@@ -1221,9 +1221,13 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 		RequestSourceIP:      req.SourceIP,
 		ApprovedAt:           now,
 		ApprovedByUsername:   identity.Username,
-		CodeExpiresAt:        expiresAt,
-		CertificateLifetime:  effectiveDuration,
-		ServerURL:            s.config.HTTP.PublicOrigin(),
+		ApprovedByEmail:      identity.Email,
+		// dc is the approver's own connection, the same values the decision
+		// row keeps. RequestSourceIP above is the requester's.
+		ApproverSourceIP:    dc.SourceIP,
+		CodeExpiresAt:       expiresAt,
+		CertificateLifetime: effectiveDuration,
+		ServerURL:           s.config.HTTP.PublicOrigin(),
 	})
 
 	return nil
@@ -1301,11 +1305,16 @@ func checkUserPrincipalLinkage(identity *Identity, selected []string) error {
 }
 
 // newDecision builds the immutable audit record for a single Approve/Deny
-// resolution of requestID, snapshotting identity's full six fields, dc's
-// connection context, and the policy explanation (nil for a denial, which
-// issues nothing to explain). Plain copied values, not a reference to the
-// users table — see model.CertificateRequestDecision's doc comment for why.
-func newDecision(requestID string, outcome model.CertificateRequestDecisionOutcome, identity *Identity, dc DecisionContext, decidedAt time.Time, explanation *PolicyExplanation) (*model.CertificateRequestDecision, error) {
+// resolution of req, snapshotting identity's full six fields, dc's
+// connection context, req's host context, and the policy explanation (nil
+// for a denial, which issues nothing to explain). Plain copied values, not a
+// reference to the users table or to the request — see
+// model.CertificateRequestDecision's doc comment for why.
+//
+// It takes the whole request rather than its id so the host-context
+// snapshot cannot be forgotten at a call site: every resolution goes
+// through here, so every decision row gets the same nine fields.
+func newDecision(req model.CertificateRequest, outcome model.CertificateRequestDecisionOutcome, identity *Identity, dc DecisionContext, decidedAt time.Time, explanation *PolicyExplanation) (*model.CertificateRequestDecision, error) {
 	groupsJSON, err := json.Marshal(identity.Groups)
 	if err != nil {
 		// not covered (this branch and the two below): all three are
@@ -1332,9 +1341,13 @@ func newDecision(requestID string, outcome model.CertificateRequestDecisionOutco
 		explanationJSON = string(encoded)
 	}
 
+	// The same pair every cert.* audit event reports, resolved by type
+	// rather than read off a fixed column pair.
+	reportedUsername, reportedHostname := req.ReportedIdentity()
+
 	return &model.CertificateRequestDecision{
 		ID:                   uuid.NewString(),
-		CertificateRequestID: requestID,
+		CertificateRequestID: req.ID,
 		Outcome:              outcome,
 		Subject:              identity.Subject,
 		Username:             identity.Username,
@@ -1347,6 +1360,15 @@ func newDecision(requestID string, outcome model.CertificateRequestDecisionOutco
 		AcceptLanguage:       dc.AcceptLanguage,
 		ForwardedFor:         dc.ForwardedFor,
 		PolicyExplanation:    explanationJSON,
+		ReportedUsername:     reportedUsername,
+		ReportedHostname:     reportedHostname,
+		PAMService:           req.PAMService,
+		TTY:                  req.TTY,
+		RemoteHost:           req.RemoteHost,
+		RequestingUser:       req.RequestingUser,
+		Process:              req.Process,
+		MachineID:            req.MachineID,
+		Client:               req.Client,
 		DecidedAt:            decidedAt,
 	}, nil
 }
@@ -1413,7 +1435,7 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 		}
 	}
 
-	decision, err := newDecision(req.ID, model.CertificateRequestDecisionApproved, identity, dc, now, &outcome.explanation)
+	decision, err := newDecision(req, model.CertificateRequestDecisionApproved, identity, dc, now, &outcome.explanation)
 	if err != nil {
 		// not covered: newDecision can only fail through its own
 		// json.Marshal calls, unreachable at their own definition.
@@ -1566,7 +1588,7 @@ func (s *CertRequestService) Deny(ctx context.Context, requestID string, identit
 		return err
 	}
 
-	decision, err := newDecision(requestID, model.CertificateRequestDecisionDenied, identity, dc, now, nil)
+	decision, err := newDecision(req, model.CertificateRequestDecisionDenied, identity, dc, now, nil)
 	if err != nil {
 		// not covered: newDecision can only fail through its own
 		// json.Marshal calls on []string, unreachable at their own

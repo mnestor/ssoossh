@@ -96,6 +96,37 @@ type CertificateRequestDecision struct {
 	Principals     string `gorm:"column:principals"`
 	GrantedOptions string `gorm:"column:granted_options"`
 
+	// The host context as it stood at decision time: who and where the
+	// request claimed to come from, and through what. Copied values, for
+	// the same reason the identity snapshot above is -- certificate_requests
+	// holds these too, but this table is the permanent one, and a
+	// certificate's history must not go blank the day requests are pruned.
+	//
+	// The compact set, matching what every cert.* audit event carries
+	// (service.hostContextDetail). The long tail -- caller uid/pid/ppid, os,
+	// client mode and clock, trusted CA fingerprints -- stays on the request
+	// alone, where cert.requested records it in full.
+	//
+	// ReportedUsername and ReportedHostname are the requester's "who and
+	// where", not the approver's: Username above is the human who decided.
+	// Which request columns they came from depends on the certificate type,
+	// which is CertificateRequest.ReportedIdentity's job -- a user
+	// certificate's pair is local_username/local_hostname, so reading the
+	// PAM columns for one reports nobody.
+	//
+	// Empty on a decision whose request was already gone at migration time,
+	// and on the PAM-only fields for a user certificate, which has no PAM
+	// service or terminal to report.
+	ReportedUsername string `gorm:"column:reported_username"`
+	ReportedHostname string `gorm:"column:reported_hostname"`
+	PAMService       string `gorm:"column:pam_service"`
+	TTY              string `gorm:"column:tty"`
+	RemoteHost       string `gorm:"column:remote_host"`
+	RequestingUser   string `gorm:"column:requesting_user"`
+	Process          string `gorm:"column:process"`
+	MachineID        string `gorm:"column:machine_id"`
+	Client           string `gorm:"column:client"`
+
 	DecidedAt time.Time `gorm:"column:decided_at"`
 }
 

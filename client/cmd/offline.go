@@ -7,6 +7,7 @@ import (
 	"github.com/bep/simplecobra"
 
 	"github.com/mnestor/ssoossh/internal/api"
+	"github.com/mnestor/ssoossh/internal/hostinfo"
 )
 
 // offlineCommander is implemented by commands that must complete without
@@ -53,7 +54,7 @@ func (c *offlineAPIClient) GetCA(ctx context.Context) (string, error) {
 }
 
 // CreateUserRequest implements api.Client.
-func (c *offlineAPIClient) CreateUserRequest(ctx context.Context, publicKey, localUsername, localHostname string, opts api.RequestedOptions) (*api.PendingRequest, error) {
+func (c *offlineAPIClient) CreateUserRequest(_ context.Context, _ hostinfo.HostContext, _ string, _ []string, _ api.RequestedOptions) (*api.PendingRequest, error) {
 	return nil, c.refuse("CreateUserRequest")
 }
 

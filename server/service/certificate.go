@@ -308,6 +308,15 @@ func (s *CertificateService) GetByID(ctx context.Context, id string, identity *I
 		DecisionPolicyExplanation    *string
 		DecisionPrincipals           *string
 		DecisionGrantedOptions       *string
+		DecisionReportedUsername     *string
+		DecisionReportedHostname     *string
+		DecisionPAMService           *string
+		DecisionTTY                  *string
+		DecisionRemoteHost           *string
+		DecisionRequestingUser       *string
+		DecisionProcess              *string
+		DecisionMachineID            *string
+		DecisionClient               *string
 		DecisionDecidedAt            *time.Time
 		RetrievalEnrollmentID        *string
 		RetrievalSourceIP            *string
@@ -343,6 +352,15 @@ func (s *CertificateService) GetByID(ctx context.Context, id string, identity *I
 			certificate_request_decisions.policy_explanation as decision_policy_explanation,
 			certificate_request_decisions.principals as decision_principals,
 			certificate_request_decisions.granted_options as decision_granted_options,
+			certificate_request_decisions.reported_username as decision_reported_username,
+			certificate_request_decisions.reported_hostname as decision_reported_hostname,
+			certificate_request_decisions.pam_service as decision_pam_service,
+			certificate_request_decisions.tty as decision_tty,
+			certificate_request_decisions.remote_host as decision_remote_host,
+			certificate_request_decisions.requesting_user as decision_requesting_user,
+			certificate_request_decisions.process as decision_process,
+			certificate_request_decisions.machine_id as decision_machine_id,
+			certificate_request_decisions.client as decision_client,
 			certificate_request_decisions.decided_at as decision_decided_at,
 			enrollment_retrievals.enrollment_id as retrieval_enrollment_id,
 			enrollment_retrievals.source_ip as retrieval_source_ip,
@@ -417,7 +435,20 @@ func (s *CertificateService) GetByID(ctx context.Context, id string, identity *I
 			PolicyExplanation: derefOrEmpty(result.DecisionPolicyExplanation),
 			Principals:        derefOrEmpty(result.DecisionPrincipals),
 			GrantedOptions:    derefOrEmpty(result.DecisionGrantedOptions),
-			DecidedAt:         *result.DecisionDecidedAt,
+			// The host context the request claimed, snapshotted at
+			// decision time. Detail page only, like the three above:
+			// nine more strings on every row of a history page is
+			// payload nobody reads.
+			ReportedUsername: derefOrEmpty(result.DecisionReportedUsername),
+			ReportedHostname: derefOrEmpty(result.DecisionReportedHostname),
+			PAMService:       derefOrEmpty(result.DecisionPAMService),
+			TTY:              derefOrEmpty(result.DecisionTTY),
+			RemoteHost:       derefOrEmpty(result.DecisionRemoteHost),
+			RequestingUser:   derefOrEmpty(result.DecisionRequestingUser),
+			Process:          derefOrEmpty(result.DecisionProcess),
+			MachineID:        derefOrEmpty(result.DecisionMachineID),
+			Client:           derefOrEmpty(result.DecisionClient),
+			DecidedAt:        *result.DecisionDecidedAt,
 		}
 	}
 

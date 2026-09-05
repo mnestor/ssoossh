@@ -161,6 +161,10 @@ func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 		return nil
 	}
 	r.api = apiClient
+	// Recorded before the fetch below overwrites it: afterwards a configured
+	// key and a fetched one are indistinguishable, and only the first is
+	// worth reporting as a trusted CA (see config.Config.CAPubkeyPinned).
+	cfg.CAPubkeyPinned = cfg.CAPubkey != ""
 	if cfg.CAPubkey == "" {
 		cfg.CAPubkey, err = apiClient.GetCA(runner.CobraCommand.Context())
 		if err != nil {

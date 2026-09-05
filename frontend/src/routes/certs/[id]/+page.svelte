@@ -80,6 +80,23 @@
 	const extensions = $derived(cert?.extensions ?? []);
 	const criticalOptions = $derived(Object.entries(cert?.critical_options ?? {}));
 
+	// A PAM or console certificate authenticates one local operation and is
+	// then thrown away, so permit-pty and friends mean nothing to it -- the
+	// server says as much where the default is set
+	// (config.CertOptionsPAM.Extensions), console has no extensions setting
+	// at all, and neither type reaches an sshd that would act on a critical
+	// option. Both sections would read "None / None" forever, which is a
+	// section that teaches a reader to skip the page.
+	//
+	// Suppressed only when there is genuinely nothing in it. PAM extensions
+	// are configurable even though they default to empty, and an audit page
+	// must not hide something that really was signed into the certificate
+	// just because its type usually carries none.
+	const isLocalAuthCert = $derived(cert?.type === 'pam' || cert?.type === 'console');
+	const showGrants = $derived(
+		!isLocalAuthCert || extensions.length > 0 || criticalOptions.length > 0
+	);
+
 	// What the approval itself decided, distinct from what the issued
 	// certificate above carries: recorded on the decision at approval time,
 	// so it stays the record of what was decided even if the certificate's
@@ -94,6 +111,36 @@
 			!decidedGrantedOptions.no_touch_required
 	);
 	const policyExplanation = $derived(parsePolicyExplanation(cert?.decided_policy_explanation));
+
+	// What asked for the certificate, as opposed to who approved it. Read
+	// from the decision's own snapshot rather than from the request, so it
+	// survives the request row being pruned -- see
+	// model.CertificateRequestDecision.
+	//
+	// "user@host" is the pair the server resolved by type
+	// (CertificateRequest.ReportedIdentity): the PAM account and machine for
+	// a pam or console certificate, the local client's for a user one. Only
+	// joined when both halves are there, since "alice@" reads as a truncated
+	// address rather than as a missing hostname.
+	const askedBy = $derived(
+		cert?.reported_username && cert?.reported_hostname
+			? `${cert.reported_username}@${cert.reported_hostname}`
+			: (cert?.reported_username ?? cert?.reported_hostname ?? '')
+	);
+	const reportedRows = $derived(
+		(
+			[
+				['Service', cert?.reported_pam_service],
+				['Terminal', cert?.reported_tty],
+				['Remote host', cert?.reported_remote_host],
+				['Invoked by', cert?.reported_requesting_user],
+				['Command', cert?.reported_process],
+				['Machine ID', cert?.reported_machine_id],
+				['Client', cert?.reported_client]
+			] as [string, string | undefined][]
+		).filter((row): row is [string, string] => Boolean(row[1]))
+	);
+	const hasReportedContext = $derived(Boolean(askedBy) || reportedRows.length > 0);
 </script>
 
 <svelte:head><title>Certificate · ssoossh</title></svelte:head>
@@ -155,41 +202,43 @@
 				</dl>
 			</Card>
 
-			<Card
-				title="What it grants"
-				description="The extensions and critical options signed into the certificate."
-				testid="cert-grants"
-			>
-				<dl class="divide-y divide-border-subtle">
-					<DetailRow label="Extensions">
-						{#if extensions.length > 0}
-							<span class="flex flex-wrap gap-1.5">
-								{#each extensions as extension (extension)}
-									<MonoChip>{extension}</MonoChip>
-								{/each}
-							</span>
-						{:else}
-							<span class="text-ink-muted">None</span>
-						{/if}
-					</DetailRow>
+			{#if showGrants}
+				<Card
+					title="What it grants"
+					description="The extensions and critical options signed into the certificate."
+					testid="cert-grants"
+				>
+					<dl class="divide-y divide-border-subtle">
+						<DetailRow label="Extensions">
+							{#if extensions.length > 0}
+								<span class="flex flex-wrap gap-1.5">
+									{#each extensions as extension (extension)}
+										<MonoChip>{extension}</MonoChip>
+									{/each}
+								</span>
+							{:else}
+								<span class="text-ink-muted">None</span>
+							{/if}
+						</DetailRow>
 
-					<!-- Stated even when empty: "no critical options" is a fact
+						<!-- Stated even when empty: "no critical options" is a fact
 					     about the certificate worth reading, not an absence. A
 					     force-command that is not there is why an interactive
 					     shell works. -->
-					<DetailRow label="Critical options">
-						{#if criticalOptions.length > 0}
-							<span class="flex flex-col items-start gap-1.5">
-								{#each criticalOptions as [name, value] (name)}
-									<MonoChip>{name} <span class="text-ink-muted">=</span> {value}</MonoChip>
-								{/each}
-							</span>
-						{:else}
-							<span class="text-ink-muted">None</span>
-						{/if}
-					</DetailRow>
-				</dl>
-			</Card>
+						<DetailRow label="Critical options">
+							{#if criticalOptions.length > 0}
+								<span class="flex flex-col items-start gap-1.5">
+									{#each criticalOptions as [name, value] (name)}
+										<MonoChip>{name} <span class="text-ink-muted">=</span> {value}</MonoChip>
+									{/each}
+								</span>
+							{:else}
+								<span class="text-ink-muted">None</span>
+							{/if}
+						</DetailRow>
+					</dl>
+				</Card>
+			{/if}
 
 			{#if decidedBy}
 				<!-- Who decided, from where, and when. The modal states this as a
@@ -233,7 +282,7 @@
 								</span>
 							</DetailRow>
 						{/if}
-						{#if decidedGrantedOptions}
+						{#if decidedGrantedOptions && !(isLocalAuthCert && decidedGrantedOptionsEmpty)}
 							<!-- Recorded on the decision at approval time, which is a
 							     different source from the certificate's own Extensions
 							     and Critical options above: this is what the approval
@@ -294,6 +343,35 @@
 							</dl>
 						</div>
 					{/if}
+				</Card>
+			{/if}
+
+			{#if hasReportedContext}
+				<!-- What asked for the certificate. The approval page showed
+				     all of this to the approver; without it here the history
+				     can say who signed off and what was granted but not which
+				     machine or command it was for, which is where an incident
+				     review starts.
+
+				     Rendered as claims throughout. Every field is
+				     self-reported by an unauthenticated caller and none of it
+				     fed any decision: principals came from the approver's
+				     held accounts and the lifetime from policy. The one
+				     address the server established itself is the decision's
+				     source address above, and that is the approver's. -->
+				<Card
+					title="What asked for it"
+					description="Reported by the requesting host and never verified."
+					testid="cert-reported-context"
+				>
+					<dl class="divide-y divide-border-subtle">
+						{#if askedBy}
+							<DetailRow label="Reported as" mono>{askedBy}</DetailRow>
+						{/if}
+						{#each reportedRows as [label, value] (label)}
+							<DetailRow {label} mono>{value}</DetailRow>
+						{/each}
+					</dl>
 				</Card>
 			{/if}
 

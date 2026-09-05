@@ -8,9 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"os/exec"
-	"os/user"
 	"runtime"
 	"time"
 
@@ -20,6 +18,7 @@ import (
 	"github.com/mnestor/ssoossh/internal/api"
 	sshagent "github.com/mnestor/ssoossh/internal/crypto/ssh/agent"
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
+	"github.com/mnestor/ssoossh/internal/hostinfo"
 
 	"github.com/mnestor/ssoossh/client/config"
 )
@@ -341,7 +340,12 @@ func runLogin(ctx context.Context, root *RootCommand, out io.Writer, force bool)
 		return fmt.Errorf("encode public key: %w", err)
 	}
 
-	localUsername, localHostname := localIdentity()
+	// What this machine reports about itself, the client's half of the same
+	// report pam_ssoossh sends from a host. It carries the local identity
+	// too, so there is one place that reads it. See internal/hostinfo, and
+	// https://mnestor.github.io/ssoossh/internals/host-context/ for how far
+	// each field travels.
+	hostContext := hostinfo.Collect()
 
 	// Compute effective extensions with attribution.
 	removals := make(map[string]extensionRemovalReason)
@@ -355,7 +359,7 @@ func runLogin(ctx context.Context, root *RootCommand, out io.Writer, force bool)
 		printEffectiveExtensions(out, effectiveExts, loginExtensions, removals)
 	}
 
-	pending, err := root.API().CreateUserRequest(ctx, publicKey, localUsername, localHostname, api.RequestedOptions{
+	pending, err := root.API().CreateUserRequest(ctx, hostContext, publicKey, pinnedCAFingerprints(cfg), api.RequestedOptions{
 		Extensions:      effectiveExts,
 		SourceAddresses: api.LocalInterfaceAddresses(),
 	})
@@ -402,18 +406,27 @@ func runLogin(ctx context.Context, root *RootCommand, out io.Writer, force bool)
 	return nil
 }
 
-// localIdentity returns this machine's local OS username and hostname, for
-// a user-type request's LocalUsername/LocalHostname — the local client is
-// the requester for this certificate type, so this is who/where the
-// request actually came from. Best-effort: either value is
-// left empty on a lookup failure rather than failing the login over
-// metadata that isn't a precondition for issuance.
-func localIdentity() (username, hostname string) {
-	if u, err := user.Current(); err == nil {
-		username = u.Username
+// pinnedCAFingerprints is the SHA256 fingerprint of the CA public key this
+// client has pinned, in the OpenSSH form the module reports, or nothing.
+//
+// Only a pinned key. When none is configured the runner fetches one from
+// the server (client/cmd/cmd.go), and reporting that back would tell the
+// server the fingerprint of the key it just handed us. A pinned one is a
+// real statement: this client will refuse a certificate signed by anything
+// else, so the approval page can say so before the refusal rather than
+// after — the same job the field does for pam_ssoossh's trusted-ca-file.
+//
+// Best-effort, like the rest of the host context: a key that will not parse
+// is reported as no fingerprint rather than failing a login over metadata.
+func pinnedCAFingerprints(cfg *config.Config) []string {
+	if cfg == nil || !cfg.CAPubkeyPinned || cfg.CAPubkey == "" {
+		return nil
 	}
-	hostname, _ = os.Hostname() //nolint:errcheck // best-effort audit metadata, not a login precondition — see the doc comment above
-	return username, hostname
+	parsed, _, _, _, err := ssh.ParseAuthorizedKey([]byte(cfg.CAPubkey)) //nolint:dogsled // the comment/options/rest say nothing about the key
+	if err != nil {
+		return nil
+	}
+	return []string{ssh.FingerprintSHA256(parsed)}
 }
 
 // pruneSuperseded removes the certificates this login replaces: everything

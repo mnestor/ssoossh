@@ -37,9 +37,15 @@ type ServiceEnrollmentCreated struct {
 	SourceAddresses []string `json:"source_addresses,omitempty"`
 	NoTouchRequired bool     `json:"no_touch_required,omitempty"`
 
+	// RequestSourceIP is the requester's address; ApproverSourceIP is the
+	// approver's. Two different questions, and on a message announcing a
+	// credential that mints certificates unattended for months, the second
+	// is the one that says whose session let it exist.
 	RequestSourceIP    string    `json:"request_source_ip"`
 	ApprovedAt         time.Time `json:"approved_at"`
 	ApprovedByUsername string    `json:"approved_by_username"`
+	ApprovedByEmail    string    `json:"approved_by_email,omitempty"`
+	ApproverSourceIP   string    `json:"approver_source_ip,omitempty"`
 
 	// CodeExpiresAt bounds the code; CertificateLifetime bounds each
 	// certificate it produces, measured from each redemption. They are
@@ -192,13 +198,68 @@ type CertificateIssued struct {
 	LocalUsername string `json:"local_username,omitempty"`
 	LocalHostname string `json:"local_hostname,omitempty"`
 
+	// The rest of the host context the request reported, the same set the
+	// approval page showed and every cert.* audit event carries (see
+	// https://mnestor.github.io/ssoossh/internals/host-context/). Present
+	// because this is the "was this you?" message: "a certificate was
+	// issued" is not answerable, and "sudo systemctl restart nginx on
+	// rack07, at pts/3, from a machine you have never used" is.
+	//
+	// Client-reported and therefore not evidence, exactly like
+	// LocalUsername above. A template rendering any of it must present it
+	// as a claim; the shipped ones say so in a line under the block.
+	//
+	// Every field is optional. A user certificate has no PAMService, a
+	// local terminal has no RemoteHost, and a client that reported none of
+	// it leaves the whole block empty.
+	RequestingUser string `json:"requesting_user,omitempty"`
+	Process        string `json:"process,omitempty"`
+	TTY            string `json:"tty,omitempty"`
+	RemoteHost     string `json:"remote_host,omitempty"`
+	PAMService     string `json:"pam_service,omitempty"`
+	MachineID      string `json:"machine_id,omitempty"`
+	OS             string `json:"os,omitempty"`
+	Client         string `json:"client,omitempty"`
+	ClientMode     string `json:"client_mode,omitempty"`
+
+	// The process on the reporting machine, for joining against its own
+	// auditd or journal. Pointers so absent is distinguishable from uid 0,
+	// and from a platform that has no such id at all.
+	CallerUID  *int64 `json:"caller_uid,omitempty"`
+	CallerGID  *int64 `json:"caller_gid,omitempty"`
+	CallerPID  *int64 `json:"caller_pid,omitempty"`
+	CallerPPID *int64 `json:"caller_ppid,omitempty"`
+
 	SourceIP  string    `json:"source_ip"`
 	IssuedAt  time.Time `json:"issued_at"`
 	ExpiresAt time.Time `json:"expires_at"`
 
+	// Who approved the request, from where, and when.
+	//
+	// The most security-relevant thing in this message and the thing it
+	// carried none of: a recipient could see that a certificate existed but
+	// not who let it exist. On the unhappy path -- a session the reader does
+	// not recognize -- the approver's address is the fact that says whether
+	// their own account was used or someone else's.
+	//
+	// Empty on a certificate whose decision record has gone or predates
+	// them, which the shipped templates render as "not recorded" rather
+	// than as nobody.
+	ApprovedByUsername string    `json:"approved_by_username,omitempty"`
+	ApprovedByEmail    string    `json:"approved_by_email,omitempty"`
+	ApproverSourceIP   string    `json:"approver_source_ip,omitempty"`
+	ApproverUserAgent  string    `json:"approver_user_agent,omitempty"`
+	ApprovedAt         time.Time `json:"approved_at,omitempty"`
+
 	Extensions      []string `json:"extensions,omitempty"`
 	ForceCommand    string   `json:"force_command,omitempty"`
 	SourceAddresses []string `json:"source_addresses,omitempty"`
+
+	// NoTouchRequired completes the granted set. A certificate that waives
+	// the hardware-key touch is a weaker credential than one that does not,
+	// so its absence from this message was a gap in what the reader is
+	// being asked to confirm.
+	NoTouchRequired bool `json:"no_touch_required,omitempty"`
 
 	ServerURL string `json:"server_url"`
 }

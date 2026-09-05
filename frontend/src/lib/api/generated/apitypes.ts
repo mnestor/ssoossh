@@ -242,6 +242,79 @@ export interface UserRequestBody {
 	public_key: string;
 	local_username?: string;
 	local_hostname?: string;
+	/**
+	 * The rest of the host context, the same set and the same trust as
+	 * PAMRequestBody's -- see that type for what each field means and
+	 * https://mnestor.github.io/ssoossh/internals/host-context/ for how far
+	 * each one travels. The client reads them off its own process and
+	 * machine (internal/hostinfo); every value is self-reported by an
+	 * unauthenticated caller and the approval page renders each as a claim.
+	 * A user request carried only the two identity fields above until this
+	 * existed, so an approver deciding a `ssh login` saw two strings where
+	 * an approver deciding a `sudo` saw a dozen. All optional: an older
+	 * client that sends none of them still works, and a field the platform
+	 * cannot answer is simply absent.
+	 * PAMService and Mode have no analogue here and are not sent. The
+	 * endpoint already says this is a user request, and there is no pam.d
+	 * line to have configured a mode in.
+	 * RequestingUser is SUDO_USER, the analogue of PAM_RUSER: who invoked
+	 * the client, when that differs from the account it runs as.
+	 */
+	requesting_user?: string;
+	/**
+	 * Process is the client's own argv ("ssoossh ssh login --force"),
+	 * the analogue of the PAM host process's command line. It is what
+	 * distinguishes an interactive login from a ProxyCommand invocation.
+	 */
+	process?: string;
+	/**
+	 * TTY is the controlling terminal where the platform can name one.
+	 */
+	tty?: string;
+	/**
+	 * RemoteHost is the peer address when the client is itself running
+	 * inside an SSH session (SSH_CONNECTION), the analogue of PAM_RHOST.
+	 * Empty at a local terminal.
+	 */
+	remote_host?: string;
+	/**
+	 * CallerUID, CallerGID, CallerPID and CallerPPID identify the client
+	 * process, for joining with the machine's own logs. Pointers so an
+	 * absent value is distinguishable from uid 0 or gid 0; the two ids are
+	 * absent on Windows, which has neither.
+	 */
+	caller_uid?: number /* int64 */;
+	caller_gid?: number /* int64 */;
+	caller_pid?: number /* int64 */;
+	caller_ppid?: number /* int64 */;
+	/**
+	 * MachineID is a stable per-install identifier: /etc/machine-id on
+	 * Linux, kern.uuid on macOS, kern.hostuuid on FreeBSD, MachineGuid on
+	 * Windows.
+	 */
+	machine_id?: string;
+	/**
+	 * OS is the platform as the machine describes itself.
+	 */
+	os?: string;
+	/**
+	 * Client names the implementation and version ("ssoossh/1.2.3"), which
+	 * is what tells this client and pam_ssoossh apart in a log.
+	 */
+	client?: string;
+	/**
+	 * ClientTime is the machine's own clock when it built the request, so
+	 * skew against the server is visible before it breaks a login.
+	 */
+	client_time?: string;
+	/**
+	 * TrustedCAFingerprints is the SHA256 fingerprint of the CA public key
+	 * this client has *pinned* (the `capubkey` setting), in OpenSSH form.
+	 * Sent only when it was pinned: a key the client fetched from this same
+	 * server says nothing the server does not already know, and reporting
+	 * one as trust would be circular.
+	 */
+	trusted_ca_fingerprints?: string[];
 	requested_options?: RequestedOptions;
 }
 /**
@@ -302,8 +375,13 @@ export interface PAMRequestBody {
 	 * CallerUID, CallerPID and CallerPPID identify the process on the host,
 	 * for joining with the host's own logs. Pointers so an absent value is
 	 * distinguishable from uid 0 or pid 0.
+	 * CallerGID is the process's group, added with the Go client and
+	 * accepted here so one column and one audit key mean the same thing
+	 * whichever implementation sent the request; the C module does not
+	 * report it yet.
 	 */
 	caller_uid?: number /* int64 */;
+	caller_gid?: number /* int64 */;
 	caller_pid?: number /* int64 */;
 	caller_ppid?: number /* int64 */;
 	/**
@@ -372,6 +450,7 @@ export interface ConsoleRequestBody {
 	requesting_user?: string;
 	process?: string;
 	caller_uid?: number /* int64 */;
+	caller_gid?: number /* int64 */;
 	caller_pid?: number /* int64 */;
 	caller_ppid?: number /* int64 */;
 	machine_id?: string;

@@ -51,6 +51,7 @@ var expiresAt = time.Date(2026, 9, 5, 11, 34, 5, 0, time.UTC)
 // between them would hide exactly the divergence that matters.
 var (
 	callerUID  = int64(1000)
+	callerGID  = int64(1000)
 	callerPID  = int64(4242)
 	callerPPID = int64(4200)
 )
@@ -74,10 +75,27 @@ func fullFixtures() map[string]any {
 		"requested_options": requestedOptions,
 
 		"user_request": apitypes.UserRequestBody{
-			PublicKey:        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleUserKey alice@workstation",
-			LocalUsername:    "alice",
-			LocalHostname:    "workstation.example.org",
-			RequestedOptions: requestedOptions,
+			PublicKey:     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleUserKey alice@workstation",
+			LocalUsername: "alice",
+			LocalHostname: "workstation.example.org",
+			// The host context the Go client reports (internal/hostinfo).
+			// Deliberately the same values the PAM fixture uses where the
+			// field means the same thing, so a diff between the two
+			// fixtures shows only what genuinely differs by type.
+			RequestingUser:        "alice",
+			Process:               "ssoossh ssh login",
+			TTY:                   "/dev/pts/3",
+			RemoteHost:            "198.51.100.7",
+			CallerUID:             &callerUID,
+			CallerGID:             &callerGID,
+			CallerPID:             &callerPID,
+			CallerPPID:            &callerPPID,
+			MachineID:             "6b3a1f9c8d2e4a5b9c0d1e2f3a4b5c6d",
+			OS:                    "Debian GNU/Linux 13 (trixie) Linux 6.12.0",
+			Client:                "ssoossh/1.2.3",
+			ClientTime:            &clientTime,
+			TrustedCAFingerprints: []string{"SHA256:1yQ0mE2xExampleFingerprintOne"},
+			RequestedOptions:      requestedOptions,
 		},
 
 		"service_enroll_request": apitypes.ServiceEnrollRequestBody{
@@ -95,6 +113,7 @@ func fullFixtures() map[string]any {
 			RequestingUser:        "alice",
 			Process:               "sudo systemctl restart nginx",
 			CallerUID:             &callerUID,
+			CallerGID:             &callerGID,
 			CallerPID:             &callerPID,
 			CallerPPID:            &callerPPID,
 			MachineID:             "6b3a1f9c8d2e4a5b9c0d1e2f3a4b5c6d",
@@ -116,6 +135,7 @@ func fullFixtures() map[string]any {
 			RequestingUser:        "alice",
 			Process:               "login",
 			CallerUID:             &callerUID,
+			CallerGID:             &callerGID,
 			CallerPID:             &callerPID,
 			CallerPPID:            &callerPPID,
 			MachineID:             "6b3a1f9c8d2e4a5b9c0d1e2f3a4b5c6d",

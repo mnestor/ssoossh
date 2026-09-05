@@ -230,11 +230,32 @@ func (cr *certRequestController) createUserRequestHandler(g *gin.Context) {
 		return
 	}
 
+	// TTY and RemoteHost ride in the same columns a PAM request uses: a
+	// terminal is a terminal and a peer address is a peer address whichever
+	// module reported it, and one column per meaning is what lets an audit
+	// query ask "which requests came from over the network" without knowing
+	// the type. PAMService and Mode stay empty -- a user request has
+	// neither.
 	cr.createRequest(g, service.NewCertRequestParams{
-		Type:             model.CertificateTypeUser,
-		PublicKey:        body.PublicKey,
-		LocalUsername:    body.LocalUsername,
-		LocalHostname:    body.LocalHostname,
+		Type:          model.CertificateTypeUser,
+		PublicKey:     body.PublicKey,
+		LocalUsername: body.LocalUsername,
+		LocalHostname: body.LocalHostname,
+		TTY:           body.TTY,
+		RemoteHost:    body.RemoteHost,
+		HostContext: service.HostContext{
+			RequestingUser:        body.RequestingUser,
+			Process:               body.Process,
+			CallerUID:             body.CallerUID,
+			CallerGID:             body.CallerGID,
+			CallerPID:             body.CallerPID,
+			CallerPPID:            body.CallerPPID,
+			MachineID:             body.MachineID,
+			OS:                    body.OS,
+			Client:                body.Client,
+			ClientTime:            body.ClientTime,
+			TrustedCAFingerprints: body.TrustedCAFingerprints,
+		},
 		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})
 }
@@ -320,6 +341,7 @@ func toHostContext(body apitypes.PAMRequestBody) service.HostContext {
 		RequestingUser:        body.RequestingUser,
 		Process:               body.Process,
 		CallerUID:             body.CallerUID,
+		CallerGID:             body.CallerGID,
 		CallerPID:             body.CallerPID,
 		CallerPPID:            body.CallerPPID,
 		MachineID:             body.MachineID,
@@ -390,6 +412,7 @@ func (cr *certRequestController) createConsoleRequestHandler(g *gin.Context) {
 			RequestingUser:        body.RequestingUser,
 			Process:               body.Process,
 			CallerUID:             body.CallerUID,
+			CallerGID:             body.CallerGID,
 			CallerPID:             body.CallerPID,
 			CallerPPID:            body.CallerPPID,
 			MachineID:             body.MachineID,

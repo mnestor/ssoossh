@@ -16,6 +16,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/mnestor/ssoossh/internal/apitypes"
+	"github.com/mnestor/ssoossh/internal/hostinfo"
 )
 
 // writeSSEEvent writes name/data in gin's c.SSEvent wire format:
@@ -75,7 +78,7 @@ func TestCreateUserRequest_ShouldReturnApprovedOutcome(t *testing.T) {
 		t.Fatalf("unexpected error building client: %v", err)
 	}
 
-	pending, err := c.CreateUserRequest(context.Background(), "ssh-ed25519 AAAA... test", "alice", "alice-laptop", RequestedOptions{Extensions: []string{"permit-pty"}})
+	pending, err := c.CreateUserRequest(context.Background(), hostinfo.HostContext{Username: "alice", Hostname: "alice-laptop"}, "ssh-ed25519 AAAA... test", nil, RequestedOptions{Extensions: []string{"permit-pty"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -199,7 +202,7 @@ func TestCreateUserRequest_ShouldReturnResponseErrorWhenCreateFails(t *testing.T
 		t.Fatalf("unexpected error building client: %v", err)
 	}
 
-	_, err = c.CreateUserRequest(context.Background(), "", "", "", RequestedOptions{})
+	_, err = c.CreateUserRequest(context.Background(), hostinfo.HostContext{}, "", nil, RequestedOptions{})
 	respErr := &ResponseError{}
 	ok := errors.As(err, &respErr)
 	if !ok {
@@ -236,7 +239,7 @@ func TestAwaitCertificate_ShouldReturnResponseErrorWhenEventsConnectionFails(t *
 		t.Fatalf("unexpected error building client: %v", err)
 	}
 
-	pending, err := c.CreateUserRequest(context.Background(), "ssh-ed25519 AAAA... test", "", "", RequestedOptions{})
+	pending, err := c.CreateUserRequest(context.Background(), hostinfo.HostContext{}, "ssh-ed25519 AAAA... test", nil, RequestedOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error creating the request: %v", err)
 	}
@@ -292,7 +295,7 @@ func TestAwaitCertificate_ShouldReconnectAfterDroppedEventsConnection(t *testing
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	pending, err := c.CreateUserRequest(ctx, "ssh-ed25519 AAAA... test", "", "", RequestedOptions{})
+	pending, err := c.CreateUserRequest(ctx, hostinfo.HostContext{}, "ssh-ed25519 AAAA... test", nil, RequestedOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -349,7 +352,7 @@ func TestCreateUserRequest_ShouldReturnApprovalURLBeforeAnyoneApproves(t *testin
 	defer cancel()
 
 	// The point of the test: this returns while the request is unresolved.
-	pending, err := c.CreateUserRequest(ctx, "ssh-ed25519 AAAA... test", "", "", RequestedOptions{})
+	pending, err := c.CreateUserRequest(ctx, hostinfo.HostContext{}, "ssh-ed25519 AAAA... test", nil, RequestedOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -422,5 +425,108 @@ func TestNewClient_ShouldAssumeHTTPSWhenTheServerURLHasNoScheme(t *testing.T) {
 				t.Errorf("got serverURL %q, want %q", c.serverURL, tt.want)
 			}
 		})
+	}
+}
+
+// A user request carries the whole host context, not just the two identity
+// fields it used to. Without this the certificate an approver sees for a
+// `ssh login` says less than the one for a `sudo`, which is the gap
+// internal/hostinfo exists to close.
+func TestCreateUserRequest_ShouldSendTheWholeHostContext(t *testing.T) {
+	uid, gid, pid, ppid := int64(501), int64(20), int64(4412), int64(4200)
+	at := time.Date(2026, 9, 5, 21, 30, 0, 0, time.UTC)
+
+	var got apitypes.UserRequestBody
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("failed to decode the request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"request_id":"req-1","approval_url":"/approve/req-1","events_url":"/api/certs/requests/req-1/events"}}`))
+	}))
+	defer server.Close()
+
+	c, err := NewClient(Config{ServerURL: server.URL})
+	if err != nil {
+		t.Fatalf("unexpected error building the client: %v", err)
+	}
+
+	hc := hostinfo.HostContext{
+		Username: "alice", Hostname: "alice-laptop",
+		RequestingUser: "bob", Process: "ssoossh ssh login", TTY: "/dev/pts/3",
+		RemoteHost: "203.0.113.9",
+		CallerUID:  &uid, CallerGID: &gid, CallerPID: &pid, CallerPPID: &ppid,
+		MachineID: "3f2c1e0d9b8a7f6e", OS: "macOS 26.5.2 Darwin 25.5.0",
+		Client: "ssoossh/1.2.3", ClientTime: &at,
+	}
+	if _, err := c.CreateUserRequest(context.Background(), hc, "ssh-ed25519 AAAA... test",
+		[]string{"SHA256:pinned"}, RequestedOptions{}); err != nil {
+		t.Fatalf("unexpected error creating the request: %v", err)
+	}
+
+	for field, pair := range map[string][2]string{
+		"local_username":  {got.LocalUsername, "alice"},
+		"local_hostname":  {got.LocalHostname, "alice-laptop"},
+		"requesting_user": {got.RequestingUser, "bob"},
+		"process":         {got.Process, "ssoossh ssh login"},
+		"tty":             {got.TTY, "/dev/pts/3"},
+		"remote_host":     {got.RemoteHost, "203.0.113.9"},
+		"machine_id":      {got.MachineID, "3f2c1e0d9b8a7f6e"},
+		"os":              {got.OS, "macOS 26.5.2 Darwin 25.5.0"},
+		"client":          {got.Client, "ssoossh/1.2.3"},
+	} {
+		if pair[0] != pair[1] {
+			t.Errorf("%s = %q, want %q", field, pair[0], pair[1])
+		}
+	}
+	for field, pair := range map[string][2]*int64{
+		"caller_uid":  {got.CallerUID, &uid},
+		"caller_gid":  {got.CallerGID, &gid},
+		"caller_pid":  {got.CallerPID, &pid},
+		"caller_ppid": {got.CallerPPID, &ppid},
+	} {
+		if pair[0] == nil || *pair[0] != *pair[1] {
+			t.Errorf("%s = %v, want %d", field, pair[0], *pair[1])
+		}
+	}
+	if got.ClientTime == nil || !got.ClientTime.Equal(at) {
+		t.Errorf("client_time = %v, want %v", got.ClientTime, at)
+	}
+	if len(got.TrustedCAFingerprints) != 1 || got.TrustedCAFingerprints[0] != "SHA256:pinned" {
+		t.Errorf("trusted_ca_fingerprints = %v, want the pinned one", got.TrustedCAFingerprints)
+	}
+}
+
+// An older client, or one on a platform that can answer none of it, sends
+// the two identity fields and nothing else. Every host-context key has to
+// drop out rather than shipping as a zero the approval page would render.
+func TestCreateUserRequest_ShouldOmitAnEmptyHostContext(t *testing.T) {
+	var raw map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+			t.Errorf("failed to decode the request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"request_id":"req-1","approval_url":"/approve/req-1","events_url":"/api/certs/requests/req-1/events"}}`))
+	}))
+	defer server.Close()
+
+	c, err := NewClient(Config{ServerURL: server.URL})
+	if err != nil {
+		t.Fatalf("unexpected error building the client: %v", err)
+	}
+	if _, err := c.CreateUserRequest(context.Background(), hostinfo.HostContext{},
+		"ssh-ed25519 AAAA... test", nil, RequestedOptions{}); err != nil {
+		t.Fatalf("unexpected error creating the request: %v", err)
+	}
+
+	for _, key := range []string{
+		"requesting_user", "process", "tty", "remote_host", "caller_uid", "caller_gid",
+		"caller_pid", "caller_ppid", "machine_id", "os", "client", "client_time",
+		"trusted_ca_fingerprints",
+	} {
+		if v, present := raw[key]; present {
+			t.Errorf("%s = %v, want the key absent when nothing was collected", key, v)
+		}
 	}
 }

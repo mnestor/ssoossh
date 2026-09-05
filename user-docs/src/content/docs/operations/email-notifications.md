@@ -39,6 +39,44 @@ says to run `ssoossh service enroll` again rather than offering anything to
 reuse, and the expired-attempt report names the enrollment without naming the
 code that was presented.
 
+## What a "was this you?" message has to answer
+
+The three `*_certificate_issued` kinds exist for one reader: the person
+deciding whether a certificate in their name was theirs. "A certificate was
+issued" is not answerable. What is answerable is *what asked* and *who let it
+happen*, so every message carries both.
+
+**What asked** is the host context the requester reported -- the account and
+machine, who invoked it, the command line, the terminal, the peer address if
+the request came from over a network, the machine's stable id, its platform,
+the client implementation and version, and the process ids. It is the same set
+the approval page showed and every `cert.*` audit event carries; see
+[Host context](/ssoossh/internals/host-context/) for where each value comes
+from.
+
+:::caution[None of it is verified]
+Every one of those fields is self-reported by an unauthenticated caller, and
+none of it decided anything: principals come from the approver's own accounts
+and the lifetime from policy. The shipped templates say so in a line under the
+block, and an override that renders them should keep that line or say the same
+thing. `SourceIP` and `ApproverSourceIP` are the exceptions -- the server
+observed both.
+:::
+
+**Who let it happen** is the approval: the account that approved, its email,
+the address and browser it approved from, and when. This is the part that
+distinguishes the two bad outcomes from each other. A certificate you do not
+recognize approved from an address you were at is a machine you should look
+at; the same certificate approved from an address you have never used is an
+account someone else was driving. A certificate whose decision record has gone
+renders as "not recorded" rather than as nobody.
+
+`service_enrollment_created` carries the approver too, for the same reason and
+more urgently: it announces a credential that mints certificates unattended
+for as long as the code lives. `RequestSourceIP` there is the requester's
+address and `ApproverSourceIP` the approver's -- two different questions that
+are easy to conflate.
+
 ## Configuring the relay
 
 Two deployments are worth writing out. **A local relay**, where the mail
@@ -296,6 +334,8 @@ Templates:
 | `.RequestSourceIP` | `string` | The address the enrollment request was submitted from. |
 | `.ApprovedAt` | `time.Time` | When the request was approved and the code minted. |
 | `.ApprovedByUsername` | `string` | The username of the identity that approved the request. |
+| `.ApprovedByEmail` | `string` | The approver's email address, or empty if none was recorded. |
+| `.ApproverSourceIP` | `string` | The address the approval was made from, observed by the server. A different question from RequestSourceIP, which is the requester's. |
 | `.CodeExpiresAt` | `time.Time` | When the enrollment code stops being redeemable. Re-enroll before this to keep an unattended job running. |
 | `.CertificateLifetime` | `time.Duration` | How long each certificate redeemed from this code is valid for, measured from each redemption. |
 | `.ServerURL` | `string` | The server's public origin, for links back to the request. |
@@ -415,12 +455,31 @@ Templates:
 | `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the key the certificate was issued for. |
 | `.LocalUsername` | `string` | The local account the client reported, or empty if it reported none. Client-reported, so not evidence. |
 | `.LocalHostname` | `string` | The machine the client reported, or empty if it reported none. Client-reported, so not evidence. |
-| `.SourceIP` | `string` | The address the request was made from. |
+| `.RequestingUser` | `string` | Who invoked the request, when that differs from the account it ran as: PAM_RUSER for a module, SUDO_USER for the client. Client-reported, so not evidence. |
+| `.Process` | `string` | The command line that asked, e.g. "sudo systemctl restart nginx" or "ssoossh ssh login". Client-reported, so not evidence. |
+| `.TTY` | `string` | The terminal the request came from, or empty if it had none. Client-reported, so not evidence. |
+| `.RemoteHost` | `string` | The peer address the requester reported, non-empty only when it was itself reached over the network. Client-reported, so not evidence. |
+| `.PAMService` | `string` | The PAM service that asked (sudo, su, sshd, login). Empty on a user certificate, which has none. |
+| `.MachineID` | `string` | The requesting machine's stable installation id, which survives a rename. Client-reported, so not evidence. |
+| `.OS` | `string` | The platform as the requesting machine describes itself. Client-reported, so not evidence. |
+| `.Client` | `string` | The implementation and version that sent the request, e.g. "ssoossh/1.2.3" or "pam_ssoossh-c/0.3.0". |
+| `.ClientMode` | `string` | The PAM module's configured mode argument (auto, sudo, console). Empty for the client, which has none. |
+| `.CallerUID` | `*int64` | The requesting process's user id, or absent if it reported none. A pointer because uid 0 is a value. |
+| `.CallerGID` | `*int64` | The requesting process's group id, or absent if it reported none. |
+| `.CallerPID` | `*int64` | The requesting process's id, for joining against the machine's own logs. |
+| `.CallerPPID` | `*int64` | The requesting process's parent id. |
+| `.SourceIP` | `string` | The address the request was made from. Observed by the server, unlike everything the client reported. |
 | `.IssuedAt` | `time.Time` | When the certificate becomes valid. |
 | `.ExpiresAt` | `time.Time` | When the certificate stops being valid. |
+| `.ApprovedByUsername` | `string` | The account that approved the request, or empty if no decision record survives. |
+| `.ApprovedByEmail` | `string` | The approver's email address, or empty if none was recorded. |
+| `.ApproverSourceIP` | `string` | The address the approval was made from, observed by the server. On the unhappy path this is the fact that says whose session was used. |
+| `.ApproverUserAgent` | `string` | The browser that approved, as it identified itself. |
+| `.ApprovedAt` | `time.Time` | When the approval happened. Zero if no decision record survives. |
 | `.Extensions` | `[]string` | SSH certificate extensions granted, after narrowing against server config. |
 | `.ForceCommand` | `string` | The force-command critical option, or empty if none was granted. |
 | `.SourceAddresses` | `[]string` | The source-address critical option, or empty if unrestricted. |
+| `.NoTouchRequired` | `bool` | Whether the certificate waives the hardware-key touch, which makes it a weaker credential than one that does not. |
 | `.ServerURL` | `string` | The server's public origin, for links back to the certificate. |
 
 
@@ -448,12 +507,31 @@ Templates:
 | `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the key the certificate was issued for. |
 | `.LocalUsername` | `string` | The local account the client reported, or empty if it reported none. Client-reported, so not evidence. |
 | `.LocalHostname` | `string` | The machine the client reported, or empty if it reported none. Client-reported, so not evidence. |
-| `.SourceIP` | `string` | The address the request was made from. |
+| `.RequestingUser` | `string` | Who invoked the request, when that differs from the account it ran as: PAM_RUSER for a module, SUDO_USER for the client. Client-reported, so not evidence. |
+| `.Process` | `string` | The command line that asked, e.g. "sudo systemctl restart nginx" or "ssoossh ssh login". Client-reported, so not evidence. |
+| `.TTY` | `string` | The terminal the request came from, or empty if it had none. Client-reported, so not evidence. |
+| `.RemoteHost` | `string` | The peer address the requester reported, non-empty only when it was itself reached over the network. Client-reported, so not evidence. |
+| `.PAMService` | `string` | The PAM service that asked (sudo, su, sshd, login). Empty on a user certificate, which has none. |
+| `.MachineID` | `string` | The requesting machine's stable installation id, which survives a rename. Client-reported, so not evidence. |
+| `.OS` | `string` | The platform as the requesting machine describes itself. Client-reported, so not evidence. |
+| `.Client` | `string` | The implementation and version that sent the request, e.g. "ssoossh/1.2.3" or "pam_ssoossh-c/0.3.0". |
+| `.ClientMode` | `string` | The PAM module's configured mode argument (auto, sudo, console). Empty for the client, which has none. |
+| `.CallerUID` | `*int64` | The requesting process's user id, or absent if it reported none. A pointer because uid 0 is a value. |
+| `.CallerGID` | `*int64` | The requesting process's group id, or absent if it reported none. |
+| `.CallerPID` | `*int64` | The requesting process's id, for joining against the machine's own logs. |
+| `.CallerPPID` | `*int64` | The requesting process's parent id. |
+| `.SourceIP` | `string` | The address the request was made from. Observed by the server, unlike everything the client reported. |
 | `.IssuedAt` | `time.Time` | When the certificate becomes valid. |
 | `.ExpiresAt` | `time.Time` | When the certificate stops being valid. |
+| `.ApprovedByUsername` | `string` | The account that approved the request, or empty if no decision record survives. |
+| `.ApprovedByEmail` | `string` | The approver's email address, or empty if none was recorded. |
+| `.ApproverSourceIP` | `string` | The address the approval was made from, observed by the server. On the unhappy path this is the fact that says whose session was used. |
+| `.ApproverUserAgent` | `string` | The browser that approved, as it identified itself. |
+| `.ApprovedAt` | `time.Time` | When the approval happened. Zero if no decision record survives. |
 | `.Extensions` | `[]string` | SSH certificate extensions granted, after narrowing against server config. |
 | `.ForceCommand` | `string` | The force-command critical option, or empty if none was granted. |
 | `.SourceAddresses` | `[]string` | The source-address critical option, or empty if unrestricted. |
+| `.NoTouchRequired` | `bool` | Whether the certificate waives the hardware-key touch, which makes it a weaker credential than one that does not. |
 | `.ServerURL` | `string` | The server's public origin, for links back to the certificate. |
 
 
@@ -481,12 +559,31 @@ Templates:
 | `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the key the certificate was issued for. |
 | `.LocalUsername` | `string` | The local account the client reported, or empty if it reported none. Client-reported, so not evidence. |
 | `.LocalHostname` | `string` | The machine the client reported, or empty if it reported none. Client-reported, so not evidence. |
-| `.SourceIP` | `string` | The address the request was made from. |
+| `.RequestingUser` | `string` | Who invoked the request, when that differs from the account it ran as: PAM_RUSER for a module, SUDO_USER for the client. Client-reported, so not evidence. |
+| `.Process` | `string` | The command line that asked, e.g. "sudo systemctl restart nginx" or "ssoossh ssh login". Client-reported, so not evidence. |
+| `.TTY` | `string` | The terminal the request came from, or empty if it had none. Client-reported, so not evidence. |
+| `.RemoteHost` | `string` | The peer address the requester reported, non-empty only when it was itself reached over the network. Client-reported, so not evidence. |
+| `.PAMService` | `string` | The PAM service that asked (sudo, su, sshd, login). Empty on a user certificate, which has none. |
+| `.MachineID` | `string` | The requesting machine's stable installation id, which survives a rename. Client-reported, so not evidence. |
+| `.OS` | `string` | The platform as the requesting machine describes itself. Client-reported, so not evidence. |
+| `.Client` | `string` | The implementation and version that sent the request, e.g. "ssoossh/1.2.3" or "pam_ssoossh-c/0.3.0". |
+| `.ClientMode` | `string` | The PAM module's configured mode argument (auto, sudo, console). Empty for the client, which has none. |
+| `.CallerUID` | `*int64` | The requesting process's user id, or absent if it reported none. A pointer because uid 0 is a value. |
+| `.CallerGID` | `*int64` | The requesting process's group id, or absent if it reported none. |
+| `.CallerPID` | `*int64` | The requesting process's id, for joining against the machine's own logs. |
+| `.CallerPPID` | `*int64` | The requesting process's parent id. |
+| `.SourceIP` | `string` | The address the request was made from. Observed by the server, unlike everything the client reported. |
 | `.IssuedAt` | `time.Time` | When the certificate becomes valid. |
 | `.ExpiresAt` | `time.Time` | When the certificate stops being valid. |
+| `.ApprovedByUsername` | `string` | The account that approved the request, or empty if no decision record survives. |
+| `.ApprovedByEmail` | `string` | The approver's email address, or empty if none was recorded. |
+| `.ApproverSourceIP` | `string` | The address the approval was made from, observed by the server. On the unhappy path this is the fact that says whose session was used. |
+| `.ApproverUserAgent` | `string` | The browser that approved, as it identified itself. |
+| `.ApprovedAt` | `time.Time` | When the approval happened. Zero if no decision record survives. |
 | `.Extensions` | `[]string` | SSH certificate extensions granted, after narrowing against server config. |
 | `.ForceCommand` | `string` | The force-command critical option, or empty if none was granted. |
 | `.SourceAddresses` | `[]string` | The source-address critical option, or empty if unrestricted. |
+| `.NoTouchRequired` | `bool` | Whether the certificate waives the hardware-key touch, which makes it a weaker credential than one that does not. |
 | `.ServerURL` | `string` | The server's public origin, for links back to the certificate. |
 
 <!-- END GENERATED NOTIFICATION REFERENCE -->
@@ -518,8 +615,28 @@ Files are named `<kind>.<part>.tmpl`, where `<part>` is one of:
 Both bodies are always sent. A text-only reader gets the whole message rather
 than a notice telling them to view it elsewhere.
 
-The field tables above list what each template may reference. In addition,
-these functions are available in every template:
+The field tables above list what each template may reference. Everything in a
+notification's payload appears there -- a test fails when the tables and the
+payload structs disagree in either direction, so a field that exists is a field
+you can render, and one you can render is one that is documented.
+
+Optional fields are the ones to guard. A user certificate has no `.PAMService`,
+a local terminal has no `.RemoteHost`, a Windows client reports no `.CallerUID`,
+and a certificate whose decision record has gone has no `.ApprovedByUsername`.
+Wrap each in an `{{ if }}` rather than assuming it is there:
+
+```
+{{ if .Process }}  Command  {{ .Process }}
+{{ end }}
+```
+
+The `.Caller*` fields are pointers, so `{{ if .CallerUID }}` is false when the
+platform reported none and true when it reported zero -- and `{{ .CallerUID }}`
+prints the number, not an address. Times are `time.Time`, so
+`{{ if not .ApprovedAt.IsZero }}` is how you tell "not recorded" from a real
+timestamp.
+
+In addition, these functions are available in every template:
 
 | Function | Example | Renders |
 | --- | --- | --- |

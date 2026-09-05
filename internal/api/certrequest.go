@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/mnestor/ssoossh/internal/apitypes"
+	"github.com/mnestor/ssoossh/internal/hostinfo"
 )
 
 // PendingRequest is a certificate request ssoosshd has created but nobody
@@ -33,12 +34,30 @@ type PendingRequest struct {
 }
 
 // CreateUserRequest implements Client.
-func (c *HTTPClient) CreateUserRequest(ctx context.Context, publicKey, localUsername, localHostname string, opts RequestedOptions) (*PendingRequest, error) {
+//
+// hc is what this machine reports about itself (internal/hostinfo). It
+// carries LocalUsername and LocalHostname too, so the caller does not read
+// the same two values twice, and the rest of the host context rides with
+// them -- see apitypes.UserRequestBody for the set and what it is for.
+func (c *HTTPClient) CreateUserRequest(ctx context.Context, hc hostinfo.HostContext, publicKey string, trustedCAFingerprints []string, opts RequestedOptions) (*PendingRequest, error) {
 	return c.create(ctx, "/certs/user", apitypes.UserRequestBody{
-		PublicKey:        publicKey,
-		LocalUsername:    localUsername,
-		LocalHostname:    localHostname,
-		RequestedOptions: opts,
+		PublicKey:             publicKey,
+		LocalUsername:         hc.Username,
+		LocalHostname:         hc.Hostname,
+		RequestingUser:        hc.RequestingUser,
+		Process:               hc.Process,
+		TTY:                   hc.TTY,
+		RemoteHost:            hc.RemoteHost,
+		CallerUID:             hc.CallerUID,
+		CallerGID:             hc.CallerGID,
+		CallerPID:             hc.CallerPID,
+		CallerPPID:            hc.CallerPPID,
+		MachineID:             hc.MachineID,
+		OS:                    hc.OS,
+		Client:                hc.Client,
+		ClientTime:            hc.ClientTime,
+		TrustedCAFingerprints: trustedCAFingerprints,
+		RequestedOptions:      opts,
 	})
 }
 

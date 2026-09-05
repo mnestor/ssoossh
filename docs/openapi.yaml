@@ -19,6 +19,8 @@ components:
       type: object
     apitypes.ConsoleRequestBody:
       properties:
+        caller_gid:
+          type: integer
         caller_pid:
           type: integer
         caller_ppid:
@@ -122,6 +124,8 @@ components:
       type: object
     apitypes.PAMRequestBody:
       properties:
+        caller_gid:
+          type: integer
         caller_pid:
           type: integer
         caller_ppid:
@@ -131,6 +135,10 @@ components:
             CallerUID, CallerPID and CallerPPID identify the process on the host,
             for joining with the host's own logs. Pointers so an absent value is
             distinguishable from uid 0 or pid 0.
+            CallerGID is the process's group, added with the Go client and
+            accepted here so one column and one audit key mean the same thing
+            whichever implementation sent the request; the C module does not
+            report it yet.
           type: integer
         client:
           description: |-
@@ -268,14 +276,95 @@ components:
       type: object
     apitypes.UserRequestBody:
       properties:
+        caller_gid:
+          type: integer
+        caller_pid:
+          type: integer
+        caller_ppid:
+          type: integer
+        caller_uid:
+          description: |-
+            CallerUID, CallerGID, CallerPID and CallerPPID identify the client
+            process, for joining with the machine's own logs. Pointers so an
+            absent value is distinguishable from uid 0 or gid 0; the two ids are
+            absent on Windows, which has neither.
+          type: integer
+        client:
+          description: |-
+            Client names the implementation and version ("ssoossh/1.2.3"), which
+            is what tells this client and pam_ssoossh apart in a log.
+          type: string
+        client_time:
+          description: |-
+            ClientTime is the machine's own clock when it built the request, so
+            skew against the server is visible before it breaks a login.
+          type: string
         local_hostname:
           type: string
         local_username:
           type: string
+        machine_id:
+          description: |-
+            MachineID is a stable per-install identifier: /etc/machine-id on
+            Linux, kern.uuid on macOS, kern.hostuuid on FreeBSD, MachineGuid on
+            Windows.
+          type: string
+        os:
+          description: OS is the platform as the machine describes itself.
+          type: string
+        process:
+          description: |-
+            Process is the client's own argv ("ssoossh ssh login --force"),
+            the analogue of the PAM host process's command line. It is what
+            distinguishes an interactive login from a ProxyCommand invocation.
+          type: string
         public_key:
+          type: string
+        remote_host:
+          description: |-
+            RemoteHost is the peer address when the client is itself running
+            inside an SSH session (SSH_CONNECTION), the analogue of PAM_RHOST.
+            Empty at a local terminal.
           type: string
         requested_options:
           $ref: '#/components/schemas/apitypes.RequestedOptions'
+        requesting_user:
+          description: |-
+            The rest of the host context, the same set and the same trust as
+            PAMRequestBody's -- see that type for what each field means and
+            https://mnestor.github.io/ssoossh/internals/host-context/ for how far
+            each one travels. The client reads them off its own process and
+            machine (internal/hostinfo); every value is self-reported by an
+            unauthenticated caller and the approval page renders each as a claim.
+
+            A user request carried only the two identity fields above until this
+            existed, so an approver deciding a `ssh login` saw two strings where
+            an approver deciding a `sudo` saw a dozen. All optional: an older
+            client that sends none of them still works, and a field the platform
+            cannot answer is simply absent.
+
+            PAMService and Mode have no analogue here and are not sent. The
+            endpoint already says this is a user request, and there is no pam.d
+            line to have configured a mode in.
+
+            RequestingUser is SUDO_USER, the analogue of PAM_RUSER: who invoked
+            the client, when that differs from the account it runs as.
+          type: string
+        trusted_ca_fingerprints:
+          description: |-
+            TrustedCAFingerprints is the SHA256 fingerprint of the CA public key
+            this client has *pinned* (the `capubkey` setting), in OpenSSH form.
+            Sent only when it was pinned: a key the client fetched from this same
+            server says nothing the server does not already know, and reporting
+            one as trust would be circular.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        tty:
+          description: TTY is the controlling terminal where the platform can name
+            one.
+          type: string
       required:
       - public_key
       type: object
@@ -986,6 +1075,43 @@ components:
           type: string
         public_key_fingerprint:
           type: string
+        reported_client:
+          type: string
+        reported_hostname:
+          type: string
+        reported_machine_id:
+          type: string
+        reported_pam_service:
+          type: string
+        reported_process:
+          type: string
+        reported_remote_host:
+          type: string
+        reported_requesting_user:
+          type: string
+        reported_tty:
+          type: string
+        reported_username:
+          description: |-
+            What asked for this certificate, as the requester reported it, taken
+            from the decision record's snapshot rather than from the request --
+            see model.CertificateRequestDecision. Without these the history could
+            say who approved a certificate and what it granted but not which
+            machine or command it was for, which is the question an incident
+            review actually starts from.
+
+            Every one is self-reported by an unauthenticated caller and must be
+            rendered as a claim, exactly as the approval page renders it (see
+            RequestDetailResponse). The one field here the server established
+            itself is DecidedSourceIP above, and that is the approver's, not the
+            requester's.
+
+            ReportedUsername and ReportedHostname are the "user@host" that asked:
+            the PAM account and machine for a pam or console certificate, the
+            local client's for a user one. The rest are PAM and console only, and
+            empty on a user certificate, which has no service or terminal to
+            report. All are populated by the detail endpoint alone.
+          type: string
         retrieved_at:
           description: |-
             RetrievedAt is when that redemption happened. Distinct from IssuedAt
@@ -1309,6 +1435,8 @@ components:
           type: boolean
         approval_url:
           type: string
+        caller_gid:
+          type: integer
         caller_pid:
           type: integer
         caller_ppid:

@@ -207,24 +207,33 @@
 	// requests share exactly the same block: both are local-auth requests a
 	// human is approving on trust in the reporting host.
 	const claimedContext = $derived.by((): ClaimedContextRow[] => {
-		if (!isLocalAuth) {
+		if (!isLocalAuth && !isUserRequest) {
 			return [];
 		}
+		// A user request reports the same things through the columns its own
+		// type uses: the account and machine are local_username and
+		// local_hostname rather than the PAM pair, and there is no PAM
+		// service or target account to name. Everything else -- the command,
+		// the terminal, the platform, the process ids -- is the same field
+		// with the same meaning, so it is the same row.
+		const account = detail.target_account || detail.local_username;
+		const host = detail.hostname || detail.local_hostname;
 		const rows: ClaimedContextRow[] = [];
-		if (detail.target_account) {
-			rows.push({ key: 'account', label: 'Account', value: detail.target_account });
+		if (account) {
+			rows.push({ key: 'account', label: 'Account', value: account });
 		}
 		// Omitted when it just repeats the account: PAM_RUSER equal to the
 		// target account is the ordinary case (someone sudo-ing to
-		// themselves) and adds nothing a second row would explain.
-		if (detail.requesting_user && detail.requesting_user !== detail.target_account) {
+		// themselves) and adds nothing a second row would explain. The
+		// client applies the same rule to SUDO_USER before sending it.
+		if (detail.requesting_user && detail.requesting_user !== account) {
 			rows.push({ key: 'invoked-by', label: 'Invoked by', value: detail.requesting_user });
 		}
 		if (detail.process) {
 			rows.push({ key: 'command', label: 'Command', value: detail.process, mono: true });
 		}
-		if (detail.hostname) {
-			rows.push({ key: 'host', label: 'Host', value: detail.hostname, sub: detail.machine_id });
+		if (host) {
+			rows.push({ key: 'host', label: 'Host', value: host, sub: detail.machine_id });
 		}
 		if (detail.pam_service) {
 			rows.push({ key: 'service', label: 'Service', value: detail.pam_service });
@@ -250,6 +259,9 @@
 		const processIds: string[] = [];
 		if (detail.caller_uid !== undefined) {
 			processIds.push(`uid ${detail.caller_uid}`);
+		}
+		if (detail.caller_gid !== undefined) {
+			processIds.push(`gid ${detail.caller_gid}`);
 		}
 		if (detail.caller_pid !== undefined) {
 			processIds.push(`pid ${detail.caller_pid}`);
@@ -404,7 +416,10 @@
 			<DetailRow label="Requested from">
 				<MonoChip>{detail.source_ip}</MonoChip>
 			</DetailRow>
-			{#if detail.local_username || detail.local_hostname}
+			<!-- Suppressed once the claimed-context block is showing: that
+			     block names the same account and machine as its own rows, and
+			     carries a Client row of its own for the reporting binary. -->
+			{#if (detail.local_username || detail.local_hostname) && claimedContext.length === 0}
 				<DetailRow label="Client" mono>
 					{detail.local_username}{detail.local_username && detail.local_hostname
 						? '@'

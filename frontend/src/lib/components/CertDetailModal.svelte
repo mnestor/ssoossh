@@ -73,6 +73,39 @@
 	const decidedBy = $derived(
 		cert.decided_by_email || cert.decided_by_username || cert.decided_by_subject
 	);
+
+	// "user@host", as the requester reported it: the PAM account and machine
+	// for a pam or console certificate, the local client's for a user one.
+	// The server resolves which pair that is (ReportedIdentity), so this
+	// only has to join them — and only when both are there, since
+	// "alice@" reads as a truncated address rather than as a missing
+	// hostname.
+	const askedBy = $derived(
+		cert.reported_username && cert.reported_hostname
+			? `${cert.reported_username}@${cert.reported_hostname}`
+			: cert.reported_username || cert.reported_hostname || ''
+	);
+
+	// The rest of the host context, as label/value pairs so the block can be
+	// rendered by one loop and be absent entirely when nothing was reported.
+	// Every value is self-reported by an unauthenticated caller, which is
+	// what the note under the block says and why none of it is styled as a
+	// server-established fact.
+	const reportedRows = $derived(
+		(
+			[
+				['Service', cert.reported_pam_service],
+				['Terminal', cert.reported_tty],
+				['Remote host', cert.reported_remote_host],
+				['Invoked by', cert.reported_requesting_user],
+				['Command', cert.reported_process],
+				['Machine ID', cert.reported_machine_id],
+				['Client', cert.reported_client]
+			] as [string, string | undefined][]
+		).filter((row): row is [string, string] => Boolean(row[1]))
+	);
+
+	const hasReportedContext = $derived(Boolean(askedBy) || reportedRows.length > 0);
 </script>
 
 <dialog
@@ -156,6 +189,39 @@
 				<DetailRow label="Key ID" mono>{cert.key_id}</DetailRow>
 			</dl>
 		</div>
+
+		{#if hasReportedContext}
+			<!-- What asked for the certificate, as opposed to who approved
+			     it. The approval page showed all of this to the approver;
+			     without it here the history can say who signed off and what
+			     was granted but not which machine or command it was for,
+			     which is where an incident review starts.
+
+			     Read from the decision's own snapshot, not from the request,
+			     so it survives the request row being pruned — see
+			     model.CertificateRequestDecision.
+
+			     Rendered as claims throughout. Every field is self-reported
+			     by an unauthenticated caller and none of it fed any
+			     decision: principals came from the approver's held accounts
+			     and the lifetime from policy. The one address the server
+			     established itself is in the banner above, and that is the
+			     approver's. -->
+			<div data-testid="cert-reported-context">
+				<SectionLabel>What asked for it</SectionLabel>
+				<dl class="divide-y divide-border-subtle">
+					{#if askedBy}
+						<DetailRow label="Reported as" mono>{askedBy}</DetailRow>
+					{/if}
+					{#each reportedRows as [label, value] (label)}
+						<DetailRow {label} mono>{value}</DetailRow>
+					{/each}
+				</dl>
+				<p class="mt-2 text-xs text-ink-muted">
+					Reported by the requesting host and never verified. Nothing here granted anything.
+				</p>
+			</div>
+		{/if}
 
 		{#if cert.retrieved_source_ip}
 			<!-- Only a service certificate has one. The address here is the

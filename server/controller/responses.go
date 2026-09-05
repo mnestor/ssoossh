@@ -155,6 +155,7 @@ func newRequestDetailResponse(d *service.RequestDetail) webtypes.RequestDetailRe
 		RequestingUser:        d.Request.RequestingUser,
 		Process:               d.Request.Process,
 		CallerUID:             d.Request.CallerUID,
+		CallerGID:             d.Request.CallerGID,
 		CallerPID:             d.Request.CallerPID,
 		CallerPPID:            d.Request.CallerPPID,
 		MachineID:             d.Request.MachineID,
@@ -398,8 +399,36 @@ func newCertificateResponseFromWithDecision(cd service.CertificateWithDecision) 
 	}
 
 	setIssuedOptionsOnCertificate(&resp, cd.Certificate)
+	if cd.Decision != nil {
+		setReportedContextOnCertificate(&resp, cd.Decision)
+	}
 
 	return resp
+}
+
+// setReportedContextOnCertificate copies the decision's host-context
+// snapshot onto the wire shape: what the requester said it was, on the
+// certificate that came out of it.
+//
+// Only the detail endpoint calls it, the same split
+// setIssuedOptionsOnCertificate makes -- this is a question asked of one
+// certificate, and nine strings per row is payload a history page never
+// displays.
+//
+// Empty fields are simply empty. A decision predating the snapshot whose
+// request had already been pruned has nothing to report, and a user
+// certificate has no PAM service or terminal, so both cases end up with
+// omitted keys rather than a distinction the UI would have to explain.
+func setReportedContextOnCertificate(resp *webtypes.CertificateResponse, decision *model.CertificateRequestDecision) {
+	resp.ReportedUsername = decision.ReportedUsername
+	resp.ReportedHostname = decision.ReportedHostname
+	resp.ReportedService = decision.PAMService
+	resp.ReportedTTY = decision.TTY
+	resp.ReportedRemoteHost = decision.RemoteHost
+	resp.ReportedRequestingUser = decision.RequestingUser
+	resp.ReportedProcess = decision.Process
+	resp.ReportedMachineID = decision.MachineID
+	resp.ReportedClient = decision.Client
 }
 
 // setIssuedOptionsOnCertificate decodes the certificate audit row's two JSON

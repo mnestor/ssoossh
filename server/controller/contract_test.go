@@ -21,6 +21,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/mnestor/ssoossh/internal/api"
+	"github.com/mnestor/ssoossh/internal/hostinfo"
 	"github.com/mnestor/ssoossh/server/controller"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
@@ -132,7 +133,7 @@ func TestContract_RequestUserCertificate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	pending, err := client.CreateUserRequest(ctx, "ssh-ed25519 AAAA test", "alice", "alice-laptop", api.RequestedOptions{
+	pending, err := client.CreateUserRequest(ctx, hostinfo.HostContext{Username: "alice", Hostname: "alice-laptop"}, "ssh-ed25519 AAAA test", nil, api.RequestedOptions{
 		Extensions: []string{"permit-pty"},
 	})
 	if err != nil {

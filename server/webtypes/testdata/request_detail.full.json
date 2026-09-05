@@ -13,6 +13,7 @@
   "requesting_user": "alice",
   "process": "sudo -i",
   "caller_uid": 1000,
+  "caller_gid": 1000,
   "caller_pid": 4242,
   "caller_ppid": 4200,
   "machine_id": "3f2c1e0d9b8a7f6e5d4c3b2a19080706",

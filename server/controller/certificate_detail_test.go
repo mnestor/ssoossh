@@ -457,3 +457,152 @@ func TestCertificateDetailHandler_ShouldWriteTheSerialAsAnExactString(t *testing
 		t.Errorf("serial_number = %q, want %q", resp.Data.SerialNumber, want)
 	}
 }
+
+// The decision's host-context snapshot: what asked for the certificate, as
+// opposed to who approved it. Read off the decision rather than the request
+// (see model.CertificateRequestDecision), and the detail endpoint is the
+// only one that carries it -- a history page would be paying for nine
+// strings a row it never displays.
+func TestCertificateDetailHandler_ShouldRenderWhatAskedForTheCertificate(t *testing.T) {
+	t.Parallel()
+
+	svc := &detailCertService{
+		result: service.CertificateWithDecision{
+			Certificate: model.Certificate{ID: "cert-asked", Type: model.CertificateTypePAM},
+			Decision: &model.CertificateRequestDecision{
+				ID:                   "decision-asked",
+				CertificateRequestID: "req-asked",
+				Outcome:              model.CertificateRequestDecisionApproved,
+				Username:             "mike.nestor",
+				DecidedAt:            time.Now(),
+				ReportedUsername:     "root",
+				ReportedHostname:     "web01",
+				PAMService:           "sudo",
+				TTY:                  "pts/3",
+				RemoteHost:           "203.0.113.9",
+				RequestingUser:       "alice",
+				Process:              "sudo systemctl restart nginx",
+				MachineID:            "3f2c1e0d9b8a7f6e",
+				Client:               "pam_ssoossh-c/0.3.0",
+			},
+		},
+	}
+
+	r := certDetailRouter(t, svc, &service.Identity{Subject: "sub-alice"})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/cert-asked", nil))
+
+	var resp struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	for field, want := range map[string]string{
+		"reported_username":        "root",
+		"reported_hostname":        "web01",
+		"reported_pam_service":     "sudo",
+		"reported_tty":             "pts/3",
+		"reported_remote_host":     "203.0.113.9",
+		"reported_requesting_user": "alice",
+		"reported_process":         "sudo systemctl restart nginx",
+		"reported_machine_id":      "3f2c1e0d9b8a7f6e",
+		"reported_client":          "pam_ssoossh-c/0.3.0",
+	} {
+		if resp.Data[field] != want {
+			t.Errorf("%s = %v, want %q", field, resp.Data[field], want)
+		}
+	}
+
+	// The approver's username and the requester's are different columns and
+	// must not be conflated on the way out.
+	if resp.Data["decided_by_username"] != "mike.nestor" {
+		t.Errorf("decided_by_username = %v, want the approver mike.nestor", resp.Data["decided_by_username"])
+	}
+}
+
+// A user certificate reports the local client, which the server resolved
+// into the same pair when the decision was written. The PAM-only fields
+// have nothing to say and drop out rather than shipping as empty strings.
+func TestCertificateDetailHandler_ShouldRenderTheLocalClientOfAUserCertificate(t *testing.T) {
+	t.Parallel()
+
+	svc := &detailCertService{
+		result: service.CertificateWithDecision{
+			Certificate: model.Certificate{ID: "cert-user-asked", Type: model.CertificateTypeUser},
+			Decision: &model.CertificateRequestDecision{
+				ID:                   "decision-user",
+				CertificateRequestID: "req-user",
+				Outcome:              model.CertificateRequestDecisionApproved,
+				DecidedAt:            time.Now(),
+				ReportedUsername:     "alice",
+				ReportedHostname:     "alice-laptop",
+			},
+		},
+	}
+
+	r := certDetailRouter(t, svc, &service.Identity{Subject: "sub-alice"})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/cert-user-asked", nil))
+
+	var resp struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if resp.Data["reported_username"] != "alice" || resp.Data["reported_hostname"] != "alice-laptop" {
+		t.Errorf("reported identity = %v@%v, want alice@alice-laptop",
+			resp.Data["reported_username"], resp.Data["reported_hostname"])
+	}
+	for _, field := range []string{"reported_pam_service", "reported_tty", "reported_process"} {
+		if v, present := resp.Data[field]; present {
+			t.Errorf("%s = %v, want absent on a user certificate", field, v)
+		}
+	}
+}
+
+// A decision written before the snapshot existed, whose request had already
+// gone, has nothing to report. Every key drops out rather than the response
+// carrying nine empty strings the UI would then have to explain.
+func TestCertificateDetailHandler_ShouldOmitAnEmptyHostContextSnapshot(t *testing.T) {
+	t.Parallel()
+
+	svc := &detailCertService{
+		result: service.CertificateWithDecision{
+			Certificate: model.Certificate{ID: "cert-no-context", Type: model.CertificateTypeUser},
+			Decision: &model.CertificateRequestDecision{
+				ID:                   "decision-old",
+				CertificateRequestID: "req-old",
+				Outcome:              model.CertificateRequestDecisionApproved,
+				DecidedAt:            time.Now(),
+			},
+		},
+	}
+
+	r := certDetailRouter(t, svc, &service.Identity{Subject: "sub-alice"})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/cert-no-context", nil))
+
+	var resp struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	for _, field := range []string{
+		"reported_username", "reported_hostname", "reported_pam_service", "reported_tty",
+		"reported_remote_host", "reported_requesting_user", "reported_process",
+		"reported_machine_id", "reported_client",
+	} {
+		if v, present := resp.Data[field]; present {
+			t.Errorf("%s = %v, want absent when nothing was snapshotted", field, v)
+		}
+	}
+}

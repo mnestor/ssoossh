@@ -11,6 +11,7 @@ import (
 	"github.com/mnestor/ssoossh/client/config"
 	"github.com/mnestor/ssoossh/internal/api"
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/agent"
+	"github.com/mnestor/ssoossh/internal/hostinfo"
 )
 
 // noMappingFile stands in for the --file accessor the host commands are
@@ -209,7 +210,7 @@ func TestOfflineAPIClientRefusesEveryCall(t *testing.T) {
 	}{
 		{name: "should refuse GetCA", call: func() error { _, err := c.GetCA(ctx); return err }},
 		{name: "should refuse CreateUserRequest", call: func() error {
-			_, err := c.CreateUserRequest(ctx, "key", "user", "host", api.RequestedOptions{})
+			_, err := c.CreateUserRequest(ctx, hostinfo.HostContext{}, "key", nil, api.RequestedOptions{})
 			return err
 		}},
 		{name: "should refuse CreateServiceEnrollment", call: func() error {

@@ -251,14 +251,26 @@ describe('ApprovalView', () => {
 	});
 
 	describe('when the request carries user-type client identity', () => {
+		// A local account deliberately unlike the principals the default
+		// fixture carries, so an assertion on it matches the claimed-context
+		// row rather than a principal chip.
 		const withClient = detail({
-			local_username: 'alice',
+			local_username: 'alice.local',
 			local_hostname: 'alices-laptop'
 		});
 
-		it('should show the local user and hostname the client reported', () => {
+		// The account and the machine are rows of the claimed-context block
+		// now that a user request reports the rest of the context too, and
+		// the combined "alice@alices-laptop" row is suppressed rather than
+		// repeating both halves a second time.
+		it('should show the local user as the account', () => {
 			mount({ detail: withClient });
-			expect(screen.getByText('alice@alices-laptop')).toBeInTheDocument();
+			expect(screen.getByText('alice.local')).toBeInTheDocument();
+		});
+
+		it('should show the local hostname as the host', () => {
+			mount({ detail: withClient });
+			expect(screen.getByText('alices-laptop')).toBeInTheDocument();
 		});
 	});
 
@@ -793,25 +805,47 @@ describe('ApprovalView', () => {
 			expect(screen.getByText('sudo -i')).toBeInTheDocument();
 		});
 
-		it('should render none of the block for a user request', () => {
+		// A user request reports the same context now that the client
+		// collects it (internal/hostinfo), so the block renders for one
+		// too -- sourcing the account and host from local_username and
+		// local_hostname, which is the pair ReportedIdentity returns for
+		// this type.
+		it('should render the block for a user request', () => {
 			mount({
 				detail: detail({
 					type: 'user',
-					target_account: 'root',
-					requesting_user: 'alice',
-					process: 'sudo -i',
-					hostname: 'web01',
-					pam_service: 'sudo',
-					tty: 'pts/3',
-					os: 'Debian GNU/Linux 13 (trixie)',
-					client_time: '2026-08-14T09:00:00Z'
+					local_username: 'alice.local',
+					local_hostname: 'alices-laptop',
+					requesting_user: 'bob',
+					process: 'ssoossh ssh login',
+					tty: '/dev/pts/3',
+					os: 'macOS 26.5.2 Darwin 25.5.0',
+					client: 'ssoossh/1.2.3'
 				})
 			});
-			expect(screen.queryByText('Account')).not.toBeInTheDocument();
-			expect(screen.queryByText('Invoked by')).not.toBeInTheDocument();
-			expect(screen.queryByText('Command')).not.toBeInTheDocument();
-			expect(screen.queryByText('Platform')).not.toBeInTheDocument();
-			expect(screen.queryByText('Host clock')).not.toBeInTheDocument();
+			expect(screen.getByText('Account')).toBeInTheDocument();
+			expect(screen.getByText('alice.local')).toBeInTheDocument();
+			expect(screen.getByText('Invoked by')).toBeInTheDocument();
+			expect(screen.getByText('ssoossh ssh login')).toBeInTheDocument();
+			expect(screen.getByText('macOS 26.5.2 Darwin 25.5.0')).toBeInTheDocument();
+		});
+
+		// PAM-only fields stay out of a user request's block: the server
+		// never fills them for this type, so there is nothing to show.
+		it('should omit the PAM-only rows for a user request', () => {
+			mount({
+				detail: detail({
+					type: 'user',
+					local_username: 'alice.local',
+					local_hostname: 'alices-laptop'
+				})
+			});
+			expect(screen.queryByText('Service')).not.toBeInTheDocument();
+		});
+
+		it('should show the group id alongside the other process ids', () => {
+			mount({ detail: localAuthDetail({ caller_uid: 1000, caller_gid: 20, caller_pid: 4242 }) });
+			expect(screen.getByText(/gid 20/)).toBeInTheDocument();
 		});
 
 		it('should omit "Invoked by" when the reported user is the same as the account', () => {

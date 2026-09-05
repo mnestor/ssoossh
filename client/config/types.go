@@ -3,9 +3,22 @@ package config
 import "github.com/mnestor/ssoossh/internal/fipsmode"
 
 type Config struct {
-	Server        string `mapstructure:"server"`
-	CAPubkey      string `mapstructure:"capubkey"`
-	SkipVerifySSL bool   `mapstructure:"insecure_skip_verify"`
+	Server   string `mapstructure:"server"`
+	CAPubkey string `mapstructure:"capubkey"`
+
+	// CAPubkeyPinned records that CAPubkey came from configuration rather
+	// than from the server. The runner overwrites CAPubkey with a fetched
+	// key when none is configured (client/cmd/cmd.go), so by the time a
+	// request is built the field alone no longer says which it was.
+	//
+	// It matters because only a pinned key is worth reporting as
+	// trusted_ca_fingerprints: telling the server the fingerprint of the
+	// key it just handed us is circular, where telling it about a key an
+	// operator pinned lets the approval page warn before this client
+	// refuses what is about to be signed.
+	CAPubkeyPinned bool `mapstructure:"-"`
+
+	SkipVerifySSL bool `mapstructure:"insecure_skip_verify"`
 
 	SSHKey SSHKeyOptions `mapstructure:"sshkey"`
 

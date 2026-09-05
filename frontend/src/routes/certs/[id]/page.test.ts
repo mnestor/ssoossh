@@ -144,6 +144,134 @@ describe('Certificate detail page', () => {
 		});
 	});
 
+	describe('when the certificate authenticates a local operation', () => {
+		// A pam or console certificate is verified by pam_ssoossh and thrown
+		// away; it never reaches an sshd that would act on an extension or a
+		// critical option, so the grants card would read "None / None"
+		// forever. See config.CertOptionsPAM.Extensions.
+		const local: CertificateResponse = {
+			id: 'cert-pam',
+			type: 'pam',
+			serial_number: '42',
+			key_id: 'root@web01',
+			principals: 'mnestor',
+			public_key_fingerprint: 'SHA256:abcd1234',
+			issued_at: new Date('2024-08-24T10:00:00Z').toISOString(),
+			expires_at: new Date('2024-08-24T10:00:30Z').toISOString()
+		};
+
+		it('should hide the grants card when the certificate is a PAM one', async () => {
+			mockFetch(local);
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(screen.queryByTestId('cert-grants')).not.toBeInTheDocument();
+		});
+
+		it('should hide the grants card when the certificate is a console one', async () => {
+			mockFetch({ ...local, type: 'console' });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(screen.queryByTestId('cert-grants')).not.toBeInTheDocument();
+		});
+
+		// PAM extensions default to empty but are configurable, and an audit
+		// page must never hide something that really was signed in.
+		it('should still show the grants card when a PAM certificate carries an extension', async () => {
+			mockFetch({ ...local, extensions: ['permit-pty'] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(within(screen.getByTestId('cert-grants')).getByText('permit-pty')).toBeInTheDocument();
+		});
+
+		it('should still show the grants card when a PAM certificate carries a critical option', async () => {
+			mockFetch({ ...local, critical_options: { 'force-command': '/usr/bin/id' } });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(screen.getByTestId('cert-grants')).toBeInTheDocument();
+		});
+
+		it('should keep the grants card on a user certificate that grants nothing', async () => {
+			mockFetch({ ...local, type: 'user' });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(screen.getByTestId('cert-grants')).toBeInTheDocument();
+		});
+	});
+
+	describe('when the decision snapshotted what asked for the certificate', () => {
+		const asked: CertificateResponse = {
+			id: 'cert-pam',
+			type: 'pam',
+			serial_number: '42',
+			key_id: 'root@web01',
+			principals: 'mnestor',
+			public_key_fingerprint: 'SHA256:abcd1234',
+			issued_at: new Date('2024-08-24T10:00:00Z').toISOString(),
+			expires_at: new Date('2024-08-24T10:00:30Z').toISOString(),
+			reported_username: 'root',
+			reported_hostname: 'web01',
+			reported_pam_service: 'sudo',
+			reported_tty: 'pts/3',
+			reported_requesting_user: 'alice',
+			reported_process: 'sudo systemctl restart nginx',
+			reported_machine_id: '3f2c1e0d9b8a7f6e',
+			reported_client: 'pam_ssoossh-c/0.3.0'
+		};
+
+		it('should join the reported account and host into user@host', async () => {
+			mockFetch(asked);
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const context = screen.getByTestId('cert-reported-context');
+			expect(within(context).getByText('root@web01')).toBeInTheDocument();
+		});
+
+		it('should show the command that asked', async () => {
+			mockFetch(asked);
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const context = screen.getByTestId('cert-reported-context');
+			expect(within(context).getByText('sudo systemctl restart nginx')).toBeInTheDocument();
+		});
+
+		// The user-certificate case: local_username/local_hostname on the
+		// request, which the server resolves into the same reported pair.
+		it('should show the local client of a user certificate', async () => {
+			mockFetch({
+				id: 'cert-user',
+				type: 'user',
+				serial_number: '42',
+				key_id: 'alice',
+				principals: 'alice',
+				public_key_fingerprint: 'SHA256:abcd1234',
+				issued_at: new Date('2024-08-24T10:00:00Z').toISOString(),
+				expires_at: new Date('2024-08-24T18:00:00Z').toISOString(),
+				reported_username: 'alice',
+				reported_hostname: 'alice-laptop'
+			});
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const context = screen.getByTestId('cert-reported-context');
+			expect(within(context).getByText('alice@alice-laptop')).toBeInTheDocument();
+		});
+
+		it('should omit the section when nothing was reported', async () => {
+			mockFetch({
+				id: 'cert-bare',
+				type: 'user',
+				serial_number: '42',
+				key_id: 'alice',
+				principals: 'alice',
+				public_key_fingerprint: 'SHA256:abcd1234',
+				issued_at: new Date('2024-08-24T10:00:00Z').toISOString(),
+				expires_at: new Date('2024-08-24T18:00:00Z').toISOString()
+			});
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(screen.queryByTestId('cert-reported-context')).not.toBeInTheDocument();
+		});
+	});
+
 	describe('when the certificate carries a decision record', () => {
 		const decided: CertificateResponse = {
 			id: 'cert-123',
@@ -254,6 +382,32 @@ describe('Certificate detail page', () => {
 			await new Promise((resolve) => setTimeout(resolve, 0));
 			const section = screen.getByTestId('cert-decision');
 			expect(within(section).getByText(/force-command.*\/usr\/bin\/backup/)).toBeInTheDocument();
+		});
+
+		// Same reason the grants card is hidden for these types: an empty
+		// options row is a row that teaches a reader to skip the section.
+		it('should hide the empty options row when the certificate is a PAM one', async () => {
+			mockFetch({
+				...decidedWithGrant,
+				type: 'pam',
+				decided_granted_options: { extensions: [], no_touch_required: false }
+			});
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const section = screen.getByTestId('cert-decision');
+			expect(within(section).queryByText('Options granted')).not.toBeInTheDocument();
+		});
+
+		it('should still show the options row when a PAM decision granted something', async () => {
+			mockFetch({
+				...decidedWithGrant,
+				type: 'pam',
+				decided_granted_options: { extensions: ['permit-pty'], no_touch_required: false }
+			});
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const section = screen.getByTestId('cert-decision');
+			expect(within(section).getByText('Options granted')).toBeInTheDocument();
 		});
 
 		it('should say none when the decision granted no options at all', async () => {
