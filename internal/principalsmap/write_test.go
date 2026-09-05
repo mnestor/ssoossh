@@ -1,6 +1,7 @@
 package principalsmap
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -8,6 +9,10 @@ import (
 	"strings"
 	"testing"
 )
+
+// errBoom is the cause the fake handle reports, so a test can assert the
+// error that came back still unwraps to it.
+var errBoom = errors.New("boom")
 
 // TestFormat should render each accepted shape in the subset parse reads.
 func TestFormat(t *testing.T) {
@@ -319,4 +324,152 @@ func equalMaps(a, b PrincipalsMap) bool {
 		}
 	}
 	return true
+}
+
+// failingFile is a mappingFile whose steps fail on demand. It stands in for
+// the handles a working filesystem will not hand out: a write that runs out
+// of space, a truncate or sync the kernel refuses after a good write, a
+// close that reports a deferred error.
+type failingFile struct {
+	writeErr    error
+	truncateErr error
+	syncErr     error
+	closeErr    error
+
+	written    []byte
+	truncateTo int64
+	closes     int
+}
+
+func (f *failingFile) Write(p []byte) (int, error) {
+	if f.writeErr != nil {
+		return 0, f.writeErr
+	}
+	f.written = append(f.written, p...)
+	return len(p), nil
+}
+
+func (f *failingFile) Truncate(size int64) error {
+	f.truncateTo = size
+	return f.truncateErr
+}
+
+func (f *failingFile) Sync() error { return f.syncErr }
+
+func (f *failingFile) Close() error {
+	f.closes++
+	return f.closeErr
+}
+
+// TestOverwriteReportsWhichStepFailed should name the failing step and keep
+// the underlying error unwrappable, so a caller can tell a full disk from a
+// handle that refuses to be truncated.
+func TestOverwriteReportsWhichStepFailed(t *testing.T) {
+	tests := []struct {
+		name string
+		file *failingFile
+		want string
+	}{
+		{
+			name: "a failed write",
+			file: &failingFile{writeErr: errBoom},
+			want: "boom",
+		},
+		{
+			name: "a failed truncate",
+			file: &failingFile{truncateErr: errBoom},
+			want: "truncate: boom",
+		},
+		{
+			name: "a failed sync",
+			file: &failingFile{syncErr: errBoom},
+			want: "sync: boom",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := overwrite(tc.file, []byte("alice:\n"))
+			if err == nil {
+				t.Fatal("overwrite() error = nil, want an error")
+			}
+			if !errors.Is(err, errBoom) {
+				t.Errorf("overwrite() error = %v, want it to wrap the cause", err)
+			}
+			if err.Error() != tc.want {
+				t.Errorf("overwrite() error = %q, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestOverwriteTruncatesToWhatItWrote should cut the file to the length of
+// the new content, which is what drops the tail of a longer previous write.
+func TestOverwriteTruncatesToWhatItWrote(t *testing.T) {
+	f := &failingFile{}
+	data := []byte("alice:\n  - alice\n")
+
+	if err := overwrite(f, data); err != nil {
+		t.Fatalf("overwrite() error = %v", err)
+	}
+
+	if f.truncateTo != int64(len(data)) {
+		t.Errorf("truncated to %d, want %d", f.truncateTo, len(data))
+	}
+}
+
+// TestWriteAndCloseReportsAFailedWrite should name the path and the cause,
+// rather than reporting success for content that never landed.
+func TestWriteAndCloseReportsAFailedWrite(t *testing.T) {
+	f := &failingFile{writeErr: errBoom}
+
+	err := writeAndClose("/etc/principals.yaml", f, []byte("alice:\n"))
+
+	if err == nil {
+		t.Fatal("writeAndClose() error = nil, want an error")
+	}
+	if err.Error() != "write /etc/principals.yaml: boom" {
+		t.Errorf("writeAndClose() error = %q, want it to name the path and the cause", err)
+	}
+}
+
+// TestWriteAndCloseClosesAFileItCouldNotWrite should not leak the handle when
+// the write fails, since the caller has no reference left to close.
+func TestWriteAndCloseClosesAFileItCouldNotWrite(t *testing.T) {
+	f := &failingFile{writeErr: errBoom}
+
+	_ = writeAndClose("principals.yaml", f, []byte("alice:\n"))
+
+	if f.closes != 1 {
+		t.Errorf("closed %d times, want exactly 1", f.closes)
+	}
+}
+
+// TestWriteAndCloseReportsAFailedClose should surface a close failure. The
+// content is only durable once the handle closes cleanly, so a close that
+// reports an error is a write that did not happen.
+func TestWriteAndCloseReportsAFailedClose(t *testing.T) {
+	f := &failingFile{closeErr: errBoom}
+
+	err := writeAndClose("/etc/principals.yaml", f, []byte("alice:\n"))
+
+	if err == nil {
+		t.Fatal("writeAndClose() error = nil, want an error")
+	}
+	if err.Error() != "close /etc/principals.yaml: boom" {
+		t.Errorf("writeAndClose() error = %q, want it to name the path and the cause", err)
+	}
+}
+
+// TestWriteAndCloseClosesOnceOnSuccess should close the handle exactly once
+// when everything works, so the descriptor is neither leaked nor double-closed.
+func TestWriteAndCloseClosesOnceOnSuccess(t *testing.T) {
+	f := &failingFile{}
+
+	if err := writeAndClose("principals.yaml", f, []byte("alice:\n")); err != nil {
+		t.Fatalf("writeAndClose() error = %v", err)
+	}
+
+	if f.closes != 1 {
+		t.Errorf("closed %d times, want exactly 1", f.closes)
+	}
 }

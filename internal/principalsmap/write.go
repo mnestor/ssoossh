@@ -3,6 +3,7 @@ package principalsmap
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -80,7 +81,27 @@ func WriteFile(path string, m PrincipalsMap) error {
 	if err != nil {
 		return fmt.Errorf("open principals map for writing: %w", err)
 	}
+	return writeAndClose(path, f, data)
+}
 
+// mappingFile is the part of *os.File that writing the mapping uses. The
+// steps below report a failed write, truncate, sync, or close, and none of
+// those can be provoked from a real file on a working filesystem -- a
+// regular file's close does not fail, and every handle whose sync fails is
+// refused at the truncate first. Naming the narrow set here lets a test supply a
+// handle that fails on demand, so each of those reports is exercised rather
+// than taken on faith.
+type mappingFile interface {
+	io.Writer
+	io.Closer
+	Truncate(size int64) error
+	Sync() error
+}
+
+// writeAndClose puts data down over f and closes it, naming path in whatever
+// fails. It owns f from here: every path through it closes the file exactly
+// once.
+func writeAndClose(path string, f mappingFile, data []byte) error {
 	if err := overwrite(f, data); err != nil {
 		f.Close() // the write error is the one worth reporting.
 		return fmt.Errorf("write %s: %w", path, err)
@@ -95,7 +116,7 @@ func WriteFile(path string, m PrincipalsMap) error {
 // contents left beyond it, then flushes. Split out so WriteFile's error
 // paths stay one deep, and so the truncate is impossible to reorder ahead
 // of the write by accident.
-func overwrite(f *os.File, data []byte) error {
+func overwrite(f mappingFile, data []byte) error {
 	n, err := f.Write(data)
 	if err != nil {
 		return err

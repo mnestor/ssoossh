@@ -16,5 +16,8 @@
     "astro-mermaid": "^2.1.0",
     "mermaid": "^11.17.2",
     "starlight-openapi": "^0.26.2"
+  },
+  "overrides": {
+    "form-data": "^4.0.6"
   }
 }
