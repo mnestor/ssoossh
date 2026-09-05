@@ -26,8 +26,9 @@ type ServiceEnrollRequestBody struct {
 // PAMRequestBody is the POST /api/certs/pam request body. Username is the
 // local account the PAM module is authenticating (e.g. who is running
 // `sudo`); it reaches the approval page and the audit record and stops
-// there. The certificate's principals are the approver's own accounts, and
-// the host's principals-map decides whether they authorize that account.
+// there. The certificate's principals are accounts the approver holds and
+// selects; the module on the host matches them against that account,
+// directly or through its principals-map.
 type PAMRequestBody struct {
 	PublicKey string `json:"public_key" binding:"required"`
 	Username  string `json:"username" binding:"required"`

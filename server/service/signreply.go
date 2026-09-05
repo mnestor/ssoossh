@@ -168,6 +168,22 @@ type certificateOrigin struct {
 	LocalHostname string
 }
 
+// reportedContext returns the client-reported account and machine behind a
+// request, from whichever columns its type stores them in. A user request
+// records the OS user and host the client ran on in local_username and
+// local_hostname; a PAM or console request records the account being
+// authenticated and the machine it is on in username and hostname (see
+// model.CertificateRequest). The notification wants the same thing from
+// each — the name the person who was there will recognize.
+func reportedContext(req model.CertificateRequest) (username, hostname string) {
+	switch req.Type {
+	case model.CertificateTypePAM, model.CertificateTypeConsole:
+		return req.Username, req.Hostname
+	default:
+		return req.LocalUsername, req.LocalHostname
+	}
+}
+
 // recordCertificate writes the audit row for an issued certificate and
 // returns what the request row said about its origin, which the issued
 // notification needs and would otherwise re-read.
@@ -210,9 +226,11 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 		var req model.CertificateRequest
 		// The client-reported columns come back with the owner rather than
 		// in a second read: the issued notification needs them, and this is
-		// the one place the request row is already being loaded.
+		// the one place the request row is already being loaded. Which
+		// columns hold them depends on the type (see reportedContext), so
+		// both pairs are read.
 		switch err := h.db.WithContext(ctx).
-			Select("user_id", "source_ip", "local_username", "local_hostname").
+			Select("type", "user_id", "source_ip", "local_username", "local_hostname", "username", "hostname").
 			First(&req, "id = ?", reply.RequestID).Error; {
 		case err != nil:
 			slog.Warn("could not resolve the owner of an issued certificate",
@@ -222,13 +240,15 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 			// request ID is what keeps this row reattachable later rather than
 			// permanently orphaned.
 			requestID = &reply.RequestID
-			origin.SourceIP, origin.LocalUsername, origin.LocalHostname = req.SourceIP, req.LocalUsername, req.LocalHostname
+			origin.SourceIP = req.SourceIP
+			origin.LocalUsername, origin.LocalHostname = reportedContext(req)
 			slog.Warn("issued certificate has no owner: its request was never bound to a user",
 				"request_id", reply.RequestID)
 		default:
 			userID = req.UserID
 			requestID = &reply.RequestID
-			origin.SourceIP, origin.LocalUsername, origin.LocalHostname = req.SourceIP, req.LocalUsername, req.LocalHostname
+			origin.SourceIP = req.SourceIP
+			origin.LocalUsername, origin.LocalHostname = reportedContext(req)
 		}
 	}
 	origin.UserID, origin.RequestID = userID, requestID
@@ -310,6 +330,8 @@ func (h *SignedReplyHandler) notifyIssued(ctx context.Context, reply certmsg.Sig
 		kind = notify.KindUserCertificateIssued
 	case model.CertificateTypePAM:
 		kind = notify.KindPAMCertificateIssued
+	case model.CertificateTypeConsole:
+		kind = notify.KindConsoleCertificateIssued
 	default:
 		// Service, and any type added later without a notification of its
 		// own. Silent by design rather than by omission.

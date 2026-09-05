@@ -337,6 +337,21 @@ func (s *EnrollmentService) notifyExpiredAttempt(ctx context.Context, enrollment
 		})
 }
 
+// The reminder cadence. An enrollment inside mail.expiry_reminder_lead is
+// reminded once a week until it is within ExpiryReminderDailyWindow of
+// expiring, then once a day. A 30-day lead therefore produces weekly
+// reminders at 30, 23, 16 and 9 days out, then daily ones from 7 days out
+// to the last; the default 7-day lead produces the daily ones alone.
+//
+// Exported because the sweep interval in bootstrap is derived from the
+// shortest cadence here, not from the lead: a daily reminder swept every
+// seven hours would drift a full day late over the week it runs.
+const (
+	ExpiryReminderDailyWindow    = 7 * 24 * time.Hour
+	ExpiryReminderDailyInterval  = 24 * time.Hour
+	ExpiryReminderWeeklyInterval = 7 * 24 * time.Hour
+)
+
 // expiryReminderBatch bounds how many reminders one sweep pass claims.
 //
 // The sweep is a background job with no deadline, and the queue it
@@ -346,17 +361,21 @@ func (s *EnrollmentService) notifyExpiredAttempt(ctx context.Context, enrollment
 // remainder is picked up by the next pass, which is minutes away.
 const expiryReminderBatch = 500
 
-// SweepExpiryReminders sends the one-per-enrollment reminder for codes
-// coming up on expiry, and is the only notification not emitted from an
-// event path — the event here is the absence of one.
+// SweepExpiryReminders sends the reminders for codes coming up on expiry,
+// weekly and then daily (see ExpiryReminderDailyWindow), and is the only
+// notification not emitted from an event path — the event here is the
+// absence of one.
 //
 // Registered as a scheduled job (see bootstrap.registerExpiryReminderJob)
 // and disabled entirely when mail.expiry_reminder_lead is zero.
 //
-// Every instance runs this. The send-once guarantee comes from claiming
-// each row with a guarded UPDATE and publishing only when that reports a
-// row, so two instances sweeping the same enrollment produce one reminder
-// between them rather than one each.
+// Every instance runs this. The once-per-interval guarantee comes from
+// claiming each row with a guarded UPDATE on expiry_reminder_sent_at and
+// publishing only when that reports a row, so two instances sweeping the
+// same enrollment produce one reminder between them rather than one each.
+// The guard is "last sent at or before the cadence threshold" rather than
+// an equality on the value read, so it needs no timestamp round-trip
+// precision from either dialect.
 func (s *EnrollmentService) SweepExpiryReminders(ctx context.Context) error {
 	// Registration already skips a zero lead, so in production nothing
 	// reaches here with one. The guard stays because it belongs with the
@@ -368,15 +387,22 @@ func (s *EnrollmentService) SweepExpiryReminders(ctx context.Context) error {
 	}
 
 	now := time.Now()
+	dailyFrom := now.Add(ExpiryReminderDailyWindow)
 	var due []model.Enrollment
 	err := s.db.WithContext(ctx).
-		Where("expiry_reminder_sent_at IS NULL").
 		// Already-expired codes are deliberately excluded. A reminder that
 		// something expires "in already elapsed" helps nobody, and the
 		// aftermath has its own notification: an expired code that anything
 		// still presents raises service_enrollment_expired_attempt.
 		Where("expires_at > ?", now).
 		Where("expires_at <= ?", now.Add(lead)).
+		// Due under whichever cadence the code's remaining life puts it in:
+		// never reminded, or last reminded at least one interval ago.
+		Where(s.db.
+			Where("expires_at <= ? AND (expiry_reminder_sent_at IS NULL OR expiry_reminder_sent_at <= ?)",
+				dailyFrom, now.Add(-ExpiryReminderDailyInterval)).
+			Or("expires_at > ? AND (expiry_reminder_sent_at IS NULL OR expiry_reminder_sent_at <= ?)",
+				dailyFrom, now.Add(-ExpiryReminderWeeklyInterval))).
 		Order("expires_at").
 		Limit(expiryReminderBatch).
 		Find(&due).Error
@@ -385,11 +411,19 @@ func (s *EnrollmentService) SweepExpiryReminders(ctx context.Context) error {
 	}
 
 	for _, enrollment := range due {
-		// Guarded on the column still being NULL, which is the claim: a
-		// second instance that selected the same row loses this update and
-		// publishes nothing.
+		daily := !enrollment.ExpiresAt.After(dailyFrom)
+		interval := ExpiryReminderWeeklyInterval
+		if daily {
+			interval = ExpiryReminderDailyInterval
+		}
+
+		// Guarded on the column still being at or before the cadence
+		// threshold, which is the claim: a second instance that selected
+		// the same row finds it already stamped with now, loses this
+		// update, and publishes nothing.
 		result := s.db.WithContext(ctx).Model(&model.Enrollment{}).
-			Where("id = ? AND expiry_reminder_sent_at IS NULL", enrollment.ID).
+			Where("id = ? AND (expiry_reminder_sent_at IS NULL OR expiry_reminder_sent_at <= ?)",
+				enrollment.ID, now.Add(-interval)).
 			Update("expiry_reminder_sent_at", now)
 		if result.Error != nil {
 			return fmt.Errorf("failed to claim the expiry reminder for enrollment %q: %w", enrollment.ID, result.Error)
@@ -420,6 +454,7 @@ func (s *EnrollmentService) SweepExpiryReminders(ctx context.Context) error {
 				PublicKeyType:        keyType,
 				FirstRedeemedAt:      firstRedeemedAt,
 				CodeExpiresAt:        enrollment.ExpiresAt,
+				Daily:                daily,
 				ServerURL:            s.config.HTTP.PublicOrigin(),
 			})
 	}

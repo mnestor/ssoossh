@@ -2,7 +2,7 @@ An enrollment code for one of your service accounts is about to expire. Once
 it does, `ssoossh service retrieve` stops issuing certificates for it, and any
 unattended job that renews through it starts failing.
 
-This is the only reminder for this enrollment.
+{{ if .Daily }}You will hear about this every day until the code expires.{{ else }}You will hear about this again in a week, then every day over its final week.{{ end }}
 
 ENROLLMENT
 

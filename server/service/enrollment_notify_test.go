@@ -95,10 +95,10 @@ func TestSweepExpiryReminders_shouldRemindAnEnrollmentInsideTheWindow(t *testing
 	}
 }
 
-// The claim is what makes "one reminder per enrollment" true across
+// The claim is what makes "one reminder per interval" true across
 // instances; a second sweep standing in for a second instance must publish
 // nothing.
-func TestSweepExpiryReminders_shouldRemindOnlyOnce(t *testing.T) {
+func TestSweepExpiryReminders_shouldRemindOnlyOncePerInterval(t *testing.T) {
 	t.Parallel()
 
 	svc, notifier := notifyingEnrollmentService(t, 7*24*time.Hour, 0)
@@ -111,6 +111,99 @@ func TestSweepExpiryReminders_shouldRemindOnlyOnce(t *testing.T) {
 	}
 
 	notifier.only(t, notify.KindServiceEnrollmentExpiring)
+}
+
+// markReminded stamps the enrollment's last reminder, standing in for an
+// earlier sweep having sent one at that time.
+func markReminded(t *testing.T, db *gorm.DB, id string, sentAt time.Time) {
+	t.Helper()
+
+	if err := db.Model(&model.Enrollment{}).Where("id = ?", id).
+		Update("expiry_reminder_sent_at", sentAt).Error; err != nil {
+		t.Fatalf("failed to mark the enrollment reminded: %v", err)
+	}
+}
+
+// The cadence: weekly while the code has more than a week left, daily once
+// it does not, each measured from the last reminder sent. The margin on
+// each side of a boundary is an hour, comfortably more than a test runs in
+// and less than any interval in play.
+func TestSweepExpiryReminders_shouldFollowTheWeeklyThenDailyCadence(t *testing.T) {
+	t.Parallel()
+
+	const day = 24 * time.Hour
+	tests := []struct {
+		name      string
+		expiresIn time.Duration
+		sentAgo   time.Duration // zero means never reminded
+		want      bool
+		wantDaily bool
+	}{
+		{name: "should remind weekly-phase enrollment never reminded", expiresIn: 20 * day, want: true, wantDaily: false},
+		{name: "should remind weekly-phase enrollment a week after the last", expiresIn: 20 * day, sentAgo: 7*day + time.Hour, want: true, wantDaily: false},
+		{name: "should not remind weekly-phase enrollment inside a week of the last", expiresIn: 20 * day, sentAgo: 7*day - time.Hour, want: false},
+		{name: "should not remind weekly-phase enrollment a day after the last", expiresIn: 20 * day, sentAgo: day + time.Hour, want: false},
+		{name: "should remind daily-phase enrollment never reminded", expiresIn: 3 * day, want: true, wantDaily: true},
+		{name: "should remind daily-phase enrollment a day after the last", expiresIn: 3 * day, sentAgo: day + time.Hour, want: true, wantDaily: true},
+		{name: "should not remind daily-phase enrollment inside a day of the last", expiresIn: 3 * day, sentAgo: day - time.Hour, want: false},
+		{name: "should switch to daily on entering the final week", expiresIn: 7*day - time.Hour, sentAgo: 2 * day, want: true, wantDaily: true},
+		{name: "should stay weekly just outside the final week", expiresIn: 7*day + time.Hour, sentAgo: 2 * day, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc, notifier := notifyingEnrollmentService(t, 30*day, 0)
+			seeded := seedEnrollmentRow(t, svc.db, "deploy-bot", time.Now().Add(tt.expiresIn))
+			if tt.sentAgo != 0 {
+				markReminded(t, svc.db, seeded.ID, time.Now().Add(-tt.sentAgo))
+			}
+
+			if err := svc.SweepExpiryReminders(t.Context()); err != nil {
+				t.Fatalf("SweepExpiryReminders: %v", err)
+			}
+
+			if !tt.want {
+				if got := notifier.captured(); len(got) != 0 {
+					t.Errorf("published %+v, want nothing", got)
+				}
+				return
+			}
+			got := notifier.only(t, notify.KindServiceEnrollmentExpiring)
+			payload, ok := got.Payload.(*notify.ServiceEnrollmentExpiring)
+			if !ok {
+				t.Fatalf("payload is %T, want *notify.ServiceEnrollmentExpiring", got.Payload)
+			}
+			if payload.Daily != tt.wantDaily {
+				t.Errorf("Daily = %t, want %t", payload.Daily, tt.wantDaily)
+			}
+		})
+	}
+}
+
+// A reminder sent under the old cadence must not block the next one:
+// the stamp moves forward with each send, so a sweep a day later inside
+// the final week sends again rather than treating the row as done.
+func TestSweepExpiryReminders_shouldAdvanceTheStampOnEachSend(t *testing.T) {
+	t.Parallel()
+
+	svc, notifier := notifyingEnrollmentService(t, 7*24*time.Hour, 0)
+	seeded := seedEnrollmentRow(t, svc.db, "deploy-bot", time.Now().Add(3*24*time.Hour))
+	markReminded(t, svc.db, seeded.ID, time.Now().Add(-25*time.Hour))
+
+	if err := svc.SweepExpiryReminders(t.Context()); err != nil {
+		t.Fatalf("SweepExpiryReminders: %v", err)
+	}
+	notifier.only(t, notify.KindServiceEnrollmentExpiring)
+
+	var row model.Enrollment
+	if err := svc.db.First(&row, "id = ?", seeded.ID).Error; err != nil {
+		t.Fatalf("failed to reload the enrollment: %v", err)
+	}
+	if row.ExpiryReminderSentAt == nil || time.Since(*row.ExpiryReminderSentAt) > time.Minute {
+		t.Errorf("expiry_reminder_sent_at = %v, want stamped with the time of this send", row.ExpiryReminderSentAt)
+	}
 }
 
 // A code expiring in three months is not news yet. Reminding early would

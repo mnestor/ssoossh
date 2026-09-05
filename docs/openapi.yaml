@@ -2238,10 +2238,11 @@ paths:
         client should bound its own wait by.
 
         Username is the local account being logged into, reported by the caller
-        and used for display and audit only. The certificate's principals are the
-        approver's own accounts; the host's principals-map decides whether they
-        authorize that local account. The remaining context fields are equally
-        self-reported and are shown to the approver as claims.
+        and used for display and audit only. The certificate's principals are
+        accounts the approver holds and selects at approval; the module on the host
+        matches them against that local account, directly or through its
+        principals-map. The remaining context fields are equally self-reported and
+        are shown to the approver as claims.
 
         Set `cert_options.console.require` to restrict who may approve one, and
         `cert_options.console.allowed_networks` to refuse creation from outside
@@ -2286,9 +2287,9 @@ paths:
       description: |-
         Unauthenticated. Username is the local account pam_ssoossh is authenticating,
         reported by the caller and used for display and audit only. The certificate's
-        principals are the approver's own accounts; the host's principals-map decides
-        whether they authorize that local account. Set `cert_options.pam.require` to
-        restrict who may approve one.
+        principals are accounts the approver holds and selects at approval; the module
+        on the host matches them against that local account, directly or through its
+        principals-map. Set `cert_options.pam.require` to restrict who may approve one.
       requestBody:
         content:
           application/json:

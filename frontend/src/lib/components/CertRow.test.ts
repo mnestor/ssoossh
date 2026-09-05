@@ -85,6 +85,11 @@ describe('CertRow', () => {
 		expect(screen.getByLabelText('Certificate type: PAM')).toBeInTheDocument();
 	});
 
+	it('should name a console certificate for assistive technology', () => {
+		render(CertRow, { cert: cert({ type: 'console' }), now, onclick: vi.fn() });
+		expect(screen.getByLabelText('Certificate type: Console')).toBeInTheDocument();
+	});
+
 	it('should call onclick when the row is activated', async () => {
 		const onclick = vi.fn();
 		render(CertRow, { cert: cert(), now, onclick });

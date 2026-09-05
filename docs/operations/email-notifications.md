@@ -119,20 +119,24 @@ than one each.
 
 ```yaml
 mail:
-  # How far ahead of an enrollment code's expiry the reminder goes out.
-  # 0 disables it and the sweep is not registered at all.
+  # How far ahead of an enrollment code's expiry the reminders start.
+  # 0 disables them and the sweep is not registered at all.
   expiry_reminder_lead: 168h
   # At most one "expired code used" message per enrollment per window.
   # 0 disables that notification.
   expired_attempt_window: 24h
 ```
 
-`expiry_reminder_lead` is one reminder per enrollment, ever. Lengthening it
-does not re-remind a code already reminded under the old value; shortening it
-means a code now past the new window never gets one. The sweep runs at a
-fraction of the lead (a 7-day lead sweeps every 7 hours), and skips codes
-that have already expired — a reminder that something expired yesterday helps
-nobody, and the aftermath has its own notification.
+`expiry_reminder_lead` opens the window; inside it the reminder repeats
+weekly until the code is within its final week, then daily until it expires.
+A 30-day lead sends at 30, 23, 16 and 9 days out and then every day from 7
+days out; the default week sends the daily ones alone. Each send is claimed
+in the database, so a multi-instance deployment sends each one once.
+Shortening the lead means a code now past the new window gets nothing until
+it re-enters it; lengthening it picks codes up at the next sweep. The sweep
+runs hourly (a lead shorter than a day sweeps at a fraction of it), and skips
+codes that have already expired — a reminder that something expired
+yesterday helps nobody, and the aftermath has its own notification.
 
 `expired_attempt_window` is a rate limit rather than a one-shot, because what
 it reports is a retry loop: a cron job holding a dead code fails on its own
@@ -182,14 +186,19 @@ Choices are stored per (user, kind); a user who has never answered
 gets the kind's own default, which is what lets a new notification ship
 without a backfill.
 
-The two "was this you?" kinds — `user_certificate_issued` and
-`pam_certificate_issued` — default **off**, and are the only ones that do. An
-interactive certificate is issued per login and a PAM certificate per `sudo`,
-so either defaulting on would make every existing deployment noisy the day it
-upgrades. They are two kinds rather than one with a type field so a user who
-runs `sudo` forty times a day and logs in twice can keep the login signal
-without drowning in the other. A security-sensitive deployment can tell its
-users to turn them on; nothing turns them on for them.
+The three "was this you?" kinds — `user_certificate_issued`,
+`pam_certificate_issued` and `console_certificate_issued` — default **off**,
+and are the only ones that do. An interactive certificate is issued per
+login, a PAM certificate per `sudo` and a console certificate per console
+login, so any of them defaulting on would make every existing deployment
+noisy the day it upgrades. They are separate kinds rather than one with a
+type field so a user who runs `sudo` forty times a day and logs in twice can
+keep the login signal without drowning in the other. A security-sensitive
+deployment can tell its users to turn them on; nothing turns them on for
+them. The console kind is the one such a deployment should push hardest: a
+console request is made by an unauthenticated machine and approved by a code
+typed into the owner's web session, so a message the owner does not
+recognize means that session was used by someone else.
 
 The preference is read at delivery rather than at publication, so a
 notification queued moments before someone opts out is not delivered
@@ -274,7 +283,7 @@ Templates:
 
 `service_enrollment_expiring`
 
-Sent once when one of your enrollment codes is close to expiring, so an unattended job can be re-enrolled before it starts failing.
+Sent while one of your enrollment codes is close to expiring, so an unattended job can be re-enrolled before it starts failing: weekly inside the reminder window, then daily over the final week.
 
 Default: **on**.
 
@@ -295,6 +304,7 @@ Templates:
 | `.PublicKeyType` | `string` | SSH algorithm of the enrolled public key, e.g. ssh-ed25519. |
 | `.FirstRedeemedAt` | `time.Time` | When the code was first redeemed, or the zero time if it never was. A code never redeemed is usually a job that was never finished. |
 | `.CodeExpiresAt` | `time.Time` | When the code stops being redeemable. Re-enroll before this. |
+| `.Daily` | `bool` | True once the code is inside its final week and reminders come daily; false while they are still weekly. |
 | `.ServerURL` | `string` | The server's public origin, for links back to the enrollment. |
 
 
@@ -343,7 +353,7 @@ Templates:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `.CertificateType` | `string` | The certificate type, "user" or "pam". |
+| `.CertificateType` | `string` | The certificate type: "user", "pam" or "console". |
 | `.RequestID` | `string` | The certificate request this certificate was issued for. |
 | `.KeyID` | `string` | The SSH certificate key ID. |
 | `.Principals` | `[]string` | The accounts this certificate may log in as. |
@@ -376,7 +386,40 @@ Templates:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `.CertificateType` | `string` | The certificate type, "user" or "pam". |
+| `.CertificateType` | `string` | The certificate type: "user", "pam" or "console". |
+| `.RequestID` | `string` | The certificate request this certificate was issued for. |
+| `.KeyID` | `string` | The SSH certificate key ID. |
+| `.Principals` | `[]string` | The accounts this certificate may log in as. |
+| `.Serial` | `uint64` | The certificate serial, matching the entry in your certificate history. |
+| `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the key the certificate was issued for. |
+| `.LocalUsername` | `string` | The local account the client reported, or empty if it reported none. Client-reported, so not evidence. |
+| `.LocalHostname` | `string` | The machine the client reported, or empty if it reported none. Client-reported, so not evidence. |
+| `.SourceIP` | `string` | The address the request was made from. |
+| `.IssuedAt` | `time.Time` | When the certificate becomes valid. |
+| `.ExpiresAt` | `time.Time` | When the certificate stops being valid. |
+| `.Extensions` | `[]string` | SSH certificate extensions granted, after narrowing against server config. |
+| `.ForceCommand` | `string` | The force-command critical option, or empty if none was granted. |
+| `.SourceAddresses` | `[]string` | The source-address critical option, or empty if unrestricted. |
+| `.ServerURL` | `string` | The server's public origin, for links back to the certificate. |
+
+
+### Console certificate issued
+
+`console_certificate_issued`
+
+Sent every time a certificate is signed for a console login you approved with a typed code. Off by default: this is one message per login.
+
+Default: **off**.
+
+Templates:
+
+- `console_certificate_issued.subject.tmpl`
+- `console_certificate_issued.txt.tmpl`
+- `console_certificate_issued.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.CertificateType` | `string` | The certificate type: "user", "pam" or "console". |
 | `.RequestID` | `string` | The certificate request this certificate was issued for. |
 | `.KeyID` | `string` | The SSH certificate key ID. |
 | `.Principals` | `[]string` | The accounts this certificate may log in as. |

@@ -43,10 +43,11 @@ The four kinds, in the order they earn their keep:
 
 | Kind | Fires when | Default |
 |---|---|---|
-| `service_enrollment_expiring` | An enrollment code is within the reminder window of `ExpiresAt` | on |
+| `service_enrollment_expiring` | An enrollment code is within the reminder window of `ExpiresAt` (since revised from send-once to weekly, then daily over the final week) | on |
 | `service_enrollment_expired_attempt` | `service retrieve` presents a code that has expired | on |
 | `user_certificate_issued` | An interactive user certificate is signed | off |
 | `pam_certificate_issued` | A PAM certificate is signed for a `sudo`/`su` | off |
+| `console_certificate_issued` | A console certificate is signed for a code-approved login (added with the console type, after this proposal) | off |
 
 Everything here follows the existing four-step "adding a notification
 kind" recipe (docs/email-notifications.md): a `Kind` constant, a payload

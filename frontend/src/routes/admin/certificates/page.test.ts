@@ -257,6 +257,7 @@ describe('Admin certificates page', () => {
 			expect(within(typeFilter).getByText(/user/i)).toBeInTheDocument();
 			expect(within(typeFilter).getByText(/service/i)).toBeInTheDocument();
 			expect(within(typeFilter).getByText(/pam/i)).toBeInTheDocument();
+			expect(within(typeFilter).getByText(/console/i)).toBeInTheDocument();
 		});
 
 		it('should trigger refetch when type filter changes', async () => {

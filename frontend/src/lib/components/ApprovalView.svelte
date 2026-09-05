@@ -102,8 +102,33 @@
 	const isConsoleRequest = $derived(detail.type === 'console');
 	const isServiceRequest = $derived(detail.type === 'service');
 	const isUserRequest = $derived(detail.type === 'user');
+	// PAM and console requests authorize a local operation on a host, not an
+	// SSH session, and their certificate is shaped entirely by server config:
+	// the requesting machine minted a throwaway key and asked for nothing, so
+	// the public key, the extension and critical-option sets, and the
+	// "less than was requested" comparison carry no decision for the
+	// approver. What they need is above: who is acting, as which account, on
+	// which machine.
+	const isLocalAuth = $derived(detail.type === 'pam' || isConsoleRequest);
 	const hasServiceAccounts = $derived(serviceAccounts.length > 0);
 	const hasPrincipals = $derived(userPrincipals.length > 0);
+	// The approver picks which of their accounts the certificate carries for
+	// every type but service. For PAM and console the host then matches
+	// those principals against the local account, directly or through its
+	// principals-map, so which ones go in is the approver's call.
+	const picksPrincipals = $derived((isUserRequest || isLocalAuth) && hasPrincipals);
+	// The picker replaces the read-only row only while there is a decision
+	// to make: a decided, expired or foreign request shows what the server
+	// says instead. Once a decision has been sent the chips stay, disabled,
+	// so the page keeps showing what was actually chosen.
+	const showsPicker = $derived(picksPrincipals && !hasDecisionRecord && !blocked);
+
+	/** togglePrincipal adds principal to the selection or removes it. */
+	function togglePrincipal(principal: string) {
+		selectedPrincipals = selectedPrincipals.includes(principal)
+			? selectedPrincipals.filter((p) => p !== principal)
+			: [...selectedPrincipals, principal];
+	}
 
 	// The short form of the request id, for the corner of the card — enough
 	// to tell two requests apart when comparing against a log line. Labelled
@@ -194,7 +219,38 @@
 
 		<dl class="divide-y divide-border-subtle">
 			<DetailRow label="Principals">
-				{#if detail.principals.length > 0}
+				{#if showsPicker}
+					<!-- The approver's held accounts as toggle chips: pressed ones go
+					     into the certificate. In the row itself rather than a section
+					     further down, so the value being decided sits where the value
+					     is read. -->
+					<span
+						class="flex flex-wrap items-center gap-1.5"
+						role="group"
+						aria-label="Principals to include"
+					>
+						{#each userPrincipals as principal (principal)}
+							{@const pressed = selectedPrincipals.includes(principal)}
+							<button
+								type="button"
+								onclick={() => togglePrincipal(principal)}
+								aria-pressed={pressed}
+								disabled={busy || outcome !== null}
+								class="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-xs break-all transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default"
+								class:border-accent={pressed}
+								class:bg-accent={pressed}
+								class:text-accent-ink={pressed}
+								class:border-border-subtle={!pressed}
+								class:text-ink-muted={!pressed}
+								class:hover:bg-surface-muted={!pressed && !busy && outcome === null}
+							>
+								{#if pressed}<Icon name="check" size="sm" />{/if}
+								{principal}
+							</button>
+						{/each}
+						<span class="font-sans text-ink-muted">select the accounts to include</span>
+					</span>
+				{:else if detail.principals.length > 0}
 					<span class="flex flex-wrap gap-1.5">
 						<!-- Keyed by position: a request carries whatever the client sent,
 					     and nothing guarantees those values are distinct. -->
@@ -270,23 +326,28 @@
 					{formatDateTime(detail.expires_at)} ({expiryLabel(detail.expires_at, now)})
 				</DetailRow>
 			{/if}
-			<DetailRow label="Public key" mono>{detail.public_key}</DetailRow>
+			{#if !isLocalAuth}
+				<DetailRow label="Public key" mono>{detail.public_key}</DetailRow>
+			{/if}
 		</dl>
 
 		<!-- The granted set, not the requested set. Options this deployment does
 		     not permit are trimmed rather than rejected, so the two can differ and
 		     the difference has to be visible before anyone approves (root
-		     CLAUDE.md, Hard Constraints). -->
+		     CLAUDE.md, Hard Constraints). Omitted for PAM and console requests,
+		     where nothing was requested by a person: see isLocalAuth. -->
 		<div class="mt-6 space-y-6">
-			<div>
-				<SectionLabel>Extensions this certificate will carry</SectionLabel>
-				<OptionDiffList entries={extensions} emptyLabel="No extensions requested." />
-			</div>
+			{#if !isLocalAuth}
+				<div>
+					<SectionLabel>Extensions this certificate will carry</SectionLabel>
+					<OptionDiffList entries={extensions} emptyLabel="No extensions requested." />
+				</div>
 
-			<div>
-				<SectionLabel>Critical options</SectionLabel>
-				<OptionDiffList entries={criticalOptions} emptyLabel="No critical options requested." />
-			</div>
+				<div>
+					<SectionLabel>Critical options</SectionLabel>
+					<OptionDiffList entries={criticalOptions} emptyLabel="No critical options requested." />
+				</div>
+			{/if}
 
 			{#if remoteHostSuspicious}
 				<Alert
@@ -301,7 +362,7 @@
 				</Alert>
 			{/if}
 
-			{#if narrowed}
+			{#if narrowed && !isLocalAuth}
 				<Alert variant="warning" title="Less than was requested" testid="narrowed-warning">
 					This server does not permit everything the client asked for. The struck-through entries
 					above will not be in the certificate.
@@ -391,24 +452,6 @@
 							</div>
 						</div>
 					{/if}
-					{#if isUserRequest && hasPrincipals}
-						<div>
-							<SectionLabel>Select principals</SectionLabel>
-							<div class="flex flex-col gap-2.5">
-								{#each userPrincipals as principal (principal)}
-									<label class="flex items-center gap-2">
-										<input
-											type="checkbox"
-											value={principal}
-											bind:group={selectedPrincipals}
-											class="rounded border border-border-subtle bg-surface accent-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-										/>
-										<span class="font-mono text-[13px] text-ink">{principal}</span>
-									</label>
-								{/each}
-							</div>
-						</div>
-					{/if}
 					{#if actionError}
 						<Alert variant="error" title="That did not go through">{actionError}</Alert>
 					{/if}
@@ -424,7 +467,7 @@
 							testid="approve-button"
 							{busy}
 							disabled={(isServiceRequest && !selectedServiceAccount) ||
-								(isUserRequest && selectedPrincipals.length === 0)}
+								(picksPrincipals && selectedPrincipals.length === 0)}
 							onclick={onapprove}
 						>
 							<Icon name="check" size="sm" />

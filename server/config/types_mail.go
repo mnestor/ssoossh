@@ -98,18 +98,22 @@ type MailConfig struct {
 	TemplateDir string `mapstructure:"template_dir" example:"\"/etc/ssoossh/mail-templates\""`
 
 	// ExpiryReminderLead is how far ahead of an enrollment code's expiry the
-	// service_enrollment_expiring reminder is sent. Zero disables the sweep
-	// that sends it, and the job is not registered at all.
+	// service_enrollment_expiring reminders start. Zero disables the sweep
+	// that sends them, and the job is not registered at all.
+	//
+	// Inside the window the reminder repeats weekly until the code is within
+	// its final week, then daily until it expires. A 30-day lead therefore
+	// sends at 30, 23, 16 and 9 days out and then every day from 7 days out;
+	// the default week sends the daily ones alone.
 	//
 	// A week by default: long enough that someone can schedule the
 	// re-enrollment rather than drop what they are doing, short enough that
-	// the message still describes a real deadline.
+	// the first message still describes a real deadline.
 	//
-	// One reminder per enrollment, claimed in the database so every instance
-	// can run the sweep without any of them duplicating the send. Lengthening
-	// this does not re-remind an enrollment already reminded under the old
-	// value; shortening it means an enrollment past the new window never
-	// gets one.
+	// Each send is claimed in the database so every instance can run the
+	// sweep without any of them duplicating it. Shortening this means an
+	// enrollment past the new window gets no reminder until it re-enters
+	// it; lengthening it picks enrollments up at the next sweep.
 	ExpiryReminderLead time.Duration `mapstructure:"expiry_reminder_lead" default:"168h"`
 
 	// ExpiredAttemptWindow rate-limits the service_enrollment_expired_attempt

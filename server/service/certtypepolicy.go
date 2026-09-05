@@ -191,14 +191,20 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates, dec
 		return []string{identity.Username}
 	}
 
-	// pamPrincipals returns every account the approver holds. There is no
-	// selection to honour: the module names one local account, and the host's
-	// own principals-map decides whether these principals authorize it
-	// (pam_ssoossh/checks.go, check 3). Listing them all lets the host make
-	// that decision without the server modelling host-local state it
-	// deliberately does not have (docs/internals/design-brief.md, "Principal
-	// mapping": nothing syncs the mapping down).
-	pamPrincipals := func(identity *Identity, _ []string) []string {
+	// localAuthPrincipals returns the approver's selection for PAM and
+	// console requests, or every account they hold when nothing was
+	// selected. The module names one local account; pam_ssoossh's check 3
+	// (pam_ssoossh/checks.go) then matches the certificate's principals
+	// against it, directly or through the host's principals-map. The
+	// approver picks which of their accounts to put in the certificate for
+	// that match; the all-held default keeps direct API callers that send
+	// no selection working, and the server never models host-local state
+	// either way (docs/internals/design-brief.md, "Principal mapping":
+	// nothing syncs the mapping down).
+	localAuthPrincipals := func(identity *Identity, selected []string) []string {
+		if len(selected) > 0 {
+			return selected
+		}
 		return heldAccounts(identity)
 	}
 
@@ -234,13 +240,14 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates, dec
 			validDuration: opts.PAM.ValidDuration,
 			extensions:    opts.PAM.Extensions,
 			keyIDTemplate: kt.pam,
-			principals:    pamPrincipals,
+			principals:    localAuthPrincipals,
 			flow:          flowSigning,
 			clientTimeout: opts.ClientTimeout,
-			// No linkage: pamPrincipals returns the approver's own accounts,
-			// so there is no selection to cross-check against what they hold.
-			// checkUserPrincipalLinkage exists for the user type, where the
-			// approver picks the principals.
+			// The approver picks the principals, as for the user type, so the
+			// selection has to be checked against what they hold.
+			linkage: func(identity *Identity, selection ApprovalSelection) error {
+				return checkUserPrincipalLinkage(identity, selection.Principals)
+			},
 		},
 		model.CertificateTypeConsole: {
 			require:       requireConsole,
@@ -249,16 +256,18 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates, dec
 			keyIDTemplate: kt.console,
 			// Same reasoning as PAM, and it matters more here: the module
 			// names the account typed at the `login:` prompt, and the
-			// certificate names the approver's own accounts instead. An
+			// certificate names accounts the approver holds instead. An
 			// attacker who types `root` at an unattended console gets a
-			// certificate the host's principals-map refuses unless that map
-			// already says the approver may become root.
-			principals:      pamPrincipals,
+			// certificate check 3 refuses unless the approver holds root or
+			// the host's principals-map already says they may become it.
+			principals:      localAuthPrincipals,
 			flow:            flowSigning,
 			clientTimeout:   consoleTimeout,
 			allowedNetworks: consoleNetworks,
 			usesUserCode:    true,
-			// No linkage, for the same reason as PAM.
+			linkage: func(identity *Identity, selection ApprovalSelection) error {
+				return checkUserPrincipalLinkage(identity, selection.Principals)
+			},
 		},
 	}, nil
 }

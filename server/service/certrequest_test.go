@@ -1150,6 +1150,97 @@ func TestCertRequestService_Approve_ShouldQueuePAMRequestWithApproverAccountsAsP
 	}
 }
 
+// The approver's selection is what a PAM certificate carries, so someone
+// holding several accounts can put only the one the sudo needs into it.
+func TestCertRequestService_Approve_ShouldQueuePAMRequestWithTheSelectedPrincipals(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+		PAM: config.CertOptionsPAM{Require: &config.PolicyCondition{Group: "sudoers"}, ValidDuration: 30 * time.Second},
+	})
+
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypePAM,
+		PublicKey: "ssh-ed25519 AAAA...",
+		Username:  "mnestor",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	messages, err := svc.subscriber.Subscribe(ctx, certmsg.SignQueueTopic)
+	if err != nil {
+		t.Fatalf("unexpected error subscribing to the sign queue: %v", err)
+	}
+
+	identity := &Identity{
+		Username:      "mike.nestor",
+		OtherAccounts: []string{"mnestor", "root"},
+		Subject:       "sub-1",
+		Groups:        []string{"sudoers"},
+	}
+	seedUser(t, svc.db, identity.Subject)
+	selection := ApprovalSelection{Principals: []string{"mnestor"}}
+	if err := svc.Approve(context.Background(), requestID, identity, DecisionContext{}, selection); err != nil {
+		t.Fatalf("unexpected error approving request: %v", err)
+	}
+
+	select {
+	case msg := <-messages:
+		var job certmsg.SigningJob
+		if err := json.Unmarshal(msg.Payload, &job); err != nil {
+			t.Fatalf("failed to decode signing job: %v", err)
+		}
+		msg.Ack()
+
+		if !slices.Equal(job.Principals, []string{"mnestor"}) {
+			t.Errorf("got principals %v, want only the selected [mnestor]", job.Principals)
+		}
+	case <-ctx.Done():
+		t.Fatal("timed out waiting for the signing job to be published")
+	}
+}
+
+// A selection outside what the approver holds is refused before anything
+// is published, for PAM exactly as for a user request: otherwise the
+// picker would be the escalation the previous test closes.
+func TestCertRequestService_Approve_ShouldRefuseAnUnheldPrincipalOnAPAMRequest(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+		PAM: config.CertOptionsPAM{Require: &config.PolicyCondition{Group: "sudoers"}, ValidDuration: 30 * time.Second},
+	})
+
+	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
+		Type:      model.CertificateTypePAM,
+		PublicKey: "ssh-ed25519 AAAA...",
+		Username:  "root",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error creating request: %v", err)
+	}
+
+	identity := &Identity{Username: "alice", Subject: "sub-1", Groups: []string{"sudoers"}}
+	seedUser(t, svc.db, identity.Subject)
+	selection := ApprovalSelection{Principals: []string{"root"}}
+	err = svc.Approve(context.Background(), requestID, identity, DecisionContext{}, selection)
+
+	var forbidden *errorresponses.ForbiddenError
+	if !errors.As(err, &forbidden) {
+		t.Fatalf("Approve with an unheld principal returned %v, want a ForbiddenError", err)
+	}
+
+	var req model.CertificateRequest
+	if err := svc.db.First(&req, "id = ?", requestID).Error; err != nil {
+		t.Fatalf("failed to reload the request: %v", err)
+	}
+	if req.Status != model.CertificateRequestStatusPending {
+		t.Errorf("request status = %q after a refused approval, want it still pending", req.Status)
+	}
+}
+
 // TestCertRequestService_Approve_ShouldNotLetAPAMRequestNameItsOwnPrincipal
 // is the regression test for the escalation this change closes. A PAM
 // request is created by an unauthenticated caller, so before the fix a

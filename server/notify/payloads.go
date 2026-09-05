@@ -113,6 +113,11 @@ type ServiceEnrollmentExpiring struct {
 	// for a detail the recipient can look up.
 	FirstRedeemedAt time.Time `json:"first_redeemed_at,omitempty"`
 
+	// Daily is true once the code is inside the final week and reminders
+	// have moved from weekly to daily, so the message can say when the
+	// next one comes rather than pretending to be the only one.
+	Daily bool `json:"daily"`
+
 	CodeExpiresAt time.Time `json:"code_expires_at"`
 	ServerURL     string    `json:"server_url"`
 }
@@ -150,21 +155,24 @@ type ServiceEnrollmentExpiredAttempt struct {
 	ServerURL string `json:"server_url"`
 }
 
-// CertificateIssued is the payload for both KindUserCertificateIssued and
-// KindPAMCertificateIssued: the "was this you?" message.
+// CertificateIssued is the payload for KindUserCertificateIssued,
+// KindPAMCertificateIssued and KindConsoleCertificateIssued: the "was this
+// you?" message.
 //
-// The requester was present for both flows — approving in a browser, or
-// typing a password at a PAM prompt — so on the happy path this confirms
+// The requester was present for every flow — approving in a browser,
+// typing a password at a PAM prompt, or typing a code from a console into
+// the web UI — so on the happy path this confirms
 // what the reader already knows. Its value is the unhappy path: a
 // certificate minted by a session they do not recognize, from an address
 // they were never at. That is why SourceIP and the granted option set are
 // here and not just the identity of the certificate.
 //
-// One struct for two kinds because the two describe the same object; the
+// One struct for three kinds because they describe the same object; the
 // kinds are separate so the preferences can be.
 type CertificateIssued struct {
-	// CertificateType is "user" or "pam", matching the kind. Carried in the
-	// payload as well as the kind so one shared template can name it.
+	// CertificateType is "user", "pam" or "console", matching the kind.
+	// Carried in the payload as well as the kind so one shared template can
+	// name it.
 	CertificateType string `json:"certificate_type"`
 
 	RequestID string `json:"request_id"`
@@ -176,9 +184,11 @@ type CertificateIssued struct {
 	PublicKeyFingerprint string `json:"public_key_fingerprint"`
 
 	// LocalUsername and LocalHostname are the account and machine the
-	// client reported at request time — for PAM, whose `sudo` this
-	// authorized. Client-reported and therefore not evidence, but they are
-	// what makes the message recognizable to the person who was there.
+	// client reported at request time: for a user certificate the OS user
+	// and host the client ran on, for PAM whose `sudo` this authorized, for
+	// console which account was typed at which machine's login prompt.
+	// Client-reported and therefore not evidence, but they are what makes
+	// the message recognizable to the person who was there.
 	LocalUsername string `json:"local_username,omitempty"`
 	LocalHostname string `json:"local_hostname,omitempty"`
 

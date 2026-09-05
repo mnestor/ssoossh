@@ -51,17 +51,18 @@ func errorCode(err error) string {
 
 // certTypeFor maps a ssoossh certificate type onto an SSH certificate type.
 //
-// User, PAM, and service all map to ssh.UserCert: a PAM certificate
-// authenticates a person to a local operation (e.g. `sudo`) and a service
-// certificate authenticates an unattended account to an SSH session, same
-// as a user certificate authenticates a person — the differences are
-// entirely in lifetime, options, and who validates them, not in
-// certificate type. Service jobs reach the sign queue from
+// User, PAM, console, and service all map to ssh.UserCert: a PAM
+// certificate authenticates a person to a local operation (e.g. `sudo`), a
+// console certificate authenticates a person to an interactive login
+// session, and a service certificate authenticates an unattended account
+// to an SSH session, same as a user certificate authenticates a person —
+// the differences are entirely in lifetime, options, and who validates
+// them, not in certificate type. Service jobs reach the sign queue from
 // EnrollmentService.Retrieve (approval creates the enrollment; each
 // redemption publishes a job).
 func certTypeFor(t model.CertificateType) (uint32, error) {
 	switch t {
-	case model.CertificateTypeUser, model.CertificateTypePAM, model.CertificateTypeService:
+	case model.CertificateTypeUser, model.CertificateTypePAM, model.CertificateTypeConsole, model.CertificateTypeService:
 		return ssh.UserCert, nil
 	}
 	return 0, newSignError(certmsg.ErrCodeUnsupportedType, "certificate type %q is not supported yet", t)

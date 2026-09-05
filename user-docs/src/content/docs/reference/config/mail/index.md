@@ -93,11 +93,13 @@ mail:
 
 `duration`, default `168h`
 
-How far ahead of an enrollment code's expiry the service_enrollment_expiring reminder is sent. Zero disables the sweep that sends it, and the job is not registered at all.
+How far ahead of an enrollment code's expiry the service_enrollment_expiring reminders start. Zero disables the sweep that sends them, and the job is not registered at all.
 
-A week by default: long enough that someone can schedule the re-enrollment rather than drop what they are doing, short enough that the message still describes a real deadline.
+Inside the window the reminder repeats weekly until the code is within its final week, then daily until it expires. A 30-day lead therefore sends at 30, 23, 16 and 9 days out and then every day from 7 days out; the default week sends the daily ones alone.
 
-One reminder per enrollment, claimed in the database so every instance can run the sweep without any of them duplicating the send. Lengthening this does not re-remind an enrollment already reminded under the old value; shortening it means an enrollment past the new window never gets one.
+A week by default: long enough that someone can schedule the re-enrollment rather than drop what they are doing, short enough that the first message still describes a real deadline.
+
+Each send is claimed in the database so every instance can run the sweep without any of them duplicating it. Shortening this means an enrollment past the new window gets no reminder until it re-enters it; lengthening it picks enrollments up at the next sweep.
 
 ```yaml
 mail:

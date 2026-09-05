@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -171,9 +171,17 @@ describe('Approval page', () => {
 			session.user = null;
 		});
 
-		/** principalBoxes returns the picker's checkbox values, in render order. */
+		/** principalBoxes returns the picker's chip names, in render order. */
 		function principalBoxes(): string[] {
-			return screen.getAllByRole('checkbox').map((box) => (box as HTMLInputElement).value);
+			const group = screen.getByRole('group', { name: 'Principals to include' });
+			return within(group)
+				.getAllByRole('button')
+				.map((chip) => chip.textContent?.trim() ?? '');
+		}
+
+		/** chip returns the toggle chip for principal. */
+		function chip(principal: string) {
+			return screen.getByRole('button', { name: principal });
 		}
 
 		it('should list the username before the approver other accounts', async () => {
@@ -200,7 +208,53 @@ describe('Approval page', () => {
 			render(Page);
 			await settle();
 
-			expect(screen.getByRole('checkbox', { name: 'alice' })).toBeChecked();
+			expect(chip('alice')).toHaveAttribute('aria-pressed', 'true');
+		});
+
+		/** pamRequest mocks a pending PAM request acting as target. */
+		function pamRequest(target: string) {
+			mockFetch(200, {
+				id: 'req-1',
+				type: 'pam',
+				status: 'pending',
+				source_ip: '198.51.100.7',
+				public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5',
+				principals: [],
+				target_account: target,
+				valid_seconds: 30,
+				requested: { extensions: [], no_touch_required: false },
+				granted: { extensions: [], no_touch_required: false },
+				created_at: '2026-08-14T09:00:00Z',
+				approval_url: '/approve/req-1',
+				is_owned_by_you: true,
+				already_closed: false
+			});
+		}
+
+		// The host matches the certificate's principals against the account
+		// being acted as, so that account is the default, and the only one:
+		// the username is not added alongside it.
+		it('should default a PAM request to the account it acts as when the approver holds it', async () => {
+			pamRequest('alice-alt');
+			session.user = signedInAs({ other_accounts: ['alice-alt', 'alice-service'] });
+
+			render(Page);
+			await settle();
+
+			expect(chip('alice')).toHaveAttribute('aria-pressed', 'false');
+			expect(chip('alice-alt')).toHaveAttribute('aria-pressed', 'true');
+			expect(chip('alice-service')).toHaveAttribute('aria-pressed', 'false');
+		});
+
+		it('should fall back to the username when the approver does not hold the account acted as', async () => {
+			pamRequest('root');
+			session.user = signedInAs({ other_accounts: ['alice-alt'] });
+
+			render(Page);
+			await settle();
+
+			expect(chip('alice')).toHaveAttribute('aria-pressed', 'true');
+			expect(chip('alice-alt')).toHaveAttribute('aria-pressed', 'false');
 		});
 
 		it('should send the selected principals under the snake_case wire name', async () => {
@@ -209,7 +263,7 @@ describe('Approval page', () => {
 			render(Page);
 			await settle();
 
-			await userEvent.click(screen.getByRole('checkbox', { name: 'alice-alt' }));
+			await userEvent.click(chip('alice-alt'));
 			await userEvent.click(screen.getByTestId('approve-button'));
 			await settle();
 

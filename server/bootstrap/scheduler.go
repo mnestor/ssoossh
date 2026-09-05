@@ -30,9 +30,11 @@ const ldapSyncJobName = "ldap-directory-sync"
 const expiryReminderJobName = "enrollment-expiry-reminder"
 
 // expiryReminderSweepDivisor sets the reminder sweep's interval as a
-// fraction of the configured lead, so a shorter lead is swept
-// proportionally more often and the reminder is never systematically late
-// by more than a small share of the window it announces.
+// fraction of the shortest reminder cadence (the daily one, or the lead
+// itself when that is shorter), so a reminder is never systematically late
+// by more than a small share of the gap it is meant to keep. Deriving it
+// from the lead alone would sweep a 30-day lead every 30 hours and turn
+// the daily reminders of the final week into every-other-day ones.
 const expiryReminderSweepDivisor = 24
 
 // minExpiryReminderInterval floors that interval. A very short lead (a lab
@@ -85,10 +87,7 @@ func (a *app) registerExpiryReminderJob(ctx context.Context) error {
 		return nil
 	}
 
-	interval := lead / expiryReminderSweepDivisor
-	if interval < minExpiryReminderInterval {
-		interval = minExpiryReminderInterval
-	}
+	interval := expiryReminderInterval(lead)
 
 	err := a.scheduler.RegisterJob(ctx, expiryReminderJobName,
 		gocron.DurationJob(interval),
@@ -105,6 +104,18 @@ func (a *app) registerExpiryReminderJob(ctx context.Context) error {
 		slog.Duration("lead", lead),
 	)
 	return nil
+}
+
+// expiryReminderInterval is how often the reminder sweep runs for a given
+// lead: a fraction of the shortest cadence in play, floored so a lab lead
+// of an hour does not query every couple of minutes.
+func expiryReminderInterval(lead time.Duration) time.Duration {
+	cadence := min(lead, service.ExpiryReminderDailyInterval)
+	interval := cadence / expiryReminderSweepDivisor
+	if interval < minExpiryReminderInterval {
+		interval = minExpiryReminderInterval
+	}
+	return interval
 }
 
 // registerLDAPSyncJob schedules the directory sync, which refreshes

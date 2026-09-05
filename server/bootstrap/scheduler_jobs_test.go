@@ -217,6 +217,34 @@ func TestRegisterExpiryReminderJob_ShouldRegisterTheSweep(t *testing.T) {
 	}
 }
 
+// The sweep paces itself off the shortest cadence, so a long lead still
+// sweeps often enough to keep the final week's reminders daily, and a lab
+// lead of an hour is floored rather than swept every couple of minutes.
+func TestExpiryReminderInterval_ShouldFollowTheShortestCadence(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		lead time.Duration
+		want time.Duration
+	}{
+		{name: "should sweep hourly for the default week", lead: 7 * 24 * time.Hour, want: time.Hour},
+		{name: "should still sweep hourly for a month", lead: 30 * 24 * time.Hour, want: time.Hour},
+		{name: "should sweep at a fraction of a lead shorter than a day", lead: 12 * time.Hour, want: 30 * time.Minute},
+		{name: "should floor a very short lead", lead: time.Hour, want: minExpiryReminderInterval},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := expiryReminderInterval(tt.lead); got != tt.want {
+				t.Errorf("expiryReminderInterval(%v) = %v, want %v", tt.lead, got, tt.want)
+			}
+		})
+	}
+}
+
 // A very short lead would otherwise produce a sweep every couple of minutes,
 // which is a query per few minutes forever to catch a deadline measured in
 // hours. gocron also rejects intervals at the bottom of that range.

@@ -31,10 +31,10 @@ const (
 	// redeems an enrollment code, successful or not.
 	KindServiceEnrollmentRedeemed Kind = "service_enrollment_redeemed"
 
-	// KindServiceEnrollmentExpiring fires once per enrollment, when its code
-	// comes within mail.expiry_reminder_lead of expiring. The only kind not
-	// emitted from an event path, because the event is the absence of one:
-	// a scheduled sweep finds it instead.
+	// KindServiceEnrollmentExpiring fires while an enrollment's code is
+	// within mail.expiry_reminder_lead of expiring: weekly, then daily over
+	// the final week. The only kind not emitted from an event path, because
+	// the event is the absence of one: a scheduled sweep finds it instead.
 	KindServiceEnrollmentExpiring Kind = "service_enrollment_expiring"
 
 	// KindServiceEnrollmentExpiredAttempt fires when `service retrieve`
@@ -54,6 +54,14 @@ const (
 	// one, so a user who runs `sudo` forty times a day and logs in twice can
 	// keep the login signal without drowning in the other.
 	KindPAMCertificateIssued Kind = "pam_certificate_issued"
+
+	// KindConsoleCertificateIssued fires when a console certificate is
+	// signed for an interactive login on a machine with no browser. Its own
+	// kind for the same reason PAM has one: a login session is a different
+	// event from a `sudo`, and the request was made by an unauthenticated
+	// machine and approved by a typed code, which makes "was this you?"
+	// the question that matters most for this type.
+	KindConsoleCertificateIssued Kind = "console_certificate_issued"
 )
 
 // Field documents one variable a template for this kind may reference.
@@ -148,7 +156,7 @@ var definitions = []Definition{
 	{
 		Kind:           KindServiceEnrollmentExpiring,
 		Title:          "Service enrollment expiring",
-		Description:    "Sent once when one of your enrollment codes is close to expiring, so an unattended job can be re-enrolled before it starts failing.",
+		Description:    "Sent while one of your enrollment codes is close to expiring, so an unattended job can be re-enrolled before it starts failing: weekly inside the reminder window, then daily over the final week.",
 		DefaultEnabled: true,
 		NewPayload:     func() any { return &ServiceEnrollmentExpiring{} },
 		Fields: []Field{
@@ -161,6 +169,7 @@ var definitions = []Definition{
 			{"PublicKeyType", "string", "SSH algorithm of the enrolled public key, e.g. ssh-ed25519."},
 			{"FirstRedeemedAt", "time.Time", "When the code was first redeemed, or the zero time if it never was. A code never redeemed is usually a job that was never finished."},
 			{"CodeExpiresAt", "time.Time", "When the code stops being redeemable. Re-enroll before this."},
+			{"Daily", "bool", "True once the code is inside its final week and reminders come daily; false while they are still weekly."},
 			{"ServerURL", "string", "The server's public origin, for links back to the enrollment."},
 		},
 	},
@@ -200,13 +209,21 @@ var definitions = []Definition{
 		NewPayload:     func() any { return &CertificateIssued{} },
 		Fields:         certificateIssuedFields,
 	},
+	{
+		Kind:           KindConsoleCertificateIssued,
+		Title:          "Console certificate issued",
+		Description:    "Sent every time a certificate is signed for a console login you approved with a typed code. Off by default: this is one message per login.",
+		DefaultEnabled: false,
+		NewPayload:     func() any { return &CertificateIssued{} },
+		Fields:         certificateIssuedFields,
+	},
 }
 
-// certificateIssuedFields documents CertificateIssued, shared by the two
-// kinds that render it. Written once rather than twice so the pair cannot
+// certificateIssuedFields documents CertificateIssued, shared by the three
+// kinds that render it. Written once rather than three times so they cannot
 // drift into documenting the same struct differently.
 var certificateIssuedFields = []Field{
-	{"CertificateType", "string", "The certificate type, \"user\" or \"pam\"."},
+	{"CertificateType", "string", "The certificate type: \"user\", \"pam\" or \"console\"."},
 	{"RequestID", "string", "The certificate request this certificate was issued for."},
 	{"KeyID", "string", "The SSH certificate key ID."},
 	{"Principals", "[]string", "The accounts this certificate may log in as."},

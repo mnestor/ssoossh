@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -165,6 +165,51 @@ describe('ApprovalView', () => {
 		it('should omit the local account row when the request carries none', () => {
 			mount({ detail: detail({ type: 'pam', principals: ['alice'] }) });
 			expect(screen.queryByText('Attempting to act as')).not.toBeInTheDocument();
+		});
+	});
+
+	// A PAM or console certificate is shaped by server config, not by a
+	// person: the requesting machine minted a throwaway key and asked for
+	// nothing. The key and option sections would only be noise between the
+	// approver and the rows that matter.
+	describe('when the request authorizes a local operation', () => {
+		const narrowedOptions = {
+			requested: options({
+				extensions: ['permit-pty', 'permit-port-forwarding'],
+				force_command: '/bin/backup'
+			}),
+			granted: options({ extensions: ['permit-pty'] })
+		};
+
+		for (const type of ['pam', 'console'] as const) {
+			const local = detail({ type, target_account: 'root', ...narrowedOptions });
+
+			it(`should not show the public key for a ${type} request`, () => {
+				mount({ detail: local });
+				expect(screen.queryByText('Public key')).not.toBeInTheDocument();
+			});
+
+			it(`should not show the extensions for a ${type} request`, () => {
+				mount({ detail: local });
+				expect(
+					screen.queryByText('Extensions this certificate will carry')
+				).not.toBeInTheDocument();
+			});
+
+			it(`should not show the critical options for a ${type} request`, () => {
+				mount({ detail: local });
+				expect(screen.queryByText('Critical options')).not.toBeInTheDocument();
+			});
+
+			it(`should not warn that less was granted for a ${type} request`, () => {
+				mount({ detail: local });
+				expect(screen.queryByTestId('narrowed-warning')).not.toBeInTheDocument();
+			});
+		}
+
+		it('should still show the public key for a user request', () => {
+			mount({ detail: detail(narrowedOptions) });
+			expect(screen.getByText('Public key')).toBeInTheDocument();
 		});
 	});
 
@@ -443,31 +488,108 @@ describe('ApprovalView', () => {
 		});
 	});
 
-	describe('principal picker (user certificates)', () => {
-		it('should not offer a picker for non-user requests', () => {
+	describe('principal picker', () => {
+		/** picker returns the chip group, or null when the row is read-only. */
+		function picker() {
+			return screen.queryByRole('group', { name: 'Principals to include' });
+		}
+
+		it('should not offer a picker for service requests', () => {
 			mount({ detail: detail({ type: 'service' }), userPrincipals: ['alice'] });
-			expect(screen.queryByText('Select principals')).not.toBeInTheDocument();
+			expect(picker()).not.toBeInTheDocument();
 		});
 
-		// principals: [] clears the read-only Principals row, which otherwise
-		// renders 'alice' a second time and makes getByText ambiguous.
-		it('should list the candidate principals when the request is a user request', () => {
+		// PAM and console approvers pick too: the host matches the
+		// certificate's principals against the local account, so which of
+		// the approver's accounts go in is their decision.
+		for (const type of ['pam', 'console'] as const) {
+			it(`should offer a picker for a ${type} request`, () => {
+				mount({
+					detail: detail({ type, principals: [], target_account: 'root' }),
+					userPrincipals: ['alice', 'alice-alt']
+				});
+				expect(picker()).toBeInTheDocument();
+			});
+
+			it(`should keep approve disabled for a ${type} request with nothing selected`, () => {
+				mount({
+					detail: detail({ type, target_account: 'root' }),
+					userPrincipals: ['alice'],
+					selectedPrincipals: []
+				});
+				expect(screen.getByRole('button', { name: /Approve/ })).toBeDisabled();
+			});
+		}
+
+		it('should put the picker in the principals row while deciding', () => {
+			mount({ detail: detail({ type: 'user', principals: ['alice'] }), userPrincipals: ['alice'] });
+			expect(picker()).toBeInTheDocument();
+		});
+
+		it('should show the recorded principals once a decision exists', () => {
 			mount({
-				detail: detail({ type: 'user', principals: [] }),
+				detail: detail({ type: 'user', principals: ['alice'], decided_at: '2026-08-14T10:00:00Z' }),
+				userPrincipals: ['alice']
+			});
+			expect(picker()).not.toBeInTheDocument();
+		});
+
+		it("should show the server principals when the request is not the viewer's to decide", () => {
+			mount({
+				detail: detail({ type: 'user', principals: ['bob'], is_owned_by_you: false }),
+				userPrincipals: ['alice']
+			});
+			expect(picker()).not.toBeInTheDocument();
+			expect(screen.getByText('bob')).toBeInTheDocument();
+		});
+
+		it('should list the candidate principals as chips', () => {
+			mount({
+				detail: detail({ type: 'user' }),
 				userPrincipals: ['alice', 'alice-alt']
 			});
-			expect(screen.getByText('alice')).toBeInTheDocument();
-			expect(screen.getByText('alice-alt')).toBeInTheDocument();
+			expect(screen.getByRole('button', { name: 'alice' })).toBeInTheDocument();
+			expect(screen.getByRole('button', { name: 'alice-alt' })).toBeInTheDocument();
 		});
 
-		it('should pre-check the username principal', () => {
+		it('should press the chips that are selected', () => {
 			mount({
 				detail: detail({ type: 'user' }),
 				userPrincipals: ['alice', 'alice-alt'],
 				selectedPrincipals: ['alice']
 			});
-			const checkboxes = screen.getAllByRole('checkbox');
-			expect(checkboxes[0]).toBeChecked();
+			expect(screen.getByRole('button', { name: 'alice', pressed: true })).toBeInTheDocument();
+			expect(screen.getByRole('button', { name: 'alice-alt', pressed: false })).toBeInTheDocument();
+		});
+
+		it('should add a principal when its chip is pressed', async () => {
+			mount({
+				detail: detail({ type: 'user' }),
+				userPrincipals: ['alice', 'alice-alt'],
+				selectedPrincipals: ['alice']
+			});
+			await userEvent.click(screen.getByRole('button', { name: 'alice-alt' }));
+			expect(screen.getByRole('button', { name: 'alice-alt', pressed: true })).toBeInTheDocument();
+		});
+
+		it('should remove a principal when its chip is pressed again', async () => {
+			mount({
+				detail: detail({ type: 'user' }),
+				userPrincipals: ['alice'],
+				selectedPrincipals: ['alice']
+			});
+			await userEvent.click(screen.getByRole('button', { name: 'alice' }));
+			expect(screen.getByRole('button', { name: 'alice', pressed: false })).toBeInTheDocument();
+		});
+
+		it('should freeze the chips once a decision has been sent', () => {
+			mount({
+				detail: detail({ type: 'user' }),
+				userPrincipals: ['alice'],
+				selectedPrincipals: ['alice'],
+				outcome: 'approved'
+			});
+			expect(screen.getByRole('button', { name: 'alice' })).toBeDisabled();
 		});
 
 		it('should keep approve disabled until at least one principal is selected', async () => {
@@ -503,17 +625,16 @@ describe('ApprovalView', () => {
 				userPrincipals: []
 			});
 			expect(screen.getByRole('combobox')).toBeInTheDocument();
-			expect(screen.queryByText('Select principals')).not.toBeInTheDocument();
+			expect(picker()).not.toBeInTheDocument();
 		});
 
-		it('should render a single checkbox when the approver holds no other accounts', () => {
+		it('should render a single chip when the approver holds no other accounts', () => {
 			mount({
 				detail: detail({ type: 'user' }),
 				userPrincipals: ['alice'],
 				selectedPrincipals: ['alice']
 			});
-			const checkboxes = screen.getAllByRole('checkbox');
-			expect(checkboxes).toHaveLength(1);
+			expect(within(picker()!).getAllByRole('button')).toHaveLength(1);
 		});
 	});
 	// The address is offered at approval because that is the moment the

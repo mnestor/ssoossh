@@ -98,10 +98,11 @@ type DecisionContext struct {
 
 // ApprovalSelection carries the human's choices when approving a request,
 // varying by certificate type. ServiceAccount is required for
-// CertificateTypeService; Principals is optional for CertificateTypeUser
-// and ignored for others. Empty/absent Principals on a user request
-// defaults to []string{approver.Username} server-side, preserving existing
-// behavior for direct API callers.
+// CertificateTypeService; Principals is optional for the user, PAM and
+// console types and ignored for service. Empty/absent Principals defaults
+// server-side to the approver's username for a user request and to every
+// account they hold for a PAM or console one, preserving existing behavior
+// for direct API callers.
 type ApprovalSelection struct {
 	ServiceAccount string
 	Principals     []string
@@ -184,7 +185,7 @@ type requestOutcomeMessage struct {
 // NewCertRequestController for why.
 //
 // Approving a request behaves differently per Type:
-//   - user, PAM: queue a signing job and resolve to a certificate
+//   - user, PAM, console: queue a signing job and resolve to a certificate
 //   - service: create a model.Enrollment instead (see service/enrollment.go) —
 //     the certificate itself isn't issued until `service retrieve`
 //
@@ -730,8 +731,9 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 	}
 
 	// Pass no selection for the preview: user-type requests default to the
-	// approver's username (none has been selected yet), PAM returns the
-	// approver's held accounts, and service ignores the field.
+	// approver's username (none has been selected yet), PAM and console
+	// return every account the approver holds, and service ignores the
+	// field.
 	principals := policy.principals(identity, nil)
 	for _, p := range principals {
 		if err := sshcrypto.ValidatePrincipal(p); err != nil {
@@ -801,13 +803,14 @@ func (s *CertRequestService) lookupDecision(ctx context.Context, requestID strin
 //     is the one type where an unset RequireGroup denies rather than opens
 //     — see CertOptionsPAM.RequireGroup.
 //   - Principals always describe the approver, never the requester's own
-//     claim about themselves. User-type requests carry the approver's
-//     selection (or default to their username if none was selected),
-//     validated against the accounts they hold (username plus
-//     OtherAccounts). PAM requests carry those held accounts outright; the
-//     local account named on the request (req.Username) is context for the
-//     approver and the audit record, and the host's principals-map decides
-//     what the certificate authorizes there. Service certificates use the
+//     claim about themselves. User, PAM and console requests carry the
+//     approver's selection, validated against the accounts they hold
+//     (username plus OtherAccounts); with no selection a user request
+//     defaults to their username and a PAM or console one to every held
+//     account. The local account named on a PAM or console request
+//     (req.Username) is context for the approver and the audit record;
+//     pam_ssoossh's check 3 matches the certificate's principals against
+//     it on the host. Service certificates use the
 //     selected ServiceAccount — required, and it must be one of the
 //     approver's own identity.ServiceAccounts (account linkage: approving
 //     for an account you aren't associated with is refused). Empty/absent
@@ -1246,10 +1249,11 @@ func checkServiceAccountLinkage(identity *Identity, serviceAccount string) error
 // first, then their OtherAccounts, with repeats dropped and order preserved
 // so a certificate's principal list is stable across approvals.
 //
-// One definition, two callers with opposite jobs: pamPrincipals
-// (certtypepolicy.go) turns it into the principals a PAM certificate
-// carries, and checkUserPrincipalLinkage below rejects a user-type
-// selection that reaches outside it. They must agree on what "holds" means.
+// One definition, two callers with opposite jobs: localAuthPrincipals
+// (certtypepolicy.go) turns it into the principals a PAM or console
+// certificate carries when nothing was selected, and
+// checkUserPrincipalLinkage below rejects a selection that reaches outside
+// it. They must agree on what "holds" means.
 //
 // An empty identity.Username is kept rather than skipped. It cannot produce
 // a usable principal, and leaving it in means ValidatePrincipal rejects the
@@ -1418,9 +1422,9 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 
 	s.auditLog(auditEvent)
 
-	// Principals are derived per-type, always from the approver: user uses
-	// their selection (or defaults to their username), PAM uses every
-	// account they hold. Validate every one before it can be persisted or
+	// Principals are derived per-type, always from the approver: their
+	// selection, defaulting to their username (user) or every account they
+	// hold (PAM, console). Validate every one before it can be persisted or
 	// signed into a certificate; the signer re-checks as a backstop.
 	principals := policy.principals(identity, selectedPrincipals)
 	// An empty principal list is a wildcard, not an empty grant: a

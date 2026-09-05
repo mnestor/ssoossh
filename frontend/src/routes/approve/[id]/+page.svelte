@@ -47,10 +47,20 @@
 		return principals;
 	});
 
-	// Initialize selected principals to the username on first load.
+	// Initialize selected principals on first load. For a PAM or console
+	// request that is the local account being acted as, when the approver
+	// holds it: the host matches the certificate's principals against that
+	// account, so it is the one the approver almost always means. Otherwise,
+	// and for a user request, it is the username. Either way the choice
+	// stays on the page.
 	$effect(() => {
 		if (detail && !selectedPrincipals.length && session.user?.username) {
-			selectedPrincipals = [session.user.username];
+			const target = detail.target_account;
+			const actsLocally = detail.type === 'pam' || detail.type === 'console';
+			selectedPrincipals =
+				actsLocally && target && userPrincipals.includes(target)
+					? [target]
+					: [session.user.username];
 		}
 	});
 

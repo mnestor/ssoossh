@@ -1,0 +1,40 @@
+A certificate was issued to log in as you at a console -- a physical
+terminal, a serial console, or a BMC viewer on the machine below.
+
+If you just typed a code from that screen into the web UI and approved the
+login, this is it and there is nothing to do.
+
+If you did not, someone got a console login in your name approved. That takes
+your web session, so treat it as a compromised session: sign out everywhere,
+change whatever protects your identity provider account, then tell whoever
+runs that machine. The certificate below is live until it expires and cannot
+be recalled.
+
+LOGIN
+
+  Authenticated as      {{ join .Principals ", " }}
+{{ if or .LocalUsername .LocalHostname }}  Console reported      {{ .LocalUsername }}{{ if and .LocalUsername .LocalHostname }}@{{ end }}{{ .LocalHostname }}
+{{ end }}  Requested from        {{ .SourceIP }}
+  Issued at             {{ datetime .IssuedAt }}
+  Valid until           {{ datetime .ExpiresAt }} (in {{ until .ExpiresAt }})
+
+The console-reported name above is whatever the machine sent and is not proof
+of anything. The address is what the server observed.
+
+CERTIFICATE
+
+  Serial                {{ .Serial }}
+  Key ID                {{ .KeyID }}
+  For key               {{ .PublicKeyFingerprint }}
+  Request ID            {{ .RequestID }}
+
+A console certificate authorizes one login session on that machine. It is not
+an SSH login credential, and nothing here can be used to open a session
+elsewhere.
+{{ if .ServerURL }}
+Your certificate history is at
+{{ .ServerURL }}/certs
+{{ end }}
+You are receiving this because "Console certificate issued" is enabled in your
+notification preferences{{ if .ServerURL }} at {{ .ServerURL }}/preferences{{ end }}. It is off by
+default; turn it off there if one message per login is more than you want.

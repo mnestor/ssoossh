@@ -31,13 +31,13 @@ type CertificateRequest struct {
 	// authenticating (e.g. who is running `sudo`, or the account typed at
 	// the `login:` prompt). It is context, not authority. An unauthenticated client
 	// chooses it, so it reaches the approval page and the audit record and
-	// stops there; the issued certificate's principals come from the
-	// approver's own identity (see service.newCertTypePolicies,
-	// pamPrincipals). Whether those principals authorize this account is the
-	// host's decision, made by pam_ssoossh's check 3 against its local
-	// principals-map. It used to become the certificate's principal
-	// directly; see docs/proposals/pam-principal-source.md for why that
-	// changed.
+	// stops there; the issued certificate's principals are accounts the
+	// approver holds and selects (see service.newCertTypePolicies,
+	// localAuthPrincipals). Whether those principals authorize this account
+	// is the host's decision, made by pam_ssoossh's check 3: an exact match
+	// against the account, or a match through its local principals-map. It
+	// used to become the certificate's principal directly; see
+	// docs/proposals/pam-principal-source.md for why that changed.
 	Username string `gorm:"column:username"`
 
 	// RequestedOptions is JSON-encoded. Server config (config.CertificateOptions)

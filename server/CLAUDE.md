@@ -14,9 +14,11 @@
 
 ## Certificate Rules
 
-- Three types: **User** (interactive SSH; principals from OIDC claims + LDAP
+- Four types: **User** (interactive SSH; principals from OIDC claims + LDAP
   account identifiers), **Service** (non-interactive, a User-type cert),
-  **PAM** (a User-type cert issued for a local PAM authentication)
+  **PAM** (a User-type cert issued for a local PAM authentication),
+  **Console** (a User-type cert for an interactive console login, approved
+  in the web UI by a typed code; see docs/proposals/console-login-pam.md)
 - There is no host certificate type, and no secure host verification to
   justify one (docs/project/decisions.md). `ssoossh host` is local
   principal-mapping tooling only. Do not add a host type

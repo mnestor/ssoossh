@@ -79,13 +79,15 @@ type Enrollment struct {
 	// address is the account's own subscription, entered deliberately.
 	NotificationEmail string `gorm:"column:notification_email"`
 
-	// ExpiryReminderSentAt claims the one expiry reminder this enrollment
-	// gets. Nil means unclaimed; the sweep takes it with a guarded UPDATE
-	// and publishes only if that reports a row, so every instance can sweep
-	// without any of them duplicating the send.
+	// ExpiryReminderSentAt is when the last expiry reminder for this
+	// enrollment was claimed. Nil means never; the sweep advances it with
+	// a guarded UPDATE once the reminder cadence (weekly, then daily in the
+	// final week — see service.ExpiryReminderDailyWindow) says another is
+	// due, and publishes only if that reports a row, so every instance can
+	// sweep without any of them duplicating a send.
 	//
 	// Any path that moves ExpiresAt earlier must clear this, or a reminder
-	// already sent for the old horizon suppresses the one that matters for
+	// already sent under the old horizon delays the one that matters for
 	// the new, closer one.
 	ExpiryReminderSentAt *time.Time `gorm:"column:expiry_reminder_sent_at"`
 

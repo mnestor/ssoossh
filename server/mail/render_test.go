@@ -62,6 +62,7 @@ func samplePayload(t *testing.T, kind notify.Kind) any {
 			PublicKeyType:        "ssh-ed25519",
 			FirstRedeemedAt:      time.Now().Add(-30 * 24 * time.Hour),
 			CodeExpiresAt:        time.Now().Add(7 * 24 * time.Hour),
+			Daily:                true,
 			ServerURL:            "https://ssoossh.example.com",
 		}
 	case notify.KindServiceEnrollmentExpiredAttempt:
@@ -78,13 +79,16 @@ func samplePayload(t *testing.T, kind notify.Kind) any {
 			CodeExpiredAt:        time.Now().Add(-24 * time.Hour),
 			ServerURL:            "https://ssoossh.example.com",
 		}
-	case notify.KindUserCertificateIssued, notify.KindPAMCertificateIssued:
-		// One sample for both kinds because they render one payload type.
-		// CertificateType is the only field that distinguishes them, so it
-		// is filled from the kind rather than hardcoded.
+	case notify.KindUserCertificateIssued, notify.KindPAMCertificateIssued, notify.KindConsoleCertificateIssued:
+		// One sample for all three kinds because they render one payload
+		// type. CertificateType is the only field that distinguishes them,
+		// so it is filled from the kind rather than hardcoded.
 		certType := "user"
-		if kind == notify.KindPAMCertificateIssued {
+		switch kind {
+		case notify.KindPAMCertificateIssued:
 			certType = "pam"
+		case notify.KindConsoleCertificateIssued:
+			certType = "console"
 		}
 		return &notify.CertificateIssued{
 			CertificateType:      certType,

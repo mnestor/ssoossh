@@ -118,40 +118,86 @@ func TestNewCertTypePolicies_Principals_ShouldUseUsernameForUserAndServiceCertif
 	}
 }
 
-// TestNewCertTypePolicies_Principals_ShouldUseApproverAccountsForPAM is the
-// assertion this inverted: a PAM certificate used to name the local account
-// the module sent, which made an unauthenticated caller the author of the
-// field the certificate is authorized on. It now names the approver, and the
-// host's principals-map decides which local account that authorizes. See
+// TestNewCertTypePolicies_Principals_ShouldDefaultToApproverAccountsForLocalAuth
+// is the assertion this inverted: a PAM certificate used to name the local
+// account the module sent, which made an unauthenticated caller the author
+// of the field the certificate is authorized on. With no selection it now
+// names every account the approver holds, and pam_ssoossh's check 3 matches
+// those against the local account on the host. See
 // docs/proposals/pam-principal-source.md.
-func TestNewCertTypePolicies_Principals_ShouldUseApproverAccountsForPAM(t *testing.T) {
+func TestNewCertTypePolicies_Principals_ShouldDefaultToApproverAccountsForLocalAuth(t *testing.T) {
 	t.Parallel()
 
 	policies := mustCertTypePolicies(t, config.CertificateOptions{})
 
-	identity := &Identity{Username: "mike.nestor", OtherAccounts: []string{"mnestor", "root"}}
-	got := policies[model.CertificateTypePAM].principals(identity, nil)
+	for _, certType := range []model.CertificateType{model.CertificateTypePAM, model.CertificateTypeConsole} {
+		identity := &Identity{Username: "mike.nestor", OtherAccounts: []string{"mnestor", "root"}}
+		got := policies[certType].principals(identity, nil)
 
-	want := []string{"mike.nestor", "mnestor", "root"}
-	if !slices.Equal(got, want) {
-		t.Errorf("got %v, want %v", got, want)
+		want := []string{"mike.nestor", "mnestor", "root"}
+		if !slices.Equal(got, want) {
+			t.Errorf("for %s: got %v, want %v", certType, got, want)
+		}
 	}
 }
 
-// TestNewCertTypePolicies_Principals_ShouldIgnoreTheSelectionForPAM: a PAM
-// request has no approval-time selection, and a caller passing one must not
-// be able to widen or replace what the approver holds.
-func TestNewCertTypePolicies_Principals_ShouldIgnoreTheSelectionForPAM(t *testing.T) {
+// The approver picks which of their accounts a PAM or console certificate
+// carries, the same way they do for a user certificate. The selection is
+// taken as given here; keeping it inside what they hold is the linkage
+// check's job, asserted separately below.
+func TestNewCertTypePolicies_Principals_ShouldUseTheSelectionForLocalAuth(t *testing.T) {
 	t.Parallel()
 
 	policies := mustCertTypePolicies(t, config.CertificateOptions{})
 
-	identity := &Identity{Username: "mike.nestor"}
-	got := policies[model.CertificateTypePAM].principals(identity, []string{"root"})
+	for _, certType := range []model.CertificateType{model.CertificateTypePAM, model.CertificateTypeConsole} {
+		identity := &Identity{Username: "mike.nestor", OtherAccounts: []string{"mnestor", "root"}}
+		got := policies[certType].principals(identity, []string{"mnestor"})
 
-	want := []string{"mike.nestor"}
-	if !slices.Equal(got, want) {
-		t.Errorf("got %v, want %v", got, want)
+		want := []string{"mnestor"}
+		if !slices.Equal(got, want) {
+			t.Errorf("for %s: got %v, want %v", certType, got, want)
+		}
+	}
+}
+
+// A selection is only as safe as the check that it stays inside what the
+// approver holds. Every type that lets the approver pick has to carry
+// that check, or a caller could name any account at all.
+func TestNewCertTypePolicies_Linkage_ShouldRefuseAnUnheldPrincipalForEveryPickingType(t *testing.T) {
+	t.Parallel()
+
+	policies := mustCertTypePolicies(t, config.CertificateOptions{})
+
+	tests := []struct {
+		name     string
+		certType model.CertificateType
+		selected []string
+		wantErr  bool
+	}{
+		{name: "should accept a held account for user", certType: model.CertificateTypeUser, selected: []string{"mnestor"}},
+		{name: "should refuse an unheld account for user", certType: model.CertificateTypeUser, selected: []string{"root"}, wantErr: true},
+		{name: "should accept a held account for pam", certType: model.CertificateTypePAM, selected: []string{"mnestor"}},
+		{name: "should refuse an unheld account for pam", certType: model.CertificateTypePAM, selected: []string{"root"}, wantErr: true},
+		{name: "should accept a held account for console", certType: model.CertificateTypeConsole, selected: []string{"mnestor"}},
+		{name: "should refuse an unheld account for console", certType: model.CertificateTypeConsole, selected: []string{"root"}, wantErr: true},
+		{name: "should accept an empty selection for pam", certType: model.CertificateTypePAM},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			policy := policies[tt.certType]
+			if policy.linkage == nil {
+				t.Fatalf("%s has no linkage check; a picking type must have one", tt.certType)
+			}
+			identity := &Identity{Username: "mike.nestor", OtherAccounts: []string{"mnestor"}}
+			err := policy.linkage(identity, ApprovalSelection{Principals: tt.selected})
+			if (err != nil) != tt.wantErr {
+				t.Errorf("linkage(%v) error = %v, wantErr %t", tt.selected, err, tt.wantErr)
+			}
+		})
 	}
 }
 

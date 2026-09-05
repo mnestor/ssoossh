@@ -312,6 +312,33 @@ func TestSign_ShouldIssueUserCertForPAM(t *testing.T) {
 	}
 }
 
+// TestSign_ShouldIssueUserCertForConsole guards the mapping for console
+// certificates: they authenticate a person to an interactive login session,
+// so like PAM they must produce an ssh.UserCert rather than being rejected
+// as an unsupported type.
+func TestSign_ShouldIssueUserCertForConsole(t *testing.T) {
+	t.Parallel()
+
+	ks, _ := newTestKeySource(t)
+	job := newTestJob(t)
+	job.Type = model.CertificateTypeConsole
+	job.KeyID = "console:alice"
+	job.RequestedOptions = certmsg.RequestedOptions{}
+
+	reply, err := Sign(context.Background(), ks, job, false, newDefaultTestLimits())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	cert := parseCert(t, reply.Certificate)
+
+	if cert.CertType != ssh.UserCert {
+		t.Errorf("got CertType %d, want %d (ssh.UserCert)", cert.CertType, ssh.UserCert)
+	}
+	if reply.Type != model.CertificateTypeConsole {
+		t.Errorf("got reply type %q, want %q", reply.Type, model.CertificateTypeConsole)
+	}
+}
+
 func TestSign_ShouldRejectAnUnparseablePublicKey(t *testing.T) {
 	t.Parallel()
 

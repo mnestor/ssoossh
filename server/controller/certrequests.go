@@ -275,16 +275,16 @@ func (cr *certRequestController) createServiceEnrollRequestHandler(g *gin.Contex
 // single local operation (e.g. `sudo`) to pam_ssoossh rather than an
 // interactive SSH session — and returns its events/approval URLs (see
 // createUserRequestHandler). Username is the local account being
-// authenticated; it becomes the issued certificate's principal (see
-// service.resolvePrincipals), not whatever the approving browser identity
-// is called.
+// authenticated; it is shown to the approver and recorded, and the
+// certificate's principals are accounts the approver holds and selects
+// (see service.Approve), not whatever the caller named.
 //
 // @Summary     Create a PAM certificate request
 // @Description Unauthenticated. Username is the local account pam_ssoossh is authenticating,
 // @Description reported by the caller and used for display and audit only. The certificate's
-// @Description principals are the approver's own accounts; the host's principals-map decides
-// @Description whether they authorize that local account. Set `cert_options.pam.require` to
-// @Description restrict who may approve one.
+// @Description principals are accounts the approver holds and selects at approval; the module
+// @Description on the host matches them against that local account, directly or through its
+// @Description principals-map. Set `cert_options.pam.require` to restrict who may approve one.
 // @Tags        client
 // @Accept      json
 // @Produce     json
@@ -330,10 +330,11 @@ func (cr *certRequestController) createPAMRequestHandler(g *gin.Context) {
 // @Description client should bound its own wait by.
 // @Description
 // @Description Username is the local account being logged into, reported by the caller
-// @Description and used for display and audit only. The certificate's principals are the
-// @Description approver's own accounts; the host's principals-map decides whether they
-// @Description authorize that local account. The remaining context fields are equally
-// @Description self-reported and are shown to the approver as claims.
+// @Description and used for display and audit only. The certificate's principals are
+// @Description accounts the approver holds and selects at approval; the module on the host
+// @Description matches them against that local account, directly or through its
+// @Description principals-map. The remaining context fields are equally self-reported and
+// @Description are shown to the approver as claims.
 // @Description
 // @Description Set `cert_options.console.require` to restrict who may approve one, and
 // @Description `cert_options.console.allowed_networks` to refuse creation from outside

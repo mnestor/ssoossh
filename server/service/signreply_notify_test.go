@@ -29,13 +29,22 @@ func issuedReplyFixture(t *testing.T, certType model.CertificateType) (*SignedRe
 	h := newTestSignedReplyHandler(t, svc)
 
 	userID := seedUser(t, svc.db, "sub-alice")
-	requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
-		Type:          certType,
-		PublicKey:     "ssh-ed25519 AAAA test",
-		SourceIP:      "198.51.100.7",
-		LocalUsername: "alice",
-		LocalHostname: "workstation",
-	})
+	params := NewCertRequestParams{
+		Type:      certType,
+		PublicKey: "ssh-ed25519 AAAA test",
+		SourceIP:  "198.51.100.7",
+	}
+	// The client-reported context lives in different columns per type
+	// (see reportedContext): a user request carries the OS user and host
+	// the client ran on, a PAM or console request the account being
+	// authenticated and the machine it is on.
+	switch certType {
+	case model.CertificateTypePAM, model.CertificateTypeConsole:
+		params.Username, params.Hostname = "alice", "workstation"
+	default:
+		params.LocalUsername, params.LocalHostname = "alice", "workstation"
+	}
+	requestID, err := svc.createRequestID(context.Background(), params)
 	if err != nil {
 		t.Fatalf("failed to create the %s request: %v", certType, err)
 	}
@@ -104,6 +113,61 @@ func TestResolveSuccess_shouldNotifyUnderThePAMKindForAPAMCertificate(t *testing
 	}
 
 	notifier.only(t, notify.KindPAMCertificateIssued)
+}
+
+// A console login is the type where "was this you?" matters most: the
+// request came from an unauthenticated machine and was approved by a code
+// typed into the owner's web session. It gets its own kind, like PAM, so
+// its tolerance can be set apart from logins and sudos.
+func TestResolveSuccess_shouldNotifyUnderTheConsoleKindForAConsoleCertificate(t *testing.T) {
+	t.Parallel()
+
+	h, notifier, _, requestID, _ := issuedReplyFixture(t, model.CertificateTypeConsole)
+
+	if err := h.resolveSuccess(context.Background(), successfulReply(requestID, model.CertificateTypeConsole)); err != nil {
+		t.Fatalf("resolveSuccess: %v", err)
+	}
+
+	notifier.only(t, notify.KindConsoleCertificateIssued)
+}
+
+// The "reported" line in the message reads whichever columns the request
+// type stores its client-reported context in. A PAM or console request
+// never sets local_username/local_hostname, so reading only those would
+// leave the line blank for exactly the two types whose messages lean on it.
+func TestResolveSuccess_shouldCarryTheReportedAccountAndMachineForEveryType(t *testing.T) {
+	t.Parallel()
+
+	for _, certType := range []model.CertificateType{
+		model.CertificateTypeUser,
+		model.CertificateTypePAM,
+		model.CertificateTypeConsole,
+	} {
+		t.Run(string(certType), func(t *testing.T) {
+			t.Parallel()
+
+			h, notifier, _, requestID, _ := issuedReplyFixture(t, certType)
+
+			if err := h.resolveSuccess(context.Background(), successfulReply(requestID, certType)); err != nil {
+				t.Fatalf("resolveSuccess: %v", err)
+			}
+
+			got := notifier.captured()
+			if len(got) != 1 {
+				t.Fatalf("captured %d notifications, want 1", len(got))
+			}
+			payload, ok := got[0].Payload.(*notify.CertificateIssued)
+			if !ok {
+				t.Fatalf("payload is %T, want *notify.CertificateIssued", got[0].Payload)
+			}
+			if payload.LocalUsername != "alice" || payload.LocalHostname != "workstation" {
+				t.Errorf("reported context = %q@%q, want alice@workstation", payload.LocalUsername, payload.LocalHostname)
+			}
+			if payload.CertificateType != string(certType) {
+				t.Errorf("CertificateType = %q, want %q", payload.CertificateType, certType)
+			}
+		})
+	}
 }
 
 // A service certificate's notification is the redemption one, addressed to
@@ -194,13 +258,17 @@ func TestResolveSuccess_shouldCarryNoAddressesForAnUnrestrictedCertificate(t *te
 	}
 }
 
-// Both kinds default off so an existing deployment stays exactly as quiet on
-// upgrade as it was before. Asserted against the registry rather than the
-// emit path, because the default is what decides that.
+// All three kinds default off so an existing deployment stays exactly as
+// quiet on upgrade as it was before. Asserted against the registry rather
+// than the emit path, because the default is what decides that.
 func TestCertificateIssuedKinds_shouldDefaultOff(t *testing.T) {
 	t.Parallel()
 
-	for _, kind := range []notify.Kind{notify.KindUserCertificateIssued, notify.KindPAMCertificateIssued} {
+	for _, kind := range []notify.Kind{
+		notify.KindUserCertificateIssued,
+		notify.KindPAMCertificateIssued,
+		notify.KindConsoleCertificateIssued,
+	} {
 		if notify.DefaultEnabled(kind) {
 			t.Errorf("%s defaults on; one message per login or per sudo must be opt-in", kind)
 		}

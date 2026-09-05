@@ -6,7 +6,7 @@
     that renews through it starts failing.
   </p>
 
-  <p style="color:#6b7280;font-size:13px">This is the only reminder for this enrollment.</p>
+  <p style="color:#6b7280;font-size:13px">{{ if .Daily }}You will hear about this every day until the code expires.{{ else }}You will hear about this again in a week, then every day over its final week.{{ end }}</p>
 
   <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Enrollment</h3>
   <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
