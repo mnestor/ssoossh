@@ -1,0 +1,251 @@
+---
+title: Illustrated walkthrough
+description: A friendly guide to certificate-based SSH login, in seven pictures.
+eyebrow: How it works
+sidebar:
+  order: 2
+---
+
+A friendly guide to certificate-based SSH login: the same flow as
+[interactive user certificates](/ssoossh/concepts/user-certificate/), told
+from the outside, one screen at a time. Nothing here is configuration. If you
+have just been told your company uses ssoossh, start here.
+
+export const figure = {
+	border: '1px solid var(--sl-color-gray-5)',
+	borderRadius: '10px',
+	padding: '1rem',
+	margin: '1.5rem 0',
+	maxWidth: '360px',
+};
+
+## Step 1: You type the command
+
+<div style={figure}>
+<svg viewBox="0 0 280 240" role="img" aria-label="A terminal window showing the ssoossh command, printing a URL and waiting for approval">
+<rect x="20" y="40" width="240" height="160" fill="currentColor" opacity="0.08" rx="4" />
+<rect x="20" y="40" width="240" height="160" fill="none" stroke="currentColor" stroke-width="2" rx="4" />
+<rect x="20" y="40" width="240" height="24" fill="currentColor" opacity="0.12" rx="4" />
+<circle cx="32" cy="52" r="3" fill="currentColor" opacity="0.5" />
+<circle cx="44" cy="52" r="3" fill="currentColor" opacity="0.5" />
+<circle cx="56" cy="52" r="3" fill="currentColor" opacity="0.5" />
+<text x="30" y="90" font-family="var(--sl-font-mono)" font-size="11" fill="currentColor">$ ssoossh ssh login</text>
+<text x="30" y="110" font-family="var(--sl-font-mono)" font-size="11" fill="var(--sl-color-accent)">Opening browser...</text>
+<text x="30" y="135" font-family="var(--sl-font-mono)" font-size="11" fill="currentColor">Visit: https://ssh.company.com/auth/xyz123</text>
+<rect x="30" y="145" width="8" height="2" fill="var(--sl-color-green)" opacity="0.7" />
+<text x="30" y="170" font-family="var(--sl-font-mono)" font-size="10" fill="var(--sl-color-gray-3)">Waiting for approval...</text>
+</svg>
+</div>
+
+Open your terminal and run `ssoossh ssh login`, or just `ssh host` if it is set
+up in your `ssh_config`.
+
+If you already hold a valid certificate, the client reuses it and you are done
+with no browser at all. Otherwise it generates a fresh, unique keypair, sends
+the public key to the ssoossh server, and gets back a URL.
+
+Your terminal prints that URL and then waits patiently. Nothing leaves your
+laptop except the public key: the private key stays right there, on your
+machine.
+
+## Step 2: Your browser opens automatically
+
+<div style={figure}>
+<svg viewBox="0 0 280 240" role="img" aria-label="A browser window on the ssoossh sign-in page, offering a login with SSO button">
+<rect x="20" y="30" width="240" height="180" fill="currentColor" opacity="0.08" rx="4" />
+<rect x="20" y="30" width="240" height="180" fill="none" stroke="currentColor" stroke-width="2" rx="4" />
+<rect x="20" y="30" width="240" height="28" fill="currentColor" opacity="0.12" rx="4" />
+<text x="35" y="50" font-size="10" fill="currentColor" opacity="0.7">ssh.company.com/auth/xyz123</text>
+<text x="40" y="90" font-size="14" font-weight="600" fill="currentColor">Sign In</text>
+<text x="40" y="115" font-size="11" fill="var(--sl-color-gray-3)">Use your company account</text>
+<rect x="40" y="135" width="200" height="40" fill="var(--sl-color-accent)" rx="4" />
+<text x="140" y="163" font-size="12" font-weight="600" fill="var(--sl-color-accent-low)" text-anchor="middle">Login with SSO</text>
+</svg>
+</div>
+
+ssoossh tries to open the URL in your default browser. If that does not work,
+or you would rather do it yourself, paste the link into a browser by hand.
+
+You land on the ssoossh login page, which immediately sends you to your
+company's identity provider: the same place you log into everything else.
+
+Nothing special happens here. You log in exactly the way you normally do,
+including any multi-factor step your company requires.
+
+## Step 3: You see exactly what you are approving
+
+<div style={figure}>
+<svg viewBox="0 0 280 240" role="img" aria-label="An approval page listing what is granted in green and what policy trimmed in amber, with approve and decline buttons">
+<rect x="20" y="20" width="240" height="200" fill="currentColor" opacity="0.08" rx="4" />
+<rect x="20" y="20" width="240" height="200" fill="none" stroke="currentColor" stroke-width="2" rx="4" />
+<rect x="20" y="20" width="240" height="32" fill="currentColor" opacity="0.12" rx="4" />
+<text x="40" y="42" font-size="13" font-weight="600" fill="currentColor">Approve certificate?</text>
+<text x="40" y="70" font-size="11" font-weight="600" fill="var(--sl-color-green)">Granted</text>
+<text x="40" y="87" font-size="10" fill="currentColor">SSH to prod servers</text>
+<text x="40" y="102" font-size="10" fill="currentColor">Expires in 12 hours</text>
+<text x="40" y="125" font-size="11" font-weight="600" fill="var(--sl-color-orange)">Not allowed</text>
+<text x="40" y="142" font-size="10" fill="var(--sl-color-gray-3)">File transfer (denied by policy)</text>
+<text x="40" y="157" font-size="10" fill="var(--sl-color-gray-3)">Agent forwarding (denied by policy)</text>
+<rect x="40" y="180" width="85" height="28" fill="var(--sl-color-green)" rx="3" />
+<text x="82.5" y="200" font-size="11" font-weight="600" fill="var(--sl-color-accent-low)" text-anchor="middle">Approve</text>
+<rect x="155" y="180" width="85" height="28" fill="currentColor" opacity="0.1" stroke="currentColor" stroke-width="1" rx="3" />
+<text x="197.5" y="200" font-size="11" font-weight="600" fill="currentColor" text-anchor="middle">Decline</text>
+</svg>
+</div>
+
+After logging in you land on an approval page. This is where ssoossh shows you
+the certificate it is about to issue.
+
+In green you see what you have been granted: which servers you can log into,
+and how long the certificate lasts. In amber you see anything you asked for
+that policy does not allow, such as file transfer or agent forwarding.
+
+That difference is the point. You can see what you requested against what you
+are actually getting, and if something looks wrong you can decline and ask your
+administrator to adjust the policy.
+
+## Step 4: You approve, and your part is over
+
+<div style={figure}>
+<svg viewBox="0 0 280 240" role="img" aria-label="A pointer clicking the approve button, with a confirmation checkmark appearing">
+<path d="M 100 80 L 110 60 L 115 70 L 120 55 L 120 75 L 115 80 Z" fill="var(--sl-color-accent)" opacity="0.8" />
+<rect x="80" y="120" width="120" height="45" fill="var(--sl-color-green)" rx="4" opacity="0.8" />
+<text x="140" y="150" font-size="14" font-weight="600" fill="var(--sl-color-accent-low)" text-anchor="middle">Approve</text>
+<circle cx="180" cy="100" r="30" fill="none" stroke="var(--sl-color-green)" stroke-width="2" opacity="0.6" />
+<path d="M 170 105 L 178 115 L 200 90" fill="none" stroke="var(--sl-color-green)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.6" />
+</svg>
+</div>
+
+You click Approve. That is it for you: the browser shows a confirmation page
+and you are done.
+
+Meanwhile your terminal has not gone anywhere. It is still sitting on that
+event stream, waiting for the certificate to arrive. The server signs the
+certificate in the background and delivers it straight to the waiting client,
+so the terminal learns the outcome the moment the certificate lands. The
+certificate is never stored on the server, so that delivery is the only copy.
+
+## Step 5: Your certificate arrives, automatically
+
+<div style={figure}>
+<svg viewBox="0 0 280 240" role="img" aria-label="The waiting terminal receiving the certificate, shown as a badge valid for twelve hours">
+<rect x="20" y="40" width="240" height="160" fill="currentColor" opacity="0.08" rx="4" />
+<rect x="20" y="40" width="240" height="160" fill="none" stroke="currentColor" stroke-width="2" rx="4" />
+<rect x="20" y="40" width="240" height="24" fill="currentColor" opacity="0.12" rx="4" />
+<circle cx="32" cy="52" r="3" fill="currentColor" opacity="0.5" />
+<circle cx="44" cy="52" r="3" fill="currentColor" opacity="0.5" />
+<circle cx="56" cy="52" r="3" fill="currentColor" opacity="0.5" />
+<text x="30" y="90" font-family="var(--sl-font-mono)" font-size="11" fill="currentColor">$ ssoossh ssh login</text>
+<text x="30" y="110" font-family="var(--sl-font-mono)" font-size="11" fill="var(--sl-color-accent)">Opening browser...</text>
+<text x="30" y="135" font-family="var(--sl-font-mono)" font-size="11" fill="currentColor">Certificate received!</text>
+<g transform="translate(180, 85)">
+<rect x="0" y="0" width="60" height="70" fill="var(--sl-color-green)" rx="3" opacity="0.8" />
+<text x="30" y="20" font-size="10" font-weight="600" fill="var(--sl-color-accent-low)" text-anchor="middle">Badge</text>
+<text x="30" y="38" font-size="8" fill="var(--sl-color-accent-low)" text-anchor="middle">Loaded</text>
+<circle cx="30" cy="55" r="6" fill="none" stroke="var(--sl-color-accent-low)" stroke-width="1" />
+<text x="30" y="59" font-size="7" fill="var(--sl-color-accent-low)" text-anchor="middle">12h</text>
+</g>
+</svg>
+</div>
+
+Within seconds your terminal wakes up. The server has signed your certificate:
+a visitor badge that says who you are, which login names (principals) you may
+use, and when it expires.
+
+ssoossh loads that certificate into your local ssh-agent, the part of SSH that
+holds your credentials, or writes it to key files if you do not run an agent.
+The private key never left your laptop; the certificate just joins it.
+
+You are now ready to connect. The whole flow takes about a minute, including
+the time you spent logging in.
+
+## Step 6: SSH connects and works immediately
+
+<div style={figure}>
+<svg viewBox="0 0 280 240" role="img" aria-label="A laptop presenting its certificate to a server, which verifies it against the CA and lets the user in">
+<defs>
+<marker id="wt-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+<polygon points="0 0, 10 3, 0 6" fill="currentColor" />
+</marker>
+<marker id="wt-arrow-ok" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+<polygon points="0 0, 10 3, 0 6" fill="var(--sl-color-green)" />
+</marker>
+</defs>
+<rect x="20" y="100" width="70" height="50" fill="currentColor" opacity="0.08" stroke="currentColor" stroke-width="1" rx="3" />
+<text x="55" y="130" font-size="10" fill="currentColor" text-anchor="middle">Your laptop</text>
+<g transform="translate(35, 65)">
+<rect x="0" y="0" width="40" height="25" fill="var(--sl-color-green)" rx="2" opacity="0.8" />
+<text x="20" y="16" font-size="7" fill="var(--sl-color-accent-low)" text-anchor="middle" font-weight="600">Badge</text>
+</g>
+<path d="M 100 120 L 160 120" stroke="currentColor" stroke-width="2" fill="none" marker-end="url(#wt-arrow)" />
+<text x="130" y="110" font-size="9" fill="currentColor" text-anchor="middle">present</text>
+<text x="130" y="133" font-size="9" fill="currentColor" text-anchor="middle">certificate</text>
+<rect x="180" y="100" width="80" height="50" fill="currentColor" opacity="0.08" stroke="currentColor" stroke-width="1" rx="3" />
+<text x="220" y="130" font-size="10" fill="currentColor" text-anchor="middle">Server</text>
+<circle cx="220" cy="75" r="12" fill="var(--sl-color-green)" opacity="0.7" />
+<path d="M 214 75 L 219 81 L 227 69" fill="none" stroke="var(--sl-color-accent-low)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+<path d="M 160 160 L 100 160" stroke="var(--sl-color-green)" stroke-width="2" fill="none" marker-end="url(#wt-arrow-ok)" />
+<text x="130" y="175" font-size="9" fill="var(--sl-color-green)" text-anchor="middle" font-weight="600">Verified</text>
+</svg>
+</div>
+
+Now you run `ssh prod-server.internal` the way you normally would. SSH uses the
+certificate you just received, your visitor badge, to authenticate.
+
+The server does not have your key stored anywhere. It trusts the badge office,
+which is ssoossh's CA key. It checks the certificate's signature, checks that
+the principals and constraints match what you are trying to do, and if
+everything holds, you are in.
+
+No special credentials to manage, no key stored in a thousand places, no
+ancient key from years ago that nobody remembers.
+
+## Step 7: It expires on its own, by design
+
+<div style={figure}>
+<svg viewBox="0 0 280 240" role="img" aria-label="A timeline showing the certificate valid at first and expired after twelve hours">
+<rect x="20" y="60" width="100" height="40" fill="var(--sl-color-green)" opacity="0.3" rx="3" />
+<text x="70" y="88" font-size="10" fill="var(--sl-color-green)" text-anchor="middle" font-weight="600">Valid</text>
+<rect x="160" y="60" width="100" height="40" fill="currentColor" opacity="0.08" rx="3" stroke="currentColor" stroke-width="1" stroke-dasharray="2,2" />
+<text x="210" y="88" font-size="10" fill="currentColor" text-anchor="middle" font-weight="600">Expired</text>
+<g transform="translate(210, 130)">
+<circle cx="0" cy="0" r="18" fill="none" stroke="var(--sl-color-red)" stroke-width="2" />
+<line x1="0" y1="-8" x2="0" y2="-2" stroke="var(--sl-color-red)" stroke-width="2" />
+<line x1="8" y1="0" x2="2" y2="0" stroke="var(--sl-color-red)" stroke-width="2" />
+</g>
+<path d="M 30 175 L 250 175" stroke="currentColor" stroke-width="1" stroke-dasharray="3,3" fill="none" />
+<text x="20" y="200" font-size="9" fill="var(--sl-color-gray-3)">Now</text>
+<text x="235" y="200" font-size="9" fill="var(--sl-color-gray-3)">12 hours</text>
+</svg>
+</div>
+
+Your certificate is short-lived on purpose. After its window closes it is
+worthless. Nobody has to revoke it and nobody has to rotate anything; it just
+stops working.
+
+Next time you need a server, run the command again. You go through the same
+flow, get a new badge, and keep working. It stays out of your way because
+ssoossh reuses a certificate that has not expired yet, so you see the browser
+only when a new one is needed: typically once a workday, not once per
+connection.
+
+That is the whole story. A certificate is a visitor badge, issued for a
+moment, checked at the door, and discarded when its time is up.
+
+:::note
+Twelve hours is the example above, not a default. How long your certificate
+lasts is set by your administrator, and can vary by group and by the network
+you are on -- see
+[options and lifetime resolution](/ssoossh/concepts/options-and-lifetime/).
+:::
+
+## Related
+
+- [Interactive user certificates](/ssoossh/concepts/user-certificate/) -- the
+  same flow as sequence diagrams, with the parts this page skipped.
+- [The ssoossh client](/ssoossh/guides/client/) -- installing and running it.
+- [ssh_config integration](/ssoossh/guides/ssh-config/) -- making `ssh host`
+  do all of this for you.
+- [Approving in the browser](/ssoossh/guides/approving/) -- step 3 in detail.
+- [Diagnostics](/ssoossh/guides/diagnostics/) -- when the terminal never wakes
+  up.

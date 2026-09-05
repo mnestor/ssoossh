@@ -4,6 +4,14 @@
 OIDC and receive short-lived SSH certificates instead of managing long-lived
 keys. Self-hosted, homelab-friendly, early development.
 
+The rendered documentation site is at
+<https://mnestor.github.io/ssoossh/>. It is built from `user-docs/` and
+covers the same ground as this directory for users, host administrators,
+and server operators, with the configuration, CLI, and HTTP API references
+generated from the source. The files here remain the working copies that
+the site's hand-written pages are derived from; the proposals and dev
+documents below have no site page and are linked from it by GitHub URL.
+
 | Directory | Audience |
 | --- | --- |
 | [guide/](guide/) | Using ssoossh |

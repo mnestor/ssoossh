@@ -1,22 +1,49 @@
 ---
 title: ssoossh
-description: Short-lived SSH certificates from your identity provider.
+description: Short-lived SSH certificates from your identity provider, for ssh, sudo, and the console.
 template: splash
 hero:
-  tagline: Sign in with your identity provider, get a short-lived SSH certificate. No long-lived keys to distribute, rotate, or revoke.
+  tagline: Sign in with your identity provider, get a short-lived SSH certificate. No long-lived keys to distribute, rotate, or revoke. The same approval puts sudo, su, and console logins behind the identity provider too.
   actions:
     - text: Get started
       link: /ssoossh/getting-started/
       icon: right-arrow
-    - text: Configuration reference
-      link: /ssoossh/reference/config/
+    - text: How it works
+      link: /ssoossh/concepts/
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Pick your path
+
+<CardGrid>
+	<LinkCard
+		title="I log in to servers"
+		description="Install the client, wire it into ssh_config, approve once in the browser, and ssh as usual."
+		href="/ssoossh/guides/client/"
+	/>
+	<LinkCard
+		title="I run the servers people log in to"
+		description="Trust the CA in sshd, and put sudo, su, or console login behind an approval with pam_ssoossh."
+		href="/ssoossh/hosts/"
+	/>
+	<LinkCard
+		title="I operate ssoosshd"
+		description="Deploy the server: CA key, identity provider, TLS, database, policy, notifications, and multi-instance."
+		href="/ssoossh/operations/"
+	/>
+	<LinkCard
+		title="I need the exact key or flag"
+		description="Every ssoosshd.yaml key, every ssoossh and ssoosshd command, and the HTTP API, generated from the source."
+		href="/ssoossh/reference/config/"
+	/>
+</CardGrid>
+
+## What it does
 
 <CardGrid stagger>
-	<Card title="OIDC-backed" icon="seti:lock">
+	<Card title="OIDC-backed" icon="padlock">
 		The server authenticates users against your OpenID Connect provider and
 		signs their SSH public keys into short-lived certificates. Group
 		membership feeds the lifetime decision; it never appears in the
@@ -25,16 +52,55 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 	<Card title="Approval workflow" icon="approve-check">
 		Certificate requests are approved and confirmed in a web UI, with
 		per-user certificate history and admin, SOC, and auditor roles mapped
-		from OIDC groups.
+		from OIDC groups. Every decision lands in an append-only audit log.
 	</Card>
-	<Card title="Client and PAM" icon="laptop">
-		The `ssoossh` client requests certificates from the command line and
-		loads them into your agent; `pam_ssoossh` issues certificates for local
-		PAM authentication.
+	<Card title="sudo, su, and the console" icon="laptop">
+		`pam_ssoossh` issues a certificate for a local PAM authentication and
+		validates it on the host. A machine with a browser gets a URL; a serial
+		console or BMC viewer gets a short code and a QR code instead.
 	</Card>
-	<Card title="SQLite or PostgreSQL" icon="seti:db">
-		Runs as a single systemd service with SQLite, or against PostgreSQL in
-		multi-instance deployments. CA keys come from an inline SSH key or a
-		PKCS#11/HSM token.
+	<Card title="Service accounts" icon="clock">
+		Unattended jobs enroll once, are approved by a human, and then reissue
+		their own certificates on a schedule without anyone at a keyboard.
+	</Card>
+	<Card title="Private keys stay put" icon="puzzle">
+		The client generates the keypair and loads the result into your
+		ssh-agent. The server only ever sees public keys. The CA key can live
+		in a PKCS#11 token so it never leaves the hardware.
+	</Card>
+	<Card title="SQLite or PostgreSQL" icon="database">
+		Runs as a single systemd service with SQLite, or as several instances
+		against PostgreSQL with NATS carrying signing jobs to a signer that
+		holds the CA key alone.
 	</Card>
 </CardGrid>
+
+## The shape of a login
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as You
+    participant S as ssh
+    participant C as ssoossh client
+    participant D as ssoosshd
+    participant I as Identity provider
+    participant H as Target host
+
+    U->>S: ssh host
+    S->>C: Match exec / ProxyCommand
+    C->>D: public key, requested options
+    C-->>U: opens browser
+    U->>I: sign in
+    I-->>D: identity and groups
+    U->>D: approve
+    D-->>C: signed certificate
+    C->>C: load into ssh-agent
+    S->>H: connect with certificate
+    H->>H: verify against TrustedUserCAKeys
+```
+
+The [illustrated walkthrough](/ssoossh/concepts/walkthrough/) shows each of
+these steps as the user sees them, and the
+[flow pages](/ssoossh/concepts/user-certificate/) show what the server and
+the host do in between.

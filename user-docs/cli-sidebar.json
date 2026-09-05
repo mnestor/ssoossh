@@ -1,0 +1,133 @@
+[
+  {
+    "label": "ssoossh (client)",
+    "items": [
+      {
+        "label": "ssoossh",
+        "slug": "reference/cli/ssoossh"
+      },
+      {
+        "label": "ca",
+        "slug": "reference/cli/ssoossh/ca"
+      },
+      {
+        "label": "host",
+        "items": [
+          {
+            "label": "Overview",
+            "slug": "reference/cli/ssoossh/host"
+          },
+          {
+            "label": "mapping",
+            "items": [
+              {
+                "label": "Overview",
+                "slug": "reference/cli/ssoossh/host-mapping"
+              },
+              {
+                "label": "add",
+                "slug": "reference/cli/ssoossh/host-mapping-add"
+              },
+              {
+                "label": "list",
+                "slug": "reference/cli/ssoossh/host-mapping-list"
+              },
+              {
+                "label": "remove",
+                "slug": "reference/cli/ssoossh/host-mapping-remove"
+              }
+            ]
+          },
+          {
+            "label": "principals",
+            "slug": "reference/cli/ssoossh/host-principals"
+          }
+        ]
+      },
+      {
+        "label": "service",
+        "items": [
+          {
+            "label": "Overview",
+            "slug": "reference/cli/ssoossh/service"
+          },
+          {
+            "label": "enroll",
+            "slug": "reference/cli/ssoossh/service-enroll"
+          },
+          {
+            "label": "retrieve",
+            "slug": "reference/cli/ssoossh/service-retrieve"
+          }
+        ]
+      },
+      {
+        "label": "ssh",
+        "items": [
+          {
+            "label": "Overview",
+            "slug": "reference/cli/ssoossh/ssh"
+          },
+          {
+            "label": "config",
+            "slug": "reference/cli/ssoossh/ssh-config"
+          },
+          {
+            "label": "inspect",
+            "slug": "reference/cli/ssoossh/ssh-inspect"
+          },
+          {
+            "label": "login",
+            "slug": "reference/cli/ssoossh/ssh-login"
+          },
+          {
+            "label": "logout",
+            "slug": "reference/cli/ssoossh/ssh-logout"
+          },
+          {
+            "label": "proxycommand",
+            "slug": "reference/cli/ssoossh/ssh-proxycommand"
+          }
+        ]
+      },
+      {
+        "label": "version",
+        "slug": "reference/cli/ssoossh/version"
+      }
+    ]
+  },
+  {
+    "label": "ssoosshd (server)",
+    "items": [
+      {
+        "label": "ssoosshd",
+        "slug": "reference/cli/ssoosshd"
+      },
+      {
+        "label": "serve",
+        "items": [
+          {
+            "label": "Overview",
+            "slug": "reference/cli/ssoosshd/serve"
+          },
+          {
+            "label": "api",
+            "slug": "reference/cli/ssoosshd/serve-api"
+          },
+          {
+            "label": "full",
+            "slug": "reference/cli/ssoosshd/serve-full"
+          }
+        ]
+      },
+      {
+        "label": "sign",
+        "slug": "reference/cli/ssoosshd/sign"
+      },
+      {
+        "label": "version",
+        "slug": "reference/cli/ssoosshd/version"
+      }
+    ]
+  }
+]

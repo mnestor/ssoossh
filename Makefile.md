@@ -101,6 +101,7 @@ per-component variants (`test-server`, `test-client`, `test-pam`,
 | `make openapi` | Regenerate docs/openapi.yaml from swag annotations |
 | `make gendocs` | Regenerate man pages from the cobra commands |
 | `make confdocs` | Regenerate the config reference and defaults.yaml comments |
+| `make clidocs` | Regenerate the docs site's CLI reference from the cobra commands |
 | `make makefile-docs` | Regenerate the target tables in Makefile.md |
 | `make third-party-licenses` | Regenerate THIRD-PARTY-LICENSES.md |
 

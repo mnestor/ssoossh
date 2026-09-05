@@ -171,8 +171,8 @@ closed.
 
 ```yaml
 admin:
-  # Full administrative access: re-enabling users, reassigning any enrollment,
-  # plus everything SOC and auditor can do.
+  # Full administrative access: re-enabling users, plus everything SOC and
+  # auditor can do.
   require_group: "ssh-admins"
 
   # Containment only: disabling users and expiring enrollments. Admins hold

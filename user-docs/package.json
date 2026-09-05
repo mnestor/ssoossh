@@ -12,6 +12,9 @@
     "@astrojs/starlight": "0.41.10",
     "@fontsource/fira-code": "^5.3.0",
     "@fontsource/public-sans": "^5.3.0",
-    "astro": "7.2.9"
+    "astro": "7.2.9",
+    "astro-mermaid": "^2.1.0",
+    "mermaid": "^11.17.2",
+    "starlight-openapi": "^0.26.2"
   }
 }

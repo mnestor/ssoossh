@@ -100,6 +100,12 @@ jobs:
       - name: Check generated man pages are current
         run: make man-check
 
+      # The docs site's configuration reference comes from the config
+      # structs and its CLI reference from the cobra commands. Catches a
+      # key or a flag changing without the site following.
+      - name: Check generated docs site pages are current
+        run: make confdocs-check clidocs-check
+
       # The server binary embeds server/frontend/dist.
       - name: Build web UI
         run: make frontend
@@ -151,6 +157,10 @@ jobs:
       # not ship in a release archive.
       - name: Check generated man pages are current
         run: make man-check
+
+      # The docs site's generated reference pages, for the same reason.
+      - name: Check generated docs site pages are current
+        run: make confdocs-check clidocs-check
 
       # Must run before goreleaser: the server binary embeds
       # server/frontend/dist, and only a placeholder index.html is tracked.

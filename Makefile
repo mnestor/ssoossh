@@ -412,10 +412,10 @@ check-gitignore: ## Assert the .gitignore invariants hold
 # here -- the .PHONY line and check-generated's prerequisites both follow
 # from this list rather than repeating it.
 GENERATED_GATES := types-check openapi-check openapi-lint man-check \
-	confdocs-check makefile-docs-check
+	confdocs-check clidocs-check makefile-docs-check
 
 .PHONY: check-generated $(GENERATED_GATES)
-.PHONY: types openapi gendocs confdocs makefile-docs third-party-licenses
+.PHONY: types openapi gendocs confdocs clidocs makefile-docs third-party-licenses
 check-generated: $(GENERATED_GATES) ## Assert every generated artifact is current
 
 # Asserts that regenerating an artifact changes nothing, by hashing the
@@ -557,6 +557,25 @@ server/config/defaults.yaml, and the user-docs config pages being regenerated.
 
 confdocs-check:
 	$(call STALENESS_CHECK,$(CONFDOCS_OUT),confdocs,$(STALE_CONFDOCS))
+
+# The documentation site's CLI reference, one page per cobra command, from
+# the same trees gendocs turns into man pages -- so the site and the man
+# pages can never describe different flags. cli-sidebar.json carries the
+# tree's own order into the sidebar.
+#
+# CGO_ENABLED=1 for the same reason gendocs needs it: importing the server
+# command tree reaches the HSM key source's libpkcs11 binding.
+CLIDOCS_OUT := user-docs/src/content/docs/reference/cli user-docs/cli-sidebar.json
+
+clidocs: ## Regenerate the docs site's CLI reference from the cobra commands
+	CGO_ENABLED=1 go run ./internal/tools/genclidocs
+
+STALE_CLIDOCS := The CLI reference is stale: a cobra command's name, \
+description, flags, or subcommand set changed without the user-docs CLI \
+pages being regenerated.
+
+clidocs-check:
+	$(call STALENESS_CHECK,$(CLIDOCS_OUT),clidocs,$(STALE_CLIDOCS))
 
 # Makefile.md's target inventory is generated from this file's own ##@ and
 # ## annotations -- the same data `make help` prints. Only the region between
