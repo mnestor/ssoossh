@@ -35,5 +35,22 @@
   "decided_user_agent": "curl/8.0.0",
   "decided_accept_language": "en-US",
   "decided_forwarded_for": "198.51.100.7, 10.0.0.1",
-  "decided_at": "2026-08-14T09:30:00+02:00"
+  "decided_at": "2026-08-14T09:30:00+02:00",
+  "decided_principals": [
+    "alice",
+    "alice.other"
+  ],
+  "decided_granted_options": {
+    "extensions": [
+      "permit-pty",
+      "permit-agent-forwarding"
+    ],
+    "force_command": "/usr/local/bin/audit-shell",
+    "source_addresses": [
+      "198.51.100.0/24",
+      "203.0.113.7/32"
+    ],
+    "no_touch_required": true
+  },
+  "decided_policy_explanation": "{\"v\":1,\"cert_type\":\"user\",\"policy_configured\":false,\"ceiling\":\"8h0m0s\",\"effective_duration\":\"8h0m0s\"}"
 }

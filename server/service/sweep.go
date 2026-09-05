@@ -95,9 +95,12 @@ func (s *CertRequestService) strandedCutoff() time.Time {
 // — which caches its outcome for Wait to trust without a DB read — is only
 // called for those, never for a request some other path already resolved.
 func (s *CertRequestService) failStranded(ctx context.Context, ids []string) {
+	// RETURNING the whole row rather than just id: the cert.sign_failed
+	// event below carries the request's type and host context, and this
+	// is the one read that already has them.
 	var updated []model.CertificateRequest
 	result := s.db.WithContext(ctx).
-		Clauses(clause.Returning{Columns: []clause.Column{{Name: "id"}}}).
+		Clauses(clause.Returning{}).
 		Model(&updated).
 		Where("id IN ? AND status = ?", ids, model.CertificateRequestStatusSigning).
 		Updates(map[string]any{
@@ -116,6 +119,21 @@ func (s *CertRequestService) failStranded(ctx context.Context, ids []string) {
 		updatedIDs[req.ID] = true
 		slog.Warn("invalidated stranded certificate request",
 			"request_id", req.ID, "reason", FailureReasonStranded)
+		// Same event the listener emits for a signer refusal: an approval
+		// that never became a certificate, here because the job was lost
+		// rather than rejected. The reason string tells the two apart.
+		s.auditRecord(ctx, AuditEvent{
+			Action:     AuditCertSignFailed,
+			System:     true,
+			OccurredAt: time.Now(),
+			Detail: withDetail(hostContextDetail(req), map[string]any{
+				"request_id": req.ID,
+				"cert_type":  string(req.Type),
+				"source_ip":  req.SourceIP,
+				"error_code": "stranded",
+				"error":      FailureReasonStranded,
+			}),
+		})
 		s.notifyWaiter(req.ID, WaitOutcome{Status: model.CertificateRequestStatusFailed})
 	}
 	for _, id := range ids {

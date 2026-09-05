@@ -537,9 +537,19 @@ func (s *EnrollmentService) SetNotificationEmail(ctx context.Context, enrollment
 	// account's holders hearing about their code, and where did it go
 	// instead" is the question this event exists to answer, and the new
 	// value alone does not answer it.
+	// The setter's users-row id is the grouping key that puts this on
+	// their own timeline. Best effort: a miss costs the key, not the event.
+	var actorUserID string
+	if err := s.db.WithContext(ctx).Model(&model.User{}).
+		Select("id").Where("subject = ?", identity.Subject).
+		Scan(&actorUserID).Error; err != nil {
+		slog.Warn("could not resolve the acting user's id for the audit event",
+			"enrollment_id", enrollmentID, "error", err)
+	}
+
 	s.auditRecord(ctx, AuditEvent{
 		Action: AuditEnrollmentNotificationEmailSet,
-		Actor:  AuditSubjectFromIdentity(identity, ""),
+		Actor:  AuditSubjectFromIdentity(identity, actorUserID),
 		Target: &AuditSubject{UserID: enrollment.UserID},
 		Detail: map[string]any{
 			"enrollment_id":      enrollmentID,

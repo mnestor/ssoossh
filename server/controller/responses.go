@@ -150,14 +150,27 @@ func newRequestDetailResponse(d *service.RequestDetail) webtypes.RequestDetailRe
 		PAMService:    d.Request.PAMService,
 		TTY:           d.Request.TTY,
 		RemoteHost:    d.Request.RemoteHost,
-		ExpiresAt:     d.ExpiresAt,
-		PublicKey:     d.Request.PublicKey,
-		Principals:    orEmpty(d.Principals),
-		ValidSeconds:  int(d.ValidDuration.Seconds()),
-		Requested:     newCertificateOptionsResponse(d.Requested),
-		Granted:       newCertificateOptionsResponse(d.Narrowed),
-		CreatedAt:     d.Request.CreatedAt,
-		ApprovalURL:   approvalURL(d.Request.ID),
+
+		RequestingUser:        d.Request.RequestingUser,
+		Process:               d.Request.Process,
+		CallerUID:             d.Request.CallerUID,
+		CallerPID:             d.Request.CallerPID,
+		CallerPPID:            d.Request.CallerPPID,
+		MachineID:             d.Request.MachineID,
+		OS:                    d.Request.OS,
+		Client:                d.Request.Client,
+		ClientMode:            d.Request.ClientMode,
+		ClientTime:            d.Request.ClientTime,
+		TrustedCAFingerprints: d.TrustedCAFingerprints,
+
+		ExpiresAt:    d.ExpiresAt,
+		PublicKey:    d.Request.PublicKey,
+		Principals:   orEmpty(d.Principals),
+		ValidSeconds: int(d.ValidDuration.Seconds()),
+		Requested:    newCertificateOptionsResponse(d.Requested),
+		Granted:      newCertificateOptionsResponse(d.Narrowed),
+		CreatedAt:    d.Request.CreatedAt,
+		ApprovalURL:  approvalURL(d.Request.ID),
 		// Detail binds the request to the caller, so reaching this point at
 		// all means they own it. Present as a field anyway so the UI does
 		// not have to infer ownership from the absence of an error.
@@ -192,6 +205,27 @@ func setDecisionFields(resp *webtypes.RequestDetailResponse, decision *model.Cer
 	resp.DecidedByGroups = decodeDecisionStringList("groups", decision.Groups)
 	resp.DecidedByOtherAccounts = decodeDecisionStringList("other_accounts", decision.OtherAccounts)
 	resp.DecidedByServiceAccounts = decodeDecisionStringList("service_accounts", decision.ServiceAccounts)
+	resp.DecidedPrincipals, resp.DecidedGrantedOptions, resp.DecidedPolicyExplanation = decodeDecisionGrant(decision)
+}
+
+// decodeDecisionGrant reads the decision's content columns back for a
+// response: the principals list, the granted options, and the policy
+// explanation passed through as the JSON document it is. Empty columns
+// (denials, rows predating them) read as absent, never as an error.
+func decodeDecisionGrant(decision *model.CertificateRequestDecision) ([]string, *webtypes.CertificateOptionsResponse, string) {
+	principals := decodeDecisionStringList("principals", decision.Principals)
+	var granted *webtypes.CertificateOptionsResponse
+	if decision.GrantedOptions != "" {
+		var opts service.RequestedOptions
+		if err := json.Unmarshal([]byte(decision.GrantedOptions), &opts); err != nil {
+			slog.Warn("could not decode a decision's granted options",
+				"decision_id", decision.ID, "error", err)
+		} else {
+			g := newCertificateOptionsResponse(opts)
+			granted = &g
+		}
+	}
+	return principals, granted, decision.PolicyExplanation
 }
 
 // setDecisionFieldsOnCertificate maps decision's fields onto a certificate
@@ -211,6 +245,7 @@ func setDecisionFieldsOnCertificate(resp *webtypes.CertificateResponse, decision
 	resp.DecidedByGroups = decodeDecisionStringList("groups", decision.Groups)
 	resp.DecidedByOtherAccounts = decodeDecisionStringList("other_accounts", decision.OtherAccounts)
 	resp.DecidedByServiceAccounts = decodeDecisionStringList("service_accounts", decision.ServiceAccounts)
+	resp.DecidedPrincipals, resp.DecidedGrantedOptions, resp.DecidedPolicyExplanation = decodeDecisionGrant(decision)
 }
 
 // decodeDecisionStringList decodes a JSON-encoded []string column from

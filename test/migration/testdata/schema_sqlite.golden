@@ -22,11 +22,13 @@ table certificate_request_decisions
   column decided_at type=DATETIME nullable=false pk=false default=<none>
   column email type=TEXT nullable=false pk=false default=''
   column forwarded_for type=TEXT nullable=false pk=false default=''
+  column granted_options type=TEXT nullable=false pk=false default=''
   column groups type=TEXT nullable=false pk=false default=''
   column id type=TEXT nullable=false pk=true default=<none>
   column other_accounts type=TEXT nullable=false pk=false default=''
   column outcome type=TEXT nullable=false pk=false default=<none>
   column policy_explanation type=TEXT nullable=false pk=false default=''
+  column principals type=TEXT nullable=false pk=false default=''
   column service_accounts type=TEXT nullable=false pk=false default=''
   column source_ip type=TEXT nullable=false pk=false default=''
   column subject type=TEXT nullable=false pk=false default=''
@@ -39,9 +41,15 @@ table certificate_request_decisions
   index sqlite_autoindex_certificate_request_decisions_1 unique=true columns=id
   index sqlite_autoindex_certificate_request_decisions_2 unique=true columns=certificate_request_id
 table certificate_requests
+  column caller_pid type=INTEGER nullable=true pk=false default=<none>
+  column caller_ppid type=INTEGER nullable=true pk=false default=<none>
+  column caller_uid type=INTEGER nullable=true pk=false default=<none>
   column claim_token_hash type=TEXT nullable=true pk=false default=<none>
   column claim_user_agent type=TEXT nullable=false pk=false default=''
   column claimed_at type=DATETIME nullable=true pk=false default=<none>
+  column client type=TEXT nullable=false pk=false default=''
+  column client_mode type=TEXT nullable=false pk=false default=''
+  column client_time type=DATETIME nullable=true pk=false default=<none>
   column created_at type=DATETIME nullable=false pk=false default=<none>
   column enrollment_token type=TEXT nullable=false pk=false default=''
   column failure_reason type=TEXT nullable=false pk=false default=''
@@ -49,15 +57,20 @@ table certificate_requests
   column id type=TEXT nullable=false pk=true default=<none>
   column local_hostname type=TEXT nullable=false pk=false default=''
   column local_username type=TEXT nullable=false pk=false default=''
+  column machine_id type=TEXT nullable=false pk=false default=''
+  column os type=TEXT nullable=false pk=false default=''
   column pam_service type=TEXT nullable=false pk=false default=''
+  column process type=TEXT nullable=false pk=false default=''
   column public_key type=TEXT nullable=false pk=false default=<none>
   column remote_host type=TEXT nullable=false pk=false default=''
   column requested_options type=TEXT nullable=false pk=false default=''
+  column requesting_user type=TEXT nullable=false pk=false default=''
   column resolved_at type=DATETIME nullable=true pk=false default=<none>
   column serial_number type=INTEGER nullable=true pk=false default=<none>
   column service_account type=TEXT nullable=false pk=false default=''
   column source_ip type=TEXT nullable=false pk=false default=''
   column status type=TEXT nullable=false pk=false default=<none>
+  column trusted_ca_fingerprints type=TEXT nullable=false pk=false default=''
   column tty type=TEXT nullable=false pk=false default=''
   column type type=TEXT nullable=false pk=false default=<none>
   column user_code type=TEXT nullable=false pk=false default=''

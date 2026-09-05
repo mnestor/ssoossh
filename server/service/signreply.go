@@ -129,6 +129,12 @@ func (h *SignedReplyHandler) resolveFailure(ctx context.Context, reply certmsg.S
 		Status: model.CertificateRequestStatusFailed,
 	})
 
+	// An approval that produced no certificate is recorded where it
+	// happened, so the trail distinguishes it from one that did. System
+	// event: the signer, not a person, said no. Best effort on the re-read
+	// of the request, which only enriches the event.
+	h.auditSignFailed(ctx, reply.RequestID, reply.Type, reply.ErrorCode, reply.Error)
+
 	if !resolvesRequestRow(reply) {
 		return nil
 	}
@@ -137,6 +143,31 @@ func (h *SignedReplyHandler) resolveFailure(ctx context.Context, reply certmsg.S
 	// a benign zero-rows race comes back as nil. See resolveSuccess.
 	return h.markResolved(ctx, reply.RequestID, model.CertificateRequestStatusFailed,
 		fmt.Sprintf("%s: %s", reply.ErrorCode, reply.Error))
+}
+
+// auditSignFailed emits cert.sign_failed for requestID. certType and the
+// error pair come from the signer's reply; the host context is read off the
+// request row when there is one (a service retrieval has none).
+func (h *SignedReplyHandler) auditSignFailed(ctx context.Context, requestID string, certType model.CertificateType, errorCode, errorText string) {
+	if h.certs == nil {
+		return
+	}
+	var req model.CertificateRequest
+	if err := h.db.WithContext(ctx).First(&req, "id = ?", requestID).Error; err != nil {
+		req = model.CertificateRequest{}
+	}
+	h.certs.auditRecord(ctx, AuditEvent{
+		Action:     AuditCertSignFailed,
+		System:     true,
+		OccurredAt: time.Now(),
+		Detail: withDetail(hostContextDetail(req), map[string]any{
+			"request_id": requestID,
+			"cert_type":  string(certType),
+			"source_ip":  req.SourceIP,
+			"error_code": errorCode,
+			"error":      errorText,
+		}),
+	})
 }
 
 // resolvesRequestRow reports whether reply has a certificate_requests row
@@ -176,12 +207,7 @@ type certificateOrigin struct {
 // model.CertificateRequest). The notification wants the same thing from
 // each — the name the person who was there will recognize.
 func reportedContext(req model.CertificateRequest) (username, hostname string) {
-	switch req.Type {
-	case model.CertificateTypePAM, model.CertificateTypeConsole:
-		return req.Username, req.Hostname
-	default:
-		return req.LocalUsername, req.LocalHostname
-	}
+	return req.ReportedIdentity()
 }
 
 // recordCertificate writes the audit row for an issued certificate and
@@ -233,7 +259,8 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 		// columns hold them depends on the type (see reportedContext), so
 		// both pairs are read.
 		switch err := h.db.WithContext(ctx).
-			Select("type", "user_id", "source_ip", "local_username", "local_hostname", "username", "hostname").
+			Select("type", "user_id", "source_ip", "local_username", "local_hostname", "username", "hostname",
+				"pam_service", "tty", "remote_host", "requesting_user", "process", "machine_id", "client").
 			First(&req, "id = ?", reply.RequestID).Error; {
 		case err != nil:
 			slog.Warn("could not resolve the owner of an issued certificate",
@@ -295,21 +322,23 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 			Action:     AuditCertIssued,
 			Target:     &AuditSubject{UserID: derefOrEmpty(userID)},
 			OccurredAt: reply.ValidAfter,
-			Detail: map[string]any{
-				"request_id":   derefOrEmpty(requestID),
-				"cert_type":    string(reply.Type),
-				"serial":       reply.Serial,
-				"key_id":       reply.KeyID,
-				"principals":   reply.Principals,
-				"fingerprint":  reply.PublicKeyFingerprint,
-				"valid_after":  reply.ValidAfter,
-				"valid_before": reply.ValidBefore,
-				// The account and host a PAM or console request claimed.
-				// This is the line joined against the host's own sshd and
-				// sudo logs, and the hostname is the join key.
-				"username": req.Username,
-				"hostname": req.Hostname,
-			},
+			// The host context the request claimed rides here as on every
+			// cert.* event. This is the line joined against the host's own
+			// sshd and sudo logs, and the hostname is the join key. For a
+			// service reply req is empty and the keys are blank.
+			Detail: withDetail(hostContextDetail(req), map[string]any{
+				"request_id":       derefOrEmpty(requestID),
+				"cert_type":        string(reply.Type),
+				"serial":           reply.Serial,
+				"key_id":           reply.KeyID,
+				"principals":       reply.Principals,
+				"fingerprint":      reply.PublicKeyFingerprint,
+				"valid_after":      reply.ValidAfter,
+				"valid_before":     reply.ValidBefore,
+				"extensions":       reply.Extensions,
+				"critical_options": reply.CriticalOptions,
+				"source_ip":        req.SourceIP,
+			}),
 		})
 	}
 

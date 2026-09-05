@@ -307,8 +307,28 @@ func (cr *certRequestController) createPAMRequestHandler(g *gin.Context) {
 		PAMService:       body.PAMService,
 		TTY:              body.TTY,
 		RemoteHost:       body.RemoteHost,
+		HostContext:      toHostContext(body),
 		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})
+}
+
+// toHostContext maps the wire body's host-context fields (shared by the
+// PAM and console bodies) onto the service's HostContext. An explicit
+// conversion for the same reason toServiceOptions is one.
+func toHostContext(body apitypes.PAMRequestBody) service.HostContext {
+	return service.HostContext{
+		RequestingUser:        body.RequestingUser,
+		Process:               body.Process,
+		CallerUID:             body.CallerUID,
+		CallerPID:             body.CallerPID,
+		CallerPPID:            body.CallerPPID,
+		MachineID:             body.MachineID,
+		OS:                    body.OS,
+		Client:                body.Client,
+		Mode:                  body.Mode,
+		ClientTime:            body.ClientTime,
+		TrustedCAFingerprints: body.TrustedCAFingerprints,
+	}
 }
 
 // createConsoleRequestHandler handles POST /api/certs/console: creates a
@@ -355,13 +375,28 @@ func (cr *certRequestController) createConsoleRequestHandler(g *gin.Context) {
 	}
 
 	cr.createRequest(g, service.NewCertRequestParams{
-		Type:             model.CertificateTypeConsole,
-		PublicKey:        body.PublicKey,
-		Username:         body.Username,
-		Hostname:         body.Hostname,
-		PAMService:       body.PAMService,
-		TTY:              body.TTY,
-		RemoteHost:       body.RemoteHost,
+		Type:       model.CertificateTypeConsole,
+		PublicKey:  body.PublicKey,
+		Username:   body.Username,
+		Hostname:   body.Hostname,
+		PAMService: body.PAMService,
+		TTY:        body.TTY,
+		RemoteHost: body.RemoteHost,
+		// The console body is the PAM body's shape by construction (see
+		// apitypes.ConsoleRequestBody), so the same conversion applies.
+		HostContext: toHostContext(apitypes.PAMRequestBody{
+			RequestingUser:        body.RequestingUser,
+			Process:               body.Process,
+			CallerUID:             body.CallerUID,
+			CallerPID:             body.CallerPID,
+			CallerPPID:            body.CallerPPID,
+			MachineID:             body.MachineID,
+			OS:                    body.OS,
+			Client:                body.Client,
+			Mode:                  body.Mode,
+			ClientTime:            body.ClientTime,
+			TrustedCAFingerprints: body.TrustedCAFingerprints,
+		}),
 		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})
 }

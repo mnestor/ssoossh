@@ -451,6 +451,26 @@ export interface RequestDetailResponse {
 	tty?: string;
 	remote_host?: string;
 	/**
+	 * The rest of the host context, same trust: who invoked the service
+	 * (PAM_RUSER), the command line asking, the process identifiers, a
+	 * stable machine id, the platform, the module and its configured
+	 * mode, the host's clock, and the CA fingerprints the host trusts.
+	 * See apitypes.PAMRequestBody for each. Set for PAM and console
+	 * requests; the numeric ones are absent rather than zero when the
+	 * module did not report them.
+	 */
+	requesting_user?: string;
+	process?: string;
+	caller_uid?: number /* int64 */;
+	caller_pid?: number /* int64 */;
+	caller_ppid?: number /* int64 */;
+	machine_id?: string;
+	os?: string;
+	client?: string;
+	client_mode?: string;
+	client_time?: string;
+	trusted_ca_fingerprints?: string[];
+	/**
 	 * ExpiresAt is when the request stops being approvable, from its own
 	 * type's budget. The page counts down to it, which matters most for
 	 * console requests: their budget is deliberately the shortest, and an
@@ -479,6 +499,16 @@ export interface RequestDetailResponse {
 	decided_accept_language?: string;
 	decided_forwarded_for?: string;
 	decided_at?: string;
+	/**
+	 * What the approval granted and why: the principals selected, the
+	 * options after every narrowing, and the lifetime policy's own
+	 * explanation as a JSON document (see service.PolicyExplanation).
+	 * Approvals only; absent for denials and for decisions predating the
+	 * columns.
+	 */
+	decided_principals?: string[];
+	decided_granted_options?: CertificateOptionsResponse;
+	decided_policy_explanation?: string;
 }
 /**
  * CertificateResponse is one row of a user's issued-certificate history.
@@ -564,6 +594,13 @@ export interface CertificateResponse {
 	decided_accept_language?: string;
 	decided_forwarded_for?: string;
 	decided_at?: string;
+	/**
+	 * The decision's content and reasoning; see RequestDetailResponse.
+	 * Populated on the detail endpoint only.
+	 */
+	decided_principals?: string[];
+	decided_granted_options?: CertificateOptionsResponse;
+	decided_policy_explanation?: string;
 }
 /**
  * CertificateListResponse is the data payload for the cursor-paginated

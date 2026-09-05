@@ -61,6 +61,30 @@ export function formatDateTime(value: string): string {
 }
 
 /**
+ * clockSkewLabel compares a claimed clock — e.g. a PAM module's
+ * client_time — against a reference timestamp, normally the server's own
+ * created_at, and describes the drift: "31s behind server". Returns null
+ * within a 30 second tolerance, or when either timestamp fails to parse.
+ * Ordinary clock drift is not worth a row; only a gap big enough to
+ * suggest the host's clock (or the request itself) is wrong is.
+ */
+export function clockSkewLabel(clientTime: string, reference: string): string | null {
+	const client = new Date(clientTime);
+	const ref = new Date(reference);
+	if (Number.isNaN(client.getTime()) || Number.isNaN(ref.getTime())) {
+		return null;
+	}
+
+	const driftSeconds = Math.round((ref.getTime() - client.getTime()) / 1000);
+	if (Math.abs(driftSeconds) <= 30) {
+		return null;
+	}
+
+	const direction = driftSeconds > 0 ? 'behind server' : 'ahead of server';
+	return `${formatDuration(Math.abs(driftSeconds))} ${direction}`;
+}
+
+/**
  * expiryLabel describes a certificate's expiry relative to now: "expires in
  * 3h 12m", or "expired" once it has passed.
  *

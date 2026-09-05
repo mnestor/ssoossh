@@ -52,6 +52,10 @@ type NewCertRequestParams struct {
 	PAMService string
 	TTY        string
 	RemoteHost string
+
+	// HostContext is the rest of what the module reports, with the same
+	// trust and the same bound. See HostContext.
+	HostContext HostContext
 }
 
 // CreatedRequest is what CreateRequest hands back: the request's ID, the
@@ -450,6 +454,11 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 		TTY:        truncateContextField(p.TTY),
 		RemoteHost: truncateContextField(p.RemoteHost),
 	}
+	if err := applyHostContext(&req, p.HostContext); err != nil {
+		// not covered: applyHostContext only fails through json.Marshal
+		// of a []string, unreachable at its own definition.
+		return CreatedRequest{}, err
+	}
 
 	if err := s.persistNewRequest(ctx, &req, policy); err != nil {
 		return CreatedRequest{}, err
@@ -457,32 +466,21 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 
 	// A request is created by an unauthenticated client, so nothing knows
 	// whose it is yet: the event carries no actor and no target, only the
-	// connection detail an incident reviewer would want.
+	// connection detail an incident reviewer would want. This is the one
+	// event that records the whole host context (fullHostContextDetail);
+	// the later cert.* events carry the compact set.
+	//
+	// req.UserCode is deliberately absent. It is a bearer-adjacent
+	// credential and the never-log-sensitive-data rule covers audit
+	// payloads too — the same treatment the enrollment code gets.
 	s.auditRecord(ctx, AuditEvent{
 		Action:     AuditCertRequested,
 		OccurredAt: req.CreatedAt,
-		Detail: map[string]any{
-			"request_id":     req.ID,
-			"cert_type":      string(req.Type),
-			"source_ip":      req.SourceIP,
-			"local_username": req.LocalUsername,
-			"local_hostname": req.LocalHostname,
-			// The account a PAM or console request is authenticating
-			// (see model.CertificateRequest.Username), and the console
-			// context, recorded because they are what an incident reviewer
-			// needs to place a login: which account, on which machine,
-			// through which service, at which terminal. Every one of them
-			// is the caller's own claim.
-			"username": req.Username,
-			//
-			// req.UserCode is deliberately absent. It is a bearer-adjacent
-			// credential and the never-log-sensitive-data rule covers audit
-			// payloads too — the same treatment the enrollment code gets.
-			"hostname":    req.Hostname,
-			"pam_service": req.PAMService,
-			"tty":         req.TTY,
-			"remote_host": req.RemoteHost,
-		},
+		Detail: withDetail(fullHostContextDetail(req), map[string]any{
+			"request_id": req.ID,
+			"cert_type":  string(req.Type),
+			"source_ip":  req.SourceIP,
+		}),
 	})
 
 	return CreatedRequest{
@@ -680,6 +678,11 @@ type RequestDetail struct {
 	// request, since most requests being viewed haven't been decided yet.
 	// See model.CertificateRequestDecision.
 	Decision *model.CertificateRequestDecision
+
+	// TrustedCAFingerprints is Request.TrustedCAFingerprints decoded, so
+	// the page can say whether the host will accept what is about to be
+	// signed.
+	TrustedCAFingerprints []string
 }
 
 // Detail returns what identity would be approving for requestID, and binds
@@ -752,6 +755,8 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 		ValidDuration: policy.validDuration,
 		ExpiresAt:     req.CreatedAt.Add(policy.approvalTTL()),
 		Decision:      decision,
+
+		TrustedCAFingerprints: decodeTrustedCAFingerprints(req.TrustedCAFingerprints),
 	}, nil
 }
 
@@ -1374,39 +1379,89 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 	effectiveDuration := outcome.duration
 	narrowed = outcome.narrowOptions(narrowed, req.SourceIP)
 
+	// Principals are derived per-type, always from the approver: their
+	// selection, defaulting to their username (user) or every account they
+	// hold (PAM, console). Validate every one before it can be persisted or
+	// signed into a certificate; the signer re-checks as a backstop.
+	//
+	// Computed before the decision and its audit event are written, so both
+	// record what this approval actually grants. They used to be computed
+	// after, which left the audit table knowing who approved and what
+	// serial, but never which accounts the certificate named.
+	principals := policy.principals(identity, selectedPrincipals)
+	// An empty principal list is a wildcard, not an empty grant: a
+	// certificate with no ValidPrincipals is valid for EVERY user. That is
+	// the format's documented behaviour ("by default, generated certificates
+	// are valid for all users or hosts", ssh-keygen(1), CERTIFICATES) and
+	// x/crypto implements it by skipping the principal check when the list
+	// is empty (ssh.CertChecker.CheckCert). So an empty list has to fail the
+	// approval, and the loop below cannot do it: it has nothing to iterate.
+	//
+	// pam_ssoossh's own check 3 would reject such a certificate, but user
+	// certificates from this same path go to a real sshd, which will not.
+	if len(principals) == 0 {
+		return fmt.Errorf("refusing to sign a certificate with no principals for %s request %q", req.Type, req.ID)
+	}
+	for _, p := range principals {
+		if err := sshcrypto.ValidatePrincipal(p); err != nil {
+			return fmt.Errorf("invalid principal: %w", err)
+		}
+	}
+
 	decision, err := newDecision(req.ID, model.CertificateRequestDecisionApproved, identity, dc, now, &outcome.explanation)
 	if err != nil {
 		// not covered: newDecision can only fail through its own
 		// json.Marshal calls, unreachable at their own definition.
 		return err
 	}
+	principalsJSON, narrowedJSON, err := encodeGrant(principals, narrowed)
+	if err != nil {
+		// not covered: both are plain structs of strings and slices, so
+		// json.Marshal cannot fail on them.
+		return err
+	}
+	decision.Principals = principalsJSON
+	decision.GrantedOptions = narrowedJSON
 
 	auditEvent := AuditEvent{
 		Action:     AuditCertApproved,
 		Actor:      AuditSubjectFromIdentity(identity, derefOrEmpty(req.UserID)),
 		OccurredAt: now,
-		Detail: map[string]any{
-			"request_id":    req.ID,
-			"cert_type":     string(req.Type),
-			"key_id":        keyID,
-			"serial":        serialNum,
-			"source_ip":     req.SourceIP,
-			"cert_lifetime": effectiveDuration.String(),
-			// The account and host the request claimed, carried on every
-			// cert.* event so a reviewer never has to join back to
-			// cert.requested to learn what was approved for whom.
-			"username": req.Username,
-			"hostname": req.Hostname,
-		},
+		// The host context rides on every cert.* event so a reviewer never
+		// has to join back to cert.requested to learn what was approved
+		// for whom. source_ip is the requester's; the approver's own
+		// connection is approver_ip and approver_user_agent, the same
+		// values the decisions row keeps.
+		Detail: withDetail(hostContextDetail(req), map[string]any{
+			"request_id":          req.ID,
+			"cert_type":           string(req.Type),
+			"key_id":              keyID,
+			"serial":              serialNum,
+			"source_ip":           req.SourceIP,
+			"cert_lifetime":       effectiveDuration.String(),
+			"principals":          principals,
+			"extensions":          narrowed.Extensions,
+			"force_command":       narrowed.ForceCommand,
+			"source_addresses":    narrowed.SourceAddresses,
+			"no_touch_required":   narrowed.NoTouchRequired,
+			"approver_ip":         dc.SourceIP,
+			"approver_user_agent": dc.UserAgent,
+		}),
 	}
 
 	// See approveServiceEnrollment's comment on why this pair is
 	// transactional but the wider bind/resolve/queue sequence stays out of
-	// scope here.
+	// scope here. The narrowed options are written back onto the request,
+	// as the enrollment path already did, so the row shows what was
+	// granted rather than what was asked for.
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&model.CertificateRequest{}).
 			Where("id = ? AND status = ?", req.ID, model.CertificateRequestStatusPending).
-			Updates(map[string]any{"status": model.CertificateRequestStatusSigning, "serial_number": serialNum})
+			Updates(map[string]any{
+				"status":            model.CertificateRequestStatusSigning,
+				"serial_number":     serialNum,
+				"requested_options": narrowedJSON,
+			})
 		if result.Error != nil {
 			// not covered: failing this query while leaving the enclosing
 			// Transaction() able to begin needs per-query DB fault
@@ -1429,30 +1484,6 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 	}
 
 	s.auditLog(auditEvent)
-
-	// Principals are derived per-type, always from the approver: their
-	// selection, defaulting to their username (user) or every account they
-	// hold (PAM, console). Validate every one before it can be persisted or
-	// signed into a certificate; the signer re-checks as a backstop.
-	principals := policy.principals(identity, selectedPrincipals)
-	// An empty principal list is a wildcard, not an empty grant: a
-	// certificate with no ValidPrincipals is valid for EVERY user. That is
-	// the format's documented behaviour ("by default, generated certificates
-	// are valid for all users or hosts", ssh-keygen(1), CERTIFICATES) and
-	// x/crypto implements it by skipping the principal check when the list
-	// is empty (ssh.CertChecker.CheckCert). So an empty list has to fail the
-	// approval, and the loop below cannot do it: it has nothing to iterate.
-	//
-	// pam_ssoossh's own check 3 would reject such a certificate, but user
-	// certificates from this same path go to a real sshd, which will not.
-	if len(principals) == 0 {
-		return fmt.Errorf("refusing to sign a certificate with no principals for %s request %q", req.Type, req.ID)
-	}
-	for _, p := range principals {
-		if err := sshcrypto.ValidatePrincipal(p); err != nil {
-			return fmt.Errorf("invalid principal: %w", err)
-		}
-	}
 
 	job := certmsg.SigningJob{
 		RequestID:        req.ID,
@@ -1538,18 +1569,31 @@ func (s *CertRequestService) Deny(ctx context.Context, requestID string, identit
 		return err
 	}
 
+	// The denier's users-row id is the grouping key that puts this denial
+	// on their own timeline; without it a denial is only findable in the
+	// unfiltered feed. Best effort: a lookup failure costs the grouping
+	// key, not the denial, since the payload still names them.
+	actorUserID := ""
+	if user, err := s.resolveUser(ctx, identity); err == nil {
+		actorUserID = user.ID
+	} else {
+		slog.Warn("could not resolve the denying user's id for the audit event",
+			"request_id", requestID, "error", err)
+	}
+
 	auditEvent := AuditEvent{
 		Action:     AuditCertDenied,
-		Actor:      AuditSubjectFromIdentity(identity, ""),
+		Actor:      AuditSubjectFromIdentity(identity, actorUserID),
 		OccurredAt: now,
-		Detail: map[string]any{
-			"request_id": requestID,
-			"cert_type":  string(req.Type),
-			// See the cert.approved event for why these ride on every
-			// cert.* event.
-			"username": req.Username,
-			"hostname": req.Hostname,
-		},
+		// See the cert.approved event for the shape: host context, the
+		// requester's source_ip, and the denier's own connection.
+		Detail: withDetail(hostContextDetail(req), map[string]any{
+			"request_id":          requestID,
+			"cert_type":           string(req.Type),
+			"source_ip":           req.SourceIP,
+			"approver_ip":         dc.SourceIP,
+			"approver_user_agent": dc.UserAgent,
+		}),
 	}
 
 	// See approveServiceEnrollment's comment on why this pair is
@@ -1834,7 +1878,44 @@ func (s *CertRequestService) expire(ctx context.Context, requestID string) {
 		return
 	}
 
+	// A request that nobody answered is a state change like any other, and
+	// the one the trail used to say nothing about: an approval link that
+	// was sent and never opened looks the same as one that was. System
+	// event, no actor. Best effort on the re-read, since the row is
+	// already expired and the waiter must be told regardless.
+	detail := map[string]any{"request_id": requestID}
+	if req, err := s.lookupRequest(ctx, requestID); err == nil {
+		detail = withDetail(hostContextDetail(req), map[string]any{
+			"request_id": requestID,
+			"cert_type":  string(req.Type),
+			"source_ip":  req.SourceIP,
+			"created_at": req.CreatedAt,
+		})
+	}
+	s.auditRecord(ctx, AuditEvent{
+		Action:     AuditCertExpired,
+		System:     true,
+		OccurredAt: now,
+		Detail:     detail,
+	})
+
 	s.notifyWaiter(requestID, WaitOutcome{Status: model.CertificateRequestStatusExpired})
+}
+
+// encodeGrant JSON-encodes what an approval granted for the decisions row
+// and the request row: the principal list and the narrowed options.
+func encodeGrant(principals []string, granted RequestedOptions) (principalsJSON, grantedJSON string, err error) {
+	p, err := json.Marshal(principals)
+	if err != nil {
+		// not covered: a []string, so json.Marshal cannot fail.
+		return "", "", fmt.Errorf("failed to encode granted principals: %w", err)
+	}
+	g, err := json.Marshal(granted)
+	if err != nil {
+		// not covered: a plain struct of strings, bools and slices.
+		return "", "", fmt.Errorf("failed to encode granted options: %w", err)
+	}
+	return string(p), string(g), nil
 }
 
 // tryHandleWakeMessage attempts to decode and use a wake message payload,

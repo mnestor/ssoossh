@@ -238,8 +238,9 @@ export interface ServiceEnrollRequestBody {
  * PAMRequestBody is the POST /api/certs/pam request body. Username is the
  * local account the PAM module is authenticating (e.g. who is running
  * `sudo`); it reaches the approval page and the audit record and stops
- * there. The certificate's principals are the approver's own accounts, and
- * the host's principals-map decides whether they authorize that account.
+ * there. The certificate's principals are accounts the approver holds and
+ * selects; the module on the host matches them against that account,
+ * directly or through its principals-map.
  */
 export interface PAMRequestBody {
 	public_key: string;
@@ -257,6 +258,67 @@ export interface PAMRequestBody {
 	pam_service?: string;
 	tty?: string;
 	remote_host?: string;
+	/**
+	 * The rest of the host context, same trust as the four above: every
+	 * value is what the module read off its own process and machine, and
+	 * the approval page renders each as a claim. They exist so an
+	 * approver of a `sudo` can see which command is asking, on which
+	 * machine, invoked by whom, and so the audit line joins against the
+	 * host's own auditd or journal. See docs/internals/host-context.md.
+	 * RequestingUser is PAM_RUSER: who invoked the service, as opposed to
+	 * Username, the account being authenticated. Under `su` or sudo's
+	 * targetpw they differ.
+	 */
+	requesting_user?: string;
+	/**
+	 * Process is the PAM host process's command line ("sudo -i",
+	 * "sudo systemctl restart nginx"), read from /proc/self/cmdline where
+	 * the platform has it. Empty where it does not.
+	 */
+	process?: string;
+	/**
+	 * CallerUID, CallerPID and CallerPPID identify the process on the host,
+	 * for joining with the host's own logs. Pointers so an absent value is
+	 * distinguishable from uid 0 or pid 0.
+	 */
+	caller_uid?: number /* int64 */;
+	caller_pid?: number /* int64 */;
+	caller_ppid?: number /* int64 */;
+	/**
+	 * MachineID is a stable per-install identifier (/etc/machine-id or
+	 * kern.hostuuid), so a host is still recognisable after a rename and
+	 * two hosts claiming one name are distinguishable.
+	 */
+	machine_id?: string;
+	/**
+	 * OS is the platform as the host describes itself: os-release
+	 * PRETTY_NAME followed by uname -s and -r.
+	 */
+	os?: string;
+	/**
+	 * Client names the module and its version ("pam_ssoossh-c/0.3.0"),
+	 * which is what tells the two module implementations apart in a log.
+	 */
+	client?: string;
+	/**
+	 * Mode is the module's configured mode argument as written in pam.d
+	 * ("auto", "sudo", "console"), not the route it resolved to; the
+	 * endpoint already says that. Together they explain why a request
+	 * arrived as a console one.
+	 */
+	mode?: string;
+	/**
+	 * ClientTime is the host's own clock when it built the request, so
+	 * skew against the server is visible before it fails a login.
+	 */
+	client_time?: string;
+	/**
+	 * TrustedCAFingerprints are the SHA256 fingerprints of the keys in the
+	 * module's trusted-ca-file, in OpenSSH form. The module will reject a
+	 * certificate signed by any other key, so the server can warn the
+	 * approver before that happens rather than after.
+	 */
+	trusted_ca_fingerprints?: string[];
 	requested_options?: RequestedOptions;
 }
 /**
@@ -282,6 +344,20 @@ export interface ConsoleRequestBody {
 	pam_service?: string;
 	tty?: string;
 	remote_host?: string;
+	/**
+	 * The rest of the host context; see PAMRequestBody for each field.
+	 */
+	requesting_user?: string;
+	process?: string;
+	caller_uid?: number /* int64 */;
+	caller_pid?: number /* int64 */;
+	caller_ppid?: number /* int64 */;
+	machine_id?: string;
+	os?: string;
+	client?: string;
+	mode?: string;
+	client_time?: string;
+	trusted_ca_fingerprints?: string[];
 	requested_options?: RequestedOptions;
 }
 /**

@@ -402,6 +402,25 @@ type RequestDetailResponse struct {
 	TTY        string `json:"tty,omitempty"`
 	RemoteHost string `json:"remote_host,omitempty"`
 
+	// The rest of the host context, same trust: who invoked the service
+	// (PAM_RUSER), the command line asking, the process identifiers, a
+	// stable machine id, the platform, the module and its configured
+	// mode, the host's clock, and the CA fingerprints the host trusts.
+	// See apitypes.PAMRequestBody for each. Set for PAM and console
+	// requests; the numeric ones are absent rather than zero when the
+	// module did not report them.
+	RequestingUser        string     `json:"requesting_user,omitempty"`
+	Process               string     `json:"process,omitempty"`
+	CallerUID             *int64     `json:"caller_uid,omitempty"`
+	CallerPID             *int64     `json:"caller_pid,omitempty"`
+	CallerPPID            *int64     `json:"caller_ppid,omitempty"`
+	MachineID             string     `json:"machine_id,omitempty"`
+	OS                    string     `json:"os,omitempty"`
+	Client                string     `json:"client,omitempty"`
+	ClientMode            string     `json:"client_mode,omitempty"`
+	ClientTime            *time.Time `json:"client_time,omitempty"`
+	TrustedCAFingerprints []string   `json:"trusted_ca_fingerprints,omitempty"`
+
 	// ExpiresAt is when the request stops being approvable, from its own
 	// type's budget. The page counts down to it, which matters most for
 	// console requests: their budget is deliberately the shortest, and an
@@ -431,6 +450,15 @@ type RequestDetailResponse struct {
 	DecidedAcceptLanguage    string     `json:"decided_accept_language,omitempty"`
 	DecidedForwardedFor      string     `json:"decided_forwarded_for,omitempty"`
 	DecidedAt                *time.Time `json:"decided_at,omitempty"`
+
+	// What the approval granted and why: the principals selected, the
+	// options after every narrowing, and the lifetime policy's own
+	// explanation as a JSON document (see service.PolicyExplanation).
+	// Approvals only; absent for denials and for decisions predating the
+	// columns.
+	DecidedPrincipals        []string                    `json:"decided_principals,omitempty"`
+	DecidedGrantedOptions    *CertificateOptionsResponse `json:"decided_granted_options,omitempty"`
+	DecidedPolicyExplanation string                      `json:"decided_policy_explanation,omitempty"`
 }
 
 // CertificateResponse is one row of a user's issued-certificate history.
@@ -515,6 +543,12 @@ type CertificateResponse struct {
 	DecidedAcceptLanguage    string     `json:"decided_accept_language,omitempty"`
 	DecidedForwardedFor      string     `json:"decided_forwarded_for,omitempty"`
 	DecidedAt                *time.Time `json:"decided_at,omitempty"`
+
+	// The decision's content and reasoning; see RequestDetailResponse.
+	// Populated on the detail endpoint only.
+	DecidedPrincipals        []string                    `json:"decided_principals,omitempty"`
+	DecidedGrantedOptions    *CertificateOptionsResponse `json:"decided_granted_options,omitempty"`
+	DecidedPolicyExplanation string                      `json:"decided_policy_explanation,omitempty"`
 }
 
 // CertificateListResponse is the data payload for the cursor-paginated

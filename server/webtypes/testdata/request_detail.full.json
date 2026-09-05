@@ -10,6 +10,19 @@
   "pam_service": "login",
   "tty": "tty1",
   "remote_host": "198.51.100.7",
+  "requesting_user": "alice",
+  "process": "sudo -i",
+  "caller_uid": 1000,
+  "caller_pid": 4242,
+  "caller_ppid": 4200,
+  "machine_id": "3f2c1e0d9b8a7f6e5d4c3b2a19080706",
+  "os": "Debian GNU/Linux 13 (trixie) Linux 6.12.0",
+  "client": "pam_ssoossh-c/0.3.0",
+  "client_mode": "auto",
+  "client_time": "2026-08-14T09:30:00+02:00",
+  "trusted_ca_fingerprints": [
+    "SHA256:2Fd4rIWZ8kQnGx0mJvKp1YhLcTzXbA3sNeR5uW7oPqM"
+  ],
   "expires_at": "2026-08-14T09:30:00+02:00",
   "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample alice@laptop",
   "principals": [
@@ -63,5 +76,22 @@
   "decided_user_agent": "curl/8.0.0",
   "decided_accept_language": "en-US",
   "decided_forwarded_for": "198.51.100.7, 10.0.0.1",
-  "decided_at": "2026-08-14T09:30:00+02:00"
+  "decided_at": "2026-08-14T09:30:00+02:00",
+  "decided_principals": [
+    "alice",
+    "alice.other"
+  ],
+  "decided_granted_options": {
+    "extensions": [
+      "permit-pty",
+      "permit-agent-forwarding"
+    ],
+    "force_command": "/usr/local/bin/audit-shell",
+    "source_addresses": [
+      "198.51.100.0/24",
+      "203.0.113.7/32"
+    ],
+    "no_touch_required": true
+  },
+  "decided_policy_explanation": "{\"v\":1,\"cert_type\":\"user\",\"policy_configured\":false,\"ceiling\":\"8h0m0s\",\"effective_duration\":\"8h0m0s\"}"
 }

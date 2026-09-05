@@ -87,6 +87,16 @@ type CertificateRequestDecision struct {
 	// predating the column.
 	PolicyExplanation string `gorm:"column:policy_explanation"`
 
+	// Principals and GrantedOptions are what the approval actually granted:
+	// the principal list the approver selected (or defaulted to) and the
+	// requested options after every narrowing, both JSON-encoded. They are
+	// the durable record of the decision's content, which the signing job
+	// carries but nothing persisted before: if signing failed, what the
+	// human approved was only in the log. Empty for denials, and for
+	// decisions predating the columns.
+	Principals     string `gorm:"column:principals"`
+	GrantedOptions string `gorm:"column:granted_options"`
+
 	DecidedAt time.Time `gorm:"column:decided_at"`
 }
 

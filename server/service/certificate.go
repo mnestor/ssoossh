@@ -303,6 +303,9 @@ func (s *CertificateService) GetByID(ctx context.Context, id string, identity *I
 		DecisionGroups               *string
 		DecisionOtherAccounts        *string
 		DecisionServiceAccounts      *string
+		DecisionPolicyExplanation    *string
+		DecisionPrincipals           *string
+		DecisionGrantedOptions       *string
 		DecisionDecidedAt            *time.Time
 		RetrievalEnrollmentID        *string
 		RetrievalSourceIP            *string
@@ -335,6 +338,9 @@ func (s *CertificateService) GetByID(ctx context.Context, id string, identity *I
 			certificate_request_decisions.groups as decision_groups,
 			certificate_request_decisions.other_accounts as decision_other_accounts,
 			certificate_request_decisions.service_accounts as decision_service_accounts,
+			certificate_request_decisions.policy_explanation as decision_policy_explanation,
+			certificate_request_decisions.principals as decision_principals,
+			certificate_request_decisions.granted_options as decision_granted_options,
 			certificate_request_decisions.decided_at as decision_decided_at,
 			enrollment_retrievals.enrollment_id as retrieval_enrollment_id,
 			enrollment_retrievals.source_ip as retrieval_source_ip,
@@ -404,7 +410,12 @@ func (s *CertificateService) GetByID(ctx context.Context, id string, identity *I
 			Groups:               *result.DecisionGroups,
 			OtherAccounts:        *result.DecisionOtherAccounts,
 			ServiceAccounts:      *result.DecisionServiceAccounts,
-			DecidedAt:            *result.DecisionDecidedAt,
+			// The decision's content and its policy reasoning, detail
+			// page only: the list would carry them on every row.
+			PolicyExplanation: derefOrEmpty(result.DecisionPolicyExplanation),
+			Principals:        derefOrEmpty(result.DecisionPrincipals),
+			GrantedOptions:    derefOrEmpty(result.DecisionGrantedOptions),
+			DecidedAt:         *result.DecisionDecidedAt,
 		}
 	}
 

@@ -133,6 +133,20 @@ func (s *CertRequestService) claimApprovalPage(ctx context.Context, req *model.C
 			return ClaimPageResult{}, fmt.Errorf("failed to claim certificate request: %w", result.Error)
 		}
 		if result.RowsAffected == 1 {
+			// The link was opened: the first time anything says so. No
+			// actor, since the claim happens before authentication; the
+			// user agent is what a reviewer reads to tell a person's
+			// browser from a mail scanner that burned the link.
+			s.auditRecord(ctx, AuditEvent{
+				Action:     AuditCertClaimed,
+				OccurredAt: time.Now(),
+				Detail: withDetail(hostContextDetail(*req), map[string]any{
+					"request_id": req.ID,
+					"cert_type":  string(req.Type),
+					"source_ip":  req.SourceIP,
+					"user_agent": userAgent,
+				}),
+			})
 			return ClaimPageResult{Outcome: ClaimPageClaimed, Token: token}, nil
 		}
 

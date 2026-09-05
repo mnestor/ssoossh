@@ -18,7 +18,7 @@
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import TypeChip from '$lib/components/TypeChip.svelte';
-	import { expiryLabel, formatDateTime, formatDuration } from '$lib/format';
+	import { clockSkewLabel, expiryLabel, formatDateTime, formatDuration } from '$lib/format';
 
 	// Everything this component shows arrives as props, and both decisions
 	// leave as callbacks. Fetching and posting stay in +page.svelte so this
@@ -166,22 +166,116 @@
 		};
 	});
 
-	// Everything the module sent about where the login is happening. Each
-	// value is the caller\u2019s own claim: nothing authenticates a hostname or
-	// a tty, and the row labels say so rather than presenting them as facts.
-	const consoleContext = $derived(
-		[
-			{ label: 'Host', value: detail.hostname },
-			{ label: 'Service', value: detail.pam_service },
-			{ label: 'Terminal', value: detail.tty }
-		].filter((row) => !!row.value)
-	);
-
 	// A console has no remote host. PAM_RHOST arriving non-empty on a
-	// request that claims to be one means it is something else \u2014 an SSH
-	// session, or a caller sending whatever it likes \u2014 and that is worth
+	// request that claims to be one means it is something else — an SSH
+	// session, or a caller sending whatever it likes — and that is worth
 	// saying outright rather than rendering as one more grey row.
 	const remoteHostSuspicious = $derived(isConsoleRequest && !!detail.remote_host);
+
+	// A PAM authentication with no terminal and no remote host is not
+	// someone at a keyboard: an interactive sudo has a tty, and a remote one
+	// has PAM_RHOST. Neither present usually means a cron job or a service
+	// account driving sudo unattended — worth a quiet note, not a warning,
+	// since it is ordinary for plenty of deployments.
+	const pamLooksHeadless = $derived(
+		detail.type === 'pam' && !!detail.pam_service && !detail.tty && !detail.remote_host
+	);
+
+	/** One row of the claimed-context block: the caller's own, unauthenticated
+	 * account of where and how this operation is happening. `sub` is a
+	 * smaller line under the value (machine_id under Host). `mono` renders
+	 * the value as plain monospace text instead of a bordered chip, for
+	 * values that are not a discrete token — a command line, a version
+	 * string, a list of process ids. `plain` renders it as ordinary sans-serif
+	 * prose instead — for a value that is neither a token nor code, such as a
+	 * platform description (see DESIGN.md: Fira Code is for keys,
+	 * fingerprints, principals and other cryptographic data, not prose). */
+	interface ClaimedContextRow {
+		key: string;
+		label: string;
+		value: string;
+		sub?: string;
+		mono?: boolean;
+		plain?: boolean;
+	}
+
+	// Everything the client and the pam_ssoossh module sent about where and
+	// how this request is happening, in the order a reviewer would want to
+	// check it: who, running what, from where, as observed by which module.
+	// None of it is authenticated — see server/service/hostcontext.go — so
+	// every row is rendered as a claim, not a fact, and PAM and console
+	// requests share exactly the same block: both are local-auth requests a
+	// human is approving on trust in the reporting host.
+	const claimedContext = $derived.by((): ClaimedContextRow[] => {
+		if (!isLocalAuth) {
+			return [];
+		}
+		const rows: ClaimedContextRow[] = [];
+		if (detail.target_account) {
+			rows.push({ key: 'account', label: 'Account', value: detail.target_account });
+		}
+		// Omitted when it just repeats the account: PAM_RUSER equal to the
+		// target account is the ordinary case (someone sudo-ing to
+		// themselves) and adds nothing a second row would explain.
+		if (detail.requesting_user && detail.requesting_user !== detail.target_account) {
+			rows.push({ key: 'invoked-by', label: 'Invoked by', value: detail.requesting_user });
+		}
+		if (detail.process) {
+			rows.push({ key: 'command', label: 'Command', value: detail.process, mono: true });
+		}
+		if (detail.hostname) {
+			rows.push({ key: 'host', label: 'Host', value: detail.hostname, sub: detail.machine_id });
+		}
+		if (detail.pam_service) {
+			rows.push({ key: 'service', label: 'Service', value: detail.pam_service });
+		}
+		if (detail.tty) {
+			rows.push({ key: 'terminal', label: 'Terminal', value: detail.tty });
+		}
+		// A console request with a suspicious remote host gets the warning
+		// below instead of a plain row — the row would just repeat what the
+		// warning already says more usefully.
+		if (detail.remote_host && !remoteHostSuspicious) {
+			rows.push({ key: 'remote-host', label: 'Remote host', value: detail.remote_host });
+		}
+		if (detail.os) {
+			rows.push({ key: 'platform', label: 'Platform', value: detail.os, plain: true });
+		}
+		if (detail.client) {
+			const value = detail.client_mode
+				? `${detail.client} (mode=${detail.client_mode})`
+				: detail.client;
+			rows.push({ key: 'client', label: 'Client', value, mono: true });
+		}
+		const processIds: string[] = [];
+		if (detail.caller_uid !== undefined) {
+			processIds.push(`uid ${detail.caller_uid}`);
+		}
+		if (detail.caller_pid !== undefined) {
+			processIds.push(`pid ${detail.caller_pid}`);
+		}
+		if (detail.caller_ppid !== undefined) {
+			processIds.push(`ppid ${detail.caller_ppid}`);
+		}
+		if (processIds.length > 0) {
+			rows.push({
+				key: 'process-ids',
+				label: 'Process ids',
+				value: processIds.join(' \u00b7 '),
+				mono: true
+			});
+		}
+		return rows;
+	});
+
+	// How far the host's own clock (client_time) has drifted from when the
+	// server received the request — worth a note past a small tolerance,
+	// since ordinary drift is not, but a clock that is minutes off might mean
+	// the reporting host is misconfigured or the request is not what it
+	// claims to be.
+	const hostClockSkew = $derived(
+		detail.client_time ? clockSkewLabel(detail.client_time, detail.created_at) : null
+	);
 
 	// Wording per blocked reason, so the page explains why there is no
 	// button rather than just not having one.
@@ -262,36 +356,47 @@
 					<span class="font-sans text-ink-muted">none</span>
 				{/if}
 			</DetailRow>
-			{#if detail.target_account}
-				<!-- PAM and console only. The account being logged in as, reported
-				     by the client rather than proven, and deliberately not one of
-				     the principals above: the certificate names the approver, and
-				     the host's principals-map decides whether that authorizes this
-				     account. Shown because without it the approver cannot see what
-				     they are actually authorizing. -->
-				<DetailRow label={isConsoleRequest ? 'Logging in as' : 'Attempting to act as'}>
-					<span class="flex flex-wrap items-center gap-1.5">
-						<MonoChip>{detail.target_account}</MonoChip>
-						<span class="font-sans text-ink-muted">reported by the client</span>
-					</span>
-				</DetailRow>
-			{/if}
-			{#each consoleContext as row (row.label)}
-				<!-- Self-reported, every one of them. Their value is that they
-				     let a human notice "I am at my desk, why is there a console
-				     login on rack07" — not that they authorize anything. -->
-				<DetailRow label={row.label}>
-					<span class="flex flex-wrap items-center gap-1.5">
-						<MonoChip>{row.value}</MonoChip>
-						<span class="font-sans text-ink-muted">reported by the client</span>
+			<!-- The claimed context: everything the client and the pam_ssoossh
+			     module reported about who is doing this and where, for PAM and
+			     console requests alike. None of it is authenticated — the row
+			     labels and the "reported by the client" tag say so rather than
+			     presenting any of it as fact. Their value is that they let a
+			     human notice "I am at my desk, why is there a console login on
+			     rack07" — not that they authorize anything. -->
+			{#each claimedContext as row (row.key)}
+				<DetailRow label={row.label} mono={row.mono}>
+					<span class="flex flex-col gap-0.5">
+						<span class="flex flex-wrap items-center gap-1.5">
+							{#if row.mono || row.plain}
+								<span>{row.value}</span>
+							{:else}
+								<MonoChip>{row.value}</MonoChip>
+							{/if}
+							<span class="font-sans text-ink-muted">reported by the client</span>
+						</span>
+						{#if row.sub}
+							<span class="font-mono text-[11px] text-ink-muted">{row.sub}</span>
+						{/if}
 					</span>
 				</DetailRow>
 			{/each}
-			{#if detail.remote_host && !remoteHostSuspicious}
-				<DetailRow label="Remote host">
+			{#if isLocalAuth && detail.client_time}
+				<DetailRow label="Host clock">
 					<span class="flex flex-wrap items-center gap-1.5">
-						<MonoChip>{detail.remote_host}</MonoChip>
+						<span>{formatDateTime(detail.client_time)}</span>
 						<span class="font-sans text-ink-muted">reported by the client</span>
+						{#if hostClockSkew}
+							<span class="text-trimmed">{hostClockSkew}</span>
+						{/if}
+					</span>
+				</DetailRow>
+			{/if}
+			{#if isLocalAuth && (detail.trusted_ca_fingerprints ?? []).length > 0}
+				<DetailRow label="Host trusts">
+					<span class="flex flex-col items-start gap-1.5">
+						{#each detail.trusted_ca_fingerprints ?? [] as fingerprint, index (index)}
+							<MonoChip>{fingerprint}</MonoChip>
+						{/each}
 					</span>
 				</DetailRow>
 			{/if}
@@ -360,6 +465,16 @@
 					>). A console has nobody connecting to it over the network. Treat this as a login you did
 					not start unless you know otherwise.
 				</Alert>
+			{/if}
+
+			{#if pamLooksHeadless}
+				<!-- Not a warning: plenty of deployments run sudo unattended on
+				     purpose. Just worth naming, since the approver otherwise has
+				     to notice the absence of two rows themselves. -->
+				<p class="text-[13px] text-ink-muted" data-testid="pam-headless-note">
+					No terminal and no remote host: this looks like a script or a service, not a person at a
+					keyboard.
+				</p>
 			{/if}
 
 			{#if narrowed && !isLocalAuth}

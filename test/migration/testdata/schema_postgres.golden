@@ -22,11 +22,13 @@ table certificate_request_decisions
   column decided_at type=timestamp with time zone nullable=false default=<none>
   column email type=text nullable=false default=''::text
   column forwarded_for type=text nullable=false default=''::text
+  column granted_options type=text nullable=false default=''::text
   column groups type=text nullable=false default=''::text
   column id type=text nullable=false default=<none>
   column other_accounts type=text nullable=false default=''::text
   column outcome type=text nullable=false default=<none>
   column policy_explanation type=text nullable=false default=''::text
+  column principals type=text nullable=false default=''::text
   column service_accounts type=text nullable=false default=''::text
   column source_ip type=text nullable=false default=''::text
   column subject type=text nullable=false default=''::text
@@ -39,9 +41,15 @@ table certificate_request_decisions
   index idx_certificate_request_decisions_source_ip CREATE INDEX idx_certificate_request_decisions_source_ip ON public.certificate_request_decisions USING btree (source_ip)
   index idx_certificate_request_decisions_subject CREATE INDEX idx_certificate_request_decisions_subject ON public.certificate_request_decisions USING btree (subject)
 table certificate_requests
+  column caller_pid type=bigint nullable=true default=<none>
+  column caller_ppid type=bigint nullable=true default=<none>
+  column caller_uid type=bigint nullable=true default=<none>
   column claim_token_hash type=text nullable=true default=<none>
   column claim_user_agent type=text nullable=false default=''::text
   column claimed_at type=timestamp with time zone nullable=true default=<none>
+  column client type=text nullable=false default=''::text
+  column client_mode type=text nullable=false default=''::text
+  column client_time type=timestamp with time zone nullable=true default=<none>
   column created_at type=timestamp with time zone nullable=false default=<none>
   column enrollment_token type=text nullable=false default=''::text
   column failure_reason type=text nullable=false default=''::text
@@ -49,15 +57,20 @@ table certificate_requests
   column id type=text nullable=false default=<none>
   column local_hostname type=text nullable=false default=''::text
   column local_username type=text nullable=false default=''::text
+  column machine_id type=text nullable=false default=''::text
+  column os type=text nullable=false default=''::text
   column pam_service type=text nullable=false default=''::text
+  column process type=text nullable=false default=''::text
   column public_key type=text nullable=false default=<none>
   column remote_host type=text nullable=false default=''::text
   column requested_options type=text nullable=false default=''::text
+  column requesting_user type=text nullable=false default=''::text
   column resolved_at type=timestamp with time zone nullable=true default=<none>
   column serial_number type=bigint nullable=true default=<none>
   column service_account type=text nullable=false default=''::text
   column source_ip type=text nullable=false default=''::text
   column status type=text nullable=false default=<none>
+  column trusted_ca_fingerprints type=text nullable=false default=''::text
   column tty type=text nullable=false default=''::text
   column type type=text nullable=false default=<none>
   column user_code type=text nullable=false default=''::text

@@ -185,6 +185,44 @@ func TestCertificateRequestStructure(t *testing.T) {
 	})
 }
 
+// TestCertificateRequest_ReportedIdentity pins which column pair means "who
+// and where the request came from" for each type, so no consumer picks a
+// pair by hand and reads empty strings for the other family.
+func TestCertificateRequest_ReportedIdentity(t *testing.T) {
+	t.Parallel()
+
+	req := CertificateRequest{
+		Username:      "root",
+		Hostname:      "web01",
+		LocalUsername: "alice",
+		LocalHostname: "alice-laptop",
+	}
+	tests := []struct {
+		name         string
+		typ          CertificateType
+		wantUsername string
+		wantHostname string
+	}{
+		{name: "should read the PAM columns for a pam request", typ: CertificateTypePAM, wantUsername: "root", wantHostname: "web01"},
+		{name: "should read the PAM columns for a console request", typ: CertificateTypeConsole, wantUsername: "root", wantHostname: "web01"},
+		{name: "should read the local columns for a user request", typ: CertificateTypeUser, wantUsername: "alice", wantHostname: "alice-laptop"},
+		{name: "should read the local columns for a service request", typ: CertificateTypeService, wantUsername: "alice", wantHostname: "alice-laptop"},
+		{name: "should read the local columns for an empty type", typ: "", wantUsername: "alice", wantHostname: "alice-laptop"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := req
+			r.Type = tt.typ
+			username, hostname := r.ReportedIdentity()
+			if username != tt.wantUsername || hostname != tt.wantHostname {
+				t.Errorf("got (%q, %q), want (%q, %q)", username, hostname, tt.wantUsername, tt.wantHostname)
+			}
+		})
+	}
+}
+
 // TestCertificateRequestDecisionStructure verifies CertificateRequestDecision model fields.
 func TestCertificateRequestDecisionStructure(t *testing.T) {
 	t.Run("should construct decision with approval", func(t *testing.T) {

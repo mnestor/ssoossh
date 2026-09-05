@@ -19,12 +19,30 @@ components:
       type: object
     apitypes.ConsoleRequestBody:
       properties:
+        caller_pid:
+          type: integer
+        caller_ppid:
+          type: integer
+        caller_uid:
+          type: integer
+        client:
+          type: string
+        client_time:
+          type: string
         hostname:
           description: |-
             Same fields, same trust, as PAMRequestBody's — and they matter more
             here, because a console certificate authorizes a whole session.
           type: string
+        machine_id:
+          type: string
+        mode:
+          type: string
+        os:
+          type: string
         pam_service:
+          type: string
+        process:
           type: string
         public_key:
           type: string
@@ -32,6 +50,14 @@ components:
           type: string
         requested_options:
           $ref: '#/components/schemas/apitypes.RequestedOptions'
+        requesting_user:
+          description: The rest of the host context; see PAMRequestBody for each field.
+          type: string
+        trusted_ca_fingerprints:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
         tty:
           type: string
         username:
@@ -96,6 +122,26 @@ components:
       type: object
     apitypes.PAMRequestBody:
       properties:
+        caller_pid:
+          type: integer
+        caller_ppid:
+          type: integer
+        caller_uid:
+          description: |-
+            CallerUID, CallerPID and CallerPPID identify the process on the host,
+            for joining with the host's own logs. Pointers so an absent value is
+            distinguishable from uid 0 or pid 0.
+          type: integer
+        client:
+          description: |-
+            Client names the module and its version ("pam_ssoossh-c/0.3.0"),
+            which is what tells the two module implementations apart in a log.
+          type: string
+        client_time:
+          description: |-
+            ClientTime is the host's own clock when it built the request, so
+            skew against the server is visible before it fails a login.
+          type: string
         hostname:
           description: |-
             The context an approver needs to tell a request they caused from one
@@ -107,7 +153,31 @@ components:
             is displayed as a claim, never as a fact. Optional, so a client that
             does not read PAM items still works.
           type: string
+        machine_id:
+          description: |-
+            MachineID is a stable per-install identifier (/etc/machine-id or
+            kern.hostuuid), so a host is still recognisable after a rename and
+            two hosts claiming one name are distinguishable.
+          type: string
+        mode:
+          description: |-
+            Mode is the module's configured mode argument as written in pam.d
+            ("auto", "sudo", "console"), not the route it resolved to; the
+            endpoint already says that. Together they explain why a request
+            arrived as a console one.
+          type: string
+        os:
+          description: |-
+            OS is the platform as the host describes itself: os-release
+            PRETTY_NAME followed by uname -s and -r.
+          type: string
         pam_service:
+          type: string
+        process:
+          description: |-
+            Process is the PAM host process's command line ("sudo -i",
+            "sudo systemctl restart nginx"), read from /proc/self/cmdline where
+            the platform has it. Empty where it does not.
           type: string
         public_key:
           type: string
@@ -115,6 +185,29 @@ components:
           type: string
         requested_options:
           $ref: '#/components/schemas/apitypes.RequestedOptions'
+        requesting_user:
+          description: |-
+            The rest of the host context, same trust as the four above: every
+            value is what the module read off its own process and machine, and
+            the approval page renders each as a claim. They exist so an
+            approver of a `sudo` can see which command is asking, on which
+            machine, invoked by whom, and so the audit line joins against the
+            host's own auditd or journal. See docs/internals/host-context.md.
+
+            RequestingUser is PAM_RUSER: who invoked the service, as opposed to
+            Username, the account being authenticated. Under `su` or sudo's
+            targetpw they differ.
+          type: string
+        trusted_ca_fingerprints:
+          description: |-
+            TrustedCAFingerprints are the SHA256 fingerprints of the keys in the
+            module's trusted-ca-file, in OpenSSH form. The module will reject a
+            certificate signed by any other key, so the server can warn the
+            approver before that happens rather than after.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
         tty:
           type: string
         username:
@@ -846,6 +939,18 @@ components:
           type: string
         decided_forwarded_for:
           type: string
+        decided_granted_options:
+          $ref: '#/components/schemas/webtypes.CertificateOptionsResponse'
+        decided_policy_explanation:
+          type: string
+        decided_principals:
+          description: |-
+            The decision's content and reasoning; see RequestDetailResponse.
+            Populated on the detail endpoint only.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
         decided_source_ip:
           type: string
         decided_user_agent:
@@ -1204,6 +1309,18 @@ components:
           type: boolean
         approval_url:
           type: string
+        caller_pid:
+          type: integer
+        caller_ppid:
+          type: integer
+        caller_uid:
+          type: integer
+        client:
+          type: string
+        client_mode:
+          type: string
+        client_time:
+          type: string
         created_at:
           type: string
         decided_accept_language:
@@ -1235,6 +1352,21 @@ components:
           type: string
         decided_forwarded_for:
           type: string
+        decided_granted_options:
+          $ref: '#/components/schemas/webtypes.CertificateOptionsResponse'
+        decided_policy_explanation:
+          type: string
+        decided_principals:
+          description: |-
+            What the approval granted and why: the principals selected, the
+            options after every narrowing, and the lifetime policy's own
+            explanation as a JSON document (see service.PolicyExplanation).
+            Approvals only; absent for denials and for decisions predating the
+            columns.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
         decided_source_ip:
           type: string
         decided_user_agent:
@@ -1272,6 +1404,10 @@ components:
           type: string
         local_username:
           type: string
+        machine_id:
+          type: string
+        os:
+          type: string
         pam_service:
           type: string
         principals:
@@ -1279,12 +1415,24 @@ components:
             type: string
           type: array
           uniqueItems: false
+        process:
+          type: string
         public_key:
           type: string
         remote_host:
           type: string
         requested:
           $ref: '#/components/schemas/webtypes.CertificateOptionsResponse'
+        requesting_user:
+          description: |-
+            The rest of the host context, same trust: who invoked the service
+            (PAM_RUSER), the command line asking, the process identifiers, a
+            stable machine id, the platform, the module and its configured
+            mode, the host's clock, and the CA fingerprints the host trusts.
+            See apitypes.PAMRequestBody for each. Set for PAM and console
+            requests; the numeric ones are absent rather than zero when the
+            module did not report them.
+          type: string
         source_ip:
           type: string
         status:
@@ -1300,6 +1448,11 @@ components:
             it the approver cannot see which account the sudo is for, since the
             principals now describe the approver instead.
           type: string
+        trusted_ca_fingerprints:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
         tty:
           type: string
         type:

@@ -46,6 +46,51 @@ type PAMRequestBody struct {
 	TTY        string `json:"tty,omitempty"`
 	RemoteHost string `json:"remote_host,omitempty"`
 
+	// The rest of the host context, same trust as the four above: every
+	// value is what the module read off its own process and machine, and
+	// the approval page renders each as a claim. They exist so an
+	// approver of a `sudo` can see which command is asking, on which
+	// machine, invoked by whom, and so the audit line joins against the
+	// host's own auditd or journal. See docs/internals/host-context.md.
+	//
+	// RequestingUser is PAM_RUSER: who invoked the service, as opposed to
+	// Username, the account being authenticated. Under `su` or sudo's
+	// targetpw they differ.
+	RequestingUser string `json:"requesting_user,omitempty"`
+	// Process is the PAM host process's command line ("sudo -i",
+	// "sudo systemctl restart nginx"), read from /proc/self/cmdline where
+	// the platform has it. Empty where it does not.
+	Process string `json:"process,omitempty"`
+	// CallerUID, CallerPID and CallerPPID identify the process on the host,
+	// for joining with the host's own logs. Pointers so an absent value is
+	// distinguishable from uid 0 or pid 0.
+	CallerUID  *int64 `json:"caller_uid,omitempty"`
+	CallerPID  *int64 `json:"caller_pid,omitempty"`
+	CallerPPID *int64 `json:"caller_ppid,omitempty"`
+	// MachineID is a stable per-install identifier (/etc/machine-id or
+	// kern.hostuuid), so a host is still recognisable after a rename and
+	// two hosts claiming one name are distinguishable.
+	MachineID string `json:"machine_id,omitempty"`
+	// OS is the platform as the host describes itself: os-release
+	// PRETTY_NAME followed by uname -s and -r.
+	OS string `json:"os,omitempty"`
+	// Client names the module and its version ("pam_ssoossh-c/0.3.0"),
+	// which is what tells the two module implementations apart in a log.
+	Client string `json:"client,omitempty"`
+	// Mode is the module's configured mode argument as written in pam.d
+	// ("auto", "sudo", "console"), not the route it resolved to; the
+	// endpoint already says that. Together they explain why a request
+	// arrived as a console one.
+	Mode string `json:"mode,omitempty"`
+	// ClientTime is the host's own clock when it built the request, so
+	// skew against the server is visible before it fails a login.
+	ClientTime *time.Time `json:"client_time,omitempty"`
+	// TrustedCAFingerprints are the SHA256 fingerprints of the keys in the
+	// module's trusted-ca-file, in OpenSSH form. The module will reject a
+	// certificate signed by any other key, so the server can warn the
+	// approver before that happens rather than after.
+	TrustedCAFingerprints []string `json:"trusted_ca_fingerprints,omitempty"`
+
 	RequestedOptions RequestedOptions `json:"requested_options,omitempty"`
 }
 
@@ -71,6 +116,19 @@ type ConsoleRequestBody struct {
 	PAMService string `json:"pam_service,omitempty"`
 	TTY        string `json:"tty,omitempty"`
 	RemoteHost string `json:"remote_host,omitempty"`
+
+	// The rest of the host context; see PAMRequestBody for each field.
+	RequestingUser        string     `json:"requesting_user,omitempty"`
+	Process               string     `json:"process,omitempty"`
+	CallerUID             *int64     `json:"caller_uid,omitempty"`
+	CallerPID             *int64     `json:"caller_pid,omitempty"`
+	CallerPPID            *int64     `json:"caller_ppid,omitempty"`
+	MachineID             string     `json:"machine_id,omitempty"`
+	OS                    string     `json:"os,omitempty"`
+	Client                string     `json:"client,omitempty"`
+	Mode                  string     `json:"mode,omitempty"`
+	ClientTime            *time.Time `json:"client_time,omitempty"`
+	TrustedCAFingerprints []string   `json:"trusted_ca_fingerprints,omitempty"`
 
 	RequestedOptions RequestedOptions `json:"requested_options,omitempty"`
 }

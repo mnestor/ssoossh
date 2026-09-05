@@ -51,6 +51,20 @@ const (
 	// archive line, which an incident reviewer joins against target-host
 	// sshd logs, is the valuable part.
 	AuditCertIssued AuditAction = "cert.issued"
+	// AuditCertClaimed records the first browser opening an approval page
+	// (see CertRequestService.ClaimApprovalPage). It is the moment a link
+	// that was sent somewhere turns into a page in front of someone, and
+	// the event a reviewer reads to learn whether a link was opened at all
+	// and from what user agent, before any decision was made.
+	AuditCertClaimed AuditAction = "cert.claimed"
+	// AuditCertExpired records a request nobody answered within its budget.
+	// System event: there is no actor, which is the point of recording it.
+	AuditCertExpired AuditAction = "cert.expired"
+	// AuditCertSignFailed records an approval that produced no certificate:
+	// the signer refused the job, or the stranded-request sweep found the
+	// row stuck in signing. Without it an approval that never became a
+	// certificate reads exactly like one that did.
+	AuditCertSignFailed AuditAction = "cert.sign_failed"
 
 	AuditEnrollmentCodeCreated AuditAction = "enrollment.code_created"
 	AuditEnrollmentRedeemed    AuditAction = "enrollment.redeemed"

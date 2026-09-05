@@ -164,7 +164,7 @@ describe('ApprovalView', () => {
 
 		it('should omit the local account row when the request carries none', () => {
 			mount({ detail: detail({ type: 'pam', principals: ['alice'] }) });
-			expect(screen.queryByText('Attempting to act as')).not.toBeInTheDocument();
+			expect(screen.queryByText('Account')).not.toBeInTheDocument();
 		});
 	});
 
@@ -715,9 +715,10 @@ describe('ApprovalView', () => {
 			expect(screen.queryByText('Terminal')).not.toBeInTheDocument();
 		});
 
-		it('should say the account is being logged in as, not acted as', () => {
+		it('should label the account row the same as a PAM request, not "logging in as"', () => {
 			mount({ detail: consoleDetail() });
-			expect(screen.getByText('Logging in as')).toBeInTheDocument();
+			expect(screen.getByText('Account')).toBeInTheDocument();
+			expect(screen.getByText('root')).toBeInTheDocument();
 		});
 
 		// A console has nobody connecting to it over the network, so a
@@ -749,6 +750,173 @@ describe('ApprovalView', () => {
 		it('should not show a deadline for a request that is already closed', () => {
 			mount({ detail: consoleDetail({ already_closed: true, status: 'approved' }) });
 			expect(screen.queryByText('Approvable until')).not.toBeInTheDocument();
+		});
+	});
+
+	// PAM and console requests now share exactly one claimed-context block:
+	// every row is the requester's own, unauthenticated claim about who is
+	// doing this and from where (see ApprovalView.svelte's claimedContext).
+	describe('the claimed context block', () => {
+		/** localAuthDetail is a pending PAM request carrying the full set of
+		 * self-reported host context fields. */
+		function localAuthDetail(overrides: Partial<RequestDetail> = {}): RequestDetail {
+			return detail({
+				type: 'pam',
+				target_account: 'root',
+				requesting_user: 'alice',
+				process: 'sudo -i',
+				hostname: 'web01',
+				machine_id: '3f2c1e0d9b8a7f6e5d4c3b2a19080706',
+				pam_service: 'sudo',
+				tty: 'pts/3',
+				os: 'Debian GNU/Linux 13 (trixie)',
+				client: 'pam_ssoossh-c/0.3.0',
+				client_mode: 'auto',
+				caller_uid: 1000,
+				caller_pid: 4242,
+				caller_ppid: 4200,
+				client_time: '2026-08-14T09:00:00Z',
+				trusted_ca_fingerprints: ['SHA256:2Fd4rIWZ8kQnGx0mJvKp1YhLcTzXbA3sNeR5uW7oPqM'],
+				...overrides
+			});
+		}
+
+		it('should render the block for a PAM request', () => {
+			mount({ detail: localAuthDetail() });
+			expect(screen.getByText('Invoked by')).toBeInTheDocument();
+			expect(screen.getByText('sudo -i')).toBeInTheDocument();
+		});
+
+		it('should still render the block for a console request', () => {
+			mount({ detail: localAuthDetail({ type: 'console' }) });
+			expect(screen.getByText('Invoked by')).toBeInTheDocument();
+			expect(screen.getByText('sudo -i')).toBeInTheDocument();
+		});
+
+		it('should render none of the block for a user request', () => {
+			mount({
+				detail: detail({
+					type: 'user',
+					target_account: 'root',
+					requesting_user: 'alice',
+					process: 'sudo -i',
+					hostname: 'web01',
+					pam_service: 'sudo',
+					tty: 'pts/3',
+					os: 'Debian GNU/Linux 13 (trixie)',
+					client_time: '2026-08-14T09:00:00Z'
+				})
+			});
+			expect(screen.queryByText('Account')).not.toBeInTheDocument();
+			expect(screen.queryByText('Invoked by')).not.toBeInTheDocument();
+			expect(screen.queryByText('Command')).not.toBeInTheDocument();
+			expect(screen.queryByText('Platform')).not.toBeInTheDocument();
+			expect(screen.queryByText('Host clock')).not.toBeInTheDocument();
+		});
+
+		it('should omit "Invoked by" when the reported user is the same as the account', () => {
+			mount({ detail: localAuthDetail({ requesting_user: 'root' }) });
+			expect(screen.queryByText('Invoked by')).not.toBeInTheDocument();
+		});
+
+		it('should show the machine id beneath the host', () => {
+			mount({ detail: localAuthDetail() });
+			expect(screen.getByText('3f2c1e0d9b8a7f6e5d4c3b2a19080706')).toBeInTheDocument();
+		});
+
+		it('should append the configured mode to the reported client', () => {
+			mount({ detail: localAuthDetail() });
+			expect(screen.getByText('pam_ssoossh-c/0.3.0 (mode=auto)')).toBeInTheDocument();
+		});
+
+		it('should show the process ids together', () => {
+			mount({ detail: localAuthDetail() });
+			expect(screen.getByText('uid 1000 · pid 4242 · ppid 4200')).toBeInTheDocument();
+		});
+
+		it('should list the trusted CA fingerprints under "Host trusts"', () => {
+			mount({ detail: localAuthDetail() });
+			expect(screen.getByText('Host trusts')).toBeInTheDocument();
+			expect(
+				screen.getByText('SHA256:2Fd4rIWZ8kQnGx0mJvKp1YhLcTzXbA3sNeR5uW7oPqM')
+			).toBeInTheDocument();
+		});
+
+		it('should not show a "Host trusts" row when no fingerprints were reported', () => {
+			mount({ detail: localAuthDetail({ trusted_ca_fingerprints: undefined }) });
+			expect(screen.queryByText('Host trusts')).not.toBeInTheDocument();
+		});
+
+		describe('the host clock', () => {
+			it('should show no skew note at 29 seconds of drift', () => {
+				mount({
+					detail: localAuthDetail({
+						created_at: '2026-08-14T09:00:00Z',
+						client_time: '2026-08-14T08:59:31Z'
+					})
+				});
+				expect(screen.getByText('Host clock')).toBeInTheDocument();
+				expect(screen.queryByText(/behind server|ahead of server/)).not.toBeInTheDocument();
+			});
+
+			it('should show a skew note once drift exceeds 30 seconds, at 31 seconds', () => {
+				mount({
+					detail: localAuthDetail({
+						created_at: '2026-08-14T09:00:00Z',
+						client_time: '2026-08-14T08:59:29Z'
+					})
+				});
+				expect(screen.getByText('31s behind server')).toBeInTheDocument();
+			});
+		});
+
+		describe('the script-not-person note', () => {
+			it('should appear on a PAM request with a service but no terminal or remote host', () => {
+				mount({
+					detail: detail({
+						type: 'pam',
+						target_account: 'svc-backup',
+						pam_service: 'cron'
+					})
+				});
+				expect(screen.getByTestId('pam-headless-note')).toBeInTheDocument();
+			});
+
+			it('should not appear when the PAM request reports a terminal', () => {
+				mount({
+					detail: detail({
+						type: 'pam',
+						target_account: 'root',
+						pam_service: 'sudo',
+						tty: 'pts/3'
+					})
+				});
+				expect(screen.queryByTestId('pam-headless-note')).not.toBeInTheDocument();
+			});
+
+			it('should not appear when the PAM request reports a remote host', () => {
+				mount({
+					detail: detail({
+						type: 'pam',
+						target_account: 'root',
+						pam_service: 'sshd',
+						remote_host: '198.51.100.7'
+					})
+				});
+				expect(screen.queryByTestId('pam-headless-note')).not.toBeInTheDocument();
+			});
+
+			it('should not appear when the request carries no PAM service at all', () => {
+				mount({ detail: detail({ type: 'pam', target_account: 'root' }) });
+				expect(screen.queryByTestId('pam-headless-note')).not.toBeInTheDocument();
+			});
+
+			it('should not appear on a console request, where a service alone is ordinary', () => {
+				mount({
+					detail: detail({ type: 'console', target_account: 'root', pam_service: 'login' })
+				});
+				expect(screen.queryByTestId('pam-headless-note')).not.toBeInTheDocument();
+			});
 		});
 	});
 });

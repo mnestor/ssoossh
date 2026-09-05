@@ -11,9 +11,11 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import SectionLabel from '$lib/components/SectionLabel.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import TypeChip from '$lib/components/TypeChip.svelte';
 	import { formatDateTime, formatDuration } from '$lib/format';
+	import { parsePolicyExplanation } from '$lib/policyExplanation';
 
 	const id = $derived(page.params.id ?? '');
 
@@ -77,6 +79,21 @@
 	// merely ignores an unknown extension.
 	const extensions = $derived(cert?.extensions ?? []);
 	const criticalOptions = $derived(Object.entries(cert?.critical_options ?? {}));
+
+	// What the approval itself decided, distinct from what the issued
+	// certificate above carries: recorded on the decision at approval time,
+	// so it stays the record of what was decided even if the certificate's
+	// own audit columns were ever unreadable.
+	const decidedPrincipals = $derived(cert?.decided_principals ?? []);
+	const decidedGrantedOptions = $derived(cert?.decided_granted_options ?? null);
+	const decidedGrantedOptionsEmpty = $derived(
+		!!decidedGrantedOptions &&
+			decidedGrantedOptions.extensions.length === 0 &&
+			!decidedGrantedOptions.force_command &&
+			(decidedGrantedOptions.source_addresses ?? []).length === 0 &&
+			!decidedGrantedOptions.no_touch_required
+	);
+	const policyExplanation = $derived(parsePolicyExplanation(cert?.decided_policy_explanation));
 </script>
 
 <svelte:head><title>Certificate · ssoossh</title></svelte:head>
@@ -204,7 +221,79 @@
 								</span>
 							</DetailRow>
 						{/if}
+						{#if decidedPrincipals.length > 0}
+							<!-- What the approval selected, which is not always every
+							     principal on the certificate above: an approver may
+							     hold more accounts than they chose to include. -->
+							<DetailRow label="Principals granted">
+								<span class="flex flex-wrap gap-1.5">
+									{#each decidedPrincipals as principal (principal)}
+										<MonoChip>{principal}</MonoChip>
+									{/each}
+								</span>
+							</DetailRow>
+						{/if}
+						{#if decidedGrantedOptions}
+							<!-- Recorded on the decision at approval time, which is a
+							     different source from the certificate's own Extensions
+							     and Critical options above: this is what the approval
+							     granted, not what the signed certificate carries. -->
+							<DetailRow label="Options granted">
+								{#if decidedGrantedOptionsEmpty}
+									<span class="text-ink-muted">None</span>
+								{:else}
+									<span class="flex flex-col items-start gap-1.5">
+										{#if decidedGrantedOptions.extensions.length > 0}
+											<span class="flex flex-wrap gap-1.5">
+												{#each decidedGrantedOptions.extensions as extension (extension)}
+													<MonoChip>{extension}</MonoChip>
+												{/each}
+											</span>
+										{/if}
+										{#if decidedGrantedOptions.force_command}
+											<MonoChip
+												>force-command <span class="text-ink-muted">=</span>
+												{decidedGrantedOptions.force_command}</MonoChip
+											>
+										{/if}
+										{#each decidedGrantedOptions.source_addresses ?? [] as address, index (index)}
+											<MonoChip>{address}</MonoChip>
+										{/each}
+										{#if decidedGrantedOptions.no_touch_required}
+											<MonoChip>no-touch-required</MonoChip>
+										{/if}
+									</span>
+								{/if}
+							</DetailRow>
+						{/if}
 					</dl>
+
+					{#if policyExplanation}
+						<!-- The lifetime policy engine's own record of how it arrived
+						     at this certificate's duration: the tier that matched, the
+						     ceiling and what it computed to, and the source rule that
+						     narrowed it, if any (see service.PolicyExplanation). -->
+						<div class="mt-5">
+							<SectionLabel>Lifetime policy</SectionLabel>
+							<dl class="divide-y divide-border-subtle">
+								{#if policyExplanation.tier}
+									<DetailRow label="Tier">
+										{policyExplanation.tier.name}
+										<span class="text-ink-muted">— {policyExplanation.tier.condition}</span>
+									</DetailRow>
+								{/if}
+								<DetailRow label="Ceiling" mono>{policyExplanation.ceiling}</DetailRow>
+								<DetailRow label="Effective duration" mono
+									>{policyExplanation.effective_duration}</DetailRow
+								>
+								{#if policyExplanation.source_rule}
+									<DetailRow label="Source rule" mono
+										>{policyExplanation.source_rule.cidr}</DetailRow
+									>
+								{/if}
+							</dl>
+						</div>
+					{/if}
 				</Card>
 			{/if}
 

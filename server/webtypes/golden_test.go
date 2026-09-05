@@ -49,6 +49,7 @@ func fullFixtures() map[string]any {
 	}
 
 	certificateValidSeconds := 28800
+	callerUID, callerPID, callerPPID := int64(1000), int64(4242), int64(4200)
 
 	return map[string]any{
 		"current_user": webtypes.CurrentUserResponse{
@@ -77,6 +78,19 @@ func fullFixtures() map[string]any {
 			PAMService:    "login",
 			TTY:           "tty1",
 			RemoteHost:    "198.51.100.7",
+
+			RequestingUser:        "alice",
+			Process:               "sudo -i",
+			CallerUID:             &callerUID,
+			CallerPID:             &callerPID,
+			CallerPPID:            &callerPPID,
+			MachineID:             "3f2c1e0d9b8a7f6e5d4c3b2a19080706",
+			OS:                    "Debian GNU/Linux 13 (trixie) Linux 6.12.0",
+			Client:                "pam_ssoossh-c/0.3.0",
+			ClientMode:            "auto",
+			ClientTime:            &issuedAt,
+			TrustedCAFingerprints: []string{"SHA256:2Fd4rIWZ8kQnGx0mJvKp1YhLcTzXbA3sNeR5uW7oPqM"},
+
 			ExpiresAt:     issuedAt,
 			PublicKey:     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample alice@laptop",
 			Principals:    []string{"alice", "alice@example.org"},
@@ -100,6 +114,9 @@ func fullFixtures() map[string]any {
 			DecidedAcceptLanguage:    "en-US",
 			DecidedForwardedFor:      "198.51.100.7, 10.0.0.1",
 			DecidedAt:                &issuedAt,
+			DecidedPrincipals:        []string{"alice", "alice.other"},
+			DecidedGrantedOptions:    &options,
+			DecidedPolicyExplanation: `{"v":1,"cert_type":"user","policy_configured":false,"ceiling":"8h0m0s","effective_duration":"8h0m0s"}`,
 		},
 		"notification_preferences": webtypes.NotificationPreferencesResponse{
 			MailEnabled: true,
@@ -173,6 +190,9 @@ func fullFixtures() map[string]any {
 			DecidedAcceptLanguage:    "en-US",
 			DecidedForwardedFor:      "198.51.100.7, 10.0.0.1",
 			DecidedAt:                &issuedAt,
+			DecidedPrincipals:        []string{"alice", "alice.other"},
+			DecidedGrantedOptions:    &options,
+			DecidedPolicyExplanation: `{"v":1,"cert_type":"user","policy_configured":false,"ceiling":"8h0m0s","effective_duration":"8h0m0s"}`,
 		},
 	}
 }

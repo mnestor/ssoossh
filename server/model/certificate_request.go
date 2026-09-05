@@ -137,7 +137,40 @@ type CertificateRequest struct {
 	PAMService string `gorm:"column:pam_service"`
 	TTY        string `gorm:"column:tty"`
 	RemoteHost string `gorm:"column:remote_host"`
+
+	// The rest of the host context a PAM or console module reports, with
+	// the same trust and the same bound as the four above (see
+	// apitypes.PAMRequestBody for each field's meaning). Set for
+	// CertificateTypePAM and CertificateTypeConsole requests; the numeric
+	// ones are pointers because uid 0 is a real value and NULL means "not
+	// reported". TrustedCAFingerprints is a JSON-encoded []string.
+	RequestingUser        string     `gorm:"column:requesting_user"`
+	Process               string     `gorm:"column:process"`
+	CallerUID             *int64     `gorm:"column:caller_uid"`
+	CallerPID             *int64     `gorm:"column:caller_pid"`
+	CallerPPID            *int64     `gorm:"column:caller_ppid"`
+	MachineID             string     `gorm:"column:machine_id"`
+	OS                    string     `gorm:"column:os"`
+	Client                string     `gorm:"column:client"`
+	ClientMode            string     `gorm:"column:client_mode"`
+	ClientTime            *time.Time `gorm:"column:client_time"`
+	TrustedCAFingerprints string     `gorm:"column:trusted_ca_fingerprints"`
 }
 
 // TableName overrides GORM's default pluralization to match the migration.
 func (CertificateRequest) TableName() string { return "certificate_requests" }
+
+// ReportedIdentity returns the account and host the request claimed to
+// come from, whichever columns hold them for this type: Username/Hostname
+// for a PAM or console request, LocalUsername/LocalHostname for a user
+// one. Both pairs mean the same thing, "who and where", and every consumer
+// that wants it should come through here rather than pick a pair, so a
+// user-type event never reads the PAM columns and gets empty strings.
+func (r CertificateRequest) ReportedIdentity() (username, hostname string) {
+	switch r.Type {
+	case CertificateTypePAM, CertificateTypeConsole:
+		return r.Username, r.Hostname
+	default:
+		return r.LocalUsername, r.LocalHostname
+	}
+}

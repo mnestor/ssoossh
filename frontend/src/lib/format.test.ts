@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { expiryLabel, formatDateTime, formatDuration, isExpired, relativeTime } from './format';
+import {
+	clockSkewLabel,
+	expiryLabel,
+	formatDateTime,
+	formatDuration,
+	isExpired,
+	relativeTime
+} from './format';
 
 describe('formatDuration', () => {
 	const cases: { name: string; seconds: number; want: string }[] = [
@@ -85,6 +92,34 @@ describe('isExpired', () => {
 	// Fails closed: an expiry that cannot be read is not evidence of validity.
 	it('should report true for an unparseable expiry', () => {
 		expect(isExpired('whenever', now)).toBe(true);
+	});
+});
+
+describe('clockSkewLabel', () => {
+	const reference = '2026-08-14T12:00:00Z';
+
+	it('should report no skew at the tolerance boundary of 30 seconds', () => {
+		expect(clockSkewLabel('2026-08-14T11:59:30Z', reference)).toBeNull();
+	});
+
+	it('should report no skew just inside the tolerance at 29 seconds', () => {
+		expect(clockSkewLabel('2026-08-14T11:59:31Z', reference)).toBeNull();
+	});
+
+	it('should report skew once the drift exceeds 30 seconds at 31 seconds', () => {
+		expect(clockSkewLabel('2026-08-14T11:59:29Z', reference)).toBe('31s behind server');
+	});
+
+	it('should describe a host clock ahead of the server', () => {
+		expect(clockSkewLabel('2026-08-14T12:02:00Z', reference)).toBe('2m ahead of server');
+	});
+
+	it('should return null when the claimed clock cannot be parsed', () => {
+		expect(clockSkewLabel('not-a-timestamp', reference)).toBeNull();
+	});
+
+	it('should return null when the reference timestamp cannot be parsed', () => {
+		expect(clockSkewLabel(reference, 'not-a-timestamp')).toBeNull();
 	});
 });
 
