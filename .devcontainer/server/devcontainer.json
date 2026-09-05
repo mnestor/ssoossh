@@ -1,8 +1,9 @@
 {
   "name": "ssoossh-server",
   "image": "ghcr.io/mnestor/ssoossh-devcontainer:latest",
-  "workspaceFolder": "/workspace/${localWorkspaceFolderBasename}",
-  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/${localWorkspaceFolderBasename},type=bind",
+  "workspaceFolder": "/workspace/ssoossh",
+  "workspaceMount": "source=${localEnv:HOME}/git,target=/workspace,type=bind",
+  // "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/${localWorkspaceFolderBasename},type=bind",
   // Personal tooling config, not part of the app -- mounted from the host
   // so it's available inside the container without living in the image.
   "mounts": [
@@ -59,6 +60,15 @@
     "--security-opt",
     "seccomp=unconfined"
   ],
+  "features": {
+    // Sibling containers via the host daemon. The socket mount below grants
+    // the access; this feature installs the CLI and fixes group membership
+    // so it works without sudo.
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "moby": false,
+      "installDockerBuildx": true
+    },
+  },
   "shutdownAction": "none",
   "postCreateCommand": {
     "allow-git": "git config --global --add safe.directory /workspace/${localWorkspaceFolderBasename}",
