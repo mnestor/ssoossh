@@ -50,6 +50,7 @@ the matching `lint-*`) and the internal check halves
 | `make linux` | Snapshot build for linux/amd64 only |
 | `make binaries` | Snapshot build for every release target |
 | `make server-linux-build-local` | Build ssoosshd for a local `docker build` (see Dockerfile) |
+| `make macos-client-pkg` | Package dist/'s darwin client archives as .pkg (macOS only) |
 | `make frontend-clean` | Remove the built web UI |
 
 ### Test

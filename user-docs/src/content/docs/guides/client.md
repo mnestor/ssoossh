@@ -22,7 +22,32 @@ Release packages are on the
 | Debian / Ubuntu | `ssoossh-client_*.deb` | `/usr/local/bin/ssoossh`, sample config at `/etc/ssoossh/ssoossh.yaml` |
 | RHEL / Fedora | `ssoossh-client_*.rpm` | same |
 | Windows | `ssoossh-client_*.zip` | extract `ssoossh.exe` onto `PATH` |
-| macOS | `ssoossh-client_*.zip` | extract `ssoossh` onto `PATH`; the binary is signed and notarized |
+| macOS | `ssoossh-client_*_darwin_<arch>.pkg` | `/usr/local/bin/ssoossh`, man pages under `/usr/local/share/man`, the annotated defaults at `/usr/local/share/ssoossh/ssoossh.yaml` |
+| macOS | `ssoossh-client_*.zip` | the same files, unpacked by hand -- extract `ssoossh` onto `PATH` |
+
+There is one macOS package per architecture, `darwin_arm64` for Apple
+silicon and `darwin_amd64` for Intel; the installer refuses the wrong one
+rather than leaving you with a binary that will not run. Both the binary and
+the package are Developer ID signed and notarized, so neither prompts
+Gatekeeper. Check a download before opening it:
+
+```bash
+spctl --assess --type install -v ssoossh-client_1.2.3_darwin_arm64.pkg
+```
+
+The package writes nothing under `/etc`. It installs the annotated defaults
+to `/usr/local/share/ssoossh/ssoossh.yaml` as a file to copy from -- the
+client reads `/etc/ssoossh/ssoossh.yaml`, `~/.config/ssoossh.yaml` and
+`./ssoossh.yaml`, in that order, and needs none of them, since the same
+defaults are compiled in. To remove it:
+
+```bash
+sudo rm -rf /usr/local/bin/ssoossh /usr/local/share/ssoossh \
+    /usr/local/share/doc/ssoossh-client \
+    /usr/local/share/man/man1/ssoossh*.1 \
+    /usr/local/share/man/man5/ssoossh.yaml.5
+sudo pkgutil --forget org.mikenestor.ssoossh-client
+```
 
 ## Global flags
 

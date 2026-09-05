@@ -39,12 +39,13 @@ denominator, which is what the `-glibc-openssl3`, `-glibc-openssl1.1` and
 
 ## Client packages
 
-Linux (`.deb`/`.rpm`), Windows (`.zip`), and macOS (`.zip`, quill-signed
-and notarized).
+Linux (`.deb`/`.rpm`), Windows (`.zip`), and macOS (a Developer ID signed
+and notarized `.pkg` per architecture, plus the `.zip` for anyone who would
+rather unpack it by hand; the binary inside both is quill-signed and
+notarized).
 
 ## Known gaps
 
-- macOS ships as a signed, notarized `.zip` only -- no `.dmg` yet.
 - LDAP configuration is parsed but not consumed: setting it has no effect
   on authentication or on issued certificates.
 

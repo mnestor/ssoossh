@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  productbuild's description of the installer: what it is called, what it
+  refuses to install on, and which panes it shows. Every @NAME@ is filled in
+  by packaging/macos/pkg.sh from the archive's name and the binary itself.
+
+  hostArchitectures carries one architecture because the release builds one
+  package per architecture (see the script's header for why the two are not
+  lipo'd into a universal binary). An Intel Mac handed the arm64 package is
+  told so by the installer rather than by a binary that will not exec.
+
+  The OS floor is the deployment target the Go linker stamped into the
+  binary, read back with otool at package time so a toolchain bump carries
+  it rather than leaving a constant here to go stale.
+
+  customize="never": there is one payload and nothing to opt out of.
+  rootVolumeOnly: the paths are absolute and outside SIP, so an install onto
+  anything but the boot volume would put the binary somewhere nothing looks.
+-->
+<installer-gui-script minSpecVersion="2">
+    <title>ssoossh @VERSION@</title>
+    <options customize="never" require-scripts="false"
+             hostArchitectures="@HOSTARCH@" rootVolumeOnly="true"/>
+    <domains enable_localSystem="true"/>
+    <volume-check>
+        <allowed-os-versions>
+            <os-version min="@MINVER@"/>
+        </allowed-os-versions>
+    </volume-check>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <readme file="readme.html" mime-type="text/html"/>
+    <license file="LICENSE.txt" mime-type="text/plain"/>
+    <choices-outline>
+        <line choice="default">
+            <line choice="@IDENTIFIER@"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="@IDENTIFIER@" visible="false">
+        <pkg-ref id="@IDENTIFIER@"/>
+    </choice>
+    <pkg-ref id="@IDENTIFIER@" version="@PKGVER@" onConclusion="none">component.pkg</pkg-ref>
+</installer-gui-script>

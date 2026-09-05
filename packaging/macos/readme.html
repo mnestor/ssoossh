@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 13px -apple-system, "Helvetica Neue", sans-serif; margin: 1em; }
+  code, pre { font: 12px Menlo, monospace; }
+  pre { white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<p><b>What is installed</b></p>
+<pre>/usr/local/bin/ssoossh
+/usr/local/share/man/man1/ssoossh.1 and one page per subcommand
+/usr/local/share/man/man5/ssoossh.yaml.5
+/usr/local/share/ssoossh/ssoossh.yaml   the annotated defaults
+/usr/local/share/doc/ssoossh-client/    LICENSE, NOTICE, THIRD-PARTY-LICENSES.md</pre>
+
+<p><code>/usr/local/bin</code> is on the default <code>PATH</code> and
+<code>/usr/local/share/man</code> is on the default manpath, so
+<code>ssoossh version</code> and <code>man ssoossh</code> both work in a new
+shell with nothing else to set up.</p>
+
+<p><b>Configuration</b></p>
+
+<p>None is required: the defaults are compiled into the binary, and
+<code>--server</code> is enough to try it. The file installed at
+<code>/usr/local/share/ssoossh/ssoossh.yaml</code> is a copy to start from,
+not one the client reads. Put your edits in one of the places it does read,
+last of these wins:</p>
+
+<pre>/etc/ssoossh/ssoossh.yaml     machine-wide, and the only file `enforce` is read from
+~/.config/ssoossh.yaml        yours
+./ssoossh.yaml                the working directory
+--config &lt;file&gt;</pre>
+
+<pre>sudo mkdir -p /etc/ssoossh
+sudo cp /usr/local/share/ssoossh/ssoossh.yaml /etc/ssoossh/ssoossh.yaml</pre>
+
+<p>Nothing under <code>/etc</code> is written by this installer, so an
+upgrade never touches a file you edited. <code>man ssoossh.yaml</code>
+describes every key.</p>
+
+<p><b>Using it</b></p>
+
+<pre>ssoossh --server https://ssh.example.com ssh login</pre>
+
+<p>That opens a browser, and on approval writes a certificate into your SSH
+agent. <code>ssoossh ssh config</code> prints the two lines for
+<code>~/.ssh/config</code> that make it happen automatically on first
+connection to a host. <code>ssoossh ssh inspect</code> shows what you are
+currently holding.</p>
+
+<p><b>Removing it</b></p>
+
+<pre>sudo rm -rf /usr/local/bin/ssoossh \
+    /usr/local/share/ssoossh \
+    /usr/local/share/doc/ssoossh-client \
+    /usr/local/share/man/man1/ssoossh*.1 \
+    /usr/local/share/man/man5/ssoossh.yaml.5
+sudo pkgutil --forget @IDENTIFIER@</pre>
+
+<p><code>pkgutil --files @IDENTIFIER@</code> lists exactly what the receipt
+claims before you delete anything.</p>
+</body>
+</html>

@@ -67,8 +67,18 @@ client defaults at `/etc/ssoossh/ssoossh.yaml`.
 
 **Windows** -- download the `.zip`, extract `ssoossh.exe` somewhere on `PATH`.
 
-**macOS** -- download the `.zip`. The binary inside is signed and notarized, so
-Gatekeeper does not block it. Extract it and put `ssoossh` on `PATH`.
+**macOS**
+
+```bash
+sudo installer -pkg ssoossh-client_*_darwin_arm64.pkg -target /
+```
+
+`darwin_amd64` for an Intel Mac; the installer refuses the wrong one. It puts
+the binary in `/usr/local/bin`, its man pages under `/usr/local/share/man`,
+and the annotated defaults at `/usr/local/share/ssoossh/ssoossh.yaml` -- a
+copy to start from, not one the client reads. Package and binary are both
+Developer ID signed and notarized, so double-clicking it works too. The
+`.zip` is still there for anyone who would rather place the binary by hand.
 
 ## 2. Point the client at the server
 

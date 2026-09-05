@@ -57,6 +57,7 @@ jobs:
               - 'frontend/**'
               - 'Makefile'
               - 'Dockerfile'
+              - 'packaging/**'
               - '.goreleaser*.yml'
               - 'docs/openapi.yaml'
               - 'tygo.yaml'
@@ -313,6 +314,20 @@ jobs:
           "$MUSL_BINARY" version || { echo "✗ musl binary failed to run under the musl loader"; exit 1; }
           echo "✓ musl binary runs under the musl loader"
 
+      # What the macos-client-pkg job below wraps as installer packages.
+      # Handing it the archives rather than the release assets is what lets
+      # that job run on a snapshot too: nothing is published in --snapshot
+      # mode, so a job that downloaded from the release would only ever run
+      # during an actual release -- and the weekly run exists precisely so
+      # the signed pipeline is exercised before then.
+      - name: Upload the darwin client archives
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: darwin-client-archives
+          path: dist/ssoossh-client_*_darwin_*.zip
+          if-no-files-found: error
+          retention-days: 7
+
       - name: cleanup
         if: always()
         run: |
@@ -324,4 +339,141 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release delete -y ${TAG}
+          gh release delete -y "$TAG"
+
+  # The macOS client installer, one package per architecture.
+  #
+  # A second job on a Mac rather than a step in build-most, because
+  # pkgbuild, productbuild, productsign and notarytool exist only on macOS
+  # and that job runs in a Linux container. Nothing is compiled here: it
+  # takes the darwin archives build-most uploaded, whose binaries goreleaser
+  # already had quill sign and notarize, and wraps each one untouched.
+  #
+  # It runs on every event build-most does, not only on tags. On a snapshot
+  # the packages are still signed and notarized -- quill's post-hook runs in
+  # the build phase, which --snapshot does not skip -- and simply never
+  # reach a release. That is what keeps the weekly run an honest rehearsal
+  # of this half of the pipeline instead of it first executing during a real
+  # release.
+  macos-client-pkg:
+    name: macos client pkg
+    needs: [changes, build-most]
+    if: github.event_name != 'pull_request' && needs.changes.outputs.code == 'true'
+    # Pinned to a version rather than macos-latest, like every other version
+    # in this pipeline. Nothing is compiled here, so this is not an SDK
+    # choice: the newest image is simply the one whose notarytool and
+    # stapler are the ones Apple is currently changing, and the weekly run
+    # exists to meet those changes before a release does.
+    #
+    # It does not set the package's floor. allowed-os-versions comes from
+    # the client binary's LC_BUILD_VERSION minos, which packaging/macos/pkg.sh
+    # reads out of the binary itself, so the floor follows the Go toolchain
+    # and not this label.
+    runs-on: macos-26
+    timeout-minutes: 60
+    permissions:
+      # gh release upload, on tag pushes only.
+      contents: write
+    steps:
+      # packaging/macos/ holds the script, Distribution.xml and the
+      # installer's HTML panes; the payload comes from the artifact below.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: darwin-client-archives
+          path: dist
+
+      # The same 1Password item build-most reads for quill. QUILL_INSTALLER_P12
+      # is the field quill itself does not use: a Developer ID *Application*
+      # certificate signs a Mach-O and cannot sign an installer package, and
+      # Gatekeeper refuses a downloaded package that is not Installer-signed.
+      - uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
+        id: secrets
+        with:
+          export-env: false
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          QUILL_INSTALLER_P12: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_INSTALLER_P12
+          QUILL_SIGN_PASSWORD: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_SIGN_PASSWORD
+          QUILL_NOTARY_ISSUER: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_NOTARY_ISSUER
+          QUILL_NOTARY_KEY: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_NOTARY_KEY
+          QUILL_NOTARY_KEY_ID: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_NOTARY_KEY_ID
+
+      - name: Installer packages, signed and notarized
+        env:
+          QUILL_INSTALLER_P12: ${{ steps.secrets.outputs.QUILL_INSTALLER_P12 }}
+          QUILL_SIGN_PASSWORD: ${{ steps.secrets.outputs.QUILL_SIGN_PASSWORD }}
+          QUILL_NOTARY_ISSUER: ${{ steps.secrets.outputs.QUILL_NOTARY_ISSUER }}
+          QUILL_NOTARY_KEY: ${{ steps.secrets.outputs.QUILL_NOTARY_KEY }}
+          QUILL_NOTARY_KEY_ID: ${{ steps.secrets.outputs.QUILL_NOTARY_KEY_ID }}
+        run: |
+          set -euo pipefail
+          for archive in dist/ssoossh-client_*_darwin_*.zip; do
+            packaging/macos/pkg.sh "$archive" dist
+          done
+          ls -l dist/*.pkg
+
+      # Both architectures must be here. A glob that matched one archive
+      # because the other never got built would otherwise ship a release
+      # with half its installers and no failure anywhere.
+      - name: Both architectures were packaged
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            ls dist/ssoossh-client_*_darwin_"$arch".pkg >/dev/null
+          done
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: macos-client-packages
+          path: dist/*.pkg
+          if-no-files-found: error
+          retention-days: 7
+
+      # goreleaser created the release in build-most and has finished with
+      # it, so these go up afterwards with gh. The checksums file it wrote
+      # is rewritten to cover them too -- a release whose checksums list
+      # describes only some of its assets is worse than one with none.
+      # Existing lines for these names are dropped first, so a re-run of
+      # this job replaces them rather than appending a second set.
+      - name: Attach the packages to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" dist/*.pkg --clobber
+
+          sums=$(gh release view "$TAG" --json assets \
+            --jq '.assets[].name | select(endswith("_checksums.txt"))')
+          if [ -z "$sums" ]; then
+            echo "no checksums asset on $TAG; nothing to amend"
+            exit 0
+          fi
+          gh release download "$TAG" --pattern "$sums" --dir dist --clobber
+          (
+            cd dist
+            shasum -a 256 -- *.pkg > pkg-sums.txt
+            # Every line of the release's file whose second field is not one
+            # of the names just hashed, then those names appended once. The
+            # sort is only so the result is stable between runs.
+            awk 'NR == FNR { seen[$2] = 1; next } !($2 in seen)' \
+              pkg-sums.txt "$sums" > kept.txt
+            cat kept.txt pkg-sums.txt | sort -k2 > "$sums"
+            rm -f kept.txt pkg-sums.txt
+          )
+          gh release upload "$TAG" "dist/$sums" --clobber
+          cat "dist/$sums"
+
+      # Same invariant build-most keeps: a published release is complete or
+      # it is not published. A failure here leaves the tag, not a release
+      # missing its macOS installers.
+      - name: remove the release, we failed
+        if: startsWith(github.ref, 'refs/tags/') && failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release delete -y "$TAG"
