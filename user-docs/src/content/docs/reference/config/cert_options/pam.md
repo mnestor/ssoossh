@@ -211,4 +211,4 @@ Evaluated in order; the FIRST tier whose when condition the approver's identity 
 
 Restricts certificate lifetime based on the request's source IP address. Longest prefix match wins; ties resolve to the stricter rule. Entries are intersected with the tier-determined duration, and the final effective lifetime is clamped to the ceiling set by the enclosing CertOptions*.ValidDuration.
 
-See docs/operations/certificate-lifetime-policy.md section "Which address" for why the server-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
+See https://mnestor.github.io/ssoossh/operations/certificate-policy/ section "Which address" for why the server-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.

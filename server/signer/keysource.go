@@ -27,7 +27,8 @@ import (
 // CAKeySource supplies the ssh.Signer certificates are signed with. The
 // indirection is the seam for the CA key living somewhere other than the
 // config file — today a PKCS#11 token (HSMKeySource), and whatever comes
-// after it — without touching Sign. See docs/internals/invariants.md.
+// after it — without touching Sign. See
+// https://mnestor.github.io/ssoossh/internals/invariants/.
 type CAKeySource interface {
 	Signer(ctx context.Context) (ssh.Signer, error)
 }

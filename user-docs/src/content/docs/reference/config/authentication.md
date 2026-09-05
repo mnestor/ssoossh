@@ -85,7 +85,7 @@ authentication:
 
 `string`, default `groups`
 
-Names a claim expected to hold a JSON array of group names. It feeds the certificate lifetime and require-group decision only; group membership is never placed in an issued certificate (see docs/internals/invariants.md).
+Names a claim expected to hold a JSON array of group names. It feeds the certificate lifetime and require-group decision only; group membership is never placed in an issued certificate (see https://mnestor.github.io/ssoossh/internals/invariants/).
 
 ```yaml
 authentication:
@@ -153,4 +153,4 @@ cert_options:
     key_id_template: '{{.Username}}-{{.Extra.dept}}-{{join .Extra.accounts ";"}}'
 ```
 
-See docs/operations/certificate-keyid-template.md for the full template field list and the MISSING rendering rules.
+See https://mnestor.github.io/ssoossh/operations/key-id-templates/ for the full template field list and the MISSING rendering rules.

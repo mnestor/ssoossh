@@ -51,11 +51,12 @@ type CertificateProvider interface {
 	// Scoped by the requesting identity's user row.
 	ListForIdentity(ctx context.Context, identity *Identity, after *string, limit int) ([]CertificateWithDecision, *string, error)
 
-	// GetByID returns the certificate identified by id if the caller has permission to read it.
-	// Authorization: the certificate's approving user (the one whose users.id matches
-	// certificate.user_id), or any identity with auditor-level access. Returns 404
-	// uniformly for both "certificate does not exist" and "caller does not have
-	// permission", so the response does not leak existence to an unauthorized caller.
+	// GetByID returns the certificate identified by id if the caller has
+	// permission to read it. Authorization: the certificate's approving user
+	// (the one whose users.id matches certificate.user_id), or any identity with
+	// auditor-level access. Returns 404 uniformly for both "certificate does not
+	// exist" and "caller does not have permission", so the response does not
+	// leak existence to an unauthorized caller.
 	GetByID(ctx context.Context, id string, identity *Identity, cfg *config.Config) (CertificateWithDecision, error)
 }
 
@@ -65,7 +66,7 @@ type CertificateProvider interface {
 //
 // Note the history is metadata, never the certificate itself — certificates
 // are ephemeral and deliberately not persisted (see
-// docs/internals/signing-pipeline.md).
+// https://mnestor.github.io/ssoossh/internals/architecture/).
 type CertificateService struct {
 	db *gorm.DB
 }
@@ -103,7 +104,8 @@ func (s *CertificateService) ListForIdentity(ctx context.Context, identity *Iden
 
 	query := s.db.WithContext(ctx).Where("certificates.user_id = ?", user.ID)
 
-	// If a cursor is provided, look it up to get its issued_at, then build the seek predicate.
+	// If a cursor is provided, look it up to get its issued_at, then build the
+	// seek predicate.
 	if after != nil {
 		var cursorCert model.Certificate
 		err := s.db.WithContext(ctx).

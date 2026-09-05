@@ -1,7 +1,7 @@
 # Operator-facing deployment of ssoosshd. Two services, deliberately not a
 # full stack: no pocket-id, no target sshd, no sudo target, no lldap slot —
 # those belong to a QA rehearsal harness, a separate thing (see
-# docs/operations/deployment.md). This still needs a real OIDC
+# https://mnestor.github.io/ssoossh/operations/install/). This still needs a real OIDC
 # provider and a real machine to `ssh` into; it only runs the server.
 #
 # The dev docker-compose.yml at the repo root is unrelated — it sleep-loops
@@ -9,7 +9,7 @@
 #
 # Usage — this pulls a published image; nothing on this host needs to be
 # built. The image (both this glibc build and the -musl variant; see
-# docs/operations/hsm.md) is assembled by goreleaser's dockers_v2 pipe
+# https://mnestor.github.io/ssoossh/operations/hsm/) is assembled by goreleaser's dockers_v2 pipe
 # (.goreleaser.yml) from the Dockerfile at the repo root, as part of the
 # build-most job in .github/workflows/build.yaml, and pushed to
 # ghcr.io/mnestor/ssoosshd only on a v* release tag — there is no
@@ -45,7 +45,7 @@
 # In config/ssoosshd.yaml, http.address must be 0.0.0.0 (not the default
 # 127.0.0.1): the port mapping below publishes from the container's
 # external interface, which a process bound to its own loopback is not
-# reachable on. See docs/operations/deployment.md.
+# reachable on. See https://mnestor.github.io/ssoossh/operations/install/.
 #
 # database.provider defaults to sqlite, which needs nothing else and is
 # fine for a single instance. postgres is opt-in via the "postgres" profile

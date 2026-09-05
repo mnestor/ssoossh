@@ -67,14 +67,13 @@ type CertificateRequestDecision struct {
 	// server/bootstrap/router.go).
 	SourceIP string `gorm:"column:source_ip"`
 
-	// UserAgent, AcceptLanguage, and ForwardedFor are a deliberate
-	// allowlist of request headers, not "every header minus a denylist":
-	// Cookie carries the live session token, and neither it nor
-	// Authorization is ever captured here, per docs/internals/invariants.md's "never
-	// log sensitive data" rule. ForwardedFor is the raw header, kept
-	// alongside SourceIP because g.ClientIP() already collapses it to one
-	// trusted value — the raw chain preserves forensic detail that
-	// resolution throws away.
+	// UserAgent, AcceptLanguage, and ForwardedFor are a deliberate allowlist of
+	// request headers, not "every header minus a denylist": Cookie carries the
+	// live session token, and neither it nor Authorization is ever captured
+	// here, per https://mnestor.github.io/ssoossh/internals/invariants/'s "never
+	// log sensitive data" rule. ForwardedFor is the raw header, kept alongside
+	// SourceIP because g.ClientIP() already collapses it to one trusted value —
+	// the raw chain preserves forensic detail that resolution throws away.
 	UserAgent      string `gorm:"column:user_agent"`
 	AcceptLanguage string `gorm:"column:accept_language"`
 	ForwardedFor   string `gorm:"column:forwarded_for"`

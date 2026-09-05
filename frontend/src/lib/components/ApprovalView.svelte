@@ -140,7 +140,7 @@
 	// pam_ssoossh, not an interactive SSH session — "requesting an SSH
 	// certificate" would misdescribe what's actually being authorized, so
 	// the heading says what this type of certificate is for instead (see
-	// docs/guide/features.md, PAM).
+	// https://mnestor.github.io/ssoossh/concepts/, PAM).
 	// A console login is the bigger grant of the two and reads differently:
 	// it authorizes a whole interactive session on the machine, and the
 	// person approving it is being asked to vouch for someone standing at a

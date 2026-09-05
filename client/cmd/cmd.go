@@ -251,10 +251,11 @@ func (r *RootCommand) Agent() agent.Agent { return r.ssh }
 // check this before using Config/API/Agent.
 func (r *RootCommand) InitErr() error { return r.initErr }
 
-// newAPIClientFromConfig builds the default api.Client from the loaded
-// client config, mapping config.Config's TLS options into api.Config
-// (internal/ can't import client/config back, see docs/internals/invariants.md, so the
-// mapping has to happen on this side).
+// newAPIClientFromConfig builds the default api.Client from the loaded client
+// config, mapping config.Config's TLS options into api.Config (internal/
+// can't import client/config back, see
+// https://mnestor.github.io/ssoossh/internals/invariants/, so the mapping has
+// to happen on this side).
 func newAPIClientFromConfig(cfg *config.Config) (api.Client, error) {
 	return api.NewClient(api.Config{
 		ServerURL:     cfg.Server,

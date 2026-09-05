@@ -20,7 +20,7 @@ const policyRegistryPath = `SOFTWARE\Policies\com.github.mnestor\ssoossh`
 // policyStringValues names the REG_SZ values under policyRegistryPath and
 // the canonical setting name (matching the YAML config keys, with the two
 // sshkey fields as "sshkey.type"/"sshkey.size") each maps to. See
-// docs/operations/client-settings-enforcement.md for the full mapping.
+// https://mnestor.github.io/ssoossh/hosts/client-enforcement/ for the full mapping.
 var policyStringValues = map[string]string{
 	"Server":      "server",
 	"CAPubkey":    "capubkey",

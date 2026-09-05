@@ -42,10 +42,11 @@ func runConfig(out io.Writer) error {
 
 // sshConfigGuidance is how ssoossh gets hooked into ssh_config, kept here
 // because `ssh config` is where someone looks for it. It is the command's
-// entire output and is embedded in its long help, so a plain run, --help
-// and the man page cannot come to say different things. Mirrors
-// docs/operations/configuration.md, which is the long form with the sshd and PAM ends
-// of the setup that do not belong in a client help page.
+// entire output and is embedded in its long help, so a plain run, --help and
+// the man page cannot come to say different things. Mirrors
+// https://mnestor.github.io/ssoossh/reference/config/, which is the long form
+// with the sshd and PAM ends of the setup that do not belong in a client help
+// page.
 const sshConfigGuidance = `The client is never run on its own — ssh invokes it. Two ways to arrange that:
 
   Match exec (recommended). Runs before ssh connects, so a certificate that

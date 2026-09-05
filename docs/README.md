@@ -4,77 +4,76 @@
 OIDC and receive short-lived SSH certificates instead of managing long-lived
 keys. Self-hosted, homelab-friendly, early development.
 
-The rendered documentation site is at
-<https://mnestor.github.io/ssoossh/>. It is built from `user-docs/` and
-covers the same ground as this directory for users, host administrators,
-and server operators, with the configuration, CLI, and HTTP API references
-generated from the source. The files here remain the working copies that
-the site's hand-written pages are derived from; the proposals and dev
-documents below have no site page and are linked from it by GitHub URL.
+**The documentation is at <https://mnestor.github.io/ssoossh/>.** It is built
+from `user-docs/` in this repository and covers users, host administrators,
+server operators, and the internals, with the configuration, CLI, and HTTP API
+references generated from the source.
 
-| Directory | Audience |
+This directory used to hold a second copy of that material. It no longer does:
+one copy in two places drifts, and the site is the copy people read. What is
+left here is what has no site page.
+
+| Path | What it is |
 | --- | --- |
-| [guide/](guide/) | Using ssoossh |
-| [operations/](operations/) | Running a server |
-| [internals/](internals/) | How it works inside |
-| [project/](project/) | Scope, releases, dependencies |
+| [proposals/](proposals/) | Designs, mostly for work not yet built |
+| [dev/](dev/) | Contributing and testing notes |
 | [man/](man/) | Man pages (`.1` client, `.5` config formats, `.8` server) |
-| [proposals/](proposals/) | Designs for work not yet built |
-| [dev/](dev/) | Contributing and testing |
+| [openapi.yaml](openapi.yaml) | The HTTP API wire contract |
+| [wire-contract.json](wire-contract.json) | The versioned wire contract manifest |
 
-## guide/
+## Where the old pages went
 
-| Document | What it covers |
+Every page removed from here has a page on the site. Nothing was deleted
+without a replacement.
+
+| Was | Now |
 | --- | --- |
-| [getting-started.md](guide/getting-started.md) | The shortest path to a working `ssh login` |
-| [walkthrough.html](guide/walkthrough.html) | The login flow illustrated step by step, for end users |
-| [features.md](guide/features.md) | What ssoossh solves, and everything it does today |
-| [flows.md](guide/flows.md) | Mermaid sequence diagrams for each flow |
-| [faq.md](guide/faq.md) | Common questions for users, sshd host admins, and server operators |
+| `guide/getting-started.md` | [Getting started](https://mnestor.github.io/ssoossh/getting-started/) |
+| `guide/walkthrough.html` | [Walkthrough](https://mnestor.github.io/ssoossh/concepts/walkthrough/) |
+| `guide/features.md`, `guide/flows.md` | [How it works](https://mnestor.github.io/ssoossh/concepts/) |
+| `guide/faq.md` | [FAQ](https://mnestor.github.io/ssoossh/guides/faq/), split by audience across the user, host and operator sections |
+| `operations/configuration.md` | [Configuration reference](https://mnestor.github.io/ssoossh/reference/config/), generated from the config structs |
+| `operations/deployment.md` | [Install](https://mnestor.github.io/ssoossh/operations/install/) and the operations section, split one page per topic |
+| `operations/certificate-lifetime-policy.md` | [Certificate policy](https://mnestor.github.io/ssoossh/operations/certificate-policy/) |
+| `operations/certificate-keyid-template.md` | [Key ID templates](https://mnestor.github.io/ssoossh/operations/key-id-templates/) |
+| `operations/client-settings-enforcement.md` | [Client enforcement](https://mnestor.github.io/ssoossh/hosts/client-enforcement/) |
+| `operations/email-notifications.md` | [Email notifications](https://mnestor.github.io/ssoossh/operations/email-notifications/) |
+| `operations/ldap.md` | [LDAP](https://mnestor.github.io/ssoossh/operations/ldap/) |
+| `operations/audit-log.md` | [Audit log](https://mnestor.github.io/ssoossh/operations/audit-log/) |
+| `operations/hsm.md` | [HSM](https://mnestor.github.io/ssoossh/operations/hsm/) |
+| `internals/invariants.md` | [Invariants](https://mnestor.github.io/ssoossh/internals/invariants/) |
+| `internals/signing-pipeline.md` | [Architecture](https://mnestor.github.io/ssoossh/internals/architecture/) |
+| `internals/wire-types.md` | [Wire types](https://mnestor.github.io/ssoossh/internals/wire-types/) |
+| `internals/design-brief.md` | [Design brief](https://mnestor.github.io/ssoossh/internals/design-brief/) |
+| `internals/host-context.md` | [Host context](https://mnestor.github.io/ssoossh/internals/host-context/) |
+| `project/decisions.md` | [Decisions](https://mnestor.github.io/ssoossh/project/decisions/) |
+| `project/release-notes.md` | [Release notes](https://mnestor.github.io/ssoossh/project/release-notes/) |
+| `project/DEPENDENCY-SCANNING.md` | [Dependency scanning](https://mnestor.github.io/ssoossh/project/dependency-scanning/) |
 
-## operations/
-
-| Document | What it covers |
-| --- | --- |
-| [configuration.md](operations/configuration.md) | Every configuration surface: `ssoosshd.yaml`, `ssoossh.yaml`, `ssh_config`, `sshd`, PAM |
-| [deployment.md](operations/deployment.md) | Operator runbook: CA key, systemd, `sshd` trust, OIDC provider, reverse proxy, startup modes, multi-instance, PAM |
-| [certificate-lifetime-policy.md](operations/certificate-lifetime-policy.md) | Lifetime and options derived from group membership, source network, and claims |
-| [email-notifications.md](operations/email-notifications.md) | Outbound email: SMTP relay, notification contents, template overrides |
-| [ldap.md](operations/ldap.md) | Directory enrichment, the background sync, and persisted groups |
-| [audit-log.md](operations/audit-log.md) | The administrative audit stream: what is recorded, where it goes, how long it is kept |
-| [client-settings-enforcement.md](operations/client-settings-enforcement.md) | Locking down client settings: `enforce` file, Windows Group Policy, macOS managed preferences |
-| [certificate-keyid-template.md](operations/certificate-keyid-template.md) | The key ID template written into every certificate |
-| [hsm.md](operations/hsm.md) | Keeping the CA key in a PKCS#11 token |
-
-Also here: the annotated defaults that ship as `/etc/ssoossh/*.yaml` —
+The annotated defaults that ship as `/etc/ssoossh/*.yaml` are still in the
+source tree they are generated into:
 [server/config/defaults.yaml](../server/config/defaults.yaml) and
 [client/config/defaults.yaml](../client/config/defaults.yaml).
 
-The annotated `pam.d` stack for `sudo`/`su` moved out with the module: it
-ships from
-[github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam). The
-maintained prose for it is still here, on the documentation site's
+The annotated `pam.d` stack for `sudo`/`su` ships from
+[github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam) with
+the module; its documentation is still maintained here, on the site's
 [host administration pages](https://mnestor.github.io/ssoossh/hosts/pam/sudo/).
 
-## internals/
+## Generated artifacts
 
-| Document | What it covers |
-| --- | --- |
-| [invariants.md](internals/invariants.md) | Rules the code relies on. Cited from code comments |
-| [signing-pipeline.md](internals/signing-pipeline.md) | The create → approve → sign → deliver pipeline |
-| [wire-types.md](internals/wire-types.md) | How server, Go client, and web UI are kept from drifting |
-| [design-brief.md](internals/design-brief.md) | The original design brief: constraints, invocation modes, enrollment, CLI surface |
+Neither is hand-edited.
 
-[openapi.yaml](openapi.yaml) is the HTTP API wire contract. Generated by
-`make openapi` — edit the handler annotations, not the file.
+- [openapi.yaml](openapi.yaml) comes from the handler annotations in
+  `server/controller`. Run `make openapi`.
+- [wire-contract.json](wire-contract.json) versions the shapes ssoosshd puts
+  on the wire, for the C module in
+  [ssoossh-pam](https://github.com/mnestor/ssoossh-pam), which shares no code
+  with this repository. Run `make wire-contract`; see
+  [Wire types](https://mnestor.github.io/ssoossh/internals/wire-types/).
 
-## project/
-
-| Document | What it covers |
-| --- | --- |
-| [decisions.md](project/decisions.md) | What ssoossh deliberately does not do, and why |
-| [release-notes.md](project/release-notes.md) | Notes for the first tagged release |
-| [DEPENDENCY-SCANNING.md](project/DEPENDENCY-SCANNING.md) | How dependencies are scanned and kept current |
+Man pages under [man/](man/) are generated too, except the `.5` config-format
+pages. Run `make gendocs`.
 
 ## proposals/
 
@@ -98,16 +97,16 @@ part has.
 | [enhancements.md](proposals/enhancements.md) | Small feature modifications logged for later, each too small for its own doc |
 
 **Built.** Kept for the reasoning behind each decision, which the
-operator-facing references deliberately do not carry. Each names the document
-to read instead.
+operator-facing references deliberately do not carry. Each names the page to
+read instead.
 
 | Document | Now documented in |
 | --- | --- |
-| [claim-driven-certificate-policy.md](proposals/claim-driven-certificate-policy.md) | [operations/certificate-lifetime-policy.md](operations/certificate-lifetime-policy.md) |
-| [audit-log.md](proposals/audit-log.md) | [operations/audit-log.md](operations/audit-log.md) |
-| [ldap-enrichment-and-sync.md](proposals/ldap-enrichment-and-sync.md) | [operations/ldap.md](operations/ldap.md) |
-| [enrollment-group-ownership.md](proposals/enrollment-group-ownership.md) | [guide/features.md](guide/features.md), "Service certificates" |
-| [notification-kinds-expansion.md](proposals/notification-kinds-expansion.md) | [operations/email-notifications.md](operations/email-notifications.md) |
+| [claim-driven-certificate-policy.md](proposals/claim-driven-certificate-policy.md) | [Certificate policy](https://mnestor.github.io/ssoossh/operations/certificate-policy/) |
+| [audit-log.md](proposals/audit-log.md) | [Audit log](https://mnestor.github.io/ssoossh/operations/audit-log/) |
+| [ldap-enrichment-and-sync.md](proposals/ldap-enrichment-and-sync.md) | [LDAP](https://mnestor.github.io/ssoossh/operations/ldap/) |
+| [enrollment-group-ownership.md](proposals/enrollment-group-ownership.md) | [How it works](https://mnestor.github.io/ssoossh/concepts/), "Service certificates" |
+| [notification-kinds-expansion.md](proposals/notification-kinds-expansion.md) | [Email notifications](https://mnestor.github.io/ssoossh/operations/email-notifications/) |
 
 ## dev/
 

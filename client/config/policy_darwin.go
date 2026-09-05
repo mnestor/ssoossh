@@ -27,11 +27,12 @@ var managedPreferencesDir = "/Library/Managed Preferences"
 // materializes <managedPreferencesDir>/<username>/<preferenceDomain>.plist.
 // Neither path is a documented public API (the sanctioned entry point is
 // CFPreferencesCopyAppValue, which needs CGo and a macOS SDK this project's
-// cross-compiling CI doesn't have — see docs/operations/client-settings-enforcement.md),
-// but the location has been stable for years and is what other enterprise
-// Mac tooling already relies on directly. When both files exist, the
-// user-scoped one wins for any key it sets, matching Apple's documented
-// precedence of the user channel over the device channel.
+// cross-compiling CI doesn't have — see
+// https://mnestor.github.io/ssoossh/hosts/client-enforcement/), but the
+// location has been stable for years and is what other enterprise Mac tooling
+// already relies on directly. When both files exist, the user-scoped one wins
+// for any key it sets, matching Apple's documented precedence of the user
+// channel over the device channel.
 func loadPlatformPolicy() (map[string]any, error) {
 	flat := map[string]any{}
 

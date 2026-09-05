@@ -1,7 +1,7 @@
 # Expanding the notification catalogue
 
 **Status: implemented.** Built 2026-08-29. The operator-facing reference is
-[operations/email-notifications.md](../operations/email-notifications.md),
+[Email notifications](https://mnestor.github.io/ssoossh/operations/email-notifications/),
 which is now the document to read; this one is kept for the reasoning behind
 each decision.
 
@@ -250,7 +250,7 @@ than a plan.
 
 - **Domain restriction on the notification address.** Shipped
   unrestricted, documented in
-  [operations/email-notifications.md](../operations/email-notifications.md).
+  [Email notifications](https://mnestor.github.io/ssoossh/operations/email-notifications/).
   An allowlist config stays cheap to add later without a migration.
 - **Reminder cardinality.** Shipped as one reminder per enrollment. A
   second, closer-in reminder (say 7 days and 24 hours) doubles the

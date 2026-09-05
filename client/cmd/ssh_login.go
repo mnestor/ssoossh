@@ -26,9 +26,10 @@ import (
 
 // loginExtensions are the certificate extensions `ssh login` asks for by
 // default. The server narrows this against its own configuration and the web
-// UI shows what survived before anyone approves (see docs/internals/invariants.md, Hard
-// Constraints), so asking for the full interactive set is a request, not a
-// demand — anything the deployment does not permit is simply trimmed.
+// UI shows what survived before anyone approves (see
+// https://mnestor.github.io/ssoossh/internals/invariants/, Hard Constraints),
+// so asking for the full interactive set is a request, not a demand —
+// anything the deployment does not permit is simply trimmed.
 //
 // Users can opt out of extensions via config settings or CLI flags, and
 // administrators can forbid extensions via policy (Windows registry, macOS

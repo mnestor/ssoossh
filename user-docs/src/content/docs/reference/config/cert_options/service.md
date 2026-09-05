@@ -172,7 +172,7 @@ cert_options:
 
 `string`, default `empty`
 
-The key ID written into service certificates; see docs/guide/features.md (key ID templating). Empty falls back to cert_options.user.key_id_template.
+The key ID written into service certificates; see https://mnestor.github.io/ssoossh/concepts/ (key ID templating). Empty falls back to cert_options.user.key_id_template.
 
 ```yaml
 cert_options:
@@ -182,7 +182,7 @@ cert_options:
 
 ## `lifetime_policy`
 
-Configures tiered certificate duration based on OIDC group membership and source network narrowing — see docs/operations/certificate-lifetime-policy.md.
+Configures tiered certificate duration based on OIDC group membership and source network narrowing — see https://mnestor.github.io/ssoossh/operations/certificate-policy/.
 
 ## `lifetime_policy.default_duration`
 
@@ -227,4 +227,4 @@ Evaluated in order; the FIRST tier whose when condition the approver's identity 
 
 Restricts certificate lifetime based on the request's source IP address. Longest prefix match wins; ties resolve to the stricter rule. Entries are intersected with the tier-determined duration, and the final effective lifetime is clamped to the ceiling set by the enclosing CertOptions*.ValidDuration.
 
-See docs/operations/certificate-lifetime-policy.md section "Which address" for why the server-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
+See https://mnestor.github.io/ssoossh/operations/certificate-policy/ section "Which address" for why the server-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.

@@ -14,7 +14,7 @@ import "time"
 // CertificateRequestDecision takes, and consistent with how this codebase
 // already treats identity, since group membership is never persisted
 // precisely because claims drift between logins (see
-// docs/internals/invariants.md).
+// https://mnestor.github.io/ssoossh/internals/invariants/).
 //
 // This table is a bounded cache, not the archive. Real retention and search
 // happen in whatever external log system the deployment ships the

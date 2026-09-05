@@ -95,7 +95,7 @@ type SignerConfig struct {
 	// HSM optionally sources the CA key from a PKCS#11 token instead of
 	// ssh_key. Exactly one of the two may be set at the config level (API
 	// mode has neither; signing modes require one to be set). See
-	// docs/operations/hsm.md for setup.
+	// https://mnestor.github.io/ssoossh/operations/hsm/ for setup.
 	//
 	// Supported: ECDSA P-256/384/521, RSA >= 2048. Ed25519 is not supported
 	// by PKCS#11 here; keep ssh_key for an Ed25519 CA.

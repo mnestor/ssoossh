@@ -66,7 +66,7 @@ type Config struct {
 
 	// Mail configures outbound email notifications: the relay, the sender,
 	// and the local template overrides. Disabled by default; see
-	// docs/operations/email-notifications.md.
+	// https://mnestor.github.io/ssoossh/operations/email-notifications/.
 	Mail MailConfig `mapstructure:"mail"`
 
 	// Branding customizes the login page and web UI. All fields are
@@ -198,7 +198,7 @@ type DB struct {
 // LDAP error during the callback logs to the LDAP destination and proceeds
 // with the OIDC-only identity. There is deliberately no `required` knob.
 //
-// See docs/operations/ldap.md.
+// See https://mnestor.github.io/ssoossh/operations/ldap/.
 type LDAPConfig struct {
 	// Enabled turns on the login-time lookup and the background sync.
 	Enabled bool `mapstructure:"enabled" default:"false"`

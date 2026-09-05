@@ -10,11 +10,11 @@
 // would be a cycle waiting to happen.
 //
 // Adding a notification kind is meant to be a small, local edit. See
-// docs/operations/email-notifications.md ("Adding a notification kind") — in short: a
-// Kind constant, a payload struct in payloads.go, a Definition in the
-// registry below, and the two template files. Everything else (preferences
-// storage and UI, the docs table, delivery) is driven off the registry and
-// needs no change.
+// https://mnestor.github.io/ssoossh/operations/email-notifications/ ("Adding
+// a notification kind") — in short: a Kind constant, a payload struct in
+// payloads.go, a Definition in the registry below, and the two template
+// files. Everything else (preferences storage and UI, the docs table,
+// delivery) is driven off the registry and needs no change.
 package notify
 
 // Kind identifies one notification type. The string value is persisted in

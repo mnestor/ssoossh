@@ -463,9 +463,10 @@ type RequestDetailResponse struct {
 
 // CertificateResponse is one row of a user's issued-certificate history.
 //
-// The certificate itself is absent because it is never persisted — these
-// are ephemeral by design (see docs/internals/signing-pipeline.md). This is the audit
-// trail, not a place to re-download one.
+// The certificate itself is absent because it is never persisted — these are
+// ephemeral by design (see
+// https://mnestor.github.io/ssoossh/internals/architecture/). This is the
+// audit trail, not a place to re-download one.
 //
 // The Decided* fields are populated from the request's decision-audit record
 // (see model.CertificateRequestDecision) if the certificate was issued as a

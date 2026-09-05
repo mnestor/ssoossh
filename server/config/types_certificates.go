@@ -38,10 +38,11 @@ type CertificateOptions struct {
 // sweep interval that detects it — which is why ApprovalTTL subtracts twice.
 const signingShare = 10
 
-// SigningGrace is the machine's share of ClientTimeout: how long an
-// approved request may sit awaiting signature before the stranded-request
-// sweep fails it (see docs/internals/signing-pipeline.md), how often that sweep runs,
-// and how long `service retrieve` blocks waiting for its certificate.
+// SigningGrace is the machine's share of ClientTimeout: how long an approved
+// request may sit awaiting signature before the stranded-request sweep fails
+// it (see https://mnestor.github.io/ssoossh/internals/architecture/), how
+// often that sweep runs, and how long `service retrieve` blocks waiting for
+// its certificate.
 //
 // Not measured from approval — nothing records when a request entered
 // signing — but from creation, offset by ApprovalTTL, so the sweep can
@@ -193,12 +194,12 @@ type CertOptionsUser struct {
 	// KeyIDTemplate is the fallback for the service and PAM templates when
 	// either is empty, since
 	// user certificates are the common case. See
-	// docs/guide/features.md (key ID templating).
+	// https://mnestor.github.io/ssoossh/concepts/ (key ID templating).
 	KeyIDTemplate string `mapstructure:"key_id_template" default:""`
 
 	// LifetimePolicy configures tiered certificate duration based on OIDC
 	// group membership and source network narrowing — see
-	// docs/operations/certificate-lifetime-policy.md.
+	// https://mnestor.github.io/ssoossh/operations/certificate-policy/.
 	LifetimePolicy LifetimePolicy `mapstructure:"lifetime_policy"`
 }
 
@@ -244,13 +245,13 @@ type CertOptionsService struct {
 	EnrollmentDuration time.Duration `mapstructure:"enrollment_duration,string" default:"8760h"`
 
 	// KeyIDTemplate is the key ID written into service certificates; see
-	// docs/guide/features.md (key ID templating). Empty falls back to
+	// https://mnestor.github.io/ssoossh/concepts/ (key ID templating). Empty falls back to
 	// cert_options.user.key_id_template.
 	KeyIDTemplate string `mapstructure:"key_id_template" default:""`
 
 	// LifetimePolicy configures tiered certificate duration based on OIDC
 	// group membership and source network narrowing — see
-	// docs/operations/certificate-lifetime-policy.md.
+	// https://mnestor.github.io/ssoossh/operations/certificate-policy/.
 	LifetimePolicy LifetimePolicy `mapstructure:"lifetime_policy"`
 }
 
@@ -331,13 +332,13 @@ type CertOptionsConsole struct {
 	// before a keypair is certified and before any human is asked to
 	// approve anything. Empty means no network gate.
 	//
-	// The server's half of per-host policy rests on the source address
-	// rather than the hostname because the address is observed by the
-	// server and the hostname is a string an unauthenticated caller typed
-	// — the same reasoning that got host certificates declined
-	// (docs/project/decisions.md). Behind a reverse proxy this is only
-	// meaningful with http.trusted_proxies set; without it every request
-	// carries the proxy's address.
+	// The server's half of per-host policy rests on the source address rather
+	// than the hostname because the address is observed by the server and the
+	// hostname is a string an unauthenticated caller typed — the same reasoning
+	// that got host certificates declined
+	// (https://mnestor.github.io/ssoossh/project/decisions/). Behind a reverse
+	// proxy this is only meaningful with http.trusted_proxies set; without it
+	// every request carries the proxy's address.
 	AllowedNetworks []string `mapstructure:"allowed_networks" default:"[]"`
 
 	// ClientTimeout is this type's whole budget: the longest a console
@@ -388,9 +389,9 @@ type CertOptionsConsole struct {
 
 // LifetimePolicy configures certificate issuance duration and extension
 // grants based on tiered conditions and source network policies — see
-// docs/operations/certificate-lifetime-policy.md. Empty configuration (all
-// fields at their zero values) means all certificates receive ValidDuration
-// from the enclosing CertOptions* struct.
+// https://mnestor.github.io/ssoossh/operations/certificate-policy/. Empty
+// configuration (all fields at their zero values) means all certificates
+// receive ValidDuration from the enclosing CertOptions* struct.
 type LifetimePolicy struct {
 	// DefaultDuration is the duration applied when no tier matches. It is
 	// required whenever any part of the lifetime policy is configured: a
@@ -438,9 +439,9 @@ type LifetimePolicy struct {
 	// duration, and the final effective lifetime is clamped to the ceiling
 	// set by the enclosing CertOptions*.ValidDuration.
 	//
-	// See docs/operations/certificate-lifetime-policy.md section "Which address"
-	// for why the server-observed source IP is used, and why
-	// RequestedOptions.SourceAddresses is never consulted.
+	// See https://mnestor.github.io/ssoossh/operations/certificate-policy/
+	// section "Which address" for why the server-observed source IP is used, and
+	// why RequestedOptions.SourceAddresses is never consulted.
 	SourcePolicy []SourcePolicyEntry `mapstructure:"source_policy"`
 }
 
@@ -476,15 +477,17 @@ type LifetimePolicyTier struct {
 }
 
 // SourcePolicyEntry restricts certificate lifetime and options based on the
-// source IP address of the request. See docs/operations/certificate-lifetime-policy.md
-// section "Source-network policy" for the full semantics.
+// source IP address of the request. See
+// https://mnestor.github.io/ssoossh/operations/certificate-policy/ section
+// "Source-network policy" for the full semantics.
 type SourcePolicyEntry struct {
 	// CIDR is the IPv4 or IPv6 network this rule applies to, in CIDR notation
 	// (e.g., "10.0.0.0/8" or "2001:db8::/32").
 	CIDR string `mapstructure:"cidr"`
 
-	// MaxDuration is the longest lifetime certificates from this network can receive.
-	// The final effective duration is min(tier_duration, source_rule_max_duration, type_ceiling).
+	// MaxDuration is the longest lifetime certificates from this network can
+	// receive. The final effective duration is min(tier_duration,
+	// source_rule_max_duration, type_ceiling).
 	MaxDuration time.Duration `mapstructure:"max_duration,string"`
 
 	// Extensions has been replaced by removed_extensions. The old key made
@@ -501,11 +504,13 @@ type SourcePolicyEntry struct {
 	RemovedExtensions []string `mapstructure:"removed_extensions"`
 
 	// PinSourceAddress, when true, adds a critical "source-address" SSH option
-	// pinning the certificate to this network. Valid only for service certificates;
-	// ignored for user certificates (see docs/operations/certificate-lifetime-policy.md
-	// "Not for user certificates"). The network must be narrow enough to actually
+	// pinning the certificate to this network. Valid only for service
+	// certificates; ignored for user certificates (see
+	// https://mnestor.github.io/ssoossh/operations/certificate-policy/ "Not for
+	// user certificates"). The network must be narrow enough to actually
 	// restrict — a /0 or ::/0 with PinSourceAddress=true is a warning sign (the
 	// certificate can be used anywhere, pinning is meaningless). Narrowing is
-	// enforced by the intersectExtensions helper (source-address is not an extension).
+	// enforced by the intersectExtensions helper (source-address is not an
+	// extension).
 	PinSourceAddress bool `mapstructure:"pin_source_address"`
 }

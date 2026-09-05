@@ -7,7 +7,7 @@ import "time"
 // `host sign`, `service enroll`), resolved when a user approves/denies in
 // the web UI or it times out. Approving a CertificateTypeService request
 // creates an Enrollment rather than issuing a certificate immediately — see
-// docs/internals/design-brief.md, "Service enrollment".
+// https://mnestor.github.io/ssoossh/internals/design-brief/, "Service enrollment".
 //
 // The SSE endpoint the client is waiting on watches a request by ID.
 // TODO: the pub/sub or channel-based broker backing that watch is not yet
@@ -42,12 +42,13 @@ type CertificateRequest struct {
 
 	// RequestedOptions is JSON-encoded. Server config (config.CertificateOptions)
 	// is the outer bound — the web UI narrows or adjusts, never widens (see
-	// docs/internals/invariants.md).
+	// https://mnestor.github.io/ssoossh/internals/invariants/).
 	RequestedOptions string `gorm:"column:requested_options"`
 
 	// SourceIP is one of the lifetime-policy signals (see
-	// docs/internals/design-brief.md "Certificate lifetime policy" — client-supplied
-	// source addresses are unverified input and need a policy ceiling).
+	// https://mnestor.github.io/ssoossh/internals/design-brief/ "Certificate
+	// lifetime policy" — client-supplied source addresses are unverified input
+	// and need a policy ceiling).
 	SourceIP string `gorm:"column:source_ip"`
 
 	// LocalUsername and LocalHostname are set only for CertificateTypeUser
@@ -88,7 +89,7 @@ type CertificateRequest struct {
 
 	// FailureReason explains a CertificateRequestStatusFailed row: either
 	// the signer's error, or that the invalidation sweep found it stranded
-	// (see docs/internals/signing-pipeline.md). For operators
+	// (see https://mnestor.github.io/ssoossh/internals/architecture/). For operators
 	// reading the database — it isn't returned over the API.
 	FailureReason string `gorm:"column:failure_reason"`
 

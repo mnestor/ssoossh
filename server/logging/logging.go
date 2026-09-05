@@ -109,7 +109,7 @@ func New(c *config.Config) (closeFns []func(context.Context) error, err error) {
 
 // namedLoggers lists every "type"-tagged sub-logger. New components (a
 // future "signer" or "listener" log, say) get an entry here rather than a
-// bespoke routing block — see docs/internals/signing-pipeline.md.
+// bespoke routing block — see https://mnestor.github.io/ssoossh/internals/architecture/.
 func namedLoggers(c *config.Config) []namedLoggerConfig {
 	return []namedLoggerConfig{
 		{tag: TagAccessLog, src: &c.HTTP.AccessLogging},

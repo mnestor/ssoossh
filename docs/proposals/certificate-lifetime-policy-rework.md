@@ -6,7 +6,7 @@
 before relying on one.
 
 The lifetime policy engine ships and is documented in
-[operations/certificate-lifetime-policy.md](../operations/certificate-lifetime-policy.md).
+[Certificate policy](https://mnestor.github.io/ssoossh/operations/certificate-policy/).
 This records what it deliberately left unbuilt, and one defect in what it did
 build.
 
@@ -119,7 +119,7 @@ Questions, not a plan.
    objection, since a relocated unattended job then silently stops working
    with no human present to see why.
 4. **Whether user certificates get a pin at all.**
-   [project/decisions.md](../project/decisions.md) declines it, noting it may
+   [Decisions](https://mnestor.github.io/ssoossh/project/decisions/) declines it, noting it may
    be worth reconsidering for users who ssh onward from remote systems.
 5. **Startup validation.** Whatever a `/0` pin means once (2) is decided
    should be a startup error or warning, not a comment.

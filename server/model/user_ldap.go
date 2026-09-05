@@ -83,7 +83,7 @@ func (UserLDAP) TableName() string { return "user_ldap" }
 // **Never an authorization input.** Authorization — admin, SOC, auditor,
 // and certificate policy gates — is evaluated from the session identity
 // only, and this table answers "who should this reach", never "may this
-// caller do this". See docs/internals/invariants.md.
+// caller do this". See https://mnestor.github.io/ssoossh/internals/invariants/.
 //
 // Only group names the configuration references are persisted; membership
 // outside that allowlist is discarded at capture time. The server does not

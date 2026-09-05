@@ -13,8 +13,8 @@ derived from it. Every `file:line` anchor was verified against `5d23809`
 > flagged **[judgement]** and are the ones worth re-opening first.
 
 This builds on the service enrollment flow described in
-[flows.md](../guide/flows.md) and the notification machinery in
-[email-notifications.md](../operations/email-notifications.md). Read the latter first: the
+[How it works](https://mnestor.github.io/ssoossh/concepts/) and the notification machinery in
+[Email notifications](https://mnestor.github.io/ssoossh/operations/email-notifications/). Read the latter first: the
 registry-driven notification design is reused here almost unchanged, and the
 one place this design has to extend it is called out explicitly.
 
@@ -297,7 +297,7 @@ server URL. `service_enrollment_locked` adds the action taken and, when it
 is `lock`, what an admin does to clear it.
 
 **The code itself is never in a payload**, the rule
-[email-notifications.md](../operations/email-notifications.md#what-is-never-emailed)
+[Email notifications](https://mnestor.github.io/ssoossh/operations/email-notifications/#what-is-never-emailed)
 already states and `ServiceEnrollmentCreated` already honours
 (`server/notify/payloads.go:9-16`). An alert about a possibly-leaked bearer
 credential that mails the credential would be the worst possible version of

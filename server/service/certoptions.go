@@ -5,8 +5,8 @@ import "github.com/mnestor/ssoossh/server/certmsg"
 // RequestedOptions are the client-supplied certificate options carried on a
 // CertificateRequest, narrowed against server config (config.CertOptionsUser
 // / CertOptionsService / CertOptions) before anything reaches the web UI or
-// gets signed — see docs/internals/invariants.md ("server config is the
-// outer bound").
+// gets signed — see https://mnestor.github.io/ssoossh/internals/invariants/
+// ("server config is the outer bound").
 //
 // Aliased to certmsg.RequestedOptions rather than defined here: the signing
 // job carries these across the queue to a component that must not import

@@ -94,7 +94,7 @@ type MailConfig struct {
 	// file there replaces the embedded template of the same name; anything
 	// absent falls back to the embedded one, so overriding a single
 	// message does not mean vendoring the whole set. See
-	// docs/operations/email-notifications.md.
+	// https://mnestor.github.io/ssoossh/operations/email-notifications/.
 	TemplateDir string `mapstructure:"template_dir" example:"\"/etc/ssoossh/mail-templates\""`
 
 	// ExpiryReminderLead is how far ahead of an enrollment code's expiry the

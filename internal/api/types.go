@@ -1,5 +1,6 @@
-// Package api is the ssoosshd HTTP API client used by client/, which may
-// not import server/ directly — see docs/internals/invariants.md on package
+// Package api is the ssoosshd HTTP API client used by client/, which may not
+// import server/ directly — see
+// https://mnestor.github.io/ssoossh/internals/invariants/ on package
 // boundaries; this is the internal/ home for what the API consumers share.
 // Built directly on net/http rather than on a convenience library; see
 // HTTPClient for why.
@@ -8,7 +9,7 @@
 // (github.com/mnestor/ssoossh-pam) speaks the same endpoints from C and
 // shares no code with this package, so the shapes in internal/apitypes are a
 // cross-repository contract rather than an internal detail — see
-// docs/internals/wire-types.md and docs/wire-contract.json.
+// https://mnestor.github.io/ssoossh/internals/wire-types/ and docs/wire-contract.json.
 //
 // The wire shapes themselves (request/response JSON bodies) live in
 // internal/apitypes, not here, so server/controller can share the exact

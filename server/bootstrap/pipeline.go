@@ -18,7 +18,8 @@ import (
 // initPipeline registers the certificate pipeline's queue consumers on the
 // pub/sub Router: the signer (sign queue → signed replies), the CA key
 // listener (registry updates), and the listener/resolver (signed replies →
-// audit row, delivery, terminal status). See docs/internals/signing-pipeline.md.
+// audit row, delivery, terminal status). See
+// https://mnestor.github.io/ssoossh/internals/architecture/.
 //
 // For full mode, the signer, listener, and CA key listener are registered.
 // For API mode, only the listener and CA key listener are registered.

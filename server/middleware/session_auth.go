@@ -152,11 +152,12 @@ func PopOIDCVerifier(c *gin.Context) (string, error) {
 	return verifier, sess.Save()
 }
 
-// SetReturnURL stores returnURL in the session for a later PopReturnURL
-// call to redirect back to once login completes. The web UI is a JS/AJAX
-// consumer of the API (see docs/internals/invariants.md), so it — not this server — is
-// what decides to redirect the browser to /auth/login?return_to=<url> on a
-// 401; this just captures and replays that value.
+// SetReturnURL stores returnURL in the session for a later PopReturnURL call
+// to redirect back to once login completes. The web UI is a JS/AJAX consumer
+// of the API (see https://mnestor.github.io/ssoossh/internals/invariants/),
+// so it — not this server — is what decides to redirect the browser to
+// /auth/login?return_to=<url> on a 401; this just captures and replays that
+// value.
 func SetReturnURL(c *gin.Context, returnURL string) error {
 	sess := sessions.Default(c)
 	sess.Set(sessionKeyReturnURL, returnURL)

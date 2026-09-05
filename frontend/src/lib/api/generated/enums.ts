@@ -5,10 +5,11 @@
 
 /**
  * CertificateType identifies which of the four certificate types
- * (docs/internals/design-brief.md — "Certificate types") a row represents.
- * These four are the whole set: anything else is rejected at the service
- * boundary and by the schema's type CHECK. Host identity is deliberately
- * not among them (docs/project/decisions.md).
+ * (https://mnestor.github.io/ssoossh/internals/design-brief/ — "Certificate
+ * types") a row represents. These four are the whole set: anything else is
+ * rejected at the service boundary and by the schema's type CHECK. Host
+ * identity is deliberately not among them
+ * (https://mnestor.github.io/ssoossh/project/decisions/).
  */
 export const CertificateTypeUser = "user";
 export const CertificateTypeService = "service";
@@ -30,14 +31,16 @@ export type CertificateType = typeof CertificateTypeUser | typeof CertificateTyp
  */
 export const CertificateRequestStatusPending = "pending";
 /**
- * CertificateRequestStatusSigning means a human approved the request
- * and a signing job was published (see
- * docs/internals/signing-pipeline.md) — not yet terminal. The signer
- * (docs/internals/signing-pipeline.md) and its listener/resolver
- * still need to run before this becomes CertificateRequestStatusApproved.
- * Only used for CertificateTypeUser/CertificateTypePAM — service
- * requests go straight from Pending to CertificateRequestStatusEnrolled,
- * no signer involved at approval time.
+ * CertificateRequestStatusSigning means a human approved the request and a
+ * signing job was published (see
+ * https://mnestor.github.io/ssoossh/internals/architecture/) — not yet
+ * terminal. The signer
+ * (https://mnestor.github.io/ssoossh/internals/architecture/) and its
+ * listener/resolver still need to run before this becomes
+ * CertificateRequestStatusApproved. Only used for
+ * CertificateTypeUser/CertificateTypePAM — service requests go straight from
+ * Pending to CertificateRequestStatusEnrolled, no signer involved at
+ * approval time.
  */
 export const CertificateRequestStatusSigning = "signing";
 export const CertificateRequestStatusApproved = "approved";
@@ -45,16 +48,16 @@ export const CertificateRequestStatusApproved = "approved";
  * CertificateRequestStatusEnrolled is CertificateTypeService's terminal
  * approval state: EnrollmentToken is set, and the certificate itself
  * isn't issued until a later `service retrieve` redeems it — see
- * docs/internals/design-brief.md, "Service enrollment".
+ * https://mnestor.github.io/ssoossh/internals/design-brief/, "Service enrollment".
  */
 export const CertificateRequestStatusEnrolled = "enrolled";
 export const CertificateRequestStatusDenied = "denied";
 export const CertificateRequestStatusExpired = "expired";
 /**
  * CertificateRequestStatusFailed is terminal: the signer couldn't
- * produce a certificate (see docs/internals/signing-pipeline.md),
+ * produce a certificate (see https://mnestor.github.io/ssoossh/internals/architecture/),
  * or a boot-time sweep invalidated a request left stuck in Signing (see
- * docs/internals/signing-pipeline.md). Distinct from Denied,
+ * https://mnestor.github.io/ssoossh/internals/architecture/). Distinct from Denied,
  * which means a human said no.
  */
 export const CertificateRequestStatusFailed = "failed";

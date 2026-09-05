@@ -25,7 +25,7 @@ move, in this order:
 	make wire-contract
 
 then land the matching change in ssoossh-pam before releasing either side.
-See docs/internals/wire-types.md.
+See https://mnestor.github.io/ssoossh/internals/wire-types/.
 */
 
 /**
@@ -37,8 +37,9 @@ See docs/internals/wire-types.md.
  * They mirror server/model.CertificateRequestStatus, which is the source of
  * truth for the database. They're duplicated here rather than imported
  * because client/ cannot import server/ (see
- * docs/internals/invariants.md); keeping them in this shared wire-contract
- * package is what stops the two sides drifting apart as statuses are added.
+ * https://mnestor.github.io/ssoossh/internals/invariants/); keeping them in
+ * this shared wire-contract package is what stops the two sides drifting
+ * apart as statuses are added.
  */
 export const StatusApproved = "approved";
 /**
@@ -50,8 +51,9 @@ export const StatusApproved = "approved";
  * They mirror server/model.CertificateRequestStatus, which is the source of
  * truth for the database. They're duplicated here rather than imported
  * because client/ cannot import server/ (see
- * docs/internals/invariants.md); keeping them in this shared wire-contract
- * package is what stops the two sides drifting apart as statuses are added.
+ * https://mnestor.github.io/ssoossh/internals/invariants/); keeping them in
+ * this shared wire-contract package is what stops the two sides drifting
+ * apart as statuses are added.
  */
 export const StatusDenied = "denied";
 /**
@@ -63,14 +65,16 @@ export const StatusDenied = "denied";
  * They mirror server/model.CertificateRequestStatus, which is the source of
  * truth for the database. They're duplicated here rather than imported
  * because client/ cannot import server/ (see
- * docs/internals/invariants.md); keeping them in this shared wire-contract
- * package is what stops the two sides drifting apart as statuses are added.
+ * https://mnestor.github.io/ssoossh/internals/invariants/); keeping them in
+ * this shared wire-contract package is what stops the two sides drifting
+ * apart as statuses are added.
  */
 export const StatusExpired = "expired";
 /**
- * StatusEnrolled resolves a service-enrollment request: the payload
- * carries CertificateResult.Code (an enrollment token), not a
- * certificate. See docs/internals/design-brief.md, "Service enrollment".
+ * StatusEnrolled resolves a service-enrollment request: the payload carries
+ * CertificateResult.Code (an enrollment token), not a certificate. See
+ * https://mnestor.github.io/ssoossh/internals/design-brief/, "Service
+ * enrollment".
  */
 export const StatusEnrolled = "enrolled";
 /**
@@ -120,10 +124,11 @@ export const ErrorCodeNotImplemented = "not_implemented";
  */
 export const ErrorCodeInternalError = "internal_error";
 /**
- * RequestedOptions are the certificate options a caller may request.
- * Server config is always the outer bound on what's actually granted (see
- * docs/internals/invariants.md) — the server narrows or rejects
- * anything it doesn't permit, it never grants more than was requested.
+ * RequestedOptions are the certificate options a caller may request. Server
+ * config is always the outer bound on what's actually granted (see
+ * https://mnestor.github.io/ssoossh/internals/invariants/) — the server
+ * narrows or rejects anything it doesn't permit, it never grants more than
+ * was requested.
  * Deliberately independent of server/service.RequestedOptions: this is the
  * wire contract, free to evolve on its own rather than being coupled to
  * the server's internal representation. server/controller converts between
@@ -164,9 +169,10 @@ export interface CertificateResult {
 	certificate?: string;
 	/**
 	 * Code is the enrollment token, set only when Status is "enrolled"
-	 * (CertificateTypeService — see docs/internals/design-brief.md, "Service
-	 * enrollment"). `service retrieve` presents this later to redeem the
-	 * actual certificate.
+	 * (CertificateTypeService — see
+	 * https://mnestor.github.io/ssoossh/internals/design-brief/, "Service
+	 * enrollment"). `service retrieve` presents this later to redeem the actual
+	 * certificate.
 	 */
 	code?: string;
 	/**
@@ -242,7 +248,9 @@ export interface UserRequestBody {
  * ServiceEnrollRequestBody is the POST /api/certs/service/enroll request
  * body. PublicKey may be operator-supplied (BYO key, possibly HSM/PKCS#11/
  * encrypted file — the server never sees the private half) or
- * client-generated (see docs/internals/design-brief.md, "Service enrollment").
+ * client-generated (see
+ * https://mnestor.github.io/ssoossh/internals/design-brief/, "Service
+ * enrollment").
  */
 export interface ServiceEnrollRequestBody {
 	public_key: string;
@@ -273,12 +281,12 @@ export interface PAMRequestBody {
 	tty?: string;
 	remote_host?: string;
 	/**
-	 * The rest of the host context, same trust as the four above: every
-	 * value is what the module read off its own process and machine, and
-	 * the approval page renders each as a claim. They exist so an
-	 * approver of a `sudo` can see which command is asking, on which
-	 * machine, invoked by whom, and so the audit line joins against the
-	 * host's own auditd or journal. See docs/internals/host-context.md.
+	 * The rest of the host context, same trust as the four above: every value is
+	 * what the module read off its own process and machine, and the approval
+	 * page renders each as a claim. They exist so an approver of a `sudo` can
+	 * see which command is asking, on which machine, invoked by whom, and so the
+	 * audit line joins against the host's own auditd or journal. See
+	 * https://mnestor.github.io/ssoossh/internals/host-context/.
 	 * RequestingUser is PAM_RUSER: who invoked the service, as opposed to
 	 * Username, the account being authenticated. Under `su` or sudo's
 	 * targetpw they differ.
@@ -420,11 +428,12 @@ export interface CreateRequestResponse {
 	expires_at: string;
 }
 /**
- * ApproveResponse is POST /api/certs/requests/:id/approve's response body.
- * It does not carry the certificate — approval only queues a signing job
- * (see docs/internals/signing-pipeline.md); the certificate itself is delivered
- * later over the client's own SSE connection (CreateRequestResponse's
- * EventsURL), not returned here to the approving browser.
+ * ApproveResponse is POST /api/certs/requests/:id/approve's response body. It
+ * does not carry the certificate — approval only queues a signing job (see
+ * https://mnestor.github.io/ssoossh/internals/architecture/); the certificate
+ * itself is delivered later over the client's own SSE connection
+ * (CreateRequestResponse's EventsURL), not returned here to the approving
+ * browser.
  */
 export interface ApproveResponse {
 	/**
@@ -449,7 +458,7 @@ export interface DenyResponse {
  * RetrieveRequestBody is the POST /api/certs/service/retrieve request
  * body. Only the code is posted — never a public key, so a stolen code
  * can't be paired with an attacker's keypair (see
- * docs/internals/design-brief.md, "Service enrollment").
+ * https://mnestor.github.io/ssoossh/internals/design-brief/, "Service enrollment").
  */
 export interface RetrieveRequestBody {
 	code: string;

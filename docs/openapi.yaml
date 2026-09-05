@@ -187,12 +187,12 @@ components:
           $ref: '#/components/schemas/apitypes.RequestedOptions'
         requesting_user:
           description: |-
-            The rest of the host context, same trust as the four above: every
-            value is what the module read off its own process and machine, and
-            the approval page renders each as a claim. They exist so an
-            approver of a `sudo` can see which command is asking, on which
-            machine, invoked by whom, and so the audit line joins against the
-            host's own auditd or journal. See docs/internals/host-context.md.
+            The rest of the host context, same trust as the four above: every value is
+            what the module read off its own process and machine, and the approval
+            page renders each as a claim. They exist so an approver of a `sudo` can
+            see which command is asking, on which machine, invoked by whom, and so the
+            audit line joins against the host's own auditd or journal. See
+            https://mnestor.github.io/ssoossh/internals/host-context/.
 
             RequestingUser is PAM_RUSER: who invoked the service, as opposed to
             Username, the account being authenticated. Under `su` or sudo's

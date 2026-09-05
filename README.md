@@ -10,7 +10,7 @@ the OIDC provider.
 
 > **Status: early development.** User, service, and PAM (`sudo`/`su`)
 > certificates all work end to end today. ssoosshd deliberately issues no
-> host certificates — see [docs/project/decisions.md](docs/project/decisions.md).
+> host certificates — see [Decisions](https://mnestor.github.io/ssoossh/project/decisions/).
 > Interfaces and configuration are expected to change.
 
 ## Is it AI slop?
@@ -73,7 +73,7 @@ flow backs `sudo`/`su` through the `pam_ssoossh` PAM module
 ([mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam)), where a
 certificate is requested, validated once, and discarded.
 
-[docs/guide/flows.md](docs/guide/flows.md) has the full set of diagrams, step by step.
+[How it works](https://mnestor.github.io/ssoossh/concepts/) has the full set of diagrams, step by step.
 
 ## Components
 
@@ -88,29 +88,29 @@ certificate is requested, validated once, and discarded.
 Four pieces make a working login:
 
 1. Run `ssoosshd` with a CA key, a public URL, and an OIDC client:
-   [docs/operations/configuration.md](docs/operations/configuration.md#server-ssoosshdyaml)
+   [Configuration reference](https://mnestor.github.io/ssoossh/reference/config/)
 2. Point the client at the server in `ssoossh.yaml`:
-   [docs/operations/configuration.md](docs/operations/configuration.md#client-ssoosshyaml)
+   [Client configuration reference](https://mnestor.github.io/ssoossh/reference/client-config/)
 3. Add a `Match exec "ssoossh ssh login"` line to your `ssh_config`:
-   [docs/operations/configuration.md](docs/operations/configuration.md#ssh_config)
+   [ssh_config](https://mnestor.github.io/ssoossh/guides/ssh-config/)
 4. Trust the CA on each target host with `TrustedUserCAKeys`:
-   [docs/operations/configuration.md](docs/operations/configuration.md#sshd-on-target-hosts)
+   [sshd trust](https://mnestor.github.io/ssoossh/hosts/sshd-trust/)
 
-[docs/guide/getting-started.md](docs/guide/getting-started.md) walks through them in
-order; [docs/operations/deployment.md](docs/operations/deployment.md) is the operator runbook
+[Getting started](https://mnestor.github.io/ssoossh/getting-started/) walks through them in
+order; [Install](https://mnestor.github.io/ssoossh/operations/install/) is the operator runbook
 behind each step.
 
 ## Documentation
 
 | Document | What it covers |
 | --- | --- |
-| [docs/guide/getting-started.md](docs/guide/getting-started.md) | The shortest path to a working `ssh login` |
-| [docs/guide/features.md](docs/guide/features.md) | What ssoossh solves, and everything it does today |
-| [docs/guide/flows.md](docs/guide/flows.md) | Sequence diagrams for every flow |
-| [docs/guide/faq.md](docs/guide/faq.md) | Common questions: users, sshd host admins, server operators |
-| [docs/operations/configuration.md](docs/operations/configuration.md) | Every configuration surface: server, client, `ssh_config`, `sshd`, PAM |
-| [docs/operations/deployment.md](docs/operations/deployment.md) | Operator runbook: CA key, systemd, OIDC provider, reverse proxy, multi-instance, PAM |
-| [docs/project/decisions.md](docs/project/decisions.md) | What ssoossh deliberately does not do, and why |
+| [Getting started](https://mnestor.github.io/ssoossh/getting-started/) | The shortest path to a working `ssh login` |
+| [How it works](https://mnestor.github.io/ssoossh/concepts/) | What ssoossh solves, and everything it does today |
+| [How it works](https://mnestor.github.io/ssoossh/concepts/) | Sequence diagrams for every flow |
+| [FAQ](https://mnestor.github.io/ssoossh/guides/faq/) | Common questions: users, sshd host admins, server operators |
+| [Configuration reference](https://mnestor.github.io/ssoossh/reference/config/) | Every configuration surface: server, client, `ssh_config`, `sshd`, PAM |
+| [Install](https://mnestor.github.io/ssoossh/operations/install/) | Operator runbook: CA key, systemd, OIDC provider, reverse proxy, multi-instance, PAM |
+| [Decisions](https://mnestor.github.io/ssoossh/project/decisions/) | What ssoossh deliberately does not do, and why |
 
 The full index, including internals and design documents, is at
 [docs/README.md](docs/README.md).

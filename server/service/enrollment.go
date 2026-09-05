@@ -42,7 +42,8 @@ type EnrollmentProvider interface {
 // CertRequestService.Approve for a CertificateTypeService request) into a
 // signed certificate. `service retrieve` posts only the enrollment code —
 // never a public key — so a stolen code can't be paired with an attacker's
-// keypair (see docs/internals/design-brief.md, "Service enrollment").
+// keypair (see https://mnestor.github.io/ssoossh/internals/design-brief/,
+// "Service enrollment").
 //
 // Codes are reusable until the enrollment expires: unattended jobs retry
 // safely, and every redemption issues a fresh certificate carrying the
@@ -101,7 +102,8 @@ func (s *EnrollmentService) auditRecord(ctx context.Context, event AuditEvent) {
 // Retrieve signs and returns a service certificate for the enrollment
 // identified by code, using the public key, key ID, principals, and option
 // set stored at approval time — never re-deriving policy
-// (evaluate-at-enrollment-time; see docs/operations/certificate-lifetime-policy.md).
+// (evaluate-at-enrollment-time; see
+// https://mnestor.github.io/ssoossh/operations/certificate-policy/).
 //
 // The certificate is valid from now for the duration fixed at approval, so
 // every redemption yields a full-length certificate — including the last one
@@ -153,11 +155,11 @@ func (s *EnrollmentService) Retrieve(ctx context.Context, code string, sourceIP 
 	// approver actually agreed to. Honor it rather than guessing a length
 	// for a grant made under the old rules.
 	//
-	// A stored zero is not that case and must not be read as one: a
-	// pin-only lifetime policy computes zero (see
-	// docs/operations/certificate-lifetime-policy.md), and inheriting the code's
-	// window there would turn the one span that must never become a
-	// certificate's into exactly that. Passed through as-is, the signer
+	// A stored zero is not that case and must not be read as one: a pin-only
+	// lifetime policy computes zero (see
+	// https://mnestor.github.io/ssoossh/operations/certificate-policy/), and
+	// inheriting the code's window there would turn the one span that must never
+	// become a certificate's into exactly that. Passed through as-is, the signer
 	// rejects the zero-length span and the redemption fails closed.
 	validBefore := enrollment.ExpiresAt
 	if enrollment.CertificateDurationSeconds != nil {

@@ -1,7 +1,7 @@
 # LDAP enrichment, directory sync, and persisted groups
 
 **Status: implemented.** Built 2026-08-29. The operator-facing reference is
-[operations/ldap.md](../operations/ldap.md), which is now the document to
+[LDAP](https://mnestor.github.io/ssoossh/operations/ldap/), which is now the document to
 read; this one is kept for the reasoning behind each decision.
 
 **What shipped:** all four principles, the field mapping with searches, both
@@ -287,7 +287,7 @@ sync). The notifications feature should not require the LDAP feature.
 
 ## The invariant amendment
 
-`docs/internals/invariants.md` currently states: "Group membership is never
+`https://mnestor.github.io/ssoossh/internals/invariants/` currently states: "Group membership is never
 persisted and never placed in a certificate." This proposal deliberately
 retires the first half and must reword the invariant, not quietly violate it.
 The surviving invariant:

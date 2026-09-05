@@ -452,7 +452,7 @@ Default:
 .BR preferred_username .
 .TP
 .BI authentication.fields.groups: " string"
-Names a claim expected to hold a JSON array of group names. It feeds the certificate lifetime and require\-group decision only; group membership is never placed in an issued certificate (see docs/internals/invariants.md).
+Names a claim expected to hold a JSON array of group names. It feeds the certificate lifetime and require\-group decision only; group membership is never placed in an issued certificate (see https://mnestor.github.io/ssoossh/internals/invariants/).
 Default:
 .BR groups .
 .TP
@@ -504,9 +504,9 @@ user:
 key_id_template: '{{.Username}}\-{{.Extra.dept}}\-{{join .Extra.accounts ";"}}'
 .fi
 .IP
-See docs/operations/certificate\-keyid\-template.md for the full template field list and the MISSING rendering rules.
+See https://mnestor.github.io/ssoossh/operations/key\-id\-templates/ for the full template field list and the MISSING rendering rules.
 .SS ldap (optionally enriches the OIDC identity with directory attributes)
-LDAP is enrichment, never a requirement. If directory data is available a user gets more \(em extra principals, fresher groups, auto\-disable coverage. If it is not, everything still works. Login therefore **fails open**: an LDAP error during the callback logs to the LDAP destination and proceeds with the OIDC\-only identity. There is deliberately no `required` knob.  See docs/operations/ldap.md.
+LDAP is enrichment, never a requirement. If directory data is available a user gets more \(em extra principals, fresher groups, auto\-disable coverage. If it is not, everything still works. Login therefore **fails open**: an LDAP error during the callback logs to the LDAP destination and proceeds with the OIDC\-only identity. There is deliberately no `required` knob.  See https://mnestor.github.io/ssoossh/operations/ldap/.
 .TP
 .BI ldap.enabled: " bool"
 Turns on the login\-time lookup and the background sync.
@@ -687,7 +687,7 @@ Writes JSON instead of text. Text is meant to be read, not parsed: the message i
 Default:
 .BR true .
 .SS hsm (optionally sources the CA key from a PKCS#11 token instead of ssh_key)
-Exactly one of the two may be set at the config level (API mode has neither; signing modes require one to be set). See docs/operations/hsm.md for setup.  Supported: ECDSA P\-256/384/521, RSA >= 2048. Ed25519 is not supported by PKCS#11 here; keep ssh_key for an Ed25519 CA.  	hsm: 	  module: /usr/lib/softhsm/libsofthsm2.so 	  token_label: ssoossh\-ca 	  pin_file: /etc/ssoossh/hsm\-pin    # or pin: "1234" 	  key_label: ssoossh\-ca 	  # key_id: "01"                    # hex CKA_ID, instead of key_label
+Exactly one of the two may be set at the config level (API mode has neither; signing modes require one to be set). See https://mnestor.github.io/ssoossh/operations/hsm/ for setup.  Supported: ECDSA P\-256/384/521, RSA >= 2048. Ed25519 is not supported by PKCS#11 here; keep ssh_key for an Ed25519 CA.  	hsm: 	  module: /usr/lib/softhsm/libsofthsm2.so 	  token_label: ssoossh\-ca 	  pin_file: /etc/ssoossh/hsm\-pin    # or pin: "1234" 	  key_label: ssoossh\-ca 	  # key_id: "01"                    # hex CKA_ID, instead of key_label
 .TP
 .BI hsm.module: " string"
 The absolute path to the PKCS#11 shared library, e.g. /usr/lib/softhsm/libsofthsm2.so. Setting it enables HSM mode.
@@ -813,7 +813,7 @@ Default:
 .BR permit\-pty, permit\-user\-rc .
 .TP
 .BI cert_options.user.key_id_template: " string"
-The fallback for the service and PAM templates when either is empty, since user certificates are the common case. See docs/guide/features.md (key ID templating).
+The fallback for the service and PAM templates when either is empty, since user certificates are the common case. See https://mnestor.github.io/ssoossh/concepts/ (key ID templating).
 Default:
 .BR empty .
 .TP
@@ -845,7 +845,7 @@ Default:
 .BI cert_options.user.lifetime_policy.source_policy: " list"
 Restricts certificate lifetime based on the request's source IP address. Longest prefix match wins; ties resolve to the stricter rule. Entries are intersected with the tier\-determined duration, and the final effective lifetime is clamped to the ceiling set by the enclosing CertOptions*.ValidDuration.
 .IP
-See docs/operations/certificate\-lifetime\-policy.md section "Which address" for why the server\-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
+See https://mnestor.github.io/ssoossh/operations/certificate\-policy/ section "Which address" for why the server\-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
 Default:
 .BR empty .
 .TP
@@ -924,7 +924,7 @@ Default:
 .BR 8760h .
 .TP
 .BI cert_options.service.key_id_template: " string"
-The key ID written into service certificates; see docs/guide/features.md (key ID templating). Empty falls back to cert_options.user.key_id_template.
+The key ID written into service certificates; see https://mnestor.github.io/ssoossh/concepts/ (key ID templating). Empty falls back to cert_options.user.key_id_template.
 Default:
 .BR empty .
 .TP
@@ -956,7 +956,7 @@ Default:
 .BI cert_options.service.lifetime_policy.source_policy: " list"
 Restricts certificate lifetime based on the request's source IP address. Longest prefix match wins; ties resolve to the stricter rule. Entries are intersected with the tier\-determined duration, and the final effective lifetime is clamped to the ceiling set by the enclosing CertOptions*.ValidDuration.
 .IP
-See docs/operations/certificate\-lifetime\-policy.md section "Which address" for why the server\-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
+See https://mnestor.github.io/ssoossh/operations/certificate\-policy/ section "Which address" for why the server\-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
 Default:
 .BR empty .
 .TP
@@ -1058,7 +1058,7 @@ Default:
 .BI cert_options.pam.lifetime_policy.source_policy: " list"
 Restricts certificate lifetime based on the request's source IP address. Longest prefix match wins; ties resolve to the stricter rule. Entries are intersected with the tier\-determined duration, and the final effective lifetime is clamped to the ceiling set by the enclosing CertOptions*.ValidDuration.
 .IP
-See docs/operations/certificate\-lifetime\-policy.md section "Which address" for why the server\-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
+See https://mnestor.github.io/ssoossh/operations/certificate\-policy/ section "Which address" for why the server\-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
 Default:
 .BR empty .
 .TP
@@ -1115,7 +1115,7 @@ Default:
 .BI cert_options.console.allowed_networks: " list"
 Refuses request creation from outside these CIDRs, before a keypair is certified and before any human is asked to approve anything. Empty means no network gate.
 .IP
-The server's half of per\-host policy rests on the source address rather than the hostname because the address is observed by the server and the hostname is a string an unauthenticated caller typed \(em the same reasoning that got host certificates declined (docs/project/decisions.md). Behind a reverse proxy this is only meaningful with http.trusted_proxies set; without it every request carries the proxy's address.
+The server's half of per\-host policy rests on the source address rather than the hostname because the address is observed by the server and the hostname is a string an unauthenticated caller typed \(em the same reasoning that got host certificates declined (https://mnestor.github.io/ssoossh/project/decisions/). Behind a reverse proxy this is only meaningful with http.trusted_proxies set; without it every request carries the proxy's address.
 Default:
 .BR empty .
 .TP
@@ -1171,7 +1171,7 @@ Default:
 .BI cert_options.console.lifetime_policy.source_policy: " list"
 Restricts certificate lifetime based on the request's source IP address. Longest prefix match wins; ties resolve to the stricter rule. Entries are intersected with the tier\-determined duration, and the final effective lifetime is clamped to the ceiling set by the enclosing CertOptions*.ValidDuration.
 .IP
-See docs/operations/certificate\-lifetime\-policy.md section "Which address" for why the server\-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
+See https://mnestor.github.io/ssoossh/operations/certificate\-policy/ section "Which address" for why the server\-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
 Default:
 .BR empty .
 .TP
@@ -1182,7 +1182,7 @@ The server owns this deadline rather than the client, and measures it from the r
 Default:
 .BR 5m .
 .SS mail (the relay, the sender, and the local template overrides)
-Disabled by default; see docs/operations/email\-notifications.md.  Disabled is the default. A server that has never been told about a relay should not try to reach one, and notifications are an addition to the certificate flows rather than a part of them \(em every path that emits one works identically when this is off.
+Disabled by default; see https://mnestor.github.io/ssoossh/operations/email\-notifications/.  Disabled is the default. A server that has never been told about a relay should not try to reach one, and notifications are an addition to the certificate flows rather than a part of them \(em every path that emits one works identically when this is off.
 .TP
 .BI mail.enabled: " bool"
 Turns outbound mail on. With it false the notification handler is not registered at all, so no event is queued and nothing is rendered.
@@ -1205,7 +1205,7 @@ Default:
 .BR empty .
 .TP
 .BI mail.template_dir: " string"
-An optional directory of local template overrides. A file there replaces the embedded template of the same name; anything absent falls back to the embedded one, so overriding a single message does not mean vendoring the whole set. See docs/operations/email\-notifications.md.
+An optional directory of local template overrides. A file there replaces the embedded template of the same name; anything absent falls back to the embedded one, so overriding a single message does not mean vendoring the whole set. See https://mnestor.github.io/ssoossh/operations/email\-notifications/.
 Default:
 .BR empty .
 .TP

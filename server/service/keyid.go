@@ -14,8 +14,9 @@ import (
 )
 
 // keyIDTemplateData is the set of fields available for substitution in a
-// config.CertOptions*.KeyIDTemplate. See docs/internals/certificate-keyid-template.md
-// — keep that table in sync with this struct.
+// config.CertOptions*.KeyIDTemplate. See
+// https://mnestor.github.io/ssoossh/operations/key-id-templates/ — keep that
+// table in sync with this struct.
 //
 // Extra holds the operator-configured extra claim fields (see
 // config.OAuthFields.Extra), referenced as {{.Extra.name}} or {{join
@@ -88,7 +89,7 @@ type keyIDTemplates struct {
 // the common case, so an unset Service template falls back to whatever's
 // configured for User (raw, before defaulting) — only when User's is also
 // unset does each type fall back to its own hardcoded default. See
-// docs/internals/certificate-keyid-template.md.
+// https://mnestor.github.io/ssoossh/operations/key-id-templates/.
 func newKeyIDTemplates(opts config.CertificateOptions) (*keyIDTemplates, error) {
 	userSrc := opts.User.KeyIDTemplate
 	if userSrc == "" {
@@ -134,11 +135,12 @@ func newKeyIDTemplates(opts config.CertificateOptions) (*keyIDTemplates, error) 
 }
 
 // parseKeyIDTemplate parses src and immediately executes it once against a
-// zero-value keyIDTemplateData, so a reference to a field that doesn't
-// exist (a typo, or a field docs/internals/certificate-keyid-template.md no longer
+// zero-value keyIDTemplateData, so a reference to a field that doesn't exist
+// (a typo, or a field
+// https://mnestor.github.io/ssoossh/operations/key-id-templates/ no longer
 // documents) is caught now rather than at the first real issuance —
-// text/template only validates syntax at Parse time, not field names,
-// which are only resolved against real data at Execute time.
+// text/template only validates syntax at Parse time, not field names, which
+// are only resolved against real data at Execute time.
 func parseKeyIDTemplate(name, src string) (*template.Template, error) {
 	// missingkey=zero makes an .Extra lookup of an unconfigured name render
 	// the zero extraValue — which prints missingPlaceholder — instead of

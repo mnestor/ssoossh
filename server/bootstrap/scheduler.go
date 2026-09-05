@@ -196,9 +196,10 @@ func (a *app) registerAuditSweepJob(ctx context.Context) error {
 	return nil
 }
 
-// registerSweepJob schedules the stranded-request sweep, which fails
-// requests left awaiting a signature that will never arrive (see
-// service.SweepStrandedRequests and docs/internals/signing-pipeline.md).
+// registerSweepJob schedules the stranded-request sweep, which fails requests
+// left awaiting a signature that will never arrive (see
+// service.SweepStrandedRequests and
+// https://mnestor.github.io/ssoossh/internals/architecture/).
 //
 // A recurring job, run immediately on start as well, so a restart's
 // stranded requests are cleaned up promptly and in-process ones are caught

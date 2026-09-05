@@ -6,10 +6,10 @@ import (
 )
 
 // initPubSub builds the message-broker primitives the signing pipeline runs
-// on (see docs/internals/signing-pipeline.md). Branches on configured backend:
-// gochannel (in-process, default) or NATS (multi-instance). initPipeline
-// registers handlers on its Router, and services that publish take its
-// Publisher/Subscriber by injection.
+// on (see https://mnestor.github.io/ssoossh/internals/architecture/).
+// Branches on configured backend: gochannel (in-process, default) or NATS
+// (multi-instance). initPipeline registers handlers on its Router, and
+// services that publish take its Publisher/Subscriber by injection.
 func (a *app) initPubSub() (*pubsub.PubSub, error) {
 	return pubsub.New(&a.config.Signer.PubSub, logging.Tagged(logging.TagQueue))
 }

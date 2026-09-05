@@ -5,13 +5,13 @@
 - Manages ssh keypairs in files or ssh-agent; keypair is regenerated whenever
   a new certificate is needed.
 - Full design context (enrollment flow, principal mapping, open questions):
-  `docs/internals/design-brief.md`
+  `https://mnestor.github.io/ssoossh/internals/design-brief/`
 
 # Design rules
 - Viper config loading (~/.config/ssoossh.yaml | ./ssoossh.yaml), CLI
   overrides
 - Never open a listening port — no loopback redirect (see
-  docs/internals/invariants.md)
+  https://mnestor.github.io/ssoossh/internals/invariants/)
 
 ## CLI surface
 
@@ -39,7 +39,7 @@ ssoossh version
   overwrites that file in place rather than renaming a temp file over it, so
   an operator's ownership and mode survive an edit — see its doc comment for
   what that costs. There are no host certificates and no server-side
-  mappings (docs/project/decisions.md); the mapping is purely local.
+  mappings (https://mnestor.github.io/ssoossh/project/decisions/); the mapping is purely local.
 - `ssh config` — the wiring harness: prints the `ssh_config` recipes and
   nothing else, as both its output and its long help. Declared `offline`
   (see `offlineCommander`), so PreRun skips the CA fetch and it answers with
@@ -68,7 +68,7 @@ for invocations whose command line belongs to `ssh` or cron:
 
 `--debug` implies `-v`, and is hidden from `--help` (a diagnostic aid, not
 part of the advertised surface) but documented in
-`docs/operations/configuration.md#diagnostics--v-and---debug` and `docs/guide/faq.md`.
+`https://mnestor.github.io/ssoossh/guides/diagnostics/` and `https://mnestor.github.io/ssoossh/guides/faq/`.
 Malformed values in either variable read as off — a diagnostic must never
 fail a login. `-v` is what a bug report should ask for.
 

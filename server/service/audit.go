@@ -24,10 +24,11 @@ type AuditAction string
 // The taxonomy. Namespaced by subject area: authentication, certificates,
 // enrollments, user containment, and privileged views.
 const (
-	// AuditAuthLogin records a successful login, snapshotting the groups
-	// the identity carried at that moment. Since group membership is never
-	// persisted (see docs/internals/invariants.md), this is in fact the only
-	// durable record of what access an identity held on a given day.
+	// AuditAuthLogin records a successful login, snapshotting the groups the
+	// identity carried at that moment. Since group membership is never persisted
+	// (see https://mnestor.github.io/ssoossh/internals/invariants/), this is in
+	// fact the only durable record of what access an identity held on a given
+	// day.
 	AuditAuthLogin AuditAction = "auth.login"
 	// AuditAuthLoginDenied records a disabled account attempting to log in.
 	// There is deliberately no logout event: sessions mostly end by expiry,

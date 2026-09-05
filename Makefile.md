@@ -207,7 +207,7 @@ or a golden fixture moves. The consumer it exists for is `pam_ssoossh`
 which is written in C and shares no code with this repository: nothing at
 compile time tells it that a JSON field was renamed. The bump is what puts
 that in front of a reviewer, and the number is what the other side pins. See
-[docs/internals/wire-types.md](docs/internals/wire-types.md).
+[Wire types](https://mnestor.github.io/ssoossh/internals/wire-types/).
 
 ## Security
 

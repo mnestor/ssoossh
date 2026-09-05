@@ -20,8 +20,9 @@ import (
 // Client is the set of ssoosshd API calls an API consumer can make.
 // HTTPClient is the production implementation.
 //
-// There is no host-certificate or principal-mapping-sync call here:
-// ssoosshd issues no host identity (docs/project/decisions.md), and principal
+// There is no host-certificate or principal-mapping-sync call here: ssoosshd
+// issues no host identity
+// (https://mnestor.github.io/ssoossh/project/decisions/), and principal
 // mapping is purely local to the client (`ssoossh host mapping`), never
 // synced from the server.
 type Client interface {
@@ -68,9 +69,9 @@ type Client interface {
 }
 
 // Config configures an HTTPClient. Deliberately its own type rather than
-// client/config.Config — internal/ packages can't import back up into
-// client/ (see docs/internals/invariants.md) — so callers map their own config into
-// this.
+// client/config.Config — internal/ packages can't import back up into client/
+// (see https://mnestor.github.io/ssoossh/internals/invariants/) — so callers
+// map their own config into this.
 type Config struct {
 	// ServerURL is the ssoosshd base URL, e.g. "https://sso.example.com".
 	// Required.

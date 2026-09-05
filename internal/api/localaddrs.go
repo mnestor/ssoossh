@@ -5,13 +5,14 @@ import (
 	"slices"
 )
 
-// LocalInterfaceAddresses returns the caller's own non-loopback IP
-// addresses, gathered from every up network interface. Used to populate
+// LocalInterfaceAddresses returns the caller's own non-loopback IP addresses,
+// gathered from every up network interface. Used to populate
 // RequestedOptions.SourceAddresses so ssoosshd can union them with the
 // address it observes the request coming from — a client behind NAT has a
-// private local address that downstream hosts see when it connects, which
-// is not the address ssoosshd sees when it mints the certificate. See
-// docs/internals/design-brief.md's "Certificate lifetime policy".
+// private local address that downstream hosts see when it connects, which is
+// not the address ssoosshd sees when it mints the certificate. See
+// https://mnestor.github.io/ssoossh/internals/design-brief/'s "Certificate
+// lifetime policy".
 //
 // Link-local addresses (fe80::/10, 169.254.0.0/16) are left out along with
 // loopback. They are meaningful only within a single link, so they can

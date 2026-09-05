@@ -10,7 +10,7 @@
   or registry-fetched keys (split mode / multi-instance); signing always
   happens behind a keysource interface, never hardcoded to any single backend
 - Full design context (open questions, future plans):
-  `docs/internals/design-brief.md`
+  `https://mnestor.github.io/ssoossh/internals/design-brief/`
 
 ## Certificate Rules
 
@@ -20,10 +20,10 @@
   **Console** (a User-type cert for an interactive console login, approved
   in the web UI by a typed code; see docs/proposals/console-login-pam.md)
 - There is no host certificate type, and no secure host verification to
-  justify one (docs/project/decisions.md). `ssoossh host` is local
+  justify one (https://mnestor.github.io/ssoossh/project/decisions/). `ssoossh host` is local
   principal-mapping tooling only. Do not add a host type
 - Group membership never appears in a certificate — groups feed the lifetime
-  decision only (see docs/internals/invariants.md)
+  decision only (see https://mnestor.github.io/ssoossh/internals/invariants/)
 - `verify-required` is never used; `no-touch-required` only applies to
   enrolled `sk-` keys on the service path, never client-generated keys
 

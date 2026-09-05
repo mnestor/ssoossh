@@ -529,4 +529,4 @@ verification for console detection and `LockFileEx`.
   express is a common source of confusion, and the setting is enforced through
   Windows policy (`client/config/policy_windows.go`), so changing its shape
   has a documented downstream cost in
-  `docs/operations/client-settings-enforcement.md`.
+  `https://mnestor.github.io/ssoossh/hosts/client-enforcement/`.

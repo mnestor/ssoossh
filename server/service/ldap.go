@@ -404,7 +404,7 @@ func (s *LDAPService) applyValues(identity *Identity, values map[string][]string
 			identity.ServiceAccounts = vals
 		case config.LDAPFieldGroups:
 			// Persisted, never merged into the session identity: see the
-			// invariant in docs/internals/invariants.md.
+			// invariant in https://mnestor.github.io/ssoossh/internals/invariants/.
 		default:
 			// Any other name is an extra template field, on the same
 			// contract as OAuthFields.Extra.

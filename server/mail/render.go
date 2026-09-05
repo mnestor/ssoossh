@@ -130,7 +130,7 @@ func NewRenderer(templateDir, subjectPrefix string) (*Renderer, error) {
 		}
 		sort.Strings(names)
 		return nil, fmt.Errorf(
-			"mail.template_dir %q contains template files matching no notification: %s (expected <kind>.{subject,txt,html}.tmpl; see docs/operations/email-notifications.md)",
+			"mail.template_dir %q contains template files matching no notification: %s (expected <kind>.{subject,txt,html}.tmpl; see https://mnestor.github.io/ssoossh/operations/email-notifications/)",
 			templateDir, strings.Join(names, ", "))
 	}
 

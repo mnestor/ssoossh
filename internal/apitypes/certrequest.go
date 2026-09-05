@@ -17,7 +17,9 @@ type UserRequestBody struct {
 // ServiceEnrollRequestBody is the POST /api/certs/service/enroll request
 // body. PublicKey may be operator-supplied (BYO key, possibly HSM/PKCS#11/
 // encrypted file — the server never sees the private half) or
-// client-generated (see docs/internals/design-brief.md, "Service enrollment").
+// client-generated (see
+// https://mnestor.github.io/ssoossh/internals/design-brief/, "Service
+// enrollment").
 type ServiceEnrollRequestBody struct {
 	PublicKey        string           `json:"public_key" binding:"required"`
 	RequestedOptions RequestedOptions `json:"requested_options,omitempty"`
@@ -46,12 +48,12 @@ type PAMRequestBody struct {
 	TTY        string `json:"tty,omitempty"`
 	RemoteHost string `json:"remote_host,omitempty"`
 
-	// The rest of the host context, same trust as the four above: every
-	// value is what the module read off its own process and machine, and
-	// the approval page renders each as a claim. They exist so an
-	// approver of a `sudo` can see which command is asking, on which
-	// machine, invoked by whom, and so the audit line joins against the
-	// host's own auditd or journal. See docs/internals/host-context.md.
+	// The rest of the host context, same trust as the four above: every value is
+	// what the module read off its own process and machine, and the approval
+	// page renders each as a claim. They exist so an approver of a `sudo` can
+	// see which command is asking, on which machine, invoked by whom, and so the
+	// audit line joins against the host's own auditd or journal. See
+	// https://mnestor.github.io/ssoossh/internals/host-context/.
 	//
 	// RequestingUser is PAM_RUSER: who invoked the service, as opposed to
 	// Username, the account being authenticated. Under `su` or sudo's
@@ -177,11 +179,12 @@ type CreateRequestResponse struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-// ApproveResponse is POST /api/certs/requests/:id/approve's response body.
-// It does not carry the certificate — approval only queues a signing job
-// (see docs/internals/signing-pipeline.md); the certificate itself is delivered
-// later over the client's own SSE connection (CreateRequestResponse's
-// EventsURL), not returned here to the approving browser.
+// ApproveResponse is POST /api/certs/requests/:id/approve's response body. It
+// does not carry the certificate — approval only queues a signing job (see
+// https://mnestor.github.io/ssoossh/internals/architecture/); the certificate
+// itself is delivered later over the client's own SSE connection
+// (CreateRequestResponse's EventsURL), not returned here to the approving
+// browser.
 type ApproveResponse struct {
 	// Status is always "signing" today — included so the response shape
 	// can carry more without a breaking change later.

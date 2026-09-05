@@ -70,7 +70,7 @@ func (h *SignedReplyHandler) handle(msg *message.Message) error {
 //
 //  1. audit row first — it's the only durable record that a certificate was
 //     ever issued (the certificate itself is deliberately never stored; see
-//     docs/internals/signing-pipeline.md)
+//     https://mnestor.github.io/ssoossh/internals/architecture/)
 //  2. deliver (cache + wake) second
 //  3. status update last
 //
@@ -81,10 +81,10 @@ func (h *SignedReplyHandler) handle(msg *message.Message) error {
 // approved with nothing cached, and Wait would wrongly tell a client its
 // certificate was gone.
 //
-// The cost of this ordering is that a crash between 2 and 3 leaves the row
-// in "signing" — which is precisely what the invalidation sweep exists
-// to clean up (see docs/internals/signing-pipeline.md), and by then
-// the audit row is already durable.
+// The cost of this ordering is that a crash between 2 and 3 leaves the row in
+// "signing" — which is precisely what the invalidation sweep exists to clean
+// up (see https://mnestor.github.io/ssoossh/internals/architecture/), and by
+// then the audit row is already durable.
 func (h *SignedReplyHandler) resolveSuccess(ctx context.Context, reply certmsg.SignedReply) error {
 	origin, err := h.recordCertificate(ctx, reply)
 	if err != nil {

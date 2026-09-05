@@ -264,107 +264,232 @@ Seven kinds. Every one ships three templates, named
 | `pam_certificate_issued` | a certificate is signed for a local `sudo` or `su` on your behalf | the person the certificate is for | off |
 | `console_certificate_issued` | a certificate is signed for a console login you approved with a typed code | the person who approved | off |
 
+<!-- BEGIN GENERATED NOTIFICATION REFERENCE -->
+
 ### Service enrollment created
 
-Carries everything `ssoossh service enroll` printed except the code.
+`service_enrollment_created`
+
+Sent when you approve a service certificate request and an enrollment code is created for it.
+
+Default: **on**.
+
+Templates:
+
+- `service_enrollment_created.subject.tmpl`
+- `service_enrollment_created.txt.tmpl`
+- `service_enrollment_created.html.tmpl`
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `.ServiceAccount` | `string` | The service account the enrollment was approved for. It is the sole principal of every certificate the code produces |
-| `.RequestID` | `string` | The certificate request this enrollment came from |
-| `.EnrollmentID` | `string` | The enrollment record's own identifier, as shown in the retrieval log |
-| `.KeyID` | `string` | The SSH certificate key ID fixed at approval time |
-| `.Principals` | `[]string` | The certificate principals fixed at approval time |
-| `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the enrolled public key. The code only ever produces certificates for this key |
-| `.PublicKeyType` | `string` | SSH algorithm of the enrolled public key, e.g. ssh-ed25519 |
-| `.Extensions` | `[]string` | SSH certificate extensions granted, after narrowing against server config |
-| `.ForceCommand` | `string` | The force-command critical option, or empty if none was granted |
-| `.SourceAddresses` | `[]string` | The source-address critical option, or empty if unrestricted |
-| `.NoTouchRequired` | `bool` | Whether the no-touch-required extension was granted (hardware-backed `sk-` keys only) |
-| `.RequestSourceIP` | `string` | The address the enrollment request was submitted from |
-| `.ApprovedAt` | `time.Time` | When the request was approved and the code minted |
-| `.ApprovedByUsername` | `string` | The username of the identity that approved the request |
-| `.CodeExpiresAt` | `time.Time` | When the enrollment code stops being redeemable. Re-enroll before this to keep an unattended job running |
-| `.CertificateLifetime` | `time.Duration` | How long each certificate redeemed from this code is valid for, measured from each redemption |
-| `.ServerURL` | `string` | The server's public origin, for links back to the request |
+| `.ServiceAccount` | `string` | The service account the enrollment was approved for. It is the sole principal of every certificate the code produces. |
+| `.RequestID` | `string` | The certificate request this enrollment came from. |
+| `.EnrollmentID` | `string` | The enrollment record's own identifier, as shown in the retrieval log. |
+| `.KeyID` | `string` | The SSH certificate key ID fixed at approval time. |
+| `.Principals` | `[]string` | The certificate principals fixed at approval time. |
+| `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the enrolled public key. The code only ever produces certificates for this key. |
+| `.PublicKeyType` | `string` | SSH algorithm of the enrolled public key, e.g. ssh-ed25519. |
+| `.Extensions` | `[]string` | SSH certificate extensions granted, after narrowing against server config. |
+| `.ForceCommand` | `string` | The force-command critical option, or empty if none was granted. |
+| `.SourceAddresses` | `[]string` | The source-address critical option, or empty if unrestricted. |
+| `.NoTouchRequired` | `bool` | Whether the no-touch-required extension was granted (hardware-backed sk- keys only). |
+| `.RequestSourceIP` | `string` | The address the enrollment request was submitted from. |
+| `.ApprovedAt` | `time.Time` | When the request was approved and the code minted. |
+| `.ApprovedByUsername` | `string` | The username of the identity that approved the request. |
+| `.CodeExpiresAt` | `time.Time` | When the enrollment code stops being redeemable. Re-enroll before this to keep an unattended job running. |
+| `.CertificateLifetime` | `time.Duration` | How long each certificate redeemed from this code is valid for, measured from each redemption. |
+| `.ServerURL` | `string` | The server's public origin, for links back to the request. |
+
 
 ### Service enrollment redeemed
 
+`service_enrollment_redeemed`
+
+Sent every time one of your enrollment codes is redeemed for a certificate, including failed attempts.
+
+Default: **on**.
+
+Templates:
+
+- `service_enrollment_redeemed.subject.tmpl`
+- `service_enrollment_redeemed.txt.tmpl`
+- `service_enrollment_redeemed.html.tmpl`
+
 | Field | Type | Description |
 | --- | --- | --- |
-| `.ServiceAccount` | `string` | The service account the redeemed certificate is for |
-| `.RequestID` | `string` | The certificate request the enrollment came from, or empty for an enrollment with no linked request |
-| `.EnrollmentID` | `string` | The enrollment whose code was redeemed |
-| `.RetrievalID` | `string` | This redemption's own identifier, matching the row in the retrieval log |
-| `.SourceIP` | `string` | The address the redemption was made from |
-| `.RetrievedAt` | `time.Time` | When the code was redeemed |
-| `.CertificateSerial` | `uint64` | Serial of the certificate issued for this redemption |
-| `.CertificateExpiresAt` | `time.Time` | When the issued certificate stops being valid |
-| `.KeyID` | `string` | The SSH certificate key ID carried by the issued certificate |
-| `.Principals` | `[]string` | The issued certificate's principals |
-| `.Succeeded` | `bool` | False when the code was valid but signing failed; the failure detail is in the server log |
-| `.FirstRedemption` | `bool` | True when this was the first time the code was redeemed |
-| `.CodeExpiresAt` | `time.Time` | When the code itself stops being redeemable |
-| `.ServerURL` | `string` | The server's public origin, for links back to the retrieval log |
+| `.ServiceAccount` | `string` | The service account the redeemed certificate is for. |
+| `.RequestID` | `string` | The certificate request the enrollment came from, or empty for an enrollment with no linked request. |
+| `.EnrollmentID` | `string` | The enrollment whose code was redeemed. |
+| `.RetrievalID` | `string` | This redemption's own identifier, matching the row in the retrieval log. |
+| `.SourceIP` | `string` | The address the redemption was made from. |
+| `.RetrievedAt` | `time.Time` | When the code was redeemed. |
+| `.CertificateSerial` | `uint64` | Serial of the certificate issued for this redemption. |
+| `.CertificateExpiresAt` | `time.Time` | When the issued certificate stops being valid. |
+| `.KeyID` | `string` | The SSH certificate key ID carried by the issued certificate. |
+| `.Principals` | `[]string` | The issued certificate's principals. |
+| `.Succeeded` | `bool` | False when the code was valid but signing failed; the failure detail is in the server log. |
+| `.FirstRedemption` | `bool` | True when this was the first time the code was redeemed. |
+| `.CodeExpiresAt` | `time.Time` | When the code itself stops being redeemable. |
+| `.ServerURL` | `string` | The server's public origin, for links back to the retrieval log. |
+
 
 ### Service enrollment expiring
 
+`service_enrollment_expiring`
+
+Sent while one of your enrollment codes is close to expiring, so an unattended job can be re-enrolled before it starts failing: weekly inside the reminder window, then daily over the final week.
+
+Default: **on**.
+
+Templates:
+
+- `service_enrollment_expiring.subject.tmpl`
+- `service_enrollment_expiring.txt.tmpl`
+- `service_enrollment_expiring.html.tmpl`
+
 | Field | Type | Description |
 | --- | --- | --- |
-| `.ServiceAccount` | `string` | The service account the expiring enrollment belongs to |
-| `.RequestID` | `string` | The certificate request the enrollment came from, or empty for an enrollment with no linked request |
-| `.EnrollmentID` | `string` | The enrollment about to expire |
-| `.KeyID` | `string` | The SSH certificate key ID fixed at approval time |
-| `.Principals` | `[]string` | The certificate principals fixed at approval time |
-| `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the enrolled public key |
-| `.PublicKeyType` | `string` | SSH algorithm of the enrolled public key, e.g. ssh-ed25519 |
-| `.FirstRedeemedAt` | `time.Time` | When the code was first redeemed, or the zero time if it never was. A code never redeemed is usually a job that was never finished |
-| `.CodeExpiresAt` | `time.Time` | When the code stops being redeemable. Re-enroll before this |
-| `.Daily` | `bool` | True once the code is inside its final week and reminders come daily; false while they are still weekly |
-| `.ServerURL` | `string` | The server's public origin, for links back to the enrollment |
+| `.ServiceAccount` | `string` | The service account the expiring enrollment belongs to. |
+| `.RequestID` | `string` | The certificate request the enrollment came from, or empty for an enrollment with no linked request. |
+| `.EnrollmentID` | `string` | The enrollment about to expire. |
+| `.KeyID` | `string` | The SSH certificate key ID fixed at approval time. |
+| `.Principals` | `[]string` | The certificate principals fixed at approval time. |
+| `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the enrolled public key. |
+| `.PublicKeyType` | `string` | SSH algorithm of the enrolled public key, e.g. ssh-ed25519. |
+| `.FirstRedeemedAt` | `time.Time` | When the code was first redeemed, or the zero time if it never was. A code never redeemed is usually a job that was never finished. |
+| `.CodeExpiresAt` | `time.Time` | When the code stops being redeemable. Re-enroll before this. |
+| `.Daily` | `bool` | True once the code is inside its final week and reminders come daily; false while they are still weekly. |
+| `.ServerURL` | `string` | The server's public origin, for links back to the enrollment. |
+
 
 ### Expired enrollment code used
 
-Either a job is still trying to use a dead code, or someone is replaying a
-credential that should no longer exist.
+`service_enrollment_expired_attempt`
+
+Sent when an expired enrollment code is presented for redemption: either a job is still trying to use it, or someone is replaying a credential that should no longer exist.
+
+Default: **on**.
+
+Templates:
+
+- `service_enrollment_expired_attempt.subject.tmpl`
+- `service_enrollment_expired_attempt.txt.tmpl`
+- `service_enrollment_expired_attempt.html.tmpl`
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `.ServiceAccount` | `string` | The service account the expired enrollment belongs to |
-| `.RequestID` | `string` | The certificate request the enrollment came from, or empty for an enrollment with no linked request |
-| `.EnrollmentID` | `string` | The enrollment whose expired code was presented |
-| `.KeyID` | `string` | The SSH certificate key ID fixed at approval time |
-| `.Principals` | `[]string` | The certificate principals fixed at approval time |
-| `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the enrolled public key |
-| `.PublicKeyType` | `string` | SSH algorithm of the enrolled public key, e.g. ssh-ed25519 |
-| `.SourceIP` | `string` | The address the attempt came from |
-| `.AttemptedAt` | `time.Time` | When the expired code was presented |
-| `.CodeExpiredAt` | `time.Time` | When the code stopped being redeemable |
-| `.ServerURL` | `string` | The server's public origin, for links back to the enrollment |
+| `.ServiceAccount` | `string` | The service account the expired enrollment belongs to. |
+| `.RequestID` | `string` | The certificate request the enrollment came from, or empty for an enrollment with no linked request. |
+| `.EnrollmentID` | `string` | The enrollment whose expired code was presented. |
+| `.KeyID` | `string` | The SSH certificate key ID fixed at approval time. |
+| `.Principals` | `[]string` | The certificate principals fixed at approval time. |
+| `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the enrolled public key. |
+| `.PublicKeyType` | `string` | SSH algorithm of the enrolled public key, e.g. ssh-ed25519. |
+| `.SourceIP` | `string` | The address the attempt came from. |
+| `.AttemptedAt` | `time.Time` | When the expired code was presented. |
+| `.CodeExpiredAt` | `time.Time` | When the code stopped being redeemable. |
+| `.ServerURL` | `string` | The server's public origin, for links back to the enrollment. |
 
-### The three certificate-issued kinds
 
-`user_certificate_issued`, `pam_certificate_issued` and
-`console_certificate_issued` are separate kinds with separate preferences and
-separate templates, and they carry the same payload shape.
+### User certificate issued
+
+`user_certificate_issued`
+
+Sent every time an interactive SSH certificate is signed for you. Off by default: this is one message per login, for people who want to see every one.
+
+Default: **off**.
+
+Templates:
+
+- `user_certificate_issued.subject.tmpl`
+- `user_certificate_issued.txt.tmpl`
+- `user_certificate_issued.html.tmpl`
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `.CertificateType` | `string` | The certificate type: "user", "pam" or "console" |
-| `.RequestID` | `string` | The certificate request this certificate was issued for |
-| `.KeyID` | `string` | The SSH certificate key ID |
-| `.Principals` | `[]string` | The accounts this certificate may log in as |
-| `.Serial` | `uint64` | The certificate serial, matching the entry in your certificate history |
-| `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the key the certificate was issued for |
-| `.LocalUsername` | `string` | The local account the client reported, or empty if it reported none. Client-reported, so not evidence |
-| `.LocalHostname` | `string` | The machine the client reported, or empty if it reported none. Client-reported, so not evidence |
-| `.SourceIP` | `string` | The address the request was made from |
-| `.IssuedAt` | `time.Time` | When the certificate becomes valid |
-| `.ExpiresAt` | `time.Time` | When the certificate stops being valid |
-| `.Extensions` | `[]string` | SSH certificate extensions granted, after narrowing against server config |
-| `.ForceCommand` | `string` | The force-command critical option, or empty if none was granted |
-| `.SourceAddresses` | `[]string` | The source-address critical option, or empty if unrestricted |
-| `.ServerURL` | `string` | The server's public origin, for links back to the certificate |
+| `.CertificateType` | `string` | The certificate type: "user", "pam" or "console". |
+| `.RequestID` | `string` | The certificate request this certificate was issued for. |
+| `.KeyID` | `string` | The SSH certificate key ID. |
+| `.Principals` | `[]string` | The accounts this certificate may log in as. |
+| `.Serial` | `uint64` | The certificate serial, matching the entry in your certificate history. |
+| `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the key the certificate was issued for. |
+| `.LocalUsername` | `string` | The local account the client reported, or empty if it reported none. Client-reported, so not evidence. |
+| `.LocalHostname` | `string` | The machine the client reported, or empty if it reported none. Client-reported, so not evidence. |
+| `.SourceIP` | `string` | The address the request was made from. |
+| `.IssuedAt` | `time.Time` | When the certificate becomes valid. |
+| `.ExpiresAt` | `time.Time` | When the certificate stops being valid. |
+| `.Extensions` | `[]string` | SSH certificate extensions granted, after narrowing against server config. |
+| `.ForceCommand` | `string` | The force-command critical option, or empty if none was granted. |
+| `.SourceAddresses` | `[]string` | The source-address critical option, or empty if unrestricted. |
+| `.ServerURL` | `string` | The server's public origin, for links back to the certificate. |
+
+
+### PAM certificate issued
+
+`pam_certificate_issued`
+
+Sent every time a certificate is signed for a local sudo or su on your behalf. Off by default: this is one message per sudo.
+
+Default: **off**.
+
+Templates:
+
+- `pam_certificate_issued.subject.tmpl`
+- `pam_certificate_issued.txt.tmpl`
+- `pam_certificate_issued.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.CertificateType` | `string` | The certificate type: "user", "pam" or "console". |
+| `.RequestID` | `string` | The certificate request this certificate was issued for. |
+| `.KeyID` | `string` | The SSH certificate key ID. |
+| `.Principals` | `[]string` | The accounts this certificate may log in as. |
+| `.Serial` | `uint64` | The certificate serial, matching the entry in your certificate history. |
+| `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the key the certificate was issued for. |
+| `.LocalUsername` | `string` | The local account the client reported, or empty if it reported none. Client-reported, so not evidence. |
+| `.LocalHostname` | `string` | The machine the client reported, or empty if it reported none. Client-reported, so not evidence. |
+| `.SourceIP` | `string` | The address the request was made from. |
+| `.IssuedAt` | `time.Time` | When the certificate becomes valid. |
+| `.ExpiresAt` | `time.Time` | When the certificate stops being valid. |
+| `.Extensions` | `[]string` | SSH certificate extensions granted, after narrowing against server config. |
+| `.ForceCommand` | `string` | The force-command critical option, or empty if none was granted. |
+| `.SourceAddresses` | `[]string` | The source-address critical option, or empty if unrestricted. |
+| `.ServerURL` | `string` | The server's public origin, for links back to the certificate. |
+
+
+### Console certificate issued
+
+`console_certificate_issued`
+
+Sent every time a certificate is signed for a console login you approved with a typed code. Off by default: this is one message per login.
+
+Default: **off**.
+
+Templates:
+
+- `console_certificate_issued.subject.tmpl`
+- `console_certificate_issued.txt.tmpl`
+- `console_certificate_issued.html.tmpl`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `.CertificateType` | `string` | The certificate type: "user", "pam" or "console". |
+| `.RequestID` | `string` | The certificate request this certificate was issued for. |
+| `.KeyID` | `string` | The SSH certificate key ID. |
+| `.Principals` | `[]string` | The accounts this certificate may log in as. |
+| `.Serial` | `uint64` | The certificate serial, matching the entry in your certificate history. |
+| `.PublicKeyFingerprint` | `string` | SHA256 fingerprint of the key the certificate was issued for. |
+| `.LocalUsername` | `string` | The local account the client reported, or empty if it reported none. Client-reported, so not evidence. |
+| `.LocalHostname` | `string` | The machine the client reported, or empty if it reported none. Client-reported, so not evidence. |
+| `.SourceIP` | `string` | The address the request was made from. |
+| `.IssuedAt` | `time.Time` | When the certificate becomes valid. |
+| `.ExpiresAt` | `time.Time` | When the certificate stops being valid. |
+| `.Extensions` | `[]string` | SSH certificate extensions granted, after narrowing against server config. |
+| `.ForceCommand` | `string` | The force-command critical option, or empty if none was granted. |
+| `.SourceAddresses` | `[]string` | The source-address critical option, or empty if unrestricted. |
+| `.ServerURL` | `string` | The server's public origin, for links back to the certificate. |
+
+<!-- END GENERATED NOTIFICATION REFERENCE -->
 
 ## Overriding a template
 
@@ -444,5 +569,5 @@ That is a code change rather than a configuration one: a `Kind` constant, a
 payload struct, a registry `Definition`, and three templates, after which the
 preferences page, the reference table, and delivery all follow from the
 registry. The steps are documented for developers in
-[docs/operations/email-notifications.md](https://github.com/mnestor/ssoossh/blob/main/docs/operations/email-notifications.md#adding-a-notification-kind)
+[Adding a notification kind](#adding-a-notification-kind)
 in the repository.

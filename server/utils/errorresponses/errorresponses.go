@@ -1,5 +1,6 @@
-// Package errorresponses defines error types that carry an HTTP status
-// code and machine-readable error code, for handlers to translate into API error responses.
+// Package errorresponses defines error types that carry an HTTP status code
+// and machine-readable error code, for handlers to translate into API error
+// responses.
 package errorresponses
 
 import (
@@ -62,10 +63,11 @@ func (e *NotFoundError) ErrorCode() string { return apitypes.ErrorCodeNotFound }
 // and signed, but the signed certificate can no longer be obtained.
 //
 // Certificates are deliberately never persisted (see
-// docs/internals/signing-pipeline.md): they're delivered once, via an
-// in-memory cache and its wake message. A client reconnecting after the
-// server restarted has missed that window and must make a new request —
-// which is cheap, since the certificates are short-lived by design.
+// https://mnestor.github.io/ssoossh/internals/architecture/): they're
+// delivered once, via an in-memory cache and its wake message. A client
+// reconnecting after the server restarted has missed that window and must
+// make a new request — which is cheap, since the certificates are short-lived
+// by design.
 //
 // Rendered as 410 Gone rather than 404: the request genuinely existed and
 // was approved, and 410 is also outside the client's SSE retry conditions

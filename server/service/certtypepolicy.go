@@ -53,11 +53,11 @@ type certTypePolicy struct {
 	noTouchEligible bool
 	keyIDTemplate   *template.Template
 	// principals computes a certificate's principal list from the approver's
-	// identity and, for user-type requests, their selection. Every type
-	// derives it from the approver and nothing else: the certificate asserts
-	// who the identity provider vouched for, and the host decides which local
-	// accounts that maps to (docs/internals/design-brief.md, "Principal
-	// mapping"). That is why this takes no per-request context. A PAM
+	// identity and, for user-type requests, their selection. Every type derives
+	// it from the approver and nothing else: the certificate asserts who the
+	// identity provider vouched for, and the host decides which local accounts
+	// that maps to (https://mnestor.github.io/ssoossh/internals/design-brief/,
+	// "Principal mapping"). That is why this takes no per-request context. A PAM
 	// request's req.Username used to be returned here verbatim, which made an
 	// unauthenticated caller the author of the one field the certificate is
 	// authorized on. See docs/proposals/pam-principal-source.md.
@@ -191,17 +191,16 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates, dec
 		return []string{identity.Username}
 	}
 
-	// localAuthPrincipals returns the approver's selection for PAM and
-	// console requests, or every account they hold when nothing was
-	// selected. The module names one local account; pam_ssoossh's check 3
-	// (checks.go in github.com/mnestor/ssoossh-pam) then matches the
-	// certificate's principals
-	// against it, directly or through the host's principals-map. The
-	// approver picks which of their accounts to put in the certificate for
-	// that match; the all-held default keeps direct API callers that send
-	// no selection working, and the server never models host-local state
-	// either way (docs/internals/design-brief.md, "Principal mapping":
-	// nothing syncs the mapping down).
+	// localAuthPrincipals returns the approver's selection for PAM and console
+	// requests, or every account they hold when nothing was selected. The module
+	// names one local account; pam_ssoossh's check 3 (checks.go in
+	// github.com/mnestor/ssoossh-pam) then matches the certificate's principals
+	// against it, directly or through the host's principals-map. The approver
+	// picks which of their accounts to put in the certificate for that match;
+	// the all-held default keeps direct API callers that send no selection
+	// working, and the server never models host-local state either way
+	// (https://mnestor.github.io/ssoossh/internals/design-brief/, "Principal
+	// mapping": nothing syncs the mapping down).
 	localAuthPrincipals := func(identity *Identity, selected []string) []string {
 		if len(selected) > 0 {
 			return selected

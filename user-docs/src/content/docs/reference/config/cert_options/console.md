@@ -125,7 +125,7 @@ Passes when at least one listed condition passes. Listed conditions may not them
 
 Refuses request creation from outside these CIDRs, before a keypair is certified and before any human is asked to approve anything. Empty means no network gate.
 
-The server's half of per-host policy rests on the source address rather than the hostname because the address is observed by the server and the hostname is a string an unauthenticated caller typed — the same reasoning that got host certificates declined (docs/project/decisions.md). Behind a reverse proxy this is only meaningful with http.trusted_proxies set; without it every request carries the proxy's address.
+The server's half of per-host policy rests on the source address rather than the hostname because the address is observed by the server and the hostname is a string an unauthenticated caller typed — the same reasoning that got host certificates declined (https://mnestor.github.io/ssoossh/project/decisions/). Behind a reverse proxy this is only meaningful with http.trusted_proxies set; without it every request carries the proxy's address.
 
 ```yaml
 cert_options:
@@ -232,4 +232,4 @@ Evaluated in order; the FIRST tier whose when condition the approver's identity 
 
 Restricts certificate lifetime based on the request's source IP address. Longest prefix match wins; ties resolve to the stricter rule. Entries are intersected with the tier-determined duration, and the final effective lifetime is clamped to the ceiling set by the enclosing CertOptions*.ValidDuration.
 
-See docs/operations/certificate-lifetime-policy.md section "Which address" for why the server-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
+See https://mnestor.github.io/ssoossh/operations/certificate-policy/ section "Which address" for why the server-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.

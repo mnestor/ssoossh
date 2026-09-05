@@ -31,7 +31,7 @@ type OAuthFields struct {
 	// Groups names a claim expected to hold a JSON array of group names. It
 	// feeds the certificate lifetime and require-group decision only; group
 	// membership is never placed in an issued certificate (see
-	// docs/internals/invariants.md).
+	// https://mnestor.github.io/ssoossh/internals/invariants/).
 	Groups string `mapstructure:"groups" default:"groups"`
 
 	// OtherAccounts names a claim expected to hold a JSON array of alternate
@@ -73,7 +73,7 @@ type OAuthFields struct {
 	//	  user:
 	//	    key_id_template: '{{.Username}}-{{.Extra.dept}}-{{join .Extra.accounts ";"}}'
 	//
-	// See docs/operations/certificate-keyid-template.md for the full
+	// See https://mnestor.github.io/ssoossh/operations/key-id-templates/ for the full
 	// template field list and the MISSING rendering rules.
 	Extra map[string]string `mapstructure:"extra"`
 }

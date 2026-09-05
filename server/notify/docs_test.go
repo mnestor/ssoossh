@@ -10,10 +10,13 @@ import (
 	"github.com/mnestor/ssoossh/server/notify"
 )
 
-var update = flag.Bool("update", false, "rewrite the generated block in docs/operations/email-notifications.md instead of comparing against it")
+var update = flag.Bool("update", false, "rewrite the generated block in the notification reference instead of comparing against it")
 
-// docPath is the operator-facing reference this test keeps honest.
-const docPath = "../../docs/operations/email-notifications.md"
+// docPath is the operator-facing reference this test keeps honest. It is the
+// documentation site's page: the site is what operators read, so generating
+// into anything else would leave the copy they actually see hand-maintained,
+// which is the drift this test exists to prevent.
+const docPath = "../../user-docs/src/content/docs/operations/email-notifications.md"
 
 // The generated block's fences. Everything between them is derived from
 // the registry; everything outside is hand-written prose.

@@ -30,9 +30,10 @@ import (
 
 // NewCertRequestParams are the client-supplied inputs to CreateRequest.
 // RequestedOptions is narrowed by server config before anything is shown in
-// the web UI (server config is the outer bound — see docs/internals/invariants.md Hard
-// Constraints). That narrowing isn't implemented yet (see Approve) — for
-// now RequestedOptions is stored as submitted.
+// the web UI (server config is the outer bound — see
+// https://mnestor.github.io/ssoossh/internals/invariants/ Hard Constraints).
+// That narrowing isn't implemented yet (see Approve) — for now
+// RequestedOptions is stored as submitted.
 type NewCertRequestParams struct {
 	Type             model.CertificateType
 	PublicKey        string
@@ -166,7 +167,7 @@ type WaitOutcome struct {
 // actual source of truth, and the message is only a low-latency signal
 // that something changed — but it's still JSON so any future consumer
 // (e.g. debugging, or a listener/resolver in a later phase — see
-// docs/internals/signing-pipeline.md) can read it directly.
+// https://mnestor.github.io/ssoossh/internals/architecture/) can read it directly.
 type requestOutcomeMessage struct {
 	Status      model.CertificateRequestStatus `json:"status"`
 	Certificate string                         `json:"certificate,omitempty"`
@@ -180,13 +181,13 @@ type requestOutcomeMessage struct {
 }
 
 // CertRequestService manages the pending-approval lifecycle shared by all
-// certificate types: a client creates a request (`ssh login`,
-// `service enroll`) and its events endpoint waits for it to
-// resolve (see server/controller/certrequests.go's eventsHandler); a human
-// opens the approval URL that client printed and approves or denies it
-// out-of-band, which is what unblocks that wait via publisher/subscriber
-// below (see docs/internals/signing-pipeline.md). Requests are never listed — see
-// NewCertRequestController for why.
+// certificate types: a client creates a request (`ssh login`, `service
+// enroll`) and its events endpoint waits for it to resolve (see
+// server/controller/certrequests.go's eventsHandler); a human opens the
+// approval URL that client printed and approves or denies it out-of-band,
+// which is what unblocks that wait via publisher/subscriber below (see
+// https://mnestor.github.io/ssoossh/internals/architecture/). Requests are
+// never listed — see NewCertRequestController for why.
 //
 // Approving a request behaves differently per Type:
 //   - user, PAM, console: queue a signing job and resolve to a certificate
@@ -229,18 +230,18 @@ type CertRequestService struct {
 	// one that was never blocked in the first place) reads the cached
 	// outcome instead of waiting on a wake message that already happened.
 	resolved map[string]WaitOutcome
-	// TODO: ca signing dependency (reuse/extend CAService — it currently
-	// only exposes GetCAPublicKey, not signing) and the lifetime-policy
-	// computation (see docs/internals/design-brief.md "Certificate lifetime
-	// policy") are still needed before Approve can actually issue a
-	// certificate.
+	// TODO: ca signing dependency (reuse/extend CAService — it currently only
+	// exposes GetCAPublicKey, not signing) and the lifetime-policy computation
+	// (see https://mnestor.github.io/ssoossh/internals/design-brief/
+	// "Certificate lifetime policy") are still needed before Approve can
+	// actually issue a certificate.
 }
 
 // NewCertRequestService constructs a CertRequestService, parsing
 // c.CertOptions' per-type key ID templates (see
-// docs/internals/certificate-keyid-template.md) so a bad template fails startup.
-// publisher/subscriber back the wake-topic broker (see certmsg.WaitTopic) —
-// the gochannel-based pair from server/pubsub.
+// https://mnestor.github.io/ssoossh/operations/key-id-templates/) so a bad
+// template fails startup. publisher/subscriber back the wake-topic broker
+// (see certmsg.WaitTopic) — the gochannel-based pair from server/pubsub.
 func NewCertRequestService(c *config.Config, db *gorm.DB, publisher message.Publisher, subscriber message.Subscriber) (*CertRequestService, error) {
 	keyIDTmpls, err := newKeyIDTemplates(c.CertOptions)
 	if err != nil {
@@ -399,18 +400,19 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 		}
 	}
 
-	// Union the server-observed source address into the caller's own
-	// reported SourceAddresses before persisting, so the stored value is
-	// the complete set docs/internals/design-brief.md's lifetime-policy section
-	// describes: the client's own interfaces plus the address the server
-	// observed the request coming from. This matters for a client behind
-	// NAT — the address ssoosshd sees when it mints the certificate is not
-	// the address downstream hosts see when the client connects to them,
-	// so a source-address restriction built from the observed address
-	// alone would wrongly reject the client's real connections. Plain
-	// string-equality dedup is enough here; netip-normalized matching
-	// belongs to the deferred source-address policy engine in
-	// docs/operations/certificate-lifetime-policy.md, not this capture step.
+	// Union the server-observed source address into the caller's own reported
+	// SourceAddresses before persisting, so the stored value is the complete set
+	// https://mnestor.github.io/ssoossh/internals/design-brief/'s
+	// lifetime-policy section describes: the client's own interfaces plus the
+	// address the server observed the request coming from. This matters for a
+	// client behind NAT — the address ssoosshd sees when it mints the
+	// certificate is not the address downstream hosts see when the client
+	// connects to them, so a source-address restriction built from the observed
+	// address alone would wrongly reject the client's real connections. Plain
+	// string-equality dedup is enough here; netip-normalized matching belongs to
+	// the deferred source-address policy engine in
+	// https://mnestor.github.io/ssoossh/operations/certificate-policy/, not this
+	// capture step.
 	//
 	// The caller's own list is normalized here rather than trusted to arrive
 	// clean: any client at all — an older release, pam_ssoossh, something
@@ -653,7 +655,7 @@ func (s *CertRequestService) EvictResolved(_ context.Context) error {
 // outer bound on every option, and options a deployment doesn't permit are
 // trimmed rather than rejected — so the UI has to be able to show what was
 // asked for alongside what would actually be granted, before anyone
-// approves anything (see docs/internals/invariants.md).
+// approves anything (see https://mnestor.github.io/ssoossh/internals/invariants/).
 type RequestDetail struct {
 	Request model.CertificateRequest
 
@@ -780,32 +782,34 @@ func (s *CertRequestService) lookupDecision(ctx context.Context, requestID strin
 // then branches by type:
 //
 //   - user, PAM: marks the request CertificateRequestStatusSigning and
-//     publishes a self-contained signingJob to certmsg.SignQueueTopic — the queue is
-//     the only entrypoint that turns an approved request into a signed
-//     certificate (see docs/internals/signing-pipeline.md). The certificate is
-//     delivered later, over the client's own Wait/SSE connection, once the
-//     signer and listener/resolver process the job.
+//     publishes a self-contained signingJob to certmsg.SignQueueTopic — the
+//     queue is the only entrypoint that turns an approved request into a
+//     signed certificate (see
+//     https://mnestor.github.io/ssoossh/internals/architecture/). The
+//     certificate is delivered later, over the client's own Wait/SSE
+//     connection, once the signer and listener/resolver process the job.
 //   - service: does NOT use the queue. Marks the request
 //     CertificateRequestStatusEnrolled with a freshly generated
-//     EnrollmentToken directly, and notifies the wake topic itself, right
-//     here in the approving request — there's no signer round trip to wait
-//     on, since the certificate itself isn't produced until a later
-//     `service retrieve` redeems the token (see
-//     docs/internals/design-brief.md, "Service enrollment"). The client waiting on
-//     Wait/SSE for this request gets the token, not a certificate.
+//     EnrollmentToken directly, and notifies the wake topic itself, right here
+//     in the approving request — there's no signer round trip to wait on,
+//     since the certificate itself isn't produced until a later `service
+//     retrieve` redeems the token (see
+//     https://mnestor.github.io/ssoossh/internals/design-brief/, "Service
+//     enrollment"). The client waiting on Wait/SSE for this request gets the
+//     token, not a certificate.
 //
 // Policy resolution (applies to both branches):
 //   - Extensions are narrowed to the intersection of requested and
 //     configured-permitted (server config is always the outer bound — see
-//     docs/internals/invariants.md).
-//   - ForceCommand and SourceAddresses are dropped entirely: there's no
-//     server config concept yet to bound either against (source-address
-//     policy is explicitly "design in progress," see
-//     docs/internals/design-brief.md), and granting an unbounded client-requested
-//     critical option would violate the same hard constraint. Revisit once
-//     that policy exists.
+//     https://mnestor.github.io/ssoossh/internals/invariants/).
+//   - ForceCommand and SourceAddresses are dropped entirely: there's no server
+//     config concept yet to bound either against (source-address policy is
+//     explicitly "design in progress," see
+//     https://mnestor.github.io/ssoossh/internals/design-brief/), and granting
+//     an unbounded client-requested critical option would violate the same
+//     hard constraint. Revisit once that policy exists.
 //   - NoTouchRequired is only ever granted for CertificateTypeService, per
-//     docs/internals/invariants.md.
+//     https://mnestor.github.io/ssoossh/internals/invariants/.
 //   - RequireGroup (service/PAM config) is enforced: identity must be
 //     a member, or Approve fails without publishing/enrolling anything. PAM
 //     is the one type where an unset RequireGroup denies rather than opens
@@ -944,12 +948,12 @@ func (s *CertRequestService) checkFIPSApproved(authorizedKey string) error {
 // public key (see resolvePrincipals), so an admin approving a stranger's
 // request would hand that stranger an admin certificate.
 //
-// It does not defend against a user being tricked into approving a request
-// an attacker created for them. That consent-phishing case needs a
-// verification code the requesting client displays and the browser has to
-// match, which is what the console flow does — see docs/guide/flows.md,
-// "Console login". For the browser flows there is no such code, so this
-// remains out of scope here.
+// It does not defend against a user being tricked into approving a request an
+// attacker created for them. That consent-phishing case needs a verification
+// code the requesting client displays and the browser has to match, which is
+// what the console flow does — see
+// https://mnestor.github.io/ssoossh/concepts/, "Console login". For the
+// browser flows there is no such code, so this remains out of scope here.
 //
 // Takes the already-resolved users row (see resolveUser): Approve resolves
 // it before the authorization gate, so binding — which claims the request —
@@ -1036,11 +1040,11 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 		return fmt.Errorf("failed to encode narrowed options: %w", err)
 	}
 
-	// Key ID and principals are fixed here, not at retrieve time: the
-	// enrollment contract is evaluate-at-enrollment-time (see
-	// docs/operations/certificate-lifetime-policy.md), and the approving identity —
-	// which both derive from — no longer exists when `service retrieve`
-	// redeems the code unattended.
+	// Key ID and principals are fixed here, not at retrieve time: the enrollment
+	// contract is evaluate-at-enrollment-time (see
+	// https://mnestor.github.io/ssoossh/operations/certificate-policy/), and the
+	// approving identity — which both derive from — no longer exists when
+	// `service retrieve` redeems the code unattended.
 	keyID, err := executeKeyIDTemplate(policy.keyIDTemplate, newKeyIDTemplateData(identity, req.SourceIP, req.ID))
 	if err != nil {
 		// not covered: parseKeyIDTemplate already executed
@@ -1507,7 +1511,7 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 	// If this publish fails, the row is left in Signing with no queued
 	// job — a stuck row the invalidation sweep is responsible for
 	// catching, not something recovered here (see
-	// docs/internals/signing-pipeline.md).
+	// https://mnestor.github.io/ssoossh/internals/architecture/).
 	if err := s.publisher.Publish(certmsg.SignQueueTopic, message.NewMessage(watermill.NewUUID(), payload)); err != nil {
 		return fmt.Errorf("failed to publish signing job: %w", err)
 	}
@@ -1661,17 +1665,18 @@ func (s *CertRequestService) Wait(ctx context.Context, requestID string) (WaitOu
 	// One subscription, taken before the first database read and held for
 	// the whole call.
 	//
-	// Subscribing before the read closes the window where a wake fires
-	// between the two: it lands on this channel instead of being missed.
-	// Holding it across loop iterations closes the same window *between*
-	// iterations, which is the one that actually bit — neither broker
-	// replays. gochannel is deliberately not Persistent (see
-	// server/pubsub/pubsub.go) and core NATS has no replay at all, so a
-	// wake published while nothing is subscribed is gone. Under NATS that
-	// is unrecoverable rather than merely late: the certificate is never
-	// persisted (docs/internals/signing-pipeline.md), so the reconcileStatus read
-	// below can see "approved" on another instance and still have nothing
-	// to hand back, leaving the client blocked until its request expires.
+	// Subscribing before the read closes the window where a wake fires between
+	// the two: it lands on this channel instead of being missed. Holding it
+	// across loop iterations closes the same window *between* iterations, which
+	// is the one that actually bit — neither broker replays. gochannel is
+	// deliberately not Persistent (see server/pubsub/pubsub.go) and core NATS
+	// has no replay at all, so a wake published while nothing is subscribed is
+	// gone. Under NATS that is unrecoverable rather than merely late: the
+	// certificate is never persisted
+	// (https://mnestor.github.io/ssoossh/internals/architecture/), so the
+	// reconcileStatus read below can see "approved" on another instance and
+	// still have nothing to hand back, leaving the client blocked until its
+	// request expires.
 	messages, err := s.subscriber.Subscribe(ctx, certmsg.WaitTopic(requestID))
 	if err != nil {
 		return WaitOutcome{}, fmt.Errorf("failed to subscribe to certificate request updates: %w", err)
@@ -1808,7 +1813,7 @@ func (s *CertRequestService) reconcileStatus(ctx context.Context, requestID stri
 
 	case model.CertificateRequestStatusSigning:
 		// Approved and queued for the signer (see
-		// docs/internals/signing-pipeline.md) — not yet resolved. No TTL
+		// https://mnestor.github.io/ssoossh/internals/architecture/) — not yet resolved. No TTL
 		// applies (TTL is only for "unapproved too long," see ttlCutoffFor),
 		// so wait the same way as pending.
 		return true, nil

@@ -105,14 +105,14 @@ func main() {
 //
 // This used to hand-build a parallel cobra tree, on the reasoning that
 // simplecobra put the assembled tree out of reach. The cost was a gate that
-// reported success while measuring nothing: `make man-check` regenerates
-// and diffs, so against a hand-built tree it compared the duplicate to
-// itself and always passed. The page drifted until it described `host` as
-// "Manage host certificates" — a feature this product does not have
-// (docs/project/decisions.md) — and omitted --verbose along with every subcommand
-// below the top
-// level. clientcmd.CobraCommandForManpage returns the same tree Execute
-// runs, so the diff means something again.
+// reported success while measuring nothing: `make man-check` regenerates and
+// diffs, so against a hand-built tree it compared the duplicate to itself and
+// always passed. The page drifted until it described `host` as "Manage host
+// certificates" — a feature this product does not have
+// (https://mnestor.github.io/ssoossh/project/decisions/) — and omitted
+// --verbose along with every subcommand below the top level.
+// clientcmd.CobraCommandForManpage returns the same tree Execute runs, so the
+// diff means something again.
 func generateClientManpage(outDir string, date time.Time) error {
 	root, err := clientcmd.CobraCommandForManpage()
 	if err != nil {

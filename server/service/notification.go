@@ -593,7 +593,7 @@ type NotificationPreferenceProvider interface {
 // This is the whole of group fan-out — a recipient resolver, not a new
 // subsystem — and it is what user_groups exists for. The rows are a
 // snapshot for reaching people, never an authorization input (see
-// docs/internals/invariants.md).
+// https://mnestor.github.io/ssoossh/internals/invariants/).
 //
 // Accepted limitation: fan-out reaches only users who have logged in at
 // least once, because only they have a row. The server does not create

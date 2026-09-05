@@ -46,12 +46,12 @@ type loggerSource interface {
 }
 
 // namedLoggerConfig is one "type"-tagged sub-logger: records carrying a
-// matching "type" attribute are routed to their own handler/destination
-// (with "type" itself stripped from the output there — see dropAttr)
-// instead of the general log. Add an entry to New's namedLoggers slice for
-// each new named logger (e.g. a future "signer" or "listener" component —
-// see docs/internals/signing-pipeline.md) instead of writing another bespoke
-// routing block.
+// matching "type" attribute are routed to their own handler/destination (with
+// "type" itself stripped from the output there — see dropAttr) instead of the
+// general log. Add an entry to New's namedLoggers slice for each new named
+// logger (e.g. a future "signer" or "listener" component — see
+// https://mnestor.github.io/ssoossh/internals/architecture/) instead of
+// writing another bespoke routing block.
 type namedLoggerConfig struct {
 	tag string
 	src loggerSource

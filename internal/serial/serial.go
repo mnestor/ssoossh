@@ -19,8 +19,8 @@ const Mask = 1<<63 - 1
 // New returns a random certificate serial. Random rather than a counter so it
 // needs no coordination — the signer has no database, and there may
 // eventually be several signers with independent hardware-backed keys (see
-// docs/operations/certificate-lifetime-policy.md's note on multiple signers).
-// Serials matter for revocation lists (KRLs).
+// https://mnestor.github.io/ssoossh/operations/certificate-policy/'s note on
+// multiple signers). Serials matter for revocation lists (KRLs).
 //
 // The returned serial is guaranteed to have the high bit clear (Mask applied),
 // but may be zero. Code treating zero as a sentinel must check explicitly;

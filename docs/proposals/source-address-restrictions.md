@@ -13,7 +13,7 @@ drift.
 
 Related documents, neither of which this one edits:
 
-- [certificate-lifetime-policy.md](../operations/certificate-lifetime-policy.md) owns the
+- [Certificate policy](https://mnestor.github.io/ssoossh/operations/certificate-policy/) owns the
   lifetime engine and records, under "Known defect: `source-address` is welded
   to the lifetime rule", why the current pinning implementation needs rework
   rather than extension. This proposal is the answer to the five questions

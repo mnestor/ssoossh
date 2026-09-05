@@ -1,7 +1,7 @@
 # Audit log
 
 **Status: implemented.** Built 2026-08-29. The operator-facing reference is
-[operations/audit-log.md](../operations/audit-log.md), which is now the
+[Audit log](https://mnestor.github.io/ssoossh/operations/audit-log/), which is now the
 document to read; this one is kept for the reasoning behind each decision.
 
 **What shipped:** all eight numbered items below, plus the required-reason
@@ -85,7 +85,7 @@ to nothing.
 
 This is consistent with how the codebase already treats identity: group
 membership is never persisted precisely because claims drift between logins
-(`server/model/user.go`, `docs/internals/invariants.md`). An `auth.login`
+(`server/model/user.go`, `https://mnestor.github.io/ssoossh/internals/invariants/`). An `auth.login`
 event that snapshots groups-at-login is in fact the only durable record of
 what access an identity carried on a given day, which is part of why login
 belongs in the taxonomy.

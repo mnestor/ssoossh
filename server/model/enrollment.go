@@ -7,7 +7,7 @@ import "time"
 // approved. After that, `service retrieve` calls present only Code — the
 // server never re-accepts a public key for an existing enrollment, so a
 // stolen code can't be paired with an attacker's keypair (see
-// docs/internals/design-brief.md, "Service enrollment").
+// https://mnestor.github.io/ssoossh/internals/design-brief/, "Service enrollment").
 type Enrollment struct {
 	ID        string `gorm:"column:id;primaryKey"`
 	Code      string `gorm:"column:code"`

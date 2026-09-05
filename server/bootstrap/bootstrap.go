@@ -93,7 +93,8 @@ func (a *app) newCAKeySource() (signer.CAKeySource, error) {
 		return nil, err
 	}
 	a.caKeySource = ks
-	// Wrap ks.Close to match servicerunner.Service signature (accepts context, returns error).
+	// Wrap ks.Close to match servicerunner.Service signature (accepts context,
+	// returns error).
 	a.closeCAKeySource = func(context.Context) error { return ks.Close() }
 	return ks, nil
 }
@@ -128,7 +129,8 @@ func BootstrapServe(cmd *cobra.Command, mode ServerMode) error {
 
 	ctx := cmd.Context()
 
-	// Initialize the observability stack, including the logger, distributed tracing, and metrics
+	// Initialize the observability stack, including the logger, distributed
+	// tracing, and metrics
 	shutdownFns, err := a.initObservability(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to initialize OpenTelemetry: %w", err)
@@ -143,9 +145,9 @@ func BootstrapServe(cmd *cobra.Command, mode ServerMode) error {
 	}
 
 	// Build the message-broker primitives (gochannel-only for now — see
-	// docs/internals/signing-pipeline.md). Its Router needs to run for the
-	// duration of the server (serviceRunners) and be closed on shutdown
-	// (shutdowns), same as the other long-running components below.
+	// https://mnestor.github.io/ssoossh/internals/architecture/). Its Router
+	// needs to run for the duration of the server (serviceRunners) and be closed
+	// on shutdown (shutdowns), same as the other long-running components below.
 	a.pubSub, err = a.initPubSub()
 	if err != nil {
 		return fmt.Errorf("failed to initialize pub/sub: %w", err)

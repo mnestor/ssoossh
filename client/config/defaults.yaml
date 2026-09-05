@@ -54,7 +54,7 @@
 # that WSL can execute Windows .exe files directly: invoking the Windows
 # build from a WSL shell talks to the Windows agents, not the distro's.
 #
-# See ssoossh(1), or docs/guide/features.md, for what the client does.
+# See ssoossh(1), or https://mnestor.github.io/ssoossh/concepts/, for what the client does.
 ---
 
 # Base URL of the ssoossh server, e.g. https://ssh.example.com. Overridden by
@@ -118,7 +118,7 @@ try_open_browser: false
 # Windows and macOS also support locking these same settings through their
 # own native fleet-management mechanisms (a Group Policy-managed registry
 # key, or macOS managed preferences pushed by MDM) instead of this file —
-# see docs/operations/client-settings-enforcement.md for the full mapping.
+# see https://mnestor.github.io/ssoossh/hosts/client-enforcement/ for the full mapping.
 # enforce: ssoossh-locked.yaml
 
 # Steer key generation toward algorithms that SSH implementations running in

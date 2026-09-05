@@ -38,12 +38,12 @@ and has drifted since.
 
 This is the design for the item already parked in two places:
 
-- [design-brief.md](../internals/design-brief.md) "Future": *"Console login
+- [Design brief](https://mnestor.github.io/ssoossh/internals/design-brief/) "Future": *"Console login
   PAM module: displays a code the user types into the web UI (machine needs
   server reachability, not a browser). Same four checks. Per-host server
   setting to disallow or group-restrict console logins, failing before a
   certificate is minted."*
-- [features.md](../guide/features.md) roadmap: *"Console-login PAM and
+- [How it works](https://mnestor.github.io/ssoossh/concepts/) roadmap: *"Console-login PAM and
   QR-code approval, for a machine with no browser in front of it."*
 
 **Depends on** [pam-principal-source.md](pam-principal-source.md), which
@@ -498,7 +498,7 @@ above, and it fails earlier than the brief asked for: before the request is
 created at all. What is left for the server is **disallow**, and it cannot
 rest on the hostname, which is a string an unauthenticated requester typed
 (the exact reasoning that got host certificates declined,
-`docs/project/decisions.md`). Do it on the source address instead, which the
+`https://mnestor.github.io/ssoossh/project/decisions/`). Do it on the source address instead, which the
 server observes, reusing the network machinery from
 [source-address-restrictions.md](source-address-restrictions.md):
 
@@ -721,7 +721,7 @@ expiry, and what the create response reports.
 certificate types ... not a per-type concept"*. That was true and stops
 being true here, so the comment moves with the code. This does not reopen
 the decision against splitting the approval and signing windows
-(`docs/project/decisions.md`, "Separate knobs for the approval window and
+(`https://mnestor.github.io/ssoossh/project/decisions/`, "Separate knobs for the approval window and
 the signing grace"): the reasoning there was that an operator cares about
 the total a client can hang, which is why the per-type knob is a
 `client_timeout` with the same derived shares, not an `approval_ttl`.
@@ -1056,8 +1056,8 @@ filled in.
 Read in full at `a009511`: `pam_ssoossh/*.go`, `pam_ssoossh/pam.go`,
 `pam_ssoossh/conversation.go`, `docs/pam.d-sudo.example`,
 `server/service/certtypepolicy.go`, `server/model/enums.go`,
-`server/model/certificate_request.go`, `docs/project/decisions.md`,
-`docs/internals/design-brief.md`.
+`server/model/certificate_request.go`, `https://mnestor.github.io/ssoossh/project/decisions/`,
+`https://mnestor.github.io/ssoossh/internals/design-brief/`.
 
 Read in part: `server/controller/certrequests.go` (route registration and
 the PAM/events handlers), `server/service/certrequest.go`
@@ -1119,7 +1119,7 @@ Specific claims and how each was checked:
 3. **Whether a shared operator account needs anything.** Several people
    legitimately logging into one console account is a `principals-map` and
    NSS-group question, host-side, and LDAP enrichment
-   (`docs/operations/ldap.md`) is parsed but not yet consumed. Worth
+   (`https://mnestor.github.io/ssoossh/operations/ldap/`) is parsed but not yet consumed. Worth
    confirming nothing server-side is needed once that lands.
 5. **Which QR encoder**, and whether vendoring a minimal one is preferable
    to a dependency, given this is a `.so` loaded into every authenticating

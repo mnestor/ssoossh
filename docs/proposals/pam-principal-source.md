@@ -68,7 +68,7 @@ transaction lands in the advisory field and the unauthenticated half lands
 in the load-bearing one.
 
 This contradicts the project's own stated model
-(`docs/internals/design-brief.md:83`):
+(`https://mnestor.github.io/ssoossh/internals/design-brief/:83`):
 
 > The certificate asserts identity; the host decides which local accounts
 > that maps to. This is what keeps "userX may become root here" from being
@@ -180,7 +180,7 @@ upgrade", the change needs, at minimum:
    `identity.Username` or an `OtherAccounts` entry match the local accounts
    they `sudo` as? The data is already in the users table.
 3. `LDAP enrichment`, which is the mechanism that fills `OtherAccounts`
-   (`docs/operations/ldap.md`), is parsed but not yet consumed. Until it is,
+   (`https://mnestor.github.io/ssoossh/operations/ldap/`), is parsed but not yet consumed. Until it is,
    `OtherAccounts` is empty for most deployments and `principals-map` is
    the only migration path. Worth confirming before picking a release.
 
@@ -201,7 +201,7 @@ already knows one of them.
 accounts with `req.Username` (directly or through a server-side map), is
 tighter but needs the server to know the host's mapping, which it
 deliberately does not: principal mapping is local to each host and nothing
-syncs it down (`docs/internals/design-brief.md`, "Principal mapping"). It
+syncs it down (`https://mnestor.github.io/ssoossh/internals/design-brief/`, "Principal mapping"). It
 would also fail closed in a way that is hard to diagnose, because the
 server would have to guess what the host's map says.
 
@@ -222,8 +222,8 @@ not require the server to model host-local state.
    actually will be.
 4. **Docs**: `docs/pam.d-sudo.example`'s `principals-map` entry stops being
    an optional convenience and becomes the normal case;
-   `docs/operations/deployment.md`'s PAM section gains the migration;
-   `docs/guide/features.md` gains the corrected description.
+   `https://mnestor.github.io/ssoossh/operations/install/`'s PAM section gains the migration;
+   `https://mnestor.github.io/ssoossh/concepts/` gains the corrected description.
 5. **Release note**, breaking, with the pre-flight.
 
 ## Testing
@@ -254,7 +254,7 @@ not require the server to model host-local state.
   comment stating the intent) and `:324-326` (the assertion).
 - The key ID split: `server/service/keyid.go:67` for the template,
   `:40` for `Username` being `identity.Username`.
-- The stated model: `docs/internals/design-brief.md:83`.
+- The stated model: `https://mnestor.github.io/ssoossh/internals/design-brief/:83`.
 - The consent-phishing note: `server/service/certrequest.go:721-725`. The
   `docs/security-review-2026-08-11.md` it cites is not in the tree.
 - Map semantics: `internal/principalsmap/principalsmap.go:294-305`.

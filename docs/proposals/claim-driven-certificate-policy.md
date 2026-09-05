@@ -5,7 +5,7 @@ sequencing below landed in one change: all six findings are closed, the
 condition grammar is in `server/service/policycondition.go`, the engine
 rework in `server/service/lifetimepolicy.go`, and the operator-facing
 semantics are documented in
-[operations/certificate-lifetime-policy.md](../operations/certificate-lifetime-policy.md),
+[Certificate policy](https://mnestor.github.io/ssoossh/operations/certificate-policy/),
 which is now the reference. This document is kept for the reasoning behind
 each decision, which the reference deliberately does not carry.
 
@@ -34,7 +34,7 @@ each decision, which the reference deliberately does not carry.
   thresholds belong in descending order — is discharged in the operations
   reference and the sample config.
 
-This extends [certificate-lifetime-policy.md](../operations/certificate-lifetime-policy.md),
+This extends [Certificate policy](https://mnestor.github.io/ssoossh/operations/certificate-policy/),
 which is implemented. Read that first: it establishes the engine, the
 precedence rules, and the narrowing-only invariant that this design works
 within.

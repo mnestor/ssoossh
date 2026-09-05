@@ -19,7 +19,7 @@ func isLifetimePolicyConfigured(p config.LifetimePolicy) bool {
 
 // lifetimePolicyEngine evaluates certificate lifetime and options based on
 // tiered identity conditions and source network restrictions — see
-// docs/operations/certificate-lifetime-policy.md.
+// https://mnestor.github.io/ssoossh/operations/certificate-policy/.
 type lifetimePolicyEngine struct {
 	// Parsed/validated policies per type. Each remains nil if no lifetime
 	// policy is configured for that type.
@@ -430,7 +430,8 @@ func matchSourceRule(rules []parsedSourceRule, sourceIP string) *parsedSourceRul
 	}
 
 	// Normalize IPv4-mapped IPv6 addresses to their IPv4 equivalent, so
-	// ::ffff:10.0.0.1 matches 10.0.0.0/8 — see docs/operations/certificate-lifetime-policy.md.
+	// ::ffff:10.0.0.1 matches 10.0.0.0/8 — see
+	// https://mnestor.github.io/ssoossh/operations/certificate-policy/.
 	addr = addr.Unmap()
 
 	var bestMatch *parsedSourceRule
@@ -484,9 +485,10 @@ func (e *lifetimePolicyEngine) policyFor(certType model.CertificateType) *parsed
 
 // validateStartupConfig checks that source-network policy is consistent with
 // the server's reverse-proxy configuration, logging warnings if a footgun is
-// detected (see docs/operations/certificate-lifetime-policy.md section "The footgun
-// this creates"). Called once at bootstrap, before policies are used to evaluate
-// requests.
+// detected (see
+// https://mnestor.github.io/ssoossh/operations/certificate-policy/ section
+// "The footgun this creates"). Called once at bootstrap, before policies are
+// used to evaluate requests.
 func (e *lifetimePolicyEngine) validateStartupConfig(trustedProxies []string) {
 	// Check all per-type policies.
 	for _, policy := range []*parsedLifetimePolicy{e.userPolicy, e.servicePolicy, e.pamPolicy, e.consolePolicy} {
@@ -501,7 +503,7 @@ func (e *lifetimePolicyEngine) validateStartupConfig(trustedProxies []string) {
 			slog.Warn("source-network policy configured without http.trusted_proxies — " +
 				"all requests will appear to come from the reverse proxy's address, " +
 				"silently landing all clients in the most generous tier. " +
-				"See docs/operations/certificate-lifetime-policy.md section 'The footgun this creates'.")
+				"See https://mnestor.github.io/ssoossh/operations/certificate-policy/ section 'The footgun this creates'.")
 		}
 	}
 }
