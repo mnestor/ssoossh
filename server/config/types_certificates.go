@@ -278,7 +278,7 @@ type CertOptionsPAM struct {
 	// ValidDuration should be seconds, not hours: a PAM certificate is
 	// validated once, in-process, and discarded — it never enters an agent
 	// and is never reused. Pick this together with the client's skew
-	// tolerance (see pam_ssoossh/checks.go, check 4).
+	// tolerance (see checks.go in github.com/mnestor/ssoossh-pam, check 4).
 	ValidDuration time.Duration `mapstructure:"valid_duration,string" default:"30s"`
 
 	// Extensions should default to empty. permit-pty and friends are

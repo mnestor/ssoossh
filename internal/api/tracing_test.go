@@ -31,9 +31,10 @@ func traceLogger(buf *bytes.Buffer) *slog.Logger {
 	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: tracelog.LevelTrace}))
 }
 
-// pam_ssoossh is loaded into sudo and sshd, where anything written to stdout
-// or stderr corrupts the host process's own output. It builds its API client
-// without a Logger and routes its own logging to syslog, so this package must
+// pam_ssoossh (github.com/mnestor/ssoossh-pam) is loaded into sudo and sshd,
+// where anything written to stdout or stderr corrupts the host process's own
+// output. It builds its API client without a Logger and routes its own
+// logging to syslog, so this package must
 // emit nothing at all in that configuration — including via slog.Default(),
 // whose built-in handler writes to stderr.
 func TestNewClient_ShouldEmitNothingWhenNoLoggerIsConfigured(t *testing.T) {

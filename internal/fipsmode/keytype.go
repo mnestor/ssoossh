@@ -1,8 +1,9 @@
-// Package fipsmode centralizes FIPS 140-3 policy shared by client, server,
-// and pam_ssoossh: which SSH key algorithms are FIPS-approved, what to
-// default to, and whether FIPS mode itself is in effect. It exists because
-// client, server, and pam_ssoossh must not import each other directly, but
-// all three need this logic.
+// Package fipsmode centralizes FIPS 140-3 policy shared by client and
+// server: which SSH key algorithms are FIPS-approved, what to default to,
+// and whether FIPS mode itself is in effect. It exists because client and
+// server must not import each other directly, but both need this logic.
+// pam_ssoossh (github.com/mnestor/ssoossh-pam) applies the same policy from
+// its own module.
 package fipsmode
 
 import "slices"

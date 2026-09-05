@@ -39,8 +39,11 @@ uses `rtk` to minimize token usage in bash commands.
 - Node.js 26+, pnpm 11+
 - golangci-lint
 - Docker, for `make semgrep`. The e2e suite does not need it.
-- libpam headers, only if you touch `pam_ssoossh/`. The devcontainer already
-  has them; on a bare host run `scripts/build-env-for-pam.sh`.
+
+The `pam_ssoossh` PAM module is a separate project,
+[mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam); its build
+toolchain is not needed here. Its documentation is still maintained in this
+repository under `user-docs/`.
 
 `make help` lists every target with a one-line description. Run it first if
 you are not sure what exists.
@@ -52,7 +55,6 @@ you are not sure what exists.
 | `/cmd/` | binary entrypoints (client, server, PAM module) |
 | `/client/` | SSH client code (Go) |
 | `/server/` | server code (Go) |
-| `/pam_ssoossh/` | PAM module (C + Go cgo) |
 | `/internal/` | shared code (Go) |
 | `/frontend/` | web UI (SvelteKit, TypeScript) |
 | `/docs/` | documentation |
@@ -109,7 +111,7 @@ and macOS builds. It is not a merge gate: `pre-pr` is.
 ## Make targets
 
 The curated set `make help` prints. Per-component variants (`test-server`,
-`test-client`, `test-pam`, `test-internal`, and the matching `lint-*`) and the
+`test-client`, `test-internal`, and the matching `lint-*`) and the
 internal check halves (`types-check`, `man-check`, and friends, all reached
 through `check-generated`) are deliberately left out of both.
 
@@ -130,7 +132,6 @@ through `check-generated`) are deliberately left out of both.
 | `make linux` | Snapshot build for linux/amd64 only |
 | `make binaries` | Snapshot build for every release target |
 | `make server-linux-build-local` | Build `ssoosshd` for a local `docker build` |
-| `make pam` | Build `pam_ssoossh.so` (cgo, needs libpam headers) |
 | `make frontend-clean` | Remove the built web UI |
 
 ### Test
@@ -176,7 +177,6 @@ before running it. That is why it is deliberately absent from `ci-required`.
 | `make lint` | golangci-lint over the whole module (merge gate) |
 | `make lint-tagged` | golangci-lint over the build-tagged suites `lint` cannot see |
 | `make lint-cross` | golangci-lint the Windows and macOS builds `lint` cannot see |
-| `make lint-pam` | golangci-lint over `pam_ssoossh` (needs cgo) |
 | `make frontend-lint` | `prettier --check` and eslint over the frontend |
 | `make frontend-check` | `svelte-check` the frontend against `tsconfig.json` |
 | `make actionlint` | Lint the GitHub Actions workflow files |
@@ -227,8 +227,8 @@ The checks compare sha256 hashes rather than `git diff`, deliberately:
 pass while reporting nothing.
 
 `gendocs` covers the `.1` and `.8` pages generated from cobra. The `.5`
-config-format pages (`ssoossh.yaml.5`, `ssoosshd.yaml.5`) and
-`pam_ssoossh.8` are hand-written and outside that set.
+config-format pages (`ssoossh.yaml.5`, `ssoosshd.yaml.5`) are hand-written
+and outside that set.
 
 ### Security and CI mirrors
 
@@ -264,12 +264,8 @@ plain command report success over code it never looked at.
 | **Build tags** | `lint` passes none; `test` builds none | A suite behind `e2e`, `resilience`, `load`, `dbparity`, `softhsm`, or `natsintegration` can fail to compile outright while both report success | `lint-tagged` |
 | **GOOS** | `lint` runs with the host's | A G115 overflow bug sat in `client/config/policy_windows.go`, on a value an admin sets through Group Policy | `lint-cross` |
 | **cgo** | golangci-lint cannot see into a cgo file | Every symbol referenced only from one reports as unused. The devcontainer defaults `CGO_ENABLED=0` | Explicit `CGO_ENABLED=1` per recipe |
-| **The `pam` tag** | `./...` and coverage both | An entire package contributes nothing, silently | `test-pam`, `lint-pam`, `cover-ci`'s second run |
 
-`cover-ci` is two runs, not one: every file in `pam_ssoossh/` is behind
-`//go:build pam`, so a plain `./...` compiles that package to nothing and PAM
-contributes neither numerator nor denominator. `cover-floors` ratchets **per
-package**, not on one module number, because a module total moves for
+`cover-floors` ratchets **per package**, not on one module number, because a module total moves for
 unrelated reasons and hides exactly the regression it exists to catch. Raising
 a floor is routine; lowering one is a deliberate edit to `.coverage-floors`
 that shows up in review.
@@ -330,17 +326,17 @@ marking them done.
    history is clear.
 
 Expect the first `pre-pr` run to take a while: `ci-required` builds the web
-UI, runs the whole unit suite with coverage, builds the PAM module under cgo,
-and runs the frontend lint, typecheck, and semgrep scan.
+UI, runs the whole unit suite with coverage, and runs the frontend lint,
+typecheck, and semgrep scan.
 
 ### What CI blocks on
 
 | Workflow | Blocking | Notes |
 | --- | --- | --- |
-| `lint` | yes | Go lint: the host build, pam, and the Windows and macOS builds. Plus frontend lint and svelte-check, actionlint, `.gitignore` invariants |
+| `lint` | yes | Go lint: the host build and the Windows and macOS builds. Plus frontend lint and svelte-check, actionlint, `.gitignore` invariants |
 | `codecover` | yes | Unit suite plus the Codecov upload |
 | `build` | yes | On PRs: generated-artifact staleness plus a single-target snapshot build. The full signed multi-platform pipeline runs on tags, weekly, and manual dispatch |
-| `e2e` | yes | Four tiers. sqlite only except tier 1, which runs both backends |
+| `e2e` | yes | Three tiers plus the multi-signer job. sqlite only except tier 1, which runs both backends |
 | `client-matrix` | yes | macOS and Windows client and agent tests |
 | `resilience` | yes | Resilience and accessibility. The load job is weekly, not per-PR |
 | `security` | partly | semgrep blocks; govulncheck and pnpm audit report to a PR comment |
@@ -379,12 +375,11 @@ checks as skipped. Skipped satisfies branch protection; it is not a failure.
 
 | Requirement | Needed by | Why |
 | --- | --- | --- |
-| **cgo on** | `build`, `test-server`, `test-internal`, `test-race`, `cover*`, `lint`, `lint-pam`, `pam`, `gendocs`, tagged suites | `server/signer`'s HSM key source reaches libpkcs11 through crypto11; without it the server packages do not build at all. Set per-recipe to keep the rest of the tree cgo-free |
+| **cgo on** | `build`, `test-server`, `test-internal`, `test-race`, `cover*`, `lint`, `gendocs`, tagged suites | `server/signer`'s HSM key source reaches libpkcs11 through crypto11; without it the server packages do not build at all. Set per-recipe to keep the rest of the tree cgo-free |
 | **cgo off** | `lint-cross` only | There is no cross-compiling cgo toolchain, which is also why its scope is a package list rather than `./...` |
 | **Node, pnpm** | `frontend`, `frontend-*`, `fmt`, `pnpm-audit` | The web UI toolchain |
 | **Frontend bundle** | Anything embedding or testing the UI | `server/frontend` embeds it. A stale bundle makes a browser test assert against whenever the UI was last built, presenting as a selector timeout indistinguishable from a wrong selector |
 | **Docker** | `semgrep` only | Pinned image, same as CI |
-| **libpam headers** | `pam`, `test-pam`, `lint-pam` | The devcontainer has them; on a bare host run `scripts/build-env-for-pam.sh` |
 | **Host state + sudo** | `test-e2e` tier 3 | Creates and unlocks a local account, runs sshd as root |
 | **softhsm2 + opensc** | `test-hsm` | A real PKCS#11 token |
 | **goreleaser** | `linux`, `binaries`, `all` | Snapshot builds |
@@ -396,7 +391,6 @@ Testing plans and design records live in the repository under `docs/dev/`.
 | Document | What it covers |
 | --- | --- |
 | [e2e-testing-plan.md](https://github.com/mnestor/ssoossh/blob/main/docs/dev/e2e-testing-plan.md) | The end-to-end merge gate: login, browser approval, certificate, `ssh` |
-| [pam-e2e-testing.md](https://github.com/mnestor/ssoossh/blob/main/docs/dev/pam-e2e-testing.md) | End-to-end testing for `pam_ssoossh` |
 | [cross-platform-testing.md](https://github.com/mnestor/ssoossh/blob/main/docs/dev/cross-platform-testing.md) | Testing the client across macOS, Linux, and Windows |
 | [testing-strategy-assessment.md](https://github.com/mnestor/ssoossh/blob/main/docs/dev/testing-strategy-assessment.md) | What further test investment would and would not buy |
 | [test-coverage-gap-map.md](https://github.com/mnestor/ssoossh/blob/main/docs/dev/test-coverage-gap-map.md) | Where coverage is thin and why |

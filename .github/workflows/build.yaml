@@ -66,8 +66,8 @@ jobs:
   # What a PR gets instead of the release pipeline: the checks that catch a
   # committed artifact going stale, plus proof that the tree still builds
   # through goreleaser. One target (linux/amd64) rather than four platforms,
-  # no PAM containers, and no 1Password/GPG/notarization secrets -- a PR
-  # branch does not need the signing key to prove the config parses.
+  # and no 1Password/GPG/notarization secrets -- a PR branch does not need
+  # the signing key to prove the config parses.
   build-check:
     name: build check
     needs: changes
@@ -257,32 +257,6 @@ jobs:
             echo "✗ GLIBC version $GLIBC_MAX is newer than 2.28 floor"
             exit 1
           fi
-
-      # Both arches' PAM .so's dynamically link the target's real
-      # libpam.so.0 (see Dockerfile.runner) rather than statically
-      # embedding libpam.a -- a headers-only foreign-arch install makes
-      # that fallback happen silently, so this checks the actual artifact
-      # instead of trusting that the build not erroring means it linked
-      # correctly.
-      - name: Verify PAM modules link libpam dynamically and hold their glibc floor
-        shell: bash
-        run: |
-          set -euo pipefail
-          declare -A FLOORS=([amd64]=2.17 [arm64]=2.26)
-          for ARCH in amd64 arm64; do
-            SO="dist/linux-pam-build-${ARCH}_linux_${ARCH}*/pam_ssoossh.so"
-            SO=$(ls $SO)
-            if ! objdump -p "$SO" | grep -q 'NEEDED.*libpam\.so\.0'; then
-              echo "✗ $SO does not dynamically link libpam.so.0 (statically linked libpam.a?)"
-              exit 1
-            fi
-            GLIBC_MAX=$(objdump -T "$SO" | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -1 | cut -d_ -f2)
-            if ! printf '%s\n%s\n' "$GLIBC_MAX" "${FLOORS[$ARCH]}" | sort -CV; then
-              echo "✗ $SO needs GLIBC $GLIBC_MAX, newer than the ${FLOORS[$ARCH]} floor"
-              exit 1
-            fi
-            echo "✓ $SO: dynamically linked, GLIBC floor $GLIBC_MAX <= ${FLOORS[$ARCH]}"
-          done
 
       # Both arches, not just amd64: a toolchain that quietly drops -dynamic
       # (see .goreleaser.yml) drops it for arm64 too, and an Alpine package

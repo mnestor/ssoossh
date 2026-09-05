@@ -98,7 +98,7 @@ worktree: ## Create a ready-to-use agent worktree: make worktree NAME=<name> [BA
 
 ##@ Build
 
-.PHONY: all frontend build binaries linux pam frontend-clean
+.PHONY: all frontend build binaries linux frontend-clean
 all: frontend binaries
 
 # Build the web UI into server/frontend/dist, which server/frontend embeds
@@ -151,27 +151,15 @@ server-linux-build-local: $(FRONTEND_DIST) ## Build ssoosshd for a local `docker
 	mkdir -p linux/$(shell go env GOARCH)
 	CGO_ENABLED=1 go build -tags=nomsgpack $(LDFLAGS) -o linux/$(shell go env GOARCH)/ssoosshd ./cmd/ssoosshd
 
-# pam_ssoossh needs libpam headers and cgo, both installed by
-# this repo's .github/docker/Dockerfile.devcontainer. On a bare host,
-# run scripts/build-env-for-pam.sh first.
-# CGO_ENABLED is set here rather than globally so the rest of the tree keeps
-# building cgo-free.
-# -trimpath matches the release build (.goreleaser.yml): it keeps the
-# absolute build path out of the module and takes ~66 KB off .gopclntab,
-# which matters here because every byte of this .so is mapped into sudo.
-pam: ## Build pam_ssoossh.so (cgo, needs libpam headers)
-	mkdir -p .build
-	CGO_ENABLED=1 go build -trimpath -tags=pam -buildmode=c-shared -o .build/pam_ssoossh.so ./pam_ssoossh/
-
 frontend-clean: ## Remove the built web UI
 	rm -rf server/frontend/dist
 
 ##@ Test
 
-.PHONY: test test-server test-client test-pam test-internal test-race cover cover-ci frontend-test
+.PHONY: test test-server test-client test-internal test-race cover cover-ci frontend-test
 # server/frontend embeds server/frontend/dist. The unit suite includes tests
 # that assert on real UI assets, so the UI has to exist first.
-test: $(FRONTEND_DIST) test-server test-client test-pam test-internal ## Unit tests per component, with coverage
+test: $(FRONTEND_DIST) test-server test-client test-internal ## Unit tests per component, with coverage
 
 # server and internal need cgo for the same reason `build` does: the HSM
 # key source binds libpkcs11. client has no such dependency.
@@ -180,9 +168,6 @@ test-server:
 
 test-client:
 	$(call TESTCOMPONENT,client,0)
-
-test-pam:
-	CGO_ENABLED=1 go test -tags=pam ./pam_ssoossh/...
 
 test-internal:
 	$(call TESTCOMPONENT,internal,1)
@@ -201,14 +186,8 @@ cover: $(FRONTEND_DIST) ## Coverage HTML report at .coverage/coverage.html
 
 # Mirrors codecover.yaml's test run (minus the Codecov upload, which needs a
 # token) -- it is what the runner actually executes.
-#
-# Two runs, because ./... cannot see pam_ssoossh: every file there is behind
-# //go:build pam, so the first run compiles the package to nothing and PAM
-# contributes neither numerator nor denominator. Codecov takes both profiles;
-# they cover disjoint packages, so nothing is double counted.
 cover-ci: $(FRONTEND_DIST) ## Coverage exactly as codecover.yaml runs it
 	CGO_ENABLED=1 go test -v -covermode=atomic -coverprofile=coverage.txt ./...
-	CGO_ENABLED=1 go test -v -tags=pam -covermode=atomic -coverprofile=coverage-pam.txt ./pam_ssoossh/...
 
 # The ratchet. Coverage regressions are the one finding in the audit that
 # was about direction rather than position: client/cmd fell 88.7% -> 76.6%
@@ -288,7 +267,7 @@ test-migration: ## SQLite/Postgres migration parity checks
 
 ##@ Format and lint
 
-.PHONY: fmt fmt-check lint-fix lint lint-cross lint-server lint-client lint-pam lint-internal
+.PHONY: fmt fmt-check lint-fix lint lint-cross lint-server lint-client lint-internal
 .PHONY: frontend-lint frontend-check actionlint check-gitignore
 # `go list ./...` rather than `.`, and it matters: a git worktree checked out
 # under .claude/worktrees/ is a nested module, so plain `gofmt -w .` would
@@ -312,23 +291,19 @@ fmt-check: ## Fail if any Go file is not gofmt-clean
 # -- godot (comment full stops), the gofmt/goimports formatters, and the
 # interface{} -> any rewrite -- and there is no pre-commit hook in this repo
 # to catch them, so without this they fail the merge gate instead.
-# CGO_ENABLED=1 for the same reason lint-pam needs it: server/signer's HSM
-# key source imports crypto11, which golangci-lint's type-checker cannot
-# resolve without cgo.
+# CGO_ENABLED=1 because server/signer's HSM key source imports crypto11,
+# which golangci-lint's type-checker cannot resolve without cgo.
 lint-fix: ## Auto-fix every lint finding that golangci-lint can fix
 	CGO_ENABLED=1 golangci-lint run --fix ./...
-	# Second pass for pam_ssoossh: without the tag and cgo, golangci-lint
-	# cannot see those files at all, so the first pass silently skips them.
-	CGO_ENABLED=1 golangci-lint run --fix --build-tags pam ./pam_ssoossh/...
 
 lint: ## golangci-lint over the whole module (merge gate)
 	CGO_ENABLED=1 golangci-lint run ./...
 
 # `lint` above passes no build tags, so every file behind e2e, resilience,
 # load, dbparity or softhsm is invisible to it -- which is most of test/.
-# Only lint-pam passed a tag before this, and only for PAM. Running it over
-# the tagged suites for the first time surfaced findings that had been
-# accumulating unseen in the one part of the tree nobody linted.
+# Running it over the tagged suites for the first time surfaced findings
+# that had been accumulating unseen in the one part of the tree nobody
+# linted.
 #
 # One invocation per tag set rather than a single combined one: the tags
 # select mutually exclusive views of the tree in places, so a combined run
@@ -370,12 +345,6 @@ lint-server:
 
 lint-client:
 	golangci-lint run ./client/...
-
-# CGO_ENABLED=1 is required here: golangci-lint's type-checker cannot see
-# into a cgo file (pam.go, pam_ssoossh.go) without it, and with those files
-# invisible every symbol only referenced from them reports as unused.
-lint-pam: ## golangci-lint over pam_ssoossh (needs cgo)
-	CGO_ENABLED=1 golangci-lint run --build-tags pam ./pam_ssoossh/...
 
 lint-internal:
 	golangci-lint run ./internal/...
@@ -519,8 +488,8 @@ gendocs: ## Regenerate man pages from the cobra commands
 # always did. Pinning the literal name would have left seventeen of those
 # ungated — the hole this whole change closes, reopened one level down.
 #
-# pam_ssoossh.8 and the .5 config-format pages are hand-written and are
-# deliberately outside this set; a gendocs run leaves them byte-identical.
+# The .5 config-format pages are hand-written and are deliberately outside
+# this set; a gendocs run leaves them byte-identical.
 GENERATED_MAN := docs/man/ssoossh*.1 docs/man/ssoosshd*.8
 
 STALE_MAN := Man pages are stale: a cobra command's name, description, or \
@@ -644,7 +613,7 @@ security: govulncheck pnpm-audit semgrep ## Run every security scanner
 # reverses its up; it was wired into no workflow whatsoever. The e2e tier-1
 # matrix proves the app works on both backends, which is a different claim
 # from the schemas agreeing.
-ci-required: fmt-check check-gitignore lint lint-tagged lint-cross frontend-lint frontend-check frontend-test actionlint check-generated build pam test-pam lint-pam cover-ci cover-floors test-migration semgrep ## Every blocking check CI runs
+ci-required: fmt-check check-gitignore lint lint-tagged lint-cross frontend-lint frontend-check frontend-test actionlint check-generated build cover-ci cover-floors test-migration semgrep ## Every blocking check CI runs
 
 # Advisory: govulncheck and pnpm audit report to the PR summary rather than
 # blocking, because both can surface a dependency you cannot fix in the same

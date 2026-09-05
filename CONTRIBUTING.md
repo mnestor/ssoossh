@@ -48,10 +48,9 @@ Fixes #42
 
 ### Layout
 
-- `/cmd/` — binary entrypoints (client, server, PAM module)
+- `/cmd/` — binary entrypoints (client, server)
 - `/client/` — SSH client code (Go)
 - `/server/` — SSH server code (Go)
-- `/pam_ssoossh/` — PAM module (C + Go cgo)
 - `/internal/` — shared code (Go)
 - `/frontend/` — web UI (SvelteKit, TypeScript)
 - `/docs/` — documentation
@@ -63,8 +62,11 @@ Fixes #42
 - Node.js 26+, pnpm 11+
 - golangci-lint
 - Docker (for `make semgrep`; the e2e suite does not need it)
-- libpam headers, only if you touch `pam_ssoossh/`. The devcontainer already
-  has them; on a bare host run `scripts/build-env-for-pam.sh`.
+
+The `pam_ssoossh` PAM module is a separate project,
+[mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam); its build
+toolchain is not needed here. Its documentation is still maintained in this
+repository under `user-docs/`.
 
 `make help` lists every target with a one-line description. Run it first if
 you are not sure what exists.
@@ -170,15 +172,15 @@ and fail the merge gate over punctuation.
 | `make ci-required` | every blocking CI check | The actual gate |
 
 Expect the first run to take a while: `ci-required` builds the web UI, runs
-the whole unit suite with coverage, builds the PAM module under cgo, and runs
-the frontend lint, typecheck, and semgrep scan.
+the whole unit suite with coverage, and runs the frontend lint, typecheck,
+and semgrep scan.
 
 If you want to run one piece at a time, `make ci-required` is the list:
 
 ```
 fmt-check check-gitignore lint lint-tagged lint-cross frontend-lint
-frontend-check frontend-test actionlint check-generated build pam test-pam
-lint-pam cover-ci cover-floors test-migration semgrep
+frontend-check frontend-test actionlint check-generated build cover-ci
+cover-floors test-migration semgrep
 ```
 
 **Verify with `make pre-pr`, never with a hand-assembled subset.** `make lint`
@@ -213,10 +215,10 @@ the differences that have actually broken a build.
 
 | Workflow | Blocking | Notes |
 | --- | --- | --- |
-| `lint` | yes | Go lint: the host build, pam, and the Windows and macOS builds. Plus frontend lint and svelte-check, actionlint, .gitignore invariants |
+| `lint` | yes | Go lint: the host build and the Windows and macOS builds. Plus frontend lint and svelte-check, actionlint, .gitignore invariants |
 | `codecover` | yes | Unit suite plus the Codecov upload |
 | `build` | yes | On PRs: generated-artifact staleness plus a single-target snapshot build. The full signed multi-platform pipeline runs on tags, weekly, and manual dispatch |
-| `e2e` | yes | Four tiers. sqlite only except tier 1, which runs both backends |
+| `e2e` | yes | Three tiers plus the multi-signer job. sqlite only except tier 1, which runs both backends |
 | `client-matrix` | yes | macOS and Windows client and agent tests |
 | `resilience` | yes | Resilience and accessibility. The load job is weekly, not per-PR |
 | `security` | partly | semgrep blocks; govulncheck and pnpm audit report to a PR comment |

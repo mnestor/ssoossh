@@ -314,10 +314,12 @@ for how NATS enables running the signer in a separate process.
 
 ## 8. PAM: `sudo` and `su`
 
-[pam.d-sudo.example](../pam.d-sudo.example) documents every module argument
-in detail (`server`, `trusted-ca-file`, `debug`, `insecure-skip-verify`,
+The [pam_ssoossh reference](https://mnestor.github.io/ssoossh/hosts/pam/reference/) documents every module argument in detail
+(`server`, `trusted-ca-file`, `debug`, `insecure-skip-verify`,
 `skew-tolerance`, `timeout`, `principals-map`); read it before editing a
-real PAM stack. This section is the operational wrapper around it.
+real PAM stack. This section is the operational wrapper around it. The module
+itself ships from
+[github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam).
 
 ### The lockout warning
 
@@ -335,7 +337,7 @@ which is also how you'd normally fix a PAM mistake.
 
 ### Stack configuration
 
-Add the line from [pam.d-sudo.example](../pam.d-sudo.example) to the `auth`
+Add the line from the [sudo and su guide](https://mnestor.github.io/ssoossh/hosts/pam/sudo/) to the `auth`
 group in `/etc/pam.d/sudo` (and `/etc/pam.d/su`, if wanted), above the
 existing `pam_unix.so` line:
 

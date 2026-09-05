@@ -7,9 +7,11 @@
 // # Accepted format
 //
 // The file is YAML, but this package parses a fixed subset of it by hand
-// rather than linking a YAML library: pam_ssoossh is a c-shared module
-// mapped into sudo and sshd, and gopkg.in/yaml.v3 cost 549 KB of the
-// module's size to read a file with exactly one shape. The subset is:
+// rather than linking a YAML library: pam_ssoossh
+// (github.com/mnestor/ssoossh-pam) is a c-shared module mapped into sudo
+// and sshd, and gopkg.in/yaml.v3 cost 549 KB of the module's size to read a
+// file with exactly one shape. The format is shared with that module, so
+// this subset is a cross-repository contract. The subset is:
 //
 //	# a comment
 //	alice:            # an account, at the start of the line

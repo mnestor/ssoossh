@@ -208,11 +208,6 @@ var (
 	serverArchiveIDs = []string{"linux-server-archives", "linux-server-musl-archives"}
 )
 
-// pamPackageIDs are the ssoossh-pam artifacts, one nfpm id per arch
-// (linux-pam-build-amd64/-arm64 in .goreleaser.yml), each emitting both a
-// deb and an rpm from the same contents list.
-var pamPackageIDs = []string{"pam-amd64", "pam-arm64"}
-
 // should ship the mail templates the server binary embeds, so an operator
 // who installed a package — and has no source tree — can copy one out as
 // the starting point for a mail.template_dir override.
@@ -327,15 +322,11 @@ var manOwners = map[string]manPageOwner{
 	"ssoossh": {packages: []string{"client"}},
 	// The server's root and per-subcommand pages, plus its config page.
 	"ssoosshd": {packages: serverPackageIDs},
-	// The PAM module's own page.
-	"pam_ssoossh": {packages: pamPackageIDs},
 }
 
 // ownerFor returns the owner key for a man page filename.
 func ownerFor(name string) string {
 	switch {
-	case strings.HasPrefix(name, "pam_ssoossh"):
-		return "pam_ssoossh"
 	// Checked before "ssoossh": every server page name starts with the
 	// client's prefix too, so the order here is the whole discrimination.
 	case strings.HasPrefix(name, "ssoosshd"):
@@ -427,10 +418,10 @@ func TestPackagesShouldShipEveryManPageTheyOwn(t *testing.T) {
 
 // should put every man page in every real release archive. Unlike the
 // packages, archives are not split by owner: nothing owns a path inside a
-// tarball, so there is no co-installation hazard, and the pam page belongs
-// there too. "Real" excludes formats: binary entries (pam-binaries) --
-// goreleaser's raw binary format packages only the one binary, with no
-// files: list at all, so it structurally cannot carry docs/man alongside it.
+// tarball, so there is no co-installation hazard. "Real" excludes formats:
+// binary entries -- goreleaser's raw binary format packages only the one
+// binary, with no files: list at all, so it structurally cannot carry
+// docs/man alongside it.
 func TestArchivesShouldShipEveryManPage(t *testing.T) {
 	t.Parallel()
 

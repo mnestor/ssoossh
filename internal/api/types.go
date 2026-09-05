@@ -1,8 +1,9 @@
-// Package api is the ssoosshd HTTP API client shared by client and
-// pam_ssoossh (neither may import the other or server/ directly — see
-// docs/internals/invariants.md on package boundaries; this is the internal/
-// home for what they share). Built directly on net/http — see HTTPClient
-// for why that matters to the size of pam_ssoossh.
+// Package api is the ssoosshd HTTP API client used by client/, which may
+// not import server/ directly — see docs/internals/invariants.md on package
+// boundaries; this is the internal/ home for what the API consumers share.
+// Built directly on net/http — see HTTPClient for why that matters to
+// pam_ssoossh (github.com/mnestor/ssoossh-pam), which speaks the same API
+// from its own module.
 //
 // The wire shapes themselves (request/response JSON bodies) live in
 // internal/apitypes, not here, so server/controller can share the exact

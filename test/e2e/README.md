@@ -25,7 +25,6 @@ Run one tier (or one test) with `-run`:
 go test -tags=e2e -run TestLogin ./test/e2e/...    # tier 1, wire
 go test -tags=e2e -run TestSSH ./test/e2e/...      # tier 3, sshd
 go test -tags=e2e -run TestApproval ./test/e2e/... # tier 2, browser
-go test -tags=e2e -run TestPAMStack ./test/e2e/... # tier 3, pam
 ```
 
 Requires a built web UI (`make frontend`) — the harness builds the
@@ -39,12 +38,10 @@ Don't — and `make test-e2e` now stops you, by taking an flock on
 
 Worktrees isolate the filesystem, not the host, and this suite reaches the
 host in several places: the `ssoossh-e2e` local account, `sshd` under sudo,
-PAM service files in `/etc/pam.d`, and container ports. Those are now
-individually collision-safe — PAM service names carry a pid and a counter,
-NATS ports are allocated rather than hardcoded, and the account creation
-tolerates losing the race — but the lock is the belt to those braces, because
-the interference used to be silent rather than loud: two runs sharing a PAM
-service file meant one run authenticating against the other's server.
+and container ports. Those are now individually collision-safe — NATS ports
+are allocated rather than hardcoded, and the account creation tolerates
+losing the race — but the lock is the belt to those braces, because the
+interference used to be silent rather than loud.
 
 `make test-e2e-unlocked` skips the lock if you genuinely want a parallel run.
 CI never goes through either target — `e2e.yaml` invokes `gotestsum` on
@@ -60,12 +57,10 @@ Needs `openssh-server` installed and passwordless `sudo`. It's idempotent —
 safe to run repeatedly — but it is a real system-account change, not a
 sandboxed one.
 
-`TestPAMStack_*` (harness/pam.go) builds `pam_ssoossh.so` (cgo; needs `gcc`
-and `libpam0g-dev`), compiles `pam_ssoossh/testing/pamtest.c`, and writes a
-dedicated `/etc/pam.d/ssoossh-e2e-pam-*` service via `sudo` (removed again
-in cleanup). The real `sudo`/`su` stacks are never touched, and the module
-is loaded by absolute path from a temp directory — nothing is installed
-into the system module directory.
+There is no PAM tier here. `pam_ssoossh` is a separate project,
+[github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam), and
+drives its own PAM stack against a `ssoosshd`. What this suite covers of that
+flow is the server side: `cert_options.pam` issuance and narrowing, at tier 1.
 
 ## Writing selectors (tier 2)
 

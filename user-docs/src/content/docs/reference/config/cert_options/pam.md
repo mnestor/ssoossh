@@ -132,7 +132,7 @@ Passes when at least one listed condition passes. Listed conditions may not them
 
 `duration`, default `30s`
 
-Should be seconds, not hours: a PAM certificate is validated once, in-process, and discarded — it never enters an agent and is never reused. Pick this together with the client's skew tolerance (see pam_ssoossh/checks.go, check 4).
+Should be seconds, not hours: a PAM certificate is validated once, in-process, and discarded — it never enters an agent and is never reused. Pick this together with the client's skew tolerance (see checks.go in github.com/mnestor/ssoossh-pam, check 4).
 
 ```yaml
 cert_options:

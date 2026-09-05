@@ -194,7 +194,8 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates, dec
 	// localAuthPrincipals returns the approver's selection for PAM and
 	// console requests, or every account they hold when nothing was
 	// selected. The module names one local account; pam_ssoossh's check 3
-	// (pam_ssoossh/checks.go) then matches the certificate's principals
+	// (checks.go in github.com/mnestor/ssoossh-pam) then matches the
+	// certificate's principals
 	// against it, directly or through the host's principals-map. The
 	// approver picks which of their accounts to put in the certificate for
 	// that match; the all-held default keeps direct API callers that send

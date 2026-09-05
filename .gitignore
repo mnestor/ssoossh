@@ -57,8 +57,6 @@ yarn-error.log*
 # goreleaser, and the macOS signing tool it shells out to
 /dist/
 /quill
-# `make pam`: pam_ssoossh.so plus the cgo header goreleaser generates
-/.build/
 
 # Local runtime state and config. Named exactly, not globbed: `ssoossh*.yaml`
 # would swallow any sample or example config added later. Name local variants

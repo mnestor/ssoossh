@@ -83,7 +83,7 @@ deployment can configure either, both, or neither.
 
 | Piece | Where | State |
 | --- | --- | --- |
-| Client reports interface addresses | `client/cmd/ssh_login.go:306`, `pam_ssoossh/auth.go:69` | `api.LocalInterfaceAddresses()`, `ssh login` and PAM only |
+| Client reports interface addresses | `client/cmd/ssh_login.go:306`, `auth.go:69` in github.com/mnestor/ssoossh-pam | `api.LocalInterfaceAddresses()`, `ssh login` and PAM only |
 | `service enroll` reports nothing | `client/cmd/service_enroll.go:73` | Sends `api.RequestedOptions{}` |
 | Interface prefix length discarded | `internal/api/localaddrs.go:65` | `ipNet.IP.String()`, the mask is in hand and dropped |
 | Claimed addresses normalized and stored | `server/service/certrequest.go:302-305` | Link-local dropped, deduped, observed `SourceIP` unioned in |

@@ -9,7 +9,7 @@ there is no separate sample to drift from them:
 
 - [server/config/defaults.yaml](../../server/config/defaults.yaml): full server reference
 - [client/config/defaults.yaml](../../client/config/defaults.yaml): full client reference
-- [pam.d-sudo.example](../pam.d-sudo.example): annotated PAM stack
+- [pam_ssoossh reference](https://mnestor.github.io/ssoossh/hosts/pam/reference/): every PAM module argument
 
 For the operational procedures around these settings (generating the CA
 key, systemd, provider setup, the PAM lockout warning), see
@@ -385,8 +385,8 @@ auth  sufficient  pam_ssoossh.so  server=https://ssoosshd.example.com  trusted-c
 `trusted-ca-file` is the same authorized_keys-format CA public key used
 for `TrustedUserCAKeys`. Module arguments (`server`, `trusted-ca-file`,
 `debug`, `insecure-skip-verify`, `skew-tolerance`, `timeout`,
-`principals-map`) are documented in
-[pam.d-sudo.example](../pam.d-sudo.example).
+`principals-map`) are documented in the
+[pam_ssoossh reference](https://mnestor.github.io/ssoossh/hosts/pam/reference/).
 
 **Before editing a real PAM stack, read the lockout warning and the
 `sufficient` vs `required` trade-off in

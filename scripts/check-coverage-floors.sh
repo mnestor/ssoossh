@@ -30,14 +30,7 @@ fi
 if [[ -z "$PROFILE" ]]; then
     PROFILE="$(mktemp)"
     trap 'rm -f "$PROFILE"' EXIT
-    # Both runs, for the same reason cover-ci does two: ./... cannot see
-    # pam_ssoossh, whose every file is behind //go:build pam.
     CGO_ENABLED=1 go test -coverprofile="$PROFILE" ./... >/dev/null
-    PAM_PROFILE="$(mktemp)"
-    trap 'rm -f "$PROFILE" "$PAM_PROFILE"' EXIT
-    CGO_ENABLED=1 go test -tags=pam -coverprofile="$PAM_PROFILE" ./pam_ssoossh/... >/dev/null
-    # Concatenate, dropping the second profile's mode line.
-    tail -n +2 "$PAM_PROFILE" >>"$PROFILE"
 fi
 
 # Per-package statement coverage, read straight from the raw profile.

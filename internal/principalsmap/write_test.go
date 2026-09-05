@@ -258,7 +258,8 @@ func TestWriteFileTruncatesWhatItShortens(t *testing.T) {
 }
 
 // TestWriteFileRoundTripsThroughLoadFromFile should read back exactly what was
-// written, through the same entry point pam_ssoossh and host principals use.
+// written, through the same entry point host principals use — and the same
+// file format pam_ssoossh reads on the host.
 func TestWriteFileRoundTripsThroughLoadFromFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "principals.yaml")
 	want := PrincipalsMap{"alice": {"alice", "admin"}, "deploy": {"alice", "bob"}, "root": nil}

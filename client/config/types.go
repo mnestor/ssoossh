@@ -115,9 +115,9 @@ type SSHKeyOptions struct {
 
 // SSHKeyType names a key algorithm as written in configuration, e.g.
 // `type: ed25519`. It aliases fipsmode.SSHKeyType: the type and its
-// approval/default policy live in internal/fipsmode since server and
-// pam_ssoossh need them too, but client code keeps referring to them under
-// the config package's own name.
+// approval/default policy live in internal/fipsmode since the server needs
+// them too, but client code keeps referring to them under the config
+// package's own name.
 type SSHKeyType = fipsmode.SSHKeyType
 
 const (

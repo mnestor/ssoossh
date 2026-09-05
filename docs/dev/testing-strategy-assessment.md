@@ -74,7 +74,11 @@ Verdict: **Build now.** This is a correctness fix for load-balanced deployments,
 
 ## 6. PAM End-to-End in Container
 
-**Status:** In progress (planning stage)
+**Status:** Moved out of this repository. `pam_ssoossh` is now its own project,
+[github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam), and
+this question belongs to it. The assessment below is kept as the record of
+where it stood while the module lived here; the build-cost paragraph in
+particular no longer describes this repository, which builds no PAM artifact.
 
 Feasibility: Medium. PAM module is already 78% covered at the unit level (cgo entry points correctly documented as untestable in Go with pam_ssoossh/testing/pamtest.c harness). Container e2e would repeat what unit tests already cover at lower speed. The gap: integration with the actual `sudo`/`su` flow. Buildable but requires amd64 container + root context.
 

@@ -19,7 +19,6 @@ package e2e
 // test skips without docker. CI runs all of them in the multi-signer job.
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -155,42 +154,6 @@ func TestMultiSigner_SshdAcceptsCertsFromEitherSigner(t *testing.T) {
 	loginAndGetCert(t, ssoosshBin, srvC.BaseURL, agentC, sshd.Principal)
 	if out, err := harness.RunSSH(t, sshd, agentC.Socket, "true"); err == nil {
 		t.Fatalf("ssh with an untrusted instance's certificate succeeded, want refusal\noutput:\n%s", out)
-	}
-}
-
-// TestMultiSigner_PamAuthenticatesCertsFromEitherSigner: two PAM services,
-// one per instance, both trusting the merged CA file (pam_ssoossh's
-// documented multi-key rotation format). Approval through either instance
-// must authenticate.
-func TestMultiSigner_PamAuthenticatesCertsFromEitherSigner(t *testing.T) {
-	dsn := harness.NewPostgresDatabase(t)
-	idp := harness.NewIdentityProvider(t)
-	srvA := harness.StartServer(t, idp, harness.ServerOptions{DSN: dsn, PAMRequireGroup: pamApproverGroup})
-	srvB := harness.StartServer(t, idp, harness.ServerOptions{DSN: dsn, PAMRequireGroup: pamApproverGroup})
-
-	modulePath, pamtestBin := harness.PAMArtifacts(t)
-	merged := srvA.CAPublicKey + "\n" + srvB.CAPublicKey
-
-	for _, tc := range []struct {
-		service string
-		srv     *harness.Server
-	}{
-		{service: "ssoossh-e2e-pam-multi-a", srv: srvA},
-		{service: "ssoossh-e2e-pam-multi-b", srv: srvB},
-	} {
-		service := harness.InstallPAMServiceWithCA(t, tc.service, modulePath, tc.srv, merged)
-
-		pt := harness.StartPamtest(t, pamtestBin, service)
-		requestID := requestIDFromApprovalURL(t, pt.ApprovalURL(t))
-		approve(t, newBrowserClient(t), tc.srv.BaseURL, requestID, pamApprover, []string{pamApproverGroup})
-
-		exitCode, output := pt.Wait(t)
-		if exitCode != 0 {
-			t.Errorf("pamtest via %s exited %d, want 0\noutput:\n%s", tc.srv.BaseURL, exitCode, output)
-		}
-		if !strings.Contains(output, "auth=Success") {
-			t.Errorf("pam_authenticate via %s did not report Success\noutput:\n%s", tc.srv.BaseURL, output)
-		}
 	}
 }
 

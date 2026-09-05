@@ -1,5 +1,11 @@
 # Console login through ssoossh
 
+> **Note (module relocated).** `pam_ssoossh` is now its own project,
+> [github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam).
+> Every `pam_ssoossh/...` path cited below refers to the module's source as
+> it stood in this repository at the anchor commit; look for the equivalent
+> in that repository instead.
+
 **Status: the server half is built.** The `console` certificate type,
 `POST /api/certs/console`, the code-resolution endpoint, the per-type
 approval budget, the `allowed_networks` gate, and the `/console` and
@@ -162,11 +168,12 @@ Facts that shape the design:
   the sweep interval. Separately, `cert_options.pam.valid_duration: 30s`
   (`:912`) is the certificate's own life, short because it is validated once
   and discarded.
-- **The e2e tier for PAM is real.** `TestPAMStack*` in
-  `test/e2e/pam_stack_test.go` compiles `pam_ssoossh/testing/pamtest.c`,
-  installs a dedicated `/etc/pam.d` service, and drives a real
-  `pam_authenticate` (`docs/dev/pam-e2e-testing.md`). A console mode can be
-  tested the same way rather than by hand.
+- **The e2e tier for PAM was real.** `TestPAMStack*` compiled the module and
+  a `pamtest` harness, installed a dedicated `/etc/pam.d` service, and drove
+  a real `pam_authenticate`. It moved to
+  [github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam)
+  with the module; a console mode can be tested the same way there rather
+  than by hand.
 
 ## The problem, stated precisely
 
@@ -1016,10 +1023,11 @@ Following `.claude/rules/test-go.md` and `.claude/rules/go.md`.
 inserts and reads back a `console` row, which is what proves the SQLite
 table rebuild kept the foreign keys and the other constraints.
 
-**End to end:** extend `test/e2e/pam_stack_test.go`. The existing harness
-already installs a dedicated `/etc/pam.d` service and drives a real
-`pam_authenticate` through `pamtest.c`, so a console-mode case is a new
-service file plus a code-submission step against the real ssoosshd, not new
+**End to end:** extend the PAM stack suite, which now lives in
+[github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam). Its
+harness already installs a dedicated `/etc/pam.d` service and drives a real
+`pam_authenticate` through a `pamtest` binary, so a console-mode case is a
+new service file plus a code-submission step against a real ssoosshd, not new
 infrastructure. Assert that the certificate is issued only after the code is
 submitted and approved, and that a wrong code never produces one.
 

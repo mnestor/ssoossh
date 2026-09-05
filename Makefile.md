@@ -23,8 +23,8 @@ order: the autofix steps must run before anything checks for what they fix.
 ## Targets
 
 Generated from the Makefile. This is the curated set `make help` prints; the
-per-component variants (`test-server`, `test-client`, `test-pam`,
-`test-internal`, and the matching `lint-*`) and the internal check halves
+per-component variants (`test-server`, `test-client`, `test-internal`, and
+the matching `lint-*`) and the internal check halves
 (`types-check`, `man-check`, and friends, all reached through
 `check-generated`) are deliberately left out of both.
 
@@ -50,7 +50,6 @@ per-component variants (`test-server`, `test-client`, `test-pam`,
 | `make linux` | Snapshot build for linux/amd64 only |
 | `make binaries` | Snapshot build for every release target |
 | `make server-linux-build-local` | Build ssoosshd for a local `docker build` (see Dockerfile) |
-| `make pam` | Build pam_ssoossh.so (cgo, needs libpam headers) |
 | `make frontend-clean` | Remove the built web UI |
 
 ### Test
@@ -86,7 +85,6 @@ per-component variants (`test-server`, `test-client`, `test-pam`,
 | `make lint` | golangci-lint over the whole module (merge gate) |
 | `make lint-tagged` | golangci-lint over the build-tagged suites lint(1) cannot see |
 | `make lint-cross` | golangci-lint the Windows and macOS builds lint(1) cannot see |
-| `make lint-pam` | golangci-lint over pam_ssoossh (needs cgo) |
 | `make frontend-lint` | prettier --check and eslint over the frontend |
 | `make frontend-check` | svelte-check the frontend against tsconfig.json |
 | `make actionlint` | Lint the GitHub Actions workflow files |
@@ -149,14 +147,10 @@ is deliberately absent from `ci-required`.
 `test-memory-leak` is quarantined: those tests assert defects **exist**, so
 they are meant to fail.
 
-`cover-ci` is two runs, not one: every file in `pam_ssoossh/` is behind
-`//go:build pam`, so a plain `./...` compiles that package to nothing and PAM
-contributes neither numerator nor denominator.
-
 `cover-floors` ratchets **per package**, not on one module number — a module
 total moves for unrelated reasons and hides exactly the regression it exists
-to catch. Given no argument it runs its own coverage pass (both runs,
-including PAM); CI hands it the already-combined profile instead. Floors are
+to catch. Given no argument it runs its own coverage pass; CI hands it the
+profile `cover-ci` already produced instead. Floors are
 a ratchet: raising one is routine, lowering one is a deliberate edit to
 `.coverage-floors` that shows up in review.
 
@@ -198,8 +192,8 @@ The checks compare sha256 hashes rather than `git diff`, deliberately:
 pass while reporting nothing.
 
 `gendocs` covers the `.1` and `.8` pages generated from cobra. The `.5`
-config-format pages (`ssoossh.yaml.5`, `ssoosshd.yaml.5`) and `pam_ssoossh.8`
-are hand-written and outside that set.
+config-format pages (`ssoossh.yaml.5`, `ssoosshd.yaml.5`) are hand-written
+and outside that set.
 
 ## Security
 
@@ -229,18 +223,16 @@ plain command report success over code it never looked at:
 | **Build tags** | `lint` passes none; `test` builds none | A suite behind `e2e`, `resilience`, `load`, `dbparity`, `softhsm`, or `natsintegration` can fail to compile outright while both report success | `lint-tagged` |
 | **GOOS** | `lint` runs with the host's | A G115 overflow bug sat in `client/config/policy_windows.go`, on a value an admin sets through Group Policy | `lint-cross` |
 | **cgo** | golangci-lint can't see into a cgo file | Every symbol referenced only from one reports as unused. The devcontainer defaults `CGO_ENABLED=0` | Explicit `CGO_ENABLED=1` per recipe |
-| **The `pam` tag** | `./...` and coverage both | An entire package contributes nothing, silently | `test-pam`, `lint-pam`, `cover-ci`'s second run |
 
 ## Cross-cutting requirements
 
 | Requirement | Needed by | Why |
 | --- | --- | --- |
-| **cgo on** | `build`, `test-server`, `test-internal`, `test-race`, `cover*`, `lint`, `lint-pam`, `pam`, `gendocs`, tagged suites | `server/signer`'s HSM key source reaches libpkcs11 through crypto11; without it the server packages do not build at all. Set per-recipe to keep the rest of the tree cgo-free |
+| **cgo on** | `build`, `test-server`, `test-internal`, `test-race`, `cover*`, `lint`, `gendocs`, tagged suites | `server/signer`'s HSM key source reaches libpkcs11 through crypto11; without it the server packages do not build at all. Set per-recipe to keep the rest of the tree cgo-free |
 | **cgo off** | `lint-cross` only | There is no cross-compiling cgo toolchain — which is also why its scope is a package list, not `./...` |
 | **Node, pnpm** | `frontend`, `frontend-*`, `fmt`, `pnpm-audit` | The web UI toolchain |
 | **Frontend bundle** | Anything embedding or testing the UI (declared as a prerequisite) | `server/frontend` embeds it. A stale bundle makes a browser test assert against whenever the UI was last built — presenting as a selector timeout, indistinguishable from a wrong selector |
 | **Docker** | `semgrep` only | Pinned image, same as CI |
-| **libpam headers** | `pam`, `test-pam`, `lint-pam` | The devcontainer has them; on a bare host run `scripts/build-env-for-pam.sh` |
 | **Host state + sudo** | `test-e2e` tier 3 | Creates and unlocks a local account, runs sshd as root |
 | **softhsm2 + opensc** | `test-hsm` | A real PKCS#11 token |
 | **goreleaser** | `linux`, `binaries`, `all` | Snapshot builds |

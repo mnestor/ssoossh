@@ -1,6 +1,6 @@
-// Package errs holds shared error types used across client, server, and
-// pam_ssoossh — not just scaffolding placeholders, but a home for any error
-// that needs consistent identity/behavior wherever it's raised.
+// Package errs holds shared error types used across client and server — not
+// just scaffolding placeholders, but a home for any error that needs
+// consistent identity/behavior wherever it's raised.
 package errs
 
 import "fmt"

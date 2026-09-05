@@ -81,12 +81,18 @@ callback server. The browser approval flow works without one.
 
 ## Package boundaries
 
-**`client/` and `pam_ssoossh/` may not import `server/`, or each other.**
+**`client/` may not import `server/`.**
 Anything shared travels through `internal/` — `internal/api` for the HTTP
 client, `internal/apitypes` for the wire contract. This is why
 `apitypes.CertificateRequestStatus` duplicates `model.CertificateRequestStatus`
 rather than importing it; `server/model` remains the source of truth for the
 database, and `wire-types.md` covers how the two are kept from drifting.
+
+**The wire contract is cross-repository.** `internal/apitypes` and the
+`internal/principalsmap` file format are also spoken by `pam_ssoossh`
+([github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam)),
+which is a separate module and so cannot import `internal/` at all. A
+breaking change to either is a change in two repositories, not one.
 
 **`internal/` may not import back up into `client/` or `server/`.** A caller
 maps its own config into whatever the internal package defines, which is why

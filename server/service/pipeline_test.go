@@ -344,8 +344,9 @@ func TestPipeline_EndToEnd_PAM(t *testing.T) {
 		},
 	}
 	// Both names validate: the host's principals-map is what decides which
-	// of them may assume a given local account (pam_ssoossh/checks.go,
-	// check 3), and this certificate has to carry them for it to.
+	// of them may assume a given local account (checks.go in
+	// github.com/mnestor/ssoossh-pam, check 3), and this certificate has to
+	// carry them for it to.
 	for _, principal := range wantPrincipals {
 		if err := checker.CheckCert(principal, cert); err != nil {
 			t.Errorf("delivered certificate did not validate for %q: %v", principal, err)

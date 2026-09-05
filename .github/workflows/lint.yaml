@@ -51,14 +51,6 @@ jobs:
       - name: golangci-lint
         run: make lint
 
-      # pam_ssoossh needs its own pass: without the pam build tag and cgo,
-      # golangci-lint cannot see those files at all and silently skips them
-      # (see the Makefile's lint-fix comment). This ran only in the
-      # Makefile's ci-required target, which no workflow invoked, so the
-      # package was linted on developer machines and nowhere else.
-      - name: golangci-lint (pam)
-        run: make lint-pam
-
       # The Windows and macOS builds, which the step above cannot see: it
       # runs with the runner's GOOS, so every file behind a `windows` or
       # `darwin` constraint is invisible to it. That is how a G115

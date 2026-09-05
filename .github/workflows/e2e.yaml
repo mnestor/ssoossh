@@ -5,7 +5,7 @@ name: e2e
 #
 # Tiers run as separate jobs so that "a break is reported at the layer it
 # happened" -- job name alone tells you tier 1 (wire), tier 2 (browser),
-# tier 3 (sshd), tier 3 (pam), or multi-signer failed. The -run/-skip
+# tier 3 (sshd) or multi-signer failed. The -run/-skip
 # filters below are anchored and mutually exclusive, so every test in
 # ./test/e2e runs in exactly one tier (multi-signer owns TestMultiSigner_
 # and runs on the bare runner because its NATS scenario needs docker):
@@ -148,7 +148,7 @@ jobs:
         # (the default Actions shell has no pipefail).
         run: |
           gotestsum --junitfile=test-results-tier1-${{ matrix.backend }}.xml -- \
-            -buildvcs=false -tags=e2e -count=1 -timeout=5m -skip '^(TestApproval_|TestSSH_|TestPAMStack_|TestMultiSigner_|TestMultiInstance_)' ./test/e2e/...
+            -buildvcs=false -tags=e2e -count=1 -timeout=5m -skip '^(TestApproval_|TestSSH_|TestMultiSigner_|TestMultiInstance_)' ./test/e2e/...
 
       - name: Upload diagnostics
         if: failure()
@@ -282,71 +282,13 @@ jobs:
           path: test-results-tier3.xml
           retention-days: 7
 
-  tier-3-pam:
-    name: tier 3 (pam)
-    needs: [changes, prepare]
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/mnestor/ssoossh-build:latest
-    timeout-minutes: 10
-    # sqlite only. This tier exercises a real PAM stack, which does not
-    # change behaviour with the storage backend -- tier 1 owns the
-    # wire and persistence surface where it does, and weekly-extended
-    # runs the whole suite against both. Running the matrix here cost a
-    # job and a Postgres service container to re-prove tier 1's point.
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Replaces the module/build caching setup-go provided before the Go
-      # toolchain moved into the runner image.
-      - name: Cache Go modules
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: go-${{ runner.os }}-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            go-${{ runner.os }}-
-
-      - name: Download artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: e2e-binaries
-      # The test builds pam_ssoossh.so (cgo, needs libpam headers) and
-      # compiles pamtest.c itself. Both the toolchain (build-essential) and
-      # libpam0g-dev ship in the build image, so there is nothing to install.
-
-      - name: Run tier 3 (pam) tests
-        # gotestsum runs go test itself so a test failure fails the step
-        # (see the tier 1 step for why the old pipe form did not).
-        run: |
-          gotestsum --junitfile=test-results-tier3-pam.xml -- \
-            -buildvcs=false -tags=e2e -count=1 -timeout=10m -run '^TestPAMStack_' ./test/e2e/...
-
-      - name: Upload diagnostics
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: e2e-diagnostics-tier3-pam
-          path: test/e2e/_artifacts/
-          retention-days: 7
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: e2e-test-results-tier3-pam
-          path: test-results-tier3-pam.xml
-          retention-days: 7
-
   multi-signer:
     name: multi-signer
     needs: [changes, prepare]
     if: needs.changes.outputs.code == 'true'
     # Bare runner, not the build container: the split-signer and
     # multi-instance scenarios need the docker daemon for NATS, plus
-    # sudo/sshd/PAM like the tier 3 jobs.
+    # sshd like the tier 3 job.
     # Go comes from setup-go instead of the image; the postgres service
     # publishes its port on localhost because there is no job container
     # network to join.
@@ -377,9 +319,9 @@ jobs:
         with:
           name: e2e-binaries
 
-      - name: Ensure sshd and PAM build tools are available
+      - name: Ensure sshd is available
         run: |
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends openssh-server gcc libpam0g-dev
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends openssh-server
           sudo mkdir -p /run/sshd
 
       # Same version the build image ships (.github/docker/Dockerfile.runner);
@@ -414,7 +356,7 @@ jobs:
 
   e2e-summary:
     name: e2e results
-    needs: [tier-1, tier-2, tier-3, tier-3-pam, multi-signer]
+    needs: [tier-1, tier-2, tier-3, multi-signer]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: ${{ !cancelled() && needs.tier-1.result != 'skipped' }}
@@ -428,11 +370,10 @@ jobs:
           echo "| Tier 1 (wire) | ${{ needs.tier-1.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Tier 2 (browser) | ${{ needs.tier-2.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Tier 3 (sshd) | ${{ needs.tier-3.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Tier 3 (pam) | ${{ needs.tier-3-pam.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Multi-signer | ${{ needs.multi-signer.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          if [[ "${{ needs.tier-1.result }}" == "success" && "${{ needs.tier-2.result }}" == "success" && "${{ needs.tier-3.result }}" == "success" && "${{ needs.tier-3-pam.result }}" == "success" && "${{ needs.multi-signer.result }}" == "success" ]]; then
+          if [[ "${{ needs.tier-1.result }}" == "success" && "${{ needs.tier-2.result }}" == "success" && "${{ needs.tier-3.result }}" == "success" && "${{ needs.multi-signer.result }}" == "success" ]]; then
             echo "All tiers passed" >> $GITHUB_STEP_SUMMARY
             exit 0
           else
@@ -486,9 +427,9 @@ jobs:
       - name: Build binaries
         run: go build -buildvcs=false -o bin/ ./cmd/...
 
-      # The unfiltered suite needs every tier's prerequisites. All of them
-      # (openssh-server, build-essential, libpam0g-dev) ship in the build
-      # image; only sshd's runtime directory has to be made here.
+      # The unfiltered suite needs every tier's prerequisites. openssh-server
+      # ships in the build image; only sshd's runtime directory has to be
+      # made here.
       - name: Prepare sshd runtime directory
         run: mkdir -p /run/sshd
 

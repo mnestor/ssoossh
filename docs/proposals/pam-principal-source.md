@@ -1,5 +1,11 @@
 # PAM certificates should carry the approver, not the requester's claim
 
+> **Note (module relocated).** `pam_ssoossh` is now its own project,
+> [github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam).
+> Every `pam_ssoossh/...` path cited below refers to the module's source as
+> it stood in this repository at the anchor commit; look for the equivalent
+> in that repository instead.
+
 **Status: implemented in the working tree, not yet committed.** Anchors
 verified against `a009511` (2026-09-04); the code they point at has since
 changed, which is the point. Kept as the record of what was wrong and why

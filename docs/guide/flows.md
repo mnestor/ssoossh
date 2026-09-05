@@ -301,7 +301,7 @@ sequenceDiagram
 
 Nothing is written to disk. Stack configuration and the lockout warning:
 [deployment.md](../operations/deployment.md#8-pam-sudo-and-su);
-[pam.d-sudo.example](../pam.d-sudo.example) documents every module argument.
+the [pam_ssoossh reference](https://mnestor.github.io/ssoossh/hosts/pam/reference/) documents every module argument.
 
 ---
 

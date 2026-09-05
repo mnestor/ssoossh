@@ -18,7 +18,7 @@ Please include:
 ssoossh handles SSH authentication and certificate/key issuance, so the following are especially high-priority:
 
 - **Authentication flows** — SSO/OIDC login, session and token handling (`server/controller/auth.go` and related)
-- **PAM module** (`pam_ssoossh/`) — anything affecting host login authorization
+- **PAM certificate issuance** (`cert_options.pam` in `server/config/`, `server/service/certtypepolicy.go`) — anything affecting host login authorization. The module itself lives in [mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam); report vulnerabilities in its code there
 - **SSH key and certificate handling** (`internal/crypto/ssh/`, `server/signer/`) — key generation, signing, storage
 
 Reports touching these areas will be triaged first.

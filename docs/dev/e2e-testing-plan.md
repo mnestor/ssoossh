@@ -62,19 +62,17 @@ test/e2e/
     server.go     # ssoosshd: config, start, wait for /healthz, teardown
     agent.go      # a private ssh-agent per test
     sshd.go       # a real sshd trusting the test CA
-    pam.go        # builds pam_ssoossh.so + pamtest, installs a /etc/pam.d service
     client.go     # runs the ssoossh binary, captures stdout/stderr
     browser.go    # drives the approval page
   login_test.go     # tier 1: the wire
   approval_test.go  # tier 2: the browser
   ssh_test.go       # tier 3: sshd
-  pam_stack_test.go # tier 3: a real pam_authenticate through pam_ssoossh.so
 ```
 
 The tier a test runs in comes from its **name prefix**, not the file it sits
 in: `.github/workflows/e2e.yaml` selects tier 2 with `-run '^TestApproval_'`,
-tier 3 with `-run '^TestSSH_'` and `-run '^TestPAMStack_'`, and tier 1 takes
-the remainder via `-skip` over the same anchored list. Only the tier's own job
+tier 3 with `-run '^TestSSH_'`, and tier 1 takes the remainder via `-skip`
+over the same anchored list. Only the tier's own job
 installs that tier's prerequisites, so a test that drives a real sshd must be
 named `TestSSH_*` wherever it lives -- `keystorage_test.go`, `service_test.go`
 and `proxycommand_test.go` each contribute one that way. A sshd-driving test
@@ -109,7 +107,6 @@ happened.
 | 1 — wire | Harness + `ssoossh` binary; approval driven over HTTP with a cookie jar walking the OIDC redirects | Request lifecycle, SSE delivery, narrowing, session and CSRF handling | ~10s |
 | 2 — browser | The same, with the approval page driven in a real browser | The SPA against the real server: routing, CSP, cookies, the granted-vs-requested rendering | ~30s |
 | 3 — ssh | Tier 1 plus a real `sshd` trusting the test CA | The certificate actually authenticating a session | ~15s |
-| 3 — pam | Tier 1 plus a real libpam stack loading a freshly built `pam_ssoossh.so`, driven by `pamtest.c` | The module authenticating (and refusing) a real PAM transaction end to end | ~15s |
 
 Tier 1 is worth having separately from tier 2 despite the overlap: when both
 fail, the pair says whether the break is in the server or the UI, which is the
@@ -334,8 +331,10 @@ backend. The harness is responsible for setup; see `test/e2e/harness/postgres.go
 - **A real pocket-id.** Pulling a container for it would trade determinism and
   runtime for coverage of somebody else's code. The harness IdP exercises the
   same `go-oidc` path.
-- **`pam_ssoossh`.** Blocked on the same amd64 container as phase 7; the
-  harness IdP is written to be reusable when that unblocks.
+- **`pam_ssoossh`.** The module is a separate project,
+  [github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam),
+  and tests its own PAM stack. What stays testable here is the server side of
+  that flow: `cert_options.pam` issuance and narrowing, covered at tier 1.
 - **Load or soak testing.** Different goal, different job.
 
 ## Open questions

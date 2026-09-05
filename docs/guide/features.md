@@ -176,7 +176,7 @@ local principal-mapping tooling (`host mapping`, `host principals`) for
   per-attempt ephemeral keypair, a short-lived certificate, four checks
   (CA signature, key binding, principals, validity window), and nothing
   retained on disk. Fail-closed everywhere
-  ([pam.d-sudo.example](../pam.d-sudo.example)).
+  ([pam_ssoossh reference](https://mnestor.github.io/ssoossh/hosts/pam/reference/)).
 - The certificate names the **approver**: their OIDC username and the other
   accounts they hold. It does not name the local account the module is
   authenticating, which an unauthenticated client reports and which is used

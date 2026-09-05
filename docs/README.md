@@ -48,10 +48,13 @@ documents below have no site page and are linked from it by GitHub URL.
 
 Also here: the annotated defaults that ship as `/etc/ssoossh/*.yaml` —
 [server/config/defaults.yaml](../server/config/defaults.yaml) and
-[client/config/defaults.yaml](../client/config/defaults.yaml) — and
-[pam.d-sudo.example](pam.d-sudo.example), an annotated `pam.d` stack for
-`sudo`/`su`. The example file stays at the docs root because release
-packaging installs it from there.
+[client/config/defaults.yaml](../client/config/defaults.yaml).
+
+The annotated `pam.d` stack for `sudo`/`su` moved out with the module: it
+ships from
+[github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam). The
+maintained prose for it is still here, on the documentation site's
+[host administration pages](https://mnestor.github.io/ssoossh/hosts/pam/sudo/).
 
 ## internals/
 
@@ -111,7 +114,6 @@ to read instead.
 | Document | What it covers |
 | --- | --- |
 | [e2e-testing-plan.md](dev/e2e-testing-plan.md) | The end-to-end merge gate: login, browser approval, certificate, `ssh` |
-| [pam-e2e-testing.md](dev/pam-e2e-testing.md) | End-to-end testing for `pam_ssoossh` |
 | [cross-platform-testing.md](dev/cross-platform-testing.md) | Testing the client across macOS, Linux, and Windows |
 | [testing-strategy-assessment.md](dev/testing-strategy-assessment.md) | What further test investment would and would not buy |
 | [test-coverage-gap-map.md](dev/test-coverage-gap-map.md) | Where coverage is thin and why |

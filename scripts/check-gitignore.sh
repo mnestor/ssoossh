@@ -15,7 +15,7 @@ status=0
 
 # Where authored code lives. Scoping the second check to these keeps it off
 # node_modules, which is both enormous and legitimately ignored.
-readonly SOURCE_TREES=(cmd client server internal pam_ssoossh test frontend/src scripts)
+readonly SOURCE_TREES=(cmd client server internal test frontend/src scripts)
 
 # Paths under those trees whose contents are generated or vendored rather
 # than authored. They hold files with source extensions, so the check has to

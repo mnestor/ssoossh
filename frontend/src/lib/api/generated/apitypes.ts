@@ -5,13 +5,18 @@
 /*
 Package apitypes is the ssoosshd HTTP API's wire contract: the request
 and response shapes exchanged over /api, shared by both sides so they
-can't drift apart. internal/api (the client, used by client/ and
-pam_ssoossh/) and server/controller both import this package rather than
-each declaring their own copy of the same JSON shapes.
+can't drift apart. internal/api (the client, used by client/) and
+server/controller both import this package rather than each declaring
+their own copy of the same JSON shapes.
 
 This package holds only plain data types (no HTTP client, no gin
 dependency) so either side can import it without pulling in the other's
 dependencies.
+
+pam_ssoossh (github.com/mnestor/ssoossh-pam) speaks this same contract
+from its own module. Being a separate module it cannot import an
+internal/ package, so a change to these shapes is a cross-repository
+change: land it here, then update ssoossh-pam.
 */
 
 /**
@@ -22,7 +27,7 @@ dependencies.
  * or it will block forever waiting for an event that never comes.
  * They mirror server/model.CertificateRequestStatus, which is the source of
  * truth for the database. They're duplicated here rather than imported
- * because client/ and pam_ssoossh/ cannot import server/ (see
+ * because client/ cannot import server/ (see
  * docs/internals/invariants.md); keeping them in this shared wire-contract
  * package is what stops the two sides drifting apart as statuses are added.
  */
@@ -35,7 +40,7 @@ export const StatusApproved = "approved";
  * or it will block forever waiting for an event that never comes.
  * They mirror server/model.CertificateRequestStatus, which is the source of
  * truth for the database. They're duplicated here rather than imported
- * because client/ and pam_ssoossh/ cannot import server/ (see
+ * because client/ cannot import server/ (see
  * docs/internals/invariants.md); keeping them in this shared wire-contract
  * package is what stops the two sides drifting apart as statuses are added.
  */
@@ -48,7 +53,7 @@ export const StatusDenied = "denied";
  * or it will block forever waiting for an event that never comes.
  * They mirror server/model.CertificateRequestStatus, which is the source of
  * truth for the database. They're duplicated here rather than imported
- * because client/ and pam_ssoossh/ cannot import server/ (see
+ * because client/ cannot import server/ (see
  * docs/internals/invariants.md); keeping them in this shared wire-contract
  * package is what stops the two sides drifting apart as statuses are added.
  */

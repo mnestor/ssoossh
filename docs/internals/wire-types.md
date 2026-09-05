@@ -116,6 +116,27 @@ Hence the explicit types in `server/openapidoc`. They reference the real
 payload types, so field changes still flow through automatically; only the
 wrapper is manual. When swag ships generics, all of them collapse.
 
+## Go server → pam_ssoossh
+
+`pam_ssoossh` lives in its own repository,
+[github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam), and
+is a separate Go module — so it cannot import `internal/apitypes`, and no
+compiler checks this pairing at all. Two contracts cross that boundary:
+
+- **The HTTP wire shapes** in `internal/apitypes` (and the SSE event names,
+  which are the terminal statuses in that package).
+- **The principals-map file format**, which `internal/principalsmap` parses
+  here and the module parses on the host.
+
+`docs/openapi.yaml` is the artifact that carries the first of these across:
+it is generated from the handler annotations (see the section above), so the
+other repository has a machine-readable statement of the current contract to
+check itself against rather than a prose description.
+
+**Workflow.** A breaking change to either contract is a change in two
+repositories. Land it here, regenerate `docs/openapi.yaml`, then open the
+matching change in `ssoossh-pam` before releasing either side.
+
 ## What is still hand-maintained
 
 Nothing describing a shape. The remaining judgement calls are which handler

@@ -69,7 +69,8 @@ sequenceDiagram
 The target host trusts the certificate because its `sshd_config` names the
 ssoossh CA in `TrustedUserCAKeys`. A valid certificate is reused until it
 expires, so one browser approval can cover a workday. The same approval
-flow backs `sudo`/`su` through the `pam_ssoossh` PAM module, where a
+flow backs `sudo`/`su` through the `pam_ssoossh` PAM module
+([mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam)), where a
 certificate is requested, validated once, and discarded.
 
 [docs/guide/flows.md](docs/guide/flows.md) has the full set of diagrams, step by step.
@@ -80,7 +81,7 @@ certificate is requested, validated once, and discarded.
 | --- | --- |
 | **ssoossh** (client) | Runs on macOS, Linux, and Windows. Invoked from `ssh_config`; manages its own keypair and talks to the server over HTTPS. Private keys never leave the machine. |
 | **ssoosshd** (server) | The trust anchor and policy decision point. Authenticates via OIDC, maps identity to certificate contents, signs with the CA key, and serves the web UI where issuance is approved. |
-| **pam_ssoossh** | A Linux PAM module for `sudo`/`su`. Requests a very short-lived certificate, validates it, and discards it. SSH login itself is not in scope here, since that path is already certificate-based. |
+| **pam_ssoossh** | A Linux PAM module for `sudo`/`su`. Requests a very short-lived certificate, validates it, and discards it. SSH login itself is not in scope here, since that path is already certificate-based. Ships from its own repository, [mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam); its documentation lives here. |
 
 ## Getting started
 
