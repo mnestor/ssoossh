@@ -10,7 +10,7 @@ ssoossh-host-mapping - Manage the local principal mapping file.
 
 
 .SH DESCRIPTION
-Manages the local principal mapping (JSON object: account → []string of principals). Used by \fBhost principals\fR to answer sshd's AuthorizedPrincipalsCommand.
+Manages the local principal mapping: a YAML file listing, per local account, the certificate principals allowed to assume it. Used by \fBhost principals\fR to answer sshd's AuthorizedPrincipalsCommand, and readable by pam_ssoossh's principals-map, so one file can serve both.
 
 
 .SH OPTIONS
@@ -23,8 +23,8 @@ Manages the local principal mapping (JSON object: account → []string of princi
 	path to the ssoossh config file
 
 .PP
-\fB--file\fP="/etc/ssoossh/principals.json"
-	path to the local principal mapping file (JSON object: local account -> list of principals)
+\fB--file\fP="/etc/ssoossh/principals.yaml"
+	path to the local principal mapping file (YAML: local account -> list of principals)
 
 .PP
 \fB--server\fP=""

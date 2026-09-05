@@ -101,9 +101,11 @@ Three things in that diagram are load-bearing rather than incidental:
   approval page.
 - **The code is the consent-phishing control**, not a convenience. Request
   binding stops one user approving another's pending request; it does nothing
-  about a user talked into approving a request an attacker created for them. A
-  code that exists only on the console screen raises that from "click this
-  link" to "read me the eight characters in front of you".
+  about a user talked into approving a request an attacker created for them.
+  The attacker in that case is the one at the console -- the certificate goes
+  to the machine that asked for it -- and has to read the code off its screen
+  and talk a victim with a browser through typing it. There is no link to
+  send, and no code exists without a real console in front of someone.
 
 ## The login stanza
 

@@ -167,9 +167,12 @@ is authoritative for every account once it loads.
   same list as on `web01`.
 
 :::note
-This is not the file `sshd` reads. `sshd` maps principals through
-`AuthorizedPrincipalsFile` or `AuthorizedPrincipalsCommand`, and the client's
-`ssoossh host mapping` writes a JSON file for the latter. Same kind of question,
-two different programs, neither consulting the other's file -- see
-[Trusting the CA in sshd](/ssoossh/hosts/sshd-trust/#principals-and-authorizedprincipalsfile).
+`sshd` does not read this file, but it reads the same format. `sshd` maps
+principals through `AuthorizedPrincipalsFile` or
+`AuthorizedPrincipalsCommand`, and `ssoossh host principals` answers the
+latter from a file in exactly this format, written by `ssoossh host mapping`.
+Pointing both at one path therefore works and is a deliberate choice; keep
+them separate when `sudo` and `ssh` should authorize different people for the
+same account. See
+[answering with a command](/ssoossh/hosts/sshd-trust/#answering-with-a-command).
 :::

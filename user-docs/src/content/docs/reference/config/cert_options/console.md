@@ -139,7 +139,7 @@ cert_options:
 
 This type's whole budget: the longest a console login can sit waiting for a human. Unset (zero) inherits cert_options.client_timeout. A value LONGER than that global is a startup error — the global is the ceiling, and a type may only shorten it.
 
-Shorter is the point. The approval window is the attacker's working time in the consent-phishing case the typed code exists to raise the bar on: someone at an unattended console starts a login and phones the victim to read them the code. Halving the window halves the time that call has to succeed in.
+Shorter is the point. The approval window is the attacker's working time in the consent-phishing case the typed code exists to raise the bar on: the attacker is the one at the unattended console, and has to phone a victim, read them the code off its screen, and talk them through approving it. Halving the window halves the time that call has to succeed in.
 
 The human's share is client_timeout - 2*(client_timeout/10), so 2m here gives the approver 96s, not 120s. There is a floor, and it is not the technical one: below about 90s a first approval that has to go through an OIDC login starts to fail, people retry, and a flow people habitually retry is a flow people learn to approve without reading.
 

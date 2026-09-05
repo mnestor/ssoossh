@@ -100,9 +100,12 @@ requires a session, so an unauthenticated caller can never turn a code into a
 request, and resolving it claims the request: a second person typing the same
 code is refused.
 
-The code is a control, not a convenience. It raises "click this link" to "read
-me the eight characters in front of you", which is the difference between being
-phished into an approval and having to be standing at the machine.
+The code is a control, not a convenience. You are approving a login for
+whoever is at that machine, and the certificate carries *your* identity, not
+theirs. Anyone who wants to borrow your access has to reach you and talk you
+through typing a code read off a console you cannot see, so treat an
+unexpected request to approve one as exactly that. The page names the machine,
+the service, the terminal and the account before you confirm.
 
 ## Your history
 

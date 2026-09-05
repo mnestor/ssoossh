@@ -340,9 +340,11 @@ func toHostContext(body apitypes.PAMRequestBody) service.HostContext {
 // The code is the consent-phishing control, not just a UX device. Binding a
 // request to the first authenticated toucher stops one user approving
 // another's pending request, but it does nothing against a user talked into
-// approving a request an attacker created for them; a code that only exists
-// on the console screen raises that from "click this link" to "read me the
-// eight characters in front of you".
+// approving a request an attacker created for them. In that case the
+// attacker is the one at the console — the certificate is delivered to the
+// machine that asked for it — so they have to read the code off its screen
+// and talk a victim through signing in and typing it. There is no link to
+// send, and no code exists without a real console in front of someone.
 //
 // @Summary     Create a console login certificate request
 // @Description Unauthenticated. Returns a short `user_code` for a human to type into the

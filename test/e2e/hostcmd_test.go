@@ -35,12 +35,12 @@ func runHost(t *testing.T, bin, mappingPath string, args ...string) harness.Clie
 	return harness.RunClient(t, bin, harness.ClientOptions{Args: full})
 }
 
-// writeMapping writes a principals.json into a fresh directory and returns
+// writeMapping writes a principals.yaml into a fresh directory and returns
 // its path.
 func writeMapping(t *testing.T, content string) string {
 	t.Helper()
 
-	path := filepath.Join(t.TempDir(), "principals.json")
+	path := filepath.Join(t.TempDir(), "principals.yaml")
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatalf("failed to write mapping file: %v", err)
 	}
@@ -49,7 +49,7 @@ func writeMapping(t *testing.T, content string) string {
 
 func TestHostPrincipals_ShouldPrintMappedPrincipalsWhenTheAccountIsKnown(t *testing.T) {
 	_, bin := harness.Binaries(t)
-	mapping := writeMapping(t, `{"deploy":["alice","bob"],"other":["carol"]}`)
+	mapping := writeMapping(t, "deploy:\n  - alice\n  - bob\nother:\n  - carol\n")
 
 	res := runHost(t, bin, mapping, "principals", "deploy")
 
@@ -87,14 +87,14 @@ func TestHostPrincipals_ShouldExitZeroWithNoOutputWhenNothingMatches(t *testing.
 		missing bool
 		account string
 	}{
-		{name: "unknown account", mapping: `{"deploy":["alice"]}`, account: "nobody"},
-		{name: "empty mapping", mapping: `{}`, account: "deploy"},
+		{name: "unknown account", mapping: "deploy:\n  - alice\n", account: "nobody"},
+		{name: "empty mapping", mapping: "", account: "deploy"},
 		{name: "missing file", missing: true, account: "deploy"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "principals.json")
+			path := filepath.Join(t.TempDir(), "principals.yaml")
 			if !tt.missing {
 				path = writeMapping(t, tt.mapping)
 			}
@@ -115,7 +115,7 @@ func TestHostPrincipals_ShouldExitZeroWithNoOutputWhenNothingMatches(t *testing.
 // empty would silently deny every login on the host while looking healthy.
 func TestHostPrincipals_ShouldFailWhenTheMappingFileIsMalformed(t *testing.T) {
 	_, bin := harness.Binaries(t)
-	mapping := writeMapping(t, `{"deploy": [`)
+	mapping := writeMapping(t, "  deploy:\n")
 
 	res := runHost(t, bin, mapping, "principals", "deploy")
 
@@ -129,7 +129,7 @@ func TestHostPrincipals_ShouldFailWhenTheMappingFileIsMalformed(t *testing.T) {
 
 func TestHostPrincipals_ShouldFailWhenNoUsernameIsGiven(t *testing.T) {
 	_, bin := harness.Binaries(t)
-	mapping := writeMapping(t, `{"deploy":["alice"]}`)
+	mapping := writeMapping(t, "deploy:\n  - alice\n")
 
 	res := runHost(t, bin, mapping, "principals")
 
@@ -146,7 +146,7 @@ func TestHostPrincipals_ShouldFailWhenNoUsernameIsGiven(t *testing.T) {
 // of three functions that never meet.
 func TestHostMapping_ShouldRoundTripAddListRemove(t *testing.T) {
 	_, bin := harness.Binaries(t)
-	mapping := filepath.Join(t.TempDir(), "principals.json")
+	mapping := filepath.Join(t.TempDir(), "principals.yaml")
 
 	if res := runHost(t, bin, mapping, "mapping", "add", "deploy", "alice"); res.ExitCode != 0 {
 		t.Fatalf("add alice failed with exit %d\nstderr:\n%s", res.ExitCode, res.Stderr)
@@ -191,7 +191,7 @@ func TestHostMapping_ShouldRoundTripAddListRemove(t *testing.T) {
 
 func TestHostMapping_ShouldRemoveTheWholeAccountWhenGivenOneArgument(t *testing.T) {
 	_, bin := harness.Binaries(t)
-	mapping := writeMapping(t, `{"deploy":["alice","bob"],"other":["carol"]}`)
+	mapping := writeMapping(t, "deploy:\n  - alice\n  - bob\nother:\n  - carol\n")
 
 	if res := runHost(t, bin, mapping, "mapping", "remove", "deploy"); res.ExitCode != 0 {
 		t.Fatalf("remove failed with exit %d\nstderr:\n%s", res.ExitCode, res.Stderr)
@@ -206,17 +206,20 @@ func TestHostMapping_ShouldRemoveTheWholeAccountWhenGivenOneArgument(t *testing.
 	}
 }
 
-func TestHostMapping_ShouldPrintEmptyObjectWhenTheFileIsMissing(t *testing.T) {
+// A missing file lists as nothing at all rather than a placeholder: the
+// output is the file's own YAML, and the subset it is parsed from has no
+// flow-mapping form, so a "{}" would not load back if redirected into one.
+func TestHostMapping_ShouldPrintNothingWhenTheFileIsMissing(t *testing.T) {
 	_, bin := harness.Binaries(t)
-	missing := filepath.Join(t.TempDir(), "principals.json")
+	missing := filepath.Join(t.TempDir(), "principals.yaml")
 
 	res := runHost(t, bin, missing, "mapping", "list")
 
 	if res.ExitCode != 0 {
 		t.Fatalf("expected exit 0 for a missing mapping file, got %d\nstderr:\n%s", res.ExitCode, res.Stderr)
 	}
-	if strings.TrimSpace(res.Stdout) != "{}" {
-		t.Errorf("expected %q, got %q", "{}", strings.TrimSpace(res.Stdout))
+	if strings.TrimSpace(res.Stdout) != "" {
+		t.Errorf("expected no output, got %q", res.Stdout)
 	}
 }
 
@@ -234,7 +237,7 @@ func TestHostMapping_ShouldFailWhenGivenTooFewArguments(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mapping := writeMapping(t, `{}`)
+			mapping := writeMapping(t, "")
 
 			res := runHost(t, bin, mapping, tt.args...)
 

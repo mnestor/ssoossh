@@ -85,12 +85,20 @@ a file only root on that machine can edit.
 | Denied, expired, unparseable, a failed check, or a timeout | `PAM_AUTH_ERR` |
 | The server could not be reached, or answered with something that was not an answer | `PAM_AUTHINFO_UNAVAIL` |
 | The person pressed Ctrl-C at the approval prompt | `PAM_IGNORE` |
+| `ssh-only` is set and the session did not arrive over SSH | `PAM_IGNORE` |
 | `server` is not configured, or the user could not be read | `PAM_USER_UNKNOWN` |
 | The trusted CA file is missing, holds no usable key, or an argument is malformed | `PAM_NO_MODULE_DATA` |
 
 The distinction matters when the module is `sufficient` in the stack: an
 ssoossh outage returns `PAM_AUTHINFO_UNAVAIL` and the stack falls through to
 whatever follows, so a server outage does not become a fleet-wide lockout.
+
+The last `PAM_IGNORE` row is a deliberate opt-out rather than a failure. With
+[`ssh-only`](/ssoossh/hosts/pam/reference/#ssh-only) set, the module takes part
+only in a session that arrived over SSH and stands aside for a local login,
+which is how a host keeps Touch ID or a smartcard for the person at the
+keyboard while remote logins go through ssoossh. Nothing is generated or sent
+on the path it declines.
 
 :::danger
 Editing `/etc/pam.d/sudo` wrongly costs you `sudo` on that machine, which is

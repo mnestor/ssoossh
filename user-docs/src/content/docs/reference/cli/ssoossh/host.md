@@ -18,7 +18,7 @@ ssoossh host [command] [flags]
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
-| `--file` | string | `/etc/ssoossh/principals.json` | path to the local principal mapping file (JSON object: local account -&gt; list of principals) |
+| `--file` | string | `/etc/ssoossh/principals.yaml` | path to the local principal mapping file (YAML: local account -&gt; list of principals) |
 
 ## Global options
 

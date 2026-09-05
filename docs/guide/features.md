@@ -205,9 +205,13 @@ flow.
 - **The code is the consent-phishing control**, not just a convenience.
   Request binding stops one user approving another's pending request; it
   does nothing about a user talked into approving a request an attacker
-  created for them. A code that exists only on the console screen raises
-  that from "click this link" to "read me the eight characters in front of
-  you".
+  created for them. Note which side is which: the certificate is delivered
+  to the machine that asked for it, so the attacker is the one at the
+  console and the victim is the one with the browser. The attacker reads
+  the code off the console screen and has to talk the victim through
+  signing in, typing it, and approving. There is no link to send and
+  nothing to mass-mail, and the attacker has to be sitting at a real
+  console to have a code at all.
 - The approval page shows what is being approved: the machine, the PAM
   service, the terminal, the account being logged into, and the address the
   server observed. Everything but that last one is self-reported by an

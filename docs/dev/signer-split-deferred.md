@@ -101,7 +101,7 @@ state on reconnect.
 
 ## Concurrency
 
-Signing is effectively single-threaded when the CA key lives in an ssh-agent,
+Signing is effectively single-threaded when the CA key lives in a PKCS#11 token,
 which serializes on its socket. A concurrency-limited consumer group on the
 signer's subscription serializes access and absorbs bursts without extra code
 — no separate queue in front of it.

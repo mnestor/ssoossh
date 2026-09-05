@@ -21,7 +21,7 @@ Inherited from [`ssoossh`](/ssoossh/reference/cli/ssoossh/) and its parents.
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `-c`, `--config` | string |  | path to the ssoossh config file |
-| `--file` | string | `/etc/ssoossh/principals.json` | path to the local principal mapping file (JSON object: local account -&gt; list of principals) |
+| `--file` | string | `/etc/ssoossh/principals.yaml` | path to the local principal mapping file (YAML: local account -&gt; list of principals) |
 | `--server` | string |  | server address including scheme (e.g. "https://example.com") assumes https if omited. |
 | `-v`, `--verbose` | count | `0` | trace what the command is doing, to stderr; repeat for more (-v steps, -vv requests and files, -vvv bodies) |
 

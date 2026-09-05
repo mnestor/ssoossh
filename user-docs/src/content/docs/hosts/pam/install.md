@@ -13,45 +13,27 @@ Wiring it into a service is a separate decision, described on
 [console login](/ssoossh/hosts/pam/console/) and
 [sshd keyboard-interactive](/ssoossh/hosts/pam/sshd/).
 
-## Which module
+## What you are installing
 
-Two implementations exist, and they are not interchangeable in every detail.
+`pam_ssoossh` lives in its own repository,
+[github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam). It
+is around 82 KB stripped and links only libraries the operating system
+already ships: `libpam`, `libcrypto`, `libcurl`. Nothing it needs is bundled,
+which is why it reports the versions it actually linked on every
+authentication.
 
-**The C module**, from
-[github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam), is
-what every host page on this site documents. It is around 82 KB stripped and
-links only libraries the operating system already ships: `libpam`,
-`libcrypto`, `libcurl`. It has both flows -- the browser flow and the console
-code-and-QR flow -- and the `mode=` argument that picks between them.
-
-**The Go module** in the ssoossh monorepo (`pam_ssoossh/`, built with
-`-buildmode=c-shared`) is the earlier implementation. It carries the Go
-runtime into `sudo` and `sshd` at around 12.9 MB, does the browser flow only,
-has no console mode, and is being retired. It reads the same `pam.d` lines, so
-a stanza written for it keeps working, with these deliberate divergences:
-
-| Behaviour | C module | Go module |
-| --- | --- | --- |
-| Ctrl-C at the approval prompt | `PAM_IGNORE` | `PAM_AUTH_ERR` |
-| `ssh-rsa` (SHA-1) CA in the trusted CA file | Refused by policy | Accepted |
-| Console flow and `mode=` | Present | Absent |
-| Syslog identity | Every line prefixed `pam_ssoossh:` | Syslog tag `ssoossh` |
-| Text sent to the terminal | Filtered to a safe character set | Not filtered |
-| Host context sent with the request | Every field, on both paths | None |
-
-:::note
-The monorepo's own documents -- `docs/pam.d-sudo.example` and deployment.md
-§8 -- describe the Go module. Where they and the C module's manual page
-disagree, the manual page is what the module on your host does. The
-[reference page](/ssoossh/hosts/pam/reference/) restates it in full.
-:::
+It has both flows, the browser flow and the console code-and-QR flow, and the
+`mode=` argument that picks between them. `pam_ssoossh(8)` is the contract,
+and the [reference page](/ssoossh/hosts/pam/reference/) restates it in full.
 
 :::caution[Status]
-The C module authenticates end to end through a real PAM stack against a stub
+The module authenticates end to end through a real PAM stack against a stub
 `ssoosshd`, under ASan and UBSan, with fuzzing over every parser that reads
 network bytes. What has not happened yet is a run against a production
-`ssoosshd`, a build on FreeBSD or macOS, or console mode against the real
-server endpoints rather than a stub written against them.
+`ssoosshd`; FreeBSD, whose build branch exists but has never been compiled;
+macOS in CI, which has been built and run by hand on Apple silicon but not on
+a hosted runner; and console mode against the real server endpoints rather
+than a stub written against them.
 :::
 
 ## Supported platforms
@@ -61,7 +43,7 @@ server endpoints rather than a stub written against them.
 | Linux glibc (x86-64, arm64) | OpenSSL 1.1.1 or newer | yes | yes |
 | Linux musl / Alpine | OpenSSL 1.1.1 or newer | yes | yes |
 | FreeBSD | OpenSSL in base | yes | yes |
-| macOS 15 Sequoia (arm64) | Security.framework | no | no, developer and CI only |
+| macOS 15 or newer (Apple silicon) | Security.framework | no | yes, a signed `.pkg` |
 
 OpenSSL 1.1.1 is a hard floor, set by RHEL 8: a build against anything older
 fails at compile time. OpenSSL 1.0.2 and the releases carrying it -- RHEL 7,
@@ -87,7 +69,8 @@ deploy: `ssh-keygen -l -f /etc/ssoossh/ca.pub`.
 ## Which package
 
 Releases are built per platform and wrapped as distribution packages by
-[nfpm](https://nfpm.goreleaser.com).
+[nfpm](https://nfpm.goreleaser.com), and the macOS one as an installer package
+built with Apple's own tools.
 
 | Artifact | For | Package formats |
 | --- | --- | --- |
@@ -95,6 +78,7 @@ Releases are built per platform and wrapped as distribution packages by
 | `linux-{x86_64,aarch64}-glibc-openssl1.1` | RHEL 8 and rebuilds, anything with `libcrypto.so.1.1` | `.rpm` |
 | `linux-{x86_64,aarch64}-musl` | Alpine | `.apk` |
 | `freebsd14-x86_64` | FreeBSD 14 | tarball only |
+| `macos15-aarch64` | macOS 15 and later on Apple silicon | `.pkg`, Developer ID signed and notarized |
 
 There is no `.deb` for the OpenSSL 1.1 build: the Debian and Ubuntu releases
 that shipped `libssl1.1` are past their support dates.
@@ -114,6 +98,22 @@ spellings of the ones the 64-bit `time_t` transition renamed
 | `.deb` (Debian, Ubuntu) | `/usr/lib/<triplet>/security/pam_ssoossh.so`, for example `/usr/lib/x86_64-linux-gnu/security/pam_ssoossh.so` |
 | `.rpm` (RHEL and rebuilds) | `/usr/lib64/security/pam_ssoossh.so` |
 | `.apk` (Alpine) | `/lib/security/pam_ssoossh.so` |
+| `.pkg` (macOS) | `/usr/local/lib/pam/pam_ssoossh.so` |
+
+On Linux and FreeBSD the module lands where that platform's libpam already
+looks, so a `pam.d` line names it by bare filename. macOS is the exception:
+`/usr/lib/pam`, where OpenPAM looks a bare name up, is protected by System
+Integrity Protection, so the package installs under `/usr/local/lib/pam` and
+the `pam.d` line has to name that absolute path. See
+[macOS and Touch ID](/ssoossh/hosts/pam/sudo/#macos-and-touch-id).
+
+The macOS package is signed with a Developer ID Installer certificate,
+notarized by Apple with the ticket stapled on, so it installs without a
+Gatekeeper prompt. Check it before installing:
+
+```bash
+spctl --assess --type install -v pam_ssoossh-v1.2.0-macos15-aarch64.pkg
+```
 
 Everything else is documentation:
 

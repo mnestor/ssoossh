@@ -16,13 +16,16 @@ short-lived by design — minutes, not years — so they expire faster than a
 revocation list could reasonably be distributed. Expiry does that work.
 The reasoning is in [decisions.md](decisions.md).
 
-## PAM module: glibc floor
+## PAM module: what it links
 
-The PAM module is cross-compiled with `zig cc` against a deliberately old
-glibc target so it loads on long-lived server distributions:
+`pam_ssoossh` links only libraries the operating system already ships, so
+which of them is resident in `sudo` is a property of the host rather than of
+the module. **OpenSSL 1.1.1 is a hard floor**, set by RHEL 8; a build against
+anything older fails at compile time.
 
-- **amd64**: `x86_64-linux-gnu.2.17`, floor glibc **2.17**
-- **arm64**: `aarch64-linux-gnu.2.26`, floor glibc **2.26**
+Artifacts are built per platform rather than to one lowest common
+denominator, which is what the `-glibc-openssl3`, `-glibc-openssl1.1` and
+`-musl` names on a release distinguish.
 
 ## Client packages
 

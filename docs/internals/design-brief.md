@@ -14,8 +14,8 @@ Config is YAML with command-line overrides.
 
 **ssoossh server** — Go, gin. Authenticates users via OIDC, optionally enriches identity
 from LDAP. Decides certificate contents. Signs public keys. Serves a web UI for approval,
-confirmation, and per-user certificate history. CA key lives in an ssh-agent the server
-process can reach (v1); PKCS#11/HSM/cloud KMS planned behind the same signing interface.
+confirmation, and per-user certificate history. The CA key comes from an inline PEM in
+the config or from a PKCS#11 token, behind one signing interface.
 
 **pam_ssoossh** — Linux PAM module, `auth` group, `sudo`/`su` only. Generates an
 ephemeral keypair, requests a certificate, validates it, discards everything.

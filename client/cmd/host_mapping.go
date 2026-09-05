@@ -2,22 +2,25 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
+	"io/fs"
 	"slices"
 
 	"github.com/bep/simplecobra"
 
 	sshcrypto "github.com/mnestor/ssoossh/internal/crypto/ssh"
+	"github.com/mnestor/ssoossh/internal/principalsmap"
 )
 
 func newHostMappingCommand(mappingFileFunc func() string) simplecobra.Commander {
 	return &simpleCommand{
 		name:  "mapping",
 		short: "Manage the local principal mapping file.",
-		long: "Manages the local principal mapping (JSON object: account → []string of principals). " +
-			"Used by `host principals` to answer sshd's AuthorizedPrincipalsCommand.",
+		long: "Manages the local principal mapping: a YAML file listing, per local account, " +
+			"the certificate principals allowed to assume it. Used by `host principals` to " +
+			"answer sshd's AuthorizedPrincipalsCommand, and readable by pam_ssoossh's " +
+			"principals-map, so one file can serve both.",
 		offline: true,
 		commands: []simplecobra.Commander{
 			newHostMappingListCommand(mappingFileFunc),
@@ -39,30 +42,20 @@ func newHostMappingListCommand(mappingFileFunc func() string) simplecobra.Comman
 }
 
 func runHostMappingList(ctx context.Context, mappingPath string) error {
-	if mappingPath == "" {
-		fmt.Println("{}")
-		return nil
-	}
-
-	data, err := os.ReadFile(mappingPath)
+	mapping, err := loadMapping(mappingPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Println("{}")
-			return nil
-		}
-		return fmt.Errorf("read mapping file: %w", err)
+		return err
 	}
 
-	var mapping map[string][]string
-	if err := json.Unmarshal(data, &mapping); err != nil {
-		return fmt.Errorf("malformed mapping file: %w", err)
-	}
-
-	out, err := json.MarshalIndent(mapping, "", "  ")
+	// Printed as the file itself is spelled, so the output can be
+	// redirected back into one. An empty mapping is therefore no output at
+	// all rather than a "{}" placeholder: the subset the map is parsed
+	// from has no flow-mapping form, so "{}" would not load back.
+	out, err := principalsmap.Format(mapping)
 	if err != nil {
-		return fmt.Errorf("encode mapping: %w", err)
+		return fmt.Errorf("render mapping: %w", err)
 	}
-	fmt.Println(string(out))
+	fmt.Print(string(out))
 	return nil
 }
 
@@ -149,39 +142,29 @@ func runHostMappingRemove(account, principal, mappingPath string) error {
 }
 
 // loadMapping reads the mapping file. A missing file is an empty mapping
-// (nothing has been added yet); a malformed one is an error — silently
+// (nothing has been added yet); a malformed one is an error -- silently
 // treating it as empty would let the next add/remove overwrite whatever
 // the operator actually had.
-func loadMapping(path string) (map[string][]string, error) {
+func loadMapping(path string) (principalsmap.PrincipalsMap, error) {
 	if path == "" {
-		return make(map[string][]string), nil
+		return principalsmap.PrincipalsMap{}, nil
 	}
-	data, err := os.ReadFile(path)
+	mapping, err := principalsmap.LoadFromFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return make(map[string][]string), nil
+		if errors.Is(err, fs.ErrNotExist) {
+			return principalsmap.PrincipalsMap{}, nil
 		}
-		return nil, fmt.Errorf("read mapping file: %w", err)
-	}
-	var mapping map[string][]string
-	if err := json.Unmarshal(data, &mapping); err != nil {
-		return nil, fmt.Errorf("malformed mapping file %s: %w", path, err)
-	}
-	if mapping == nil {
-		mapping = make(map[string][]string)
+		return nil, err
 	}
 	return mapping, nil
 }
 
-func writeMapping(path string, mapping map[string][]string) error {
+// writeMapping writes the mapping back over the file it came from, keeping
+// the ownership and mode an operator set on it. See
+// principalsmap.WriteFile for why that matters here and what it costs.
+func writeMapping(path string, mapping principalsmap.PrincipalsMap) error {
 	if path == "" {
 		return fmt.Errorf("no mapping file: --file is empty")
 	}
-
-	data, err := json.MarshalIndent(mapping, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode mapping: %w", err)
-	}
-
-	return writeFileAtomic(path, data, 0644)
+	return principalsmap.WriteFile(path, mapping)
 }

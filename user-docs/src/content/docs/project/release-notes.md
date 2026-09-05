@@ -9,9 +9,8 @@ sidebar:
 Per-release notes are generated from the git log at tag time. For what
 changed in any given version, see the GitHub releases:
 
-- Server, client, and the Go PAM module:
-  https://github.com/mnestor/ssoossh/releases
-- The C PAM module (`pam_ssoossh`):
+- Server and client: https://github.com/mnestor/ssoossh/releases
+- The PAM module (`pam_ssoossh`):
   https://github.com/mnestor/ssoossh-pam/releases
 
 This page carries only what lives nowhere else: the build floors, the
@@ -26,13 +25,17 @@ short-lived by design -- minutes, not years -- so they expire faster than a
 revocation list could reasonably be distributed. Expiry does that work.
 The reasoning is in [Decisions](/ssoossh/project/decisions/).
 
-## PAM module: glibc floor
+## PAM module: what it links
 
-The PAM module is cross-compiled with `zig cc` against a deliberately old
-glibc target so it loads on long-lived server distributions:
+`pam_ssoossh` links only libraries the operating system already ships, so
+which of them is resident in `sudo` is a property of the host rather than of
+the module. **OpenSSL 1.1.1 is a hard floor**, set by RHEL 8; a build against
+anything older fails at compile time.
 
-- **amd64**: `x86_64-linux-gnu.2.17`, floor glibc **2.17**
-- **arm64**: `aarch64-linux-gnu.2.26`, floor glibc **2.26**
+Artifacts are built per platform rather than to one lowest common
+denominator, which is what the `-glibc-openssl3`, `-glibc-openssl1.1` and
+`-musl` names on a release distinguish. See
+[Installing pam_ssoossh](/ssoossh/hosts/pam/install/).
 
 ## Client packages
 

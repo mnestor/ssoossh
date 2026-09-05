@@ -27,13 +27,19 @@ ssoossh version
   agent (`ssh` won't re-read changed key files, so `Match exec` + `ssh login`
   is the only mode where key files on disk work without an agent)
 - `host principals | mapping` — manage the local principal mapping file
-  (JSON object: account → list of principals). `host principals` implements
-  sshd's `AuthorizedPrincipalsCommand` (runs as root, called on every login
-  attempt, never touches the network); `host mapping list|add|remove` edits
-  the mapping. Both commands accept `--file PATH` for the mapping file
-  (default: `/etc/ssoossh/principals.json`). There are no host
-  certificates and no server-side mappings (docs/project/decisions.md); the mapping
-  is purely local.
+  (YAML: account → list of principals, read and written through
+  `internal/principalsmap`, the same package `pam_ssoossh` parses its
+  `principals-map` with, so one file can serve both). `host principals`
+  implements sshd's `AuthorizedPrincipalsCommand` (called on every login
+  attempt, never touches the network, needs nothing but read access to the
+  mapping file — give `AuthorizedPrincipalsCommandUser` a dedicated
+  unprivileged account, not root); `host mapping list|add|remove` edits the
+  mapping. Both commands accept `--file PATH` for the mapping file
+  (default: `/etc/ssoossh/principals.yaml`). `principalsmap.WriteFile`
+  overwrites that file in place rather than renaming a temp file over it, so
+  an operator's ownership and mode survive an edit — see its doc comment for
+  what that costs. There are no host certificates and no server-side
+  mappings (docs/project/decisions.md); the mapping is purely local.
 - `ssh config` — the wiring harness: prints the `ssh_config` recipes and
   nothing else, as both its output and its long help. Declared `offline`
   (see `offlineCommander`), so PreRun skips the CA fetch and it answers with

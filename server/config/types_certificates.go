@@ -348,9 +348,10 @@ type CertOptionsConsole struct {
 	//
 	// Shorter is the point. The approval window is the attacker's working
 	// time in the consent-phishing case the typed code exists to raise the
-	// bar on: someone at an unattended console starts a login and phones
-	// the victim to read them the code. Halving the window halves the time
-	// that call has to succeed in.
+	// bar on: the attacker is the one at the unattended console, and has to
+	// phone a victim, read them the code off its screen, and talk them
+	// through approving it. Halving the window halves the time that call
+	// has to succeed in.
 	//
 	// The human's share is client_timeout - 2*(client_timeout/10), so 2m
 	// here gives the approver 96s, not 120s. There is a floor, and it is

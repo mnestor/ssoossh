@@ -294,17 +294,20 @@ context (host, tty, source IP) rather than a bare approve link.
 ### Consent phishing, and why the code is the control
 
 Someone standing at an unattended console types `alice` at the `login:`
-prompt. The module shows a code. The attacker phones Alice: "IT here, we
-are re-enrolling your console access, can you approve the code on your
-screen, it is K7M4-QP2X."
+prompt. The module shows a code on that console. The attacker phones Alice:
+"IT here, we are re-enrolling console access on db07, go to the approval
+page and enter K7M4-QP2X." The attacker is the one at the console; Alice is
+the one with the browser, and the certificate her approval mints is
+delivered to the console she cannot see.
 
 `bindRequester` does not stop this and says so. Nobody has touched the
 request yet, so Alice's first authenticated touch *is* the binding: she
 claims it, then approves it. The recorded answer to exactly this case is
 "a verification code the client displays and the browser has to match"
 (`server/service/certrequest.go:721-725`), which is what the console flow
-already is. The code raises the bar from "click this link" to "read me the
-eight characters on that screen", which is a phone call an attacker has to
+already is. The code raises the bar from "click this link" to a phone call
+the attacker can only place while sitting at a real console, asking for
+something Alice has to sign in and type herself -- a call an attacker has to
 make and a lie a victim can be trained to refuse.
 
 What it buys is also much smaller after
@@ -314,8 +317,8 @@ Alice on a host where the map already allows her, not a session as whatever
 account they typed at the prompt. Escalation is off the table; impersonation
 of the approver is what is left.
 
-It does not eliminate that. A human who will read a code aloud is a human
-who will read a code aloud. Three mitigations narrow what it buys:
+It does not eliminate that. A human who will type a code a stranger read to
+them is a human who will type a code a stranger read to them. Three mitigations narrow what it buys:
 
 **A shorter approval window.** The attack is a live phone call: dial,
 explain, get the victim to a browser, through an OIDC login, into the code

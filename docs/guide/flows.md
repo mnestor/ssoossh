@@ -369,7 +369,7 @@ reasoning: [console-login-pam.md](../proposals/console-login-pam.md).
 
 ```mermaid
 flowchart LR
-    CA["ssoossh CA<br/>ssh-agent, file, or PKCS#11 HSM"]
+    CA["ssoossh CA<br/>config PEM or PKCS#11 token"]
     CA --> U["User certificate<br/>interactive SSH<br/>shipped"]
     CA --> S["Service certificate<br/>non-interactive<br/>shipped"]
     CA --> P["PAM certificate<br/>sudo/su<br/>shipped"]

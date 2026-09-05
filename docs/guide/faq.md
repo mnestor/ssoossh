@@ -232,11 +232,12 @@ A compromised web tier can deny service, not escalate.
 
 ### Where does the CA private key live?
 
-In an ssh-agent the server process reaches, never in the config-parsing
-web tier's memory when you run the split signer. For stronger isolation,
-run `ssoosshd sign` on its own machine
+In one of exactly two places, and one of them must be set or the server
+does not start: an inline PEM in `ssh_key`, or a PKCS#11 token configured
+under `hsm`, where the private half never leaves the hardware. With the
+split signer it is never in the web tier's memory at all. For stronger
+isolation, run `ssoosshd sign` on its own machine
 ([deployment.md §6](../operations/deployment.md#6-startup-modes-full-api-and-sign)).
-HSM/PKCS#11/cloud-KMS signing is planned behind the same interface.
 
 ### Can I lock down client settings across a fleet?
 

@@ -208,28 +208,34 @@ server.
 
 | Flag | Default | What it does |
 | --- | --- | --- |
-| `--file <path>` | `/etc/ssoossh/principals.json` | The local principal mapping file: a JSON object mapping a local account to a list of principals |
+| `--file <path>` | `/etc/ssoossh/principals.yaml` | The local principal mapping file: YAML listing, per local account, the principals allowed to assume it |
 
 `--file` is inherited by every `host` subcommand.
 
 ### `ssoossh host principals`
 
-Implements `AuthorizedPrincipalsCommand`. It runs as root, is called on every
-login attempt, and never touches the network -- it answers only from the local
-mapping file. It expects one argument, the local username to look up, and
-prints one principal per line.
+Implements `AuthorizedPrincipalsCommand`. It is called on every login attempt
+and never touches the network -- it answers only from the local mapping file.
+It expects one argument, the local username to look up, and prints one
+principal per line.
 
 | Situation | Behavior |
 | --- | --- |
 | Account found | Prints its principals, one per line, exit 0 |
 | Unknown account, or missing file | No output, exit 0 (sshd reads that as no principals) |
-| Malformed file | Non-zero exit |
+| Unreadable or malformed file | Non-zero exit |
+
+It needs no privilege beyond read access to the mapping file, so run it as a
+dedicated unprivileged account rather than as root:
 
 ```ini
 # /etc/ssh/sshd_config
 AuthorizedPrincipalsCommand /usr/local/bin/ssoossh host principals %u
-AuthorizedPrincipalsCommandUser root
+AuthorizedPrincipalsCommandUser ssoossh-principals
 ```
+
+See [trusting the CA in sshd](/ssoossh/hosts/sshd-trust/#answering-with-a-command)
+for creating that account and the file permissions it needs.
 
 ### `ssoossh host mapping`
 

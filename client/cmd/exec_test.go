@@ -51,7 +51,7 @@ func TestExecuteEndToEnd(t *testing.T) {
 		// wantNilErr marks a command that's expected to succeed end-to-end.
 		wantNilErr bool
 		// useMappingFile appends --file pointing at a fresh temp path, for
-		// the host commands: their default is /etc/ssoossh/principals.json,
+		// the host commands: their default is /etc/ssoossh/principals.yaml,
 		// which a unit test must neither read nor write.
 		useMappingFile bool
 	}{
@@ -81,7 +81,7 @@ func TestExecuteEndToEnd(t *testing.T) {
 		{name: "host mapping remove with no arguments", args: []string{"host", "mapping", "remove"}, wantErr: errors.New("usage: ssoossh host mapping remove <account> [principal]")},
 
 		// The success paths through the same wrappers, which need --file:
-		// the default mapping file is /etc/ssoossh/principals.json and a
+		// the default mapping file is /etc/ssoossh/principals.yaml and a
 		// unit test must not write there. Together with the arity rows
 		// above these take both constructors from 12.5% to covered.
 		{name: "host mapping add", args: []string{"host", "mapping", "add", "deploy", "alice"}, useMappingFile: true, wantNilErr: true},
@@ -96,7 +96,7 @@ func TestExecuteEndToEnd(t *testing.T) {
 
 			args := tt.args
 			if tt.useMappingFile {
-				args = append(append([]string{}, args...), "--file", filepath.Join(t.TempDir(), "principals.json"))
+				args = append(append([]string{}, args...), "--file", filepath.Join(t.TempDir(), "principals.yaml"))
 			}
 
 			_, err := f.exec.Execute(context.Background(), args)

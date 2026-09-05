@@ -18,8 +18,8 @@ import (
 // them on a host whose mapping is corrupt.
 
 func TestRunHostPrincipals_ShouldPrintOnePrincipalPerLine(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "principals.json")
-	if err := os.WriteFile(path, []byte(`{"deploy":["alice","bob"],"other":["carol"]}`), 0o600); err != nil {
+	path := filepath.Join(t.TempDir(), "principals.yaml")
+	if err := os.WriteFile(path, []byte("deploy:\n  - alice\n  - bob\nother:\n  - carol\n"), 0o600); err != nil {
 		t.Fatalf("write mapping: %v", err)
 	}
 
@@ -42,8 +42,8 @@ func TestRunHostPrincipals_ShouldPrintOnePrincipalPerLine(t *testing.T) {
 
 func TestRunHostPrincipals_ShouldSucceedSilentlyWhenNothingMatches(t *testing.T) {
 	dir := t.TempDir()
-	populated := filepath.Join(dir, "principals.json")
-	if err := os.WriteFile(populated, []byte(`{"deploy":["alice"]}`), 0o600); err != nil {
+	populated := filepath.Join(dir, "principals.yaml")
+	if err := os.WriteFile(populated, []byte("deploy:\n  - alice\n"), 0o600); err != nil {
 		t.Fatalf("write mapping: %v", err)
 	}
 
@@ -53,7 +53,7 @@ func TestRunHostPrincipals_ShouldSucceedSilentlyWhenNothingMatches(t *testing.T)
 		account string
 	}{
 		{name: "unknown account", path: populated, account: "nobody"},
-		{name: "missing file", path: filepath.Join(dir, "absent.json"), account: "deploy"},
+		{name: "missing file", path: filepath.Join(dir, "absent.yaml"), account: "deploy"},
 		// An empty path is what an operator gets from `--file ""`. sshd
 		// reads the empty answer as "no principals", which is the safe
 		// reading of "no mapping was configured".
@@ -79,8 +79,8 @@ func TestRunHostPrincipals_ShouldSucceedSilentlyWhenNothingMatches(t *testing.T)
 // fail. Treating it as empty would silently deny every login on the host
 // while everything looked healthy.
 func TestRunHostPrincipals_ShouldFailWhenTheMappingIsMalformed(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "principals.json")
-	if err := os.WriteFile(path, []byte(`{"deploy": [`), 0o600); err != nil {
+	path := filepath.Join(t.TempDir(), "principals.yaml")
+	if err := os.WriteFile(path, []byte("  deploy:\n"), 0o600); err != nil {
 		t.Fatalf("write mapping: %v", err)
 	}
 
@@ -88,8 +88,8 @@ func TestRunHostPrincipals_ShouldFailWhenTheMappingIsMalformed(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a malformed mapping file to be an error")
 	}
-	if !strings.Contains(err.Error(), "malformed") {
-		t.Errorf("got %q, want it to say the file is malformed", err.Error())
+	if !strings.Contains(err.Error(), "parse principals map") {
+		t.Errorf("got %q, want it to say the map would not parse", err.Error())
 	}
 }
 
@@ -105,8 +105,8 @@ func TestRunHostPrincipals_ShouldFailWhenTheMappingCannotBeRead(t *testing.T) {
 		t.Skip("windows cannot make a file unreadable through the file mode")
 	}
 
-	path := filepath.Join(t.TempDir(), "principals.json")
-	if err := os.WriteFile(path, []byte(`{"deploy":["alice"]}`), 0o000); err != nil {
+	path := filepath.Join(t.TempDir(), "principals.yaml")
+	if err := os.WriteFile(path, []byte("deploy:\n  - alice\n"), 0o000); err != nil {
 		t.Fatalf("write mapping: %v", err)
 	}
 	if os.Geteuid() == 0 {
@@ -117,7 +117,7 @@ func TestRunHostPrincipals_ShouldFailWhenTheMappingCannotBeRead(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an unreadable mapping file to be an error")
 	}
-	if !strings.Contains(err.Error(), "read principal mapping file") {
+	if !strings.Contains(err.Error(), "read principals map") {
 		t.Errorf("got %q, want it to name the read failure", err.Error())
 	}
 }

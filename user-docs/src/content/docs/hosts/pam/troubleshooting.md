@@ -53,7 +53,7 @@ just that one did. Take it off again afterwards.
 | `PAM_USER_UNKNOWN` | `pam_get_user` failed, or `server` is not configured | The `server=` argument. Nothing was sent |
 | `PAM_NO_MODULE_DATA` | The argument vector could not be read, an argument is malformed or too long, or the trusted CA file is missing or holds no usable key | The `pam.d` line, and `trusted-ca-file`. Nothing was sent |
 | `PAM_AUTH_ERR` | The request resolved and the answer was no: denied, expired, the server could not issue, the certificate did not parse, or a check failed. Also a timeout | The per-check debug lines; the server's audit log |
-| `PAM_IGNORE` | Ctrl-C at the approval prompt | Nothing. The module contributed nothing and the stack continued |
+| `PAM_IGNORE` | Ctrl-C at the approval prompt, or `ssh-only` is set and the session did not arrive over SSH | Nothing. The module contributed nothing and the stack continued |
 | `PAM_AUTHINFO_UNAVAIL` | `ssoosshd` could not be reached, or answered with something that was not an answer | Network, DNS, TLS -- see below |
 | `PAM_ABORT` | The keypair or the HTTP client could not be constructed | The host. Out of entropy, out of memory, or a broken libcrypto |
 
@@ -154,6 +154,35 @@ Check 1 failing with a message naming an algorithm is a CA key type this build
 cannot verify, not a bad signature -- see
 [certificate algorithms](/ssoossh/hosts/pam/reference/#certificate-algorithms).
 Under FIPS, `ssh-ed25519` is the usual one.
+
+## Nothing happens at all, and there is no approval prompt
+
+The module ran and declined to take part. Two arguments do that, and both log
+the reason.
+
+If [`ssh-only`](/ssoossh/hosts/pam/reference/#ssh-only) is set, a login that
+did not arrive over SSH returns `PAM_IGNORE` before anything is generated or
+sent. That is the flag working: the next factor in the stack is meant to
+handle a local login. The log names it:
+
+```text
+pam_ssoossh: ssh-only is set and this session did not arrive over SSH; standing aside for alice
+```
+
+A session counts as SSH when `SSH_CONNECTION`, `SSH_CLIENT` or `SSH_TTY` is in
+the environment, or when an `sshd` process, or `sshd-session` on OpenSSH 9.8
+and later, is this process or one of its ancestors. Either signal is enough,
+and the two cover each other: `sudo` scrubs the environment it hands the
+command, not its own, so those variables normally survive, and the ancestry
+walk answers even when something has stripped them.
+
+The surprises run both ways. A remote session that is neither a descendant of
+`sshd` nor carrying any of those variables reads as local. A local user who
+exports `SSH_TTY` reads as remote and gets the browser flow instead of Touch
+ID, which is a worse experience rather than a weaker check.
+
+To confirm which way the module read a session, set `debug` and compare the
+`ssh-only` line above against the request context it logs.
 
 ## Can pam_ssoossh lock me out?
 

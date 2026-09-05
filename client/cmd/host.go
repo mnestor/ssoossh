@@ -12,8 +12,8 @@ func newHostCommand() simplecobra.Commander {
 			"via AuthorizedPrincipalsCommand. Principals can be synced from the server or " +
 			"managed locally.",
 		init: func(cd *simplecobra.Commandeer) error {
-			cd.CobraCommand.PersistentFlags().StringVar(&mappingFile, "file", "/etc/ssoossh/principals.json",
-				"path to the local principal mapping file (JSON object: local account -> list of principals)")
+			cd.CobraCommand.PersistentFlags().StringVar(&mappingFile, "file", "/etc/ssoossh/principals.yaml",
+				"path to the local principal mapping file (YAML: local account -> list of principals)")
 			return nil
 		},
 		commands: []simplecobra.Commander{

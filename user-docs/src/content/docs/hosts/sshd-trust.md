@@ -90,27 +90,100 @@ AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
 ```
 
 with one principal per line in `/etc/ssh/auth_principals/deploy`, or a command
-that answers the same question:
+that answers the same question.
 
-```ini
-AuthorizedPrincipalsCommand /usr/bin/ssoossh host principals %u
-AuthorizedPrincipalsCommandUser root
-```
+### Answering with a command
 
-`ssoossh host principals` implements exactly that contract: it runs as root,
-is called on every login attempt, and never touches the network -- it answers
-only from the local mapping file, `/etc/ssoossh/principals.json` by default
-(`--file` changes it). One principal per line on stdout; an unknown account or
-a missing file exits 0 with no output, which `sshd` reads as no principals; a
+`ssoossh host principals` implements that contract: it is called on every
+login attempt and never touches the network -- it answers only from the local
+mapping file, `/etc/ssoossh/principals.yaml` by default (`--file` changes it).
+One principal per line on stdout; an unknown account or a missing file exits 0
+with no output, which `sshd` reads as no principals; an unreadable or
 malformed file exits non-zero. Edit the mapping with `ssoossh host mapping
 add`, `list` and `remove`.
 
+The file lists, per local account, the principals allowed to assume it:
+
+```yaml
+# /etc/ssoossh/principals.yaml
+deploy:
+  - alice
+  - bob
+alice:
+  - alice
+root:          # listed with nothing: nobody becomes root this way
+```
+
+Reading that file is the only privilege it needs. It opens no socket, writes
+nothing, and does not need a home directory or any environment, so give it a
+dedicated unprivileged account. `sshd` recommends exactly that: an account
+"that has no other role on the host than running authorized principals
+commands".
+
+```bash
+# A dedicated account: no login shell, no home directory, no group members.
+useradd --system --no-create-home --shell /usr/sbin/nologin ssoossh-principals
+
+# Create the mapping through the tool, as root. It writes 0644 root-owned,
+# which the account above can already read.
+ssoossh host mapping add deploy alice
+```
+
+```ini
+# /etc/ssh/sshd_config
+AuthorizedPrincipalsCommand /usr/bin/ssoossh host principals %u
+AuthorizedPrincipalsCommandUser ssoossh-principals
+```
+
+`AuthorizedPrincipalsCommandUser` is not optional. `sshd` refuses to start
+when `AuthorizedPrincipalsCommand` is set without it.
+
+That is the whole setup, and no `chmod` is needed. If you would rather the
+mapping were not world-readable, tighten it once and it stays tightened:
+
+```bash
+chown root:ssoossh-principals /etc/ssoossh/principals.yaml
+chmod 0640 /etc/ssoossh/principals.yaml
+```
+
+`ssoossh host mapping` overwrites that file in place rather than replacing it,
+so the ownership and mode you set survive every later edit. Only a file the
+command creates from nothing gets a mode of its own, and that one is 0644 so a
+fresh install answers before anyone has adjusted anything.
+
+The mapping is not a credential. It states which principals may assume which
+local account, the same class of statement as an `authorized_keys` file, and
+`0644` is a defensible resting place for it. What it does disclose is who may
+reach which account, which is the reason the tighter mode is offered at all.
+
+:::caution
+The mapping file has to stay **readable by the command's account**. If a
+lookup cannot read it, that is an error rather than an empty answer, and no
+principal is returned for any account. An empty file is fine, though: it
+parses as a mapping with nothing in it, so `install /dev/null` or a plain
+`touch` is a valid way to create one before adding anything.
+:::
+
+The binary has its own rule, and it comes from `sshd` rather than from
+ssoossh: `AuthorizedPrincipalsCommand` must name an absolute path to a program
+**owned by root and not writable by group or others**, or `sshd` refuses to
+run it. A package-installed `/usr/bin/ssoossh` already satisfies that.
+
 :::note
-This is a different file from the PAM module's
-[principals map](/ssoossh/hosts/pam/principals-map/). `sshd` reads the JSON
-mapping through `AuthorizedPrincipalsCommand`; `pam_ssoossh` reads its own
-YAML map directly. They answer the same kind of question for two different
-programs, and neither one is consulted by the other.
+Do not point the sshd line at a config file with `-c`. A `--config` path that
+cannot be read is a hard error even for this command, which needs nothing from
+it, so a root-only config file would fail every lookup. A config file found on
+the normal search path is skipped when unreadable, which is why the plain
+command above is safe.
+:::
+
+:::note
+This is the same format as the PAM module's
+[principals map](/ssoossh/hosts/pam/principals-map/), and it can be the same
+file. `sshd` reads it through `AuthorizedPrincipalsCommand`; `pam_ssoossh`
+reads its `principals-map` directly. Neither consults the other, so pointing
+both at one path is a choice rather than the default -- keep them separate if
+`sudo` and `ssh` should authorize different people for an account.
 :::
 
 ## Rotation with multiple keys

@@ -7,9 +7,7 @@ sidebar:
 ---
 
 The authoritative page for the module's behaviour. It restates
-`pam_ssoossh(8)` from the C module, which is what the module on your host
-does; where the monorepo's own documents describe the Go module instead, the
-differences are listed under [Compatibility](#compatibility).
+`pam_ssoossh(8)`, which is what the module on your host does.
 
 ## Synopsis
 
@@ -100,6 +98,7 @@ uses libpam's bracket form, `key=[a value]`.
 | [`skew-tolerance=DURATION`](#skew-toleranceduration) | `2s` | applied to both ends of the validity window |
 | [`timeout=DURATION`](#timeoutduration) | `60s` | bounds the whole attempt |
 | [`insecure-skip-verify`](#insecure-skip-verify) | off | skips TLS verification; logs a warning when used |
+| [`ssh-only`](#ssh-only) | off | take part only when the session arrived over SSH |
 | [`mode=auto\|sudo\|console`](#modeautosudoconsole) | `auto` | forces a flow |
 | [`debug`](#debug) | off | logs each check's decision |
 
@@ -160,6 +159,36 @@ With this on, nothing the server says is authenticated, including the URL that
 reaches the terminal; the module logs a warning on every attempt that uses it.
 A value that is neither `true` nor `false` is treated as `false`.
 
+### `ssh-only`
+
+Default off. Accepts the bare word, `=true` or `=false`. Takes part only when
+the session arrived over SSH. For any other login the module returns
+`PAM_IGNORE` before generating a key or opening a socket, and the stack
+continues to whatever follows it.
+
+This is for a host whose local logins already carry a factor a remote login
+cannot use: a Mac with Touch ID, a workstation with a smartcard reader. Someone
+at the keyboard gets that factor, and someone who arrived over `ssh` gets the
+browser flow.
+
+A session counts as SSH when either test says so:
+
+| Test | Survives |
+| --- | --- |
+| `SSH_CONNECTION`, `SSH_CLIENT` or `SSH_TTY` is set in the environment | `tmux` and `screen`, where the process tree no longer leads back to `sshd` |
+| An `sshd` process, or `sshd-session` on OpenSSH 9.8 and later, is this process or one of its ancestors | a scrubbed environment, where those variables are gone |
+
+:::caution
+This chooses which factor to ask for. It is not a security boundary, and every
+branch of it still authenticates. A local user who exports `SSH_TTY` gets the
+browser flow instead of Touch ID, which is a worse experience rather than a
+weaker check, and a remote user cannot hide `sshd` from the process table.
+Do not reach for this as a way to keep someone at the console out.
+:::
+
+Independent of `mode`. See [sudo and su](/ssoossh/hosts/pam/sudo/#macos-and-touch-id)
+for the macOS stack this exists for.
+
 ### `mode=auto|sudo|console`
 
 Default `auto`, described under [Modes](#modes-and-which-flow-runs). `sudo` and
@@ -207,21 +236,44 @@ supports, so only the CA side is ever constrained by
 | `PAM_USER_UNKNOWN` | `pam_get_user` failed, or `server` is not configured. |
 | `PAM_NO_MODULE_DATA` | The argument vector could not be read, an argument is malformed or too long, or the trusted CA file is missing or holds no usable key. |
 | `PAM_AUTH_ERR` | The request resolved and the answer was no: denied, expired, the server could not issue, the certificate did not parse, or a check failed. Also a timeout. |
-| `PAM_IGNORE` | The person pressed Ctrl-C at the approval prompt. The module contributes nothing and the stack continues to whatever follows it. |
+| `PAM_IGNORE` | The person pressed Ctrl-C at the approval prompt, or [`ssh-only`](#ssh-only) is set and the session did not arrive over SSH. The module contributes nothing and the stack continues to whatever follows it. |
 | `PAM_AUTHINFO_UNAVAIL` | `ssoosshd` could not be reached, or answered with something that was not an answer. This lets a `sufficient` stack fall through, so an ssoossh outage does not become a `sudo` outage on every host. A server that answered and said no is `PAM_AUTH_ERR` instead. |
 | `PAM_ABORT` | The keypair or the HTTP client could not be constructed. |
 
 ## PAM items
 
 The module reads `PAM_USER`, which names the account, and `PAM_SERVICE`,
-`PAM_TTY` and `PAM_RHOST`, which together with the hostname are sent to
-`ssoosshd` as the request's context, so the approver can tell a request they
-caused from one they did not: which machine, through which service, at which
-terminal, from where.
+`PAM_TTY` and `PAM_RHOST`, which go to `ssoosshd` as part of the request
+context below. `PAM_TTY` and `PAM_RHOST` also decide the flow, as described
+under [Modes](#modes-and-which-flow-runs).
 
-Every one of them is self-reported by an unauthenticated caller and the server
-shows them as claims, not facts. `PAM_TTY` and `PAM_RHOST` also decide the
-flow, as described under [Modes](#modes-and-which-flow-runs).
+## Request context
+
+Every request, in either flow, carries what this process can say about itself
+and where it is, so the approver can tell a request they caused from one they
+did not.
+
+| Sent | Detail |
+| --- | --- |
+| Hostname | The host's own name |
+| PAM service, terminal, remote host, requesting user | From the items above |
+| Host process command line | Linux and FreeBSD only |
+| Calling uid, pid and parent pid | Of the process the module is loaded into |
+| Machine identifier | `/etc/machine-id` on Linux, the host UUID elsewhere |
+| Operating system | From `/etc/os-release` and `uname` |
+| Module name and version | This module's own |
+| Configured `mode` | `auto`, `sudo` or `console` as set |
+| The host's clock | What this host believes the time is |
+| CA fingerprints | The SHA256 fingerprint of each key in `trusted-ca-file`, up to eight |
+
+:::caution
+Every one of these is self-reported by an unauthenticated caller. The module
+verifies none of them before sending, and the server shows them as claims, not
+facts. A field the host cannot supply is left out rather than guessed.
+:::
+
+Earlier releases sent this context on the console path only. It now goes with
+both flows, so a `sudo` approval shows the same detail a console approval does.
 
 Everything written to the terminal goes through the PAM conversation function
 the application supplied; the module never opens the tty itself.
@@ -248,16 +300,18 @@ mutates process-global state and the second closes a descriptor the host
 process may be holding, and inside `sudo` neither is this module's to touch.
 Every message carries its own `pam_ssoossh:` prefix instead.
 
-Each attempt logs one unconditional line naming the module version and the
-crypto and HTTP libraries actually linked into the process:
+Each attempt logs one unconditional line naming the module version, the
+`ssoosshd` release it was qualified against, and the crypto and HTTP libraries
+actually linked into the process:
 
 ```text
-pam_ssoossh: 1.0.0 | crypto: OpenSSL 1.1.1k | fips: off | http: libcurl/7.61.1 OpenSSL/1.1.1k
+pam_ssoossh: 1.0.0 | ssoosshd: v1.0.0 | crypto: OpenSSL 1.1.1k | fips: off | http: libcurl/7.61.1 OpenSSL/1.1.1k
 ```
 
 | Field | Is |
 | --- | --- |
 | `1.0.0` | The module version |
+| `ssoosshd:` | The server release this build was tested against, not the server it is talking to. The module and the server are versioned independently |
 | `crypto:` | The crypto library the module itself calls, as that library reports itself. On macOS, `Security.framework` plus the Ed25519 SPI self-test result |
 | `fips:` | `on` or `off`, the host's FIPS mode. Absent on macOS, which has no such switch |
 | `http:` | What libcurl reports for itself and for the TLS library it drives |
@@ -382,19 +436,17 @@ line.
 
 ## Compatibility
 
-Differences from the Go module worth knowing when swapping one for the other:
+Behaviour worth knowing before writing a `pam.d` line against this module:
 
-- The console flow and `mode=` exist only in the C module.
-- `PAM_IGNORE` is returned on Ctrl-C here; the Go module returns
-  `PAM_AUTH_ERR` for that case.
-- `ssh-rsa` (SHA-1) CAs are refused here and accepted there.
-- Log lines are prefixed `pam_ssoossh:` here; the Go module logs under the
-  syslog tag `ssoossh`.
-- Text sent to the terminal is filtered here, as described under
+- `PAM_IGNORE` is returned on Ctrl-C, so the stack continues to whatever
+  follows rather than counting the interruption as a failed authentication.
+- `ssh-rsa` (SHA-1) CA keys are refused by policy. OpenSSH has disabled that
+  signature algorithm by default since 8.8; check what your CA key is with
+  `ssh-keygen -l -f /etc/ssoossh/ca.pub`.
+- Log lines carry their own `pam_ssoossh:` prefix rather than calling
+  `openlog`, so syslog attributes them to the host process.
+- Text sent to the terminal is filtered first, as described under
   [Logging](#logging).
-
-Otherwise the C module reads the same `pam.d` lines: a stanza that works with
-the Go module keeps working.
 
 ## See also
 

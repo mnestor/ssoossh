@@ -73,18 +73,19 @@ authentication, so it needs nothing. See
 
 ## The PAM module
 
-### Which PAM module am I running?
+### Which version of the module am I running?
 
-Two implementations exist. The C module (`ssoossh-pam`) is what these pages
-document: it has the browser flow, the console code-and-QR flow, and the
-`mode=` argument. The Go module in the monorepo is the earlier implementation
--- browser flow only, no console mode -- and is being retired. It reads the
-same `pam.d` lines, and the behavioural differences are listed on
-[the install page](/ssoossh/hosts/pam/install/#which-module).
+Every authentication logs one unconditional line to syslog naming it, along
+with the `ssoosshd` release the build was qualified against and the crypto and
+HTTP libraries it actually linked:
 
-The version line each attempt logs to syslog tells you which one is loaded:
-the C module prefixes every line `pam_ssoossh:`, the Go module logs under the
-syslog tag `ssoossh`.
+```text
+pam_ssoossh: 1.0.0 | ssoosshd: v1.0.0 | crypto: OpenSSL 1.1.1k | fips: off | http: libcurl/7.61.1 OpenSSL/1.1.1k
+```
+
+That line is what makes "which crypto is running inside `sudo`, across the
+fleet" a syslog grep rather than guesswork. The fields are described under
+[Logging](/ssoossh/hosts/pam/reference/#logging).
 
 ### Which services can I put it in?
 
@@ -97,6 +98,25 @@ nobody can see is a lockout.
 
 Only the `auth` management group is implemented. The module has no code for
 `account`, `password` or `session` lines.
+
+### Can I use ssoossh for remote logins but keep Touch ID or a smartcard locally?
+
+Yes. Add the [`ssh-only`](/ssoossh/hosts/pam/reference/#ssh-only) argument and
+put the local factor after the ssoossh line. A login that did not arrive over
+SSH returns `PAM_IGNORE` before anything is generated or sent, so the stack
+goes straight on to the next module.
+
+```ini
+auth    sufficient  pam_ssoossh.so server=https://ssoossh.example.com \
+                    trusted-ca-file=/etc/ssoossh/ca.pub ssh-only
+auth    sufficient  pam_tid.so
+```
+
+That is the point of the flag: a person at the keyboard has a factor a remote
+login cannot use, and someone who arrived over `ssh` has no Touch ID to offer.
+It picks which factor to ask for and is not a security boundary. The macOS
+stack is written out under
+[macOS and Touch ID](/ssoossh/hosts/pam/sudo/#macos-and-touch-id).
 
 ### Can pam_ssoossh lock me out of sudo?
 

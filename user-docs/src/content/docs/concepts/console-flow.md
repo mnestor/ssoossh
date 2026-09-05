@@ -104,8 +104,22 @@ sequenceDiagram
 
 Request binding stops one user approving another's pending request. It does
 nothing about a user talked into approving a request an attacker created for
-them. A code that exists only on the console screen raises that attack from
-"click this link" to "read me the eight characters in front of you".
+them.
+
+Start with which side is which, because it is easy to get backwards. The
+certificate is delivered to the machine that asked for it, and it carries the
+*approver's* identity. So in this attack the attacker is the one sitting at
+the console and the victim is the one holding the browser. The attacker reads
+the code off the console screen and tells it to the victim. The reverse is not
+an attack at all: a victim at the console whose request an attacker approves
+simply receives a certificate naming the attacker.
+
+The code is what makes that call expensive. It appears only on the console
+screen, so there is no link to send and nothing to mass-mail, and the attacker
+has to be at a real host's console to have a code in the first place. The
+victim has to sign in, reach the approval page themselves, and type eight
+characters into it, and the page then names the machine, the service, the
+terminal and the account being logged into.
 
 That is also why the window is the number it is. The approval window is the
 attacker's working time in the phone-call case: someone starts a login at an

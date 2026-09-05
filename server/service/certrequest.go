@@ -945,10 +945,11 @@ func (s *CertRequestService) checkFIPSApproved(authorizedKey string) error {
 // request would hand that stranger an admin certificate.
 //
 // It does not defend against a user being tricked into approving a request
-// an attacker created for them: that consent-phishing case needs a
-// verification code the client displays and the browser has to match, which
-// is deliberately out of scope here (see docs/security-review-2026-08-11.md
-// finding 2).
+// an attacker created for them. That consent-phishing case needs a
+// verification code the requesting client displays and the browser has to
+// match, which is what the console flow does — see docs/guide/flows.md,
+// "Console login". For the browser flows there is no such code, so this
+// remains out of scope here.
 //
 // Takes the already-resolved users row (see resolveUser): Approve resolves
 // it before the authorization gate, so binding — which claims the request —

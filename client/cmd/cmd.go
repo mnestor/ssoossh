@@ -145,9 +145,10 @@ func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 	// command that never talks to the server has to know where its own
 	// local files live, but everything below either reaches the network
 	// (the CA fetch) or exists only to serve something that does. Skipping
-	// it is the point rather than an optimization: `host principals` runs
-	// as root on every sshd login attempt and must answer from local state
-	// alone, and printing a version string is nobody's business but this
+	// it is the point rather than an optimization: `host principals` runs on
+	// every sshd login attempt -- unprivileged, as whatever account
+	// AuthorizedPrincipalsCommandUser names -- and must answer from local
+	// state alone, and printing a version string is nobody's business but this
 	// machine's.
 	if isOffline(runner.Command) {
 		r.api = &offlineAPIClient{command: runner.CobraCommand.CommandPath()}

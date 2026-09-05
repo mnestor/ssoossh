@@ -48,10 +48,9 @@ itself, and the page shows it as such.
 | `trusted_ca_fingerprints` | SHA256 of each key in `trusted-ca-file` | The module rejects a certificate signed by any other key, so the page can say "this host will not accept what is about to be signed" before the host does. |
 
 The first five existed before this document; the rest were added with it.
-Until then the C module sent the four context fields only on the console
-path, for byte parity with the in-repo Go module, which read none of them.
-The C module (the `ssoossh-pam` repository) now sends everything on both
-paths; the Go module is being retired and does not send the context.
+Until then the four context fields went only with a console request. The
+module (the `ssoossh-pam` repository) now sends everything on both paths, so
+a `sudo` approval shows the same detail a console approval does.
 
 ## Where each value goes
 

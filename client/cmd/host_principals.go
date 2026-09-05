@@ -2,11 +2,13 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
+	"io/fs"
 
 	"github.com/bep/simplecobra"
+
+	"github.com/mnestor/ssoossh/internal/principalsmap"
 )
 
 func newHostPrincipalsCommand(mappingFileFunc func() string) simplecobra.Commander {
@@ -17,11 +19,14 @@ func newHostPrincipalsCommand(mappingFileFunc func() string) simplecobra.Command
 		// documented: offline makes root's PreRun skip the CA fetch, so
 		// there is no server round-trip anywhere in this command's path.
 		offline: true,
-		long: "Implements AuthorizedPrincipalsCommand. Runs as root, called on every login " +
-			"attempt, and must never touch the network — it answers only from whatever " +
-			"local mapping files were written. Expects one argument: the local username to " +
-			"look up. Prints one principal per line; unknown account or missing file exits " +
-			"0 with no output (sshd treats as no principals). Malformed file exits non-zero.",
+		long: "Implements AuthorizedPrincipalsCommand. Called on every login attempt, and " +
+			"must never touch the network -- it answers only from whatever local mapping " +
+			"files were written. It needs no privilege beyond read access to the mapping " +
+			"file, so give sshd's AuthorizedPrincipalsCommandUser a dedicated unprivileged " +
+			"account rather than root. Expects one argument: the local username to look " +
+			"up. Prints one principal per line; unknown account or missing file exits 0 " +
+			"with no output (sshd treats as no principals). An unreadable or malformed " +
+			"file exits non-zero.",
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
 			if len(args) < 1 {
 				return fmt.Errorf("usage: ssoossh host principals <username>")
@@ -37,25 +42,20 @@ func runHostPrincipals(ctx context.Context, username, mappingPath string) error 
 		return nil
 	}
 
-	data, err := os.ReadFile(mappingPath)
+	// A file that is not there yet is not an error: sshd reads no output as
+	// no principals, which is the right answer for a host whose mapping has
+	// not been written. Anything else -- unreadable, malformed -- is
+	// reported, because answering "no principals" for a file that exists
+	// and says otherwise would quietly deny every login it authorizes.
+	mapping, err := principalsmap.LoadFromFile(mappingPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
-		return fmt.Errorf("read principal mapping file: %w", err)
+		return err
 	}
 
-	var mapping map[string][]string
-	if err := json.Unmarshal(data, &mapping); err != nil {
-		return fmt.Errorf("malformed principal mapping file: %w", err)
-	}
-
-	principals, ok := mapping[username]
-	if !ok {
-		return nil
-	}
-
-	for _, p := range principals {
+	for _, p := range mapping[username] {
 		fmt.Println(p)
 	}
 	return nil

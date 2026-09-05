@@ -130,6 +130,7 @@ hard dependency of every host's recovery path.
 | The request expired server-side, the server could not issue, or a check failed | `PAM_AUTH_ERR` | Falls through to the password prompt |
 | `ssoosshd` unreachable, or answered with something that was not an answer | `PAM_AUTHINFO_UNAVAIL` | Falls through to the password prompt |
 | Ctrl-C at the approval prompt | `PAM_IGNORE` | The module contributes nothing; the stack continues |
+| `ssh-only` is set and the login is local | `PAM_IGNORE` | Nothing is sent at all; the stack continues to the next factor |
 | `server` missing, or `pam_get_user` failed | `PAM_USER_UNKNOWN` | Falls through; nothing was ever sent |
 | Trusted CA file missing, unreadable, or holding no usable key | `PAM_NO_MODULE_DATA` | Falls through; nothing was ever sent |
 
@@ -175,6 +176,50 @@ http:
   login by the same person stay distinguishable in an audit log.
 - [`http.cert_request_rate_limit.pam`](/ssoossh/reference/config/http/cert_request_rate_limit/#pam)
   bounds request creation per source address.
+
+## macOS and Touch ID
+
+On a Mac the interesting case is that local logins already have a good factor
+and remote ones do not. Touch ID is right there for someone at the keyboard,
+and useless over `ssh`. The [`ssh-only`](/ssoossh/hosts/pam/reference/#ssh-only)
+argument splits the two so each gets the factor that fits.
+
+Put the line in `/etc/pam.d/sudo_local`, not in `sudo`. macOS includes
+`sudo_local` from `sudo` and leaves it alone across OS updates. Create it from
+Apple's template if it is not there:
+
+```bash
+sudo cp /etc/pam.d/sudo_local.template /etc/pam.d/sudo_local
+```
+
+```ini
+# /etc/pam.d/sudo_local
+auth    sufficient  /usr/local/lib/pam/pam_ssoossh.so server=https://ssoossh.example.com \
+                    trusted-ca-file=/etc/ssoossh/ca.pub \
+                    principals-map=/etc/ssoossh/principals.yaml \
+                    ssh-only timeout=60s
+auth    sufficient  pam_tid.so
+```
+
+A login at the console returns `PAM_IGNORE` from the ssoossh line and goes on
+to `pam_tid.so`, which is Touch ID. A login that arrived over `ssh`, where
+there is no Touch ID to offer, gets the browser flow. `sufficient` still means
+a denial, a timeout, Ctrl-C or an unreachable server falls through to whatever
+follows, which here is Touch ID and then the password prompt.
+
+The module is named by absolute path because `/usr/lib/pam`, where OpenPAM
+looks a bare name up, is protected by System Integrity Protection. The
+installer package puts the module under `/usr/local/lib/pam` instead.
+
+:::note
+`mode=console` is not available on macOS. Console mode is compiled in on Linux
+and FreeBSD only; on a Mac it is refused with `PAM_NO_MODULE_DATA` and
+`mode=auto` always uses the browser flow.
+:::
+
+`ssh-only` is not macOS-only. Any host whose local logins carry a factor a
+remote login cannot use is the same shape, a workstation with a smartcard
+reader being the other common one.
 
 ## A safe rollout
 

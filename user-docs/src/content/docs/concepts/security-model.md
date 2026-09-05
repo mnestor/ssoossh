@@ -172,14 +172,6 @@ CA keys can be active at once, which is what covers rotation. See
 [startup modes](/ssoossh/operations/startup-modes/) and
 [HSM and PKCS#11](/ssoossh/operations/hsm/).
 
-:::note[The FAQ says otherwise]
-The repository FAQ still answers "where does the CA private key live" with
-"in an ssh-agent the server process reaches", and calls PKCS#11 planned. The
-shipped configuration surface has no ssh-agent source: `ssh_key` and `hsm`
-are the two, exactly one of them must be set, and the HSM path is documented
-and tested. Treat the FAQ wording as stale.
-:::
-
 ## A compromised web tier, or a rogue admin
 
 Neither can widen access. This is a design property, not an operational hope.
@@ -235,11 +227,15 @@ does nothing about the other shape of the attack: a user talked into
 approving a request the *attacker* created for them. "Click this link and sign
 in" is a phone call away.
 
-The console flow's eight-character code
-(Crockford Base32, shown as `K7M4-QP2X`) is the control for that, not a
-convenience. The code exists only on the screen of the machine in front of
-the person, so the attacker's script becomes "read me the eight characters on
-your console" -- which is a very different conversation from clicking a link.
+The console flow's eight-character code (Crockford Base32, shown as
+`K7M4-QP2X`) is the control for that, not a convenience.
+
+Which side is which matters here. The certificate is delivered to the machine
+that asked for it and carries the approver's identity, so the attacker is the
+one at the console and the victim is the one with the browser. The attacker's
+script is not "read me a code" but "I am at the console of db07, go and
+approve K7M4-QP2X" -- a call they can only make while sitting at a real
+console, to a person who then has to sign in, find the page and type it.
 
 Three properties make it hold:
 

@@ -51,9 +51,9 @@ generates or stores a private key; it records public key material and issuance
 metadata only. The client manages its own keypair.
 
 **The CA key is reached through a `CAKeySource` interface**, never hardcoded
-to one backend. The config file, an ssh-agent connection, and a PKCS#11 token
-are all sources behind that seam, which is also what lets the signer become a
-separate, minimally-privileged process later.
+to one backend. The config file and a PKCS#11 token are the sources behind
+that seam, which is also what lets the signer run as a separate,
+minimally-privileged process.
 
 ## Identity
 
