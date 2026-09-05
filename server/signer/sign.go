@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -79,15 +80,31 @@ func parsePublicKey(authorizedKey string) (ssh.PublicKey, error) {
 	return publicKey, nil
 }
 
+// grantedExtensions lists the extensions actually set on the certificate,
+// sorted so the reply is stable regardless of map order.
+func grantedExtensions(p ssh.Permissions) []string {
+	if len(p.Extensions) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(p.Extensions))
+	for name := range p.Extensions {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // permissionsFor maps the job's already-narrowed options onto SSH
 // certificate permissions.
 //
 // This is a faithful translation, not a policy check: Approve is the only
-// policy point (it currently drops ForceCommand/SourceAddresses entirely and
-// grants NoTouchRequired only for service certificates, which never reach
-// here). Those branches are therefore dead today — but they're implemented
-// rather than omitted, because silently dropping an option the job asked for
-// would make the issued certificate quietly disagree with what was approved.
+// policy point. It drops ForceCommand and SourceAddresses for the signing
+// flow (the lifetime engine may re-add a server-observed source address for
+// service certificates) and grants NoTouchRequired only for service
+// certificates, whose jobs arrive here from EnrollmentService.Retrieve. The
+// branches are implemented in full regardless, because silently dropping an
+// option the job asked for would make the issued certificate quietly
+// disagree with what was approved.
 func permissionsFor(opts certmsg.RequestedOptions) ssh.Permissions {
 	extensions := make(map[string]string, len(opts.Extensions)+1)
 	for _, e := range opts.Extensions {
@@ -208,9 +225,13 @@ func Sign(ctx context.Context, ks CAKeySource, job certmsg.SigningJob, fipsEnabl
 		KeyID:                job.KeyID,
 		Principals:           job.Principals,
 		PublicKeyFingerprint: ssh.FingerprintSHA256(publicKey),
-		CriticalOptions:      permissions.CriticalOptions,
-		Extensions:           job.RequestedOptions.Extensions,
-		ValidAfter:           job.ValidAfter,
-		ValidBefore:          job.ValidBefore,
+		// Both report what was actually signed, not what the job asked
+		// for: permissionsFor may add no-touch-required, and a reply that
+		// echoed the input list would leave the certificates row and the
+		// issued notification unaware of it.
+		CriticalOptions: permissions.CriticalOptions,
+		Extensions:      grantedExtensions(permissions),
+		ValidAfter:      job.ValidAfter,
+		ValidBefore:     job.ValidBefore,
 	}, nil
 }

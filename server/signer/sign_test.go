@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -259,6 +260,62 @@ func TestSign_ShouldGrantNoTouchRequiredWhenRequested(t *testing.T) {
 
 	if _, ok := cert.Extensions["no-touch-required"]; !ok {
 		t.Errorf("expected no-touch-required in extensions, got %v", cert.Extensions)
+	}
+}
+
+// The reply must describe what was signed, not what was asked: the listener
+// writes certificates.extensions and the issued notification from it, and
+// an extension present on the certificate but absent from the reply would
+// be unrecoverable once delivered.
+func TestSign_ShouldReportEveryGrantedExtensionInTheReply(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		options certmsg.RequestedOptions
+		want    []string
+	}{
+		{
+			name:    "should list the requested extensions sorted",
+			options: certmsg.RequestedOptions{Extensions: []string{"permit-pty", "permit-agent-forwarding"}},
+			want:    []string{"permit-agent-forwarding", "permit-pty"},
+		},
+		{
+			name:    "should include no-touch-required when granted",
+			options: certmsg.RequestedOptions{Extensions: []string{"permit-pty"}, NoTouchRequired: true},
+			want:    []string{"no-touch-required", "permit-pty"},
+		},
+		{
+			name:    "should report nothing when nothing was granted",
+			options: certmsg.RequestedOptions{},
+			want:    nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ks, _ := newTestKeySource(t)
+			job := newTestJob(t)
+			job.RequestedOptions = tt.options
+
+			reply, err := Sign(context.Background(), ks, job, false, newDefaultTestLimits())
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !slices.Equal(reply.Extensions, tt.want) {
+				t.Errorf("got reply extensions %v, want %v", reply.Extensions, tt.want)
+			}
+			cert := parseCert(t, reply.Certificate)
+			for _, ext := range reply.Extensions {
+				if _, ok := cert.Extensions[ext]; !ok {
+					t.Errorf("reply lists %q but the certificate does not carry it", ext)
+				}
+			}
+			if len(cert.Extensions) != len(reply.Extensions) {
+				t.Errorf("certificate carries %d extensions, reply lists %d", len(cert.Extensions), len(reply.Extensions))
+			}
+		})
 	}
 }
 
