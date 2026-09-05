@@ -168,6 +168,17 @@ jobs:
       - name: Build web UI
         run: make frontend
 
+      # Also before goreleaser, which attaches the result as a release asset
+      # (.goreleaser.yml's release.extra_files). An explicit step rather than
+      # a goreleaser before-hook for the same reason the web UI is one: a
+      # hook would make every local snapshot build produce it too.
+      #
+      # The script refuses to build a bundle whose manifest is stale, so a
+      # release cannot ship fixtures that disagree with the version
+      # github.com/mnestor/ssoossh-pam pins against them.
+      - name: Build the wire-contract bundle
+        run: make wire-contract-bundle
+
       # 0.16 is a floor, not a preference: earlier zig cc accepted -dynamic
       # on a musl target and linked libc statically anyway, and a static musl
       # binary cannot dlopen a PKCS#11 module (see .goreleaser.yml). Keep in

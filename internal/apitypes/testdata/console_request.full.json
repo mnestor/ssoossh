@@ -1,0 +1,34 @@
+{
+  "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleConsoleKey pam@host",
+  "username": "alice",
+  "hostname": "db-01.example.org",
+  "pam_service": "login",
+  "tty": "/dev/tty1",
+  "remote_host": "198.51.100.7",
+  "requesting_user": "alice",
+  "process": "login",
+  "caller_uid": 1000,
+  "caller_pid": 4242,
+  "caller_ppid": 4200,
+  "machine_id": "6b3a1f9c8d2e4a5b9c0d1e2f3a4b5c6d",
+  "os": "Debian GNU/Linux 13 (trixie) Linux 6.12.0",
+  "client": "pam_ssoossh-c/0.3.0",
+  "mode": "console",
+  "client_time": "2026-09-05T13:04:05+02:00",
+  "trusted_ca_fingerprints": [
+    "SHA256:1yQ0mE2xExampleFingerprintOne",
+    "SHA256:9pR4nT7zExampleFingerprintTwo"
+  ],
+  "requested_options": {
+    "extensions": [
+      "permit-pty",
+      "permit-agent-forwarding"
+    ],
+    "force_command": "/usr/local/bin/audit-shell",
+    "source_addresses": [
+      "198.51.100.0/24",
+      "203.0.113.7/32"
+    ],
+    "no_touch_required": true
+  }
+}

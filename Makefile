@@ -381,10 +381,11 @@ check-gitignore: ## Assert the .gitignore invariants hold
 # here -- the .PHONY line and check-generated's prerequisites both follow
 # from this list rather than repeating it.
 GENERATED_GATES := types-check openapi-check openapi-lint man-check \
-	confdocs-check clidocs-check makefile-docs-check
+	confdocs-check clidocs-check makefile-docs-check wire-contract-check
 
 .PHONY: check-generated $(GENERATED_GATES)
-.PHONY: types openapi gendocs confdocs clidocs makefile-docs third-party-licenses
+.PHONY: types openapi gendocs confdocs clidocs makefile-docs wire-contract
+.PHONY: wire-contract-bundle third-party-licenses
 check-generated: $(GENERATED_GATES) ## Assert every generated artifact is current
 
 # Asserts that regenerating an artifact changes nothing, by hashing the
@@ -553,6 +554,45 @@ clidocs-check:
 # is hand-written and adding a target does not invalidate it.
 makefile-docs: ## Regenerate the target tables in Makefile.md
 	./scripts/gen-makefile-docs.sh Makefile Makefile.md
+
+# docs/wire-contract.json: the versioned statement of what ssoosshd puts on
+# the wire, for the consumer no compiler can check. pam_ssoossh
+# (github.com/mnestor/ssoossh-pam) is a separate project in C, so a renamed
+# JSON tag here breaks it with every gate in this repository still green.
+#
+# The manifest records the endpoint set, the terminal SSE event names, and a
+# hash per golden fixture, and bumps its own version whenever any of those
+# move. Nothing about that stops a breaking change -- it makes one show up in
+# review as a version bump, and gives the other repository a number to pin.
+#
+# Reads the goldens, never writes them: the shapes are decided by
+# `go test ./internal/apitypes/ -update` and
+# `go test ./server/controller/ -update`, and this only reports them.
+wire-contract: ## Regenerate docs/wire-contract.json from the goldens and the spec
+	go run ./internal/tools/genwirecontract
+
+WIRE_CONTRACT_OUT := docs/wire-contract.json
+
+STALE_WIRE_CONTRACT := The wire contract changed: an endpoint, a terminal SSE \
+event, or a wire shape moved. This is spoken by github.com/mnestor/ssoossh-pam, \
+which shares no code with this repository -- land the matching change there \
+before releasing either side.
+
+wire-contract-check:
+	$(call STALENESS_CHECK,$(WIRE_CONTRACT_OUT),wire-contract,$(STALE_WIRE_CONTRACT))
+
+# The release asset: the spec, the manifest and every golden fixture in one
+# reproducible tarball, attached to the release (.goreleaser.yml's
+# release.extra_files). A C consumer with no Go toolchain fetches it for the
+# version it pins and runs its own decoder over the fixtures.
+#
+# Not a goreleaser before-hook, for the same reason `make frontend` is not:
+# a hook would make every local `goreleaser build --snapshot` depend on it.
+# The release workflow runs this as an explicit step instead
+# (.github/workflows/build.yaml). Staged in .wire-contract/ rather than
+# dist/, which goreleaser --clean empties before it reads extra_files.
+wire-contract-bundle: ## Build the release's wire-contract tarball into .wire-contract/
+	./scripts/gen-wire-contract-bundle.sh
 
 MAKEFILE_DOCS_OUT := Makefile.md
 STALE_MAKEFILE_DOCS := $(MAKEFILE_DOCS_OUT) is stale: a target's name or its \

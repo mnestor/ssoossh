@@ -210,6 +210,8 @@ tree and asserts nothing changed.
 | `openapi` | `openapi-check`, `openapi-lint` | swag annotations on `server/controller` handlers |
 | `gendocs` | `man-check` | the cobra command trees |
 | `confdocs` | `confdocs-check` | the doc comments on `server/config`'s structs |
+| `clidocs` | `clidocs-check` | the cobra command trees (the docs site's CLI reference) |
+| `wire-contract` | `wire-contract-check` | the goldens under `internal/apitypes/testdata` and `server/controller/testdata`, plus `docs/openapi.yaml`'s paths |
 | `makefile-docs` | `makefile-docs-check` | the `##@`/`##` annotations in the Makefile |
 | `third-party-licenses` | *(none, not committed)* | the Go module cache |
 

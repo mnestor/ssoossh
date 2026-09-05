@@ -57,6 +57,10 @@ yarn-error.log*
 # goreleaser, and the macOS signing tool it shells out to
 /dist/
 /quill
+# `make wire-contract-bundle`: the release's wire-contract tarball. Staged
+# here rather than dist/, which goreleaser --clean empties before it reads
+# release.extra_files.
+/.wire-contract/
 
 # Local runtime state and config. Named exactly, not globbed: `ssoossh*.yaml`
 # would swallow any sample or example config added later. Name local variants

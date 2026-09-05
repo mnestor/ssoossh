@@ -1,0 +1,15 @@
+{
+  "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleServiceKey deploy@ci",
+  "requested_options": {
+    "extensions": [
+      "permit-pty",
+      "permit-agent-forwarding"
+    ],
+    "force_command": "/usr/local/bin/audit-shell",
+    "source_addresses": [
+      "198.51.100.0/24",
+      "203.0.113.7/32"
+    ],
+    "no_touch_required": true
+  }
+}

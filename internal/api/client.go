@@ -82,26 +82,29 @@ type Config struct {
 	// additional pinning.
 	SkipVerifySSL bool
 
-	// Logger receives per-request tracing. Nil means none, which is the
-	// default and what pam_ssoossh (github.com/mnestor/ssoossh-pam) relies
-	// on: it is loaded into sudo and sshd, where writing to stdout or
-	// stderr corrupts the host process's own output, and it routes its
-	// logging to syslog through its own Logger rather than slog.
-	// Defaulting to slog.Default() here would put
-	// this package's tracing on that stderr by accident, so the caller that
-	// wants tracing has to say so.
+	// Logger receives per-request tracing. Nil means none, and the caller
+	// that wants tracing has to say so: defaulting to slog.Default() would
+	// put this package's tracing on the host process's stderr by accident,
+	// which is not a library's decision to make.
+	//
+	// The rule arrived when a Go PAM module linked this package into sudo,
+	// where a stray write to stderr corrupts the host process's own output.
+	// That module is C now and links none of this, so the constraint is no
+	// longer load-bearing — but the design was right on its own terms and
+	// reverting it would surprise every caller that relies on the silence.
 	Logger *slog.Logger
 }
 
 // HTTPClient is the production Client implementation, built on net/http
 // directly.
 //
-// Directly, rather than on an HTTP convenience library, for a reason that
-// is not style: this code also has to be linkable into pam_ssoossh
-// (github.com/mnestor/ssoossh-pam), a c-shared module mapped into sudo and
-// sshd. The three calls and one event stream below used to go through
-// resty.dev/v3, whose removal took 726 KB off that module — it dragged in
-// encoding/xml and regexp for features none of these calls use.
+// Directly, rather than on an HTTP convenience library. The three calls and
+// one event stream below used to go through resty.dev/v3, which dragged in
+// encoding/xml and regexp for features none of them use; removing it took
+// 726 KB off the binary. That mattered acutely when a Go PAM module linked
+// this package into a c-shared object mapped into every sudo, which is no
+// longer the case — the module is C and links none of this. The dependency
+// is still not worth re-adding for four calls.
 type HTTPClient struct {
 	http *http.Client
 

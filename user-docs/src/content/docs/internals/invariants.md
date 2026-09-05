@@ -99,8 +99,10 @@ are kept from drifting.
 **The wire contract is cross-repository.** `internal/apitypes` and the
 `internal/principalsmap` file format are also spoken by `pam_ssoossh`
 ([github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam)),
-which is a separate module and so cannot import `internal/` at all. A
-breaking change to either is a change in two repositories, not one.
+which is written in C and shares no code with this repository. A breaking
+change to either is a change in two repositories, not one. `docs/wire-contract.json`
+is what makes such a change visible: it versions the shapes, and
+`make wire-contract-check` gates it. See `wire-types.md`.
 
 **`internal/` may not import back up into `client/` or `server/`.** A caller
 maps its own config into whatever the internal package defines, which is why

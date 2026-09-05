@@ -8,10 +8,19 @@
 // dependency) so either side can import it without pulling in the other's
 // dependencies.
 //
-// pam_ssoossh (github.com/mnestor/ssoossh-pam) speaks this same contract
-// from its own module. Being a separate module it cannot import an
-// internal/ package, so a change to these shapes is a cross-repository
-// change: land it here, then update ssoossh-pam.
+// pam_ssoossh (github.com/mnestor/ssoossh-pam) speaks this same contract in
+// C. It shares no code with this package and never will, so nothing at
+// compile time connects the two: a renamed tag here is a silent break there.
+// The goldens in testdata/ are what the other side tests against, and
+// docs/wire-contract.json versions them — change a shape and both have to
+// move, in this order:
+//
+//	go test ./internal/apitypes/ -update
+//	make openapi
+//	make wire-contract
+//
+// then land the matching change in ssoossh-pam before releasing either side.
+// See docs/internals/wire-types.md.
 package apitypes
 
 import "time"

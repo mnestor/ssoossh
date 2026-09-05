@@ -128,22 +128,62 @@ wrapper is manual. When swag ships generics, all of them collapse.
 
 `pam_ssoossh` lives in its own repository,
 [github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam), and
-is a separate Go module — so it cannot import `internal/apitypes`, and no
-compiler checks this pairing at all. Two contracts cross that boundary:
+is written in C. It shares no code with this one, so unlike the two pairings
+above there is no compiler, no generator and no shared type anywhere in it.
+A renamed json tag here regenerates `docs/openapi.yaml` without complaint,
+passes every gate in this repository, and breaks a production `sudo`.
 
-- **The HTTP wire shapes** in `internal/apitypes` (and the SSE event names,
-  which are the terminal statuses in that package).
+Two contracts cross that boundary:
+
+- **The HTTP wire shapes** in `internal/apitypes`, plus the SSE event names,
+  which are the terminal statuses in that package.
 - **The principals-map file format**, which `internal/principalsmap` parses
-  here and the module parses on the host.
+  here and the module parses on the host. This one has no artifact yet; it is
+  specified only by the doc comment on that package.
 
-`docs/openapi.yaml` is the artifact that carries the first of these across:
-it is generated from the handler annotations (see the section above), so the
-other repository has a machine-readable statement of the current contract to
-check itself against rather than a prose description.
+Three things carry the first across.
+
+**Golden fixtures.** `internal/apitypes/testdata/` holds one encoded instance
+of every wire type — `.full.json` with every field set, `.zero.json` showing
+which fields vanish under `omitempty`. `server/controller/testdata/` holds the
+raw bytes of each terminal SSE event, captured by driving the real handler.
+They are plain files, so the C side reads them with no Go toolchain: it runs
+its own decoder over each one and fails its own build when the two disagree.
+
+The SSE goldens exist because that is the part `docs/openapi.yaml` cannot
+describe. The spec says so itself — the response is a stream, so there is
+nowhere to declare a schema — and the two conventions it therefore cannot
+state are both easy to get wrong. The status is in the event name and not in
+the payload (`sse_stream_denied.sse` is `{"data":{}}` and nothing else), and
+the framing is `event:approved` with no space after the colon.
+
+**A versioned manifest.** `docs/wire-contract.json` records the endpoint set,
+the terminal event names, and a SHA-256 per fixture, and bumps its own
+`version` whenever any of those move. `make wire-contract-check` is the merge
+gate. None of this prevents a breaking change; it makes one show up in review
+as a version bump, and gives the other repository a number to pin.
+
+The endpoint set is read from `docs/openapi.yaml`'s paths rather than the spec
+being hashed whole, deliberately: editing a handler's `@Description` should
+not bump the contract version.
+
+**A release asset.** `make wire-contract-bundle` packs the spec, the manifest
+and every fixture into a tarball that goreleaser attaches to the release
+(`release.extra_files`), with `wire-contract.json` uploaded loose alongside it
+so a consumer can read the version with one request. `ssoossh-pam` pins a
+version and tests against the bundle for it.
 
 **Workflow.** A breaking change to either contract is a change in two
-repositories. Land it here, regenerate `docs/openapi.yaml`, then open the
-matching change in `ssoossh-pam` before releasing either side.
+repositories:
+
+```
+go test ./internal/apitypes/ -update    # the payload shapes
+go test ./server/controller/ -update    # the SSE framing
+make openapi                            # the spec
+make wire-contract                      # bumps docs/wire-contract.json
+```
+
+Then open the matching change in `ssoossh-pam` before releasing either side.
 
 ## What is still hand-maintained
 

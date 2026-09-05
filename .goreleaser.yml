@@ -12,6 +12,30 @@ release:
   use_existing_draft: true
   replace_existing_draft: false
 
+  # The wire contract, published so the consumer no compiler can check has
+  # something to pin. pam_ssoossh (github.com/mnestor/ssoossh-pam) is a
+  # separate project in C: it shares no types with this repository, so the
+  # only way it learns that a JSON field moved is by testing its own decoder
+  # against these files.
+  #
+  # wire-contract.json goes up loose as well as inside the tarball, so a
+  # consumer can read the contract version with one request instead of
+  # downloading the fixtures to find it.
+  #
+  # The tarball is built by `make wire-contract-bundle`, which the release
+  # workflow runs as an explicit step before this (.github/workflows/
+  # build.yaml) -- deliberately not a before-hook, for the same reason the
+  # web UI build is not one: it would make every local snapshot build
+  # depend on it.
+  #
+  # It is staged in .wire-contract/ and not dist/ because goreleaser runs
+  # with --clean, which empties dist/ before anything else happens: a bundle
+  # written there by an earlier step is gone by the time this glob runs.
+  extra_files:
+    - glob: ./docs/wire-contract.json
+    - glob: ./docs/openapi.yaml
+    - glob: ./.wire-contract/ssoossh-wire-contract.tar.gz
+
 before:
   hooks:
     - go mod tidy

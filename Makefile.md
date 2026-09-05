@@ -101,6 +101,8 @@ the matching `lint-*`) and the internal check halves
 | `make confdocs` | Regenerate the config reference and defaults.yaml comments |
 | `make clidocs` | Regenerate the docs site's CLI reference from the cobra commands |
 | `make makefile-docs` | Regenerate the target tables in Makefile.md |
+| `make wire-contract` | Regenerate docs/wire-contract.json from the goldens and the spec |
+| `make wire-contract-bundle` | Build the release's wire-contract tarball into .wire-contract/ |
 | `make third-party-licenses` | Regenerate THIRD-PARTY-LICENSES.md |
 
 ### Security
@@ -166,7 +168,7 @@ hand-written Svelte.
 
 ## Generated artifacts
 
-`make check-generated` runs all six gates. Each regenerates into the tree and
+`make check-generated` runs all eight gates. Each regenerates into the tree and
 asserts nothing changed. **Edit the source, never the generated file.**
 
 | Regenerate with | Gated by | Source of truth |
@@ -175,6 +177,8 @@ asserts nothing changed. **Edit the source, never the generated file.**
 | `openapi` | `openapi-check`, `openapi-lint` | swag annotations on `server/controller` handlers |
 | `gendocs` | `man-check` | the cobra command trees |
 | `confdocs` | `confdocs-check` | the doc comments on `server/config`'s structs |
+| `clidocs` | `clidocs-check` | the cobra command trees (the docs site's CLI reference) |
+| `wire-contract` | `wire-contract-check` | the goldens under `internal/apitypes/testdata` and `server/controller/testdata`, plus `docs/openapi.yaml`'s paths |
 | `makefile-docs` | `makefile-docs-check` | the `##@`/`##` annotations in the Makefile |
 | `third-party-licenses` | *(none — not committed)* | the Go module cache |
 
@@ -194,6 +198,16 @@ pass while reporting nothing.
 `gendocs` covers the `.1` and `.8` pages generated from cobra. The `.5`
 config-format pages (`ssoossh.yaml.5`, `ssoosshd.yaml.5`) are hand-written
 and outside that set.
+
+`wire-contract` is the one gate that is not only about staleness.
+`docs/wire-contract.json` versions the shapes ssoosshd puts on the wire, and
+its `version` bumps automatically whenever an endpoint, a terminal SSE event
+or a golden fixture moves. The consumer it exists for is `pam_ssoossh`
+([github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam)),
+which is written in C and shares no code with this repository: nothing at
+compile time tells it that a JSON field was renamed. The bump is what puts
+that in front of a reviewer, and the number is what the other side pins. See
+[docs/internals/wire-types.md](docs/internals/wire-types.md).
 
 ## Security
 

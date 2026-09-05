@@ -1,0 +1,9 @@
+{
+  "request_id": "9f1c0b2a-3d4e-5f60-8a91-b2c3d4e5f607",
+  "events_url": "/api/certs/requests/9f1c0b2a-3d4e-5f60-8a91-b2c3d4e5f607/events",
+  "approval_url": "/approve/9f1c0b2a-3d4e-5f60-8a91-b2c3d4e5f607",
+  "user_code": "K7M4-QP2X",
+  "verification_url": "/console",
+  "verification_url_complete": "/c/K7M4QP2X",
+  "expires_at": "2026-09-05T11:34:05Z"
+}

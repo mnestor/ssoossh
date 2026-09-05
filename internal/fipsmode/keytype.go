@@ -2,8 +2,10 @@
 // server: which SSH key algorithms are FIPS-approved, what to default to,
 // and whether FIPS mode itself is in effect. It exists because client and
 // server must not import each other directly, but both need this logic.
-// pam_ssoossh (github.com/mnestor/ssoossh-pam) applies the same policy from
-// its own module.
+// pam_ssoossh (github.com/mnestor/ssoossh-pam) enforces the same policy in
+// its own C implementation, which shares no code with this package: a key
+// type accepted here and rejected there is a divergence only a test against
+// a real server catches.
 package fipsmode
 
 import "slices"

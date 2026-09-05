@@ -31,6 +31,7 @@ internal/principalsmap         100.0
 internal/serial                 79.0
 internal/tools/confdocs         83.0
 internal/tools/gendocs          71.0
+internal/tools/genwirecontract  76.0
 internal/tracelog               93.0
 
 server/bootstrap                86.0
