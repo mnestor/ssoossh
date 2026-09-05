@@ -9,8 +9,9 @@
 # all. This isn't about matching the *host* OS -- Docker already
 # abstracts that away, so a glibc-based container runs fine on an Alpine
 # host and vice versa. What it's actually for: mounting a PKCS#11 module
-# into the *container* (docs/operations/hsm.md, "Mount the PKCS#11 Module
-# and Token Store") only works if the module's own libc matches the
+# into the *container* (https://mnestor.github.io/ssoossh/operations/hsm/
+# #option-1-mount-the-module-and-token-store) only works if the module's
+# own libc matches the
 # container's -- a glibc-built module (e.g. apt's libsofthsm2.so) can't be
 # dlopen()'d from inside a musl container. Use this image when the
 # PKCS#11 module you're mounting in was itself built against musl.

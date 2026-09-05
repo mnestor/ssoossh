@@ -2,8 +2,7 @@
 
 Proves, on every pull request, that `ssoossh ssh login` → browser approval →
 certificate → `ssh` actually works. See `docs/dev/e2e-testing-plan.md` for the
-full design and `docs/release-phase2-e2e.md` for why it's built the way it
-is.
+full design and why it is built the way it is.
 
 Behind the `e2e` build tag, so `go test ./...` never touches it.
 

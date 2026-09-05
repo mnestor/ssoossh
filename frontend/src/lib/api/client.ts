@@ -55,8 +55,8 @@ interface RequestOptions {
  *
  * Every ssoosshd endpoint answers with `{data, error}` — including SSE event
  * payloads — so unwrapping happens in exactly one place and no caller sees
- * the envelope. See docs/delivery-phase3-web-api.md for why that is
- * universal rather than per-endpoint.
+ * the envelope. `Envelope` in internal/apitypes carries the reasoning for
+ * making it universal rather than per-endpoint.
  *
  * Uses fetch rather than a client library on purpose: the app needs cookie
  * credentials and JSON, both of which fetch does natively, and a dependency

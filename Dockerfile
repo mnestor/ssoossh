@@ -4,7 +4,7 @@
 # already compiled and version-stamped (internal/version) -- there is no
 # compile step here, and no ARG to override the stamp with. See
 # Dockerfile.musl for the Alpine/musl counterpart image, and
-# docs/operations/hsm.md for why the two exist (musl for a bind-mounted
+# https://mnestor.github.io/ssoossh/operations/hsm/ for why the two exist (musl for a bind-mounted
 # PKCS#11 module built against musl, not host-OS compatibility -- Docker
 # already abstracts that away).
 #
@@ -16,7 +16,8 @@
 #
 # base-debian12 (not static-) because ssoosshd is dynamically linked (cgo,
 # dlopen for PKCS#11 modules). To use an HSM in-container, mount the
-# PKCS#11 module and its deps into the image (see docs/operations/hsm.md).
+# PKCS#11 module and its deps into the image (see
+# https://mnestor.github.io/ssoossh/operations/hsm/).
 FROM gcr.io/distroless/base-debian12:nonroot
 ARG TARGETARCH
 COPY linux/$TARGETARCH/ssoosshd /usr/local/sbin/ssoosshd
@@ -26,7 +27,7 @@ COPY linux/$TARGETARCH/ssoosshd /usr/local/sbin/ssoosshd
 # and same reasoning as the .deb/.rpm/.apk packages: /usr/share, never an
 # active template_dir, since a file in an override directory IS an override
 # and would then survive as a stale copy across an upgrade. See
-# docs/operations/email-notifications.md.
+# https://mnestor.github.io/ssoossh/operations/email-notifications/.
 COPY server/resources/mail/ /usr/share/ssoossh/mail-templates/
 USER nonroot:nonroot
 EXPOSE 8080

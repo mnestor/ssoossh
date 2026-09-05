@@ -13,7 +13,7 @@
 // They are deliberately not in internal/apitypes. That package exists to stop
 // the Go client and this server drifting apart; nothing in Go consumes these,
 // and the only consumer is the SvelteKit frontend. See
-// docs/delivery-phase3-web-api.md.
+// https://mnestor.github.io/ssoossh/internals/wire-types/, "Go server -> web UI".
 //
 // The authoritative human-readable contract is docs/openapi.yaml.
 package webtypes

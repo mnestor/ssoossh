@@ -523,7 +523,8 @@ nobody needs to scroll past two hundred matching keys to find the two that
 do not.
 
 Wire types go in `server/webtypes` and flow to TypeScript through the
-existing tygo generation and golden test (`docs/wire-types.md`,
+existing tygo generation and golden test
+(https://mnestor.github.io/ssoossh/internals/wire-types/,
 `server/webtypes/golden_test.go`).
 
 **A metric.** A gauge, labelled by class, that alerting can watch. This is
@@ -641,7 +642,8 @@ Steps 1 and 2 are worth doing even if nothing after them is ever built.
    before settling it.
 5. **Should the client's configuration participate?** `client/config` has
    its own `defaults.yaml` and its own golden. Client settings enforcement
-   is a separate mechanism (`docs/client-settings-enforcement.md`) and this
+   is a separate mechanism (https://mnestor.github.io/ssoossh/hosts/client-enforcement/)
+   and this
    document is scoped to servers, but the reflective walk and the class tag
    would work identically there.
 6. **What happens on a config change that is intentionally staged?** An

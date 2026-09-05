@@ -131,7 +131,7 @@ doesn't need most HTTP/OIDC/DB flags and validation.
   checks (no DB, HTTP, OIDC validation). A future hardening (secrets in
   memory the signer never uses) is documented as residual concern.
 - **NATS subject naming (decided): per-implementation.** `subjectCalculator`
-  in `server/pubsub.go` maps topics to queue groups: `certrequest.sign` →
+  in `server/pubsub/pubsub.go` maps topics to queue groups: `certrequest.sign` →
   "signer", `certrequest.signed` → "signed-listeners", `certrequest.wait.*`
   → no queue group (fan-out). Shared reply topic confirmed in multi-instance
   testing.

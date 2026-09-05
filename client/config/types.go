@@ -23,7 +23,7 @@ type Config struct {
 	// meant to settle — a keypair created under the service's own account
 	// versus under a person's — is about where the key file lives, which
 	// Filename already answers, not about the certificate's principal. See
-	// docs/delivery-phase8-service.md.
+	// https://mnestor.github.io/ssoossh/internals/design-brief/#service-enrollment.
 	Username string `mapstructure:"username"`
 
 	TryOpenBrowser bool `mapstructure:"try_open_browser"`

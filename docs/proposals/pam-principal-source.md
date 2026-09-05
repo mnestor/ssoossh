@@ -68,7 +68,7 @@ transaction lands in the advisory field and the unauthenticated half lands
 in the load-bearing one.
 
 This contradicts the project's own stated model
-(`https://mnestor.github.io/ssoossh/internals/design-brief/:83`):
+([the design brief, "Principal mapping"](https://mnestor.github.io/ssoossh/internals/design-brief/#principal-mapping)):
 
 > The certificate asserts identity; the host decides which local accounts
 > that maps to. This is what keeps "userX may become root here" from being
@@ -254,7 +254,8 @@ not require the server to model host-local state.
   comment stating the intent) and `:324-326` (the assertion).
 - The key ID split: `server/service/keyid.go:67` for the template,
   `:40` for `Username` being `identity.Username`.
-- The stated model: `https://mnestor.github.io/ssoossh/internals/design-brief/:83`.
+- The stated model: the design brief's "Principal mapping" section,
+  https://mnestor.github.io/ssoossh/internals/design-brief/#principal-mapping.
 - The consent-phishing note: `server/service/certrequest.go:721-725`. The
   `docs/security-review-2026-08-11.md` it cites is not in the tree.
 - Map semantics: `internal/principalsmap/principalsmap.go:294-305`.

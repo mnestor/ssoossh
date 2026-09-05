@@ -1,7 +1,9 @@
 -- Host context: the rest of what a PAM or console module can say about the
 -- process and machine asking, and the content of an approval decision.
--- See docs/internals/host-context.md. Plain ADD COLUMN on both dialects;
--- the postgres file is the same list with its own types.
+-- See https://mnestor.github.io/ssoossh/internals/host-context/.
+--
+-- Plain ADD COLUMN on both dialects; the postgres file is the same list
+-- with its own types.
 --
 -- Every certificate_requests column here is self-reported by an
 -- unauthenticated caller, bounded on the way in, and rendered as a claim.

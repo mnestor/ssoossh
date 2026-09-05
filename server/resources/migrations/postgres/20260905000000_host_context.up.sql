@@ -1,6 +1,6 @@
 -- Host context: the rest of what a PAM or console module can say about the
 -- process and machine asking, and the content of an approval decision.
--- See docs/internals/host-context.md.
+-- See https://mnestor.github.io/ssoossh/internals/host-context/.
 --
 -- Every certificate_requests column here is self-reported by an
 -- unauthenticated caller, bounded on the way in, and rendered as a claim.

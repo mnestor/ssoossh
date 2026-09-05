@@ -1,5 +1,6 @@
 -- LDAP enrichment, directory sync, and the first persisted group storage.
--- See docs/operations/ldap.md and docs/proposals/ldap-enrichment-and-sync.md.
+-- See https://mnestor.github.io/ssoossh/operations/ldap/ and
+-- docs/proposals/ldap-enrichment-and-sync.md.
 
 -- Sync bookkeeping, one row per user who has logged in while LDAP was
 -- enabled. Only known users sync: the server never enumerates the
@@ -17,7 +18,7 @@ CREATE TABLE user_ldap (
 
 -- Persisted group membership, for notification fan-out and display. Never
 -- an authorization input: authorization reads the session identity only
--- (see docs/internals/invariants.md).
+-- (see https://mnestor.github.io/ssoossh/internals/invariants/).
 --
 -- Rows rather than JSON so "everyone in soc" is one indexed query. Unique
 -- per (user, group, source) so the two capture paths never collide and

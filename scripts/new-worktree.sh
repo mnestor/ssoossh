@@ -75,5 +75,4 @@ worktree ready
 Notes: every go command needs CGO_ENABLED=1 (the Makefile sets it), and
 commits need --no-gpg-sign in this container -- start a rebase with
 --no-gpg-sign too, or the sequencer records a signing option it cannot use.
-See docs/dev/parallel-agent-workflow.md.
 INFO

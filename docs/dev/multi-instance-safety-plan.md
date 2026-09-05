@@ -26,7 +26,7 @@ one NATS cluster, with no client able to tell which instance it reached.
 ## The central problem: delivery is instance-local
 
 Certificates are deliberately never persisted
-(`docs/signing-pipeline.md`). They're delivered once, via
+(https://mnestor.github.io/ssoossh/internals/architecture/). They're delivered once, via
 `CertRequestService`'s in-memory `resolved` cache and a wake message.
 
 With several instances, the request path fans out:
@@ -105,7 +105,7 @@ from it, so no configuration produces an unbounded window. Every instance
 derives the same bound from the same value.
 
 `signing_started_at` would still remove the derivation and its imprecision,
-and is the option deferred in `docs/signing-pipeline.md` — but it is now an
+and is the option deferred in https://mnestor.github.io/ssoossh/internals/architecture/ — but it is now an
 accuracy improvement, not a fix for a hazard.
 
 ### 3. Duplicate scheduled work (correctness-safe, wasteful)

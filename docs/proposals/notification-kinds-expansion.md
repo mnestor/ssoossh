@@ -50,7 +50,8 @@ The four kinds, in the order they earn their keep:
 | `console_certificate_issued` | A console certificate is signed for a code-approved login (added with the console type, after this proposal) | off |
 
 Everything here follows the existing four-step "adding a notification
-kind" recipe (docs/email-notifications.md): a `Kind` constant, a payload
+kind" recipe (https://mnestor.github.io/ssoossh/operations/email-notifications/#adding-a-notification-kind):
+a `Kind` constant, a payload
 struct, a registry `Definition`, and templates. The sections below cover
 only what each kind needs *beyond* that recipe, plus the one change to
 delivery itself.

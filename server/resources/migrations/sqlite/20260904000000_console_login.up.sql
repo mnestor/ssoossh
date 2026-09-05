@@ -21,8 +21,8 @@
 PRAGMA foreign_keys=OFF;
 
 -- Host identity is deliberately absent from the type CHECK
--- (docs/project/decisions.md): no secure way exists today to verify a
--- host's claim to a hostname.
+-- (https://mnestor.github.io/ssoossh/project/decisions/): no secure way exists
+-- today to verify a host's claim to a hostname.
 CREATE TABLE certificate_requests_new (
     id TEXT PRIMARY KEY NOT NULL,
     type TEXT NOT NULL

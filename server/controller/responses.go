@@ -18,8 +18,9 @@ import (
 // Converters from the server's internal types to the web UI's wire shapes.
 // The shapes themselves live in server/webtypes, which is what tygo reads to
 // generate the frontend's TypeScript — keeping them in a package of their
-// own means the generator sees wire types and nothing else. See docs/api.md
-// for the wire contract.
+// own means the generator sees wire types and nothing else. docs/openapi.yaml
+// is the wire contract itself; https://mnestor.github.io/ssoossh/internals/wire-types/
+// explains how the two are kept from drifting.
 //
 // New endpoints use the {data, error} envelope from
 // .claude/rules/server-api.md. The older client-facing endpoints
