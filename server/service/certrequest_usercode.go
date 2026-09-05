@@ -103,6 +103,7 @@ func (s *CertRequestService) ResolveUserCode(ctx context.Context, submitted stri
 		Detail: map[string]any{
 			"request_id": req.ID,
 			"cert_type":  string(req.Type),
+			"username":   req.Username,
 			"hostname":   req.Hostname,
 			"tty":        req.TTY,
 		},

@@ -467,10 +467,13 @@ func (s *CertRequestService) CreateRequest(ctx context.Context, p NewCertRequest
 			"source_ip":      req.SourceIP,
 			"local_username": req.LocalUsername,
 			"local_hostname": req.LocalHostname,
-			// The console context, recorded because it is what an incident
-			// reviewer needs to place a login: which machine claimed to be
-			// asking, through which service, at which terminal. Every one
-			// of them is the caller's own claim.
+			// The account a PAM or console request is authenticating
+			// (see model.CertificateRequest.Username), and the console
+			// context, recorded because they are what an incident reviewer
+			// needs to place a login: which account, on which machine,
+			// through which service, at which terminal. Every one of them
+			// is the caller's own claim.
+			"username": req.Username,
 			//
 			// req.UserCode is deliberately absent. It is a bearer-adjacent
 			// credential and the never-log-sensitive-data rule covers audit
@@ -1389,6 +1392,11 @@ func (s *CertRequestService) approveForSigning(ctx context.Context, req model.Ce
 			"serial":        serialNum,
 			"source_ip":     req.SourceIP,
 			"cert_lifetime": effectiveDuration.String(),
+			// The account and host the request claimed, carried on every
+			// cert.* event so a reviewer never has to join back to
+			// cert.requested to learn what was approved for whom.
+			"username": req.Username,
+			"hostname": req.Hostname,
 		},
 	}
 
@@ -1534,7 +1542,14 @@ func (s *CertRequestService) Deny(ctx context.Context, requestID string, identit
 		Action:     AuditCertDenied,
 		Actor:      AuditSubjectFromIdentity(identity, ""),
 		OccurredAt: now,
-		Detail:     map[string]any{"request_id": requestID},
+		Detail: map[string]any{
+			"request_id": requestID,
+			"cert_type":  string(req.Type),
+			// See the cert.approved event for why these ride on every
+			// cert.* event.
+			"username": req.Username,
+			"hostname": req.Hostname,
+		},
 	}
 
 	// See approveServiceEnrollment's comment on why this pair is

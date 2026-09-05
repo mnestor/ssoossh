@@ -215,6 +215,10 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 	// lose the audit record entirely, which is the very outcome the
 	// best-effort handling here exists to avoid.
 	var userID, requestID *string
+	// req stays in scope past the lookup because the cert.issued event
+	// below carries the account and host the request claimed. For a
+	// service reply, or a lookup that fails, it is simply empty.
+	var req model.CertificateRequest
 	if reply.Type == model.CertificateTypeService {
 		// A service reply's RequestID is an enrollment_retrievals row, not
 		// a certificate request (see EnrollmentService.Retrieve): the audit
@@ -223,7 +227,6 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 		// the approving user and that request's ID.
 		userID, requestID = h.resolveRetrievalOwner(ctx, reply.RequestID)
 	} else {
-		var req model.CertificateRequest
 		// The client-reported columns come back with the owner rather than
 		// in a second read: the issued notification needs them, and this is
 		// the one place the request row is already being loaded. Which
@@ -301,6 +304,11 @@ func (h *SignedReplyHandler) recordCertificate(ctx context.Context, reply certms
 				"fingerprint":  reply.PublicKeyFingerprint,
 				"valid_after":  reply.ValidAfter,
 				"valid_before": reply.ValidBefore,
+				// The account and host a PAM or console request claimed.
+				// This is the line joined against the host's own sshd and
+				// sudo logs, and the hostname is the join key.
+				"username": req.Username,
+				"hostname": req.Hostname,
 			},
 		})
 	}
