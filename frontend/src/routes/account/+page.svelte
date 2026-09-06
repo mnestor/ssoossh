@@ -18,6 +18,18 @@
 	let loadError = $state<string | null>(null);
 	let hasLoaded = $state(false);
 
+	// Every access level this session holds, widest first. The roles nest —
+	// an admin holds SOC and auditor too — and the page names all of them
+	// rather than only the narrowest, so an admin is not told "Auditor" and
+	// left unable to tell that from an account that really is auditor-only.
+	const roles = $derived(
+		[
+			user?.is_admin ? 'Admin' : null,
+			user?.is_soc ? 'SOC' : null,
+			user?.is_auditor ? 'Auditor' : null
+		].filter((role): role is string => role !== null)
+	);
+
 	$effect(() => {
 		const controller = new AbortController();
 
@@ -77,12 +89,16 @@
 						</div>
 					{/each}
 				{/if}
-				{#if user.is_auditor}
+				{#if roles.length > 0}
 					<DetailRow label="Access">
-						<span
-							class="inline-flex items-center gap-1.5 rounded-full bg-granted-surface px-2.5 py-1 text-xs font-semibold text-granted"
-						>
-							Auditor
+						<span class="flex flex-wrap gap-1.5" data-testid="access-roles">
+							{#each roles as role (role)}
+								<span
+									class="inline-flex items-center gap-1.5 rounded-full bg-granted-surface px-2.5 py-1 text-xs font-semibold text-granted"
+								>
+									{role}
+								</span>
+							{/each}
 						</span>
 					</DetailRow>
 				{/if}

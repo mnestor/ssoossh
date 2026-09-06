@@ -141,6 +141,81 @@ func TestCurrentUserHandler_ShouldReturnTheSessionIdentity(t *testing.T) {
 	}
 }
 
+// TestCurrentUserHandler_ShouldReportEveryAccessLevelHeld covers the three
+// display-only access flags. The roles nest, so more than one is true at a
+// time and the response must say so: reporting only the narrowest is what
+// left an admin's account page reading "Auditor".
+func TestCurrentUserHandler_ShouldReportEveryAccessLevelHeld(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	admin := config.AdminConfig{RequireGroup: "admins", SOCGroup: "soc", AuditorGroup: "auditors"}
+
+	tests := []struct {
+		name        string
+		groups      []string
+		wantAdmin   bool
+		wantSOC     bool
+		wantAuditor bool
+	}{
+		{
+			name:        "an admin holds all three",
+			groups:      []string{"admins"},
+			wantAdmin:   true,
+			wantSOC:     true,
+			wantAuditor: true,
+		},
+		{
+			name:        "a SOC member holds SOC and auditor but not admin",
+			groups:      []string{"soc"},
+			wantSOC:     true,
+			wantAuditor: true,
+		},
+		{
+			name:        "an auditor holds auditor only",
+			groups:      []string{"auditors"},
+			wantAuditor: true,
+		},
+		{
+			name:   "an ordinary user holds none",
+			groups: []string{"ssh-users"},
+		},
+		{
+			name:        "membership in every group still reports all three once",
+			groups:      []string{"admins", "soc", "auditors"},
+			wantAdmin:   true,
+			wantSOC:     true,
+			wantAuditor: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			identity := &service.Identity{Subject: "sub-alice", Username: "alice", Groups: tt.groups}
+			r := gin.New()
+			NewUserController(&r.RouterGroup, &config.Config{Admin: admin}, identityMiddleware(identity), &mockUserDatabase{})
+
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/me", nil))
+
+			var got webtypes.CurrentUserResponse
+			decodeEnvelope(t, w.Body.Bytes(), &got)
+
+			if got.IsAdmin != tt.wantAdmin {
+				t.Errorf("got is_admin %v, want %v", got.IsAdmin, tt.wantAdmin)
+			}
+			if got.IsSOC != tt.wantSOC {
+				t.Errorf("got is_soc %v, want %v", got.IsSOC, tt.wantSOC)
+			}
+			if got.IsAuditor != tt.wantAuditor {
+				t.Errorf("got is_auditor %v, want %v", got.IsAuditor, tt.wantAuditor)
+			}
+		})
+	}
+}
+
 // TestCurrentUserHandler_ShouldRenderGroupsAsAnEmptyArray keeps the UI from
 // having to handle null: a user in no groups gets [], not null.
 func TestCurrentUserHandler_ShouldRenderGroupsAsAnEmptyArray(t *testing.T) {

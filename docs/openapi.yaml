@@ -1216,12 +1216,19 @@ components:
             type: string
           type: array
           uniqueItems: false
-        is_auditor:
+        is_admin:
           description: |-
-            IsAuditor reports whether this session holds auditor-level access
-            (config.AdminConfig.GrantsAuditor), so the UI can show
-            auditor-only affordances like other users' retrieval logs. Display
-            only — the server re-checks on every auditor-scoped read.
+            IsAdmin, IsSOC and IsAuditor report the access levels this session
+            holds, so the UI can show the affordances each one unlocks. The roles
+            nest — an admin holds all three, a SOC member holds SOC and auditor —
+            so more than one is true at a time and the account page names every
+            one rather than only the narrowest. Display only: the server re-checks
+            the matching Grants* rule on every scoped request, so hiding or
+            showing an affordance changes nothing about what this session can do.
+          type: boolean
+        is_auditor:
+          type: boolean
+        is_soc:
           type: boolean
         other_accounts:
           description: |-
@@ -1252,7 +1259,9 @@ components:
       - email
       - extra
       - groups
+      - is_admin
       - is_auditor
+      - is_soc
       - other_accounts
       - service_accounts
       - subject

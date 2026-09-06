@@ -95,11 +95,16 @@ export interface CurrentUserResponse {
 	 */
 	extra: { [key: string]: any};
 	/**
-	 * IsAuditor reports whether this session holds auditor-level access
-	 * (config.AdminConfig.GrantsAuditor), so the UI can show
-	 * auditor-only affordances like other users' retrieval logs. Display
-	 * only — the server re-checks on every auditor-scoped read.
+	 * IsAdmin, IsSOC and IsAuditor report the access levels this session
+	 * holds, so the UI can show the affordances each one unlocks. The roles
+	 * nest — an admin holds all three, a SOC member holds SOC and auditor —
+	 * so more than one is true at a time and the account page names every
+	 * one rather than only the narrowest. Display only: the server re-checks
+	 * the matching Grants* rule on every scoped request, so hiding or
+	 * showing an affordance changes nothing about what this session can do.
 	 */
+	is_admin: boolean;
+	is_soc: boolean;
 	is_auditor: boolean;
 }
 /**

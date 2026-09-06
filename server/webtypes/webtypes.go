@@ -86,10 +86,15 @@ type CurrentUserResponse struct {
 	// The frontend should display missing values visibly rather than hiding them.
 	Extra map[string]any `json:"extra" validate:"required"`
 
-	// IsAuditor reports whether this session holds auditor-level access
-	// (config.AdminConfig.GrantsAuditor), so the UI can show
-	// auditor-only affordances like other users' retrieval logs. Display
-	// only — the server re-checks on every auditor-scoped read.
+	// IsAdmin, IsSOC and IsAuditor report the access levels this session
+	// holds, so the UI can show the affordances each one unlocks. The roles
+	// nest — an admin holds all three, a SOC member holds SOC and auditor —
+	// so more than one is true at a time and the account page names every
+	// one rather than only the narrowest. Display only: the server re-checks
+	// the matching Grants* rule on every scoped request, so hiding or
+	// showing an affordance changes nothing about what this session can do.
+	IsAdmin   bool `json:"is_admin" validate:"required"`
+	IsSOC     bool `json:"is_soc" validate:"required"`
 	IsAuditor bool `json:"is_auditor" validate:"required"`
 }
 

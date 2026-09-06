@@ -33,6 +33,8 @@ function signedInUser(isAuditor: boolean) {
 		other_accounts: [],
 		service_accounts: [],
 		extra: {},
+		is_admin: false,
+		is_soc: false,
 		is_auditor: isAuditor
 	};
 }

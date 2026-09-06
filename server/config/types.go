@@ -347,6 +347,15 @@ func (a *AdminConfig) IsSOCEnabled() bool {
 	return a.SOCGroup != ""
 }
 
+// GrantsAdmin reports whether an identity holding groups has admin-level
+// access. Admin is the root role: it is granted only by membership in the
+// configured admin group, and nothing else confers it. Fails closed: an
+// unconfigured admin group, or empty groups, denies. The single authority
+// for this rule — middleware.AdminAuthMiddleware goes through it.
+func (a *AdminConfig) GrantsAdmin(groups []string) bool {
+	return a.IsAdminEnabled() && containsGroup(groups, a.RequireGroup)
+}
+
 // GrantsSOC reports whether an identity holding groups has SOC-level
 // access (containment operations: disabling users, expiring enrollments).
 // Admins are a superset of SOC: admin group membership grants access even
@@ -356,7 +365,7 @@ func (a *AdminConfig) IsSOCEnabled() bool {
 // single authority for this rule — middleware.SOCAuthMiddleware goes
 // through it.
 func (a *AdminConfig) GrantsSOC(groups []string) bool {
-	if a.IsAdminEnabled() && containsGroup(groups, a.RequireGroup) {
+	if a.GrantsAdmin(groups) {
 		return true
 	}
 	return a.IsSOCEnabled() && containsGroup(groups, a.SOCGroup)

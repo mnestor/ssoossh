@@ -54,6 +54,8 @@ function signedInAs(overrides: Partial<CurrentUser> = {}): CurrentUser {
 		other_accounts: [],
 		service_accounts: [],
 		extra: {},
+		is_admin: false,
+		is_soc: false,
 		is_auditor: false,
 		...overrides
 	};

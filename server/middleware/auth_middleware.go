@@ -20,15 +20,11 @@ func NewAdminAuthMiddleware(c *config.Config) *AdminAuthMiddleware {
 }
 
 // Add returns a gin.HandlerFunc that checks admin group membership and fails
-// closed with 403 Forbidden if the caller is not an admin.
+// closed with 403 Forbidden if the caller is not an admin. An unconfigured
+// admin group denies too: config.AdminConfig.GrantsAdmin is the single
+// authority for the rule and never grants without a configured group.
 func (m *AdminAuthMiddleware) Add() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !m.config.Admin.IsAdminEnabled() {
-			_ = c.Error(&errorresponses.ForbiddenError{}) //nolint:errcheck
-			c.Abort()
-			return
-		}
-
 		identity, ok := Identity(c)
 		if !ok || identity == nil {
 			_ = c.Error(&errorresponses.ForbiddenError{}) //nolint:errcheck
@@ -36,7 +32,7 @@ func (m *AdminAuthMiddleware) Add() gin.HandlerFunc {
 			return
 		}
 
-		if !containsString(identity.Groups, m.config.Admin.RequireGroup) {
+		if !m.config.Admin.GrantsAdmin(identity.Groups) {
 			_ = c.Error(&errorresponses.ForbiddenError{}) //nolint:errcheck
 			c.Abort()
 			return
@@ -121,18 +117,4 @@ func (m *AuditorAuthMiddleware) Add() gin.HandlerFunc {
 
 		c.Next()
 	}
-}
-
-// containsString reports whether needle is in haystack. An empty needle never
-// matches, so an unconfigured group cannot accidentally authorize a caller.
-func containsString(haystack []string, needle string) bool {
-	if needle == "" {
-		return false
-	}
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
 }

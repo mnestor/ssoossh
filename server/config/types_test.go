@@ -519,3 +519,75 @@ func TestGrantsSOC_ShouldDecideSOCAccess(t *testing.T) {
 		})
 	}
 }
+
+// TestGrantsAdmin_ShouldDecideAdminAccess exercises the admin grant, which
+// is the root role: only membership in the configured admin group confers
+// it, and no other role does. It is also what the account page reads to say
+// "Admin" rather than reporting the narrowest role an admin happens to
+// satisfy, so a false negative here is a user told they are less than they
+// are.
+func TestGrantsAdmin_ShouldDecideAdminAccess(t *testing.T) {
+	tests := []struct {
+		name   string
+		cfg    AdminConfig
+		groups []string
+		want   bool
+	}{
+		{
+			name:   "admin group grants admin access",
+			cfg:    AdminConfig{RequireGroup: "admins"},
+			groups: []string{"admins"},
+			want:   true,
+		},
+		{
+			name:   "admin group grants alongside the other roles",
+			cfg:    AdminConfig{RequireGroup: "admins", SOCGroup: "soc", AuditorGroup: "auditors"},
+			groups: []string{"auditors", "admins"},
+			want:   true,
+		},
+		{
+			name:   "SOC group never grants admin access",
+			cfg:    AdminConfig{RequireGroup: "admins", SOCGroup: "soc"},
+			groups: []string{"soc"},
+			want:   false,
+		},
+		{
+			name:   "auditor group never grants admin access",
+			cfg:    AdminConfig{RequireGroup: "admins", AuditorGroup: "auditors"},
+			groups: []string{"auditors"},
+			want:   false,
+		},
+		{
+			name:   "an unconfigured admin group denies everyone",
+			cfg:    AdminConfig{SOCGroup: "soc", AuditorGroup: "auditors"},
+			groups: []string{"admins"},
+			want:   false,
+		},
+		{
+			name:   "an empty group list entry never matches an unset admin group",
+			cfg:    AdminConfig{},
+			groups: []string{""},
+			want:   false,
+		},
+		{
+			name:   "no groups at all denies",
+			cfg:    AdminConfig{RequireGroup: "admins"},
+			groups: nil,
+			want:   false,
+		},
+		{
+			name:   "membership is exact, not a prefix",
+			cfg:    AdminConfig{RequireGroup: "admins"},
+			groups: []string{"admins-readonly"},
+			want:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.cfg.GrantsAdmin(tt.groups); got != tt.want {
+				t.Errorf("GrantsAdmin(%v) = %v, want %v", tt.groups, got, tt.want)
+			}
+		})
+	}
+}

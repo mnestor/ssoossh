@@ -68,9 +68,12 @@ func newPageMeta(p paging.Params, total int64) webtypes.PageMeta {
 }
 
 // newCurrentUserResponse converts the session identity to its wire shape.
-// IsAuditor is display-only: the server re-checks GrantsAuditor on every
-// auditor-scoped read, so the UI hiding or showing an affordance changes
-// nothing about what this session can actually fetch. Extra is hydrated from
+// The three access flags are display-only: the server re-checks the matching
+// Grants* rule on every scoped request, so the UI hiding or showing an
+// affordance changes nothing about what this session can actually fetch.
+// All three are reported rather than only the narrowest, because the roles
+// nest and an admin who is told only "auditor" cannot tell that from an
+// account that really is auditor-only. Extra is hydrated from
 // the users table by subject, since it is a stored attribute independent of
 // the session. Malformed JSON degrades to empty rather than erroring.
 func newCurrentUserResponse(identity *service.Identity, c *config.Config, db any, subject string) webtypes.CurrentUserResponse {
@@ -83,6 +86,8 @@ func newCurrentUserResponse(identity *service.Identity, c *config.Config, db any
 		OtherAccounts:   orEmpty(identity.OtherAccounts),
 		ServiceAccounts: orEmpty(identity.ServiceAccounts),
 		Extra:           extra,
+		IsAdmin:         c.Admin.GrantsAdmin(identity.Groups),
+		IsSOC:           c.Admin.GrantsSOC(identity.Groups),
 		IsAuditor:       c.Admin.GrantsAuditor(identity.Groups),
 	}
 }

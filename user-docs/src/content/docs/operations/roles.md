@@ -81,6 +81,18 @@ What no role may do, at all:
 A compromised web tier, or a rogue admin, can deny service. It cannot
 escalate.
 
+### What a person sees of their own access
+
+The account page names **every** role the session holds, not the narrowest
+one. The roles nest, so an admin's account page reads `Admin` `SOC` `Auditor`
+and a SOC member's reads `SOC` `Auditor`. Someone who holds no privileged
+role sees no access row at all.
+
+This is display only. The badges come from the same
+`admin.require_group` / `admin.soc_group` / `admin.auditor_group` membership
+the server evaluates, and the server re-checks it on every scoped request, so
+a badge cannot grant anything and its absence cannot take anything away.
+
 ### What auditors see of the configuration
 
 The effective-configuration screen renders the server's whole configuration,

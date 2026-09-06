@@ -18,6 +18,8 @@ function aliceUser(overrides: Partial<CurrentUser> = {}): CurrentUser {
 			cost_center: 'CC-7781',
 			teams: ['team-a', 'team-b']
 		},
+		is_admin: false,
+		is_soc: false,
 		is_auditor: false,
 		...overrides
 	};
@@ -92,17 +94,45 @@ describe('Account page', () => {
 			expect(screen.getByText('ops')).toBeInTheDocument();
 		});
 
-		it('should not show the auditor badge for a non-auditor', async () => {
+		it('should not show any access badge when the session holds no role', async () => {
 			mockFetch(aliceUser());
 			render(Page);
 			await screen.findByText('sub-alice');
-			expect(screen.queryByText('Auditor')).not.toBeInTheDocument();
+			expect(screen.queryByTestId('access-roles')).not.toBeInTheDocument();
 		});
 
 		it('should show the auditor badge for an auditor', async () => {
 			mockFetch(aliceUser({ is_auditor: true }));
 			render(Page);
 			expect(await screen.findByText('Auditor')).toBeInTheDocument();
+		});
+
+		it('should show the SOC badge for a SOC member', async () => {
+			mockFetch(aliceUser({ is_soc: true, is_auditor: true }));
+			render(Page);
+			expect(await screen.findByText('SOC')).toBeInTheDocument();
+		});
+
+		it('should show the admin badge for an admin', async () => {
+			mockFetch(aliceUser({ is_admin: true, is_soc: true, is_auditor: true }));
+			render(Page);
+			expect(await screen.findByText('Admin')).toBeInTheDocument();
+		});
+
+		it('should show every held role for an admin, not just the narrowest', async () => {
+			mockFetch(aliceUser({ is_admin: true, is_soc: true, is_auditor: true }));
+			render(Page);
+			const roles = await screen.findByTestId('access-roles');
+			const labels = Array.from(roles.children).map((el) => el.textContent?.trim());
+			expect(labels).toEqual(['Admin', 'SOC', 'Auditor']);
+		});
+
+		it('should show both roles when a SOC member is not an admin', async () => {
+			mockFetch(aliceUser({ is_soc: true, is_auditor: true }));
+			render(Page);
+			const roles = await screen.findByTestId('access-roles');
+			const labels = Array.from(roles.children).map((el) => el.textContent?.trim());
+			expect(labels).toEqual(['SOC', 'Auditor']);
 		});
 
 		it('should show scalar extra fields', async () => {
