@@ -90,6 +90,7 @@ the matching `lint-*`) and the internal check halves
 | `make frontend-check` | svelte-check the frontend against tsconfig.json |
 | `make actionlint` | Lint the GitHub Actions workflow files |
 | `make check-gitignore` | Assert the .gitignore invariants hold |
+| `make check-go-version` | Assert the images' Go is new enough for go.mod |
 
 ### Generated artifacts
 

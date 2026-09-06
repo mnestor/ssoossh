@@ -286,7 +286,7 @@ test-migration: ## SQLite/Postgres migration parity checks
 ##@ Format and lint
 
 .PHONY: fmt fmt-check lint-fix lint lint-cross lint-server lint-client lint-internal
-.PHONY: frontend-lint frontend-check actionlint check-gitignore
+.PHONY: frontend-lint frontend-check actionlint check-gitignore check-go-version
 # `go list ./...` rather than `.`, and it matters: a git worktree checked out
 # under .claude/worktrees/ is a nested module, so plain `gofmt -w .` would
 # walk into someone else's branch and reformat it. `go list` skips nested
@@ -391,6 +391,14 @@ actionlint: ## Lint the GitHub Actions workflow files
 # touch a .gitignore.
 check-gitignore: ## Assert the .gitignore invariants hold
 	@scripts/check-gitignore.sh
+
+# Mirrors lint.yaml's go-version step: both images pin the same Go, that pin
+# is at least go.mod's `go` directive, and the toolchain actually running is
+# too. GOTOOLCHAIN=auto papers over a stale image for every ordinary Go step,
+# so nothing else here notices -- but govulncheck, a prebuilt binary that
+# cannot switch toolchains, fails every package in the module.
+check-go-version: ## Assert the images' Go is new enough for go.mod
+	@scripts/check-go-version.sh
 
 ##@ Generated artifacts
 
@@ -676,7 +684,7 @@ security: govulncheck pnpm-audit semgrep ## Run every security scanner
 # reverses its up; it was wired into no workflow whatsoever. The e2e tier-1
 # matrix proves the app works on both backends, which is a different claim
 # from the schemas agreeing.
-ci-required: fmt-check check-gitignore lint lint-tagged lint-cross frontend-lint frontend-check frontend-test actionlint check-generated build cover-ci cover-floors test-migration semgrep ## Every blocking check CI runs
+ci-required: fmt-check check-gitignore check-go-version lint lint-tagged lint-cross frontend-lint frontend-check frontend-test actionlint check-generated build cover-ci cover-floors test-migration semgrep ## Every blocking check CI runs
 
 # Advisory: govulncheck and pnpm audit report to the PR summary rather than
 # blocking, because both can surface a dependency you cannot fix in the same

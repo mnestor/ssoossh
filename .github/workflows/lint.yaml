@@ -36,6 +36,17 @@ jobs:
       - name: check .gitignore invariants
         run: scripts/check-gitignore.sh
 
+      # The image this job runs in has to be new enough for go.mod, and
+      # nothing else here would notice if it were not: GOTOOLCHAIN=auto
+      # quietly downloads a newer toolchain for every ordinary Go step. The
+      # binaries baked into the image cannot do that, so a stale image turns
+      # govulncheck into a wall of "requires newer Go version" -- and because
+      # that scan is advisory, it reported the errors as a clean result for
+      # as long as the drift lasted. Blocking here is what makes the next
+      # go.mod bump fail loudly instead.
+      - name: check Go version invariants
+        run: scripts/check-go-version.sh
+
       # No frontend build needed: golangci-lint typechecks server/frontend,
       # which embeds dist/ via `//go:embed all:dist/*`, and the tracked
       # dist/.gitignore is what makes that pattern match. (A `go generate`
