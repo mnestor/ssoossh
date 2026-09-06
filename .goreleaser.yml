@@ -12,6 +12,30 @@ release:
   use_existing_draft: true
   replace_existing_draft: false
 
+  # pam_ssoossh is not in this release and never will be: it is a separate
+  # project in C (github.com/mnestor/ssoossh-pam) with its own tags, its own
+  # platform matrix, and its own cadence. Said here because the two halves
+  # are deployed together -- someone reading these notes to plan an upgrade
+  # needs to know the host side is a second download, and where from --
+  # and because a release page that lists only server and client artifacts
+  # otherwise reads as though the module were missing from the build.
+  #
+  # /releases/latest is GitHub's own redirect to whatever the newest
+  # non-prerelease is there, so this link does not go stale between the two
+  # projects' tags.
+  footer: |
+    ## pam_ssoossh
+
+    The PAM module is not built or released here. It ships from its own
+    repository, [github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam),
+    on its own cadence, and its packages -- the `-glibc-openssl3`,
+    `-glibc-openssl1.1` and `-musl` builds -- are attached to its releases,
+    not to this one.
+
+    - **Packages:** [latest `pam_ssoossh` release](https://github.com/mnestor/ssoossh-pam/releases/latest)
+    - **All versions:** [ssoossh-pam releases](https://github.com/mnestor/ssoossh-pam/releases)
+    - **Installing it:** [Installing pam_ssoossh](https://mnestor.github.io/ssoossh/hosts/pam/install/)
+
   # The wire contract, published so the consumer no compiler can check has
   # something to pin. pam_ssoossh (github.com/mnestor/ssoossh-pam) is a
   # separate project in C: it shares no types with this repository, so the
