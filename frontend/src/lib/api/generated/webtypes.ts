@@ -1430,3 +1430,77 @@ export interface LDAPProbeResponse {
 	 */
 	wrote: boolean;
 }
+/**
+ * IdentityEchoStartResponse is where to send the browser to see a fresh ID
+ * token. The echo re-authenticates rather than remembering: the server keeps
+ * only the claims the configuration maps, so there is no stored copy of the
+ * rest to show.
+ */
+export interface IdentityEchoStartResponse {
+	/**
+	 * AuthorizationURL carries prompt=login, so the provider issues a fresh
+	 * token rather than replaying its own session.
+	 */
+	authorization_url: string;
+}
+/**
+ * ClaimMappingResponse says which claim each configured field reads, so an
+ * echo can be annotated against the configuration rather than printed raw.
+ */
+export interface ClaimMappingResponse {
+	username?: string;
+	groups?: string;
+	other_accounts?: string;
+	service_accounts?: string;
+	email?: string;
+	/**
+	 * Extra maps each configured extra field name to the claim it reads.
+	 */
+	extra?: { [key: string]: string};
+}
+/**
+ * IdentityEchoPayload is one echo result: the decoded ID token, annotated
+ * against the configuration.
+ * It is handed to the page in the redirect fragment rather than returned by
+ * an endpoint, because a fragment never reaches the server. Nothing about
+ * this is stored: not in the database, not in the session, not in a server
+ * log. It exists on the page that rendered it and nowhere else.
+ */
+export interface IdentityEchoPayload {
+	/**
+	 * Claims is the decoded ID token, in full.
+	 */
+	claims: { [key: string]: any};
+	/**
+	 * Mapping is what the configuration reads out of it.
+	 */
+	mapping: ClaimMappingResponse;
+	/**
+	 * Suggestions are config lines that would capture a claim nothing
+	 * currently reads. Suggestions, not decisions.
+	 */
+	suggestions?: ClaimSuggestion[];
+	/**
+	 * IssuedAt is when the echo was produced, so a page left open is
+	 * visibly stale rather than quietly so.
+	 */
+	issued_at: string;
+}
+/**
+ * ClaimSuggestion is the config line that would capture one unmapped claim.
+ */
+export interface ClaimSuggestion {
+	/**
+	 * Claim is the claim name nothing currently reads.
+	 */
+	claim: string;
+	/**
+	 * Reason says why it is worth naming — a numeric value a policy
+	 * condition could gate on, say.
+	 */
+	reason: string;
+	/**
+	 * YAML is the block to add, ready to paste and review.
+	 */
+	yaml: string;
+}

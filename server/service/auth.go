@@ -61,6 +61,21 @@ type AuthProvider interface {
 	// HandleCallback exchanges code for tokens using the PKCE verifier and
 	// verifies the ID token, including that its nonce claim matches nonce.
 	HandleCallback(ctx context.Context, code string, nonce string, pkceVerifier string) (*Identity, error)
+
+	// EchoAuthorizationURL is AuthorizationURL with prompt=login, for the
+	// claims echo: the caller is already signed in, and the point is to
+	// see a fresh token rather than to reuse the provider's session.
+	EchoAuthorizationURL(ctx context.Context, state string) (authURL string, nonce string, pkceVerifier string, err error)
+
+	// EchoCallback verifies the callback the same way HandleCallback does
+	// and returns the decoded ID token claims, establishing nothing: no
+	// session, no user row, no login event.
+	EchoCallback(ctx context.Context, code string, nonce string, pkceVerifier string) (map[string]any, error)
+
+	// ClaimMapping reports which configured field consumes each claim, so
+	// an echo can be annotated against the configuration rather than
+	// printed raw.
+	ClaimMapping() ClaimMapping
 }
 
 // AuthService handles OIDC authentication: building the authorization URL,
@@ -505,4 +520,113 @@ func (s *AuthService) captureOIDCGroups(ctx context.Context, identity *Identity,
 		slog.Warn("failed to capture OIDC group membership",
 			slog.String("subject", identity.Subject), slog.Any("error", err))
 	}
+}
+
+// ClaimMapping says which configured field consumes each claim name, so an
+// echo of the caller's ID token can be annotated against the configuration
+// rather than printed raw. A claim dump is a curiosity; a claim dump that
+// names the key each value lands in — and says which values nothing reads —
+// is a config-authoring tool.
+type ClaimMapping struct {
+	// Username, Groups, OtherAccounts, ServiceAccounts and Email are the
+	// claim names the reserved fields read. Empty means the field is
+	// unconfigured, which for OtherAccounts and ServiceAccounts is the
+	// default.
+	Username        string
+	Groups          string
+	OtherAccounts   string
+	ServiceAccounts string
+	Email           string
+
+	// Extra maps each configured extra field name to the claim it reads,
+	// which is the half an operator is usually trying to get right.
+	Extra map[string]string
+}
+
+// ClaimMapping reports the configured claim names.
+func (s *AuthService) ClaimMapping() ClaimMapping {
+	fields := s.config.AuthConfig.Fields
+
+	// The email fallback is opportunistic in HandleCallback, so it is
+	// reported the same way here rather than as unconfigured: the echo
+	// should say which claim the value would actually come from.
+	email := fields.Email
+	if email == "" {
+		email = "email"
+	}
+
+	extra := make(map[string]string, len(fields.Extra))
+	for name, claim := range fields.Extra {
+		extra[name] = claim
+	}
+
+	return ClaimMapping{
+		Username:        fields.Username,
+		Groups:          fields.Groups,
+		OtherAccounts:   fields.OtherAccounts,
+		ServiceAccounts: fields.ServiceAccounts,
+		Email:           email,
+		Extra:           extra,
+	}
+}
+
+// EchoAuthorizationURL is AuthorizationURL with prompt=login.
+//
+// The caller already holds a session; the point of the echo is to see what
+// the identity provider sends now, so reusing the provider's session would
+// answer a slightly different question and would silently succeed when the
+// provider's session is the stale part.
+func (s *AuthService) EchoAuthorizationURL(ctx context.Context, state string) (authURL string, nonce string, pkceVerifier string, err error) {
+	nonce, err = randomToken()
+	if err != nil {
+		// not covered: randomToken fails only if crypto/rand.Read does,
+		// which crashes the process rather than returning an error.
+		return "", "", "", fmt.Errorf("failed to generate OIDC nonce: %w", err)
+	}
+
+	pkceVerifier = oauth2.GenerateVerifier()
+
+	return s.oauth2Config.AuthCodeURL(state,
+		oidc.Nonce(nonce),
+		oauth2.S256ChallengeOption(pkceVerifier),
+		oauth2.SetAuthURLParam("prompt", "login"),
+	), nonce, pkceVerifier, nil
+}
+
+// EchoCallback verifies the callback exactly as HandleCallback does and
+// returns the decoded ID token claims.
+//
+// It establishes nothing. No session is set, no users row is written, no
+// login event is recorded, and the claims are returned rather than stored:
+// the server deliberately keeps only what the configuration maps, and an
+// echo that quietly kept the rest would be the thing this feature exists to
+// avoid.
+func (s *AuthService) EchoCallback(ctx context.Context, code string, nonce string, pkceVerifier string) (map[string]any, error) {
+	token, err := s.oauth2Config.Exchange(ctx, code, oauth2.VerifierOption(pkceVerifier))
+	if err != nil {
+		return nil, fmt.Errorf("failed to exchange OIDC authorization code: %w", err)
+	}
+
+	rawIDToken, ok := token.Extra("id_token").(string)
+	if !ok {
+		return nil, errors.New("OIDC token response is missing id_token")
+	}
+
+	idToken, err := s.verifier.Verify(ctx, rawIDToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify OIDC ID token: %w", err)
+	}
+
+	if idToken.Nonce != nonce {
+		return nil, errors.New("OIDC ID token nonce does not match the one issued at login")
+	}
+
+	var claims map[string]any
+	if err := idToken.Claims(&claims); err != nil {
+		// not covered: Verify above already parsed this same payload as
+		// JSON to validate the standard claims, so re-unmarshaling it
+		// here cannot fail.
+		return nil, fmt.Errorf("failed to parse OIDC ID token claims: %w", err)
+	}
+	return claims, nil
 }

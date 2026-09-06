@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -165,6 +166,22 @@ func (a *authController) callbackHandler(g *gin.Context) {
 		return
 	}
 
+	// A claims echo shares this callback because the redirect URI is
+	// registered with the identity provider and a second one is an
+	// operator task in a system the operator may not control. The flag was
+	// set by the echo start endpoint and is consumed here.
+	echo, err := middleware.PopOIDCEcho(g)
+	if err != nil {
+		handleError(g, err)
+		// not covered: same as PopOIDCNonce above, further down the same
+		// Save() chain.
+		return
+	}
+	if echo {
+		a.echoCallback(g, code, nonce, pkceVerifier)
+		return
+	}
+
 	identity, err := a.authService.HandleCallback(g.Request.Context(), code, nonce, pkceVerifier)
 	if err != nil {
 		// Check if the user is disabled and redirect to the disabled page
@@ -196,6 +213,31 @@ func (a *authController) callbackHandler(g *gin.Context) {
 	}
 
 	g.Redirect(http.StatusFound, returnURL)
+}
+
+// echoCallback finishes a claims echo: verify the token the same way a login
+// does, then render it instead of establishing anything.
+//
+// The caller's existing session is untouched — they were already signed in,
+// and an echo that quietly re-issued their session would make "show me my
+// claims" a way to extend a session past its absolute cap. Nothing is
+// written: no users row, no login event, and the claims travel in the
+// redirect fragment, which never reaches a server or a log.
+func (a *authController) echoCallback(g *gin.Context, code, nonce, pkceVerifier string) {
+	claims, err := a.authService.EchoCallback(g.Request.Context(), code, nonce, pkceVerifier)
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	redirect, err := echoRedirectURL(claims, a.authService.ClaimMapping(), time.Now())
+	if err != nil {
+		// not covered: the payload is claims already decoded from JSON
+		// plus plain strings, so re-encoding it cannot fail.
+		handleError(g, err)
+		return
+	}
+	g.Redirect(http.StatusFound, redirect)
 }
 
 // isSafeReturnURL reports whether url is safe to redirect to: a same-site,

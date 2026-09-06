@@ -24,6 +24,11 @@ const (
 	sessionKeyOIDCState        = "oidc_state"
 	sessionKeyOIDCNonce        = "oidc_nonce"
 	sessionKeyOIDCVerifier     = "oidc_verifier"
+	// sessionKeyOIDCEcho marks the in-flight OIDC round trip as a claims
+	// echo rather than a login, so the callback renders the token instead
+	// of establishing a session. Set only by the echo start endpoint, and
+	// consumed once.
+	sessionKeyOIDCEcho = "oidc_echo"
 	sessionKeyReturnURL        = "return_url"
 	sessionKeyIdentitySubject  = "identity_subject"
 	sessionKeyIdentityUsername = "identity_username"
@@ -107,6 +112,33 @@ func SetOIDCLoginState(c *gin.Context, state, nonce, verifier, returnURL string)
 		sess.Set(sessionKeyReturnURL, returnURL)
 	}
 	return sess.Save()
+}
+
+// SetOIDCEchoState stores the state, nonce and PKCE verifier for a claims
+// echo, and marks the round trip as an echo.
+//
+// A separate flag rather than a different callback route: the redirect URI
+// is registered with the identity provider, and adding a second one is an
+// operator task in a system the operator may not control. The flag is what
+// the one callback branches on.
+func SetOIDCEchoState(c *gin.Context, state, nonce, verifier string) error {
+	sess := sessions.Default(c)
+	sess.Set(sessionKeyOIDCState, state)
+	sess.Set(sessionKeyOIDCNonce, nonce)
+	sess.Set(sessionKeyOIDCVerifier, verifier)
+	sess.Set(sessionKeyOIDCEcho, true)
+	return sess.Save()
+}
+
+// PopOIDCEcho reports whether the in-flight round trip is a claims echo,
+// and clears the flag so it can only be consumed once. A missing or
+// wrong-typed value is false, which is the login path — the safe default,
+// since the echo path is the one that skips establishing a session.
+func PopOIDCEcho(c *gin.Context) (bool, error) {
+	sess := sessions.Default(c)
+	echo, _ := sess.Get(sessionKeyOIDCEcho).(bool)
+	sess.Delete(sessionKeyOIDCEcho)
+	return echo, sess.Save()
 }
 
 // PopOIDCState returns the state stored by SetOIDCState and clears it, so

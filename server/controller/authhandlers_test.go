@@ -36,6 +36,16 @@ type fakeAuthService struct {
 	gotCode         string
 	gotCallbackNonc string
 	gotPKCEVerifier string
+
+	// The claims echo half: a separate authorization URL (prompt=login)
+	// and a callback that returns raw claims and establishes nothing.
+	echoURL     string
+	echoURLErr  error
+	echoClaims  map[string]any
+	echoCbErr   error
+	echoStarted bool
+	echoHandled bool
+	mapping     service.ClaimMapping
 }
 
 func (f *fakeAuthService) AuthorizationURL(_ context.Context, _ string) (string, string, string, error) {
@@ -54,6 +64,27 @@ func (f *fakeAuthService) HandleCallback(_ context.Context, code, nonce, pkceVer
 	}
 	return f.identity, nil
 }
+
+func (f *fakeAuthService) EchoAuthorizationURL(_ context.Context, _ string) (string, string, string, error) {
+	f.echoStarted = true
+	if f.echoURLErr != nil {
+		return "", "", "", f.echoURLErr
+	}
+	return f.echoURL, f.nonce, f.pkceVerifier, nil
+}
+
+func (f *fakeAuthService) EchoCallback(_ context.Context, code, nonce, pkceVerifier string) (map[string]any, error) {
+	f.echoHandled = true
+	f.gotCode = code
+	f.gotCallbackNonc = nonce
+	f.gotPKCEVerifier = pkceVerifier
+	if f.echoCbErr != nil {
+		return nil, f.echoCbErr
+	}
+	return f.echoClaims, nil
+}
+
+func (f *fakeAuthService) ClaimMapping() service.ClaimMapping { return f.mapping }
 
 // newAuthTestRouter wires a real cookie-backed session store and
 // NewAuthController, matching bootstrap.initRouter's setup.

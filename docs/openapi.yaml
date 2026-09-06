@@ -1466,6 +1466,16 @@ components:
       required:
       - reason
       type: object
+    webtypes.IdentityEchoStartResponse:
+      properties:
+        authorization_url:
+          description: |-
+            AuthorizationURL carries prompt=login, so the provider issues a fresh
+            token rather than replaying its own session.
+          type: string
+      required:
+      - authorization_url
+      type: object
     webtypes.LDAPProbeAttribute:
       properties:
         configured:
@@ -2588,6 +2598,43 @@ paths:
       security:
       - sessionCookie: []
       summary: Expire an enrollment (admin or SOC)
+      tags:
+      - admin
+  /api/admin/identity/echo/start:
+    post:
+      description: |-
+        Returns the authorization URL for a fresh OIDC round trip
+        carrying prompt=login. The callback renders the decoded ID
+        token instead of establishing a session, and the caller's
+        existing session is left exactly as it was.
+
+        The echo re-authenticates rather than remembering: the server
+        keeps only the claims the configuration maps, so there is no
+        stored copy of the rest to show. Nothing about the result is
+        written down — it reaches the page in the redirect fragment,
+        which never reaches the server at all.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/webtypes.IdentityEchoStartResponse'
+          description: Where to send the browser
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as admin
+      security:
+      - sessionCookie: []
+      summary: Start a claims echo (admin-only)
       tags:
       - admin
   /api/admin/ldap/probe:

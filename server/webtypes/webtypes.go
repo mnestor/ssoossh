@@ -1222,3 +1222,60 @@ type LDAPProbeResponse struct {
 	// of the response, not only of the documentation.
 	Wrote bool `json:"wrote"`
 }
+
+// IdentityEchoStartResponse is where to send the browser to see a fresh ID
+// token. The echo re-authenticates rather than remembering: the server keeps
+// only the claims the configuration maps, so there is no stored copy of the
+// rest to show.
+type IdentityEchoStartResponse struct {
+	// AuthorizationURL carries prompt=login, so the provider issues a fresh
+	// token rather than replaying its own session.
+	AuthorizationURL string `json:"authorization_url" validate:"required"`
+}
+
+// ClaimMappingResponse says which claim each configured field reads, so an
+// echo can be annotated against the configuration rather than printed raw.
+type ClaimMappingResponse struct {
+	Username        string `json:"username,omitempty"`
+	Groups          string `json:"groups,omitempty"`
+	OtherAccounts   string `json:"other_accounts,omitempty"`
+	ServiceAccounts string `json:"service_accounts,omitempty"`
+	Email           string `json:"email,omitempty"`
+
+	// Extra maps each configured extra field name to the claim it reads.
+	Extra map[string]string `json:"extra,omitempty"`
+}
+
+// IdentityEchoPayload is one echo result: the decoded ID token, annotated
+// against the configuration.
+//
+// It is handed to the page in the redirect fragment rather than returned by
+// an endpoint, because a fragment never reaches the server. Nothing about
+// this is stored: not in the database, not in the session, not in a server
+// log. It exists on the page that rendered it and nowhere else.
+type IdentityEchoPayload struct {
+	// Claims is the decoded ID token, in full.
+	Claims map[string]any `json:"claims" validate:"required"`
+
+	// Mapping is what the configuration reads out of it.
+	Mapping ClaimMappingResponse `json:"mapping" validate:"required"`
+
+	// Suggestions are config lines that would capture a claim nothing
+	// currently reads. Suggestions, not decisions.
+	Suggestions []ClaimSuggestion `json:"suggestions,omitempty"`
+
+	// IssuedAt is when the echo was produced, so a page left open is
+	// visibly stale rather than quietly so.
+	IssuedAt time.Time `json:"issued_at" validate:"required"`
+}
+
+// ClaimSuggestion is the config line that would capture one unmapped claim.
+type ClaimSuggestion struct {
+	// Claim is the claim name nothing currently reads.
+	Claim string `json:"claim" validate:"required"`
+	// Reason says why it is worth naming — a numeric value a policy
+	// condition could gate on, say.
+	Reason string `json:"reason" validate:"required"`
+	// YAML is the block to add, ready to paste and review.
+	YAML string `json:"yaml" validate:"required"`
+}

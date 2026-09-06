@@ -488,6 +488,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	}
 	controller.NewLDAPAdminController(apiGroup, a.config, a.db, ldapDiagnostics,
 		sessionAuth, adminAuth, auditorAuth, csrf, probeRateLimit, a.svc.audit)
+	controller.NewIdentityEchoController(apiGroup, a.svc.auth, sessionAuth, adminAuth, csrf)
 
 	return nil
 }
