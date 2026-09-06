@@ -4,9 +4,11 @@ import {
 	clockSkewLabel,
 	expiryLabel,
 	formatDateTime,
+	formatDateTimeRange,
 	formatDuration,
 	isExpired,
-	relativeTime
+	relativeTime,
+	remainingLabel
 } from './format';
 
 describe('formatDuration', () => {
@@ -95,6 +97,55 @@ describe('formatDateTime', () => {
 	// as a disagreement.
 	it('should name the timezone it rendered the timestamp in', () => {
 		expect(formatDateTime('2026-08-14T09:00:00Z')).toMatch(/UTC|GMT|[A-Z]{2,5}$/);
+	});
+});
+
+describe('formatDateTimeRange', () => {
+	it('should join the two ends with an en dash', () => {
+		expect(formatDateTimeRange('2026-08-14T09:00:00Z', '2027-08-14T09:00:00Z')).toContain(' – ');
+	});
+
+	// The zone belongs to the pair, not to each half: both are rendered in
+	// the viewer's own zone, so naming it twice only widens the row.
+	it('should name the timezone once, on the closing end', () => {
+		const end = '2027-08-14T09:00:00Z';
+		// The zone as this environment renders it — "UTC" here, "EDT" or
+		// "GMT+5:30" elsewhere — so the count is asserted, not the label.
+		const zone = formatDateTime(end).split(' ').pop() as string;
+		const range = formatDateTimeRange('2026-08-14T09:00:00Z', end);
+		expect(range.split(zone).length - 1).toBe(1);
+	});
+
+	it('should fall back to the end alone when the start cannot be parsed', () => {
+		expect(formatDateTimeRange('whenever', '2027-08-14T09:00:00Z')).toBe(
+			formatDateTime('2027-08-14T09:00:00Z')
+		);
+	});
+
+	it('should fall back to the start alone when the end cannot be parsed', () => {
+		expect(formatDateTimeRange('2026-08-14T09:00:00Z', '')).toBe(
+			formatDateTime('2026-08-14T09:00:00Z')
+		);
+	});
+});
+
+describe('remainingLabel', () => {
+	const now = new Date('2026-08-14T12:00:00Z');
+
+	it('should render the remaining time without repeating the word expires', () => {
+		expect(remainingLabel('2026-08-14T15:30:00Z', now)).toBe('3h 30m left');
+	});
+
+	it('should report expired when the validity window has passed', () => {
+		expect(remainingLabel('2026-08-14T11:59:59Z', now)).toBe('expired');
+	});
+
+	it('should report expired at the exact expiry instant', () => {
+		expect(remainingLabel('2026-08-14T12:00:00Z', now)).toBe('expired');
+	});
+
+	it('should render an em dash for an unparseable expiry', () => {
+		expect(remainingLabel('whenever', now)).toBe('—');
 	});
 });
 

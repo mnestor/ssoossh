@@ -131,16 +131,16 @@ describe('AdminServiceCodeDetail', () => {
 		expect(screen.getByText('permit-pty')).toBeInTheDocument();
 	});
 
-	it('should show the forced command', () => {
+	it('should show the forced command with its keyword', () => {
 		stubHolders();
 		render(AdminServiceCodeDetail, { detail: detail(), now });
-		expect(screen.getByText('/usr/local/bin/deploy')).toBeInTheDocument();
+		expect(screen.getByText('command=/usr/local/bin/deploy')).toBeInTheDocument();
 	});
 
-	it('should show the source address restriction', () => {
+	it('should show the source address restriction with its keyword', () => {
 		stubHolders();
 		render(AdminServiceCodeDetail, { detail: detail(), now });
-		expect(screen.getByText('198.51.100.0/24')).toBeInTheDocument();
+		expect(screen.getByText('from=198.51.100.0/24')).toBeInTheDocument();
 	});
 
 	it('should say when no options were fixed at approval', () => {
@@ -149,13 +149,38 @@ describe('AdminServiceCodeDetail', () => {
 			detail: detail(enrollment({ options: { extensions: [], no_touch_required: false } })),
 			now
 		});
-		expect(screen.getByText(/No extensions or restrictions/)).toBeInTheDocument();
+		expect(screen.getByText(/carry the server's defaults/)).toBeInTheDocument();
 	});
 
-	it('should report when the code stops working', () => {
+	it('should report the validity window as one period', () => {
 		stubHolders();
 		render(AdminServiceCodeDetail, { detail: detail(), now });
-		expect(screen.getByText(/expires in/)).toBeInTheDocument();
+		expect(screen.getByText(/Aug 20, 2026.* – .*Nov 20, 2026/)).toBeInTheDocument();
+	});
+
+	it('should report how much of the validity window is left', () => {
+		stubHolders();
+		render(AdminServiceCodeDetail, { detail: detail(), now });
+		expect(screen.getByText(/left\)/)).toBeInTheDocument();
+	});
+
+	// The log below lists every redemption with the host that made it, so a
+	// summary above it was two numbers to reconcile rather than an answer.
+	it('should not restate the redemption count above the log', () => {
+		stubHolders();
+		render(AdminServiceCodeDetail, { detail: detail(enrollment(), [aRedemption()]), now });
+		expect(screen.queryByText('Last redeemed')).not.toBeInTheDocument();
+	});
+
+	// Last on the page, as on the holder's: an operator who opened the code to
+	// read what it grants or to expire it should not scroll a year of cron
+	// redemptions to reach either.
+	it('should put the history below the admin actions', () => {
+		stubHolders();
+		render(AdminServiceCodeDetail, { detail: detail(enrollment(), [aRedemption()]), now });
+		const history = screen.getByText('Redemption history');
+		const position = screen.getByTestId('admin-expire-code').compareDocumentPosition(history);
+		expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 	});
 
 	it('should report an expired code as already expired', () => {
@@ -214,6 +239,14 @@ describe('AdminServiceCodeDetail', () => {
 			stubHolders();
 			render(AdminServiceCodeDetail, { detail: detail(enrollment(), [aRedemption()]), now });
 			expect(screen.queryByText(/most recent of/)).not.toBeInTheDocument();
+		});
+
+		// The section is unconditional now that it is what the summary points
+		// at: a link into a section that is not rendered goes nowhere.
+		it('should say so when the code has never been redeemed', () => {
+			stubHolders();
+			render(AdminServiceCodeDetail, { detail: detail(enrollment(), []), now });
+			expect(screen.getByText('Never redeemed.')).toBeInTheDocument();
 		});
 	});
 
