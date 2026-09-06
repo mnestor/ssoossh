@@ -77,11 +77,19 @@ type LDAPSync struct {
 	// Interval is how often the sync runs. Zero disables the job entirely.
 	Interval time.Duration `mapstructure:"interval,string" default:"15m"`
 
-	// DisableAfter is how many consecutive *successful* searches that find
-	// no entry it takes before the user is auto-disabled. A directory
-	// outage is never a miss: only a search that succeeds and finds nothing
-	// counts.
-	DisableAfter int `mapstructure:"disable_after" default:"3"`
+	// DisableAfter is how long a directory entry may stay missing before
+	// the user is auto-disabled, measured from the first *successful*
+	// search that found no entry. A directory outage is never a miss: only
+	// a search that succeeds and finds nothing starts or continues the
+	// window. Zero disables auto-disable entirely.
+	//
+	// A duration rather than a count of passes, because a count was not a
+	// measure of time. Scheduled jobs are not leader-elected, so every
+	// instance runs its own sync and three replicas produced three
+	// increments per interval; an operator-triggered sync added more. The
+	// same absence now means the same thing however many passes observe
+	// it.
+	DisableAfter time.Duration `mapstructure:"disable_after,string" default:"45m"`
 
 	// Reenable lets the sync clear its own disables when a directory entry
 	// reappears. It only ever clears disables whose source is exactly
@@ -139,11 +147,20 @@ func (c *LDAPConfig) Validate() error {
 	if c.Sync.DisableAfter < 0 {
 		return fmt.Errorf("ldap.sync.disable_after must not be negative")
 	}
-	// Zero would disable an account on the first miss, which turns a
-	// momentary directory inconsistency into a lockout. Enabling
-	// auto-disable at all is opt-in through a positive value.
+	// disable_after used to be a count of passes. A bare number still
+	// decodes — as nanoseconds — so `disable_after: 3` would silently mean
+	// three nanoseconds and disable an account on its first miss. Anything
+	// under a minute is rejected by name rather than honoured, since no
+	// real deployment wants a sub-minute grace period and every one of
+	// them would be a config that used to mean something else.
+	if c.Sync.DisableAfter > 0 && c.Sync.DisableAfter < time.Minute {
+		return fmt.Errorf("ldap.sync.disable_after is a duration, not a number of sync passes: write it as %q or longer (a bare number is read as nanoseconds)", "45m")
+	}
+	// Zero leaves an entry that has stopped resolving in place forever,
+	// which is a choice an operator can make but not one to make for them
+	// when the sync is running at all.
 	if c.Sync.Interval > 0 && c.Sync.DisableAfter == 0 {
-		return fmt.Errorf("ldap.sync.disable_after must be greater than zero: a single missed search would otherwise disable the account")
+		return fmt.Errorf("ldap.sync.disable_after must be greater than zero: set how long an entry may stay missing, for example %q", "45m")
 	}
 
 	// tls_insecure_skip_verify is not an error — it is a deliberate homelab

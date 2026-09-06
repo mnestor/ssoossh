@@ -533,10 +533,18 @@ ldap:
   sync:
     # How often the sync runs. Zero disables the job entirely.
     interval: 15m
-    # How many consecutive *successful* searches that find no entry it takes
-    # before the user is auto-disabled. A directory outage is never a miss: only
-    # a search that succeeds and finds nothing counts.
-    disable_after: 3
+    # How long a directory entry may stay missing before the user is
+    # auto-disabled, measured from the first *successful* search that found no
+    # entry. A directory outage is never a miss: only a search that succeeds and
+    # finds nothing starts or continues the window. Zero disables auto-disable
+    # entirely.
+    #
+    # A duration rather than a count of passes, because a count was not a
+    # measure of time. Scheduled jobs are not leader-elected, so every instance
+    # runs its own sync and three replicas produced three increments per
+    # interval; an operator-triggered sync added more. The same absence now
+    # means the same thing however many passes observe it.
+    disable_after: 45m
     # Lets the sync clear its own disables when a directory entry reappears. It
     # only ever clears disables whose source is exactly ldap_sync; a user
     # disabled by an admin or SOC operator is never touched by the sync, in

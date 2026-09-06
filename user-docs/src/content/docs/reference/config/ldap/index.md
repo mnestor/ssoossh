@@ -25,7 +25,7 @@ LDAP is enrichment, never a requirement. If directory data is available a user g
 | [`ldap.fields.<name>.searches[].value`](#fieldsnamesearchesvalue) | string | `empty` |
 | [`ldap.group_name_attribute`](#group_name_attribute) | string | `empty` |
 | [`ldap.sync.interval`](/ssoossh/reference/config/ldap/sync/#interval) | duration | `15m` |
-| [`ldap.sync.disable_after`](/ssoossh/reference/config/ldap/sync/#disable_after) | int | `3` |
+| [`ldap.sync.disable_after`](/ssoossh/reference/config/ldap/sync/#disable_after) | duration | `45m` |
 | [`ldap.sync.reenable`](/ssoossh/reference/config/ldap/sync/#reenable) | bool | `true` |
 | [`ldap.sync.extra_groups`](/ssoossh/reference/config/ldap/sync/#extra_groups) | list | `empty` |
 | [`ldap.limits.max_values_per_attribute`](#limitsmax_values_per_attribute) | int | `1000` |

@@ -66,7 +66,24 @@ type UserLDAP struct {
 	// ConsecutiveMisses counts *successful* searches that found no entry.
 	// A directory outage never increments it: only a search that succeeds
 	// and finds nothing is a miss, so an outage can never disable anyone.
+	//
+	// Reporting only. It used to decide the auto-disable and no longer
+	// does — see FirstMissingAt — because a count of passes is not a
+	// measure of time: every instance runs its own sync, so replica count
+	// and any operator-triggered pass changed what the threshold meant.
 	ConsecutiveMisses int `gorm:"column:consecutive_misses"`
+
+	// FirstMissingAt is when the entry was first found to be missing, and
+	// what the auto-disable threshold is measured against
+	// (config.LDAPSync.DisableAfter, a duration). Set on the first miss,
+	// cleared on any find, so it is NULL exactly when the entry is
+	// currently resolving.
+	//
+	// Elapsed time rather than a pass count is what makes sync frequency
+	// stop being load-bearing: three replicas, or an impatient operator
+	// pressing sync, cannot disable anyone sooner than a single scheduled
+	// pass would have.
+	FirstMissingAt *time.Time `gorm:"column:first_missing_at"`
 
 	CreatedAt time.Time `gorm:"column:created_at"`
 	UpdatedAt time.Time `gorm:"column:updated_at"`

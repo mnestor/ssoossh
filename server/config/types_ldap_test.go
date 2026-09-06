@@ -20,7 +20,7 @@ func validLDAP() LDAPConfig {
 		URL:        "ldaps://directory.test",
 		BaseDN:     "ou=people,dc=test",
 		UserFilter: "(uid={{.Username}})",
-		Sync:       LDAPSync{Interval: 15 * time.Minute, DisableAfter: 3},
+		Sync:       LDAPSync{Interval: 15 * time.Minute, DisableAfter: 45 * time.Minute},
 	}
 }
 
@@ -52,16 +52,34 @@ func TestLDAPConfig_Validate(t *testing.T) {
 			wantText: "ldap.user_filter",
 		},
 		{
-			// Zero would disable an account on its first miss, turning a
-			// momentary inconsistency into a lockout.
-			name:     "a sync with no miss threshold",
+			// Zero leaves a missing entry in place forever, which is not a
+			// default to pick for an operator who is running the sync.
+			name:     "a sync with no missing-window threshold",
 			mutate:   func(c *LDAPConfig) { c.Sync.DisableAfter = 0 },
 			wantText: "disable_after",
 		},
 		{
-			name:     "a negative miss threshold",
+			name:     "a negative missing-window threshold",
 			mutate:   func(c *LDAPConfig) { c.Sync.DisableAfter = -1 },
 			wantText: "disable_after",
+		},
+		{
+			// The pre-duration spelling. A bare `disable_after: 3` decodes
+			// as three nanoseconds, which would disable an account on its
+			// first miss, so it has to be rejected by name rather than
+			// honoured.
+			name:     "a pass count left over from the old spelling",
+			mutate:   func(c *LDAPConfig) { c.Sync.DisableAfter = 3 },
+			wantText: "is a duration, not a number of sync passes",
+		},
+		{
+			name:     "a sub-minute window",
+			mutate:   func(c *LDAPConfig) { c.Sync.DisableAfter = 30 * time.Second },
+			wantText: "is a duration, not a number of sync passes",
+		},
+		{
+			name:   "a long window is fine",
+			mutate: func(c *LDAPConfig) { c.Sync.DisableAfter = 72 * time.Hour },
 		},
 		{
 			// With the sync off there is nothing to threshold, so a zero is

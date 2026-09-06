@@ -201,44 +201,61 @@ func (s *LDAPService) persistSync(ctx context.Context, userID string, entry *lda
 	return s.persist(ctx, userID, entry)
 }
 
-// recordMiss increments the miss counter and disables the user once it
-// reaches the configured threshold.
+// recordMiss opens or continues the missing window and disables the user
+// once the entry has been missing for longer than the configured duration.
+//
+// The window is what the threshold measures, not the number of passes that
+// observed it: every instance runs its own sync and an operator can trigger
+// one by hand, so a count would mean different things in different
+// deployments and would shrink every time someone pressed the button. The
+// counter is still written, for the operator reading a row.
 func (s *LDAPService) recordMiss(ctx context.Context, user *model.User, row *model.UserLDAP) {
 	now := time.Now()
 	misses := row.ConsecutiveMisses + 1
+
+	// The first miss opens the window; later ones leave it where it is, so
+	// the elapsed time keeps growing rather than restarting each pass.
+	missingSince := row.FirstMissingAt
+	if missingSince == nil {
+		missingSince = &now
+	}
 
 	if err := s.db.WithContext(ctx).Model(&model.UserLDAP{}).
 		Where("user_id = ?", row.UserID).
 		Updates(map[string]any{
 			"consecutive_misses": misses,
+			"first_missing_at":   missingSince,
 			"last_synced_at":     now,
 			"updated_at":         now,
 		}).Error; err != nil {
 		s.log.ErrorContext(ctx, "failed to record a directory miss", "user_id", row.UserID, "error", err)
 		return
 	}
+	row.FirstMissingAt = missingSince
 
 	threshold := s.config.LDAP.Sync.DisableAfter
-	if threshold <= 0 || misses < threshold || user.DisabledAt != nil {
+	missingFor := now.Sub(*missingSince)
+	if threshold <= 0 || missingFor < threshold || user.DisabledAt != nil {
 		s.log.InfoContext(ctx, "directory entry not found",
 			"user_id", row.UserID, "username", user.Username,
-			"consecutive_misses", misses, "disable_after", threshold)
+			"first_missing_at", missingSince, "missing_for", missingFor.String(),
+			"consecutive_misses", misses, "disable_after", threshold.String())
 		return
 	}
 
-	s.autoDisable(ctx, user, misses, now)
+	s.autoDisable(ctx, user, missingFor, now)
 }
 
 // autoDisable disables a user whose directory entry has been missing for
-// the configured number of consecutive successful searches.
+// longer than the configured duration.
 //
 // disabled_source is what makes this reversible safely: the sync clears
 // only disables it caused, so an operator's disable is never undone
 // automatically. DisabledByUserID stays NULL, since it is a users.id and
 // cannot represent the system actor.
-func (s *LDAPService) autoDisable(ctx context.Context, user *model.User, misses int, now time.Time) {
+func (s *LDAPService) autoDisable(ctx context.Context, user *model.User, missingFor time.Duration, now time.Time) {
 	source := model.DisabledSourceLDAPSync
-	reason := fmt.Sprintf("directory entry not found on %d consecutive successful searches", misses)
+	reason := fmt.Sprintf("directory entry not found for %s of successful searches", missingFor.Round(time.Second))
 
 	auditEvent := AuditEvent{
 		Action:     AuditUserAutoDisabled,
@@ -247,8 +264,8 @@ func (s *LDAPService) autoDisable(ctx context.Context, user *model.User, misses 
 		Reason:     reason,
 		OccurredAt: now,
 		Detail: map[string]any{
-			"consecutive_misses": misses,
-			"trigger":            "ldap-directory-sync",
+			"missing_for": missingFor.Round(time.Second).String(),
+			"trigger":     "ldap-directory-sync",
 		},
 	}
 
@@ -287,7 +304,7 @@ func (s *LDAPService) autoDisable(ctx context.Context, user *model.User, misses 
 		s.auditor.LogOnly(auditEvent)
 	}
 	s.log.WarnContext(ctx, "auto-disabled a user whose directory entry is gone",
-		"user_id", user.ID, "username", user.Username, "consecutive_misses", misses)
+		"user_id", user.ID, "username", user.Username, "missing_for", missingFor.String())
 }
 
 // errAlreadyDisabled unwinds the auto-disable transaction when someone else

@@ -67,7 +67,7 @@ ldap:
 
   sync:
     interval: 15m          # zero disables the sync job entirely
-    disable_after: 3       # consecutive successful-search misses before disable
+    disable_after: 45m     # how long an entry may stay missing before disable
     reenable: true         # the sync may clear its own disables
     extra_groups: []       # persisted in addition to config-referenced names
 
@@ -206,11 +206,11 @@ over every user with a `user_ldap` row.
 ```mermaid
 flowchart TD
     S["Sync tick, per known user"] --> D{"Read entry by DN"}
-    D -- "found" --> R["Refresh attributes and groups,<br/>update last_seen_at,<br/>reset miss counter"]
+    D -- "found" --> R["Refresh attributes and groups,<br/>update last_seen_at,<br/>clear first_missing_at"]
     D -- "DN read failed" --> F["One filter search:<br/>a moved entry re-anchors"]
     F -- "found" --> R
-    F -- "search succeeded, no entry" --> M["Increment consecutive_misses"]
-    M --> T{"misses >= disable_after?"}
+    F -- "search succeeded, no entry" --> M["Open first_missing_at<br/>if it is not already set"]
+    M --> T{"missing for<br/>>= disable_after?"}
     T -- "yes" --> X["Disable, disabled_source = ldap_sync"]
     T -- "no" --> W["Wait for the next tick"]
     D -- "unreachable or bind failed" --> N["Change nothing, count nothing,<br/>log loudly"]
@@ -223,12 +223,14 @@ flowchart TD
    back to one filter search, so a moved entry re-anchors instead of being
    disabled.
 2. **Found:** refresh attributes and LDAP group rows, update `last_seen_at`,
-   reset the miss counter. If the user is disabled with
+   and clear `first_missing_at` -- the window closes outright, so an absence
+   that ended never counts toward a later one. If the user is disabled with
    `disabled_source = ldap_sync` and
    [`sync.reenable`](/ssoossh/reference/config/ldap/sync/#reenable) is on,
    clear it.
-3. **Not found** (search succeeded, no entry): increment
-   `consecutive_misses`. At
+3. **Not found** (search succeeded, no entry): set `first_missing_at` if it is
+   not already set, leaving it alone on later passes. Once the entry has been
+   missing for
    [`sync.disable_after`](/ssoossh/reference/config/ldap/sync/#disable_after),
    disable the user with `disabled_source = ldap_sync`.
 4. **Directory unreachable or bind failed:** update nothing, count nothing,
@@ -238,6 +240,23 @@ flowchart TD
 Only a search that *succeeds* and finds no entry is a miss. This is the single
 rule the sync design rests on, and it is what step 4 exists for.
 :::
+
+### Why the threshold is a duration
+
+`disable_after` measures elapsed absence, not a number of passes. It has to,
+because the number of passes is not a property of the user: scheduled jobs are
+not leader-elected, so every instance runs every job, and three replicas
+produced three increments per interval. A pass count of 3 at a 15-minute
+interval therefore meant 45 minutes on one instance and 15 on three -- and any
+operator-triggered sync shortened it further.
+
+`consecutive_misses` is still written and still shown, as a report of how many
+passes have observed the absence. Nothing decides on it.
+
+A configuration carrying the old spelling is rejected at startup rather than
+reinterpreted: a bare `disable_after: 3` would otherwise decode as three
+*nanoseconds* and disable an account on its first miss. Write a duration --
+`45m`, `24h` -- and anything under a minute is refused by name.
 
 `disabled_source` is what makes auto-re-enable safe: the sync clears only
 disables whose source is exactly `ldap_sync`, so an admin or SOC disable is
@@ -250,8 +269,8 @@ An auto-disable is audited like any other containment action, as
 
 **Side effect worth naming:** the sync partially closes the revocation window.
 Removing a user from the directory now disables the account within
-`interval * disable_after`, where previously removal took effect only at their
-next login. Losing one linked account rather than the whole entry takes effect
+`disable_after` of the first pass that notices, where previously removal took
+effect only at their next login. Losing one linked account rather than the whole entry takes effect
 on the person's next request, since account lists are re-read per request.
 Group downgrades -- still in the directory, out of a role group -- still ride
 out the session, unchanged. See

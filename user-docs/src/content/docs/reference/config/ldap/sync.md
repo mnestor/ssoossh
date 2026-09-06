@@ -11,7 +11,7 @@ Configures the background directory sync.
 | Key | Type | Default |
 | --- | --- | --- |
 | [`ldap.sync.interval`](#interval) | duration | `15m` |
-| [`ldap.sync.disable_after`](#disable_after) | int | `3` |
+| [`ldap.sync.disable_after`](#disable_after) | duration | `45m` |
 | [`ldap.sync.reenable`](#reenable) | bool | `true` |
 | [`ldap.sync.extra_groups`](#extra_groups) | list | `empty` |
 
@@ -29,14 +29,16 @@ ldap:
 
 ## `disable_after`
 
-`int`, default `3`
+`duration`, default `45m`
 
-How many consecutive *successful* searches that find no entry it takes before the user is auto-disabled. A directory outage is never a miss: only a search that succeeds and finds nothing counts.
+How long a directory entry may stay missing before the user is auto-disabled, measured from the first *successful* search that found no entry. A directory outage is never a miss: only a search that succeeds and finds nothing starts or continues the window. Zero disables auto-disable entirely.
+
+A duration rather than a count of passes, because a count was not a measure of time. Scheduled jobs are not leader-elected, so every instance runs its own sync and three replicas produced three increments per interval; an operator-triggered sync added more. The same absence now means the same thing however many passes observe it.
 
 ```yaml
 ldap:
   sync:
-    disable_after: 3
+    disable_after: 45m
 ```
 
 ## `reenable`

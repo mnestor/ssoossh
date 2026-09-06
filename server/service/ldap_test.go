@@ -85,7 +85,7 @@ func ldapTestConfig(fields map[string]config.LDAPField) *config.Config {
 		UserFilter: "(&(objectClass=person)(uid={{.Username}}))",
 		Fields:     fields,
 		Timeout:    5 * time.Second,
-		Sync:       config.LDAPSync{Interval: time.Minute, DisableAfter: 3, Reenable: true},
+		Sync:       config.LDAPSync{Interval: time.Minute, DisableAfter: 45 * time.Minute, Reenable: true},
 		Limits: config.LDAPLimits{
 			MaxValuesPerAttribute: 1000,
 			MaxEntriesPerSearch:   1000,
@@ -325,45 +325,39 @@ func TestSync_ShouldNotCountAMissWhenTheDirectoryIsUnreachable(t *testing.T) {
 	}
 }
 
-// A search that succeeds and finds nothing is a miss, and enough of them
-// disable the account.
-func TestSync_ShouldDisableAfterTheConfiguredMisses(t *testing.T) {
+// A search that succeeds and finds nothing opens the missing window, and an
+// entry missing for longer than ldap.sync.disable_after disables the
+// account.
+func TestSync_ShouldDisableOnceTheEntryHasBeenMissingLongEnough(t *testing.T) {
 	t.Parallel()
 
-	dir := &fakeDirectory{entries: []*ldap.Entry{
-		entry("uid=alice,ou=people,dc=test", nil),
-	}}
-	cfg := ldapTestConfig(nil)
-	svc, db := newLDAPTestService(t, cfg, dir)
-	svc.SetAuditor(NewAuditService(cfg, db))
-	userID := seedLDAPUser(t, db, "sub-alice", "alice")
-	svc.Enrich(context.Background(), &Identity{Subject: "sub-alice", Username: "alice"}, userID)
+	dir, svc, db, userID := missingEntryFixture(t)
+	svc.SetAuditor(NewAuditService(svc.config, db))
+	_ = dir
 
-	// The entry disappears: every search now succeeds with no results.
-	dir.entries = nil
-	dir.searchFn = func(*ldap.SearchRequest) (*ldap.SearchResult, error) {
-		return &ldap.SearchResult{}, nil
+	// The first pass opens the window. Nothing is disabled yet.
+	if err := svc.Sync(context.Background()); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+	row := loadUserLDAP(t, db, userID)
+	if row.FirstMissingAt == nil {
+		t.Fatal("the first miss did not record first_missing_at")
+	}
+	if loadUser(t, db, userID).DisabledAt != nil {
+		t.Fatal("the first miss disabled the account")
 	}
 
-	for i := 1; i <= cfg.LDAP.Sync.DisableAfter; i++ {
-		if err := svc.Sync(context.Background()); err != nil {
-			t.Fatalf("Sync() error = %v", err)
-		}
+	// Age the window past the threshold, which is the only thing that
+	// decides the disable.
+	backdateFirstMissing(t, db, userID, 46*time.Minute)
 
-		var user model.User
-		if err := db.First(&user, "id = ?", userID).Error; err != nil {
-			t.Fatalf("load user: %v", err)
-		}
-		disabled := user.DisabledAt != nil
-		wantDisabled := i >= cfg.LDAP.Sync.DisableAfter
-		if disabled != wantDisabled {
-			t.Fatalf("after %d misses disabled = %v, want %v", i, disabled, wantDisabled)
-		}
+	if err := svc.Sync(context.Background()); err != nil {
+		t.Fatalf("Sync() error = %v", err)
 	}
 
-	var user model.User
-	if err := db.First(&user, "id = ?", userID).Error; err != nil {
-		t.Fatalf("load user: %v", err)
+	user := loadUser(t, db, userID)
+	if user.DisabledAt == nil {
+		t.Fatal("an entry missing for longer than disable_after was not disabled")
 	}
 	if user.DisabledSource == nil || *user.DisabledSource != model.DisabledSourceLDAPSync {
 		t.Errorf("disabled_source = %v, want ldap_sync so the sync may clear it later", user.DisabledSource)
@@ -379,6 +373,142 @@ func TestSync_ShouldDisableAfterTheConfiguredMisses(t *testing.T) {
 	}
 	if len(events) == 0 {
 		t.Error("the auto-disable was not audited")
+	}
+}
+
+// TestSync_ShouldNotDisableFromPassCountAlone is the reason the threshold is
+// a duration. Passes are not leader-elected, so replicas and an
+// operator-triggered sync multiply them; none of that may bring a disable
+// forward.
+func TestSync_ShouldNotDisableFromPassCountAlone(t *testing.T) {
+	t.Parallel()
+
+	_, svc, db, userID := missingEntryFixture(t)
+
+	for i := 1; i <= 10; i++ {
+		if err := svc.Sync(context.Background()); err != nil {
+			t.Fatalf("Sync() error = %v", err)
+		}
+		if loadUser(t, db, userID).DisabledAt != nil {
+			t.Fatalf("pass %d disabled the account inside the missing window", i)
+		}
+	}
+
+	row := loadUserLDAP(t, db, userID)
+	if row.ConsecutiveMisses != 10 {
+		t.Errorf("consecutive_misses = %d, want 10: the counter is still reported", row.ConsecutiveMisses)
+	}
+}
+
+// TestSync_ShouldKeepTheWindowOpenAcrossPasses pins the other half: later
+// misses must not push first_missing_at forward, or the window could never
+// elapse on a frequently-run sync.
+func TestSync_ShouldKeepTheWindowOpenAcrossPasses(t *testing.T) {
+	t.Parallel()
+
+	_, svc, db, userID := missingEntryFixture(t)
+
+	if err := svc.Sync(context.Background()); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+	opened := loadUserLDAP(t, db, userID).FirstMissingAt
+	if opened == nil {
+		t.Fatal("the first miss did not record first_missing_at")
+	}
+
+	if err := svc.Sync(context.Background()); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+
+	got := loadUserLDAP(t, db, userID).FirstMissingAt
+	if got == nil || !got.Equal(*opened) {
+		t.Errorf("first_missing_at = %v, want it left at %v", got, opened)
+	}
+}
+
+// TestSync_ShouldCloseTheWindowWhenTheEntryComesBack keeps an absence that
+// ended from counting toward a later one: the threshold measures one
+// unbroken window.
+func TestSync_ShouldCloseTheWindowWhenTheEntryComesBack(t *testing.T) {
+	t.Parallel()
+
+	dir, svc, db, userID := missingEntryFixture(t)
+
+	if err := svc.Sync(context.Background()); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+	backdateFirstMissing(t, db, userID, 40*time.Minute)
+
+	// The entry reappears.
+	dir.searchFn = nil
+	dir.entries = []*ldap.Entry{entry("uid=alice,ou=people,dc=test", nil)}
+	if err := svc.Sync(context.Background()); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+
+	row := loadUserLDAP(t, db, userID)
+	if row.FirstMissingAt != nil {
+		t.Errorf("first_missing_at = %v, want nil once the entry resolved again", row.FirstMissingAt)
+	}
+	if row.ConsecutiveMisses != 0 {
+		t.Errorf("consecutive_misses = %d, want 0 once the entry resolved again", row.ConsecutiveMisses)
+	}
+}
+
+// missingEntryFixture builds an enriched user whose directory entry has
+// since vanished: every search succeeds and returns nothing, which is the
+// only outcome that counts as a miss.
+func missingEntryFixture(t *testing.T) (*fakeDirectory, *LDAPService, *gorm.DB, string) {
+	t.Helper()
+
+	dir := &fakeDirectory{entries: []*ldap.Entry{
+		entry("uid=alice,ou=people,dc=test", nil),
+	}}
+	cfg := ldapTestConfig(nil)
+	svc, db := newLDAPTestService(t, cfg, dir)
+	userID := seedLDAPUser(t, db, "sub-alice", "alice")
+	svc.Enrich(context.Background(), &Identity{Subject: "sub-alice", Username: "alice"}, userID)
+
+	dir.entries = nil
+	dir.searchFn = func(*ldap.SearchRequest) (*ldap.SearchResult, error) {
+		return &ldap.SearchResult{}, nil
+	}
+	return dir, svc, db, userID
+}
+
+// loadUser reads one users row.
+func loadUser(t *testing.T, db *gorm.DB, userID string) model.User {
+	t.Helper()
+
+	var user model.User
+	if err := db.First(&user, "id = ?", userID).Error; err != nil {
+		t.Fatalf("load user: %v", err)
+	}
+	return user
+}
+
+// loadUserLDAP reads one directory bookkeeping row.
+func loadUserLDAP(t *testing.T, db *gorm.DB, userID string) model.UserLDAP {
+	t.Helper()
+
+	var row model.UserLDAP
+	if err := db.First(&row, "user_id = ?", userID).Error; err != nil {
+		t.Fatalf("load user_ldap: %v", err)
+	}
+	return row
+}
+
+// backdateFirstMissing ages the missing window by moving its start back,
+// which is how a test reaches a threshold measured in elapsed time without
+// waiting for it.
+func backdateFirstMissing(t *testing.T, db *gorm.DB, userID string, by time.Duration) {
+	t.Helper()
+
+	opened := time.Now().Add(-by)
+	if err := db.Model(&model.UserLDAP{}).
+		Where("user_id = ?", userID).
+		Update("first_missing_at", opened).Error; err != nil {
+		t.Fatalf("backdate first_missing_at: %v", err)
 	}
 }
 

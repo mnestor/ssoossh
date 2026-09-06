@@ -191,6 +191,7 @@ table user_ldap
   column consecutive_misses type=INTEGER nullable=false pk=false default=0
   column created_at type=DATETIME nullable=false pk=false default=<none>
   column dn type=TEXT nullable=false pk=false default=''
+  column first_missing_at type=DATETIME nullable=true pk=false default=<none>
   column last_seen_at type=DATETIME nullable=true pk=false default=<none>
   column last_synced_at type=DATETIME nullable=true pk=false default=<none>
   column updated_at type=DATETIME nullable=false pk=false default=<none>

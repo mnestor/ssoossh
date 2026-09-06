@@ -500,15 +500,19 @@ func (s *LDAPService) persist(ctx context.Context, userID string, entry *ldapEnt
 		LastSeenAt:        &now,
 		LastSyncedAt:      &now,
 		ConsecutiveMisses: 0,
-		CreatedAt:         now,
-		UpdatedAt:         now,
+		// A find closes the missing window outright. Nothing decays it
+		// gradually: the threshold measures one unbroken absence, so an
+		// entry that comes back and disappears again starts a fresh one.
+		FirstMissingAt: nil,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "user_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"dn", "attributes", "last_seen_at", "last_synced_at", "consecutive_misses", "updated_at",
+				"dn", "attributes", "last_seen_at", "last_synced_at", "consecutive_misses", "first_missing_at", "updated_at",
 			}),
 		}).Create(&row).Error; err != nil {
 			return fmt.Errorf("failed to persist directory bookkeeping: %w", err)

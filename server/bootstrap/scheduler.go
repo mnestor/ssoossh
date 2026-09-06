@@ -150,7 +150,7 @@ func (a *app) registerLDAPSyncJob(ctx context.Context) error {
 	slog.DebugContext(ctx, "registered LDAP directory sync",
 		slog.String("job", ldapSyncJobName),
 		slog.Duration("interval", interval),
-		slog.Int("disable_after", a.config.LDAP.Sync.DisableAfter),
+		slog.Duration("disable_after", a.config.LDAP.Sync.DisableAfter),
 	)
 	return nil
 }

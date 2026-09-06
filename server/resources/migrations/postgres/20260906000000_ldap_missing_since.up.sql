@@ -1,0 +1,20 @@
+-- When a user's directory entry was first found to be missing, which is what
+-- makes ldap.sync.disable_after a duration rather than a pass count.
+--
+-- The count it replaces was not a measure of time. recordMiss incremented it
+-- once per pass, and scheduled jobs are not leader-elected: every instance
+-- runs every job, so three replicas produced three increments per interval
+-- and `disable_after: 3` at `interval: 15m` meant fifteen minutes of absence
+-- rather than forty-five. An operator-triggered sync made it worse in the
+-- same direction, since each press was another increment.
+--
+-- Set on the first miss, cleared on any find, and compared against elapsed
+-- time. Pass frequency stops being load-bearing: a manual sync can never
+-- disable anyone a scheduled sync would not have disabled at the same moment.
+--
+-- NULL means the entry is not currently missing. Existing rows carry NULL
+-- with no backfill: consecutive_misses is not a timestamp and cannot be
+-- converted into one, so a user who was mid-absence at upgrade starts their
+-- window at the next missed pass. That grants at most one extra window and
+-- never disables someone early, which is the safe direction.
+ALTER TABLE user_ldap ADD COLUMN first_missing_at TIMESTAMPTZ NULL;
