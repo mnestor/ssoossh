@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { createRawSnippet } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -169,6 +169,23 @@ describe('root layout', () => {
 		// One for the desktop column, one for the drawer. Both are the same
 		// component, which is what keeps them from disagreeing.
 		expect(screen.getAllByTestId('app-rail')).toHaveLength(2);
+	});
+
+	// The collapsed width is a desktop preference kept in one persisted
+	// flag, and the control that clears it is hidden below `lg`. Before the
+	// drawer was forced expanded, collapsing on a laptop and later opening
+	// the app on a phone gave a strip of unlabelled icons with no way back.
+	it('should open the drawer expanded even when the rail is collapsed', async () => {
+		stubAppFetch(alice);
+		rail.collapsed = true;
+
+		render(Layout, { children });
+		await userEvent.click(await screen.findByRole('button', { name: 'Open navigation menu' }));
+
+		const drawer = document.getElementById('app-rail-drawer');
+		expect(drawer).not.toBeNull();
+		// The desktop copy stays collapsed; only the drawer is overridden.
+		expect(within(drawer as HTMLElement).getByText('Dashboard')).toBeVisible();
 	});
 
 	// A drawer that only closes by re-pressing a trigger it now covers is a

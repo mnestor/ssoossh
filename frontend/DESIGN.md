@@ -200,9 +200,16 @@ of glyphs. The preference is kept in `localStorage` under
 drawer's open state — deliberately a separate field, and never persisted: a
 phone visitor's open drawer is not a desktop preference.
 
-Admin is a group inside the same rail, gated on `is_auditor`. It opens by
-itself on an `/admin` route and stays wherever the viewer last put it once
-they have said. It replaced a horizontal tab strip in the admin layout that
+Admin is a group inside the same rail, gated on `is_auditor`. It is open by
+default and remembers being shut (`ssoossh:rail-admin-open`), and an
+`/admin` route forces it open whatever was last chosen — arriving in the
+admin area with the section list hidden is the one case where the stored
+preference cannot be what the viewer meant. It started shut everywhere but
+`/admin` at first, which read as the admin menu having gone missing.
+
+The collapsed width is a separate key, and the drawer overrides it: the
+control that expands the rail is hidden below `lg`, so a drawer inheriting a
+desktop collapse would be a strip of unlabelled icons with no way back. It replaced a horizontal tab strip in the admin layout that
 was reachable only from a line inside the account dropdown.
 
 Four routes render with no rail at all — sign-in, an approval, a console

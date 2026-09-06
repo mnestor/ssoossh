@@ -27,12 +27,22 @@
 		orgName?: string;
 		/** True while the sign-out call is in flight. */
 		signingOut?: boolean;
+		/**
+		 * Overrides the stored width preference.
+		 *
+		 * The drawer passes `false`. Collapsed is a desktop preference kept
+		 * in one persisted flag, and the only control that clears it is
+		 * hidden below `lg` — so a viewer who collapsed the rail on a laptop
+		 * and later opened the app on a phone got a 60px strip of unlabelled
+		 * icons with no way in the app to widen it again.
+		 */
+		collapsed?: boolean;
 		onsignout: () => void;
 	}
 
-	let { orgName, signingOut = false, onsignout }: Props = $props();
+	let { orgName, signingOut = false, collapsed: forceCollapsed, onsignout }: Props = $props();
 
-	const collapsed = $derived(rail.collapsed);
+	const collapsed = $derived(forceCollapsed ?? rail.collapsed);
 	const isAuditor = $derived(session.user?.is_auditor ?? false);
 
 	// The identity is the label on its own row rather than a heading above
@@ -40,12 +50,16 @@
 	// rail's bottom edge exists to answer.
 	const identity = $derived(session.user?.email || session.user?.username || 'Account');
 
-	// The admin group opens by itself on an admin route, and stays wherever
-	// the viewer last put it once they have said. Null means "nobody has
-	// said", which is what makes arrival open it without overriding a
-	// deliberate close on the next navigation.
-	let adminOverride = $state<boolean | null>(null);
-	const adminOpen = $derived(adminOverride ?? isAdminRoute(page.url.pathname));
+	// The admin group is open unless the viewer has shut it, and an admin
+	// route forces it open whatever they last chose: arriving in the admin
+	// area with the section list hidden is the one case where their
+	// preference cannot be what they meant.
+	//
+	// It used to default to shut everywhere but /admin, which read as the
+	// admin menu having gone missing — the sections had been one click away
+	// in a dropdown before, and were now two behind a collapsed group with
+	// nothing to say what was inside it.
+	const adminOpen = $derived(rail.adminOpen || isAdminRoute(page.url.pathname));
 
 	// Named for what pressing it does, not for the state it is in: a control
 	// labelled "Collapse rail" on an already-collapsed rail tells a screen
@@ -116,7 +130,7 @@
 				open={adminOpen}
 				{collapsed}
 				testid="rail-admin-group"
-				ontoggle={() => (adminOverride = !adminOpen)}
+				ontoggle={() => rail.toggleAdminOpen()}
 			>
 				{#each adminNav as item (item.href)}
 					<RailItem

@@ -122,8 +122,12 @@
 				onclick={() => rail.closeDrawer()}
 				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
 			></button>
+			<!-- collapsed={false}: the icon-only width is a desktop
+			     preference, and the control that undoes it is hidden at this
+			     width. Inheriting it here would hand a phone a strip of
+			     unlabelled icons with no way back. -->
 			<div id="app-rail-drawer" class="fixed inset-y-0 left-0 z-50 lg:hidden">
-				<AppRail orgName={branding.org_name} {signingOut} onsignout={signOut} />
+				<AppRail orgName={branding.org_name} collapsed={false} {signingOut} onsignout={signOut} />
 			</div>
 		{/if}
 

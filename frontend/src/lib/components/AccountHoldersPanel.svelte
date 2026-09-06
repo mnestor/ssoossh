@@ -122,9 +122,16 @@
 </div>
 
 {#snippet signInCaveat()}
+	<!-- What this list is, stated plainly, because it is a snapshot rather
+	     than a live answer: it is built from what each person's last sign-in
+	     (or last directory sync) reported, which is the same record the
+	     server authorizes against. That the two read the same source is the
+	     property that matters — somebody who has lost the account drops off
+	     this list and loses access at the same moment, on their next sign-in,
+	     rather than one changing without the other. -->
 	<p class="mt-2 text-[11px] text-ink-muted" data-testid="account-holders-caveat">
-		Only people who have signed in are listed. The server reads its own records, never the
-		directory, so somebody who holds this account and has not signed in yet is missing from this
-		list — and will appear the first time they do.
+		Built from what each person's last sign-in reported, so somebody who has never signed in is not
+		listed, and a change made since is not reflected until they sign in again. Access is decided
+		from the same record, so this list and what the server allows never disagree.
 	</p>
 {/snippet}
