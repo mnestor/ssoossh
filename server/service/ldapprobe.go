@@ -125,6 +125,13 @@ type ProbeResult struct {
 	// returned. Nil when nothing matched.
 	Entry *ProbeEntry
 
+	// IDAttribute echoes ldap.id_attribute, and DirectoryID is what it
+	// resolved to on this entry — the value that would be stored as the
+	// re-anchoring identifier. Both empty when it is unconfigured, which is
+	// the case probeSuggestions offers a candidate for.
+	IDAttribute string
+	DirectoryID string
+
 	// Fields is the field-mapping stage: what each configured
 	// ldap.fields entry resolved to, and why.
 	Fields []ProbeField
@@ -256,7 +263,15 @@ func (s *LDAPService) Probe(ctx context.Context, req ProbeRequest) (*ProbeResult
 	if len(attrs) == 0 {
 		// "*" is the LDAP spelling for every user attribute, which is the
 		// whole point: an operator cannot map a field they cannot see.
-		attrs = []string{"*"}
+		//
+		// The identifier attributes are named individually because they are
+		// operational and "*" does not return them. Asking for a handful
+		// that a given directory will not have costs nothing — an absent
+		// attribute is simply absent from the result — and it is what lets
+		// the probe answer "which attribute do I anchor on", which is not a
+		// question an operator can answer from their own directory's
+		// documentation in any reasonable time.
+		attrs = append([]string{"*"}, probeIDAttributes(s.config.LDAP.IDAttribute)...)
 	}
 
 	result := &ProbeResult{
@@ -291,6 +306,8 @@ func (s *LDAPService) Probe(ctx context.Context, req ProbeRequest) (*ProbeResult
 
 	entry := search.Entries[0]
 	result.Entry = s.probeEntry(entry)
+	result.IDAttribute = s.config.LDAP.IDAttribute
+	result.DirectoryID = directoryIDValue(entry, s.config.LDAP.IDAttribute)
 	result.Fields = s.probeFields(conn, req, entry)
 	result.Merge = s.probeMerge(result.Fields)
 	result.Suggestions = s.probeSuggestions(result)
@@ -457,6 +474,15 @@ func (s *LDAPService) probeMerge(fields []ProbeField) []ProbeMerge {
 		case config.LDAPFieldOtherAccounts, config.LDAPFieldServiceAccounts:
 			merged.Action = "override"
 			merged.Note = "replaces the OIDC value outright rather than merging with it, so a retired account really goes away."
+		case config.LDAPFieldName:
+			merged.Action = "override"
+			if len(merged.Kept) > 1 {
+				// A multi-valued cn names the same person twice; only the
+				// first is taken, and saying so beats an operator wondering
+				// which one the UI picked.
+				merged.Kept = merged.Kept[:1]
+			}
+			merged.Note = "replaces the OIDC name claim. Display only: shown in the web UI and offered to email templates, never a principal, a key ID input, or an authorization input. Only the first value is used."
 		default:
 			merged.Action = "extra"
 			merged.Note = fmt.Sprintf("lands as an extra field, reachable from a key ID template as {{.Extra.%s}}.", field.Name)
@@ -488,6 +514,27 @@ func (s *LDAPService) probeSuggestions(result *ProbeResult) []ProbeSuggestion {
 		})
 	}
 
+	// The re-anchoring identifier, which is the suggestion with the most
+	// leverage in the whole console: without one, a person renamed in the
+	// directory stops matching user_filter, looks exactly like a deleted
+	// entry, and is walked toward the auto-disable. Every directory has an
+	// identifier attribute and every directory calls it something else, so
+	// naming the one this directory actually returned is the answer an
+	// operator cannot easily look up.
+	if s.config.LDAP.IDAttribute == "" {
+		for _, candidate := range wellKnownIDAttributes {
+			attr := findProbeAttribute(result.Entry, candidate)
+			if attr == nil {
+				continue
+			}
+			out = append(out, ProbeSuggestion{
+				Reason: fmt.Sprintf("%s is on this entry and ldap.id_attribute is unset: without it, a renamed or moved entry cannot be re-anchored and counts toward the auto-disable", attr.Name),
+				YAML:   fmt.Sprintf("ldap:\n  id_attribute: %s", attr.Name),
+			})
+			break
+		}
+	}
+
 	// Group values the allowlist discards. The allowlist is why an
 	// operator cannot see the group they forgot to configure, so naming
 	// the ones that were dropped is most of the value of the whole
@@ -509,11 +556,51 @@ func (s *LDAPService) probeSuggestions(result *ProbeResult) []ProbeSuggestion {
 	return out
 }
 
+// wellKnownIDAttributes are the unique, immutable identifier attributes the
+// common directories use, in the order the probe offers them. Every
+// directory has one and every directory names it differently: entryUUID is
+// the RFC 4530 standard that OpenLDAP and 389 Directory Server implement,
+// objectGUID is Active Directory's, ipaUniqueID is FreeIPA's, and
+// nsuniqueid is the older 389/Netscape one that predates entryUUID.
+var wellKnownIDAttributes = []string{"entryUUID", "objectGUID", "ipaUniqueID", "nsuniqueid"}
+
+// probeIDAttributes is the identifier attributes to request explicitly:
+// every well-known one, plus the configured attribute when it is something
+// else. Operational attributes are not returned by "*", so an unrequested
+// one is simply invisible.
+func probeIDAttributes(configured string) []string {
+	out := append([]string{}, wellKnownIDAttributes...)
+	if configured != "" && !slices.ContainsFunc(out, func(a string) bool {
+		return strings.EqualFold(a, configured)
+	}) {
+		out = append(out, configured)
+	}
+	return out
+}
+
+// findProbeAttribute looks up one attribute on a probed entry, matching the
+// way a directory does: case-insensitively. Returns nil when absent.
+func findProbeAttribute(entry *ProbeEntry, name string) *ProbeAttribute {
+	if entry == nil {
+		return nil
+	}
+	for i := range entry.Attributes {
+		if strings.EqualFold(entry.Attributes[i].Name, name) {
+			return &entry.Attributes[i]
+		}
+	}
+	return nil
+}
+
 // operationalAttributes are directory bookkeeping rather than identity, so
 // suggesting a mapping for them would be noise. Matched case-insensitively.
+// The identifier attributes are here too: they are exactly the thing
+// id_attribute takes, and suggesting one be mapped to a template field
+// instead would point an operator away from the setting that matters.
 var operationalAttributes = []string{
 	"objectClass", "createTimestamp", "modifyTimestamp", "creatorsName",
-	"modifiersName", "entryUUID", "entryDN", "entryCSN", "structuralObjectClass",
+	"modifiersName", "entryUUID", "objectGUID", "ipaUniqueID", "nsuniqueid",
+	"entryDN", "entryCSN", "structuralObjectClass",
 	"subschemaSubentry", "hasSubordinates", "userPassword",
 }
 

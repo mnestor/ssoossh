@@ -94,6 +94,12 @@ func NewLDAPService(c *config.Config, db *gorm.DB) (*LDAPService, error) {
 	}
 
 	attrs := map[string]bool{}
+	// The re-anchoring ID is requested on every primary read, so it is
+	// captured from the very first login rather than only once a sync has
+	// run. Unconfigured adds nothing to the request.
+	if c.LDAP.IDAttribute != "" {
+		attrs[c.LDAP.IDAttribute] = true
+	}
 	for _, name := range sortedFieldNames(c.LDAP.Fields) {
 		field := c.LDAP.Fields[name]
 		parsed := parsedLDAPField{name: name, attribute: field.Attribute}
@@ -218,6 +224,11 @@ func conditionGroups(cond *config.PolicyCondition) []string {
 // ldapEntry is what one directory lookup yields.
 type ldapEntry struct {
 	DN string
+	// DirectoryID is the value of config.LDAPConfig.IDAttribute on this
+	// entry, in the form directoryIDValue produced. Empty when the
+	// attribute is unconfigured or absent, which leaves resolution on the
+	// DN-then-filter path.
+	DirectoryID string
 	// Values maps each configured field name to the values resolved for
 	// it, from the entry's own attribute and every search under it.
 	Values map[string][]string
@@ -236,7 +247,19 @@ func (s *LDAPService) Enrich(ctx context.Context, identity *Identity, userID str
 		return
 	}
 
-	entry, err := s.lookup(ctx, identity)
+	// The stored anchors, so a login resolves the same way a sync pass
+	// does. Without them a renamed person's user_filter no longer matches
+	// and every one of their logins falls back to the cache, which is the
+	// case ldap.id_attribute exists to fix. A read failure is not worth
+	// failing over: nil anchors just start the walk at the filter, exactly
+	// as a first login does.
+	anchors, err := s.storedRow(ctx, userID)
+	if err != nil {
+		s.log.WarnContext(ctx, "failed to read the stored directory anchors; resolving by filter",
+			"subject", identity.Subject, "error", err)
+	}
+
+	entry, err := s.lookup(ctx, identity, anchors)
 	if err != nil {
 		s.log.WarnContext(ctx, "directory lookup failed; continuing with the OIDC identity",
 			"subject", identity.Subject, "username", identity.Username, "error", err)
@@ -254,8 +277,14 @@ func (s *LDAPService) Enrich(ctx context.Context, identity *Identity, userID str
 	}
 }
 
-// lookup runs the primary search and then each field's searches.
-func (s *LDAPService) lookup(ctx context.Context, identity *Identity) (*ldapEntry, error) {
+// lookup dials the directory and resolves identity's entry through the
+// shared anchor walk, then runs each field's searches.
+//
+// row is the caller's stored bookkeeping, or nil for a user who has never
+// been enriched — a first login, or the first pass after ldap.id_attribute
+// was configured. Nil simply means there are no anchors yet and the walk
+// starts at the filter.
+func (s *LDAPService) lookup(ctx context.Context, identity *Identity, row *model.UserLDAP) (*ldapEntry, error) {
 	conn, err := s.dial(&s.config.LDAP)
 	if err != nil {
 		return nil, err
@@ -266,26 +295,120 @@ func (s *LDAPService) lookup(ctx context.Context, identity *Identity) (*ldapEntr
 		}
 	}()
 
+	entry, outcome := s.resolveAnchored(ctx, conn, identity, row)
+	switch outcome {
+	case syncFound:
+		return entry, nil
+	case syncMissing:
+		return nil, errors.New("no directory entry matched")
+	default:
+		return nil, errors.New("the directory could not be read")
+	}
+}
+
+// resolveAnchored finds identity's directory entry: by unique ID first,
+// then by the stored DN, then by one rendered user_filter search.
+//
+// The order is most-stable-first. The ID (ldap.id_attribute) is the only
+// anchor that does not move — a person moved between OUs gets a new DN, and
+// a person renamed stops matching a user_filter keyed on their username —
+// so without it a rename is indistinguishable from a deletion and walks the
+// account toward the sync.disable_after auto-disable. The DN is second
+// because it is a single base-object read and it distinguishes "entry
+// deleted" from "filter no longer matches". The filter is last because it
+// is the only step that can find an entry both stored anchors have lost.
+//
+// Every step is skipped when it has nothing to go on, so a deployment with
+// no ldap.id_attribute and a nil row walks straight to the filter and
+// behaves exactly as it did before any of this existed.
+//
+// The three outcomes are distinct on purpose: syncMissing is reserved for a
+// search that *succeeded* and found nothing, since that is the only result
+// that may ever count against a user. Every failure is syncFailed, so a
+// directory that is merely unreachable can never disable anyone.
+//
+// row may be nil, meaning no anchors are stored yet.
+func (s *LDAPService) resolveAnchored(ctx context.Context, conn ldapConn, identity *Identity, row *model.UserLDAP) (*ldapEntry, syncOutcome) {
+	logAttrs := []any{"subject", identity.Subject, "username", identity.Username}
+
+	if row != nil {
+		if filter := directoryIDFilter(s.config.LDAP.IDAttribute, row.DirectoryID); filter != "" {
+			entry, err := s.searchOne(conn, s.config.LDAP.BaseDN, filter, s.primaryAttrs)
+			switch {
+			case err != nil:
+				// Includes two entries sharing an ID, which is a directory
+				// problem rather than a missing person: it must not count
+				// as a miss, so it falls through to the next anchor like
+				// any other failed step.
+				s.log.WarnContext(ctx, "directory read by unique id failed; falling back to the stored DN",
+					append(logAttrs, "error", err)...)
+			case entry != nil:
+				if entry.DN != row.DN {
+					// The whole payoff: the entry moved or was renamed and
+					// was found anyway. The new DN is persisted with the
+					// read, so the cheaper anchor is correct again next
+					// time.
+					s.log.InfoContext(ctx, "directory entry re-anchored by unique id",
+						append(logAttrs, "old_dn", row.DN, "new_dn", entry.DN)...)
+				}
+				return s.finishResolve(ctx, conn, identity, entry, logAttrs)
+			}
+		}
+
+		if row.DN != "" {
+			entry, err := s.readByDN(conn, row.DN)
+			switch {
+			case err != nil:
+				s.log.WarnContext(ctx, "directory read by DN failed; falling back to a filter search",
+					append(logAttrs, "dn", row.DN, "error", err)...)
+			case entry != nil:
+				return s.finishResolve(ctx, conn, identity, entry, logAttrs)
+			}
+		}
+	}
+
 	filter, err := s.userFilter.execute(s.filterData(identity, "", nil))
 	if err != nil {
-		return nil, err
+		s.log.ErrorContext(ctx, "failed to render the user filter",
+			append(logAttrs, "error", err)...)
+		return nil, syncFailed
 	}
-
 	entry, err := s.searchOne(conn, s.config.LDAP.BaseDN, filter, s.primaryAttrs)
 	if err != nil {
-		return nil, err
+		s.log.WarnContext(ctx, "directory search failed; nothing counted as a miss",
+			append(logAttrs, "error", err)...)
+		return nil, syncFailed
 	}
 	if entry == nil {
-		return nil, fmt.Errorf("no directory entry matched %s", filter)
+		// The search succeeded and found nothing. This, and only this, is
+		// a miss.
+		return nil, syncMissing
 	}
+	return s.finishResolve(ctx, conn, identity, entry, logAttrs)
+}
 
-	return s.resolveFields(ctx, conn, identity, entry)
+// finishResolve runs the field searches over a located entry. A failure
+// here keeps the caller's cached values rather than returning a thinner
+// record: a transient error must never shrink a principal list.
+func (s *LDAPService) finishResolve(ctx context.Context, conn ldapConn, identity *Identity, entry *ldap.Entry, logAttrs []any) (*ldapEntry, syncOutcome) {
+	resolved, err := s.resolveFields(ctx, conn, identity, entry)
+	if err != nil {
+		s.log.WarnContext(ctx, "directory field searches failed; keeping the cached values",
+			append(logAttrs, "error", err)...)
+		return nil, syncFailed
+	}
+	return resolved, syncFound
 }
 
 // resolveFields collects each field's values from the primary entry and
 // from its searches.
 func (s *LDAPService) resolveFields(ctx context.Context, conn ldapConn, identity *Identity, entry *ldap.Entry) (*ldapEntry, error) {
-	out := &ldapEntry{DN: entry.DN, Values: map[string][]string{}, Attrs: map[string]string{}}
+	out := &ldapEntry{
+		DN:          entry.DN,
+		DirectoryID: directoryIDValue(entry, s.config.LDAP.IDAttribute),
+		Values:      map[string][]string{},
+		Attrs:       map[string]string{},
+	}
 	for _, a := range s.primaryAttrs {
 		out.Attrs[a] = entry.GetAttributeValue(a)
 	}
@@ -408,6 +531,14 @@ func applyLDAPValues(identity *Identity, values map[string][]string) {
 			identity.OtherAccounts = vals
 		case config.LDAPFieldServiceAccounts:
 			identity.ServiceAccounts = vals
+		case config.LDAPFieldName:
+			// One name, so only the first value is taken. A directory that
+			// carries several (cn is routinely multi-valued) is naming the
+			// same person more than once, and joining them would produce a
+			// label no directory actually holds.
+			if len(vals) > 0 {
+				identity.DisplayName = vals[0]
+			}
 		case config.LDAPFieldGroups:
 			// Persisted, never merged into the session identity: see the
 			// invariant in https://mnestor.github.io/ssoossh/internals/invariants/.
@@ -464,18 +595,35 @@ type storedLDAPValues struct {
 	lastSeenAt *time.Time
 }
 
-// storedValues reads and decodes one user's cached directory values.
-// Returns nil, nil when there is no bookkeeping row or its JSON is
-// unreadable — both mean "nothing to overlay", which is the same outcome
-// for every caller.
-func (s *LDAPService) storedValues(ctx context.Context, userID string) (*storedLDAPValues, error) {
+// storedRow reads one user's bookkeeping row. Returns nil, nil when there
+// is none, which is a user who has never been enriched rather than an
+// error.
+func (s *LDAPService) storedRow(ctx context.Context, userID string) (*model.UserLDAP, error) {
+	if userID == "" {
+		return nil, nil
+	}
 	var row model.UserLDAP
 	if err := s.db.WithContext(ctx).First(&row, "user_id = ?", userID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
+		return nil, fmt.Errorf("failed to read the directory bookkeeping row: %w", err)
+	}
+	return &row, nil
+}
+
+// storedValues reads and decodes one user's cached directory values.
+// Returns nil, nil when there is no bookkeeping row or its JSON is
+// unreadable — both mean "nothing to overlay", which is the same outcome
+// for every caller.
+func (s *LDAPService) storedValues(ctx context.Context, userID string) (*storedLDAPValues, error) {
+	row, err := s.storedRow(ctx, userID)
+	if err != nil {
 		s.log.WarnContext(ctx, "failed to read cached directory attributes", "error", err)
-		return nil, fmt.Errorf("failed to read cached directory attributes: %w", err)
+		return nil, err
+	}
+	if row == nil {
+		return nil, nil
 	}
 	var values map[string][]string
 	if err := json.Unmarshal([]byte(row.Attributes), &values); err != nil {
@@ -501,6 +649,7 @@ func (s *LDAPService) persist(ctx context.Context, userID string, entry *ldapEnt
 	now := time.Now()
 	row := model.UserLDAP{
 		UserID:            userID,
+		DirectoryID:       entry.DirectoryID,
 		DN:                entry.DN,
 		Attributes:        string(encoded),
 		LastSeenAt:        &now,
@@ -518,7 +667,7 @@ func (s *LDAPService) persist(ctx context.Context, userID string, entry *ldapEnt
 		if err := tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "user_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"dn", "attributes", "last_seen_at", "last_synced_at", "consecutive_misses", "first_missing_at", "updated_at",
+				"directory_id", "dn", "attributes", "last_seen_at", "last_synced_at", "consecutive_misses", "first_missing_at", "updated_at",
 			}),
 		}).Create(&row).Error; err != nil {
 			return fmt.Errorf("failed to persist directory bookkeeping: %w", err)

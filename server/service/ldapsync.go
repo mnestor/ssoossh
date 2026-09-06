@@ -242,63 +242,21 @@ func (s *LDAPService) syncUser(ctx context.Context, conn ldapConn, row *model.Us
 	return syncFound
 }
 
-// resolveEntry re-reads a user's entry, by DN first and falling back to one
-// filter search.
+// resolveEntry re-reads one user's entry during a sync pass.
 //
-// By DN because it is cheaper and because it distinguishes "entry deleted"
-// from "filter no longer matches". The filter fallback is what lets a moved
-// entry re-anchor instead of being disabled.
+// It is the sync's half of the shared anchor walk: build the identity the
+// stored row describes, then hand it to resolveAnchored, which is the same
+// code the login path uses so the two can never drift into resolving a
+// person differently.
 func (s *LDAPService) resolveEntry(ctx context.Context, conn ldapConn, user *model.User, row *model.UserLDAP) (*ldapEntry, syncOutcome) {
 	identity := &Identity{
-		Subject:  user.Subject,
-		Username: user.Username,
-		Email:    user.Email,
-		Extra:    decodeExtraFields(user.ExtraFields),
+		Subject:     user.Subject,
+		Username:    user.Username,
+		Email:       user.Email,
+		DisplayName: user.DisplayName,
+		Extra:       decodeExtraFields(user.ExtraFields),
 	}
-
-	if row.DN != "" {
-		entry, err := s.readByDN(conn, row.DN)
-		switch {
-		case err != nil:
-			s.log.WarnContext(ctx, "directory read by DN failed; falling back to a filter search",
-				"user_id", row.UserID, "dn", row.DN, "error", err)
-		case entry != nil:
-			resolved, err := s.resolveFields(ctx, conn, identity, entry)
-			if err != nil {
-				s.log.WarnContext(ctx, "directory field searches failed; keeping the cached values",
-					"user_id", row.UserID, "error", err)
-				return nil, syncFailed
-			}
-			return resolved, syncFound
-		}
-	}
-
-	// Fall back to the filter, which also re-anchors a moved entry.
-	filter, err := s.userFilter.execute(s.filterData(identity, "", nil))
-	if err != nil {
-		s.log.ErrorContext(ctx, "failed to render the user filter during sync",
-			"user_id", row.UserID, "error", err)
-		return nil, syncFailed
-	}
-	entry, err := s.searchOne(conn, s.config.LDAP.BaseDN, filter, s.primaryAttrs)
-	if err != nil {
-		s.log.WarnContext(ctx, "directory search failed during sync; nothing counted as a miss",
-			"user_id", row.UserID, "error", err)
-		return nil, syncFailed
-	}
-	if entry == nil {
-		// The search succeeded and found nothing. This, and only this, is
-		// a miss.
-		return nil, syncMissing
-	}
-
-	resolved, err := s.resolveFields(ctx, conn, identity, entry)
-	if err != nil {
-		s.log.WarnContext(ctx, "directory field searches failed; keeping the cached values",
-			"user_id", row.UserID, "error", err)
-		return nil, syncFailed
-	}
-	return resolved, syncFound
+	return s.resolveAnchored(ctx, conn, identity, row)
 }
 
 // readByDN fetches one entry by its distinguished name. A "no such object"
