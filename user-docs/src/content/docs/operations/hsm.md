@@ -215,12 +215,12 @@ high availability.
 
 ## Docker and containers
 
-`ghcr.io/mnestor/ssoosshd` ships two image variants per version, both
+`ghcr.io/mnestor/ssoossh-server` ships two image variants per version, both
 dynamically linked so a PKCS#11 module can be `dlopen`'d:
 
-- `ghcr.io/mnestor/ssoosshd:<version>` -- glibc, built on
+- `ghcr.io/mnestor/ssoossh-server:<version>` -- glibc, built on
   `distroless/base-debian12`.
-- `ghcr.io/mnestor/ssoosshd:<version>-musl` -- musl, built on Alpine.
+- `ghcr.io/mnestor/ssoossh-server:<version>-musl` -- musl, built on Alpine.
 
 Which one to run has nothing to do with the *host* OS; Docker abstracts that
 away, and either image runs on any host with a container runtime. It matters
@@ -234,7 +234,7 @@ the module you are mounting was built against.
 docker run -v /usr/lib/softhsm/libsofthsm2.so:/usr/lib/softhsm/libsofthsm2.so:ro \
   -v /var/lib/softhsm/tokens/:/var/lib/softhsm/tokens/:rw \
   -v /etc/ssoossh/ssoosshd.yaml:/etc/ssoosshd.yaml:ro \
-  ghcr.io/mnestor/ssoosshd:<version>
+  ghcr.io/mnestor/ssoossh-server:<version>
 ```
 
 ### Option 2: split signer, recommended for production
@@ -250,7 +250,7 @@ ssoosshd -c signer.yaml sign
 ```bash
 # In the container
 docker run -v /etc/ssoossh/api.yaml:/etc/ssoosshd.yaml:ro \
-  ghcr.io/mnestor/ssoosshd:<version> serve api
+  ghcr.io/mnestor/ssoossh-server:<version> serve api
 ```
 
 Both processes need `pubsub.backend: nats` with mTLS credentials --

@@ -12,25 +12,31 @@
 # https://mnestor.github.io/ssoossh/operations/hsm/) is assembled by goreleaser's dockers_v2 pipe
 # (.goreleaser.yml) from the Dockerfile at the repo root, as part of the
 # build-most job in .github/workflows/build.yaml, and pushed to
-# ghcr.io/mnestor/ssoosshd only on a v* release tag — there is no
-# `latest` and no branch/sha tag published, deliberately: a floating tag
-# means `docker compose pull` can silently change what's running on a
-# restart, so every image here is meant to be pinned by an explicit
-# version instead. Set SSOOSSHD_VERSION to one before starting:
+# ghcr.io/mnestor/ssoossh-server only on a v* release tag — there is no
+# `latest`, and no X.Y either, deliberately: a floating tag means `docker
+# compose pull` can silently change what's running on a restart, so every
+# image here is meant to be pinned by an explicit version instead.
+#
+# The image tag drops the leading v — release v0.2.0 publishes the image
+# tag 0.2.0. Published alongside it is an immutable sha-<commit> tag, the
+# name the release pipeline pushes first and promotes to the version tag
+# once the release is complete (see .goreleaser.yml's dockers_v2).
+# Pinning that instead is fine; it just names a commit rather than a
+# release. Set SSOOSSHD_VERSION before starting:
 #   mkdir -p config
 #   cp ../server/config/defaults.yaml config/ssoosshd.yaml  # then edit it
-#   echo SSOOSSHD_VERSION=v0.2.0 > .env   # a real tag; see the packages
+#   echo SSOOSSHD_VERSION=0.2.0 > .env    # a real tag; see the packages
 #                                         # page below for what's published
 #   docker compose up -d                                    # sqlite (default)
 #   docker compose --profile postgres up -d                 # with postgres
 #
-# ghcr.io/mnestor/ssoosshd is a GitHub Container Registry package, which
+# ghcr.io/mnestor/ssoossh-server is a GitHub Container Registry package, which
 # defaults to private on its first push regardless of the repo's own
 # visibility — `docker compose pull` gets a 401/denied until someone with
 # admin on the package sets its visibility to public (Package settings on
 # GitHub), or until you `docker login ghcr.io` with a token that has read
 # access to it. What versions exist:
-# https://github.com/mnestor/ssoossh/pkgs/container/ssoosshd
+# https://github.com/mnestor/ssoossh/pkgs/container/ssoossh-server
 #
 # Developing the Dockerfile itself: unlike before, `docker compose build`
 # is not enough on its own — Dockerfile expects a binary already staged at
@@ -54,7 +60,7 @@
 
 services:
   ssoosshd:
-    image: ghcr.io/mnestor/ssoosshd:${SSOOSSHD_VERSION:?set SSOOSSHD_VERSION to a released tag, e.g. v0.2.0 -- see this file's header comment}
+    image: ghcr.io/mnestor/ssoossh-server:${SSOOSSHD_VERSION:?set SSOOSSHD_VERSION to a released tag, e.g. 0.2.0 -- see this file's header comment}
     build:
       context: ..
       dockerfile: Dockerfile
