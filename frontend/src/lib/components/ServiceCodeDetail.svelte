@@ -175,26 +175,15 @@
 		<span class="ml-auto"><CopyableId value={enrollment.id} testid="enrollment-id" /></span>
 	</div>
 
-	<!-- The account leads, the way the decider leads on a certificate:
-	     everything else here is a property of the grant made to this one
-	     account.
-
-	     It used to close with "everyone with access to that account sees and
-	     manages this code", which is the same sentence the "Who has access"
-	     section below opens with. Said twice, four lines apart, it read as a
-	     warning rather than a fact. -->
-	<div class="flex gap-2.5 rounded-lg bg-surface-muted px-3.5 py-3 text-[13px] leading-normal">
-		<Icon name="user" size="sm" class="mt-px flex-shrink-0 text-ink-muted" />
-		<span>
-			Mints certificates for <strong class="font-mono" data-testid="service-code-account"
-				>{subject}</strong
-			>, its only principal, fixed at approval.
-		</span>
-	</div>
-
 	<div>
 		<SectionLabel>What it hands out</SectionLabel>
 		<dl class="divide-y divide-border-subtle">
+			<!-- The principal leads the way the decider leads on a certificate:
+			     it is the account every certificate this code mints is for, fixed
+			     at approval, and everything below is a property of that grant. -->
+			<DetailRow label="Principal" mono>
+				<span data-testid="service-code-account">{subject}</span>
+			</DetailRow>
 			<DetailRow label="Certificate life" icon="clock">{certificateLifetime}</DetailRow>
 			<DetailRow label="Key ID" mono>{enrollment.key_id || '—'}</DetailRow>
 			<DetailRow label="Bound key" mono>{enrollment.public_key_fingerprint || '—'}</DetailRow>
