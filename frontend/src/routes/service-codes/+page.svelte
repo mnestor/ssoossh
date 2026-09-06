@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { pushState } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { getCurrentUser, listServiceEnrollments } from '$lib/api/endpoints';
 	import type { ServiceEnrollment } from '$lib/api/types';
@@ -10,12 +11,12 @@
 	import PageShell from '$lib/components/PageShell.svelte';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
 	import ServiceAccountRow from '$lib/components/ServiceAccountRow.svelte';
-	import ServiceCodeDetailModal from '$lib/components/ServiceCodeDetailModal.svelte';
 	import ServiceCodeRow from '$lib/components/ServiceCodeRow.svelte';
 	import { isExpired } from '$lib/format';
 
-	// The service codes for every account this identity holds, three levels
-	// deep: the accounts, then one account's codes, then one code.
+	// The service codes for every account this identity holds: the accounts,
+	// then one account's codes. One code is a page of its own,
+	// /service-codes/[id].
 	//
 	// Account first because that is what ownership is now — a code belongs to
 	// its service account, and everyone holding the account holds the code
@@ -37,16 +38,6 @@
 
 	function accountOf(enrollment: ServiceEnrollment): string {
 		return enrollment.service_account || enrollment.principals[0] || '';
-	}
-
-	// The panel saves the address; the list holds the copy the panel renders
-	// from, so it has to be told. Patched in place rather than refetched: the
-	// server has already answered with what it stored, and a reload would
-	// discard the reader's scroll position for a value already in hand.
-	function updateNotificationEmail(id: string, notificationEmail: string) {
-		enrollments = enrollments.map((enrollment) =>
-			enrollment.id === id ? { ...enrollment, notification_email: notificationEmail } : enrollment
-		);
 	}
 
 	// One entry per account the identity holds, including accounts with no
@@ -95,20 +86,13 @@
 		});
 	});
 
-	// Both levels below the list are addressable, and both fall back to the
-	// search parameter a pasted link arrives with — the same arrangement the
-	// history page's certificate modal uses.
+	// Which account is open, from the pushed state and falling back to the
+	// search parameter a pasted link arrives with. It is the one level that
+	// is still a view of this page rather than a route of its own: it is this
+	// list, filtered, and the codes are already loaded behind it.
 	const openAccount = $derived(
 		'accountName' in page.state ? page.state.accountName : page.url.searchParams.get('account')
 	);
-
-	const modalEnrollmentId = $derived(
-		'modalEnrollmentId' in page.state
-			? page.state.modalEnrollmentId
-			: page.url.searchParams.get('modal')
-	);
-
-	const modalEnrollment = $derived(enrollments.find((e) => e.id === modalEnrollmentId));
 
 	const accountCodes = $derived(enrollments.filter((e) => accountOf(e) === openAccount));
 
@@ -121,39 +105,23 @@
 	// Shallow-route within this same page (a query parameter), not a
 	// navigation to a different route id — resolve() is for the latter, so it
 	// does not apply here.
-	function navigate(params: { account?: string | null; modal?: string | null }) {
+	//
+	// Closing records an explicit null rather than an absent key: an absent
+	// one means "nothing has been opened or closed here yet", which falls
+	// back to the search parameter — and on a page reached by a pasted link,
+	// that would reopen what was just closed.
+	function openAccountView(account: string | null) {
 		const url = new URL(page.url);
-		const state: { accountName?: string | null; modalEnrollmentId?: string | null } = {};
-
-		if ('account' in params) {
-			if (params.account) {
-				url.searchParams.set('account', params.account);
-			} else {
-				url.searchParams.delete('account');
-			}
-			state.accountName = params.account ?? null;
+		if (account) {
+			url.searchParams.set('account', account);
+		} else {
+			url.searchParams.delete('account');
 		}
-		if ('modal' in params) {
-			if (params.modal) {
-				url.searchParams.set('modal', params.modal);
-			} else {
-				url.searchParams.delete('modal');
-			}
-			state.modalEnrollmentId = params.modal ?? null;
-		}
-
 		// eslint-disable-next-line svelte/no-navigation-without-resolve
-		pushState(url, { ...page.state, ...state });
+		pushState(url, { ...page.state, accountName: account });
 	}
 
-	// Closing records an explicit null rather than an absent key: an absent
-	// one means "nothing has been opened or closed here yet", which falls back
-	// to the search parameter — and on a page reached by a pasted link, that
-	// would reopen what was just closed.
-	const openAccountView = (account: string) => navigate({ account, modal: null });
-	const closeAccountView = () => navigate({ account: null, modal: null });
-	const openDetail = (id: string) => navigate({ modal: id });
-	const closeDetail = () => navigate({ modal: null });
+	const closeAccountView = () => openAccountView(null);
 
 	$effect(() => {
 		const controller = new AbortController();
@@ -238,7 +206,7 @@
 							{now}
 							testid="service-code-row"
 							showAccount={false}
-							onclick={() => openDetail(enrollment.id)}
+							href={resolve(`/service-codes/${enrollment.id}`)}
 						/>
 					{/each}
 				</div>
@@ -253,7 +221,7 @@
 							{now}
 							testid="service-code-row"
 							showAccount={false}
-							onclick={() => openDetail(enrollment.id)}
+							href={resolve(`/service-codes/${enrollment.id}`)}
 						/>
 					{/each}
 				</div>
@@ -279,14 +247,5 @@
 				/>
 			{/each}
 		</div>
-	{/if}
-
-	{#if modalEnrollment}
-		<ServiceCodeDetailModal
-			enrollment={modalEnrollment}
-			{now}
-			onnotificationemailchanged={(address) => updateNotificationEmail(modalEnrollment.id, address)}
-			onclosed={closeDetail}
-		/>
 	{/if}
 </PageShell>

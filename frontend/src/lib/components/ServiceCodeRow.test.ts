@@ -1,6 +1,5 @@
 import { render, screen } from '@testing-library/svelte';
-import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import type { ServiceEnrollment } from '$lib/api/types';
 import ServiceCodeRow from './ServiceCodeRow.svelte';
@@ -30,7 +29,7 @@ function enrollment(overrides: Partial<ServiceEnrollment> = {}): ServiceEnrollme
 
 describe('ServiceCodeRow', () => {
 	it('should name the row by the account the code mints for', () => {
-		render(ServiceCodeRow, { enrollment: enrollment(), now, onclick: vi.fn() });
+		render(ServiceCodeRow, { enrollment: enrollment(), now, href: '/service-codes/enr-1' });
 		expect(screen.getByText('svc-deploy')).toBeInTheDocument();
 	});
 
@@ -38,7 +37,7 @@ describe('ServiceCodeRow', () => {
 		render(ServiceCodeRow, {
 			enrollment: enrollment({ service_account: '', principals: [] }),
 			now,
-			onclick: vi.fn()
+			href: '/service-codes/enr-1'
 		});
 		expect(screen.getByText('unknown account')).toBeInTheDocument();
 	});
@@ -47,24 +46,24 @@ describe('ServiceCodeRow', () => {
 		render(ServiceCodeRow, {
 			enrollment: enrollment(),
 			now,
-			onclick: vi.fn(),
+			href: '/service-codes/enr-1',
 			showAccount: false
 		});
 		expect(screen.getByText('svc-deploy/req-1')).toBeInTheDocument();
 	});
 
 	it('should name who approved the code', () => {
-		render(ServiceCodeRow, { enrollment: enrollment(), now, onclick: vi.fn() });
+		render(ServiceCodeRow, { enrollment: enrollment(), now, href: '/service-codes/enr-1' });
 		expect(screen.getByText(/by alice/)).toBeInTheDocument();
 	});
 
 	it('should report how long ago the code was approved', () => {
-		render(ServiceCodeRow, { enrollment: enrollment(), now, onclick: vi.fn() });
+		render(ServiceCodeRow, { enrollment: enrollment(), now, href: '/service-codes/enr-1' });
 		expect(screen.getByText(/2d ago/)).toBeInTheDocument();
 	});
 
 	it('should state the lifetime of the certificates it hands out', () => {
-		render(ServiceCodeRow, { enrollment: enrollment(), now, onclick: vi.fn() });
+		render(ServiceCodeRow, { enrollment: enrollment(), now, href: '/service-codes/enr-1' });
 		expect(screen.getByText(/certificates valid for 1h/)).toBeInTheDocument();
 	});
 
@@ -72,42 +71,40 @@ describe('ServiceCodeRow', () => {
 	// certificate's carries no duration, and the code's expiry bounded both.
 	it('should say certificates last until the code expires when no lifetime is reported', () => {
 		const row = enrollment({ certificate_valid_seconds: undefined });
-		render(ServiceCodeRow, { enrollment: row, now, onclick: vi.fn() });
+		render(ServiceCodeRow, { enrollment: row, now, href: '/service-codes/enr-1' });
 		expect(screen.getByText(/certificates last until the code expires/)).toBeInTheDocument();
 	});
 
 	it('should summarize how often the code has been redeemed', () => {
-		render(ServiceCodeRow, { enrollment: enrollment(), now, onclick: vi.fn() });
+		render(ServiceCodeRow, { enrollment: enrollment(), now, href: '/service-codes/enr-1' });
 		expect(screen.getByText(/redeemed 12 times, last 2h ago/)).toBeInTheDocument();
 	});
 
 	it('should say a single redemption once rather than as a count', () => {
 		const row = enrollment({ retrieval_count: 1 });
-		render(ServiceCodeRow, { enrollment: row, now, onclick: vi.fn() });
+		render(ServiceCodeRow, { enrollment: row, now, href: '/service-codes/enr-1' });
 		expect(screen.getByText(/redeemed once/)).toBeInTheDocument();
 	});
 
 	it('should say so when nothing has ever redeemed the code', () => {
 		const row = enrollment({ retrieval_count: 0, last_retrieved_at: undefined });
-		render(ServiceCodeRow, { enrollment: row, now, onclick: vi.fn() });
+		render(ServiceCodeRow, { enrollment: row, now, href: '/service-codes/enr-1' });
 		expect(screen.getByText('never redeemed')).toBeInTheDocument();
 	});
 
 	it('should mark a still-redeemable code as active', () => {
-		render(ServiceCodeRow, { enrollment: enrollment(), now, onclick: vi.fn() });
+		render(ServiceCodeRow, { enrollment: enrollment(), now, href: '/service-codes/enr-1' });
 		expect(screen.getByText('Active')).toBeInTheDocument();
 	});
 
 	it('should mark a code past its expiry as expired', () => {
 		const row = enrollment({ expires_at: '2026-08-21T12:00:00Z' });
-		render(ServiceCodeRow, { enrollment: row, now, onclick: vi.fn() });
+		render(ServiceCodeRow, { enrollment: row, now, href: '/service-codes/enr-1' });
 		expect(screen.getByText('Expired')).toBeInTheDocument();
 	});
 
-	it('should call onclick when the row is activated', async () => {
-		const onclick = vi.fn();
-		render(ServiceCodeRow, { enrollment: enrollment(), now, onclick });
-		await userEvent.click(screen.getByRole('button'));
-		expect(onclick).toHaveBeenCalledOnce();
+	it('should link to the code the row is about', () => {
+		render(ServiceCodeRow, { enrollment: enrollment(), now, href: '/service-codes/enr-1' });
+		expect(screen.getByRole('link')).toHaveAttribute('href', '/service-codes/enr-1');
 	});
 });

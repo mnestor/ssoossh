@@ -315,15 +315,18 @@ works through in order stays a column.
 - **SectionLabel**: The small muted uppercase label that opens a group of fields inside a card. Quieter than `PageHeading`'s eyebrow, which takes the accent.
 - **CertRow**: One certificate as a standalone, clickable card — type badge, subject, what happened and when, principals, and the decision badge. Stacked below `xl`, aligned columns above it: a list of rows is the same fields over and over, and stretching a stacked row only pushes the last field further from the first.
 - **ServiceCodeRow**: One approved service enrollment as the same kind of card — the account the code mints for, when it was approved and what it hands out, how often it has been redeemed, and an active/expired pill. Never the code.
-- **ServiceCodeDetailModal**: The enrollment in full behind a row: what a redemption grants, the options fixed at approval, the code's own dates, and its redemption log. The server caps that log at its newest 100 rows and reports the true total, so the panel says what it is showing a slice of rather than letting the last row read as the first redemption. Read-only, and structurally unable to show a code.
+- **ServiceCodeDetail**: The enrollment in full, the body of `/service-codes/<id>`: what a redemption grants, the options fixed at approval, the code's own dates, its redemption log, who else holds the account, where notifications go, and the control that retires it. The server caps that log at its newest 100 rows and reports the true total, so the page says what it is showing a slice of rather than letting the last row read as the first redemption. Structurally unable to show a code.
+- **AdminServiceCodeDetail**: The same enrollment as an operator sees it, the body of `/admin/service-codes/<id>` — the approver's name and address as well, and the admin controls. The detail is handed in as a prop rather than fetched here: `GET /api/admin/enrollments/:id` is audited, and a component that fetched on mount would write a second `admin.enrollment_viewed` event for the one look the route already recorded.
 - **TypeBadge**: The certificate type as a fixed 26×26 square. Fixed rather than content-sized so rows align vertically whatever the type is called, and always shown: on a row the type is the primary identifier, not decoration.
 - **TypeChip**: The labelled form of `TypeBadge`, for detail views with room to name the type.
 - **MonoChip**: One monospace value as a bordered chip — a principal, an IP. Chips rather than a comma-separated string so set boundaries are unambiguous.
 - **ThemeToggle**: One button cycling system → light → dark, in two shapes. `rail` is a full-width row matching every other row in the rail; `icon` is the square button the signed-out header uses. See Dark Mode.
 - **OptionDiffList**: Shows granted vs. trimmed options (extensions, critical options) with strike-through for trimmed items.
 - **ApprovalView**: Composite component rendering a full certificate-request approval form.
-- **CertDetailModal**: Read-only certificate details in a modal for quick preview when clicking a row in Dashboard or History. Shallow routing (via `page.state` and `?modal=<id>`) allows the modal to remain open while navigating within the page. A service certificate also states where it was fetched from — the source address of the `service retrieve` that produced it, distinct from the approval's own IP — and links to the service code behind it. Includes a "View full details →" link that navigates to the canonical certificate detail page at `/certs/<id>`. The open certificate lives in `page.state` via shallow routing, with a matching `?modal=<id>` in the address bar so a specific certificate is linkable without leaving the list behind it. It has to be both: SvelteKit's `pushState` updates `page.state` and the address bar but never reassigns `page.url`, so state drives the open modal and the search parameter is only the fallback a pasted link arrives with. Every close path — the button, Escape, the backdrop — goes through the dialog's own `close` event, which is what keeps that parameter in step with what is on screen.
-- **Certificate Detail Page**: The canonical view of a single certificate at `/certs/<id>`. Accessible to the user who approved the underlying request and to auditors/admins. Opens with an identity strip — type chip, decision badge, full id — above three `Card`s: the certificate's own metadata, what it grants (the extensions and critical options signed into it, stated as "None" when empty rather than omitted), and the decision audit record (who approved or denied it, when, from where, and the approver's groups). A service certificate adds a fourth for the redemption that produced it and the link back to its service code. Returns 404 (uniformly for both "not found" and "not authorized") to prevent existence leakage. The full details justify a dedicated page rather than a modal — more room, more context, no scrolling within a dialog.
+- **Rows are links, not buttons**: every `CertRow` and `ServiceCodeRow` is an `<a>` carrying an href its list resolved. Opening one is a navigation to the thing's own page, so middle-click, ctrl-click and "copy link address" all work, and the browser's own Back leaves it. Both used to open a `<dialog>` over the list through shallow routing (`page.state` plus a `?modal=<id>` fallback), which could not be reloaded, linked to, or dismissed with Back, and which had to hold a screenful of fields inside a scrolling dialog.
+- **Certificate Detail Page**: The only view of a single certificate, at `/certs/<id>`. Accessible to the user who approved the underlying request and to auditors/admins. Opens with an identity strip — type chip, decision badge, full id — above three `Card`s: the certificate's own metadata, what it grants (the extensions and critical options signed into it, stated as "None" when empty rather than omitted), and the decision audit record (who approved or denied it, when, from where, and the approver's groups). A service certificate adds a fourth for the redemption that produced it and the link back to its service code. Returns 404 (uniformly for both "not found" and "not authorized") to prevent existence leakage.
+
+  It is `wide`, the width of the lists that open it, rather than the narrower reading width: both are centred in the same space, so a detail page 360px narrower moves the left edge inward on every click and opens a gap beside it. It opens with a back chip naming the list the reader came from, chosen by a `from` search parameter the linking list writes — `history`, `dashboard` or `admin`. The parameter is only ever looked up in that table: it is a hint from our own links, not a destination to follow because a URL said so. A certificate reached from a notification or an audit line carries no `from` and falls back to the reader's own history.
 
   The field lists sit inside `Card` rather than a hand-rolled bordered `<dl>`: `DetailRow` carries vertical padding only, on the assumption that its horizontal padding comes from the container. A bordered box around a bare `dl` puts every label and value flush against the border.
 
@@ -336,7 +339,7 @@ works through in order stays a column.
 Certificate serials cross the wire as decimal strings, never JSON numbers. They are 63 bits of randomness, so all but a vanishing fraction exceed `Number.MAX_SAFE_INTEGER` and a browser parsing one as a number rounds it silently: `3260700569889958163` reads back as `3260700569889958400`, which matches no certificate and cannot be searched for. The Go side carries both `json:",string"` and `tstype:"string"` — the first decides what is written, the second what tygo tells the browser to expect.
 
 - **ConsentModal**: Blocking login consent notice, shown above the login form until accepted.
-- **AuditTimeline**: The audit feed as a list of sentences — who did what, to whom. Each row puts the sentence on the line and pins the action name and the timestamp together as one muted group to its right, so a long sentence pushes the pair onto its own line intact rather than stranding the time on whichever line it happened to reach. Details render as an aligned two-column field list, so a long request id wraps under the value column rather than under whatever pair preceded it. Unknown actions fall back to the raw namespaced name: the taxonomy grows without a wire change, and a client that rendered only the actions it knew would silently drop the new ones. Timestamps go through `formatDateTime`, zone named, for the reason every audit timestamp does.
+- **AuditTimeline**: The audit feed as a list of sentences — who did what, to whom. Each row puts the sentence on the line and pins the action name and the timestamp together as one muted group to its right, so a long sentence pushes the pair onto its own line intact rather than stranding the time on whichever line it happened to reach. Rows are separated by a rule, not only by space: an event is a sentence, a reason and a field list, and two of them stacked with nothing between read as one paragraph that changed subject halfway down. Details render as an aligned two-column field list, so a long request id wraps under the value column rather than under whatever pair preceded it. Unknown actions fall back to the raw namespaced name: the taxonomy grows without a wire change, and a client that rendered only the actions it knew would silently drop the new ones. Timestamps go through `formatDateTime`, zone named, for the reason every audit timestamp does.
 - **Pager**: Offset pagination for the paged admin and auditor lists. The server sends the window it served (`webtypes.PageMeta`) and the pager asks for another one by offset, so neither side re-derives page arithmetic per list. Renders nothing when one page holds everything, keeps the first and last page reachable behind an ellipsis on long runs, and marks the current page with `aria-current`. Built from plain buttons rather than `Button`, which carries neither `aria-current` nor a per-page accessible name.
 - **SearchInput**: The debounced search box those lists are filtered with. Reports the trimmed term once the typing settles, and only when it settled on something new, so a stray space does not re-run a query. Enter reports immediately; the clear button reports an empty term without waiting out the debounce. `value` seeds the box and is not watched afterwards — a page that needs to reset the term remounts it with a key.
 
@@ -398,19 +401,28 @@ identity has approved, and never the codes themselves — the server has no
 endpoint that returns one, by design (see
 `webtypes.ServiceEnrollmentResponse`).
 
-It is built the same way as the certificate history: a stack of
-`ServiceCodeRow` cards, each opening `ServiceCodeDetailModal` through the
-same shallow-routing arrangement (`page.state.modalEnrollmentId`, with
-`?modal=<id>` as the fallback a pasted link arrives with). The two keys are
-separate rather than shared, so a `?modal=` id belonging to one list cannot
-resolve against the other.
+It has two levels and a route. The page lists the service accounts the
+identity holds; opening one filters the page down to that account's codes,
+which is shallow-routed (`page.state.accountName`, with `?account=<name>` as
+the fallback a pasted link arrives with) because it is this same list,
+filtered, against codes already loaded. Opening a code is a navigation to
+`/service-codes/<id>`.
 
 A row carries what someone scanning the list is looking for: the account the
 code mints for, when it was approved, what a redemption hands out, how often
-anything has redeemed it, and whether it still works. The panel behind it
-adds the key ID, the bound key's fingerprint, the options fixed at approval,
-the code's dates, and the full redemption log fetched from
+anything has redeemed it, and whether it still works. `ServiceCodeDetail`
+behind it adds the key ID, the bound key's fingerprint, the options fixed at
+approval, the code's dates, and the full redemption log fetched from
 `/api/certs/requests/{id}/retrievals`.
+
+`/service-codes/<id>` resolves the id out of the caller's own enrollment
+list rather than from an endpoint of its own: there is no per-id route for a
+holder, and `GET /api/certs/service/enrollments` is already scoped to the
+accounts the identity holds, so a code absent from that answer is a code this
+reader may not see — one message covers both, since telling them apart would
+report the existence of codes they have no access to. It opens with a back
+chip to the account's own codes, the same shape as the account view's chip
+back to the account list.
 
 Live codes come first and expired ones follow under their own section label
 rather than dropping off the page: a job that stopped working is explained by

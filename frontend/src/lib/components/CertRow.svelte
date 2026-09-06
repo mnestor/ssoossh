@@ -19,7 +19,12 @@
 		trailing?: Snippet;
 		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
 		testid?: string;
-		onclick: () => void;
+		/**
+		 * Where the row leads. A row is a link rather than a button because
+		 * opening one is a navigation to the certificate's own page, and only a
+		 * link gives a reader middle-click, ctrl-click and "copy link address".
+		 */
+		href: string;
 	}
 
 	let {
@@ -28,7 +33,7 @@
 		now = new Date(),
 		trailing,
 		testid,
-		onclick
+		href
 	}: Props = $props();
 
 	// The subject line is whatever names this certificate to a human: the
@@ -60,11 +65,14 @@
 	const decision = $derived(cert.decided_by_outcome === 'denied' ? 'denied' : 'approved');
 </script>
 
-<button
-	type="button"
-	{onclick}
+<!-- eslint-disable svelte/no-navigation-without-resolve --
+     This file's one link is the row itself, and its href comes in already
+     resolved from whoever renders the list. Resolving it a second time here
+     would double the base path. -->
+<a
+	{href}
 	data-testid={testid}
-	class="flex w-full items-center justify-between gap-4 rounded-[10px] border border-border-subtle bg-surface px-4 py-3 text-left transition hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+	class="flex w-full items-center justify-between gap-4 rounded-[10px] border border-border-subtle bg-surface px-4 py-3 text-left text-ink no-underline transition hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 >
 	<span class="flex min-w-0 flex-1 items-center gap-3">
 		<TypeBadge type={cert.type} />
@@ -91,4 +99,4 @@
 	{:else}
 		<StatusBadge status={decision} />
 	{/if}
-</button>
+</a>

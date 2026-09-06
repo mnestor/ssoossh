@@ -1,13 +1,10 @@
 <script lang="ts">
-	import { pushState } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { page } from '$app/state';
 	import { listCertificates } from '$lib/api/endpoints';
 	import type { CertificateListResponse, CertificateRecord } from '$lib/api/types';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
 	import Button from '$lib/components/Button.svelte';
-	import CertDetailModal from '$lib/components/CertDetailModal.svelte';
 	import CertRow from '$lib/components/CertRow.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
@@ -38,14 +35,6 @@
 		return () => clearInterval(timer);
 	});
 
-	// Shallow routing keeps the open certificate in page.state; the search
-	// parameter is what a pasted link arrives with, and is the fallback until
-	// something on this page opens or closes a modal.
-	const modalCertId = $derived(
-		'modalCertId' in page.state ? page.state.modalCertId : page.url.searchParams.get('modal')
-	);
-	const modalCert = $derived(allCertificates.find((c) => c.id === modalCertId));
-
 	// What each certificate type's row is a record of.
 	const rowEvents: Record<string, string> = {
 		user: 'certificate requested',
@@ -54,26 +43,11 @@
 		service: 'service key requested'
 	};
 
-	// Shallow-route within this same page (a modal query param), not a
-	// navigation to a different route id — resolve() is for the latter, so
-	// it doesn't apply here, same reasoning as the caller-supplied returnTo
-	// path on the login page.
-	function openCertDetail(certId: string) {
-		const url = new URL(page.url);
-		url.searchParams.set('modal', certId);
-		// eslint-disable-next-line svelte/no-navigation-without-resolve
-		pushState(url, { modalCertId: certId });
-	}
-
-	// Closing records an explicit null rather than an empty state: an absent
-	// modalCertId means "nothing has been opened or closed here yet", which
-	// falls back to the search parameter — and on a page reached by a pasted
-	// ?modal= link, that would reopen the certificate the moment it closed.
-	function closeCertDetail() {
-		const url = new URL(page.url);
-		url.searchParams.delete('modal');
-		// eslint-disable-next-line svelte/no-navigation-without-resolve
-		pushState(url, { modalCertId: null });
+	// A row opens the certificate's own page rather than a dialog over the
+	// list. `from` is what the back chip there reads, so a reader who came
+	// from this list is returned to it rather than to the full history.
+	function certHref(certId: string): string {
+		return `${resolve(`/certs/${certId}`)}?from=dashboard`;
 	}
 
 	async function loadMoreCertificates() {
@@ -147,7 +121,8 @@
 					{cert}
 					{now}
 					event={rowEvents[cert.type] ?? 'certificate requested'}
-					onclick={() => openCertDetail(cert.id)}
+					testid="cert-row"
+					href={certHref(cert.id)}
 				/>
 			{/each}
 		</div>
@@ -159,9 +134,5 @@
 				{isLoading ? 'Loading…' : 'Load more'}
 			</Button>
 		</div>
-	{/if}
-
-	{#if modalCert}
-		<CertDetailModal cert={modalCert} onclosed={closeCertDetail} />
 	{/if}
 </PageShell>

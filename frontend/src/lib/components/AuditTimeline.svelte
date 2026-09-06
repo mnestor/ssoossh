@@ -91,9 +91,18 @@
 {#if rows.length === 0}
 	<p class="text-sm text-ink-muted">No audit events recorded.</p>
 {:else}
-	<ol class="space-y-3" data-testid="audit-timeline">
+	<!-- A rule between rows, not just space. An event is a sentence, a
+	     reason and a field list, so two of them stacked with nothing between
+	     them read as one paragraph that happened to change subject halfway
+	     down — worst on the rows that carry detail, which is exactly where a
+	     reader is counting fields. The left bar marks how far one row
+	     extends; the rule says where the next begins. -->
+	<ol class="divide-y divide-border-subtle" data-testid="audit-timeline">
 		{#each rows as event (event.id)}
-			<li class="border-l-2 border-border-subtle pl-3" data-testid="audit-event">
+			<li
+				class="border-l-2 border-border-subtle py-3 pl-3 first:pt-0 last:pb-0"
+				data-testid="audit-event"
+			>
 				<!-- The sentence takes the line; the action name and the time
 				     travel together as one muted group pinned to the right of
 				     it. They used to be three siblings in one wrapping row

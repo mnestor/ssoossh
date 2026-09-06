@@ -168,10 +168,10 @@ func (e *enrollmentController) listHandler(g *gin.Context) {
 // @Description rather than to whoever approved it, so this is the only place that
 // @Description answers "who else has this".
 // @Description
-// @Description Only users who have logged in at least once appear, holding the
-// @Description accounts they held at that login: the server never enumerates a
-// @Description directory, so this is everyone known to hold the account rather than
-// @Description everyone who does.
+// @Description Only users the server has a row for appear -- those who have logged in
+// @Description at least once, or whom the directory sync has seen -- holding the accounts
+// @Description that record last reported: the server never enumerates a directory, so this
+// @Description is everyone known to hold the account rather than everyone who does.
 // @Description
 // @Description Visible to auditors and to the account's own holders.
 // @Tags        web
