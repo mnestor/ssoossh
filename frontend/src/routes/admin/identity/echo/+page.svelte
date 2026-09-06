@@ -54,9 +54,12 @@
 
 	/** consumers maps each claim name to the configured field that reads it,
 	 * which is what turns a claim dump into a config-authoring tool. */
+	// A plain record rather than a Map: it is rebuilt whole on every change
+	// and never mutated in place, which is what the reactivity rule about
+	// Map is guarding against.
 	const consumers = $derived.by(() => {
-		const map = new Map<string, string>();
-		if (!payload) return map;
+		const byClaim: Record<string, string> = {};
+		if (!payload) return byClaim;
 
 		const m = payload.mapping;
 		const reserved: Array<[string | undefined, string]> = [
@@ -67,12 +70,12 @@
 			[m.email, 'fields.email']
 		];
 		for (const [claim, field] of reserved) {
-			if (claim) map.set(claim, field);
+			if (claim) byClaim[claim] = field;
 		}
 		for (const [name, claim] of Object.entries(m.extra ?? {})) {
-			map.set(claim, `fields.extra.${name}`);
+			byClaim[claim] = `fields.extra.${name}`;
 		}
-		return map;
+		return byClaim;
 	});
 
 	/** claimRows is the token in a stable order: the claims something reads
@@ -81,7 +84,7 @@
 	const claimRows = $derived.by(() => {
 		if (!payload) return [];
 		return Object.entries(payload.claims)
-			.map(([name, value]) => ({ name, value, consumer: consumers.get(name) }))
+			.map(([name, value]) => ({ name, value, consumer: consumers[name] }))
 			.sort((a, b) => {
 				if (!!a.consumer !== !!b.consumer) return a.consumer ? -1 : 1;
 				return a.name.localeCompare(b.name);
