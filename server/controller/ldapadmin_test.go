@@ -103,7 +103,7 @@ func ldapRouter(t *testing.T, cfg *config.Config, db *gorm.DB, identity *service
 func doLDAPRequest(r *gin.Engine, method, path string, body any) *httptest.ResponseRecorder {
 	var reader *bytes.Reader
 	if body != nil {
-		encoded, _ := json.Marshal(body) //nolint:errcheck // test fixtures are always encodable.
+		encoded, _ := json.Marshal(body)
 		reader = bytes.NewReader(encoded)
 	} else {
 		reader = bytes.NewReader(nil)

@@ -527,9 +527,9 @@ func (a *ldapAdminController) auditActor(g *gin.Context) *service.AuditSubject {
 	}
 	var user model.User
 	if a.db != nil {
-		_ = a.db.WithContext(g.Request.Context()). //nolint:errcheck // a missing row leaves the id empty; the event is still worth recording.
-								Select("id").Where("subject = ?", identity.Subject).
-								First(&user).Error
+		_ = a.db.WithContext(g.Request.Context()).
+			Select("id").Where("subject = ?", identity.Subject).
+			First(&user).Error
 	}
 	return service.AuditSubjectFromIdentity(identity, user.ID)
 }

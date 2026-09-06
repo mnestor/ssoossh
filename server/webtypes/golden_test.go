@@ -243,9 +243,9 @@ func fullFixtures() map[string]any {
 		},
 		"ldap_sync_run": syncRun,
 		"ldap_probe": webtypes.LDAPProbeResponse{
-			BaseDN:     "dc=example,dc=net",
-			FilterSent: "(&(objectClass=person)(uid=alice))",
-			Mode:       "template",
+			BaseDN:      "dc=example,dc=net",
+			FilterSent:  "(&(objectClass=person)(uid=alice))",
+			Mode:        "template",
 			Attributes:  []string{"*", "entryUUID"},
 			Matched:     1,
 			IDAttribute: "entryUUID",

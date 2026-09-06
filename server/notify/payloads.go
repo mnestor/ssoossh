@@ -259,7 +259,7 @@ type CertificateIssued struct {
 	ApprovedByEmail   string    `json:"approved_by_email,omitempty"`
 	ApproverSourceIP  string    `json:"approver_source_ip,omitempty"`
 	ApproverUserAgent string    `json:"approver_user_agent,omitempty"`
-	ApprovedAt         time.Time `json:"approved_at,omitempty"`
+	ApprovedAt        time.Time `json:"approved_at,omitempty"`
 
 	Extensions      []string `json:"extensions,omitempty"`
 	ForceCommand    string   `json:"force_command,omitempty"`

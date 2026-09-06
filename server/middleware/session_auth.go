@@ -21,14 +21,14 @@ const IdentityContextKey = "ssoossh.identity"
 // so SessionAuthMiddleware (reader) and the Set*/Pop*/Clear* helpers below
 // (writers, used by controller.authController) agree on the same keys.
 const (
-	sessionKeyOIDCState        = "oidc_state"
-	sessionKeyOIDCNonce        = "oidc_nonce"
-	sessionKeyOIDCVerifier     = "oidc_verifier"
+	sessionKeyOIDCState    = "oidc_state"
+	sessionKeyOIDCNonce    = "oidc_nonce"
+	sessionKeyOIDCVerifier = "oidc_verifier"
 	// sessionKeyOIDCEcho marks the in-flight OIDC round trip as a claims
 	// echo rather than a login, so the callback renders the token instead
 	// of establishing a session. Set only by the echo start endpoint, and
 	// consumed once.
-	sessionKeyOIDCEcho = "oidc_echo"
+	sessionKeyOIDCEcho         = "oidc_echo"
 	sessionKeyReturnURL        = "return_url"
 	sessionKeyIdentitySubject  = "identity_subject"
 	sessionKeyIdentityUsername = "identity_username"

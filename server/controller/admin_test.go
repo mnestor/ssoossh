@@ -2176,7 +2176,7 @@ func TestAdminGetUserHandler_ShouldReturnEverythingStoredForTheUser(t *testing.T
 		UserID: user.ID, DN: "uid=alice,ou=People,dc=example,dc=net",
 		DirectoryID: "8f14e45f-ea8f-4f2d-9c1b-3a7b5d2e6c40",
 		Attributes:  `{"groups":["platform"],"other_accounts":["alice.adm","alice.root"]}`,
-		LastSeenAt: &seen, LastSyncedAt: &now, FirstMissingAt: &missing,
+		LastSeenAt:  &seen, LastSyncedAt: &now, FirstMissingAt: &missing,
 		ConsecutiveMisses: 2, CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatalf("seed user_ldap: %v", err)
