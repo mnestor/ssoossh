@@ -27,7 +27,6 @@ eyebrow: "Configuration"
 | [`http.trusted_proxies`](#trusted_proxies) | list | `empty` |
 | [`http.public_url`](#public_url) | string | `empty` |
 | [`http.cookie_key`](#cookie_key) | string | `empty` |
-| [`http.cookie_secure`](#cookie_secure) | bool | `empty` |
 | [`http.cookie_same_site`](#cookie_same_site) | string | `strict` |
 | [`http.cookie_max_age`](#cookie_max_age) | duration | `9h` |
 | [`http.cookie_idle_timeout`](#cookie_idle_timeout) | duration | `30m` |
@@ -130,19 +129,6 @@ The secret used to sign and encrypt session cookies. If empty, a key is generate
 ```yaml
 http:
   cookie_key: ""
-```
-
-## `cookie_secure`
-
-`bool`, default `empty`
-
-Has been retired: the Secure attribute is now derived from public_url alone (see IsTLS). It said nothing public_url had not already said — a deployment states the scheme browsers reach it on once, and the cookie follows it — while giving an operator a second place to disagree with the first.
-
-Setting it is a startup error rather than a silent no-op, on the same reasoning as cert_options.*.require_group: `cookie_secure: false` under an https public_url was a deliberate weakening, and a weakening that quietly stops applying is worse than one that fails loudly at boot.
-
-```yaml
-http:
-  cookie_secure: ~
 ```
 
 ## `cookie_same_site`

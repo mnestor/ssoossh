@@ -448,7 +448,7 @@ func TestInitRouter_ShouldLogRequestsByStatusClass(t *testing.T) {
 
 	// Matched a line at a time, not as loose substrings of the whole
 	// stream: a WRN appears in this capture whatever the access log does,
-	// because initRouter warns about the unset cookie_secure. The claim is
+	// because initRouter warns about the non-Secure cookie. The claim is
 	// that the record *for this request* carries that level.
 	//
 	// wantLevel is tint's three-letter token rather than slog TextHandler's

@@ -82,19 +82,6 @@ type HTTPSettings struct {
 	// database.
 	CookieKey string `mapstructure:"cookie_key" default:"" secret:"true"`
 
-	// CookieSecure has been retired: the Secure attribute is now derived
-	// from public_url alone (see IsTLS). It said nothing public_url had not
-	// already said — a deployment states the scheme browsers reach it on
-	// once, and the cookie follows it — while giving an operator a second
-	// place to disagree with the first.
-	//
-	// Setting it is a startup error rather than a silent no-op, on the same
-	// reasoning as cert_options.*.require_group: `cookie_secure: false`
-	// under an https public_url was a deliberate weakening, and a
-	// weakening that quietly stops applying is worse than one that fails
-	// loudly at boot.
-	CookieSecure *bool `mapstructure:"cookie_secure" default:"~"`
-
 	// CookieSameSite controls the session cookie's SameSite attribute:
 	// "strict" (default), "lax", or "none". Strict is right for this server
 	// because nothing legitimately navigates into it from another site — the
@@ -305,9 +292,6 @@ type ConsoleCodeRateLimitSettings struct {
 func (h *HTTPSettings) Validate() error {
 	if _, err := h.parsePublicURL(); err != nil {
 		return err
-	}
-	if h.CookieSecure != nil {
-		return fmt.Errorf("http.cookie_secure has been retired: the session cookie's Secure attribute now follows the scheme of http.public_url, so remove the key (give public_url an https:// scheme to mark cookies Secure)")
 	}
 	// Only checkable when both are set explicitly; when either falls back
 	// to its built-in default the bootstrap resolvers keep the pair

@@ -29,8 +29,8 @@ type Scalars struct {
 	Rate  float64 `mapstructure:"rate"`
 }
 
-// Pointered holds the optional-flag shape Config uses for fips and
-// cookie_secure, where nil and false mean different things.
+// Pointered holds the optional-flag shape Config uses for fips, where nil
+// and false mean different things.
 type Pointered struct {
 	Flag *bool `mapstructure:"flag"`
 }

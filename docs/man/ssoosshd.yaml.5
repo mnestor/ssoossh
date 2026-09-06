@@ -296,13 +296,6 @@ The secret used to sign and encrypt session cookies. If empty, a key is generate
 Default:
 .BR empty .
 .TP
-.BI http.cookie_secure: " bool"
-Has been retired: the Secure attribute is now derived from public_url alone (see IsTLS). It said nothing public_url had not already said \(em a deployment states the scheme browsers reach it on once, and the cookie follows it \(em while giving an operator a second place to disagree with the first.
-.IP
-Setting it is a startup error rather than a silent no\-op, on the same reasoning as cert_options.*.require_group: `cookie_secure: false` under an https public_url was a deliberate weakening, and a weakening that quietly stops applying is worse than one that fails loudly at boot.
-Default:
-.BR empty .
-.TP
 .BI http.cookie_same_site: " string"
 Controls the session cookie's SameSite attribute: "strict" (default), "lax", or "none". Strict is right for this server because nothing legitimately navigates into it from another site \(em the OIDC callback is a redirect the browser follows to a URL this server issued, not a cross\-site form post.
 .IP

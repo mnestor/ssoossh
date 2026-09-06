@@ -66,7 +66,7 @@ The output is a report an admin acts on by editing a file and restarting.
 | Config is `defaults.yaml` layered under the operator's file, unmarshalled once at startup | `server/config/config.go:33` (`NewConfig`) |
 | The only existing cross-instance requirement is enforced as a startup error | `server/config/config.go:108` |
 | `SignerConfig` is squashed, so its keys are top-level in YAML | `server/config/types.go:41` |
-| `FIPS` and `HTTPSettings.CookieSecure` are `*bool`, so unset differs from false | `server/config/types.go:65`, `server/config/types_http.go:105` |
+| `FIPS` is a `*bool`, so unset differs from false | `server/config/types.go:65` |
 | `Config.FIPSEnabled()` resolves unset against the runtime's own FIPS mode | `server/config/types.go`, `internal/fipsmode` |
 | Three startup modes exist, and `ssoosshd sign` has **no database** | `docs/configuration.md:154-158` |
 | Auditors already have a redacted effective-config endpoint | `server/controller/admin.go:37` (route), `:61` (handler) |
@@ -245,8 +245,7 @@ Four details the walker has to get right, all present in the current config:
    (`types_signer.go:102`) carries a `,string` modifier. Split on the comma
    and take the first element, or the key comes out as
    `max_cert_lifetime,string`.
-3. **Pointers.** `FIPS *bool` and `CookieSecure *bool` distinguish unset
-   from false. Render unset as a distinct token rather than as `false`, or
+3. **Pointers.** `FIPS *bool` distinguishes unset from false. Render unset as a distinct token rather than as `false`, or
    two instances that resolve to different behaviour compare equal.
 4. **Values, not text.** Reflect over the unmarshalled struct, not over the
    YAML. `time.Duration` then compares as an int64 and renders canonically,

@@ -77,7 +77,6 @@ http.cookie_idle_timeout = 30m
 http.cookie_key = 
 http.cookie_max_age = 9h
 http.cookie_same_site = strict
-http.cookie_secure = <nil>
 http.hsts = max-age=31536000; includeSubDomains
 http.port = 8080
 http.proxy_protocol = []
