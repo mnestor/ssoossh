@@ -9,6 +9,7 @@ function aliceUser(overrides: Partial<CurrentUser> = {}): CurrentUser {
 	return {
 		subject: 'sub-alice',
 		username: 'alice',
+		name: 'Alice Ashworth',
 		email: 'alice@example.com',
 		groups: ['ssh-users', 'ops'],
 		other_accounts: ['alice.adm'],

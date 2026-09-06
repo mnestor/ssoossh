@@ -70,6 +70,12 @@ export interface CurrentUserResponse {
 	email: string;
 	groups: string[];
 	/**
+	 * Name is the caller's human-readable name, for greeting them as a
+	 * person rather than as an account. Display only, and empty when
+	 * neither the identity provider nor the directory supplied one.
+	 */
+	name: string;
+	/**
 	 * OtherAccounts are alternate account identifiers this identity is
 	 * known by on target systems (see config.OAuthFields.OtherAccounts),
 	 * shown so a user can see every account name tied to their identity.
@@ -835,11 +841,18 @@ export interface AdminUserSummary {
 	 */
 	username: string;
 	/**
+	 * Name is the person's human-readable name, so a list of usernames can
+	 * be scanned by someone who thinks in names. Display only, and empty
+	 * when nothing supplied one.
+	 */
+	name: string;
+	/**
 	 * Email is the user's email from OIDC, possibly empty or changed at login.
 	 */
 	email: string;
 	/**
-	 * Subject is the OIDC "sub" claim, stable across logins for this user.
+	 * Subject is the unique account identifier (authentication.fields.subject,
+	 * "sub" by default) — the one field here that is stable across logins.
 	 */
 	subject: string;
 	/**
@@ -878,20 +891,40 @@ export interface AdminUserDetail {
 	 */
 	id: string;
 	/**
-	 * Username is the OIDC claim username.
+	 * Username is the OIDC claim username. Not an identifier — it changes
+	 * when a person is renamed, which is what Subject exists to survive.
 	 */
 	username: string;
 	/**
-	 * Email is the user's email from OIDC, possibly empty.
+	 * Email is the user's email from OIDC, possibly empty. Not an
+	 * identifier either, for the same reason as Username.
 	 */
 	email: string;
 	/**
-	 * Subject is the stable OIDC "sub" claim.
+	 * Subject is the unique account identifier, read from the claim named
+	 * by authentication.fields.subject ("sub" by default). It is the only
+	 * value a login is keyed by, and the only one guaranteed not to move.
 	 */
 	subject: string;
 	/**
-	 * OtherAccounts are alternate account identifiers from OIDC, decoded
-	 * from the stored JSON array.
+	 * Name is the person's human-readable name. Display only: it is not a
+	 * principal, not a key ID input, and never an authorization input.
+	 * Empty when neither the identity provider nor the directory supplied
+	 * one.
+	 */
+	name: string;
+	/**
+	 * OtherAccounts, ServiceAccounts, ExtraFields and Name above are the
+	 * OIDC capture — exactly what the ID token carried at the last login,
+	 * as stored on the users row. They are deliberately *not* the values
+	 * the server acts on: a configured ldap.fields entry overrides its
+	 * OIDC counterpart wholesale, and DirectoryOverrides below names every
+	 * field where that is currently happening and what the effective value
+	 * is.
+	 * Showing the OIDC half even when it is overridden is the point. An
+	 * operator debugging "why is this person missing a principal" needs to
+	 * see both sides and which one won; showing only the winner makes a
+	 * misconfigured claim mapping invisible.
 	 */
 	other_accounts: string[];
 	/**
@@ -902,6 +935,14 @@ export interface AdminUserDetail {
 	 * ExtraFields are operator-configured extra claims, decoded from stored JSON map.
 	 */
 	extra_fields: { [key: string]: any};
+	/**
+	 * DirectoryOverrides names each identity field the directory currently
+	 * supplies in place of the OIDC value, with both sides shown. Empty
+	 * when LDAP is disabled, unconfigured, or has never resolved this
+	 * person — in which case the OIDC values above are what the server
+	 * acts on.
+	 */
+	directory_overrides: AdminUserOverride[];
 	/**
 	 * CreatedAt is when the user first authenticated.
 	 */
@@ -946,7 +987,11 @@ export interface AdminUserDetail {
 	 */
 	disabled_source?: string;
 	/**
-	 * Groups are the persisted group memberships, from both capture paths.
+	 * Groups are the persisted group memberships. Both capture paths while
+	 * ldap.enabled is true; OIDC only when it is false, on the same
+	 * reasoning as Directory below — the directory rows are frozen, so
+	 * they are neither shown nor used for notification fan-out until the
+	 * directory is switched back on.
 	 * Never an authorization input (see
 	 * https://mnestor.github.io/ssoossh/internals/invariants/): this is
 	 * what the server recorded, shown so an operator can see why a
@@ -955,9 +1000,24 @@ export interface AdminUserDetail {
 	 */
 	groups: AdminUserGroup[];
 	/**
+	 * DirectoryEnabled mirrors ldap.enabled, and is what disambiguates an
+	 * absent Directory. Without it, "no directory record" means either "this
+	 * person has never been enriched" or "the directory is switched off and
+	 * their record is being withheld" — two states that call for opposite
+	 * actions from whoever is reading the page.
+	 */
+	directory_enabled: boolean;
+	/**
 	 * Directory is the user's directory bookkeeping row, absent when they
 	 * have never been enriched. It is what answers "why is this person
 	 * missing a group" from data already stored.
+	 * Also absent whenever ldap.enabled is false, even for a user who has a
+	 * row. Switching the directory off stops the sync, so everything in
+	 * that row is frozen at whatever the last pass read, and the server no
+	 * longer acts on any of it — the session identity falls back to the
+	 * OIDC values on the next request. Presenting frozen data beside live
+	 * data with no way to tell them apart is how someone ends up granting
+	 * access on a principal list that has not been true for months.
 	 */
 	directory?: AdminUserDirectory;
 	/**
@@ -992,8 +1052,40 @@ export interface AdminUserGroup {
  * AdminUserDirectory is the user's directory bookkeeping row: where their
  * entry is, what was last read from it, and whether it is currently
  * resolving.
+ * AdminUserOverride is one identity field the directory supplies in place
+ * of the OIDC claim, with both values.
+ * The merge rule it reports is per field and total: a configured
+ * ldap.fields entry replaces its OIDC counterpart rather than being unioned
+ * with it, so that a principal retired in one source can actually be
+ * retired. That makes "which source won this field" a question with a real
+ * answer, and this is it.
  */
+export interface AdminUserOverride {
+	/**
+	 * Field is the destination name: "other_accounts", "service_accounts",
+	 * "name", or an operator-chosen extra field.
+	 */
+	field: string;
+	/**
+	 * OIDC is what the ID token supplied for this field at the last login,
+	 * shown even though it lost — a claim mapping that is quietly wrong is
+	 * invisible otherwise. Empty when the token carried nothing.
+	 */
+	oidc: string[];
+	/**
+	 * Effective is what the directory supplies, and therefore what the
+	 * server actually acts on for this field.
+	 */
+	effective: string[];
+}
 export interface AdminUserDirectory {
+	/**
+	 * DirectoryID is the entry's unique, immutable identifier (the
+	 * attribute named by ldap.id_attribute), and the anchor that survives a
+	 * rename or a move between OUs. Empty when ldap.id_attribute is
+	 * unconfigured, which leaves resolution on the DN-then-filter path.
+	 */
+	directory_id: string;
 	/**
 	 * DN is the entry's distinguished name from the last successful read.
 	 */
@@ -1413,6 +1505,14 @@ export interface LDAPProbeResponse {
 	 * The login path refuses anything but exactly one.
 	 */
 	matched: number /* int */;
+	/**
+	 * IDAttribute echoes ldap.id_attribute and DirectoryID is what it
+	 * resolved to on the matched entry — the value that would be stored as
+	 * the re-anchoring identifier. Both empty when it is unconfigured, in
+	 * which case Suggestions names a candidate the entry actually carries.
+	 */
+	id_attribute?: string;
+	directory_id?: string;
 	entry?: LDAPProbeEntry;
 	fields?: LDAPProbeField[];
 	merge?: LDAPProbeMerge[];
@@ -1448,7 +1548,15 @@ export interface IdentityEchoStartResponse {
  * echo can be annotated against the configuration rather than printed raw.
  */
 export interface ClaimMappingResponse {
+	/**
+	 * Subject names the claim the unique account identifier is read from,
+	 * and is the one to check first: every other mapping can be wrong and
+	 * be corrected later, while a subject claim that varies between logins
+	 * forks the person's certificate history into a new account each time.
+	 */
+	subject?: string;
 	username?: string;
+	name?: string;
 	groups?: string;
 	other_accounts?: string;
 	service_accounts?: string;

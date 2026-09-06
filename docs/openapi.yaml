@@ -699,6 +699,25 @@ components:
           type: string
         directory:
           $ref: '#/components/schemas/webtypes.AdminUserDirectory'
+        directory_enabled:
+          description: |-
+            DirectoryEnabled mirrors ldap.enabled, and is what disambiguates an
+            absent Directory. Without it, "no directory record" means either "this
+            person has never been enriched" or "the directory is switched off and
+            their record is being withheld" — two states that call for opposite
+            actions from whoever is reading the page.
+          type: boolean
+        directory_overrides:
+          description: |-
+            DirectoryOverrides names each identity field the directory currently
+            supplies in place of the OIDC value, with both sides shown. Empty
+            when LDAP is disabled, unconfigured, or has never resolved this
+            person — in which case the OIDC values above are what the server
+            acts on.
+          items:
+            $ref: '#/components/schemas/webtypes.AdminUserOverride'
+          type: array
+          uniqueItems: false
         disabled_at:
           description: DisabledAt is when an admin disabled this user. Omitted if
             not disabled.
@@ -725,7 +744,9 @@ components:
             predating the column.
           type: string
         email:
-          description: Email is the user's email from OIDC, possibly empty.
+          description: |-
+            Email is the user's email from OIDC, possibly empty. Not an
+            identifier either, for the same reason as Username.
           type: string
         extra_fields:
           additionalProperties: {}
@@ -734,7 +755,11 @@ components:
           type: object
         groups:
           description: |-
-            Groups are the persisted group memberships, from both capture paths.
+            Groups are the persisted group memberships. Both capture paths while
+            ldap.enabled is true; OIDC only when it is false, on the same
+            reasoning as Directory below — the directory rows are frozen, so
+            they are neither shown nor used for notification fan-out until the
+            directory is switched back on.
             Never an authorization input (see
             https://mnestor.github.io/ssoossh/internals/invariants/): this is
             what the server recorded, shown so an operator can see why a
@@ -747,6 +772,13 @@ components:
         id:
           description: ID is the stable user identifier.
           type: string
+        name:
+          description: |-
+            Name is the person's human-readable name. Display only: it is not a
+            principal, not a key ID input, and never an authorization input.
+            Empty when neither the identity provider nor the directory supplied
+            one.
+          type: string
         notification_preferences:
           description: |-
             NotificationPreferences are the explicit choices this user has made.
@@ -758,8 +790,18 @@ components:
           uniqueItems: false
         other_accounts:
           description: |-
-            OtherAccounts are alternate account identifiers from OIDC, decoded
-            from the stored JSON array.
+            OtherAccounts, ServiceAccounts, ExtraFields and Name above are the
+            OIDC capture — exactly what the ID token carried at the last login,
+            as stored on the users row. They are deliberately *not* the values
+            the server acts on: a configured ldap.fields entry overrides its
+            OIDC counterpart wholesale, and DirectoryOverrides below names every
+            field where that is currently happening and what the effective value
+            is.
+
+            Showing the OIDC half even when it is overridden is the point. An
+            operator debugging "why is this person missing a principal" needs to
+            see both sides and which one won; showing only the winner makes a
+            misconfigured claim mapping invisible.
           items:
             type: string
           type: array
@@ -779,22 +821,29 @@ components:
             working (see docs/proposals/enrollment-group-ownership.md).
           type: integer
         subject:
-          description: Subject is the stable OIDC "sub" claim.
+          description: |-
+            Subject is the unique account identifier, read from the claim named
+            by authentication.fields.subject ("sub" by default). It is the only
+            value a login is keyed by, and the only one guaranteed not to move.
           type: string
         updated_at:
           description: UpdatedAt is when the user's identity was last refreshed at
             login.
           type: string
         username:
-          description: Username is the OIDC claim username.
+          description: |-
+            Username is the OIDC claim username. Not an identifier — it changes
+            when a person is renamed, which is what Subject exists to survive.
           type: string
       required:
       - certificate_count
       - created_at
+      - directory_overrides
       - email
       - extra_fields
       - groups
       - id
+      - name
       - notification_preferences
       - other_accounts
       - service_accounts
@@ -808,6 +857,14 @@ components:
         Directory is the user's directory bookkeeping row, absent when they
         have never been enriched. It is what answers "why is this person
         missing a group" from data already stored.
+
+        Also absent whenever ldap.enabled is false, even for a user who has a
+        row. Switching the directory off stops the sync, so everything in
+        that row is frozen at whatever the last pass read, and the server no
+        longer acts on any of it — the session identity falls back to the
+        OIDC values on the next request. Presenting frozen data beside live
+        data with no way to tell them apart is how someone ends up granting
+        access on a principal list that has not been true for months.
       properties:
         attributes:
           additionalProperties:
@@ -825,6 +882,13 @@ components:
             Reporting only: the disable is decided on elapsed time, since a pass
             count measures replica count rather than absence.
           type: integer
+        directory_id:
+          description: |-
+            DirectoryID is the entry's unique, immutable identifier (the
+            attribute named by ldap.id_attribute), and the anchor that survives a
+            rename or a move between OUs. Empty when ldap.id_attribute is
+            unconfigured, which leaves resolution on the DN-then-filter path.
+          type: string
         dn:
           description: DN is the entry's distinguished name from the last successful
             read.
@@ -845,6 +909,7 @@ components:
           type: string
       required:
       - attributes
+      - directory_id
       - dn
       type: object
     webtypes.AdminUserGroup:
@@ -885,6 +950,35 @@ components:
       - kind
       - updated_at
       type: object
+    webtypes.AdminUserOverride:
+      properties:
+        effective:
+          description: |-
+            Effective is what the directory supplies, and therefore what the
+            server actually acts on for this field.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        field:
+          description: |-
+            Field is the destination name: "other_accounts", "service_accounts",
+            "name", or an operator-chosen extra field.
+          type: string
+        oidc:
+          description: |-
+            OIDC is what the ID token supplied for this field at the last login,
+            shown even though it lost — a claim mapping that is quietly wrong is
+            invisible otherwise. Empty when the token carried nothing.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+      required:
+      - effective
+      - field
+      - oidc
+      type: object
     webtypes.AdminUserSummary:
       properties:
         created_at:
@@ -907,9 +1001,16 @@ components:
         id:
           description: ID is the stable user identifier.
           type: string
+        name:
+          description: |-
+            Name is the person's human-readable name, so a list of usernames can
+            be scanned by someone who thinks in names. Display only, and empty
+            when nothing supplied one.
+          type: string
         subject:
-          description: Subject is the OIDC "sub" claim, stable across logins for this
-            user.
+          description: |-
+            Subject is the unique account identifier (authentication.fields.subject,
+            "sub" by default) — the one field here that is stable across logins.
           type: string
         updated_at:
           description: UpdatedAt is when the user's identity was last refreshed at
@@ -923,6 +1024,7 @@ components:
       - created_at
       - email
       - id
+      - name
       - subject
       - updated_at
       - username
@@ -1345,6 +1447,12 @@ components:
           type: boolean
         is_soc:
           type: boolean
+        name:
+          description: |-
+            Name is the caller's human-readable name, for greeting them as a
+            person rather than as an account. Display only, and empty when
+            neither the identity provider nor the directory supplied one.
+          type: string
         other_accounts:
           description: |-
             OtherAccounts are alternate account identifiers this identity is
@@ -1377,6 +1485,7 @@ components:
       - is_admin
       - is_auditor
       - is_soc
+      - name
       - other_accounts
       - service_accounts
       - subject
@@ -1635,6 +1744,8 @@ components:
             out, so an operator sees the rendered filter rather than the
             template.
           type: string
+        directory_id:
+          type: string
         elapsed_ms:
           type: integer
         entry:
@@ -1645,6 +1756,13 @@ components:
           type: array
           uniqueItems: false
         filter_sent:
+          type: string
+        id_attribute:
+          description: |-
+            IDAttribute echoes ldap.id_attribute and DirectoryID is what it
+            resolved to on the matched entry — the value that would be stored as
+            the re-anchoring identifier. Both empty when it is unconfigured, in
+            which case Suggestions names a candidate the entry actually carries.
           type: string
         matched:
           description: |-

@@ -28,6 +28,7 @@ function signedInUser(isAuditor: boolean) {
 	return {
 		subject: 'sub-1',
 		username: 'alice',
+		name: 'Alice Ashworth',
 		email: 'alice@example.com',
 		groups: [],
 		other_accounts: [],

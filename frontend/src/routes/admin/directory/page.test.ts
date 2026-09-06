@@ -140,6 +140,7 @@ function signedInAsAdmin(isAdmin = true) {
 	session.user = {
 		subject: 'sub-alice',
 		username: 'alice',
+		name: 'Alice Ashworth',
 		email: 'alice@corp.example',
 		groups: [],
 		other_accounts: [],

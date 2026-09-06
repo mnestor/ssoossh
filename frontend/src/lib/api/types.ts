@@ -16,6 +16,7 @@ export type {
 	AdminEnrollmentResponse as AdminEnrollment,
 	AdminEnrollmentsResponse,
 	AdminUserDetail,
+	AdminUserOverride,
 	AdminUserSummary,
 	AdminUsersListResponse,
 	AuditEventResponse as AuditEvent,

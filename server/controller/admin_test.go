@@ -2398,6 +2398,12 @@ func TestAdminGetUserHandler_ShouldWithholdTheDirectoryRecordWhenLDAPIsOff(t *te
 	if got.Directory != nil {
 		t.Errorf("directory = %+v, want nil: the row is frozen and the server no longer acts on it", got.Directory)
 	}
+	// The two absences read differently to whoever is looking at the page:
+	// "never enriched" and "withheld because the directory is off" call for
+	// opposite actions, so the flag says which one this is.
+	if got.DirectoryEnabled {
+		t.Error("directory_enabled is true with ldap.enabled false, so the page cannot tell a withheld record from an absent one")
+	}
 	if len(got.DirectoryOverrides) != 0 {
 		t.Errorf("directory_overrides = %+v, want none: a frozen record overrides nothing", got.DirectoryOverrides)
 	}

@@ -38,9 +38,12 @@ function mockDetail(overrides: Record<string, unknown> = {}) {
 							username: 'alice',
 							email: 'alice@corp.example',
 							subject: 'sub-alice',
+							name: 'Alice Smith',
 							other_accounts: ['a.smith'],
 							service_accounts: ['svc-deploy'],
 							extra_fields: { employee_id: 'E-40921' },
+							directory_overrides: [],
+							directory_enabled: true,
 							groups: [],
 							notification_preferences: [],
 							created_at: '2026-08-01T10:00:00Z',
@@ -71,10 +74,25 @@ afterEach(() => {
 });
 
 describe('Admin user detail', () => {
-	it('should name the user it is showing', async () => {
+	// The heading is the person, the chip beside it is the account. Both,
+	// because an admin arrives here from a username and reads the page as a
+	// name.
+	it('should head the page with the human-readable name', async () => {
 		mockDetail();
 		render(Page);
-		expect(await screen.findByText('alice')).toBeInTheDocument();
+		expect(await screen.findByRole('heading', { name: 'Alice Smith' })).toBeInTheDocument();
+	});
+
+	it('should show the username beside the name', async () => {
+		mockDetail();
+		render(Page);
+		expect(await screen.findByTestId('user-username')).toHaveTextContent('alice');
+	});
+
+	it('should fall back to the username when no name was captured', async () => {
+		mockDetail({ name: '' });
+		render(Page);
+		expect(await screen.findByRole('heading', { name: 'alice' })).toBeInTheDocument();
 	});
 
 	it('should show an operator-configured extra field', async () => {
@@ -86,14 +104,14 @@ describe('Admin user detail', () => {
 	it('should not offer a confirmation before the admin asks for one', async () => {
 		mockDetail();
 		render(Page);
-		await screen.findByText('alice');
+		await screen.findByTestId('user-username');
 		expect(screen.queryByText(/Disable User\?/)).not.toBeInTheDocument();
 	});
 
 	it('should count the enrollments the disable leaves alone', async () => {
 		mockDetail();
 		render(Page);
-		await screen.findByText('alice');
+		await screen.findByTestId('user-username');
 
 		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
 		// The real count from the server, not fixed copy: an admin deciding
@@ -111,7 +129,7 @@ describe('Admin user detail', () => {
 	it('should say the enrollments they approved keep working', async () => {
 		mockDetail();
 		render(Page);
-		await screen.findByText('alice');
+		await screen.findByTestId('user-username');
 
 		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
 		const consequences = await screen.findByTestId('disable-consequences');
@@ -121,7 +139,7 @@ describe('Admin user detail', () => {
 	it('should say so when they approved no live enrollments', async () => {
 		mockDetail({ service_enrollment_count: 0 });
 		render(Page);
-		await screen.findByText('alice');
+		await screen.findByTestId('user-username');
 
 		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
 		const consequences = await screen.findByTestId('disable-consequences');
@@ -131,7 +149,7 @@ describe('Admin user detail', () => {
 	it('should say the account is blocked immediately', async () => {
 		mockDetail();
 		render(Page);
-		await screen.findByText('alice');
+		await screen.findByTestId('user-username');
 
 		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
 		expect(await screen.findByText(/immediately/)).toBeInTheDocument();
@@ -140,7 +158,7 @@ describe('Admin user detail', () => {
 	it('should close the confirmation without disabling when cancelled', async () => {
 		mockDetail();
 		render(Page);
-		await screen.findByText('alice');
+		await screen.findByTestId('user-username');
 
 		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
 		await screen.findByText(/Disable User\?/);
@@ -160,7 +178,7 @@ describe('Admin user detail', () => {
 	it('should not allow confirming a disable until a reason is given', async () => {
 		mockDetail();
 		render(Page);
-		await screen.findByText('alice');
+		await screen.findByTestId('user-username');
 
 		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
 		await screen.findByText(/Disable User\?/);
@@ -174,7 +192,7 @@ describe('Admin user detail', () => {
 	it('should not treat a whitespace-only reason as a reason', async () => {
 		mockDetail();
 		render(Page);
-		await screen.findByText('alice');
+		await screen.findByTestId('user-username');
 
 		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
 		await screen.findByText(/Disable User\?/);
@@ -200,7 +218,7 @@ describe('Admin user detail', () => {
 	it('should require a reason before re-enabling', async () => {
 		mockDetail({ disabled_at: '2026-08-20T09:00:00Z', disabled_by_username: 'root-admin' });
 		render(Page);
-		await screen.findByText('alice');
+		await screen.findByTestId('user-username');
 
 		await userEvent.click(screen.getByTestId('enable-user'));
 		await screen.findByText(/Re-enable User\?/);
@@ -260,8 +278,39 @@ describe('Admin user detail', () => {
 		it('should not show a directory record for a user who has never been enriched', async () => {
 			mockDetail({ directory: undefined });
 			render(Page);
-			await screen.findByText('alice');
+			await screen.findByTestId('user-username');
 			expect(screen.queryByTestId('user-directory')).not.toBeInTheDocument();
+		});
+
+		it('should name the re-anchoring identifier when one is stored', async () => {
+			mockDetail({
+				directory: {
+					directory_id: '8f14e45f-ea8f-4f2d-9c1b-3a7b5d2e6c40',
+					dn: 'uid=alice,ou=People,dc=corp,dc=example',
+					attributes: {},
+					consecutive_misses: 0
+				}
+			});
+			render(Page);
+			expect(await screen.findByTestId('user-directory-id')).toHaveTextContent(
+				'8f14e45f-ea8f-4f2d-9c1b-3a7b5d2e6c40'
+			);
+		});
+
+		// Not a cosmetic gap: with no identifier a rename cannot be
+		// re-anchored and reads as a deletion, so the page says which
+		// setting is missing rather than showing a blank field.
+		it('should say the identifier is unconfigured when none is stored', async () => {
+			mockDetail({
+				directory: {
+					directory_id: '',
+					dn: 'uid=alice,ou=People,dc=corp,dc=example',
+					attributes: {},
+					consecutive_misses: 0
+				}
+			});
+			render(Page);
+			expect(await screen.findByTestId('user-directory-id')).toHaveTextContent('not configured');
 		});
 
 		it('should flag a directory entry that is currently missing', async () => {
@@ -306,8 +355,110 @@ describe('Admin user detail', () => {
 		it('should hide the notification block when the user has changed nothing', async () => {
 			mockDetail({ notification_preferences: [] });
 			render(Page);
-			await screen.findByText('alice');
+			await screen.findByTestId('user-username');
 			expect(screen.queryByTestId('user-notification-preferences')).not.toBeInTheDocument();
 		});
+	});
+});
+
+describe('the OIDC record and what the directory overrides', () => {
+	it('should label the OIDC capture as its own record', async () => {
+		mockDetail();
+		render(Page);
+		expect(await screen.findByTestId('user-oidc-record')).toHaveTextContent('OIDC record');
+	});
+
+	// The whole point of showing both sides. The OIDC value is what the
+	// operator wrote a claim mapping for; the directory value is what the
+	// server acts on. Showing only the winner makes a claim mapping that is
+	// quietly wrong invisible.
+	it('should show the OIDC value alongside the directory value that replaced it', async () => {
+		mockDetail({
+			other_accounts: ['a.smith'],
+			directory_overrides: [
+				{ field: 'other_accounts', oidc: ['a.smith'], effective: ['alice.adm', 'alice.root'] }
+			]
+		});
+		render(Page);
+
+		const block = await screen.findByTestId('user-oidc-other_accounts');
+		expect(block).toHaveTextContent('a.smith');
+		expect(block).toHaveTextContent('alice.adm');
+	});
+
+	it('should name LDAP as what overrode the field', async () => {
+		mockDetail({
+			directory_overrides: [
+				{ field: 'service_accounts', oidc: ['svc-deploy'], effective: ['svc-prod'] }
+			]
+		});
+		render(Page);
+		expect(await screen.findByTestId('user-override-service_accounts')).toHaveTextContent(
+			'Overridden by LDAP'
+		);
+	});
+
+	// An empty OIDC list under an override is the exact state someone is
+	// diagnosing when they ask why a principal is missing, so the block is
+	// rendered even when there is nothing in it.
+	it('should still show an empty OIDC list when the directory overrides it', async () => {
+		mockDetail({
+			other_accounts: [],
+			directory_overrides: [{ field: 'other_accounts', oidc: [], effective: ['alice.adm'] }]
+		});
+		render(Page);
+		expect(await screen.findByTestId('user-oidc-other_accounts')).toHaveTextContent(
+			'None in the ID token'
+		);
+	});
+
+	it('should mark an overridden extra field', async () => {
+		mockDetail({
+			extra_fields: { employee_id: 'E-40921' },
+			directory_overrides: [{ field: 'employee_id', oidc: ['E-40921'], effective: ['E-99999'] }]
+		});
+		render(Page);
+		expect(await screen.findByTestId('user-override-employee_id')).toHaveTextContent('E-99999');
+	});
+
+	// A field the directory supplies that the ID token never carried is
+	// still an override in the sense that matters: the server acts on a
+	// value with no OIDC side at all.
+	it('should show a field the directory supplies and OIDC never did', async () => {
+		mockDetail({
+			extra_fields: {},
+			directory_overrides: [{ field: 'cost_center', oidc: [], effective: ['CC-7781'] }]
+		});
+		render(Page);
+		expect(await screen.findByTestId('user-override-cost_center')).toHaveTextContent('CC-7781');
+	});
+
+	it('should mark the name as overridden by the directory', async () => {
+		mockDetail({
+			name: 'Alice Smith',
+			directory_overrides: [
+				{ field: 'name', oidc: ['Alice Smith'], effective: ['Alice R. Smith'] }
+			]
+		});
+		render(Page);
+		expect(await screen.findByTestId('user-name-overridden')).toHaveTextContent('Alice R. Smith');
+	});
+
+	// The server withholds the directory row while ldap.enabled is false,
+	// so the page has to explain the absence rather than let an operator
+	// conclude the memberships were deleted.
+	it('should explain that directory rows are withheld when the directory is off', async () => {
+		mockDetail({ directory_enabled: false, directory: undefined });
+		render(Page);
+		expect(await screen.findByTestId('user-groups-oidc-only')).toBeInTheDocument();
+	});
+
+	// The other absence: the directory is on, this person has simply never
+	// resolved. Nothing is being withheld, so saying so would be wrong.
+	it('should not claim rows are withheld when the directory is on', async () => {
+		mockDetail({ directory_enabled: true, directory: undefined });
+		render(Page);
+		await screen.findByTestId('user-username');
+		expect(screen.queryByTestId('user-groups-oidc-only')).not.toBeInTheDocument();
 	});
 });

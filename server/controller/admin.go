@@ -446,6 +446,7 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 		// when, and the directory row says whether their entry still
 		// resolves.
 		Groups:                  groups,
+		DirectoryEnabled:        a.config.LDAP.Enabled,
 		Directory:               directory,
 		NotificationPreferences: preferences,
 

@@ -49,6 +49,7 @@ function signedInAs(overrides: Partial<CurrentUser> = {}): CurrentUser {
 	return {
 		subject: 'sub-alice',
 		username: 'alice',
+		name: 'Alice Ashworth',
 		email: 'alice@example.com',
 		groups: [],
 		other_accounts: [],

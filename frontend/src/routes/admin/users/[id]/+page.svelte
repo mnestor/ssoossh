@@ -4,7 +4,12 @@
 	import { getAdminUser, disableUser, enableUser, getUserAudit } from '$lib/api/endpoints';
 	import Button from '$lib/components/Button.svelte';
 	import AuditTimeline from '$lib/components/AuditTimeline.svelte';
-	import type { AdminUserDetail, AuditEvent, DisableUserConsequences } from '$lib/api/types';
+	import type {
+		AdminUserDetail,
+		AdminUserOverride,
+		AuditEvent,
+		DisableUserConsequences
+	} from '$lib/api/types';
 
 	let user: AdminUserDetail | null = $state(null);
 	let error: string | null = $state(null);
@@ -41,6 +46,41 @@
 			default:
 				return source;
 		}
+	}
+
+	/** reservedFields are the override destinations that have their own
+	 * block above the extra fields, so the extra-fields block can annotate
+	 * the rest without them leaking in. */
+	const reservedFields = ['other_accounts', 'service_accounts', 'name'];
+
+	/** overrides indexes the directory overrides by field name, so each
+	 * block in the OIDC record can ask "is this one of mine" without
+	 * scanning the list. A record rather than a Map because the template
+	 * reads it directly. */
+	const overrides: Record<string, AdminUserOverride> = $derived.by(() => {
+		const list: AdminUserOverride[] = user?.directory_overrides ?? [];
+		return Object.fromEntries(list.map((o) => [o.field, o]));
+	});
+
+	/** ldapOnlyExtras are fields the directory supplies that the ID token
+	 * never carried. Still an override in the sense that matters: the
+	 * server acts on a value with no OIDC side at all.
+	 *
+	 * Derived here rather than filtered in the template because svelte-check
+	 * cannot narrow `user` inside a callback. */
+	const ldapOnlyExtras: AdminUserOverride[] = $derived.by(() => {
+		if (!user) return [];
+		const extras = user.extra_fields;
+		return (user.directory_overrides ?? []).filter(
+			(o) => !reservedFields.includes(o.field) && !(o.field in extras)
+		);
+	});
+
+	/** valueList normalizes a stored extra field, which keeps the shape its
+	 * claim arrived in, to the list the override rows are rendered as. */
+	function valueList(value: string | string[] | undefined): string[] {
+		if (value === undefined || value === null) return [];
+		return Array.isArray(value) ? value : [value];
 	}
 
 	async function loadUser() {
@@ -128,8 +168,11 @@
 	{:else if user}
 		<div class="flex items-center justify-between">
 			<div>
-				<h1 class="text-2xl font-bold text-ink">{user.username}</h1>
-				<p class="text-sm text-ink-muted">{user.email || 'No email'}</p>
+				<h1 class="text-2xl font-bold text-ink">{user.name || user.username}</h1>
+				<p class="text-sm text-ink-muted">
+					{#if user.name}<span class="font-mono" data-testid="user-username">{user.username}</span> ·
+					{/if}{user.email || 'No email'}
+				</p>
 			</div>
 			<div class="flex gap-2">
 				{#if user.disabled_at}
@@ -154,13 +197,42 @@
 			</div>
 		</div>
 
-		<!-- User details section -->
-		<div class="rounded-lg border border-border-subtle bg-surface-muted p-4">
-			<h2 class="mb-4 font-semibold text-ink">Identity</h2>
+		<!-- The OIDC record: exactly what the ID token carried at the last
+		     login, as stored on the users row. Deliberately not the merged
+		     view — where the directory overrides one of these, both sides
+		     are shown and the override is named, because a claim mapping
+		     that is quietly wrong is invisible otherwise. -->
+		<div
+			class="rounded-lg border border-border-subtle bg-surface-muted p-4"
+			data-testid="user-oidc-record"
+		>
+			<h2 class="mb-1 font-semibold text-ink">OIDC record</h2>
+			<p class="mb-4 text-[13px] text-ink-muted">
+				What the identity provider sent at this user's last login. Where a configured
+				<code>ldap.fields</code> entry replaces one of these, it is marked below and the directory value
+				is what the server acts on.
+			</p>
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div>
-					<p class="text-xs font-semibold text-ink-muted">Subject (OIDC sub)</p>
-					<p class="font-mono text-sm">{user.subject}</p>
+					<p class="text-xs font-semibold text-ink-muted">Account identifier</p>
+					<p class="font-mono text-sm break-all">{user.subject}</p>
+					<p class="mt-0.5 text-xs text-ink-muted">
+						The claim named by <code>authentication.fields.subject</code>. The only field here that
+						is stable across logins.
+					</p>
+				</div>
+				<div>
+					<p class="text-xs font-semibold text-ink-muted">Username</p>
+					<p class="font-mono text-sm">{user.username}</p>
+				</div>
+				<div data-testid="user-name">
+					<p class="text-xs font-semibold text-ink-muted">Name</p>
+					<p>{user.name || 'Not captured'}</p>
+					{#if overrides.name}
+						<p class="mt-0.5 text-xs text-accent" data-testid="user-name-overridden">
+							Overridden by LDAP: {overrides.name.effective.join(', ') || 'none'}
+						</p>
+					{/if}
 				</div>
 				<div>
 					<p class="text-xs font-semibold text-ink-muted">Created</p>
@@ -190,31 +262,52 @@
 				{/if}
 			</div>
 
-			{#if user.other_accounts.length > 0}
-				<div class="mt-4">
-					<p class="text-xs font-semibold text-ink-muted">Other Accounts</p>
-					<div class="flex flex-wrap gap-2">
-						{#each user.other_accounts as acct (acct)}
-							<span class="rounded bg-surface px-2 py-1 text-sm">{acct}</span>
-						{/each}
-					</div>
+			<!-- Shown even when empty and even when overridden. An empty
+			     other_accounts under an LDAP override is the exact state
+			     someone is trying to diagnose when they ask why a principal
+			     is missing, and hiding the block answers the question with
+			     silence. -->
+			{#each [{ field: 'other_accounts', label: 'Other accounts', values: user.other_accounts }, { field: 'service_accounts', label: 'Service accounts', values: user.service_accounts }] as block (block.field)}
+				<div class="mt-4" data-testid="user-oidc-{block.field}">
+					<p class="text-xs font-semibold text-ink-muted">{block.label}</p>
+					{#if block.values.length > 0}
+						<div class="flex flex-wrap gap-2">
+							{#each block.values as acct (acct)}
+								<span
+									class="rounded bg-surface px-2 py-1 text-sm"
+									class:line-through={overrides[block.field]}
+									class:text-ink-muted={overrides[block.field]}>{acct}</span
+								>
+							{/each}
+						</div>
+					{:else}
+						<p class="text-sm text-ink-muted">None in the ID token.</p>
+					{/if}
+					{#if overrides[block.field]}
+						<div
+							class="mt-2 rounded border-l-2 border-accent bg-surface p-2 text-sm"
+							data-testid="user-override-{block.field}"
+						>
+							<p class="text-xs font-semibold text-accent">Overridden by LDAP</p>
+							<p class="text-ink-muted">
+								A configured <code>ldap.fields.{block.field}</code> replaces the OIDC value outright
+								rather than merging with it. The server acts on:
+							</p>
+							<div class="mt-1 flex flex-wrap gap-2">
+								{#each overrides[block.field].effective as acct (acct)}
+									<span class="rounded bg-surface-muted px-2 py-1 text-sm">{acct}</span>
+								{:else}
+									<span class="text-sm text-ink-muted">nothing — the directory supplied no value</span>
+								{/each}
+							</div>
+						</div>
+					{/if}
 				</div>
-			{/if}
+			{/each}
 
-			{#if user.service_accounts.length > 0}
+			{#if Object.keys(user.extra_fields).length > 0 || ldapOnlyExtras.length > 0}
 				<div class="mt-4">
-					<p class="text-xs font-semibold text-ink-muted">Service Accounts</p>
-					<div class="flex flex-wrap gap-2">
-						{#each user.service_accounts as acct (acct)}
-							<span class="rounded bg-surface px-2 py-1 text-sm">{acct}</span>
-						{/each}
-					</div>
-				</div>
-			{/if}
-
-			{#if Object.keys(user.extra_fields).length > 0}
-				<div class="mt-4">
-					<p class="text-xs font-semibold text-ink-muted">Extra Fields</p>
+					<p class="text-xs font-semibold text-ink-muted">Extra fields</p>
 					<div class="space-y-2">
 						{#each Object.entries(user.extra_fields) as [key, value] (key)}
 							<div class="flex items-start gap-2">
@@ -222,12 +315,32 @@
 									class="flex-shrink-0 rounded bg-surface px-2 py-1 font-mono text-sm text-ink-muted"
 									>{key}</span
 								>
+								<span
+									class="flex-grow rounded bg-surface px-2 py-1 text-sm"
+									class:line-through={overrides[key]}
+									class:text-ink-muted={overrides[key]}
+								>
+									{valueList(value).join(', ') || '—'}
+								</span>
+							</div>
+							{#if overrides[key]}
+								<p class="pl-2 text-xs text-accent" data-testid="user-override-{key}">
+									Overridden by LDAP: {overrides[key].effective.join(', ') || 'none'}
+								</p>
+							{/if}
+						{/each}
+						<!-- A field the directory supplies that the ID token never
+						     carried. It is still an override in the sense that
+						     matters: the server acts on a value with no OIDC side. -->
+						{#each ldapOnlyExtras as override (override.field)}
+							<div class="flex items-start gap-2" data-testid="user-override-{override.field}">
+								<span
+									class="flex-shrink-0 rounded bg-surface px-2 py-1 font-mono text-sm text-ink-muted"
+									>{override.field}</span
+								>
 								<span class="flex-grow rounded bg-surface px-2 py-1 text-sm">
-									{#if Array.isArray(value)}
-										{value.join(', ')}
-									{:else}
-										{value}
-									{/if}
+									{override.effective.join(', ') || '—'}
+									<span class="text-xs text-accent">— from LDAP only, no OIDC claim</span>
 								</span>
 							</div>
 						{/each}
@@ -254,6 +367,18 @@
 				configuration references are stored, so a group missing here may simply be unconfigured.
 				Never used to authorize anything.
 			</p>
+			<!-- With the directory off, its rows are withheld everywhere: from
+			     this table, from the directory record below, and from
+			     notification fan-out. Saying so beats an operator wondering
+			     where the memberships they remember went. -->
+			{#if !user.directory_enabled}
+				<p class="mb-4 text-[13px] text-ink-muted" data-testid="user-groups-oidc-only">
+					Only OIDC memberships are listed. <code>ldap.enabled</code> is false, so any
+					directory-sourced rows are frozen at whatever the last sync read and are withheld here and
+					from notification fan-out. They are kept on disk and come back if the directory is switched
+					on again.
+				</p>
+			{/if}
 			{#if user.groups.length === 0}
 				<p class="text-sm text-ink-muted" data-testid="user-groups-empty">
 					No group memberships have been captured for this user.
@@ -292,19 +417,36 @@
 			{/if}
 		</div>
 
-		<!-- Directory record. Present only for a user who has been enriched at
-		     least once; its absence is an answer rather than an error. -->
-		{#if user.directory}
+		<!-- Directory record. Present only while the directory is on and for a
+		     user who has been enriched at least once; either absence is an
+		     answer rather than an error, and directory_enabled is what tells
+		     them apart. -->
+		{#if user.directory_enabled && user.directory}
 			<div
 				class="rounded-lg border border-border-subtle bg-surface-muted p-4"
 				data-testid="user-directory"
 			>
 				<h2 class="mb-1 font-semibold text-ink">Directory record</h2>
 				<p class="mb-4 text-[13px] text-ink-muted">
-					What the LDAP sync last read for this user, and whether their entry still resolves.
+					What the LDAP sync last read for this user, and whether their entry still resolves. Absent
+					entirely while <code>ldap.enabled</code> is false, since nothing refreshes it and nothing
+					acts on it.
 				</p>
 
 				<div class="grid gap-4 sm:grid-cols-2">
+					<div class="sm:col-span-2">
+						<p class="text-xs font-semibold text-ink-muted">Unique identifier</p>
+						<p class="font-mono text-sm break-all" data-testid="user-directory-id">
+							{user.directory.directory_id || 'not configured'}
+						</p>
+						{#if !user.directory.directory_id}
+							<p class="mt-0.5 text-xs text-ink-muted">
+								<code>ldap.id_attribute</code> is unset, so this entry is re-read by DN and then by
+								<code>ldap.user_filter</code>. Both move when the person is renamed or moved between
+								OUs, which reads as a deletion and counts toward the auto-disable.
+							</p>
+						{/if}
+					</div>
 					<div class="sm:col-span-2">
 						<p class="text-xs font-semibold text-ink-muted">Distinguished name</p>
 						<p class="font-mono text-sm break-all">{user.directory.dn || '—'}</p>

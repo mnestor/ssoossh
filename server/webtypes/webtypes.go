@@ -882,6 +882,13 @@ type AdminUserDetail struct {
 	// missing.
 	Groups []AdminUserGroup `json:"groups" validate:"required"`
 
+	// DirectoryEnabled mirrors ldap.enabled, and is what disambiguates an
+	// absent Directory. Without it, "no directory record" means either "this
+	// person has never been enriched" or "the directory is switched off and
+	// their record is being withheld" — two states that call for opposite
+	// actions from whoever is reading the page.
+	DirectoryEnabled bool `json:"directory_enabled"`
+
 	// Directory is the user's directory bookkeeping row, absent when they
 	// have never been enriched. It is what answers "why is this person
 	// missing a group" from data already stored.
