@@ -8,7 +8,10 @@ sidebar:
 
 What ssoossh is made of, what a certificate is here, and which flow applies to
 which kind of login. Read this first if you are deciding whether ssoossh fits
-your deployment; the pages after it walk each flow end to end.
+your deployment, then
+[Keys and certificates compared](/ssoossh/concepts/keys-and-certificates/) for
+what changes against plain SSH keys; the pages after those walk each flow end
+to end.
 
 ## The components
 
@@ -131,6 +134,7 @@ certificates unattended after that.
 
 | Flow | Page |
 | --- | --- |
+| How this differs from `authorized_keys`, situation by situation | [Keys and certificates compared](/ssoossh/concepts/keys-and-certificates/) |
 | A person runs `ssh host` | [Interactive user certificates](/ssoossh/concepts/user-certificate/) |
 | The same flow, narrated for a newcomer | [Illustrated walkthrough](/ssoossh/concepts/walkthrough/) |
 | What a certificate may carry, and for how long | [Options and lifetime resolution](/ssoossh/concepts/options-and-lifetime/) |

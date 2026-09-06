@@ -3,7 +3,7 @@ title: Interactive user certificates
 description: The everyday path, from ssh host to a shell, in four stages.
 eyebrow: How it works
 sidebar:
-  order: 1
+  order: 2
 ---
 
 The everyday path: a person types `ssh host` and gets a shell. It runs in four

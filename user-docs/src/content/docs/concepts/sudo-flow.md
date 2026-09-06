@@ -3,7 +3,7 @@ title: sudo and su through PAM
 description: How pam_ssoossh puts a local privilege escalation behind the identity provider.
 eyebrow: How it works
 sidebar:
-  order: 5
+  order: 6
 ---
 
 `sudo` and `su` are the two moments where a local password still decides

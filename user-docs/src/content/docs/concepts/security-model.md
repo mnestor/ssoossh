@@ -3,7 +3,7 @@ title: Security model
 description: What ssoossh guarantees, what it deliberately does not defend against, and where each control is configured.
 eyebrow: How it works
 sidebar:
-  order: 7
+  order: 8
 ---
 
 What ssoossh guarantees, what it deliberately does not defend against, and

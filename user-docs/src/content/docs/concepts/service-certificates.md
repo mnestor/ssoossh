@@ -3,7 +3,7 @@ title: Service certificates
 description: Enroll once with a human present, then reissue unattended from a code.
 eyebrow: How it works
 sidebar:
-  order: 4
+  order: 5
 ---
 
 A nightly backup job, a CI runner pushing artifacts, a file transfer on a
