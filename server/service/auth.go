@@ -35,9 +35,18 @@ import (
 // service-approval linkage (checkServiceAccountLinkage) and both are surfaced
 // by /api/users/me for the web UI's account page.
 type Identity struct {
-	Subject         string
-	Username        string
-	Email           string
+	Subject  string
+	Username string
+	Email    string
+
+	// DisplayName is the person's human-readable name, from the claim named
+	// by config.OAuthFields.Name and overridden by the directory's
+	// config.LDAPFieldName. Display only: the web UI shows it beside the
+	// username and email templates may render it. It is deliberately not a
+	// principal candidate, not a key ID field, and never an authorization
+	// input — a display name is not unique and nothing may act on it.
+	DisplayName string
+
 	Groups          []string
 	OtherAccounts   []string
 	ServiceAccounts []string
@@ -135,6 +144,12 @@ func NewAuthService(ctx context.Context, c *config.Config, db *gorm.DB, httpClie
 	}
 	if authConfig.Fields.Username == "" {
 		return nil, errors.New("authentication.fields.username is required")
+	}
+	// Empty would leave every user row keyed by the empty string, which is
+	// one shared account rather than none. Rejected at startup rather than
+	// defaulted here, so an operator who blanked it hears about it.
+	if authConfig.Fields.Subject == "" {
+		return nil, errors.New(`authentication.fields.subject is required: it names the claim holding the unique account identifier, and defaults to "sub"`)
 	}
 	if strings.TrimSpace(c.HTTP.PublicURL) == "" {
 		return nil, errors.New("http.public_url is required: set it to the URL browsers reach this server at, e.g. \"https://ssh.example.com\"")
@@ -237,10 +252,27 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce str
 
 	fields := s.config.AuthConfig.Fields
 
+	// The account identifier, from whichever claim the operator named. Not
+	// idToken.Subject: that is always the literal "sub", and "sub" is not
+	// the stable identifier everywhere — Entra ID issues a per-application
+	// one and puts the tenant-stable value in "oid". A login with no
+	// identifier cannot be keyed to a user row at all, so an absent or
+	// empty claim fails the login rather than inventing one.
+	subjectID, ok := scalarClaim(claims, fields.Subject)
+	if !ok || subjectID == "" {
+		return nil, fmt.Errorf("OIDC ID token is missing the configured subject claim %q", fields.Subject)
+	}
+
 	username, ok := claims[fields.Username].(string)
 	if !ok || username == "" {
 		return nil, fmt.Errorf("OIDC ID token is missing the configured username claim %q", fields.Username)
 	}
+
+	// The human-readable name is optional in every direction: an
+	// unconfigured claim, an absent one, or one of the wrong shape all
+	// leave it empty, and nothing downstream requires it. It is display
+	// only.
+	displayName, _ := scalarClaim(claims, fields.Name)
 
 	// not covered (the three error branches below): all three calls pass
 	// required=false, and stringSliceClaim only returns an error when
@@ -270,9 +302,10 @@ func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce str
 	}
 
 	identity := &Identity{
-		Subject:         idToken.Subject,
+		Subject:         subjectID,
 		Username:        username,
 		Email:           email,
+		DisplayName:     displayName,
 		Groups:          groups,
 		OtherAccounts:   otherAccounts,
 		ServiceAccounts: serviceAccounts,
@@ -361,6 +394,7 @@ func (s *AuthService) upsertUser(ctx context.Context, identity *Identity) error 
 		Subject:         identity.Subject,
 		Username:        identity.Username,
 		Email:           identity.Email,
+		DisplayName:     identity.DisplayName,
 		OtherAccounts:   string(otherAccountsJSON),
 		ServiceAccounts: string(serviceAccountsJSON),
 		ExtraFields:     string(extraFieldsJSON),
@@ -371,9 +405,33 @@ func (s *AuthService) upsertUser(ctx context.Context, identity *Identity) error 
 	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "subject"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"username", "email", "other_accounts", "service_accounts", "extra_fields", "updated_at",
+			"username", "email", "display_name", "other_accounts", "service_accounts", "extra_fields", "updated_at",
 		}),
 	}).Create(&user).Error
+}
+
+// scalarClaim reads key from claims as a single string, coercing the scalar
+// JSON shapes the way extraClaims does: a string is itself, a bool and a
+// number render as text. An unconfigured key, an absent claim, or a
+// composite value (array, object) reports false.
+//
+// Numbers are accepted because an account identifier is not always a
+// string — a provider fronting a database commonly issues a numeric user
+// id — and encoding/json decodes every JSON number as float64.
+func scalarClaim(claims map[string]any, key string) (string, bool) {
+	if key == "" {
+		return "", false
+	}
+	switch v := claims[key].(type) {
+	case string:
+		return v, true
+	case bool:
+		return strconv.FormatBool(v), true
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64), true
+	default:
+		return "", false
+	}
 }
 
 // stringSliceClaim reads key from claims as a []string, returning nil (not
@@ -528,8 +586,14 @@ func (s *AuthService) captureOIDCGroups(ctx context.Context, identity *Identity,
 // names the key each value lands in — and says which values nothing reads —
 // is a config-authoring tool.
 type ClaimMapping struct {
-	// Username, Groups, OtherAccounts, ServiceAccounts and Email are the
-	// claim names the reserved fields read. Empty means the field is
+	// Subject names the claim the account identifier is read from, and is
+	// the one worth checking first in an echo: everything else can be
+	// wrong and be fixed, while a subject claim that varies between logins
+	// forks a person's history into a new account each time.
+	Subject string
+
+	// Username, Groups, OtherAccounts, ServiceAccounts, Email and Name are
+	// the claim names the reserved fields read. Empty means the field is
 	// unconfigured, which for OtherAccounts and ServiceAccounts is the
 	// default.
 	Username        string
@@ -537,6 +601,7 @@ type ClaimMapping struct {
 	OtherAccounts   string
 	ServiceAccounts string
 	Email           string
+	Name            string
 
 	// Extra maps each configured extra field name to the claim it reads,
 	// which is the half an operator is usually trying to get right.
@@ -561,11 +626,13 @@ func (s *AuthService) ClaimMapping() ClaimMapping {
 	}
 
 	return ClaimMapping{
+		Subject:         fields.Subject,
 		Username:        fields.Username,
 		Groups:          fields.Groups,
 		OtherAccounts:   fields.OtherAccounts,
 		ServiceAccounts: fields.ServiceAccounts,
 		Email:           email,
+		Name:            fields.Name,
 		Extra:           extra,
 	}
 }

@@ -236,7 +236,7 @@ func TestSetIdentitySessionAndSessionAuthMiddleware(t *testing.T) {
 // field in that test, put it on the carried or the deliberately-excluded
 // side, and bump this. It has already earned its keep once, catching
 // Identity.Extra arriving from another branch.
-const identityFieldCount = 7
+const identityFieldCount = 8
 
 func TestIdentity_ShouldAccountForEveryFieldInTheRoundTripTest(t *testing.T) {
 	t.Parallel()

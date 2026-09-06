@@ -54,9 +54,9 @@ func NewIdentityService(db *gorm.DB, ldap *LDAPService) *IdentityService {
 	return &IdentityService{db: db, ldap: ldap}
 }
 
-// RefreshIdentity replaces identity's account lists and extra fields with
-// what is stored for it, mutating identity in place. Subject is the key, and
-// the only field read.
+// RefreshIdentity replaces identity's account lists, extra fields and
+// display name with what is stored for it, mutating identity in place.
+// Subject is the key, and the only field read.
 //
 // It rebuilds the identity the same way a login does — the users row first,
 // then the directory values over the top — so a refreshed session and a
@@ -75,7 +75,7 @@ func (s *IdentityService) RefreshIdentity(ctx context.Context, identity *Identit
 
 	var user model.User
 	err := s.db.WithContext(ctx).
-		Select("id", "other_accounts", "service_accounts", "extra_fields").
+		Select("id", "display_name", "other_accounts", "service_accounts", "extra_fields").
 		Where("subject = ?", identity.Subject).
 		First(&user).Error
 	switch {
@@ -85,6 +85,9 @@ func (s *IdentityService) RefreshIdentity(ctx context.Context, identity *Identit
 		return err
 	}
 
+	// Display only, but refreshed with the rest so a rename in the
+	// directory shows up without waiting for the person to log in again.
+	identity.DisplayName = user.DisplayName
 	identity.OtherAccounts = decodeStoredStringList(user.OtherAccounts)
 	identity.ServiceAccounts = decodeStoredStringList(user.ServiceAccounts)
 	identity.Extra = decodeExtraFields(user.ExtraFields)

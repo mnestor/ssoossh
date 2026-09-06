@@ -33,6 +33,11 @@ const (
 	sessionKeyIdentitySubject  = "identity_subject"
 	sessionKeyIdentityUsername = "identity_username"
 	sessionKeyIdentityEmail    = "identity_email"
+	// sessionKeyIdentityDisplayName carries the human-readable name so a
+	// deployment with no identity refresher still renders it. Display
+	// only, and re-read from the database on every refreshed request, so a
+	// stale value here is corrected rather than acted on.
+	sessionKeyIdentityDisplayName = "identity_display_name"
 	// sessionKeyIdentityGroups is comma-joined. Group names sourced from
 	// OIDC/LDAP aren't expected to contain commas; revisit if that changes.
 	sessionKeyIdentityGroups = "identity_groups"
@@ -213,6 +218,7 @@ func SetIdentitySession(c *gin.Context, identity *service.Identity) error {
 	sess.Set(sessionKeyIdentitySubject, identity.Subject)
 	sess.Set(sessionKeyIdentityUsername, identity.Username)
 	sess.Set(sessionKeyIdentityEmail, identity.Email)
+	sess.Set(sessionKeyIdentityDisplayName, identity.DisplayName)
 	sess.Set(sessionKeyIdentityGroups, strings.Join(identity.Groups, ","))
 	sess.Set(sessionKeyIdentityOtherAccounts, strings.Join(identity.OtherAccounts, ","))
 	sess.Set(sessionKeyIdentityServiceAccounts, strings.Join(identity.ServiceAccounts, ","))
@@ -332,6 +338,7 @@ func (m *SessionAuthMiddleware) Add() gin.HandlerFunc {
 			Subject:         subject,
 			Username:        username,
 			Email:           email,
+			DisplayName:     sessionString(sess, sessionKeyIdentityDisplayName),
 			Groups:          sessionStringSlice(sess, sessionKeyIdentityGroups),
 			OtherAccounts:   sessionStringSlice(sess, sessionKeyIdentityOtherAccounts),
 			ServiceAccounts: sessionStringSlice(sess, sessionKeyIdentityServiceAccounts),

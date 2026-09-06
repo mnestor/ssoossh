@@ -140,7 +140,9 @@ func newTestAuthConfig(provider *fakeOIDCProvider, clientID string) *config.Conf
 	c := &config.Config{}
 	c.AuthConfig.ProviderURL = provider.srv.URL
 	c.AuthConfig.ClientID = clientID
+	c.AuthConfig.Fields.Subject = "sub"
 	c.AuthConfig.Fields.Username = "preferred_username"
+	c.AuthConfig.Fields.Name = "name"
 	c.AuthConfig.Fields.Email = "email"
 	c.AuthConfig.Fields.Groups = "groups"
 	c.HTTP.PublicURL = "https://ssh.example.com"
@@ -176,6 +178,7 @@ func TestNewAuthService_ShouldRejectMissingRequiredConfig(t *testing.T) {
 		{name: "should require provider_url", mutate: func(c *config.Config) { c.AuthConfig.ProviderURL = "" }, wantErr: "provider_url"},
 		{name: "should require client_id", mutate: func(c *config.Config) { c.AuthConfig.ClientID = "" }, wantErr: "client_id"},
 		{name: "should require fields.username", mutate: func(c *config.Config) { c.AuthConfig.Fields.Username = "" }, wantErr: "fields.username"},
+		{name: "should require fields.subject", mutate: func(c *config.Config) { c.AuthConfig.Fields.Subject = "" }, wantErr: "fields.subject"},
 		{name: "should require http.public_url", mutate: func(c *config.Config) { c.HTTP.PublicURL = "" }, wantErr: "public_url"},
 	}
 

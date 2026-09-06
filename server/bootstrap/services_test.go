@@ -41,6 +41,7 @@ func TestInitServices_ShouldConstructCAService(t *testing.T) {
 	c.AuthConfig.ClientID = "test-client"
 	c.AuthConfig.ProviderURL = oidcSrv.URL
 	c.AuthConfig.Fields.Username = "sub"
+	c.AuthConfig.Fields.Subject = "sub"
 	c.HTTP.PublicURL = "https://ssoossh.example.com"
 
 	ps, err := pubsub.New(&config.PubSubConfig{}, slog.Default())
@@ -77,6 +78,7 @@ func TestInitServices_ShouldSucceedWithInvalidSSHKeyForAPIMode(t *testing.T) {
 	c.AuthConfig.ClientID = "test-client"
 	c.AuthConfig.ProviderURL = oidcSrv.URL
 	c.AuthConfig.Fields.Username = "sub"
+	c.AuthConfig.Fields.Subject = "sub"
 	c.HTTP.PublicURL = "https://ssoossh.example.com"
 
 	ps, err := pubsub.New(&config.PubSubConfig{}, slog.Default())
