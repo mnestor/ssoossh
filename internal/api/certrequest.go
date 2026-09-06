@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/internal/hostinfo"
@@ -98,9 +99,43 @@ func (c *HTTPClient) create(ctx context.Context, path string, body any) (*Pendin
 		return nil, fmt.Errorf("failed to create certificate request: %w", err)
 	}
 
+	approvalURL, err := joinServerPath(c.serverURL, "approval_url", created.Data.ApprovalURL)
+	if err != nil {
+		return nil, err
+	}
+	eventsURL, err := joinServerPath(c.serverURL, "events_url", created.Data.EventsURL)
+	if err != nil {
+		return nil, err
+	}
+
 	return &PendingRequest{
 		RequestID:   created.Data.RequestID,
-		ApprovalURL: c.serverURL + created.Data.ApprovalURL,
-		eventsURL:   c.serverURL + created.Data.EventsURL,
+		ApprovalURL: approvalURL,
+		eventsURL:   eventsURL,
 	}, nil
+}
+
+// joinServerPath joins one of the relative URLs a create call returns onto
+// the server's base URL, refusing any value that is not an absolute path.
+//
+// serverURL is a bare origin ("https://host" - normalizeServerURL strips
+// any trailing slash and adds no path), so these two values are the whole
+// path of the URL that results, and a value not rooted at "/" escapes the
+// origin entirely. "@evil.example/x" concatenates to
+// "https://host@evil.example/x", where "host" is userinfo and the actual
+// host is evil.example; a leading "//" carries an authority the same way.
+// The result is both fetched by this client and printed to a human as the
+// link to approve, so a bad value is a redirect of the approval itself.
+//
+// This guards the contract, not a live bug: ssoosshd builds all four of
+// these URLs from string literals plus a UUID or a Crockford code (see
+// server/controller/certrequests.go), and apitypes.CreateRequestResponse
+// documents them as relative. The C PAM module enforces the same rule on
+// its side, and enforcing it here too means a server change that emitted a
+// fully-qualified URL fails loudly in both clients rather than only in one.
+func joinServerPath(serverURL, field, path string) (string, error) {
+	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+		return "", fmt.Errorf("server returned a %s that is not an absolute path: %q", field, path)
+	}
+	return serverURL + path, nil
 }

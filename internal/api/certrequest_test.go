@@ -530,3 +530,89 @@ func TestCreateUserRequest_ShouldOmitAnEmptyHostContext(t *testing.T) {
 		}
 	}
 }
+
+// TestJoinServerPath_ShouldRejectAnythingThatIsNotAnAbsolutePath covers the
+// shapes that escape the origin once concatenated onto a bare
+// "https://host": userinfo, a scheme-relative authority, a fully-qualified
+// URL, and a path that is not rooted at all. See joinServerPath for why the
+// client refuses them rather than trusting the server to never emit one.
+func TestJoinServerPath_ShouldRejectAnythingThatIsNotAnAbsolutePath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		path    string
+		want    string
+		wantErr bool
+	}{
+		{name: "absolute path", path: "/approve/req-1", want: "https://sso.example.com/approve/req-1"},
+		{name: "deep absolute path", path: "/api/certs/requests/req-1/events", want: "https://sso.example.com/api/certs/requests/req-1/events"},
+		{name: "userinfo escape", path: "@evil.example/x", wantErr: true},
+		{name: "scheme-relative authority", path: "//evil.example/x", wantErr: true},
+		{name: "fully-qualified url", path: "https://evil.example/x", wantErr: true},
+		{name: "unrooted path", path: "approve/req-1", wantErr: true},
+		{name: "empty", path: "", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := joinServerPath("https://sso.example.com", "approval_url", tt.path)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("got %q, want the value refused", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestCreateUserRequest_ShouldFailWhenTheServerReturnsACrossOriginURL is the
+// end-to-end form of the guard: a create call whose URLs would resolve to
+// another host is an error, not a PendingRequest carrying a link to that
+// host. One case per field, since each is checked on its own line.
+func TestCreateUserRequest_ShouldFailWhenTheServerReturnsACrossOriginURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		eventsURL   string
+		approvalURL string
+	}{
+		{name: "approval_url", eventsURL: "/api/certs/requests/req-1/events", approvalURL: "@evil.example/approve/req-1"},
+		{name: "events_url", eventsURL: "@evil.example/api/certs/requests/req-1/events", approvalURL: "/approve/req-1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				writeEnvelope(w, map[string]string{
+					"request_id":   "req-1",
+					"events_url":   tt.eventsURL,
+					"approval_url": tt.approvalURL,
+				})
+			}))
+			t.Cleanup(ts.Close)
+
+			c, err := NewClient(Config{ServerURL: ts.URL})
+			if err != nil {
+				t.Fatalf("unexpected error building client: %v", err)
+			}
+
+			_, err = c.CreateUserRequest(context.Background(), hostinfo.HostContext{Username: "alice"}, "ssh-ed25519 AAAA... test", nil, RequestedOptions{})
+			if err == nil {
+				t.Fatalf("got no error, want the cross-origin %s refused", tt.name)
+			}
+		})
+	}
+}
