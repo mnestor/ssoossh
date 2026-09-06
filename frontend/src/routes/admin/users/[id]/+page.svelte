@@ -26,6 +26,23 @@
 	// routes/approve/[id] reads it the same way for the same reason.
 	const userId = $derived(page.params.id ?? '');
 
+	/** disabledSourceLabel names what disabled an account in the terms the
+	 * re-enable decision is made in. ldap_sync is the one that matters: the
+	 * sync clears only its own disables, so a human disable is never undone
+	 * automatically. */
+	function disabledSourceLabel(source: string): string {
+		switch (source) {
+			case 'ldap_sync':
+				return 'the directory sync (cleared automatically if the entry reappears)';
+			case 'soc':
+				return 'a SOC operator';
+			case 'admin':
+				return 'an admin';
+			default:
+				return source;
+		}
+	}
+
 	async function loadUser() {
 		busy = true;
 		error = null;
@@ -162,6 +179,14 @@
 						<p class="text-xs font-semibold text-danger">Disable Reason</p>
 						<p>{user.disabled_reason || 'No reason recorded'}</p>
 					</div>
+					{#if user.disabled_source}
+						<div data-testid="user-disabled-source">
+							<p class="text-xs font-semibold text-danger">Disabled By</p>
+							<!-- The source, not the person: it is what decides whether the
+							     directory sync may clear this disable automatically. -->
+							<p>{disabledSourceLabel(user.disabled_source)}</p>
+						</div>
+					{/if}
 				{/if}
 			</div>
 
@@ -217,6 +242,153 @@
 				</div>
 			{/if}
 		</div>
+
+		<!-- Group membership. Never an authorization input: this is what the
+		     server recorded for notification fan-out and display, and it is
+		     what answers "why did this reach them" or "why is the group I
+		     expected missing". -->
+		<div class="rounded-lg border border-border-subtle bg-surface-muted p-4">
+			<h2 class="mb-1 font-semibold text-ink">Group membership</h2>
+			<p class="mb-4 text-[13px] text-ink-muted">
+				Captured at login (OIDC) and by the directory sync (LDAP). Only group names the
+				configuration references are stored, so a group missing here may simply be unconfigured.
+				Never used to authorize anything.
+			</p>
+			{#if user.groups.length === 0}
+				<p class="text-sm text-ink-muted" data-testid="user-groups-empty">
+					No group memberships have been captured for this user.
+				</p>
+			{:else}
+				<div class="overflow-x-auto">
+					<table class="w-full text-sm" data-testid="user-groups-table">
+						<thead>
+							<tr class="border-b border-border-subtle text-left text-xs text-ink-muted">
+								<th class="py-2 pr-4 font-semibold">Group</th>
+								<th class="py-2 pr-4 font-semibold">Source</th>
+								<th class="py-2 pr-4 font-semibold">First seen</th>
+								<th class="py-2 font-semibold">Last seen</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each user.groups as group (group.source + '/' + group.name)}
+								<tr class="border-b border-border-subtle last:border-0">
+									<td class="py-2 pr-4 font-mono">{group.name}</td>
+									<td class="py-2 pr-4">
+										<span class="rounded bg-surface px-2 py-0.5 text-xs uppercase"
+											>{group.source}</span
+										>
+									</td>
+									<td class="py-2 pr-4 text-ink-muted"
+										>{new Date(group.first_seen_at).toLocaleString()}</td
+									>
+									<td class="py-2 text-ink-muted"
+										>{new Date(group.last_seen_at).toLocaleString()}</td
+									>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+		</div>
+
+		<!-- Directory record. Present only for a user who has been enriched at
+		     least once; its absence is an answer rather than an error. -->
+		{#if user.directory}
+			<div
+				class="rounded-lg border border-border-subtle bg-surface-muted p-4"
+				data-testid="user-directory"
+			>
+				<h2 class="mb-1 font-semibold text-ink">Directory record</h2>
+				<p class="mb-4 text-[13px] text-ink-muted">
+					What the LDAP sync last read for this user, and whether their entry still resolves.
+				</p>
+
+				<div class="grid gap-4 sm:grid-cols-2">
+					<div class="sm:col-span-2">
+						<p class="text-xs font-semibold text-ink-muted">Distinguished name</p>
+						<p class="font-mono text-sm break-all">{user.directory.dn || '—'}</p>
+					</div>
+					<div>
+						<p class="text-xs font-semibold text-ink-muted">Entry last seen</p>
+						<p>
+							{user.directory.last_seen_at
+								? new Date(user.directory.last_seen_at).toLocaleString()
+								: 'never'}
+						</p>
+					</div>
+					<div>
+						<p class="text-xs font-semibold text-ink-muted">Last sync attempt</p>
+						<p>
+							{user.directory.last_synced_at
+								? new Date(user.directory.last_synced_at).toLocaleString()
+								: 'never'}
+						</p>
+					</div>
+				</div>
+
+				{#if user.directory.first_missing_at}
+					<div
+						class="mt-4 rounded border-l-2 border-danger bg-surface p-3 text-sm"
+						data-testid="user-directory-missing"
+					>
+						<p class="font-semibold text-danger">Entry is currently missing</p>
+						<p class="text-ink-muted">
+							First missing {new Date(user.directory.first_missing_at).toLocaleString()}, observed
+							by {user.directory.consecutive_misses} sync
+							{user.directory.consecutive_misses === 1 ? 'pass' : 'passes'}. The auto-disable is
+							decided on how long it has been missing, not on how many passes have seen it.
+						</p>
+					</div>
+				{/if}
+
+				{#if Object.keys(user.directory.attributes).length > 0}
+					<div class="mt-4">
+						<p class="mb-2 text-xs font-semibold text-ink-muted">Stored field values</p>
+						<div class="space-y-2">
+							{#each Object.entries(user.directory.attributes) as [field, values] (field)}
+								<div class="flex items-start gap-2">
+									<span
+										class="flex-shrink-0 rounded bg-surface px-2 py-1 font-mono text-sm text-ink-muted"
+										>{field}</span
+									>
+									<span class="flex-grow rounded bg-surface px-2 py-1 font-mono text-sm break-all">
+										{values.length > 0 ? values.join(', ') : '—'}
+									</span>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Notification choices. A kind with no row is on its registered
+		     default, so an empty list means "all default", not "all off". -->
+		{#if user.notification_preferences.length > 0}
+			<div
+				class="rounded-lg border border-border-subtle bg-surface-muted p-4"
+				data-testid="user-notification-preferences"
+			>
+				<h2 class="mb-1 font-semibold text-ink">Notification choices</h2>
+				<p class="mb-4 text-[13px] text-ink-muted">
+					Only the choices this user has changed. Anything not listed is on its default.
+				</p>
+				<div class="space-y-2">
+					{#each user.notification_preferences as pref (pref.kind)}
+						<div class="flex items-center gap-2 text-sm">
+							<span class="rounded bg-surface px-2 py-1 font-mono text-ink-muted">{pref.kind}</span>
+							<span class:text-danger={!pref.enabled} class:text-granted={pref.enabled}>
+								{pref.enabled ? 'on' : 'off'}
+							</span>
+							<span class="text-xs text-ink-muted">
+								changed {new Date(pref.updated_at).toLocaleString()}
+							</span>
+						</div>
+					{/each}
+				</div>
+			</div>
+		{/if}
 
 		<!-- Activity section -->
 		<div class="grid gap-4 sm:grid-cols-2">

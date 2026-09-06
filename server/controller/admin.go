@@ -413,6 +413,12 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 		return
 	}
 
+	groups, directory, preferences, err := a.userStoredRecord(g, id)
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
 	detail := webtypes.AdminUserDetail{
 		ID:       user.ID,
 		Username: user.Username,
@@ -430,11 +436,23 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 		UpdatedAt:              user.UpdatedAt,
 		ServiceEnrollmentCount: enrollmentCount,
 		CertificateCount:       certCount,
+
+		// Everything else the server has stored about this person. It is
+		// what answers "why is this other person missing a group" without
+		// capturing anything new: the group rows say what was seen and
+		// when, and the directory row says whether their entry still
+		// resolves.
+		Groups:                  groups,
+		Directory:               directory,
+		NotificationPreferences: preferences,
 	}
 
 	if user.DisabledAt != nil {
 		detail.DisabledAt = user.DisabledAt
 		detail.DisabledReason = user.DisabledReason
+		if user.DisabledSource != nil {
+			detail.DisabledSource = string(*user.DisabledSource)
+		}
 		if user.DisabledByUserID != nil {
 			detail.DisabledByUserID = user.DisabledByUserID
 			// Look up the admin that disabled this user
@@ -1223,3 +1241,83 @@ func (a *adminController) getEnrollmentDetailHandler(g *gin.Context) {
 }
 
 // convertOptions converts a service.RequestedOptions to a webtypes.CertificateOptionsResponse.
+
+// userStoredRecord reads the rest of what the server has stored about one
+// user: their persisted group memberships, their directory bookkeeping row,
+// and the notification choices they have made.
+//
+// Three reads rather than joins, because they answer independent questions
+// and two of them are usually empty. None of it is new capture — every row
+// here was already written by a login or a sync; it was simply not reachable
+// from any screen.
+func (a *adminController) userStoredRecord(g *gin.Context, userID string) (
+	[]webtypes.AdminUserGroup, *webtypes.AdminUserDirectory, []webtypes.AdminUserNotificationPreference, error,
+) {
+	ctx := g.Request.Context()
+
+	var groupRows []model.UserGroup
+	if err := a.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("group_name ASC, source ASC").
+		Find(&groupRows).Error; err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to read the user's group memberships: %w", err)
+	}
+	groups := make([]webtypes.AdminUserGroup, 0, len(groupRows))
+	for _, row := range groupRows {
+		groups = append(groups, webtypes.AdminUserGroup{
+			Name:        row.GroupName,
+			Source:      string(row.Source),
+			FirstSeenAt: row.FirstSeenAt,
+			LastSeenAt:  row.LastSeenAt,
+		})
+	}
+
+	var prefRows []model.NotificationPreference
+	if err := a.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("kind ASC").
+		Find(&prefRows).Error; err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to read the user's notification preferences: %w", err)
+	}
+	preferences := make([]webtypes.AdminUserNotificationPreference, 0, len(prefRows))
+	for _, row := range prefRows {
+		preferences = append(preferences, webtypes.AdminUserNotificationPreference{
+			Kind:      row.Kind,
+			Enabled:   row.Enabled,
+			UpdatedAt: row.UpdatedAt,
+		})
+	}
+
+	// No row means the user has never been enriched — LDAP disabled, or
+	// they have not logged in since it was switched on. That is an answer,
+	// not an error.
+	var ldapRow model.UserLDAP
+	err := a.db.WithContext(ctx).First(&ldapRow, "user_id = ?", userID).Error
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return groups, nil, preferences, nil
+	case err != nil:
+		return nil, nil, nil, fmt.Errorf("failed to read the user's directory record: %w", err)
+	}
+
+	// A malformed attributes column degrades to empty rather than failing
+	// the page: the rest of the row — the DN, when the entry was last seen,
+	// whether it is currently missing — is the part an operator came for.
+	attributes := map[string][]string{}
+	if ldapRow.Attributes != "" {
+		if err := json.Unmarshal([]byte(ldapRow.Attributes), &attributes); err != nil {
+			slog.Warn("failed to decode a user's stored directory attributes",
+				slog.String("user_id", userID), slog.String("error", err.Error()))
+			attributes = map[string][]string{}
+		}
+	}
+
+	return groups, &webtypes.AdminUserDirectory{
+		DN:                ldapRow.DN,
+		Attributes:        attributes,
+		LastSeenAt:        ldapRow.LastSeenAt,
+		LastSyncedAt:      ldapRow.LastSyncedAt,
+		FirstMissingAt:    ldapRow.FirstMissingAt,
+		ConsecutiveMisses: ldapRow.ConsecutiveMisses,
+	}, preferences, nil
+}

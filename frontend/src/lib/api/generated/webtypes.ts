@@ -937,6 +937,103 @@ export interface AdminUserDetail {
 	 * CertificateCount is how many certificates have been issued to this user.
 	 */
 	certificate_count: number /* int */;
+	/**
+	 * DisabledSource says what disabled the account: "admin", "soc" or
+	 * "ldap_sync". It is what makes auto-re-enable safe — the sync clears
+	 * only its own disables — so it belongs next to the reason rather than
+	 * only in the database. Omitted if not disabled, and absent on rows
+	 * predating the column.
+	 */
+	disabled_source?: string;
+	/**
+	 * Groups are the persisted group memberships, from both capture paths.
+	 * Never an authorization input (see
+	 * https://mnestor.github.io/ssoossh/internals/invariants/): this is
+	 * what the server recorded, shown so an operator can see why a
+	 * notification reached someone, or why a group they expected is
+	 * missing.
+	 */
+	groups: AdminUserGroup[];
+	/**
+	 * Directory is the user's directory bookkeeping row, absent when they
+	 * have never been enriched. It is what answers "why is this person
+	 * missing a group" from data already stored.
+	 */
+	directory?: AdminUserDirectory;
+	/**
+	 * NotificationPreferences are the explicit choices this user has made.
+	 * A kind with no row here is on its registered default, so an empty
+	 * list means "everything default" rather than "everything off".
+	 */
+	notification_preferences: AdminUserNotificationPreference[];
+}
+/**
+ * AdminUserGroup is one persisted group membership.
+ */
+export interface AdminUserGroup {
+	/**
+	 * Name is the reduced, comparable name: a memberOf DN is reduced to its
+	 * CN before it is stored.
+	 */
+	name: string;
+	/**
+	 * Source is "oidc" or "ldap". The two capture paths never collide and
+	 * a name can appear under both.
+	 */
+	source: string;
+	/**
+	 * FirstSeenAt survives a refresh that keeps the membership, so "since
+	 * when" is answerable; LastSeenAt is the last capture that saw it.
+	 */
+	first_seen_at: string;
+	last_seen_at: string;
+}
+/**
+ * AdminUserDirectory is the user's directory bookkeeping row: where their
+ * entry is, what was last read from it, and whether it is currently
+ * resolving.
+ */
+export interface AdminUserDirectory {
+	/**
+	 * DN is the entry's distinguished name from the last successful read.
+	 */
+	dn: string;
+	/**
+	 * Attributes is the stored field map — the same values the login path
+	 * merges onto the identity, and the last-known-good cache it falls back
+	 * to when the directory is unreachable.
+	 */
+	attributes: { [key: string]: string[]};
+	/**
+	 * LastSeenAt is the last successful read of the entry; LastSyncedAt is
+	 * the last pass that reached the directory at all. They differ exactly
+	 * when the entry is missing.
+	 */
+	last_seen_at?: string;
+	last_synced_at?: string;
+	/**
+	 * FirstMissingAt is when the entry was first found to be missing, and
+	 * what the auto-disable threshold is measured against. Absent means the
+	 * entry is currently resolving.
+	 */
+	first_missing_at?: string;
+	/**
+	 * ConsecutiveMisses is how many passes have observed the absence.
+	 * Reporting only: the disable is decided on elapsed time, since a pass
+	 * count measures replica count rather than absence.
+	 */
+	consecutive_misses: number /* int */;
+}
+/**
+ * AdminUserNotificationPreference is one explicit notification choice.
+ */
+export interface AdminUserNotificationPreference {
+	kind: string;
+	enabled: boolean;
+	/**
+	 * UpdatedAt is when the choice was last changed.
+	 */
+	updated_at: string;
 }
 /**
  * DisableUserConsequences describes what disabling a user does, shown in

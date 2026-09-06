@@ -697,6 +697,8 @@ components:
         created_at:
           description: CreatedAt is when the user first authenticated.
           type: string
+        directory:
+          $ref: '#/components/schemas/webtypes.AdminUserDirectory'
         disabled_at:
           description: DisabledAt is when an admin disabled this user. Omitted if
             not disabled.
@@ -714,6 +716,14 @@ components:
             and shown here because this is where it meets the person deciding
             whether to re-enable. Omitted if not disabled.
           type: string
+        disabled_source:
+          description: |-
+            DisabledSource says what disabled the account: "admin", "soc" or
+            "ldap_sync". It is what makes auto-re-enable safe — the sync clears
+            only its own disables — so it belongs next to the reason rather than
+            only in the database. Omitted if not disabled, and absent on rows
+            predating the column.
+          type: string
         email:
           description: Email is the user's email from OIDC, possibly empty.
           type: string
@@ -722,9 +732,30 @@ components:
           description: ExtraFields are operator-configured extra claims, decoded from
             stored JSON map.
           type: object
+        groups:
+          description: |-
+            Groups are the persisted group memberships, from both capture paths.
+            Never an authorization input (see
+            https://mnestor.github.io/ssoossh/internals/invariants/): this is
+            what the server recorded, shown so an operator can see why a
+            notification reached someone, or why a group they expected is
+            missing.
+          items:
+            $ref: '#/components/schemas/webtypes.AdminUserGroup'
+          type: array
+          uniqueItems: false
         id:
           description: ID is the stable user identifier.
           type: string
+        notification_preferences:
+          description: |-
+            NotificationPreferences are the explicit choices this user has made.
+            A kind with no row here is on its registered default, so an empty
+            list means "everything default" rather than "everything off".
+          items:
+            $ref: '#/components/schemas/webtypes.AdminUserNotificationPreference'
+          type: array
+          uniqueItems: false
         other_accounts:
           description: |-
             OtherAccounts are alternate account identifiers from OIDC, decoded
@@ -762,13 +793,97 @@ components:
       - created_at
       - email
       - extra_fields
+      - groups
       - id
+      - notification_preferences
       - other_accounts
       - service_accounts
       - service_enrollment_count
       - subject
       - updated_at
       - username
+      type: object
+    webtypes.AdminUserDirectory:
+      description: |-
+        Directory is the user's directory bookkeeping row, absent when they
+        have never been enriched. It is what answers "why is this person
+        missing a group" from data already stored.
+      properties:
+        attributes:
+          additionalProperties:
+            items:
+              type: string
+            type: array
+          description: |-
+            Attributes is the stored field map — the same values the login path
+            merges onto the identity, and the last-known-good cache it falls back
+            to when the directory is unreachable.
+          type: object
+        consecutive_misses:
+          description: |-
+            ConsecutiveMisses is how many passes have observed the absence.
+            Reporting only: the disable is decided on elapsed time, since a pass
+            count measures replica count rather than absence.
+          type: integer
+        dn:
+          description: DN is the entry's distinguished name from the last successful
+            read.
+          type: string
+        first_missing_at:
+          description: |-
+            FirstMissingAt is when the entry was first found to be missing, and
+            what the auto-disable threshold is measured against. Absent means the
+            entry is currently resolving.
+          type: string
+        last_seen_at:
+          description: |-
+            LastSeenAt is the last successful read of the entry; LastSyncedAt is
+            the last pass that reached the directory at all. They differ exactly
+            when the entry is missing.
+          type: string
+        last_synced_at:
+          type: string
+      required:
+      - attributes
+      - dn
+      type: object
+    webtypes.AdminUserGroup:
+      properties:
+        first_seen_at:
+          description: |-
+            FirstSeenAt survives a refresh that keeps the membership, so "since
+            when" is answerable; LastSeenAt is the last capture that saw it.
+          type: string
+        last_seen_at:
+          type: string
+        name:
+          description: |-
+            Name is the reduced, comparable name: a memberOf DN is reduced to its
+            CN before it is stored.
+          type: string
+        source:
+          description: |-
+            Source is "oidc" or "ldap". The two capture paths never collide and
+            a name can appear under both.
+          type: string
+      required:
+      - first_seen_at
+      - last_seen_at
+      - name
+      - source
+      type: object
+    webtypes.AdminUserNotificationPreference:
+      properties:
+        enabled:
+          type: boolean
+        kind:
+          type: string
+        updated_at:
+          description: UpdatedAt is when the choice was last changed.
+          type: string
+      required:
+      - kind
+      - updated_at
       type: object
     webtypes.AdminUserSummary:
       properties:

@@ -34,6 +34,9 @@ func newTestDB(t *testing.T) *gorm.DB {
 		&model.Enrollment{},
 		&model.Certificate{},
 		&model.AuditEvent{},
+		&model.UserGroup{},
+		&model.UserLDAP{},
+		&model.NotificationPreference{},
 	); err != nil {
 		t.Fatalf("failed to migrate test database: %v", err)
 	}
@@ -2139,5 +2142,171 @@ func TestCertificateHistoryHandler_Pagination(t *testing.T) {
 	}
 	if total, ok := resp.Data.PageMeta["total"]; !ok || total != float64(10) {
 		t.Errorf("page 1: got total %v, want 10", total)
+	}
+}
+
+// TestAdminGetUserHandler_ShouldReturnEverythingStoredForTheUser is the
+// answer to "why is this other person missing a group": the group rows say
+// what was captured and when, the directory row says whether their entry
+// still resolves, and none of it is new capture.
+func TestAdminGetUserHandler_ShouldReturnEverythingStoredForTheUser(t *testing.T) {
+	t.Parallel()
+
+	db := newTestDB(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	seen := now.Add(-time.Hour)
+	missing := now.Add(-30 * time.Minute)
+
+	user := model.User{
+		ID: "u-alice", Subject: "sub-alice", Username: "alice", Email: "alice@example.com",
+		OtherAccounts: `["alice.adm"]`, ServiceAccounts: `[]`, ExtraFields: `{"employee_id":"E-1"}`,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := db.Create(&[]model.UserGroup{
+		{ID: "g-1", UserID: user.ID, GroupName: "ssh-users", Source: model.GroupSourceOIDC, FirstSeenAt: seen, LastSeenAt: now},
+		{ID: "g-2", UserID: user.ID, GroupName: "platform", Source: model.GroupSourceLDAP, FirstSeenAt: seen, LastSeenAt: now},
+	}).Error; err != nil {
+		t.Fatalf("seed groups: %v", err)
+	}
+	if err := db.Create(&model.UserLDAP{
+		UserID: user.ID, DN: "uid=alice,ou=People,dc=example,dc=net",
+		Attributes: `{"groups":["platform"],"other_accounts":["alice.adm"]}`,
+		LastSeenAt: &seen, LastSyncedAt: &now, FirstMissingAt: &missing,
+		ConsecutiveMisses: 2, CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed user_ldap: %v", err)
+	}
+	if err := db.Create(&model.NotificationPreference{
+		ID: "np-1", UserID: user.ID, Kind: "enrollment_expiring", Enabled: false,
+		CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed notification preference: %v", err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Admin.RequireGroup = "ssh-admins"
+	identity := &service.Identity{Subject: "sub-admin", Username: "admin", Groups: []string{"ssh-admins"}}
+	r := routerWithAuth(t, cfg, db, identity)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/users/u-alice", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want 200: %s", w.Code, w.Body.String())
+	}
+
+	var got webtypes.AdminUserDetail
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+
+	if len(got.Groups) != 2 {
+		t.Fatalf("groups = %+v, want both memberships", got.Groups)
+	}
+	// Ordered by name, so platform (ldap) comes before ssh-users (oidc).
+	if got.Groups[0].Name != "platform" || got.Groups[0].Source != "ldap" {
+		t.Errorf("first group = %+v, want platform from ldap", got.Groups[0])
+	}
+	if got.Groups[1].Source != "oidc" {
+		t.Errorf("second group source = %q, want oidc", got.Groups[1].Source)
+	}
+
+	if got.Directory == nil {
+		t.Fatal("directory = nil, want the stored bookkeeping row")
+	}
+	if got.Directory.DN != "uid=alice,ou=People,dc=example,dc=net" {
+		t.Errorf("directory dn = %q, want the stored one", got.Directory.DN)
+	}
+	if got.Directory.ConsecutiveMisses != 2 {
+		t.Errorf("consecutive_misses = %d, want 2", got.Directory.ConsecutiveMisses)
+	}
+	if got.Directory.FirstMissingAt == nil {
+		t.Error("first_missing_at is absent, so the entry reads as resolving when it is not")
+	}
+	if len(got.Directory.Attributes["groups"]) != 1 {
+		t.Errorf("directory attributes = %v, want the stored field map", got.Directory.Attributes)
+	}
+
+	if len(got.NotificationPreferences) != 1 || got.NotificationPreferences[0].Kind != "enrollment_expiring" {
+		t.Errorf("notification preferences = %+v, want the one explicit choice", got.NotificationPreferences)
+	}
+	if got.NotificationPreferences[0].Enabled {
+		t.Error("the stored preference is off and was reported as on")
+	}
+}
+
+// TestAdminGetUserHandler_ShouldOmitADirectoryRecordThatDoesNotExist keeps a
+// user who has never been enriched from reading as a broken one.
+func TestAdminGetUserHandler_ShouldOmitADirectoryRecordThatDoesNotExist(t *testing.T) {
+	t.Parallel()
+
+	db := newTestDB(t)
+	now := time.Now()
+	if err := db.Create(&model.User{
+		ID: "u-bob", Subject: "sub-bob", Username: "bob",
+		OtherAccounts: `[]`, ServiceAccounts: `[]`, ExtraFields: `{}`,
+		CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Admin.RequireGroup = "ssh-admins"
+	identity := &service.Identity{Subject: "sub-admin", Groups: []string{"ssh-admins"}}
+	r := routerWithAuth(t, cfg, db, identity)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/users/u-bob", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want 200: %s", w.Code, w.Body.String())
+	}
+
+	var got webtypes.AdminUserDetail
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+
+	if got.Directory != nil {
+		t.Errorf("directory = %+v, want nil for a user who has never been enriched", got.Directory)
+	}
+	if got.Groups == nil {
+		t.Error("groups = null, want an empty array: the frontend types it as an array")
+	}
+	if got.NotificationPreferences == nil {
+		t.Error("notification_preferences = null, want an empty array")
+	}
+}
+
+// TestAdminGetUserHandler_ShouldReportWhatDisabledTheAccount surfaces
+// disabled_source, which is what makes auto-re-enable safe and was stored
+// but unreachable from any screen.
+func TestAdminGetUserHandler_ShouldReportWhatDisabledTheAccount(t *testing.T) {
+	t.Parallel()
+
+	db := newTestDB(t)
+	now := time.Now()
+	source := model.DisabledSourceLDAPSync
+	if err := db.Create(&model.User{
+		ID: "u-carol", Subject: "sub-carol", Username: "carol",
+		OtherAccounts: `[]`, ServiceAccounts: `[]`, ExtraFields: `{}`,
+		DisabledAt: &now, DisabledSource: &source, DisabledReason: "directory entry not found",
+		CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Admin.RequireGroup = "ssh-admins"
+	identity := &service.Identity{Subject: "sub-admin", Groups: []string{"ssh-admins"}}
+	r := routerWithAuth(t, cfg, db, identity)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/users/u-carol", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want 200: %s", w.Code, w.Body.String())
+	}
+
+	var got webtypes.AdminUserDetail
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+	if got.DisabledSource != string(model.DisabledSourceLDAPSync) {
+		t.Errorf("disabled_source = %q, want ldap_sync", got.DisabledSource)
 	}
 }

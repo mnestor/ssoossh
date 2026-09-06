@@ -93,6 +93,32 @@ This is display only. The badges come from the same
 the server evaluates, and the server re-checks it on every scoped request, so
 a badge cannot grant anything and its absence cannot take anything away.
 
+### What the user detail page shows
+
+One user's page carries everything the server has stored about them, all of
+it written by a login or a sync rather than captured for the page:
+
+- **Identity** -- username, email, subject, the account lists, and the extra
+  fields the configuration captures.
+- **Group membership** -- every persisted group row with its source (`oidc`
+  or `ldap`) and when it was first and last seen. Only names the
+  configuration references are stored, so a group missing here is often one
+  nothing is configured to care about. Never an authorization input.
+- **Directory record** -- the LDAP bookkeeping row: the entry's DN, the
+  stored field values, when the entry was last seen, and whether it is
+  currently missing (with how long it has been). Absent for a user who has
+  never been enriched.
+- **Notification choices** -- only the ones this user has changed. Anything
+  absent is on its default.
+- **What disabled the account**, when it is disabled: `admin`, `soc`, or
+  `ldap_sync`. That last one is the only source the sync will clear
+  automatically.
+
+Between the group rows and the directory record, "why is this person missing
+a group" is answerable from the page. What it cannot show is a group the
+configuration never references, because those are discarded at capture --
+the [probe console](/ssoossh/operations/ldap/) is what breaks that circle.
+
 ### What auditors see of the configuration
 
 The effective-configuration screen renders the server's whole configuration,

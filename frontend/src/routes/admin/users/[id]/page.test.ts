@@ -42,6 +42,7 @@ function mockDetail(overrides: Record<string, unknown> = {}) {
 							service_accounts: ['svc-deploy'],
 							extra_fields: { employee_id: 'E-40921' },
 							groups: [],
+							notification_preferences: [],
 							created_at: '2026-08-01T10:00:00Z',
 							updated_at: '2026-08-01T10:00:00Z',
 							service_enrollment_count: ENROLLMENTS,
@@ -208,5 +209,105 @@ describe('Admin user detail', () => {
 
 		await userEvent.type(screen.getByTestId('enable-reason'), 'cleared with security');
 		expect(screen.getByTestId('confirm-enable')).toBeEnabled();
+	});
+	describe('the stored record', () => {
+		it('should list every captured group membership with its source', async () => {
+			mockDetail({
+				groups: [
+					{
+						name: 'platform',
+						source: 'ldap',
+						first_seen_at: '2026-07-01T10:00:00Z',
+						last_seen_at: '2026-09-01T10:00:00Z'
+					},
+					{
+						name: 'ssh-users',
+						source: 'oidc',
+						first_seen_at: '2026-07-01T10:00:00Z',
+						last_seen_at: '2026-09-01T10:00:00Z'
+					}
+				]
+			});
+			render(Page);
+
+			const table = await screen.findByTestId('user-groups-table');
+			expect(table).toHaveTextContent('platform');
+			expect(table).toHaveTextContent('ssh-users');
+		});
+
+		it('should say so when no group membership has been captured', async () => {
+			mockDetail({ groups: [] });
+			render(Page);
+			expect(await screen.findByTestId('user-groups-empty')).toBeInTheDocument();
+		});
+
+		it('should show the directory record when the user has one', async () => {
+			mockDetail({
+				directory: {
+					dn: 'uid=alice,ou=People,dc=corp,dc=example',
+					attributes: { groups: ['platform'] },
+					last_seen_at: '2026-09-01T10:00:00Z',
+					last_synced_at: '2026-09-01T10:15:00Z',
+					consecutive_misses: 0
+				}
+			});
+			render(Page);
+
+			const directory = await screen.findByTestId('user-directory');
+			expect(directory).toHaveTextContent('uid=alice,ou=People,dc=corp,dc=example');
+		});
+
+		it('should not show a directory record for a user who has never been enriched', async () => {
+			mockDetail({ directory: undefined });
+			render(Page);
+			await screen.findByText('alice');
+			expect(screen.queryByTestId('user-directory')).not.toBeInTheDocument();
+		});
+
+		it('should flag a directory entry that is currently missing', async () => {
+			mockDetail({
+				directory: {
+					dn: 'uid=alice,ou=People,dc=corp,dc=example',
+					attributes: {},
+					last_seen_at: '2026-09-01T10:00:00Z',
+					last_synced_at: '2026-09-01T10:15:00Z',
+					first_missing_at: '2026-09-01T10:05:00Z',
+					consecutive_misses: 3
+				}
+			});
+			render(Page);
+			expect(await screen.findByTestId('user-directory-missing')).toBeInTheDocument();
+		});
+
+		it('should name what disabled the account', async () => {
+			mockDetail({
+				disabled_at: '2026-08-20T09:00:00Z',
+				disabled_reason: 'directory entry not found',
+				disabled_source: 'ldap_sync'
+			});
+			render(Page);
+			expect(await screen.findByTestId('user-disabled-source')).toHaveTextContent(
+				'the directory sync'
+			);
+		});
+
+		it('should list only the notification choices the user has changed', async () => {
+			mockDetail({
+				notification_preferences: [
+					{ kind: 'enrollment_expiring', enabled: false, updated_at: '2026-09-01T10:00:00Z' }
+				]
+			});
+			render(Page);
+			expect(await screen.findByTestId('user-notification-preferences')).toHaveTextContent(
+				'enrollment_expiring'
+			);
+		});
+
+		it('should hide the notification block when the user has changed nothing', async () => {
+			mockDetail({ notification_preferences: [] });
+			render(Page);
+			await screen.findByText('alice');
+			expect(screen.queryByTestId('user-notification-preferences')).not.toBeInTheDocument();
+		});
 	});
 });
