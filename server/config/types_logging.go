@@ -55,7 +55,7 @@ type GenericLogging struct {
 	// logger, with the same keys and meanings as logging.* above. This
 	// destination is only split out of the main log once its filename is
 	// set; until then its records go to the general log.
-	timberjack.Logger `mapstructure:",squash"`
+	timberjack.Logger `mapstructure:",squash"` // squash: viper never squashes an untagged embed, and these keys are documented flat
 
 	// Level is the minimum log level for this destination, in the same form
 	// as logging.level.
@@ -78,7 +78,7 @@ type AccessLogging struct {
 	// Log-file rotation for the access log, via the embedded timberjack
 	// logger, with the same keys and meanings as logging.* above. The access
 	// log is only split into its own file once its filename is set.
-	timberjack.Logger `mapstructure:",squash"`
+	timberjack.Logger `mapstructure:",squash"` // squash: viper never squashes an untagged embed, and these keys are documented flat
 
 	// Level is the minimum log level for the access log, in the same form as
 	// logging.level. Requests are logged at INFO, client errors (4xx) at
