@@ -6,5 +6,7 @@
   "other_accounts": null,
   "service_accounts": null,
   "extra": null,
+  "is_admin": false,
+  "is_soc": false,
   "is_auditor": false
 }

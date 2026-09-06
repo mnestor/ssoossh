@@ -388,7 +388,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 		return fmt.Errorf("failed to register frontend: %w", err)
 	}
 
-	sessionAuth := middleware.NewSessionAuthMiddleware(resolvedCookieIdleTimeout(a.config), resolvedCookieMaxAge(a.config)).Add()
+	sessionAuth := middleware.NewSessionAuthMiddleware(resolvedCookieIdleTimeout(a.config), resolvedCookieMaxAge(a.config), a.svc.identity).Add()
 	csrf := middleware.NewCsrfMiddleware(a.config.HTTP.PublicOrigin()).Add()
 	adminAuth := middleware.NewAdminAuthMiddleware(a.config).Add()
 	socAuth := middleware.NewSOCAuthMiddleware(a.config).Add()

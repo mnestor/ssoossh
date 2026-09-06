@@ -33,6 +33,10 @@ type services struct {
 	// ldap is nil when directory enrichment is disabled, which every
 	// consumer treats as "no enrichment" rather than branching on config.
 	ldap *service.LDAPService
+	// identity re-reads the stored half of a session identity on each
+	// request. Always present: it answers the same question with or
+	// without a directory, just from fewer sources.
+	identity *service.IdentityService
 }
 
 // initServices constructs the services using a.config and a.httpClient,
@@ -105,6 +109,11 @@ func (a *app) initServices() (*services, error) {
 	svc.auth.SetAuditor(svc.audit)
 	svc.ldap.SetAuditor(svc.audit)
 	svc.auth.SetLDAP(svc.ldap)
+
+	// Built last of the plain constructors because it reads through the
+	// directory service, and after it so a nil svc.ldap here means the same
+	// thing it means everywhere else.
+	svc.identity = service.NewIdentityService(a.db, svc.ldap)
 
 	// Validate lifetime policy configuration against reverse-proxy settings.
 	// This is a startup check with logging only; bad config here is not an error.

@@ -251,8 +251,10 @@ An auto-disable is audited like any other containment action, as
 **Side effect worth naming:** the sync partially closes the revocation window.
 Removing a user from the directory now disables the account within
 `interval * disable_after`, where previously removal took effect only at their
-next login. Group downgrades -- still in the directory, out of a role group --
-still ride out the session, unchanged. See
+next login. Losing one linked account rather than the whole entry takes effect
+on the person's next request, since account lists are re-read per request.
+Group downgrades -- still in the directory, out of a role group -- still ride
+out the session, unchanged. See
 [Roles and containment](/ssoossh/operations/roles/).
 
 ## Cost and freshness
@@ -267,10 +269,17 @@ The sync costs (users with a `user_ldap` row) x (1 + configured field
 searches) directory operations per tick. Per-user results are small; the
 multiplier is what to choose the interval against.
 
-Refresh semantics mid-session: extra fields are re-hydrated from the users row
-at approval time, so extra-field refreshes take effect for key ID templates
-and claim conditions without a re-login. The account-list fields ride the
-session, so refreshed principals take effect at the next login.
+Refresh semantics mid-session: the account-list fields and the extra fields
+are re-read on every authenticated request, merged the way a login merges them
+-- the OIDC values from the users row, then the directory values from
+`user_ldap.attributes` over the top. A sync that removes a shared account
+therefore takes that principal away from live sessions on their next request,
+not at their next login, and the account page shows what the person can
+actually mint with.
+
+Group membership is the deliberate exception: roles are read at login and
+never re-read, so the session lifetime stays the revocation window for a role
+(see [Roles and containment](/ssoossh/operations/roles/)).
 
 ## Notifications fan-out
 

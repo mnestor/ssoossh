@@ -67,9 +67,27 @@ subject identifier rather than storing claims.
 "who should this reach", never "may this caller do this". It was added by
 directory sync (see [LDAP enrichment](/ssoossh/operations/ldap/)), which
 retired the older, stronger wording that group membership is never persisted
-at all. What survives is the half that was load-bearing -- nothing reads those
-rows to make a decision, and per-request database hydration of identity fields
-remains out of scope, since the session carries them.
+at all. What survives is the half that was load-bearing: nothing reads those
+rows to make a decision.
+
+**Roles come from the session; account lists come from the database.** The two
+halves of an identity are refreshed on opposite schedules, deliberately:
+
+- *Groups* are read at login and never re-read, which is what makes the
+  session lifetime the revocation window for a role. Nothing stored can grant
+  one.
+- *Account lists and extra fields* -- `other_accounts`, `service_accounts`,
+  and the configured extras -- are re-read from the database on every
+  authenticated request, rebuilt the way a login builds them: the users row
+  first, then the directory values over the top.
+
+The second half is what stops a live session outliving a directory change.
+Approval linkage reads those lists to decide which principals a certificate
+may carry, so a session holding a login-time snapshot could go on approving a
+certificate for a shared account the directory had already taken away. The
+refresh fails open -- a database error leaves the session's values in place
+and logs, because no principals at all is a worse failure than briefly stale
+ones.
 
 **Session and authorization headers are never captured.** The headers recorded
 on an approval decision are a deliberate allowlist -- `User-Agent`,

@@ -63,6 +63,8 @@ func fullFixtures() map[string]any {
 				"employee_id": "E-12345",
 				"department":  "Engineering",
 			},
+			IsAdmin:   true,
+			IsSOC:     true,
 			IsAuditor: true,
 		},
 		"certificate_options": options,

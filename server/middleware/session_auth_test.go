@@ -7,6 +7,8 @@ package middleware
 // these tests are about the session read/write primitives themselves.
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -203,7 +205,7 @@ func TestSetIdentitySessionAndSessionAuthMiddleware(t *testing.T) {
 	r := newSessionTestRouter()
 	var gotIdentity *service.Identity
 	var gotOK bool
-	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour).Add(), func(c *gin.Context) {
+	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour, nil).Add(), func(c *gin.Context) {
 		gotIdentity, gotOK = Identity(c)
 		c.String(http.StatusOK, "ok")
 	})
@@ -264,7 +266,7 @@ func slidingExpiryRequest(t *testing.T, idleTimeout, maxSession time.Duration) (
 	// The error handler is what turns the middleware's UnauthorizedError
 	// into a 401 status; without it a rejection reads as an empty 200.
 	r.Use(NewErrorHandlerMiddleware().Add())
-	r.GET("/whoami", NewSessionAuthMiddleware(idleTimeout, maxSession).Add(), func(c *gin.Context) {
+	r.GET("/whoami", NewSessionAuthMiddleware(idleTimeout, maxSession, nil).Add(), func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})
 	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)
@@ -329,7 +331,7 @@ func TestSessionAuthMiddleware_ShouldFailClosedWithoutASession(t *testing.T) {
 	r := newSessionTestRouter()
 	r.Use(NewErrorHandlerMiddleware().Add())
 	var reached bool
-	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour).Add(), func(c *gin.Context) {
+	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour, nil).Add(), func(c *gin.Context) {
 		reached = true
 	})
 
@@ -359,7 +361,7 @@ func TestSessionAuthMiddleware_ShouldHandleNoGroups(t *testing.T) {
 
 	r := newSessionTestRouter()
 	var gotIdentity *service.Identity
-	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour).Add(), func(c *gin.Context) {
+	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour, nil).Add(), func(c *gin.Context) {
 		gotIdentity, _ = Identity(c)
 	})
 	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)
@@ -398,7 +400,7 @@ func TestClearIdentitySession(t *testing.T) {
 
 	r := newSessionTestRouter()
 	r.Use(NewErrorHandlerMiddleware().Add())
-	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour).Add(), func(c *gin.Context) {
+	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour, nil).Add(), func(c *gin.Context) {
 		c.String(http.StatusOK, "should not reach here")
 	})
 	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)
@@ -576,5 +578,133 @@ func TestPopOIDCVerifier_ShouldReturnEmptyWhenNeverSet(t *testing.T) {
 
 	if got != "" {
 		t.Errorf("PopOIDCVerifier() = %q, want empty", got)
+	}
+}
+
+// fakeIdentityRefresher stands in for service.IdentityService, recording
+// that it ran and applying a fixed result.
+type fakeIdentityRefresher struct {
+	// accounts is what the refresh replaces OtherAccounts with.
+	accounts []string
+	// err is returned instead of refreshing, for the fail-open test.
+	err error
+	// calls counts invocations, so a test can assert the refresh ran on the
+	// request path rather than inferring it from the result.
+	calls int
+}
+
+func (f *fakeIdentityRefresher) RefreshIdentity(_ context.Context, identity *service.Identity) error {
+	f.calls++
+	if f.err != nil {
+		return f.err
+	}
+	identity.OtherAccounts = f.accounts
+	return nil
+}
+
+// TestSessionAuthMiddleware_ShouldRefreshTheIdentityFromTheStore is the
+// regression for a stale session outliving a directory change: the cookie
+// still carries the account the sync removed, and the request must be
+// authorized against the stored list instead.
+func TestSessionAuthMiddleware_ShouldRefreshTheIdentityFromTheStore(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		refresher *fakeIdentityRefresher
+		wantOther []string
+		wantCalls int
+	}{
+		{
+			name:      "should replace the cookie's account list with the stored one",
+			refresher: &fakeIdentityRefresher{accounts: []string{"alice.adm"}},
+			wantOther: []string{"alice.adm"},
+			wantCalls: 1,
+		},
+		{
+			name:      "should drop every account when the store holds none",
+			refresher: &fakeIdentityRefresher{accounts: nil},
+			wantOther: nil,
+			wantCalls: 1,
+		},
+		{
+			name:      "should keep the cookie's list when the refresh fails",
+			refresher: &fakeIdentityRefresher{err: errors.New("database unavailable")},
+			wantOther: []string{"alice.adm", "shared-ops"},
+			wantCalls: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			identity := &service.Identity{
+				Subject:       "sub-alice",
+				Username:      "alice",
+				OtherAccounts: []string{"alice.adm", "shared-ops"},
+			}
+			setResp := doSessionRequest(t, func(c *gin.Context) {
+				if err := SetIdentitySession(c, identity); err != nil {
+					t.Fatalf("SetIdentitySession() error = %v", err)
+				}
+			}, nil)
+
+			r := newSessionTestRouter()
+			var got *service.Identity
+			r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour, tt.refresher).Add(), func(c *gin.Context) {
+				got, _ = Identity(c)
+				c.String(http.StatusOK, "ok")
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/whoami", nil)
+			for _, c := range setResp.Result().Cookies() {
+				req.AddCookie(c)
+			}
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("got status %d, want %d", w.Code, http.StatusOK)
+			}
+			if tt.refresher.calls != tt.wantCalls {
+				t.Errorf("refresher ran %d times, want %d", tt.refresher.calls, tt.wantCalls)
+			}
+			if !reflect.DeepEqual(got.OtherAccounts, tt.wantOther) {
+				t.Errorf("got other accounts %v, want %v", got.OtherAccounts, tt.wantOther)
+			}
+		})
+	}
+}
+
+// TestSessionAuthMiddleware_ShouldNotRefreshGroups pins the deliberate
+// exclusion: roles are read at login so that the session lifetime is the
+// revocation window, and nothing in the database may grant one.
+func TestSessionAuthMiddleware_ShouldNotRefreshGroups(t *testing.T) {
+	t.Parallel()
+
+	identity := &service.Identity{Subject: "sub-alice", Groups: []string{"ssh-admins"}}
+	setResp := doSessionRequest(t, func(c *gin.Context) {
+		if err := SetIdentitySession(c, identity); err != nil {
+			t.Fatalf("SetIdentitySession() error = %v", err)
+		}
+	}, nil)
+
+	r := newSessionTestRouter()
+	var got *service.Identity
+	refresher := &fakeIdentityRefresher{accounts: []string{"alice.adm"}}
+	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour, refresher).Add(), func(c *gin.Context) {
+		got, _ = Identity(c)
+		c.String(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)
+	for _, c := range setResp.Result().Cookies() {
+		req.AddCookie(c)
+	}
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	if !reflect.DeepEqual(got.Groups, []string{"ssh-admins"}) {
+		t.Errorf("got groups %v, want the session claim [ssh-admins]", got.Groups)
 	}
 }

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log/slog"
 	"strings"
 	"time"
 
@@ -243,14 +244,23 @@ type SessionAuthMiddleware struct {
 	// maxSession is the absolute cap (bootstrap's resolvedCookieMaxAge),
 	// enforced against sessionKeyIdentityIssuedAt.
 	maxSession time.Duration
+	// refresher re-reads the account lists and extra fields from the
+	// database on every request, so a directory sync that removed an
+	// account takes effect immediately rather than at the session's next
+	// login. Nil skips the refresh, which leaves the cookie's login-time
+	// snapshot in place; only tests that assert on the snapshot itself
+	// should pass nil.
+	refresher service.IdentityRefresher
 }
 
 // NewSessionAuthMiddleware creates a SessionAuthMiddleware. idleTimeout
 // must be the same lifetime the session store's cookie options were built
 // with, or refreshed cookies come back with a different lifetime than
 // first-issue ones; maxSession is the absolute cap from the same config.
-func NewSessionAuthMiddleware(idleTimeout, maxSession time.Duration) *SessionAuthMiddleware {
-	return &SessionAuthMiddleware{idleTimeout: idleTimeout, maxSession: maxSession}
+// refresher may be nil, which leaves identities exactly as the cookie
+// carries them.
+func NewSessionAuthMiddleware(idleTimeout, maxSession time.Duration, refresher service.IdentityRefresher) *SessionAuthMiddleware {
+	return &SessionAuthMiddleware{idleTimeout: idleTimeout, maxSession: maxSession, refresher: refresher}
 }
 
 // Add returns a gin.HandlerFunc that reads the identity persisted by
@@ -286,14 +296,37 @@ func (m *SessionAuthMiddleware) Add() gin.HandlerFunc {
 		username := sessionString(sess, sessionKeyIdentityUsername)
 		email := sessionString(sess, sessionKeyIdentityEmail)
 
-		c.Set(IdentityContextKey, &service.Identity{
+		identity := &service.Identity{
 			Subject:         subject,
 			Username:        username,
 			Email:           email,
 			Groups:          sessionStringSlice(sess, sessionKeyIdentityGroups),
 			OtherAccounts:   sessionStringSlice(sess, sessionKeyIdentityOtherAccounts),
 			ServiceAccounts: sessionStringSlice(sess, sessionKeyIdentityServiceAccounts),
-		})
+		}
+
+		// What the person holds now, not what they held at login. The
+		// cookie's account lists are a snapshot of the login-time merge,
+		// and a directory sync between logins can remove an account from
+		// under it — which, unrefreshed, left a live session still able to
+		// approve a certificate for an account the directory had taken
+		// away. Groups are deliberately not refreshed: roles are read at
+		// login by design, which is what makes the session lifetime the
+		// revocation window.
+		//
+		// Fails open. A database error leaves the snapshot in place and is
+		// logged rather than 500ing every authenticated request, because
+		// the alternative to slightly stale principals here is no
+		// principals at all.
+		if m.refresher != nil {
+			if err := m.refresher.RefreshIdentity(c.Request.Context(), identity); err != nil {
+				slog.WarnContext(c.Request.Context(),
+					"failed to refresh the session identity from the database; using the login-time values",
+					slog.String("subject", subject), slog.Any("error", err))
+			}
+		}
+
+		c.Set(IdentityContextKey, identity)
 
 		// Sliding expiry: re-save once past half the idle window (see the
 		// type comment). A failed save is logged-and-continued rather than

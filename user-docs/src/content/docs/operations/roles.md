@@ -176,6 +176,11 @@ Authorization is evaluated from the session identity, and group membership is
 read at login. So removing someone from an admin group in the identity
 provider takes effect **at their next login**, not immediately.
 
+This applies to roles only. The account lists a certificate's principals come
+from are re-read from the database on every request, so a directory sync that
+removes a linked account takes it away from live sessions immediately (see
+[LDAP enrichment](/ssoossh/operations/ldap/)).
+
 That window is bounded by the session settings:
 
 | Key | Default | Meaning |

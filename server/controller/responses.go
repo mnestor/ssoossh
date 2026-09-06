@@ -77,7 +77,15 @@ func newPageMeta(p paging.Params, total int64) webtypes.PageMeta {
 // the users table by subject, since it is a stored attribute independent of
 // the session. Malformed JSON degrades to empty rather than erroring.
 func newCurrentUserResponse(identity *service.Identity, c *config.Config, db any, subject string) webtypes.CurrentUserResponse {
+	// The users row is the OIDC half of the extras and the fallback for a
+	// session whose identity was never refreshed. A refreshed identity
+	// carries the merged set — OIDC claims with the directory values over
+	// the top — and that is what the rest of the server evaluates, so it
+	// wins where the two disagree.
 	extra := hydrateExtraFields(db, subject)
+	for name, value := range identity.EffectiveExtra() {
+		extra[name] = value
+	}
 	return webtypes.CurrentUserResponse{
 		Subject:         identity.Subject,
 		Username:        identity.Username,

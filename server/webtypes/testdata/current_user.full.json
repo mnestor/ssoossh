@@ -16,5 +16,7 @@
     "department": "Engineering",
     "employee_id": "E-12345"
   },
+  "is_admin": true,
+  "is_soc": true,
   "is_auditor": true
 }

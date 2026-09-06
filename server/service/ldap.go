@@ -240,7 +240,7 @@ func (s *LDAPService) Enrich(ctx context.Context, identity *Identity, userID str
 		return
 	}
 
-	s.applyValues(identity, entry.Values)
+	applyLDAPValues(identity, entry.Values)
 
 	if err := s.persist(ctx, userID, entry); err != nil {
 		s.log.ErrorContext(ctx, "failed to persist directory enrichment",
@@ -395,7 +395,7 @@ func (s *LDAPService) search(conn ldapConn, baseDN, filter string, attrs []strin
 // union makes it impossible to retire a stale principal from only one
 // source. Groups are the exception — the session identity's Groups stays
 // the OIDC claim, and LDAP groups are persisted alongside instead.
-func (s *LDAPService) applyValues(identity *Identity, values map[string][]string) {
+func applyLDAPValues(identity *Identity, values map[string][]string) {
 	for name, vals := range values {
 		switch name {
 		case config.LDAPFieldOtherAccounts:
@@ -423,21 +423,60 @@ func (s *LDAPService) applyValues(identity *Identity, values map[string][]string
 // applyCached falls back to the last successful read when the directory is
 // unreachable, so an outage costs freshness rather than principals.
 func (s *LDAPService) applyCached(ctx context.Context, identity *Identity, userID string) {
+	row, err := s.storedValues(ctx, userID)
+	if err != nil || row == nil {
+		return
+	}
+	applyLDAPValues(identity, row.values)
+	s.log.InfoContext(ctx, "used cached directory attributes after a failed lookup",
+		"subject", identity.Subject, "last_seen_at", row.lastSeenAt)
+}
+
+// applyStored overlays the stored directory values on identity, which is
+// what makes a live session reflect a sync that ran after its login.
+//
+// A nil receiver — LDAP disabled — is a no-op, leaving the OIDC values the
+// caller already loaded as the whole answer. Nothing here is an error the
+// caller must act on: no bookkeeping row means the user has never been
+// enriched, and a read that fails leaves the identity untouched.
+func (s *LDAPService) applyStored(ctx context.Context, identity *Identity, userID string) error {
+	if s == nil || identity == nil || userID == "" {
+		return nil
+	}
+	row, err := s.storedValues(ctx, userID)
+	if err != nil || row == nil {
+		return err
+	}
+	applyLDAPValues(identity, row.values)
+	return nil
+}
+
+// storedLDAPValues is one decoded user_ldap row: the field values and when
+// the entry behind them was last actually read.
+type storedLDAPValues struct {
+	values     map[string][]string
+	lastSeenAt *time.Time
+}
+
+// storedValues reads and decodes one user's cached directory values.
+// Returns nil, nil when there is no bookkeeping row or its JSON is
+// unreadable — both mean "nothing to overlay", which is the same outcome
+// for every caller.
+func (s *LDAPService) storedValues(ctx context.Context, userID string) (*storedLDAPValues, error) {
 	var row model.UserLDAP
 	if err := s.db.WithContext(ctx).First(&row, "user_id = ?", userID).Error; err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			s.log.WarnContext(ctx, "failed to read cached directory attributes", "error", err)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
 		}
-		return
+		s.log.WarnContext(ctx, "failed to read cached directory attributes", "error", err)
+		return nil, fmt.Errorf("failed to read cached directory attributes: %w", err)
 	}
 	var values map[string][]string
 	if err := json.Unmarshal([]byte(row.Attributes), &values); err != nil {
 		s.log.WarnContext(ctx, "failed to decode cached directory attributes", "error", err)
-		return
+		return nil, nil
 	}
-	s.applyValues(identity, values)
-	s.log.InfoContext(ctx, "used cached directory attributes after a failed lookup",
-		"subject", identity.Subject, "last_seen_at", row.LastSeenAt)
+	return &storedLDAPValues{values: values, lastSeenAt: row.LastSeenAt}, nil
 }
 
 // persist writes the sync bookkeeping row and replaces the user's
