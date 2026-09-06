@@ -118,6 +118,8 @@ func echoRedirectURL(claims map[string]any, mapping service.ClaimMapping, now ti
 // newClaimMappingResponse converts the configured mapping to its wire shape.
 func newClaimMappingResponse(mapping service.ClaimMapping) webtypes.ClaimMappingResponse {
 	return webtypes.ClaimMappingResponse{
+		Subject:         mapping.Subject,
+		Name:            mapping.Name,
 		Username:        mapping.Username,
 		Groups:          mapping.Groups,
 		OtherAccounts:   mapping.OtherAccounts,
@@ -136,8 +138,8 @@ func newClaimMappingResponse(mapping service.ClaimMapping) webtypes.ClaimMapping
 func claimSuggestions(claims map[string]any, mapping service.ClaimMapping) []webtypes.ClaimSuggestion {
 	consumed := map[string]bool{}
 	for _, name := range []string{
-		mapping.Username, mapping.Groups, mapping.OtherAccounts,
-		mapping.ServiceAccounts, mapping.Email,
+		mapping.Subject, mapping.Username, mapping.Name, mapping.Groups,
+		mapping.OtherAccounts, mapping.ServiceAccounts, mapping.Email,
 	} {
 		if name != "" {
 			consumed[name] = true

@@ -3,9 +3,12 @@
   "filter_sent": "(\u0026(objectClass=person)(uid=alice))",
   "mode": "template",
   "attributes": [
-    "*"
+    "*",
+    "entryUUID"
   ],
   "matched": 1,
+  "id_attribute": "entryUUID",
+  "directory_id": "8f14e45f-ea8f-4f2d-9c1b-3a7b5d2e6c40",
   "entry": {
     "dn": "uid=alice,ou=People,dc=example,dc=net",
     "attributes": [

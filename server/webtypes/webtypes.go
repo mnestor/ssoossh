@@ -64,6 +64,11 @@ type CurrentUserResponse struct {
 	Email    string   `json:"email" validate:"required"`
 	Groups   []string `json:"groups" validate:"required"`
 
+	// Name is the caller's human-readable name, for greeting them as a
+	// person rather than as an account. Display only, and empty when
+	// neither the identity provider nor the directory supplied one.
+	Name string `json:"name" validate:"required"`
+
 	// OtherAccounts are alternate account identifiers this identity is
 	// known by on target systems (see config.OAuthFields.OtherAccounts),
 	// shown so a user can see every account name tied to their identity.
@@ -745,10 +750,16 @@ type AdminUserSummary struct {
 	// Username is the OIDC claim username, possibly changed at each login.
 	Username string `json:"username" validate:"required"`
 
+	// Name is the person's human-readable name, so a list of usernames can
+	// be scanned by someone who thinks in names. Display only, and empty
+	// when nothing supplied one.
+	Name string `json:"name" validate:"required"`
+
 	// Email is the user's email from OIDC, possibly empty or changed at login.
 	Email string `json:"email" validate:"required"`
 
-	// Subject is the OIDC "sub" claim, stable across logins for this user.
+	// Subject is the unique account identifier (authentication.fields.subject,
+	// "sub" by default) — the one field here that is stable across logins.
 	Subject string `json:"subject" validate:"required"`
 
 	// DisabledAt is when an admin disabled this user. Omitted (null) if not
@@ -778,17 +789,37 @@ type AdminUserDetail struct {
 	// ID is the stable user identifier.
 	ID string `json:"id" validate:"required"`
 
-	// Username is the OIDC claim username.
+	// Username is the OIDC claim username. Not an identifier — it changes
+	// when a person is renamed, which is what Subject exists to survive.
 	Username string `json:"username" validate:"required"`
 
-	// Email is the user's email from OIDC, possibly empty.
+	// Email is the user's email from OIDC, possibly empty. Not an
+	// identifier either, for the same reason as Username.
 	Email string `json:"email" validate:"required"`
 
-	// Subject is the stable OIDC "sub" claim.
+	// Subject is the unique account identifier, read from the claim named
+	// by authentication.fields.subject ("sub" by default). It is the only
+	// value a login is keyed by, and the only one guaranteed not to move.
 	Subject string `json:"subject" validate:"required"`
 
-	// OtherAccounts are alternate account identifiers from OIDC, decoded
-	// from the stored JSON array.
+	// Name is the person's human-readable name. Display only: it is not a
+	// principal, not a key ID input, and never an authorization input.
+	// Empty when neither the identity provider nor the directory supplied
+	// one.
+	Name string `json:"name" validate:"required"`
+
+	// OtherAccounts, ServiceAccounts, ExtraFields and Name above are the
+	// OIDC capture — exactly what the ID token carried at the last login,
+	// as stored on the users row. They are deliberately *not* the values
+	// the server acts on: a configured ldap.fields entry overrides its
+	// OIDC counterpart wholesale, and DirectoryOverrides below names every
+	// field where that is currently happening and what the effective value
+	// is.
+	//
+	// Showing the OIDC half even when it is overridden is the point. An
+	// operator debugging "why is this person missing a principal" needs to
+	// see both sides and which one won; showing only the winner makes a
+	// misconfigured claim mapping invisible.
 	OtherAccounts []string `json:"other_accounts" validate:"required"`
 
 	// ServiceAccounts are service accounts from OIDC, decoded from stored JSON.
@@ -796,6 +827,13 @@ type AdminUserDetail struct {
 
 	// ExtraFields are operator-configured extra claims, decoded from stored JSON map.
 	ExtraFields map[string]any `json:"extra_fields" validate:"required"`
+
+	// DirectoryOverrides names each identity field the directory currently
+	// supplies in place of the OIDC value, with both sides shown. Empty
+	// when LDAP is disabled, unconfigured, or has never resolved this
+	// person — in which case the OIDC values above are what the server
+	// acts on.
+	DirectoryOverrides []AdminUserOverride `json:"directory_overrides" validate:"required"`
 
 	// CreatedAt is when the user first authenticated.
 	CreatedAt time.Time `json:"created_at" validate:"required"`
@@ -832,7 +870,11 @@ type AdminUserDetail struct {
 	// predating the column.
 	DisabledSource string `json:"disabled_source,omitempty"`
 
-	// Groups are the persisted group memberships, from both capture paths.
+	// Groups are the persisted group memberships. Both capture paths while
+	// ldap.enabled is true; OIDC only when it is false, on the same
+	// reasoning as Directory below — the directory rows are frozen, so
+	// they are neither shown nor used for notification fan-out until the
+	// directory is switched back on.
 	// Never an authorization input (see
 	// https://mnestor.github.io/ssoossh/internals/invariants/): this is
 	// what the server recorded, shown so an operator can see why a
@@ -843,6 +885,14 @@ type AdminUserDetail struct {
 	// Directory is the user's directory bookkeeping row, absent when they
 	// have never been enriched. It is what answers "why is this person
 	// missing a group" from data already stored.
+	//
+	// Also absent whenever ldap.enabled is false, even for a user who has a
+	// row. Switching the directory off stops the sync, so everything in
+	// that row is frozen at whatever the last pass read, and the server no
+	// longer acts on any of it — the session identity falls back to the
+	// OIDC values on the next request. Presenting frozen data beside live
+	// data with no way to tell them apart is how someone ends up granting
+	// access on a principal list that has not been true for months.
 	Directory *AdminUserDirectory `json:"directory,omitempty"`
 
 	// NotificationPreferences are the explicit choices this user has made.
@@ -870,7 +920,36 @@ type AdminUserGroup struct {
 // AdminUserDirectory is the user's directory bookkeeping row: where their
 // entry is, what was last read from it, and whether it is currently
 // resolving.
+// AdminUserOverride is one identity field the directory supplies in place
+// of the OIDC claim, with both values.
+//
+// The merge rule it reports is per field and total: a configured
+// ldap.fields entry replaces its OIDC counterpart rather than being unioned
+// with it, so that a principal retired in one source can actually be
+// retired. That makes "which source won this field" a question with a real
+// answer, and this is it.
+type AdminUserOverride struct {
+	// Field is the destination name: "other_accounts", "service_accounts",
+	// "name", or an operator-chosen extra field.
+	Field string `json:"field" validate:"required"`
+
+	// OIDC is what the ID token supplied for this field at the last login,
+	// shown even though it lost — a claim mapping that is quietly wrong is
+	// invisible otherwise. Empty when the token carried nothing.
+	OIDC []string `json:"oidc" validate:"required"`
+
+	// Effective is what the directory supplies, and therefore what the
+	// server actually acts on for this field.
+	Effective []string `json:"effective" validate:"required"`
+}
+
 type AdminUserDirectory struct {
+	// DirectoryID is the entry's unique, immutable identifier (the
+	// attribute named by ldap.id_attribute), and the anchor that survives a
+	// rename or a move between OUs. Empty when ldap.id_attribute is
+	// unconfigured, which leaves resolution on the DN-then-filter path.
+	DirectoryID string `json:"directory_id" validate:"required"`
+
 	// DN is the entry's distinguished name from the last successful read.
 	DN string `json:"dn" validate:"required"`
 
@@ -1206,6 +1285,13 @@ type LDAPProbeResponse struct {
 	// The login path refuses anything but exactly one.
 	Matched int `json:"matched"`
 
+	// IDAttribute echoes ldap.id_attribute and DirectoryID is what it
+	// resolved to on the matched entry — the value that would be stored as
+	// the re-anchoring identifier. Both empty when it is unconfigured, in
+	// which case Suggestions names a candidate the entry actually carries.
+	IDAttribute string `json:"id_attribute,omitempty"`
+	DirectoryID string `json:"directory_id,omitempty"`
+
 	Entry       *LDAPProbeEntry       `json:"entry,omitempty"`
 	Fields      []LDAPProbeField      `json:"fields,omitempty"`
 	Merge       []LDAPProbeMerge      `json:"merge,omitempty"`
@@ -1236,7 +1322,13 @@ type IdentityEchoStartResponse struct {
 // ClaimMappingResponse says which claim each configured field reads, so an
 // echo can be annotated against the configuration rather than printed raw.
 type ClaimMappingResponse struct {
+	// Subject names the claim the unique account identifier is read from,
+	// and is the one to check first: every other mapping can be wrong and
+	// be corrected later, while a subject claim that varies between logins
+	// forks the person's certificate history into a new account each time.
+	Subject         string `json:"subject,omitempty"`
 	Username        string `json:"username,omitempty"`
+	Name            string `json:"name,omitempty"`
 	Groups          string `json:"groups,omitempty"`
 	OtherAccounts   string `json:"other_accounts,omitempty"`
 	ServiceAccounts string `json:"service_accounts,omitempty"`

@@ -76,6 +76,7 @@ func fullFixtures() map[string]any {
 			Subject:         "9c1f0f8e-1d0a-4a37-9d1e-2f6a1b4c5d6e",
 			Username:        "alice",
 			Email:           "alice@example.org",
+			Name:            "Alice Ashworth",
 			Groups:          []string{"engineering", "sre"},
 			OtherAccounts:   []string{"alice.adm"},
 			ServiceAccounts: []string{"svc-deploy"},
@@ -245,8 +246,10 @@ func fullFixtures() map[string]any {
 			BaseDN:     "dc=example,dc=net",
 			FilterSent: "(&(objectClass=person)(uid=alice))",
 			Mode:       "template",
-			Attributes: []string{"*"},
-			Matched:    1,
+			Attributes:  []string{"*", "entryUUID"},
+			Matched:     1,
+			IDAttribute: "entryUUID",
+			DirectoryID: "8f14e45f-ea8f-4f2d-9c1b-3a7b5d2e6c40",
 			Entry: &webtypes.LDAPProbeEntry{
 				DN: "uid=alice,ou=People,dc=example,dc=net",
 				Attributes: []webtypes.LDAPProbeAttribute{{

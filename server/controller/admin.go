@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -337,6 +338,7 @@ func (a *adminController) listUsersHandler(g *gin.Context) {
 		summary := webtypes.AdminUserSummary{
 			ID:        u.ID,
 			Username:  u.Username,
+			Name:      u.DisplayName,
 			Email:     u.Email,
 			Subject:   u.Subject,
 			CreatedAt: u.CreatedAt,
@@ -424,6 +426,7 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 		Username: user.Username,
 		Email:    user.Email,
 		Subject:  user.Subject,
+		Name:     user.DisplayName,
 		// orEmpty, because these are declared validate:"required" on the wire
 		// type and typed string[] in the generated TypeScript. A user whose
 		// row carries no accounts decodes to a nil slice, which marshals as
@@ -445,6 +448,11 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 		Groups:                  groups,
 		Directory:               directory,
 		NotificationPreferences: preferences,
+
+		// Which of the OIDC values above the directory is currently
+		// replacing. Empty whenever directory is nil, since a frozen or
+		// absent directory record overrides nothing.
+		DirectoryOverrides: directoryOverrides(directory, otherAccounts, serviceAccounts, extraFields, user.DisplayName),
 	}
 
 	if user.DisabledAt != nil {
@@ -1288,9 +1296,25 @@ func (a *adminController) userStoredRecord(g *gin.Context, userID string) (
 		})
 	}
 
-	// No row means the user has never been enriched — LDAP disabled, or
-	// they have not logged in since it was switched on. That is an answer,
-	// not an error.
+	// With the directory switched off, everything it wrote is frozen:
+	// nothing refreshes the attributes, nothing re-reads the entry, and the
+	// server itself stops acting on any of it — a live session falls back
+	// to the OIDC values on its next request, and group fan-out drops the
+	// directory rows (see service.NotificationService.GroupRecipients).
+	//
+	// So the rows are reported as what they now are, which is absent. They
+	// are deliberately not deleted: switching the directory back on must
+	// restore the record without waiting for a sync pass, and a frozen
+	// snapshot is still worth having on disk. It is presenting it beside
+	// live data, with nothing to tell them apart, that would let someone
+	// grant access on a principal list that has not been true for months.
+	if !a.config.LDAP.Enabled {
+		return oidcOnly(groups), nil, preferences, nil
+	}
+
+	// No row means the user has never been enriched — they have not logged
+	// in since the directory was switched on, or their entry has never
+	// resolved. That is an answer, not an error.
 	var ldapRow model.UserLDAP
 	err := a.db.WithContext(ctx).First(&ldapRow, "user_id = ?", userID).Error
 	switch {
@@ -1313,6 +1337,7 @@ func (a *adminController) userStoredRecord(g *gin.Context, userID string) (
 	}
 
 	return groups, &webtypes.AdminUserDirectory{
+		DirectoryID:       ldapRow.DirectoryID,
 		DN:                ldapRow.DN,
 		Attributes:        attributes,
 		LastSeenAt:        ldapRow.LastSeenAt,
@@ -1320,4 +1345,114 @@ func (a *adminController) userStoredRecord(g *gin.Context, userID string) (
 		FirstMissingAt:    ldapRow.FirstMissingAt,
 		ConsecutiveMisses: ldapRow.ConsecutiveMisses,
 	}, preferences, nil
+}
+
+// oidcOnly drops the directory-sourced group rows, for the case where the
+// directory is switched off and they are frozen where the last sync left
+// them. The rows stay on disk; they simply stop being part of the answer.
+func oidcOnly(groups []webtypes.AdminUserGroup) []webtypes.AdminUserGroup {
+	out := make([]webtypes.AdminUserGroup, 0, len(groups))
+	for _, group := range groups {
+		if group.Source == string(model.GroupSourceOIDC) {
+			out = append(out, group)
+		}
+	}
+	return out
+}
+
+// directoryOverrides pairs each directory-supplied identity field with the
+// OIDC value it replaced, so the detail page can show both sides and say
+// which one the server acts on.
+//
+// Driven by what the directory actually stored rather than by what the
+// configuration declares: a configured field that has never resolved
+// overrides nothing, and reporting it as an override would send an operator
+// looking for a directory value that does not exist. directory is nil
+// whenever LDAP is off or the user has no row, and then nothing is
+// overridden at all.
+//
+// Groups are excluded because they are not an override: the two sources
+// persist side by side and the Groups list already names each row's source.
+func directoryOverrides(
+	directory *webtypes.AdminUserDirectory,
+	otherAccounts, serviceAccounts []string,
+	extraFields map[string]any,
+	displayName string,
+) []webtypes.AdminUserOverride {
+	out := []webtypes.AdminUserOverride{}
+	if directory == nil {
+		return out
+	}
+
+	// oidcSide is what the users row holds for one destination, in the
+	// list shape the wire type uses. The reserved names read their own
+	// column; anything else is an extra field, whose stored value is
+	// either a string or an array of them.
+	oidcSide := func(field string) []string {
+		switch field {
+		case config.LDAPFieldOtherAccounts:
+			return otherAccounts
+		case config.LDAPFieldServiceAccounts:
+			return serviceAccounts
+		case config.LDAPFieldName:
+			if displayName == "" {
+				return nil
+			}
+			return []string{displayName}
+		default:
+			return extraFieldValues(extraFields[field])
+		}
+	}
+
+	for _, field := range sortedKeys(directory.Attributes) {
+		if field == config.LDAPFieldGroups {
+			continue
+		}
+		out = append(out, webtypes.AdminUserOverride{
+			Field:     field,
+			OIDC:      orEmpty(oidcSide(field)),
+			Effective: orEmpty(directory.Attributes[field]),
+		})
+	}
+	return out
+}
+
+// sortedKeys gives map iteration a stable order, so the rendered list does
+// not reshuffle between requests.
+func sortedKeys(m map[string][]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+// extraFieldValues normalizes one stored extra field to a list. Extra
+// fields keep the shape their claim arrived in — a string or an array of
+// strings — and both read as a list here.
+func extraFieldValues(value any) []string {
+	switch v := value.(type) {
+	case nil:
+		return nil
+	case string:
+		if v == "" {
+			return nil
+		}
+		return []string{v}
+	case []string:
+		return v
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, e := range v {
+			if s, ok := e.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		// not covered: extra fields are decoded from the users row, whose
+		// values are only ever a string or an array of strings.
+		return nil
+	}
 }

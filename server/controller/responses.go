@@ -90,6 +90,7 @@ func newCurrentUserResponse(identity *service.Identity, c *config.Config, db any
 		Subject:         identity.Subject,
 		Username:        identity.Username,
 		Email:           identity.Email,
+		Name:            identity.DisplayName,
 		Groups:          orEmpty(identity.Groups),
 		OtherAccounts:   orEmpty(identity.OtherAccounts),
 		ServiceAccounts: orEmpty(identity.ServiceAccounts),

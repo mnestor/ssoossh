@@ -439,6 +439,8 @@ func newProbeResponse(result *service.ProbeResult) webtypes.LDAPProbeResponse {
 		Mode:                  string(result.Mode),
 		Attributes:            orEmpty(result.Attributes),
 		Matched:               result.Matched,
+		IDAttribute:           result.IDAttribute,
+		DirectoryID:           result.DirectoryID,
 		ElapsedMS:             int(result.Elapsed.Milliseconds()),
 		TimeoutMS:             int(result.Timeout.Milliseconds()),
 		TLSInsecureSkipVerify: result.TLSInsecureSkipVerify,

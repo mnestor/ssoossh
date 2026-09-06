@@ -66,12 +66,20 @@ type NotificationService struct {
 	// a no-op: no delivery handler is registered either, so a published
 	// event would sit unconsumed.
 	enabled bool
+
+	// ldapEnabled mirrors config.LDAPConfig.Enabled, and gates whether
+	// directory-sourced group rows count for fan-out. Switching the
+	// directory off freezes those rows where they are — nothing refreshes
+	// them and nothing removes them — so continuing to mail on them would
+	// route by membership that may be months out of date and that no
+	// operator can correct from inside the product. See GroupRecipients.
+	ldapEnabled bool
 }
 
 // NewNotificationService constructs the service. enabled comes from
-// config.MailConfig.Enabled.
-func NewNotificationService(db *gorm.DB, publisher message.Publisher, enabled bool) *NotificationService {
-	return &NotificationService{db: db, publisher: publisher, enabled: enabled}
+// config.MailConfig.Enabled and ldapEnabled from config.LDAPConfig.Enabled.
+func NewNotificationService(db *gorm.DB, publisher message.Publisher, enabled, ldapEnabled bool) *NotificationService {
+	return &NotificationService{db: db, publisher: publisher, enabled: enabled, ldapEnabled: ldapEnabled}
 }
 
 // Notify queues one notification and returns. It never blocks on the mail
@@ -587,8 +595,15 @@ type NotificationPreferenceProvider interface {
 }
 
 // GroupRecipients resolves the users a group-targeted notification should
-// reach: everyone recorded in groupName, from either capture source, who is
-// enabled and has an email address.
+// reach: everyone recorded in groupName who is enabled and has an email
+// address.
+//
+// Both capture sources count while the directory is on. With ldap.enabled
+// false only the OIDC rows do: the directory-sourced rows stop being
+// refreshed the moment the sync stops running, and a membership frozen at
+// whatever it was on the day LDAP was switched off is not something to
+// route mail by. They are left on disk rather than deleted, so switching
+// the directory back on restores them without a re-sync.
 //
 // This is the whole of group fan-out — a recipient resolver, not a new
 // subsystem — and it is what user_groups exists for. The rows are a
@@ -605,10 +620,15 @@ func (s *NotificationService) GroupRecipients(ctx context.Context, groupName str
 		return nil, nil
 	}
 
-	var users []model.User
-	err := s.db.WithContext(ctx).
+	query := s.db.WithContext(ctx).
 		Joins("JOIN user_groups ON user_groups.user_id = users.id").
-		Where("user_groups.group_name = ?", groupName).
+		Where("user_groups.group_name = ?", groupName)
+	if !s.ldapEnabled {
+		query = query.Where("user_groups.source = ?", model.GroupSourceOIDC)
+	}
+
+	var users []model.User
+	err := query.
 		// Disabled accounts are excluded: a disable removes fan-out
 		// eligibility, which is also why stale LDAP rows left behind by a
 		// vanished entry cost nothing once the disable lands.

@@ -2159,6 +2159,7 @@ func TestAdminGetUserHandler_ShouldReturnEverythingStoredForTheUser(t *testing.T
 
 	user := model.User{
 		ID: "u-alice", Subject: "sub-alice", Username: "alice", Email: "alice@example.com",
+		DisplayName:   "Alice Ashworth",
 		OtherAccounts: `["alice.adm"]`, ServiceAccounts: `[]`, ExtraFields: `{"employee_id":"E-1"}`,
 		CreatedAt: now, UpdatedAt: now,
 	}
@@ -2173,7 +2174,8 @@ func TestAdminGetUserHandler_ShouldReturnEverythingStoredForTheUser(t *testing.T
 	}
 	if err := db.Create(&model.UserLDAP{
 		UserID: user.ID, DN: "uid=alice,ou=People,dc=example,dc=net",
-		Attributes: `{"groups":["platform"],"other_accounts":["alice.adm"]}`,
+		DirectoryID: "8f14e45f-ea8f-4f2d-9c1b-3a7b5d2e6c40",
+		Attributes:  `{"groups":["platform"],"other_accounts":["alice.adm","alice.root"]}`,
 		LastSeenAt: &seen, LastSyncedAt: &now, FirstMissingAt: &missing,
 		ConsecutiveMisses: 2, CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
@@ -2188,6 +2190,9 @@ func TestAdminGetUserHandler_ShouldReturnEverythingStoredForTheUser(t *testing.T
 
 	cfg := &config.Config{}
 	cfg.Admin.RequireGroup = "ssh-admins"
+	// The directory has to be on for any of it to be reported: with it off
+	// the stored rows are frozen, and the handler says so by omitting them.
+	cfg.LDAP.Enabled = true
 	identity := &service.Identity{Subject: "sub-admin", Username: "admin", Groups: []string{"ssh-admins"}}
 	r := routerWithAuth(t, cfg, db, identity)
 
@@ -2225,6 +2230,32 @@ func TestAdminGetUserHandler_ShouldReturnEverythingStoredForTheUser(t *testing.T
 	}
 	if len(got.Directory.Attributes["groups"]) != 1 {
 		t.Errorf("directory attributes = %v, want the stored field map", got.Directory.Attributes)
+	}
+	if got.Directory.DirectoryID != "8f14e45f-ea8f-4f2d-9c1b-3a7b5d2e6c40" {
+		t.Errorf("directory_id = %q, want the stored re-anchoring identifier", got.Directory.DirectoryID)
+	}
+
+	if got.Name != "Alice Ashworth" {
+		t.Errorf("name = %q, want the stored display name", got.Name)
+	}
+
+	// The OIDC half is reported even where the directory wins, and the
+	// override says so explicitly: one field, both sides.
+	if len(got.DirectoryOverrides) != 1 {
+		t.Fatalf("directory_overrides = %+v, want the one overridden field", got.DirectoryOverrides)
+	}
+	override := got.DirectoryOverrides[0]
+	if override.Field != "other_accounts" {
+		t.Errorf("override field = %q, want other_accounts (groups are not an override)", override.Field)
+	}
+	if len(override.OIDC) != 1 || override.OIDC[0] != "alice.adm" {
+		t.Errorf("override oidc = %v, want the users-row value the directory replaced", override.OIDC)
+	}
+	if len(override.Effective) != 2 {
+		t.Errorf("override effective = %v, want the directory value the server acts on", override.Effective)
+	}
+	if len(got.OtherAccounts) != 1 || got.OtherAccounts[0] != "alice.adm" {
+		t.Errorf("other_accounts = %v, want the OIDC capture rather than the merged value", got.OtherAccounts)
 	}
 
 	if len(got.NotificationPreferences) != 1 || got.NotificationPreferences[0].Kind != "enrollment_expiring" {
@@ -2308,5 +2339,83 @@ func TestAdminGetUserHandler_ShouldReportWhatDisabledTheAccount(t *testing.T) {
 	decodeEnvelope(t, w.Body.Bytes(), &got)
 	if got.DisabledSource != string(model.DisabledSourceLDAPSync) {
 		t.Errorf("disabled_source = %q, want ldap_sync", got.DisabledSource)
+	}
+}
+
+// TestAdminGetUserHandler_ShouldWithholdTheDirectoryRecordWhenLDAPIsOff is
+// the whole of "switching the directory off must not leave stale data
+// looking live".
+//
+// The rows stay on disk — switching it back on has to restore the record
+// without waiting for a sync — but nothing in the running server acts on
+// them any more: the session identity falls back to the OIDC values on its
+// next request, and group fan-out drops the directory rows. Reporting them
+// here anyway would be the one place a stale principal list still looked
+// like a current one.
+func TestAdminGetUserHandler_ShouldWithholdTheDirectoryRecordWhenLDAPIsOff(t *testing.T) {
+	t.Parallel()
+
+	db := newTestDB(t)
+	now := time.Now().UTC().Truncate(time.Second)
+
+	user := model.User{
+		ID: "u-carol", Subject: "sub-carol", Username: "carol",
+		OtherAccounts: `["carol.adm"]`, ServiceAccounts: `[]`, ExtraFields: `{}`,
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := db.Create(&[]model.UserGroup{
+		{ID: "gc-1", UserID: user.ID, GroupName: "ssh-users", Source: model.GroupSourceOIDC, FirstSeenAt: now, LastSeenAt: now},
+		{ID: "gc-2", UserID: user.ID, GroupName: "platform", Source: model.GroupSourceLDAP, FirstSeenAt: now, LastSeenAt: now},
+	}).Error; err != nil {
+		t.Fatalf("seed groups: %v", err)
+	}
+	if err := db.Create(&model.UserLDAP{
+		UserID: user.ID, DN: "uid=carol,ou=People,dc=example,dc=net",
+		Attributes: `{"other_accounts":["carol.stale"]}`,
+		LastSeenAt: &now, LastSyncedAt: &now, CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed user_ldap: %v", err)
+	}
+
+	cfg := &config.Config{}
+	cfg.Admin.RequireGroup = "ssh-admins"
+	cfg.LDAP.Enabled = false
+	identity := &service.Identity{Subject: "sub-admin", Username: "admin", Groups: []string{"ssh-admins"}}
+	r := routerWithAuth(t, cfg, db, identity)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/users/u-carol", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want 200: %s", w.Code, w.Body.String())
+	}
+
+	var got webtypes.AdminUserDetail
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+
+	if got.Directory != nil {
+		t.Errorf("directory = %+v, want nil: the row is frozen and the server no longer acts on it", got.Directory)
+	}
+	if len(got.DirectoryOverrides) != 0 {
+		t.Errorf("directory_overrides = %+v, want none: a frozen record overrides nothing", got.DirectoryOverrides)
+	}
+	if len(got.Groups) != 1 {
+		t.Fatalf("groups = %+v, want only the OIDC membership", got.Groups)
+	}
+	if got.Groups[0].Source != "oidc" || got.Groups[0].Name != "ssh-users" {
+		t.Errorf("group = %+v, want the OIDC row", got.Groups[0])
+	}
+	// The rows are withheld from the answer, not deleted: switching the
+	// directory back on has to restore them without a re-sync.
+	var remaining int64
+	if err := db.Model(&model.UserGroup{}).
+		Where("user_id = ? AND source = ?", user.ID, model.GroupSourceLDAP).
+		Count(&remaining).Error; err != nil {
+		t.Fatalf("count ldap group rows: %v", err)
+	}
+	if remaining != 1 {
+		t.Errorf("ldap group rows on disk = %d, want 1: they are withheld, never deleted", remaining)
 	}
 }

@@ -119,7 +119,7 @@ func newNotificationFixtureWithSender(t *testing.T, sender *recordingSender) *no
 	<-router.Running()
 
 	return &notificationFixture{
-		svc:    NewNotificationService(db, channel, true),
+		svc:    NewNotificationService(db, channel, true, true),
 		db:     db,
 		sender: sender,
 		user:   user,

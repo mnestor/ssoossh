@@ -84,7 +84,7 @@ func TestGroupRecipients_ShouldApplyTheExclusionRules(t *testing.T) {
 	t.Parallel()
 
 	db := recipientsDB(t)
-	svc := NewNotificationService(db, nil, true)
+	svc := NewNotificationService(db, nil, true, true)
 
 	member := addUser(t, db, "alice", "alice@example.com", "", false)
 	addGroupRow(t, db, member.ID, "ops", model.GroupSourceOIDC)
@@ -113,7 +113,7 @@ func TestGroupRecipients_ShouldNotDoubleSendAcrossCaptureSources(t *testing.T) {
 	t.Parallel()
 
 	db := recipientsDB(t)
-	svc := NewNotificationService(db, nil, true)
+	svc := NewNotificationService(db, nil, true, true)
 
 	member := addUser(t, db, "alice", "alice@example.com", "", false)
 	addGroupRow(t, db, member.ID, "ops", model.GroupSourceOIDC)
@@ -131,7 +131,7 @@ func TestGroupRecipients_ShouldNotDoubleSendAcrossCaptureSources(t *testing.T) {
 func TestGroupRecipients_ShouldReturnNothingForAnEmptyName(t *testing.T) {
 	t.Parallel()
 
-	svc := NewNotificationService(recipientsDB(t), nil, true)
+	svc := NewNotificationService(recipientsDB(t), nil, true, true)
 
 	got, err := svc.GroupRecipients(t.Context(), "")
 	if err != nil {
@@ -146,7 +146,7 @@ func TestServiceAccountRecipients_ShouldMatchWholeElementsOnly(t *testing.T) {
 	t.Parallel()
 
 	db := recipientsDB(t)
-	svc := NewNotificationService(db, nil, true)
+	svc := NewNotificationService(db, nil, true, true)
 
 	addUser(t, db, "holder", "holder@example.com", `["deploy-bot","other-bot"]`, false)
 	addUser(t, db, "prefix", "prefix@example.com", `["deploy-bot-staging"]`, false)
@@ -169,7 +169,7 @@ func TestServiceAccountRecipients_ShouldSkipAnUnparseableRow(t *testing.T) {
 	t.Parallel()
 
 	db := recipientsDB(t)
-	svc := NewNotificationService(db, nil, true)
+	svc := NewNotificationService(db, nil, true, true)
 
 	addUser(t, db, "good", "good@example.com", `["deploy-bot"]`, false)
 	addUser(t, db, "corrupt", "corrupt@example.com", `oops "deploy-bot" oops`, false)
@@ -186,7 +186,7 @@ func TestServiceAccountRecipients_ShouldSkipAnUnparseableRow(t *testing.T) {
 func TestServiceAccountRecipients_ShouldReturnNothingForAnEmptyName(t *testing.T) {
 	t.Parallel()
 
-	svc := NewNotificationService(recipientsDB(t), nil, true)
+	svc := NewNotificationService(recipientsDB(t), nil, true, true)
 
 	got, err := svc.ServiceAccountRecipients(t.Context(), "")
 	if err != nil {
@@ -202,10 +202,10 @@ func TestServiceAccountRecipients_ShouldReturnNothingForAnEmptyName(t *testing.T
 func TestMailEnabled_ShouldMirrorTheConstructorFlag(t *testing.T) {
 	t.Parallel()
 
-	if !NewNotificationService(nil, nil, true).MailEnabled() {
+	if !NewNotificationService(nil, nil, true, true).MailEnabled() {
 		t.Error("MailEnabled() = false for a service built enabled")
 	}
-	if NewNotificationService(nil, nil, false).MailEnabled() {
+	if NewNotificationService(nil, nil, false, true).MailEnabled() {
 		t.Error("MailEnabled() = true for a service built disabled")
 	}
 }
@@ -227,7 +227,7 @@ func TestDiscardNotifications_ShouldBeSafeToCall(t *testing.T) {
 func TestNotify_ShouldAbsorbAPublishFailure(t *testing.T) {
 	t.Parallel()
 
-	svc := NewNotificationService(recipientsDB(t), failingPublisher{}, true)
+	svc := NewNotificationService(recipientsDB(t), failingPublisher{}, true, true)
 	svc.Notify(t.Context(), notify.KindServiceEnrollmentCreated, "user-1", &notify.ServiceEnrollmentCreated{})
 	svc.NotifyServiceAccount(t.Context(), notify.KindServiceEnrollmentRedeemed, "deploy-bot", &notify.ServiceEnrollmentRedeemed{})
 }
@@ -238,7 +238,7 @@ func TestEnabledFor_ShouldReportADatabaseFailure(t *testing.T) {
 	t.Parallel()
 
 	db := recipientsDB(t)
-	svc := NewNotificationService(db, nil, true)
+	svc := NewNotificationService(db, nil, true, true)
 
 	sqlDB, err := db.DB()
 	if err != nil {
