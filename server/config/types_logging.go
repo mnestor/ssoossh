@@ -18,7 +18,12 @@ type AppLogging struct {
 	// addition to size. The rest tune backup filename formatting and
 	// rotation at specific times. See the DeRuina/timberjack package for the
 	// per-field detail.
-	timberjack.Logger
+	//
+	// The squash tag is load-bearing: viper's decoder does not squash
+	// untagged embedded structs, so without it every rotation key here
+	// would have to be written under a `logger:` level nobody documents,
+	// and one written where the docs say to put it is silently dropped.
+	timberjack.Logger `mapstructure:",squash"`
 
 	// Level is the minimum log level: a level name (debug, info, warn,
 	// error, case-insensitive, optionally with a numeric +N or -N offset) or
@@ -55,7 +60,7 @@ type GenericLogging struct {
 	// logger, with the same keys and meanings as logging.* above. This
 	// destination is only split out of the main log once its filename is
 	// set; until then its records go to the general log.
-	timberjack.Logger
+	timberjack.Logger `mapstructure:",squash"`
 
 	// Level is the minimum log level for this destination, in the same form
 	// as logging.level.
@@ -78,7 +83,7 @@ type AccessLogging struct {
 	// Log-file rotation for the access log, via the embedded timberjack
 	// logger, with the same keys and meanings as logging.* above. The access
 	// log is only split into its own file once its filename is set.
-	timberjack.Logger
+	timberjack.Logger `mapstructure:",squash"`
 
 	// Level is the minimum log level for the access log, in the same form as
 	// logging.level. Requests are logged at INFO, client errors (4xx) at

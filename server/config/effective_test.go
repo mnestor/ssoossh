@@ -95,10 +95,18 @@ type SquashTagged struct {
 	Inner Inner `mapstructure:",squash"`
 }
 
-// SquashEmbedded squashes by embedding without a tag, the form the
-// timberjack logger and CertificateInfo arrive in.
-type SquashEmbedded struct {
+// EmbeddedUntagged embeds without a tag. Viper's decoder does not squash
+// such a field, so its keys sit under a level named for the embedded type
+// rather than in the parent's namespace.
+type EmbeddedUntagged struct {
 	Inner
+}
+
+// EmbeddedSquashed embeds with an explicit squash tag, the form the
+// timberjack logger takes so its rotation keys sit directly under
+// `logging:`.
+type EmbeddedSquashed struct {
+	Inner `mapstructure:",squash"`
 }
 
 // Skipping holds a field tagged out of the configuration entirely.
@@ -212,8 +220,13 @@ func TestEffectiveWalk(t *testing.T) {
 			want:  []Setting{{Key: "key", Value: "value"}},
 		},
 		{
-			name:  "should lift an untagged embedded struct into its parent",
-			input: &SquashEmbedded{Inner: Inner{Key: "value"}},
+			name:  "should nest an untagged embedded struct under its type name",
+			input: &EmbeddedUntagged{Inner: Inner{Key: "value"}},
+			want:  []Setting{{Key: "inner.key", Value: "value"}},
+		},
+		{
+			name:  "should lift a squash-tagged embedded struct into its parent",
+			input: &EmbeddedSquashed{Inner: Inner{Key: "value"}},
 			want:  []Setting{{Key: "key", Value: "value"}},
 		},
 		{

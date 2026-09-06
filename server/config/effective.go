@@ -245,18 +245,14 @@ func fieldKey(field reflect.StructField) (name string, squash, skip bool) {
 		return "", false, true
 	}
 
-	// An untagged embedded struct is squashed: viper's decoder sets
-	// Squash, which is why the timberjack logger's keys sit directly under
-	// `logging:` and CertificateInfo's under `http.tls:` rather than under
-	// a level named for the embedded type.
-	if name == "" && field.Anonymous {
-		return "", true, false
-	}
-
 	if name == "" {
-		// Untagged and named: mapstructure matches such a field
-		// case-insensitively against its own name, so the lowercased name
-		// is the key an operator would write.
+		// Untagged: mapstructure matches such a field case-insensitively
+		// against its own name, so the lowercased name is the key an
+		// operator would write. This holds for an embedded struct too --
+		// viper's decoder does not set Squash, so an untagged embed is a
+		// level named for its type, not a squashed one. Rendering it as
+		// squashed here is how the view came to show `logging.filename`
+		// as a key the decoder never actually read.
 		return strings.ToLower(field.Name), squash, false
 	}
 

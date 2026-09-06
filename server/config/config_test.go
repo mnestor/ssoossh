@@ -281,3 +281,108 @@ func TestNewConfig_ShouldAllowEmptySSHKeyForAPIMode(t *testing.T) {
 		t.Errorf("got SSHKey %q, want empty string for API mode", c.Signer.SSHKey)
 	}
 }
+
+// TestNewConfig_ShouldDecodeRotationKeysDirectlyUnderTheirLoggingBlock
+// pins the flat key shape every doc and the shipped defaults.yaml describe:
+// the timberjack rotation options belong to the logging block itself, not to
+// a level named for the embedded Go type. They only do so because each embed
+// carries `mapstructure:",squash"` -- viper's decoder does not squash an
+// untagged embedded struct, and without the tag a filename written where the
+// docs say to put it is discarded in silence, leaving the destination
+// unrouted and its effective-config row empty.
+func TestNewConfig_ShouldDecodeRotationKeysDirectlyUnderTheirLoggingBlock(t *testing.T) {
+	// Changes the process's working directory via t.Chdir, so it must not
+	// run in parallel with other tests that also rely on cwd.
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	writeFile(t, filepath.Join(dir, "ssoosshd.yaml"), `
+ssh_key: "test-key-material"
+logging:
+  filename: "/logs/app.log"
+  maxsize: 25
+db:
+  logging:
+    filename: "/logs/db.log"
+ldap:
+  logging:
+    filename: "/logs/ldap.log"
+audit:
+  logging:
+    filename: "/logs/audit.log"
+http:
+  access_logging:
+    filename: "/logs/access.log"
+mail:
+  logging:
+    filename: "/logs/mail.log"
+`)
+
+	c, err := NewConfig(newTestCommand())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	tests := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"main log", c.Logging.Filename, "/logs/app.log"},
+		{"database log", c.DB.Logging.Filename, "/logs/db.log"},
+		{"ldap log", c.LDAP.Logging.Filename, "/logs/ldap.log"},
+		{"audit log", c.Audit.Logging.Filename, "/logs/audit.log"},
+		{"access log", c.HTTP.AccessLogging.Filename, "/logs/access.log"},
+		{"mail log", c.Mail.Logging.Filename, "/logs/mail.log"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.got != tc.want {
+				t.Errorf("got filename %q, want %q", tc.got, tc.want)
+			}
+		})
+	}
+
+	// A second rotation key, to show the whole embedded group is reachable
+	// and not just the one field.
+	if c.Logging.MaxSize != 25 {
+		t.Errorf("got Logging.MaxSize %d, want 25", c.Logging.MaxSize)
+	}
+}
+
+// TestConfig_EffectiveShouldReportRotationKeysUnderTheirLoggingBlock keeps
+// the admin screen's key paths honest against the decoder. The two are
+// derived separately -- one by mapstructure, one by config.Effective's own
+// walk -- so a divergence shows up as a row an operator can copy into their
+// config file and have ignored.
+func TestConfig_EffectiveShouldReportRotationKeysUnderTheirLoggingBlock(t *testing.T) {
+	// Changes the process's working directory via t.Chdir, so it must not
+	// run in parallel with other tests that also rely on cwd.
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	writeFile(t, filepath.Join(dir, "ssoosshd.yaml"), `
+ssh_key: "test-key-material"
+ldap:
+  logging:
+    filename: "/logs/ldap.log"
+`)
+
+	c, err := NewConfig(newTestCommand())
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	var found bool
+	for _, s := range c.Effective() {
+		if s.Key == "ldap.logging.filename" {
+			found = true
+			if s.Value != "/logs/ldap.log" {
+				t.Errorf("got ldap.logging.filename %q, want %q", s.Value, "/logs/ldap.log")
+			}
+		}
+	}
+	if !found {
+		t.Error("expected ldap.logging.filename in the effective configuration, got no such key")
+	}
+}
