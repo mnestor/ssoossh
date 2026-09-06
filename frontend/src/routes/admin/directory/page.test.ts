@@ -323,6 +323,35 @@ describe('Directory admin page', () => {
 			);
 		});
 
+		it('should name the attribute the entry is anchored on', async () => {
+			signedInAsAdmin();
+			mockApi({
+				status: enabledStatus(),
+				probe: probeResult({
+					id_attribute: 'entryUUID',
+					directory_id: '8f14e45f-ea8f-4f2d-9c1b-3a7b5d2e6c40'
+				})
+			});
+			render(Page);
+
+			await userEvent.click(await screen.findByTestId('ldap-run-probe'));
+			expect(await screen.findByTestId('ldap-probe-identifier')).toHaveTextContent('entryUUID');
+		});
+
+		// Unset is the state worth naming, not a blank field: without an
+		// identifier a renamed entry cannot be re-anchored and reads as a
+		// deleted one.
+		it('should say what is lost when no identifier is configured', async () => {
+			signedInAsAdmin();
+			mockApi({ status: enabledStatus(), probe: probeResult({ id_attribute: '' }) });
+			render(Page);
+
+			await userEvent.click(await screen.findByTestId('ldap-run-probe'));
+			expect(await screen.findByTestId('ldap-probe-identifier')).toHaveTextContent(
+				'ldap.id_attribute'
+			);
+		});
+
 		it('should show every attribute the directory returned', async () => {
 			signedInAsAdmin();
 			mockApi({ status: enabledStatus() });

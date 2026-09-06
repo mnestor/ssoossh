@@ -66,9 +66,15 @@
 			testid="account-identity-card"
 		>
 			<dl data-testid="identity-fields">
+				{#if user.name}
+					<DetailRow label="Name" icon="user">{user.name}</DetailRow>
+				{/if}
 				<DetailRow label="Username" mono icon="user">{user.username}</DetailRow>
 				<DetailRow label="Email">{user.email || '—'}</DetailRow>
-				<DetailRow label="Subject" mono>{user.subject}</DetailRow>
+				<!-- The identifier the whole account is keyed by, from the claim
+				     authentication.fields.subject names. Not the username: that
+				     changes when someone is renamed. -->
+				<DetailRow label="Account identifier" mono>{user.subject}</DetailRow>
 				{#if user.extra}
 					{#each Object.entries(user.extra) as [name, value] (name)}
 						<div data-testid="extra-field-{name}">

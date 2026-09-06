@@ -73,6 +73,22 @@ describe('Account page', () => {
 			expect(await screen.findByText('sub-alice')).toBeInTheDocument();
 		});
 
+		it('should show the human-readable name', async () => {
+			mockFetch(aliceUser());
+			render(Page);
+			expect(await screen.findByText('Alice Ashworth')).toBeInTheDocument();
+		});
+
+		// A name is optional in every direction: an unconfigured claim, an
+		// absent one, and one of the wrong shape all store empty. The row is
+		// dropped rather than showing a blank field.
+		it('should omit the name row when nothing supplied one', async () => {
+			mockFetch(aliceUser({ name: '' }));
+			render(Page);
+			await screen.findByText('sub-alice');
+			expect(screen.queryByText('Name')).not.toBeInTheDocument();
+		});
+
 		it('should list every service account', async () => {
 			mockFetch(aliceUser());
 			render(Page);
@@ -204,3 +220,4 @@ describe('Account page', () => {
 		});
 	});
 });
+

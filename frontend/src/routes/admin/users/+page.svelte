@@ -66,6 +66,7 @@
 			<table class="w-full text-sm">
 				<thead>
 					<tr class="border-b border-border-subtle">
+						<th class="px-3 py-2 text-left font-semibold text-ink">Name</th>
 						<th class="px-3 py-2 text-left font-semibold text-ink">Username</th>
 						<th class="px-3 py-2 text-left font-semibold text-ink">Email</th>
 						<th class="px-3 py-2 text-left font-semibold text-ink">Status</th>
@@ -76,7 +77,11 @@
 				<tbody>
 					{#each users.users as user (user.id)}
 						<tr class="border-b border-border-subtle hover:bg-surface-muted">
-							<td class="px-3 py-2">{user.username}</td>
+							<!-- The name first, because an admin scanning this list is
+							     usually looking for a person rather than for an account
+							     name. Empty for anyone whose IdP sent no name claim. -->
+							<td class="px-3 py-2">{user.name || '—'}</td>
+							<td class="px-3 py-2 font-mono">{user.username}</td>
 							<td class="px-3 py-2 text-ink-muted">{user.email || '—'}</td>
 							<td class="px-3 py-2">
 								{#if user.disabled_at}
