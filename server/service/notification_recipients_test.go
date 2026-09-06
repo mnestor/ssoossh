@@ -24,7 +24,7 @@ func recipientsDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
 	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.User{}, &model.UserGroup{}, &model.NotificationPreference{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserGroup{}, &model.UserLDAP{}, &model.NotificationPreference{}); err != nil {
 		t.Fatalf("failed to migrate test tables: %v", err)
 	}
 	return db
@@ -159,6 +159,36 @@ func TestServiceAccountRecipients_ShouldMatchWholeElementsOnly(t *testing.T) {
 	}
 	if names := usernames(got); len(names) != 1 || names[0] != "holder" {
 		t.Errorf("ServiceAccountRecipients(deploy-bot) = %v, want only the enabled, addressed holder", names)
+	}
+}
+
+// The fan-out half of the bug the holders panel showed: a directory
+// deployment keeps the resolved accounts in user_ldap and leaves the claim
+// column as login found it, so resolving recipients from the claim column
+// alone sent an expiry reminder or a redemption notice to nobody at all.
+func TestServiceAccountRecipients_ShouldReachAHolderTheDirectoryNames(t *testing.T) {
+	t.Parallel()
+
+	db := recipientsDB(t)
+	svc := NewNotificationService(db, nil, true, true, false)
+
+	holder := addUser(t, db, "holder", "holder@example.com", `null`, false)
+	if err := db.Create(&model.UserLDAP{
+		UserID:     holder.ID,
+		DN:         "uid=holder,ou=people,dc=example,dc=com",
+		Attributes: `{"service_accounts":["deploy-bot"],"other_accounts":[]}`,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("failed to create the directory row: %v", err)
+	}
+
+	got, err := svc.ServiceAccountRecipients(t.Context(), "deploy-bot")
+	if err != nil {
+		t.Fatalf("ServiceAccountRecipients: %v", err)
+	}
+	if names := usernames(got); len(names) != 1 || names[0] != "holder" {
+		t.Errorf("ServiceAccountRecipients(deploy-bot) = %v, want the holder the directory names", names)
 	}
 }
 

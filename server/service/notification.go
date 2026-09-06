@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"time"
 
 	"github.com/ThreeDotsLabs/watermill"
@@ -670,123 +669,33 @@ func (s *NotificationService) GroupRecipients(ctx context.Context, groupName str
 // exactly the set of owners, resolved fresh at delivery rather than
 // captured when the event was published.
 //
-// # Matching a JSON column
-//
-// users.service_accounts is a JSON-encoded []string, and no portable SQL
-// expression indexes into it, so the match is done in two steps: the query
-// narrows on the quoted name as a substring, and the result is confirmed
-// by actually decoding each candidate. The LIKE alone would be wrong (it
-// cannot distinguish a name that is a prefix of another once quotes are
-// stripped by a malformed row) and the decode alone would be expensive
-// (every user row into Go on every redemption). Together they are exact
-// and cheap.
-//
-// It is still an unindexed scan, and a deployment with a very large user
-// table and a very hot redemption loop would want the same treatment
-// user_groups got: rows instead of JSON. Nothing needs it yet.
+// Who holds an account is answered by usersHoldingAccount, which reads the
+// same two places a session is rebuilt from: the OIDC claim on the users
+// row, with the directory sync's answer over the top. Resolving it here
+// against the claim column alone used to mean that in a directory
+// deployment -- where the claim column is routinely empty and user_ldap
+// carries the accounts -- an expiry reminder or a redemption notice for a
+// service code reached nobody at all.
 //
 // Accepted limitation, the same one GroupRecipients carries: fan-out
-// reaches only users who have logged in at least once, holding the
-// accounts they held at that login. The server never enumerates a
-// directory to email strangers.
+// reaches only users the server has a row for, which is those who have
+// logged in at least once or whom the directory sync has seen. The server
+// never enumerates a directory to email strangers.
 func (s *NotificationService) ServiceAccountRecipients(ctx context.Context, accountName string) ([]model.User, error) {
-	if accountName == "" {
-		return nil, nil
-	}
-
-	// The quotes are part of the pattern: they are what make this match a
-	// whole element of the JSON array rather than any substring of one.
-	quoted, err := json.Marshal(accountName)
-	if err != nil {
-		// not covered: json.Marshal cannot fail on a string.
-		return nil, fmt.Errorf("failed to encode service account %q: %w", accountName, err)
-	}
-
-	var candidates []model.User
-	err = s.db.WithContext(ctx).
-		Where("service_accounts LIKE ?", "%"+string(quoted)+"%").
-		// Disabled accounts are excluded, the same rule GroupRecipients
-		// applies: a disable removes fan-out eligibility.
-		Where("disabled_at IS NULL").
-		Where("email <> ''").
-		Find(&candidates).Error
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve the holders of service account %q: %w", accountName, err)
-	}
-
-	holders := make([]model.User, 0, len(candidates))
-	seen := make(map[string]bool, len(candidates))
-	for _, user := range candidates {
-		var accounts []string
-		if err := json.Unmarshal([]byte(user.ServiceAccounts), &accounts); err != nil {
-			// One unreadable row must not silence the notification for
-			// everyone else holding the account.
-			slog.WarnContext(ctx, "skipping a user whose service accounts do not parse",
-				"user_id", user.ID, "error", err)
-			continue
-		}
-		if slices.Contains(accounts, accountName) {
-			holders = append(holders, user)
-			seen[user.ID] = true
-		}
-	}
-
-	if !s.userAccountsAsService {
-		return holders, nil
-	}
-
-	// With cert_options.service.allow_user_accounts on, the account may be
-	// a person's own rather than a claimed one, and then the person is its
-	// holder. A separate query rather than a widened LIKE: username is an
-	// indexed column with an exact match, and other_accounts needs the same
-	// quoted-element treatment as above.
-	own, err := s.ownAccountHolders(ctx, accountName, string(quoted))
+	holdings, err := usersHoldingAccount(ctx, s.db, accountName, s.ldapEnabled, s.userAccountsAsService)
 	if err != nil {
 		return nil, err
 	}
-	for _, user := range own {
-		if !seen[user.ID] {
-			holders = append(holders, user)
-			seen[user.ID] = true
-		}
-	}
-	return holders, nil
-}
 
-// ownAccountHolders finds the users for whom accountName is one of their own
-// accounts: their username, or an entry in their other_accounts. quoted is
-// accountName as a JSON string, for the same whole-element LIKE prefilter
-// ServiceAccountRecipients uses on service_accounts.
-//
-// Same fan-out rules as everywhere else here: disabled accounts are
-// excluded and an address is required, since a recipient without one is not
-// a recipient.
-func (s *NotificationService) ownAccountHolders(ctx context.Context, accountName, quoted string) ([]model.User, error) {
-	var candidates []model.User
-	err := s.db.WithContext(ctx).
-		Where("username = ? OR other_accounts LIKE ?", accountName, "%"+quoted+"%").
-		Where("disabled_at IS NULL").
-		Where("email <> ''").
-		Find(&candidates).Error
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve the personal holders of account %q: %w", accountName, err)
-	}
-
-	holders := make([]model.User, 0, len(candidates))
-	for _, user := range candidates {
-		if user.Username == accountName {
-			holders = append(holders, user)
+	holders := make([]model.User, 0, len(holdings))
+	for _, holding := range holdings {
+		// Disabled accounts are excluded, the same rule GroupRecipients
+		// applies: a disable removes fan-out eligibility. A recipient
+		// without an address is not a recipient.
+		if holding.User.DisabledAt != nil || holding.User.Email == "" {
 			continue
 		}
-		var accounts []string
-		if err := json.Unmarshal([]byte(user.OtherAccounts), &accounts); err != nil {
-			slog.WarnContext(ctx, "skipping a user whose other accounts do not parse",
-				"user_id", user.ID, "error", err)
-			continue
-		}
-		if slices.Contains(accounts, accountName) {
-			holders = append(holders, user)
-		}
+		holders = append(holders, holding.User)
 	}
 	return holders, nil
 }

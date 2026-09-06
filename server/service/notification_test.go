@@ -74,7 +74,7 @@ func newNotificationFixtureWithSender(t *testing.T, sender *recordingSender) *no
 	t.Helper()
 
 	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.User{}, &model.NotificationPreference{}, &model.Enrollment{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserLDAP{}, &model.NotificationPreference{}, &model.Enrollment{}); err != nil {
 		t.Fatalf("failed to migrate test tables: %v", err)
 	}
 

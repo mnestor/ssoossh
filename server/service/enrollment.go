@@ -1054,9 +1054,11 @@ type AccountHolder struct {
 // who else can.
 //
 // The accepted limitation, the same one notification fan-out carries: this
-// reaches only users who have logged in at least once, holding the accounts
-// they held at that login. The server never enumerates a directory, so the
-// answer is "everyone known to have this", not "everyone who has this".
+// reaches only users the server has a row for, which is those who have
+// logged in at least once or whom the directory sync has seen, holding the
+// accounts that record last reported. The server never enumerates a
+// directory, so the answer is "everyone known to have this", not "everyone
+// who has this".
 func (s *EnrollmentService) ListAccountHolders(ctx context.Context, enrollmentID string, identity *Identity) (AccountHolders, error) {
 	var enrollment model.Enrollment
 	if err := s.db.WithContext(ctx).First(&enrollment, "id = ?", enrollmentID).Error; err != nil {
@@ -1079,82 +1081,30 @@ func (s *EnrollmentService) ListAccountHolders(ctx context.Context, enrollmentID
 
 // accountHolders resolves the holders of one account name. Split from the
 // lookup above so the authorization and the query stay separately
-// readable — and testable — rather than one long method.
+// readable -- and testable -- rather than one long method.
+//
+// The resolution itself is shared with notification fan-out
+// (usersHoldingAccount): the two must agree, because this panel tells a
+// reader who a redemption notice will reach.
 func (s *EnrollmentService) accountHolders(ctx context.Context, accountName string) ([]AccountHolder, error) {
-	if accountName == "" {
-		return []AccountHolder{}, nil
-	}
-
-	// The quotes are part of the pattern: they make this match a whole
-	// element of the stored JSON array rather than any substring of one.
-	// The LIKE is a prefilter and the decode below is the actual test, the
-	// same pairing NotificationService.ServiceAccountRecipients uses and
-	// for the same reason — the LIKE alone cannot be trusted and the decode
-	// alone would pull every user row into Go.
-	quoted, err := json.Marshal(accountName)
+	holdings, err := usersHoldingAccount(ctx, s.db, accountName,
+		s.config.LDAP.Enabled, s.config.CertOptions.Service.AllowUserAccounts)
 	if err != nil {
-		// not covered: json.Marshal cannot fail on a string.
-		return nil, fmt.Errorf("failed to encode service account %q: %w", accountName, err)
-	}
-	pattern := "%" + string(quoted) + "%"
-
-	q := s.db.WithContext(ctx).Model(&model.User{}).
-		Where("service_accounts LIKE ?", pattern)
-	// With allow_user_accounts on the account may be a person's own, and
-	// then the person holds it. Widened in the query rather than filtered
-	// afterwards so the scan stays one pass.
-	if s.config.CertOptions.Service.AllowUserAccounts {
-		q = q.Or("username = ?", accountName).
-			Or("other_accounts LIKE ?", pattern)
+		return nil, err
 	}
 
-	var candidates []model.User
-	if err := q.Order("username ASC").Find(&candidates).Error; err != nil {
-		return nil, fmt.Errorf("failed to resolve the holders of service account %q: %w", accountName, err)
-	}
-
-	holders := make([]AccountHolder, 0, len(candidates))
-	for _, user := range candidates {
-		claimed := storedListContains(ctx, user.ID, "service accounts", user.ServiceAccounts, accountName)
-		own := false
-		if s.config.CertOptions.Service.AllowUserAccounts {
-			own = user.Username == accountName ||
-				storedListContains(ctx, user.ID, "other accounts", user.OtherAccounts, accountName)
-		}
-		if !claimed && !own {
-			continue
-		}
+	holders := make([]AccountHolder, 0, len(holdings))
+	for _, holding := range holdings {
 		holders = append(holders, AccountHolder{
-			UserID:   user.ID,
-			Username: user.Username,
-			Name:     user.DisplayName,
-			Email:    user.Email,
-			Disabled: user.DisabledAt != nil,
-			// Claimed wins the label where a person has the account both
-			// ways: the claim is the stronger statement, and the page's
-			// "this is their own account" note would be misleading beside
-			// an account a claim also vouches for.
-			Own: own && !claimed,
+			UserID:   holding.User.ID,
+			Username: holding.User.Username,
+			Name:     holding.User.DisplayName,
+			Email:    holding.User.Email,
+			Disabled: holding.User.DisabledAt != nil,
+			Own:      holding.Own,
 		})
 	}
 	return holders, nil
-}
-
-// storedListContains reports whether a stored JSON string array holds name.
-// An unreadable column is a warning and a false rather than an error: one
-// bad row must not blank the whole holder list, exactly as it must not
-// silence a notification for everyone else.
-func storedListContains(ctx context.Context, userID, what, stored, name string) bool {
-	if stored == "" {
-		return false
-	}
-	var values []string
-	if err := json.Unmarshal([]byte(stored), &values); err != nil {
-		slog.WarnContext(ctx, "skipping a user whose stored accounts do not parse",
-			"user_id", userID, "field", what, "error", err)
-		return false
-	}
-	return slices.Contains(values, name)
 }
 
 // RetrievalPageSize bounds how many redemptions ListRetrievals returns.

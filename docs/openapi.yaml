@@ -4078,10 +4078,10 @@ paths:
         rather than to whoever approved it, so this is the only place that
         answers "who else has this".
 
-        Only users who have logged in at least once appear, holding the
-        accounts they held at that login: the server never enumerates a
-        directory, so this is everyone known to hold the account rather than
-        everyone who does.
+        Only users the server has a row for appear -- those who have logged in
+        at least once, or whom the directory sync has seen -- holding the accounts
+        that record last reported: the server never enumerates a directory, so this
+        is everyone known to hold the account rather than everyone who does.
 
         Visible to auditors and to the account's own holders.
       parameters:

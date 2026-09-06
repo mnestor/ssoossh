@@ -33,6 +33,7 @@ func newTestEnrollmentService(t *testing.T, svc *CertRequestService) *Enrollment
 	if err := svc.db.AutoMigrate(
 		&model.Certificate{},
 		&model.User{},
+		&model.UserLDAP{},
 		&model.EnrollmentRetrieval{},
 		&model.EnrollmentReassignment{},
 	); err != nil {
@@ -946,7 +947,7 @@ func TestListForAdmin(t *testing.T) {
 		})
 
 		// Migrate user models so we can load them
-		if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+		if err := svc.db.AutoMigrate(&model.User{}, &model.UserLDAP{}); err != nil {
 			t.Fatalf("failed to migrate users: %v", err)
 		}
 
@@ -972,7 +973,7 @@ func TestListForAdmin(t *testing.T) {
 		enrollment := newTestEnrollmentService(t, svc)
 
 		// Seed users with specific usernames
-		if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+		if err := svc.db.AutoMigrate(&model.User{}, &model.UserLDAP{}); err != nil {
 			t.Fatalf("failed to migrate users: %v", err)
 		}
 		user1 := model.User{
@@ -1044,7 +1045,7 @@ func TestListForAdmin(t *testing.T) {
 			CreatedAt: time.Now(),
 		})
 
-		if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+		if err := svc.db.AutoMigrate(&model.User{}, &model.UserLDAP{}); err != nil {
 			t.Fatalf("failed to migrate users: %v", err)
 		}
 
@@ -1157,7 +1158,7 @@ func TestListForAdmin_PagingWithSearch(t *testing.T) {
 	svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
 	enrollment := newTestEnrollmentService(t, svc)
 
-	if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+	if err := svc.db.AutoMigrate(&model.User{}, &model.UserLDAP{}); err != nil {
 		t.Fatalf("failed to migrate users: %v", err)
 	}
 
@@ -1251,7 +1252,7 @@ func TestListForAdmin_SearchFilteringPinnedToSQL(t *testing.T) {
 	svc := newTestCertRequestServiceWithConfig(t, auditorCfg)
 	enrollment := newTestEnrollmentService(t, svc)
 
-	if err := svc.db.AutoMigrate(&model.User{}); err != nil {
+	if err := svc.db.AutoMigrate(&model.User{}, &model.UserLDAP{}); err != nil {
 		t.Fatalf("failed to migrate users: %v", err)
 	}
 
@@ -1609,6 +1610,42 @@ func TestListAccountHolders(t *testing.T) {
 		}
 		if names := holderUsernames(got.Holders); !slices.Equal(names, []string{"alice", "bob"}) {
 			t.Errorf("holders = %v, want alice and bob, not carol", names)
+		}
+	})
+
+	// The panel showed nobody at all in a directory deployment: the sync
+	// writes the accounts it resolves to user_ldap and leaves the claim
+	// column as login found it, and this lookup read only the claim column.
+	t.Run("should list a holder the directory knows about", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+		svc.config.LDAP.Enabled = true
+
+		ownerID := seedAccountHolder(t, svc.db, "alice", `["svc-a"]`, `[]`, false)
+		bobID := seedAccountHolder(t, svc.db, "bob", `null`, `null`, false)
+		if err := svc.db.Create(&model.UserLDAP{
+			UserID:     bobID,
+			DN:         "uid=bob,ou=people,dc=example,dc=com",
+			Attributes: `{"service_accounts":["svc-a"],"other_accounts":[]}`,
+			CreatedAt:  time.Now(),
+			UpdatedAt:  time.Now(),
+		}).Error; err != nil {
+			t.Fatalf("failed to seed the directory row: %v", err)
+		}
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, ServiceAccount: "svc-a", KeyID: "key1",
+			ExpiresAt: time.Now().Add(time.Hour), CreatedAt: time.Now(),
+		})
+
+		got, err := enrollment.ListAccountHolders(context.Background(),
+			"enrollment1", &Identity{Subject: "sub-alice", ServiceAccounts: []string{"svc-a"}})
+		if err != nil {
+			t.Fatalf("ListAccountHolders() error = %v", err)
+		}
+		if names := holderUsernames(got.Holders); !slices.Equal(names, []string{"alice", "bob"}) {
+			t.Errorf("holders = %v, want the claimed holder and the directory one", names)
 		}
 	})
 

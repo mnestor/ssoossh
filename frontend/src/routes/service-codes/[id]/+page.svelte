@@ -7,7 +7,7 @@
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
 	import Icon from '$lib/components/Icon.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
+
 	import PageShell from '$lib/components/PageShell.svelte';
 	import ServiceCodeDetail from '$lib/components/ServiceCodeDetail.svelte';
 
@@ -94,11 +94,14 @@
 		{backLabel}
 	</a>
 
-	<PageHeading
-		eyebrow="Service code"
-		title={enrollment?.key_id || account || 'Service code'}
-		testid="service-code-heading"
-	/>
+	<!-- No visible heading: the key ID this used to repeat is a row in
+	     "What it hands out" a few lines below, and the identity strip and
+	     the account sentence under it already say what this page is. The
+	     h1 stays for anything reading the page as a document rather than
+	     looking at it. -->
+	<h1 class="sr-only" data-testid="service-code-heading">
+		Service code{enrollment?.key_id ? ` ${enrollment.key_id}` : ''}
+	</h1>
 
 	{#if loadError}
 		<Alert variant="error" title="Could not load this service code">{loadError}</Alert>
