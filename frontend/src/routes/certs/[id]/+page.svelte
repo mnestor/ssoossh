@@ -11,6 +11,7 @@
 	import Icon from '$lib/components/Icon.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import TypeChip from '$lib/components/TypeChip.svelte';
@@ -145,7 +146,7 @@
 
 <svelte:head><title>Certificate · ssoossh</title></svelte:head>
 
-<div class="flex w-full max-w-[600px] flex-col gap-5">
+<PageShell width="default">
 	<PageHeading eyebrow="Certificate" title="Details" />
 
 	{#if loadError}
@@ -406,4 +407,4 @@
 			{/if}
 		</div>
 	{/if}
-</div>
+</PageShell>

@@ -10,6 +10,7 @@
 	import CertDetailModal from '$lib/components/CertDetailModal.svelte';
 	import CertRow from '$lib/components/CertRow.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 
 	// Your recent decisions, newest first — there is deliberately no list of
 	// requests awaiting approval. A request has no owner until someone opens
@@ -117,7 +118,7 @@
 
 <svelte:head><title>Dashboard · ssoossh</title></svelte:head>
 
-<div class="flex w-full max-w-[680px] flex-col gap-5">
+<PageShell width="wide">
 	<PageHeading eyebrow="Activity" title="Recent decisions">
 		{#snippet action()}
 			<a
@@ -163,4 +164,4 @@
 	{#if modalCert}
 		<CertDetailModal cert={modalCert} onclosed={closeCertDetail} />
 	{/if}
-</div>
+</PageShell>

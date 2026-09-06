@@ -130,6 +130,39 @@ describe('AccountHoldersPanel', () => {
 
 	// The panel sits inside a dialog carrying everything else about the
 	// code; an unexpected shape must not take that down with it.
+	// The list is only as complete as the users table, and the panel has to
+	// say so where it is read: as a footnote under the answer rather than a
+	// preamble that reads as a reason to distrust the panel before there is
+	// anything on it.
+	it('should qualify the list with what it cannot know', async () => {
+		stubHolders([holder()]);
+
+		render(AccountHoldersPanel, { enrollmentId: 'enr-1', serviceAccount: 'svc-deploy' });
+
+		expect(await screen.findByTestId('account-holders-caveat')).toBeInTheDocument();
+	});
+
+	// "Nobody holds this" is the answer most in need of the caveat: it is
+	// the one a reader is likeliest to act on.
+	it('should qualify an empty list too', async () => {
+		stubHolders([]);
+
+		render(AccountHoldersPanel, { enrollmentId: 'enr-1', serviceAccount: 'svc-deploy' });
+
+		expect(await screen.findByTestId('account-holders-caveat')).toBeInTheDocument();
+	});
+
+	// A failed load has no list to qualify, and a caveat about completeness
+	// beside an error would read as though something had been listed.
+	it('should not qualify a list it failed to load', async () => {
+		stubStatus(500);
+
+		render(AccountHoldersPanel, { enrollmentId: 'enr-1', serviceAccount: 'svc-deploy' });
+
+		await screen.findByTestId('account-holders-error');
+		expect(screen.queryByTestId('account-holders-caveat')).not.toBeInTheDocument();
+	});
+
 	it('should render as empty when the response carries no holders array', async () => {
 		vi.stubGlobal(
 			'fetch',

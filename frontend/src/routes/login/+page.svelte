@@ -6,6 +6,7 @@
 	import Button from '$lib/components/Button.svelte';
 	import ConsentModal from '$lib/components/ConsentModal.svelte';
 	import Icon from '$lib/components/Icon.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 	import { isInternalPath } from '$lib/paths';
 	import { session } from '$lib/session.svelte';
 
@@ -35,14 +36,12 @@
 	<ConsentModal notice={branding.login_notice} onaccepted={() => (consentAccepted = true)} />
 {/if}
 
-<div
-	class="flex w-full flex-1 items-center justify-center {blocked
-		? 'pointer-events-none opacity-50 blur-[2px]'
-		: ''}"
->
+<PageShell width="focus" center>
 	<div
 		data-testid="login-view"
-		class="flex w-full max-w-[380px] flex-col items-center gap-[22px] text-center"
+		class="mx-auto flex w-full max-w-[380px] flex-col items-center gap-[22px] text-center {blocked
+			? 'pointer-events-none opacity-50 blur-[2px]'
+			: ''}"
 	>
 		<BrandMark size={40} strokeWidth={1.6} />
 
@@ -77,4 +76,4 @@
 
 		<p class="text-xs text-ink-muted">Trouble signing in? Contact your administrator.</p>
 	</div>
-</div>
+</PageShell>

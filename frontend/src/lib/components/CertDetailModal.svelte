@@ -114,9 +114,7 @@
 	aria-label="Certificate details"
 	class="modal-dialog z-50"
 >
-	<div
-		class="flex max-h-[88vh] w-full max-w-[600px] flex-col gap-[18px] overflow-y-auto rounded-xl border border-border-subtle bg-surface p-6 shadow-lg"
-	>
+	<div class="modal-panel">
 		<div class="flex items-center justify-between gap-3">
 			<TypeChip type={cert.type} />
 			<div class="flex items-center gap-2">

@@ -22,6 +22,10 @@
 	--color-accent: oklch(45% 0.06 200);
 	--color-accent-hover: oklch(38% 0.07 200);
 	--color-accent-ink: #ffffff;
+	/* A tint of the accent, for the ground under a selected rail item. Dark
+	   enough to read as chosen against the surface, light enough that the
+	   accent-coloured label on top of it keeps its contrast. */
+	--color-accent-wash: oklch(95% 0.018 200);
 
 	--color-granted: oklch(46% 0.08 155);
 	--color-granted-surface: oklch(95% 0.02 155);
@@ -74,6 +78,7 @@
 		--color-accent: oklch(72% 0.08 200);
 		--color-accent-hover: oklch(78% 0.07 200);
 		--color-accent-ink: oklch(18% 0.01 200);
+		--color-accent-wash: oklch(27% 0.03 200);
 
 		--color-granted: oklch(74% 0.1 155);
 		--color-granted-surface: oklch(27% 0.03 155);
@@ -130,6 +135,80 @@
 
 	.modal-dialog::backdrop {
 		background-color: rgb(0 0 0 / 0.55);
+	}
+
+	/* The panel inside a .modal-dialog.
+
+	   Stated once because three modals had the same twenty-class string, and
+	   a width that has to be changed in three files is a width that ends up
+	   different in three files.
+
+	   720px rather than the 600px they carried: these panels show key IDs
+	   and SHA256 fingerprints in a DetailRow, whose 140px label column left
+	   about 410px for the value. A fingerprint is 50 monospace characters
+	   and wrapped by two or three of them, which is the worst width there
+	   is — wide enough to look like it fits, narrow enough that it does
+	   not. */
+	.modal-panel {
+		display: flex;
+		width: 100%;
+		max-width: 720px;
+		max-height: 88vh;
+		flex-direction: column;
+		gap: 1.125rem;
+		overflow-y: auto;
+		border: 1px solid var(--color-border-subtle);
+		border-radius: 0.75rem;
+		background: var(--color-surface);
+		padding: 1.5rem;
+		box-shadow:
+			0 10px 15px -3px rgb(0 0 0 / 0.1),
+			0 4px 6px -4px rgb(0 0 0 / 0.1);
+	}
+
+	/* The shared look of a data table.
+
+	   Three admin screens each rolled their own: one used px-3 py-2 cells
+	   with bold sentence-case headers, another pr-4 with no horizontal
+	   padding at all, and the header treatment agreed with nothing else in
+	   the app. Stating it once means a fourth table inherits the answer
+	   rather than inventing a fifth.
+
+	   A component style rather than utilities because the rules reach
+	   descendants: every th and td of a table, without a class on each of a
+	   few hundred generated cells. A page can still override one property on
+	   one cell with a utility, which is why this sits in the components
+	   layer. */
+	.data-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.8125rem;
+	}
+
+	.data-table thead th {
+		padding: 0.5rem 0.75rem;
+		text-align: left;
+		font-family: var(--font-family-mono);
+		font-size: 0.625rem;
+		font-weight: 500;
+		letter-spacing: 0.09em;
+		text-transform: uppercase;
+		white-space: nowrap;
+		color: var(--color-ink-muted);
+		border-bottom: 1px solid var(--color-border-subtle);
+	}
+
+	.data-table tbody td {
+		padding: 0.5rem 0.75rem;
+		border-bottom: 1px solid var(--color-border-subtle);
+		/* Dates and counts line up down a column; a name that happens to
+		   contain a digit is unaffected, since the figures are the same
+		   width either way. */
+		font-variant-numeric: tabular-nums;
+	}
+
+	.data-table tbody tr:last-child td {
+		border-bottom: none;
 	}
 }
 

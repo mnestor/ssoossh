@@ -71,8 +71,7 @@
 	<p class="mb-2 text-[13px] text-ink-muted">
 		Everyone holding
 		{#if serviceAccount}<span class="font-mono">{serviceAccount}</span>{:else}this service account{/if}
-		can see and manage this code, whoever approved it. Only people who have signed in at least once are
-		listed: the server never reads a directory to find the rest.
+		can see and manage this code, whoever approved it.
 	</p>
 
 	{#if loadError}
@@ -84,6 +83,7 @@
 			Nobody who has signed in holds this account. Notifications about this code reach nobody unless
 			an address is set below.
 		</p>
+		{@render signInCaveat()}
 	{:else}
 		<dl class="divide-y divide-border-subtle">
 			{#each holders as holder (holder.user_id)}
@@ -117,5 +117,14 @@
 				</div>
 			{/each}
 		</dl>
+		{@render signInCaveat()}
 	{/if}
 </div>
+
+{#snippet signInCaveat()}
+	<p class="mt-2 text-[11px] text-ink-muted" data-testid="account-holders-caveat">
+		Only people who have signed in are listed. The server reads its own records, never the
+		directory, so somebody who holds this account and has not signed in yet is missing from this
+		list — and will appear the first time they do.
+	</p>
+{/snippet}

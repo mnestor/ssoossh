@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
+	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import Pager from '$lib/components/Pager.svelte';
 	import { getAdminUsers } from '$lib/api/endpoints';
@@ -67,11 +69,10 @@
 	onMount(loadUsers);
 </script>
 
-<div class="flex max-w-full flex-col gap-6">
-	<div>
-		<h1 class="text-2xl font-bold text-ink">Users</h1>
-		<p class="text-sm text-ink-muted">Directory of all users with disable controls</p>
-	</div>
+<PageShell width="full">
+	<PageHeading eyebrow="Admin" title="Users">
+		{#snippet sub()}Directory of all users, with disable controls.{/snippet}
+	</PageHeading>
 
 	<div class="flex flex-wrap items-end justify-between gap-4">
 		<div class="min-w-[240px] flex-1">
@@ -123,19 +124,19 @@
 	-->
 	{:else if users?.users?.length}
 		<div class="overflow-x-auto">
-			<table class="w-full text-sm">
+			<table class="data-table">
 				<thead>
-					<tr class="border-b border-border-subtle">
-						<th class="px-3 py-2 text-left font-semibold text-ink">Name</th>
-						<th class="px-3 py-2 text-left font-semibold text-ink">Username</th>
-						<th class="px-3 py-2 text-left font-semibold text-ink">Email</th>
-						<th class="px-3 py-2 text-left font-semibold text-ink">Status</th>
-						<th class="px-3 py-2 text-left font-semibold text-ink">Created</th>
+					<tr>
+						<th>Name</th>
+						<th>Username</th>
+						<th>Email</th>
+						<th>Status</th>
+						<th>Created</th>
 					</tr>
 				</thead>
 				<tbody>
 					{#each users.users as user (user.id)}
-						<tr class="border-b border-border-subtle hover:bg-surface-muted">
+						<tr class="hover:bg-surface-muted">
 							<!-- The name first, because an admin scanning this list is
 							     usually looking for a person rather than for an account
 							     name. Empty for anyone whose IdP sent no name claim.
@@ -143,27 +144,27 @@
 							     is what let the Action column go: a column holding one
 							     word per row cost more width than it earned, and names
 							     and emails are what actually need the space. -->
-							<td class="px-3 py-2">
+							<td>
 								<a
 									href={resolve(`/admin/users/${user.id}`)}
 									data-testid="user-link"
 									class="text-accent hover:underline">{user.name || '—'}</a
 								>
 							</td>
-							<td class="px-3 py-2 font-mono">
+							<td class="font-mono">
 								<a href={resolve(`/admin/users/${user.id}`)} class="text-accent hover:underline"
 									>{user.username}</a
 								>
 							</td>
-							<td class="px-3 py-2 text-ink-muted">{user.email || '—'}</td>
-							<td class="px-3 py-2">
+							<td class="text-ink-muted">{user.email || '—'}</td>
+							<td>
 								{#if user.disabled_at}
 									<span class="rounded bg-danger-surface px-2 py-1 text-danger">Disabled</span>
 								{:else}
 									<span class="rounded bg-granted-surface px-2 py-1 text-granted">Active</span>
 								{/if}
 							</td>
-							<td class="px-3 py-2 text-ink-muted">
+							<td class="text-ink-muted">
 								{new Date(user.created_at).toLocaleDateString()}
 							</td>
 						</tr>
@@ -178,4 +179,4 @@
 	{:else}
 		<div class="py-8 text-center text-ink-muted">No users found</div>
 	{/if}
-</div>
+</PageShell>

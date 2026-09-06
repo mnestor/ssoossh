@@ -7,6 +7,7 @@
 	import Alert from '$lib/components/Alert.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
 	import ServiceAccountRow from '$lib/components/ServiceAccountRow.svelte';
 	import ServiceCodeDetailModal from '$lib/components/ServiceCodeDetailModal.svelte';
@@ -184,7 +185,7 @@
 
 <svelte:head><title>Service codes · ssoossh</title></svelte:head>
 
-<div class="flex w-full max-w-[680px] flex-col gap-5">
+<PageShell width="wide">
 	{#if openAccount}
 		<button
 			type="button"
@@ -288,4 +289,4 @@
 			onclosed={closeDetail}
 		/>
 	{/if}
-</div>
+</PageShell>

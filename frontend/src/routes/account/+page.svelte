@@ -7,6 +7,7 @@
 	import DetailRow from '$lib/components/DetailRow.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
 
 	// Fetched here rather than read from the app-wide session store: this
@@ -52,7 +53,7 @@
 
 <svelte:head><title>Account · ssoossh</title></svelte:head>
 
-<div class="flex w-full max-w-[680px] flex-col gap-5">
+<PageShell width="default">
 	<PageHeading eyebrow="Account" title="Your account" />
 
 	{#if loadError}
@@ -172,4 +173,4 @@
 			{/if}
 		</Card>
 	{/if}
-</div>
+</PageShell>

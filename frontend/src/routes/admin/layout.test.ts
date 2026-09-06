@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/svelte';
+import { render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -10,9 +10,12 @@ import Layout from './+layout.svelte';
 // app-wide session singleton put into each state directly. The gate is
 // display-only (the server re-checks every read), but it decides whether a
 // signed-in non-auditor gets an explanation or a redirect loop, which is
-// worth pinning. The section tabs are pinned alongside it: which one reads
-// as current is the only thing about them a page can get wrong, and a
-// detail page is the case that used to leave the row with nothing marked.
+// worth pinning.
+//
+// The section tabs this layout used to own moved to the rail, and are
+// covered by AppRail.test.ts. What is pinned here instead is that they did
+// not come back: a layout that navigates as well as gates would put the
+// admin sections in two places that can disagree.
 
 vi.mock('$app/state', async () => {
 	const { fakePage } = await import('$lib/testing/page.svelte');
@@ -55,7 +58,6 @@ describe('admin layout', () => {
 		render(Layout, { children });
 
 		expect(screen.getByTestId('admin-child')).toBeInTheDocument();
-		expect(screen.getByText('Audit log')).toBeInTheDocument();
 		expect(screen.queryByTestId('admin-access-denied')).not.toBeInTheDocument();
 	});
 
@@ -71,61 +73,26 @@ describe('admin layout', () => {
 		expect(screen.queryByTestId('admin-child')).not.toBeInTheDocument();
 	});
 
-	it('should name every admin section in the tab row', () => {
+	// The rail names the sections now. A second copy here would be a second
+	// list to keep in step.
+	it('should not carry a navigation of its own', () => {
 		session.user = signedInUser(true);
 		session.resolved = true;
 
 		render(Layout, { children });
 
-		const tabs = screen.getByRole('navigation', { name: 'Admin sections' });
-		const labels = within(tabs)
-			.getAllByRole('link')
-			.map((link) => link.textContent?.trim());
-
-		expect(labels).toEqual([
-			'Users',
-			'Certificates',
-			'Service codes',
-			'Config',
-			'Directory',
-			'Claims echo',
-			'Audit log',
-			'Diagnostics'
-		]);
+		expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
 	});
 
-	it('should mark the section being viewed as the current page', () => {
+	// Each page states its own width through PageShell. A width here would
+	// be a second opinion wrapping the first.
+	it('should not impose a width on the page inside it', () => {
 		session.user = signedInUser(true);
 		session.resolved = true;
 
-		render(Layout, { children });
+		const { container } = render(Layout, { children });
 
-		expect(screen.getByRole('link', { name: 'Users' })).toHaveAttribute('aria-current', 'page');
-		expect(screen.getByRole('link', { name: 'Config' })).not.toHaveAttribute('aria-current');
-	});
-
-	// A detail page sits under its section rather than at it, and used to
-	// leave the whole row unmarked.
-	it('should keep a section current on a detail page beneath it', () => {
-		resetFakePage('http://localhost/admin/users/user-123');
-		session.user = signedInUser(true);
-		session.resolved = true;
-
-		render(Layout, { children });
-
-		expect(screen.getByRole('link', { name: 'Users' })).toHaveAttribute('aria-current', 'page');
-	});
-
-	// /admin/service-codes must not light up for /admin/service-codes-other,
-	// which a bare prefix match would.
-	it('should not mark a section whose route is only a prefix of the path', () => {
-		resetFakePage('http://localhost/admin/certificates-archive');
-		session.user = signedInUser(true);
-		session.resolved = true;
-
-		render(Layout, { children });
-
-		expect(screen.getByRole('link', { name: 'Certificates' })).not.toHaveAttribute('aria-current');
+		expect(container.querySelector('[class*="max-w-"]')).toBeNull();
 	});
 
 	it('should hold on a loading state while the session resolves', () => {

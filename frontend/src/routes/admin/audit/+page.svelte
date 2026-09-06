@@ -5,6 +5,8 @@
 	import { dedupeAuditEvents, visibleAuditEvents } from '$lib/audit';
 	import AuditTimeline from '$lib/components/AuditTimeline.svelte';
 	import Button from '$lib/components/Button.svelte';
+	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 
 	const pageSize = 50;
 
@@ -42,14 +44,13 @@
 	onMount(() => load(0));
 </script>
 
-<div class="flex max-w-full flex-col gap-6">
-	<div>
-		<h1 class="text-2xl font-bold text-ink">Audit Log</h1>
-		<p class="text-sm text-ink-muted">
+<PageShell width="full">
+	<PageHeading eyebrow="Admin" title="Audit log">
+		{#snippet sub()}
 			Recent administrative activity, newest first. This is a bounded cache of recent events kept
 			for this view; the shipped audit log is the archive, and searching happens there.
-		</p>
-	</div>
+		{/snippet}
+	</PageHeading>
 
 	{#if error}
 		<p class="text-sm text-danger" data-testid="audit-error">{error}</p>
@@ -77,4 +78,4 @@
 			{/if}
 		</div>
 	{/if}
-</div>
+</PageShell>

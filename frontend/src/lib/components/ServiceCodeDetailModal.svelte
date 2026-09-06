@@ -179,9 +179,7 @@
 	aria-label="Service code details"
 	class="modal-dialog z-50"
 >
-	<div
-		class="flex max-h-[88vh] w-full max-w-[600px] flex-col gap-[18px] overflow-y-auto rounded-xl border border-border-subtle bg-surface p-6 shadow-lg"
-	>
+	<div class="modal-panel">
 		<div class="flex items-center justify-between gap-3">
 			<TypeChip type="service" />
 			<div class="flex items-center gap-2">
@@ -226,14 +224,18 @@
 
 		<!-- The account leads, the way the decider leads on a certificate:
 		     everything else on the panel is a property of the grant made to
-		     this one account -- including who can see this panel at all. -->
+		     this one account.
+		     
+		     It used to close with "everyone with access to that account sees
+		     and manages this code", which is the same sentence the "Who has
+		     access" section below opens with. Said twice, four lines apart,
+		     it read as a warning rather than a fact. -->
 		<div class="flex gap-2.5 rounded-lg bg-surface-muted px-3.5 py-3 text-[13px] leading-normal">
 			<Icon name="user" size="sm" class="mt-px flex-shrink-0 text-ink-muted" />
 			<span>
 				Mints certificates for <strong class="font-mono" data-testid="service-code-account"
 					>{subject}</strong
-				>, its only principal, fixed at approval. Everyone with access to that account sees and
-				manages this code.
+				>, its only principal, fixed at approval.
 			</span>
 		</div>
 

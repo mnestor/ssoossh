@@ -5,8 +5,10 @@
 	import Alert from '$lib/components/Alert.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Card from '$lib/components/Card.svelte';
+	import CardGrid from '$lib/components/CardGrid.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 	import { session } from '$lib/session.svelte';
 
 	const isAdmin = $derived(session.user?.is_admin ?? false);
@@ -46,7 +48,7 @@
 	}
 </script>
 
-<div class="flex flex-col gap-6">
+<PageShell width="wide">
 	<PageHeading eyebrow="Admin" title="Diagnostics">
 		{#snippet action()}
 			{#if isAdmin}
@@ -82,8 +84,16 @@
 				</p>
 			{/if}
 
-			<div class="flex flex-col gap-4" data-testid="diagnostics-results">
-				{#each report.checks as check (check.id)}
+			<!-- A check's height is its findings list plus the remediation
+			     note when one is shown; a passing check is title and summary
+			     alone. -->
+			<CardGrid
+				testid="diagnostics-results"
+				items={report.checks}
+				weight={(check) =>
+					check.findings.length + (check.remediation && needsAttention(check) ? 3 : 0)}
+			>
+				{#snippet card(check)}
 					<Card>
 						<div class="flex items-start justify-between gap-4">
 							<div>
@@ -116,12 +126,12 @@
 							</div>
 						{/if}
 					</Card>
-				{/each}
-			</div>
+				{/snippet}
+			</CardGrid>
 		{:else if !error}
 			<p class="text-sm text-ink-muted">
 				Press <strong>Run checks</strong> to test this deployment.
 			</p>
 		{/if}
 	{/if}
-</div>
+</PageShell>

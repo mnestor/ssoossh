@@ -64,15 +64,22 @@
 	type="button"
 	{onclick}
 	data-testid={testid}
-	class="flex w-full items-center justify-between gap-4 rounded-[10px] border border-border-subtle bg-surface px-5 py-3.5 text-left transition hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+	class="flex w-full items-center justify-between gap-4 rounded-[10px] border border-border-subtle bg-surface px-4 py-3 text-left transition hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 >
-	<span class="flex min-w-0 items-center gap-3">
+	<span class="flex min-w-0 flex-1 items-center gap-3">
 		<TypeBadge type={cert.type} />
-		<span class="min-w-0">
+		<!-- Stacked on a narrow screen, three columns once the page is wide
+		     enough to hold them. A list of rows is the same five fields over
+		     and over, and stretching a stacked row only pushes the last field
+		     further from the first — aligning them into columns is what makes
+		     the extra width worth having. -->
+		<span
+			class="grid min-w-0 flex-1 gap-x-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1fr)] xl:items-baseline"
+		>
 			<span class="block truncate font-mono text-[13px]">{subject}</span>
-			<span class="mt-0.5 block text-xs text-ink-muted">{detail}</span>
+			<span class="mt-0.5 block truncate text-xs text-ink-muted xl:mt-0">{detail}</span>
 			{#if principals}
-				<span class="mt-px block truncate text-xs text-ink-muted">
+				<span class="mt-px block truncate text-xs text-ink-muted xl:mt-0">
 					principals: <span class="font-mono">{principals}</span>
 				</span>
 			{/if}

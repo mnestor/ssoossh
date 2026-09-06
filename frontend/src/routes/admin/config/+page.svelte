@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import CardGrid from '$lib/components/CardGrid.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import { getAdminConfig } from '$lib/api/endpoints';
 	import type { ConfigSection, ConfigSetting, EffectiveConfigResponse } from '$lib/api/types';
@@ -79,7 +81,7 @@
 	const setCount = $derived(all.filter((setting) => setting.value !== '').length);
 </script>
 
-<div class="flex w-full flex-col gap-5">
+<PageShell width="wide">
 	<PageHeading eyebrow="Admin" title="Server configuration" />
 
 	<p class="-mt-2 text-[13px] text-ink-muted">
@@ -121,8 +123,11 @@
 				No configuration key matches this filter.
 			</p>
 		{:else}
-			<div class="flex flex-col gap-2.5">
-				{#each sections as section (section.name)}
+			<!-- Weighted by how many settings a section carries: they run from
+			     one to over fifty, so balancing by section count alone would
+			     put a wall of keys beside almost nothing. -->
+			<CardGrid items={sections} weight={(section) => section.settings.length}>
+				{#snippet card(section)}
 					<section
 						data-testid="config-section"
 						class="rounded-[10px] border border-border-subtle bg-surface p-4"
@@ -158,8 +163,8 @@
 							{/each}
 						</dl>
 					</section>
-				{/each}
-			</div>
+				{/snippet}
+			</CardGrid>
 		{/if}
 	{/if}
-</div>
+</PageShell>

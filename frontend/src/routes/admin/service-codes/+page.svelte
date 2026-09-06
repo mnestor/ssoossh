@@ -7,6 +7,7 @@
 	import AdminServiceCodeDetailModal from '$lib/components/AdminServiceCodeDetailModal.svelte';
 	import Alert from '$lib/components/Alert.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 	import Pager from '$lib/components/Pager.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import ServiceCodeRow from '$lib/components/ServiceCodeRow.svelte';
@@ -92,7 +93,7 @@
 	<title>Service codes · Admin · ssoossh</title>
 </svelte:head>
 
-<div class="flex w-full max-w-[680px] flex-col gap-5">
+<PageShell width="wide">
 	<PageHeading eyebrow="Admin" title="Service enrollment codes" />
 
 	<p class="text-sm text-ink-muted">
@@ -147,4 +148,4 @@
 	{#if modalEnrollment}
 		<AdminServiceCodeDetailModal enrollment={modalEnrollment} {now} onclosed={closeDetail} />
 	{/if}
-</div>
+</PageShell>
