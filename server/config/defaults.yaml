@@ -82,6 +82,11 @@ logging:
   # a duration forcing rotation on a schedule in addition to size. The rest
   # tune backup filename formatting and rotation at specific times. See the
   # DeRuina/timberjack package for the per-field detail.
+  #
+  # The squash tag is load-bearing: viper's decoder does not squash untagged
+  # embedded structs, so without it every rotation key here would have to be
+  # written under a `logger:` level nobody documents, and one written where
+  # the docs say to put it is silently dropped.
   # The minimum log level: a level name (debug, info, warn, error,
   # case-insensitive, optionally with a numeric +N or -N offset) or a raw
   # numeric slog level such as -4, 0, 4, or 8. An unrecognized or empty value
