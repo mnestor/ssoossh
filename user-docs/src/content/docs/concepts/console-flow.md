@@ -227,6 +227,9 @@ matches the proxy matches everything.
   an approver may become `root`.
 - [sudo and su through PAM](/ssoossh/concepts/sudo-flow/) -- the four checks,
   and the same module in its other mode.
+- [Passwords, tokens, and pam_ssoossh](/ssoossh/concepts/pam-factors/) --
+  what this proves that a password does not, and where a hardware token
+  cannot reach.
 - [Host context](/ssoossh/internals/host-context/) -- every self-reported field
   and how far it travels.
 - [HTTP API](/ssoossh/reference/api/) -- `/api/certs/console` and the

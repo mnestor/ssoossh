@@ -149,6 +149,7 @@ certificates unattended after that.
 | A backup job or CI runner with no human present | [Service certificates](/ssoossh/concepts/service-certificates/) |
 | `sudo` and `su` on a host | [sudo and su through PAM](/ssoossh/concepts/sudo-flow/) |
 | A login at a serial console, BMC viewer, or VM console | [Console login](/ssoossh/concepts/console-flow/) |
+| How the PAM flows compare with passwords and hardware tokens | [Passwords, tokens, and pam_ssoossh](/ssoossh/concepts/pam-factors/) |
 | What holds all of it together | [Security model](/ssoossh/concepts/security-model/) |
 
 ## Related

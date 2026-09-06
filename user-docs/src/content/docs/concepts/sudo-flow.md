@@ -181,5 +181,8 @@ decline something that says something else.
   servers and clock skew.
 - [Console login](/ssoossh/concepts/console-flow/) -- the same module where
   there is no browser.
+- [Passwords, tokens, and pam_ssoossh](/ssoossh/concepts/pam-factors/) --
+  what this proves that a password does not, and where a hardware token
+  cannot reach.
 - [Host context](/ssoossh/internals/host-context/) -- every field above, and
   how far each one travels.
