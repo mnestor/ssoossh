@@ -1,16 +1,19 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { ApiError } from '$lib/api/client';
 	import { getAdminEnrollmentDetail, type AdminEnrollmentDetail } from '$lib/api/endpoints';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
+	import AdminServiceCodeDetail from '$lib/components/AdminServiceCodeDetail.svelte';
 	import Alert from '$lib/components/Alert.svelte';
-	import AdminServiceCodeDetailModal from '$lib/components/AdminServiceCodeDetailModal.svelte';
+	import Icon from '$lib/components/Icon.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 
-	// One enrollment, addressed by id. This is where an operator lands with
-	// an id copied out of a notification email, an enrollment.* audit event,
-	// or a server log line.
+	// One enrollment, addressed by id. This is where an operator lands from
+	// the list, and where they land with an id copied out of a notification
+	// email, an enrollment.* audit event, or a server log line.
 	//
 	// It reads the detail endpoint, which resolves any enrollment. It used
 	// to ask the list endpoint for a thousand rows and search them in the
@@ -20,6 +23,8 @@
 	let detail = $state<AdminEnrollmentDetail | null>(null);
 	let loadError = $state<string | null>(null);
 	let hasLoaded = $state(false);
+
+	const listHref = resolve('/admin/service-codes');
 
 	$effect(() => {
 		const controller = new AbortController();
@@ -56,12 +61,6 @@
 
 		return () => controller.abort();
 	});
-
-	function handleClosed() {
-		// Back to wherever the reader came from, which for a pasted link is
-		// out of the app rather than to the list.
-		history.back();
-	}
 </script>
 
 <svelte:head>
@@ -69,6 +68,18 @@
 </svelte:head>
 
 <PageShell width="default">
+	<!-- Always the list, whatever route reached this page: it is the one
+	     place every code is, and an operator who arrived from a log line was
+	     nowhere before this. -->
+	<a
+		href={listHref}
+		data-testid="admin-service-code-back"
+		class="-mb-2 inline-flex w-fit items-center gap-1 text-sm text-accent transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+	>
+		<Icon name="chevron-left" size="xs" />
+		All service codes
+	</a>
+
 	<PageHeading eyebrow="Admin" title="Service code details" />
 
 	{#if loadError}
@@ -79,6 +90,6 @@
 		<!-- The detail is handed over rather than fetched again: the
 		     endpoint is audited, so a second read would write two
 		     admin.enrollment_viewed events for one look. -->
-		<AdminServiceCodeDetailModal enrollment={detail.enrollment} {detail} onclosed={handleClosed} />
+		<AdminServiceCodeDetail {detail} onexpired={() => goto(listHref)} />
 	{/if}
 </PageShell>

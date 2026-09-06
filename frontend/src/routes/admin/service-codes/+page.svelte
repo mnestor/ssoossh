@@ -1,10 +1,8 @@
 <script lang="ts">
-	import { pushState } from '$app/navigation';
-	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
 	import { listAdminEnrollments } from '$lib/api/endpoints';
 	import type { AdminEnrollment } from '$lib/api/types';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
-	import AdminServiceCodeDetailModal from '$lib/components/AdminServiceCodeDetailModal.svelte';
 	import Alert from '$lib/components/Alert.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
@@ -48,36 +46,6 @@
 
 		return () => controller.abort();
 	});
-
-	// Both the pushed state and the search parameter, like the holder-facing
-	// page: the state is what a click records, and the parameter is what a
-	// pasted link arrives with.
-	const modalEnrollmentId = $derived(
-		'modalEnrollmentId' in page.state
-			? page.state.modalEnrollmentId
-			: page.url.searchParams.get('modal')
-	);
-
-	const modalEnrollment = $derived(enrollments.find((e) => e.id === modalEnrollmentId));
-
-	function navigate(id: string | null) {
-		const url = new URL(page.url);
-		if (id) {
-			url.searchParams.set('modal', id);
-		} else {
-			url.searchParams.delete('modal');
-		}
-		// Shallow-route within this same page (a query parameter), not a
-		// navigation to a different route id — resolve() is for the latter.
-		// eslint-disable-next-line svelte/no-navigation-without-resolve
-		pushState(url, { ...page.state, modalEnrollmentId: id });
-	}
-
-	// Closing records an explicit null rather than an absent key: an absent
-	// one falls back to the search parameter, which on a page reached by a
-	// pasted link would reopen what was just closed.
-	const openDetail = (id: string) => navigate(id);
-	const closeDetail = () => navigate(null);
 
 	function onSearch(query: string) {
 		searchQuery = query;
@@ -132,7 +100,7 @@
 				<ServiceCodeRow
 					{enrollment}
 					{now}
-					onclick={() => openDetail(enrollment.id)}
+					href={resolve(`/admin/service-codes/${enrollment.id}`)}
 					testid="enrollment-row"
 				/>
 			{/each}
@@ -141,11 +109,5 @@
 		{#if meta}
 			<Pager {meta} onpage={onPageChange} testid="enrollments-pager" />
 		{/if}
-	{/if}
-
-	<!-- The row click pushed the state and nothing rendered the panel, so
-	     opening a code did nothing at all. -->
-	{#if modalEnrollment}
-		<AdminServiceCodeDetailModal enrollment={modalEnrollment} {now} onclosed={closeDetail} />
 	{/if}
 </PageShell>

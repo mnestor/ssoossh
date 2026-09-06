@@ -7,7 +7,7 @@ import type {
 	EnrollmentRetrievalsResponse,
 	ServiceEnrollment
 } from '$lib/api/types';
-import ServiceCodeDetailModal from './ServiceCodeDetailModal.svelte';
+import ServiceCodeDetail from './ServiceCodeDetail.svelte';
 
 const now = new Date('2026-08-22T12:00:00Z');
 
@@ -45,10 +45,10 @@ function json(data: unknown): Response {
 	});
 }
 
-/** mockRetrievals stubs the two fetches the panel makes on open: the
- * retrieval log, and the account's holders. Routed by URL rather than
- * answered with one body, because a single stub handed the holders panel
- * the retrieval envelope and it had no holders in it.
+/** mockRetrievals stubs the two fetches the page makes: the retrieval log,
+ * and the account's holders. Routed by URL rather than answered with one
+ * body, because a single stub handed the holders panel the retrieval
+ * envelope and it had no holders in it.
  *
  * `total` defaults to the page length — the untruncated case. */
 function mockRetrievals(
@@ -82,22 +82,22 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 
-describe('ServiceCodeDetailModal', () => {
+describe('ServiceCodeDetail', () => {
 	it('should show the short form of the enrollment id', () => {
 		mockRetrievals([]);
-		render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
 		expect(screen.getByText('enr-1')).toBeInTheDocument();
 	});
 
 	it('should label the id rather than prefixing it with a bare hash', () => {
 		mockRetrievals([]);
-		render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
 		expect(screen.getByTitle('enr-1234-5678')).toHaveTextContent(/^ID/);
 	});
 
 	it('should name the account the code mints for', () => {
 		mockRetrievals([]);
-		render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
 
 		// Scoped to the element that names the account rather than matching
 		// the text anywhere: the account appears in the key ID beneath it
@@ -107,107 +107,108 @@ describe('ServiceCodeDetailModal', () => {
 
 	it('should show the lifetime of the certificates it hands out', () => {
 		mockRetrievals([]);
-		render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
 		expect(screen.getByText('1h')).toBeInTheDocument();
 	});
 
 	it('should say certificates last until the code expires when no lifetime is reported', () => {
 		mockRetrievals([]);
 		const row = enrollment({ certificate_valid_seconds: undefined });
-		render(ServiceCodeDetailModal, { enrollment: row, now, onclosed: vi.fn() });
+		render(ServiceCodeDetail, { enrollment: row, now });
 		expect(screen.getByText('until the code expires')).toBeInTheDocument();
 	});
 
 	it('should show the key id fixed at approval', () => {
 		mockRetrievals([]);
-		render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
 		expect(screen.getByText('svc-deploy/req-1')).toBeInTheDocument();
 	});
 
 	it('should show the fingerprint of the bound keypair', () => {
 		mockRetrievals([]);
-		render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
 		expect(screen.getByText('SHA256:abc')).toBeInTheDocument();
 	});
 
 	it('should show the granted extensions', () => {
 		mockRetrievals([]);
-		render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
 		expect(screen.getByText('permit-pty')).toBeInTheDocument();
 	});
 
 	it('should show the forced command', () => {
 		mockRetrievals([]);
-		render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
 		expect(screen.getByText('/usr/local/bin/deploy')).toBeInTheDocument();
 	});
 
 	it('should show the source address restriction', () => {
 		mockRetrievals([]);
-		render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
 		expect(screen.getByText('198.51.100.0/24')).toBeInTheDocument();
 	});
 
 	it('should say when no options were fixed at approval', () => {
 		mockRetrievals([]);
 		const row = enrollment({ options: { extensions: [], no_touch_required: false } });
-		render(ServiceCodeDetailModal, { enrollment: row, now, onclosed: vi.fn() });
+		render(ServiceCodeDetail, { enrollment: row, now });
 		expect(screen.getByText(/No extensions or restrictions/)).toBeInTheDocument();
 	});
 
 	it('should report when the code stops working', () => {
 		mockRetrievals([]);
-		render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
 		expect(screen.getByText(/expires in/)).toBeInTheDocument();
 	});
 
 	it('should report an expired code as already expired', () => {
 		mockRetrievals([]);
 		const row = enrollment({ expires_at: '2026-08-21T12:00:00Z' });
-		render(ServiceCodeDetailModal, { enrollment: row, now, onclosed: vi.fn() });
+		render(ServiceCodeDetail, { enrollment: row, now });
 		expect(screen.getByText('Expired')).toBeInTheDocument();
 	});
 
-	// The whole reason the panel exists is that the code cannot be shown.
+	// Retiring a code the reader holds. An expired one needs no control: the
+	// outcome it would produce is already true.
+	it('should offer to retire a code that still works', () => {
+		mockRetrievals([]);
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
+		expect(screen.getByTestId('expire-code')).toBeInTheDocument();
+	});
+
+	it('should not offer to retire a code that has already expired', () => {
+		mockRetrievals([]);
+		const row = enrollment({ expires_at: '2026-08-21T12:00:00Z' });
+		render(ServiceCodeDetail, { enrollment: row, now });
+		expect(screen.queryByTestId('expire-code')).not.toBeInTheDocument();
+	});
+
+	// The whole reason the page exists is that the code cannot be shown.
 	it('should never render an enrollment code', () => {
 		mockRetrievals([]);
 		const row = { ...enrollment(), ...({ code: 'super-secret-code' } as object) };
-		render(ServiceCodeDetailModal, { enrollment: row, now, onclosed: vi.fn() });
+		render(ServiceCodeDetail, { enrollment: row, now });
 		expect(screen.queryByText(/super-secret-code/)).not.toBeInTheDocument();
 	});
 
 	describe('the retrieval log', () => {
 		it('should list each redemption', async () => {
-			mockRetrievals([
-				{
-					retrieved_at: '2026-08-22T10:00:00Z',
-					source_ip: '203.0.113.9',
-					certificate_serial: '42',
-					succeeded: true
-				}
-			]);
-			render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+			mockRetrievals([aRedemption()]);
+			render(ServiceCodeDetail, { enrollment: enrollment(), now });
 			expect(await screen.findByText('203.0.113.9')).toBeInTheDocument();
 		});
 
 		// A redemption that passed code validation but failed at signing is
 		// still worth surfacing: someone held the code.
 		it('should mark a redemption that failed at signing', async () => {
-			mockRetrievals([
-				{
-					retrieved_at: '2026-08-22T10:00:00Z',
-					source_ip: '203.0.113.9',
-					certificate_serial: '42',
-					succeeded: false
-				}
-			]);
-			render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+			mockRetrievals([aRedemption({ succeeded: false })]);
+			render(ServiceCodeDetail, { enrollment: enrollment(), now });
 			expect(await screen.findByText('Failed')).toBeInTheDocument();
 		});
 
 		it('should say so when the code has never been retrieved', async () => {
 			mockRetrievals([]);
-			render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+			render(ServiceCodeDetail, { enrollment: enrollment(), now });
 			expect(await screen.findByText('Never retrieved.')).toBeInTheDocument();
 		});
 
@@ -215,37 +216,33 @@ describe('ServiceCodeDetailModal', () => {
 		// redemption. Saying nothing would let it read as though it were.
 		it('should say what it is showing a slice of when the log is truncated', async () => {
 			mockRetrievals([aRedemption()], 8760);
-			render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+			render(ServiceCodeDetail, { enrollment: enrollment(), now });
 			expect(await screen.findByText(/1 most recent of 8760 redemptions/)).toBeInTheDocument();
 		});
 
 		it('should not claim truncation when the whole log fits', async () => {
 			mockRetrievals([aRedemption()]);
-			render(ServiceCodeDetailModal, { enrollment: enrollment(), now, onclosed: vi.fn() });
+			render(ServiceCodeDetail, { enrollment: enrollment(), now });
 			await screen.findByText('203.0.113.9');
 			expect(screen.queryByText(/most recent of/)).not.toBeInTheDocument();
 		});
 	});
-	// The address is the one thing on this panel that can be changed, and it
+
+	// The address is the one thing on this page that can be changed, and it
 	// exists for the cases fan-out cannot serve: an account whose holders have
 	// never logged in reaches nobody.
 	describe('the notification address', () => {
 		it('should say who hears about the code when no address is set', () => {
 			mockRetrievals([]);
-			render(ServiceCodeDetailModal, {
-				enrollment: enrollment({ notification_email: '' }),
-				now,
-				onclosed: vi.fn()
-			});
+			render(ServiceCodeDetail, { enrollment: enrollment({ notification_email: '' }), now });
 			expect(screen.getByText(/go to everyone with access to/)).toBeInTheDocument();
 		});
 
 		it('should show the address when one is set', () => {
 			mockRetrievals([]);
-			render(ServiceCodeDetailModal, {
+			render(ServiceCodeDetail, {
 				enrollment: enrollment({ notification_email: 'deploys@example.com' }),
-				now,
-				onclosed: vi.fn()
+				now
 			});
 			expect(screen.getByTestId('notification-email-input')).toHaveValue('deploys@example.com');
 		});
@@ -254,10 +251,9 @@ describe('ServiceCodeDetailModal', () => {
 		// button cannot fire a no-op PATCH.
 		it('should disable saving until the address changes', async () => {
 			mockRetrievals([]);
-			render(ServiceCodeDetailModal, {
+			render(ServiceCodeDetail, {
 				enrollment: enrollment({ notification_email: 'deploys@example.com' }),
-				now,
-				onclosed: vi.fn()
+				now
 			});
 			expect(screen.getByTestId('notification-email-save')).toBeDisabled();
 
@@ -265,7 +261,7 @@ describe('ServiceCodeDetailModal', () => {
 			expect(screen.getByTestId('notification-email-save')).toBeEnabled();
 		});
 
-		// The panel renders what the server stored, not the draft: the server
+		// The page renders what the server stored, not the draft: the server
 		// trims, so echoing the input back would show whitespace it does not hold.
 		it('should report the address the server stored', async () => {
 			const fetchMock = vi.fn(() =>
@@ -278,12 +274,9 @@ describe('ServiceCodeDetailModal', () => {
 			);
 			vi.stubGlobal('fetch', fetchMock);
 
-			const onchanged = vi.fn();
-			render(ServiceCodeDetailModal, {
+			render(ServiceCodeDetail, {
 				enrollment: enrollment({ notification_email: '', certificate_request_id: undefined }),
-				now,
-				onnotificationemailchanged: onchanged,
-				onclosed: vi.fn()
+				now
 			});
 
 			await userEvent.type(
@@ -294,7 +287,6 @@ describe('ServiceCodeDetailModal', () => {
 
 			expect(await screen.findByTestId('notification-email-saved')).toBeInTheDocument();
 			expect(screen.getByTestId('notification-email-input')).toHaveValue('deploys@example.com');
-			expect(onchanged).toHaveBeenCalledWith('deploys@example.com');
 		});
 
 		// A refusal has to be visible: silently failing would leave the reader
@@ -312,10 +304,9 @@ describe('ServiceCodeDetailModal', () => {
 				)
 			);
 
-			render(ServiceCodeDetailModal, {
+			render(ServiceCodeDetail, {
 				enrollment: enrollment({ notification_email: '', certificate_request_id: undefined }),
-				now,
-				onclosed: vi.fn()
+				now
 			});
 
 			await userEvent.type(screen.getByTestId('notification-email-input'), 'nope');

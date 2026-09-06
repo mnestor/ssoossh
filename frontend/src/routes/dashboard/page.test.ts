@@ -1,23 +1,8 @@
 import { render, screen } from '@testing-library/svelte';
-import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
 import type { CertificateListResponse } from '$lib/api/types';
-import { resetFakePage } from '$lib/testing/page.svelte';
 import Page from './+page.svelte';
-
-// $app/state and $app/navigation are replaced with a reactive fake so the
-// shallow-routing flow (click a row, modal opens) is exercised for real.
-// See src/lib/testing/page.svelte.ts for why the fake refuses to update
-// page.url.
-vi.mock('$app/state', async () => {
-	const { fakePage } = await import('$lib/testing/page.svelte');
-	return { page: fakePage };
-});
-vi.mock('$app/navigation', async () => {
-	const { fakePushState } = await import('$lib/testing/page.svelte');
-	return { pushState: fakePushState };
-});
 
 /** mockFetch stubs the global fetch with a response body and status. */
 function mockFetch(response: object, status = 200) {
@@ -41,10 +26,6 @@ function mockFetchError(message = 'network error') {
 		vi.fn(() => Promise.reject(new Error(message)))
 	);
 }
-
-beforeEach(() => {
-	resetFakePage('http://localhost/dashboard');
-});
 
 afterEach(() => {
 	vi.unstubAllGlobals();
@@ -139,7 +120,10 @@ describe('Dashboard page', () => {
 		expect(screen.getByText('Loading…')).toBeInTheDocument();
 	});
 
-	describe('the certificate detail modal', () => {
+	// A row is a link to the certificate's own page. It used to open a
+	// dialog over the list, which could not be reloaded, linked to, or left
+	// with the browser's own Back.
+	describe('the rows', () => {
 		beforeEach(() => {
 			const response: CertificateListResponse = {
 				certificates: [
@@ -158,40 +142,13 @@ describe('Dashboard page', () => {
 			mockFetch(response);
 		});
 
-		// Regression: this flow was wired through the ?modal= search
-		// parameter, but SvelteKit's pushState never reassigns page.url — so
-		// the row updated the address bar and nothing else, and the modal
-		// never opened.
-		it('should open the modal when a row is activated', async () => {
+		it('should link a row to the certificate it is about', async () => {
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
-			await userEvent.click(screen.getByRole('button', { name: /key-1/ }));
-			expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
-		});
-
-		it('should close the modal when Close is used', async () => {
-			render(Page);
-			await new Promise((resolve) => setTimeout(resolve, 0));
-			await userEvent.click(screen.getByRole('button', { name: /key-1/ }));
-			await userEvent.click(screen.getByRole('button', { name: 'Close' }));
-			expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
-		});
-
-		it('should open the modal named by a pasted ?modal= link', async () => {
-			resetFakePage('http://localhost/dashboard?modal=cert-1');
-			render(Page);
-			await new Promise((resolve) => setTimeout(resolve, 0));
-			expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
-		});
-
-		// The search parameter stays in page.url after closing, so a close
-		// that only cleared state would be undone on the next recompute.
-		it('should stay closed after closing a modal that arrived by link', async () => {
-			resetFakePage('http://localhost/dashboard?modal=cert-1');
-			render(Page);
-			await new Promise((resolve) => setTimeout(resolve, 0));
-			await userEvent.click(screen.getByRole('button', { name: 'Close' }));
-			expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
+			expect(screen.getByRole('link', { name: /key-1/ })).toHaveAttribute(
+				'href',
+				'/certs/cert-1?from=dashboard'
+			);
 		});
 	});
 });

@@ -10,26 +10,14 @@ declare global {
 		// interface PageData {}
 		interface PageState {
 			/**
-			 * The certificate whose detail modal is open, carried through
+			 * The service account whose codes are listed, carried through
 			 * shallow routing. Null means "explicitly closed", which is
-			 * distinct from absent: absent falls back to the ?modal= search
-			 * parameter so a pasted link opens the certificate it names.
-			 */
-			modalCertId?: string | null;
-
-			/**
-			 * The service enrollment whose detail modal is open, on the same
-			 * terms as modalCertId. A separate key rather than a shared one
-			 * because the two lists hold different things: a shared key would
-			 * let a ?modal= id from one page resolve against the other.
-			 */
-			modalEnrollmentId?: string | null;
-
-			/**
-			 * The service account whose codes are listed, on the same terms as
-			 * modalEnrollmentId. The service codes page is a drill-down --
-			 * accounts, then that account's codes, then one code -- and this is
-			 * the middle level.
+			 * distinct from absent: absent falls back to the ?account= search
+			 * parameter so a pasted link opens the account it names.
+			 *
+			 * The only shallow-routed level left. Certificates and service
+			 * codes each have a page of their own now, so opening one is an
+			 * ordinary navigation and nothing about it lives in page state.
 			 */
 			accountName?: string | null;
 		}

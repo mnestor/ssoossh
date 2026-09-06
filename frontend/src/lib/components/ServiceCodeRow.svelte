@@ -12,7 +12,12 @@
 		enrollment: ServiceEnrollment;
 		/** Pinned clock, so a list of rows agrees with itself and tests can fix it. */
 		now?: Date;
-		onclick: () => void;
+		/**
+		 * Where the row leads. A link rather than a button because opening a
+		 * code is a navigation to its own page, and only a link gives a reader
+		 * middle-click, ctrl-click and "copy link address".
+		 */
+		href: string;
 		/** Optional test ID for identifying this row in tests. */
 		testid?: string;
 		/**
@@ -23,7 +28,7 @@
 		showAccount?: boolean;
 	}
 
-	let { enrollment, now = new Date(), onclick, testid, showAccount = true }: Props = $props();
+	let { enrollment, now = new Date(), href, testid, showAccount = true }: Props = $props();
 
 	// Service enrollments carry a single principal by construction. The join
 	// covers a row that somehow says otherwise, and the fallback one whose
@@ -67,11 +72,14 @@
 	);
 </script>
 
-<button
-	type="button"
-	{onclick}
+<!-- eslint-disable svelte/no-navigation-without-resolve --
+     This file's one link is the row itself, and its href comes in already
+     resolved from whoever renders the list. Resolving it a second time here
+     would double the base path. -->
+<a
+	{href}
 	data-testid={testid}
-	class="flex w-full items-center justify-between gap-4 rounded-[10px] border border-border-subtle bg-surface px-5 py-3.5 text-left transition hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+	class="flex w-full items-center justify-between gap-4 rounded-[10px] border border-border-subtle bg-surface px-5 py-3.5 text-left text-ink no-underline transition hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 >
 	<span class="flex min-w-0 items-center gap-3">
 		<TypeBadge type="service" />
@@ -97,4 +105,4 @@
 			Active
 		</span>
 	{/if}
-</button>
+</a>

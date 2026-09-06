@@ -20,6 +20,27 @@
 
 	const id = $derived(page.params.id ?? '');
 
+	// Where the reader came from, so the chip at the top of the page returns
+	// them to the list they opened this from rather than to one they were
+	// never on. Read from `from`, and only ever resolved against these three:
+	// the parameter is a hint written by our own links, not a destination to
+	// follow because a URL said so.
+	//
+	// A certificate reached from a notification or an audit line carries no
+	// `from` and falls back to the reader's own history, which is the list
+	// that holds their certificates.
+	const backTargets = {
+		history: { route: '/logs/me', label: 'Certificate history' },
+		dashboard: { route: '/dashboard', label: 'Recent decisions' },
+		admin: { route: '/admin/certificates', label: 'All certificates' }
+	} as const;
+	const back = $derived.by(() => {
+		const from = page.url.searchParams.get('from') ?? '';
+		return from in backTargets
+			? backTargets[from as keyof typeof backTargets]
+			: backTargets.history;
+	});
+
 	let cert = $state<CertificateResponse | null>(null);
 	let loadError = $state<string | null>(null);
 	let isAccessDenied = $state(false);
@@ -147,6 +168,15 @@
 <svelte:head><title>Certificate · ssoossh</title></svelte:head>
 
 <PageShell width="default">
+	<a
+		href={resolve(back.route)}
+		data-testid="cert-back"
+		class="-mb-2 inline-flex w-fit items-center gap-1 text-sm text-accent transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+	>
+		<Icon name="chevron-left" size="xs" />
+		{back.label}
+	</a>
+
 	<PageHeading eyebrow="Certificate" title="Details" />
 
 	{#if loadError}
@@ -394,7 +424,7 @@
 						{#if cert.enrollment_id}
 							<DetailRow label="Service code">
 								<a
-									href="{resolve('/service-codes')}?modal={cert.enrollment_id}"
+									href={resolve(`/service-codes/${cert.enrollment_id}`)}
 									class="inline-flex items-center gap-1.5 text-accent underline-offset-2 hover:underline"
 								>
 									View the code this came from

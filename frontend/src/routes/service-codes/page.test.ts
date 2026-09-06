@@ -51,9 +51,8 @@ function deployCode(overrides: Partial<ServiceEnrollment> = {}): ServiceEnrollme
 	};
 }
 
-/** mockFetch answers the enrollment list with `enrollments`, /users/me with
- * the accounts the identity holds, and any other call — the panel's
- * retrieval log — with an empty log.
+/** mockFetch answers the enrollment list with `enrollments` and /users/me
+ * with the accounts the identity holds.
  *
  * heldAccounts defaults to the accounts on the codes, which is the ordinary
  * case; a test passes it explicitly to cover an account with no codes, or an
@@ -68,14 +67,7 @@ function mockFetch(enrollments: ServiceEnrollment[], heldAccounts?: string[]) {
 		vi.fn((input: RequestInfo | URL) => {
 			const url = String(input);
 			let body: unknown = { enrollments };
-			if (url.includes('/retrievals')) {
-				body = { retrievals: [] };
-			} else if (url.includes('/holders')) {
-				// The panel resolves who else holds the account. Empty here:
-				// these cases are about the code, and the holders panel has
-				// its own tests.
-				body = { service_account: 'svc-deploy', holders: [] };
-			} else if (url.includes('/users/me')) {
+			if (url.includes('/users/me')) {
 				body = { service_accounts };
 			}
 			return Promise.resolve(
@@ -202,31 +194,19 @@ describe('Service codes page', () => {
 		});
 	});
 
+	// A code is a page of its own now, /service-codes/[id]: the panel it
+	// used to open over this list could not be reloaded, linked to, or left
+	// with the browser's own Back. What the page then shows is that page's
+	// to test; this list's job is to address it.
 	describe('when a code is opened', () => {
-		it('should show the details behind it', async () => {
+		it("should link the row to the code's own page", async () => {
 			mockFetch([deployCode()]);
 			render(Page);
 			await openAccount();
-			await userEvent.click(await screen.findByText('svc-deploy/req-1'));
-			expect(await screen.findByText('SHA256:abc123')).toBeInTheDocument();
-		});
-
-		it('should show the options fixed at approval', async () => {
-			mockFetch([deployCode()]);
-			render(Page);
-			await openAccount();
-			await userEvent.click(await screen.findByText('svc-deploy/req-1'));
-			expect(await screen.findByText('permit-pty')).toBeInTheDocument();
-			expect(screen.getByText('/usr/local/bin/deploy')).toBeInTheDocument();
-			expect(screen.getByText('198.51.100.0/24')).toBeInTheDocument();
-		});
-
-		it('should show the redemption log', async () => {
-			mockFetch([deployCode()]);
-			render(Page);
-			await openAccount();
-			await userEvent.click(await screen.findByText('svc-deploy/req-1'));
-			expect(await screen.findByText('Never retrieved.')).toBeInTheDocument();
+			expect(await screen.findByTestId('service-code-row')).toHaveAttribute(
+				'href',
+				'/service-codes/enr-1'
+			);
 		});
 	});
 

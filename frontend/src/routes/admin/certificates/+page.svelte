@@ -184,31 +184,29 @@
 	{:else}
 		<div data-testid="cert-list" class="flex flex-col gap-2.5">
 			{#each certificates as cert (cert.id)}
-				<a href={resolve(`/certs/${cert.id}`)}>
-					<CertRow
-						cert={{
-							...cert,
-							decided_by_outcome: cert.decided_by_outcome || undefined,
-							decided_by_subject: cert.decided_by_subject || undefined,
-							decided_by_username: cert.decided_by_username || undefined,
-							decided_by_email: cert.decided_by_email || undefined,
-							decided_by_groups: cert.decided_by_groups || [],
-							decided_by_other_accounts: cert.decided_by_other_accounts || [],
-							decided_by_service_accounts: cert.decided_by_service_accounts || [],
-							decided_source_ip: cert.decided_source_ip || undefined,
-							decided_user_agent: cert.decided_user_agent || undefined,
-							decided_accept_language: cert.decided_accept_language || undefined,
-							decided_forwarded_for: cert.decided_forwarded_for || undefined,
-							decided_at: cert.decided_at || undefined,
-							retrieved_source_ip: cert.retrieved_source_ip || undefined,
-							retrieved_at: cert.retrieved_at || undefined,
-							enrollment_id: cert.enrollment_id || undefined
-						}}
-						event="certificate issued"
-						testid="cert-row"
-						onclick={() => {}}
-					/>
-				</a>
+				<CertRow
+					cert={{
+						...cert,
+						decided_by_outcome: cert.decided_by_outcome || undefined,
+						decided_by_subject: cert.decided_by_subject || undefined,
+						decided_by_username: cert.decided_by_username || undefined,
+						decided_by_email: cert.decided_by_email || undefined,
+						decided_by_groups: cert.decided_by_groups || [],
+						decided_by_other_accounts: cert.decided_by_other_accounts || [],
+						decided_by_service_accounts: cert.decided_by_service_accounts || [],
+						decided_source_ip: cert.decided_source_ip || undefined,
+						decided_user_agent: cert.decided_user_agent || undefined,
+						decided_accept_language: cert.decided_accept_language || undefined,
+						decided_forwarded_for: cert.decided_forwarded_for || undefined,
+						decided_at: cert.decided_at || undefined,
+						retrieved_source_ip: cert.retrieved_source_ip || undefined,
+						retrieved_at: cert.retrieved_at || undefined,
+						enrollment_id: cert.enrollment_id || undefined
+					}}
+					event="certificate issued"
+					testid="cert-row"
+					href={`${resolve(`/certs/${cert.id}`)}?from=admin`}
+				/>
 			{/each}
 		</div>
 	{/if}

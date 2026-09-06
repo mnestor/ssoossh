@@ -150,4 +150,17 @@ describe('admin service code detail page', () => {
 
 		expect(await screen.findByText('Could not load enrollment')).toBeInTheDocument();
 	});
+
+	// Always the list, whatever reached the page: an operator who arrived
+	// with an id out of a log line was nowhere before this.
+	it('should offer a way back to the list', async () => {
+		stubDetail(adminEnrollment('enr-1'));
+
+		render(Page);
+
+		expect(screen.getByTestId('admin-service-code-back')).toHaveAttribute(
+			'href',
+			'/admin/service-codes'
+		);
+	});
 });
