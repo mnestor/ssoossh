@@ -23,6 +23,7 @@ LDAP is enrichment, never a requirement. If directory data is available a user g
 | [`ldap.fields.<name>.searches[].base_dn`](#fieldsnamesearchesbase_dn) | string | `empty` |
 | [`ldap.fields.<name>.searches[].filter`](#fieldsnamesearchesfilter) | string | `empty` |
 | [`ldap.fields.<name>.searches[].value`](#fieldsnamesearchesvalue) | string | `empty` |
+| [`ldap.id_attribute`](#id_attribute) | string | `empty` |
 | [`ldap.group_name_attribute`](#group_name_attribute) | string | `empty` |
 | [`ldap.sync.interval`](/ssoossh/reference/config/ldap/sync/#interval) | duration | `15m` |
 | [`ldap.sync.disable_after`](/ssoossh/reference/config/ldap/sync/#disable_after) | duration | `45m` |
@@ -112,11 +113,11 @@ ldap:
 
 Maps destinations to the directory sources that populate them, mirroring OAuthFields with attribute names instead of claim names.
 
-The reserved names are other_accounts, service_accounts and groups. Any other key is an extra template field, captured into the same contract as OAuthFields.Extra: reachable as {{.Extra.&lt;name>}}, stored empty when absent, and never a reason for login to fail. There is no separate extra sub-map; LDAP enrichment is extra by definition.
+The reserved names are other_accounts, service_accounts, groups and name. Any other key is an extra template field, captured into the same contract as OAuthFields.Extra: reachable as {{.Extra.&lt;name>}}, stored empty when absent, and never a reason for login to fail. There is no separate extra sub-map; LDAP enrichment is extra by definition.
 
 The merge rule is per field: a configured LDAP field (any attribute or searches) wins over the OIDC value, and an unconfigured one leaves the OIDC value untouched. Override rather than union, because union makes it impossible to retire a stale principal from only one source. Groups are the exception — both sources persist side by side.
 
-username, email and subject are rejected here: the subject keys the user row, the username is what lookups are keyed by, and the OIDC email claim is the source of truth for users.email.
+username, email and subject are rejected here: the subject keys the user row, the username is what lookups are keyed by, and the OIDC email claim is the source of truth for users.email. The person's display name is not in that set — see the name destination above.
 
 A bare string in YAML is shorthand for `attribute: <string>`.
 
@@ -193,6 +194,23 @@ ldap:
     <name>:
       searches:
         - value: uid
+```
+
+## `id_attribute`
+
+`string`, default `empty`
+
+Names the attribute holding the entry's unique, immutable identifier, and is what makes a directory rename survivable. Empty (the default) keeps the DN-then-filter resolution described below.
+
+Every directory has one under a different name: entryUUID on OpenLDAP and 389 Directory Server (RFC 4530), objectGUID on Active Directory, ipaUniqueID on FreeIPA. None of them is guessable from the others, so there is no useful default beyond off.
+
+With it set, the sync resolves an entry by ID first, falling back to the stored DN and then to user_filter. That ordering is the point: a DN changes when someone moves between OUs and user_filter stops matching when they are renamed, so without an ID a rename looks exactly like a deletion and walks the account toward the sync.disable_after auto-disable. The ID is read at login, stored on user_ldap.directory_id, and never used for authorization.
+
+Binary-valued attributes (objectGUID) are stored as their hex form, which is also how they must be written in a filter.
+
+```yaml
+ldap:
+  id_attribute: entryUUID
 ```
 
 ## `group_name_attribute`

@@ -414,9 +414,37 @@ authentication:
   # token. Username is the only required field; the rest are empty by default,
   # meaning "not populated from OIDC".
   fields:
+    # Names the claim holding the unique, immutable account identifier — the
+    # value users.subject is keyed by, and the only thing that ties a person to
+    # their certificate history across logins.
+    #
+    # It defaults to "sub" because that is what OIDC guarantees to be stable per
+    # issuer, but not every provider's "sub" is the identifier an operator
+    # wants: Entra ID issues a per-application "sub" and puts the tenant-stable
+    # one in "oid", and a provider fronting an upstream directory may carry the
+    # directory's own UUID in a private claim. Username and email are
+    # deliberately not candidates — both change when a person is renamed or
+    # married, and keying on either silently forks their history into a second
+    # account.
+    #
+    # Changing this on a running deployment re-keys every login: users whose row
+    # was written under the old claim will no longer match and will be created
+    # fresh. Choose it before the first login, not after.
+    subject: "sub"
     # Names the claim holding the local account username, e.g.
     # "preferred_username". Required.
+    #
+    # This is the account name on target systems — the default certificate
+    # principal — not an identifier. It may change; Subject is what stays put.
     username: "preferred_username"
+    # Names the claim holding the person's human-readable name, e.g. "Ada
+    # Lovelace". Display only: it is shown beside the username in the web UI and
+    # offered to email templates, and it never becomes a certificate principal,
+    # a key ID, or an authorization input.
+    #
+    # Empty disables the capture. A configured claim that does not arrive stores
+    # empty and is simply not shown; login never fails over one.
+    name: "name"
     # Names a claim expected to hold a JSON array of group names. It feeds the
     # certificate lifetime and require-group decision only; group membership is
     # never placed in an issued certificate (see
@@ -494,9 +522,9 @@ ldap:
   # Maps destinations to the directory sources that populate them, mirroring
   # OAuthFields with attribute names instead of claim names.
   #
-  # The reserved names are other_accounts, service_accounts and groups. Any
-  # other key is an extra template field, captured into the same contract as
-  # OAuthFields.Extra: reachable as {{.Extra.<name>}}, stored empty when
+  # The reserved names are other_accounts, service_accounts, groups and name.
+  # Any other key is an extra template field, captured into the same contract
+  # as OAuthFields.Extra: reachable as {{.Extra.<name>}}, stored empty when
   # absent, and never a reason for login to fail. There is no separate extra
   # sub-map; LDAP enrichment is extra by definition.
   #
@@ -508,7 +536,8 @@ ldap:
   #
   # username, email and subject are rejected here: the subject keys the user
   # row, the username is what lookups are keyed by, and the OIDC email claim
-  # is the source of truth for users.email.
+  # is the source of truth for users.email. The person's display name is not
+  # in that set — see the name destination above.
   #
   # A bare string in YAML is shorthand for `attribute: <string>`.
   #
@@ -523,6 +552,26 @@ ldap:
   #           filter: (manager={{.DN}})
   #           value: uid
 
+  # Names the attribute holding the entry's unique, immutable identifier, and
+  # is what makes a directory rename survivable. Empty (the default) keeps the
+  # DN-then-filter resolution described below.
+  #
+  # Every directory has one under a different name: entryUUID on OpenLDAP and
+  # 389 Directory Server (RFC 4530), objectGUID on Active Directory,
+  # ipaUniqueID on FreeIPA. None of them is guessable from the others, so
+  # there is no useful default beyond off.
+  #
+  # With it set, the sync resolves an entry by ID first, falling back to the
+  # stored DN and then to user_filter. That ordering is the point: a DN
+  # changes when someone moves between OUs and user_filter stops matching when
+  # they are renamed, so without an ID a rename looks exactly like a deletion
+  # and walks the account toward the sync.disable_after auto-disable. The ID
+  # is read at login, stored on user_ldap.directory_id, and never used for
+  # authorization.
+  #
+  # Binary-valued attributes (objectGUID) are stored as their hex form, which
+  # is also how they must be written in a filter.
+  id_attribute: ""
   # Names the attribute to read a group's name from when a group search is
   # used. When groups arrive as DNs (memberOf, the common case), each DN is
   # reduced to its first RDN value — the CN — and a value that does not

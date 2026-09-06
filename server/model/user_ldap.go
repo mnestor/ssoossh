@@ -40,12 +40,28 @@ const (
 type UserLDAP struct {
 	UserID string `gorm:"column:user_id;primaryKey"`
 
-	// DN is the entry's distinguished name from the login-time search, and
-	// the load-bearing column here. Login searches by filter once; the sync
-	// re-reads by DN, which is cheaper and distinguishes "entry deleted"
-	// from "filter no longer matches". A DN read that fails falls back to
-	// one filter search before counting a miss, so a moved entry
-	// re-anchors instead of being disabled.
+	// DirectoryID is the entry's unique, immutable identifier — the value
+	// of the attribute named by config.LDAPConfig.IDAttribute (entryUUID,
+	// objectGUID, ipaUniqueID). Empty when that is unconfigured, which is
+	// the default and leaves resolution exactly as it was.
+	//
+	// It outranks DN as an anchor because it is the only thing here that
+	// does not move. A DN changes when someone is moved between OUs, and
+	// the rendered user_filter stops matching the moment they are renamed,
+	// so before this a rename was indistinguishable from a deletion and
+	// counted toward the auto-disable. Resolution is now ID, then DN, then
+	// filter.
+	//
+	// Never an authorization input: it identifies an entry, and nothing
+	// reads it to decide what anyone may do.
+	DirectoryID string `gorm:"column:directory_id;index:idx_user_ldap_directory_id"`
+
+	// DN is the entry's distinguished name from the last successful read,
+	// and the second anchor after DirectoryID. Login searches by filter
+	// once; the sync re-reads by DN, which is cheap and distinguishes
+	// "entry deleted" from "filter no longer matches". A DN read that
+	// fails falls back to one filter search before counting a miss, so a
+	// moved entry re-anchors instead of being disabled.
 	DN string `gorm:"column:dn"`
 
 	// Attributes is the JSON-encoded map of fetched field values, including

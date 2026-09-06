@@ -8,18 +8,27 @@ import (
 	"time"
 )
 
-// Reserved field names under ldap.fields. The first three map to the
-// identity fields LDAP may populate; the last three name the key identity
+// Reserved field names under ldap.fields. These map to the identity fields
+// LDAP may populate; ldapForbiddenFields below names the key identity
 // fields it may never touch.
 const (
 	LDAPFieldOtherAccounts   = "other_accounts"
 	LDAPFieldServiceAccounts = "service_accounts"
 	LDAPFieldGroups          = "groups"
+
+	// LDAPFieldName populates the person's human-readable name, the same
+	// display-only value OAuthFields.Name captures. The directory is
+	// usually the better source for it (displayName or cn is maintained
+	// there even when the identity provider omits it from the token), so
+	// unlike username and email it is a destination LDAP may write.
+	LDAPFieldName = "name"
 )
 
 // ldapReservedFields are the field names with defined meanings, so they
 // cannot double as extra template fields.
-var ldapReservedFields = []string{LDAPFieldOtherAccounts, LDAPFieldServiceAccounts, LDAPFieldGroups}
+var ldapReservedFields = []string{
+	LDAPFieldOtherAccounts, LDAPFieldServiceAccounts, LDAPFieldGroups, LDAPFieldName,
+}
 
 // ldapForbiddenFields are the key identity fields LDAP may never write.
 // Subject keys the user row, the username is what LDAP lookups are keyed

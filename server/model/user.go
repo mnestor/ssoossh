@@ -9,10 +9,26 @@ import "time"
 // sessions — group membership itself is never persisted here or placed in
 // a certificate (see https://mnestor.github.io/ssoossh/internals/invariants/).
 type User struct {
-	ID       string `gorm:"column:id;primaryKey"`
-	Subject  string `gorm:"column:subject;uniqueIndex:idx_users_subject"` // OIDC "sub" claim, unique per provider
+	ID string `gorm:"column:id;primaryKey"`
+
+	// Subject is the unique, immutable account identifier read from the
+	// claim named by config.OAuthFields.Subject ("sub" by default). It is
+	// the only field a login is keyed by, precisely because Username and
+	// Email are not stable: a rename or a marriage changes both, and
+	// keying on either would fork a person's certificate history into a
+	// second account.
+	Subject string `gorm:"column:subject;uniqueIndex:idx_users_subject"`
+
 	Username string `gorm:"column:username"`
 	Email    string `gorm:"column:email"`
+
+	// DisplayName is the person's human-readable name, from
+	// config.OAuthFields.Name and overridden by the directory's
+	// config.LDAPFieldName where one is configured. Display only: it is
+	// shown beside the username in the web UI and offered to email
+	// templates, and it is never a certificate principal, a key ID input,
+	// or an authorization input. Empty when nothing supplied one.
+	DisplayName string `gorm:"column:display_name"`
 
 	// OtherAccounts and ServiceAccounts are JSON-encoded []string, same
 	// convention as model.Certificate.Extensions. See

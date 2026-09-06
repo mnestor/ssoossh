@@ -230,8 +230,8 @@ type LDAPConfig struct {
 	// Fields maps destinations to the directory sources that populate them,
 	// mirroring OAuthFields with attribute names instead of claim names.
 	//
-	// The reserved names are other_accounts, service_accounts and groups.
-	// Any other key is an extra template field, captured into the same
+	// The reserved names are other_accounts, service_accounts, groups and
+	// name. Any other key is an extra template field, captured into the same
 	// contract as OAuthFields.Extra: reachable as {{.Extra.<name>}}, stored
 	// empty when absent, and never a reason for login to fail. There is no
 	// separate extra sub-map; LDAP enrichment is extra by definition.
@@ -244,8 +244,30 @@ type LDAPConfig struct {
 	//
 	// username, email and subject are rejected here: the subject keys the
 	// user row, the username is what lookups are keyed by, and the OIDC
-	// email claim is the source of truth for users.email.
+	// email claim is the source of truth for users.email. The person's
+	// display name is not in that set — see the name destination above.
 	Fields map[string]LDAPField `mapstructure:"fields"`
+
+	// IDAttribute names the attribute holding the entry's unique, immutable
+	// identifier, and is what makes a directory rename survivable. Empty
+	// (the default) keeps the DN-then-filter resolution described below.
+	//
+	// Every directory has one under a different name: entryUUID on OpenLDAP
+	// and 389 Directory Server (RFC 4530), objectGUID on Active Directory,
+	// ipaUniqueID on FreeIPA. None of them is guessable from the others, so
+	// there is no useful default beyond off.
+	//
+	// With it set, the sync resolves an entry by ID first, falling back to
+	// the stored DN and then to user_filter. That ordering is the point: a
+	// DN changes when someone moves between OUs and user_filter stops
+	// matching when they are renamed, so without an ID a rename looks
+	// exactly like a deletion and walks the account toward the
+	// sync.disable_after auto-disable. The ID is read at login, stored on
+	// user_ldap.directory_id, and never used for authorization.
+	//
+	// Binary-valued attributes (objectGUID) are stored as their hex form,
+	// which is also how they must be written in a filter.
+	IDAttribute string `mapstructure:"id_attribute" default:"" example:"entryUUID"`
 
 	// GroupNameAttribute names the attribute to read a group's name from
 	// when a group search is used. When groups arrive as DNs (memberOf,

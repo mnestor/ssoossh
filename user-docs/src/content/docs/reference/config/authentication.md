@@ -14,7 +14,9 @@ See OAuthConfig for details on provider URL, scopes, and field mapping from OIDC
 | [`authentication.client_secret`](#client_secret) | string | `empty` |
 | [`authentication.provider_url`](#provider_url) | string | `empty` |
 | [`authentication.scopes`](#scopes) | string | `profile email` |
+| [`authentication.fields.subject`](#fieldssubject) | string | `sub` |
 | [`authentication.fields.username`](#fieldsusername) | string | `preferred_username` |
+| [`authentication.fields.name`](#fieldsname) | string | `name` |
 | [`authentication.fields.groups`](#fieldsgroups) | string | `groups` |
 | [`authentication.fields.other_accounts`](#fieldsother_accounts) | string | `empty` |
 | [`authentication.fields.service_accounts`](#fieldsservice_accounts) | string | `empty` |
@@ -69,16 +71,48 @@ authentication:
 
 Maps ssoossh identity fields to claim names in the OIDC provider's ID token. Username is the only required field; the rest are empty by default, meaning "not populated from OIDC".
 
+## `fields.subject`
+
+`string`, default `sub`
+
+Names the claim holding the unique, immutable account identifier — the value users.subject is keyed by, and the only thing that ties a person to their certificate history across logins.
+
+It defaults to "sub" because that is what OIDC guarantees to be stable per issuer, but not every provider's "sub" is the identifier an operator wants: Entra ID issues a per-application "sub" and puts the tenant-stable one in "oid", and a provider fronting an upstream directory may carry the directory's own UUID in a private claim. Username and email are deliberately not candidates — both change when a person is renamed or married, and keying on either silently forks their history into a second account.
+
+Changing this on a running deployment re-keys every login: users whose row was written under the old claim will no longer match and will be created fresh. Choose it before the first login, not after.
+
+```yaml
+authentication:
+  fields:
+    subject: "sub"
+```
+
 ## `fields.username`
 
 `string`, default `preferred_username`
 
 Names the claim holding the local account username, e.g. "preferred_username". Required.
 
+This is the account name on target systems — the default certificate principal — not an identifier. It may change; Subject is what stays put.
+
 ```yaml
 authentication:
   fields:
     username: "preferred_username"
+```
+
+## `fields.name`
+
+`string`, default `name`
+
+Names the claim holding the person's human-readable name, e.g. "Ada Lovelace". Display only: it is shown beside the username in the web UI and offered to email templates, and it never becomes a certificate principal, a key ID, or an authorization input.
+
+Empty disables the capture. A configured claim that does not arrive stores empty and is simply not shown; login never fails over one.
+
+```yaml
+authentication:
+  fields:
+    name: "name"
 ```
 
 ## `fields.groups`

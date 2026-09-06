@@ -446,10 +446,28 @@ A space\-separated list of additional scopes to request alongside the always\-in
 Default:
 .BR profile email .
 .TP
+.BI authentication.fields.subject: " string"
+Names the claim holding the unique, immutable account identifier \(em the value users.subject is keyed by, and the only thing that ties a person to their certificate history across logins.
+.IP
+It defaults to "sub" because that is what OIDC guarantees to be stable per issuer, but not every provider's "sub" is the identifier an operator wants: Entra ID issues a per\-application "sub" and puts the tenant\-stable one in "oid", and a provider fronting an upstream directory may carry the directory's own UUID in a private claim. Username and email are deliberately not candidates \(em both change when a person is renamed or married, and keying on either silently forks their history into a second account.
+.IP
+Changing this on a running deployment re\-keys every login: users whose row was written under the old claim will no longer match and will be created fresh. Choose it before the first login, not after.
+Default:
+.BR sub .
+.TP
 .BI authentication.fields.username: " string"
 Names the claim holding the local account username, e.g. "preferred_username". Required.
+.IP
+This is the account name on target systems \(em the default certificate principal \(em not an identifier. It may change; Subject is what stays put.
 Default:
 .BR preferred_username .
+.TP
+.BI authentication.fields.name: " string"
+Names the claim holding the person's human\-readable name, e.g. "Ada Lovelace". Display only: it is shown beside the username in the web UI and offered to email templates, and it never becomes a certificate principal, a key ID, or an authorization input.
+.IP
+Empty disables the capture. A configured claim that does not arrive stores empty and is simply not shown; login never fails over one.
+Default:
+.BR name .
 .TP
 .BI authentication.fields.groups: " string"
 Names a claim expected to hold a JSON array of group names. It feeds the certificate lifetime and require\-group decision only; group membership is never placed in an issued certificate (see https://mnestor.github.io/ssoossh/internals/invariants/).
@@ -541,11 +559,11 @@ Default:
 .BI ldap.fields: " map"
 Maps destinations to the directory sources that populate them, mirroring OAuthFields with attribute names instead of claim names.
 .IP
-The reserved names are other_accounts, service_accounts and groups. Any other key is an extra template field, captured into the same contract as OAuthFields.Extra: reachable as {{.Extra.<name>}}, stored empty when absent, and never a reason for login to fail. There is no separate extra sub\-map; LDAP enrichment is extra by definition.
+The reserved names are other_accounts, service_accounts, groups and name. Any other key is an extra template field, captured into the same contract as OAuthFields.Extra: reachable as {{.Extra.<name>}}, stored empty when absent, and never a reason for login to fail. There is no separate extra sub\-map; LDAP enrichment is extra by definition.
 .IP
 The merge rule is per field: a configured LDAP field (any attribute or searches) wins over the OIDC value, and an unconfigured one leaves the OIDC value untouched. Override rather than union, because union makes it impossible to retire a stale principal from only one source. Groups are the exception \(em both sources persist side by side.
 .IP
-username, email and subject are rejected here: the subject keys the user row, the username is what lookups are keyed by, and the OIDC email claim is the source of truth for users.email.
+username, email and subject are rejected here: the subject keys the user row, the username is what lookups are keyed by, and the OIDC email claim is the source of truth for users.email. The person's display name is not in that set \(em see the name destination above.
 .IP
 A bare string in YAML is shorthand for `attribute: <string>`.
 .TP
@@ -576,6 +594,17 @@ Default:
 .TP
 .BI ldap.fields.<name>.searches[].value: " string"
 Names the attribute on each matched entry that contributes to the field, e.g. "uid".
+Default:
+.BR empty .
+.TP
+.BI ldap.id_attribute: " string"
+Names the attribute holding the entry's unique, immutable identifier, and is what makes a directory rename survivable. Empty (the default) keeps the DN\-then\-filter resolution described below.
+.IP
+Every directory has one under a different name: entryUUID on OpenLDAP and 389 Directory Server (RFC 4530), objectGUID on Active Directory, ipaUniqueID on FreeIPA. None of them is guessable from the others, so there is no useful default beyond off.
+.IP
+With it set, the sync resolves an entry by ID first, falling back to the stored DN and then to user_filter. That ordering is the point: a DN changes when someone moves between OUs and user_filter stops matching when they are renamed, so without an ID a rename looks exactly like a deletion and walks the account toward the sync.disable_after auto\-disable. The ID is read at login, stored on user_ldap.directory_id, and never used for authorization.
+.IP
+Binary\-valued attributes (objectGUID) are stored as their hex form, which is also how they must be written in a filter.
 Default:
 .BR empty .
 .TP

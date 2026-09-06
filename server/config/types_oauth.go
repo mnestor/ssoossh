@@ -24,9 +24,40 @@ type OAuthConfig struct {
 // provider's ID token. Username is the only required field; the rest are
 // empty by default, meaning "not populated from OIDC".
 type OAuthFields struct {
+	// Subject names the claim holding the unique, immutable account
+	// identifier — the value users.subject is keyed by, and the only thing
+	// that ties a person to their certificate history across logins.
+	//
+	// It defaults to "sub" because that is what OIDC guarantees to be
+	// stable per issuer, but not every provider's "sub" is the identifier
+	// an operator wants: Entra ID issues a per-application "sub" and puts
+	// the tenant-stable one in "oid", and a provider fronting an upstream
+	// directory may carry the directory's own UUID in a private claim.
+	// Username and email are deliberately not candidates — both change
+	// when a person is renamed or married, and keying on either silently
+	// forks their history into a second account.
+	//
+	// Changing this on a running deployment re-keys every login: users
+	// whose row was written under the old claim will no longer match and
+	// will be created fresh. Choose it before the first login, not after.
+	Subject string `mapstructure:"subject" default:"sub"`
+
 	// Username names the claim holding the local account username, e.g.
 	// "preferred_username". Required.
+	//
+	// This is the account name on target systems — the default certificate
+	// principal — not an identifier. It may change; Subject is what stays
+	// put.
 	Username string `mapstructure:"username" default:"preferred_username"`
+
+	// Name names the claim holding the person's human-readable name, e.g.
+	// "Ada Lovelace". Display only: it is shown beside the username in the
+	// web UI and offered to email templates, and it never becomes a
+	// certificate principal, a key ID, or an authorization input.
+	//
+	// Empty disables the capture. A configured claim that does not arrive
+	// stores empty and is simply not shown; login never fails over one.
+	Name string `mapstructure:"name" default:"name"`
 
 	// Groups names a claim expected to hold a JSON array of group names. It
 	// feeds the certificate lifetime and require-group decision only; group
