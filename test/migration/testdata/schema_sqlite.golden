@@ -208,6 +208,7 @@ table user_ldap
   column attributes type=TEXT nullable=false pk=false default=''
   column consecutive_misses type=INTEGER nullable=false pk=false default=0
   column created_at type=DATETIME nullable=false pk=false default=<none>
+  column directory_id type=TEXT nullable=false pk=false default=''
   column dn type=TEXT nullable=false pk=false default=''
   column first_missing_at type=DATETIME nullable=true pk=false default=<none>
   column last_seen_at type=DATETIME nullable=true pk=false default=<none>
@@ -215,6 +216,7 @@ table user_ldap
   column updated_at type=DATETIME nullable=false pk=false default=<none>
   column user_id type=TEXT nullable=false pk=true default=<none>
   fk user_id -> users.id on_delete=NO ACTION on_update=CASCADE
+  index idx_user_ldap_directory_id unique=false columns=directory_id
   index sqlite_autoindex_user_ldap_1 unique=true columns=user_id
 table users
   column created_at type=DATETIME nullable=false pk=false default=<none>
@@ -222,6 +224,7 @@ table users
   column disabled_by_user_id type=TEXT nullable=true pk=false default=<none>
   column disabled_reason type=TEXT nullable=false pk=false default=''
   column disabled_source type=TEXT nullable=true pk=false default=<none>
+  column display_name type=TEXT nullable=false pk=false default=''
   column email type=TEXT nullable=false pk=false default=''
   column extra_fields type=TEXT nullable=false pk=false default=''
   column id type=TEXT nullable=false pk=true default=<none>

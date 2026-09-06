@@ -159,6 +159,24 @@ table enrollments
   index idx_enrollments_expiry_reminder CREATE INDEX idx_enrollments_expiry_reminder ON public.enrollments USING btree (expiry_reminder_sent_at, expires_at)
   index idx_enrollments_service_account CREATE INDEX idx_enrollments_service_account ON public.enrollments USING btree (service_account)
   index idx_enrollments_user_id CREATE INDEX idx_enrollments_user_id ON public.enrollments USING btree (user_id)
+table ldap_sync_runs
+  column actor_user_id type=text nullable=true default=<none>
+  column disabled type=integer nullable=false default=0
+  column dry_run type=boolean nullable=false default=false
+  column error_message type=text nullable=false default=''::text
+  column failed type=integer nullable=false default=0
+  column finished_at type=timestamp with time zone nullable=true default=<none>
+  column found type=integer nullable=false default=0
+  column id type=text nullable=false default=<none>
+  column instance type=text nullable=false default=''::text
+  column missing type=integer nullable=false default=0
+  column reenabled type=integer nullable=false default=0
+  column started_at type=timestamp with time zone nullable=false default=<none>
+  column trigger_source type=text nullable=false default=<none>
+  column users_seen type=integer nullable=false default=0
+  fk actor_user_id -> users.id
+  index idx_ldap_sync_runs_started CREATE INDEX idx_ldap_sync_runs_started ON public.ldap_sync_runs USING btree (started_at DESC)
+  index ldap_sync_runs_pkey CREATE UNIQUE INDEX ldap_sync_runs_pkey ON public.ldap_sync_runs USING btree (id)
 table notification_preferences
   column created_at type=timestamp with time zone nullable=false default=<none>
   column enabled type=boolean nullable=false default=false
@@ -191,12 +209,15 @@ table user_ldap
   column attributes type=text nullable=false default=''::text
   column consecutive_misses type=integer nullable=false default=0
   column created_at type=timestamp with time zone nullable=false default=<none>
+  column directory_id type=text nullable=false default=''::text
   column dn type=text nullable=false default=''::text
+  column first_missing_at type=timestamp with time zone nullable=true default=<none>
   column last_seen_at type=timestamp with time zone nullable=true default=<none>
   column last_synced_at type=timestamp with time zone nullable=true default=<none>
   column updated_at type=timestamp with time zone nullable=false default=<none>
   column user_id type=text nullable=false default=<none>
   fk user_id -> users.id
+  index idx_user_ldap_directory_id CREATE INDEX idx_user_ldap_directory_id ON public.user_ldap USING btree (directory_id) WHERE (directory_id <> ''::text)
   index user_ldap_pkey CREATE UNIQUE INDEX user_ldap_pkey ON public.user_ldap USING btree (user_id)
 table users
   column created_at type=timestamp with time zone nullable=false default=<none>
@@ -204,6 +225,7 @@ table users
   column disabled_by_user_id type=text nullable=true default=<none>
   column disabled_reason type=text nullable=false default=''::text
   column disabled_source type=text nullable=true default=<none>
+  column display_name type=text nullable=false default=''::text
   column email type=text nullable=false default=''::text
   column extra_fields type=text nullable=false default=''::text
   column id type=text nullable=false default=<none>
