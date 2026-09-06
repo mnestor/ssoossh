@@ -492,6 +492,85 @@ func TestCertificateService_CertificateWithDecision(t *testing.T) {
 	}
 }
 
+// A history row leads with what asked for the certificate, so the list
+// query reads the decision's reported "user@host" -- and only that pair:
+// the rest of the host-context snapshot is the detail endpoint's.
+func TestCertificateService_ShouldReadTheReportedUserAndHostOnAListRow(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+
+	userID := seedUser(t, reqSvc.db, "sub-alice")
+
+	now := time.Now()
+	decision := &model.CertificateRequestDecision{
+		Outcome:          model.CertificateRequestDecisionApproved,
+		Subject:          "sub-approver",
+		Username:         "approver",
+		Email:            "approver@example.com",
+		ReportedUsername: "root",
+		ReportedHostname: "web01",
+		PAMService:       "sshd",
+		TTY:              "pts/0",
+		DecidedAt:        now,
+	}
+	seedCertificateWithRequest(t, reqSvc, &userID, 1, now, decision)
+
+	got, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 25)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(got) != 1 || got[0].Decision == nil {
+		t.Fatalf("got %d certificates with decision %v, want one with a decision", len(got), got[0].Decision)
+	}
+
+	if got[0].Decision.ReportedUsername != "root" || got[0].Decision.ReportedHostname != "web01" {
+		t.Errorf("got reported identity %q@%q, want root@web01",
+			got[0].Decision.ReportedUsername, got[0].Decision.ReportedHostname)
+	}
+}
+
+// The seven remaining host-context fields are detail-only: reading them on
+// every row of a history page is payload nobody displays.
+func TestCertificateService_ShouldLeaveTheRestOfTheHostContextOffAListRow(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+
+	userID := seedUser(t, reqSvc.db, "sub-alice")
+
+	now := time.Now()
+	decision := &model.CertificateRequestDecision{
+		Outcome:          model.CertificateRequestDecisionApproved,
+		Subject:          "sub-approver",
+		Username:         "approver",
+		Email:            "approver@example.com",
+		ReportedUsername: "root",
+		ReportedHostname: "web01",
+		PAMService:       "sshd",
+		TTY:              "pts/0",
+		DecidedAt:        now,
+	}
+	seedCertificateWithRequest(t, reqSvc, &userID, 1, now, decision)
+
+	got, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 25)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(got) != 1 || got[0].Decision == nil {
+		t.Fatalf("got %d certificates with decision %v, want one with a decision", len(got), got[0].Decision)
+	}
+
+	if got[0].Decision.PAMService != "" || got[0].Decision.TTY != "" {
+		t.Errorf("got pam service %q and tty %q on a list row, want both empty",
+			got[0].Decision.PAMService, got[0].Decision.TTY)
+	}
+}
+
 // TestCertificateService_CertificateWithoutDecision tests that certificates
 // without associated decision records (orphaned requests) are properly handled
 // with nil decision pointer.

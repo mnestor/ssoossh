@@ -36,9 +36,27 @@
 		href
 	}: Props = $props();
 
-	// The subject line is whatever names this certificate to a human: the
-	// account it was decided for, else its key id.
-	const subject = $derived(cert.decided_by_email || cert.decided_by_username || cert.key_id);
+	// "user@host" as the requester reported it, the same pair the certificate
+	// page reports as "Reported as". Joined only when both halves are there —
+	// "alice@" reads as a truncated address rather than as a missing
+	// hostname.
+	const askedBy = $derived(
+		cert.reported_username && cert.reported_hostname
+			? `${cert.reported_username}@${cert.reported_hostname}`
+			: cert.reported_username || cert.reported_hostname || ''
+	);
+
+	// The subject line is where the certificate came from, which is a
+	// different field per type: a service certificate's own origin is the
+	// address that redeemed the code, and every other type's is the client
+	// that asked. Deliberately not the deciding account — on a person's own
+	// history that is their own address on every row, which names nothing.
+	// Who approved it is on the certificate's own page.
+	const subject = $derived(
+		cert.type === 'service'
+			? cert.retrieved_source_ip || askedBy || cert.key_id
+			: askedBy || cert.retrieved_source_ip || cert.key_id
+	);
 
 	const principals = $derived(
 		cert.principals

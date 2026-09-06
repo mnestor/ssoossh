@@ -628,7 +628,13 @@ type CertificateResponse struct {
 	// the PAM account and machine for a pam or console certificate, the
 	// local client's for a user one. The rest are PAM and console only, and
 	// empty on a user certificate, which has no service or terminal to
-	// report. All are populated by the detail endpoint alone.
+	// report.
+	//
+	// The pair is on a list row too, because it is what a history row leads
+	// with: the row's subject is where the certificate was fetched from, and
+	// the approver's identity is the same value on every row of a person's
+	// own history. The remaining seven stay detail-only -- seven more strings
+	// on every row is payload nobody reads.
 	ReportedUsername       string `json:"reported_username,omitempty"`
 	ReportedHostname       string `json:"reported_hostname,omitempty"`
 	ReportedService        string `json:"reported_pam_service,omitempty"`
