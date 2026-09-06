@@ -390,6 +390,12 @@ func newCertificateResponsesWithDecisions(certsWithDecisions []service.Certifica
 		// Populate decision fields if a decision record exists.
 		if cd.Decision != nil {
 			setDecisionFieldsOnCertificate(&resp, cd.Decision)
+			// The reported "user@host" alone, not the whole host-context
+			// snapshot setReportedContextOnCertificate copies: a row leads
+			// with what asked for the certificate, and the rest of the
+			// context is a question asked of one certificate.
+			resp.ReportedUsername = cd.Decision.ReportedUsername
+			resp.ReportedHostname = cd.Decision.ReportedHostname
 		}
 
 		// Only a service certificate has one. It is what says where this
