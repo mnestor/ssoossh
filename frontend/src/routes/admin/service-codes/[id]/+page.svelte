@@ -67,7 +67,7 @@
 	<title>Service code details · Admin · ssoossh</title>
 </svelte:head>
 
-<PageShell width="default">
+<PageShell width="wide">
 	<!-- Always the list, whatever route reached this page: it is the one
 	     place every code is, and an operator who arrived from a log line was
 	     nowhere before this. -->

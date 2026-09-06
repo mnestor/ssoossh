@@ -250,7 +250,7 @@
 					send them to one place instead.
 				{/if}
 			</p>
-			<div class="flex flex-wrap items-start gap-2">
+			<div class="flex max-w-[560px] flex-wrap items-start gap-2">
 				<label class="flex min-w-[220px] flex-1 flex-col gap-1">
 					<span class="sr-only">Notification address</span>
 					<input
@@ -284,11 +284,13 @@
 
 		<!-- Expire control -->
 		{#if !expired}
-			<ExpireCodeAction
-				testid="admin-expire-code"
-				expire={(reason) => expireEnrollment(enrollment.id, reason)}
-				onexpired={() => onexpired?.()}
-			/>
+			<div class="max-w-[560px]">
+				<ExpireCodeAction
+					testid="admin-expire-code"
+					expire={(reason) => expireEnrollment(enrollment.id, reason)}
+					onexpired={() => onexpired?.()}
+				/>
+			</div>
 		{/if}
 	</div>
 </div>

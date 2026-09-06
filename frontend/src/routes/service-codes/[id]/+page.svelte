@@ -84,7 +84,7 @@
 
 <svelte:head><title>Service code · ssoossh</title></svelte:head>
 
-<PageShell width="default">
+<PageShell width="wide">
 	<a
 		href="{resolve('/service-codes')}{accountQuery}"
 		data-testid="service-code-back"

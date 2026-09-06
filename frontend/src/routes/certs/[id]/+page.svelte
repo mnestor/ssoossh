@@ -167,7 +167,7 @@
 
 <svelte:head><title>Certificate · ssoossh</title></svelte:head>
 
-<PageShell width="default">
+<PageShell width="wide">
 	<a
 		href={resolve(back.route)}
 		data-testid="cert-back"

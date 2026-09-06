@@ -282,7 +282,7 @@
 				<span class="font-mono">{subject}</span>. Set an address to send them to one place instead.
 			{/if}
 		</p>
-		<div class="flex flex-wrap items-start gap-2">
+		<div class="flex max-w-[560px] flex-wrap items-start gap-2">
 			<label class="flex min-w-[220px] flex-1 flex-col gap-1">
 				<span class="sr-only">Notification address</span>
 				<input
@@ -364,11 +364,13 @@
 	{#if !expired}
 		<div>
 			<SectionLabel>Retire this code</SectionLabel>
-			<ExpireCodeAction
-				testid="expire-code"
-				expire={(reason) => expireOwnEnrollment(enrollment.id, reason)}
-				onexpired={() => onexpired?.()}
-			/>
+			<div class="max-w-[560px]">
+				<ExpireCodeAction
+					testid="expire-code"
+					expire={(reason) => expireOwnEnrollment(enrollment.id, reason)}
+					onexpired={() => onexpired?.()}
+				/>
+			</div>
 		</div>
 	{/if}
 </div>

@@ -18,9 +18,19 @@
 	interface Props {
 		/**
 		 * focus   560px — sign-in, an approval, a console code
-		 * default 760px — reading and detail pages
-		 * wide   1120px — card and row lists
+		 * default 760px — reading pages that stand on their own
+		 * wide   1120px — card and row lists, and the pages they open
 		 * full          — uncapped, for tables
+		 *
+		 * A page reached by opening a row takes its list's width rather than
+		 * the narrower reading one. Both are centred in the same space, so a
+		 * detail page 360px narrower than the list behind it moves the left
+		 * edge inward by half that on every click — the content shifts and a
+		 * gap opens beside it, which reads as a different app rather than as
+		 * the next screen. Long values are the reason 760 exists, and a
+		 * DetailRow does not stretch them: its value starts right after the
+		 * 140px label column and only wraps later. Forms are the exception
+		 * and cap themselves — an email field 900px wide looks like a bug.
 		 */
 		width?: PageWidth;
 		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
