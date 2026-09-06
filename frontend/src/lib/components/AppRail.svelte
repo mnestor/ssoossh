@@ -93,9 +93,9 @@
 			     gives up its link here: Dashboard is the row directly below,
 			     and stranding someone at 60px wide costs more.
 
-			     Not hidden below `lg`, unlike the expanded form: a drawer
-			     opened while the stored preference is collapsed has no other
-			     way out of icon width. -->
+			     No `max-lg:hidden`, unlike the expanded form, because this
+			     branch cannot render below `lg` in the first place — the
+			     drawer passes `collapsed={false}`. -->
 			<button
 				type="button"
 				onclick={() => rail.toggleCollapsed()}

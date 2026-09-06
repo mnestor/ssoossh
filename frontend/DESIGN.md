@@ -204,9 +204,8 @@ The width control sits in the brand row, right-aligned beside the wordmark.
 It is the one control in the rail that acts on the rail rather than on the
 app, and the head of a column is where a control for that column is looked
 for. Expanded, it is a `panel-left` button hidden below `lg` — a drawer has
-nothing to collapse. Collapsed, the brand mark itself is the button, and it
-is _not_ hidden below `lg`: a drawer opened while the stored preference is
-collapsed would otherwise have no way back to labels.
+nothing to collapse. Collapsed, the brand mark itself is the button: at 60px
+that row has one slot and it has to do both jobs.
 
 The rail's bottom edge is one row — the identity — and everything done to
 the session hangs off it in a drop-up (`RailUserMenu.svelte`): account,
@@ -222,10 +221,18 @@ those rows behind a shut popover, the trigger carries the selected state for
 every page they lead to — otherwise standing on `/preferences` would leave
 the rail with nothing marked.
 
-Admin is a group inside the same rail, gated on `is_auditor`. It opens by
-itself on an `/admin` route and stays wherever the viewer last put it once
-they have said. It replaced a horizontal tab strip in the admin layout that
-was reachable only from a line inside the account dropdown.
+Admin is a group inside the same rail, gated on `is_auditor`. It is open by
+default and remembers being shut (`ssoossh:rail-admin-open`), and an
+`/admin` route forces it open whatever was last chosen — arriving in the
+admin area with the section list hidden is the one case where the stored
+preference cannot be what the viewer meant. It started shut everywhere but
+`/admin` at first, which read as the admin menu having gone missing. It
+replaced a horizontal tab strip in the admin layout that was reachable only
+from a line inside the account dropdown.
+
+The collapsed width is a separate key, and the drawer overrides it: the
+control that expands the rail is hidden below `lg`, so a drawer inheriting a
+desktop collapse would be a strip of unlabelled icons with no way back.
 
 Four routes render with no rail at all — sign-in, an approval, a console
 code, the approval-unavailable notice — as does any screen for a signed-out

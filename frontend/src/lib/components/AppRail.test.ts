@@ -246,19 +246,6 @@ describe('app rail', () => {
 		);
 	});
 
-	// The expanded control is desktop-only — a drawer has nothing to
-	// collapse. The collapsed one is not, because a drawer opened while the
-	// stored preference is collapsed has no other way back to labels.
-	it('should keep the expand control available at drawer widths', () => {
-		rail.collapsed = true;
-		session.user = signedInUser(false);
-		session.resolved = true;
-
-		render(AppRail, { onsignout: () => {} });
-
-		expect(screen.getByTestId('rail-collapse')).not.toHaveClass('max-lg:hidden');
-	});
-
 	it('should state the identity the session is acting as', () => {
 		session.user = signedInUser(false);
 		session.resolved = true;
