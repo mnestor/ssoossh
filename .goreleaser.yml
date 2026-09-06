@@ -3,7 +3,15 @@ version: 2
 
 release:
   prerelease: auto
-  draft: false
+
+  # Created as a draft, and published by build.yaml's publish job once the
+  # .pkg installers are attached and the checksums file has been rewritten
+  # to cover them. goreleaser finishes long before that, so publishing here
+  # would put a release on the page for the length of a macOS notarization
+  # with no macOS installers on it and a checksums file that does not
+  # describe them. use_existing_draft below is what lets a re-run of the
+  # tag reuse that draft rather than leave a second one behind.
+  draft: true
   disable: false
   skip_upload: false
   include_meta: false
@@ -365,7 +373,7 @@ archives:
     files: *client_archive_files
     name_template: *client_archive_name
 
-# Builds and pushes ghcr.io/mnestor/ssoosshd, one multi-arch (linux/amd64 +
+# Builds and pushes ghcr.io/mnestor/ssoossh-server, one multi-arch (linux/amd64 +
 # linux/arm64) manifest per libc, straight from the server-linux-build /
 # server-linux-musl-build binaries above -- no separate compile step, so
 # the image gets the same -X version.Version/Commit/Date/BuiltBy stamp
@@ -379,6 +387,24 @@ archives:
 # catch a broken Dockerfile but never pushes -- goreleaser skips its whole
 # publish phase in --snapshot mode.
 #
+# The only tag pushed here is the commit sha, and that is deliberate. This
+# pipe runs in build-most, well before the macOS installers exist, so a
+# release that dies in the macOS job would otherwise have already put
+# ghcr.io/mnestor/ssoossh-server:1.4.0 in front of the world -- a version
+# tag for a release that never published, and one a re-run of the tag then
+# silently overwrites. build.yaml's publish job copies these to their
+# version tags (docker buildx imagetools create, a server-side manifest
+# copy by digest) at the same moment it publishes the release draft, so a
+# version tag exists only for a release that does.
+#
+# What stays behind on a failed release is the sha tag, which is fine: it
+# is immutable, it names the commit that built it, and it never claimed to
+# be a release. Nothing is deleted, so no delete:packages credential is
+# needed anywhere in this pipeline.
+#
+# No floating tag is published at all -- no `latest`, and no X.Y, which is
+# `latest` with extra steps. An operator pins the version they tested.
+#
 # dockers_v2 (not the older dockers:/docker_manifests:) is what's current
 # in goreleaser v2; see https://goreleaser.com/customization/package/dockers_v2/.
 # sbom is off: a cosign/syft SBOM attachment isn't set up in this project's
@@ -391,8 +417,7 @@ dockers_v2:
     images:
       - ghcr.io/mnestor/ssoossh-server
     tags:
-      - "{{ .Version }}"
-      - "{{ .Major }}.{{ .Minor }}"
+      - "sha-{{ .FullCommit }}"
     platforms:
       - linux/amd64
       - linux/arm64
@@ -415,9 +440,11 @@ dockers_v2:
     dockerfile: Dockerfile.musl
     images:
       - ghcr.io/mnestor/ssoossh-server
+    # Distinct from the glibc entry's tag: both entries push to the same
+    # image, so sharing one sha tag would have the second overwrite the
+    # first.
     tags:
-      - "{{ .Version }}-musl"
-      - "{{ .Major }}.{{ .Minor }}-musl"
+      - "sha-{{ .FullCommit }}-musl"
     platforms:
       - linux/amd64
       - linux/arm64

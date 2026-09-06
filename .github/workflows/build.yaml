@@ -3,7 +3,13 @@ name: build
 # The release pipeline, plus the cheap check that stands in for it on PRs.
 #
 # On a v* tag push this publishes the real release (goreleaser
-# archives/packages, the ssoosshd Docker image). PRs no longer run that
+# archives/packages, the ssoosshd Docker image). Nothing is visible under
+# a name anyone would look for until the publish job at the end: goreleaser
+# writes the release as a draft and tags the images with the commit sha
+# only, macos-client-pkg attaches the macOS installers, and publish then
+# flips the draft and copies the images to their version tags in one step.
+# A release that dies partway leaves a tag and an unreferenced sha tag, not
+# a half-published release. PRs no longer run that
 # pipeline: they run `build-check`, which does the generated-artifact
 # staleness checks and a single-target snapshot build, with no release
 # secrets on the runner. The weekly run is what still exercises the full
@@ -127,8 +133,9 @@ jobs:
     permissions:
       # goreleaser creates the release and uploads assets on tag pushes.
       contents: write
-      # goreleaser's dockers_v2 pipe pushes ghcr.io/mnestor/ssoosshd on tag
-      # pushes (see .goreleaser.yml).
+      # goreleaser's dockers_v2 pipe pushes ghcr.io/mnestor/ssoossh-server on tag
+      # pushes (see .goreleaser.yml) -- under its commit-sha tag only; the
+      # version tags are the publish job's.
       packages: write
     container:
       image: ghcr.io/mnestor/ssoossh-build:latest
@@ -431,12 +438,13 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      # goreleaser created the release in build-most and has finished with
-      # it, so these go up afterwards with gh. The checksums file it wrote
-      # is rewritten to cover them too -- a release whose checksums list
-      # describes only some of its assets is worse than one with none.
-      # Existing lines for these names are dropped first, so a re-run of
-      # this job replaces them rather than appending a second set.
+      # goreleaser created the release in build-most -- as a draft, so none
+      # of this is visible yet -- and has finished with it, so these go up
+      # afterwards with gh. The checksums file it wrote is rewritten to
+      # cover them too -- a release whose checksums list describes only
+      # some of its assets is worse than one with none. Existing lines for
+      # these names are dropped first, so a re-run of this job replaces
+      # them rather than appending a second set.
       - name: Attach the packages to the release
         if: startsWith(github.ref, 'refs/tags/')
         env:
@@ -468,10 +476,98 @@ jobs:
           cat "dist/$sums"
 
       # Same invariant build-most keeps: a published release is complete or
-      # it is not published. A failure here leaves the tag, not a release
-      # missing its macOS installers.
+      # it is not published. A failure here leaves the tag, and at most an
+      # unpublished draft -- never a release missing its macOS installers.
       - name: remove the release, we failed
         if: startsWith(github.ref, 'refs/tags/') && failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release delete -y "$TAG"
+
+  # Where a release becomes visible, and the only job that makes anything
+  # public under a name someone would go looking for. Everything before it
+  # published to names nobody pulls: goreleaser wrote the release as a
+  # draft (.goreleaser.yml's release.draft) and tagged the images with the
+  # commit sha (its dockers_v2 tags), macos-client-pkg attached the
+  # installers to that draft. This flips both at the end, once every
+  # artifact for every platform is in place.
+  #
+  # Tag pushes only -- there is nothing to publish on the weekly run, which
+  # is exactly why that run rehearses everything except this job.
+  #
+  # No container and no build tooling: two registry calls and one API call.
+  # docker with the buildx plugin and gh are both on the stock runner
+  # image, so this does not pay for the ssoossh-build pull either.
+  publish:
+    name: publish
+    needs: [build-most, macos-client-pkg]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # gh release edit.
+      contents: write
+      # The version tags created below.
+      packages: write
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `imagetools create` copies the manifest list registry-side, by
+      # digest: the multi-arch index and the labels goreleaser baked in at
+      # build time carry over untouched and no layer moves, so this costs
+      # about a second per tag. It is a registry operation rather than a
+      # build, so unlike build-most this job needs no buildx builder and
+      # no setup-buildx-action.
+      #
+      # The version goreleaser tags with is the git tag without its v
+      # (.Version in its templates, and the value already in each image's
+      # org.opencontainers.image.version label), which is what these have
+      # to match.
+      #
+      # Two calls because the two variants come from two different source
+      # images. A failure between them leaves one version tag behind, which
+      # the re-run of the tag overwrites -- the narrow case this ordering
+      # does not cover.
+      - name: Promote the images to their version tags
+        env:
+          IMAGE: ghcr.io/mnestor/ssoossh-server
+          TAG: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          for variant in "" "-musl"; do
+            docker buildx imagetools create \
+              -t "${IMAGE}:${version}${variant}" \
+              "${IMAGE}:sha-${COMMIT}${variant}"
+            docker buildx imagetools inspect "${IMAGE}:${version}${variant}"
+          done
+
+      # Last, so a failure in the promote above leaves the release a draft
+      # rather than a published release whose images are half-named.
+      #
+      # Only draft is touched. Whether the release is a prerelease, and
+      # whether it becomes /releases/latest, remain goreleaser's call
+      # (.goreleaser.yml's release.prerelease: auto).
+      - name: Publish the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: gh release edit "$TAG" --draft=false
+
+      # Same invariant the build jobs keep. The sha tags are left alone on
+      # purpose: they are immutable, they name the commit that built them,
+      # and they never claimed to be a release -- so nothing in this
+      # pipeline ever needs a credential that can delete a package version.
+      - name: remove the release, we failed
+        if: failure()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
