@@ -35,6 +35,27 @@ participate in enrichment refresh, sync, or group capture. The server never
 enumerates the directory, which keeps the user set self-selecting and leaves
 fan-out building on a bounded, consented population.
 
+### Switching the directory off
+
+Setting `ldap.enabled: false` stops the sync, so everything the directory
+wrote is frozen at whatever the last pass read. The server stops acting on all
+of it, immediately and everywhere:
+
+- **Certificate principals.** A live session falls back to the OIDC values on
+  its very next request -- the per-request identity refresh reads the users
+  row and overlays nothing. A principal the directory supplied stops being
+  offered without waiting for anyone to log in again.
+- **Notification fan-out.** Group resolution counts only the OIDC rows. A
+  membership frozen on the day the directory was switched off does not route
+  mail.
+- **The admin console.** The directory record and the directory-sourced group
+  rows are withheld from the user detail page, and the page says why. Frozen
+  data shown beside live data with nothing to tell them apart is how someone
+  grants access on a principal list that has not been true for months.
+
+Nothing is deleted. Switching the directory back on restores the record
+without waiting for a sync pass.
+
 ## Configuration
 
 ```yaml
@@ -45,12 +66,17 @@ ldap:
   bind_password: "..."
   base_dn: "ou=people,dc=example,dc=net"
 
+  # The entry's unique, immutable identifier. Set this: it is what lets a
+  # renamed or relocated entry be found again. See "Surviving a rename".
+  id_attribute: entryUUID
+
   # A Go template over the OIDC identity: {{.Username}}, {{.Email}},
   # {{.Subject}}, {{.Extra.<name>}}. Values are RFC 4515 escaped
   # automatically and the operator cannot opt out.
   user_filter: "(&(objectClass=person)(uid={{.Username}}))"
 
   fields:
+    name: displayName                # the person's human-readable name
     groups: memberOf                 # shorthand for {attribute: memberOf}
     other_accounts:
       attribute: sAMAccountName      # the person's own entry
@@ -91,8 +117,9 @@ ldap:
 | [`ldap.url`](/ssoossh/reference/config/ldap/#url) | empty | e.g. `ldaps://ldap.example.net` |
 | [`ldap.bind_dn`](/ssoossh/reference/config/ldap/#bind_dn) / [`bind_password`](/ssoossh/reference/config/ldap/#bind_password) | empty | the implicit "simple" bind mechanism |
 | [`ldap.base_dn`](/ssoossh/reference/config/ldap/#base_dn) | empty | the user lookup base, and the default base for field searches that name none |
+| [`ldap.id_attribute`](/ssoossh/reference/config/ldap/#id_attribute) | empty | the entry's unique, immutable identifier; see [Surviving a rename](#surviving-a-rename) |
 | [`ldap.user_filter`](/ssoossh/reference/config/ldap/#user_filter) | empty | the template above |
-| [`ldap.fields`](/ssoossh/reference/config/ldap/#fields) | none | destinations mapped to directory sources |
+| [`ldap.fields`](/ssoossh/reference/config/ldap/#fields) | none | destinations mapped to directory sources; reserved names are `other_accounts`, `service_accounts`, `groups` and `name` |
 | [`ldap.group_name_attribute`](/ssoossh/reference/config/ldap/#group_name_attribute) | empty | the attribute a group search reads a name from |
 | [`ldap.timeout`](/ssoossh/reference/config/ldap/#timeout) | `5s` | bounds each directory operation, and so bounds the latency enrichment adds to a login |
 | [`ldap.start_tls`](/ssoossh/reference/config/ldap/#start_tls) | `false` | upgrades a plain `ldap://` connection; irrelevant for `ldaps://` |
@@ -109,8 +136,8 @@ friends. Give it a filename to split it into its own rotating file.
 `ldap.fields` mirrors
 [`authentication.fields`](/ssoossh/reference/config/authentication/#fieldsextra),
 with attribute names instead of claim names. The reserved destinations are
-`other_accounts`, `service_accounts` and `groups`; **any other key is an extra
-template field**, on the same contract as `authentication.fields.extra` --
+`other_accounts`, `service_accounts`, `groups` and `name`; **any other key is
+an extra template field**, on the same contract as `authentication.fields.extra` --
 reachable in [key ID templates](/ssoossh/operations/key-id-templates/) as
 `{{.Extra.<name>}}`, stored empty when absent, and never a reason for login to
 fail. There is no separate `extra:` sub-map, because LDAP enrichment is extra
@@ -120,6 +147,14 @@ by definition.
 user row, the username is what lookups are keyed *by*, and the OIDC email
 claim is the source of truth for the user's email. Configuring one could only
 read as an attempt to override identity.
+
+`name` is not in that set, and the directory is usually the better source for
+it: `displayName` or `cn` is maintained there even when the identity provider
+omits a name claim from the token. It is display only -- shown in the web UI
+and offered to [email templates](/ssoossh/operations/email-notifications/),
+never a certificate principal, a key ID input, or an authorization input. Only
+the first value is taken, since a multi-valued `cn` names the same person
+twice and joining them would produce a label no directory holds.
 
 **The merge rule is per field.** A configured LDAP field (any `attribute` or
 `searches`) wins over the OIDC value; an unconfigured one leaves the OIDC
@@ -205,8 +240,10 @@ over every user with a `user_ldap` row.
 
 ```mermaid
 flowchart TD
-    S["Sync tick, per known user"] --> D{"Read entry by DN"}
-    D -- "found" --> R["Refresh attributes and groups,<br/>update last_seen_at,<br/>clear first_missing_at"]
+    S["Sync tick, per known user"] --> I{"Search by id_attribute"}
+    I -- "found" --> R["Refresh attributes and groups,<br/>update last_seen_at and DN,<br/>clear first_missing_at"]
+    I -- "unset, absent or failed" --> D{"Read entry by DN"}
+    D -- "found" --> R
     D -- "DN read failed" --> F["One filter search:<br/>a moved entry re-anchors"]
     F -- "found" --> R
     F -- "search succeeded, no entry" --> M["Open first_missing_at<br/>if it is not already set"]
@@ -218,27 +255,76 @@ flowchart TD
     E -- "yes" --> C["Clear the disable"]
 ```
 
-1. Read the entry **by DN**, which is cheaper than a search and distinguishes
-   "entry deleted" from "filter no longer matches". A failed DN read falls
-   back to one filter search, so a moved entry re-anchors instead of being
-   disabled.
-2. **Found:** refresh attributes and LDAP group rows, update `last_seen_at`,
+The login path walks the same three anchors in the same order, so a login and
+a sync pass can never resolve a person differently.
+
+1. Search by [`ldap.id_attribute`](/ssoossh/reference/config/ldap/#id_attribute),
+   the only anchor that does not move. Skipped entirely when it is unset or
+   nothing has been stored yet.
+2. Read the entry **by DN**, which is cheap and distinguishes "entry deleted"
+   from "filter no longer matches". A failed DN read falls back to one filter
+   search, so a moved entry re-anchors instead of being disabled.
+3. **Found:** refresh attributes and LDAP group rows, update `last_seen_at`,
    and clear `first_missing_at` -- the window closes outright, so an absence
    that ended never counts toward a later one. If the user is disabled with
    `disabled_source = ldap_sync` and
    [`sync.reenable`](/ssoossh/reference/config/ldap/sync/#reenable) is on,
    clear it.
-3. **Not found** (search succeeded, no entry): set `first_missing_at` if it is
+4. **Not found** (search succeeded, no entry): set `first_missing_at` if it is
    not already set, leaving it alone on later passes. Once the entry has been
    missing for
    [`sync.disable_after`](/ssoossh/reference/config/ldap/sync/#disable_after),
    disable the user with `disabled_source = ldap_sync`.
-4. **Directory unreachable or bind failed:** update nothing, count nothing,
+5. **Directory unreachable or bind failed:** update nothing, count nothing,
    log loudly.
 
 :::caution[An outage must never disable anyone]
 Only a search that *succeeds* and finds no entry is a miss. This is the single
-rule the sync design rests on, and it is what step 4 exists for.
+rule the sync design rests on, and it is what step 5 exists for.
+:::
+
+### Surviving a rename
+
+Set [`ldap.id_attribute`](/ssoossh/reference/config/ldap/#id_attribute). It is
+the single most valuable line in this file, and it is empty by default only
+because no value is right for every directory.
+
+Without it there are two anchors, and both move:
+
+- The **DN** changes when someone is moved between OUs, or when their RDN is
+  built from a name that changed.
+- The **`user_filter`** stops matching the moment they are renamed, if it is
+  keyed on `{{.Username}}` -- which is the common case.
+
+So a rename looks exactly like a deletion. The sync finds nothing, opens
+`first_missing_at`, and after
+[`sync.disable_after`](/ssoossh/reference/config/ldap/sync/#disable_after)
+disables an account whose owner is sitting at their desk.
+
+Every directory has an identifier that does not move, and every directory
+calls it something else:
+
+| Directory | Attribute | Shape |
+| --- | --- | --- |
+| OpenLDAP, 389 Directory Server | `entryUUID` | UUID string (RFC 4530) |
+| Active Directory | `objectGUID` | 16 raw bytes |
+| FreeIPA | `ipaUniqueID` | UUID string |
+| 389 DS / Netscape (legacy) | `nsuniqueid` | UUID-like string |
+
+If you do not know which one your directory has, run a probe from
+**Admin → Directory** and read the suggestion: the probe requests all of them
+by name (they are operational attributes, so `*` does not return them) and
+names the one your entry actually carries.
+
+A binary identifier such as `objectGUID` is stored hex-encoded behind a `0x`
+marker, and rendered back into the `\a1\b2...` byte-escape form a directory
+matches against. Nothing about that is visible in configuration -- name the
+attribute and it is handled.
+
+:::note[Never an authorization input]
+The identifier locates a directory entry. Nothing reads it to decide what
+anyone may do, and it never appears in a certificate. Authorization is
+evaluated from the session identity, exactly as it was before.
 :::
 
 ### Why the threshold is a duration
@@ -423,6 +509,9 @@ Accepted limitation: fan-out reaches only users who have logged in at least
 once, because only they have rows. The sync does not create shadow users for
 directory members who have never authenticated; enumerating a directory to
 email strangers is a different feature with different consent implications.
+
+With `ldap.enabled: false`, only the OIDC rows resolve -- see
+[Switching the directory off](#switching-the-directory-off).
 
 ## Out of scope
 

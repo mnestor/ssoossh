@@ -81,7 +81,9 @@ The defaults suit a provider that follows the usual claim names.
 
 | Key | Default | What it feeds |
 | --- | --- | --- |
+| [`fields.subject`](/ssoossh/reference/config/authentication/#fieldssubject) | `sub` | the unique account identifier every login is keyed by. See [Choosing the account identifier](#choosing-the-account-identifier) |
 | [`fields.username`](/ssoossh/reference/config/authentication/#fieldsusername) | `preferred_username` | the primary principal, and `{{.Username}}` in key IDs. Required |
+| [`fields.name`](/ssoossh/reference/config/authentication/#fieldsname) | `name` | the person's human-readable name, shown in the web UI and offered to email templates. Display only |
 | [`fields.groups`](/ssoossh/reference/config/authentication/#fieldsgroups) | `groups` | `require` gates, lifetime tiers, and the admin roles. A JSON array of names |
 | [`fields.other_accounts`](/ssoossh/reference/config/authentication/#fieldsother_accounts) | empty | alternate account names added to a certificate's principal list |
 | [`fields.service_accounts`](/ssoossh/reference/config/authentication/#fieldsservice_accounts) | empty | which service accounts this identity may enroll and manage |
@@ -118,6 +120,39 @@ someone's score in the provider takes effect at their next authentication.
 
 Directory attributes can fill the same fields when OIDC does not carry them --
 see [LDAP enrichment](/ssoossh/operations/ldap/).
+
+## Choosing the account identifier
+
+`authentication.fields.subject` names the claim ssoossh keys a person by. It
+is the value stored on `users.subject`, and the only thing that ties someone
+to their certificate history, their enrollments and their audit trail across
+logins.
+
+It defaults to `sub`, which is what OIDC guarantees to be stable per issuer
+and is the right answer for most providers. Two cases where it is not:
+
+- **Entra ID** issues a per-application `sub` and puts the tenant-stable
+  identifier in `oid`. Registering a second application client for the same
+  people would give them all new `sub` values, and so new accounts.
+- **A provider fronting a directory** may carry the directory's own UUID in a
+  private claim, which is worth keying on so that ssoossh and the directory
+  agree on who someone is.
+
+**Username and email are not candidates and never will be.** Both change --
+a rename, a marriage, a team move -- and keying on either would silently fork
+a person's history into a second account, leaving their certificates and
+enrollments attached to an identity nobody can log in as.
+
+:::caution[Choose it before the first login]
+Changing this on a running deployment re-keys every login. Anyone whose row
+was written under the old claim no longer matches and is created fresh, with
+an empty history. There is no automatic relink.
+:::
+
+The [Claims echo](#seeing-what-your-provider-actually-sends) reports which
+claim this reads, and it is the first thing to check there: every other
+mapping can be wrong and be corrected later, while a subject claim that varies
+between logins creates a new account each time.
 
 ## Seeing what your provider actually sends
 
