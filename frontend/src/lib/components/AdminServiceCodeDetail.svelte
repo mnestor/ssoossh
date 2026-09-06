@@ -122,18 +122,15 @@
 		<span class="ml-auto"><CopyableId value={enrollment.id} testid="enrollment-id" /></span>
 	</div>
 
-	<div class="flex gap-2.5 rounded-lg bg-surface-muted px-3.5 py-3 text-[13px] leading-normal">
-		<Icon name="user" size="sm" class="mt-px flex-shrink-0 text-ink-muted" />
-		<span>
-			Mints certificates for <strong class="font-mono" data-testid="service-code-account"
-				>{subject}</strong
-			>, its only principal, fixed when approved.
-		</span>
-	</div>
-
 	<div>
 		<SectionLabel>What it hands out</SectionLabel>
 		<dl class="divide-y divide-border-subtle">
+			<!-- The principal leads, as it does on the holder's own page: it is
+			     the account every certificate this code mints is for, fixed when
+			     the code was approved. -->
+			<DetailRow label="Principal" mono>
+				<span data-testid="service-code-account">{subject}</span>
+			</DetailRow>
 			<DetailRow label="Certificate life" icon="clock">{certificateLifetime}</DetailRow>
 			<DetailRow label="Key ID" mono>{enrollment.key_id || '—'}</DetailRow>
 			<DetailRow label="Bound key" mono>{enrollment.public_key_fingerprint || '—'}</DetailRow>
