@@ -38,6 +38,7 @@ jobs:
               - '**/*.go'
               - 'go.mod'
               - 'go.sum'
+              - '.github/workflows/security.yaml'
             frontend:
               - 'frontend/**'
               - '.semgrepignore'
@@ -113,14 +114,14 @@ jobs:
       - name: pnpm audit
         id: scan
         continue-on-error: true
-        run: pnpm audit --audit-level high 2>&1 | tee audit.txt
+        run: pnpm audit --audit-level high 2>&1 | tee pnpm-audit.txt
       - name: Add results to job summary
         if: ${{ !cancelled() }}
         run: |
           {
             echo "## pnpm audit (${{ steps.scan.outcome }})"
             echo '```'
-            head -c 60000 audit.txt
+            head -c 60000 pnpm-audit.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload results
@@ -128,7 +129,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: security-pnpm-audit
-          path: frontend/audit.txt
+          path: frontend/pnpm-audit.txt
           retention-days: 7
 
   # Blocking, frontend-only, and pinned. Each of those is deliberate:
@@ -200,7 +201,15 @@ jobs:
             echo "## Security scan results"
             echo ""
             for scanner in govulncheck pnpm-audit; do
-              file=$(find "results/security-${scanner}" -type f 2>/dev/null | head -1)
+              # Search the whole tree by filename rather than assuming
+              # results/security-<scanner>/. download-artifact extracts a
+              # lone matching artifact flat into `path` and only nests a
+              # per-artifact directory when two or more match -- so the
+              # nested form was there exactly when both scanners ran, and
+              # missing on the single-scanner PRs that the path gate above
+              # makes the common case. That reported every such PR as "did
+              # not run" while the scan it discarded had passed.
+              file=$(find results -type f -name "${scanner}.txt" 2>/dev/null | head -1)
               echo "<details><summary>${scanner}</summary>"
               echo ""
               echo '```'
