@@ -7,18 +7,21 @@
 # by the next run, and CI fails while the two disagree.
 #
 # This is both the defaults embedded in the binary and the annotated
-# file installed as /etc/ssoossh/ssoosshd.yaml. A key documented with
-# no value below is deliberately unset; see ssoosshd.yaml(5) for the
-# full reference.
+# file installed as /etc/ssoossh/ssoosshd.yaml. Every commented-out key
+# below is an option you can uncomment and set: it is either unset, or
+# set to the zero value its own line shows, and commenting it out or
+# leaving it out come to the same thing. The keys left uncommented are
+# the values ssoossh actually chose. See ssoosshd.yaml(5) for the full
+# reference.
 
 # Enables OpenTelemetry tracing, adding the otelgin middleware to the
 # router. Exporter endpoints come from the standard OTEL_* environment
 # variables.
-traces: false
+# traces: false
 
 # Enables OpenTelemetry metrics. Exporter endpoints come from the standard
 # OTEL_* environment variables.
-metrics: false
+# metrics: false
 
 # Selects gin's release mode rather than debug mode, and gates the
 # development-only escape hatches: notably http.rate_limit_disable_for_dev
@@ -33,7 +36,6 @@ production: true
 #   ssh_key: |
 #     -----BEGIN OPENSSH PRIVATE KEY-----
 #     -----END OPENSSH PRIVATE KEY-----
-
 
 # The maximum lifetime for user/service/PAM certificates, enforced as a
 # defense-in-depth check before signing. Must be greater than zero; a
@@ -58,14 +60,13 @@ max_service_cert_lifetime: 17544h
 #
 #   fips: true
 
-
 # Declares that the server is part of a multi-instance deployment (multiple
 # ssoosshd processes sharing a database). When enabled, certain checks are
 # enforced (e.g., cookie_key must be explicitly set) and behaviors adapt to
 # account for cross-instance message delivery (a client waiting on one
 # instance is woken by another) payloads). See
 # docs/dev/multi-instance-safety-plan.md.
-multi_instance: false
+# multi_instance: false
 
 # Configures the main application log.
 logging:
@@ -82,33 +83,52 @@ logging:
   # a duration forcing rotation on a schedule in addition to size. The rest
   # tune backup filename formatting and rotation at specific times. See the
   # DeRuina/timberjack package for the per-field detail.
+  # filename: ""
+  # maxsize: 0
+  # maxage: 0
+  # maxbackups: 0
+  # localtime: false
+  # compression: ""
+  # rotationinterval: 0s
+  # backuptimeformat: ""
+  # rotateatminutes: []
+  # rotateat: []
+  # appendtimeafterext: false
+  # filemode: 0
+
   # The minimum log level: a level name (debug, info, warn, error,
   # case-insensitive, optionally with a numeric +N or -N offset) or a raw
   # numeric slog level such as -4, 0, 4, or 8. An unrecognized or empty value
   # falls back to info.
   level: "WARN"
+
   # Also writes the main log to stdout even when a filename is set. When no
   # filename is set, or the process is attached to a terminal, stdout is used
   # regardless.
   # enable_stdout: false
+
   # Adds an "app" attribute, the string "ssoossh", to every log record.
   include_app_name: true
+
   # Adds a "version" attribute to every log record.
   include_app_version: true
+
   # Writes JSON instead of text. Text is meant to be read, not parsed: the
   # message is written as bare prose so quoted values in it are not escaped,
   # which is not a machine-readable format. Set this wherever a log collector
   # has to pull fields back out.
-  log_json: false
+  # log_json: false
 
 # Configures the database connection, pooling, retries, and query logging.
 db:
   # Identifies which database backend to use.
   provider: "sqlite"
+
   # The connection string / DSN. For SQLite this is a file path (or ":memory:"
   # for in-memory); for PostgreSQL a standard postgres:// URL or keyword
   # string.
   connection_string: "ssoossh.db"
+
   # Configures which database queries are logged and where they are written.
   # See DBLogging for detailed options.
   logging:
@@ -116,40 +136,61 @@ db:
     # logger, with the same keys and meanings as logging.* above. This
     # destination is only split out of the main log once its filename is set;
     # until then its records go to the general log.
+    # filename: ""
+    # maxsize: 0
+    # maxage: 0
+    # maxbackups: 0
+    # localtime: false
+    # compression: ""
+    # rotationinterval: 0s
+    # backuptimeformat: ""
+    # rotateatminutes: []
+    # rotateat: []
+    # appendtimeafterext: false
+    # filemode: 0
+
     # The minimum log level for this destination, in the same form as
-    # logging.level.
+    # logging.level. Empty means this destination has no threshold of its own
+    # and is filtered at logging.level with everything else.
     level: "WARN"
+
     # Includes the source file and line on each record.
-    add_source: false
+    # add_source: false
+
     # Writes JSON instead of text. Text is meant to be read, not parsed: the
     # message is written as bare prose so quoted values in it are not escaped,
     # which is not a machine-readable format. Set this wherever a log collector
     # has to pull fields back out.
-    log_json: false
+    # log_json: false
+
   # The maximum number of connection attempts before giving up. Zero or
   # negative disables retries (will fail immediately on the first error).
   # Applies to both SQLite (typically succeeds immediately) and PostgreSQL
   # (may retry on transient network failures).
   retry_attempts: 3
+
   # The time to wait between connection retry attempts. Only used if
   # retry_attempts > 1. Applies to both SQLite and PostgreSQL.
   retry_interval: 3s
+
   # Sets the maximum number of open connections to the database. Zero means
   # Go's default (typically 2). For file-backed SQLite, keep this modest:
   # writes serialize on the write lock regardless, so high counts just queue
   # without benefit. For PostgreSQL, scale with expected concurrency. This is
   # ignored for in-memory SQLite, which is always forced to 1.
   max_open_conns: 10
+
   # Sets the maximum number of idle connections held open. Zero means Go's
   # default (typically 2, same as max_open_conns). Keep this proportionate to
   # max_open_conns — they are not independent; a high max_open_conns with a
   # low max_idle_conns causes expensive churn.
   max_idle_conns: 5
+
   # Sets the maximum amount of time a connection can be reused. Zero disables
   # the limit (connections are reused indefinitely). Useful for breaking stale
   # connections in long-running deployments, but typically not necessary with
   # a well-behaved database server.
-  conn_max_lifetime: 0
+  # conn_max_lifetime: 0
 
 # Configures the listener, TLS, sessions, and rate limiting.
 http:
@@ -161,6 +202,19 @@ http:
     # Log-file rotation for the access log, via the embedded timberjack logger,
     # with the same keys and meanings as logging.* above. The access log is only
     # split into its own file once its filename is set.
+    # filename: ""
+    # maxsize: 0
+    # maxage: 0
+    # maxbackups: 0
+    # localtime: false
+    # compression: ""
+    # rotationinterval: 0s
+    # backuptimeformat: ""
+    # rotateatminutes: []
+    # rotateat: []
+    # appendtimeafterext: false
+    # filemode: 0
+
     # The minimum log level for the access log, in the same form as
     # logging.level. Requests are logged at INFO, client errors (4xx) at WARN
     # and server errors (5xx) at ERROR, so "info" logs every request and "warn"
@@ -172,52 +226,67 @@ http:
     # logging.level along with everything else — which, with the shipped
     # logging.level of WARN, means no successful request is ever logged.
     level: "info"
+
     # Records the request's User-Agent header.
     log_user_agent: true
+
     # Records the full request header set. Verbose, and it captures whatever the
     # client sent.
     log_request_header: true
+
     # Records the client address, as resolved through http.trusted_proxies.
     log_client_ip: true
+
     # Records the per-request correlation ID.
-    log_request_id: false
+    # log_request_id: false
+
     # Records the request body. Off by default and worth leaving off: request
     # bodies on this server carry public keys and enrollment codes.
-    log_request_body: false
+    # log_request_body: false
+
     # Records the response body. Off by default and worth leaving off: response
     # bodies carry issued certificates and enrollment tokens.
-    log_response_body: false
+    # log_response_body: false
+
     # Records the full response header set.
-    log_response_header: false
+    # log_response_header: false
+
     # Records the OpenTelemetry span ID.
-    log_span_id: false
+    # log_span_id: false
+
     # Records the OpenTelemetry trace ID.
-    log_trace_id: false
+    # log_trace_id: false
+
     # Writes JSON instead of text. Text is meant to be read, not parsed: the
     # message is written as bare prose so quoted values in it are not escaped,
     # which is not a machine-readable format. Set this wherever a log collector
     # has to pull fields back out.
     # log_json: false
+
   # The network interface to bind to, e.g. "127.0.0.1" to listen only locally,
   # or "0.0.0.0" for all interfaces. Used with Port to form the server's
   # listen address.
   address: "127.0.0.1"
+
   # The TCP port to listen on, e.g. 80 for HTTP or 443 for HTTPS. Port 0 is
   # reserved for testing and tells the OS to pick an unused port; the actual
   # port is logged on startup. Ignored when unix_socket is set.
   port: 8080
+
   # when set, is a filesystem path to listen on a Unix domain socket instead
   # of TCP — Address and Port are ignored. Mutually exclusive with
   # proxy_protocol (PROXY protocol is a TCP-connection concept; it has nothing
   # to prefix on a Unix socket).
-  unix_socket: ""
+  # unix_socket: ""
+
   # Lists the CIDR ranges of reverse proxies trusted to prefix connections
   # with a PROXY protocol v1/v2 header (so the real client address survives a
   # TCP-level proxy, as opposed to trusted_proxies below which is for
   # HTTP-level proxies setting X-Forwarded-For). Empty disables PROXY protocol
   # support entirely; connections from any other source are rejected outright
   # once this is set. Ignored (must be empty) when unix_socket is set.
-  proxy_protocol: []
+  # proxy_protocol: []
+
   # Lists the CIDR ranges of reverse proxies trusted to set
   # X-Forwarded-For/X-Forwarded-Proto, passed to gin's SetTrustedProxies.
   # Empty means no proxy is trusted, so c.ClientIP() always reports the direct
@@ -226,7 +295,8 @@ http:
   # That only holds because the router passes this to SetTrustedProxies
   # unconditionally — gin's own default is to trust every proxy, so skipping
   # the call for an empty list would mean the opposite.
-  trusted_proxies: []
+  # trusted_proxies: []
+
   # The scheme and host browsers actually reach this deployment at, e.g.
   # "https://ssh.example.com". Required: it is the one place the
   # browser-visible identity of this deployment is written down, and it will
@@ -246,12 +316,14 @@ http:
   # the app under a sub-path would need the frontend's base to move with it,
   # which is not supported, so accepting one here would only produce a
   # redirect URI that silently does not work.
-  public_url: ""
+  # public_url: ""
+
   # The secret used to sign and encrypt session cookies. If empty, a key is
   # generated once and persisted in the server_secrets table, so sessions
   # survive a restart and instances sharing a database share the key.
   # Configure an explicit value to key it from outside the database.
-  cookie_key: ""
+  # cookie_key: ""
+
   # Controls the session cookie's SameSite attribute: "strict" (default),
   # "lax", or "none". Strict is right for this server because nothing
   # legitimately navigates into it from another site — the OIDC callback is
@@ -262,11 +334,13 @@ http:
   # against an attacker page on a different origin of the *same* site, so
   # state-changing routes are additionally guarded by the CSRF middleware.
   cookie_same_site: "strict"
+
   # The absolute ceiling on a session's lifetime, measured from login.
   # Activity does not extend it: once a session is this old the next request
   # is unauthenticated regardless of how recently it was used, and the user
   # signs in again. Zero uses the built-in default.
   cookie_max_age: 9h
+
   # How long a session survives without a request. SessionAuthMiddleware
   # slides this window on activity (re-saving the session past half the
   # window, which reissues the cookie), so an actively-used session only ever
@@ -274,33 +348,41 @@ http:
   # quiet. Zero uses the built-in default. Must not exceed cookie_max_age - an
   # idle window longer than the absolute cap cannot ever be reached.
   cookie_idle_timeout: 30m
+
   # The maximum number of requests per rate_duration allowed per client IP.
   # Zero or negative disables rate limiting entirely. Localhost (127.0.0.1,
   # ::1) bypasses the limit, so health probes and tests from the local
   # frontend are not throttled.
   rate_limit: 60
+
   # The time window for rate limiting calculations. With rate_limit=60 and
   # rate_duration=1m, each IP is allowed 60 requests per minute. Typical
   # values are in seconds to minutes.
   rate_duration: 1m
+
   # Disables all rate limiting (global and per-endpoint) when true. Only
   # effective when Production=false, so it cannot be silently enabled in
   # production. Used for local development to avoid throttling during testing.
-  rate_limit_disable_for_dev: false
+  # rate_limit_disable_for_dev: false
+
   # Holds per-endpoint rate limits for certificate request creation endpoints.
   # Zero or negative disables the specific limit.
   cert_request_rate_limit:
     # The limit for POST /api/certs/user (interactive user cert).
     user: 10
+
     # The limit for POST /api/certs/service/enroll (service enrollment,
     # unattended).
     service_enroll: 5
+
     # The limit for POST /api/certs/pam (short-lived PAM cert, gated on local
     # interaction).
     pam: 10
+
     # The limit for POST /api/certs/console (console login, gated on someone
     # standing at a keyboard).
     console: 10
+
   # Holds the rate limit configuration for service enrollment code redemption,
   # keyed on the enrollment code to protect against brute-forcing. Zero or
   # negative disables the specific limit.
@@ -308,6 +390,7 @@ http:
     # Requests per second per enrollment code. Zero or negative disables this
     # limit.
     limit: 1
+
   # Holds the rate limit configuration for console user-code submission, keyed
   # on the submitting session and its source address to protect against
   # brute-forcing.
@@ -322,10 +405,12 @@ http:
     # Submissions per second per session and per source address. Zero or
     # negative disables this limit.
     limit: 1
+
     # How many submissions may arrive back to back before the per-second rate
     # starts holding them back. Small on purpose: a human typing a code they
     # misread retries once or twice, not ten times.
     burst: 5
+
   # (HTTP Strict-Transport-Security) is sent in the Strict-Transport-Security
   # header on every response, but only when the server terminates TLS itself
   # (i.e. tls.certificate_file and tls.private_key_file are set). Browsers
@@ -333,6 +418,7 @@ http:
   # TLS-terminating reverse proxy in front sets its own policy. Typical values
   # include "max-age=31536000; includeSubDomains".
   hsts: "max-age=31536000; includeSubDomains"
+
   # Holds the server's TLS configuration: certificate/key material, cipher
   # suites, protocol versions, and supported curves. See TLSConfig for
   # detailed field options. If no certificate/key pair is configured, the
@@ -355,10 +441,12 @@ http:
     # place needs no restart; the path itself is fixed for the process's
     # lifetime.
     # certificate_file: "/etc/ssoossh/tls/server.crt"
+
     # The path to the PEM private key matching tls.certificate_file. Required
     # together with it, re-read on the same reload, and its path is likewise
     # fixed for the process's lifetime.
     # private_key_file: "/etc/ssoossh/tls/server.key"
+
     # Restricts the TLS 1.0-1.2 cipher suites offered (Go does not allow
     # configuring TLS 1.3 suites). Names must exactly match crypto/tls constant
     # names, case-sensitively, e.g. "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"; the
@@ -366,18 +454,21 @@ http:
     # explicit list must include TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 or
     # TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256: net/http's automatic HTTP/2 setup
     # refuses to serve without one of them, failing the server at startup.
-    cipher_suites: []
+    # cipher_suites: []
+
     # The minimum TLS protocol version: TLS1.0, TLS1.1, TLS1.2, or TLS1.3.
     # Parsing tolerates case, "."/"-"/"_"/" " separators, and the
     # "tls"/"version" prefixes ("tls12", "TLS-1.2", and "VersionTLS12" all
     # work). TLS1.0 and TLS1.1 resolve but log a deprecation warning (RFC 8996).
     min_version: "TLS1.3"
+
     # Restricts the key-exchange curves/groups offered, in preference order:
     # P256, P384, P521, X25519, or X25519MLKEM768, with the same tolerant
     # parsing as TLSMinVersion ("CurveP256", "p-256", ...). Empty means Go's
     # defaults; note that naming any curve replaces those defaults entirely
     # rather than adding to them.
-    curves: []
+    # curves: []
+
     # How often the certificate files are re-read on a timer, in addition to
     # SIGHUP which always reloads. Zero or negative disables the timer, leaving
     # SIGHUP as the only trigger.
@@ -386,24 +477,65 @@ http:
     # Kubernetes secret remount is the motivating case, since it replaces a
     # directory symlink rather than writing the files in place, so a filesystem
     # watch on the paths never fires.
-    reload_interval: 0
+    # reload_interval: 0
 
 # Carries the log destination for the internal message queue.
+# queue:
+  # Configures a named, independently-routed log destination (e.g. database
+  # queries, the message queue) — anything that just needs a level, a
+  # rotating file, and a JSON/text choice. See server/logging.New, which
+  # routes records tagged with a given name to their own destination when one
+  # is configured.
+  # logging:
+    # Log-file rotation for this destination, via the embedded timberjack
+    # logger, with the same keys and meanings as logging.* above. This
+    # destination is only split out of the main log once its filename is set;
+    # until then its records go to the general log.
+    # filename: ""
+    # maxsize: 0
+    # maxage: 0
+    # maxbackups: 0
+    # localtime: false
+    # compression: ""
+    # rotationinterval: 0s
+    # backuptimeformat: ""
+    # rotateatminutes: []
+    # rotateat: []
+    # appendtimeafterext: false
+    # filemode: 0
+
+    # The minimum log level for this destination, in the same form as
+    # logging.level. Empty means this destination has no threshold of its own
+    # and is filtered at logging.level with everything else.
+    # level: "info"
+
+    # Includes the source file and line on each record.
+    # add_source: false
+
+    # Writes JSON instead of text. Text is meant to be read, not parsed: the
+    # message is written as bare prose so quoted values in it are not escaped,
+    # which is not a machine-readable format. Set this wherever a log collector
+    # has to pull fields back out.
+    # log_json: false
 
 # Configures OAuth/OIDC authentication for the server. See OAuthConfig for
 # details on provider URL, scopes, and field mapping from OIDC claims to
 # ssoossh identity fields (username, groups).
 authentication:
   # The OAuth2/OIDC client ID registered with the identity provider. Required.
-  client_id: ""
+  # client_id: ""
+
   # The OAuth2 client secret.
-  client_secret: ""
+  # client_secret: ""
+
   # The OIDC provider's issuer URL, used for discovery. A trailing
   # /.well-known/openid-configuration is stripped automatically. Required.
-  provider_url: ""
+  # provider_url: ""
+
   # A space-separated list of additional scopes to request alongside the
   # always-included "openid" scope, e.g. "profile email".
   scopes: "profile email"
+
   # Maps ssoossh identity fields to claim names in the OIDC provider's ID
   # token. Username is the only required field; the rest are empty by default,
   # meaning "not populated from OIDC".
@@ -425,12 +557,14 @@ authentication:
     # was written under the old claim will no longer match and will be created
     # fresh. Choose it before the first login, not after.
     subject: "sub"
+
     # Names the claim holding the local account username, e.g.
     # "preferred_username". Required.
     #
     # This is the account name on target systems — the default certificate
     # principal — not an identifier. It may change; Subject is what stays put.
     username: "preferred_username"
+
     # Names the claim holding the person's human-readable name, e.g. "Ada
     # Lovelace". Display only: it is shown beside the username in the web UI and
     # offered to email templates, and it never becomes a certificate principal,
@@ -439,23 +573,28 @@ authentication:
     # Empty disables the capture. A configured claim that does not arrive stores
     # empty and is simply not shown; login never fails over one.
     name: "name"
+
     # Names a claim expected to hold a JSON array of group names. It feeds the
     # certificate lifetime and require-group decision only; group membership is
     # never placed in an issued certificate (see
     # https://mnestor.github.io/ssoossh/internals/invariants/).
     groups: "groups"
+
     # Names a claim expected to hold a JSON array of alternate account
     # identifiers this identity is known by on target systems (a different
     # username, UPN, or sAMAccountName), added to a certificate's principal list
     # alongside the username claim.
-    other_accounts: ""
+    # other_accounts: ""
+
     # Names a claim expected to hold a JSON array of service-account identifiers
     # this identity is authorized to manage and enroll certificates for.
-    service_accounts: ""
+    # service_accounts: ""
+
     # Names the claim to read the user's email from. Empty falls back to the
     # standard "email" claim opportunistically (not an error if absent either
     # way).
     email: "email"
+
     # Maps additional template field names to claim names. Each configured claim
     # is captured at login (scalars as strings, string arrays as lists), stored
     # on the users row, and made available to key ID templates as
@@ -481,7 +620,6 @@ authentication:
     # See https://mnestor.github.io/ssoossh/operations/key-id-templates/ for the
     # full template field list and the MISSING rendering rules.
 
-
 # Optionally enriches the OIDC identity with directory attributes.
 #
 # LDAP is enrichment, never a requirement. If directory data is available a
@@ -494,25 +632,31 @@ authentication:
 # See https://mnestor.github.io/ssoossh/operations/ldap/.
 ldap:
   # Turns on the login-time lookup and the background sync.
-  enabled: false
+  # enabled: false
+
   # The directory server to connect to, e.g. ldaps://ldap.example.net.
-  url: ""
+  # url: ""
+
   # The DN to bind as for the search. Together with bind_password this is the
   # implicit "simple" bind mechanism; a keytab-based SASL GSSAPI alternative
   # is tracked separately and slots in beside these keys rather than replacing
   # them.
-  bind_dn: ""
+  # bind_dn: ""
+
   # The password for bind_dn.
-  bind_password: ""
+  # bind_password: ""
+
   # The search base for the user lookup, and the default base for field
   # searches that do not name their own.
-  base_dn: ""
+  # base_dn: ""
+
   # A Go template over the OIDC identity, with the same idiom as key ID
   # templates: {{.Username}}, {{.Email}}, {{.Subject}}, and {{.Extra.<name>}}.
   # Values are RFC 4515 escaped during rendering and the operator cannot opt
   # out, because a preferred_username containing * or ) is otherwise filter
   # injection.
-  user_filter: ""
+  # user_filter: ""
+
   # Maps destinations to the directory sources that populate them, mirroring
   # OAuthFields with attribute names instead of claim names.
   #
@@ -565,17 +709,20 @@ ldap:
   #
   # Binary-valued attributes (objectGUID) are stored as their hex form, which
   # is also how they must be written in a filter.
-  id_attribute: ""
+  # id_attribute: ""
+
   # Names the attribute to read a group's name from when a group search is
   # used. When groups arrive as DNs (memberOf, the common case), each DN is
   # reduced to its first RDN value — the CN — and a value that does not
   # parse as a DN is kept as-is. The reduced name is what must match the
   # configured group names.
-  group_name_attribute: ""
+  # group_name_attribute: ""
+
   # Configures the background directory sync.
   sync:
     # How often the sync runs. Zero disables the job entirely.
     interval: 15m
+
     # How long a directory entry may stay missing before the user is
     # auto-disabled, measured from the first *successful* search that found no
     # entry. A directory outage is never a miss: only a search that succeeds and
@@ -588,48 +735,89 @@ ldap:
     # interval; an operator-triggered sync added more. The same absence now
     # means the same thing however many passes observe it.
     disable_after: 45m
+
     # Lets the sync clear its own disables when a directory entry reappears. It
     # only ever clears disables whose source is exactly ldap_sync; a user
     # disabled by an admin or SOC operator is never touched by the sync, in
     # either direction.
     reenable: true
+
     # Group names to persist in addition to those the rest of the configuration
     # references — a future notification target, say. See the allowlist rule
     # on user_groups.
+    # extra_groups: []
 
   # Caps what one directory can push into the database.
   limits:
     # Caps a single multi-valued attribute.
     max_values_per_attribute: 1000
+
     # Caps the matched entries one field search contributes.
     max_entries_per_search: 1000
+
     # Caps the serialized user_ldap.attributes JSON.
     max_attributes_bytes: 65536
+
   # Bounds each directory operation. The login callback is on a user-facing
   # path, so this is the entire latency cost enrichment can add to a login.
   timeout: 5s
+
   # Upgrades a plain ldap:// connection to TLS. Irrelevant for ldaps:// URLs,
   # which are TLS from the start.
-  start_tls: false
+  # start_tls: false
+
   # A PEM bundle path to verify the directory's certificate against. Empty
   # uses the system roots.
-  tls_ca: ""
+  # tls_ca: ""
+
   # Disables certificate verification. A homelab escape hatch, logged loudly
   # at startup; it makes the connection trivially interceptable and has no
   # place in production.
-  tls_insecure_skip_verify: false
+  # tls_insecure_skip_verify: false
+
   # An independent log destination for LDAP activity, routed by a "type=ldap"
   # attribute.
+  # logging:
+    # Log-file rotation for this destination, via the embedded timberjack
+    # logger, with the same keys and meanings as logging.* above. This
+    # destination is only split out of the main log once its filename is set;
+    # until then its records go to the general log.
+    # filename: ""
+    # maxsize: 0
+    # maxage: 0
+    # maxbackups: 0
+    # localtime: false
+    # compression: ""
+    # rotationinterval: 0s
+    # backuptimeformat: ""
+    # rotateatminutes: []
+    # rotateat: []
+    # appendtimeafterext: false
+    # filemode: 0
 
+    # The minimum log level for this destination, in the same form as
+    # logging.level. Empty means this destination has no threshold of its own
+    # and is filtered at logging.level with everything else.
+    # level: "info"
+
+    # Includes the source file and line on each record.
+    # add_source: false
+
+    # Writes JSON instead of text. Text is meant to be read, not parsed: the
+    # message is written as bare prose so quoted values in it are not escaped,
+    # which is not a machine-readable format. Set this wherever a log collector
+    # has to pull fields back out.
+    # log_json: false
 
 # Configures administrative and auditor access. Both group names are
 # optional; empty disables the corresponding role.
-admin:
+# admin:
   # The OIDC group a caller must belong to in order to access admin-scoped
   # operations (re-enabling users), plus everything the SOC and auditor roles
   # below can do. Empty disables admin operations entirely. Fails closed: no
   # identity, no group, or no configured group all deny.
-  require_group: ""
+  # require_group: ""
+
   # The OIDC group a caller must belong to in order to access SOC-scoped
   # containment operations: disabling users and expiring enrollments. SOC is a
   # child role of admin, so require_group members hold SOC access regardless
@@ -638,7 +826,8 @@ admin:
   # directory and enrollment lists to find what to contain), but deliberately
   # not the restorative operations — re-enabling a user stays admin-only.
   # Fails closed: no identity, or membership in neither group, denies.
-  soc_group: ""
+  # soc_group: ""
+
   # The OIDC group a caller must belong to in order to access auditor-scoped
   # operations (viewing effective configuration, cross-user certificate
   # history). Auditor is a child role of both admin and SOC, so require_group
@@ -646,15 +835,17 @@ admin:
   # therefore narrows auditor operations to those roles rather than disabling
   # them. Fails closed: no identity, or membership in no granting group,
   # denies.
-  auditor_group: ""
+  # auditor_group: ""
+
   # The email address shown on the account-disabled page so a disabled user
   # can contact support. Empty disables the display (no mailto link on the
   # page).
-  contact_email: ""
+  # contact_email: ""
+
   # Free-text shown on the account-disabled page below the contact email.
   # Useful for explaining why the account was disabled or what the user should
   # do next.
-  disabled_message: ""
+  # disabled_message: ""
 
 # Configures the administrative audit stream: how long the database copy is
 # kept and where the durable log is shipped.
@@ -672,15 +863,18 @@ audit:
   # matters. Zero disables age-based pruning, leaving max_rows as the only
   # bound.
   retention: 1440h
+
   # Caps the table as a safety valve behind Retention, so a burst of events
   # cannot grow it without bound inside the retention window. The same sweep
   # deletes oldest-first past the cap. The default is deliberately high: this
   # exists to bound pathology, not to be the operative limit. Zero disables
   # the cap.
   max_rows: 1000000
+
   # How often the retention sweep runs. Pruning is not urgent — the window
   # is measured in weeks — so this is measured in hours rather than minutes.
   sweep_interval: 1h
+
   # The durable export: a dedicated destination that receives one JSON line
   # per event, routed by a type=audit attribute like the LDAP and queue logs.
   # Set its filename to split it into its own rotating file; leave it unset
@@ -691,11 +885,27 @@ audit:
     # logger, with the same keys and meanings as logging.* above. This
     # destination is only split out of the main log once its filename is set;
     # until then its records go to the general log.
+    # filename: ""
+    # maxsize: 0
+    # maxage: 0
+    # maxbackups: 0
+    # localtime: false
+    # compression: ""
+    # rotationinterval: 0s
+    # backuptimeformat: ""
+    # rotateatminutes: []
+    # rotateat: []
+    # appendtimeafterext: false
+    # filemode: 0
+
     # The minimum log level for this destination, in the same form as
-    # logging.level.
+    # logging.level. Empty means this destination has no threshold of its own
+    # and is filtered at logging.level with everything else.
+    # level: "info"
 
     # Includes the source file and line on each record.
     # add_source: false
+
     # Writes JSON instead of text. Text is meant to be read, not parsed: the
     # message is written as bare prose so quoted values in it are not escaped,
     # which is not a machine-readable format. Set this wherever a log collector
@@ -709,13 +919,27 @@ audit:
 #
 # Supported: ECDSA P-256/384/521, RSA >= 2048. Ed25519 is not supported by
 # PKCS#11 here; keep ssh_key for an Ed25519 CA.
-#
-#   hsm:
-#     module: /usr/lib/softhsm/libsofthsm2.so
-#     token_label: ssoossh-ca
-#     pin_file: /etc/ssoossh/hsm-pin    # or pin: "1234"
-#     key_label: ssoossh-ca
-#     # key_id: "01"                    # hex CKA_ID, instead of key_label
+# hsm:
+  # The absolute path to the PKCS#11 shared library, e.g.
+  # /usr/lib/softhsm/libsofthsm2.so. Setting it enables HSM mode.
+  # module: "/usr/lib/softhsm/libsofthsm2.so"
+
+  # Selects the token (softhsm2-util --init-token --label ...).
+  # token_label: "ssoossh-ca"
+
+  # The user PIN. Mutually exclusive with PINFile.
+  # pin: "1234"
+
+  # A path whose trimmed contents are the user PIN. Preferred over inline PIN
+  # so the config file can stay world-readable-ish.
+  # pin_file: "/etc/ssoossh/hsm-pin"
+
+  # Selects the key pair by CKA_LABEL. At least one of key_label or key_id is
+  # required; when both are set both must match.
+  # key_label: "ssoossh-ca"
+
+  # Selects the key pair by CKA_ID, hex-encoded (pkcs11-tool --id).
+  # key_id: "01"
 
 # Configures the message broker behind the certificate pipeline. gochannel
 # is in-process; NATS is required for multi-instance and split-process
@@ -729,20 +953,24 @@ pubsub:
   # is in-process, suitable for single-instance. "nats" is required for
   # multi-instance deployments.
   backend: "gochannel"
+
   # Holds NATS-specific configuration. Required when Backend is "nats".
-  nats:
+  # nats:
     # The NATS server connection string, e.g. "nats://nats.example.com:4222".
     # Empty disables NATS (leaves Backend at gochannel).
-    url: ""
+    # url: ""
+
     # The path to the client certificate for mTLS authentication. Required when
     # URL is set.
-    cert_file: ""
+    # cert_file: ""
+
     # The path to the client certificate's private key. Required when URL is
     # set.
-    key_file: ""
+    # key_file: ""
+
     # The path to the CA certificate to verify the NATS server. Required when
     # URL is set.
-    ca_file: ""
+    # ca_file: ""
 
 # Holds the issuance policy for each certificate type.
 cert_options:
@@ -753,7 +981,8 @@ cert_options:
     # `require: {group: <name>}` alongside claim conditions. Setting it is a
     # startup error rather than a silent no-op, because a gate that silently
     # stopped applying would widen issuance.
-    require_group: ""
+    # require_group: ""
+
     # The condition an approver's identity must satisfy to approve a user
     # certificate at all. Unset means any authenticated user may approve, which
     # is the behavior every deployment has had so far.
@@ -784,26 +1013,70 @@ cert_options:
     # fails the condition (the floor), loudly, and can never widen what an
     # identity receives. A claim's value is only as fresh as the subject's last
     # login — see authentication.fields.extra.
+    # require:
+      # Names an OIDC group the identity must be a member of.
+      # group: ""
+
+      # Names an extra claim (a key under authentication.fields.extra) the
+      # comparator keys below test. The server attaches no meaning to the claim
+      # itself; it only compares the value.
+      # claim: ""
+
+      # Passes when the claim's numeric value is >= this bound (inclusive). May be
+      # combined with at_most to express a range.
+      # at_least: 0
+
+      # Passes when the claim's numeric value is <= this bound (inclusive). May be
+      # combined with at_least to express a range.
+      # at_most: 0
+
+      # Passes when the claim's numeric value equals this value. It desugars to
+      # at_least and at_most of the same value, so there is no second comparison
+      # path. Right for an integer-valued score; a computed confidence of 39.9999
+      # does not equal 40, so a non-integral literal here draws a startup warning.
+      # exactly: 0
+
+      # Passes when the claim's scalar string value equals this string.
+      # equals: ""
+
+      # Passes when the claim's scalar string value appears in this set.
+      # one_of: []
+
+      # Passes when this value appears in a list-valued claim. A scalar claim
+      # takes the absent path — the condition fails, loudly.
+      # contains: ""
+
+      # Passes when every listed condition passes. Listed conditions may not
+      # themselves carry all_of or any_of; nesting stops at one level.
+      # all_of: []
+
+      # Passes when at least one listed condition passes. Listed conditions may
+      # not themselves carry all_of or any_of; nesting stops at one level.
+      # any_of: []
 
     # The ceiling on how long an issued user certificate is valid. Any lifetime
     # policy only ever narrows from here.
     valid_duration: 30s
+
     # The SSH certificate extensions a user certificate may carry, e.g.
     # permit-pty and permit-user-rc. A request is narrowed to the intersection
     # of what it asked for and this list.
     extensions: [permit-pty, permit-user-rc]
+
     # The fallback for the service and PAM templates when either is empty, since
     # user certificates are the common case. See
     # https://mnestor.github.io/ssoossh/concepts/ (key ID templating).
-    key_id_template: ""
+    # key_id_template: ""
+
     # Configures tiered certificate duration based on OIDC group membership and
     # source network narrowing — see
     # https://mnestor.github.io/ssoossh/operations/certificate-policy/.
-    lifetime_policy:
+    # lifetime_policy:
       # The duration applied when no tier matches. It is required whenever any
       # part of the lifetime policy is configured: a zero value is a startup error
       # rather than a zero-second certificate that fails at signing, several
       # layers from the config line that caused it.
+      # default_duration: 0s
 
       # States what a missing or unparseable claim resolves to during condition
       # evaluation. The only accepted value is "floor" (the default): the
@@ -811,7 +1084,8 @@ cert_options:
       # mean "skip this condition", which is how a missing claim becomes the most
       # generous outcome, so no other value exists; the key is here to make the
       # posture explicit in config.
-      on_absent_claim: ""
+      # on_absent_claim: ""
+
       # The SSH certificate extensions granted when no tier matches, or when the
       # winning tier states no grant_extensions of its own. Applies only when
       # tiers are configured: with tiers present, extension grants are opt-in and
@@ -819,11 +1093,13 @@ cert_options:
       # Every entry must appear in the enclosing type's extensions ceiling,
       # checked at startup. With no tiers configured, the grant axis is inactive
       # and the type's extensions ceiling alone bounds a request.
+      # default_extensions: []
 
       # The enrollment-code lifetime applied when no tier matches, clamped to
       # cert_options.service.enrollment_duration. Service certificates only — a
       # startup error on any other type. Zero falls back to the
       # enrollment_duration ceiling.
+      # default_enrollment_duration: 0s
 
       # Evaluated in order; the FIRST tier whose when condition the approver's
       # identity satisfies wins, and the list means what it says — tier order is
@@ -877,7 +1153,8 @@ cert_options:
   service:
     # Has been replaced by require (see cert_options.user.require_group).
     # Setting it is a startup error.
-    require_group: ""
+    # require_group: ""
+
     # The condition an approver's identity must satisfy in order to approve a
     # service enrollment. Unset means any authenticated user may. Evaluated
     # against the approver — the human vouching — not the service account
@@ -905,6 +1182,46 @@ cert_options:
     # fails the condition (the floor), loudly, and can never widen what an
     # identity receives. A claim's value is only as fresh as the subject's last
     # login — see authentication.fields.extra.
+    # require:
+      # Names an OIDC group the identity must be a member of.
+      # group: ""
+
+      # Names an extra claim (a key under authentication.fields.extra) the
+      # comparator keys below test. The server attaches no meaning to the claim
+      # itself; it only compares the value.
+      # claim: ""
+
+      # Passes when the claim's numeric value is >= this bound (inclusive). May be
+      # combined with at_most to express a range.
+      # at_least: 0
+
+      # Passes when the claim's numeric value is <= this bound (inclusive). May be
+      # combined with at_least to express a range.
+      # at_most: 0
+
+      # Passes when the claim's numeric value equals this value. It desugars to
+      # at_least and at_most of the same value, so there is no second comparison
+      # path. Right for an integer-valued score; a computed confidence of 39.9999
+      # does not equal 40, so a non-integral literal here draws a startup warning.
+      # exactly: 0
+
+      # Passes when the claim's scalar string value equals this string.
+      # equals: ""
+
+      # Passes when the claim's scalar string value appears in this set.
+      # one_of: []
+
+      # Passes when this value appears in a list-valued claim. A scalar claim
+      # takes the absent path — the condition fails, loudly.
+      # contains: ""
+
+      # Passes when every listed condition passes. Listed conditions may not
+      # themselves carry all_of or any_of; nesting stops at one level.
+      # all_of: []
+
+      # Passes when at least one listed condition passes. Listed conditions may
+      # not themselves carry all_of or any_of; nesting stops at one level.
+      # any_of: []
 
     # Lets an approver name one of their own accounts — their username, or an
     # entry from other_accounts — as the service account of a service
@@ -932,13 +1249,16 @@ cert_options:
     # themselves from "the accounts a claim vouches for" to "any account they
     # hold", which is a real widening even though every account in it is already
     # theirs.
-    allow_user_accounts: false
+    # allow_user_accounts: false
+
     # The ceiling on how long each certificate produced from an enrollment is
     # valid, bounding every redemption of the code rather than the code itself.
     valid_duration: 8760h
+
     # The SSH certificate extensions a service certificate may carry. A request
     # is narrowed to the intersection of what it asked for and this list.
-    extensions: []
+    # extensions: []
+
     # How long the enrollment code minted at approval stays redeemable —
     # deliberately independent of ValidDuration, which bounds each certificate
     # the code produces.
@@ -954,18 +1274,21 @@ cert_options:
     # Each redemption gets ValidDuration afresh, measured from the redemption,
     # so a long code never yields a long certificate.
     enrollment_duration: 8760h
+
     # The key ID written into service certificates; see
     # https://mnestor.github.io/ssoossh/concepts/ (key ID templating). Empty
     # falls back to cert_options.user.key_id_template.
-    key_id_template: ""
+    # key_id_template: ""
+
     # Configures tiered certificate duration based on OIDC group membership and
     # source network narrowing — see
     # https://mnestor.github.io/ssoossh/operations/certificate-policy/.
-    lifetime_policy:
+    # lifetime_policy:
       # The duration applied when no tier matches. It is required whenever any
       # part of the lifetime policy is configured: a zero value is a startup error
       # rather than a zero-second certificate that fails at signing, several
       # layers from the config line that caused it.
+      # default_duration: 0s
 
       # States what a missing or unparseable claim resolves to during condition
       # evaluation. The only accepted value is "floor" (the default): the
@@ -973,7 +1296,8 @@ cert_options:
       # mean "skip this condition", which is how a missing claim becomes the most
       # generous outcome, so no other value exists; the key is here to make the
       # posture explicit in config.
-      on_absent_claim: ""
+      # on_absent_claim: ""
+
       # The SSH certificate extensions granted when no tier matches, or when the
       # winning tier states no grant_extensions of its own. Applies only when
       # tiers are configured: with tiers present, extension grants are opt-in and
@@ -981,11 +1305,13 @@ cert_options:
       # Every entry must appear in the enclosing type's extensions ceiling,
       # checked at startup. With no tiers configured, the grant axis is inactive
       # and the type's extensions ceiling alone bounds a request.
+      # default_extensions: []
 
       # The enrollment-code lifetime applied when no tier matches, clamped to
       # cert_options.service.enrollment_duration. Service certificates only — a
       # startup error on any other type. Zero falls back to the
       # enrollment_duration ceiling.
+      # default_enrollment_duration: 0s
 
       # Evaluated in order; the FIRST tier whose when condition the approver's
       # identity satisfies wins, and the list means what it says — tier order is
@@ -1040,7 +1366,8 @@ cert_options:
   pam:
     # Has been replaced by require (see cert_options.user.require_group).
     # Setting it is a startup error.
-    require_group: ""
+    # require_group: ""
+
     # An optional condition an approver's identity must satisfy for a PAM
     # certificate to be issued — a minimum score to authenticate a local
     # operation, say sudo behind `claim: loc, at_least: 40`. Unset means no
@@ -1073,32 +1400,76 @@ cert_options:
     # fails the condition (the floor), loudly, and can never widen what an
     # identity receives. A claim's value is only as fresh as the subject's last
     # login — see authentication.fields.extra.
+    # require:
+      # Names an OIDC group the identity must be a member of.
+      # group: ""
+
+      # Names an extra claim (a key under authentication.fields.extra) the
+      # comparator keys below test. The server attaches no meaning to the claim
+      # itself; it only compares the value.
+      # claim: ""
+
+      # Passes when the claim's numeric value is >= this bound (inclusive). May be
+      # combined with at_most to express a range.
+      # at_least: 0
+
+      # Passes when the claim's numeric value is <= this bound (inclusive). May be
+      # combined with at_least to express a range.
+      # at_most: 0
+
+      # Passes when the claim's numeric value equals this value. It desugars to
+      # at_least and at_most of the same value, so there is no second comparison
+      # path. Right for an integer-valued score; a computed confidence of 39.9999
+      # does not equal 40, so a non-integral literal here draws a startup warning.
+      # exactly: 0
+
+      # Passes when the claim's scalar string value equals this string.
+      # equals: ""
+
+      # Passes when the claim's scalar string value appears in this set.
+      # one_of: []
+
+      # Passes when this value appears in a list-valued claim. A scalar claim
+      # takes the absent path — the condition fails, loudly.
+      # contains: ""
+
+      # Passes when every listed condition passes. Listed conditions may not
+      # themselves carry all_of or any_of; nesting stops at one level.
+      # all_of: []
+
+      # Passes when at least one listed condition passes. Listed conditions may
+      # not themselves carry all_of or any_of; nesting stops at one level.
+      # any_of: []
 
     # Should be seconds, not hours: a PAM certificate is validated once,
     # in-process, and discarded — it never enters an agent and is never
     # reused. Pick this together with the client's skew tolerance (see checks.go
     # in github.com/mnestor/ssoossh-pam, check 4).
     valid_duration: 30s
+
     # Should default to empty. permit-pty and friends are meaningless for a
     # certificate that authenticates a single local operation and is then thrown
     # away.
-    extensions: []
+    # extensions: []
+
     # The key ID written into PAM certificates. Unlike the service template, it
     # does NOT fall back to cert_options.user.key_id_template: a sudo and a
     # login by the same person must stay distinguishable in an sshd or sudo
     # audit log, so PAM has its own built-in default instead of silently
     # inheriting the user template.
-    key_id_template: ""
+    # key_id_template: ""
+
     # Takes the same grammar as the other types, though in practice only the
     # require gate matters for PAM: duration tiers against a 30-second,
     # validated-once certificate and extension grants against an empty
     # extensions ceiling have nothing to do. The expected configuration is
     # require alone, tiers unused.
-    lifetime_policy:
+    # lifetime_policy:
       # The duration applied when no tier matches. It is required whenever any
       # part of the lifetime policy is configured: a zero value is a startup error
       # rather than a zero-second certificate that fails at signing, several
       # layers from the config line that caused it.
+      # default_duration: 0s
 
       # States what a missing or unparseable claim resolves to during condition
       # evaluation. The only accepted value is "floor" (the default): the
@@ -1106,7 +1477,8 @@ cert_options:
       # mean "skip this condition", which is how a missing claim becomes the most
       # generous outcome, so no other value exists; the key is here to make the
       # posture explicit in config.
-      on_absent_claim: ""
+      # on_absent_claim: ""
+
       # The SSH certificate extensions granted when no tier matches, or when the
       # winning tier states no grant_extensions of its own. Applies only when
       # tiers are configured: with tiers present, extension grants are opt-in and
@@ -1114,11 +1486,13 @@ cert_options:
       # Every entry must appear in the enclosing type's extensions ceiling,
       # checked at startup. With no tiers configured, the grant axis is inactive
       # and the type's extensions ceiling alone bounds a request.
+      # default_extensions: []
 
       # The enrollment-code lifetime applied when no tier matches, clamped to
       # cert_options.service.enrollment_duration. Service certificates only — a
       # startup error on any other type. Zero falls back to the
       # enrollment_duration ceiling.
+      # default_enrollment_duration: 0s
 
       # Evaluated in order; the FIRST tier whose when condition the approver's
       # identity satisfies wins, and the list means what it says — tier order is
@@ -1210,6 +1584,46 @@ cert_options:
     # fails the condition (the floor), loudly, and can never widen what an
     # identity receives. A claim's value is only as fresh as the subject's last
     # login — see authentication.fields.extra.
+    # require:
+      # Names an OIDC group the identity must be a member of.
+      # group: ""
+
+      # Names an extra claim (a key under authentication.fields.extra) the
+      # comparator keys below test. The server attaches no meaning to the claim
+      # itself; it only compares the value.
+      # claim: ""
+
+      # Passes when the claim's numeric value is >= this bound (inclusive). May be
+      # combined with at_most to express a range.
+      # at_least: 0
+
+      # Passes when the claim's numeric value is <= this bound (inclusive). May be
+      # combined with at_least to express a range.
+      # at_most: 0
+
+      # Passes when the claim's numeric value equals this value. It desugars to
+      # at_least and at_most of the same value, so there is no second comparison
+      # path. Right for an integer-valued score; a computed confidence of 39.9999
+      # does not equal 40, so a non-integral literal here draws a startup warning.
+      # exactly: 0
+
+      # Passes when the claim's scalar string value equals this string.
+      # equals: ""
+
+      # Passes when the claim's scalar string value appears in this set.
+      # one_of: []
+
+      # Passes when this value appears in a list-valued claim. A scalar claim
+      # takes the absent path — the condition fails, loudly.
+      # contains: ""
+
+      # Passes when every listed condition passes. Listed conditions may not
+      # themselves carry all_of or any_of; nesting stops at one level.
+      # all_of: []
+
+      # Passes when at least one listed condition passes. Listed conditions may
+      # not themselves carry all_of or any_of; nesting stops at one level.
+      # any_of: []
 
     # Refuses request creation from outside these CIDRs, before a keypair is
     # certified and before any human is asked to approve anything. Empty means
@@ -1222,7 +1636,8 @@ cert_options:
     # (https://mnestor.github.io/ssoossh/project/decisions/). Behind a reverse
     # proxy this is only meaningful with http.trusted_proxies set; without it
     # every request carries the proxy's address.
-    allowed_networks: []
+    # allowed_networks: []
+
     # This type's whole budget: the longest a console login can sit waiting for
     # a human. Unset (zero) inherits cert_options.client_timeout. A value LONGER
     # than that global is a startup error — the global is the ceiling, and a
@@ -1240,28 +1655,33 @@ cert_options:
     # OIDC login starts to fail, people retry, and a flow people habitually
     # retry is a flow people learn to approve without reading.
     client_timeout: 2m
+
     # The ceiling on how long an issued console certificate is valid. Seconds,
     # not hours, for the same reason as the PAM type: it is validated once by
     # the module and discarded, and the session it authorizes outlives it by
     # design.
     valid_duration: 30s
+
     # Default to empty. permit-pty and friends are meaningless for a certificate
     # that authenticates one local login and is then thrown away.
-    extensions: []
+    # extensions: []
+
     # The key ID written into console certificates. Like the PAM template and
     # unlike the service one, it does NOT fall back to
     # cert_options.user.key_id_template: a console login and an SSH login by the
     # same person must stay distinguishable in an audit log, so an unset
     # template identifies the type instead.
-    key_id_template: ""
+    # key_id_template: ""
+
     # Takes the same grammar as the other types. As with PAM, in practice only
     # the require gate matters: duration tiers against a 30-second certificate
     # and extension grants against an empty ceiling have nothing to do.
-    lifetime_policy:
+    # lifetime_policy:
       # The duration applied when no tier matches. It is required whenever any
       # part of the lifetime policy is configured: a zero value is a startup error
       # rather than a zero-second certificate that fails at signing, several
       # layers from the config line that caused it.
+      # default_duration: 0s
 
       # States what a missing or unparseable claim resolves to during condition
       # evaluation. The only accepted value is "floor" (the default): the
@@ -1269,7 +1689,8 @@ cert_options:
       # mean "skip this condition", which is how a missing claim becomes the most
       # generous outcome, so no other value exists; the key is here to make the
       # posture explicit in config.
-      on_absent_claim: ""
+      # on_absent_claim: ""
+
       # The SSH certificate extensions granted when no tier matches, or when the
       # winning tier states no grant_extensions of its own. Applies only when
       # tiers are configured: with tiers present, extension grants are opt-in and
@@ -1277,11 +1698,13 @@ cert_options:
       # Every entry must appear in the enclosing type's extensions ceiling,
       # checked at startup. With no tiers configured, the grant axis is inactive
       # and the type's extensions ceiling alone bounds a request.
+      # default_extensions: []
 
       # The enrollment-code lifetime applied when no tier matches, clamped to
       # cert_options.service.enrollment_duration. Service certificates only — a
       # startup error on any other type. Zero falls back to the
       # enrollment_duration ceiling.
+      # default_enrollment_duration: 0s
 
       # Evaluated in order; the FIRST tier whose when condition the approver's
       # identity satisfies wins, and the list means what it says — tier order is
@@ -1351,24 +1774,29 @@ cert_options:
 mail:
   # Turns outbound mail on. With it false the notification handler is not
   # registered at all, so no event is queued and nothing is rendered.
-  enabled: false
+  # enabled: false
+
   # The envelope and header sender, e.g. "ssoossh@example.com" or "ssoossh
   # <noreply@example.com>". Required when Enabled.
-  from: ""
+  # from: ""
+
   # An optional Reply-To header. Worth setting to a monitored address: these
   # messages report credential activity, and the first thing a recipient does
   # with an unexpected one is try to reply.
   # reply_to: "ssh-admins@example.com"
+
   # Prepended to every rendered subject, e.g. "[ssoossh] ". Empty adds
   # nothing. Templates can also write their own subject in full; this exists
   # so an operator can tag every message without editing any template.
-  subject_prefix: ""
+  # subject_prefix: ""
+
   # An optional directory of local template overrides. A file there replaces
   # the embedded template of the same name; anything absent falls back to the
   # embedded one, so overriding a single message does not mean vendoring the
   # whole set. See
   # https://mnestor.github.io/ssoossh/operations/email-notifications/.
   # template_dir: "/etc/ssoossh/mail-templates"
+
   # How far ahead of an enrollment code's expiry the
   # service_enrollment_expiring reminders start. Zero disables the sweep that
   # sends them, and the job is not registered at all.
@@ -1387,6 +1815,7 @@ mail:
   # past the new window gets no reminder until it re-enters it; lengthening it
   # picks enrollments up at the next sweep.
   expiry_reminder_lead: 168h
+
   # Rate-limits the service_enrollment_expired_attempt notification to at most
   # one per enrollment per window. Zero disables that notification entirely.
   #
@@ -1396,49 +1825,62 @@ mail:
   # happening without hearing it every five minutes. A day by default, so the
   # useful message is "this is still happening today".
   expired_attempt_window: 24h
+
   # The relay connection.
   smtp:
     # The relay hostname or address. Required when mail is enabled.
     host: "localhost"
+
     # The relay port: conventionally 25 for a local relay, 587 for submission
     # with STARTTLS, 465 for implicit TLS.
     port: 25
+
     # The transport policy — one of off, opportunistic (default), required, or
     # implicit.
     tls: "opportunistic"
+
     # Overrides the name the relay's certificate is verified against. Needed
     # only when Host is an address rather than the name on the certificate.
     # server_name: "smtp.example.com"
+
     # A PEM bundle to verify the relay's certificate against, for a relay using
     # a private CA. Empty uses the system trust store.
     # ca_file: "/etc/ssl/certs/internal-ca.pem"
+
     # Disables verification of the relay's certificate. It turns TLS into
     # obfuscation — an attacker who can redirect the connection can also
     # present their own certificate — so it exists for a lab with a
     # self-signed relay and is warned about at startup.
-    insecure_skip_verify: false
+    # insecure_skip_verify: false
+
     # Selects the SASL mechanism — one of none (default), auto, plain, login,
     # cram-md5, scram-sha-1, scram-sha-256, or xoauth2. "auto" negotiates the
     # strongest mechanism the relay advertises.
     auth: "none"
+
     # The SASL username. Required for every mechanism but none.
     # username: "ssoossh@example.com"
+
     # The SASL password, or the OAuth2 token for xoauth2. Prefer
     # smtp.password_file: this value is a secret sitting in a config file.
     # password: ""
+
     # Reads the password from a file instead, so the secret can be a mounted
     # file or a systemd credential rather than config text. Takes precedence
     # over Password when both are set. Read once at startup; trailing whitespace
     # is trimmed, since an editor's newline is never part of the password.
     # password_file: "/run/secrets/ssoossh-smtp-password"
+
     # The name announced in the EHLO/HELO greeting. Empty lets go-mail use the
     # local hostname, which is right unless the relay checks it against
     # something specific.
     # helo: "ssoossh.example.com"
+
     # Bounds a single delivery's connect-and-send. It bounds only the background
     # sender, never a request: nothing a browser or an unattended job waits on
     # is behind this.
     timeout: 15s
+
   # Routes mail delivery logs, same shape as every other component's logging
   # block.
   logging:
@@ -1446,11 +1888,27 @@ mail:
     # logger, with the same keys and meanings as logging.* above. This
     # destination is only split out of the main log once its filename is set;
     # until then its records go to the general log.
+    # filename: ""
+    # maxsize: 0
+    # maxage: 0
+    # maxbackups: 0
+    # localtime: false
+    # compression: ""
+    # rotationinterval: 0s
+    # backuptimeformat: ""
+    # rotateatminutes: []
+    # rotateat: []
+    # appendtimeafterext: false
+    # filemode: 0
+
     # The minimum log level for this destination, in the same form as
-    # logging.level.
+    # logging.level. Empty means this destination has no threshold of its own
+    # and is filtered at logging.level with everything else.
     level: "info"
+
     # Includes the source file and line on each record.
     # add_source: false
+
     # Writes JSON instead of text. Text is meant to be read, not parsed: the
     # message is written as bare prose so quoted values in it are not escaped,
     # which is not a machine-readable format. Set this wherever a log collector
@@ -1459,10 +1917,11 @@ mail:
 
 # Customizes the login page and web UI. All fields are optional; empty
 # values mean no branding is configured.
-branding:
+# branding:
   # The organization name displayed in the web UI (e.g., "Acme Corp"). Empty
   # disables organization-specific branding.
-  org_name: ""
+  # org_name: ""
+
   # The filesystem path to the organization's logo image. Empty disables the
   # logo.
   #
@@ -1474,10 +1933,11 @@ branding:
   # rather than producing a broken image later; replacing the file needs a
   # restart. Served from /api/branding/logo, always same-origin, so no
   # third-party host sees the unauthenticated login page's traffic.
-  logo_path: ""
+  # logo_path: ""
+
   # A plain-text message shown on the login page before authentication. Empty
   # disables the notice. Supports newlines for multi-line text.
-  login_notice: ""
+  # login_notice: ""
 
 # Configures what the unauthenticated /api/version endpoint discloses about
 # the running build.

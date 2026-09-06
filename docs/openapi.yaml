@@ -4010,6 +4010,66 @@ paths:
       summary: The caller's approved service enrollments
       tags:
       - web
+  /api/certs/service/enrollments/{id}/expire:
+    patch:
+      description: |-
+        Immediately expires an enrollment for a service account the caller
+        holds, preventing future service certificate retrievals. Expiring an
+        already-expired code succeeds and changes nothing.
+      parameters:
+      - description: Enrollment ID
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/webtypes.ExpireEnrollmentRequestBody'
+                description: Why the code is being retired
+                summary: request
+        description: Why the code is being retired
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/gin.H'
+          description: Enrollment expired
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No reason given
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not a holder of the enrollment's service account
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Enrollment not found
+      security:
+      - sessionCookie: []
+      summary: Expire a service enrollment code you hold
+      tags:
+      - enrollments
   /api/certs/service/enrollments/{id}/holders:
     get:
       description: |-

@@ -185,14 +185,21 @@ func TestWriteYAMLField_ShouldWriteTheDefaultTheExampleOrNothing(t *testing.T) {
 		notWant string
 	}{
 		{
-			name:  "should write the default when the field has one",
-			field: &Field{Path: "logging.enable_stdout", Key: "enable_stdout", Type: "bool", Doc: []string{"Also writes to stdout."}, Default: "false", HasDefault: true},
-			want:  "enable_stdout: false\n",
+			name:    "should comment out a default that is the zero value for its type",
+			field:   &Field{Path: "logging.enable_stdout", Key: "enable_stdout", Type: "bool", Doc: []string{"Also writes to stdout."}, Default: "false", HasDefault: true},
+			want:    "# enable_stdout: false\n",
+			notWant: "\nenable_stdout:",
 		},
 		{
 			name:  "should quote a string default so YAML cannot retype it",
 			field: &Field{Path: "logging.level", Key: "level", Type: "string", Doc: []string{"The minimum log level."}, Default: "WARN", HasDefault: true},
 			want:  "level: \"WARN\"\n",
+		},
+		{
+			name:    "should leave a default that differs from the zero value uncommented",
+			field:   &Field{Path: "logging.include_app_name", Key: "include_app_name", Type: "bool", Doc: []string{"Adds an app attribute."}, Default: "true", HasDefault: true},
+			want:    "include_app_name: true\n",
+			notWant: "# include_app_name:",
 		},
 		{
 			name:    "should prefer the default over the example when both are set",
@@ -206,15 +213,32 @@ func TestWriteYAMLField_ShouldWriteTheDefaultTheExampleOrNothing(t *testing.T) {
 			want:  "# enable_stdout: false\n",
 		},
 		{
-			name:    "should leave a blank line when there is neither",
-			field:   &Field{Path: "logging.include_app_name", Key: "include_app_name", Type: "bool", Doc: []string{"Adds an app attribute."}},
-			want:    "# Adds an app attribute.\n\n",
-			notWant: "include_app_name:",
+			name:  "should name the key at its empty value when there is neither",
+			field: &Field{Path: "logging.include_app_name", Key: "include_app_name", Type: "bool", Doc: []string{"Adds an app attribute."}},
+			want:  "# Adds an app attribute.\n# include_app_name: false\n",
 		},
 		{
-			name:  "should write an empty-string default as a quoted empty string",
+			name: "should not repeat a key the doc comment already writes out",
+			field: &Field{
+				Path: "fips", Key: "fips", Type: "bool",
+				Doc: []string{"Steers the server toward FIPS 140-3.", "", "\tfips: true"},
+			},
+			want:    "#   fips: true\n",
+			notWant: "# fips: false",
+		},
+		{
+			name:  "should comment out an empty-string default rather than show a blank to fill in",
 			field: &Field{Path: "http.server_name", Key: "server_name", Type: "string", Doc: []string{"The public host name."}, Default: "", HasDefault: true},
-			want:  "server_name: \"\"\n",
+			want:  "# server_name: \"\"\n",
+		},
+		{
+			name: "should list the keys of an embedded group under its prose",
+			field: &Field{
+				Key: "Logger", GoName: "Logger", Embedded: true,
+				Doc:  []string{"Log-file rotation, via the embedded timberjack logger."},
+				Keys: []EmbeddedKey{{Key: "filename", Type: "string"}, {Key: "maxsize", Type: "int"}, {Key: "rotationinterval", Type: "duration"}},
+			},
+			want: "# filename: \"\"\n# maxsize: 0\n# rotationinterval: 0s\n",
 		},
 	}
 
@@ -223,7 +247,7 @@ func TestWriteYAMLField_ShouldWriteTheDefaultTheExampleOrNothing(t *testing.T) {
 			t.Parallel()
 
 			var b strings.Builder
-			writeYAMLField(&b, tt.field, nil, "logging", 0)
+			writeYAMLField(&b, tt.field, nil, "logging", 0, false)
 
 			got := b.String()
 			if !strings.Contains(got, tt.want) {
@@ -236,19 +260,20 @@ func TestWriteYAMLField_ShouldWriteTheDefaultTheExampleOrNothing(t *testing.T) {
 	}
 }
 
-// A section none of whose keys carry a default has no key written, so its
-// fields have nothing to sit beneath: emitted anyway they were indented
-// under a header that was not there. hsm is the real one -- documented in
-// full by its own comment, and left unset.
-func TestWriteSection_ShouldWithholdFieldsWhenTheKeyIsWithheld(t *testing.T) {
+// A section none of whose keys ships a value is written commented out
+// whole -- header and keys together. The header cannot be left live over
+// nothing but commented keys, since that parses as a null key the file never
+// had; withholding it instead left hsm, queue and ldap.logging as prose with
+// no key an operator could uncomment.
+func TestWriteSection_ShouldCommentOutASectionThatShipsNothing(t *testing.T) {
 	t.Parallel()
 
 	section := &Section{
 		Key: "hsm",
 		Doc: []string{"Optionally sources the CA key from a PKCS#11 token."},
 		Fields: []*Field{
-			{Path: "hsm.module", Key: "module", Type: "string", Doc: []string{"The absolute path to the PKCS#11 shared library."}},
-			{Path: "hsm.pin", Key: "pin", Type: "string", Doc: []string{"The user PIN."}},
+			{Path: "hsm.module", Key: "module", Type: "string", Doc: []string{"The absolute path to the PKCS#11 shared library."}, Example: `"/usr/lib/libsofthsm2.so"`},
+			{Path: "hsm.pin", Key: "pin", Type: "string", Doc: []string{"The user PIN."}, Example: `"1234"`},
 		},
 	}
 
@@ -256,13 +281,18 @@ func TestWriteSection_ShouldWithholdFieldsWhenTheKeyIsWithheld(t *testing.T) {
 	writeSection(&b, section, nil)
 
 	got := b.String()
-	if !strings.Contains(got, "Optionally sources the CA key") {
-		t.Errorf("the section comment must survive, got:\n%s", got)
-	}
-	for _, unwanted := range []string{"hsm:", "PKCS#11 shared library", "The user PIN"} {
-		if strings.Contains(got, unwanted) {
-			t.Errorf("got:\n%s\nwant it not to contain %q", got, unwanted)
+	for _, want := range []string{
+		"# Optionally sources the CA key",
+		"# hsm:\n",
+		`  # module: "/usr/lib/libsofthsm2.so"`,
+		`  # pin: "1234"`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("got:\n%s\nwant it to contain:\n%s", got, want)
 		}
+	}
+	if strings.Contains(got, "\nhsm:") {
+		t.Errorf("a live header over commented keys would parse as null, got:\n%s", got)
 	}
 }
 
@@ -284,6 +314,129 @@ func TestWriteSection_ShouldWriteTheKeyAndFieldsWhenSomethingHasADefault(t *test
 
 	if got := b.String(); !strings.Contains(got, "hsm:\n") || !strings.Contains(got, "module: \"/usr/lib/libsofthsm2.so\"") {
 		t.Errorf("expected the header and the field, got:\n%s", got)
+	}
+}
+
+// A section whose every key loads to the zero value states no opinion, so
+// the header goes out commented with them. Left live it would parse as a
+// null key, which is a key the file never had.
+func TestWriteSection_ShouldCommentTheHeaderWhenEveryKeyIsTheZeroValue(t *testing.T) {
+	t.Parallel()
+
+	section := &Section{
+		Key: "authentication",
+		Doc: []string{"Configures OIDC authentication."},
+		Fields: []*Field{
+			{Path: "authentication.client_id", Key: "client_id", Type: "string", Doc: []string{"The client ID."}, Default: "", HasDefault: true},
+			{Path: "authentication.client_secret", Key: "client_secret", Type: "string", Doc: []string{"The client secret."}, Default: "", HasDefault: true},
+		},
+	}
+
+	var b strings.Builder
+	writeSection(&b, section, nil)
+
+	got := b.String()
+	for _, want := range []string{"# authentication:\n", "  # client_id: \"\"\n", "  # client_secret: \"\"\n"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("got:\n%s\nwant it to contain:\n%s", got, want)
+		}
+	}
+}
+
+// One key with a real value keeps the header live, and only the zero-valued
+// keys beneath it are commented out.
+func TestWriteSection_ShouldKeepTheHeaderLiveWhenOneKeyShipsAValue(t *testing.T) {
+	t.Parallel()
+
+	section := &Section{
+		Key: "authentication",
+		Doc: []string{"Configures OIDC authentication."},
+		Fields: []*Field{
+			{Path: "authentication.client_id", Key: "client_id", Type: "string", Doc: []string{"The client ID."}, Default: "", HasDefault: true},
+			{Path: "authentication.scopes", Key: "scopes", Type: "string", Doc: []string{"Extra scopes."}, Default: "profile email", HasDefault: true},
+		},
+	}
+
+	var b strings.Builder
+	writeSection(&b, section, nil)
+
+	got := b.String()
+	if !strings.Contains(got, "\nauthentication:\n") {
+		t.Errorf("expected a live header, got:\n%s", got)
+	}
+	if !strings.Contains(got, `  scopes: "profile email"`) {
+		t.Errorf("expected the shipped value uncommented, got:\n%s", got)
+	}
+	if !strings.Contains(got, `  # client_id: ""`) {
+		t.Errorf("expected the zero-valued key commented out, got:\n%s", got)
+	}
+}
+
+// A key that follows another straight on reads as one more sentence of the
+// paragraph above it. The blank line between them is what makes a
+// commented-out option visible as an option at all.
+func TestWriteSection_ShouldSeparateKeysWithABlankLine(t *testing.T) {
+	t.Parallel()
+
+	section := &Section{
+		Key: "tls",
+		Doc: []string{"Holds the TLS configuration."},
+		Fields: []*Field{
+			{Path: "tls.certificate_file", Key: "certificate_file", Type: "string", Doc: []string{"The PEM certificate."}, Example: `"/etc/ssoossh/tls/server.crt"`},
+			{Path: "tls.private_key_file", Key: "private_key_file", Type: "string", Doc: []string{"The PEM private key."}, Example: `"/etc/ssoossh/tls/server.key"`},
+			{Path: "tls.min_version", Key: "min_version", Type: "string", Doc: []string{"The minimum version."}, Default: "TLS1.3", HasDefault: true},
+		},
+	}
+
+	var b strings.Builder
+	writeSection(&b, section, nil)
+
+	want := "  # certificate_file: \"/etc/ssoossh/tls/server.crt\"\n" +
+		"\n" +
+		"  # The PEM private key.\n" +
+		"  # private_key_file: \"/etc/ssoossh/tls/server.key\"\n" +
+		"\n" +
+		"  # The minimum version.\n" +
+		"  min_version: \"TLS1.3\"\n"
+	if got := b.String(); !strings.Contains(got, want) {
+		t.Errorf("got:\n%s\nwant it to contain:\n%s", got, want)
+	}
+}
+
+// The rotation keys belong to timberjack, so the walk cannot produce them
+// and the generator hands them in. A group left without them ships as a
+// paragraph naming keys that appear nowhere in the file, which is how
+// http.access_logging came to have no filename in it.
+func TestAttachEmbeddedKeys_ShouldFillEveryGroupOrSayWhichOneIsMissing(t *testing.T) {
+	t.Parallel()
+
+	sections := walkConfig(t)
+	if err := AttachEmbeddedKeys(sections, nil); err == nil {
+		t.Error("expected an unlisted embedded group to fail the run")
+	} else if !strings.Contains(err.Error(), "Logger") {
+		t.Errorf("expected the error to name the group, got: %v", err)
+	}
+
+	keys := map[string][]EmbeddedKey{"Logger": {{Key: "filename", Type: "string"}}}
+	if err := AttachEmbeddedKeys(sections, keys); err != nil {
+		t.Fatalf("failed to attach the keys: %v", err)
+	}
+
+	var filled int
+	var walk func([]*Field)
+	walk = func(fields []*Field) {
+		for _, f := range fields {
+			if f.Embedded && len(f.Keys) == 1 && f.Keys[0].Key == "filename" {
+				filled++
+			}
+			walk(f.Children)
+		}
+	}
+	for _, s := range sections {
+		walk(s.Fields)
+	}
+	if filled == 0 {
+		t.Error("expected every embedded group to carry its key list")
 	}
 }
 
@@ -654,7 +807,7 @@ func TestWriteYAMLField_ShouldShowTheShapeOfOneContainerEntry(t *testing.T) {
 			t.Parallel()
 
 			var b strings.Builder
-			writeYAMLField(&b, tt.field, nil, "ldap", 1)
+			writeYAMLField(&b, tt.field, nil, "ldap", 1, false)
 
 			want := strings.Join(tt.want, "\n")
 			if got := b.String(); !strings.Contains(got, want) {
