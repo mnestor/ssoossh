@@ -24,3 +24,4 @@ Every `ssoosshd.yaml` key, one page per top-level section. The pages are generat
 | [cert_options](/ssoossh/reference/config/cert_options/) | the issuance policy for each certificate type |
 | [mail](/ssoossh/reference/config/mail/) | the relay, the sender, and the local template overrides |
 | [branding](/ssoossh/reference/config/branding/) | customizes the login page and web UI |
+| [version](/ssoossh/reference/config/version/) |  |

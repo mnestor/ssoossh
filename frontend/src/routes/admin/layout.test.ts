@@ -87,7 +87,8 @@ describe('admin layout', () => {
 			'Config',
 			'Directory',
 			'Claims echo',
-			'Audit log'
+			'Audit log',
+			'Diagnostics'
 		]);
 	});
 

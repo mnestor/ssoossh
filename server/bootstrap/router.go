@@ -413,7 +413,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 
 	// Unauthenticated for the same reason as branding: the footer showing it
 	// is on every page, the login page included.
-	controller.NewVersionController(apiGroup)
+	controller.NewVersionController(apiGroup, a.config.Version)
 
 	// Build per-endpoint rate limit middleware for certificate request creation.
 	// Each endpoint gets its own rate limiter (per-IP, independent of each other).
@@ -490,7 +490,32 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 		sessionAuth, adminAuth, auditorAuth, csrf, probeRateLimit, a.svc.audit)
 	controller.NewIdentityEchoController(apiGroup, a.svc.auth, sessionAuth, adminAuth, csrf)
 
+	// The diagnostics run makes the server open an outbound connection to
+	// its own public URL, so it is bounded per caller like the directory
+	// probe. The service is constructed here rather than in the services
+	// struct because it holds only config and an HTTP client.
+	var diagnosticsRateLimit gin.HandlerFunc
+	if a.config.Production || !a.config.HTTP.RateLimitDisableForDev {
+		diagnosticsRateLimit = middleware.NewEndpointRateLimiter().
+			PerKeys(rate.Every(ldapProbeInterval), ldapProbeBurst, diagnosticsRunRateLimitKeys)
+	}
+	controller.NewDiagnosticsController(apiGroup, service.NewDiagnosticsService(a.config, nil), a.db, a.svc.audit,
+		sessionAuth, adminAuth, csrf, diagnosticsRateLimit)
+
 	return nil
+}
+
+// diagnosticsRunRateLimitKeys buckets diagnostics runs by the calling admin,
+// for the same reason ldapProbeRateLimitKeys does: the thing being bounded is
+// one caller's use of the server as an outbound-connection primitive.
+func diagnosticsRunRateLimitKeys(c *gin.Context) []string {
+	identity, ok := middleware.Identity(c)
+	if !ok {
+		// not covered: the route is session-authed, so the middleware
+		// aborts before this runs when there is no identity.
+		return nil
+	}
+	return []string{"diagnostics-run:" + identity.Subject}
 }
 
 // LDAP probe rate limit. Deliberately not configurable: it is not tuning a

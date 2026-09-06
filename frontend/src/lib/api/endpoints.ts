@@ -12,6 +12,7 @@ import type {
 	CertificateResponse,
 	CurrentUser,
 	DenyResult,
+	DiagnosticsResponse,
 	DisableUserConsequences,
 	AuditEventsResponse,
 	DisableUserRequestBody,
@@ -459,6 +460,17 @@ export function runLDAPSync(body: LDAPSyncRequestBody = {}): Promise<LDAPSyncRun
  */
 export function probeLDAP(body: LDAPProbeRequestBody): Promise<LDAPProbeResponse> {
 	return request<LDAPProbeResponse>('/admin/ldap/probe', { method: 'POST', body });
+}
+
+/**
+ * POST /api/admin/diagnostics/run — run the deployment self-checks (admin-only).
+ *
+ * The edge checks call the server's own public_url back through whatever sits
+ * in front of it; the target is always public_url and cannot be supplied by
+ * the caller. Nothing is written.
+ */
+export function runDiagnostics(): Promise<DiagnosticsResponse> {
+	return request<DiagnosticsResponse>('/admin/diagnostics/run', { method: 'POST' });
 }
 
 /**

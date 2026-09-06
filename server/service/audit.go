@@ -121,6 +121,12 @@ const (
 	// but it makes the server open an outbound connection and read an
 	// entry in full, so it is recorded with the filter it sent.
 	AuditLDAPProbed AuditAction = "ldap.probed"
+
+	// AuditAdminDiagnosticsRun is an admin running the deployment
+	// self-checks. Like the directory probe it makes the server open an
+	// outbound connection (to its own public URL), so it is recorded with
+	// the worst status each check reached.
+	AuditAdminDiagnosticsRun AuditAction = "admin.diagnostics_run"
 )
 
 // auditPayloadVersion is the payload schema version, carried on every

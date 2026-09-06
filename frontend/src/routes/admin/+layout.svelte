@@ -36,7 +36,8 @@
 		{ route: '/admin/config', label: 'Config' },
 		{ route: '/admin/directory', label: 'Directory' },
 		{ route: '/admin/identity/echo', label: 'Claims echo' },
-		{ route: '/admin/audit', label: 'Audit log' }
+		{ route: '/admin/audit', label: 'Audit log' },
+		{ route: '/admin/diagnostics', label: 'Diagnostics' }
 	] as const satisfies ReadonlyArray<{ route: string; label: string }>;
 
 	/** isCurrent matches a section's own page and everything under it, so a

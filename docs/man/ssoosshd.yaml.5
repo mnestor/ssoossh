@@ -1768,6 +1768,31 @@ Default:
 A plain\-text message shown on the login page before authentication. Empty disables the notice. Supports newlines for multi\-line text.
 Default:
 .BR empty .
+.SS version
+Configures what the unauthenticated /api/version endpoint discloses about the running build.
+.TP
+.BI version.mode: " string"
+Selects what the endpoint reveals:
+.IP
+.nf
+"show"          the real version, commit, and release URL (default)
+.fi
+.nf
+"hide"          nothing; every field is empty
+.fi
+.nf
+any other value that string, reported as the version, with no
+.fi
+.nf
+commit, repository, or release link that would give
+.fi
+.nf
+the real build away
+.fi
+.IP
+The two words "show" and "hide" are therefore reserved and cannot themselves be used as a fake version string.
+Default:
+.BR show .
 .\" END GENERATED OPTIONS
 .SH NOTES
 .IP \(bu 2

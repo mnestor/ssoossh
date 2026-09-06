@@ -93,6 +93,10 @@ type Config struct {
 	// message delivery (a client waiting on one instance is woken by another)
 	// payloads). See docs/dev/multi-instance-safety-plan.md.
 	MultiInstance bool `mapstructure:"multi_instance" default:"false"`
+
+	// Version configures what the unauthenticated /api/version endpoint
+	// discloses about the running build. See VersionConfig.
+	Version VersionConfig `mapstructure:"version"`
 }
 
 // BrandingSettings configures optional branding for the login page and web UI.

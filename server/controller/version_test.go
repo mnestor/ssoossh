@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/mnestor/ssoossh/internal/version"
+	"github.com/mnestor/ssoossh/server/config"
 )
 
 func TestGetVersionHandler(t *testing.T) {
@@ -17,7 +18,7 @@ func TestGetVersionHandler(t *testing.T) {
 	router.Use(errorHandlerMiddlewareForTest())
 
 	apiGroup := router.Group("/api")
-	NewVersionController(apiGroup)
+	NewVersionController(apiGroup, config.VersionConfig{Mode: config.VersionShow})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
 	w := httptest.NewRecorder()
@@ -120,5 +121,69 @@ func TestReleaseURL(t *testing.T) {
 				t.Errorf("expected %q, got %q", tt.expected, got)
 			}
 		})
+	}
+}
+
+// versionModeBody fetches /api/version under a disclosure mode and returns
+// the decoded data fields.
+func versionModeBody(t *testing.T, disclosure config.VersionConfig) struct {
+	Version    string `json:"version"`
+	Commit     string `json:"commit"`
+	GithubURL  string `json:"github_url"`
+	ReleaseURL string `json:"release_url"`
+} {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(errorHandlerMiddlewareForTest())
+	NewVersionController(router.Group("/api"), disclosure)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/version", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var body struct {
+		Data struct {
+			Version    string `json:"version"`
+			Commit     string `json:"commit"`
+			GithubURL  string `json:"github_url"`
+			ReleaseURL string `json:"release_url"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to parse response: %v", err)
+	}
+	return body.Data
+}
+
+func TestGetVersionHandler_ShouldHideEverythingWhenModeHide(t *testing.T) {
+	got := versionModeBody(t, config.VersionConfig{Mode: config.VersionHide})
+
+	if got.Version != "" || got.Commit != "" || got.GithubURL != "" || got.ReleaseURL != "" {
+		t.Errorf("expected every field empty in hide mode, got %+v", got)
+	}
+}
+
+func TestGetVersionHandler_ShouldReportOnlyTheFakeStringWhenModeIsAFakeVersion(t *testing.T) {
+	got := versionModeBody(t, config.VersionConfig{Mode: "totally-not-1.1.2"})
+
+	if got.Version != "totally-not-1.1.2" {
+		t.Errorf("got version %q, want the configured fake string", got.Version)
+	}
+	// The point of fake mode is that nothing lets the real build be
+	// recovered: no commit, no repository, no release link.
+	if got.Commit != "" || got.GithubURL != "" || got.ReleaseURL != "" {
+		t.Errorf("fake mode leaked a real build field: %+v", got)
+	}
+}
+
+func TestGetVersionHandler_ShouldReportTheRealBuildWhenModeShow(t *testing.T) {
+	got := versionModeBody(t, config.VersionConfig{Mode: config.VersionShow})
+
+	if got.Version != version.Version || got.Commit != version.Commit {
+		t.Errorf("show mode did not report the real build: %+v", got)
 	}
 }

@@ -122,5 +122,9 @@
   {
     "label": "branding",
     "slug": "reference/config/branding"
+  },
+  {
+    "label": "version",
+    "slug": "reference/config/version"
   }
 ]

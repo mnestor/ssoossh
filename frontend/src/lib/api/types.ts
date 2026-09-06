@@ -30,6 +30,8 @@ export type {
 	ConfigSection,
 	ConfigSetting,
 	CurrentUserResponse as CurrentUser,
+	DiagnosticCheckResult,
+	DiagnosticsResponse,
 	DisableUserConsequences,
 	DisableUserRequestBody,
 	EffectiveConfigResponse,

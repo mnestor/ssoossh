@@ -1491,6 +1491,54 @@ components:
       - subject
       - username
       type: object
+    webtypes.DiagnosticCheckResult:
+      properties:
+        findings:
+          description: |-
+            Findings are the individual observations, already phrased for an
+            operator. Empty when the check found nothing to report.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        id:
+          description: ID is a stable machine key for the check, e.g. "reachability".
+          type: string
+        remediation:
+          description: Remediation is the concrete fix. Empty when the status is "ok".
+          type: string
+        status:
+          description: |-
+            Status is the worst finding's severity: "ok", "warn", "critical", or
+            "skipped".
+          type: string
+        summary:
+          description: Summary is the one-line headline for the check.
+          type: string
+        title:
+          description: Title is the human name of the check.
+          type: string
+      required:
+      - id
+      - status
+      - summary
+      - title
+      type: object
+    webtypes.DiagnosticsResponse:
+      properties:
+        checks:
+          description: Checks are the individual results, in display order.
+          items:
+            $ref: '#/components/schemas/webtypes.DiagnosticCheckResult'
+          type: array
+          uniqueItems: false
+        public_origin:
+          description: |-
+            PublicOrigin is the URL the edge checks probed, echoed so the operator
+            can confirm the run tested what they expected. Empty when
+            http.public_url is not set.
+          type: string
+      type: object
     webtypes.DisableUserConsequences:
       properties:
         service_enrollment_count:
@@ -2574,6 +2622,47 @@ paths:
       security:
       - sessionCookie: []
       summary: View effective server configuration (auditor-only)
+      tags:
+      - admin
+  /api/admin/diagnostics/run:
+    post:
+      description: |-
+        Runs the deployment self-checks and returns what they found:
+        whether the server can reach its own public URL, how the
+        client IP is resolved through http.trusted_proxies, whether
+        the edge weakens the security headers the app sets, and
+        whether the edge adds dangerous CORS headers. The edge checks
+        call the server's own public_url back through whatever sits in
+        front of it; the target is always public_url and cannot be
+        supplied by the caller. Nothing is written.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/webtypes.DiagnosticsResponse'
+          description: What the checks found
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as admin
+        "429":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Too many runs
+      security:
+      - sessionCookie: []
+      summary: Run deployment self-checks (admin-only)
       tags:
       - admin
   /api/admin/enrollments:
@@ -4030,7 +4119,9 @@ paths:
     get:
       description: |-
         Unauthenticated endpoint that returns the running server's build
-        identity for display in the web UI footer. Values come from the
+        identity for display in the web UI footer. What it reveals is
+        governed by version.mode: "show" (the real build), "hide"
+        (nothing), or "fake" (a fixed string). Values come from the
         build stamp; an untagged build reports "development" and omits the
         release URL.
       responses:

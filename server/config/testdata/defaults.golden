@@ -136,3 +136,4 @@ pubsub.nats.cert_file =
 pubsub.nats.key_file = 
 pubsub.nats.url = 
 traces = false
+version.mode = show

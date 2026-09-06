@@ -1457,3 +1457,18 @@ branding:
   # A plain-text message shown on the login page before authentication. Empty
   # disables the notice. Supports newlines for multi-line text.
   login_notice: ""
+
+# Configures what the unauthenticated /api/version endpoint discloses about
+# the running build.
+version:
+  # Selects what the endpoint reveals:
+  #
+  #   "show"          the real version, commit, and release URL (default)
+  #   "hide"          nothing; every field is empty
+  #   any other value that string, reported as the version, with no
+  #                   commit, repository, or release link that would give
+  #                   the real build away
+  #
+  # The two words "show" and "hide" are therefore reserved and cannot
+  # themselves be used as a fake version string.
+  mode: "show"

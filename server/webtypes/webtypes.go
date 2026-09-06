@@ -1378,3 +1378,40 @@ type ClaimSuggestion struct {
 	// YAML is the block to add, ready to paste and review.
 	YAML string `json:"yaml" validate:"required"`
 }
+
+// DiagnosticCheckResult is one deployment self-check on the admin
+// diagnostics page: an identifier, a severity, a headline, the individual
+// observations, and the fix. See server/service's DiagnosticsService.
+type DiagnosticCheckResult struct {
+	// ID is a stable machine key for the check, e.g. "reachability".
+	ID string `json:"id" validate:"required"`
+
+	// Title is the human name of the check.
+	Title string `json:"title" validate:"required"`
+
+	// Status is the worst finding's severity: "ok", "warn", "critical", or
+	// "skipped".
+	Status string `json:"status" validate:"required"`
+
+	// Summary is the one-line headline for the check.
+	Summary string `json:"summary" validate:"required"`
+
+	// Findings are the individual observations, already phrased for an
+	// operator. Empty when the check found nothing to report.
+	Findings []string `json:"findings"`
+
+	// Remediation is the concrete fix. Empty when the status is "ok".
+	Remediation string `json:"remediation,omitempty"`
+}
+
+// DiagnosticsResponse is the result of one run of the admin diagnostics
+// self-checks (edge headers, CORS, proxy trust, reachability).
+type DiagnosticsResponse struct {
+	// PublicOrigin is the URL the edge checks probed, echoed so the operator
+	// can confirm the run tested what they expected. Empty when
+	// http.public_url is not set.
+	PublicOrigin string `json:"public_origin,omitempty"`
+
+	// Checks are the individual results, in display order.
+	Checks []DiagnosticCheckResult `json:"checks"`
+}

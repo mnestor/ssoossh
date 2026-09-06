@@ -1612,3 +1612,52 @@ export interface ClaimSuggestion {
 	 */
 	yaml: string;
 }
+/**
+ * DiagnosticCheckResult is one deployment self-check on the admin
+ * diagnostics page: an identifier, a severity, a headline, the individual
+ * observations, and the fix. See server/service's DiagnosticsService.
+ */
+export interface DiagnosticCheckResult {
+	/**
+	 * ID is a stable machine key for the check, e.g. "reachability".
+	 */
+	id: string;
+	/**
+	 * Title is the human name of the check.
+	 */
+	title: string;
+	/**
+	 * Status is the worst finding's severity: "ok", "warn", "critical", or
+	 * "skipped".
+	 */
+	status: string;
+	/**
+	 * Summary is the one-line headline for the check.
+	 */
+	summary: string;
+	/**
+	 * Findings are the individual observations, already phrased for an
+	 * operator. Empty when the check found nothing to report.
+	 */
+	findings: string[];
+	/**
+	 * Remediation is the concrete fix. Empty when the status is "ok".
+	 */
+	remediation?: string;
+}
+/**
+ * DiagnosticsResponse is the result of one run of the admin diagnostics
+ * self-checks (edge headers, CORS, proxy trust, reachability).
+ */
+export interface DiagnosticsResponse {
+	/**
+	 * PublicOrigin is the URL the edge checks probed, echoed so the operator
+	 * can confirm the run tested what they expected. Empty when
+	 * http.public_url is not set.
+	 */
+	public_origin?: string;
+	/**
+	 * Checks are the individual results, in display order.
+	 */
+	checks: DiagnosticCheckResult[];
+}
