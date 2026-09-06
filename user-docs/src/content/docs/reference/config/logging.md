@@ -21,8 +21,6 @@ Log-file rotation, via the embedded timberjack logger: filename, maxsize, maxage
 
 An unset filename means no log file is written and output goes to stdout instead. maxsize is in megabytes (default 100); maxage is in days (default: keep forever); maxbackups caps retained rotated files (default: keep all, subject to maxage); localtime uses local time rather than UTC in rotated filenames; compression is none, gzip, or zstd; rotationinterval is a duration forcing rotation on a schedule in addition to size. The rest tune backup filename formatting and rotation at specific times. See the DeRuina/timberjack package for the per-field detail.
 
-The squash tag is load-bearing: viper's decoder does not squash untagged embedded structs, so without it every rotation key here would have to be written under a `logger:` level nobody documents, and one written where the docs say to put it is silently dropped.
-
 ## `level`
 
 `string`, default `WARN`

@@ -18,12 +18,7 @@ type AppLogging struct {
 	// addition to size. The rest tune backup filename formatting and
 	// rotation at specific times. See the DeRuina/timberjack package for the
 	// per-field detail.
-	//
-	// The squash tag is load-bearing: viper's decoder does not squash
-	// untagged embedded structs, so without it every rotation key here
-	// would have to be written under a `logger:` level nobody documents,
-	// and one written where the docs say to put it is silently dropped.
-	timberjack.Logger `mapstructure:",squash"`
+	timberjack.Logger `mapstructure:",squash"` // squash: viper never squashes an untagged embed, and these keys are documented flat
 
 	// Level is the minimum log level: a level name (debug, info, warn,
 	// error, case-insensitive, optionally with a numeric +N or -N offset) or

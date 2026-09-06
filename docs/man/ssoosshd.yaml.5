@@ -114,8 +114,6 @@ Default:
 Log\-file rotation, via the embedded timberjack logger: filename, maxsize, maxage, maxbackups, localtime, compression, rotationinterval, backuptimeformat, rotateatminutes, rotateat, appendtimeafterext, and filemode.
 .IP
 An unset filename means no log file is written and output goes to stdout instead. maxsize is in megabytes (default 100); maxage is in days (default: keep forever); maxbackups caps retained rotated files (default: keep all, subject to maxage); localtime uses local time rather than UTC in rotated filenames; compression is none, gzip, or zstd; rotationinterval is a duration forcing rotation on a schedule in addition to size. The rest tune backup filename formatting and rotation at specific times. See the DeRuina/timberjack package for the per\-field detail.
-.IP
-The squash tag is load\-bearing: viper's decoder does not squash untagged embedded structs, so without it every rotation key here would have to be written under a `logger:` level nobody documents, and one written where the docs say to put it is silently dropped.
 .TP
 .BI logging.level: " string"
 The minimum log level: a level name (debug, info, warn, error, case\-insensitive, optionally with a numeric +N or \-N offset) or a raw numeric slog level such as \-4, 0, 4, or 8. An unrecognized or empty value falls back to info.
