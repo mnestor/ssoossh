@@ -238,6 +238,14 @@ directory to enumerate an account's holders, so it names everyone *known* to
 hold the account rather than everyone who does. Someone who has never logged
 in holds the account and does not appear.
 
+An operator with an enrollment id -- from a notification email, an
+`enrollment.*` audit event, or a server log line -- can paste it into the
+search on **Admin - Service codes**, or open `/admin/service-codes/<id>`
+directly. The search also matches the service account, the key ID, the
+certificate request id, and the approver's username or email, and it is a
+substring match, so the shortened id the detail panel shows is enough. That
+id is a button: clicking it copies the whole value.
+
 ## Enrolling under your own account
 
 Not every deployment has a service-account claim to map. Where there is none,

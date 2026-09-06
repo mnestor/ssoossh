@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1777,6 +1778,88 @@ func TestEnrollmentOwnership_ShouldFollowAllowUserAccounts(t *testing.T) {
 			}
 			if !tt.wantVisible && err == nil {
 				t.Error("GetEnrollmentDetail() succeeded, want it refused while own accounts are not service accounts")
+			}
+		})
+	}
+}
+
+// The enrollment's own id is the identifier every other record of it
+// carries: the notification email, the enrollment.* audit events, the
+// server log lines. An operator holding one from any of those had nowhere
+// to paste it — the certificate request id is a different identifier, and
+// searching by it is not the same question.
+func TestListForAdmin_ShouldFindAnEnrollmentByItsOwnID(t *testing.T) {
+	t.Parallel()
+
+	auditor := &Identity{Subject: "sub-auditor", Groups: []string{"auditors"}}
+
+	tests := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{
+			name:  "should find the row by its whole id",
+			query: "1f0a9c3e-0000-4000-8000-000000000001",
+			want:  []string{"1f0a9c3e-0000-4000-8000-000000000001"},
+		},
+		{
+			// Filter is a substring match, so the truncated id the detail
+			// panel shows is enough to find the row it came from.
+			name:  "should find the row by the prefix the panel displays",
+			query: "1f0a9",
+			want:  []string{"1f0a9c3e-0000-4000-8000-000000000001"},
+		},
+		{
+			name:  "should match case-insensitively",
+			query: "1F0A9C3E",
+			want:  []string{"1f0a9c3e-0000-4000-8000-000000000001"},
+		},
+		{
+			name:  "should not match an id belonging to another enrollment",
+			query: "2b7d4e5f-0000-4000-8000-000000000002",
+			want:  []string{"2b7d4e5f-0000-4000-8000-000000000002"},
+		},
+		{
+			name:  "should return nothing for an id no enrollment carries",
+			query: "9999ffff-0000-4000-8000-00000000ffff",
+			want:  nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := &config.Config{Admin: config.AdminConfig{AuditorGroup: "auditors"}}
+			svc := newTestCertRequestServiceWithConfig(t, cfg)
+			enrollment := newTestEnrollmentService(t, svc)
+
+			ownerID := seedUser(t, svc.db, "sub-owner")
+			for i, id := range []string{
+				"1f0a9c3e-0000-4000-8000-000000000001",
+				"2b7d4e5f-0000-4000-8000-000000000002",
+			} {
+				seedEnrollment(t, svc, model.Enrollment{
+					ID: id, Code: "code" + strconv.Itoa(i), PublicKey: "key" + strconv.Itoa(i),
+					UserID: ownerID, Principals: `["svc-a"]`, ServiceAccount: "svc-a",
+					KeyID: "key" + strconv.Itoa(i), ExpiresAt: time.Now().Add(time.Hour),
+					CreatedAt: time.Now(),
+				})
+			}
+
+			list, err := enrollment.ListForAdmin(context.Background(), auditor,
+				AdminListParams{Limit: 25, Offset: 0, Query: tt.query})
+			if err != nil {
+				t.Fatalf("ListForAdmin() error = %v", err)
+			}
+
+			got := make([]string, 0, len(list.Enrollments))
+			for _, row := range list.Enrollments {
+				got = append(got, row.Enrollment.ID)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("search %q returned %v, want %v", tt.query, got, tt.want)
 			}
 		})
 	}

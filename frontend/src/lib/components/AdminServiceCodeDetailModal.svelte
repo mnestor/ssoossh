@@ -3,7 +3,8 @@
 	import {
 		expireEnrollment,
 		getAdminEnrollmentDetail,
-		setEnrollmentNotificationEmail
+		setEnrollmentNotificationEmail,
+		type AdminEnrollmentDetail
 	} from '$lib/api/endpoints';
 	import type { AdminEnrollment } from '$lib/api/types';
 	import { errorMessage } from '$lib/auth';
@@ -11,6 +12,7 @@
 	import AccountHoldersPanel from './AccountHoldersPanel.svelte';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
+	import CopyableId from './CopyableId.svelte';
 	import DetailRow from './DetailRow.svelte';
 	import Icon from './Icon.svelte';
 	import MonoChip from './MonoChip.svelte';
@@ -19,14 +21,23 @@
 
 	interface Props {
 		enrollment: AdminEnrollment;
+		/**
+		 * The detail response, when the caller has already fetched it. The
+		 * list page has not — it holds a row and lets this panel fetch —
+		 * but the /admin/service-codes/[id] route must fetch to have an
+		 * enrollment to pass at all, and GET /api/admin/enrollments/:id is
+		 * audited, so fetching it twice per open would write two
+		 * admin.enrollment_viewed events for one look.
+		 */
+		detail?: AdminEnrollmentDetail;
 		now?: Date;
 		onclosed: () => void;
 	}
 
-	let { enrollment, now = new Date(), onclosed }: Props = $props();
+	let { enrollment, detail, now = new Date(), onclosed }: Props = $props();
 
 	let dialogEl = $state<HTMLDialogElement | undefined>(undefined);
-	let detailData = $state<any>(null);
+	let detailData = $state<AdminEnrollmentDetail | null>(null);
 	let detailLoading = $state(true);
 	let detailError = $state<string | null>(null);
 
@@ -84,8 +95,15 @@
 		}
 	});
 
-	// Load detail data
+	// Load detail data, unless the caller already has it.
 	$effect(() => {
+		if (detail) {
+			detailData = detail;
+			detailLoading = false;
+			detailError = null;
+			return;
+		}
+
 		detailLoading = true;
 		detailError = null;
 		const controller = new AbortController();
@@ -147,7 +165,6 @@
 		enrollment.principals.length > 0 ? enrollment.principals.join(', ') : 'unknown account'
 	);
 	const expired = $derived(isExpired(enrollment.expires_at, now));
-	const shortId = $derived(enrollment.id.slice(0, 5));
 	const certificateLifetime = $derived(
 		enrollment.certificate_valid_seconds === undefined
 			? 'until the code expires'
@@ -203,9 +220,7 @@
 					Active
 				</span>
 			{/if}
-			<span class="text-xs text-ink-muted" title={enrollment.id}>
-				ID <span class="font-mono">{shortId}</span>
-			</span>
+			<CopyableId value={enrollment.id} testid="enrollment-id" />
 		</div>
 
 		<div class="flex gap-2.5 rounded-lg bg-surface-muted px-3.5 py-3 text-[13px] leading-normal">

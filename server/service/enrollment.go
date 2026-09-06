@@ -1186,10 +1186,20 @@ func (s *EnrollmentService) ListForAdmin(ctx context.Context, identity *Identity
 		Model(&model.Enrollment{}).
 		Joins("LEFT JOIN users ON enrollments.user_id = users.id")
 
-	// Apply search filter across approver username and email, service
-	// account, key ID, and certificate_request_id.
+	// Apply search filter across the enrollment's own id, the approver's
+	// username and email, the service account, the key ID, and the
+	// certificate_request_id.
+	//
+	// enrollments.id matters because it is the identifier every other
+	// record of this enrollment carries: the notification email, the
+	// enrollment.* audit events, the server log lines. Without it an
+	// operator holding an id from any of those had nowhere to paste it —
+	// the request id is a different identifier, and searching by it is not
+	// the same question. Filter is a substring match, so the truncated id
+	// the detail panel shows is enough to find the row.
 	if params.Query != "" {
 		whereClause, args := paging.Filter(params.Query,
+			"enrollments.id",
 			"users.username",
 			"users.email",
 			"enrollments.service_account",

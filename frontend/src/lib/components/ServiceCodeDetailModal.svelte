@@ -8,6 +8,7 @@
 	import AccountHoldersPanel from './AccountHoldersPanel.svelte';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
+	import CopyableId from './CopyableId.svelte';
 	import DetailRow from './DetailRow.svelte';
 	import Icon from './Icon.svelte';
 	import MonoChip from './MonoChip.svelte';
@@ -152,7 +153,6 @@
 	// The short form of the id, for the corner of the panel — enough to tell
 	// two enrollments apart against a log line. The full id is on the title
 	// attribute for anyone who needs all of it.
-	const shortId = $derived(enrollment.id.slice(0, 5));
 
 	const certificateLifetime = $derived(
 		enrollment.certificate_valid_seconds === undefined
@@ -221,9 +221,7 @@
 					Active
 				</span>
 			{/if}
-			<span class="text-xs text-ink-muted" title={enrollment.id}>
-				ID <span class="font-mono">{shortId}</span>
-			</span>
+			<CopyableId value={enrollment.id} testid="enrollment-id" />
 		</div>
 
 		<!-- The account leads, the way the decider leads on a certificate:

@@ -7,9 +7,11 @@ import Page from './+page.svelte';
 
 // Test methodology: render the admin detail route against a stubbed fetch,
 // with $app/state replaced by the shared fake so the route parameter can be
-// set. The page resolves its enrollment out of the list answer, so the
-// found / not-found split — one id in the list, one not — is the behavior
-// under test, along with the failure path.
+// set. What matters is that the route asks the detail endpoint for the id it
+// was given -- it used to page the list and scan it in the browser, which
+// silently stopped resolving anything past the hundred newest codes -- and
+// that the three answers a reader must tell apart (no such code, not allowed
+// to see it, failed to load) read differently.
 
 vi.mock('$app/state', async () => {
 	const { fakePage } = await import('$lib/testing/page.svelte');
@@ -34,21 +36,20 @@ function adminEnrollment(id: string): AdminEnrollment {
 	} as AdminEnrollment;
 }
 
-/**
- * stubFetch answers the list URL with rows and any other URL (the modal's
- * own detail fetch) with a matching detail payload.
- */
-function stubFetch(rows: AdminEnrollment[]) {
+/** requests records every URL fetched, so the route's own call is testable. */
+const requests: string[] = [];
+
+/** stubDetail answers the detail endpoint with one enrollment, and the
+ * holders panel with nobody. */
+function stubDetail(enrollment: AdminEnrollment) {
 	vi.stubGlobal(
 		'fetch',
 		vi.fn((input: RequestInfo | URL) => {
 			const url = String(input);
-			const body = url.includes('/admin/enrollments?')
-				? {
-						enrollments: rows,
-						meta: { total: rows.length, limit: 1000, offset: 0, page: 1, page_count: 1 }
-					}
-				: { enrollment: rows[0], retrievals: [], retrieval_total: 0 };
+			requests.push(url);
+			const body = url.includes('/holders')
+				? { service_account: enrollment.service_account, holders: [] }
+				: { enrollment, retrievals: [], retrieval_total: 0 };
 			return Promise.resolve(
 				new Response(JSON.stringify({ data: body, error: null }), {
 					status: 200,
@@ -59,40 +60,90 @@ function stubFetch(rows: AdminEnrollment[]) {
 	);
 }
 
+/** stubStatus answers every fetch with an error status. */
+function stubStatus(status: number, error = 'nope') {
+	vi.stubGlobal(
+		'fetch',
+		vi.fn((input: RequestInfo | URL) => {
+			requests.push(String(input));
+			return Promise.resolve(
+				new Response(JSON.stringify({ data: null, error }), {
+					status,
+					headers: { 'Content-Type': 'application/json' }
+				})
+			);
+		})
+	);
+}
+
 beforeEach(() => {
 	vi.unstubAllGlobals();
+	requests.length = 0;
 	resetFakePage('http://localhost/admin/service-codes/enr-1');
 	fakePage.params = { id: 'enr-1' };
 });
 
 describe('admin service code detail page', () => {
 	it('should show the enrollment named by the route', async () => {
-		stubFetch([adminEnrollment('enr-1')]);
+		stubDetail(adminEnrollment('enr-1'));
 
 		render(Page);
 
-		expect(await screen.findByText('svc-deploy')).toBeInTheDocument();
+		// By id rather than by account name: the holders panel names the
+		// account too, so a bare text match is ambiguous.
+		expect(await screen.findByTestId('enrollment-id')).toHaveAttribute('title', 'enr-1');
 	});
 
-	it('should report an id the list does not contain', async () => {
-		stubFetch([adminEnrollment('enr-other')]);
+	// The list is capped at paging.MaxLimit (100) whatever a caller asks
+	// for, so resolving one enrollment by scanning a page of it stopped
+	// working for anything older than the hundred newest codes.
+	it('should ask the detail endpoint for the id rather than paging the list', async () => {
+		stubDetail(adminEnrollment('enr-1'));
+
+		render(Page);
+		await screen.findByTestId('enrollment-id');
+
+		expect(requests.some((url) => url.includes('/admin/enrollments/enr-1'))).toBe(true);
+		expect(requests.every((url) => !url.includes('/admin/enrollments?'))).toBe(true);
+	});
+
+	// The endpoint is audited, so fetching it here and again inside the
+	// panel would write two admin.enrollment_viewed events for one look.
+	it('should read the enrollment once', async () => {
+		stubDetail(adminEnrollment('enr-1'));
+
+		render(Page);
+		await screen.findByTestId('enrollment-id');
+
+		const reads = requests.filter((url) => url.includes('/admin/enrollments/enr-1'));
+		expect(reads).toHaveLength(1);
+	});
+
+	it('should report an id no enrollment carries', async () => {
+		stubStatus(404, 'enrollment "enr-1" not found');
 
 		render(Page);
 
-		expect(await screen.findByText('Enrollment not found')).toBeInTheDocument();
+		expect(await screen.findByText('No enrollment with that ID.')).toBeInTheDocument();
+	});
+
+	// "There is no such code" and "you may not see this one" are different
+	// answers, and an operator chasing an id from a log line needs to know
+	// which they got.
+	it('should distinguish a refusal from a missing enrollment', async () => {
+		stubStatus(403);
+
+		render(Page);
+
+		expect(
+			await screen.findByText('You do not have permission to view this enrollment.')
+		).toBeInTheDocument();
 	});
 
 	it('should surface a load failure', async () => {
 		vi.stubGlobal(
 			'fetch',
-			vi.fn(() =>
-				Promise.resolve(
-					new Response(JSON.stringify({ data: null, error: 'not authorized as auditor' }), {
-						status: 403,
-						headers: { 'Content-Type': 'application/json' }
-					})
-				)
-			)
+			vi.fn(() => Promise.reject(new Error('network is down')))
 		);
 
 		render(Page);

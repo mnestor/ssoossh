@@ -101,7 +101,17 @@
 	</p>
 
 	<div class="flex gap-4">
-		<SearchInput label="Search enrollments" onsearch={onSearch} testid="search-enrollments" />
+		<!-- The placeholder names what the search actually matches. The
+		     enrollment id is first because it is the identifier every other
+		     record of a code carries -- the notification email, the
+		     enrollment.* audit events, the server log lines -- and an
+		     operator arriving with one had no way to know it would work. -->
+		<SearchInput
+			label="Search enrollments"
+			placeholder="enrollment ID, account, key ID, request ID, or approver..."
+			onsearch={onSearch}
+			testid="search-enrollments"
+		/>
 	</div>
 
 	{#if loadError}

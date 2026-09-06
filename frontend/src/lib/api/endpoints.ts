@@ -433,23 +433,35 @@ export function listAdminEnrollments(
 }
 
 /**
+ * AdminEnrollmentDetail is what GET /api/admin/enrollments/:id answers with.
+ *
+ * Hand-declared rather than generated, because the handler answers with a
+ * gin.H of three parts rather than one wire struct. Named so the panel and
+ * the page that preloads it can agree on the shape instead of both spelling
+ * it out inline.
+ */
+export interface AdminEnrollmentDetail {
+	enrollment: AdminEnrollment;
+	retrievals: EnrollmentRetrievalResponse[];
+	retrieval_total: number;
+}
+
+/**
  * GET /api/admin/enrollments/:id — full enrollment details including
  * retrieval log and any historical reassignments, visible to auditors and to
  * holders of the enrollment's service account.
+ *
+ * This resolves any enrollment by id. Anything that needs one enrollment
+ * should come here rather than page the list and search it in the browser:
+ * the list is capped at paging.MaxLimit (100) whatever a caller asks for,
+ * so a client-side scan silently stops resolving anything older than the
+ * hundred newest codes.
  */
 export function getAdminEnrollmentDetail(
 	id: string,
 	signal?: AbortSignal
-): Promise<{
-	enrollment: AdminEnrollment;
-	retrievals: EnrollmentRetrievalResponse[];
-	retrieval_total: number;
-}> {
-	return request<{
-		enrollment: AdminEnrollment;
-		retrievals: EnrollmentRetrievalResponse[];
-		retrieval_total: number;
-	}>(`/admin/enrollments/${encodeURIComponent(id)}`, { signal });
+): Promise<AdminEnrollmentDetail> {
+	return request<AdminEnrollmentDetail>(`/admin/enrollments/${encodeURIComponent(id)}`, { signal });
 }
 
 /**
