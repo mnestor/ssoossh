@@ -467,11 +467,32 @@ export function getAdminEnrollmentDetail(
 /**
  * PATCH /api/admin/enrollments/:id/expire — immediately expire an
  * enrollment, preventing future service certificate retrievals.
+ *
+ * The reason is required: enrollment.expired is one of the actions the
+ * server validates a reason for, and this call used to send no body at all,
+ * so every press of the admin Expire button came back 400.
  */
-export function expireEnrollment(id: string): Promise<{ expired: boolean }> {
+export function expireEnrollment(id: string, reason: string): Promise<{ expired: boolean }> {
 	return request<{ expired: boolean }>(`/admin/enrollments/${encodeURIComponent(id)}/expire`, {
-		method: 'PATCH'
+		method: 'PATCH',
+		body: { reason }
 	});
+}
+
+/**
+ * PATCH /api/certs/service/enrollments/:id/expire — retire a code for a
+ * service account the caller holds.
+ *
+ * The same outcome as the admin route above, for the people who live with
+ * the code: an enrollment belongs to its service account rather than to
+ * whoever approved it, so its holders are the ones who know the job behind
+ * it has been decommissioned.
+ */
+export function expireOwnEnrollment(id: string, reason: string): Promise<{ expired: boolean }> {
+	return request<{ expired: boolean }>(
+		`/certs/service/enrollments/${encodeURIComponent(id)}/expire`,
+		{ method: 'PATCH', body: { reason } }
+	);
 }
 
 /**

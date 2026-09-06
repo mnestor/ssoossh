@@ -48,6 +48,11 @@ type fakeEnrollmentService struct {
 	// records the path parameter it was asked for.
 	holders     service.AccountHolders
 	gotHolderID string
+
+	// gotExpireID and gotExpireReason record the expiry the handler asked
+	// for, which is the whole of what that handler does.
+	gotExpireID     string
+	gotExpireReason string
 }
 
 func (f *fakeEnrollmentService) Retrieve(_ context.Context, code string, sourceIP string) (string, error) {
@@ -100,6 +105,11 @@ func (f *fakeEnrollmentService) ListAccountHolders(_ context.Context, id string,
 		return service.AccountHolders{}, f.err
 	}
 	return f.holders, nil
+}
+
+func (f *fakeEnrollmentService) ExpireForIdentity(_ context.Context, id string, identity *service.Identity, reason string) error {
+	f.gotExpireID, f.gotExpireReason, f.gotIdentity = id, reason, identity
+	return f.err
 }
 
 func (f *fakeEnrollmentService) SetNotificationEmail(_ context.Context, id string, identity *service.Identity, address string) error {
@@ -724,5 +734,81 @@ func TestHoldersHandler_ShouldRejectARequestWithNoIdentity(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("GET holders without a session = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+// The handler's whole job is to carry the path parameter, the caller's
+// identity and the reason through to the service, and to refuse a request
+// carrying no session at all. Everything it could get wrong is one of those.
+
+func TestExpireHandler_ShouldPassTheEnrollmentAndReasonThrough(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeEnrollmentService{}
+	r := newRetrievalsTestRouter(svc, &service.Identity{Subject: "sub-1"})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/certs/service/enrollments/enr-1/expire",
+		strings.NewReader(`{"reason":"job decommissioned"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("PATCH expire = %d (%s), want %d", w.Code, w.Body.String(), http.StatusOK)
+	}
+	if svc.gotExpireID != "enr-1" {
+		t.Errorf("enrollment id = %q, want enr-1", svc.gotExpireID)
+	}
+	if svc.gotExpireReason != "job decommissioned" {
+		t.Errorf("reason = %q, want the one the caller sent", svc.gotExpireReason)
+	}
+}
+
+func TestExpireHandler_ShouldRejectARequestWithNoIdentity(t *testing.T) {
+	t.Parallel()
+
+	r := newRetrievalsTestRouter(&fakeEnrollmentService{}, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/certs/service/enrollments/enr-1/expire",
+		strings.NewReader(`{"reason":"whatever"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("PATCH expire without a session = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+}
+
+// An absent body is a missing reason, which is the service's call to make —
+// the handler must reach it rather than answering 400 on the empty read.
+func TestExpireHandler_ShouldReachTheServiceWithAnEmptyBody(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeEnrollmentService{}
+	r := newRetrievalsTestRouter(svc, &service.Identity{Subject: "sub-1"})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodPatch, "/certs/service/enrollments/enr-1/expire", nil))
+
+	if svc.gotExpireID != "enr-1" {
+		t.Errorf("enrollment id = %q, want the service to have been asked anyway", svc.gotExpireID)
+	}
+}
+
+func TestExpireHandler_ShouldSurfaceARefusalFromTheService(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeEnrollmentService{err: &errorresponses.ForbiddenError{Reason: "not yours"}}
+	r := newRetrievalsTestRouter(svc, &service.Identity{Subject: "sub-1"})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/certs/service/enrollments/enr-1/expire",
+		strings.NewReader(`{"reason":"trying it on"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("PATCH expire on someone else's code = %d, want %d", w.Code, http.StatusForbidden)
 	}
 }

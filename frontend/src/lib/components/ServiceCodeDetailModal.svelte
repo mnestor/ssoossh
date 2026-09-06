@@ -1,11 +1,16 @@
 <script lang="ts">
 	import { ApiError } from '$lib/api/client';
-	import { listRetrievals, setEnrollmentNotificationEmail } from '$lib/api/endpoints';
+	import {
+		expireOwnEnrollment,
+		listRetrievals,
+		setEnrollmentNotificationEmail
+	} from '$lib/api/endpoints';
 	import type { EnrollmentRetrievalsResponse, ServiceEnrollment } from '$lib/api/types';
 	import { errorMessage } from '$lib/auth';
 	import { expiryLabel, formatDateTime, formatDuration, isExpired } from '$lib/format';
 	import { session } from '$lib/session.svelte';
 	import AccountHoldersPanel from './AccountHoldersPanel.svelte';
+	import ExpireCodeAction from './ExpireCodeAction.svelte';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
 	import CopyableId from './CopyableId.svelte';
@@ -397,6 +402,23 @@
 						{/each}
 					</dl>
 				{/if}
+			</div>
+		{/if}
+
+		<!-- Retiring the code, for the people who live with it. An
+		     enrollment belongs to its service account rather than to whoever
+		     approved it, so a holder is the one who knows the job behind it
+		     has been decommissioned — and until now they had to ask an admin
+		     to retire it for them. An already-expired code needs no control:
+		     the outcome is already true. -->
+		{#if !expired}
+			<div>
+				<SectionLabel>Retire this code</SectionLabel>
+				<ExpireCodeAction
+					testid="expire-code"
+					expire={(reason) => expireOwnEnrollment(enrollment.id, reason)}
+					onexpired={() => dialogEl?.close()}
+				/>
 			</div>
 		{/if}
 	</div>

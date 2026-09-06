@@ -46,6 +46,12 @@ func (s *stubEnrollmentProvider) Retrieve(_ context.Context, _ string, _ string)
 	return "", nil
 }
 
+// The admin expiry route has its own handler on the admin controller, so
+// nothing in this file reaches the holder-facing one.
+func (s *stubEnrollmentProvider) ExpireForIdentity(_ context.Context, _ string, _ *service.Identity, _ string) error {
+	return nil
+}
+
 func (s *stubEnrollmentProvider) ListRetrievals(_ context.Context, _ string, _ *service.Identity) (service.RetrievalLog, error) {
 	return service.RetrievalLog{}, nil
 }

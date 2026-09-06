@@ -10,6 +10,7 @@
 	import { errorMessage } from '$lib/auth';
 	import { expiryLabel, formatDateTime, formatDuration, isExpired } from '$lib/format';
 	import AccountHoldersPanel from './AccountHoldersPanel.svelte';
+	import ExpireCodeAction from './ExpireCodeAction.svelte';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
 	import CopyableId from './CopyableId.svelte';
@@ -40,10 +41,6 @@
 	let detailData = $state<AdminEnrollmentDetail | null>(null);
 	let detailLoading = $state(true);
 	let detailError = $state<string | null>(null);
-
-	let expireConfirm = $state(false);
-	let expireError = $state<string | null>(null);
-	let expiring = $state(false);
 
 	// The notification address, editable here for the deployment where the
 	// account's holders are outside ssoossh entirely and cannot set it
@@ -131,34 +128,7 @@
 	});
 
 	function handleClosed() {
-		expireConfirm = false;
-		expireError = null;
 		onclosed();
-	}
-
-	async function handleExpire() {
-		expiring = true;
-		expireError = null;
-
-		try {
-			await expireEnrollment(enrollment.id);
-			// Close after successful expiry
-			dialogEl?.close();
-		} catch (cause) {
-			if (cause instanceof ApiError) {
-				if (cause.status === 404) {
-					expireError = 'Enrollment not found';
-				} else if (cause.status === 403) {
-					expireError = 'You do not have permission to expire this enrollment';
-				} else {
-					expireError = cause.message;
-				}
-			} else {
-				expireError = cause instanceof Error ? cause.message : 'Failed to expire enrollment';
-			}
-		} finally {
-			expiring = false;
-		}
 	}
 
 	const subject = $derived(
@@ -388,35 +358,11 @@
 
 				<!-- Expire control -->
 				{#if !expired}
-					<div class="space-y-2">
-						{#if !expireConfirm}
-							<Button variant="danger" onclick={() => (expireConfirm = true)}>
-								Expire this code
-							</Button>
-						{:else}
-							<div class="space-y-2 rounded-lg bg-danger-surface p-3">
-								<p class="text-[13px] text-ink">
-									Expiring this code will prevent further certificate retrievals. Certificates
-									already issued will continue to work until they expire on their own.
-								</p>
-								<div class="flex gap-2">
-									<Button variant="danger" disabled={expiring} onclick={handleExpire}>
-										{expiring ? 'Expiring…' : 'Confirm expiry'}
-									</Button>
-									<Button
-										variant="ghost"
-										disabled={expiring}
-										onclick={() => (expireConfirm = false)}
-									>
-										Cancel
-									</Button>
-								</div>
-								{#if expireError}
-									<Alert variant="error" title="Expiry failed">{expireError}</Alert>
-								{/if}
-							</div>
-						{/if}
-					</div>
+					<ExpireCodeAction
+						testid="admin-expire-code"
+						expire={(reason) => expireEnrollment(enrollment.id, reason)}
+						onexpired={() => dialogEl?.close()}
+					/>
 				{/if}
 			</div>
 		{/if}
