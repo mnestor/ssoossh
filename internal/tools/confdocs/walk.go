@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -95,6 +96,14 @@ type Field struct {
 	// documented as one group by the doc comment on the embedded field.
 	Embedded bool
 
+	// Keys names the configuration keys of an embedded group, in
+	// declaration order. The prose above them is ours; the names are the
+	// dependency's, so AttachEmbeddedKeys fills them in from the real type
+	// rather than from a list kept by hand. Without them defaults.yaml
+	// carried the group's paragraph and not one of the keys it describes,
+	// which is how http.access_logging shipped with no filename in it.
+	Keys []EmbeddedKey
+
 	// promoted marks an embedded struct we do parse, whose fields belong to
 	// the enclosing struct's namespace rather than to a key of their own.
 	// buildChildren splices those fields into the parent and drops this
@@ -104,6 +113,51 @@ type Field struct {
 
 // IsStruct reports whether f groups other keys rather than holding a value.
 func (f *Field) IsStruct() bool { return len(f.Children) > 0 }
+
+// EmbeddedKey is one key of an embedded third-party struct: the name an
+// operator writes and the config-facing type its placeholder comes from.
+type EmbeddedKey struct {
+	// Key is the config key, e.g. "maxbackups".
+	Key string
+
+	// Type is the config-facing type name, in the same vocabulary as
+	// Field.Type: string, int, bool, duration, list, or map.
+	Type string
+}
+
+// AttachEmbeddedKeys fills in Field.Keys for every embedded group in
+// sections, looking each up in keys by the embedded type's name.
+//
+// A group with no entry is an error rather than an empty list: silently
+// writing the paragraph and none of the keys is the failure this exists to
+// stop, and it is invisible in the output.
+func AttachEmbeddedKeys(sections []*Section, keys map[string][]EmbeddedKey) error {
+	var missing []string
+	var walk func(fields []*Field)
+	walk = func(fields []*Field) {
+		for _, f := range fields {
+			if f.Embedded {
+				k, ok := keys[f.GoName]
+				if !ok {
+					missing = append(missing, f.GoName)
+					continue
+				}
+				f.Keys = k
+			}
+			walk(f.Children)
+			walk(f.Elem)
+		}
+	}
+	for _, s := range sections {
+		walk(s.Fields)
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	sort.Strings(missing)
+	return fmt.Errorf("embedded config groups have no key list, so they would ship as prose alone: %s",
+		strings.Join(slices.Compact(missing), ", "))
+}
 
 // Section is one top-level grouping in the generated output: a struct
 // directly under Config, or the synthetic group holding Config's own scalars.

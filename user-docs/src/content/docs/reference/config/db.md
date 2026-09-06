@@ -54,12 +54,12 @@ Log-file rotation for this destination, via the embedded timberjack logger, with
 
 `string`, default `WARN`
 
-The minimum log level for this destination, in the same form as logging.level.
+The minimum log level for this destination, in the same form as logging.level. Empty means this destination has no threshold of its own and is filtered at logging.level with everything else.
 
 ```yaml
 db:
   logging:
-    level: "WARN"
+    level: "info"
 ```
 
 ## `logging.add_source`

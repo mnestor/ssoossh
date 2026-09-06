@@ -27,6 +27,13 @@ const yamlWidth = 74
 //
 // A key with no default: tag is not written. Under its comment goes its
 // example: tag, commented out, or nothing -- see writeYAMLField.
+//
+// A key whose default is the zero value for its type is written commented
+// out as well. Loading the file with such a key set and loading it with the
+// key absent hand the server the same value, so the comment costs nothing
+// and says the one thing the bare key could not: this is an option to turn
+// on, not a blank an operator is expected to fill in. What is left
+// uncommented is then exactly the set of values ssoossh chose.
 func WriteDefaults(path string, sections []*Section) (bool, error) {
 	before, err := os.ReadFile(path)
 	if err != nil {
@@ -53,92 +60,152 @@ func WriteDefaults(path string, sections []*Section) (bool, error) {
 func writeSection(b *strings.Builder, s *Section, refs map[string]string) {
 	if s.Key == "" {
 		// The scalars at the root of the file.
-		for _, f := range s.Fields {
-			writeYAMLField(b, f, refs, "", 0)
-			b.WriteString("\n")
-		}
+		writeFields(b, s.Fields, refs, "", 0, false)
+		b.WriteString("\n")
 		return
 	}
 
 	writeComment(b, s.Doc, refs, s.Key, 0)
 
-	// Same reason as a struct field: a section header with nothing set
-	// beneath it would parse as a null key the file never had. hsm and
-	// queue are documented this way -- comment emitted, key withheld -- and
-	// left unset.
+	// A section every one of whose keys loads to the zero value ships no
+	// opinion of its own, so its header is commented out along with them.
+	// Left live over nothing but commented keys it would parse as null,
+	// which is a key the file never had.
 	//
-	// The fields go with it. Written anyway they would be indented under a
-	// header that is not there, which reads as a run of loose sentences with
-	// no key attached to any of them; the section comment carries the shape
-	// of the block and ssoosshd.yaml(5) carries the per-key detail.
-	if !sectionHasDefault(s) {
-		b.WriteString("\n")
-		return
-	}
-
-	fmt.Fprintf(b, "%s:\n", s.Key)
-	for _, f := range s.Fields {
-		writeYAMLField(b, f, refs, s.Key, 1)
-	}
+	// The header used to be withheld outright in that case -- hsm, queue and
+	// ldap.logging were prose and nothing else -- because a live header over
+	// commented keys is exactly that null. Commenting the header out instead
+	// keeps the whole block on the page, which is the point: an option an
+	// operator cannot see the key for is an option they do not have.
+	commented := !anyLive(s.Fields)
+	fmt.Fprintf(b, "%s%s:\n", mark(commented), s.Key)
+	writeFields(b, s.Fields, refs, s.Key, 1, commented)
 	b.WriteString("\n")
 }
 
-// sectionHasDefault reports whether any key in s has a default to write.
-func sectionHasDefault(s *Section) bool {
-	for _, f := range s.Fields {
-		if hasDefault(f) {
+// writeFields emits the keys of one block with a blank line between them.
+// The separator is what makes a commented-out key findable: without it the
+// key sits directly below the last line of its own paragraph and directly
+// above the first line of the next one, and the whole block reads as prose
+// with no settings in it.
+func writeFields(b *strings.Builder, fields []*Field, refs map[string]string, scope string, depth int, commented bool) {
+	for i, f := range fields {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		writeYAMLField(b, f, refs, scope, depth, commented)
+	}
+}
+
+// mark is the prefix a commented-out key carries. It sits at the key's own
+// indentation, so deleting the "# " leaves the key correctly indented
+// whether or not the block above it is commented out too.
+func mark(commented bool) string {
+	if commented {
+		return "# "
+	}
+	return ""
+}
+
+// writeYAMLField emits one key: its comment, then its value if it has a
+// default: tag, then its example: tag commented out if it has one instead.
+func writeYAMLField(b *strings.Builder, f *Field, refs map[string]string, scope string, depth int, commented bool) {
+	indent := strings.Repeat("  ", depth)
+	writeComment(b, f.Doc, refs, scope, depth)
+
+	// The rotation options belong to the embedded timberjack logger and have
+	// no key of their own, so the group's prose is followed by the keys
+	// themselves, every one of them commented out: none is set until an
+	// operator sets it. Without these the block was a paragraph naming keys
+	// that appeared nowhere in the file it was describing.
+	if f.Embedded {
+		for _, k := range f.Keys {
+			fmt.Fprintf(b, "%s# %s: %s\n", indent, k.Key, zeroValue(k.Type))
+		}
+		return
+	}
+
+	if f.IsStruct() {
+		// A mapping key with nothing live under it parses as null, which
+		// would add a key the file never had, so the key goes out commented
+		// along with everything below it.
+		sub := commented || !anyLive(f.Children)
+		fmt.Fprintf(b, "%s%s%s:\n", indent, mark(sub), f.Key)
+		writeFields(b, f.Children, refs, scope, depth+1, sub)
+		return
+	}
+
+	if !f.HasDefault {
+		// Documented but unset. A container of structs shows the shape of
+		// one entry; anything else names the key and shows a value that can
+		// be uncommented as it stands -- its example: tag when it has one,
+		// the empty value for its type when it does not. The key goes out
+		// either way: a paragraph with no key under it describes a setting
+		// an operator then has to go and look up somewhere else.
+		switch {
+		case len(f.Elem) > 0:
+			writeYAMLElem(b, f, depth)
+		case f.Example != "":
+			fmt.Fprintf(b, "%s# %s: %s\n", indent, f.Key, f.Example)
+		case !docShowsKey(f.Doc, f.Key):
+			fmt.Fprintf(b, "%s# %s: %s\n", indent, f.Key, zeroValue(f.Type))
+		}
+		return
+	}
+
+	fmt.Fprintf(b, "%s%s%s: %s\n", indent, mark(commented || isZeroDefault(f)), f.Key, renderDefault(f))
+}
+
+// docShowsKey reports whether a doc comment already writes the key out in a
+// code block of its own. ssh_key's PEM block and fips's tri-state note both
+// do, and a generated line under either would be a second, flatter answer to
+// a question the prose has already answered better -- for fips a wrong one,
+// since that key ships with no value precisely so that unset stays
+// distinguishable from an explicit false.
+func docShowsKey(doc []string, key string) bool {
+	for _, line := range doc {
+		t := strings.TrimSpace(line)
+		t = strings.TrimSpace(strings.TrimPrefix(t, "#"))
+		if strings.HasPrefix(t, key+":") {
 			return true
 		}
 	}
 	return false
 }
 
-// writeYAMLField emits one key: its comment, then its value if it has a
-// default: tag, then its example: tag commented out if it has one instead.
-func writeYAMLField(b *strings.Builder, f *Field, refs map[string]string, scope string, depth int) {
-	// The rotation options belong to the embedded timberjack logger and have
-	// no key of their own, so only their comment is emitted.
-	if f.Embedded {
-		writeComment(b, f.Doc, refs, scope, depth)
-		return
-	}
-
-	indent := strings.Repeat("  ", depth)
-	writeComment(b, f.Doc, refs, scope, depth)
-
-	if f.IsStruct() {
-		// A mapping key with nothing under it parses as null, which would add
-		// a key the file never had. When no descendant has a default, the
-		// comment documents the group and the key itself stays out.
-		if !hasDefault(f) {
-			b.WriteString("\n")
-			return
-		}
-		fmt.Fprintf(b, "%s%s:\n", indent, f.Key)
-		for _, c := range f.Children {
-			writeYAMLField(b, c, refs, scope, depth+1)
-		}
-		return
-	}
-
+// isZeroDefault reports whether f's default is the zero value for its type,
+// which is what viper hands the server when the key is absent. Such a key is
+// written commented out, so it reads as the option it is rather than as a
+// blank someone forgot to fill in.
+func isZeroDefault(f *Field) bool {
 	if !f.HasDefault {
-		// Documented but unset. A container of structs shows the shape of
-		// one entry; a field with an example: tag names the key and shows a
-		// value that can be uncommented as it stands. Without either, a
-		// blank line at least keeps the comment from reading as the header
-		// for whichever key comes next.
-		switch {
-		case len(f.Elem) > 0:
-			writeYAMLElem(b, f, depth)
-		case f.Example != "":
-			fmt.Fprintf(b, "%s# %s: %s\n", indent, f.Key, f.Example)
-		default:
-			b.WriteString("\n")
-		}
-		return
+		return false
 	}
+	// An empty tag is the zero value for every type it is valid on: the
+	// empty string, and the YAML null the *bool keys read as "infer it".
+	if f.Default == "" {
+		return true
+	}
+	// A zero duration is written both ways: the unit carries no information
+	// once the number is nought, so "0" and "0s" are the same key unset.
+	if f.Type == "duration" && f.Default == "0" {
+		return true
+	}
+	return f.Default == zeroValue(f.Type)
+}
 
-	fmt.Fprintf(b, "%s%s: %s\n", indent, f.Key, renderDefault(f))
+// anyLive reports whether anything in fields, or below them, ships a value
+// other than the zero value for its type.
+func anyLive(fields []*Field) bool {
+	for _, f := range fields {
+		if f.HasDefault && !isZeroDefault(f) {
+			return true
+		}
+		if anyLive(f.Children) {
+			return true
+		}
+	}
+	return false
 }
 
 // writeYAMLElem emits the shape of one entry under a container key: a
@@ -160,7 +227,6 @@ func writeYAMLElem(b *strings.Builder, f *Field, depth int) {
 	for _, line := range yamlEntry(f, "", "") {
 		b.WriteString(indent + "#   " + line + "\n")
 	}
-	b.WriteString("\n")
 }
 
 // yamlEntry renders a container key and one entry under it. at indents the
@@ -211,7 +277,14 @@ func yamlEntryValue(f *Field) string {
 	if f.Example != "" {
 		return f.Example
 	}
-	switch f.Type {
+	return zeroValue(f.Type)
+}
+
+// zeroValue is the YAML for the zero value of a config-facing type: what a
+// key holds when nobody sets it, and so both the placeholder a skeleton key
+// carries and the value isZeroDefault measures a default against.
+func zeroValue(typ string) string {
+	switch typ {
 	case "bool":
 		return "false"
 	case "int", "number":
@@ -225,19 +298,6 @@ func yamlEntryValue(f *Field) string {
 	default:
 		return `""`
 	}
-}
-
-// hasDefault reports whether f, or anything below it, has a default to write.
-func hasDefault(f *Field) bool {
-	if f.HasDefault {
-		return true
-	}
-	for _, c := range f.Children {
-		if hasDefault(c) {
-			return true
-		}
-	}
-	return false
 }
 
 // renderDefault turns a default: tag into the YAML that follows the key.
@@ -282,9 +342,12 @@ func fileHeader() string {
 		"by the next run, and CI fails while the two disagree.",
 		"",
 		"This is both the defaults embedded in the binary and the annotated",
-		"file installed as /etc/ssoossh/ssoosshd.yaml. A key documented with",
-		"no value below is deliberately unset; see ssoosshd.yaml(5) for the",
-		"full reference.",
+		"file installed as /etc/ssoossh/ssoosshd.yaml. Every commented-out key",
+		"below is an option you can uncomment and set: it is either unset, or",
+		"set to the zero value its own line shows, and commenting it out or",
+		"leaving it out come to the same thing. The keys left uncommented are",
+		"the values ssoossh actually chose. See ssoosshd.yaml(5) for the full",
+		"reference.",
 	}
 	var b strings.Builder
 	for _, l := range lines {

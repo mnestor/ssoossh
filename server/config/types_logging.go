@@ -58,8 +58,9 @@ type GenericLogging struct {
 	timberjack.Logger `mapstructure:",squash"` // squash: viper never squashes an untagged embed, and these keys are documented flat
 
 	// Level is the minimum log level for this destination, in the same form
-	// as logging.level.
-	Level string `mapstructure:"level"`
+	// as logging.level. Empty means this destination has no threshold of its
+	// own and is filtered at logging.level with everything else.
+	Level string `mapstructure:"level" example:"\"info\""`
 
 	// AddSource includes the source file and line on each record.
 	AddSource bool `mapstructure:"add_source" example:"false"`

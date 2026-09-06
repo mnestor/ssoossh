@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 
 	"github.com/mnestor/ssoossh/internal/tools/confdocs"
@@ -46,8 +47,46 @@ func main() {
 	}
 }
 
-func run(check bool) error {
+// walk reads the configuration surface out of the config structs and
+// completes it with the keys the AST walk cannot see for itself.
+func walk() ([]*confdocs.Section, error) {
 	sections, err := confdocs.Walk([]string{configPkg, tlsPkg}, "Config")
+	if err != nil {
+		return nil, err
+	}
+
+	// The walk stops at a struct embedded from another module: there are no
+	// doc comments of ours on its fields. Its key names still have to reach
+	// defaults.yaml, so they are read off the real type here.
+	keys, err := embeddedKeys()
+	if err != nil {
+		return nil, err
+	}
+	if err := confdocs.AttachEmbeddedKeys(sections, keys); err != nil {
+		return nil, err
+	}
+	return sections, nil
+}
+
+// reportStale names the artifacts that would change and exits non-zero,
+// which is what `make confdocs-check` asserts against.
+func reportStale(stale map[string]bool) {
+	var out []string
+	for path, changed := range stale {
+		if changed {
+			out = append(out, path)
+		}
+	}
+	if len(out) == 0 {
+		return
+	}
+	sort.Strings(out)
+	fmt.Fprintf(os.Stderr, "stale, run `make confdocs`: %s\n", strings.Join(out, ", "))
+	os.Exit(1)
+}
+
+func run(check bool) error {
+	sections, err := walk()
 	if err != nil {
 		return err
 	}
@@ -96,23 +135,12 @@ func run(check bool) error {
 	}
 
 	if check {
-		var stale []string
-		if man {
-			stale = append(stale, manPage)
-		}
-		if yamlChanged {
-			stale = append(stale, defaultsIn)
-		}
-		if site {
-			stale = append(stale, siteDir)
-		}
-		if sidebar {
-			stale = append(stale, sidebarOut)
-		}
-		if len(stale) > 0 {
-			fmt.Fprintf(os.Stderr, "stale, run `make confdocs`: %s\n", strings.Join(stale, ", "))
-			os.Exit(1)
-		}
+		reportStale(map[string]bool{
+			manPage:    man,
+			defaultsIn: yamlChanged,
+			siteDir:    site,
+			sidebarOut: sidebar,
+		})
 	}
 	return nil
 }

@@ -155,7 +155,7 @@ Default:
 Log\-file rotation for this destination, via the embedded timberjack logger, with the same keys and meanings as logging.* above. This destination is only split out of the main log once its filename is set; until then its records go to the general log.
 .TP
 .BI db.logging.level: " string"
-The minimum log level for this destination, in the same form as logging.level.
+The minimum log level for this destination, in the same form as logging.level. Empty means this destination has no threshold of its own and is filtered at logging.level with everything else.
 Default:
 .BR WARN .
 .TP
@@ -405,7 +405,7 @@ Default:
 Log\-file rotation for this destination, via the embedded timberjack logger, with the same keys and meanings as logging.* above. This destination is only split out of the main log once its filename is set; until then its records go to the general log.
 .TP
 .BI queue.logging.level: " string"
-The minimum log level for this destination, in the same form as logging.level.
+The minimum log level for this destination, in the same form as logging.level. Empty means this destination has no threshold of its own and is filtered at logging.level with everything else.
 Default:
 .BR empty .
 .TP
@@ -669,7 +669,7 @@ Default:
 Log\-file rotation for this destination, via the embedded timberjack logger, with the same keys and meanings as logging.* above. This destination is only split out of the main log once its filename is set; until then its records go to the general log.
 .TP
 .BI ldap.logging.level: " string"
-The minimum log level for this destination, in the same form as logging.level.
+The minimum log level for this destination, in the same form as logging.level. Empty means this destination has no threshold of its own and is filtered at logging.level with everything else.
 Default:
 .BR empty .
 .TP
@@ -731,7 +731,7 @@ Default:
 Log\-file rotation for this destination, via the embedded timberjack logger, with the same keys and meanings as logging.* above. This destination is only split out of the main log once its filename is set; until then its records go to the general log.
 .TP
 .BI audit.logging.level: " string"
-The minimum log level for this destination, in the same form as logging.level.
+The minimum log level for this destination, in the same form as logging.level. Empty means this destination has no threshold of its own and is filtered at logging.level with everything else.
 Default:
 .BR empty .
 .TP
@@ -745,7 +745,7 @@ Writes JSON instead of text. Text is meant to be read, not parsed: the message i
 Default:
 .BR true .
 .SS hsm (optionally sources the CA key from a PKCS#11 token instead of ssh_key)
-Exactly one of the two may be set at the config level (API mode has neither; signing modes require one to be set). See https://mnestor.github.io/ssoossh/operations/hsm/ for setup.  Supported: ECDSA P\-256/384/521, RSA >= 2048. Ed25519 is not supported by PKCS#11 here; keep ssh_key for an Ed25519 CA.  	hsm: 	  module: /usr/lib/softhsm/libsofthsm2.so 	  token_label: ssoossh\-ca 	  pin_file: /etc/ssoossh/hsm\-pin    # or pin: "1234" 	  key_label: ssoossh\-ca 	  # key_id: "01"                    # hex CKA_ID, instead of key_label
+Exactly one of the two may be set at the config level (API mode has neither; signing modes require one to be set). See https://mnestor.github.io/ssoossh/operations/hsm/ for setup.  Supported: ECDSA P\-256/384/521, RSA >= 2048. Ed25519 is not supported by PKCS#11 here; keep ssh_key for an Ed25519 CA.
 .TP
 .BI hsm.module: " string"
 The absolute path to the PKCS#11 shared library, e.g. /usr/lib/softhsm/libsofthsm2.so. Setting it enables HSM mode.
@@ -1742,7 +1742,7 @@ Default:
 Log\-file rotation for this destination, via the embedded timberjack logger, with the same keys and meanings as logging.* above. This destination is only split out of the main log once its filename is set; until then its records go to the general log.
 .TP
 .BI mail.logging.level: " string"
-The minimum log level for this destination, in the same form as logging.level.
+The minimum log level for this destination, in the same form as logging.level. Empty means this destination has no threshold of its own and is filtered at logging.level with everything else.
 Default:
 .BR info .
 .TP

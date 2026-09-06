@@ -15,19 +15,19 @@ import (
 type HSMConfig struct {
 	// Module is the absolute path to the PKCS#11 shared library,
 	// e.g. /usr/lib/softhsm/libsofthsm2.so. Setting it enables HSM mode.
-	Module string `mapstructure:"module"`
+	Module string `mapstructure:"module" example:"\"/usr/lib/softhsm/libsofthsm2.so\""`
 	// TokenLabel selects the token (softhsm2-util --init-token --label ...).
-	TokenLabel string `mapstructure:"token_label"`
+	TokenLabel string `mapstructure:"token_label" example:"\"ssoossh-ca\""`
 	// PIN is the user PIN. Mutually exclusive with PINFile.
-	PIN string `mapstructure:"pin" secret:"true"`
+	PIN string `mapstructure:"pin" secret:"true" example:"\"1234\""`
 	// PINFile is a path whose trimmed contents are the user PIN. Preferred
 	// over inline PIN so the config file can stay world-readable-ish.
-	PINFile string `mapstructure:"pin_file"`
+	PINFile string `mapstructure:"pin_file" example:"\"/etc/ssoossh/hsm-pin\""`
 	// KeyLabel selects the key pair by CKA_LABEL. At least one of KeyLabel
 	// or KeyID is required; when both are set both must match.
-	KeyLabel string `mapstructure:"key_label"`
+	KeyLabel string `mapstructure:"key_label" example:"\"ssoossh-ca\""`
 	// KeyID selects the key pair by CKA_ID, hex-encoded (pkcs11-tool --id).
-	KeyID string `mapstructure:"key_id"`
+	KeyID string `mapstructure:"key_id" example:"\"01\""`
 }
 
 // Enabled reports whether an HSM-backed CA key is configured.
@@ -99,13 +99,6 @@ type SignerConfig struct {
 	//
 	// Supported: ECDSA P-256/384/521, RSA >= 2048. Ed25519 is not supported
 	// by PKCS#11 here; keep ssh_key for an Ed25519 CA.
-	//
-	//	hsm:
-	//	  module: /usr/lib/softhsm/libsofthsm2.so
-	//	  token_label: ssoossh-ca
-	//	  pin_file: /etc/ssoossh/hsm-pin    # or pin: "1234"
-	//	  key_label: ssoossh-ca
-	//	  # key_id: "01"                    # hex CKA_ID, instead of key_label
 	HSM HSMConfig `mapstructure:"hsm"`
 
 	// PubSub configures the message broker behind the certificate pipeline.
