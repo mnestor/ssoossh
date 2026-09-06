@@ -3,6 +3,7 @@ package controller
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 
@@ -31,6 +32,8 @@ func NewEnrollmentController(group *gin.RouterGroup, enrollmentService service.E
 	group.GET("/certs/service/enrollments/:id/holders", sessionAuthMiddleware, e.holdersHandler)
 
 	group.PATCH("/certs/service/enrollments/:id/notification-email", sessionAuthMiddleware, e.setNotificationEmailHandler)
+
+	group.PATCH("/certs/service/enrollments/:id/expire", sessionAuthMiddleware, e.expireHandler)
 }
 
 // enrollmentController handles the service-enrollment HTTP routes.
@@ -249,6 +252,55 @@ func (e *enrollmentController) setNotificationEmailHandler(g *gin.Context) {
 	respondData(g, webtypes.SetNotificationEmailRequestBody{
 		NotificationEmail: strings.TrimSpace(body.NotificationEmail),
 	})
+}
+
+// expireHandler handles PATCH /api/certs/service/enrollments/:id/expire:
+// retires a code on behalf of somebody who holds its service account.
+//
+// The same thing the admin route does, for the people who actually live
+// with the code. A code belongs to its service account rather than to
+// whoever approved it, so the holders are the ones who know the job behind
+// it has been decommissioned — and until now they had to ask an admin to
+// retire it for them.
+//
+// @Summary     Expire a service enrollment code you hold
+// @Description Immediately expires an enrollment for a service account the caller
+// @Description holds, preventing future service certificate retrievals. Expiring an
+// @Description already-expired code succeeds and changes nothing.
+// @Tags        enrollments
+// @Accept      json
+// @Produce     json
+// @Param       id path string true "Enrollment ID"
+// @Param       request body webtypes.ExpireEnrollmentRequestBody true "Why the code is being retired"
+// @Success     200 {object} gin.H "Enrollment expired"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "No reason given"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not a holder of the enrollment's service account"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "Enrollment not found"
+// @Security    sessionCookie
+// @Router      /api/certs/service/enrollments/{id}/expire [patch]
+func (e *enrollmentController) expireHandler(g *gin.Context) {
+	identity, ok := middleware.Identity(g)
+	if !ok {
+		handleError(g, &errorresponses.UnauthorizedError{})
+		return
+	}
+
+	// An absent body is a missing reason, which the service rejects — the
+	// same answer it gives for a body carrying an empty one, so io.EOF is
+	// not special-cased here.
+	var body webtypes.ExpireEnrollmentRequestBody
+	if err := g.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
+		handleError(g, &errorresponses.InvalidRequestError{Reason: "request body was malformed or did not match the expected schema"})
+		return
+	}
+
+	if err := e.enrollmentService.ExpireForIdentity(g.Request.Context(), g.Param("id"), identity, body.Reason); err != nil {
+		handleError(g, err)
+		return
+	}
+
+	respondData(g, gin.H{"expired": true})
 }
 
 // ExtractEnrollmentCodeForRateLimit reads the enrollment code from the

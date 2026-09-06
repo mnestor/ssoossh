@@ -1864,3 +1864,130 @@ func TestListForAdmin_ShouldFindAnEnrollmentByItsOwnID(t *testing.T) {
 		})
 	}
 }
+
+// TestExpireForIdentity covers the holder-facing expiry. The authorization
+// boundary is the point: this is the first path that lets somebody who is
+// not an admin retire a code, so what matters is that it retires exactly
+// the codes they hold and refuses the rest.
+func TestExpireForIdentity(t *testing.T) {
+	t.Parallel()
+
+	// seedLiveEnrollment puts one live code for svc-a in the database and
+	// returns the service under test alongside it.
+	seedLiveEnrollment := func(t *testing.T) (*EnrollmentService, *CertRequestService, string) {
+		t.Helper()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+		ownerID := seedAccountHolder(t, svc.db, "alice", `["svc-a"]`, `[]`, false)
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, ServiceAccount: "svc-a", KeyID: "key1",
+			ExpiresAt: time.Now().Add(time.Hour), CreatedAt: time.Now(),
+		})
+		return enrollment, svc, ownerID
+	}
+
+	/** expiresAt reads the stored expiry back. */
+	expiresAt := func(t *testing.T, svc *CertRequestService) time.Time {
+		t.Helper()
+		var row model.Enrollment
+		if err := svc.db.First(&row, "id = ?", "enrollment1").Error; err != nil {
+			t.Fatalf("reading the enrollment back: %v", err)
+		}
+		return row.ExpiresAt
+	}
+
+	t.Run("should expire a code for an account the caller holds", func(t *testing.T) {
+		t.Parallel()
+		enrollment, svc, _ := seedLiveEnrollment(t)
+
+		err := enrollment.ExpireForIdentity(context.Background(), "enrollment1",
+			&Identity{Subject: "sub-alice", ServiceAccounts: []string{"svc-a"}}, "job decommissioned")
+		if err != nil {
+			t.Fatalf("ExpireForIdentity() error = %v", err)
+		}
+		if at := expiresAt(t, svc); at.After(time.Now()) {
+			t.Errorf("expires_at = %v, want it moved to now or earlier", at)
+		}
+	})
+
+	// The whole reason this path exists is that a code belongs to its
+	// account rather than its approver — but only to that account.
+	t.Run("should refuse a code for an account the caller does not hold", func(t *testing.T) {
+		t.Parallel()
+		enrollment, svc, _ := seedLiveEnrollment(t)
+		before := expiresAt(t, svc)
+
+		err := enrollment.ExpireForIdentity(context.Background(), "enrollment1",
+			&Identity{Subject: "sub-bob", ServiceAccounts: []string{"svc-b"}}, "not mine")
+
+		var forbidden *errorresponses.ForbiddenError
+		if !errors.As(err, &forbidden) {
+			t.Fatalf("ExpireForIdentity() error = %v, want a forbidden error", err)
+		}
+		if at := expiresAt(t, svc); !at.Equal(before) {
+			t.Errorf("expires_at = %v, want it untouched at %v", at, before)
+		}
+	})
+
+	// A reason is required for this action, and the check has to happen
+	// before anything is written.
+	t.Run("should refuse an expiry with no reason", func(t *testing.T) {
+		t.Parallel()
+		enrollment, svc, _ := seedLiveEnrollment(t)
+		before := expiresAt(t, svc)
+
+		err := enrollment.ExpireForIdentity(context.Background(), "enrollment1",
+			&Identity{Subject: "sub-alice", ServiceAccounts: []string{"svc-a"}}, "   ")
+
+		var invalid *errorresponses.InvalidRequestError
+		if !errors.As(err, &invalid) {
+			t.Fatalf("ExpireForIdentity() error = %v, want an invalid request error", err)
+		}
+		if at := expiresAt(t, svc); !at.Equal(before) {
+			t.Errorf("expires_at = %v, want it untouched at %v", at, before)
+		}
+	})
+
+	t.Run("should report an enrollment that does not exist as missing", func(t *testing.T) {
+		t.Parallel()
+		enrollment, _, _ := seedLiveEnrollment(t)
+
+		err := enrollment.ExpireForIdentity(context.Background(), "nope",
+			&Identity{Subject: "sub-alice", ServiceAccounts: []string{"svc-a"}}, "tidying up")
+
+		var notFound *errorresponses.NotFoundError
+		if !errors.As(err, &notFound) {
+			t.Errorf("ExpireForIdentity() error = %v, want a not found error", err)
+		}
+	})
+
+	// Rewriting expires_at on a code that died last month would move the
+	// moment it died to today, which is a lie told to every later reader.
+	t.Run("should leave an already-expired code exactly as it is", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+		ownerID := seedAccountHolder(t, svc.db, "alice", `["svc-a"]`, `[]`, false)
+		expiredAt := time.Now().Add(-720 * time.Hour)
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, ServiceAccount: "svc-a", KeyID: "key1",
+			ExpiresAt: expiredAt, CreatedAt: time.Now().Add(-800 * time.Hour),
+		})
+
+		err := enrollment.ExpireForIdentity(context.Background(), "enrollment1",
+			&Identity{Subject: "sub-alice", ServiceAccounts: []string{"svc-a"}}, "already gone")
+		if err != nil {
+			t.Fatalf("ExpireForIdentity() error = %v, want the already-expired case to succeed", err)
+		}
+
+		var row model.Enrollment
+		if err := svc.db.First(&row, "id = ?", "enrollment1").Error; err != nil {
+			t.Fatalf("reading the enrollment back: %v", err)
+		}
+		if !row.ExpiresAt.Truncate(time.Second).Equal(expiredAt.Truncate(time.Second)) {
+			t.Errorf("expires_at = %v, want the original %v", row.ExpiresAt, expiredAt)
+		}
+	})
+}

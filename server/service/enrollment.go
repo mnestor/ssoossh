@@ -37,6 +37,7 @@ type EnrollmentProvider interface {
 	GetEnrollmentDetail(ctx context.Context, enrollmentID string, identity *Identity) (AdminEnrollmentDetail, error)
 	ListAccountHolders(ctx context.Context, enrollmentID string, identity *Identity) (AccountHolders, error)
 	SetNotificationEmail(ctx context.Context, enrollmentID string, identity *Identity, address string) error
+	ExpireForIdentity(ctx context.Context, enrollmentID string, identity *Identity, reason string) error
 }
 
 // EnrollmentService redeems an approved model.Enrollment (created by
@@ -561,6 +562,103 @@ func (s *EnrollmentService) SetNotificationEmail(ctx context.Context, enrollment
 			"notification_email": address,
 		},
 	})
+	return nil
+}
+
+// ExpireForIdentity expires an enrollment on behalf of somebody who holds
+// its service account.
+//
+// The admin route (PATCH /api/admin/enrollments/:id/expire) already did
+// this, but only for an admin or SOC member. A code belongs to its service
+// account rather than to whoever approved it, so the people who live with a
+// code — the ones who know the job behind it has been decommissioned — had
+// to ask somebody else to retire it. Authorization is therefore the same
+// test SetNotificationEmail applies: hold the account, or be SOC.
+//
+// A code that has already expired is left exactly as it is. Setting
+// expires_at to now on a code that stopped working last month would move
+// the moment it died to today, which is a lie told to every later reader of
+// the row — and the outcome the caller asked for is already true, so this
+// reports success rather than an error.
+func (s *EnrollmentService) ExpireForIdentity(ctx context.Context, enrollmentID string, identity *Identity, reason string) error {
+	reason, err := ValidateAuditReason(AuditEnrollmentExpired, reason)
+	if err != nil {
+		return &errorresponses.InvalidRequestError{Reason: err.Error()}
+	}
+
+	var enrollment model.Enrollment
+	if err := s.db.WithContext(ctx).First(&enrollment, "id = ?", enrollmentID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &errorresponses.NotFoundError{Resource: fmt.Sprintf("enrollment %q", enrollmentID)}
+		}
+		return fmt.Errorf("failed to look up enrollment: %w", err)
+	}
+
+	if !s.ownsEnrollment(identity, enrollment) && !s.config.Admin.GrantsSOC(identity.Groups) {
+		return &errorresponses.ForbiddenError{Reason: "enrollment belongs to a service account you do not hold"}
+	}
+
+	now := time.Now()
+	if !enrollment.ExpiresAt.After(now) {
+		return nil
+	}
+
+	// The actor's users-row id is the grouping key that puts this on their
+	// own timeline. Best effort: a miss costs the key, not the event.
+	var actorUserID string
+	if err := s.db.WithContext(ctx).Model(&model.User{}).
+		Select("id").Where("subject = ?", identity.Subject).
+		Scan(&actorUserID).Error; err != nil {
+		slog.WarnContext(ctx, "could not resolve the acting user's id for the audit event",
+			"enrollment_id", enrollmentID, "error", err)
+	}
+
+	event := AuditEvent{
+		Action:     AuditEnrollmentExpired,
+		Actor:      AuditSubjectFromIdentity(identity, actorUserID),
+		Target:     &AuditSubject{UserID: enrollment.UserID},
+		Reason:     reason,
+		OccurredAt: now,
+		Detail: map[string]any{
+			"enrollment_id":   enrollmentID,
+			"key_id":          enrollment.KeyID,
+			"service_account": enrollment.ServiceAccount,
+		},
+	}
+
+	// The row and its audit event move together, the rule every mutation in
+	// this server follows: an expiry without its audit row is the one
+	// outcome an audit log exists to prevent.
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// expiry_reminder_sent_at is cleared alongside the date, honoring
+		// the rule that any path moving expires_at earlier releases the
+		// reminder claim (see model.Enrollment.ExpiryReminderSentAt).
+		result := tx.Model(&model.Enrollment{}).
+			Where("id = ?", enrollmentID).
+			Updates(map[string]any{
+				"expires_at":              now,
+				"expiry_reminder_sent_at": nil,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		// A valid UPDATE that matched no rows returns a nil error but
+		// affects none: without this the caller would be told an expiry
+		// happened that did not.
+		if result.RowsAffected == 0 {
+			return &errorresponses.NotFoundError{Resource: fmt.Sprintf("enrollment %q", enrollmentID)}
+		}
+		if s.auditor == nil {
+			return nil
+		}
+		return s.auditor.RecordTx(tx, event)
+	}); err != nil {
+		return err
+	}
+
+	if s.auditor != nil {
+		s.auditor.LogOnly(event)
+	}
 	return nil
 }
 
