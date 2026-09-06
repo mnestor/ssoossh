@@ -157,23 +157,31 @@ describe('ServiceCodeDetail', () => {
 		expect(screen.getByText('permit-pty')).toBeInTheDocument();
 	});
 
-	it('should show the forced command', () => {
+	// The options read as they would be written in authorized_keys, so a
+	// restriction cannot be mistaken for an extension name.
+	it('should show the forced command with its keyword', () => {
 		mockRetrievals([]);
 		render(ServiceCodeDetail, { enrollment: enrollment(), now });
-		expect(screen.getByText('/usr/local/bin/deploy')).toBeInTheDocument();
+		expect(screen.getByText('command=/usr/local/bin/deploy')).toBeInTheDocument();
 	});
 
-	it('should show the source address restriction', () => {
+	it('should show the source address restriction with its keyword', () => {
 		mockRetrievals([]);
 		render(ServiceCodeDetail, { enrollment: enrollment(), now });
-		expect(screen.getByText('198.51.100.0/24')).toBeInTheDocument();
+		expect(screen.getByText('from=198.51.100.0/24')).toBeInTheDocument();
+	});
+
+	it('should name a waived touch requirement as the extension it is', () => {
+		mockRetrievals([]);
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
+		expect(screen.getByText('no-touch-required')).toBeInTheDocument();
 	});
 
 	it('should say when no options were fixed at approval', () => {
 		mockRetrievals([]);
 		const row = enrollment({ options: { extensions: [], no_touch_required: false } });
 		render(ServiceCodeDetail, { enrollment: row, now });
-		expect(screen.getByText(/No extensions or restrictions/)).toBeInTheDocument();
+		expect(screen.getByText(/carry the server's defaults/)).toBeInTheDocument();
 	});
 
 	// Approval and expiry are one row: the reader's question is how long the
@@ -190,43 +198,35 @@ describe('ServiceCodeDetail', () => {
 		expect(screen.getByText(/left\)/)).toBeInTheDocument();
 	});
 
-	it('should report the redemption count beside the last redemption', async () => {
+	// The log below answers "has anything used this, and from where" in full,
+	// so the summary that used to sit here is gone: a count above a list of
+	// the same redemptions was two numbers to reconcile.
+	it('should not summarise the redemptions above the log', async () => {
 		mockRetrievals([aRedemption()]);
 		render(ServiceCodeDetail, { enrollment: enrollment(), now });
-		expect(await screen.findByText('12 redemptions')).toBeInTheDocument();
+		await screen.findByText('203.0.113.9');
+		expect(screen.queryByText('Last redeemed')).not.toBeInTheDocument();
 	});
 
-	it('should render the redemption count in the singular for one redemption', async () => {
-		mockRetrievals([aRedemption()]);
-		render(ServiceCodeDetail, { enrollment: enrollment({ retrieval_count: 1 }), now });
-		expect(await screen.findByText('1 redemption')).toBeInTheDocument();
-	});
-
-	it('should say a never-redeemed code has never been redeemed', () => {
-		mockRetrievals([]);
-		const row = enrollment({ retrieval_count: 0, last_retrieved_at: undefined });
-		render(ServiceCodeDetail, { enrollment: row, now });
-		expect(screen.getByText('Never redeemed')).toBeInTheDocument();
-	});
-
-	// Which host pulled a certificate is the part worth knowing, and only the
-	// log has it, so the count is the way in rather than a summary of it.
-	it('should link the redemption count to the history below it', async () => {
-		mockRetrievals([aRedemption()]);
-		render(ServiceCodeDetail, { enrollment: enrollment(), now });
-		expect(await screen.findByTestId('redemption-history-link')).toHaveAttribute(
-			'href',
-			'#redemption-history'
-		);
-	});
-
-	// A log that never arrived — a 404 or someone else's request — leaves
-	// nothing to link to, and a link to an absent section goes nowhere.
-	it('should not link the redemption count when the history did not load', async () => {
+	// A log that never arrived — a 404, or someone else's request — leaves
+	// the section out entirely rather than claiming the code was never
+	// redeemed. The holders panel's fetch settles on the same tick, so its
+	// arrival is when the refused one has had its turn too.
+	it('should leave out the history when the log did not load', async () => {
 		mockRetrievalsRefused();
 		render(ServiceCodeDetail, { enrollment: enrollment(), now });
-		expect(await screen.findByText(/12 redemptions/)).toBeInTheDocument();
-		expect(screen.queryByTestId('redemption-history-link')).not.toBeInTheDocument();
+		await screen.findByTestId('account-holders-empty');
+		expect(screen.queryByText('Redemption history')).not.toBeInTheDocument();
+	});
+
+	// Last on the page, as on the admin's: it is the only part that grows
+	// without bound, and the reader came for the facts and the controls.
+	it('should put the history below the retire control', async () => {
+		mockRetrievals([aRedemption()]);
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
+		const history = await screen.findByText('Redemption history');
+		const position = screen.getByTestId('expire-code').compareDocumentPosition(history);
+		expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 	});
 
 	it('should report an expired code as already expired', () => {
