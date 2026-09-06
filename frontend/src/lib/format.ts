@@ -4,18 +4,41 @@
  * way.
  */
 
+/** Seconds in a day, and in the nominal month used for the coarsest unit. */
+const SECONDS_PER_DAY = 86_400;
+const DAYS_PER_MONTH = 30;
+
 /**
  * formatDuration renders a certificate lifetime in the largest units that
- * divide it evenly enough to stay readable — "8h", "1h 30m", "45s".
+ * divide it evenly enough to stay readable — "3mo 5d", "14d", "8h",
+ * "1h 30m", "45s".
  *
  * Certificate lifetimes are the number a user actually reasons about ("am I
  * good until the end of the day?"), so this favors legibility over
- * precision: anything under a minute is seconds, and sub-minute remainders
- * are dropped once hours are involved.
+ * precision: each tier shows at most two units and drops the rest, since a
+ * code with three months left is not read to the minute.
+ *
+ * The long tiers exist because the long-lived things here really are long:
+ * an enrollment code's default life is a year, and rendering that as
+ * "8760h" made the one number the page exists to state unreadable. A month
+ * is a nominal 30 days rather than a calendar month — the input is a
+ * duration, not a pair of dates, so there is no calendar to be exact
+ * against, and the label is approximate by design.
  */
 export function formatDuration(seconds: number): string {
 	if (!Number.isFinite(seconds) || seconds <= 0) {
 		return '0s';
+	}
+
+	const days = Math.floor(seconds / SECONDS_PER_DAY);
+	if (days >= DAYS_PER_MONTH) {
+		const months = Math.floor(days / DAYS_PER_MONTH);
+		const remainingDays = days % DAYS_PER_MONTH;
+		return remainingDays > 0 ? `${months}mo ${remainingDays}d` : `${months}mo`;
+	}
+	if (days > 0) {
+		const remainingHours = Math.floor((seconds % SECONDS_PER_DAY) / 3600);
+		return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
 	}
 
 	const hours = Math.floor(seconds / 3600);

@@ -14,7 +14,7 @@ import (
 // rather than a served response — the store owns serialization, and what
 // this code is responsible for is the decision.
 
-// boolPtr returns a pointer to b, for the tri-state cookie_secure setting.
+// boolPtr returns a pointer to b, for the tri-state config settings.
 func boolPtr(b bool) *bool { return &b }
 
 func TestSessionCookieOptions_ShouldHardenTheSessionCookie(t *testing.T) {
@@ -23,7 +23,6 @@ func TestSessionCookieOptions_ShouldHardenTheSessionCookie(t *testing.T) {
 	tests := []struct {
 		name         string
 		publicURL    string
-		cookieSecure *bool
 		sameSite     string
 		maxAge       time.Duration
 		idleTimeout  time.Duration
@@ -42,13 +41,6 @@ func TestSessionCookieOptions_ShouldHardenTheSessionCookie(t *testing.T) {
 			name:         "should mark the cookie secure when tls terminates in front",
 			publicURL:    "https://ssh.example.com",
 			wantSecure:   true,
-			wantSameSite: http.SameSiteStrictMode,
-		},
-		{
-			name:         "should let an explicit setting override the inference",
-			publicURL:    "https://ssh.example.com",
-			cookieSecure: boolPtr(false),
-			wantSecure:   false,
 			wantSameSite: http.SameSiteStrictMode,
 		},
 		{
@@ -80,7 +72,6 @@ func TestSessionCookieOptions_ShouldHardenTheSessionCookie(t *testing.T) {
 
 			c := &config.Config{}
 			c.HTTP.PublicURL = tt.publicURL
-			c.HTTP.CookieSecure = tt.cookieSecure
 			c.HTTP.CookieSameSite = tt.sameSite
 			c.HTTP.CookieMaxAge = tt.maxAge
 			c.HTTP.CookieIdleTimeout = tt.idleTimeout

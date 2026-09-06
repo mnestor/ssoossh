@@ -45,6 +45,10 @@ function mockDetail(overrides: Record<string, unknown> = {}) {
 							directory_overrides: [],
 							directory_enabled: true,
 							groups: [],
+							// Both account fields mapped, which is what makes
+							// a directory value an override rather than the
+							// only source. The unmapped case is its own test.
+							oidc_fields: { other_accounts: true, service_accounts: true, name: true },
 							notification_preferences: [],
 							created_at: '2026-08-01T10:00:00Z',
 							updated_at: '2026-08-01T10:00:00Z',
@@ -340,19 +344,120 @@ describe('Admin user detail', () => {
 			);
 		});
 
-		it('should list only the notification choices the user has changed', async () => {
+		// The server sends the whole catalogue, not just the stored rows: a
+		// list of raw kind strings left the reader to guess what each one
+		// was, and an empty list read as "we send them nothing" when it
+		// meant the opposite.
+		it('should name each notification in the words the preferences page uses', async () => {
 			mockDetail({
 				notification_preferences: [
-					{ kind: 'enrollment_expiring', enabled: false, updated_at: '2026-09-01T10:00:00Z' }
+					{
+						kind: 'service_enrollment_expiring',
+						title: 'Service enrollment expiring',
+						description: 'Sent while one of your enrollment codes is close to expiring.',
+						enabled: true,
+						default: true,
+						explicit: false,
+						registered: true
+					}
 				]
 			});
 			render(Page);
-			expect(await screen.findByTestId('user-notification-preferences')).toHaveTextContent(
-				'enrollment_expiring'
-			);
+
+			const block = await screen.findByTestId('user-notification-preferences');
+			expect(block).toHaveTextContent('Service enrollment expiring');
+			expect(block).toHaveTextContent('close to expiring');
 		});
 
-		it('should hide the notification block when the user has changed nothing', async () => {
+		it('should still show the raw kind alongside the readable name', async () => {
+			mockDetail({
+				notification_preferences: [
+					{
+						kind: 'service_enrollment_expiring',
+						title: 'Service enrollment expiring',
+						description: '',
+						enabled: true,
+						default: true,
+						explicit: false,
+						registered: true
+					}
+				]
+			});
+			render(Page);
+			expect(
+				await screen.findByTestId('user-notification-service_enrollment_expiring')
+			).toHaveTextContent('service_enrollment_expiring');
+		});
+
+		it('should mark a kind the user has never touched as its default', async () => {
+			mockDetail({
+				notification_preferences: [
+					{
+						kind: 'user_certificate_issued',
+						title: 'User certificate issued',
+						description: '',
+						enabled: false,
+						default: false,
+						explicit: false,
+						registered: true
+					}
+				]
+			});
+			render(Page);
+			expect(
+				await screen.findByTestId('user-notification-user_certificate_issued')
+			).toHaveTextContent('default');
+		});
+
+		it('should say when a choice is the user’s own and when it was made', async () => {
+			mockDetail({
+				notification_preferences: [
+					{
+						kind: 'service_enrollment_expiring',
+						title: 'Service enrollment expiring',
+						description: '',
+						enabled: false,
+						default: true,
+						explicit: true,
+						registered: true,
+						updated_at: '2026-09-01T10:00:00Z'
+					}
+				]
+			});
+			render(Page);
+			expect(
+				await screen.findByTestId('user-notification-service_enrollment_expiring')
+			).toHaveTextContent('their choice');
+		});
+
+		// A stored row for a kind this build no longer has. Shown rather
+		// than dropped: the choice is real, still on disk, and comes back if
+		// the kind does.
+		it('should keep a stored choice for a kind the server no longer sends', async () => {
+			mockDetail({
+				notification_preferences: [
+					{
+						kind: 'enrollment_expiring',
+						title: '',
+						description: '',
+						enabled: true,
+						default: false,
+						explicit: true,
+						registered: false,
+						updated_at: '2026-09-01T10:00:00Z'
+					}
+				]
+			});
+			render(Page);
+
+			const row = await screen.findByTestId('user-notification-enrollment_expiring');
+			expect(row).toHaveTextContent('enrollment_expiring');
+			expect(screen.getByTestId('user-notification-retired')).toBeInTheDocument();
+		});
+
+		// Only reachable on a server that registers no notification kinds at
+		// all; the section has nothing to say then.
+		it('should hide the notification block when the server lists no kinds', async () => {
 			mockDetail({ notification_preferences: [] });
 			render(Page);
 			await screen.findByTestId('user-username');
@@ -431,6 +536,81 @@ describe('the OIDC record and what the directory overrides', () => {
 		});
 		render(Page);
 		expect(await screen.findByTestId('user-override-cost_center')).toHaveTextContent('CC-7781');
+	});
+
+	// Both account fields default to empty in authentication.fields, so the
+	// common deployment populates neither from OIDC. Calling the directory
+	// value an override there names a conflict that does not exist, and
+	// "None in the ID token" sends someone to check a claim mapping that was
+	// never configured.
+	describe('a field with no configured OIDC claim', () => {
+		it('should say the field is not read from OIDC rather than that the claim was empty', async () => {
+			mockDetail({
+				other_accounts: [],
+				oidc_fields: { other_accounts: false, service_accounts: false, name: true }
+			});
+			render(Page);
+
+			const block = await screen.findByTestId('user-oidc-unmapped-other_accounts');
+			expect(block).toHaveTextContent('authentication.fields.other_accounts');
+			expect(screen.queryByText('None in the ID token.')).not.toBeInTheDocument();
+		});
+
+		it('should describe the directory as supplying the field rather than overriding it', async () => {
+			mockDetail({
+				other_accounts: [],
+				oidc_fields: { other_accounts: false, service_accounts: false, name: true },
+				directory_overrides: [{ field: 'other_accounts', oidc: [], effective: ['alice.adm'] }]
+			});
+			render(Page);
+
+			const override = await screen.findByTestId('user-override-other_accounts');
+			expect(override).toHaveTextContent('Supplied by LDAP');
+			expect(override).not.toHaveTextContent('Overridden by LDAP');
+		});
+
+		it('should still call it an override when the claim is configured', async () => {
+			mockDetail({
+				other_accounts: ['a.smith'],
+				oidc_fields: { other_accounts: true, service_accounts: true, name: true },
+				directory_overrides: [
+					{ field: 'other_accounts', oidc: ['a.smith'], effective: ['alice.adm'] }
+				]
+			});
+			render(Page);
+
+			expect(await screen.findByTestId('user-override-other_accounts')).toHaveTextContent(
+				'Overridden by LDAP'
+			);
+		});
+
+		it('should describe an unmapped name as supplied rather than overridden', async () => {
+			mockDetail({
+				name: '',
+				oidc_fields: { other_accounts: true, service_accounts: true, name: false },
+				directory_overrides: [{ field: 'name', oidc: [], effective: ['Alice R. Smith'] }]
+			});
+			render(Page);
+
+			expect(await screen.findByTestId('user-name-overridden')).toHaveTextContent(
+				'Supplied by LDAP'
+			);
+		});
+
+		// The conservative reading: an unknown field keeps the fuller
+		// explanation rather than silently losing one.
+		it('should treat a field the server said nothing about as configured', async () => {
+			mockDetail({
+				extra_fields: { employee_id: 'E-40921' },
+				oidc_fields: { other_accounts: true, service_accounts: true, name: true },
+				directory_overrides: [{ field: 'employee_id', oidc: ['E-40921'], effective: ['E-99999'] }]
+			});
+			render(Page);
+
+			expect(await screen.findByTestId('user-override-employee_id')).toHaveTextContent(
+				'Overridden by LDAP'
+			);
+		});
 	});
 
 	it('should mark the name as overridden by the directory', async () => {

@@ -3492,3 +3492,176 @@ func (s *CertRequestService) createRequestID(ctx context.Context, p NewCertReque
 	created, err := s.CreateRequest(ctx, p)
 	return created.ID, err
 }
+
+// TestCheckServiceAccountLinkage covers the gate on which account a service
+// approval may name, in both configurations of
+// cert_options.service.allow_user_accounts.
+func TestCheckServiceAccountLinkage(t *testing.T) {
+	t.Parallel()
+
+	identity := &Identity{
+		Username:        "alice",
+		OtherAccounts:   []string{"alice.adm"},
+		ServiceAccounts: []string{"svc-deploy"},
+	}
+
+	tests := []struct {
+		name              string
+		account           string
+		allowUserAccounts bool
+		wantErr           string
+	}{
+		{
+			name:    "should reject an unnamed service account",
+			account: "",
+			wantErr: "choosing a service account",
+		},
+		{
+			name:    "should accept an account the service_accounts claim carries",
+			account: "svc-deploy",
+		},
+		{
+			name:    "should reject an account the identity does not hold at all",
+			account: "svc-payroll",
+			wantErr: "not associated",
+		},
+		{
+			// The default: an own account is not a service account, so a
+			// deployment that has not opted in sees no change.
+			name:    "should reject the approver's own username while user accounts are off",
+			account: "alice",
+			wantErr: "not associated",
+		},
+		{
+			name:    "should reject one of the approver's other accounts while user accounts are off",
+			account: "alice.adm",
+			wantErr: "not associated",
+		},
+		{
+			name:              "should accept the approver's own username once user accounts are on",
+			account:           "alice",
+			allowUserAccounts: true,
+		},
+		{
+			name:              "should accept one of the approver's other accounts once user accounts are on",
+			account:           "alice.adm",
+			allowUserAccounts: true,
+		},
+		{
+			// The widening is to accounts the identity already holds, never
+			// to a free choice of principal.
+			name:              "should still reject an account nobody vouched for once user accounts are on",
+			account:           "svc-payroll",
+			allowUserAccounts: true,
+			wantErr:           "not associated",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := checkServiceAccountLinkage(identity, tt.account, tt.allowUserAccounts)
+
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Errorf("got error %v, want none", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("got no error, want one mentioning %q", tt.wantErr)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("got error %q, want it to mention %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// The picker's list and the check above have to agree, or the page offers an
+// account the approval then refuses.
+func TestApprovableServiceAccounts(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		identity          *Identity
+		allowUserAccounts bool
+		want              []string
+		wantOwn           []string
+	}{
+		{
+			name:     "should offer only the claimed accounts by default",
+			identity: &Identity{Username: "alice", OtherAccounts: []string{"alice.adm"}, ServiceAccounts: []string{"svc-deploy"}},
+			want:     []string{"svc-deploy"},
+			wantOwn:  nil,
+		},
+		{
+			name:              "should offer the claimed accounts first, then the approver's own",
+			identity:          &Identity{Username: "alice", OtherAccounts: []string{"alice.adm"}, ServiceAccounts: []string{"svc-deploy"}},
+			allowUserAccounts: true,
+			want:              []string{"svc-deploy", "alice", "alice.adm"},
+			wantOwn:           []string{"alice", "alice.adm"},
+		},
+		{
+			// The claim is the stronger statement, so an account carried
+			// both ways is listed once and is not labelled as the
+			// approver's own.
+			name:              "should not repeat an account the claim already carries",
+			identity:          &Identity{Username: "svc-deploy", ServiceAccounts: []string{"svc-deploy"}},
+			allowUserAccounts: true,
+			want:              []string{"svc-deploy"},
+			wantOwn:           []string{},
+		},
+		{
+			// An empty entry would otherwise reach a picker as a blank
+			// option that cannot be approved.
+			name:              "should drop empty account names from both lists",
+			identity:          &Identity{Username: "", OtherAccounts: []string{""}, ServiceAccounts: []string{""}},
+			allowUserAccounts: true,
+			want:              []string{},
+			wantOwn:           []string{},
+		},
+		{
+			name:              "should offer nothing for an identity holding nothing",
+			identity:          &Identity{},
+			allowUserAccounts: false,
+			want:              []string{},
+			wantOwn:           nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := ApprovableServiceAccounts(tt.identity, tt.allowUserAccounts); !slices.Equal(got, tt.want) {
+				t.Errorf("ApprovableServiceAccounts = %v, want %v", got, tt.want)
+			}
+			if got := UserOwnServiceAccounts(tt.identity, tt.allowUserAccounts); !slices.Equal(got, tt.wantOwn) {
+				t.Errorf("UserOwnServiceAccounts = %v, want %v", got, tt.wantOwn)
+			}
+		})
+	}
+}
+
+// Every account the picker offers must pass the check, or the UI can only
+// have been offering an approval that fails.
+func TestApprovableServiceAccountsShouldAllPassTheLinkageCheck(t *testing.T) {
+	t.Parallel()
+
+	identity := &Identity{
+		Username:        "alice",
+		OtherAccounts:   []string{"alice.adm"},
+		ServiceAccounts: []string{"svc-deploy"},
+	}
+
+	for _, allow := range []bool{false, true} {
+		for _, account := range ApprovableServiceAccounts(identity, allow) {
+			if err := checkServiceAccountLinkage(identity, account, allow); err != nil {
+				t.Errorf("allow_user_accounts=%v offered %q but the check refused it: %v", allow, account, err)
+			}
+		}
+	}
+}

@@ -94,10 +94,15 @@ func newCurrentUserResponse(identity *service.Identity, c *config.Config, db any
 		Groups:          orEmpty(identity.Groups),
 		OtherAccounts:   orEmpty(identity.OtherAccounts),
 		ServiceAccounts: orEmpty(identity.ServiceAccounts),
-		Extra:           extra,
-		IsAdmin:         c.Admin.GrantsAdmin(identity.Groups),
-		IsSOC:           c.Admin.GrantsSOC(identity.Groups),
-		IsAuditor:       c.Admin.GrantsAuditor(identity.Groups),
+		// The picker's list and the "these are your own accounts" subset are
+		// resolved here, from the same helpers the approval check uses, so
+		// the page never has to reimplement the policy.
+		ApprovableServiceAccounts: orEmpty(service.ApprovableServiceAccounts(identity, c.CertOptions.Service.AllowUserAccounts)),
+		UserOwnServiceAccounts:    orEmpty(service.UserOwnServiceAccounts(identity, c.CertOptions.Service.AllowUserAccounts)),
+		Extra:                     extra,
+		IsAdmin:                   c.Admin.GrantsAdmin(identity.Groups),
+		IsSOC:                     c.Admin.GrantsSOC(identity.Groups),
+		IsAuditor:                 c.Admin.GrantsAuditor(identity.Groups),
 	}
 }
 
@@ -276,6 +281,30 @@ func decodeDecisionStringList(field, raw string) []string {
 	if err := json.Unmarshal([]byte(raw), &out); err != nil {
 		slog.Error("failed to decode certificate request decision field", "field", field, "error", err)
 		return nil
+	}
+	return out
+}
+
+// newAccountHoldersResponse converts the resolved holders for the wire.
+//
+// The list is made rather than declared because it is validate:"required"
+// and typed as an array in the generated TypeScript: an account nobody
+// known holds would otherwise be a nil slice, which marshals as null, and
+// null where an array was promised is what stops a panel rendering at all.
+func newAccountHoldersResponse(holders service.AccountHolders) webtypes.AccountHoldersResponse {
+	out := webtypes.AccountHoldersResponse{
+		ServiceAccount: holders.ServiceAccount,
+		Holders:        make([]webtypes.AccountHolderResponse, 0, len(holders.Holders)),
+	}
+	for _, holder := range holders.Holders {
+		out.Holders = append(out.Holders, webtypes.AccountHolderResponse{
+			UserID:   holder.UserID,
+			Username: holder.Username,
+			Name:     holder.Name,
+			Email:    holder.Email,
+			Disabled: holder.Disabled,
+			Own:      holder.Own,
+		})
 	}
 	return out
 }

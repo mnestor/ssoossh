@@ -136,7 +136,9 @@ http:
 
 `bool`, default `empty`
 
-Marks the session cookie Secure, so browsers only send it over HTTPS. Unset derives it from whether the deployment is HTTPS at all (the scheme of public_url, or a local TLS keypair), which keeps plain-HTTP local development working while defaulting to on everywhere else. Set it explicitly only to override that inference.
+Has been retired: the Secure attribute is now derived from public_url alone (see IsTLS). It said nothing public_url had not already said — a deployment states the scheme browsers reach it on once, and the cookie follows it — while giving an operator a second place to disagree with the first.
+
+Setting it is a startup error rather than a silent no-op, on the same reasoning as cert_options.*.require_group: `cookie_secure: false` under an https public_url was a deliberate weakening, and a weakening that quietly stops applying is worse than one that fails loudly at boot.
 
 ```yaml
 http:

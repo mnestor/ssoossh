@@ -13,6 +13,15 @@
   "service_accounts": [
     "svc-deploy"
   ],
+  "approvable_service_accounts": [
+    "svc-deploy",
+    "alice",
+    "alice.adm"
+  ],
+  "user_own_service_accounts": [
+    "alice",
+    "alice.adm"
+  ],
   "extra": {
     "department": "Engineering",
     "employee_id": "E-12345"

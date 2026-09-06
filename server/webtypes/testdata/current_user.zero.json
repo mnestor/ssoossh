@@ -6,6 +6,8 @@
   "name": "",
   "other_accounts": null,
   "service_accounts": null,
+  "approvable_service_accounts": null,
+  "user_own_service_accounts": null,
   "extra": null,
   "is_admin": false,
   "is_soc": false,

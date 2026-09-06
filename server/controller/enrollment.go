@@ -28,6 +28,8 @@ func NewEnrollmentController(group *gin.RouterGroup, enrollmentService service.E
 
 	group.GET("/certs/service/enrollments", sessionAuthMiddleware, e.listHandler)
 
+	group.GET("/certs/service/enrollments/:id/holders", sessionAuthMiddleware, e.holdersHandler)
+
 	group.PATCH("/certs/service/enrollments/:id/notification-email", sessionAuthMiddleware, e.setNotificationEmailHandler)
 }
 
@@ -150,6 +152,48 @@ func (e *enrollmentController) listHandler(g *gin.Context) {
 	}
 
 	respondData(g, newServiceEnrollmentsResponse(enrollments))
+}
+
+// holdersHandler handles GET
+// /api/certs/service/enrollments/:id/holders (web UI, behind
+// sessionAuthMiddleware): everyone known to hold the enrollment's service
+// account.
+//
+// @Summary     Who holds an enrollment's service account
+// @Description Everyone who can see and manage this enrollment code, which is
+// @Description everyone holding its service account — a code belongs to its account
+// @Description rather than to whoever approved it, so this is the only place that
+// @Description answers "who else has this".
+// @Description
+// @Description Only users who have logged in at least once appear, holding the
+// @Description accounts they held at that login: the server never enumerates a
+// @Description directory, so this is everyone known to hold the account rather than
+// @Description everyone who does.
+// @Description
+// @Description Visible to auditors and to the account's own holders.
+// @Tags        web
+// @Produce     json
+// @Param       id path string true "The enrollment's UUID"
+// @Success     200 {object} openapidoc.AccountHoldersEnvelope "The account's known holders"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
+// @Failure     403 {object} openapidoc.ErrorEnvelope "Not a holder of the service account"
+// @Failure     404 {object} openapidoc.ErrorEnvelope "No such enrollment"
+// @Security    sessionCookie
+// @Router      /api/certs/service/enrollments/{id}/holders [get]
+func (e *enrollmentController) holdersHandler(g *gin.Context) {
+	identity, ok := middleware.Identity(g)
+	if !ok {
+		handleError(g, &errorresponses.UnauthorizedError{})
+		return
+	}
+
+	holders, err := e.enrollmentService.ListAccountHolders(g.Request.Context(), g.Param("id"), identity)
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	respondData(g, newAccountHoldersResponse(holders))
 }
 
 // setNotificationEmailHandler handles PATCH

@@ -11,6 +11,7 @@ package migration_test
 // run says nothing about this one.
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/mnestor/ssoossh/test/postgres"
@@ -86,6 +87,11 @@ func TestConsoleMigration_PostgresShouldAdmitConsoleAndStillRefuseUnknownTypes(t
 
 // requestID names the request row seeded for the i-th type case, so the
 // certificate insert for that type can point at a row of the same type.
+//
+// The index is spelled out rather than folded into a letter ('a'+i as a
+// rune). That only ever produced r-a..r-f, ran off the alphabet past 26
+// cases, and read to gosec as an int-to-rune conversion that could
+// overflow — three problems for a decoration the id does not need.
 func requestID(i int) string {
-	return "r-" + string(rune('a'+i))
+	return "r-" + strconv.Itoa(i)
 }

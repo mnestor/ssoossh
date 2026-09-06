@@ -14,6 +14,8 @@ function aliceUser(overrides: Partial<CurrentUser> = {}): CurrentUser {
 		groups: ['ssh-users', 'ops'],
 		other_accounts: ['alice.adm'],
 		service_accounts: ['svc-backup', 'svc-deploy'],
+		approvable_service_accounts: ['svc-backup', 'svc-deploy'],
+		user_own_service_accounts: [],
 		extra: {
 			employee_id: 'E-40921',
 			cost_center: 'CC-7781',

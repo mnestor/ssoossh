@@ -33,6 +33,7 @@ cert_options.pam.key_id_template =
 cert_options.pam.lifetime_policy.on_absent_claim = 
 cert_options.pam.require_group = 
 cert_options.pam.valid_duration = 30s
+cert_options.service.allow_user_accounts = false
 cert_options.service.enrollment_duration = 8760h
 cert_options.service.extensions = []
 cert_options.service.key_id_template = 

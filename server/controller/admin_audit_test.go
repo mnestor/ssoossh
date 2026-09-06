@@ -135,9 +135,12 @@ func TestAuditFeed_ShouldReturnEventsNewestFirst(t *testing.T) {
 	}
 }
 
-// Visiting the feed is itself audited — one event per visit, not one per
-// event displayed, which is what keeps the feed from feeding itself.
-func TestAuditFeed_ShouldRecordTheVisitOnce(t *testing.T) {
+// Visiting the feed is still audited to the shipped log, but no longer to
+// the table the feed itself renders. A visit that wrote a row left the feed
+// consuming its own output: every read added an event ahead of the ones
+// being read, which shifted the offset window under "load more" and produced
+// repeats. See service.tableSkipped.
+func TestAuditFeed_ShouldNotRecordTheVisitInTheTable(t *testing.T) {
 	t.Parallel()
 
 	cfg := newTestConfig(t)
@@ -152,15 +155,36 @@ func TestAuditFeed_ShouldRecordTheVisitOnce(t *testing.T) {
 	if err := db.Find(&rows).Error; err != nil {
 		t.Fatalf("listing audit rows: %v", err)
 	}
-	if len(rows) != 1 {
-		t.Fatalf("audit rows after one visit = %d, want exactly the visit event", len(rows))
+	if len(rows) != 0 {
+		t.Fatalf("audit rows after one visit = %d, want none: the visit is shipped-log only", len(rows))
 	}
-	var recorded service.AuditEvent
-	if err := json.Unmarshal([]byte(rows[0].Payload), &recorded); err != nil {
-		t.Fatalf("decoding the visit event: %v", err)
+}
+
+// The feed reads the same rows however many times it is read. This is the
+// property "load more" depends on: a page boundary that moves between two
+// requests hands the same event out twice, which is the each_key_duplicate
+// the UI reported.
+func TestAuditFeed_ShouldNotGrowWhenItIsRead(t *testing.T) {
+	t.Parallel()
+
+	cfg := newTestConfig(t)
+	db := newTestDB(t)
+	seedAuditEvent(t, db, service.AuditEvent{
+		Action: service.AuditAuthLogin,
+		Actor:  &service.AuditSubject{UserID: "user-0"},
+	})
+	r := routerWithAuth(t, cfg, db, auditorIdentity())
+
+	var totals []int64
+	for range 3 {
+		code, page := getAuditPage(t, r, "/admin/audit")
+		if code != http.StatusOK {
+			t.Fatalf("GET /admin/audit: got %d, want %d", code, http.StatusOK)
+		}
+		totals = append(totals, page.Total)
 	}
-	if recorded.Action != service.AuditAdminAuditViewed {
-		t.Errorf("recorded action = %q, want %q", recorded.Action, service.AuditAdminAuditViewed)
+	if totals[0] != 1 || totals[1] != 1 || totals[2] != 1 {
+		t.Errorf("totals across three reads = %v, want the same one row every time", totals)
 	}
 }
 
@@ -204,16 +228,16 @@ func TestAuditFeed_ShouldPageWithNextOffset(t *testing.T) {
 		t.Errorf("first page: %d events, NextOffset %d, want 2 events and NextOffset 2", len(first.Events), first.NextOffset)
 	}
 
-	// The first visit itself became event four, so the second page holds
-	// the remaining seeded event plus that visit, and the window closes.
+	// Reading the feed no longer adds to it, so the second page holds the
+	// one remaining seeded event and the window closes.
 	code, second := getAuditPage(t, r, "/admin/audit?limit=2&offset=2")
 	if code != http.StatusOK {
 		t.Fatalf("second page: got %d, want %d", code, http.StatusOK)
 	}
-	if len(second.Events) != 2 || second.NextOffset != 0 {
-		t.Errorf("second page: %d events, NextOffset %d, want 2 events and NextOffset 0", len(second.Events), second.NextOffset)
+	if len(second.Events) != 1 || second.NextOffset != 0 {
+		t.Errorf("second page: %d events, NextOffset %d, want 1 event and NextOffset 0", len(second.Events), second.NextOffset)
 	}
-	if got := second.Events[1].Action; got != string(service.AuditAuthLogin) {
+	if got := second.Events[0].Action; got != string(service.AuditAuthLogin) {
 		t.Errorf("second page oldest action = %q, want the first seeded event", got)
 	}
 }

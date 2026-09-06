@@ -278,7 +278,7 @@ func sessionCookieOptions(c *config.Config) (sessions.Options, error) {
 
 	secure := resolvedCookieSecure(c)
 	if !secure {
-		slog.Warn("session cookie is not marked Secure, so browsers will send it over plain HTTP; give http.public_url an https:// scheme (or set http.cookie_secure) once TLS terminates in front of this server")
+		slog.Warn("session cookie is not marked Secure, so browsers will send it over plain HTTP; give http.public_url an https:// scheme once TLS terminates in front of this server")
 	}
 
 	// MaxAge must always be set to something positive. Leaving it zero does
@@ -306,14 +306,13 @@ func sessionCookieOptions(c *config.Config) (sessions.Options, error) {
 }
 
 // resolvedCookieSecure is whether cookies should carry the Secure flag:
-// the browser-visible scheme unless overridden. Marking a cookie Secure
-// over plain HTTP means the browser silently drops it, so this cannot
-// simply default to true without breaking local development. Shared by the
-// session cookie and the approval-claim cookie so the two cannot disagree.
+// entirely the browser-visible scheme, which http.public_url already
+// states. Marking a cookie Secure over plain HTTP means the browser
+// silently drops it, so this cannot simply default to true without
+// breaking local development, and there is nothing left for an operator to
+// say that public_url has not already said. Shared by the session cookie
+// and the approval-claim cookie so the two cannot disagree.
 func resolvedCookieSecure(c *config.Config) bool {
-	if c.HTTP.CookieSecure != nil {
-		return *c.HTTP.CookieSecure
-	}
 	return c.HTTP.IsTLS()
 }
 

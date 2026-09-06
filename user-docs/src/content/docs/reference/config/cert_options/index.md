@@ -58,6 +58,7 @@ eyebrow: "Configuration"
 | [`cert_options.service.require.contains`](/ssoossh/reference/config/cert_options/service/#requirecontains) | string | `empty` |
 | [`cert_options.service.require.all_of`](/ssoossh/reference/config/cert_options/service/#requireall_of) | list | `empty` |
 | [`cert_options.service.require.any_of`](/ssoossh/reference/config/cert_options/service/#requireany_of) | list | `empty` |
+| [`cert_options.service.allow_user_accounts`](/ssoossh/reference/config/cert_options/service/#allow_user_accounts) | bool | `false` |
 | [`cert_options.service.valid_duration`](/ssoossh/reference/config/cert_options/service/#valid_duration) | duration | `8760h` |
 | [`cert_options.service.extensions`](/ssoossh/reference/config/cert_options/service/#extensions) | list | `empty` |
 | [`cert_options.service.enrollment_duration`](/ssoossh/reference/config/cert_options/service/#enrollment_duration) | duration | `8760h` |

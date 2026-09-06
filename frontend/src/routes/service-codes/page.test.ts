@@ -70,6 +70,11 @@ function mockFetch(enrollments: ServiceEnrollment[], heldAccounts?: string[]) {
 			let body: unknown = { enrollments };
 			if (url.includes('/retrievals')) {
 				body = { retrievals: [] };
+			} else if (url.includes('/holders')) {
+				// The panel resolves who else holds the account. Empty here:
+				// these cases are about the code, and the holders panel has
+				// its own tests.
+				body = { service_account: 'svc-deploy', holders: [] };
 			} else if (url.includes('/users/me')) {
 				body = { service_accounts };
 			}

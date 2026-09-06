@@ -142,8 +142,23 @@ const maxAuditReasonLength = 1000
 // tableSkipped reports whether an action is emitted to the shipped log
 // only. Keeping this a function of the action (rather than a decision at
 // each call site) is what stops the two sinks drifting apart.
+//
+// The two privileged-view actions are here for the reason
+// admin.config_viewed stopped being emitted at all: an auditor working
+// through the directory generates one per user opened and one per page of
+// the feed, and within a session they outnumber the decisions the log
+// exists to record. The difference is that these still matter to whoever
+// reads the archive — "who looked at this account" is a real question — so
+// they keep their shipped-log line and lose only the table copy the UI
+// renders. admin.audit_viewed also wrote a new row on every read of the
+// feed, which shifted the offset window under "load more".
 func tableSkipped(action AuditAction) bool {
-	return action == AuditCertIssued
+	switch action {
+	case AuditCertIssued, AuditAdminAuditViewed, AuditAdminUserViewed:
+		return true
+	default:
+		return false
+	}
 }
 
 // AuditSubject is the snapshot of one identity as it stood at event time:

@@ -8,6 +8,7 @@
 	import type { AdminEnrollment } from '$lib/api/types';
 	import { errorMessage } from '$lib/auth';
 	import { expiryLabel, formatDateTime, formatDuration, isExpired } from '$lib/format';
+	import AccountHoldersPanel from './AccountHoldersPanel.svelte';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
 	import DetailRow from './DetailRow.svelte';
@@ -311,6 +312,15 @@
 					</dl>
 				</div>
 			{/if}
+
+			<!-- Immediately above the admin controls, because the first of
+			     them redirects notifications away from exactly these people.
+			     Provenance is the "Approved by" row above; this is
+			     ownership. -->
+			<AccountHoldersPanel
+				enrollmentId={enrollment.id}
+				serviceAccount={enrollment.service_account}
+			/>
 
 			<!-- Admin controls -->
 			<div class="space-y-4 border-t border-border-subtle pt-4">

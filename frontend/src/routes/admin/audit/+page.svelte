@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getAuditFeed } from '$lib/api/endpoints';
+	import type { AuditEvent } from '$lib/api/types';
+	import { dedupeAuditEvents, visibleAuditEvents } from '$lib/audit';
 	import AuditTimeline from '$lib/components/AuditTimeline.svelte';
 	import Button from '$lib/components/Button.svelte';
-	import type { AuditEvent } from '$lib/api/types';
 
 	const pageSize = 50;
 
@@ -20,7 +21,13 @@
 			const page = await getAuditFeed({ limit: pageSize, offset });
 			// Append when paging forward, replace on the first load, so
 			// "load more" grows one continuous list.
-			events = offset === 0 ? page.events : [...events, ...page.events];
+			//
+			// Deduplicated by id: offset paging over a live table cannot
+			// promise the window holds still, and a repeat is not cosmetic
+			// here — the timeline keys its {#each} by id, so it throws
+			// each_key_duplicate and takes the page down. See
+			// dedupeAuditEvents.
+			events = offset === 0 ? page.events : dedupeAuditEvents([...events, ...page.events]);
 			total = page.total;
 			nextOffset = page.next_offset ?? 0;
 		} catch (cause) {
@@ -29,6 +36,8 @@
 			busy = false;
 		}
 	}
+
+	const shownCount = $derived(visibleAuditEvents(events).length);
 
 	onMount(() => load(0));
 </script>
@@ -54,8 +63,12 @@
 		</div>
 
 		<div class="flex items-center gap-4">
+			<!-- The rendered count, not the loaded one: the timeline drops
+			     the privileged-view actions, and a footer that counted rows
+			     it did not show would keep saying "showing 50" beneath a
+			     shorter list. -->
 			<p class="text-xs text-ink-muted">
-				Showing {events.length} of {total}
+				Showing {shownCount} of {total}
 			</p>
 			{#if nextOffset > 0}
 				<Button variant="ghost" disabled={busy} onclick={() => load(nextOffset)}>

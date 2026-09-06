@@ -21,6 +21,40 @@ describe('AuditTimeline', () => {
 		expect(screen.getByText('No audit events recorded.')).toBeInTheDocument();
 	});
 
+	// One row per user record an auditor opens, and one per page of the feed
+	// they read, buries the decisions this view exists to show. The server
+	// no longer writes either to the table the UI reads; rows recorded
+	// before that stay until the retention sweep, so the display drops them
+	// too.
+	it('should not render a user-record view', () => {
+		render(AuditTimeline, { props: { events: [event({ action: 'admin.user_viewed' })] } });
+		expect(screen.getByText('No audit events recorded.')).toBeInTheDocument();
+	});
+
+	it('should not render a read of the audit log itself', () => {
+		render(AuditTimeline, { props: { events: [event({ action: 'admin.audit_viewed' })] } });
+		expect(screen.getByText('No audit events recorded.')).toBeInTheDocument();
+	});
+
+	it('should keep the decisions beside a dropped view event', () => {
+		render(AuditTimeline, {
+			props: {
+				events: [
+					event({ id: 'evt-1', action: 'admin.user_viewed' }),
+					event({ id: 'evt-2', action: 'user.disabled' })
+				]
+			}
+		});
+		expect(screen.getAllByTestId('audit-event')).toHaveLength(1);
+	});
+
+	// An enrollment view is not in the hidden set: it is one event per code
+	// opened, not one per screen, and the code is a credential.
+	it('should still render an enrollment view', () => {
+		render(AuditTimeline, { props: { events: [event({ action: 'admin.enrollment_viewed' })] } });
+		expect(screen.getAllByTestId('audit-event')).toHaveLength(1);
+	});
+
 	it('should render an unknown action rather than dropping it', () => {
 		// The taxonomy grows without a wire change, so a client that only
 		// rendered known actions would silently hide new ones.

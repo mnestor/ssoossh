@@ -50,18 +50,32 @@ function pageMeta(total: number, offset = 0, limit = 25) {
 	};
 }
 
-/** stubList answers every fetch with one admin enrollments payload. */
+/** json wraps a body in the envelope every endpoint answers with. */
+function json(data: unknown): Response {
+	return new Response(JSON.stringify({ data, error: null }), {
+		status: 200,
+		headers: { 'Content-Type': 'application/json' }
+	});
+}
+
+/** stubList answers the list fetch, plus the two the detail panel makes
+ * once a row is opened. Routed by URL, because a single body would hand the
+ * panel an enrollment list where it expects a retrieval log. */
 function stubList(enrollments: object[], meta = pageMeta(enrollments.length)) {
 	vi.stubGlobal(
 		'fetch',
-		vi.fn(() =>
-			Promise.resolve(
-				new Response(JSON.stringify({ data: { enrollments, meta }, error: null }), {
-					status: 200,
-					headers: { 'Content-Type': 'application/json' }
-				})
-			)
-		)
+		vi.fn((input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url.includes('/holders')) {
+				return Promise.resolve(json({ service_account: 'svc-deploy', holders: [] }));
+			}
+			if (url.includes('/admin/enrollments/')) {
+				return Promise.resolve(
+					json({ enrollment: enrollments[0], retrievals: [], retrieval_total: 0 })
+				);
+			}
+			return Promise.resolve(json({ enrollments, meta }));
+		})
 	);
 }
 
@@ -117,6 +131,40 @@ describe('admin service codes page', () => {
 		await user.click((await screen.findAllByTestId('enrollment-row'))[0]);
 
 		expect(fakePage.state.modalEnrollmentId).toBe('enr-1');
+	});
+
+	// The row click pushed the state and nothing rendered the panel, so
+	// opening a code did nothing at all.
+	it('should render the detail panel for the opened row', async () => {
+		stubList([adminEnrollment('enr-1', 'svc-deploy')]);
+
+		render(Page);
+		const user = userEvent.setup();
+
+		await user.click((await screen.findAllByTestId('enrollment-row'))[0]);
+
+		expect(await screen.findByRole('dialog', { name: 'Service code details' })).toBeInTheDocument();
+	});
+
+	// A pasted link has no pushed state, only the query parameter.
+	it('should open the panel named by the modal search parameter', async () => {
+		stubList([adminEnrollment('enr-1', 'svc-deploy')]);
+		resetFakePage('http://localhost/admin/service-codes?modal=enr-1');
+
+		render(Page);
+
+		expect(await screen.findByRole('dialog', { name: 'Service code details' })).toBeInTheDocument();
+	});
+
+	it('should show who holds the account behind the opened code', async () => {
+		stubList([adminEnrollment('enr-1', 'svc-deploy')]);
+
+		render(Page);
+		const user = userEvent.setup();
+
+		await user.click((await screen.findAllByTestId('enrollment-row'))[0]);
+
+		expect(await screen.findByTestId('account-holders')).toBeInTheDocument();
 	});
 
 	it('should page rather than pile every code onto one screen', async () => {

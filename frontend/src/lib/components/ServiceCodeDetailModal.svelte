@@ -4,6 +4,8 @@
 	import type { EnrollmentRetrievalsResponse, ServiceEnrollment } from '$lib/api/types';
 	import { errorMessage } from '$lib/auth';
 	import { expiryLabel, formatDateTime, formatDuration, isExpired } from '$lib/format';
+	import { session } from '$lib/session.svelte';
+	import AccountHoldersPanel from './AccountHoldersPanel.svelte';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
 	import DetailRow from './DetailRow.svelte';
@@ -297,6 +299,16 @@
 				<DetailRow label="Redemptions">{enrollment.retrieval_count}</DetailRow>
 			</dl>
 		</div>
+
+		<!-- Immediately above the notification address, because the two
+		     answer the same question from opposite ends: this is who the
+		     code reaches by default, and the field below is how to send it
+		     somewhere else instead. -->
+		<AccountHoldersPanel
+			enrollmentId={enrollment.id}
+			serviceAccount={enrollment.service_account}
+			viewerUsername={session.user?.username ?? ''}
+		/>
 
 		<!-- The only editable thing on this panel. It exists for the cases
 		     fan-out cannot serve: an account whose holders have never logged

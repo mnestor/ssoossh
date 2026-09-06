@@ -221,3 +221,46 @@ func TestValidateShouldRejectUnusablePublicURLs(t *testing.T) {
 		})
 	}
 }
+
+// cookie_secure was retired: the Secure attribute follows the scheme of
+// public_url and nothing else. A key left behind in a deployment's file
+// fails at boot rather than being ignored, because `cookie_secure: false`
+// under an https public_url was a deliberate weakening, and a weakening
+// that quietly stops applying is worse than one that fails loudly.
+func TestValidateShouldRejectTheRetiredCookieSecure(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		value   *bool
+		wantErr bool
+	}{
+		{name: "should accept the key being absent", value: nil},
+		{name: "should reject cookie_secure set to false", value: boolValue(false), wantErr: true},
+		{name: "should reject cookie_secure set to true", value: boolValue(true), wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := (&HTTPSettings{PublicURL: "https://ssh.example.com", CookieSecure: tt.value}).Validate()
+
+			if !tt.wantErr {
+				if err != nil {
+					t.Errorf("got error %v, want none", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("got no error, want one naming the retired key")
+			}
+			if !strings.Contains(err.Error(), "cookie_secure") || !strings.Contains(err.Error(), "public_url") {
+				t.Errorf("got error %q, want it to name the retired key and what replaced it", err)
+			}
+		})
+	}
+}
+
+// boolValue returns a pointer to b, for the tri-state settings.
+func boolValue(b bool) *bool { return &b }

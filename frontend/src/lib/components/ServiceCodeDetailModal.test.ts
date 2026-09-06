@@ -2,7 +2,11 @@ import { render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 
-import type { EnrollmentRetrievalsResponse, ServiceEnrollment } from '$lib/api/types';
+import type {
+	AccountHolder,
+	EnrollmentRetrievalsResponse,
+	ServiceEnrollment
+} from '$lib/api/types';
 import ServiceCodeDetailModal from './ServiceCodeDetailModal.svelte';
 
 const now = new Date('2026-08-22T12:00:00Z');
@@ -33,22 +37,33 @@ function enrollment(overrides: Partial<ServiceEnrollment> = {}): ServiceEnrollme
 	};
 }
 
-/** mockRetrievals stubs the retrieval-log fetch the panel makes on open.
+/** json wraps a body in the envelope every endpoint answers with. */
+function json(data: unknown): Response {
+	return new Response(JSON.stringify({ data, error: null }), {
+		status: 200,
+		headers: { 'Content-Type': 'application/json' }
+	});
+}
+
+/** mockRetrievals stubs the two fetches the panel makes on open: the
+ * retrieval log, and the account's holders. Routed by URL rather than
+ * answered with one body, because a single stub handed the holders panel
+ * the retrieval envelope and it had no holders in it.
+ *
  * `total` defaults to the page length — the untruncated case. */
 function mockRetrievals(
 	retrievals: EnrollmentRetrievalsResponse['retrievals'],
-	total = retrievals.length
+	total = retrievals.length,
+	holders: AccountHolder[] = []
 ) {
 	vi.stubGlobal(
 		'fetch',
-		vi.fn(() =>
-			Promise.resolve(
-				new Response(JSON.stringify({ data: { retrievals, total }, error: null }), {
-					status: 200,
-					headers: { 'Content-Type': 'application/json' }
-				})
-			)
-		)
+		vi.fn((input: RequestInfo | URL) => {
+			if (String(input).includes('/holders')) {
+				return Promise.resolve(json({ service_account: 'svc-deploy', holders }));
+			}
+			return Promise.resolve(json({ retrievals, total }));
+		})
 	);
 }
 

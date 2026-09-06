@@ -85,11 +85,29 @@ export interface CurrentUserResponse {
 	 */
 	other_accounts: string[];
 	/**
-	 * ServiceAccounts are the service accounts this identity may approve
-	 * service certificates for (see config.OAuthFields.ServiceAccounts) —
-	 * the approval page's picker is populated from them.
+	 * ServiceAccounts are the service accounts this identity holds (see
+	 * config.OAuthFields.ServiceAccounts). It is also what the service
+	 * codes page lists, so it stays the claim alone rather than the wider
+	 * approval set below.
 	 */
 	service_accounts: string[];
+	/**
+	 * ApprovableServiceAccounts is what the approval page's picker is
+	 * populated from: ServiceAccounts, plus the caller's own accounts when
+	 * cert_options.service.allow_user_accounts is on. Sent as its own list
+	 * rather than computed in the browser so the picker cannot offer an
+	 * account the server would then refuse.
+	 */
+	approvable_service_accounts: string[];
+	/**
+	 * UserOwnServiceAccounts is the subset of ApprovableServiceAccounts that
+	 * is the caller's own account rather than a claimed service account, so
+	 * the picker can say what those entries mean before one is chosen: the
+	 * certificate is still non-interactive, for an unattended job, and is
+	 * not a way to log in as yourself. Empty when
+	 * cert_options.service.allow_user_accounts is off.
+	 */
+	user_own_service_accounts: string[];
 	/**
 	 * Extra holds operator-configured extra fields captured at login from
 	 * OIDC claims (see config.OAuthFields.Extra). Each value is either a
@@ -200,6 +218,45 @@ export interface EnrollmentRetrievalsResponse {
 	 * page is the whole history.
 	 */
 	total: number /* int */;
+}
+/**
+ * AccountHolderResponse is one person who holds an enrollment's service
+ * account, and therefore can see and manage the code.
+ */
+export interface AccountHolderResponse {
+	user_id: string;
+	username: string;
+	/**
+	 * Name and Email are display fields, empty when the identity provider
+	 * released neither.
+	 */
+	name: string;
+	email: string;
+	/**
+	 * Disabled marks a holder whose account is disabled. Listed rather than
+	 * omitted: the claim is still on their row and comes back with the
+	 * account, so dropping them would answer "who has access" with a set
+	 * that quietly grows again later.
+	 */
+	disabled: boolean;
+	/**
+	 * Own marks a holder for whom this is their own account rather than one
+	 * a service_accounts claim named — only possible with
+	 * cert_options.service.allow_user_accounts on.
+	 */
+	own: boolean;
+}
+/**
+ * AccountHoldersResponse is everyone known to hold one enrollment's service
+ * account.
+ */
+export interface AccountHoldersResponse {
+	/**
+	 * ServiceAccount is the account the holders were resolved for, echoed
+	 * back so the panel can name it without re-deriving it from principals.
+	 */
+	service_account: string;
+	holders: AccountHolderResponse[];
 }
 /**
  * ServiceEnrollmentResponse describes one approved service enrollment
@@ -1021,9 +1078,24 @@ export interface AdminUserDetail {
 	 */
 	directory?: AdminUserDirectory;
 	/**
-	 * NotificationPreferences are the explicit choices this user has made.
-	 * A kind with no row here is on its registered default, so an empty
-	 * list means "everything default" rather than "everything off".
+	 * OIDCFields reports, per identity destination, whether
+	 * authentication.fields names a claim that populates it. It is what
+	 * separates "the ID token carried nothing for this field" from "nothing
+	 * was ever asked of the ID token for this field" — two states that read
+	 * identically on the page and call for opposite actions.
+	 * It also decides how a directory value is described. A field with no
+	 * configured claim has no OIDC side to override, so calling the
+	 * directory value an override there names a conflict that does not
+	 * exist; the directory is simply the only source.
+	 * Keyed by destination name: "other_accounts", "service_accounts",
+	 * "name", and one entry per configured extra field.
+	 */
+	oidc_fields: { [key: string]: boolean};
+	/**
+	 * NotificationPreferences is every notification kind the server knows
+	 * how to send, with what applies to this user and whether they chose
+	 * it. Registry order, then any stored rows for kinds no longer
+	 * registered.
 	 */
 	notification_preferences: AdminUserNotificationPreference[];
 }
@@ -1117,15 +1189,51 @@ export interface AdminUserDirectory {
 	consecutive_misses: number /* int */;
 }
 /**
- * AdminUserNotificationPreference is one explicit notification choice.
+ * AdminUserNotificationPreference is one notification kind as it stands for
+ * this user: what the server would send them, and whether that is their own
+ * choice or the kind's registered default.
+ * Every registered kind is reported, not only the ones with a stored row.
+ * The list used to be the stored rows alone, which meant the common case —
+ * a user who has never touched the preferences page — rendered as an empty
+ * section that read as "notifications are off" when it meant the opposite.
+ * Title and Description come from the same registry the preferences page
+ * renders (server/notify), so the two screens name a kind identically.
  */
 export interface AdminUserNotificationPreference {
 	kind: string;
+	/**
+	 * Title and Description are the registry's own wording. Empty for a
+	 * stored row whose kind is no longer registered — a downgrade or a
+	 * removed kind leaves rows nothing answers to, and they are still shown
+	 * rather than dropped, since the choice is real and still stored.
+	 */
+	title: string;
+	description: string;
+	/**
+	 * Enabled is what applies: the stored choice where there is one, the
+	 * registered default otherwise.
+	 */
 	enabled: boolean;
 	/**
-	 * UpdatedAt is when the choice was last changed.
+	 * Default is what would apply with no stored choice, so a reader can
+	 * see at a glance which of these the user actually decided.
 	 */
-	updated_at: string;
+	default: boolean;
+	/**
+	 * Explicit reports whether the user has stored a choice for this kind.
+	 * False means Enabled is the registered default.
+	 */
+	explicit: boolean;
+	/**
+	 * Registered reports whether the kind is still in the server's
+	 * registry. False marks a stored row left behind by a removed kind.
+	 */
+	registered: boolean;
+	/**
+	 * UpdatedAt is when the choice was last changed, absent when there is
+	 * no stored choice to have changed.
+	 */
+	updated_at?: string;
 }
 /**
  * DisableUserConsequences describes what disabling a user does, shown in

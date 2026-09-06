@@ -83,6 +83,44 @@ describe('admin audit page', () => {
 		expect(secondURL).toContain('offset=1');
 	});
 
+	// The reported bug: offset paging over a live table cannot promise the
+	// window holds still, and the timeline keys its {#each} by id — so a row
+	// arriving twice threw each_key_duplicate and took the page down rather
+	// than merely rendering twice.
+	it('should not repeat a row that arrives on both pages', async () => {
+		stubFeed(
+			feedPage([auditEvent('e1', 'user.disabled'), auditEvent('e2', 'auth.login')], 3, 2),
+			feedPage([auditEvent('e2', 'auth.login'), auditEvent('e3', 'cert.approved')], 3, 0)
+		);
+
+		render(Page);
+		const user = userEvent.setup();
+
+		await user.click(await screen.findByText('Load more'));
+
+		await waitFor(() => expect(screen.getAllByTestId('audit-event')).toHaveLength(3));
+	});
+
+	it('should count only the rows it actually rendered', async () => {
+		stubFeed(
+			feedPage(
+				[
+					auditEvent('e1', 'user.disabled'),
+					// Dropped from the display, so counting it would leave
+					// "Showing 2" above a single row.
+					auditEvent('e2', 'admin.user_viewed')
+				],
+				2
+			)
+		);
+
+		render(Page);
+
+		await screen.findByTestId('audit-timeline');
+		expect(screen.getAllByTestId('audit-event')).toHaveLength(1);
+		expect(screen.getByText('Showing 1 of 2')).toBeInTheDocument();
+	});
+
 	it('should surface a load failure instead of an empty feed', async () => {
 		vi.stubGlobal(
 			'fetch',

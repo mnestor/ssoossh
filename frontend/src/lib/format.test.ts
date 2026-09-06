@@ -13,6 +13,46 @@ describe('formatDuration', () => {
 	const cases: { name: string; seconds: number; want: string }[] = [
 		{ name: 'should render whole hours without a minutes part', seconds: 8 * 3600, want: '8h' },
 		{
+			// An enrollment code's default life is a year. As hours that
+			// reads as "8760h", which is the one number the panel exists to
+			// state and the one nobody can read.
+			name: 'should render a year in months',
+			seconds: 365 * 86400,
+			want: '12mo 5d'
+		},
+		{
+			name: 'should render whole months without a days part',
+			seconds: 90 * 86400,
+			want: '3mo'
+		},
+		{
+			name: 'should render days below a month',
+			seconds: 14 * 86400,
+			want: '14d'
+		},
+		{
+			name: 'should render days and hours when both are present',
+			seconds: 2 * 86400 + 5 * 3600,
+			want: '2d 5h'
+		},
+		{
+			name: 'should switch from hours to days at twenty-four hours',
+			seconds: 24 * 3600,
+			want: '1d'
+		},
+		{
+			name: 'should still render hours just under a day',
+			seconds: 23 * 3600,
+			want: '23h'
+		},
+		{
+			// Two units at most: a code with three months left is not read
+			// to the hour.
+			name: 'should drop the hours once months are involved',
+			seconds: 45 * 86400 + 7 * 3600,
+			want: '1mo 15d'
+		},
+		{
 			name: 'should render hours and minutes when both are present',
 			seconds: 5400,
 			want: '1h 30m'

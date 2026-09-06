@@ -17,6 +17,7 @@ import (
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/server/notify"
 	"github.com/mnestor/ssoossh/server/service"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 	"github.com/mnestor/ssoossh/server/utils/paging"
@@ -271,17 +272,48 @@ func (a *adminController) expireEnrollmentHandler(g *gin.Context) {
 	respondData(g, gin.H{"expired": true})
 }
 
+// userStatusFilter is the admin user list's account-state filter.
+type userStatusFilter string
+
+const (
+	userStatusAny      userStatusFilter = ""
+	userStatusActive   userStatusFilter = "active"
+	userStatusDisabled userStatusFilter = "disabled"
+)
+
+// parseUserStatusFilter reads the `status` query parameter. An unrecognized
+// value is an error rather than a silent fall back to "any": a UI that asks
+// for disabled accounts and is handed every account has no way to learn its
+// parameter was thrown away, which is the reasoning paging.Parse applies to
+// a malformed limit.
+func parseUserStatusFilter(raw string) (userStatusFilter, error) {
+	switch userStatusFilter(strings.TrimSpace(raw)) {
+	case userStatusAny:
+		return userStatusAny, nil
+	case userStatusActive:
+		return userStatusActive, nil
+	case userStatusDisabled:
+		return userStatusDisabled, nil
+	default:
+		return userStatusAny, &errorresponses.InvalidRequestError{
+			Reason: fmt.Sprintf("status must be %q or %q, got %q", userStatusActive, userStatusDisabled, raw),
+		}
+	}
+}
+
 // listUsersHandler handles GET /api/admin/users: returns a paginated,
 // searchable list of all users for auditor review.
 //
 // @Summary     List all users (auditor-only)
-// @Description Returns a paginated list of users, searchable by username,
-// @Description email, or subject. Useful for user directory and audit.
+// @Description Returns a paginated list of users, searchable by name,
+// @Description username, email, or subject, and filterable by account state.
+// @Description Useful for user directory and audit.
 // @Tags        admin
 // @Produce     json
 // @Param       limit query int false "Page size (default 25, max 100)" example(25)
 // @Param       offset query int false "Results to skip (default 0)" example(0)
-// @Param       q query string false "Search term" example(alice)
+// @Param       q query string false "Search term matched against name, username, email, and subject" example(alice)
+// @Param       status query string false "Account state filter: active or disabled; omitted returns both" Enums(active, disabled)
 // @Success     200 {object} webtypes.AdminUsersListResponse "User list"
 // @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid paging/search parameters"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "Not authenticated"
@@ -295,16 +327,35 @@ func (a *adminController) listUsersHandler(g *gin.Context) {
 		return
 	}
 
-	// Search over username, email, and subject.
+	status, err := parseUserStatusFilter(g.Query("status"))
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	// Search over the name, username, email, and subject. display_name is
+	// in the set because the list shows it as its first column: a directory
+	// whose leading column cannot be searched sends anyone looking for a
+	// person to scroll instead, which is what the search box exists to
+	// avoid.
 	//
 	// Model() rather than relying on the destination type: Count runs before
 	// any Find, so without a model named here gorm has no table to count and
 	// fails with "Table not set". The Find below would have inferred it from
 	// the slice, which is why this only broke on the count.
-	whereSQL, args := paging.Filter(params.Query, "username", "email", "subject")
+	whereSQL, args := paging.Filter(params.Query, "display_name", "username", "email", "subject")
 	q := a.db.WithContext(g.Request.Context()).Model(&model.User{})
 	if whereSQL != "" {
 		q = q.Where(whereSQL, args...)
+	}
+	// Applied before the count, so the pager describes the filtered set
+	// rather than the whole table.
+	switch status {
+	case userStatusActive:
+		q = q.Where("disabled_at IS NULL")
+	case userStatusDisabled:
+		q = q.Where("disabled_at IS NOT NULL")
+	case userStatusAny:
 	}
 
 	total, err := paging.Count(q)
@@ -448,6 +499,7 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 		Groups:                  groups,
 		DirectoryEnabled:        a.config.LDAP.Enabled,
 		Directory:               directory,
+		OIDCFields:              configuredOIDCFields(a.config.AuthConfig.Fields),
 		NotificationPreferences: preferences,
 
 		// Which of the OIDC values above the directory is currently
@@ -1288,14 +1340,7 @@ func (a *adminController) userStoredRecord(g *gin.Context, userID string) (
 		Find(&prefRows).Error; err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to read the user's notification preferences: %w", err)
 	}
-	preferences := make([]webtypes.AdminUserNotificationPreference, 0, len(prefRows))
-	for _, row := range prefRows {
-		preferences = append(preferences, webtypes.AdminUserNotificationPreference{
-			Kind:      row.Kind,
-			Enabled:   row.Enabled,
-			UpdatedAt: row.UpdatedAt,
-		})
-	}
+	preferences := notificationPreferenceRows(prefRows)
 
 	// With the directory switched off, everything it wrote is frozen:
 	// nothing refreshes the attributes, nothing re-reads the entry, and the
@@ -1413,6 +1458,80 @@ func directoryOverrides(
 			Field:     field,
 			OIDC:      orEmpty(oidcSide(field)),
 			Effective: orEmpty(directory.Attributes[field]),
+		})
+	}
+	return out
+}
+
+// configuredOIDCFields reports which identity destinations
+// authentication.fields actually maps a claim onto.
+//
+// other_accounts and service_accounts default to empty, so the common
+// deployment populates neither from OIDC. Without this the page had no way
+// to tell that apart from a claim that was configured and arrived empty,
+// and it described every directory value for those fields as overriding an
+// OIDC value that was never asked for.
+func configuredOIDCFields(fields config.OAuthFields) map[string]bool {
+	out := map[string]bool{
+		config.LDAPFieldOtherAccounts:   fields.OtherAccounts != "",
+		config.LDAPFieldServiceAccounts: fields.ServiceAccounts != "",
+		config.LDAPFieldName:            fields.Name != "",
+	}
+	for name, claim := range fields.Extra {
+		out[name] = claim != ""
+	}
+	return out
+}
+
+// notificationPreferenceRows renders one user's notification standing: every
+// registered kind, in registry order, with the stored choice applied where
+// there is one and the kind's default where there is not.
+//
+// Reporting the whole catalogue rather than the stored rows is what makes
+// the section answer the question it is read for. Stored rows alone meant a
+// user who has never opened the preferences page produced an empty list,
+// which reads as "we send them nothing" and means the opposite; and a raw
+// kind string beside "on" left the reader to guess what that kind is.
+//
+// A stored row whose kind is no longer registered is appended after the
+// registered ones rather than dropped: the row is real, it is still on
+// disk, and it comes back the moment a downgrade puts that kind back.
+func notificationPreferenceRows(stored []model.NotificationPreference) []webtypes.AdminUserNotificationPreference {
+	byKind := make(map[string]model.NotificationPreference, len(stored))
+	for _, row := range stored {
+		byKind[row.Kind] = row
+	}
+
+	definitions := notify.Definitions()
+	out := make([]webtypes.AdminUserNotificationPreference, 0, len(definitions)+len(stored))
+	for _, def := range definitions {
+		pref := webtypes.AdminUserNotificationPreference{
+			Kind:        string(def.Kind),
+			Title:       def.Title,
+			Description: def.Description,
+			Enabled:     def.DefaultEnabled,
+			Default:     def.DefaultEnabled,
+			Registered:  true,
+		}
+		if row, ok := byKind[string(def.Kind)]; ok {
+			pref.Enabled = row.Enabled
+			pref.Explicit = true
+			updated := row.UpdatedAt
+			pref.UpdatedAt = &updated
+		}
+		out = append(out, pref)
+	}
+
+	for _, row := range stored {
+		if _, registered := notify.Lookup(notify.Kind(row.Kind)); registered {
+			continue
+		}
+		updated := row.UpdatedAt
+		out = append(out, webtypes.AdminUserNotificationPreference{
+			Kind:      row.Kind,
+			Enabled:   row.Enabled,
+			Explicit:  true,
+			UpdatedAt: &updated,
 		})
 	}
 	return out

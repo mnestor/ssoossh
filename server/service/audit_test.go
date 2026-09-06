@@ -183,29 +183,43 @@ func TestRecord_ShouldStampTheSchemaVersionAndTime(t *testing.T) {
 	}
 }
 
-// cert.issued is emitted to the shipped log only: the UI already has
-// certificate history from the certificates table, so a table copy would be
-// pure duplication.
-func TestRecord_ShouldKeepCertIssuedOutOfTheTable(t *testing.T) {
+// The log-only actions are emitted to the shipped log and skipped in the
+// table copy the UI renders.
+//
+// cert.issued because the UI already has certificate history from the
+// certificates table, so a table copy would be pure duplication. The two
+// privileged-view actions because an auditor working through the directory
+// generates one per user opened and one per page of the feed, and within a
+// session they bury the decisions the log exists to record — admin.audit_viewed
+// also wrote a new row on every read of the feed, which shifted the offset
+// window under the UI's "load more".
+func TestRecord_ShouldKeepTheLogOnlyActionsOutOfTheTable(t *testing.T) {
 	t.Parallel()
 
-	audit, db := newTestAuditService(t)
-	audit.Record(context.Background(), AuditEvent{
-		Action: AuditCertIssued,
-		Target: &AuditSubject{UserID: "u-alice"},
-		Detail: map[string]any{"serial": uint64(42)},
-	})
-	audit.Record(context.Background(), AuditEvent{Action: AuditCertApproved, Actor: &AuditSubject{UserID: "u-alice"}})
+	logOnly := []AuditAction{AuditCertIssued, AuditAdminAuditViewed, AuditAdminUserViewed}
+	for _, action := range logOnly {
+		t.Run(string(action), func(t *testing.T) {
+			t.Parallel()
 
-	var rows []model.AuditEvent
-	if err := db.Find(&rows).Error; err != nil {
-		t.Fatalf("load audit events: %v", err)
-	}
-	if len(rows) != 1 {
-		t.Fatalf("got %d rows, want only the cert.approved one", len(rows))
-	}
-	if decodePayload(t, rows[0]).Action != AuditCertApproved {
-		t.Errorf("stored action = %q, want cert.approved", decodePayload(t, rows[0]).Action)
+			audit, db := newTestAuditService(t)
+			audit.Record(context.Background(), AuditEvent{
+				Action: action,
+				Actor:  &AuditSubject{UserID: "u-auditor"},
+				Target: &AuditSubject{UserID: "u-alice"},
+			})
+			audit.Record(context.Background(), AuditEvent{Action: AuditCertApproved, Actor: &AuditSubject{UserID: "u-alice"}})
+
+			var rows []model.AuditEvent
+			if err := db.Find(&rows).Error; err != nil {
+				t.Fatalf("load audit events: %v", err)
+			}
+			if len(rows) != 1 {
+				t.Fatalf("got %d rows, want only the cert.approved one", len(rows))
+			}
+			if decodePayload(t, rows[0]).Action != AuditCertApproved {
+				t.Errorf("stored action = %q, want cert.approved", decodePayload(t, rows[0]).Action)
+			}
+		})
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1538,5 +1539,245 @@ func TestApproveServiceEnrollment_ShouldRecordTheServiceAccount(t *testing.T) {
 		principals[0] != enrollment.ServiceAccount {
 		t.Errorf("principals %v disagree with the service account %q",
 			principals, enrollment.ServiceAccount)
+	}
+}
+
+// seedAccountHolder inserts one users row with the stored account lists a
+// holder lookup reads, which seedUser deliberately leaves empty.
+func seedAccountHolder(t *testing.T, db *gorm.DB, username, serviceAccounts, otherAccounts string, disabled bool) string {
+	t.Helper()
+
+	user := model.User{
+		ID:              uuid.NewString(),
+		Subject:         "sub-" + username,
+		Username:        username,
+		Email:           username + "@example.com",
+		DisplayName:     strings.ToUpper(username),
+		ServiceAccounts: serviceAccounts,
+		OtherAccounts:   otherAccounts,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+	if disabled {
+		now := time.Now()
+		user.DisabledAt = &now
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("failed to seed holder %q: %v", username, err)
+	}
+	return user.ID
+}
+
+// holderUsernames flattens a holder list for comparison.
+func holderUsernames(holders []AccountHolder) []string {
+	out := make([]string, 0, len(holders))
+	for _, h := range holders {
+		out = append(out, h.Username)
+	}
+	return out
+}
+
+// A code belongs to its service account rather than to whoever approved it,
+// so "who else has this" has no answer on the enrollment row. This is that
+// answer, and it is the same authorization as the detail view: everyone who
+// can already redeem the code may see who else can.
+func TestListAccountHolders(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should list every holder of the account", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		ownerID := seedAccountHolder(t, svc.db, "alice", `["svc-a"]`, `[]`, false)
+		seedAccountHolder(t, svc.db, "bob", `["svc-a","svc-b"]`, `[]`, false)
+		seedAccountHolder(t, svc.db, "carol", `["svc-b"]`, `[]`, false)
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, ServiceAccount: "svc-a", KeyID: "key1",
+			ExpiresAt: time.Now().Add(time.Hour), CreatedAt: time.Now(),
+		})
+
+		got, err := enrollment.ListAccountHolders(context.Background(),
+			"enrollment1", &Identity{Subject: "sub-alice", ServiceAccounts: []string{"svc-a"}})
+		if err != nil {
+			t.Fatalf("ListAccountHolders() error = %v", err)
+		}
+		if got.ServiceAccount != "svc-a" {
+			t.Errorf("service account = %q, want svc-a", got.ServiceAccount)
+		}
+		if names := holderUsernames(got.Holders); !slices.Equal(names, []string{"alice", "bob"}) {
+			t.Errorf("holders = %v, want alice and bob, not carol", names)
+		}
+	})
+
+	// A disabled holder still carries the claim and comes back with the
+	// account, so leaving them out would answer "who has access" with a set
+	// that quietly grows again later.
+	t.Run("should list a disabled holder and mark them disabled", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		ownerID := seedAccountHolder(t, svc.db, "alice", `["svc-a"]`, `[]`, false)
+		seedAccountHolder(t, svc.db, "mallory", `["svc-a"]`, `[]`, true)
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, ServiceAccount: "svc-a", KeyID: "key1",
+			ExpiresAt: time.Now().Add(time.Hour), CreatedAt: time.Now(),
+		})
+
+		got, err := enrollment.ListAccountHolders(context.Background(),
+			"enrollment1", &Identity{Subject: "sub-alice", ServiceAccounts: []string{"svc-a"}})
+		if err != nil {
+			t.Fatalf("ListAccountHolders() error = %v", err)
+		}
+		if len(got.Holders) != 2 {
+			t.Fatalf("holders = %v, want both the enabled and the disabled one", holderUsernames(got.Holders))
+		}
+		for _, holder := range got.Holders {
+			if (holder.Username == "mallory") != holder.Disabled {
+				t.Errorf("holder %q disabled = %v, want it to match the account state", holder.Username, holder.Disabled)
+			}
+		}
+	})
+
+	// The LIKE prefilter can match inside a longer name; the decode is what
+	// makes the answer exact.
+	t.Run("should not match an account name that merely contains the one asked for", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		ownerID := seedAccountHolder(t, svc.db, "alice", `["svc-a"]`, `[]`, false)
+		seedAccountHolder(t, svc.db, "bob", `["svc-append"]`, `[]`, false)
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, ServiceAccount: "svc-a", KeyID: "key1",
+			ExpiresAt: time.Now().Add(time.Hour), CreatedAt: time.Now(),
+		})
+
+		got, err := enrollment.ListAccountHolders(context.Background(),
+			"enrollment1", &Identity{Subject: "sub-alice", ServiceAccounts: []string{"svc-a"}})
+		if err != nil {
+			t.Fatalf("ListAccountHolders() error = %v", err)
+		}
+		if names := holderUsernames(got.Holders); !slices.Equal(names, []string{"alice"}) {
+			t.Errorf("holders = %v, want only the exact holder", names)
+		}
+	})
+
+	t.Run("should refuse an unrelated user", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		ownerID := seedAccountHolder(t, svc.db, "alice", `["svc-a"]`, `[]`, false)
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["svc-a"]`, ServiceAccount: "svc-a", KeyID: "key1",
+			ExpiresAt: time.Now().Add(time.Hour), CreatedAt: time.Now(),
+		})
+
+		_, err := enrollment.ListAccountHolders(context.Background(),
+			"enrollment1", &Identity{Subject: "sub-stranger", ServiceAccounts: []string{"svc-z"}})
+
+		var forbidden *errorresponses.ForbiddenError
+		if !errors.As(err, &forbidden) {
+			t.Errorf("ListAccountHolders() error = %v, want ForbiddenError", err)
+		}
+	})
+
+	t.Run("should report an unknown enrollment as not found", func(t *testing.T) {
+		t.Parallel()
+		svc := newTestCertRequestService(t, time.Second)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		_, err := enrollment.ListAccountHolders(context.Background(),
+			"no-such-enrollment", &Identity{Subject: "sub-alice"})
+
+		var notFound *errorresponses.NotFoundError
+		if !errors.As(err, &notFound) {
+			t.Errorf("ListAccountHolders() error = %v, want NotFoundError", err)
+		}
+	})
+
+	// With allow_user_accounts on the account may be a person's own, and
+	// then the person holds it — and the panel says which kind of holder
+	// they are, because "this is their own account" reads very differently
+	// from "a claim vouches for them".
+	t.Run("should include the person whose own account this is", func(t *testing.T) {
+		t.Parallel()
+		cfg := &config.Config{}
+		cfg.CertOptions.Service.AllowUserAccounts = true
+		svc := newTestCertRequestServiceWithConfig(t, cfg)
+		enrollment := newTestEnrollmentService(t, svc)
+
+		ownerID := seedAccountHolder(t, svc.db, "alice", `[]`, `["alice.adm"]`, false)
+		seedEnrollment(t, svc, model.Enrollment{
+			ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+			Principals: `["alice.adm"]`, ServiceAccount: "alice.adm", KeyID: "key1",
+			ExpiresAt: time.Now().Add(time.Hour), CreatedAt: time.Now(),
+		})
+
+		got, err := enrollment.ListAccountHolders(context.Background(),
+			"enrollment1", &Identity{Subject: "sub-alice", Username: "alice", OtherAccounts: []string{"alice.adm"}})
+		if err != nil {
+			t.Fatalf("ListAccountHolders() error = %v", err)
+		}
+		if len(got.Holders) != 1 || !got.Holders[0].Own {
+			t.Errorf("holders = %+v, want alice listed as holding her own account", got.Holders)
+		}
+	})
+}
+
+// An approver who mints a code under their own account has to be able to
+// open it afterwards. The set that decides what may be approved and the set
+// that decides what its author can then see must be the same one.
+func TestEnrollmentOwnership_ShouldFollowAllowUserAccounts(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		allowUserAccounts bool
+		wantVisible       bool
+	}{
+		{name: "should hide an own-account enrollment while the setting is off", allowUserAccounts: false},
+		{name: "should show an own-account enrollment once the setting is on", allowUserAccounts: true, wantVisible: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := &config.Config{}
+			cfg.CertOptions.Service.AllowUserAccounts = tt.allowUserAccounts
+			svc := newTestCertRequestServiceWithConfig(t, cfg)
+			enrollment := newTestEnrollmentService(t, svc)
+
+			ownerID := seedAccountHolder(t, svc.db, "alice", `[]`, `[]`, false)
+			seedEnrollment(t, svc, model.Enrollment{
+				ID: "enrollment1", Code: "code1", PublicKey: "key1", UserID: ownerID,
+				Principals: `["alice"]`, ServiceAccount: "alice", KeyID: "key1",
+				ExpiresAt: time.Now().Add(time.Hour), CreatedAt: time.Now(),
+			})
+
+			identity := &Identity{Subject: "sub-alice", Username: "alice"}
+			list, err := enrollment.ListForIdentity(context.Background(), identity)
+			if err != nil {
+				t.Fatalf("ListForIdentity() error = %v", err)
+			}
+			if (len(list) > 0) != tt.wantVisible {
+				t.Errorf("ListForIdentity returned %d enrollments, want visible=%v", len(list), tt.wantVisible)
+			}
+
+			_, err = enrollment.GetEnrollmentDetail(context.Background(), "enrollment1", identity)
+			if tt.wantVisible && err != nil {
+				t.Errorf("GetEnrollmentDetail() error = %v, want the approver to be able to open their own code", err)
+			}
+			if !tt.wantVisible && err == nil {
+				t.Error("GetEnrollmentDetail() succeeded, want it refused while own accounts are not service accounts")
+			}
+		})
 	}
 }

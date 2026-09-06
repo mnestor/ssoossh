@@ -91,7 +91,8 @@ http:
     - "127.0.0.1/32"
 
   # The session cookie is marked Secure automatically because public_url is
-  # https; cookie_secure only exists to override that inference.
+  # https. There is no separate switch: the scheme stated here is the one
+  # the cookie follows.
 
 authentication:
   client_id: "..."

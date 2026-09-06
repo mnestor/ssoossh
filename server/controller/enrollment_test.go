@@ -43,6 +43,11 @@ type fakeEnrollmentService struct {
 	// path parameter without a database behind it.
 	gotSetEmailID string
 	gotSetEmail   string
+
+	// holders is what the account-holders handler serves, and gotHolderID
+	// records the path parameter it was asked for.
+	holders     service.AccountHolders
+	gotHolderID string
 }
 
 func (f *fakeEnrollmentService) Retrieve(_ context.Context, code string, sourceIP string) (string, error) {
@@ -87,6 +92,14 @@ func (f *fakeEnrollmentService) GetEnrollmentDetail(_ context.Context, _ string,
 		return service.AdminEnrollmentDetail{}, f.err
 	}
 	return service.AdminEnrollmentDetail{}, nil
+}
+
+func (f *fakeEnrollmentService) ListAccountHolders(_ context.Context, id string, identity *service.Identity) (service.AccountHolders, error) {
+	f.gotHolderID, f.gotIdentity = id, identity
+	if f.err != nil {
+		return service.AccountHolders{}, f.err
+	}
+	return f.holders, nil
 }
 
 func (f *fakeEnrollmentService) SetNotificationEmail(_ context.Context, id string, identity *service.Identity, address string) error {
@@ -637,5 +650,79 @@ func TestEnrollmentsHandler_ShouldSurfaceAServiceError(t *testing.T) {
 
 	if w.Code == http.StatusOK {
 		t.Fatalf("expected the service error to surface, got status %d", w.Code)
+	}
+}
+
+// The holders route answers "who else has this code", which the enrollment
+// row cannot: a code belongs to its service account rather than to whoever
+// approved it.
+func TestHoldersHandler_ShouldReturnTheAccountsKnownHolders(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeEnrollmentService{holders: service.AccountHolders{
+		ServiceAccount: "svc-deploy",
+		Holders: []service.AccountHolder{
+			{UserID: "u-alice", Username: "alice", Name: "Alice Ashworth", Email: "alice@example.com"},
+			{UserID: "u-mallory", Username: "mallory", Disabled: true},
+		},
+	}}
+	r := newRetrievalsTestRouter(svc, &service.Identity{Subject: "sub-alice"})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/service/enrollments/enr-1/holders", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET holders = %d, want %d, body: %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if svc.gotHolderID != "enr-1" {
+		t.Errorf("service was asked for %q, want the path parameter enr-1", svc.gotHolderID)
+	}
+
+	var resp struct {
+		Data webtypes.AccountHoldersResponse `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v, body: %s", err, w.Body.String())
+	}
+	if resp.Data.ServiceAccount != "svc-deploy" {
+		t.Errorf("service_account = %q, want svc-deploy", resp.Data.ServiceAccount)
+	}
+	if len(resp.Data.Holders) != 2 {
+		t.Fatalf("holders = %+v, want both rows", resp.Data.Holders)
+	}
+	if !resp.Data.Holders[1].Disabled {
+		t.Error("the disabled holder was reported as active")
+	}
+}
+
+// Holders is validate:"required" and generates as a non-optional array, so
+// null there is what stops the panel rendering at all.
+func TestHoldersHandler_ShouldRenderNoHoldersAsAnArray(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeEnrollmentService{holders: service.AccountHolders{ServiceAccount: "svc-orphan"}}
+	r := newRetrievalsTestRouter(svc, &service.Identity{Subject: "sub-alice"})
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/service/enrollments/enr-1/holders", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET holders = %d, want %d", w.Code, http.StatusOK)
+	}
+	if !strings.Contains(w.Body.String(), `"holders":[]`) {
+		t.Errorf("body = %s, want an empty array rather than null", w.Body.String())
+	}
+}
+
+func TestHoldersHandler_ShouldRejectARequestWithNoIdentity(t *testing.T) {
+	t.Parallel()
+
+	r := newRetrievalsTestRouter(&fakeEnrollmentService{}, nil)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs/service/enrollments/enr-1/holders", nil))
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("GET holders without a session = %d, want %d", w.Code, http.StatusUnauthorized)
 	}
 }

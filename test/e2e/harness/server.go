@@ -394,7 +394,6 @@ func renderServerConfig(d serverConfigData) string {
 	fmt.Fprintf(&b, "  server_name: %q\n", d.ServerName)
 	fmt.Fprintf(&b, "  address: %q\n", d.Address)
 	fmt.Fprintf(&b, "  port: %d\n", d.Port)
-	fmt.Fprintf(&b, "  cookie_secure: false\n")
 
 	fmt.Fprintf(&b, "authentication:\n")
 	fmt.Fprintf(&b, "  client_id: %q\n", d.ClientID)

@@ -84,7 +84,7 @@ func TestGroupRecipients_ShouldApplyTheExclusionRules(t *testing.T) {
 	t.Parallel()
 
 	db := recipientsDB(t)
-	svc := NewNotificationService(db, nil, true, true)
+	svc := NewNotificationService(db, nil, true, true, false)
 
 	member := addUser(t, db, "alice", "alice@example.com", "", false)
 	addGroupRow(t, db, member.ID, "ops", model.GroupSourceOIDC)
@@ -113,7 +113,7 @@ func TestGroupRecipients_ShouldNotDoubleSendAcrossCaptureSources(t *testing.T) {
 	t.Parallel()
 
 	db := recipientsDB(t)
-	svc := NewNotificationService(db, nil, true, true)
+	svc := NewNotificationService(db, nil, true, true, false)
 
 	member := addUser(t, db, "alice", "alice@example.com", "", false)
 	addGroupRow(t, db, member.ID, "ops", model.GroupSourceOIDC)
@@ -131,7 +131,7 @@ func TestGroupRecipients_ShouldNotDoubleSendAcrossCaptureSources(t *testing.T) {
 func TestGroupRecipients_ShouldReturnNothingForAnEmptyName(t *testing.T) {
 	t.Parallel()
 
-	svc := NewNotificationService(recipientsDB(t), nil, true, true)
+	svc := NewNotificationService(recipientsDB(t), nil, true, true, false)
 
 	got, err := svc.GroupRecipients(t.Context(), "")
 	if err != nil {
@@ -146,7 +146,7 @@ func TestServiceAccountRecipients_ShouldMatchWholeElementsOnly(t *testing.T) {
 	t.Parallel()
 
 	db := recipientsDB(t)
-	svc := NewNotificationService(db, nil, true, true)
+	svc := NewNotificationService(db, nil, true, true, false)
 
 	addUser(t, db, "holder", "holder@example.com", `["deploy-bot","other-bot"]`, false)
 	addUser(t, db, "prefix", "prefix@example.com", `["deploy-bot-staging"]`, false)
@@ -169,7 +169,7 @@ func TestServiceAccountRecipients_ShouldSkipAnUnparseableRow(t *testing.T) {
 	t.Parallel()
 
 	db := recipientsDB(t)
-	svc := NewNotificationService(db, nil, true, true)
+	svc := NewNotificationService(db, nil, true, true, false)
 
 	addUser(t, db, "good", "good@example.com", `["deploy-bot"]`, false)
 	addUser(t, db, "corrupt", "corrupt@example.com", `oops "deploy-bot" oops`, false)
@@ -183,10 +183,111 @@ func TestServiceAccountRecipients_ShouldSkipAnUnparseableRow(t *testing.T) {
 	}
 }
 
+// With cert_options.service.allow_user_accounts on, an enrollment's account
+// may be a person's own rather than one a claim vouches for, and then the
+// person is its holder. Without this the code they created would notify
+// nobody, which is the one thing an expiry reminder exists to prevent.
+func TestServiceAccountRecipients_ShouldReachTheHolderOfTheirOwnAccount(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name                  string
+		userAccountsAsService bool
+		account               string
+		want                  []string
+	}{
+		{
+			name:    "should not reach a personal account holder while the setting is off",
+			account: "alice",
+			want:    []string{},
+		},
+		{
+			name:                  "should reach the person whose username is the account",
+			userAccountsAsService: true,
+			account:               "alice",
+			want:                  []string{"alice"},
+		},
+		{
+			name:                  "should reach the person whose other_accounts carries the account",
+			userAccountsAsService: true,
+			account:               "alice.adm",
+			want:                  []string{"alice"},
+		},
+		{
+			// Whole-element matching, the same property the claimed path
+			// has: a prefix must not pull in the wrong person.
+			name:                  "should not match a prefix of another other account",
+			userAccountsAsService: true,
+			account:               "alice.ad",
+			want:                  []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			db := recipientsDB(t)
+			svc := NewNotificationService(db, nil, true, true, tt.userAccountsAsService)
+
+			user := addUser(t, db, "alice", "alice@example.com", `[]`, false)
+			if err := db.Model(&user).Update("other_accounts", `["alice.adm"]`).Error; err != nil {
+				t.Fatalf("failed to set other accounts: %v", err)
+			}
+
+			got, err := svc.ServiceAccountRecipients(t.Context(), tt.account)
+			if err != nil {
+				t.Fatalf("ServiceAccountRecipients: %v", err)
+			}
+			if names := usernames(got); len(names) != len(tt.want) {
+				t.Errorf("ServiceAccountRecipients(%q) = %v, want %v", tt.account, names, tt.want)
+			}
+		})
+	}
+}
+
+// The two paths must not double up: a person holding an account both by
+// claim and as their own is one recipient, not two messages.
+func TestServiceAccountRecipients_ShouldNotRepeatAHolderCarriedBothWays(t *testing.T) {
+	t.Parallel()
+
+	db := recipientsDB(t)
+	svc := NewNotificationService(db, nil, true, true, true)
+
+	addUser(t, db, "deploy-bot", "bot@example.com", `["deploy-bot"]`, false)
+
+	got, err := svc.ServiceAccountRecipients(t.Context(), "deploy-bot")
+	if err != nil {
+		t.Fatalf("ServiceAccountRecipients: %v", err)
+	}
+	if names := usernames(got); len(names) != 1 {
+		t.Errorf("ServiceAccountRecipients(deploy-bot) = %v, want the holder once", names)
+	}
+}
+
+// The exclusion rules apply to the personal path too: a disabled account has
+// lost fan-out eligibility whichever way it holds the account.
+func TestServiceAccountRecipients_ShouldExcludeADisabledPersonalHolder(t *testing.T) {
+	t.Parallel()
+
+	db := recipientsDB(t)
+	svc := NewNotificationService(db, nil, true, true, true)
+
+	addUser(t, db, "alice", "alice@example.com", `[]`, true)
+
+	got, err := svc.ServiceAccountRecipients(t.Context(), "alice")
+	if err != nil {
+		t.Fatalf("ServiceAccountRecipients: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("ServiceAccountRecipients(alice) = %v, want nobody: the account is disabled", usernames(got))
+	}
+}
+
 func TestServiceAccountRecipients_ShouldReturnNothingForAnEmptyName(t *testing.T) {
 	t.Parallel()
 
-	svc := NewNotificationService(recipientsDB(t), nil, true, true)
+	svc := NewNotificationService(recipientsDB(t), nil, true, true, false)
 
 	got, err := svc.ServiceAccountRecipients(t.Context(), "")
 	if err != nil {
@@ -202,10 +303,10 @@ func TestServiceAccountRecipients_ShouldReturnNothingForAnEmptyName(t *testing.T
 func TestMailEnabled_ShouldMirrorTheConstructorFlag(t *testing.T) {
 	t.Parallel()
 
-	if !NewNotificationService(nil, nil, true, true).MailEnabled() {
+	if !NewNotificationService(nil, nil, true, true, false).MailEnabled() {
 		t.Error("MailEnabled() = false for a service built enabled")
 	}
-	if NewNotificationService(nil, nil, false, true).MailEnabled() {
+	if NewNotificationService(nil, nil, false, true, false).MailEnabled() {
 		t.Error("MailEnabled() = true for a service built disabled")
 	}
 }
@@ -227,7 +328,7 @@ func TestDiscardNotifications_ShouldBeSafeToCall(t *testing.T) {
 func TestNotify_ShouldAbsorbAPublishFailure(t *testing.T) {
 	t.Parallel()
 
-	svc := NewNotificationService(recipientsDB(t), failingPublisher{}, true, true)
+	svc := NewNotificationService(recipientsDB(t), failingPublisher{}, true, true, false)
 	svc.Notify(t.Context(), notify.KindServiceEnrollmentCreated, "user-1", &notify.ServiceEnrollmentCreated{})
 	svc.NotifyServiceAccount(t.Context(), notify.KindServiceEnrollmentRedeemed, "deploy-bot", &notify.ServiceEnrollmentRedeemed{})
 }
@@ -238,7 +339,7 @@ func TestEnabledFor_ShouldReportADatabaseFailure(t *testing.T) {
 	t.Parallel()
 
 	db := recipientsDB(t)
-	svc := NewNotificationService(db, nil, true, true)
+	svc := NewNotificationService(db, nil, true, true, false)
 
 	sqlDB, err := db.DB()
 	if err != nil {

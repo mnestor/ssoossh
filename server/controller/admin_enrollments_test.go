@@ -36,6 +36,10 @@ type stubEnrollmentProvider struct {
 	setEmailErr    error
 	lastSetEmailID string
 	lastSetEmail   string
+
+	holders      service.AccountHolders
+	holdersErr   error
+	lastHolderID string
 }
 
 func (s *stubEnrollmentProvider) Retrieve(_ context.Context, _ string, _ string) (string, error) {
@@ -58,6 +62,11 @@ func (s *stubEnrollmentProvider) ListForAdmin(_ context.Context, _ *service.Iden
 func (s *stubEnrollmentProvider) GetEnrollmentDetail(_ context.Context, id string, _ *service.Identity) (service.AdminEnrollmentDetail, error) {
 	s.lastID = id
 	return s.detail, s.detailErr
+}
+
+func (s *stubEnrollmentProvider) ListAccountHolders(_ context.Context, id string, _ *service.Identity) (service.AccountHolders, error) {
+	s.lastHolderID = id
+	return s.holders, s.holdersErr
 }
 
 func (s *stubEnrollmentProvider) SetNotificationEmail(_ context.Context, id string, _ *service.Identity, address string) error {

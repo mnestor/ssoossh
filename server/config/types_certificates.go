@@ -217,6 +217,35 @@ type CertOptionsService struct {
 	// service account receiving the certificate.
 	Require *PolicyCondition `mapstructure:"require"`
 
+	// AllowUserAccounts lets an approver name one of their own accounts —
+	// their username, or an entry from other_accounts — as the service
+	// account of a service enrollment, alongside any account the
+	// service_accounts claim gives them.
+	//
+	// It exists for the deployment with no service-account claim to map:
+	// a person who has to run something unattended under their own account
+	// (a cron job, a backup, a scheduled fetch) otherwise has no way to get
+	// a reusable code, and ends up leaving an interactive credential on the
+	// host instead, which is strictly worse.
+	//
+	// The certificate is still a service certificate in every respect: one
+	// principal, and the options this block grants rather than the ones
+	// cert_options.user grants — which with the default empty Extensions
+	// means no permit-pty, and so no shell. The approval page says so
+	// before the choice is made, and lists the extensions the certificate
+	// will carry, because "a certificate for my own account" is otherwise
+	// easy to read as "a certificate I can log in with".
+	//
+	// A deployment that puts permit-pty in Extensions has made service
+	// certificates interactive for every account, not just personal ones;
+	// that is a decision about this block, not about this setting.
+	//
+	// Off by default. Turning it on widens what an approver may mint for
+	// themselves from "the accounts a claim vouches for" to "any account
+	// they hold", which is a real widening even though every account in it
+	// is already theirs.
+	AllowUserAccounts bool `mapstructure:"allow_user_accounts" default:"false"`
+
 	// ValidDuration is the ceiling on how long each certificate produced
 	// from an enrollment is valid, bounding every redemption of the code
 	// rather than the code itself.

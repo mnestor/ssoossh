@@ -297,7 +297,9 @@ Default:
 .BR empty .
 .TP
 .BI http.cookie_secure: " bool"
-Marks the session cookie Secure, so browsers only send it over HTTPS. Unset derives it from whether the deployment is HTTPS at all (the scheme of public_url, or a local TLS keypair), which keeps plain\-HTTP local development working while defaulting to on everywhere else. Set it explicitly only to override that inference.
+Has been retired: the Secure attribute is now derived from public_url alone (see IsTLS). It said nothing public_url had not already said \(em a deployment states the scheme browsers reach it on once, and the cookie follows it \(em while giving an operator a second place to disagree with the first.
+.IP
+Setting it is a startup error rather than a silent no\-op, on the same reasoning as cert_options.*.require_group: `cookie_secure: false` under an https public_url was a deliberate weakening, and a weakening that quietly stops applying is worse than one that fails loudly at boot.
 Default:
 .BR empty .
 .TP
@@ -1061,6 +1063,19 @@ Default:
 Passes when at least one listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
 Default:
 .BR empty .
+.TP
+.BI cert_options.service.allow_user_accounts: " bool"
+Lets an approver name one of their own accounts \(em their username, or an entry from other_accounts \(em as the service account of a service enrollment, alongside any account the service_accounts claim gives them.
+.IP
+It exists for the deployment with no service\-account claim to map: a person who has to run something unattended under their own account (a cron job, a backup, a scheduled fetch) otherwise has no way to get a reusable code, and ends up leaving an interactive credential on the host instead, which is strictly worse.
+.IP
+The certificate is still a service certificate in every respect: one principal, and the options this block grants rather than the ones cert_options.user grants \(em which with the default empty Extensions means no permit\-pty, and so no shell. The approval page says so before the choice is made, and lists the extensions the certificate will carry, because "a certificate for my own account" is otherwise easy to read as "a certificate I can log in with".
+.IP
+A deployment that puts permit\-pty in Extensions has made service certificates interactive for every account, not just personal ones; that is a decision about this block, not about this setting.
+.IP
+Off by default. Turning it on widens what an approver may mint for themselves from "the accounts a claim vouches for" to "any account they hold", which is a real widening even though every account in it is already theirs.
+Default:
+.BR false .
 .TP
 .BI cert_options.service.valid_duration: " duration"
 The ceiling on how long each certificate produced from an enrollment is valid, bounding every redemption of the code rather than the code itself.

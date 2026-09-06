@@ -96,7 +96,8 @@ func (a *app) initServices() (*services, error) {
 	// do — rendering and SMTP happen on the broker's own goroutines, so
 	// nothing here puts a mail relay on the request path. See
 	// service.NotificationService.Notify and initNotifications.
-	svc.notification = service.NewNotificationService(a.db, a.pubSub.Publisher, a.config.Mail.Enabled, a.config.LDAP.Enabled)
+	svc.notification = service.NewNotificationService(a.db, a.pubSub.Publisher, a.config.Mail.Enabled, a.config.LDAP.Enabled,
+		a.config.CertOptions.Service.AllowUserAccounts)
 	svc.certRequest.SetNotifier(svc.notification)
 	svc.enrollment.SetNotifier(svc.notification)
 

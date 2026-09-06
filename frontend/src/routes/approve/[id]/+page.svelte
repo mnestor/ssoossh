@@ -151,7 +151,8 @@
 		{busy}
 		{actionError}
 		{outcome}
-		serviceAccounts={session.user?.service_accounts ?? []}
+		serviceAccounts={session.user?.approvable_service_accounts ?? []}
+		userOwnServiceAccounts={session.user?.user_own_service_accounts ?? []}
 		bind:selectedServiceAccount
 		bind:notificationEmail
 		{userPrincipals}

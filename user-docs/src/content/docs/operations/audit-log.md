@@ -97,7 +97,8 @@ client must render an unknown action rather than assume the list is closed.
 | `enrollment.reassigned` | **No longer emitted.** Group ownership removed enrollment transfer; the action stays defined so events recorded before that still read back with a name |
 | `user.disabled`, `user.enabled` | |
 | `user.auto_disabled` | A system action, so it carries no actor. Raised by the [LDAP sync](/ssoossh/operations/ldap/) |
-| `admin.user_viewed`, `admin.enrollment_viewed`, `admin.audit_viewed` | |
+| `admin.enrollment_viewed` | One event per enrollment code opened. Not shipped-log only, unlike the two below: a code is a bearer credential, and it is one event per credential rather than one per screen |
+| `admin.user_viewed`, `admin.audit_viewed` | **Shipped log only.** An auditor working through the directory generates one per user opened and one per page of the feed, and within a session they outnumber the decisions this log exists to record. They keep their archive line -- "who looked at this account" is a real question -- and lose the table copy the web UI renders. `admin.audit_viewed` also wrote a new row on every read of the feed, which shifted the offset window under the UI's "load more" |
 | `ldap.sync_triggered` | An admin running the [directory sync](/ssoossh/operations/ldap/) by hand, with the counts the pass produced. A dry run records `dry_run: true` and no change to go with it |
 | `ldap.probed` | One directory probe, with the filter it sent and how many entries matched. The probe writes nothing, but it makes the server open an outbound connection and read an entry in full, which is worth a record |
 | `admin.config_viewed` | **No longer emitted.** The effective-config screen is read-only and is reloaded constantly while an operator works, so the event arrived several times a minute and buried the decisions this log exists to record. The action stays defined so older events still read back with a name |
@@ -110,6 +111,13 @@ pagination writes a row per page of the user directory and says nothing. If a
 list query ever needs auditing, record it as one event carrying the search
 parameters. `admin.audit_viewed` is one event per visit to the audit feed, not
 one per event displayed, which settles the recursion question.
+
+The web UI's audit view does not render `admin.user_viewed` or
+`admin.audit_viewed` at all. The server no longer writes them to the table
+that view reads, and the view drops any rows recorded before that change,
+which stay until the retention sweep clears them. Both are in the shipped
+archive as usual, and that is where a "who looked at this account" question
+is answered.
 
 ## Required reasons
 

@@ -80,6 +80,12 @@ func fullFixtures() map[string]any {
 			Groups:          []string{"engineering", "sre"},
 			OtherAccounts:   []string{"alice.adm"},
 			ServiceAccounts: []string{"svc-deploy"},
+			// Wider than ServiceAccounts because
+			// cert_options.service.allow_user_accounts is on in this
+			// fixture: the approval picker also offers the accounts that
+			// are the caller's own, and names which those are.
+			ApprovableServiceAccounts: []string{"svc-deploy", "alice", "alice.adm"},
+			UserOwnServiceAccounts:    []string{"alice", "alice.adm"},
 			Extra: map[string]any{
 				"employee_id": "E-12345",
 				"department":  "Engineering",

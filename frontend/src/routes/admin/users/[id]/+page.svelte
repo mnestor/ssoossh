@@ -76,6 +76,21 @@
 		);
 	});
 
+	/** oidcConfigured reports whether authentication.fields names a claim
+	 * that populates one of these destinations.
+	 *
+	 * It is what separates "the ID token carried nothing for this field"
+	 * from "nothing was ever asked of the ID token for this field", and it
+	 * decides how a directory value is described: a field with no
+	 * configured claim has no OIDC side to override, so calling the
+	 * directory value an override there names a conflict that does not
+	 * exist. Unknown fields read as configured, which is the conservative
+	 * answer — it keeps the fuller explanation rather than silently
+	 * dropping one. */
+	function oidcConfigured(field: string): boolean {
+		return user?.oidc_fields?.[field] !== false;
+	}
+
 	/** valueList normalizes a stored extra field, which keeps the shape its
 	 * claim arrived in, to the list the override rows are rendered as. */
 	function valueList(value: string | string[] | undefined): string[] {
@@ -209,8 +224,8 @@
 			<h2 class="mb-1 font-semibold text-ink">OIDC record</h2>
 			<p class="mb-4 text-[13px] text-ink-muted">
 				What the identity provider sent at this user's last login. Where a configured
-				<code>ldap.fields</code> entry replaces one of these, it is marked below and the directory value
-				is what the server acts on.
+				<code>ldap.fields</code> entry replaces or supplies one of these, it is marked below and the directory
+				value is what the server acts on.
 			</p>
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div>
@@ -230,7 +245,9 @@
 					<p>{user.name || 'Not captured'}</p>
 					{#if overrides.name}
 						<p class="mt-0.5 text-xs text-accent" data-testid="user-name-overridden">
-							Overridden by LDAP: {overrides.name.effective.join(', ') || 'none'}
+							{oidcConfigured('name') ? 'Overridden by LDAP' : 'Supplied by LDAP'}: {overrides.name.effective.join(
+								', '
+							) || 'none'}
 						</p>
 					{/if}
 				</div>
@@ -280,19 +297,41 @@
 								>
 							{/each}
 						</div>
-					{:else}
+					{:else if oidcConfigured(block.field)}
 						<p class="text-sm text-ink-muted">None in the ID token.</p>
+					{:else}
+						<!-- Both account fields default to empty in
+						     authentication.fields, so the common deployment
+						     populates neither from OIDC. "None in the ID
+						     token" reads as a claim that arrived empty,
+						     which sends someone to check a claim mapping
+						     that was never configured. -->
+						<p class="text-sm text-ink-muted" data-testid="user-oidc-unmapped-{block.field}">
+							Not read from OIDC: no <code>authentication.fields.{block.field}</code> claim is configured.
+						</p>
 					{/if}
 					{#if overrides[block.field]}
 						<div
 							class="mt-2 rounded border-l-2 border-accent bg-surface p-2 text-sm"
 							data-testid="user-override-{block.field}"
 						>
-							<p class="text-xs font-semibold text-accent">Overridden by LDAP</p>
-							<p class="text-ink-muted">
-								A configured <code>ldap.fields.{block.field}</code> replaces the OIDC value outright rather
-								than merging with it. The server acts on:
-							</p>
+							<!-- With no OIDC claim configured there is nothing
+							     to override, and describing the directory as
+							     overriding one names a conflict that does not
+							     exist. The directory is simply the source. -->
+							{#if oidcConfigured(block.field)}
+								<p class="text-xs font-semibold text-accent">Overridden by LDAP</p>
+								<p class="text-ink-muted">
+									A configured <code>ldap.fields.{block.field}</code> replaces the OIDC value outright
+									rather than merging with it. The server acts on:
+								</p>
+							{:else}
+								<p class="text-xs font-semibold text-accent">Supplied by LDAP</p>
+								<p class="text-ink-muted">
+									<code>ldap.fields.{block.field}</code> is the only source for this field. The server
+									acts on:
+								</p>
+							{/if}
 							<div class="mt-1 flex flex-wrap gap-2">
 								{#each overrides[block.field].effective as acct (acct)}
 									<span class="rounded bg-surface-muted px-2 py-1 text-sm">{acct}</span>
@@ -327,7 +366,9 @@
 							</div>
 							{#if overrides[key]}
 								<p class="pl-2 text-xs text-accent" data-testid="user-override-{key}">
-									Overridden by LDAP: {overrides[key].effective.join(', ') || 'none'}
+									{oidcConfigured(key) ? 'Overridden by LDAP' : 'Supplied by LDAP'}: {overrides[
+										key
+									].effective.join(', ') || 'none'}
 								</p>
 							{/if}
 						{/each}
@@ -506,8 +547,15 @@
 			</div>
 		{/if}
 
-		<!-- Notification choices. A kind with no row is on its registered
-		     default, so an empty list means "all default", not "all off". -->
+		<!-- Notification choices: every kind the server can send, with what
+		     applies to this person and whether they chose it.
+		     
+		     Listing only the stored rows meant the common case — someone who
+		     has never opened the preferences page — rendered as an empty
+		     section, which reads as "we send them nothing" and means the
+		     opposite. A raw kind string beside "on" left the reader to guess
+		     what that kind was, so the registry's own wording comes down the
+		     wire and is what is shown. -->
 		{#if user.notification_preferences.length > 0}
 			<div
 				class="rounded-lg border border-border-subtle bg-surface-muted p-4"
@@ -515,18 +563,49 @@
 			>
 				<h2 class="mb-1 font-semibold text-ink">Notification choices</h2>
 				<p class="mb-4 text-[13px] text-ink-muted">
-					Only the choices this user has changed. Anything not listed is on its default.
+					Every notification this server can send, and whether it reaches this person. A row marked
+					<em>default</em> is one they have never changed.
 				</p>
-				<div class="space-y-2">
+				<div class="space-y-3">
 					{#each user.notification_preferences as pref (pref.kind)}
-						<div class="flex items-center gap-2 text-sm">
-							<span class="rounded bg-surface px-2 py-1 font-mono text-ink-muted">{pref.kind}</span>
-							<span class:text-danger={!pref.enabled} class:text-granted={pref.enabled}>
-								{pref.enabled ? 'on' : 'off'}
-							</span>
-							<span class="text-xs text-ink-muted">
-								changed {new Date(pref.updated_at).toLocaleString()}
-							</span>
+						<div
+							class="flex items-start justify-between gap-3"
+							data-testid="user-notification-{pref.kind}"
+						>
+							<div class="min-w-0">
+								<p class="text-sm font-medium text-ink">
+									{pref.title || pref.kind}
+								</p>
+								{#if pref.description}
+									<p class="text-[13px] text-ink-muted">{pref.description}</p>
+								{/if}
+								<p class="mt-0.5 font-mono text-[11px] text-ink-muted">{pref.kind}</p>
+								{#if !pref.registered}
+									<!-- A stored row for a kind this build no
+									     longer has. Shown rather than dropped:
+									     the choice is real, still on disk, and
+									     comes back if the kind does. -->
+									<p class="text-[11px] text-ink-muted" data-testid="user-notification-retired">
+										This server no longer sends this notification. The stored choice is kept.
+									</p>
+								{/if}
+							</div>
+							<div class="flex flex-shrink-0 flex-col items-end gap-0.5">
+								<span
+									class="text-sm font-semibold"
+									class:text-danger={!pref.enabled}
+									class:text-granted={pref.enabled}
+								>
+									{pref.enabled ? 'on' : 'off'}
+								</span>
+								{#if pref.explicit && pref.updated_at}
+									<span class="text-[11px] text-ink-muted">
+										their choice, {new Date(pref.updated_at).toLocaleString()}
+									</span>
+								{:else}
+									<span class="text-[11px] text-ink-muted">default</span>
+								{/if}
+							</div>
 						</div>
 					{/each}
 				</div>

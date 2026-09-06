@@ -34,8 +34,21 @@
 		actionError?: string | null;
 		/** Set once a decision has been recorded, to replace the buttons. */
 		outcome?: 'approved' | 'denied' | null;
-		/** Service accounts available to this approver (for service-type requests). */
+		/**
+		 * Service accounts this approver may name (for service-type
+		 * requests). The server's own list — see
+		 * CurrentUserResponse.ApprovableServiceAccounts — so the picker
+		 * cannot offer an account the approval would then refuse.
+		 */
 		serviceAccounts?: string[];
+		/**
+		 * The subset of serviceAccounts that is the approver's own account
+		 * rather than a claimed service account, possible only with
+		 * cert_options.service.allow_user_accounts on. Listed apart because
+		 * a certificate for your own account is still non-interactive, and
+		 * that is the one thing about it a reader is likely to get wrong.
+		 */
+		userOwnServiceAccounts?: string[];
 		/** Selected service account for approval (for service-type requests). */
 		selectedServiceAccount?: string | null;
 		/**
@@ -58,6 +71,7 @@
 		actionError = null,
 		outcome = null,
 		serviceAccounts = [],
+		userOwnServiceAccounts = [],
 		selectedServiceAccount = $bindable(),
 		notificationEmail = $bindable(''),
 		userPrincipals = [],
@@ -111,6 +125,22 @@
 	// which machine.
 	const isLocalAuth = $derived(detail.type === 'pam' || isConsoleRequest);
 	const hasServiceAccounts = $derived(serviceAccounts.length > 0);
+	// Split for the picker: claimed accounts read as "an account someone
+	// vouched for you on", the approver's own read as "an account that is
+	// already yours", and the two want different labels.
+	const claimedServiceAccounts = $derived(
+		serviceAccounts.filter((account) => !userOwnServiceAccounts.includes(account))
+	);
+	const offeredOwnAccounts = $derived(
+		serviceAccounts.filter((account) => userOwnServiceAccounts.includes(account))
+	);
+	// Whether what is currently selected is one of the approver's own
+	// accounts. The warning is shown on selection rather than always,
+	// because it is a fact about the choice being made rather than about
+	// the page.
+	const ownAccountSelected = $derived(
+		!!selectedServiceAccount && userOwnServiceAccounts.includes(selectedServiceAccount)
+	);
 	const hasPrincipals = $derived(userPrincipals.length > 0);
 	// The approver picks which of their accounts the certificate carries for
 	// every type but service. For PAM and console the host then matches
@@ -550,14 +580,58 @@
 									<select
 										bind:value={selectedServiceAccount}
 										aria-label="Service account to approve for"
+										data-testid="service-account-select"
 										class="rounded border border-border-subtle bg-surface px-3 py-2 text-[13px] text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 									>
 										<option value="">Select an account...</option>
-										{#each serviceAccounts as account (account)}
-											<option value={account}>{account}</option>
-										{/each}
+										<!-- Grouped only when there is something to
+										     separate: with no own accounts offered,
+										     a single "Service accounts" heading over
+										     the whole list is noise. -->
+										{#if offeredOwnAccounts.length === 0}
+											{#each serviceAccounts as account (account)}
+												<option value={account}>{account}</option>
+											{/each}
+										{:else}
+											{#if claimedServiceAccounts.length > 0}
+												<optgroup label="Service accounts">
+													{#each claimedServiceAccounts as account (account)}
+														<option value={account}>{account}</option>
+													{/each}
+												</optgroup>
+											{/if}
+											<optgroup label="Your own accounts (non-interactive)">
+												{#each offeredOwnAccounts as account (account)}
+													<option value={account}>{account}</option>
+												{/each}
+											</optgroup>
+										{/if}
 									</select>
 								</label>
+
+								<!-- Said before the button is pressed, because
+								     "a certificate for my own account" is easy to
+								     read as "a certificate I can log in with". It
+								     is not: what is approved is a service
+								     certificate, shaped by cert_options.service,
+								     and the extensions it will carry are listed
+								     above — no permit-pty in the default set, so
+								     no shell. -->
+								{#if ownAccountSelected}
+									<Alert variant="warning" testid="own-account-notice">
+										<strong class="font-mono">{selectedServiceAccount}</strong> is your own account,
+										not a service account. This still approves a
+										<strong>service certificate</strong>: a reusable enrollment code for an
+										unattended job such as a cron task. It carries only the service options listed
+										above — not the interactive options a user certificate gets — so it is not a way
+										to sign in as yourself.
+									</Alert>
+								{:else if offeredOwnAccounts.length > 0}
+									<p class="text-[11px] text-ink-muted" data-testid="own-account-hint">
+										Accounts under "Your own accounts" still approve a service certificate for an
+										unattended job, with the service options above rather than the interactive ones.
+									</p>
+								{/if}
 								<!-- Offered here because this is the moment the approver
 								     is already deciding what the enrollment is for. Left
 								     empty, notifications reach everyone holding the

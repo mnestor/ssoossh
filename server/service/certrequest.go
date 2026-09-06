@@ -1055,10 +1055,10 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 		return fmt.Errorf("failed to compute key ID: %w", err)
 	}
 
-	// The chosen service account (validated against the approver's own
-	// identity.ServiceAccounts in Approve) is the certificate principal —
-	// the whole point of the linkage check is that the certificate names
-	// the account, not the human who approved it.
+	// The chosen service account (validated by checkServiceAccountLinkage
+	// against the accounts the approver holds) is the certificate
+	// principal — the whole point of the linkage check is that the
+	// certificate names the account, not whoever happened to approve it.
 	principals := []string{serviceAccount}
 	for _, p := range principals {
 		if err := sshcrypto.ValidatePrincipal(p); err != nil {
@@ -1253,14 +1253,71 @@ func describeAuthorizedKey(authorizedKey string) (fingerprint, keyType string) {
 // service-type approval: the approver must name the service account, and
 // only one their identity is actually associated with — group membership
 // alone doesn't let someone mint a certificate for an arbitrary account.
-func checkServiceAccountLinkage(identity *Identity, serviceAccount string) error {
+//
+// allowUserAccounts is cert_options.service.allow_user_accounts. With it on,
+// the approver's own accounts count as well, so someone with no
+// service_accounts claim can still put an unattended job on a reusable code
+// under an account that is already theirs. It never widens the set beyond
+// accounts the identity holds — the check is still linkage, not a free
+// choice of principal.
+func checkServiceAccountLinkage(identity *Identity, serviceAccount string, allowUserAccounts bool) error {
 	if serviceAccount == "" {
 		return fmt.Errorf("approving a service certificate requires choosing a service account")
 	}
-	if !slices.Contains(identity.ServiceAccounts, serviceAccount) {
-		return fmt.Errorf("identity is not associated with service account %q", serviceAccount)
+	if slices.Contains(identity.ServiceAccounts, serviceAccount) {
+		return nil
 	}
-	return nil
+	if allowUserAccounts && slices.Contains(heldAccounts(identity), serviceAccount) {
+		return nil
+	}
+	return fmt.Errorf("identity is not associated with service account %q", serviceAccount)
+}
+
+// ApprovableServiceAccounts is every account identity may name as the
+// service account of a service enrollment, in the order the approval page
+// offers them: the service_accounts claim first, then the approver's own
+// accounts when cert_options.service.allow_user_accounts is on.
+//
+// One definition, shared by the check above and by the list the web UI
+// renders, so the picker cannot offer an account the approval would then
+// refuse.
+func ApprovableServiceAccounts(identity *Identity, allowUserAccounts bool) []string {
+	accounts := make([]string, 0, len(identity.ServiceAccounts)+1+len(identity.OtherAccounts))
+	for _, account := range identity.ServiceAccounts {
+		if account != "" && !slices.Contains(accounts, account) {
+			accounts = append(accounts, account)
+		}
+	}
+	if !allowUserAccounts {
+		return accounts
+	}
+	for _, account := range heldAccounts(identity) {
+		if account != "" && !slices.Contains(accounts, account) {
+			accounts = append(accounts, account)
+		}
+	}
+	return accounts
+}
+
+// UserOwnServiceAccounts is the subset of ApprovableServiceAccounts that
+// comes from the approver's own accounts rather than from the
+// service_accounts claim. The approval page labels these separately: a
+// certificate for your own account is still non-interactive, and that is
+// the one thing about it a reader is likely to get wrong.
+func UserOwnServiceAccounts(identity *Identity, allowUserAccounts bool) []string {
+	if !allowUserAccounts {
+		return nil
+	}
+	own := make([]string, 0, 1+len(identity.OtherAccounts))
+	for _, account := range heldAccounts(identity) {
+		if account == "" || slices.Contains(identity.ServiceAccounts, account) {
+			continue
+		}
+		if !slices.Contains(own, account) {
+			own = append(own, account)
+		}
+	}
+	return own
 }
 
 // heldAccounts returns every account name identity holds: their username

@@ -232,7 +232,7 @@ func newCertTypePolicies(opts config.CertificateOptions, kt *keyIDTemplates, dec
 			flow:               flowEnrollment,
 			clientTimeout:      opts.ClientTimeout,
 			linkage: func(identity *Identity, selection ApprovalSelection) error {
-				return checkServiceAccountLinkage(identity, selection.ServiceAccount)
+				return checkServiceAccountLinkage(identity, selection.ServiceAccount, opts.Service.AllowUserAccounts)
 			},
 		},
 		model.CertificateTypePAM: {

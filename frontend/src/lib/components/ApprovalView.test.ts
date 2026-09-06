@@ -425,6 +425,78 @@ describe('ApprovalView', () => {
 			mount({ serviceAccounts: [] });
 			expect(screen.getByRole('button', { name: /Approve/ })).toBeEnabled();
 		});
+
+		// cert_options.service.allow_user_accounts lets someone put an
+		// unattended job on a reusable code under an account that is already
+		// theirs. The certificate is still a service certificate, and "a
+		// certificate for my own account" is the exact phrase that reads as
+		// "a certificate I can log in with" — so the page has to say
+		// otherwise before the choice is made.
+		it('should keep the picker ungrouped when no own accounts are offered', () => {
+			mount({ detail: serviceDetail, serviceAccounts: ['svc-a'], userOwnServiceAccounts: [] });
+			expect(screen.queryByRole('group', { name: /Your own accounts/ })).not.toBeInTheDocument();
+		});
+
+		it('should separate the approver’s own accounts from the claimed ones', () => {
+			mount({
+				detail: serviceDetail,
+				serviceAccounts: ['svc-a', 'alice'],
+				userOwnServiceAccounts: ['alice']
+			});
+			expect(screen.getByRole('group', { name: 'Service accounts' })).toBeInTheDocument();
+			expect(
+				screen.getByRole('group', { name: 'Your own accounts (non-interactive)' })
+			).toBeInTheDocument();
+		});
+
+		it('should hint at what an own account produces before one is chosen', () => {
+			mount({
+				detail: serviceDetail,
+				serviceAccounts: ['svc-a', 'alice'],
+				userOwnServiceAccounts: ['alice']
+			});
+			expect(screen.getByTestId('own-account-hint')).toBeInTheDocument();
+			expect(screen.queryByTestId('own-account-notice')).not.toBeInTheDocument();
+		});
+
+		it('should say the certificate is not a login once an own account is chosen', async () => {
+			mount({
+				detail: serviceDetail,
+				serviceAccounts: ['svc-a', 'alice'],
+				userOwnServiceAccounts: ['alice']
+			});
+
+			await userEvent.selectOptions(screen.getByRole('combobox'), 'alice');
+
+			const notice = await screen.findByTestId('own-account-notice');
+			expect(notice).toHaveTextContent(/not a way to sign in as yourself/i);
+			expect(notice).toHaveTextContent(/service certificate/i);
+		});
+
+		it('should not warn when a claimed service account is chosen', async () => {
+			mount({
+				detail: serviceDetail,
+				serviceAccounts: ['svc-a', 'alice'],
+				userOwnServiceAccounts: ['alice']
+			});
+
+			await userEvent.selectOptions(screen.getByRole('combobox'), 'svc-a');
+
+			expect(screen.queryByTestId('own-account-notice')).not.toBeInTheDocument();
+		});
+
+		it('should still allow approving an own account', async () => {
+			const { onapprove } = mount({
+				detail: serviceDetail,
+				serviceAccounts: ['alice'],
+				userOwnServiceAccounts: ['alice']
+			});
+
+			await userEvent.selectOptions(screen.getByRole('combobox'), 'alice');
+			await userEvent.click(screen.getByRole('button', { name: /Approve/ }));
+
+			expect(onapprove).toHaveBeenCalledOnce();
+		});
 	});
 
 	describe('decision record display', () => {

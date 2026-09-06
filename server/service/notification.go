@@ -74,12 +74,30 @@ type NotificationService struct {
 	// route by membership that may be months out of date and that no
 	// operator can correct from inside the product. See GroupRecipients.
 	ldapEnabled bool
+
+	// userAccountsAsService mirrors
+	// config.CertOptions.Service.AllowUserAccounts, and widens what counts
+	// as holding a service account for fan-out. With it on, an approver may
+	// put an unattended job on a code under an account that is theirs
+	// rather than one a claim vouches for — and the holder of such an
+	// account is the person, not a claim. Without this the enrollment they
+	// created would notify nobody, which is the one thing an expiry
+	// reminder exists to prevent. See ServiceAccountRecipients.
+	userAccountsAsService bool
 }
 
 // NewNotificationService constructs the service. enabled comes from
-// config.MailConfig.Enabled and ldapEnabled from config.LDAPConfig.Enabled.
-func NewNotificationService(db *gorm.DB, publisher message.Publisher, enabled, ldapEnabled bool) *NotificationService {
-	return &NotificationService{db: db, publisher: publisher, enabled: enabled, ldapEnabled: ldapEnabled}
+// config.MailConfig.Enabled, ldapEnabled from config.LDAPConfig.Enabled,
+// and userAccountsAsService from
+// config.CertOptions.Service.AllowUserAccounts.
+func NewNotificationService(db *gorm.DB, publisher message.Publisher, enabled, ldapEnabled, userAccountsAsService bool) *NotificationService {
+	return &NotificationService{
+		db:                    db,
+		publisher:             publisher,
+		enabled:               enabled,
+		ldapEnabled:           ldapEnabled,
+		userAccountsAsService: userAccountsAsService,
+	}
 }
 
 // Notify queues one notification and returns. It never blocks on the mail
@@ -697,12 +715,72 @@ func (s *NotificationService) ServiceAccountRecipients(ctx context.Context, acco
 	}
 
 	holders := make([]model.User, 0, len(candidates))
+	seen := make(map[string]bool, len(candidates))
 	for _, user := range candidates {
 		var accounts []string
 		if err := json.Unmarshal([]byte(user.ServiceAccounts), &accounts); err != nil {
 			// One unreadable row must not silence the notification for
 			// everyone else holding the account.
 			slog.WarnContext(ctx, "skipping a user whose service accounts do not parse",
+				"user_id", user.ID, "error", err)
+			continue
+		}
+		if slices.Contains(accounts, accountName) {
+			holders = append(holders, user)
+			seen[user.ID] = true
+		}
+	}
+
+	if !s.userAccountsAsService {
+		return holders, nil
+	}
+
+	// With cert_options.service.allow_user_accounts on, the account may be
+	// a person's own rather than a claimed one, and then the person is its
+	// holder. A separate query rather than a widened LIKE: username is an
+	// indexed column with an exact match, and other_accounts needs the same
+	// quoted-element treatment as above.
+	own, err := s.ownAccountHolders(ctx, accountName, string(quoted))
+	if err != nil {
+		return nil, err
+	}
+	for _, user := range own {
+		if !seen[user.ID] {
+			holders = append(holders, user)
+			seen[user.ID] = true
+		}
+	}
+	return holders, nil
+}
+
+// ownAccountHolders finds the users for whom accountName is one of their own
+// accounts: their username, or an entry in their other_accounts. quoted is
+// accountName as a JSON string, for the same whole-element LIKE prefilter
+// ServiceAccountRecipients uses on service_accounts.
+//
+// Same fan-out rules as everywhere else here: disabled accounts are
+// excluded and an address is required, since a recipient without one is not
+// a recipient.
+func (s *NotificationService) ownAccountHolders(ctx context.Context, accountName, quoted string) ([]model.User, error) {
+	var candidates []model.User
+	err := s.db.WithContext(ctx).
+		Where("username = ? OR other_accounts LIKE ?", accountName, "%"+quoted+"%").
+		Where("disabled_at IS NULL").
+		Where("email <> ''").
+		Find(&candidates).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve the personal holders of account %q: %w", accountName, err)
+	}
+
+	holders := make([]model.User, 0, len(candidates))
+	for _, user := range candidates {
+		if user.Username == accountName {
+			holders = append(holders, user)
+			continue
+		}
+		var accounts []string
+		if err := json.Unmarshal([]byte(user.OtherAccounts), &accounts); err != nil {
+			slog.WarnContext(ctx, "skipping a user whose other accounts do not parse",
 				"user_id", user.ID, "error", err)
 			continue
 		}

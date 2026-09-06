@@ -18,6 +18,7 @@ import (
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/server/notify"
 	"github.com/mnestor/ssoossh/server/service"
 	"github.com/mnestor/ssoossh/server/webtypes"
 )
@@ -965,10 +966,11 @@ func TestAdminDisableUserHandler_ConsequencesIncludeEnrollmentCount(t *testing.T
 // directory never listed anyone. These cases are the ones that would have
 // caught it.
 func TestListUsersHandler_AgainstARealDatabase(t *testing.T) {
+	disabled := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
 	seed := []model.User{
-		{ID: "u-alice", Subject: "sub-alice", Username: "alice", Email: "alice@corp.example"},
-		{ID: "u-bob", Subject: "sub-bob", Username: "bob", Email: "bob@corp.example"},
-		{ID: "u-carol", Subject: "sub-carol", Username: "carol", Email: "carol@other.example"},
+		{ID: "u-alice", Subject: "sub-alice", Username: "alice", Email: "alice@corp.example", DisplayName: "Alice Ashworth"},
+		{ID: "u-bob", Subject: "sub-bob", Username: "bob", Email: "bob@corp.example", DisplayName: "Robert Bell"},
+		{ID: "u-carol", Subject: "sub-carol", Username: "carol", Email: "carol@other.example", DisplayName: "Carol Chen", DisabledAt: &disabled},
 	}
 
 	tests := []struct {
@@ -1000,6 +1002,41 @@ func TestListUsersHandler_AgainstARealDatabase(t *testing.T) {
 			query:     "?q=nobody-by-that-name",
 			wantCount: 0,
 			wantTotal: 0,
+		},
+		{
+			// The name is the list's leading column, so a directory whose
+			// first column cannot be searched sends anyone looking for a
+			// person to scroll instead.
+			name:      "should match the name a person is known by",
+			query:     "?q=ashworth",
+			wantCount: 1,
+			wantTotal: 1,
+		},
+		{
+			name:      "should match a name that differs from the username",
+			query:     "?q=robert",
+			wantCount: 1,
+			wantTotal: 1,
+		},
+		{
+			name:      "should narrow to active accounts",
+			query:     "?status=active",
+			wantCount: 2,
+			wantTotal: 2,
+		},
+		{
+			name:      "should narrow to disabled accounts",
+			query:     "?status=disabled",
+			wantCount: 1,
+			wantTotal: 1,
+		},
+		{
+			// The filter runs before the count, so the pager describes the
+			// filtered set rather than the whole table.
+			name:      "should combine a search with a status filter",
+			query:     "?q=c&status=disabled",
+			wantCount: 1,
+			wantTotal: 1,
 		},
 	}
 
@@ -2181,11 +2218,21 @@ func TestAdminGetUserHandler_ShouldReturnEverythingStoredForTheUser(t *testing.T
 	}).Error; err != nil {
 		t.Fatalf("seed user_ldap: %v", err)
 	}
+	// One explicit choice against a registered kind, and one row left
+	// behind by a kind that no longer exists. Both have to survive the
+	// round trip: the first is the user's decision, the second is still on
+	// disk and comes back if that kind ever does.
 	if err := db.Create(&model.NotificationPreference{
-		ID: "np-1", UserID: user.ID, Kind: "enrollment_expiring", Enabled: false,
+		ID: "np-1", UserID: user.ID, Kind: string(notify.KindServiceEnrollmentExpiring), Enabled: false,
 		CreatedAt: now, UpdatedAt: now,
 	}).Error; err != nil {
 		t.Fatalf("seed notification preference: %v", err)
+	}
+	if err := db.Create(&model.NotificationPreference{
+		ID: "np-2", UserID: user.ID, Kind: "enrollment_expiring", Enabled: true,
+		CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed retired notification preference: %v", err)
 	}
 
 	cfg := &config.Config{}
@@ -2258,11 +2305,45 @@ func TestAdminGetUserHandler_ShouldReturnEverythingStoredForTheUser(t *testing.T
 		t.Errorf("other_accounts = %v, want the OIDC capture rather than the merged value", got.OtherAccounts)
 	}
 
-	if len(got.NotificationPreferences) != 1 || got.NotificationPreferences[0].Kind != "enrollment_expiring" {
-		t.Errorf("notification preferences = %+v, want the one explicit choice", got.NotificationPreferences)
+	// Every registered kind is reported, not only the stored ones: a user
+	// who has never opened the preferences page produced an empty list
+	// before, which read as "we send them nothing" and meant the opposite.
+	// The retired row rides along at the end.
+	registered := notify.Definitions()
+	if len(got.NotificationPreferences) != len(registered)+1 {
+		t.Fatalf("notification preferences = %d rows, want every registered kind plus the retired stored one", len(got.NotificationPreferences))
 	}
-	if got.NotificationPreferences[0].Enabled {
+
+	byKind := map[string]webtypes.AdminUserNotificationPreference{}
+	for _, pref := range got.NotificationPreferences {
+		byKind[pref.Kind] = pref
+	}
+
+	chosen := byKind[string(notify.KindServiceEnrollmentExpiring)]
+	if chosen.Enabled {
 		t.Error("the stored preference is off and was reported as on")
+	}
+	if !chosen.Explicit || chosen.UpdatedAt == nil {
+		t.Errorf("stored choice = %+v, want it marked explicit with the time it changed", chosen)
+	}
+	if !chosen.Default {
+		t.Error("service_enrollment_expiring defaults on, so the row should say the user turned it off")
+	}
+	if chosen.Title == "" || chosen.Description == "" {
+		t.Errorf("stored choice = %+v, want the registry's own wording so the page need not invent it", chosen)
+	}
+
+	untouched := byKind[string(notify.KindUserCertificateIssued)]
+	if !untouched.Registered || untouched.Explicit || untouched.UpdatedAt != nil {
+		t.Errorf("untouched kind = %+v, want it reported as the registered default with no stored choice", untouched)
+	}
+	if untouched.Enabled != untouched.Default {
+		t.Errorf("untouched kind = %+v, want enabled to follow the registered default", untouched)
+	}
+
+	retired := byKind["enrollment_expiring"]
+	if retired.Registered || !retired.Explicit || !retired.Enabled {
+		t.Errorf("retired kind = %+v, want the stored row reported and marked unregistered", retired)
 	}
 }
 
@@ -2423,5 +2504,85 @@ func TestAdminGetUserHandler_ShouldWithholdTheDirectoryRecordWhenLDAPIsOff(t *te
 	}
 	if remaining != 1 {
 		t.Errorf("ldap group rows on disk = %d, want 1: they are withheld, never deleted", remaining)
+	}
+}
+
+// A status the server does not recognize is an error rather than a silent
+// fall back to "any": a UI that asks for disabled accounts and is handed
+// every account has no way to learn its parameter was thrown away.
+func TestListUsersHandler_ShouldRejectAnUnknownStatusFilter(t *testing.T) {
+	t.Parallel()
+
+	cfg := newTestConfig(t)
+	db := newTestDB(t)
+	identity := &service.Identity{Subject: "sub-admin", Username: "admin", Groups: []string{cfg.Admin.RequireGroup}}
+	r := routerWithAuth(t, cfg, db, identity)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/admin/users?status=retired", nil))
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("GET /admin/users?status=retired = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+// A field with no configured claim has no OIDC side, so the detail page must
+// not describe the directory's value there as overriding one. Without this
+// the page named a conflict that does not exist on the common deployment,
+// where neither account field is mapped from OIDC at all.
+func TestConfiguredOIDCFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		fields config.OAuthFields
+		want   map[string]bool
+	}{
+		{
+			name:   "should report the account fields as unmapped when nothing names a claim",
+			fields: config.OAuthFields{Name: "name"},
+			want:   map[string]bool{"other_accounts": false, "service_accounts": false, "name": true},
+		},
+		{
+			name: "should report each account field the configuration maps",
+			fields: config.OAuthFields{
+				OtherAccounts:   "alt_accounts",
+				ServiceAccounts: "svc_accounts",
+				Name:            "name",
+			},
+			want: map[string]bool{"other_accounts": true, "service_accounts": true, "name": true},
+		},
+		{
+			name:   "should report an unmapped name claim",
+			fields: config.OAuthFields{},
+			want:   map[string]bool{"other_accounts": false, "service_accounts": false, "name": false},
+		},
+		{
+			name: "should report configured extra fields alongside the reserved ones",
+			fields: config.OAuthFields{
+				Name:  "name",
+				Extra: map[string]string{"dept": "department", "unset": ""},
+			},
+			want: map[string]bool{
+				"other_accounts": false, "service_accounts": false, "name": true,
+				"dept": true, "unset": false,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := configuredOIDCFields(tt.fields)
+			if len(got) != len(tt.want) {
+				t.Fatalf("configuredOIDCFields = %v, want %v", got, tt.want)
+			}
+			for field, want := range tt.want {
+				if got[field] != want {
+					t.Errorf("configuredOIDCFields[%q] = %v, want %v", field, got[field], want)
+				}
+			}
+		})
 	}
 }

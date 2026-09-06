@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { formatDateTime } from '$lib/format';
 	import type { AuditEvent } from '$lib/api/types';
+	import { visibleAuditEvents } from '$lib/audit';
+	import { formatDateTime } from '$lib/format';
 
 	interface Props {
 		events: AuditEvent[];
@@ -15,9 +16,10 @@
 
 	const { events, subjectUserId = '' }: Props = $props();
 
-	// Defensive: an unexpected response shape must render "nothing to show"
-	// rather than tearing down the page this timeline is embedded in.
-	const rows = $derived(Array.isArray(events) ? events : []);
+	// The hidden privileged-view actions and the array guard both live in
+	// $lib/audit, so this and the page that counts what it rendered cannot
+	// disagree about which rows are shown.
+	const rows = $derived(visibleAuditEvents(events));
 
 	/**
 	 * Human phrasing per action. Unknown actions fall back to the raw
@@ -40,13 +42,16 @@
 		'user.disabled': 'disabled an account',
 		'user.enabled': 're-enabled an account',
 		'user.auto_disabled': 'was disabled automatically',
-		'admin.user_viewed': 'viewed a user record',
 		'ldap.sync_triggered': 'ran the directory sync',
 		'ldap.probed': 'probed the directory',
 		'admin.enrollment_viewed': 'viewed an enrollment',
 		// No longer emitted, kept so events recorded before that still read
 		// as a sentence rather than as a raw action name.
 		'admin.config_viewed': 'viewed the effective configuration',
+		// Not rendered at all any more (see hiddenAuditActions), but kept
+		// phrased: the filter is a display rule and this is what the row
+		// would read as if it were ever lifted.
+		'admin.user_viewed': 'viewed a user record',
 		'admin.audit_viewed': 'viewed the audit log'
 	};
 

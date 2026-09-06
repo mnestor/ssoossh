@@ -230,14 +230,52 @@ approving identity is long gone by the time a scheduled job redeems the code.
 Afterwards the approver -- and every other holder of the account -- can see what
 was granted at **Service codes** in the web UI: the account, the options and
 lifetime fixed at approval, the keypair the code is bound to, when it stops
-being redeemable, and its redemption log. Never the code.
+being redeemable, its redemption log, and everyone else who holds the account.
+Never the code.
+
+The holder list is bounded by who has signed in: the server never reads a
+directory to enumerate an account's holders, so it names everyone *known* to
+hold the account rather than everyone who does. Someone who has never logged
+in holds the account and does not appear.
+
+## Enrolling under your own account
+
+Not every deployment has a service-account claim to map. Where there is none,
+someone who has to run something unattended under their own account -- a cron
+entry, a backup, a scheduled fetch -- has no way to get a reusable code, and
+tends to leave an interactive credential on the host instead, which is worse.
+
+[`cert_options.service.allow_user_accounts`](/ssoossh/reference/config/cert_options/service/#allow_user_accounts)
+lets an approver name one of their own accounts (their username, or an entry
+from `other_accounts`) as the service account, alongside anything the
+`service_accounts` claim gives them. The approval page lists those separately,
+under "Your own accounts", and says what they produce before the choice is
+made.
+
+What it produces is a service certificate in every respect: one principal, and
+the options
+[`cert_options.service`](/ssoossh/reference/config/cert_options/service/) grants
+rather than the ones `cert_options.user` grants -- which with the default empty
+extension set means no `permit-pty`, and so no shell. The setting changes which
+account may be named, not what the certificate is.
+
+A deployment that puts `permit-pty` in `cert_options.service.extensions` has
+made every service certificate interactive, personal accounts or not; that is a
+decision about that key, not about this one.
+
+It is off by default, because turning it on widens what an approver may mint
+for themselves from "the accounts a claim vouches for" to "any account they
+hold". Every account in that wider set is already theirs, but it is still a
+widening.
 
 ## Notifications
 
 If the deployment has email enabled, four notifications concern an enrollment.
 All of them go to every holder of the service account, resolved at delivery,
 unless a notification address was set on the enrollment -- in which case that
-address is the sole recipient.
+address is the sole recipient. With `allow_user_accounts` on, the holder of an
+account that is someone's own is that person, so a code enrolled under a
+personal account notifies them.
 
 | Notification | When | Default |
 | --- | --- | --- |

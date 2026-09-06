@@ -2,6 +2,7 @@ import { isInternalPath } from '$lib/paths';
 
 import { ApiError, request } from './client';
 import type {
+	AccountHoldersResponse,
 	AdminEnrollment,
 	AdminEnrollmentsResponse,
 	AdminUserDetail,
@@ -221,6 +222,30 @@ export function listServiceEnrollments(signal?: AbortSignal): Promise<ServiceEnr
 }
 
 /**
+ * GET /api/certs/service/enrollments/:id/holders — everyone known to hold
+ * this enrollment's service account, and therefore able to see and manage
+ * the code.
+ *
+ * A code belongs to its service account rather than to whoever approved it,
+ * so this is the only place that answers "who else has this". Only users who
+ * have logged in at least once appear: the server never enumerates a
+ * directory, so the answer is everyone known to hold the account rather than
+ * everyone who does.
+ *
+ * Callable by the account's holders and by auditors; 403 otherwise, 404 for
+ * an enrollment that does not exist.
+ */
+export function listEnrollmentHolders(
+	id: string,
+	signal?: AbortSignal
+): Promise<AccountHoldersResponse> {
+	return request<AccountHoldersResponse>(
+		`/certs/service/enrollments/${encodeURIComponent(id)}/holders`,
+		{ signal }
+	);
+}
+
+/**
  * PATCH /api/certs/service/enrollments/:id/notification-email.
  *
  * Points every notification about this enrollment at one address instead of
@@ -255,6 +280,12 @@ export function getAdminUsers(options?: {
 	q?: string;
 	limit?: number;
 	offset?: number;
+	/**
+	 * Account state to narrow to: 'active' or 'disabled'. Omitted returns
+	 * both. Applied before the count, so the pager describes the filtered
+	 * set.
+	 */
+	status?: 'active' | 'disabled';
 }): Promise<AdminUsersListResponse> {
 	const params = new URLSearchParams();
 	if (options?.q) {
@@ -265,6 +296,9 @@ export function getAdminUsers(options?: {
 	}
 	if (options?.offset) {
 		params.append('offset', options.offset.toString());
+	}
+	if (options?.status) {
+		params.append('status', options.status);
 	}
 	const url = params.toString() ? `/admin/users?${params.toString()}` : '/admin/users';
 	return request<AdminUsersListResponse>(url);

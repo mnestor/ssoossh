@@ -35,6 +35,7 @@ type EnrollmentProvider interface {
 	ListForIdentity(ctx context.Context, identity *Identity) ([]ServiceEnrollment, error)
 	ListForAdmin(ctx context.Context, identity *Identity, params AdminListParams) (AdminEnrollmentList, error)
 	GetEnrollmentDetail(ctx context.Context, enrollmentID string, identity *Identity) (AdminEnrollmentDetail, error)
+	ListAccountHolders(ctx context.Context, enrollmentID string, identity *Identity) (AccountHolders, error)
 	SetNotificationEmail(ctx context.Context, enrollmentID string, identity *Identity, address string) error
 }
 
@@ -525,7 +526,7 @@ func (s *EnrollmentService) SetNotificationEmail(ctx context.Context, enrollment
 		return fmt.Errorf("failed to look up enrollment: %w", err)
 	}
 
-	if !ownsEnrollment(identity, enrollment) && !s.config.Admin.GrantsSOC(identity.Groups) {
+	if !s.ownsEnrollment(identity, enrollment) && !s.config.Admin.GrantsSOC(identity.Groups) {
 		return &errorresponses.ForbiddenError{Reason: "enrollment belongs to a service account you do not hold"}
 	}
 
@@ -656,17 +657,17 @@ type ServiceEnrollment struct {
 // heldServiceAccounts returns the service accounts identity holds, with
 // empties dropped.
 //
+// It is ApprovableServiceAccounts, which is the point: the set that decides
+// what an approval may mint and the set that decides what its author can
+// then see must be the same one. With
+// cert_options.service.allow_user_accounts on they diverged once, and an
+// approver ended up with a code they could create and then could not open.
+//
 // The empties matter: a claim that releases a blank entry would otherwise
 // match every enrollment whose principals never parsed, which is exactly
-// the set that must be owned by nobody.
-func heldServiceAccounts(identity *Identity) []string {
-	held := make([]string, 0, len(identity.ServiceAccounts))
-	for _, account := range identity.ServiceAccounts {
-		if account != "" {
-			held = append(held, account)
-		}
-	}
-	return held
+// the set that must be owned by nobody. Both helpers below drop them.
+func (s *EnrollmentService) heldServiceAccounts(identity *Identity) []string {
+	return ApprovableServiceAccounts(identity, s.config.CertOptions.Service.AllowUserAccounts)
 }
 
 // ownsEnrollment reports whether identity holds enrollment's service
@@ -677,11 +678,11 @@ func heldServiceAccounts(identity *Identity) []string {
 // Answered from the session identity rather than the users row, the same
 // source every other authorization decision in this server reads, so
 // access reflects the accounts the provider released at login.
-func ownsEnrollment(identity *Identity, enrollment model.Enrollment) bool {
+func (s *EnrollmentService) ownsEnrollment(identity *Identity, enrollment model.Enrollment) bool {
 	if enrollment.ServiceAccount == "" {
 		return false
 	}
-	return slices.Contains(identity.ServiceAccounts, enrollment.ServiceAccount)
+	return slices.Contains(s.heldServiceAccounts(identity), enrollment.ServiceAccount)
 }
 
 // ListForIdentity returns the enrollments identity owns, newest first.
@@ -701,7 +702,7 @@ func ownsEnrollment(identity *Identity, enrollment model.Enrollment) bool {
 // exactly what a holder needs to see to decide whether the job behind it
 // still needs one.
 func (s *EnrollmentService) ListForIdentity(ctx context.Context, identity *Identity) ([]ServiceEnrollment, error) {
-	held := heldServiceAccounts(identity)
+	held := s.heldServiceAccounts(identity)
 	if len(held) == 0 {
 		return []ServiceEnrollment{}, nil
 	}
@@ -912,6 +913,152 @@ type AdminEnrollmentDetail struct {
 	Reassignments []model.EnrollmentReassignment
 }
 
+// AccountHolders is everyone known to hold one service account, with the
+// account named so a caller need not re-derive it from the enrollment's
+// principals.
+type AccountHolders struct {
+	ServiceAccount string
+	Holders        []AccountHolder
+}
+
+// AccountHolder is one person who can see and manage an enrollment because
+// they hold its service account.
+//
+// It answers the question ownership made unanswerable from the page: a code
+// belongs to its account rather than to whoever approved it, so "who else
+// has this" has no answer on the enrollment row itself. This is that answer,
+// with the standing caveat below about who can be in it at all.
+type AccountHolder struct {
+	UserID   string
+	Username string
+	Name     string
+	Email    string
+
+	// Disabled marks a holder whose account is disabled. Listed rather than
+	// filtered out: a disabled account still carries the claim, and comes
+	// back the moment it is re-enabled, so leaving them out would answer
+	// "who has access" with a set that quietly grows again later.
+	Disabled bool
+
+	// Own reports that this person holds the account because it is their
+	// own (their username or an other_accounts entry) rather than because a
+	// service_accounts claim named it — only possible with
+	// cert_options.service.allow_user_accounts on.
+	Own bool
+}
+
+// ListAccountHolders returns everyone who holds the service account behind
+// enrollmentID, so a reader can see who else can use and manage the code.
+//
+// Visible to auditors and to the account's own holders — the same rule
+// GetEnrollmentDetail applies, and for the same reason: this is a fact about
+// a credential, and everyone who can already redeem it should be able to see
+// who else can.
+//
+// The accepted limitation, the same one notification fan-out carries: this
+// reaches only users who have logged in at least once, holding the accounts
+// they held at that login. The server never enumerates a directory, so the
+// answer is "everyone known to have this", not "everyone who has this".
+func (s *EnrollmentService) ListAccountHolders(ctx context.Context, enrollmentID string, identity *Identity) (AccountHolders, error) {
+	var enrollment model.Enrollment
+	if err := s.db.WithContext(ctx).First(&enrollment, "id = ?", enrollmentID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return AccountHolders{}, &errorresponses.NotFoundError{Resource: fmt.Sprintf("enrollment %q", enrollmentID)}
+		}
+		return AccountHolders{}, fmt.Errorf("failed to look up enrollment: %w", err)
+	}
+
+	if !s.config.Admin.GrantsAuditor(identity.Groups) && !s.ownsEnrollment(identity, enrollment) {
+		return AccountHolders{}, &errorresponses.ForbiddenError{Reason: "enrollment belongs to a service account you do not hold"}
+	}
+
+	holders, err := s.accountHolders(ctx, enrollment.ServiceAccount)
+	if err != nil {
+		return AccountHolders{}, err
+	}
+	return AccountHolders{ServiceAccount: enrollment.ServiceAccount, Holders: holders}, nil
+}
+
+// accountHolders resolves the holders of one account name. Split from the
+// lookup above so the authorization and the query stay separately
+// readable — and testable — rather than one long method.
+func (s *EnrollmentService) accountHolders(ctx context.Context, accountName string) ([]AccountHolder, error) {
+	if accountName == "" {
+		return []AccountHolder{}, nil
+	}
+
+	// The quotes are part of the pattern: they make this match a whole
+	// element of the stored JSON array rather than any substring of one.
+	// The LIKE is a prefilter and the decode below is the actual test, the
+	// same pairing NotificationService.ServiceAccountRecipients uses and
+	// for the same reason — the LIKE alone cannot be trusted and the decode
+	// alone would pull every user row into Go.
+	quoted, err := json.Marshal(accountName)
+	if err != nil {
+		// not covered: json.Marshal cannot fail on a string.
+		return nil, fmt.Errorf("failed to encode service account %q: %w", accountName, err)
+	}
+	pattern := "%" + string(quoted) + "%"
+
+	q := s.db.WithContext(ctx).Model(&model.User{}).
+		Where("service_accounts LIKE ?", pattern)
+	// With allow_user_accounts on the account may be a person's own, and
+	// then the person holds it. Widened in the query rather than filtered
+	// afterwards so the scan stays one pass.
+	if s.config.CertOptions.Service.AllowUserAccounts {
+		q = q.Or("username = ?", accountName).
+			Or("other_accounts LIKE ?", pattern)
+	}
+
+	var candidates []model.User
+	if err := q.Order("username ASC").Find(&candidates).Error; err != nil {
+		return nil, fmt.Errorf("failed to resolve the holders of service account %q: %w", accountName, err)
+	}
+
+	holders := make([]AccountHolder, 0, len(candidates))
+	for _, user := range candidates {
+		claimed := storedListContains(ctx, user.ID, "service accounts", user.ServiceAccounts, accountName)
+		own := false
+		if s.config.CertOptions.Service.AllowUserAccounts {
+			own = user.Username == accountName ||
+				storedListContains(ctx, user.ID, "other accounts", user.OtherAccounts, accountName)
+		}
+		if !claimed && !own {
+			continue
+		}
+		holders = append(holders, AccountHolder{
+			UserID:   user.ID,
+			Username: user.Username,
+			Name:     user.DisplayName,
+			Email:    user.Email,
+			Disabled: user.DisabledAt != nil,
+			// Claimed wins the label where a person has the account both
+			// ways: the claim is the stronger statement, and the page's
+			// "this is their own account" note would be misleading beside
+			// an account a claim also vouches for.
+			Own: own && !claimed,
+		})
+	}
+	return holders, nil
+}
+
+// storedListContains reports whether a stored JSON string array holds name.
+// An unreadable column is a warning and a false rather than an error: one
+// bad row must not blank the whole holder list, exactly as it must not
+// silence a notification for everyone else.
+func storedListContains(ctx context.Context, userID, what, stored, name string) bool {
+	if stored == "" {
+		return false
+	}
+	var values []string
+	if err := json.Unmarshal([]byte(stored), &values); err != nil {
+		slog.WarnContext(ctx, "skipping a user whose stored accounts do not parse",
+			"user_id", userID, "field", what, "error", err)
+		return false
+	}
+	return slices.Contains(values, name)
+}
+
 // RetrievalPageSize bounds how many redemptions ListRetrievals returns.
 //
 // The log is unbounded in the database and can be very large: codes are
@@ -941,7 +1088,7 @@ func (s *EnrollmentService) ListRetrievals(ctx context.Context, requestID string
 		return RetrievalLog{}, fmt.Errorf("failed to look up enrollment: %w", err)
 	}
 
-	if !s.config.Admin.GrantsAuditor(identity.Groups) && !ownsEnrollment(identity, enrollment) {
+	if !s.config.Admin.GrantsAuditor(identity.Groups) && !s.ownsEnrollment(identity, enrollment) {
 		return RetrievalLog{}, &errorresponses.ForbiddenError{Reason: "retrieval log belongs to a service account you do not hold"}
 	}
 
@@ -1179,7 +1326,7 @@ func (s *EnrollmentService) GetEnrollmentDetail(ctx context.Context, enrollmentI
 	}
 
 	// Check authorization: auditor, or a holder of the service account
-	if !s.config.Admin.GrantsAuditor(identity.Groups) && !ownsEnrollment(identity, enrollment) {
+	if !s.config.Admin.GrantsAuditor(identity.Groups) && !s.ownsEnrollment(identity, enrollment) {
 		return AdminEnrollmentDetail{}, &errorresponses.ForbiddenError{Reason: "enrollment belongs to a service account you do not hold"}
 	}
 

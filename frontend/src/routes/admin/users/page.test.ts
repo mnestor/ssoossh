@@ -140,4 +140,126 @@ describe('Admin users list', () => {
 		await screen.findByText('alice');
 		expect(screen.queryByRole('navigation', { name: /pagination/i })).not.toBeInTheDocument();
 	});
+
+	// The name is the leading column, so it has to be searchable: a
+	// directory whose first column cannot be searched sends anyone looking
+	// for a person to scroll instead.
+	it('should show the name a person is known by', async () => {
+		mockUsers([user({ name: 'Alice Ashworth' })]);
+		render(Page);
+		expect(await screen.findByText('Alice Ashworth')).toBeInTheDocument();
+	});
+
+	it('should render an em dash for a user whose provider sent no name', async () => {
+		mockUsers([user({ name: '' })]);
+		render(Page);
+		expect(await screen.findByText('—')).toBeInTheDocument();
+	});
+
+	// The Action column held one word per row and cost more width than it
+	// earned; the identity cells carry the link instead.
+	it('should link the name to the user record', async () => {
+		mockUsers([user({ name: 'Alice Ashworth' })]);
+		render(Page);
+		const link = await screen.findByTestId('user-link');
+		expect(link).toHaveAttribute('href', expect.stringContaining('/admin/users/user-1'));
+	});
+
+	it('should link the username to the user record', async () => {
+		mockUsers([user()]);
+		render(Page);
+		const link = await screen.findByRole('link', { name: 'alice' });
+		expect(link).toHaveAttribute('href', expect.stringContaining('/admin/users/user-1'));
+	});
+
+	it('should no longer render a separate action column', async () => {
+		mockUsers([user()]);
+		render(Page);
+		await screen.findByText('alice');
+		expect(screen.queryByRole('columnheader', { name: 'Action' })).not.toBeInTheDocument();
+	});
+});
+
+describe('Admin users status filter', () => {
+	it('should send no status parameter while showing every account', async () => {
+		mockUsers([user()]);
+		render(Page);
+		await screen.findByText('alice');
+		expect(requests.every((url) => !url.includes('status='))).toBe(true);
+	});
+
+	it('should ask the server for active accounts only', async () => {
+		mockUsers([user()]);
+		render(Page);
+		await screen.findByText('alice');
+
+		await userEvent.click(screen.getByTestId('status-filter-active'));
+		await waitFor(() => {
+			expect(requests.some((url) => url.includes('status=active'))).toBe(true);
+		});
+	});
+
+	it('should ask the server for disabled accounts only', async () => {
+		mockUsers([user()]);
+		render(Page);
+		await screen.findByText('alice');
+
+		await userEvent.click(screen.getByTestId('status-filter-disabled'));
+		await waitFor(() => {
+			expect(requests.some((url) => url.includes('status=disabled'))).toBe(true);
+		});
+	});
+
+	it('should drop the status parameter again when the filter returns to all', async () => {
+		mockUsers([user()]);
+		render(Page);
+		await screen.findByText('alice');
+
+		await userEvent.click(screen.getByTestId('status-filter-disabled'));
+		await waitFor(() => {
+			expect(requests.some((url) => url.includes('status=disabled'))).toBe(true);
+		});
+
+		requests.length = 0;
+		await userEvent.click(screen.getByTestId('status-filter-all'));
+		await waitFor(() => {
+			expect(requests.length).toBeGreaterThan(0);
+			expect(requests.every((url) => !url.includes('status='))).toBe(true);
+		});
+	});
+
+	// The filtered set is a different list, so page 3 of the old one means
+	// nothing in it.
+	it('should return to the first page when the filter changes', async () => {
+		mockUsers([user()], { total: 60, page_count: 3 });
+		render(Page);
+		await screen.findByText('alice');
+
+		await userEvent.click(screen.getByRole('button', { name: /next/i }));
+		await waitFor(() => {
+			expect(requests.some((url) => url.includes('offset=25'))).toBe(true);
+		});
+
+		requests.length = 0;
+		await userEvent.click(screen.getByTestId('status-filter-disabled'));
+		await waitFor(() => {
+			const filtered = requests.filter((url) => url.includes('status=disabled'));
+			expect(filtered.length).toBeGreaterThan(0);
+			// A zero offset is omitted entirely by getAdminUsers, so "back to
+			// the first page" reads as the absence of the parameter.
+			expect(filtered.every((url) => !url.includes('offset='))).toBe(true);
+		});
+	});
+
+	it('should mark the selected filter as pressed for assistive technology', async () => {
+		mockUsers([user()]);
+		render(Page);
+		await screen.findByText('alice');
+
+		await userEvent.click(screen.getByTestId('status-filter-active'));
+		await waitFor(() => {
+			expect(screen.getByTestId('status-filter-active')).toHaveAttribute('aria-pressed', 'true');
+			expect(screen.getByTestId('status-filter-all')).toHaveAttribute('aria-pressed', 'false');
+		});
+	});
 });
