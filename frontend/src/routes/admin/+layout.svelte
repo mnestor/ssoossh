@@ -34,6 +34,8 @@
 		{ route: '/admin/certificates', label: 'Certificates' },
 		{ route: '/admin/service-codes', label: 'Service codes' },
 		{ route: '/admin/config', label: 'Config' },
+		{ route: '/admin/directory', label: 'Directory' },
+		{ route: '/admin/identity/echo', label: 'Claims echo' },
 		{ route: '/admin/audit', label: 'Audit log' }
 	] as const satisfies ReadonlyArray<{ route: string; label: string }>;
 

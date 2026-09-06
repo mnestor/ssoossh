@@ -79,7 +79,15 @@ describe('admin layout', () => {
 			.getAllByRole('link')
 			.map((link) => link.textContent?.trim());
 
-		expect(labels).toEqual(['Users', 'Certificates', 'Service codes', 'Config', 'Audit log']);
+		expect(labels).toEqual([
+			'Users',
+			'Certificates',
+			'Service codes',
+			'Config',
+			'Directory',
+			'Claims echo',
+			'Audit log'
+		]);
 	});
 
 	it('should mark the section being viewed as the current page', () => {

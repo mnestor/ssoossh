@@ -18,6 +18,12 @@ import type {
 	EffectiveConfigResponse,
 	EnrollmentRetrievalResponse,
 	EnrollmentRetrievalsResponse,
+	IdentityEchoStartResponse,
+	LDAPProbeRequestBody,
+	LDAPProbeResponse,
+	LDAPStatusResponse,
+	LDAPSyncRequestBody,
+	LDAPSyncRunResponse,
 	NotificationPreferences,
 	ReEnableUserRequestBody,
 	RequestDetail,
@@ -419,4 +425,49 @@ export function expireEnrollment(id: string): Promise<{ expired: boolean }> {
 	return request<{ expired: boolean }>(`/admin/enrollments/${encodeURIComponent(id)}/expire`, {
 		method: 'PATCH'
 	});
+}
+
+/**
+ * GET /api/admin/ldap/status — directory sync status and probe target
+ * (auditor-readable).
+ *
+ * Answers "is the sync even running", which before the run record could only
+ * be answered by reading a log on whichever instance happened to run it.
+ * Names no credential.
+ */
+export function getLDAPStatus(signal?: AbortSignal): Promise<LDAPStatusResponse> {
+	return request<LDAPStatusResponse>('/admin/ldap/status', { signal });
+}
+
+/**
+ * POST /api/admin/ldap/sync — run the directory sync now (admin-only).
+ *
+ * Answers with the run record whatever happened, including a pass that could
+ * not reach the directory: that record is what the operator pressed the
+ * button to see. A pass already in progress is a 409.
+ */
+export function runLDAPSync(body: LDAPSyncRequestBody = {}): Promise<LDAPSyncRunResponse> {
+	return request<LDAPSyncRunResponse>('/admin/ldap/sync', { method: 'POST', body });
+}
+
+/**
+ * POST /api/admin/ldap/probe — one read-only directory lookup (admin-only).
+ *
+ * The connection is not part of the request: the probe always uses the
+ * running url, bind credentials and base DN, so it cannot be pointed at
+ * another host. It writes nothing.
+ */
+export function probeLDAP(body: LDAPProbeRequestBody): Promise<LDAPProbeResponse> {
+	return request<LDAPProbeResponse>('/admin/ldap/probe', { method: 'POST', body });
+}
+
+/**
+ * POST /api/admin/identity/echo/start — begin a claims echo (admin-only).
+ *
+ * Returns the authorization URL to send the browser to. The result comes
+ * back through the OIDC callback as a fragment on /admin/identity/echo, and
+ * is never stored anywhere.
+ */
+export function startIdentityEcho(): Promise<IdentityEchoStartResponse> {
+	return request<IdentityEchoStartResponse>('/admin/identity/echo/start', { method: 'POST' });
 }
