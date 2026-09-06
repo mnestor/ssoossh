@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -48,20 +49,40 @@ func (m *ErrorHandlerMiddleware) Add() gin.HandlerFunc {
 
 		err := c.Errors.Last().Err
 
+		coder, coded := err.(httpStatusCoder)
 		status := http.StatusInternalServerError
-		if coder, ok := err.(httpStatusCoder); ok {
+		if coded {
 			status = coder.HTTPStatusCode()
 		}
 
 		var code string
-		if coder, ok := err.(errorCoder); ok {
-			code = coder.ErrorCode()
+		if ec, ok := err.(errorCoder); ok {
+			code = ec.ErrorCode()
 		} else {
 			// Map HTTP status to error code for errors that don't implement errorCoder.
 			code = statusToErrorCode(status)
 		}
 
-		c.JSON(status, gin.H{"data": nil, "error": err.Error(), "error_code": code})
+		// The error text is returned to the caller only for errors that
+		// declared a status of their own. Those are the typed
+		// errorresponses values, whose message is written to be caller-safe.
+		// An error that fell through to the 500 default is an internal
+		// failure -- a database error, a recovered panic, a bare
+		// errors.New, or a parser echoing a fragment of the caller's own
+		// input back -- and its text can disclose schema, file paths, or
+		// that input. Log it for whoever is debugging and return a fixed
+		// generic message in its place.
+		message := err.Error()
+		if !coded {
+			slog.Error("unhandled request error",
+				"error", err,
+				"method", c.Request.Method,
+				"path", c.Request.URL.Path,
+			)
+			message = "internal server error"
+		}
+
+		c.JSON(status, gin.H{"data": nil, "error": message, "error_code": code})
 	}
 }
 

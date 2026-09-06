@@ -66,8 +66,49 @@ func TestErrorHandlerMiddleware_ShouldDefaultTo500ForPlainErrors(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("got status %d, want %d", w.Code, http.StatusInternalServerError)
 	}
-	if !strings.Contains(w.Body.String(), "boom") {
-		t.Errorf("expected body to contain the error message, got %q", w.Body.String())
+	if !strings.Contains(w.Body.String(), apitypes.ErrorCodeInternalError) {
+		t.Errorf("expected body to carry the internal_error code, got %q", w.Body.String())
+	}
+}
+
+func TestErrorHandlerMiddleware_ShouldNotReflectInternalErrorTextToTheCaller(t *testing.T) {
+	t.Parallel()
+
+	handler := NewErrorHandlerMiddleware().Add()
+
+	c, w := newTestRequest("203.0.113.33:1111")
+	// A bare error carries no status, so it takes the 500 default. Its text
+	// could name schema, a file path, or a fragment of the caller's own
+	// input echoed by a parser, so it must not be reflected back.
+	c.Error(errors.New("pq: relation \"users\" does not exist"))
+	c.Abort()
+	handler(c)
+
+	if strings.Contains(w.Body.String(), "users") {
+		t.Errorf("internal error text leaked to the caller: %q", w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "internal server error") {
+		t.Errorf("expected the generic message, got %q", w.Body.String())
+	}
+}
+
+func TestErrorHandlerMiddleware_ShouldReflectMessageForErrorsThatDeclareAStatus(t *testing.T) {
+	t.Parallel()
+
+	handler := NewErrorHandlerMiddleware().Add()
+
+	c, w := newTestRequest("203.0.113.34:1111")
+	// A typed error that declares its own status is caller-safe by design:
+	// its Reason is written to be returned, so it is reflected.
+	c.Error(&errorresponses.InvalidRequestError{Reason: "the widget field must be a positive integer"})
+	c.Abort()
+	handler(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("got status %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(w.Body.String(), "the widget field must be a positive integer") {
+		t.Errorf("expected the typed error's reason to be reflected, got %q", w.Body.String())
 	}
 }
 

@@ -226,7 +226,7 @@ func (cr *certRequestController) createRequest(g *gin.Context, params service.Ne
 func (cr *certRequestController) createUserRequestHandler(g *gin.Context) {
 	var body apitypes.UserRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
-		handleError(g, err)
+		handleError(g, &errorresponses.InvalidRequestError{Reason: "request body was malformed or did not match the expected schema"})
 		return
 	}
 
@@ -280,7 +280,7 @@ func (cr *certRequestController) createUserRequestHandler(g *gin.Context) {
 func (cr *certRequestController) createServiceEnrollRequestHandler(g *gin.Context) {
 	var body apitypes.ServiceEnrollRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
-		handleError(g, err)
+		handleError(g, &errorresponses.InvalidRequestError{Reason: "request body was malformed or did not match the expected schema"})
 		return
 	}
 
@@ -316,7 +316,7 @@ func (cr *certRequestController) createServiceEnrollRequestHandler(g *gin.Contex
 func (cr *certRequestController) createPAMRequestHandler(g *gin.Context) {
 	var body apitypes.PAMRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
-		handleError(g, err)
+		handleError(g, &errorresponses.InvalidRequestError{Reason: "request body was malformed or did not match the expected schema"})
 		return
 	}
 
@@ -394,7 +394,7 @@ func toHostContext(body apitypes.PAMRequestBody) service.HostContext {
 func (cr *certRequestController) createConsoleRequestHandler(g *gin.Context) {
 	var body apitypes.ConsoleRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
-		handleError(g, err)
+		handleError(g, &errorresponses.InvalidRequestError{Reason: "request body was malformed or did not match the expected schema"})
 		return
 	}
 
@@ -469,7 +469,7 @@ func (cr *certRequestController) resolveCodeHandler(g *gin.Context) {
 
 	var body webtypes.ResolveCodeRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
-		handleError(g, err)
+		handleError(g, &errorresponses.InvalidRequestError{Reason: "request body was malformed or did not match the expected schema"})
 		return
 	}
 
@@ -580,7 +580,7 @@ func (cr *certRequestController) approveHandler(g *gin.Context) {
 	var body webtypes.ApproveRequestBody
 	if g.Request.ContentLength > 0 {
 		if err := g.ShouldBindJSON(&body); err != nil {
-			handleError(g, err)
+			handleError(g, &errorresponses.InvalidRequestError{Reason: "request body was malformed or did not match the expected schema"})
 			return
 		}
 	}

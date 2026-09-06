@@ -18,9 +18,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // passthrough stands in for a middleware under test elsewhere, so these
@@ -242,10 +244,12 @@ func TestCreatePAMRequestHandler_ShouldRejectMalformedJSON(t *testing.T) {
 	svc := &fakeCertRequestService{}
 
 	r := gin.New()
-	var gotErrors int
+	var gotErr error
 	r.Use(func(c *gin.Context) {
 		c.Next()
-		gotErrors = len(c.Errors)
+		if len(c.Errors) > 0 {
+			gotErr = c.Errors.Last().Err
+		}
 	})
 	NewCertRequestController(&r.RouterGroup, svc, passthrough, passthrough, nil)
 
@@ -254,8 +258,21 @@ func TestCreatePAMRequestHandler_ShouldRejectMalformedJSON(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 
-	if gotErrors != 1 {
-		t.Fatalf("expected exactly one binding error, got %d", gotErrors)
+	// A malformed body is the caller's mistake, so it must surface as a 400
+	// invalid_request -- not fall through the error handler's 500 default
+	// carrying the raw JSON parser message, which is what it used to do.
+	var invalid *errorresponses.InvalidRequestError
+	if !errors.As(gotErr, &invalid) {
+		t.Fatalf("expected an InvalidRequestError, got %#v", gotErr)
+	}
+	if got := invalid.HTTPStatusCode(); got != http.StatusBadRequest {
+		t.Errorf("got status %d, want %d", got, http.StatusBadRequest)
+	}
+	if got := invalid.ErrorCode(); got != apitypes.ErrorCodeInvalidRequest {
+		t.Errorf("got error code %q, want %q", got, apitypes.ErrorCodeInvalidRequest)
+	}
+	if strings.Contains(invalid.Error(), "invalid character") {
+		t.Errorf("raw parser message leaked into the client-facing reason: %q", invalid.Error())
 	}
 }
 

@@ -56,7 +56,7 @@ type enrollmentController struct {
 func (e *enrollmentController) retrieveHandler(g *gin.Context) {
 	var body apitypes.RetrieveRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
-		handleError(g, err)
+		handleError(g, &errorresponses.InvalidRequestError{Reason: "request body was malformed or did not match the expected schema"})
 		return
 	}
 
@@ -190,7 +190,7 @@ func (e *enrollmentController) setNotificationEmailHandler(g *gin.Context) {
 
 	var body webtypes.SetNotificationEmailRequestBody
 	if err := g.ShouldBindJSON(&body); err != nil {
-		handleError(g, err)
+		handleError(g, &errorresponses.InvalidRequestError{Reason: "request body was malformed or did not match the expected schema"})
 		return
 	}
 
