@@ -436,9 +436,7 @@ describe('the OIDC record and what the directory overrides', () => {
 	it('should mark the name as overridden by the directory', async () => {
 		mockDetail({
 			name: 'Alice Smith',
-			directory_overrides: [
-				{ field: 'name', oidc: ['Alice Smith'], effective: ['Alice R. Smith'] }
-			]
+			directory_overrides: [{ field: 'name', oidc: ['Alice Smith'], effective: ['Alice R. Smith'] }]
 		});
 		render(Page);
 		expect(await screen.findByTestId('user-name-overridden')).toHaveTextContent('Alice R. Smith');

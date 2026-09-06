@@ -290,14 +290,16 @@
 						>
 							<p class="text-xs font-semibold text-accent">Overridden by LDAP</p>
 							<p class="text-ink-muted">
-								A configured <code>ldap.fields.{block.field}</code> replaces the OIDC value outright
-								rather than merging with it. The server acts on:
+								A configured <code>ldap.fields.{block.field}</code> replaces the OIDC value outright rather
+								than merging with it. The server acts on:
 							</p>
 							<div class="mt-1 flex flex-wrap gap-2">
 								{#each overrides[block.field].effective as acct (acct)}
 									<span class="rounded bg-surface-muted px-2 py-1 text-sm">{acct}</span>
 								{:else}
-									<span class="text-sm text-ink-muted">nothing — the directory supplied no value</span>
+									<span class="text-sm text-ink-muted"
+										>nothing — the directory supplied no value</span
+									>
 								{/each}
 							</div>
 						</div>
@@ -373,10 +375,9 @@
 			     where the memberships they remember went. -->
 			{#if !user.directory_enabled}
 				<p class="mb-4 text-[13px] text-ink-muted" data-testid="user-groups-oidc-only">
-					Only OIDC memberships are listed. <code>ldap.enabled</code> is false, so any
-					directory-sourced rows are frozen at whatever the last sync read and are withheld here and
-					from notification fan-out. They are kept on disk and come back if the directory is switched
-					on again.
+					Only OIDC memberships are listed. <code>ldap.enabled</code> is false, so any directory-sourced
+					rows are frozen at whatever the last sync read and are withheld here and from notification fan-out.
+					They are kept on disk and come back if the directory is switched on again.
 				</p>
 			{/if}
 			{#if user.groups.length === 0}
@@ -429,8 +430,8 @@
 				<h2 class="mb-1 font-semibold text-ink">Directory record</h2>
 				<p class="mb-4 text-[13px] text-ink-muted">
 					What the LDAP sync last read for this user, and whether their entry still resolves. Absent
-					entirely while <code>ldap.enabled</code> is false, since nothing refreshes it and nothing
-					acts on it.
+					entirely while <code>ldap.enabled</code> is false, since nothing refreshes it and nothing acts
+					on it.
 				</p>
 
 				<div class="grid gap-4 sm:grid-cols-2">

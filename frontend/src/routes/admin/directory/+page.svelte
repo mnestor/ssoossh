@@ -469,11 +469,14 @@
 									<p class="mt-1 text-[13px] text-ink-muted" data-testid="ldap-probe-identifier">
 										{#if probeResult.id_attribute}
 											Anchored on <code>{probeResult.id_attribute}</code> =
-											<code class="break-all">{probeResult.directory_id || 'absent on this entry'}</code>
+											<code class="break-all"
+												>{probeResult.directory_id || 'absent on this entry'}</code
+											>
 										{:else}
-											<code>ldap.id_attribute</code> is unset, so this entry is re-read by DN and then
-											by <code>ldap.user_filter</code>. Both move when someone is renamed or moved
-											between OUs, which reads as a deletion and counts toward the auto-disable.
+											<code>ldap.id_attribute</code> is unset, so this entry is re-read by DN and
+											then by <code>ldap.user_filter</code>. Both move when someone is renamed or
+											moved between OUs, which reads as a deletion and counts toward the
+											auto-disable.
 										{/if}
 									</p>
 								{/if}
