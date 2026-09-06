@@ -100,7 +100,9 @@ func (a *ldapAdminController) statusHandler(g *gin.Context) {
 		return
 	}
 
-	ldapCfg := a.config.LDAP
+	// Pointer, not a copy: LDAPConfig embeds the timberjack logger, which
+	// carries a sync.Once, so copying it by value trips go vet's copylocks.
+	ldapCfg := &a.config.LDAP
 	resp := webtypes.LDAPStatusResponse{
 		Enabled:               true,
 		URL:                   ldapCfg.URL,
@@ -385,7 +387,7 @@ func storedExtraScalars(encoded string) map[string]string {
 
 // configuredAttributes is every attribute name the configured fields read,
 // sorted, so the console can highlight them in a returned entry.
-func configuredAttributes(cfg config.LDAPConfig) []string {
+func configuredAttributes(cfg *config.LDAPConfig) []string {
 	var names []string
 	for _, field := range cfg.Fields {
 		if field.Attribute != "" && !slices.Contains(names, field.Attribute) {

@@ -180,6 +180,23 @@ func parseExtraBindings(pairs []string) (map[string]string, error) {
 func writeProbeResult(out io.Writer, result *service.ProbeResult) error {
 	w := &probeWriter{out: out}
 
+	writeProbeSummary(w, result)
+	if result.Entry == nil {
+		w.printf("\nThe search succeeded and found nothing. That is what a login would see.\n")
+		return w.err
+	}
+
+	writeProbeEntry(w, result.Entry)
+	writeProbeFields(w, result.Fields)
+	writeProbeMerge(w, result.Merge)
+	writeProbeSuggestions(w, result.Suggestions)
+
+	return w.err
+}
+
+// writeProbeSummary prints the request as it went out and the top-level
+// counts and warnings.
+func writeProbeSummary(w *probeWriter, result *service.ProbeResult) {
 	w.printf("base dn   %s\n", result.BaseDN)
 	w.printf("filter    %s", result.FilterSent)
 	if result.Mode == service.ProbeFilterTemplate {
@@ -195,13 +212,13 @@ func writeProbeResult(out io.Writer, result *service.ProbeResult) error {
 	if result.Matched > 1 {
 		w.printf("warning   the login path refuses anything but exactly one match; this filter is too loose\n")
 	}
-	if result.Entry == nil {
-		w.printf("\nThe search succeeded and found nothing. That is what a login would see.\n")
-		return w.err
-	}
+}
 
-	w.printf("\nentry as returned\n  dn %s\n", result.Entry.DN)
-	for _, attr := range result.Entry.Attributes {
+// writeProbeEntry prints the entry as the directory returned it, marking the
+// attributes the current configuration names.
+func writeProbeEntry(w *probeWriter, entry *service.ProbeEntry) {
+	w.printf("\nentry as returned\n  dn %s\n", entry.DN)
+	for _, attr := range entry.Attributes {
 		marker := " "
 		if attr.Configured {
 			marker = "*"
@@ -212,9 +229,13 @@ func writeProbeResult(out io.Writer, result *service.ProbeResult) error {
 		}
 	}
 	w.printf("  (* is named by the current configuration)\n")
+}
 
+// writeProbeFields prints the field-mapping stage: what each configured field
+// resolved to, including any secondary searches.
+func writeProbeFields(w *probeWriter, fields []service.ProbeField) {
 	w.printf("\nfield mapping\n")
-	for _, field := range result.Fields {
+	for _, field := range fields {
 		w.printf("  %s\n", field.Name)
 		if field.Attribute != "" {
 			present := "present"
@@ -235,9 +256,13 @@ func writeProbeResult(out io.Writer, result *service.ProbeResult) error {
 			w.printf("    error: %s\n", field.Error)
 		}
 	}
+}
 
+// writeProbeMerge prints the merge-and-allowlist stage: what the login path
+// would keep and drop for each field.
+func writeProbeMerge(w *probeWriter, merges []service.ProbeMerge) {
 	w.printf("\nmerge and allowlist\n")
-	for _, merge := range result.Merge {
+	for _, merge := range merges {
 		w.printf("  %s (%s)\n", merge.Name, merge.Action)
 		w.printf("    kept:    %s\n", orDash(merge.Kept))
 		if len(merge.Dropped) > 0 {
@@ -245,19 +270,22 @@ func writeProbeResult(out io.Writer, result *service.ProbeResult) error {
 		}
 	}
 	w.printf("  Nothing was written.\n")
+}
 
-	if len(result.Suggestions) > 0 {
-		w.printf("\nconfig that would keep what is being ignored\n")
-		for _, suggestion := range result.Suggestions {
-			w.printf("  # %s\n", suggestion.Reason)
-			for _, line := range strings.Split(suggestion.YAML, "\n") {
-				w.printf("  %s\n", line)
-			}
-			w.printf("\n")
-		}
+// writeProbeSuggestions prints the config lines that would map what the probe
+// currently ignores, when there are any.
+func writeProbeSuggestions(w *probeWriter, suggestions []service.ProbeSuggestion) {
+	if len(suggestions) == 0 {
+		return
 	}
-
-	return w.err
+	w.printf("\nconfig that would keep what is being ignored\n")
+	for _, suggestion := range suggestions {
+		w.printf("  # %s\n", suggestion.Reason)
+		for _, line := range strings.Split(suggestion.YAML, "\n") {
+			w.printf("  %s\n", line)
+		}
+		w.printf("\n")
+	}
 }
 
 // probeWriter collapses the error handling of a long report into one check

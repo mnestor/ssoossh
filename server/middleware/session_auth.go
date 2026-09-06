@@ -141,9 +141,11 @@ func SetOIDCEchoState(c *gin.Context, state, nonce, verifier string) error {
 // since the echo path is the one that skips establishing a session.
 func PopOIDCEcho(c *gin.Context) (bool, error) {
 	sess := sessions.Default(c)
-	echo, _ := sess.Get(sessionKeyOIDCEcho).(bool)
+	// A missing or wrong-typed value is false, the safe default: the echo
+	// path is the one that skips establishing a session.
+	echo, ok := sess.Get(sessionKeyOIDCEcho).(bool)
 	sess.Delete(sessionKeyOIDCEcho)
-	return echo, sess.Save()
+	return echo && ok, sess.Save()
 }
 
 // PopOIDCState returns the state stored by SetOIDCState and clears it, so

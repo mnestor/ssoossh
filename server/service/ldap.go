@@ -93,6 +93,18 @@ func NewLDAPService(c *config.Config, db *gorm.DB) (*LDAPService, error) {
 		return nil, err
 	}
 
+	if s.fields, s.primaryAttrs, err = parseLDAPFields(c); err != nil {
+		return nil, err
+	}
+
+	return s, nil
+}
+
+// parseLDAPFields parses every configured field and its secondary searches
+// into the runtime shape, and collects the sorted union of attribute names
+// the primary read must request (the field attributes, the re-anchoring ID,
+// and anything a search filter references off the primary entry).
+func parseLDAPFields(c *config.Config) (fields []parsedLDAPField, primaryAttrs []string, err error) {
 	attrs := map[string]bool{}
 	// The re-anchoring ID is requested on every primary read, so it is
 	// captured from the very first login rather than only once a sync has
@@ -111,9 +123,9 @@ func NewLDAPService(c *config.Config, db *gorm.DB) (*LDAPService, error) {
 			if label == "" {
 				label = fmt.Sprintf("%s.searches[%d]", name, i)
 			}
-			tmpl, err := parseFilterTemplate(label, search.Filter)
-			if err != nil {
-				return nil, err
+			tmpl, perr := parseFilterTemplate(label, search.Filter)
+			if perr != nil {
+				return nil, nil, perr
 			}
 			// Attributes a search reads off the primary entry are
 			// collected here and requested automatically, so an operator
@@ -129,14 +141,13 @@ func NewLDAPService(c *config.Config, db *gorm.DB) (*LDAPService, error) {
 				name: label, baseDN: baseDN, filter: tmpl, value: search.Value,
 			})
 		}
-		s.fields = append(s.fields, parsed)
+		fields = append(fields, parsed)
 	}
 	for a := range attrs {
-		s.primaryAttrs = append(s.primaryAttrs, a)
+		primaryAttrs = append(primaryAttrs, a)
 	}
-	slices.Sort(s.primaryAttrs)
-
-	return s, nil
+	slices.Sort(primaryAttrs)
+	return fields, primaryAttrs, nil
 }
 
 // SetAuditor attaches the audit recorder, so an auto-disable is recorded
