@@ -24,6 +24,7 @@ ssoosshd [command] [flags]
 
 | Command | Description |
 | --- | --- |
+| [`ssoosshd ldap`](/ssoossh/reference/cli/ssoosshd/ldap/) | Directory tools. |
 | [`ssoosshd serve`](/ssoossh/reference/cli/ssoosshd/serve/) | Start the ssoosshd server in the specified mode. |
 | [`ssoosshd sign`](/ssoossh/reference/cli/ssoosshd/sign/) | Run the signer process only. |
 | [`ssoosshd version`](/ssoossh/reference/cli/ssoosshd/version/) | Print ssoosshd version, commit, and build info. |

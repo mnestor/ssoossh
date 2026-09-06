@@ -104,6 +104,19 @@
         "slug": "reference/cli/ssoosshd"
       },
       {
+        "label": "ldap",
+        "items": [
+          {
+            "label": "Overview",
+            "slug": "reference/cli/ssoosshd/ldap"
+          },
+          {
+            "label": "probe",
+            "slug": "reference/cli/ssoosshd/ldap-probe"
+          }
+        ]
+      },
+      {
         "label": "serve",
         "items": [
           {
