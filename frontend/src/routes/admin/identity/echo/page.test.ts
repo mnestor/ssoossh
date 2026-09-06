@@ -15,7 +15,9 @@ function echoPayload(overrides: Partial<IdentityEchoPayload> = {}): IdentityEcho
 			employee_type: 'staff'
 		},
 		mapping: {
+			subject: 'sub',
 			username: 'preferred_username',
+			name: 'name',
 			groups: 'groups',
 			email: 'email'
 		},
@@ -112,7 +114,16 @@ describe('Claims echo page', () => {
 			render(Page);
 
 			expect(await screen.findByText('fields.username')).toBeInTheDocument();
-			expect(screen.getByText('fields.groups')).toBeInTheDocument();
+		});
+
+		// The claim the whole account is keyed by. An operator checking a
+		// token has to be able to see which claim that was read from, since
+		// one that varies between logins creates a new account each time.
+		it('should name the field that reads the subject claim', async () => {
+			withFragment(echoPayload());
+			render(Page);
+
+			expect(await screen.findByText('fields.subject')).toBeInTheDocument();
 		});
 
 		it('should mark a claim nothing reads as unmapped', async () => {

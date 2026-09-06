@@ -63,7 +63,11 @@
 
 		const m = payload.mapping;
 		const reserved: Array<[string | undefined, string]> = [
+			// Subject first: it is the claim the whole account is keyed by,
+			// and the one an operator most needs to see confirmed.
+			[m.subject, 'fields.subject'],
 			[m.username, 'fields.username'],
+			[m.name, 'fields.name'],
 			[m.groups, 'fields.groups'],
 			[m.other_accounts, 'fields.other_accounts'],
 			[m.service_accounts, 'fields.service_accounts'],
