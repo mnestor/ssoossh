@@ -7,6 +7,7 @@
 	import Card from '$lib/components/Card.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 
 	// The list of notifications is served, not hardcoded here: adding a
 	// notification kind is a server-side change (see server/notify), and this
@@ -95,7 +96,7 @@
 
 <svelte:head><title>Preferences · ssoossh</title></svelte:head>
 
-<div class="flex w-full max-w-[680px] flex-col gap-5">
+<PageShell width="default">
 	<PageHeading eyebrow="Preferences" title="Notifications" />
 
 	{#if loadError}
@@ -162,4 +163,4 @@
 			</Button>
 		</div>
 	{/if}
-</div>
+</PageShell>

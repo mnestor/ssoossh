@@ -10,6 +10,7 @@
 	import CertRow from '$lib/components/CertRow.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 
 	// Cursor-paginated certificate history. The type filter and client-side
 	// pagination apply only to loaded results — if the user filters to "host"
@@ -145,7 +146,7 @@
 
 <svelte:head><title>Certificate history · ssoossh</title></svelte:head>
 
-<div class="flex w-full max-w-[680px] flex-col gap-5">
+<PageShell width="wide">
 	<PageHeading eyebrow="History" title="Certificate history" />
 
 	{#if loadError}
@@ -220,4 +221,4 @@
 	{#if modalCert}
 		<CertDetailModal cert={modalCert} onclosed={closeCertDetail} />
 	{/if}
-</div>
+</PageShell>

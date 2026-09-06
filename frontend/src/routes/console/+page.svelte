@@ -6,6 +6,7 @@
 	import Button from '$lib/components/Button.svelte';
 	import Card from '$lib/components/Card.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 	import { session } from '$lib/session.svelte';
 	import {
 		CODE_LENGTH,
@@ -103,7 +104,7 @@
 
 <svelte:head><title>Console login · ssoossh</title></svelte:head>
 
-<div class="flex w-full max-w-[560px] flex-col gap-4">
+<PageShell width="focus">
 	<PageHeading eyebrow="Console login" title="Enter the code on the screen" />
 
 	<Card
@@ -152,4 +153,4 @@
 			</div>
 		{/if}
 	</Card>
-</div>
+</PageShell>

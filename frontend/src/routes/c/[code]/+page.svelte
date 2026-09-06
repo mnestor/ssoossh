@@ -6,6 +6,7 @@
 	import { redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
 	import Card from '$lib/components/Card.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 	import { describeCodeError, formatCode, normalizeCode, type CodeFailure } from '$lib/consolecode';
 
 	// The short form of the verification URL: /c/<code>, the equivalent of
@@ -59,7 +60,7 @@
 
 <svelte:head><title>Console login · ssoossh</title></svelte:head>
 
-<div class="w-full max-w-[560px]">
+<PageShell width="focus">
 	{#if failure}
 		<Card title={failure.title} testid="console-link-failure-{failure.kind}">
 			<p class="text-sm text-ink-muted">{failure.message}</p>
@@ -74,4 +75,4 @@
 			Checking code {formatCode(code)}…
 		</Alert>
 	{/if}
-</div>
+</PageShell>

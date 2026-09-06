@@ -12,6 +12,7 @@
 	import Card from '$lib/components/Card.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
 	import { session } from '$lib/session.svelte';
 
@@ -138,7 +139,7 @@
 
 <svelte:head><title>Directory · ssoossh</title></svelte:head>
 
-<div class="flex w-full flex-col gap-5">
+<PageShell width="wide">
 	<PageHeading eyebrow="Admin" title="Directory" />
 	<p class="-mt-2 text-sm text-ink-muted">
 		What the LDAP sync last did, and what the directory actually returns for a person.
@@ -632,4 +633,4 @@
 			</Card>
 		{/if}
 	{/if}
-</div>
+</PageShell>

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import Card from '$lib/components/Card.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 
 	// Where the server sends a document GET of /approve/<id> it refused to
 	// serve (middleware.ApprovalClaimMiddleware): approval pages are bound
@@ -12,7 +13,7 @@
 
 <svelte:head><title>Approval link unavailable · ssoossh</title></svelte:head>
 
-<div class="w-full max-w-[560px]">
+<PageShell width="focus">
 	{#if cookiesBlocked}
 		<Card title="This site needs cookies to approve requests" testid="claim-cookies-blocked">
 			<p class="text-sm text-ink-muted">
@@ -34,4 +35,4 @@
 			</p>
 		</Card>
 	{/if}
-</div>
+</PageShell>

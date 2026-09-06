@@ -6,6 +6,7 @@
 	import Alert from '$lib/components/Alert.svelte';
 	import AdminServiceCodeDetailModal from '$lib/components/AdminServiceCodeDetailModal.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 
 	// One enrollment, addressed by id. This is where an operator lands with
 	// an id copied out of a notification email, an enrollment.* audit event,
@@ -67,7 +68,7 @@
 	<title>Service code details · Admin · ssoossh</title>
 </svelte:head>
 
-<div class="flex w-full max-w-[680px] flex-col gap-5">
+<PageShell width="default">
 	<PageHeading eyebrow="Admin" title="Service code details" />
 
 	{#if loadError}
@@ -80,4 +81,4 @@
 		     admin.enrollment_viewed events for one look. -->
 		<AdminServiceCodeDetailModal enrollment={detail.enrollment} {detail} onclosed={handleClosed} />
 	{/if}
-</div>
+</PageShell>

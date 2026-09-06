@@ -33,9 +33,19 @@
 		 * sidebar would leave neither column usable.
 		 */
 		aside?: Snippet;
+		/**
+		 * Centre the page in the viewport's remaining height.
+		 *
+		 * One screen wants this — sign-in, which is a single card with
+		 * nothing above or below it and looks abandoned pinned to the top of
+		 * a tall window. Every other page starts at the top, because a page
+		 * whose vertical position depends on how much content it happens to
+		 * have is a page that moves when it loads.
+		 */
+		center?: boolean;
 	}
 
-	let { width = 'default', testid, children, aside }: Props = $props();
+	let { width = 'default', testid, children, aside, center = false }: Props = $props();
 
 	// Written out per width rather than interpolated: Tailwind scans source
 	// text for literal class names, so `max-w-[${n}px]` would never be
@@ -48,19 +58,27 @@
 	};
 </script>
 
-<div data-testid={testid} data-page-width={width} class="mx-auto w-full {caps[width]}">
-	{#if aside}
-		<div class="flex flex-col gap-8 xl:flex-row xl:items-start">
-			<div class="flex min-w-0 flex-1 flex-col gap-5">
+<div
+	data-testid={testid}
+	data-page-width={width}
+	class="flex w-full flex-col"
+	class:flex-1={center}
+	class:justify-center={center}
+>
+	<div class="mx-auto w-full {caps[width]}">
+		{#if aside}
+			<div class="flex flex-col gap-8 xl:flex-row xl:items-start">
+				<div class="flex min-w-0 flex-1 flex-col gap-5">
+					{@render children()}
+				</div>
+				<aside class="flex w-full flex-col gap-5 xl:w-[280px] xl:shrink-0">
+					{@render aside()}
+				</aside>
+			</div>
+		{:else}
+			<div class="flex flex-col gap-5">
 				{@render children()}
 			</div>
-			<aside class="flex w-full flex-col gap-5 xl:w-[280px] xl:shrink-0">
-				{@render aside()}
-			</aside>
-		</div>
-	{:else}
-		<div class="flex flex-col gap-5">
-			{@render children()}
-		</div>
-	{/if}
+		{/if}
+	</div>
 </div>

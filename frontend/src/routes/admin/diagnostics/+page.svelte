@@ -7,6 +7,7 @@
 	import Card from '$lib/components/Card.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 	import { session } from '$lib/session.svelte';
 
 	const isAdmin = $derived(session.user?.is_admin ?? false);
@@ -46,7 +47,7 @@
 	}
 </script>
 
-<div class="flex flex-col gap-6">
+<PageShell width="wide">
 	<PageHeading eyebrow="Admin" title="Diagnostics">
 		{#snippet action()}
 			{#if isAdmin}
@@ -124,4 +125,4 @@
 			</p>
 		{/if}
 	{/if}
-</div>
+</PageShell>

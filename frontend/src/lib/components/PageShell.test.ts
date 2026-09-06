@@ -42,16 +42,32 @@ describe('page shell', () => {
 		expect(screen.getByTestId('shell')).toHaveAttribute('data-page-width', 'default');
 	});
 
-	it('should uncap the container at the full width', () => {
+	// The cap sits on the column inside the outer box, which is what
+	// carries the optional vertical centring.
+	it('should uncap the column at the full width', () => {
 		render(PageShell, { children, width: 'full', testid: 'shell' });
 
-		expect(screen.getByTestId('shell')).toHaveClass('max-w-none');
+		expect(screen.getByTestId('shell').firstElementChild).toHaveClass('max-w-none');
 	});
 
-	it('should cap the container at every other width', () => {
+	it('should cap the column at every other width', () => {
 		render(PageShell, { children, width: 'wide', testid: 'shell' });
 
-		expect(screen.getByTestId('shell')).toHaveClass('max-w-[1120px]');
+		expect(screen.getByTestId('shell').firstElementChild).toHaveClass('max-w-[1120px]');
+	});
+
+	// Sign-in is the one screen that centres in the remaining height; every
+	// other page starts at the top so it does not move as content loads.
+	it('should centre the page vertically when asked to', () => {
+		render(PageShell, { children, center: true, testid: 'shell' });
+
+		expect(screen.getByTestId('shell')).toHaveClass('justify-center');
+	});
+
+	it('should start the page at the top by default', () => {
+		render(PageShell, { children, testid: 'shell' });
+
+		expect(screen.getByTestId('shell')).not.toHaveClass('justify-center');
 	});
 
 	it('should render a secondary column when one is given', () => {

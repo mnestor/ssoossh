@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import { getAdminConfig } from '$lib/api/endpoints';
 	import type { ConfigSection, ConfigSetting, EffectiveConfigResponse } from '$lib/api/types';
@@ -79,7 +80,7 @@
 	const setCount = $derived(all.filter((setting) => setting.value !== '').length);
 </script>
 
-<div class="flex w-full flex-col gap-5">
+<PageShell width="wide">
 	<PageHeading eyebrow="Admin" title="Server configuration" />
 
 	<p class="-mt-2 text-[13px] text-ink-muted">
@@ -162,4 +163,4 @@
 			</div>
 		{/if}
 	{/if}
-</div>
+</PageShell>

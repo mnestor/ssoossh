@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
+	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import Pager from '$lib/components/Pager.svelte';
 	import { getAdminUsers } from '$lib/api/endpoints';
@@ -67,11 +69,10 @@
 	onMount(loadUsers);
 </script>
 
-<div class="flex max-w-full flex-col gap-6">
-	<div>
-		<h1 class="text-2xl font-bold text-ink">Users</h1>
-		<p class="text-sm text-ink-muted">Directory of all users with disable controls</p>
-	</div>
+<PageShell width="full">
+	<PageHeading eyebrow="Admin" title="Users">
+		{#snippet sub()}Directory of all users, with disable controls.{/snippet}
+	</PageHeading>
 
 	<div class="flex flex-wrap items-end justify-between gap-4">
 		<div class="min-w-[240px] flex-1">
@@ -178,4 +179,4 @@
 	{:else}
 		<div class="py-8 text-center text-ink-muted">No users found</div>
 	{/if}
-</div>
+</PageShell>

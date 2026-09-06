@@ -6,6 +6,7 @@
 	import Alert from '$lib/components/Alert.svelte';
 	import CertRow from '$lib/components/CertRow.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 	import Pager from '$lib/components/Pager.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 
@@ -115,7 +116,7 @@
 
 <svelte:head><title>Certificates · ssoossh</title></svelte:head>
 
-<div class="flex w-full max-w-[680px] flex-col gap-5">
+<PageShell width="wide">
 	<PageHeading eyebrow="Admin" title="Certificate history" />
 
 	{#if loadError}
@@ -213,4 +214,4 @@
 	{/if}
 
 	<Pager meta={pageInfo} onpage={handlePage} busy={isLoading} testid="pager" />
-</div>
+</PageShell>

@@ -4,6 +4,8 @@
 	import { getAdminUser, disableUser, enableUser, getUserAudit } from '$lib/api/endpoints';
 	import Button from '$lib/components/Button.svelte';
 	import AuditTimeline from '$lib/components/AuditTimeline.svelte';
+	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 	import type {
 		AdminUserDetail,
 		AdminUserOverride,
@@ -220,7 +222,7 @@
 	});
 </script>
 
-<div class="flex max-w-full flex-col gap-6">
+<PageShell width="full">
 	{#if busy}
 		<div class="text-center text-ink-muted">Loading...</div>
 	{:else if error}
@@ -228,36 +230,42 @@
 			{error}
 		</div>
 	{:else if user}
-		<div class="flex items-center justify-between">
-			<div>
-				<h1 class="text-2xl font-bold text-ink">{user.name || user.username}</h1>
-				<p class="text-sm text-ink-muted">
-					{#if user.name}<span class="font-mono" data-testid="user-username">{user.username}</span> ·
-					{/if}{user.email || 'No email'}
-				</p>
-			</div>
-			<div class="flex gap-2">
-				{#if user.disabled_at}
-					<Button
-						variant="primary"
-						testid="enable-user"
-						disabled={actionBusy}
-						onclick={() => (showEnableConfirm = true)}
-					>
-						Re-enable
-					</Button>
-				{:else}
-					<Button
-						variant="danger"
-						testid="disable-user"
-						disabled={actionBusy}
-						onclick={openDisableConfirm}
-					>
-						{actionBusy ? 'Disabling...' : 'Disable'}
-					</Button>
-				{/if}
-			</div>
-		</div>
+		<!-- A snippet is its own closure, so the `user` narrowed by the
+		     branch above does not reach inside one. Bind it once here and
+		     the heading's two snippets can read it without each re-testing
+		     a value the branch has already settled. -->
+		{@const account = user}
+		<PageHeading eyebrow="Admin" title={account.name || account.username}>
+			{#snippet sub()}
+				{#if account.name}<span class="font-mono" data-testid="user-username"
+						>{account.username}</span
+					> ·
+				{/if}{account.email || 'No email'}
+			{/snippet}
+			{#snippet action()}
+				<div class="flex gap-2">
+					{#if account.disabled_at}
+						<Button
+							variant="primary"
+							testid="enable-user"
+							disabled={actionBusy}
+							onclick={() => (showEnableConfirm = true)}
+						>
+							Re-enable
+						</Button>
+					{:else}
+						<Button
+							variant="danger"
+							testid="disable-user"
+							disabled={actionBusy}
+							onclick={openDisableConfirm}
+						>
+							{actionBusy ? 'Disabling...' : 'Disable'}
+						</Button>
+					{/if}
+				</div>
+			{/snippet}
+		</PageHeading>
 
 		<!-- The OIDC record: exactly what the ID token carried at the last
 		     login, as stored on the users row. Deliberately not the merged
@@ -794,4 +802,4 @@
 			{/if}
 		</div>
 	{/if}
-</div>
+</PageShell>

@@ -7,6 +7,7 @@
 	import Card from '$lib/components/Card.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
 
 	let payload = $state<IdentityEchoPayload | null>(null);
@@ -105,7 +106,7 @@
 
 <svelte:head><title>Claims echo · ssoossh</title></svelte:head>
 
-<div class="flex w-full flex-col gap-5">
+<PageShell width="wide">
 	<PageHeading eyebrow="Admin" title="Claims echo" />
 	<p class="-mt-2 text-sm text-ink-muted">
 		What your identity provider actually sends, annotated against the configuration.
@@ -222,4 +223,4 @@
 			</div>
 		</Card>
 	{/if}
-</div>
+</PageShell>

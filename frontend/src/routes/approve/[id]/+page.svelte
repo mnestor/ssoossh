@@ -8,6 +8,7 @@
 	import Alert from '$lib/components/Alert.svelte';
 	import ApprovalView from '$lib/components/ApprovalView.svelte';
 	import Card from '$lib/components/Card.svelte';
+	import PageShell from '$lib/components/PageShell.svelte';
 
 	// The page a client prints as approval_url. It is the only place a human
 	// authorizes certificate issuance, so it does two things and nothing
@@ -139,29 +140,27 @@
 
 <svelte:head><title>Approve a certificate request · ssoossh</title></svelte:head>
 
-{#if failure}
-	<div class="w-full max-w-[560px]">
+<PageShell width="focus">
+	{#if failure}
 		<Card title={failure.title} testid="load-failure-{failure.kind}">
 			<p class="text-sm text-ink-muted">{failure.message}</p>
 		</Card>
-	</div>
-{:else if detail}
-	<ApprovalView
-		{detail}
-		{busy}
-		{actionError}
-		{outcome}
-		serviceAccounts={session.user?.approvable_service_accounts ?? []}
-		userOwnServiceAccounts={session.user?.user_own_service_accounts ?? []}
-		bind:selectedServiceAccount
-		bind:notificationEmail
-		{userPrincipals}
-		bind:selectedPrincipals
-		onapprove={() => decide('approved')}
-		ondeny={() => decide('denied')}
-	/>
-{:else}
-	<div class="w-full max-w-[560px]">
+	{:else if detail}
+		<ApprovalView
+			{detail}
+			{busy}
+			{actionError}
+			{outcome}
+			serviceAccounts={session.user?.approvable_service_accounts ?? []}
+			userOwnServiceAccounts={session.user?.user_own_service_accounts ?? []}
+			bind:selectedServiceAccount
+			bind:notificationEmail
+			{userPrincipals}
+			bind:selectedPrincipals
+			onapprove={() => decide('approved')}
+			ondeny={() => decide('denied')}
+		/>
+	{:else}
 		<Alert testid="loading-request">Loading request…</Alert>
-	</div>
-{/if}
+	{/if}
+</PageShell>
