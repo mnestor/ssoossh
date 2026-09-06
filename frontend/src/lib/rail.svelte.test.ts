@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { rail, RAIL_STORAGE_KEY } from './rail.svelte';
+import { rail, RAIL_ADMIN_STORAGE_KEY, RAIL_STORAGE_KEY } from './rail.svelte';
 
 // Test methodology: drive the singleton directly with localStorage stubbed
 // per case. What matters is the split between the two pieces of state — the
@@ -36,6 +36,7 @@ beforeEach(() => {
 	vi.unstubAllGlobals();
 	rail.collapsed = false;
 	rail.drawerOpen = false;
+	rail.adminOpen = true;
 });
 
 describe('rail state', () => {
@@ -97,6 +98,50 @@ describe('rail state', () => {
 		rail.toggleCollapsed();
 
 		expect(rail.collapsed).toBe(true);
+	});
+
+	// The admin group's sections are the point of the group, so a first
+	// visit shows them; only an explicit shut is remembered.
+	it('should start with the admin group open when nothing is stored', () => {
+		stubStorage();
+
+		rail.start();
+
+		expect(rail.adminOpen).toBe(true);
+	});
+
+	it('should start with the admin group shut when that is the stored preference', () => {
+		stubStorage({ [RAIL_ADMIN_STORAGE_KEY]: 'false' });
+
+		rail.start();
+
+		expect(rail.adminOpen).toBe(false);
+	});
+
+	it('should start with the admin group open when the browser refuses site data', () => {
+		stubThrowingStorage();
+
+		rail.start();
+
+		expect(rail.adminOpen).toBe(true);
+	});
+
+	it('should remember the admin group being shut', () => {
+		const storage = stubStorage();
+
+		rail.toggleAdminOpen();
+
+		expect(storage.setItem).toHaveBeenCalledWith(RAIL_ADMIN_STORAGE_KEY, 'false');
+	});
+
+	// Two questions, two keys: wanting a narrow rail is not wanting the
+	// admin sections hidden.
+	it('should not disturb the width preference when the admin group is toggled', () => {
+		const storage = stubStorage();
+
+		rail.toggleAdminOpen();
+
+		expect(storage.setItem).not.toHaveBeenCalledWith(RAIL_STORAGE_KEY, expect.anything());
 	});
 
 	it('should open the drawer when it is toggled', () => {

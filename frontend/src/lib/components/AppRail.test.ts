@@ -55,6 +55,7 @@ beforeEach(() => {
 	session.clear();
 	rail.collapsed = false;
 	rail.drawerOpen = false;
+	rail.adminOpen = true;
 });
 
 describe('app rail', () => {
@@ -87,7 +88,6 @@ describe('app rail', () => {
 	});
 
 	it('should name every admin section for an auditor', () => {
-		// On an admin route, where the group is open on arrival.
 		resetFakePage('http://localhost/admin/users');
 		session.user = signedInUser(true);
 		session.resolved = true;
@@ -141,23 +141,55 @@ describe('app rail', () => {
 		expect(screen.getByTestId('rail-admin-group')).toHaveAttribute('aria-expanded', 'true');
 	});
 
-	it('should keep the admin group shut elsewhere', () => {
+	// It used to start shut everywhere but /admin, which read as the admin
+	// menu having gone missing: the sections were one click away in a
+	// dropdown before, and became two behind a collapsed group.
+	it('should show the admin sections without being asked', () => {
 		session.user = signedInUser(true);
 		session.resolved = true;
 
 		render(AppRail, { onsignout: () => {} });
 
-		expect(screen.getByTestId('rail-admin-group')).toHaveAttribute('aria-expanded', 'false');
+		expect(screen.getByTestId('rail-admin-group')).toHaveAttribute('aria-expanded', 'true');
+		expect(screen.getByRole('link', { name: 'Audit log' })).toBeInTheDocument();
 	});
 
-	it('should reveal the admin sections when the group is opened', async () => {
+	it('should hide the admin sections once the group is shut', async () => {
 		session.user = signedInUser(true);
 		session.resolved = true;
 
 		render(AppRail, { onsignout: () => {} });
 		await userEvent.click(screen.getByTestId('rail-admin-group'));
 
-		expect(screen.getByRole('link', { name: 'Audit log' })).toBeInTheDocument();
+		expect(screen.queryByRole('link', { name: 'Audit log' })).not.toBeInTheDocument();
+	});
+
+	// Arriving in the admin area with the section list hidden is the one
+	// case where the stored preference cannot be what the viewer meant.
+	it('should force the group open on an admin route however it was left', () => {
+		resetFakePage('http://localhost/admin/audit');
+		rail.adminOpen = false;
+		session.user = signedInUser(true);
+		session.resolved = true;
+
+		render(AppRail, { onsignout: () => {} });
+
+		expect(screen.getByTestId('rail-admin-group')).toHaveAttribute('aria-expanded', 'true');
+	});
+
+	// The collapsed width is a desktop preference, and the control that
+	// undoes it is hidden below `lg`. The drawer inheriting it handed a
+	// phone a strip of unlabelled icons with no way back.
+	it('should ignore the stored collapse when told to render expanded', () => {
+		rail.collapsed = true;
+		session.user = signedInUser(false);
+		session.resolved = true;
+
+		render(AppRail, { onsignout: () => {}, collapsed: false });
+
+		// Visible text, not just the accessible name: sr-only labels would
+		// satisfy getByRole either way.
+		expect(screen.getByText('Dashboard')).toBeVisible();
 	});
 
 	// The whole point of the icon rail is that it is still navigable, so the

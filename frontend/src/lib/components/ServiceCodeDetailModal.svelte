@@ -296,6 +296,9 @@
 				<DetailRow label="First redeemed">
 					{enrollment.first_redeemed_at ? formatDateTime(enrollment.first_redeemed_at) : '—'}
 				</DetailRow>
+				<DetailRow label="Last redeemed">
+					{enrollment.last_retrieved_at ? formatDateTime(enrollment.last_retrieved_at) : '—'}
+				</DetailRow>
 				<DetailRow label="Redemptions">{enrollment.retrieval_count}</DetailRow>
 			</dl>
 		</div>

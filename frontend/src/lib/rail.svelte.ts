@@ -9,6 +9,15 @@ import { browser } from '$app/environment';
 export const RAIL_STORAGE_KEY = 'ssoossh:rail-collapsed';
 
 /**
+ * Where the admin group's open state is kept.
+ *
+ * Stored as its own key rather than folded into the one above: they are
+ * different questions with different answers, and a viewer who wants a
+ * narrow rail does not thereby want the admin sections hidden.
+ */
+export const RAIL_ADMIN_STORAGE_KEY = 'ssoossh:rail-admin-open';
+
+/**
  * The rail's two independent pieces of state.
  *
  * `collapsed` is a preference: the viewer asked for the icon-only rail and
@@ -26,6 +35,14 @@ class Rail {
 	drawerOpen = $state(false);
 
 	/**
+	 * True when the rail's admin group is expanded. Persisted, and open by
+	 * default: the sections are the point of the group, and a group that
+	 * starts shut is a menu the viewer has to discover twice. An admin route
+	 * forces it open regardless — see AppRail.
+	 */
+	adminOpen = $state(true);
+
+	/**
 	 * start loads the stored preference. Called once by the root layout.
 	 *
 	 * Storage access is guarded the same way the theme guards it: a browser
@@ -38,6 +55,9 @@ class Rail {
 		}
 		try {
 			this.collapsed = localStorage.getItem(RAIL_STORAGE_KEY) === 'true';
+			// Only an explicit "false" shuts it: an absent key is a first
+			// visit, and the group is open on a first visit.
+			this.adminOpen = localStorage.getItem(RAIL_ADMIN_STORAGE_KEY) !== 'false';
 		} catch {
 			// Site data blocked. Start expanded, same as a first visit.
 		}
@@ -51,6 +71,20 @@ class Rail {
 		}
 		try {
 			localStorage.setItem(RAIL_STORAGE_KEY, String(this.collapsed));
+		} catch {
+			// Site data blocked: the choice holds for this page, not beyond it.
+		}
+	}
+
+	/** toggleAdminOpen expands or collapses the admin group and remembers
+	 * the choice. */
+	toggleAdminOpen(): void {
+		this.adminOpen = !this.adminOpen;
+		if (!browser) {
+			return;
+		}
+		try {
+			localStorage.setItem(RAIL_ADMIN_STORAGE_KEY, String(this.adminOpen));
 		} catch {
 			// Site data blocked: the choice holds for this page, not beyond it.
 		}
