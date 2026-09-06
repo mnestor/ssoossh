@@ -632,8 +632,13 @@ third-party-licenses: ## Regenerate THIRD-PARTY-LICENSES.md
 # Mirrors security.yaml's govulncheck job (advisory there). Ships with the
 # devcontainer base image; if missing:
 # go install golang.org/x/vuln/cmd/govulncheck@latest
+# CGO_ENABLED=1 for the same reason `build` and `lint` need it: govulncheck
+# type-checks the whole package graph, which reaches crypto11's cgo-only
+# pkcs11 bindings. Under the devcontainer's CGO_ENABLED=0 those files are
+# excluded and the load fails with hundreds of "undefined: pkcs11.*" before
+# a single vulnerability is reported.
 govulncheck: ## Scan Go dependencies for known vulnerabilities
-	govulncheck ./...
+	CGO_ENABLED=1 govulncheck ./...
 
 # Mirrors security.yaml's pnpm-audit job (advisory there).
 pnpm-audit: ## Audit frontend dependencies
@@ -693,4 +698,5 @@ update: ## Update Go dependencies and tidy
 	go mod tidy
 
 update-go-version:
-	@echo "Must update go.mod and .github/docker/Dockerfile.devcontainer"
+	@echo "Must update go.mod, .github/docker/Dockerfile.devcontainer and"
+	@echo ".github/docker/Dockerfile.runner (GO_VERSION in both images)."

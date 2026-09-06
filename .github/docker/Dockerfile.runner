@@ -25,6 +25,13 @@ ARG GOLANGCI_LINT_VERSION=2.13.1
 ARG GOVULNCHECK_VERSION=v1.7.0
 ARG REDOCLY_VERSION=1.28.1
 ARG ACTIONLINT_VERSION=v1.7.12
+# Must be >= the `go` directive in go.mod, and should track the same pin as
+# Dockerfile.devcontainer. GOTOOLCHAIN=auto covers `go build`/`go test` by
+# downloading a newer toolchain on demand, but it cannot rescue govulncheck:
+# that is a prebuilt binary that type-checks the module in-process with the
+# go/types it was compiled against, so an image older than go.mod fails every
+# package with "requires newer Go version ... (application built with ...)".
+ARG GO_VERSION=1.27.0
 RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sources.list.d/goreleaser.list \
   && apt-get update && apt-get install -y --no-install-recommends gnupg curl ca-certificates \
   && curl -sSfL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
@@ -51,7 +58,7 @@ RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sourc
   && curl -sL -o /tmp/quill.deb $(curl -s https://api.github.com/repos/anchore/quill/releases/latest | jq -r '.assets[] |select(.name|match("linux_amd64.deb$")) | .browser_download_url') \
   && dpkg -i /tmp/quill.deb \
   && curl -fsSL https://get.pnpm.io/install.sh | ENV="$HOME/.bashrc" SHELL="$(which bash)" bash - \
-  && curl -sL https://go.dev/dl/go1.26.6.linux-amd64.tar.gz | tar -C /usr/local -xz \
+  && curl -sL https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz | tar -C /usr/local -xz \
   && curl -sL https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz | tar -C /usr/local -xJ \
   && ln -s /usr/local/zig-x86_64-linux-${ZIG_VERSION}/zig /usr/local/bin/zig \
   && /usr/local/go/bin/go install gotest.tools/gotestsum@v1.13.0 \
