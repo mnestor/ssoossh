@@ -119,6 +119,42 @@ someone's score in the provider takes effect at their next authentication.
 Directory attributes can fill the same fields when OIDC does not carry them --
 see [LDAP enrichment](/ssoossh/operations/ldap/).
 
+## Seeing what your provider actually sends
+
+Writing `fields.extra` is guesswork until you know what is in the token. The
+**Claims echo** (`/admin/identity/echo`, admin-only) removes the guessing: it
+shows an admin their own decoded ID token, with every claim annotated by the
+configured field that consumes it, and the config block that would capture the
+ones nothing reads.
+
+It **re-authenticates rather than remembers.** There is no stored copy of your
+claims to show -- the server keeps only what the configuration maps -- so
+starting an echo signs you in again with `prompt=login`, and the callback
+renders the token instead of establishing a session. Your existing session is
+untouched, no user record is written, and no login is recorded.
+
+Nothing about the result is stored. It reaches the page in the URL fragment,
+which browsers never send to a server, and the page clears the address bar as
+soon as it has read it. Reload and it is gone. There is no shareable link, on
+purpose: a link would be the thing that turns a non-storing feature into a
+storing one.
+
+Two things it deliberately does not do:
+
+- It only ever shows **your own** claims. That answers "what fields do I get
+  from this provider", which is the configuration question. It does not answer
+  "why is this other person missing a group" -- the
+  [user detail page](/ssoossh/operations/roles/) and the
+  [directory probe](/ssoossh/operations/ldap/) are for that.
+- It shows the token, not the provider's whole user record. A claim your
+  provider only releases under a scope you have not requested will not appear;
+  add the scope to
+  [`authentication.scopes`](/ssoossh/reference/config/authentication/#scopes)
+  and echo again.
+
+Each echo is a real authentication against your provider, so it appears in the
+provider's own sign-in log like any other.
+
 ## Total denial belongs to the provider
 
 Conditions in `ssoosshd` shape what an already-admitted identity receives.

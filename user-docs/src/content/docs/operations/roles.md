@@ -67,6 +67,17 @@ a user is admin-only.
 | Certificate history across all users | yes | yes | yes |
 | Service code directory and detail | yes | yes | yes |
 | Audit feed, and one user's timeline | yes | yes | yes |
+| Directory status and last sync pass | yes | yes | yes |
+| Run the directory sync by hand | yes | no | no |
+| Probe the directory | yes | no | no |
+| Echo your own IdP claims | yes | no | no |
+
+Running the sync is admin-only rather than SOC, even though a pass can
+disable an account: it restores and refreshes access as readily as it removes
+it, and re-enabling is admin-only everywhere else. Probing is admin-only
+because it makes the server open an outbound connection and read a directory
+entry in full, which is a capability rather than a view. Reading the sync
+*status* is auditor-safe: it names no credential.
 
 What no role may do, at all:
 

@@ -276,6 +276,119 @@ Group downgrades -- still in the directory, out of a role group -- still ride
 out the session, unchanged. See
 [Roles and containment](/ssoossh/operations/roles/).
 
+## Running a sync by hand
+
+`/admin/directory` shows the sync settings and the last pass on any instance,
+and gives an admin a button. The pass is the **same code path** the scheduler
+runs: a manual sync that behaved differently from a scheduled one would be a
+diagnostic that lies.
+
+Three rules make the button safe:
+
+- **Dry run is the default.** A dry run reads the directory and changes
+  nothing -- no refreshed attributes, no group rows, no miss windows, no
+  disables and no re-enables -- and reports the disables and re-enables it
+  *would* have performed. It is the version to press during an incident.
+- **One at a time.** A pass already in progress makes the request a `409`
+  rather than a second pass stacked over the same users.
+- **It cannot bring a disable forward.** The threshold is elapsed absence
+  (see above), so pressing the button ten times does not disable anyone a
+  single scheduled pass would not have disabled at the same moment.
+
+Every pass, scheduled or manual, writes an `ldap_sync_runs` row: when it
+started and finished, what triggered it, who pressed the button, which
+instance ran it, the counts, and any error that stopped it. That row is what
+lets a sync that ran be told from one that never fired -- before it, the only
+evidence was a log line on whichever instance happened to run the job. A pass
+that could not reach the directory still writes its row, so an outage is
+visible as a pass that ran and failed.
+
+A manual sync is audited as `ldap.sync_triggered`, with the counts and
+`dry_run`.
+
+## Probing the directory
+
+`/admin/directory` also carries a read-only probe, for the question a log line
+cannot answer: *what does the directory actually return for this person, and
+what will my configuration make of it*.
+
+It runs the login path's first two stages -- the lookup and the field
+resolution -- and stops before the write. Three views of one probe, in the
+order the questions come up:
+
+1. **Entry as returned.** Every attribute the directory sent back, not just
+   the ones the configuration names, with the configured ones highlighted.
+   This is the view that shows you the field you should have mapped.
+2. **Field mapping.** What each configured field resolved to, which attribute
+   or search it came from, and whether the attribute was on the entry at all
+   -- which is what separates "empty" from "misspelled".
+3. **Merge and allowlist.** What would have been persisted, and which group
+   values would have been discarded for matching no configured name. The
+   allowlist is why you cannot otherwise see the group you forgot to
+   configure; this is what breaks that circle.
+
+Below them, the config block that would keep whatever is being ignored. A
+suggestion, not a decision: it says what would capture a value, not that
+capturing it is right.
+
+### Template mode and literal mode
+
+The distinction matters because escaping is not opt-out.
+
+In **template** mode the filter is rendered against the bindings through the
+same RFC 4515 escaping the login path uses, and the result is reported. That
+is the only way to see what your configured filter really sends:
+
+```
+config   (&(objectClass=person)(uid={{.Username}}))
+binding  Username = "o'brien)"
+sent     (&(objectClass=person)(uid=o'brien9))
+```
+
+In **literal** mode the string is sent exactly as typed. Nothing is
+interpolated, so nothing is escaped -- escaping a filter you wrote by hand
+would corrupt it.
+
+Bindings are your own session or values you type. Typed values are what let
+you test someone's entry before that person has ever logged in.
+
+### What the probe cannot do
+
+**It cannot be re-pointed.** The connection is not part of the request: every
+probe uses the running
+[`ldap.url`](/ssoossh/reference/config/ldap/#url), bind credentials and
+[`base_dn`](/ssoossh/reference/config/ldap/#base_dn). Reusing the server's bind
+password against an operator-supplied URL would be a credential-exfiltration
+primitive, and dialling an arbitrary host would make the server an
+outbound-connection one. What an operator varies is the question, not who is
+asked.
+
+**It cannot write.** There is no persist call on the path at all: no
+`user_ldap` row, no group rows, no miss window, no auto-disable. The response
+carries that guarantee and a test asserts it.
+
+It is still admin-only and rate-limited per caller, and every probe is audited
+as `ldap.probed` with the filter it sent. If
+[`tls_insecure_skip_verify`](/ssoossh/reference/config/ldap/#tls_insecure_skip_verify)
+is on, the result says so -- a probe that succeeds only because verification
+was off is not the same as one that verified.
+
+### From the command line
+
+`ssoosshd ldap probe` runs the same lookup against a config file, with no
+server up and no HTTP surface at all:
+
+```bash
+ssoosshd -c /etc/ssoossh/ssoosshd.yaml ldap probe --username alice
+ssoosshd ldap probe --literal --filter '(&(objectClass=person)(uid=alice))'
+ssoosshd ldap probe --username alice --json
+```
+
+Useful before the first start, since building the service parses every filter
+template: a bad one fails here with the message the next restart would have
+produced. It never opens the database. Whoever can run it can already read the
+config file, and so already has the bind password.
+
 ## Cost and freshness
 
 The login lookup adds one directory round trip, bounded by

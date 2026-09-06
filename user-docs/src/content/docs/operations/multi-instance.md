@@ -179,6 +179,23 @@ have to do is name itself in
 not buffer the certificate event stream --
 [TLS and reverse proxies](/ssoossh/operations/tls-and-proxy/).
 
+## Scheduled jobs run on every instance
+
+Scheduled jobs are not leader-elected: each instance registers and runs every
+job on its own timer. That is deliberate for the sweeps -- they are idempotent
+and running one twice costs nothing -- but it is what makes the
+[directory sync's](/ssoossh/operations/ldap/) auto-disable threshold a
+duration rather than a count of passes. Three replicas observe an absence
+three times per interval, so a pass count would mean something different in
+every deployment.
+
+Two consequences worth knowing:
+
+- Each `ldap_sync_runs` row names the instance that produced it, since that is
+  the log to go and read.
+- A manual sync runs on whichever instance answered the request. There is no
+  queue across replicas, and the single-flight guard is per instance.
+
 ## What happens when something breaks
 
 Nothing is lost that matters, because the flow is short and interactive: the
