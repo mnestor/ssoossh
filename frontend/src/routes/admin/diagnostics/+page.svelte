@@ -84,8 +84,16 @@
 				</p>
 			{/if}
 
-			<CardGrid testid="diagnostics-results">
-				{#each report.checks as check (check.id)}
+			<!-- A check's height is its findings list plus the remediation
+			     note when one is shown; a passing check is title and summary
+			     alone. -->
+			<CardGrid
+				testid="diagnostics-results"
+				items={report.checks}
+				weight={(check) =>
+					check.findings.length + (check.remediation && needsAttention(check) ? 3 : 0)}
+			>
+				{#snippet card(check)}
 					<Card>
 						<div class="flex items-start justify-between gap-4">
 							<div>
@@ -118,7 +126,7 @@
 							</div>
 						{/if}
 					</Card>
-				{/each}
+				{/snippet}
 			</CardGrid>
 		{:else if !error}
 			<p class="text-sm text-ink-muted">

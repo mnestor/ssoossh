@@ -123,8 +123,11 @@
 				No configuration key matches this filter.
 			</p>
 		{:else}
-			<CardGrid>
-				{#each sections as section (section.name)}
+			<!-- Weighted by how many settings a section carries: they run from
+			     one to over fifty, so balancing by section count alone would
+			     put a wall of keys beside almost nothing. -->
+			<CardGrid items={sections} weight={(section) => section.settings.length}>
+				{#snippet card(section)}
 					<section
 						data-testid="config-section"
 						class="rounded-[10px] border border-border-subtle bg-surface p-4"
@@ -160,7 +163,7 @@
 							{/each}
 						</dl>
 					</section>
-				{/each}
+				{/snippet}
 			</CardGrid>
 		{/if}
 	{/if}
