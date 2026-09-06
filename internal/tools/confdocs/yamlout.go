@@ -122,19 +122,109 @@ func writeYAMLField(b *strings.Builder, f *Field, refs map[string]string, scope 
 	}
 
 	if !f.HasDefault {
-		// Documented but unset. The example: tag, when the field carries
-		// one, names the key and shows a value that can be uncommented as
-		// it stands. Without one, a blank line at least keeps the comment
-		// from reading as the header for whichever key comes next.
-		if f.Example != "" {
+		// Documented but unset. A container of structs shows the shape of
+		// one entry; a field with an example: tag names the key and shows a
+		// value that can be uncommented as it stands. Without either, a
+		// blank line at least keeps the comment from reading as the header
+		// for whichever key comes next.
+		switch {
+		case len(f.Elem) > 0:
+			writeYAMLElem(b, f, depth)
+		case f.Example != "":
 			fmt.Fprintf(b, "%s# %s: %s\n", indent, f.Key, f.Example)
-			return
+		default:
+			b.WriteString("\n")
 		}
-		b.WriteString("\n")
 		return
 	}
 
 	fmt.Fprintf(b, "%s%s: %s\n", indent, f.Key, renderDefault(f))
+}
+
+// writeYAMLElem emits the shape of one entry under a container key: a
+// commented-out block naming the key, one entry, and every key that entry
+// can hold, at the indentation the real thing would sit at.
+//
+// A container of structs has no value to ship -- a map of directory fields
+// or a list of policy tiers is deployment-specific, and inventing one would
+// be writing policy here rather than documenting it -- so before this the
+// file carried the group's prose and nothing whatever about what goes under
+// it. The prose for each key stays in ssoosshd.yaml(5), which the file
+// header already points at; what an operator cannot get from prose alone is
+// the nesting, and that is what the block shows.
+func writeYAMLElem(b *strings.Builder, f *Field, depth int) {
+	indent := strings.Repeat("  ", depth)
+	b.WriteString(indent + "#\n")
+	b.WriteString(indent + "# One entry, and the keys it can hold:\n")
+	b.WriteString(indent + "#\n")
+	for _, line := range yamlEntry(f, "", "") {
+		b.WriteString(indent + "#   " + line + "\n")
+	}
+	b.WriteString("\n")
+}
+
+// yamlEntry renders a container key and one entry under it. at indents the
+// key's own line -- a list entry's first key carries a dash, so it does not
+// always match pad -- and pad indents everything below it.
+func yamlEntry(f *Field, at, pad string) []string {
+	out := []string{at + f.Key + ":"}
+	inner := pad + "  "
+
+	// A map entry is named by the operator, so a placeholder stands in for
+	// the key they choose. A list entry has only its position, so its first
+	// key carries the dash instead.
+	if f.Type == "map" {
+		out = append(out, inner+"<name>:")
+		return append(out, yamlEntryKeys(f.Elem, inner+"  ", false)...)
+	}
+	return append(out, yamlEntryKeys(f.Elem, inner+"  ", true)...)
+}
+
+// yamlEntryKeys renders the keys of one entry at pad. dash marks the first
+// key of a list entry, which sits one level out with the dash in front of
+// it so the rest of the entry lines up past it.
+func yamlEntryKeys(fields []*Field, pad string, dash bool) []string {
+	var out []string
+	for _, f := range fields {
+		at := pad
+		if dash && len(out) == 0 {
+			at = pad[:len(pad)-2] + "- "
+		}
+		switch {
+		case f.IsStruct():
+			out = append(out, at+f.Key+":")
+			out = append(out, yamlEntryKeys(f.Children, pad+"  ", false)...)
+		case len(f.Elem) > 0:
+			out = append(out, yamlEntry(f, at, pad)...)
+		default:
+			out = append(out, at+f.Key+": "+yamlEntryValue(f))
+		}
+	}
+	return out
+}
+
+// yamlEntryValue is the placeholder a skeleton key carries: its example: tag
+// when it has one, otherwise the empty value for its type. The block is a
+// shape to fill in, so an empty value is honest where an invented hostname
+// would read as a recommendation.
+func yamlEntryValue(f *Field) string {
+	if f.Example != "" {
+		return f.Example
+	}
+	switch f.Type {
+	case "bool":
+		return "false"
+	case "int", "number":
+		return "0"
+	case "duration":
+		return "0s"
+	case "list":
+		return "[]"
+	case "map":
+		return "{}"
+	default:
+		return `""`
+	}
 }
 
 // hasDefault reports whether f, or anything below it, has a default to write.

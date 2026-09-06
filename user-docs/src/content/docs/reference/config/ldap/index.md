@@ -17,6 +17,12 @@ LDAP is enrichment, never a requirement. If directory data is available a user g
 | [`ldap.base_dn`](#base_dn) | string | `empty` |
 | [`ldap.user_filter`](#user_filter) | string | `empty` |
 | [`ldap.fields`](#fields) | map |  |
+| [`ldap.fields.<name>.attribute`](#fieldsnameattribute) | string | `empty` |
+| [`ldap.fields.<name>.searches`](#fieldsnamesearches) | list | `empty` |
+| [`ldap.fields.<name>.searches[].name`](#fieldsnamesearchesname) | string | `empty` |
+| [`ldap.fields.<name>.searches[].base_dn`](#fieldsnamesearchesbase_dn) | string | `empty` |
+| [`ldap.fields.<name>.searches[].filter`](#fieldsnamesearchesfilter) | string | `empty` |
+| [`ldap.fields.<name>.searches[].value`](#fieldsnamesearchesvalue) | string | `empty` |
 | [`ldap.group_name_attribute`](#group_name_attribute) | string | `empty` |
 | [`ldap.sync.interval`](/ssoossh/reference/config/ldap/sync/#interval) | duration | `15m` |
 | [`ldap.sync.disable_after`](/ssoossh/reference/config/ldap/sync/#disable_after) | int | `3` |
@@ -111,6 +117,83 @@ The reserved names are other_accounts, service_accounts and groups. Any other ke
 The merge rule is per field: a configured LDAP field (any attribute or searches) wins over the OIDC value, and an unconfigured one leaves the OIDC value untouched. Override rather than union, because union makes it impossible to retire a stale principal from only one source. Groups are the exception — both sources persist side by side.
 
 username, email and subject are rejected here: the subject keys the user row, the username is what lookups are keyed by, and the OIDC email claim is the source of truth for users.email.
+
+A bare string in YAML is shorthand for `attribute: <string>`.
+
+## `fields.<name>.attribute`
+
+`string`, default `empty`
+
+Reads the value from the person's own entry — a forward list, the simplest of the linking topologies.
+
+```yaml
+ldap:
+  fields:
+    <name>:
+      attribute: memberOf
+```
+
+## `fields.<name>.searches`
+
+`list`, default `empty`
+
+Resolve linked accounts that are their own directory entries. They run after the primary lookup and are keyed by filter rather than by DN, so they must re-run at sync time: a reverse link can change without the person's own entry changing, which is much of what the sync exists to catch.
+
+## `fields.<name>.searches[].name`
+
+`string`, default `empty`
+
+Labels the search in logs and errors.
+
+```yaml
+ldap:
+  fields:
+    <name>:
+      searches:
+        - name: linked-accounts
+```
+
+## `fields.<name>.searches[].base_dn`
+
+`string`, default `empty`
+
+The search base. Empty inherits ldap.base_dn.
+
+```yaml
+ldap:
+  fields:
+    <name>:
+      searches:
+        - base_dn: ou=People,dc=example,dc=net
+```
+
+## `fields.<name>.searches[].filter`
+
+`string`, default `empty`
+
+A Go template over the OIDC identity plus {{.DN}} and {{.Attr.&lt;name>}} from the primary entry. Values are RFC 4515 escaped during rendering and the operator cannot opt out: a preferred_username containing * or ) is otherwise filter injection.
+
+```yaml
+ldap:
+  fields:
+    <name>:
+      searches:
+        - filter: (manager={{.DN}})
+```
+
+## `fields.<name>.searches[].value`
+
+`string`, default `empty`
+
+Names the attribute on each matched entry that contributes to the field, e.g. "uid".
+
+```yaml
+ldap:
+  fields:
+    <name>:
+      searches:
+        - value: uid
+```
 
 ## `group_name_attribute`
 

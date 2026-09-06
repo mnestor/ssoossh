@@ -26,6 +26,7 @@ func RequireDocs(sections []*Section) error {
 				missing = append(missing, f.Path)
 			}
 			walk(f.Children)
+			walk(f.Elem)
 		}
 	}
 	for _, s := range sections {

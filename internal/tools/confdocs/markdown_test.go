@@ -426,3 +426,81 @@ func TestMarkdownPages_ShouldSetTheEyebrowOnEveryPage(t *testing.T) {
 		}
 	}
 }
+
+// A container key is followed on the page by the keys of one entry, in the
+// table and in the body, so ldap.fields is no longer a row saying "map"
+// with nothing behind it.
+func TestMarkdownPages_ShouldDocumentContainerEntryKeys(t *testing.T) {
+	t.Parallel()
+
+	pages := mdPages(t)
+	tests := []struct {
+		name, page, want string
+	}{
+		{
+			name: "should link a map entry key from the at-a-glance table",
+			page: "ldap/index.md",
+			want: "| [`ldap.fields.<name>.attribute`](#fieldsnameattribute) | string |",
+		},
+		{
+			name: "should give a map entry key its own heading",
+			page: "ldap/index.md",
+			want: "## `fields.<name>.attribute`",
+		},
+		{
+			name: "should link a list entry key from the at-a-glance table",
+			page: "cert_options/user.md",
+			want: "| [`cert_options.user.lifetime_policy.tiers[].max_duration`](#lifetime_policytiersmax_duration) | duration |",
+		},
+		{
+			name: "should walk a struct inside a list entry",
+			page: "cert_options/user.md",
+			want: "## `lifetime_policy.tiers[].when.group`",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if !strings.Contains(pages[tt.page], tt.want) {
+				t.Errorf("expected %s to contain:\n%s", tt.page, tt.want)
+			}
+		})
+	}
+}
+
+// The dotted path of an entry key says which container it belongs to but
+// not how the YAML nests, which is the whole question a list of maps
+// raises.
+func TestMdUsage_ShouldNestMapAndListEntries(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		field *Field
+		want  string
+	}{
+		{
+			name:  "should put the operator's own key where the placeholder is",
+			field: &Field{Path: "ldap.fields.<name>.attribute", Type: "string", Example: "memberOf"},
+			want:  "ldap:\n  fields:\n    <name>:\n      attribute: memberOf\n",
+		},
+		{
+			name:  "should open a list entry with a dash",
+			field: &Field{Path: "ldap.fields.<name>.searches[].value", Type: "string", Example: "uid"},
+			want:  "ldap:\n  fields:\n    <name>:\n      searches:\n        - value: uid\n",
+		},
+		{
+			name:  "should line a nested key up past the dash",
+			field: &Field{Path: "cert_options.user.lifetime_policy.tiers[].when.group", Type: "string", Example: "SSH Users"},
+			want:  "      tiers:\n        - when:\n            group: SSH Users\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := mdUsage(tt.field); !strings.Contains(got, tt.want) {
+				t.Errorf("got:\n%s\nwant it to contain:\n%s", got, tt.want)
+			}
+		})
+	}
+}

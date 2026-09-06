@@ -31,7 +31,26 @@ Deliberately its own type rather than a flag on cert_options.pam. A console cert
 | [`cert_options.console.lifetime_policy.default_extensions`](#lifetime_policydefault_extensions) | list | `empty` |
 | [`cert_options.console.lifetime_policy.default_enrollment_duration`](#lifetime_policydefault_enrollment_duration) | duration | `0` |
 | [`cert_options.console.lifetime_policy.tiers`](#lifetime_policytiers) | list | `empty` |
+| [`cert_options.console.lifetime_policy.tiers[].name`](#lifetime_policytiersname) | string | `empty` |
+| [`cert_options.console.lifetime_policy.tiers[].when.group`](#lifetime_policytierswhengroup) | string | `empty` |
+| [`cert_options.console.lifetime_policy.tiers[].when.claim`](#lifetime_policytierswhenclaim) | string | `empty` |
+| [`cert_options.console.lifetime_policy.tiers[].when.at_least`](#lifetime_policytierswhenat_least) | number | `0` |
+| [`cert_options.console.lifetime_policy.tiers[].when.at_most`](#lifetime_policytierswhenat_most) | number | `0` |
+| [`cert_options.console.lifetime_policy.tiers[].when.exactly`](#lifetime_policytierswhenexactly) | number | `0` |
+| [`cert_options.console.lifetime_policy.tiers[].when.equals`](#lifetime_policytierswhenequals) | string | `empty` |
+| [`cert_options.console.lifetime_policy.tiers[].when.one_of`](#lifetime_policytierswhenone_of) | list | `empty` |
+| [`cert_options.console.lifetime_policy.tiers[].when.contains`](#lifetime_policytierswhencontains) | string | `empty` |
+| [`cert_options.console.lifetime_policy.tiers[].when.all_of`](#lifetime_policytierswhenall_of) | list | `empty` |
+| [`cert_options.console.lifetime_policy.tiers[].when.any_of`](#lifetime_policytierswhenany_of) | list | `empty` |
+| [`cert_options.console.lifetime_policy.tiers[].max_duration`](#lifetime_policytiersmax_duration) | duration | `0` |
+| [`cert_options.console.lifetime_policy.tiers[].grant_extensions`](#lifetime_policytiersgrant_extensions) | list | `empty` |
+| [`cert_options.console.lifetime_policy.tiers[].max_enrollment_duration`](#lifetime_policytiersmax_enrollment_duration) | duration | `0` |
 | [`cert_options.console.lifetime_policy.source_policy`](#lifetime_policysource_policy) | list | `empty` |
+| [`cert_options.console.lifetime_policy.source_policy[].cidr`](#lifetime_policysource_policycidr) | string | `empty` |
+| [`cert_options.console.lifetime_policy.source_policy[].max_duration`](#lifetime_policysource_policymax_duration) | duration | `0` |
+| [`cert_options.console.lifetime_policy.source_policy[].extensions`](#lifetime_policysource_policyextensions) | list | `empty` |
+| [`cert_options.console.lifetime_policy.source_policy[].removed_extensions`](#lifetime_policysource_policyremoved_extensions) | list | `empty` |
+| [`cert_options.console.lifetime_policy.source_policy[].pin_source_address`](#lifetime_policysource_policypin_source_address) | bool | `false` |
 
 ## `require`
 
@@ -226,6 +245,114 @@ The enrollment-code lifetime applied when no tier matches, clamped to cert_optio
 
 Evaluated in order; the FIRST tier whose when condition the approver's identity satisfies wins, and the list means what it says — tier order is the administrator's job. Numeric thresholds are nested by construction (everyone satisfying at_least 40 also satisfies at_least 30), so write them in descending order; ascending order silently lands every high-score identity in the shortest tier. An empty tiers list means DefaultDuration is always used.
 
+## `lifetime_policy.tiers[].name`
+
+`string`, default `empty`
+
+Labels the tier for the policy explanation recorded with each approval decision — the answer to "why one hour".
+
+## `lifetime_policy.tiers[].when`
+
+The condition an identity must satisfy to take this tier. It is required: a tier without one is a startup error. Group tiers from before the condition grammar move from `group: <name>` to `when: {group: <name>}`.
+
+```yaml
+- group: membership in an OIDC group, exactly the behaviour group tiers
+  had before conditions existed.
+- claim with at_least / at_most: numeric comparison against an extra
+  claim (see authentication.fields.extra). Both keys together express a
+  range; boundaries are inclusive.
+- claim with exactly: numeric equality, shorthand for at_least and
+  at_most set to the same value.
+- claim with equals / one_of: scalar string equality, or membership of
+  the scalar in a fixed set.
+- claim with contains: membership of a value in a list-valued claim.
+- all_of / any_of: conjunction or disjunction over a list of the forms
+  above. One level of nesting only — a nested condition may not itself
+  carry all_of or any_of.
+```
+
+Exactly one of group, claim, all_of, or any_of must be set. A claim condition takes exactly one comparator family. Every claim name referenced must be declared under authentication.fields.extra, checked at startup.
+
+An absent claim is never neutral: a missing or unparseable claim value fails the condition (the floor), loudly, and can never widen what an identity receives. A claim's value is only as fresh as the subject's last login — see authentication.fields.extra.
+
+## `lifetime_policy.tiers[].when.group`
+
+`string`, default `empty`
+
+Names an OIDC group the identity must be a member of.
+
+## `lifetime_policy.tiers[].when.claim`
+
+`string`, default `empty`
+
+Names an extra claim (a key under authentication.fields.extra) the comparator keys below test. The server attaches no meaning to the claim itself; it only compares the value.
+
+## `lifetime_policy.tiers[].when.at_least`
+
+`number`, default `0`
+
+Passes when the claim's numeric value is >= this bound (inclusive). May be combined with at_most to express a range.
+
+## `lifetime_policy.tiers[].when.at_most`
+
+`number`, default `0`
+
+Passes when the claim's numeric value is &lt;= this bound (inclusive). May be combined with at_least to express a range.
+
+## `lifetime_policy.tiers[].when.exactly`
+
+`number`, default `0`
+
+Passes when the claim's numeric value equals this value. It desugars to at_least and at_most of the same value, so there is no second comparison path. Right for an integer-valued score; a computed confidence of 39.9999 does not equal 40, so a non-integral literal here draws a startup warning.
+
+## `lifetime_policy.tiers[].when.equals`
+
+`string`, default `empty`
+
+Passes when the claim's scalar string value equals this string.
+
+## `lifetime_policy.tiers[].when.one_of`
+
+`list`, default `empty`
+
+Passes when the claim's scalar string value appears in this set.
+
+## `lifetime_policy.tiers[].when.contains`
+
+`string`, default `empty`
+
+Passes when this value appears in a list-valued claim. A scalar claim takes the absent path — the condition fails, loudly.
+
+## `lifetime_policy.tiers[].when.all_of`
+
+`list`, default `empty`
+
+Passes when every listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
+
+## `lifetime_policy.tiers[].when.any_of`
+
+`list`, default `empty`
+
+Passes when at least one listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
+
+## `lifetime_policy.tiers[].max_duration`
+
+`duration`, default `0`
+
+The longest lifetime certificates in this tier can receive, bounded by the enclosing type's valid_duration ceiling.
+
+## `lifetime_policy.tiers[].grant_extensions`
+
+`list`, default `empty`
+
+The SSH certificate extensions this tier grants. Every entry must appear in the enclosing type's extensions ceiling — a grant outside it is a startup error rather than a silent trim. An empty or omitted list falls back to the policy's default_extensions.
+
+## `lifetime_policy.tiers[].max_enrollment_duration`
+
+`duration`, default `0`
+
+Tiers the enrollment code's own lifetime, clamped to cert_options.service.enrollment_duration — the lever against a code outliving the conditions that authorized it, without re-evaluating anything at retrieve. Service certificates only — a startup error on any other type. Zero falls back to default_enrollment_duration.
+
 ## `lifetime_policy.source_policy`
 
 `list`, default `empty`
@@ -233,3 +360,33 @@ Evaluated in order; the FIRST tier whose when condition the approver's identity 
 Restricts certificate lifetime based on the request's source IP address. Longest prefix match wins; ties resolve to the stricter rule. Entries are intersected with the tier-determined duration, and the final effective lifetime is clamped to the ceiling set by the enclosing CertOptions*.ValidDuration.
 
 See https://mnestor.github.io/ssoossh/operations/certificate-policy/ section "Which address" for why the server-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
+
+## `lifetime_policy.source_policy[].cidr`
+
+`string`, default `empty`
+
+The IPv4 or IPv6 network this rule applies to, in CIDR notation (e.g., "10.0.0.0/8" or "2001:db8::/32").
+
+## `lifetime_policy.source_policy[].max_duration`
+
+`duration`, default `0`
+
+The longest lifetime certificates from this network can receive. The final effective duration is min(tier_duration, source_rule_max_duration, type_ceiling).
+
+## `lifetime_policy.source_policy[].extensions`
+
+`list`, default `empty`
+
+Has been replaced by removed_extensions. The old key made an empty list and an omitted field mean opposite things at one length check; the subtractive key retires that. Setting it is a startup error rather than a silently skipped narrowing.
+
+## `lifetime_policy.source_policy[].removed_extensions`
+
+`list`, default `empty`
+
+SSH certificate extensions requests from this network never receive, subtracted after the tier grant. An empty or omitted list removes nothing — the two spellings agree. Subtractive on purpose: identity grants, network narrows — being on the office range is not a reason to receive a capability the tier withheld.
+
+## `lifetime_policy.source_policy[].pin_source_address`
+
+`bool`, default `false`
+
+when true, adds a critical "source-address" SSH option pinning the certificate to this network. Valid only for service certificates; ignored for user certificates (see https://mnestor.github.io/ssoossh/operations/certificate-policy/ "Not for user certificates"). The network must be narrow enough to actually restrict — a /0 or ::/0 with PinSourceAddress=true is a warning sign (the certificate can be used anywhere, pinning is meaningless). Narrowing is enforced by the intersectExtensions helper (source-address is not an extension).

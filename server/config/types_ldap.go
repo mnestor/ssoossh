@@ -32,12 +32,11 @@ var ldapForbiddenFields = []string{"username", "email", "subject"}
 // Everything feeding a field is declared under it, so reading one block
 // shows the whole picture for that value.
 //
-// A bare string in YAML is shorthand for `attribute: <string>`; see
-// UnmarshalText-style handling in the decode hook.
+// A bare string in YAML is shorthand for `attribute: <string>`.
 type LDAPField struct {
 	// Attribute reads the value from the person's own entry — a forward
 	// list, the simplest of the linking topologies.
-	Attribute string `mapstructure:"attribute"`
+	Attribute string `mapstructure:"attribute" example:"memberOf"`
 
 	// Searches resolve linked accounts that are their own directory
 	// entries. They run after the primary lookup and are keyed by filter
@@ -57,20 +56,20 @@ func (f *LDAPField) IsZero() bool {
 // under.
 type LDAPFieldSearch struct {
 	// Name labels the search in logs and errors.
-	Name string `mapstructure:"name"`
+	Name string `mapstructure:"name" example:"linked-accounts"`
 
 	// BaseDN is the search base. Empty inherits ldap.base_dn.
-	BaseDN string `mapstructure:"base_dn"`
+	BaseDN string `mapstructure:"base_dn" example:"ou=People,dc=example,dc=net"`
 
 	// Filter is a Go template over the OIDC identity plus {{.DN}} and
 	// {{.Attr.<name>}} from the primary entry. Values are RFC 4515 escaped
 	// during rendering and the operator cannot opt out: a
 	// preferred_username containing * or ) is otherwise filter injection.
-	Filter string `mapstructure:"filter"`
+	Filter string `mapstructure:"filter" example:"(manager={{.DN}})"`
 
 	// Value names the attribute on each matched entry that contributes to
 	// the field, e.g. "uid".
-	Value string `mapstructure:"value"`
+	Value string `mapstructure:"value" example:"uid"`
 }
 
 // LDAPSync configures the background directory sync.

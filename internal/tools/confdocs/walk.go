@@ -79,6 +79,16 @@ type Field struct {
 	// Children is non-empty when this field is a struct.
 	Children []*Field
 
+	// Elem is the schema of one entry under a container key: the keys of
+	// the struct behind a map's value type or a list's element type. They
+	// are real configuration, but they are not keys of this struct -- the
+	// operator writes them once per entry they add -- so they hang here
+	// rather than in Children. The man page and the site document them key
+	// by key; defaults.yaml shows one commented-out entry and no values,
+	// because a key that does not exist until an operator writes it has no
+	// default to ship.
+	Elem []*Field
+
 	// Embedded marks a field promoted from an embedded third-party struct
 	// (the timberjack rotation options). Its keys are not walked
 	// individually: the surface belongs to another module, so it is
@@ -235,7 +245,7 @@ func sections(packages map[string]*pkg, base string, root *ast.StructType) ([]*S
 	var scalars []*Field
 
 	for _, f := range root.Fields.List {
-		field, err := build(packages, base, f, "")
+		field, err := build(packages, base, f, "", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -269,9 +279,9 @@ func sections(packages map[string]*pkg, base string, root *ast.StructType) ([]*S
 
 // build converts one AST field into a Field, recursing into struct types.
 // Returns nil for a field mapstructure ignores.
-func build(packages map[string]*pkg, base string, f *ast.Field, prefix string) (*Field, error) {
+func build(packages map[string]*pkg, base string, f *ast.Field, prefix string, seen map[string]bool) (*Field, error) {
 	if len(f.Names) == 0 {
-		return buildEmbeddedField(packages, base, f, prefix)
+		return buildEmbeddedField(packages, base, f, prefix, seen)
 	}
 	name := f.Names[0].Name
 	if !ast.IsExported(name) {
@@ -304,7 +314,7 @@ func build(packages map[string]*pkg, base string, f *ast.Field, prefix string) (
 			if squash {
 				childPrefix = prefix
 			}
-			children, err := buildChildren(packages, pkgName, st, childPrefix)
+			children, err := buildChildren(packages, pkgName, st, childPrefix, descend(seen, pkgName, typeName))
 			if err != nil {
 				return nil, err
 			}
@@ -331,7 +341,86 @@ func build(packages map[string]*pkg, base string, f *ast.Field, prefix string) (
 	}
 	out.Type = rendered
 	out.Default, out.HasDefault = tagLookup(f.Tag, "default")
+	if err := buildElem(packages, base, f.Type, out, seen); err != nil {
+		return nil, err
+	}
 	return out, nil
+}
+
+// buildElem documents what one entry under a container key holds: the keys
+// of the struct behind a map's value type or a list's element type, plus
+// that type's own doc comment folded into the key's prose the same way a
+// struct field's is. Until it was walked, ldap.fields and
+// lifetime_policy.tiers were documented as "map" and "list" with nothing at
+// all saying what goes inside them.
+//
+// The entry has no name of its own -- the operator picks the map key, and a
+// list element has only its position -- so a placeholder segment stands in:
+// <name> under a map, [] under a list. The result is a path that reads the
+// way the YAML nests, ldap.fields.<name>.searches[].filter.
+//
+// Does nothing for anything but a container of structs we parse: []string
+// and map[string]string carry no keys of their own.
+func buildElem(packages map[string]*pkg, base string, e ast.Expr, out *Field, seen map[string]bool) error {
+	elem, segment, ok := containerElem(e)
+	if !ok || out.Path == "" {
+		return nil
+	}
+	pkgName, name, list := typeName(elem)
+	if pkgName == "" {
+		pkgName = base
+	}
+
+	// A list of lists names no keys, and neither does a type from a package
+	// we do not parse. A type reached from inside itself -- a policy
+	// condition holding policy conditions -- stays a bare list too: walking
+	// it again would not terminate, and one level is all the grammar
+	// allows, with the keys of a nested condition already documented a
+	// level up.
+	p, ok := packages[pkgName]
+	if !ok || list || seen[pkgName+"."+name] {
+		return nil
+	}
+	st, ok := p.structs[name]
+	if !ok {
+		return nil
+	}
+	children, err := buildChildren(packages, pkgName, st, out.Path+segment, descend(seen, pkgName, name))
+	if err != nil {
+		return err
+	}
+	out.Elem = children
+	out.Doc = joinDocs(out.Doc, docLines(p.docs[name], name), name)
+	return nil
+}
+
+// containerElem reduces a map or slice type to its element type and the path
+// segment that stands in for one entry. Reports false for anything else.
+func containerElem(e ast.Expr) (ast.Expr, string, bool) {
+	for {
+		switch t := e.(type) {
+		case *ast.StarExpr:
+			e = t.X
+		case *ast.MapType:
+			return t.Value, ".<name>", true
+		case *ast.ArrayType:
+			return t.Elt, "[]", true
+		default:
+			return nil, "", false
+		}
+	}
+}
+
+// descend records one more type as being on the path from the root, copied
+// so that sibling branches stay independent: a type used in two places is
+// documented in both, and only a type reached from inside itself is stopped.
+func descend(seen map[string]bool, pkgName, name string) map[string]bool {
+	out := make(map[string]bool, len(seen)+1)
+	for k := range seen {
+		out[k] = true
+	}
+	out[pkgName+"."+name] = true
+	return out
 }
 
 // applyChildDefaults lets the field instantiating a struct set the defaults
@@ -362,14 +451,14 @@ func applyChildDefaults(tag *ast.BasicLit, children []*Field) {
 // group treatment: its surface belongs to another module, so there are no
 // doc comments of ours to render and the fields are not ours to describe
 // one by one.
-func buildEmbeddedField(packages map[string]*pkg, base string, f *ast.Field, prefix string) (*Field, error) {
+func buildEmbeddedField(packages map[string]*pkg, base string, f *ast.Field, prefix string, seen map[string]bool) (*Field, error) {
 	pkgName, typeName, list := typeName(f.Type)
 	if pkgName == "" {
 		pkgName = base
 	}
 	if p, ok := packages[pkgName]; ok && !list {
 		if st, ok := p.structs[typeName]; ok {
-			children, err := buildChildren(packages, pkgName, st, prefix)
+			children, err := buildChildren(packages, pkgName, st, prefix, descend(seen, pkgName, typeName))
 			if err != nil {
 				return nil, err
 			}
@@ -412,10 +501,10 @@ func fieldPath(prefix, key string, squash bool) string {
 
 // buildChildren converts the fields of a struct type, skipping the ones
 // mapstructure ignores.
-func buildChildren(packages map[string]*pkg, pkgName string, st *ast.StructType, prefix string) ([]*Field, error) {
+func buildChildren(packages map[string]*pkg, pkgName string, st *ast.StructType, prefix string, seen map[string]bool) ([]*Field, error) {
 	var out []*Field
 	for _, cf := range st.Fields.List {
-		child, err := build(packages, pkgName, cf, prefix)
+		child, err := build(packages, pkgName, cf, prefix, seen)
 		if err != nil {
 			return nil, err
 		}

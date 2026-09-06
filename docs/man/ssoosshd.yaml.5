@@ -546,6 +546,38 @@ The reserved names are other_accounts, service_accounts and groups. Any other ke
 The merge rule is per field: a configured LDAP field (any attribute or searches) wins over the OIDC value, and an unconfigured one leaves the OIDC value untouched. Override rather than union, because union makes it impossible to retire a stale principal from only one source. Groups are the exception \(em both sources persist side by side.
 .IP
 username, email and subject are rejected here: the subject keys the user row, the username is what lookups are keyed by, and the OIDC email claim is the source of truth for users.email.
+.IP
+A bare string in YAML is shorthand for `attribute: <string>`.
+.TP
+.BI ldap.fields.<name>.attribute: " string"
+Reads the value from the person's own entry \(em a forward list, the simplest of the linking topologies.
+Default:
+.BR empty .
+.TP
+.BI ldap.fields.<name>.searches: " list"
+Resolve linked accounts that are their own directory entries. They run after the primary lookup and are keyed by filter rather than by DN, so they must re\-run at sync time: a reverse link can change without the person's own entry changing, which is much of what the sync exists to catch.
+Default:
+.BR empty .
+.TP
+.BI ldap.fields.<name>.searches[].name: " string"
+Labels the search in logs and errors.
+Default:
+.BR empty .
+.TP
+.BI ldap.fields.<name>.searches[].base_dn: " string"
+The search base. Empty inherits ldap.base_dn.
+Default:
+.BR empty .
+.TP
+.BI ldap.fields.<name>.searches[].filter: " string"
+A Go template over the OIDC identity plus {{.DN}} and {{.Attr.<name>}} from the primary entry. Values are RFC 4515 escaped during rendering and the operator cannot opt out: a preferred_username containing * or ) is otherwise filter injection.
+Default:
+.BR empty .
+.TP
+.BI ldap.fields.<name>.searches[].value: " string"
+Names the attribute on each matched entry that contributes to the field, e.g. "uid".
+Default:
+.BR empty .
 .TP
 .BI ldap.group_name_attribute: " string"
 Names the attribute to read a group's name from when a group search is used. When groups arrive as DNs (memberOf, the common case), each DN is reduced to its first RDN value \(em the CN \(em and a value that does not parse as a DN is kept as\-is. The reduced name is what must match the configured group names.
@@ -842,12 +874,107 @@ Evaluated in order; the FIRST tier whose when condition the approver's identity 
 Default:
 .BR empty .
 .TP
+.BI cert_options.user.lifetime_policy.tiers[].name: " string"
+Labels the tier for the policy explanation recorded with each approval decision \(em the answer to "why one hour".
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.lifetime_policy.tiers[].when.group: " string"
+Names an OIDC group the identity must be a member of.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.lifetime_policy.tiers[].when.claim: " string"
+Names an extra claim (a key under authentication.fields.extra) the comparator keys below test. The server attaches no meaning to the claim itself; it only compares the value.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.lifetime_policy.tiers[].when.at_least: " number"
+Passes when the claim's numeric value is >= this bound (inclusive). May be combined with at_most to express a range.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.user.lifetime_policy.tiers[].when.at_most: " number"
+Passes when the claim's numeric value is <= this bound (inclusive). May be combined with at_least to express a range.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.user.lifetime_policy.tiers[].when.exactly: " number"
+Passes when the claim's numeric value equals this value. It desugars to at_least and at_most of the same value, so there is no second comparison path. Right for an integer\-valued score; a computed confidence of 39.9999 does not equal 40, so a non\-integral literal here draws a startup warning.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.user.lifetime_policy.tiers[].when.equals: " string"
+Passes when the claim's scalar string value equals this string.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.lifetime_policy.tiers[].when.one_of: " list"
+Passes when the claim's scalar string value appears in this set.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.lifetime_policy.tiers[].when.contains: " string"
+Passes when this value appears in a list\-valued claim. A scalar claim takes the absent path \(em the condition fails, loudly.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.lifetime_policy.tiers[].when.all_of: " list"
+Passes when every listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.lifetime_policy.tiers[].when.any_of: " list"
+Passes when at least one listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.lifetime_policy.tiers[].max_duration: " duration"
+The longest lifetime certificates in this tier can receive, bounded by the enclosing type's valid_duration ceiling.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.user.lifetime_policy.tiers[].grant_extensions: " list"
+The SSH certificate extensions this tier grants. Every entry must appear in the enclosing type's extensions ceiling \(em a grant outside it is a startup error rather than a silent trim. An empty or omitted list falls back to the policy's default_extensions.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.lifetime_policy.tiers[].max_enrollment_duration: " duration"
+Tiers the enrollment code's own lifetime, clamped to cert_options.service.enrollment_duration \(em the lever against a code outliving the conditions that authorized it, without re\-evaluating anything at retrieve. Service certificates only \(em a startup error on any other type. Zero falls back to default_enrollment_duration.
+Default:
+.BR 0 .
+.TP
 .BI cert_options.user.lifetime_policy.source_policy: " list"
 Restricts certificate lifetime based on the request's source IP address. Longest prefix match wins; ties resolve to the stricter rule. Entries are intersected with the tier\-determined duration, and the final effective lifetime is clamped to the ceiling set by the enclosing CertOptions*.ValidDuration.
 .IP
 See https://mnestor.github.io/ssoossh/operations/certificate\-policy/ section "Which address" for why the server\-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
 Default:
 .BR empty .
+.TP
+.BI cert_options.user.lifetime_policy.source_policy[].cidr: " string"
+The IPv4 or IPv6 network this rule applies to, in CIDR notation (e.g., "10.0.0.0/8" or "2001:db8::/32").
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.lifetime_policy.source_policy[].max_duration: " duration"
+The longest lifetime certificates from this network can receive. The final effective duration is min(tier_duration, source_rule_max_duration, type_ceiling).
+Default:
+.BR 0 .
+.TP
+.BI cert_options.user.lifetime_policy.source_policy[].extensions: " list"
+Has been replaced by removed_extensions. The old key made an empty list and an omitted field mean opposite things at one length check; the subtractive key retires that. Setting it is a startup error rather than a silently skipped narrowing.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.lifetime_policy.source_policy[].removed_extensions: " list"
+SSH certificate extensions requests from this network never receive, subtracted after the tier grant. An empty or omitted list removes nothing \(em the two spellings agree. Subtractive on purpose: identity grants, network narrows \(em being on the office range is not a reason to receive a capability the tier withheld.
+Default:
+.BR empty .
+.TP
+.BI cert_options.user.lifetime_policy.source_policy[].pin_source_address: " bool"
+when true, adds a critical "source\-address" SSH option pinning the certificate to this network. Valid only for service certificates; ignored for user certificates (see https://mnestor.github.io/ssoossh/operations/certificate\-policy/ "Not for user certificates"). The network must be narrow enough to actually restrict \(em a /0 or ::/0 with PinSourceAddress=true is a warning sign (the certificate can be used anywhere, pinning is meaningless). Narrowing is enforced by the intersectExtensions helper (source\-address is not an extension).
+Default:
+.BR false .
 .TP
 .BI cert_options.service.require_group: " string"
 Has been replaced by require (see cert_options.user.require_group). Setting it is a startup error.
@@ -953,12 +1080,107 @@ Evaluated in order; the FIRST tier whose when condition the approver's identity 
 Default:
 .BR empty .
 .TP
+.BI cert_options.service.lifetime_policy.tiers[].name: " string"
+Labels the tier for the policy explanation recorded with each approval decision \(em the answer to "why one hour".
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.lifetime_policy.tiers[].when.group: " string"
+Names an OIDC group the identity must be a member of.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.lifetime_policy.tiers[].when.claim: " string"
+Names an extra claim (a key under authentication.fields.extra) the comparator keys below test. The server attaches no meaning to the claim itself; it only compares the value.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.lifetime_policy.tiers[].when.at_least: " number"
+Passes when the claim's numeric value is >= this bound (inclusive). May be combined with at_most to express a range.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.service.lifetime_policy.tiers[].when.at_most: " number"
+Passes when the claim's numeric value is <= this bound (inclusive). May be combined with at_least to express a range.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.service.lifetime_policy.tiers[].when.exactly: " number"
+Passes when the claim's numeric value equals this value. It desugars to at_least and at_most of the same value, so there is no second comparison path. Right for an integer\-valued score; a computed confidence of 39.9999 does not equal 40, so a non\-integral literal here draws a startup warning.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.service.lifetime_policy.tiers[].when.equals: " string"
+Passes when the claim's scalar string value equals this string.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.lifetime_policy.tiers[].when.one_of: " list"
+Passes when the claim's scalar string value appears in this set.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.lifetime_policy.tiers[].when.contains: " string"
+Passes when this value appears in a list\-valued claim. A scalar claim takes the absent path \(em the condition fails, loudly.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.lifetime_policy.tiers[].when.all_of: " list"
+Passes when every listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.lifetime_policy.tiers[].when.any_of: " list"
+Passes when at least one listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.lifetime_policy.tiers[].max_duration: " duration"
+The longest lifetime certificates in this tier can receive, bounded by the enclosing type's valid_duration ceiling.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.service.lifetime_policy.tiers[].grant_extensions: " list"
+The SSH certificate extensions this tier grants. Every entry must appear in the enclosing type's extensions ceiling \(em a grant outside it is a startup error rather than a silent trim. An empty or omitted list falls back to the policy's default_extensions.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.lifetime_policy.tiers[].max_enrollment_duration: " duration"
+Tiers the enrollment code's own lifetime, clamped to cert_options.service.enrollment_duration \(em the lever against a code outliving the conditions that authorized it, without re\-evaluating anything at retrieve. Service certificates only \(em a startup error on any other type. Zero falls back to default_enrollment_duration.
+Default:
+.BR 0 .
+.TP
 .BI cert_options.service.lifetime_policy.source_policy: " list"
 Restricts certificate lifetime based on the request's source IP address. Longest prefix match wins; ties resolve to the stricter rule. Entries are intersected with the tier\-determined duration, and the final effective lifetime is clamped to the ceiling set by the enclosing CertOptions*.ValidDuration.
 .IP
 See https://mnestor.github.io/ssoossh/operations/certificate\-policy/ section "Which address" for why the server\-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
 Default:
 .BR empty .
+.TP
+.BI cert_options.service.lifetime_policy.source_policy[].cidr: " string"
+The IPv4 or IPv6 network this rule applies to, in CIDR notation (e.g., "10.0.0.0/8" or "2001:db8::/32").
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.lifetime_policy.source_policy[].max_duration: " duration"
+The longest lifetime certificates from this network can receive. The final effective duration is min(tier_duration, source_rule_max_duration, type_ceiling).
+Default:
+.BR 0 .
+.TP
+.BI cert_options.service.lifetime_policy.source_policy[].extensions: " list"
+Has been replaced by removed_extensions. The old key made an empty list and an omitted field mean opposite things at one length check; the subtractive key retires that. Setting it is a startup error rather than a silently skipped narrowing.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.lifetime_policy.source_policy[].removed_extensions: " list"
+SSH certificate extensions requests from this network never receive, subtracted after the tier grant. An empty or omitted list removes nothing \(em the two spellings agree. Subtractive on purpose: identity grants, network narrows \(em being on the office range is not a reason to receive a capability the tier withheld.
+Default:
+.BR empty .
+.TP
+.BI cert_options.service.lifetime_policy.source_policy[].pin_source_address: " bool"
+when true, adds a critical "source\-address" SSH option pinning the certificate to this network. Valid only for service certificates; ignored for user certificates (see https://mnestor.github.io/ssoossh/operations/certificate\-policy/ "Not for user certificates"). The network must be narrow enough to actually restrict \(em a /0 or ::/0 with PinSourceAddress=true is a warning sign (the certificate can be used anywhere, pinning is meaningless). Narrowing is enforced by the intersectExtensions helper (source\-address is not an extension).
+Default:
+.BR false .
 .TP
 .BI cert_options.pam.require_group: " string"
 Has been replaced by require (see cert_options.user.require_group). Setting it is a startup error.
@@ -1055,12 +1277,107 @@ Evaluated in order; the FIRST tier whose when condition the approver's identity 
 Default:
 .BR empty .
 .TP
+.BI cert_options.pam.lifetime_policy.tiers[].name: " string"
+Labels the tier for the policy explanation recorded with each approval decision \(em the answer to "why one hour".
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.lifetime_policy.tiers[].when.group: " string"
+Names an OIDC group the identity must be a member of.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.lifetime_policy.tiers[].when.claim: " string"
+Names an extra claim (a key under authentication.fields.extra) the comparator keys below test. The server attaches no meaning to the claim itself; it only compares the value.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.lifetime_policy.tiers[].when.at_least: " number"
+Passes when the claim's numeric value is >= this bound (inclusive). May be combined with at_most to express a range.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.pam.lifetime_policy.tiers[].when.at_most: " number"
+Passes when the claim's numeric value is <= this bound (inclusive). May be combined with at_least to express a range.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.pam.lifetime_policy.tiers[].when.exactly: " number"
+Passes when the claim's numeric value equals this value. It desugars to at_least and at_most of the same value, so there is no second comparison path. Right for an integer\-valued score; a computed confidence of 39.9999 does not equal 40, so a non\-integral literal here draws a startup warning.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.pam.lifetime_policy.tiers[].when.equals: " string"
+Passes when the claim's scalar string value equals this string.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.lifetime_policy.tiers[].when.one_of: " list"
+Passes when the claim's scalar string value appears in this set.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.lifetime_policy.tiers[].when.contains: " string"
+Passes when this value appears in a list\-valued claim. A scalar claim takes the absent path \(em the condition fails, loudly.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.lifetime_policy.tiers[].when.all_of: " list"
+Passes when every listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.lifetime_policy.tiers[].when.any_of: " list"
+Passes when at least one listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.lifetime_policy.tiers[].max_duration: " duration"
+The longest lifetime certificates in this tier can receive, bounded by the enclosing type's valid_duration ceiling.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.pam.lifetime_policy.tiers[].grant_extensions: " list"
+The SSH certificate extensions this tier grants. Every entry must appear in the enclosing type's extensions ceiling \(em a grant outside it is a startup error rather than a silent trim. An empty or omitted list falls back to the policy's default_extensions.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.lifetime_policy.tiers[].max_enrollment_duration: " duration"
+Tiers the enrollment code's own lifetime, clamped to cert_options.service.enrollment_duration \(em the lever against a code outliving the conditions that authorized it, without re\-evaluating anything at retrieve. Service certificates only \(em a startup error on any other type. Zero falls back to default_enrollment_duration.
+Default:
+.BR 0 .
+.TP
 .BI cert_options.pam.lifetime_policy.source_policy: " list"
 Restricts certificate lifetime based on the request's source IP address. Longest prefix match wins; ties resolve to the stricter rule. Entries are intersected with the tier\-determined duration, and the final effective lifetime is clamped to the ceiling set by the enclosing CertOptions*.ValidDuration.
 .IP
 See https://mnestor.github.io/ssoossh/operations/certificate\-policy/ section "Which address" for why the server\-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
 Default:
 .BR empty .
+.TP
+.BI cert_options.pam.lifetime_policy.source_policy[].cidr: " string"
+The IPv4 or IPv6 network this rule applies to, in CIDR notation (e.g., "10.0.0.0/8" or "2001:db8::/32").
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.lifetime_policy.source_policy[].max_duration: " duration"
+The longest lifetime certificates from this network can receive. The final effective duration is min(tier_duration, source_rule_max_duration, type_ceiling).
+Default:
+.BR 0 .
+.TP
+.BI cert_options.pam.lifetime_policy.source_policy[].extensions: " list"
+Has been replaced by removed_extensions. The old key made an empty list and an omitted field mean opposite things at one length check; the subtractive key retires that. Setting it is a startup error rather than a silently skipped narrowing.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.lifetime_policy.source_policy[].removed_extensions: " list"
+SSH certificate extensions requests from this network never receive, subtracted after the tier grant. An empty or omitted list removes nothing \(em the two spellings agree. Subtractive on purpose: identity grants, network narrows \(em being on the office range is not a reason to receive a capability the tier withheld.
+Default:
+.BR empty .
+.TP
+.BI cert_options.pam.lifetime_policy.source_policy[].pin_source_address: " bool"
+when true, adds a critical "source\-address" SSH option pinning the certificate to this network. Valid only for service certificates; ignored for user certificates (see https://mnestor.github.io/ssoossh/operations/certificate\-policy/ "Not for user certificates"). The network must be narrow enough to actually restrict \(em a /0 or ::/0 with PinSourceAddress=true is a warning sign (the certificate can be used anywhere, pinning is meaningless). Narrowing is enforced by the intersectExtensions helper (source\-address is not an extension).
+Default:
+.BR false .
 .TP
 .BI cert_options.console.require.group: " string"
 Names an OIDC group the identity must be a member of.
@@ -1168,12 +1485,107 @@ Evaluated in order; the FIRST tier whose when condition the approver's identity 
 Default:
 .BR empty .
 .TP
+.BI cert_options.console.lifetime_policy.tiers[].name: " string"
+Labels the tier for the policy explanation recorded with each approval decision \(em the answer to "why one hour".
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.lifetime_policy.tiers[].when.group: " string"
+Names an OIDC group the identity must be a member of.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.lifetime_policy.tiers[].when.claim: " string"
+Names an extra claim (a key under authentication.fields.extra) the comparator keys below test. The server attaches no meaning to the claim itself; it only compares the value.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.lifetime_policy.tiers[].when.at_least: " number"
+Passes when the claim's numeric value is >= this bound (inclusive). May be combined with at_most to express a range.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.console.lifetime_policy.tiers[].when.at_most: " number"
+Passes when the claim's numeric value is <= this bound (inclusive). May be combined with at_least to express a range.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.console.lifetime_policy.tiers[].when.exactly: " number"
+Passes when the claim's numeric value equals this value. It desugars to at_least and at_most of the same value, so there is no second comparison path. Right for an integer\-valued score; a computed confidence of 39.9999 does not equal 40, so a non\-integral literal here draws a startup warning.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.console.lifetime_policy.tiers[].when.equals: " string"
+Passes when the claim's scalar string value equals this string.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.lifetime_policy.tiers[].when.one_of: " list"
+Passes when the claim's scalar string value appears in this set.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.lifetime_policy.tiers[].when.contains: " string"
+Passes when this value appears in a list\-valued claim. A scalar claim takes the absent path \(em the condition fails, loudly.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.lifetime_policy.tiers[].when.all_of: " list"
+Passes when every listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.lifetime_policy.tiers[].when.any_of: " list"
+Passes when at least one listed condition passes. Listed conditions may not themselves carry all_of or any_of; nesting stops at one level.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.lifetime_policy.tiers[].max_duration: " duration"
+The longest lifetime certificates in this tier can receive, bounded by the enclosing type's valid_duration ceiling.
+Default:
+.BR 0 .
+.TP
+.BI cert_options.console.lifetime_policy.tiers[].grant_extensions: " list"
+The SSH certificate extensions this tier grants. Every entry must appear in the enclosing type's extensions ceiling \(em a grant outside it is a startup error rather than a silent trim. An empty or omitted list falls back to the policy's default_extensions.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.lifetime_policy.tiers[].max_enrollment_duration: " duration"
+Tiers the enrollment code's own lifetime, clamped to cert_options.service.enrollment_duration \(em the lever against a code outliving the conditions that authorized it, without re\-evaluating anything at retrieve. Service certificates only \(em a startup error on any other type. Zero falls back to default_enrollment_duration.
+Default:
+.BR 0 .
+.TP
 .BI cert_options.console.lifetime_policy.source_policy: " list"
 Restricts certificate lifetime based on the request's source IP address. Longest prefix match wins; ties resolve to the stricter rule. Entries are intersected with the tier\-determined duration, and the final effective lifetime is clamped to the ceiling set by the enclosing CertOptions*.ValidDuration.
 .IP
 See https://mnestor.github.io/ssoossh/operations/certificate\-policy/ section "Which address" for why the server\-observed source IP is used, and why RequestedOptions.SourceAddresses is never consulted.
 Default:
 .BR empty .
+.TP
+.BI cert_options.console.lifetime_policy.source_policy[].cidr: " string"
+The IPv4 or IPv6 network this rule applies to, in CIDR notation (e.g., "10.0.0.0/8" or "2001:db8::/32").
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.lifetime_policy.source_policy[].max_duration: " duration"
+The longest lifetime certificates from this network can receive. The final effective duration is min(tier_duration, source_rule_max_duration, type_ceiling).
+Default:
+.BR 0 .
+.TP
+.BI cert_options.console.lifetime_policy.source_policy[].extensions: " list"
+Has been replaced by removed_extensions. The old key made an empty list and an omitted field mean opposite things at one length check; the subtractive key retires that. Setting it is a startup error rather than a silently skipped narrowing.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.lifetime_policy.source_policy[].removed_extensions: " list"
+SSH certificate extensions requests from this network never receive, subtracted after the tier grant. An empty or omitted list removes nothing \(em the two spellings agree. Subtractive on purpose: identity grants, network narrows \(em being on the office range is not a reason to receive a capability the tier withheld.
+Default:
+.BR empty .
+.TP
+.BI cert_options.console.lifetime_policy.source_policy[].pin_source_address: " bool"
+when true, adds a critical "source\-address" SSH option pinning the certificate to this network. Valid only for service certificates; ignored for user certificates (see https://mnestor.github.io/ssoossh/operations/certificate\-policy/ "Not for user certificates"). The network must be narrow enough to actually restrict \(em a /0 or ::/0 with PinSourceAddress=true is a warning sign (the certificate can be used anywhere, pinning is meaningless). Narrowing is enforced by the intersectExtensions helper (source\-address is not an extension).
+Default:
+.BR false .
 .TP
 .BI cert_options.client_timeout: " duration"
 The whole budget: the longest a client waiting on a certificate request can go before the server hands it a terminal answer. Everything else about request timing is derived from it, by ApprovalTTL and SigningGrace below.

@@ -488,3 +488,230 @@ func TestWalk_ShouldKeepAThirdPartyEmbeddedStructAsOneGroup(t *testing.T) {
 		t.Errorf("expected the timberjack logger to still be documented as an embedded group")
 	}
 }
+
+// elemLeaves returns every value-carrying key the walk hangs off a
+// container: the keys of one map entry or one list element.
+func elemLeaves(sections []*Section) []*Field {
+	var out []*Field
+	var walk func([]*Field)
+	walk = func(fields []*Field) {
+		for _, f := range fields {
+			out = append(out, f)
+			walk(f.Children)
+			walk(f.Elem)
+		}
+	}
+	for _, s := range sections {
+		for _, f := range s.Fields {
+			walk(f.Elem)
+			walk(f.Children)
+		}
+	}
+	return out
+}
+
+// A map of structs and a list of structs are configuration surface like any
+// other: before the walk descended into them, ldap.fields was documented as
+// "map" and lifetime_policy.tiers as "list", with nothing anywhere saying
+// what an entry holds.
+func TestWalk_ShouldDocumentTheKeysOfOneContainerEntry(t *testing.T) {
+	t.Parallel()
+
+	fields := map[string]*Field{}
+	for _, f := range elemLeaves(walkConfig(t)) {
+		fields[f.Path] = f
+	}
+
+	tests := []struct {
+		name, path, wantType string
+	}{
+		{
+			name:     "should name a map entry with the placeholder the operator replaces",
+			path:     "ldap.fields.<name>.attribute",
+			wantType: "string",
+		},
+		{
+			name:     "should nest a list inside a map entry",
+			path:     "ldap.fields.<name>.searches[].filter",
+			wantType: "string",
+		},
+		{
+			name:     "should walk a struct inside a list entry",
+			path:     "cert_options.user.lifetime_policy.tiers[].when.group",
+			wantType: "string",
+		},
+		{
+			name:     "should walk a list of structs that is not inside a map",
+			path:     "cert_options.user.lifetime_policy.source_policy[].cidr",
+			wantType: "string",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := fields[tt.path]
+			if f == nil {
+				t.Fatalf("%s: not produced by the walk", tt.path)
+			}
+			if f.Type != tt.wantType {
+				t.Errorf("%s: got type %q, want %q", tt.path, f.Type, tt.wantType)
+			}
+			if len(f.Doc) == 0 {
+				t.Errorf("%s: an entry key ships as a bare name without prose", tt.path)
+			}
+		})
+	}
+}
+
+// A policy condition holds policy conditions, so descending into every
+// entry type unconditionally would never terminate. The repeat stays a bare
+// list, which is also all the grammar allows: nesting stops at one level.
+func TestWalk_ShouldStopAtASelfReferentialEntryType(t *testing.T) {
+	t.Parallel()
+
+	fields := map[string]*Field{}
+	for _, f := range elemLeaves(walkConfig(t)) {
+		fields[f.Path] = f
+	}
+
+	nested := fields["cert_options.user.lifetime_policy.tiers[].when.all_of"]
+	if nested == nil {
+		t.Fatal("cert_options.user.lifetime_policy.tiers[].when.all_of: not produced by the walk")
+	}
+	if len(nested.Elem) != 0 {
+		t.Errorf("a condition inside a condition must not be walked again, got %d entry keys", len(nested.Elem))
+	}
+}
+
+// The container key itself has no value to ship -- a map of directory
+// fields or a list of policy tiers is deployment-specific -- so the shape of
+// one entry is what the file can honestly offer, and without it the prose
+// sat above nothing.
+func TestWriteYAMLField_ShouldShowTheShapeOfOneContainerEntry(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		field *Field
+		want  []string
+	}{
+		{
+			name: "should name a map entry and nest a list inside it",
+			field: &Field{
+				Path: "ldap.fields", Key: "fields", Type: "map",
+				Doc: []string{"Maps destinations to directory sources."},
+				Elem: []*Field{
+					{Path: "ldap.fields.<name>.attribute", Key: "attribute", Type: "string", Doc: []string{"Reads the value from the entry."}, Example: "memberOf"},
+					{
+						Path: "ldap.fields.<name>.searches", Key: "searches", Type: "list",
+						Doc: []string{"Resolve linked accounts."},
+						Elem: []*Field{
+							{Path: "ldap.fields.<name>.searches[].name", Key: "name", Type: "string", Doc: []string{"Labels the search."}, Example: "linked-accounts"},
+							{Path: "ldap.fields.<name>.searches[].value", Key: "value", Type: "string", Doc: []string{"Names the attribute."}},
+						},
+					},
+				},
+			},
+			want: []string{
+				"  #   fields:",
+				"  #     <name>:",
+				"  #       attribute: memberOf",
+				"  #       searches:",
+				"  #         - name: linked-accounts",
+				`  #           value: ""`,
+			},
+		},
+		{
+			name: "should open a list entry with a dash and indent a struct under it",
+			field: &Field{
+				Path: "policy.tiers", Key: "tiers", Type: "list",
+				Doc: []string{"Evaluated in order."},
+				Elem: []*Field{
+					{Path: "policy.tiers[].name", Key: "name", Type: "string", Doc: []string{"Labels the tier."}},
+					{
+						Path: "policy.tiers[].when", Key: "when",
+						Doc: []string{"The condition an identity must satisfy."},
+						Children: []*Field{
+							{Path: "policy.tiers[].when.group", Key: "group", Type: "string", Doc: []string{"An OIDC group."}},
+						},
+					},
+					{Path: "policy.tiers[].max_duration", Key: "max_duration", Type: "duration", Doc: []string{"The longest lifetime."}},
+				},
+			},
+			want: []string{
+				"  #   tiers:",
+				`  #     - name: ""`,
+				"  #       when:",
+				`  #         group: ""`,
+				"  #       max_duration: 0s",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var b strings.Builder
+			writeYAMLField(&b, tt.field, nil, "ldap", 1)
+
+			want := strings.Join(tt.want, "\n")
+			if got := b.String(); !strings.Contains(got, want) {
+				t.Errorf("got:\n%s\nwant it to contain:\n%s", got, want)
+			}
+		})
+	}
+}
+
+// The list element's own keys reach the man page, so an operator reading
+// ssoosshd.yaml(5) sees what goes inside a tier rather than the word
+// "list".
+func TestManPage_ShouldDocumentContainerEntryKeys(t *testing.T) {
+	t.Parallel()
+
+	d, err := LoadDefaults(defaults)
+	if err != nil {
+		t.Fatalf("failed to load the defaults: %v", err)
+	}
+
+	page := ManPage(walkConfig(t), d)
+	for _, want := range []string{
+		`.BI ldap.fields.<name>.attribute: " string"`,
+		`.BI cert_options.user.lifetime_policy.tiers[].max_duration: " duration"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("expected the man page to contain:\n%s", want)
+		}
+	}
+}
+
+// A skeleton key is a shape to fill in, so its placeholder has to parse as
+// the type the server expects -- an empty string where a made-up value
+// would read as a recommendation, and the right empty for everything else.
+func TestYAMLEntryValue_ShouldPlaceholderEveryType(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		field *Field
+		want  string
+	}{
+		{name: "should prefer the example when the field has one", field: &Field{Type: "string", Example: "memberOf"}, want: "memberOf"},
+		{name: "should quote an empty string", field: &Field{Type: "string"}, want: `""`},
+		{name: "should write a bool as false", field: &Field{Type: "bool"}, want: "false"},
+		{name: "should write a number as zero", field: &Field{Type: "number"}, want: "0"},
+		{name: "should write an int as zero", field: &Field{Type: "int"}, want: "0"},
+		{name: "should write a duration with its unit", field: &Field{Type: "duration"}, want: "0s"},
+		{name: "should write a list as an empty sequence", field: &Field{Type: "list"}, want: "[]"},
+		{name: "should write a map as an empty mapping", field: &Field{Type: "map"}, want: "{}"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := yamlEntryValue(tt.field); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

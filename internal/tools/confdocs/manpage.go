@@ -70,6 +70,12 @@ func writeManField(b *strings.Builder, f *Field, defaults *Defaults, refs map[st
 	if d := defaults.Describe(f); d != "" {
 		fmt.Fprintf(b, "Default:\n.BR %s .\n", troffEscape(d))
 	}
+
+	// The keys of one entry follow the container they belong to, so
+	// ldap.fields is immediately followed by what an entry under it holds.
+	for _, e := range f.Elem {
+		writeManField(b, e, defaults, refs, scope, f.Path)
+	}
 }
 
 // sentenceEnd matches the end of the first sentence, avoiding the common

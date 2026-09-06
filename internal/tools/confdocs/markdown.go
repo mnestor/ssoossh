@@ -92,16 +92,21 @@ func splitChildren(s *Section) []*Field {
 }
 
 // leafCount counts the value-carrying keys under f. An embedded group is one
-// documented surface, so it counts once.
+// documented surface, so it counts once, and a container's entry keys count
+// because they take a heading each on the page.
 func leafCount(f *Field) int {
 	n := 0
-	for _, c := range f.Children {
-		switch {
-		case c.IsStruct():
-			n += leafCount(c)
-		default:
+	count := func(c *Field) {
+		if !c.IsStruct() {
 			n++
 		}
+		n += leafCount(c)
+	}
+	for _, c := range f.Children {
+		count(c)
+	}
+	for _, e := range f.Elem {
+		count(e)
 	}
 	return n
 }
@@ -252,6 +257,12 @@ func mdTableRows(b *strings.Builder, f *Field, defaults *Defaults, page, scope, 
 	anchor := slugs.slug(relName(f.Path, scope))
 	fmt.Fprintf(b, "| [`%s`](%s#%s) | %s | %s |\n",
 		f.Path, page, anchor, f.Type, mdCell(mdDefaultCell(defaults, f)))
+
+	// The keys of one entry sit directly under the container they belong
+	// to, so the table reads in the order the YAML nests.
+	for _, e := range f.Elem {
+		mdTableRows(b, e, defaults, page, scope, f.Path, slugs)
+	}
 }
 
 // mdDefaultCell is the table form of a key's default: backticked, and
@@ -341,6 +352,10 @@ func writeMDField(b *strings.Builder, f *Field, defaults *Defaults, refs map[str
 	if usage := mdUsage(f); usage != "" {
 		b.WriteString("```yaml\n" + usage + "```\n\n")
 	}
+
+	for _, e := range f.Elem {
+		writeMDField(b, e, defaults, refs, scope, page, f.Path, slugs)
+	}
 }
 
 // mdEyebrow is the accent label above every generated page's heading, the
@@ -385,12 +400,26 @@ func mdUsage(f *Field) string {
 		return ""
 	}
 
-	parts := strings.Split(f.Path, ".")
+	// A path segment ending in [] is one entry of a list, so the key it
+	// opens carries the dash and everything below that entry lines up past
+	// it. A <name> segment needs nothing special: the operator's own map
+	// key sits where the placeholder does.
 	var b strings.Builder
-	for i, p := range parts[:len(parts)-1] {
-		fmt.Fprintf(&b, "%s%s:\n", strings.Repeat("  ", i), p)
+	indent := ""
+	write := func(text string) {
+		b.WriteString(indent + text + "\n")
+		indent = strings.Replace(indent, "- ", "  ", 1) + "  "
 	}
-	fmt.Fprintf(&b, "%s%s: %s\n", strings.Repeat("  ", len(parts)-1), parts[len(parts)-1], value)
+
+	parts := strings.Split(f.Path, ".")
+	for _, p := range parts[:len(parts)-1] {
+		name, item := strings.CutSuffix(p, "[]")
+		write(name + ":")
+		if item {
+			indent += "- "
+		}
+	}
+	write(fmt.Sprintf("%s: %s", strings.TrimSuffix(parts[len(parts)-1], "[]"), value))
 	return b.String()
 }
 

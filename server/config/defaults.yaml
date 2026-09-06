@@ -509,6 +509,19 @@ ldap:
   # username, email and subject are rejected here: the subject keys the user
   # row, the username is what lookups are keyed by, and the OIDC email claim
   # is the source of truth for users.email.
+  #
+  # A bare string in YAML is shorthand for `attribute: <string>`.
+  #
+  # One entry, and the keys it can hold:
+  #
+  #   fields:
+  #     <name>:
+  #       attribute: memberOf
+  #       searches:
+  #         - name: linked-accounts
+  #           base_dn: ou=People,dc=example,dc=net
+  #           filter: (manager={{.DN}})
+  #           value: uid
 
   # Names the attribute to read a group's name from when a group search is
   # used. When groups arrive as DNs (memberOf, the common case), each DN is
@@ -768,6 +781,25 @@ cert_options:
       # them in descending order; ascending order silently lands every high-score
       # identity in the shortest tier. An empty tiers list means DefaultDuration
       # is always used.
+      #
+      # One entry, and the keys it can hold:
+      #
+      #   tiers:
+      #     - name: ""
+      #       when:
+      #         group: ""
+      #         claim: ""
+      #         at_least: 0
+      #         at_most: 0
+      #         exactly: 0
+      #         equals: ""
+      #         one_of: []
+      #         contains: ""
+      #         all_of: []
+      #         any_of: []
+      #       max_duration: 0s
+      #       grant_extensions: []
+      #       max_enrollment_duration: 0s
 
       # Restricts certificate lifetime based on the request's source IP address.
       # Longest prefix match wins; ties resolve to the stricter rule. Entries are
@@ -778,6 +810,15 @@ cert_options:
       # See https://mnestor.github.io/ssoossh/operations/certificate-policy/
       # section "Which address" for why the server-observed source IP is used, and
       # why RequestedOptions.SourceAddresses is never consulted.
+      #
+      # One entry, and the keys it can hold:
+      #
+      #   source_policy:
+      #     - cidr: ""
+      #       max_duration: 0s
+      #       extensions: []
+      #       removed_extensions: []
+      #       pin_source_address: false
 
   # Configures issuance of service certificates: the OIDC group required to
   # request one, how long they're valid for, and which SSH certificate
@@ -875,6 +916,25 @@ cert_options:
       # them in descending order; ascending order silently lands every high-score
       # identity in the shortest tier. An empty tiers list means DefaultDuration
       # is always used.
+      #
+      # One entry, and the keys it can hold:
+      #
+      #   tiers:
+      #     - name: ""
+      #       when:
+      #         group: ""
+      #         claim: ""
+      #         at_least: 0
+      #         at_most: 0
+      #         exactly: 0
+      #         equals: ""
+      #         one_of: []
+      #         contains: ""
+      #         all_of: []
+      #         any_of: []
+      #       max_duration: 0s
+      #       grant_extensions: []
+      #       max_enrollment_duration: 0s
 
       # Restricts certificate lifetime based on the request's source IP address.
       # Longest prefix match wins; ties resolve to the stricter rule. Entries are
@@ -885,6 +945,15 @@ cert_options:
       # See https://mnestor.github.io/ssoossh/operations/certificate-policy/
       # section "Which address" for why the server-observed source IP is used, and
       # why RequestedOptions.SourceAddresses is never consulted.
+      #
+      # One entry, and the keys it can hold:
+      #
+      #   source_policy:
+      #     - cidr: ""
+      #       max_duration: 0s
+      #       extensions: []
+      #       removed_extensions: []
+      #       pin_source_address: false
 
   # Configures issuance of PAM certificates: short-lived certificates a
   # pam_ssoossh-authenticated local operation (e.g. `sudo`) validates once and
@@ -980,6 +1049,25 @@ cert_options:
       # them in descending order; ascending order silently lands every high-score
       # identity in the shortest tier. An empty tiers list means DefaultDuration
       # is always used.
+      #
+      # One entry, and the keys it can hold:
+      #
+      #   tiers:
+      #     - name: ""
+      #       when:
+      #         group: ""
+      #         claim: ""
+      #         at_least: 0
+      #         at_most: 0
+      #         exactly: 0
+      #         equals: ""
+      #         one_of: []
+      #         contains: ""
+      #         all_of: []
+      #         any_of: []
+      #       max_duration: 0s
+      #       grant_extensions: []
+      #       max_enrollment_duration: 0s
 
       # Restricts certificate lifetime based on the request's source IP address.
       # Longest prefix match wins; ties resolve to the stricter rule. Entries are
@@ -990,6 +1078,15 @@ cert_options:
       # See https://mnestor.github.io/ssoossh/operations/certificate-policy/
       # section "Which address" for why the server-observed source IP is used, and
       # why RequestedOptions.SourceAddresses is never consulted.
+      #
+      # One entry, and the keys it can hold:
+      #
+      #   source_policy:
+      #     - cidr: ""
+      #       max_duration: 0s
+      #       extensions: []
+      #       removed_extensions: []
+      #       pin_source_address: false
 
   # Configures issuance of console certificates: the certificate that
   # authenticates an interactive console login on a machine with no browser in
@@ -1115,6 +1212,25 @@ cert_options:
       # them in descending order; ascending order silently lands every high-score
       # identity in the shortest tier. An empty tiers list means DefaultDuration
       # is always used.
+      #
+      # One entry, and the keys it can hold:
+      #
+      #   tiers:
+      #     - name: ""
+      #       when:
+      #         group: ""
+      #         claim: ""
+      #         at_least: 0
+      #         at_most: 0
+      #         exactly: 0
+      #         equals: ""
+      #         one_of: []
+      #         contains: ""
+      #         all_of: []
+      #         any_of: []
+      #       max_duration: 0s
+      #       grant_extensions: []
+      #       max_enrollment_duration: 0s
 
       # Restricts certificate lifetime based on the request's source IP address.
       # Longest prefix match wins; ties resolve to the stricter rule. Entries are
@@ -1125,6 +1241,15 @@ cert_options:
       # See https://mnestor.github.io/ssoossh/operations/certificate-policy/
       # section "Which address" for why the server-observed source IP is used, and
       # why RequestedOptions.SourceAddresses is never consulted.
+      #
+      # One entry, and the keys it can hold:
+      #
+      #   source_policy:
+      #     - cidr: ""
+      #       max_duration: 0s
+      #       extensions: []
+      #       removed_extensions: []
+      #       pin_source_address: false
 
   # The whole budget: the longest a client waiting on a certificate request
   # can go before the server hands it a terminal answer. Everything else about
