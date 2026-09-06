@@ -51,8 +51,8 @@ type ConflictError struct {
 // Error implements the error interface.
 func (e *ConflictError) Error() string {
 	if e.Reason == "" {
-		// not covered: every construction site supplies a reason; the
-		// fallback exists so a zero value still reads as an error.
+		// Every construction site supplies a reason; this is here so a
+		// zero value still reads as an error rather than an empty string.
 		return "Conflict"
 	}
 	return e.Reason

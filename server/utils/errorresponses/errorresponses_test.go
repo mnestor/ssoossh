@@ -48,6 +48,44 @@ func TestMisdirectedRequestError_ShouldReturn421FromHttpStatusCode(t *testing.T)
 	}
 }
 
+// TestConflictError_ShouldCarryTheConflictingState covers the 409 the
+// directory sync's single-flight guard raises. Distinct from a rate limit:
+// the caller is not going too fast, the operation is already running, so the
+// message has to name the state rather than a limit.
+func TestConflictError_ShouldCarryTheConflictingState(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		err  *ConflictError
+		want string
+	}{
+		{
+			name: "a supplied reason is the message",
+			err:  &ConflictError{Reason: "a directory sync is already running"},
+			want: "a directory sync is already running",
+		},
+		{
+			name: "a zero value still reads as an error",
+			err:  &ConflictError{},
+			want: "Conflict",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := tt.err.Error(); got != tt.want {
+				t.Errorf("Error() = %q, want %q", got, tt.want)
+			}
+			if got := tt.err.HTTPStatusCode(); got != http.StatusConflict {
+				t.Errorf("HTTPStatusCode() = %d, want %d", got, http.StatusConflict)
+			}
+		})
+	}
+}
+
 func TestNotFoundError_ShouldIncludeResourceInMessage(t *testing.T) {
 	t.Parallel()
 
@@ -201,6 +239,7 @@ func TestErrorCode_ShouldReportTheWireCodeForEachError(t *testing.T) {
 		{name: "unauthorized", err: &UnauthorizedError{}, wantCode: apitypes.ErrorCodeUnauthenticated, wantStatus: http.StatusUnauthorized},
 		{name: "user disabled", err: &UserDisabledError{}, wantCode: apitypes.ErrorCodeForbidden, wantStatus: http.StatusForbidden},
 		{name: "user status check", err: &UserStatusCheckError{}, wantCode: apitypes.ErrorCodeUnavailable, wantStatus: http.StatusServiceUnavailable},
+		{name: "conflict", err: &ConflictError{Reason: "a directory sync is already running"}, wantCode: apitypes.ErrorCodeConflict, wantStatus: http.StatusConflict},
 	}
 
 	for _, tt := range tests {
