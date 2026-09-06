@@ -30,11 +30,14 @@ never overwrites your edits. It is generated from the server's config structs,
 which makes it the same content as `ssoosshd.yaml(5)` and the
 [configuration reference](/ssoossh/reference/config/) on this site.
 
-There are also container images, `ghcr.io/mnestor/ssoosshd:<version>` (glibc,
-distroless) and `ghcr.io/mnestor/ssoosshd:<version>-musl` (Alpine). No
-floating tag is published: pin an explicit released version, because a
-floating tag would let a restart silently change what is running. A Compose
-deployment ships at
+There are also container images, `ghcr.io/mnestor/ssoossh-server:<version>`
+(glibc, distroless) and `ghcr.io/mnestor/ssoossh-server:<version>-musl`
+(Alpine). `<version>` carries no leading `v` -- release v1.2.3 publishes the
+image tag `1.2.3`. No floating tag is published: pin an explicit released
+version, because a floating tag would let a restart silently change what is
+running. Each build also keeps an immutable `sha-<commit>` tag, which is what
+the version tag is promoted from; pinning that works too, it just names a
+commit rather than a release. A Compose deployment ships at
 [deploy/docker-compose.yml](https://github.com/mnestor/ssoossh/blob/main/deploy/docker-compose.yml).
 
 :::note

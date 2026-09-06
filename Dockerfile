@@ -1,4 +1,4 @@
-# Runtime image for ssoosshd, glibc/linux-amd64+arm64: ghcr.io/mnestor/ssoosshd
+# Runtime image for ssoosshd, glibc/linux-amd64+arm64: ghcr.io/mnestor/ssoossh-server
 # (unsuffixed tags). Assembled by goreleaser's dockers_v2 pipe
 # (.goreleaser.yml) straight from the server-linux-build binary that step
 # already compiled and version-stamped (internal/version) -- there is no
