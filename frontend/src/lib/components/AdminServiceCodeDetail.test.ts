@@ -152,10 +152,33 @@ describe('AdminServiceCodeDetail', () => {
 		expect(screen.getByText(/No extensions or restrictions/)).toBeInTheDocument();
 	});
 
-	it('should report when the code stops working', () => {
+	it('should report the validity window as one period', () => {
 		stubHolders();
 		render(AdminServiceCodeDetail, { detail: detail(), now });
-		expect(screen.getByText(/expires in/)).toBeInTheDocument();
+		expect(screen.getByText(/Aug 20, 2026.* – .*Nov 20, 2026/)).toBeInTheDocument();
+	});
+
+	it('should report how much of the validity window is left', () => {
+		stubHolders();
+		render(AdminServiceCodeDetail, { detail: detail(), now });
+		expect(screen.getByText(/left\)/)).toBeInTheDocument();
+	});
+
+	// The log below lists every redemption with the host that made it, so a
+	// summary above it was two numbers to reconcile rather than an answer.
+	it('should not restate the redemption count above the log', () => {
+		stubHolders();
+		render(AdminServiceCodeDetail, { detail: detail(enrollment(), [aRedemption()]), now });
+		expect(screen.queryByText('Last redeemed')).not.toBeInTheDocument();
+	});
+
+	it('should point at the redemption history from the code summary', () => {
+		stubHolders();
+		render(AdminServiceCodeDetail, { detail: detail(enrollment(), [aRedemption()]), now });
+		expect(screen.getByTestId('redemption-history-link')).toHaveAttribute(
+			'href',
+			'#redemption-history'
+		);
 	});
 
 	it('should report an expired code as already expired', () => {
@@ -214,6 +237,14 @@ describe('AdminServiceCodeDetail', () => {
 			stubHolders();
 			render(AdminServiceCodeDetail, { detail: detail(enrollment(), [aRedemption()]), now });
 			expect(screen.queryByText(/most recent of/)).not.toBeInTheDocument();
+		});
+
+		// The section is unconditional now that it is what the summary points
+		// at: a link into a section that is not rendered goes nowhere.
+		it('should say so when the code has never been redeemed', () => {
+			stubHolders();
+			render(AdminServiceCodeDetail, { detail: detail(enrollment(), []), now });
+			expect(screen.getByText('Never redeemed.')).toBeInTheDocument();
 		});
 	});
 

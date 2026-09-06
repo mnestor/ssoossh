@@ -2,7 +2,13 @@
 	import { expireEnrollment, setEnrollmentNotificationEmail } from '$lib/api/endpoints';
 	import type { AdminEnrollmentDetail } from '$lib/api/endpoints';
 	import { errorMessage } from '$lib/auth';
-	import { expiryLabel, formatDateTime, formatDuration, isExpired } from '$lib/format';
+	import {
+		formatDateTime,
+		formatDateTimeRange,
+		formatDuration,
+		isExpired,
+		remainingLabel
+	} from '$lib/format';
 	import AccountHoldersPanel from './AccountHoldersPanel.svelte';
 	import ExpireCodeAction from './ExpireCodeAction.svelte';
 	import Alert from './Alert.svelte';
@@ -175,28 +181,41 @@
 
 	<div>
 		<SectionLabel>The code itself</SectionLabel>
+		<!-- Two rows, because that is all this section knows that the rest of
+		     the page does not. Approval and expiry are the two ends of one
+		     window, so they are one row; the redemption timestamps and count
+		     are not here at all — the log below lists every redemption, and
+		     summarising it above itself only made the reader check whether the
+		     two agreed. -->
 		<dl class="divide-y divide-border-subtle">
+			<DetailRow label="Valid period" icon="clock">
+				{formatDateTimeRange(enrollment.created_at, enrollment.expires_at)}
+				<span class="text-ink-muted">({remainingLabel(enrollment.expires_at, now)})</span>
+			</DetailRow>
 			<DetailRow label="Approved by"
 				>{enrollment.approved_by_username} ({enrollment.approved_by_email})</DetailRow
 			>
-			<DetailRow label="Approved">{formatDateTime(enrollment.created_at)}</DetailRow>
-			<DetailRow label={expired ? 'Stopped working' : 'Stops working'} icon="clock">
-				{formatDateTime(enrollment.expires_at)}
-				<span class="text-ink-muted">({expiryLabel(enrollment.expires_at, now)})</span>
+			<!-- The pointer the removed rows leave behind. What an operator
+			     actually wants from a redemption is which host pulled the
+			     certificate and whether it worked, and only the log answers
+			     that — so the row is a way in, not a summary. -->
+			<DetailRow label="Redemptions">
+				<a
+					href="#redemption-history"
+					data-testid="redemption-history-link"
+					class="text-accent underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+				>
+					Redemption history
+				</a>
 			</DetailRow>
-			<DetailRow label="First redeemed">
-				{enrollment.first_redeemed_at ? formatDateTime(enrollment.first_redeemed_at) : '—'}
-			</DetailRow>
-			<DetailRow label="Last redeemed">
-				{enrollment.last_retrieved_at ? formatDateTime(enrollment.last_retrieved_at) : '—'}
-			</DetailRow>
-			<DetailRow label="Redemptions">{enrollment.retrieval_count}</DetailRow>
 		</dl>
 	</div>
 
-	{#if detail.retrievals.length > 0}
-		<div>
-			<SectionLabel>Retrievals</SectionLabel>
+	<div id="redemption-history">
+		<SectionLabel>Redemption history</SectionLabel>
+		{#if detail.retrievals.length === 0}
+			<p class="text-[13px] text-ink-muted">Never redeemed.</p>
+		{:else}
 			{#if truncated}
 				<p class="mb-2 text-[13px] text-ink-muted">
 					The {detail.retrievals.length} most recent of {detail.retrieval_total} redemptions.
@@ -220,8 +239,8 @@
 					</div>
 				{/each}
 			</dl>
-		</div>
-	{/if}
+		{/if}
+	</div>
 
 	<!-- Immediately above the admin controls, because the first of them
 	     redirects notifications away from exactly these people. Provenance is

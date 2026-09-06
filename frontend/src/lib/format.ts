@@ -84,6 +84,58 @@ export function formatDateTime(value: string): string {
 }
 
 /**
+ * formatDateTimeRange renders a validity window as one string — "Sep 6,
+ * 2026, 12:31 PM – Sep 6, 2027, 12:31 PM EDT".
+ *
+ * Both ends keep their time, but the zone is named once, at the end: both
+ * halves are rendered in the viewer's own zone, so repeating it widens the
+ * row without adding a fact. A window is one thing to a reader ("how long
+ * does this code live?"), and splitting it across two rows made them do the
+ * subtraction themselves.
+ *
+ * An unparseable half falls back to the other one, so a bad timestamp costs
+ * the range, not the row.
+ */
+export function formatDateTimeRange(start: string, end: string): string {
+	const from = new Date(start);
+	if (Number.isNaN(from.getTime())) {
+		return formatDateTime(end);
+	}
+	if (Number.isNaN(new Date(end).getTime())) {
+		return formatDateTime(start);
+	}
+
+	const opening = from.toLocaleString(undefined, {
+		year: 'numeric',
+		month: 'short',
+		day: 'numeric',
+		hour: 'numeric',
+		minute: '2-digit'
+	});
+	return `${opening} – ${formatDateTime(end)}`;
+}
+
+/**
+ * remainingLabel says how much of a validity window is left — "12mo 4d
+ * left", or "expired" once it has passed.
+ *
+ * The parenthetical form of expiryLabel: in a row that already names both
+ * ends of the window, "expires in 12mo 4d" repeats what the row just said.
+ */
+export function remainingLabel(expiresAt: string, now: Date = new Date()): string {
+	const expiry = new Date(expiresAt);
+	if (Number.isNaN(expiry.getTime())) {
+		return '—';
+	}
+
+	const seconds = Math.floor((expiry.getTime() - now.getTime()) / 1000);
+	if (seconds <= 0) {
+		return 'expired';
+	}
+	return `${formatDuration(seconds)} left`;
+}
+
+/**
  * clockSkewLabel compares a claimed clock — e.g. a PAM module's
  * client_time — against a reference timestamp, normally the server's own
  * created_at, and describes the drift: "31s behind server". Returns null

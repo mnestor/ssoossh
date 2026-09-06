@@ -7,7 +7,13 @@
 	} from '$lib/api/endpoints';
 	import type { EnrollmentRetrievalsResponse, ServiceEnrollment } from '$lib/api/types';
 	import { errorMessage } from '$lib/auth';
-	import { expiryLabel, formatDateTime, formatDuration, isExpired } from '$lib/format';
+	import {
+		formatDateTime,
+		formatDateTimeRange,
+		formatDuration,
+		isExpired,
+		remainingLabel
+	} from '$lib/format';
 	import { session } from '$lib/session.svelte';
 	import AccountHoldersPanel from './AccountHoldersPanel.svelte';
 	import ExpireCodeAction from './ExpireCodeAction.svelte';
@@ -229,19 +235,40 @@
 	<div>
 		<SectionLabel>The code itself</SectionLabel>
 		<dl class="divide-y divide-border-subtle">
-			<DetailRow label="Approved">{formatDateTime(enrollment.created_at)}</DetailRow>
+			<!-- Approval and expiry as one window rather than two rows: they are
+			     the two ends of a single fact, and apart they made the reader
+			     subtract one from the other to answer "how long does this
+			     live?". -->
+			<DetailRow label="Valid period" icon="clock">
+				{formatDateTimeRange(enrollment.created_at, enrollment.expires_at)}
+				<span class="text-ink-muted">({remainingLabel(enrollment.expires_at, now)})</span>
+			</DetailRow>
 			<DetailRow label="Approved by">{enrollment.approved_by_username || '—'}</DetailRow>
-			<DetailRow label={expired ? 'Stopped working' : 'Stops working'} icon="clock">
-				{formatDateTime(enrollment.expires_at)}
-				<span class="text-ink-muted">({expiryLabel(enrollment.expires_at, now)})</span>
-			</DetailRow>
-			<DetailRow label="First redeemed">
-				{enrollment.first_redeemed_at ? formatDateTime(enrollment.first_redeemed_at) : '—'}
-			</DetailRow>
+			<!-- The count rides along with the timestamp it belongs to, and
+			     leads to the log rather than restating it: which host pulled a
+			     certificate is the part worth knowing, and only the history
+			     below has it. The first redemption is not a row of its own —
+			     it is the last entry of that log. -->
 			<DetailRow label="Last redeemed">
-				{enrollment.last_retrieved_at ? formatDateTime(enrollment.last_retrieved_at) : '—'}
+				{#if enrollment.retrieval_count === 0}
+					Never redeemed
+				{:else}
+					{enrollment.last_retrieved_at ? formatDateTime(enrollment.last_retrieved_at) : '—'}
+					{@const noun = enrollment.retrieval_count === 1 ? 'redemption' : 'redemptions'}
+					<span class="text-ink-muted">
+						{#if retrievals}
+							(<a
+								href="#redemption-history"
+								data-testid="redemption-history-link"
+								class="text-accent underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+								>{enrollment.retrieval_count} {noun}</a
+							>)
+						{:else}
+							({enrollment.retrieval_count} {noun})
+						{/if}
+					</span>
+				{/if}
 			</DetailRow>
-			<DetailRow label="Redemptions">{enrollment.retrieval_count}</DetailRow>
 		</dl>
 	</div>
 
@@ -306,10 +333,10 @@
 	</div>
 
 	{#if retrievals}
-		<div>
-			<SectionLabel>Retrievals</SectionLabel>
+		<div id="redemption-history">
+			<SectionLabel>Redemption history</SectionLabel>
 			{#if retrievals.retrievals.length === 0}
-				<p class="text-[13px] text-ink-muted">Never retrieved.</p>
+				<p class="text-[13px] text-ink-muted">Never redeemed.</p>
 			{:else}
 				{#if truncated}
 					<!-- Said before the list, not after it: a reader who stops

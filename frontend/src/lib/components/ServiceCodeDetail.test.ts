@@ -67,6 +67,27 @@ function mockRetrievals(
 	);
 }
 
+/** mockRetrievalsRefused answers the log fetch the way the server does for a
+ * request that has no enrollment (404) or belongs to someone else (403),
+ * leaving the holders fetch intact. The page keeps its own summary in that
+ * case; there is just no log for it to point at. */
+function mockRetrievalsRefused(status = 404) {
+	vi.stubGlobal(
+		'fetch',
+		vi.fn((input: RequestInfo | URL) => {
+			if (String(input).includes('/holders')) {
+				return Promise.resolve(json({ service_account: 'svc-deploy', holders: [] }));
+			}
+			return Promise.resolve(
+				new Response(JSON.stringify({ data: null, error: { message: 'no such enrollment' } }), {
+					status,
+					headers: { 'Content-Type': 'application/json' }
+				})
+			);
+		})
+	);
+}
+
 /** aRedemption is one row of the log, overridable per case. */
 function aRedemption(overrides: Partial<EnrollmentRetrievalsResponse['retrievals'][0]> = {}) {
 	return {
@@ -155,10 +176,57 @@ describe('ServiceCodeDetail', () => {
 		expect(screen.getByText(/No extensions or restrictions/)).toBeInTheDocument();
 	});
 
-	it('should report when the code stops working', () => {
+	// Approval and expiry are one row: the reader's question is how long the
+	// code lives, which two rows made them work out for themselves.
+	it('should report the validity window as one period', () => {
 		mockRetrievals([]);
 		render(ServiceCodeDetail, { enrollment: enrollment(), now });
-		expect(screen.getByText(/expires in/)).toBeInTheDocument();
+		expect(screen.getByText(/Aug 20, 2026.* – .*Nov 20, 2026/)).toBeInTheDocument();
+	});
+
+	it('should report how much of the validity window is left', () => {
+		mockRetrievals([]);
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
+		expect(screen.getByText(/left\)/)).toBeInTheDocument();
+	});
+
+	it('should report the redemption count beside the last redemption', async () => {
+		mockRetrievals([aRedemption()]);
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
+		expect(await screen.findByText('12 redemptions')).toBeInTheDocument();
+	});
+
+	it('should render the redemption count in the singular for one redemption', async () => {
+		mockRetrievals([aRedemption()]);
+		render(ServiceCodeDetail, { enrollment: enrollment({ retrieval_count: 1 }), now });
+		expect(await screen.findByText('1 redemption')).toBeInTheDocument();
+	});
+
+	it('should say a never-redeemed code has never been redeemed', () => {
+		mockRetrievals([]);
+		const row = enrollment({ retrieval_count: 0, last_retrieved_at: undefined });
+		render(ServiceCodeDetail, { enrollment: row, now });
+		expect(screen.getByText('Never redeemed')).toBeInTheDocument();
+	});
+
+	// Which host pulled a certificate is the part worth knowing, and only the
+	// log has it, so the count is the way in rather than a summary of it.
+	it('should link the redemption count to the history below it', async () => {
+		mockRetrievals([aRedemption()]);
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
+		expect(await screen.findByTestId('redemption-history-link')).toHaveAttribute(
+			'href',
+			'#redemption-history'
+		);
+	});
+
+	// A log that never arrived — a 404 or someone else's request — leaves
+	// nothing to link to, and a link to an absent section goes nowhere.
+	it('should not link the redemption count when the history did not load', async () => {
+		mockRetrievalsRefused();
+		render(ServiceCodeDetail, { enrollment: enrollment(), now });
+		expect(await screen.findByText(/12 redemptions/)).toBeInTheDocument();
+		expect(screen.queryByTestId('redemption-history-link')).not.toBeInTheDocument();
 	});
 
 	it('should report an expired code as already expired', () => {
@@ -209,7 +277,7 @@ describe('ServiceCodeDetail', () => {
 		it('should say so when the code has never been retrieved', async () => {
 			mockRetrievals([]);
 			render(ServiceCodeDetail, { enrollment: enrollment(), now });
-			expect(await screen.findByText('Never retrieved.')).toBeInTheDocument();
+			expect(await screen.findByText('Never redeemed.')).toBeInTheDocument();
 		});
 
 		// The server caps the log, so the last row on screen is not the first
