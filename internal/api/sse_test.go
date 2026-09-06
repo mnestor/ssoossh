@@ -510,6 +510,34 @@ func TestWaitForOutcome_ShouldReconnectAfterABrokenStreamUntilTheContextEnds(t *
 	}
 }
 
+// Whether the context ends between two attempts or in the middle of the
+// reconnect is chance, and the answer must not depend on it: a reconnect
+// that the deadline cuts short still reports the drop that sent the wait
+// back there, not the deadline that stopped it retrying.
+func TestWaitForOutcome_ShouldReportTheDropWhenTheContextEndsMidReconnect(t *testing.T) {
+	t.Parallel()
+
+	var attempts atomic.Int64
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts.Add(1) == 1 {
+			writeRawSSE(w, "event:app")
+			panic(http.ErrAbortHandler) // break the connection mid-event
+		}
+		// Hold the reconnect open so the caller's deadline, not the
+		// stream, is what ends this attempt.
+		<-r.Context().Done()
+	}))
+	t.Cleanup(ts.Close)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err := waitForOutcome(ctx, nil, ts.URL)
+	if !errors.Is(err, errStreamEnded) {
+		t.Fatalf("got %v, want the drop that ended the last established stream", err)
+	}
+}
+
 // A server that closes the stream cleanly with nothing on it drops out the
 // same way, just without a read error to report.
 func TestWaitForOutcome_ShouldReportAnEmptyStreamWhenTheContextEnds(t *testing.T) {

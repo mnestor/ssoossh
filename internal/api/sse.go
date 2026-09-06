@@ -73,11 +73,24 @@ func waitForOutcome(ctx context.Context, tlsConfig *tls.Config, eventsURL string
 	// transport's connection pool rather than redialing and re-handshaking.
 	client := &http.Client{Transport: newTransport(tlsConfig)}
 
+	// How the last established connection ended, kept so the drop can be
+	// reported when ctx runs out during the reconnect rather than between
+	// attempts. Nil until a stream has actually dropped.
+	var lastDrop error
+
 	for {
 		result, err := readOutcome(ctx, client, eventsURL)
 		if !errors.Is(err, errStreamEnded) {
+			// A reconnect refused because the caller's context ended says
+			// nothing an operator can act on, and which side of
+			// reconnectDelay the deadline landed on is chance. Report the
+			// drop that sent the wait back here instead.
+			if lastDrop != nil && ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+				return nil, lastDrop
+			}
 			return result, err
 		}
+		lastDrop = err
 
 		select {
 		case <-ctx.Done():
