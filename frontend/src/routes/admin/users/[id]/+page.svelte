@@ -91,6 +91,53 @@
 		return user?.oidc_fields?.[field] !== false;
 	}
 
+	/** accountBlocks is the other_accounts and service_accounts rows,
+	 * resolved to what the page has to state: the values the server acts
+	 * on, where they came from, and the losing side where there is one.
+	 *
+	 * Resolved here rather than in the template because the four states
+	 * (directory wins, OIDC wins, claim configured and empty, no claim
+	 * configured) do not nest cleanly as markup — spelling them out inline
+	 * is what made this section six lines of prose per field.
+	 *
+	 * `values` is the effective set, not the OIDC capture. The old block
+	 * led with the OIDC values struck through and buried what the server
+	 * acts on in a callout underneath, which is backwards: the effective
+	 * list is the answer, and the OIDC side is the footnote that makes a
+	 * wrong claim mapping visible. */
+	const accountBlocks = $derived.by(() => {
+		const fields = [
+			{ field: 'other_accounts', label: 'Other accounts', values: user?.other_accounts ?? [] },
+			{ field: 'service_accounts', label: 'Service accounts', values: user?.service_accounts ?? [] }
+		];
+
+		return fields.map((block) => {
+			const override = overrides[block.field];
+			if (override) {
+				return {
+					...block,
+					values: override.effective,
+					source: 'ldap',
+					// Only worth showing where the ID token actually carried
+					// something: with no claim configured there is no losing
+					// side, and the badge has already said where this came
+					// from.
+					replaced: override.oidc,
+					claimEmptied: oidcConfigured(block.field) && override.oidc.length === 0,
+					unconfigured: false
+				};
+			}
+			const configured = oidcConfigured(block.field);
+			return {
+				...block,
+				source: configured ? 'oidc' : '',
+				replaced: [] as string[],
+				claimEmptied: false,
+				unconfigured: !configured
+			};
+		});
+	});
+
 	/** valueList normalizes a stored extra field, which keeps the shape its
 	 * claim arrived in, to the list the override rows are rendered as. */
 	function valueList(value: string | string[] | undefined): string[] {
@@ -223,9 +270,9 @@
 		>
 			<h2 class="mb-1 font-semibold text-ink">OIDC record</h2>
 			<p class="mb-4 text-[13px] text-ink-muted">
-				What the identity provider sent at this user's last login. Where a configured
-				<code>ldap.fields</code> entry replaces or supplies one of these, it is marked below and the directory
-				value is what the server acts on.
+				What the identity provider sent at this user's last login. The account lists below are
+				badged with the source the server actually acts on, since a configured
+				<code>ldap.fields</code> entry replaces its OIDC counterpart outright.
 			</p>
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div>
@@ -283,65 +330,60 @@
 			     other_accounts under an LDAP override is the exact state
 			     someone is trying to diagnose when they ask why a principal
 			     is missing, and hiding the block answers the question with
-			     silence. -->
-			{#each [{ field: 'other_accounts', label: 'Other accounts', values: user.other_accounts }, { field: 'service_accounts', label: 'Service accounts', values: user.service_accounts }] as block (block.field)}
+			     silence.
+
+			     One row per field: the values the server acts on, badged
+			     with where they came from, and a single muted line for the
+			     losing side where there is one. The badge is the same
+			     uppercase source chip the group table below uses, so
+			     "where did this come from" is answered the same way twice
+			     on one page. This used to be six lines of prose per field
+			     saying what the badge says. -->
+			{#each accountBlocks as block (block.field)}
 				<div class="mt-4" data-testid="user-oidc-{block.field}">
-					<p class="text-xs font-semibold text-ink-muted">{block.label}</p>
+					<div class="flex items-baseline gap-2">
+						<p class="text-xs font-semibold text-ink-muted">{block.label}</p>
+						{#if block.source}
+							<span
+								class="rounded bg-surface px-2 py-0.5 text-[10px] text-ink-muted uppercase"
+								data-testid="user-account-source-{block.field}">{block.source}</span
+							>
+						{/if}
+					</div>
+
 					{#if block.values.length > 0}
-						<div class="flex flex-wrap gap-2">
+						<div class="mt-1 flex flex-wrap gap-2">
 							{#each block.values as acct (acct)}
-								<span
-									class="rounded bg-surface px-2 py-1 text-sm"
-									class:line-through={overrides[block.field]}
-									class:text-ink-muted={overrides[block.field]}>{acct}</span
-								>
+								<span class="rounded bg-surface px-2 py-1 text-sm">{acct}</span>
 							{/each}
 						</div>
-					{:else if oidcConfigured(block.field)}
-						<p class="text-sm text-ink-muted">None in the ID token.</p>
-					{:else}
+					{:else if block.unconfigured}
 						<!-- Both account fields default to empty in
 						     authentication.fields, so the common deployment
-						     populates neither from OIDC. "None in the ID
-						     token" reads as a claim that arrived empty,
-						     which sends someone to check a claim mapping
-						     that was never configured. -->
+						     populates neither from OIDC. "None" alone reads
+						     as a claim that arrived empty, which sends
+						     someone to check a mapping that was never
+						     written. -->
 						<p class="text-sm text-ink-muted" data-testid="user-oidc-unmapped-{block.field}">
-							Not read from OIDC: no <code>authentication.fields.{block.field}</code> claim is configured.
+							Not configured: <code>authentication.fields.{block.field}</code>
 						</p>
+					{:else}
+						<p class="text-sm text-ink-muted">None.</p>
 					{/if}
-					{#if overrides[block.field]}
-						<div
-							class="mt-2 rounded border-l-2 border-accent bg-surface p-2 text-sm"
-							data-testid="user-override-{block.field}"
-						>
-							<!-- With no OIDC claim configured there is nothing
-							     to override, and describing the directory as
-							     overriding one names a conflict that does not
-							     exist. The directory is simply the source. -->
-							{#if oidcConfigured(block.field)}
-								<p class="text-xs font-semibold text-accent">Overridden by LDAP</p>
-								<p class="text-ink-muted">
-									A configured <code>ldap.fields.{block.field}</code> replaces the OIDC value outright
-									rather than merging with it. The server acts on:
-								</p>
-							{:else}
-								<p class="text-xs font-semibold text-accent">Supplied by LDAP</p>
-								<p class="text-ink-muted">
-									<code>ldap.fields.{block.field}</code> is the only source for this field. The server
-									acts on:
-								</p>
-							{/if}
-							<div class="mt-1 flex flex-wrap gap-2">
-								{#each overrides[block.field].effective as acct (acct)}
-									<span class="rounded bg-surface-muted px-2 py-1 text-sm">{acct}</span>
-								{:else}
-									<span class="text-sm text-ink-muted"
-										>nothing — the directory supplied no value</span
-									>
-								{/each}
-							</div>
-						</div>
+
+					<!-- The losing side, only when there is one. A claim
+					     mapping that is quietly wrong is invisible otherwise,
+					     and the two ways it goes wrong -- replaced by the
+					     directory, or configured and arriving empty -- read
+					     differently. -->
+					{#if block.replaced.length > 0}
+						<p class="mt-1 text-xs text-ink-muted" data-testid="user-override-{block.field}">
+							LDAP replaced <span class="line-through">{block.replaced.join(', ')}</span> from OIDC
+						</p>
+					{:else if block.claimEmptied}
+						<p class="mt-1 text-xs text-ink-muted" data-testid="user-override-{block.field}">
+							The OIDC claim supplied nothing.
+						</p>
 					{/if}
 				</div>
 			{/each}

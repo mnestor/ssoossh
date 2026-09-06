@@ -491,29 +491,54 @@ describe('the OIDC record and what the directory overrides', () => {
 		expect(block).toHaveTextContent('alice.adm');
 	});
 
-	it('should name LDAP as what overrode the field', async () => {
+	// A source badge rather than a sentence: the group table on the same
+	// page already answers "where did this come from" with the same chip,
+	// and the field's own values are what the reader came for.
+	it('should badge a directory-supplied field as coming from LDAP', async () => {
 		mockDetail({
 			directory_overrides: [
 				{ field: 'service_accounts', oidc: ['svc-deploy'], effective: ['svc-prod'] }
 			]
 		});
 		render(Page);
-		expect(await screen.findByTestId('user-override-service_accounts')).toHaveTextContent(
-			'Overridden by LDAP'
+		expect(await screen.findByTestId('user-account-source-service_accounts')).toHaveTextContent(
+			'ldap'
 		);
 	});
 
-	// An empty OIDC list under an override is the exact state someone is
-	// diagnosing when they ask why a principal is missing, so the block is
-	// rendered even when there is nothing in it.
-	it('should still show an empty OIDC list when the directory overrides it', async () => {
+	it('should badge an unoverridden field as coming from OIDC', async () => {
+		mockDetail({ service_accounts: ['svc-deploy'], directory_overrides: [] });
+		render(Page);
+		expect(await screen.findByTestId('user-account-source-service_accounts')).toHaveTextContent(
+			'oidc'
+		);
+	});
+
+	// The effective list leads. Leading with the OIDC capture struck
+	// through and burying what the server acts on in a callout underneath
+	// is backwards -- the effective list is the answer.
+	it('should lead with the values the server acts on', async () => {
+		mockDetail({
+			directory_overrides: [
+				{ field: 'service_accounts', oidc: ['svc-deploy'], effective: ['svc-prod'] }
+			]
+		});
+		render(Page);
+		expect(await screen.findByTestId('user-oidc-service_accounts')).toHaveTextContent('svc-prod');
+	});
+
+	// A configured claim that arrived empty while the directory supplied
+	// values is the exact state someone is diagnosing when they ask why a
+	// principal is missing, so it is said rather than left to be inferred
+	// from an absence.
+	it('should say when a configured claim supplied nothing and the directory won', async () => {
 		mockDetail({
 			other_accounts: [],
 			directory_overrides: [{ field: 'other_accounts', oidc: [], effective: ['alice.adm'] }]
 		});
 		render(Page);
-		expect(await screen.findByTestId('user-oidc-other_accounts')).toHaveTextContent(
-			'None in the ID token'
+		expect(await screen.findByTestId('user-override-other_accounts')).toHaveTextContent(
+			'The OIDC claim supplied nothing'
 		);
 	});
 
@@ -553,10 +578,13 @@ describe('the OIDC record and what the directory overrides', () => {
 
 			const block = await screen.findByTestId('user-oidc-unmapped-other_accounts');
 			expect(block).toHaveTextContent('authentication.fields.other_accounts');
-			expect(screen.queryByText('None in the ID token.')).not.toBeInTheDocument();
+			expect(screen.queryByText('None.')).not.toBeInTheDocument();
 		});
 
-		it('should describe the directory as supplying the field rather than overriding it', async () => {
+		// With no claim configured there is no losing side to report. The
+		// badge has already said the directory is where this came from, so
+		// a note would be saying it twice.
+		it('should report no losing side when no claim was ever configured', async () => {
 			mockDetail({
 				other_accounts: [],
 				oidc_fields: { other_accounts: false, service_accounts: false, name: true },
@@ -564,12 +592,12 @@ describe('the OIDC record and what the directory overrides', () => {
 			});
 			render(Page);
 
-			const override = await screen.findByTestId('user-override-other_accounts');
-			expect(override).toHaveTextContent('Supplied by LDAP');
-			expect(override).not.toHaveTextContent('Overridden by LDAP');
+			await screen.findByTestId('user-oidc-other_accounts');
+			expect(screen.getByTestId('user-account-source-other_accounts')).toHaveTextContent('ldap');
+			expect(screen.queryByTestId('user-override-other_accounts')).not.toBeInTheDocument();
 		});
 
-		it('should still call it an override when the claim is configured', async () => {
+		it('should name what the directory replaced when the claim carried a value', async () => {
 			mockDetail({
 				other_accounts: ['a.smith'],
 				oidc_fields: { other_accounts: true, service_accounts: true, name: true },
@@ -580,7 +608,7 @@ describe('the OIDC record and what the directory overrides', () => {
 			render(Page);
 
 			expect(await screen.findByTestId('user-override-other_accounts')).toHaveTextContent(
-				'Overridden by LDAP'
+				'LDAP replaced a.smith from OIDC'
 			);
 		});
 
