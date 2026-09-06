@@ -137,6 +137,35 @@
 		background-color: rgb(0 0 0 / 0.55);
 	}
 
+	/* The panel inside a .modal-dialog.
+
+	   Stated once because three modals had the same twenty-class string, and
+	   a width that has to be changed in three files is a width that ends up
+	   different in three files.
+
+	   720px rather than the 600px they carried: these panels show key IDs
+	   and SHA256 fingerprints in a DetailRow, whose 140px label column left
+	   about 410px for the value. A fingerprint is 50 monospace characters
+	   and wrapped by two or three of them, which is the worst width there
+	   is — wide enough to look like it fits, narrow enough that it does
+	   not. */
+	.modal-panel {
+		display: flex;
+		width: 100%;
+		max-width: 720px;
+		max-height: 88vh;
+		flex-direction: column;
+		gap: 1.125rem;
+		overflow-y: auto;
+		border: 1px solid var(--color-border-subtle);
+		border-radius: 0.75rem;
+		background: var(--color-surface);
+		padding: 1.5rem;
+		box-shadow:
+			0 10px 15px -3px rgb(0 0 0 / 0.1),
+			0 4px 6px -4px rgb(0 0 0 / 0.1);
+	}
+
 	/* The shared look of a data table.
 
 	   Three admin screens each rolled their own: one used px-3 py-2 cells
