@@ -122,8 +122,11 @@ func TestHostPrincipals_ShouldFailWhenTheMappingFileIsMalformed(t *testing.T) {
 	if res.ExitCode == 0 {
 		t.Fatalf("expected a non-zero exit for a malformed mapping file, got 0\nstdout:\n%s", res.Stdout)
 	}
-	if !strings.Contains(res.Stderr, "malformed") {
-		t.Errorf("expected the error to say the file is malformed, got:\n%s", res.Stderr)
+	// The parser's own wording is free to change; what must reach the
+	// operator is that this file is why, so match the command's wrapper
+	// rather than whichever syntax rule the file broke.
+	if !strings.Contains(res.Stderr, "parse principals map") {
+		t.Errorf("expected the error to say the mapping would not parse, got:\n%s", res.Stderr)
 	}
 }
 
