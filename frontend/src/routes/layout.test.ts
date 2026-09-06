@@ -190,8 +190,10 @@ describe('root layout', () => {
 		const user = userEvent.setup();
 
 		// The desktop rail and the drawer would both offer one; only the
-		// desktop rail is rendered until the drawer is opened.
-		await user.click(await screen.findByRole('button', { name: 'Sign out' }));
+		// desktop rail is rendered until the drawer is opened. Sign out sits
+		// behind the identity row's drop-up.
+		await user.click(await screen.findByTestId('rail-user-trigger'));
+		await user.click(screen.getByTestId('rail-sign-out'));
 
 		await waitFor(() => expect(session.user).toBeNull());
 		const logoutCall = spy.mock.calls.find(([input]) => String(input).includes('/auth/logout'));

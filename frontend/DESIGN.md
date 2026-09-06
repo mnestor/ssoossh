@@ -80,12 +80,12 @@ The `iconComponents` map in `src/lib/components/Icon.svelte` includes:
 **Navigation & UI:**
 
 - `menu` — the drawer trigger below `lg`
-- `chevron-down`, `chevron-left`, `chevron-right` — directional indicators
+- `chevron-down`, `chevron-left`, `chevron-right`, `chevron-up` — directional indicators
 - `arrow-right` — forward movement in a primary action (the login button)
 - `layout-grid` — the dashboard, and the "All" option in a type filter
 - `link` — a shareable link to the thing on screen
 - `sun`, `moon`, `monitor` — the light, dark, and follow-the-system theme states
-- `panel-left` — collapse or expand the rail
+- `panel-left` — collapse or expand the rail, from the control beside the wordmark
 - `log-out` — end the session
 
 **Rail destinations:**
@@ -96,7 +96,7 @@ literal:
 
 - `layout-grid` — Dashboard
 - `clock` — History
-- `zap` — Service codes (user), `key-round` — Service codes (admin)
+- `cog` — Service codes (user), matching the `service` certificate chip, since the two name the same object; `key-round` — Service codes (admin), kept distinct so a collapsed rail does not show the same icon twice
 - `monitor` — Console login
 - `shield-check` — the Admin group head
 - `users` — Users
@@ -200,6 +200,28 @@ of glyphs. The preference is kept in `localStorage` under
 drawer's open state — deliberately a separate field, and never persisted: a
 phone visitor's open drawer is not a desktop preference.
 
+The width control sits in the brand row, right-aligned beside the wordmark.
+It is the one control in the rail that acts on the rail rather than on the
+app, and the head of a column is where a control for that column is looked
+for. Expanded, it is a `panel-left` button hidden below `lg` — a drawer has
+nothing to collapse. Collapsed, the brand mark itself is the button, and it
+is _not_ hidden below `lg`: a drawer opened while the stored preference is
+collapsed would otherwise have no way back to labels.
+
+The rail's bottom edge is one row — the identity — and everything done to
+the session hangs off it in a drop-up (`RailUserMenu.svelte`): account,
+preferences, the theme control, sign out. It is a disclosure, not a
+`role="menu"`: the contents are ordinary links and buttons, and declaring
+the menu role would promise arrow-key roving these rows do not implement.
+The popover opens upward over the rail when there is width for labels and
+flies out to the right when the rail is collapsed, where a 60px-wide popover
+would truncate every row it exists to spell out. Escape is handled on the
+popover's own wrapper rather than on the document, so the key closes the
+popover first and the drawer underneath only once the popover has gone. With
+those rows behind a shut popover, the trigger carries the selected state for
+every page they lead to — otherwise standing on `/preferences` would leave
+the rail with nothing marked.
+
 Admin is a group inside the same rail, gated on `is_auditor`. It opens by
 itself on an `/admin` route and stays wherever the viewer last put it once
 they have said. It replaced a horizontal tab strip in the admin layout that
@@ -271,9 +293,10 @@ works through in order stays a column.
 
 - **Button**: Variants: `primary` (accent blue), `danger` (red), `ghost` (outline). Always includes `disabled` state via `opacity-50`. Lays its children out as a centered `inline-flex` row with a gap, so a label plus a trailing icon needs no wrapper. `full` stretches it to the container width, for a screen whose single primary action should span the column (the login button).
 - **BrandMark**: The deployment logo slot — the mark left of the "ssoossh" wordmark in the header and above the login heading. Renders `branding.logo_url` when a deployment sets one (height-constrained, width free, since most organisation logos are wide wordmarks) and ssoossh's own check-in-circle mark otherwise, so the slot is never empty. Takes `size` in pixels; corner rounding follows the size.
-- **AppRail**: The app's one navigation surface — brand, destinations, the admin group, theme, identity, sign out. See The app shell.
+- **AppRail**: The app's one navigation surface — brand, the rail's own width control, destinations, the admin group, and the identity drop-up. See The app shell.
 - **RailItem**: One destination in the rail. Keeps its label in the DOM when the rail is collapsed, so the accessible name never becomes an unlabelled icon.
 - **RailGroup**: A named, collapsible band of rail items. The head is a button, not a link: the group has no page of its own, and giving it one would mean inventing an admin landing screen whose only content is the list already on show.
+- **RailUserMenu**: The rail's bottom row — the identity — and the drop-up behind it holding account, preferences, theme and sign out. A disclosure rather than a `role="menu"`; see The app shell.
 - **PageShell**: The container every page sits in. Four named widths, an optional `aside` column, and the `center` flag sign-in uses. See Page Structure.
 - **CardGrid**: Independent cards two abreast above `xl`, one column below.
 - **Card**: Wraps content in a bordered box with optional title/description header and footer slot. `px-5 py-4` in the body, `px-5 py-3.5` in the header and footer.
@@ -469,9 +492,14 @@ A tagged build shows `v0.1.0` linked to its GitHub release. An untagged one has 
   unbounded one would push the wordmark out of its own row.
 - Both are absent by default, keeping the brand minimal when a deployment
   sets no branding.
-- The brand stays a link home at both rail widths. When the rail is
-  collapsed the wordmark and org tag drop and the mark stands alone —
-  dropping the mark too would leave the column starting mid-list.
+- Expanded, the brand is a link home and the rail's width control sits at
+  the far end of the same row.
+- Collapsed, the wordmark and org tag drop and the mark stands alone —
+  dropping the mark too would leave the column starting mid-list. At 60px
+  there is one slot in that row and it has to do both jobs, so the mark
+  becomes the button that brings the rail back and home gives up its link:
+  Dashboard is the row directly below, and stranding someone at icon width
+  costs more than one redundant path to `/`.
 
 **The narrow-viewport bar** (`src/routes/+layout.svelte`):
 

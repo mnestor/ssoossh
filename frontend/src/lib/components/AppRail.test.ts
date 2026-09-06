@@ -64,14 +64,9 @@ describe('app rail', () => {
 
 		render(AppRail, { onsignout: () => {} });
 
-		expect(railLinkLabels()).toEqual([
-			'Dashboard',
-			'History',
-			'Service codes',
-			'Console login',
-			'alice@example.com',
-			'Preferences'
-		]);
+		// Destinations and nothing else: account, preferences, theme and sign
+		// out moved behind the identity row's drop-up.
+		expect(railLinkLabels()).toEqual(['Dashboard', 'History', 'Service codes', 'Console login']);
 	});
 
 	// Admin used to hang off a line in the account dropdown. It is a peer of
@@ -204,13 +199,41 @@ describe('app rail', () => {
 		expect(rail.collapsed).toBe(true);
 	});
 
+	// The control acts on the column, so it sits at the column's head rather
+	// than among the session controls it used to share a footer with.
+	it('should place the collapse control above the destination list', () => {
+		session.user = signedInUser(false);
+		session.resolved = true;
+
+		render(AppRail, { onsignout: () => {} });
+
+		const collapse = screen.getByTestId('rail-collapse');
+		const firstDestination = screen.getAllByTestId('rail-item')[0];
+		expect(collapse.compareDocumentPosition(firstDestination)).toBe(
+			Node.DOCUMENT_POSITION_FOLLOWING
+		);
+	});
+
+	// The expanded control is desktop-only — a drawer has nothing to
+	// collapse. The collapsed one is not, because a drawer opened while the
+	// stored preference is collapsed has no other way back to labels.
+	it('should keep the expand control available at drawer widths', () => {
+		rail.collapsed = true;
+		session.user = signedInUser(false);
+		session.resolved = true;
+
+		render(AppRail, { onsignout: () => {} });
+
+		expect(screen.getByTestId('rail-collapse')).not.toHaveClass('max-lg:hidden');
+	});
+
 	it('should state the identity the session is acting as', () => {
 		session.user = signedInUser(false);
 		session.resolved = true;
 
 		render(AppRail, { onsignout: () => {} });
 
-		expect(screen.getByRole('link', { name: 'alice@example.com' })).toBeInTheDocument();
+		expect(screen.getByTestId('rail-user-trigger')).toHaveAccessibleName('alice@example.com');
 	});
 
 	// An identity with no address still has to be nameable, or the rail's
@@ -221,7 +244,7 @@ describe('app rail', () => {
 
 		render(AppRail, { onsignout: () => {} });
 
-		expect(screen.getByRole('link', { name: 'alice' })).toBeInTheDocument();
+		expect(screen.getByTestId('rail-user-trigger')).toHaveAccessibleName('alice');
 	});
 
 	it('should raise the sign-out request when sign out is pressed', async () => {
@@ -230,16 +253,18 @@ describe('app rail', () => {
 		session.resolved = true;
 
 		render(AppRail, { onsignout });
+		await userEvent.click(screen.getByTestId('rail-user-trigger'));
 		await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
 
 		expect(onsignout).toHaveBeenCalledOnce();
 	});
 
-	it('should refuse a second sign-out while one is in flight', () => {
+	it('should refuse a second sign-out while one is in flight', async () => {
 		session.user = signedInUser(false);
 		session.resolved = true;
 
 		render(AppRail, { onsignout: () => {}, signingOut: true });
+		await userEvent.click(screen.getByTestId('rail-user-trigger'));
 
 		expect(screen.getByRole('button', { name: 'Signing out…' })).toBeDisabled();
 	});
