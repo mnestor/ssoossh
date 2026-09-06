@@ -12,9 +12,10 @@ import (
 )
 
 func newHostPrincipalsCommand(mappingFileFunc func() string) simplecobra.Commander {
-	return &simpleCommand{
-		name:  "principals",
-		short: "Print the local principal mapping for sshd's AuthorizedPrincipalsCommand.",
+	cmd := &simpleCommand{
+		name:    "principals",
+		argSpec: "<username>",
+		short:   "Print the local principal mapping for sshd's AuthorizedPrincipalsCommand.",
 		// The "must never touch the network" below is enforced, not just
 		// documented: offline makes root's PreRun skip the CA fetch, so
 		// there is no server round-trip anywhere in this command's path.
@@ -27,14 +28,15 @@ func newHostPrincipalsCommand(mappingFileFunc func() string) simplecobra.Command
 			"up. Prints one principal per line; unknown account or missing file exits 0 " +
 			"with no output (sshd treats as no principals). An unreadable or malformed " +
 			"file exits non-zero.",
-		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
-			if len(args) < 1 {
-				return fmt.Errorf("usage: ssoossh host principals <username>")
-			}
-			username := args[0]
-			return runHostPrincipals(ctx, username, mappingFileFunc())
-		},
 	}
+	cmd.run = func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
+		if len(args) < 1 {
+			return cmd.usageError(cd)
+		}
+		username := args[0]
+		return runHostPrincipals(ctx, username, mappingFileFunc())
+	}
+	return cmd
 }
 
 func runHostPrincipals(ctx context.Context, username, mappingPath string) error {

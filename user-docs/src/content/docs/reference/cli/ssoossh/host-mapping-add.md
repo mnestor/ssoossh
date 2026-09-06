@@ -8,10 +8,12 @@ eyebrow: "CLI reference"
 
 Adds a principal to the given account, deduplicating if already present. Validates principal syntax before writing.
 
+Takes two arguments, in this order: the local account, then the certificate principal allowed to assume it.
+
 ## Synopsis
 
 ```
-ssoossh host mapping add [flags] [args]
+ssoossh host mapping add <account> <principal>
 ```
 
 ## Global options

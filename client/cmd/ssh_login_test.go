@@ -7,7 +7,10 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -822,5 +825,171 @@ func TestPrintEffectiveExtensions_ShouldNameFlagsAsTheReason(t *testing.T) {
 
 	if !strings.Contains(buf.String(), "permit-pty(flag)") {
 		t.Errorf("got %q, want it to attribute permit-pty to a flag", buf.String())
+	}
+}
+
+// launcherEnvDelay, launcherEnvTouch, and launcherEnvExit drive
+// TestBrowserLauncherHelper below, which stands in for the platform's URL
+// handler so these tests do not depend on a shell (or on a browser).
+const (
+	launcherEnvDelay = "SSOOSSH_TEST_LAUNCHER_DELAY"
+	launcherEnvTouch = "SSOOSSH_TEST_LAUNCHER_TOUCH"
+	launcherEnvExit  = "SSOOSSH_TEST_LAUNCHER_EXIT"
+)
+
+// TestBrowserLauncherHelper is not a test. It is the child process the
+// launcher tests run in place of xdg-open/open/rundll32: it waits, writes a
+// file to prove it got that far, and exits with the code it was given. The
+// os/exec helper-process pattern is used rather than a shell script because
+// the client test suite also runs on Windows.
+func TestBrowserLauncherHelper(t *testing.T) {
+	if os.Getenv(launcherEnvExit) == "" {
+		t.Skip("helper process for the browser launcher tests")
+	}
+
+	if d, err := time.ParseDuration(os.Getenv(launcherEnvDelay)); err == nil {
+		time.Sleep(d)
+	}
+	if path := os.Getenv(launcherEnvTouch); path != "" {
+		if err := os.WriteFile(path, []byte("launched"), 0o600); err != nil { //nolint:gosec // the path is this test's own t.TempDir(), handed to the child through the environment
+			t.Fatalf("helper could not write %s: %v", path, err)
+		}
+	}
+	code, err := strconv.Atoi(os.Getenv(launcherEnvExit))
+	if err != nil {
+		t.Fatalf("helper got a bad exit code: %v", err)
+	}
+	os.Exit(code)
+}
+
+// helperLauncher builds a command that runs TestBrowserLauncherHelper in a
+// child process with the given behavior.
+func helperLauncher(t *testing.T, delay time.Duration, touch string, exitCode int) *exec.Cmd {
+	t.Helper()
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestBrowserLauncherHelper$") //nolint:gosec // os.Args[0] is this test binary; the helper-process pattern has no other way to name it
+	cmd.Env = append(os.Environ(),
+		launcherEnvDelay+"="+delay.String(),
+		launcherEnvTouch+"="+touch,
+		launcherEnvExit+"="+strconv.Itoa(exitCode),
+	)
+	return cmd
+}
+
+// waitForFile polls for path, which a helper process writes from outside
+// this process's control.
+func waitForFile(t *testing.T, path string, within time.Duration) bool {
+	t.Helper()
+
+	deadline := time.Now().Add(within)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return false
+}
+
+// TestRunLauncher_ShouldLetTheLauncherFinish is the regression test for
+// try_open_browser doing nothing at all: the launch used to run under a
+// context whose cancel was deferred, so the handler was killed microseconds
+// after it started and never got as far as handing the URL to a browser.
+func TestRunLauncher_ShouldLetTheLauncherFinish(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "launched")
+	var out bytes.Buffer
+
+	runLauncher(context.Background(), &out, helperLauncher(t, 300*time.Millisecond, marker, 0), 30*time.Second)
+
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("the launcher never got to run: %v", err)
+	}
+	if out.String() != "" {
+		t.Errorf("got %q, want nothing said about a launch that worked", out.String())
+	}
+}
+
+// A launcher that exits nonzero is the "no browser here" case, and the exit
+// status is the only explanation the user gets.
+func TestRunLauncher_ShouldReportALauncherThatFails(t *testing.T) {
+	var out bytes.Buffer
+
+	runLauncher(context.Background(), &out, helperLauncher(t, 0, "", 3), 30*time.Second)
+
+	if !strings.Contains(out.String(), "could not open a browser automatically") {
+		t.Errorf("got %q, want the failure reported", out.String())
+	}
+}
+
+// A machine with no URL handler at all fails at Start, before there is any
+// exit status to wait for.
+func TestRunLauncher_ShouldReportALauncherThatCannotStart(t *testing.T) {
+	var out bytes.Buffer
+
+	runLauncher(context.Background(), &out, exec.Command("ssoossh-no-such-url-handler"), 30*time.Second)
+
+	if !strings.Contains(out.String(), "could not open a browser automatically") {
+		t.Errorf("got %q, want the missing launcher reported", out.String())
+	}
+}
+
+// A launcher still running at the timeout is left running: it is most likely
+// the browser itself in the foreground, and the login must not wait on it —
+// nor kill it, which would close the window the user has to approve in.
+func TestRunLauncher_ShouldStopWaitingWithoutKillingTheLauncher(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "launched")
+	var out bytes.Buffer
+
+	start := time.Now()
+	runLauncher(context.Background(), &out, helperLauncher(t, 400*time.Millisecond, marker, 0), 20*time.Millisecond)
+	if elapsed := time.Since(start); elapsed > 300*time.Millisecond {
+		t.Errorf("waited %s, want the login to carry on at the timeout", elapsed)
+	}
+
+	if !waitForFile(t, marker, 10*time.Second) {
+		t.Error("the launcher was killed at the timeout, taking the browser with it")
+	}
+}
+
+// A cancelled login stops waiting on the launcher too.
+func TestRunLauncher_ShouldStopWaitingWhenTheLoginIsCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var out bytes.Buffer
+
+	start := time.Now()
+	runLauncher(ctx, &out, helperLauncher(t, 400*time.Millisecond, "", 0), 30*time.Second)
+
+	if elapsed := time.Since(start); elapsed > 300*time.Millisecond {
+		t.Errorf("waited %s, want a cancelled login to stop waiting", elapsed)
+	}
+}
+
+// The command handed to the launcher has to carry the URL, whichever
+// handler this platform uses; a launcher invoked without it opens nothing.
+func TestBrowserCommand_ShouldPassTheURLToThePlatformHandler(t *testing.T) {
+	const url = "https://ssoossh.example/approve/abc123"
+
+	cmd := browserCommand(url)
+
+	if len(cmd.Args) == 0 {
+		t.Fatal("browserCommand() built a command with no arguments")
+	}
+	if cmd.Args[len(cmd.Args)-1] != url {
+		t.Errorf("last argument = %q, want the URL %q", cmd.Args[len(cmd.Args)-1], url)
+	}
+	switch runtime.GOOS {
+	case "darwin":
+		if cmd.Args[0] != "open" {
+			t.Errorf("handler = %q, want open", cmd.Args[0])
+		}
+	case "windows":
+		if cmd.Args[0] != "rundll32" {
+			t.Errorf("handler = %q, want rundll32", cmd.Args[0])
+		}
+	default:
+		if cmd.Args[0] != "xdg-open" {
+			t.Errorf("handler = %q, want xdg-open", cmd.Args[0])
+		}
 	}
 }

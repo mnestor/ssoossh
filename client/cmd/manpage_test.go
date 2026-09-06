@@ -193,3 +193,41 @@ func TestManpageRoot_ShouldCaptureTheCobraRootDuringInit(t *testing.T) {
 		t.Errorf("expected 5 top-level commands on the captured root, got %d", got)
 	}
 }
+
+// TestCobraCommandTree_ShouldDocumentPositionalArgumentsInUsageLines pins
+// the usage lines a user actually reads: `--help`, the generated CLI
+// reference (internal/tools/genclidocs renders cmd.UseLine()), and the man
+// pages all come from here. A command that takes positional arguments and
+// does not name them sends the reader to trial and error instead.
+func TestCobraCommandTree_ShouldDocumentPositionalArgumentsInUsageLines(t *testing.T) {
+	root, err := CobraCommandForManpage()
+	if err != nil {
+		t.Fatalf("build the command tree: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		path     []string
+		wantArgs string
+	}{
+		{name: "host mapping add", path: []string{"host", "mapping", "add"}, wantArgs: "<account> <principal>"},
+		{name: "host mapping remove", path: []string{"host", "mapping", "remove"}, wantArgs: "<account> [principal]"},
+		{name: "host principals", path: []string{"host", "principals"}, wantArgs: "<username>"},
+		{name: "ssh proxycommand", path: []string{"ssh", "proxycommand"}, wantArgs: "<command> [args...]"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := findCommand(root, tt.path...)
+			if cmd == nil {
+				t.Fatalf("%s is missing from the command tree", tt.name)
+			}
+			if !strings.Contains(cmd.UseLine(), tt.wantArgs) {
+				t.Errorf("usage line %q does not name the arguments %q", cmd.UseLine(), tt.wantArgs)
+			}
+			if strings.Contains(cmd.UseLine(), "[args]") {
+				t.Errorf("usage line %q still carries simplecobra's unhelpful [args] placeholder", cmd.UseLine())
+			}
+		})
+	}
+}

@@ -19,10 +19,10 @@ The code is printed once and stored nowhere. Save it where the unattended job th
 The approver picks which of their service accounts the enrollment is for, in their browser. That account is named in this command's output along with when the code stops being redeemable, since it is the sole principal of every certificate the code produces.
 
 .PP
-The key files follow OpenSSH naming: the private key is , the public key is \&.pub, and the certificate (once retrieved) is -cert.pub. The three files must be in the same directory for ssh to find them.
+The key files follow OpenSSH naming: the private key is <name>, the public key is <name>\&.pub, and the certificate (once retrieved) is <name>-cert.pub. The three files must be in the same directory for ssh to find them.
 
 .PP
-With --retrieve, the command immediately redeems the code once, writing the certificate to -cert.pub and reporting its details. If retrieval fails after the code is printed, an error is returned but the code is not lost.
+With --retrieve, the command immediately redeems the code once, writing the certificate to <name>-cert.pub and reporting its details. If retrieval fails after the code is printed, an error is returned but the code is not lost.
 
 
 .SH OPTIONS
@@ -31,11 +31,11 @@ With --retrieve, the command immediately redeems the code once, writing the cert
 
 .PP
 \fB--key\fP=""
-	keypair path (relative or absolute); generates both if neither  nor \&.pub exist, enrolls the existing \&.pub otherwise
+	keypair path (relative or absolute); generates both if neither <name> nor <name>\&.pub exist, enrolls the existing <name>\&.pub otherwise
 
 .PP
 \fB--retrieve\fP[=false]
-	immediately redeem the code and write the certificate to -cert.pub
+	immediately redeem the code and write the certificate to <name>-cert.pub
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS

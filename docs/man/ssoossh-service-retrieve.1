@@ -10,13 +10,13 @@ ssoossh-service-retrieve - Retrieve a service certificate using a previously iss
 
 
 .SH DESCRIPTION
-Redeems an enrollment code from \fBservice enroll\fR, writing the certificate to -cert.pub and checking local disk to avoid unnecessary server calls.
+Redeems an enrollment code from \fBservice enroll\fR, writing the certificate to <key>-cert.pub and checking local disk to avoid unnecessary server calls.
 
 .PP
-The certificate is skipped (exit 0) if one at -cert.pub is valid beyond --grace (default 1 minute) unless --force is passed. If retrieval fails but a still-valid certificate exists, a warning is printed and exit 0 is returned (so \fBMatch exec\fR does not block SSH when the server is temporarily unreachable). Only when there is no readable, valid certificate does an error return a non-zero exit.
+The certificate is skipped (exit 0) if one at <key>-cert.pub is valid beyond --grace (default 1 minute) unless --force is passed. If retrieval fails but a still-valid certificate exists, a warning is printed and exit 0 is returned (so \fBMatch exec\fR does not block SSH when the server is temporarily unreachable). Only when there is no readable, valid certificate does an error return a non-zero exit.
 
 .PP
-The key files follow OpenSSH naming: the private key is , the public key is \&.pub, and the certificate is -cert.pub.
+The key files follow OpenSSH naming: the private key is <name>, the public key is <name>\&.pub, and the certificate is <name>-cert.pub.
 
 
 .SH OPTIONS

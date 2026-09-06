@@ -9,6 +9,8 @@ import (
 
 	"github.com/bep/simplecobra"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/mnestor/ssoossh/internal/crypto/ssh/agent"
 )
 
 func newSSHInspectCommand() simplecobra.Commander {
@@ -28,19 +30,19 @@ func newSSHInspectCommand() simplecobra.Commander {
 // rest of the ssh commands this writes to stdout: its output is the point of
 // running it, not commentary alongside some other effect.
 func runInspect(root *RootCommand, out io.Writer) error {
+	writeStorage(out, root.Agent())
+
 	keys, err := root.Agent().List(true)
 	if err != nil {
 		return fmt.Errorf("list identities in %s: %w", root.Agent().Backend(), err)
 	}
 	if len(keys) == 0 {
-		fmt.Fprintf(out, "No certificates signed by your CA are loaded in %s.\n", root.Agent().Backend())
+		fmt.Fprintf(out, "\nNo certificates signed by your CA are loaded in %s.\n", root.Agent().Backend())
 		return nil
 	}
 
-	for i, key := range keys {
-		if i > 0 {
-			fmt.Fprintln(out)
-		}
+	for _, key := range keys {
+		fmt.Fprintln(out)
 		cert, ok := (*key).(*ssh.Certificate)
 		if !ok {
 			// List(true) filters to certificates, so this is unreachable
@@ -51,6 +53,41 @@ func runInspect(root *RootCommand, out io.Writer) error {
 		writeCertificate(out, cert)
 	}
 	return nil
+}
+
+// keyFileLister is the part of a file-backed agent this report needs: the
+// paths it keeps the identity in. Declared here rather than added to
+// agent.Agent because only the file backend has an answer -- an ssh-agent
+// holds keys in a process, not in files -- so the report asks for it and
+// prints nothing extra when the backend cannot say.
+type keyFileLister interface {
+	KeyFiles() []string
+}
+
+// writeStorage names where the certificates below are being kept. "In your
+// agent" and "in these files" send a reader looking in completely different
+// places when something is wrong, and for the file backend the paths are the
+// answer to "which key is this, then" -- a question the certificate fields
+// alone cannot settle when ~/.ssh holds several.
+func writeStorage(out io.Writer, ag agent.Agent) {
+	fmt.Fprintf(out, "%-16s %s\n", "Storage", storageDescription(ag))
+
+	files, ok := ag.(keyFileLister)
+	if !ok {
+		return
+	}
+	paths := files.KeyFiles()
+	if len(paths) == 0 {
+		fmt.Fprintf(out, "%-16s %s\n", "Key files", "(none on disk)")
+		return
+	}
+	// Label only the first line, so several paths read as one list rather
+	// than as several unrelated fields.
+	label := "Key files"
+	for _, path := range paths {
+		fmt.Fprintf(out, "%-16s %s\n", label, path)
+		label = ""
+	}
 }
 
 // writeCertificate renders one certificate as aligned label/value lines,

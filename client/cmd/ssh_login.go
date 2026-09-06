@@ -530,21 +530,58 @@ func reusableCertificate(agent sshagent.Agent) *ssh.Certificate {
 // machine with no browser (a headless jump box, a CI runner) must still be
 // able to complete a login by hand.
 func openBrowser(ctx context.Context, out io.Writer, url string) {
-	ctx, cancel := context.WithTimeout(ctx, browserLaunchTimeout)
-	defer cancel()
+	runLauncher(ctx, out, browserCommand(url), browserLaunchTimeout)
+}
 
-	var cmd *exec.Cmd
+// browserCommand builds the command that hands url to whatever this desktop
+// uses to open URLs.
+func browserCommand(url string) *exec.Cmd {
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.CommandContext(ctx, "open", url)
+		return exec.Command("open", url)
 	case "windows":
-		cmd = exec.CommandContext(ctx, "rundll32", "url.dll,FileProtocolHandler", url)
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
 	default:
-		cmd = exec.CommandContext(ctx, "xdg-open", url)
+		return exec.Command("xdg-open", url)
 	}
+}
 
+// runLauncher starts the URL handler and waits up to timeout for it to
+// finish handing the URL over, so a launcher that fails is reported with the
+// reason it gave rather than silently doing nothing.
+//
+// The context deliberately does not go to exec.CommandContext. It used to,
+// with the timeout cancelled by a deferred cancel() that ran the instant
+// after Start returned — which killed the launcher microseconds into its
+// life, every time, so try_open_browser never actually opened a browser.
+//
+// A launcher still running at the timeout is left alone rather than killed.
+// The handlers normally return as soon as the browser has the URL, so one
+// that is still up is most likely the browser itself running in the
+// foreground (xdg-open falling through to a terminal browser, say), and
+// killing it would close the very window the user is meant to approve in.
+// Waiting is bounded because the URL is already on screen: a launcher that
+// hangs must not hold up the login.
+func runLauncher(ctx context.Context, out io.Writer, cmd *exec.Cmd, timeout time.Duration) {
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(out, "(could not open a browser automatically: %v)\n", err)
+		return
+	}
+
+	// Buffered so the wait goroutine can finish and be collected once the
+	// launcher exits, whether or not anyone is still listening.
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		if err != nil {
+			fmt.Fprintf(out, "(could not open a browser automatically: %v)\n", err)
+		}
+	case <-timer.C:
+	case <-ctx.Done():
 	}
 }
 

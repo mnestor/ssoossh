@@ -29,8 +29,9 @@ func newSSHProxyCommandCommand() simplecobra.Commander {
 	exe := filepath.Base(os.Args[0])
 	pc := "ProxyCommand /usr/bin/nc -X connect -x 192.0.2.0:8080 %h %p"
 	sc := &simpleCommand{
-		name:  "proxycommand",
-		short: "Ensure a valid certificate, then relay stdio to the target host over TCP.",
+		name:    "proxycommand",
+		argSpec: "<command> [args...]",
+		short:   "Ensure a valid certificate, then relay stdio to the target host over TCP.",
 		long: "For use as ssh_config's ProxyCommand. Arguments after ProxyCommand should " +
 			"mirror exactly as if you weren't calling ssoossh.\n\n" +
 			"from ssh_config man page\nBefore: " + pc + "\n" +

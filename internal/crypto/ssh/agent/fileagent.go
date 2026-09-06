@@ -388,3 +388,21 @@ func writeAndVerify(path string, data []byte, perm os.FileMode) error {
 	}
 	return nil
 }
+
+// KeyFiles returns the on-disk paths this agent reads and writes, in
+// OpenSSH's private/public/certificate order, limited to the files that are
+// actually there. `ssh inspect` reports them so a file-backed identity names
+// the files a reader can go look at, instead of leaving them to guess which
+// of ~/.ssh holds the certificate they were just shown. The paths are
+// stat'ed at call time rather than read off the Has* flags, which describe
+// the moment the agent was constructed.
+func (f *FileAgent) KeyFiles() []string {
+	candidates := []string{f.privKey, f.privKey + ".pub", f.privKey + "-cert.pub"}
+	present := make([]string, 0, len(candidates))
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			present = append(present, path)
+		}
+	}
+	return present
+}

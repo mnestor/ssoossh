@@ -6,11 +6,14 @@ ssoossh-host-mapping-add - Add a principal to an account's mapping.
 
 
 .SH SYNOPSIS
-\fBssoossh host mapping add [flags] [args]\fP
+\fBssoossh host mapping add <account> <principal> [flags]\fP
 
 
 .SH DESCRIPTION
 Adds a principal to the given account, deduplicating if already present. Validates principal syntax before writing.
+
+.PP
+Takes two arguments, in this order: the local account, then the certificate principal allowed to assume it.
 
 
 .SH OPTIONS

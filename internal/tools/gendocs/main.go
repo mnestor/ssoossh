@@ -8,9 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
+	"github.com/spf13/pflag"
 
 	clientcmd "github.com/mnestor/ssoossh/client/cmd"
 	servercmd "github.com/mnestor/ssoossh/server/cmd"
@@ -39,6 +42,42 @@ func manPageDate() (time.Time, error) {
 	return time.Date(2026, time.August, 23, 0, 0, 0, 0, time.UTC), nil
 }
 
+// angleEscaper marks angle brackets as literal text for the markdown parser
+// behind the man pages.
+var angleEscaper = strings.NewReplacer("<", `\<`, ">", `\>`)
+
+// escapeTree rewrites a command tree's help text so argument placeholders
+// survive man page generation.
+//
+// cobra renders each page as markdown and hands it to go-md2man, whose
+// parser reads <name> as an inline HTML tag and drops it. Every placeholder
+// in the committed pages had silently vanished -- "the private key is , the
+// public key is .pub" in ssoossh-service-enroll.1, and a synopsis reading
+// "ssoossh host mapping add   [flags]" for a command that requires two
+// arguments. A backslash escape is markdown's way of saying "literal", and
+// md2man renders it back as the bare placeholder.
+//
+// The tree is mutated in place: this process exists to write the pages and
+// does nothing else with the commands afterwards.
+func escapeTree(cmd *cobra.Command) {
+	cmd.Use = angleEscaper.Replace(cmd.Use)
+	cmd.Short = angleEscaper.Replace(cmd.Short)
+	cmd.Long = angleEscaper.Replace(cmd.Long)
+	cmd.Example = angleEscaper.Replace(cmd.Example)
+
+	// Flag usage strings land in the OPTIONS section through the same
+	// renderer, and --key's "<name>.pub" was being eaten there too.
+	escapeFlags := func(flag *pflag.Flag) {
+		flag.Usage = angleEscaper.Replace(flag.Usage)
+	}
+	cmd.Flags().VisitAll(escapeFlags)
+	cmd.PersistentFlags().VisitAll(escapeFlags)
+
+	for _, sub := range cmd.Commands() {
+		escapeTree(sub)
+	}
+}
+
 // run performs the actual man page generation. It is extracted from main()
 // to enable testing. It returns an error instead of calling os.Exit or log.Fatalf.
 func run(outDir string) error {
@@ -62,6 +101,7 @@ func run(outDir string) error {
 		return err
 	}
 
+	escapeTree(cobraCmd)
 	err = doc.GenManTree(cobraCmd, &doc.GenManHeader{
 		Title:   "SSOOSSHD",
 		Section: "8",
@@ -119,6 +159,7 @@ func generateClientManpage(outDir string, date time.Time) error {
 		return fmt.Errorf("build client command tree: %w", err)
 	}
 
+	escapeTree(root)
 	return doc.GenManTree(root, &doc.GenManHeader{
 		Title:   "SSOOSSH",
 		Section: "1",

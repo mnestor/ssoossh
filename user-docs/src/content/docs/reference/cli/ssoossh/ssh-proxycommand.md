@@ -17,7 +17,7 @@ NOTICE: Use of ssh key files will not work here as ssh only reads them once at s
 ## Synopsis
 
 ```
-ssoossh ssh proxycommand [flags] [args]
+ssoossh ssh proxycommand <command> [args...]
 ```
 
 ## Global options

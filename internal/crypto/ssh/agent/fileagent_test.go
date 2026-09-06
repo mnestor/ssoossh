@@ -976,3 +976,64 @@ func TestPublicKeysEqual(t *testing.T) {
 		})
 	}
 }
+
+// should list only the key files that are on disk, in OpenSSH's
+// private/public/certificate order.
+func TestFileAgent_KeyFiles(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		present []string
+		want    []string
+	}{
+		{
+			name:    "should report nothing when no files exist",
+			present: nil,
+			want:    nil,
+		},
+		{
+			name:    "should report all three when all exist",
+			present: []string{"", ".pub", "-cert.pub"},
+			want:    []string{"", ".pub", "-cert.pub"},
+		},
+		{
+			name:    "should skip a missing certificate",
+			present: []string{"", ".pub"},
+			want:    []string{"", ".pub"},
+		},
+		{
+			name:    "should report a certificate whose private key is gone",
+			present: []string{"-cert.pub"},
+			want:    []string{"-cert.pub"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			base := filepath.Join(t.TempDir(), "id_ssoossh")
+			for _, suffix := range tt.present {
+				if err := os.WriteFile(base+suffix, []byte("x"), 0o600); err != nil {
+					t.Fatalf("write %s: %v", base+suffix, err)
+				}
+			}
+
+			want := make([]string, 0, len(tt.want))
+			for _, suffix := range tt.want {
+				want = append(want, base+suffix)
+			}
+
+			got := (&FileAgent{privKey: base}).KeyFiles()
+			if len(got) != len(want) {
+				t.Fatalf("KeyFiles() = %v, want %v", got, want)
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Errorf("KeyFiles()[%d] = %q, want %q", i, got[i], want[i])
+				}
+			}
+		})
+	}
+}

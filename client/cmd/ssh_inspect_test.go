@@ -8,6 +8,8 @@ import (
 	"time"
 
 	xssh "golang.org/x/crypto/ssh"
+
+	"github.com/mnestor/ssoossh/internal/crypto/ssh/agent"
 )
 
 // TestRunInspect_ShouldDescribeWhatTheCertificateGrants covers the point of
@@ -90,6 +92,90 @@ func TestRunInspect_ShouldRenderEmptyOptionSets(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "(none)") {
 		t.Errorf("got %q, want empty option sets rendered rather than left blank", out.String())
+	}
+}
+
+// fileStubAgent is a stubAgent that also answers KeyFiles, the way the file
+// backend does. Inspect asks for that through an optional interface, so a
+// backend that cannot answer (any live ssh-agent) has to still print.
+type fileStubAgent struct {
+	*stubAgent
+	files []string
+}
+
+func (f *fileStubAgent) KeyFiles() []string { return f.files }
+
+// TestRunInspect_ShouldNameTheAgentBackend covers the half of "agent or
+// file" a live agent gives: there are no filenames to show, and saying so
+// keeps a reader from hunting through ~/.ssh for a key that is only in a
+// process.
+func TestRunInspect_ShouldNameTheAgentBackend(t *testing.T) {
+	ours := newTestCA(t)
+	cert := newTestCert(t, ours, "alice", time.Hour)
+	ag := &stubAgent{
+		agentType:  agent.AgentTypeSsh,
+		identities: []xssh.PublicKey{cert},
+		cas:        []xssh.PublicKey{ours.public},
+	}
+
+	var out bytes.Buffer
+	if err := runInspect(&RootCommand{ssh: ag}, &out); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "Storage          ssh-agent (stub)") {
+		t.Errorf("output does not name the agent backend:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "Key files") {
+		t.Errorf("an agent has no key files to name:\n%s", out.String())
+	}
+}
+
+// TestRunInspect_ShouldListTheKeyFilesWhenFileBacked is the other half: with
+// file storage the certificate on screen came out of a specific file, and
+// naming it is the difference between "some key" and one the reader can go
+// look at.
+func TestRunInspect_ShouldListTheKeyFilesWhenFileBacked(t *testing.T) {
+	ours := newTestCA(t)
+	cert := newTestCert(t, ours, "alice", time.Hour)
+	ag := &fileStubAgent{
+		stubAgent: &stubAgent{
+			agentType:  agent.AgentTypeFile,
+			identities: []xssh.PublicKey{cert},
+			cas:        []xssh.PublicKey{ours.public},
+		},
+		files: []string{"/home/alice/.ssh/id_ssoossh", "/home/alice/.ssh/id_ssoossh-cert.pub"},
+	}
+
+	var out bytes.Buffer
+	if err := runInspect(&RootCommand{ssh: ag}, &out); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, want := range []string{
+		"Storage          file-agent (stub)",
+		"Key files        /home/alice/.ssh/id_ssoossh\n",
+		"/home/alice/.ssh/id_ssoossh-cert.pub",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output does not contain %q:\n%s", want, out.String())
+		}
+	}
+}
+
+// A file backend with nothing on disk says so rather than printing a bare
+// label: "no files" and "files I did not tell you about" read identically
+// otherwise.
+func TestRunInspect_ShouldSayWhenNoKeyFilesAreOnDisk(t *testing.T) {
+	ag := &fileStubAgent{stubAgent: &stubAgent{agentType: agent.AgentTypeFile}}
+
+	var out bytes.Buffer
+	if err := runInspect(&RootCommand{ssh: ag}, &out); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "(none on disk)") {
+		t.Errorf("got %q, want it to say there are no key files", out.String())
 	}
 }
 

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 // testManPageDate is a fixed stamp, so the generated pages are byte-identical
@@ -480,5 +482,63 @@ func TestManPageDate(t *testing.T) {
 				t.Errorf("manPageDate() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestEscapeTree_ShouldMarkAnglePlaceholdersAsLiteral covers the tree walk
+// that keeps <placeholder> text alive through go-md2man, which otherwise
+// reads it as an HTML tag and drops it.
+func TestEscapeTree_ShouldMarkAnglePlaceholdersAsLiteral(t *testing.T) {
+	root := &cobra.Command{
+		Use:     "root <target>",
+		Short:   "does something to <target>",
+		Long:    "the private key is <name>, the public key is <name>.pub",
+		Example: "root <target>",
+	}
+	root.Flags().String("key", "", "keypair path; enrolls <name>.pub")
+	sub := &cobra.Command{Use: "add <account> <principal>"}
+	root.AddCommand(sub)
+
+	escapeTree(root)
+
+	tests := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{name: "should escape the usage line", got: root.Use, want: `root \<target\>`},
+		{name: "should escape the short description", got: root.Short, want: `does something to \<target\>`},
+		{name: "should escape the long description", got: root.Long, want: `the private key is \<name\>, the public key is \<name\>.pub`},
+		{name: "should escape the example", got: root.Example, want: `root \<target\>`},
+		{name: "should escape flag usage", got: root.Flags().Lookup("key").Usage, want: `keypair path; enrolls \<name\>.pub`},
+		{name: "should escape subcommands too", got: sub.Use, want: `add \<account\> \<principal\>`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.got != tt.want {
+				t.Errorf("got %q, want %q", tt.got, tt.want)
+			}
+		})
+	}
+}
+
+// The escaping is only worth anything if the placeholders come out the far
+// end of the renderer, so this asserts on a generated page rather than on
+// the tree: the synopsis of a command with required arguments used to read
+// "ssoossh host mapping add   [flags]".
+func TestGenerateClientManpage_ShouldKeepArgumentPlaceholdersInTheSynopsis(t *testing.T) {
+	outDir := t.TempDir()
+
+	if err := generateClientManpage(outDir, testManPageDateValue()); err != nil {
+		t.Fatalf("generateClientManpage failed: %v", err)
+	}
+
+	page, err := os.ReadFile(filepath.Join(outDir, "ssoossh-host-mapping-add.1"))
+	if err != nil {
+		t.Fatalf("read the generated page: %v", err)
+	}
+	if !strings.Contains(string(page), "ssoossh host mapping add <account> <principal>") {
+		t.Errorf("the synopsis lost its argument placeholders:\n%s", page)
 	}
 }

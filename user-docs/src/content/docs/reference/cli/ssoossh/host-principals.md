@@ -11,7 +11,7 @@ Implements AuthorizedPrincipalsCommand. Called on every login attempt, and must 
 ## Synopsis
 
 ```
-ssoossh host principals [flags] [args]
+ssoossh host principals <username>
 ```
 
 ## Global options

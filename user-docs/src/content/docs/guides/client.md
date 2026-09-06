@@ -199,9 +199,14 @@ No flags beyond the global ones.
 ssoossh ssh inspect
 ```
 
-Each certificate prints as `Principals`, `Key ID`, `Type`, `Expires`, `Serial`,
-`Extensions`, and `Critical options`. With none loaded it says so, naming the
-storage backend it looked in.
+The report opens with `Storage`, naming where the certificates are kept: an
+ssh-agent holds them in a process, and a file backend adds a `Key files` list of
+the paths on disk (private key, public key, certificate) so you know which files
+the certificates below came out of.
+
+Each certificate then prints as `Principals`, `Key ID`, `Type`, `Expires`,
+`Serial`, `Extensions`, and `Critical options`. With none loaded it says so,
+naming the storage backend it looked in.
 
 ## `ssoossh ca`
 

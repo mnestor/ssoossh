@@ -78,3 +78,63 @@ func TestSimpleCommandInit(t *testing.T) {
 		t.Fatalf("expected Long to be set, got %q", cd.CobraCommand.Long)
 	}
 }
+
+// TestSimpleCommandInit_ShouldNameThePositionalArgumentsInTheUsageLine
+// covers the help gap this field exists for: simplecobra names every leaf
+// "<name> [flags] [args]", so `host mapping add --help` said nothing about
+// the two arguments it requires and the only way to learn them was to run
+// the command wrong.
+func TestSimpleCommandInit_ShouldNameThePositionalArgumentsInTheUsageLine(t *testing.T) {
+	tests := []struct {
+		name    string
+		argSpec string
+		wantUse string
+	}{
+		{
+			name:    "should name required arguments",
+			argSpec: "<account> <principal>",
+			wantUse: "test <account> <principal>",
+		},
+		{
+			name:    "should name an optional argument",
+			argSpec: "<account> [principal]",
+			wantUse: "test <account> [principal]",
+		},
+		{
+			name:    "should leave the default usage line alone when a command takes no arguments",
+			argSpec: "",
+			wantUse: "test [flags] [args]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &simpleCommand{name: "test", argSpec: tt.argSpec}
+			cd := &simplecobra.Commandeer{CobraCommand: &cobra.Command{Use: "test [flags] [args]"}}
+
+			if err := c.Init(cd); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got := cd.CobraCommand.Use; got != tt.wantUse {
+				t.Errorf("Use = %q, want %q", got, tt.wantUse)
+			}
+		})
+	}
+}
+
+// The message for calling a command wrong is built from the same argSpec
+// the usage line uses, so the two cannot drift and neither hard-codes the
+// binary name.
+func TestSimpleCommandUsageError_ShouldMatchTheUsageLine(t *testing.T) {
+	c := &simpleCommand{name: "add", argSpec: "<account> <principal>"}
+	root := &cobra.Command{Use: "ssoossh"}
+	leaf := &cobra.Command{Use: "add"}
+	root.AddCommand(leaf)
+	cd := &simplecobra.Commandeer{CobraCommand: leaf}
+
+	err := c.usageError(cd)
+
+	if err == nil || err.Error() != "usage: ssoossh add <account> <principal>" {
+		t.Errorf("got %v, want the command path and the argument spec", err)
+	}
+}

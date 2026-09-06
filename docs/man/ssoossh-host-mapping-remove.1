@@ -6,11 +6,11 @@ ssoossh-host-mapping-remove - Remove a principal or an entire account mapping.
 
 
 .SH SYNOPSIS
-\fBssoossh host mapping remove [flags] [args]\fP
+\fBssoossh host mapping remove <account> [principal] [flags]\fP
 
 
 .SH DESCRIPTION
-With two arguments, removes the principal from the account (no-op if not present). With one argument, removes the entire account mapping.
+Takes the local account, and optionally one of its principals. With both, removes that principal from that account (a no-op if it is not present). With the account alone, removes the entire account mapping.
 
 
 .SH OPTIONS

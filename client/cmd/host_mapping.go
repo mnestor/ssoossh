@@ -60,26 +60,30 @@ func runHostMappingList(ctx context.Context, mappingPath string) error {
 }
 
 func newHostMappingAddCommand(mappingFileFunc func() string) simplecobra.Commander {
-	return &simpleCommand{
-		name:  "add",
-		short: "Add a principal to an account's mapping.",
+	cmd := &simpleCommand{
+		name:    "add",
+		argSpec: "<account> <principal>",
+		short:   "Add a principal to an account's mapping.",
 		long: "Adds a principal to the given account, deduplicating if already present. " +
-			"Validates principal syntax before writing.",
+			"Validates principal syntax before writing.\n\n" +
+			"Takes two arguments, in this order: the local account, then the certificate " +
+			"principal allowed to assume it.",
 		offline: true,
-		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
-			if len(args) < 2 {
-				return fmt.Errorf("usage: ssoossh host mapping add <account> <principal>")
-			}
-			account := args[0]
-			principal := args[1]
-
-			if err := sshcrypto.ValidatePrincipal(principal); err != nil {
-				return fmt.Errorf("invalid principal: %w", err)
-			}
-
-			return runHostMappingAdd(account, principal, mappingFileFunc())
-		},
 	}
+	cmd.run = func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
+		if len(args) < 2 {
+			return cmd.usageError(cd)
+		}
+		account := args[0]
+		principal := args[1]
+
+		if err := sshcrypto.ValidatePrincipal(principal); err != nil {
+			return fmt.Errorf("invalid principal: %w", err)
+		}
+
+		return runHostMappingAdd(account, principal, mappingFileFunc())
+	}
+	return cmd
 }
 
 func runHostMappingAdd(account, principal, mappingPath string) error {
@@ -97,25 +101,28 @@ func runHostMappingAdd(account, principal, mappingPath string) error {
 }
 
 func newHostMappingRemoveCommand(mappingFileFunc func() string) simplecobra.Commander {
-	return &simpleCommand{
-		name:  "remove",
-		short: "Remove a principal or an entire account mapping.",
-		long: "With two arguments, removes the principal from the account (no-op if not present). " +
-			"With one argument, removes the entire account mapping.",
+	cmd := &simpleCommand{
+		name:    "remove",
+		argSpec: "<account> [principal]",
+		short:   "Remove a principal or an entire account mapping.",
+		long: "Takes the local account, and optionally one of its principals. With both, " +
+			"removes that principal from that account (a no-op if it is not present). With " +
+			"the account alone, removes the entire account mapping.",
 		offline: true,
-		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
-			if len(args) < 1 {
-				return fmt.Errorf("usage: ssoossh host mapping remove <account> [principal]")
-			}
-			account := args[0]
-
-			if len(args) == 1 {
-				return runHostMappingRemove(account, "", mappingFileFunc())
-			}
-			principal := args[1]
-			return runHostMappingRemove(account, principal, mappingFileFunc())
-		},
 	}
+	cmd.run = func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
+		if len(args) < 1 {
+			return cmd.usageError(cd)
+		}
+		account := args[0]
+
+		if len(args) == 1 {
+			return runHostMappingRemove(account, "", mappingFileFunc())
+		}
+		principal := args[1]
+		return runHostMappingRemove(account, principal, mappingFileFunc())
+	}
+	return cmd
 }
 
 func runHostMappingRemove(account, principal, mappingPath string) error {
