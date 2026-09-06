@@ -1,11 +1,12 @@
-/* eslint-disable svelte/no-navigation-without-resolve */
 // The admin entries below use plain hrefs rather than resolve(). This model
 // names all admin sections, but each section's page lands on its own feature
 // branch, and resolve() is typed against the routes that exist in THIS tree.
 // Using it would force a placeholder page for every absent route, and a
 // placeholder sharing a path with another branch's real page is a merge
 // waiting to resolve the wrong way. Carried over from the admin layout's
-// tab row, which this model replaced.
+// tab row, which this model replaced. The lint rule that wants resolve()
+// fires where the href reaches the DOM, so the exemption lives in
+// RailItem.svelte rather than here.
 import { resolve } from '$app/paths';
 
 /** One destination in the rail. */

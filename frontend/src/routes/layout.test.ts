@@ -3,16 +3,20 @@ import userEvent from '@testing-library/user-event';
 import { createRawSnippet } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { rail } from '$lib/rail.svelte';
 import { session } from '$lib/session.svelte';
 import { resetFakePage } from '$lib/testing/page.svelte';
 import Layout from './+layout.svelte';
 
 // Test methodology: render the root layout around a marker child with fetch
 // stubbed per URL, since the layout is what kicks off the app-wide session,
-// branding, and version loads. The behaviors pinned: the header offers
-// exactly one of the identity affordances (the user menu when signed in, a
-// sign-in button when not, nothing on /login), and signing out both ends
-// the server session and drops the cached identity.
+// branding, and version loads.
+//
+// The layout's job is now one decision: does this screen get the rail. It
+// does when there is an identity to navigate as and the screen is not a
+// single-task one, and the behaviours pinned are the consequences of that
+// decision going either way — plus sign-out, which still belongs here
+// because the layout owns the call and the rail only raises the request.
 
 vi.mock('$app/state', async () => {
 	const { fakePage } = await import('$lib/testing/page.svelte');
@@ -72,51 +76,46 @@ function stubMatchMedia() {
 	}));
 }
 
+/** stubStorage installs the localStorage the theme and rail preferences
+ * read at startup. */
+function stubStorage() {
+	vi.stubGlobal('localStorage', {
+		getItem: () => null,
+		setItem: () => {}
+	});
+}
+
 beforeEach(() => {
 	vi.unstubAllGlobals();
 	stubMatchMedia();
+	stubStorage();
 	resetFakePage('http://localhost/dashboard');
 	// The layout triggers session.load() itself; start each case unresolved.
 	session.user = null;
 	session.error = null;
 	session.resolved = false;
+	rail.collapsed = false;
+	rail.drawerOpen = false;
 });
 
 describe('root layout', () => {
-	it('should show the navigation and user menu once signed in', async () => {
+	it('should give a signed-in identity the rail', async () => {
 		stubAppFetch(alice);
 
 		render(Layout, { children });
 
-		expect(await screen.findByText('alice@example.com')).toBeInTheDocument();
-		expect(screen.getByText('Dashboard')).toBeInTheDocument();
-		expect(screen.getByText('History')).toBeInTheDocument();
+		expect(await screen.findByTestId('app-rail')).toBeInTheDocument();
 		expect(screen.getByTestId('page-child')).toBeInTheDocument();
 		expect(screen.queryByText('Sign in')).not.toBeInTheDocument();
 	});
 
-	// The button is the only way to the section links on a phone, so what it
-	// will do has to be legible from its name rather than from its icon.
-	it('should say whether the mobile menu button opens or closes the menu', async () => {
-		stubAppFetch(alice);
-
-		render(Layout, { children });
-
-		const trigger = await screen.findByRole('button', { name: 'Open navigation menu' });
-		expect(trigger).toHaveAttribute('aria-controls', 'mobile-nav');
-
-		await userEvent.click(trigger);
-
-		expect(screen.getByRole('button', { name: 'Close navigation menu' })).toBeInTheDocument();
-	});
-
-	it('should offer sign-in to a signed-out visitor', async () => {
+	it('should offer sign-in to a signed-out visitor instead of the rail', async () => {
 		stubAppFetch(null);
 
 		render(Layout, { children });
 
 		expect(await screen.findByText('Sign in')).toBeInTheDocument();
-		expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
+		expect(screen.queryByTestId('app-rail')).not.toBeInTheDocument();
 		expect(screen.getByTestId('page-child')).toBeInTheDocument();
 	});
 
@@ -132,14 +131,67 @@ describe('root layout', () => {
 		expect(screen.queryByText('Sign in')).not.toBeInTheDocument();
 	});
 
+	// A single-task screen gets no navigation column even for someone who
+	// could use one: an approval is a decision raised by a session
+	// elsewhere, and a rail beside it invites wandering off mid-decision.
+	it('should withhold the rail on a single-task screen', async () => {
+		stubAppFetch(alice);
+		resetFakePage('http://localhost/approve/req-123');
+
+		render(Layout, { children });
+
+		await waitFor(() => expect(session.resolved).toBe(true));
+		expect(screen.queryByTestId('app-rail')).not.toBeInTheDocument();
+		expect(screen.getByTestId('page-child')).toBeInTheDocument();
+	});
+
+	// Below `lg` the rail is off-canvas, and this button is the only way
+	// back to it, so what it will do has to be legible from its name.
+	it('should say whether the menu button opens or closes the drawer', async () => {
+		stubAppFetch(alice);
+
+		render(Layout, { children });
+
+		const trigger = await screen.findByRole('button', { name: 'Open navigation menu' });
+		expect(trigger).toHaveAttribute('aria-controls', 'app-rail-drawer');
+
+		await userEvent.click(trigger);
+
+		expect(screen.getByRole('button', { name: 'Close navigation menu' })).toBeInTheDocument();
+	});
+
+	it('should show the rail a second time as a drawer once it is opened', async () => {
+		stubAppFetch(alice);
+
+		render(Layout, { children });
+		await userEvent.click(await screen.findByRole('button', { name: 'Open navigation menu' }));
+
+		// One for the desktop column, one for the drawer. Both are the same
+		// component, which is what keeps them from disagreeing.
+		expect(screen.getAllByTestId('app-rail')).toHaveLength(2);
+	});
+
+	// A drawer that only closes by re-pressing a trigger it now covers is a
+	// trap for anyone who opened it by accident.
+	it('should close the drawer on Escape', async () => {
+		stubAppFetch(alice);
+
+		render(Layout, { children });
+		await userEvent.click(await screen.findByRole('button', { name: 'Open navigation menu' }));
+		await userEvent.keyboard('{Escape}');
+
+		await waitFor(() => expect(rail.drawerOpen).toBe(false));
+	});
+
 	it('should end the server session and drop the identity on sign out', async () => {
 		const spy = stubAppFetch(alice);
 
 		render(Layout, { children });
 		const user = userEvent.setup();
 
-		await user.click(await screen.findByText('alice@example.com'));
-		await user.click(await screen.findByText('Sign out'));
+		// The desktop rail and the drawer would both offer one; only the
+		// desktop rail is rendered until the drawer is opened.
+		await user.click(await screen.findByRole('button', { name: 'Sign out' }));
 
 		await waitFor(() => expect(session.user).toBeNull());
 		const logoutCall = spy.mock.calls.find(([input]) => String(input).includes('/auth/logout'));

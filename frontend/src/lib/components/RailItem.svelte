@@ -1,4 +1,9 @@
 <script lang="ts">
+	/* eslint-disable svelte/no-navigation-without-resolve */
+	// The href arrives already final. Most of them came through resolve()
+	// in lib/nav.ts, but the admin entries cannot: resolve() is typed
+	// against the routes that exist in this tree, and those sections land
+	// on separate feature branches. See the header of lib/nav.ts.
 	import Icon from './Icon.svelte';
 	import { railRowClass } from './railClasses';
 
