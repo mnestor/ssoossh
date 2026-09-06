@@ -124,19 +124,19 @@
 	-->
 	{:else if users?.users?.length}
 		<div class="overflow-x-auto">
-			<table class="w-full text-sm">
+			<table class="data-table">
 				<thead>
-					<tr class="border-b border-border-subtle">
-						<th class="px-3 py-2 text-left font-semibold text-ink">Name</th>
-						<th class="px-3 py-2 text-left font-semibold text-ink">Username</th>
-						<th class="px-3 py-2 text-left font-semibold text-ink">Email</th>
-						<th class="px-3 py-2 text-left font-semibold text-ink">Status</th>
-						<th class="px-3 py-2 text-left font-semibold text-ink">Created</th>
+					<tr>
+						<th>Name</th>
+						<th>Username</th>
+						<th>Email</th>
+						<th>Status</th>
+						<th>Created</th>
 					</tr>
 				</thead>
 				<tbody>
 					{#each users.users as user (user.id)}
-						<tr class="border-b border-border-subtle hover:bg-surface-muted">
+						<tr class="hover:bg-surface-muted">
 							<!-- The name first, because an admin scanning this list is
 							     usually looking for a person rather than for an account
 							     name. Empty for anyone whose IdP sent no name claim.
@@ -144,27 +144,27 @@
 							     is what let the Action column go: a column holding one
 							     word per row cost more width than it earned, and names
 							     and emails are what actually need the space. -->
-							<td class="px-3 py-2">
+							<td>
 								<a
 									href={resolve(`/admin/users/${user.id}`)}
 									data-testid="user-link"
 									class="text-accent hover:underline">{user.name || '—'}</a
 								>
 							</td>
-							<td class="px-3 py-2 font-mono">
+							<td class="font-mono">
 								<a href={resolve(`/admin/users/${user.id}`)} class="text-accent hover:underline"
 									>{user.username}</a
 								>
 							</td>
-							<td class="px-3 py-2 text-ink-muted">{user.email || '—'}</td>
-							<td class="px-3 py-2">
+							<td class="text-ink-muted">{user.email || '—'}</td>
+							<td>
 								{#if user.disabled_at}
 									<span class="rounded bg-danger-surface px-2 py-1 text-danger">Disabled</span>
 								{:else}
 									<span class="rounded bg-granted-surface px-2 py-1 text-granted">Active</span>
 								{/if}
 							</td>
-							<td class="px-3 py-2 text-ink-muted">
+							<td class="text-ink-muted">
 								{new Date(user.created_at).toLocaleDateString()}
 							</td>
 						</tr>

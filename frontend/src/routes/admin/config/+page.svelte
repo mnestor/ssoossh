@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import CardGrid from '$lib/components/CardGrid.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
@@ -122,7 +123,7 @@
 				No configuration key matches this filter.
 			</p>
 		{:else}
-			<div class="flex flex-col gap-2.5">
+			<CardGrid>
 				{#each sections as section (section.name)}
 					<section
 						data-testid="config-section"
@@ -160,7 +161,7 @@
 						</dl>
 					</section>
 				{/each}
-			</div>
+			</CardGrid>
 		{/if}
 	{/if}
 </PageShell>

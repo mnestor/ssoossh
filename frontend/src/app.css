@@ -136,6 +136,51 @@
 	.modal-dialog::backdrop {
 		background-color: rgb(0 0 0 / 0.55);
 	}
+
+	/* The shared look of a data table.
+
+	   Three admin screens each rolled their own: one used px-3 py-2 cells
+	   with bold sentence-case headers, another pr-4 with no horizontal
+	   padding at all, and the header treatment agreed with nothing else in
+	   the app. Stating it once means a fourth table inherits the answer
+	   rather than inventing a fifth.
+
+	   A component style rather than utilities because the rules reach
+	   descendants: every th and td of a table, without a class on each of a
+	   few hundred generated cells. A page can still override one property on
+	   one cell with a utility, which is why this sits in the components
+	   layer. */
+	.data-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.8125rem;
+	}
+
+	.data-table thead th {
+		padding: 0.5rem 0.75rem;
+		text-align: left;
+		font-family: var(--font-family-mono);
+		font-size: 0.625rem;
+		font-weight: 500;
+		letter-spacing: 0.09em;
+		text-transform: uppercase;
+		white-space: nowrap;
+		color: var(--color-ink-muted);
+		border-bottom: 1px solid var(--color-border-subtle);
+	}
+
+	.data-table tbody td {
+		padding: 0.5rem 0.75rem;
+		border-bottom: 1px solid var(--color-border-subtle);
+		/* Dates and counts line up down a column; a name that happens to
+		   contain a digit is unaffected, since the figures are the same
+		   width either way. */
+		font-variant-numeric: tabular-nums;
+	}
+
+	.data-table tbody tr:last-child td {
+		border-bottom: none;
+	}
 }
 
 @layer base {

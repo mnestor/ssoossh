@@ -5,6 +5,7 @@
 	import Alert from '$lib/components/Alert.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import Card from '$lib/components/Card.svelte';
+	import CardGrid from '$lib/components/CardGrid.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
@@ -83,7 +84,7 @@
 				</p>
 			{/if}
 
-			<div class="flex flex-col gap-4" data-testid="diagnostics-results">
+			<CardGrid testid="diagnostics-results">
 				{#each report.checks as check (check.id)}
 					<Card>
 						<div class="flex items-start justify-between gap-4">
@@ -118,7 +119,7 @@
 						{/if}
 					</Card>
 				{/each}
-			</div>
+			</CardGrid>
 		{:else if !error}
 			<p class="text-sm text-ink-muted">
 				Press <strong>Run checks</strong> to test this deployment.

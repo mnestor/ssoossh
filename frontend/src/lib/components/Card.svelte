@@ -18,7 +18,7 @@
 	class="rounded-[10px] border border-border-subtle bg-surface shadow-sm"
 >
 	{#if title}
-		<header class="border-b border-border-subtle px-6 py-5">
+		<header class="border-b border-border-subtle px-5 py-3.5">
 			<h2 class="text-base font-semibold">{title}</h2>
 			{#if description}
 				<p class="mt-1 text-sm text-ink-muted">{description}</p>
@@ -26,12 +26,12 @@
 		</header>
 	{/if}
 
-	<div class="px-6 py-5">
+	<div class="px-5 py-4">
 		{@render children()}
 	</div>
 
 	{#if footer}
-		<footer class="rounded-b-[10px] border-t border-border-subtle bg-surface-muted px-6 py-5">
+		<footer class="rounded-b-[10px] border-t border-border-subtle bg-surface-muted px-5 py-3.5">
 			{@render footer()}
 		</footer>
 	{/if}

@@ -477,30 +477,26 @@
 				</p>
 			{:else}
 				<div class="overflow-x-auto">
-					<table class="w-full text-sm" data-testid="user-groups-table">
+					<table class="data-table" data-testid="user-groups-table">
 						<thead>
 							<tr class="border-b border-border-subtle text-left text-xs text-ink-muted">
-								<th class="py-2 pr-4 font-semibold">Group</th>
-								<th class="py-2 pr-4 font-semibold">Source</th>
-								<th class="py-2 pr-4 font-semibold">First seen</th>
-								<th class="py-2 font-semibold">Last seen</th>
+								<th>Group</th>
+								<th>Source</th>
+								<th>First seen</th>
+								<th>Last seen</th>
 							</tr>
 						</thead>
 						<tbody>
 							{#each user.groups as group (group.source + '/' + group.name)}
 								<tr class="border-b border-border-subtle last:border-0">
-									<td class="py-2 pr-4 font-mono">{group.name}</td>
-									<td class="py-2 pr-4">
+									<td class="font-mono">{group.name}</td>
+									<td class="pr-4">
 										<span class="rounded bg-surface px-2 py-0.5 text-xs uppercase"
 											>{group.source}</span
 										>
 									</td>
-									<td class="py-2 pr-4 text-ink-muted"
-										>{new Date(group.first_seen_at).toLocaleString()}</td
-									>
-									<td class="py-2 text-ink-muted"
-										>{new Date(group.last_seen_at).toLocaleString()}</td
-									>
+									<td class="text-ink-muted">{new Date(group.first_seen_at).toLocaleString()}</td>
+									<td class="text-ink-muted">{new Date(group.last_seen_at).toLocaleString()}</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -621,13 +617,13 @@
 					has never changed.
 				</p>
 				<div class="overflow-x-auto">
-					<table class="w-full text-sm" data-testid="user-notification-table">
+					<table class="data-table" data-testid="user-notification-table">
 						<thead>
 							<tr class="border-b border-border-subtle text-left text-xs text-ink-muted">
-								<th class="py-2 pr-4 font-semibold">Notification</th>
-								<th class="py-2 pr-4 font-semibold">Kind</th>
-								<th class="py-2 pr-4 font-semibold">Sends</th>
-								<th class="py-2 font-semibold">Changed</th>
+								<th>Notification</th>
+								<th>Kind</th>
+								<th>Sends</th>
+								<th>Changed</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -636,7 +632,7 @@
 									class="border-b border-border-subtle last:border-0"
 									data-testid="user-notification-{pref.kind}"
 								>
-									<td class="py-2 pr-4">
+									<td class="pr-4">
 										{pref.title || pref.kind}
 										{#if !pref.registered}
 											<!-- A stored row for a kind this build no
@@ -650,19 +646,15 @@
 											>
 										{/if}
 									</td>
-									<td class="py-2 pr-4 font-mono text-[11px] text-ink-muted">{pref.kind}</td>
-									<td
-										class="py-2 pr-4 font-semibold"
-										class:text-danger={!pref.enabled}
-										class:text-granted={pref.enabled}
-									>
+									<td class="font-mono text-[11px] text-ink-muted">{pref.kind}</td>
+									<td class:text-danger={!pref.enabled} class:text-granted={pref.enabled}>
 										{pref.enabled ? 'on' : 'off'}
 									</td>
 									<!-- The date alone, not the time: a preference
 									     change is not an incident timestamp, and the
 									     column has to stay narrow enough to sit beside
 									     three others. -->
-									<td class="py-2 text-ink-muted">
+									<td class="text-ink-muted">
 										{pref.explicit && pref.updated_at
 											? new Date(pref.updated_at).toLocaleDateString()
 											: 'default'}
