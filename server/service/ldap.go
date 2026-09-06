@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-ldap/ldap/v3"
@@ -49,6 +50,11 @@ type LDAPService struct {
 	groupAllowlist []string
 
 	auditor *AuditService
+
+	// running is the single-flight guard on Sync. One pass at a time per
+	// instance, so an operator pressing the button repeatedly cannot stack
+	// passes over the same users.
+	running atomic.Bool
 }
 
 // parsedLDAPField is one destination with its sources ready to execute.

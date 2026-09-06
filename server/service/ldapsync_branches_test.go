@@ -241,7 +241,7 @@ func TestMaybeReenable_ShouldYieldWhenTheSourceChanged(t *testing.T) {
 
 	ldapSync := model.DisabledSourceLDAPSync
 	stale := model.User{ID: userID, Username: "alice", DisabledAt: &now, DisabledSource: &ldapSync}
-	svc.maybeReenable(context.Background(), &stale)
+	svc.maybeReenable(context.Background(), &stale, &model.LDAPSyncRun{}, SyncOptions{})
 
 	var user model.User
 	if err := db.First(&user, "id = ?", userID).Error; err != nil {
@@ -278,7 +278,7 @@ func TestMaybeReenable_ShouldRollBackWhenTheAuditRowFails(t *testing.T) {
 	}
 
 	stale := model.User{ID: userID, Username: "alice", DisabledAt: &now, DisabledSource: &ldapSync}
-	svc.maybeReenable(context.Background(), &stale)
+	svc.maybeReenable(context.Background(), &stale, &model.LDAPSyncRun{}, SyncOptions{})
 
 	var user model.User
 	if err := db.First(&user, "id = ?", userID).Error; err != nil {

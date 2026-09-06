@@ -159,6 +159,24 @@ table enrollments
   index idx_enrollments_service_account unique=false columns=service_account
   index idx_enrollments_user_id unique=false columns=user_id
   index sqlite_autoindex_enrollments_1 unique=true columns=id
+table ldap_sync_runs
+  column actor_user_id type=TEXT nullable=true pk=false default=<none>
+  column disabled type=INTEGER nullable=false pk=false default=0
+  column dry_run type=INTEGER nullable=false pk=false default=0
+  column error_message type=TEXT nullable=false pk=false default=''
+  column failed type=INTEGER nullable=false pk=false default=0
+  column finished_at type=DATETIME nullable=true pk=false default=<none>
+  column found type=INTEGER nullable=false pk=false default=0
+  column id type=TEXT nullable=false pk=true default=<none>
+  column instance type=TEXT nullable=false pk=false default=''
+  column missing type=INTEGER nullable=false pk=false default=0
+  column reenabled type=INTEGER nullable=false pk=false default=0
+  column started_at type=DATETIME nullable=false pk=false default=<none>
+  column trigger_source type=TEXT nullable=false pk=false default=<none>
+  column users_seen type=INTEGER nullable=false pk=false default=0
+  fk actor_user_id -> users.id on_delete=NO ACTION on_update=SET NULL
+  index idx_ldap_sync_runs_started unique=false columns=started_at
+  index sqlite_autoindex_ldap_sync_runs_1 unique=true columns=id
 table notification_preferences
   column created_at type=DATETIME nullable=false pk=false default=<none>
   column enabled type=INTEGER nullable=false pk=false default=0

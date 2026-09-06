@@ -103,7 +103,7 @@ func newLDAPTestService(t *testing.T, cfg *config.Config, dir *fakeDirectory) (*
 	t.Helper()
 
 	db := newTestDB(t)
-	if err := db.AutoMigrate(&model.User{}, &model.UserLDAP{}, &model.UserGroup{}, &model.AuditEvent{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserLDAP{}, &model.UserGroup{}, &model.AuditEvent{}, &model.LDAPSyncRun{}); err != nil {
 		t.Fatalf("failed to migrate the LDAP test database: %v", err)
 	}
 

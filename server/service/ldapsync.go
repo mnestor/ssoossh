@@ -4,16 +4,48 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/go-ldap/ldap/v3"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/model"
 )
 
-// Sync refreshes directory data for every known user and auto-disables
-// those whose entry has stopped resolving.
+// ErrSyncInProgress is returned when a sync is already running on this
+// instance. One pass at a time, so an impatient operator cannot stack three
+// passes over the same users and multiply their directory load.
+var ErrSyncInProgress = errors.New("a directory sync is already running")
+
+// SyncOptions describes one sync pass.
+type SyncOptions struct {
+	// Trigger records what started the pass. It changes nothing about how
+	// the pass behaves: a manual sync that behaved differently from a
+	// scheduled one would be a diagnostic that lies.
+	Trigger model.LDAPSyncTrigger
+
+	// ActorUserID is the admin who triggered it, empty for a scheduled
+	// pass.
+	ActorUserID string
+
+	// DryRun reads the directory and reports what the pass would do,
+	// writing nothing but the run row: no refreshed attributes, no group
+	// rows, no miss windows, no disables and no re-enables. It is what
+	// makes the button safe to press during an incident.
+	DryRun bool
+}
+
+// Sync runs the scheduled pass. See SyncWithOptions.
+func (s *LDAPService) Sync(ctx context.Context) error {
+	_, err := s.SyncWithOptions(ctx, SyncOptions{Trigger: model.LDAPSyncTriggerSchedule})
+	return err
+}
+
+// SyncWithOptions refreshes directory data for every known user and
+// auto-disables those whose entry has stopped resolving, recording the pass
+// as an ldap_sync_runs row.
 //
 // Scope is deliberately narrow: only users with a user_ldap row, meaning
 // they have logged in at least once with LDAP enabled. The server never
@@ -23,17 +55,29 @@ import (
 //
 // The one rule that matters: a directory outage must never disable anyone.
 // Only a search that *succeeds* and finds no entry counts as a miss.
-func (s *LDAPService) Sync(ctx context.Context) error {
+//
+// The returned run row is written whatever the outcome, so a pass that could
+// not reach the directory is still visible as a pass that ran and failed
+// rather than as one that never fired.
+func (s *LDAPService) SyncWithOptions(ctx context.Context, opts SyncOptions) (*model.LDAPSyncRun, error) {
 	if s == nil {
-		return nil
+		return nil, nil //nolint:nilnil // a disabled directory has no pass to run and no run to report.
 	}
+	if !s.running.CompareAndSwap(false, true) {
+		return nil, ErrSyncInProgress
+	}
+	defer s.running.Store(false)
+
+	run := s.startRun(ctx, opts)
 
 	var rows []model.UserLDAP
 	if err := s.db.WithContext(ctx).Find(&rows).Error; err != nil {
-		return fmt.Errorf("failed to list directory-synced users: %w", err)
+		err = fmt.Errorf("failed to list directory-synced users: %w", err)
+		return s.finishRun(ctx, run, err), err
 	}
+	run.UsersSeen = len(rows)
 	if len(rows) == 0 {
-		return nil
+		return s.finishRun(ctx, run, nil), nil
 	}
 
 	conn, err := s.dial(&s.config.LDAP)
@@ -43,7 +87,8 @@ func (s *LDAPService) Sync(ctx context.Context) error {
 		// into a mass disable.
 		s.log.ErrorContext(ctx, "directory sync could not reach the server; nothing was counted as a miss",
 			"users", len(rows), "error", err)
-		return fmt.Errorf("directory sync could not connect: %w", err)
+		err = fmt.Errorf("directory sync could not connect: %w", err)
+		return s.finishRun(ctx, run, err), err
 	}
 	defer func() {
 		if err := conn.Close(); err != nil {
@@ -51,21 +96,102 @@ func (s *LDAPService) Sync(ctx context.Context) error {
 		}
 	}()
 
-	var found, missing, failed int
 	for i := range rows {
-		switch s.syncUser(ctx, conn, &rows[i]) {
+		switch s.syncUser(ctx, conn, &rows[i], run, opts) {
 		case syncFound:
-			found++
+			run.Found++
 		case syncMissing:
-			missing++
+			run.Missing++
 		case syncFailed:
-			failed++
+			run.Failed++
 		}
 	}
 
 	s.log.InfoContext(ctx, "directory sync completed",
-		"users", len(rows), "found", found, "missing", missing, "failed", failed)
-	return nil
+		"run_id", run.ID, "trigger", string(run.Trigger), "dry_run", run.DryRun,
+		"users", run.UsersSeen, "found", run.Found, "missing", run.Missing, "failed", run.Failed,
+		"disabled", run.Disabled, "reenabled", run.Reenabled)
+	return s.finishRun(ctx, run, nil), nil
+}
+
+// startRun opens the run row. A failed insert is logged, not fatal: the pass
+// is worth running even when its bookkeeping cannot be written.
+func (s *LDAPService) startRun(ctx context.Context, opts SyncOptions) *model.LDAPSyncRun {
+	trigger := opts.Trigger
+	if trigger == "" {
+		trigger = model.LDAPSyncTriggerSchedule
+	}
+	host, err := os.Hostname()
+	if err != nil {
+		// not covered: os.Hostname only fails when the kernel refuses the
+		// call, which no supported platform does.
+		host = ""
+	}
+
+	run := &model.LDAPSyncRun{
+		ID:        uuid.NewString(),
+		StartedAt: time.Now(),
+		Trigger:   trigger,
+		DryRun:    opts.DryRun,
+		Instance:  host,
+	}
+	if opts.ActorUserID != "" {
+		run.ActorUserID = &opts.ActorUserID
+	}
+
+	if err := s.db.WithContext(ctx).Create(run).Error; err != nil {
+		s.log.ErrorContext(ctx, "failed to record the start of a directory sync", "error", err)
+	}
+	return run
+}
+
+// finishRun closes the run row out with its counts and any error that
+// stopped the pass, and returns it for the caller to report.
+func (s *LDAPService) finishRun(ctx context.Context, run *model.LDAPSyncRun, cause error) *model.LDAPSyncRun {
+	now := time.Now()
+	run.FinishedAt = &now
+	if cause != nil {
+		run.ErrorMessage = cause.Error()
+	}
+
+	if err := s.db.WithContext(ctx).Model(&model.LDAPSyncRun{}).
+		Where("id = ?", run.ID).
+		Updates(map[string]any{
+			"finished_at":   run.FinishedAt,
+			"users_seen":    run.UsersSeen,
+			"found":         run.Found,
+			"missing":       run.Missing,
+			"failed":        run.Failed,
+			"disabled":      run.Disabled,
+			"reenabled":     run.Reenabled,
+			"error_message": run.ErrorMessage,
+		}).Error; err != nil {
+		s.log.ErrorContext(ctx, "failed to record the outcome of a directory sync",
+			"run_id", run.ID, "error", err)
+	}
+	return run
+}
+
+// LastSyncRun returns the most recently started pass, or nil when none has
+// run on any instance. It is what answers "is the sync even running".
+func (s *LDAPService) LastSyncRun(ctx context.Context) (*model.LDAPSyncRun, error) {
+	if s == nil {
+		return nil, nil //nolint:nilnil // a disabled directory has never run a pass.
+	}
+	var run model.LDAPSyncRun
+	err := s.db.WithContext(ctx).Order("started_at DESC").First(&run).Error
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return nil, nil //nolint:nilnil // no pass has run, which is an answer rather than an error.
+	case err != nil:
+		return nil, fmt.Errorf("failed to read the last directory sync: %w", err)
+	}
+	return &run, nil
+}
+
+// SyncRunning reports whether a pass is in progress on this instance.
+func (s *LDAPService) SyncRunning() bool {
+	return s != nil && s.running.Load()
 }
 
 // syncOutcome is what one user's sync pass concluded.
@@ -82,8 +208,9 @@ const (
 	syncFailed
 )
 
-// syncUser refreshes one user, returning what the pass concluded.
-func (s *LDAPService) syncUser(ctx context.Context, conn ldapConn, row *model.UserLDAP) syncOutcome {
+// syncUser refreshes one user, returning what the pass concluded and
+// counting any containment action onto run.
+func (s *LDAPService) syncUser(ctx context.Context, conn ldapConn, row *model.UserLDAP, run *model.LDAPSyncRun, opts SyncOptions) syncOutcome {
 	var user model.User
 	if err := s.db.WithContext(ctx).First(&user, "id = ?", row.UserID).Error; err != nil {
 		// The bookkeeping row outlived its user. Nothing to sync, and not
@@ -98,17 +225,20 @@ func (s *LDAPService) syncUser(ctx context.Context, conn ldapConn, row *model.Us
 	case syncFailed:
 		return syncFailed
 	case syncMissing:
-		s.recordMiss(ctx, &user, row)
+		s.recordMiss(ctx, &user, row, run, opts)
 		return syncMissing
 	}
 
-	// Found: refresh everything and clear the miss counter.
-	if err := s.persistSync(ctx, row.UserID, entry); err != nil {
-		s.log.ErrorContext(ctx, "failed to persist a directory sync result",
-			"user_id", row.UserID, "error", err)
-		return syncFailed
+	// Found: refresh everything and close the missing window. A dry run
+	// stops here, since refreshing attributes is a write like any other.
+	if !opts.DryRun {
+		if err := s.persistSync(ctx, row.UserID, entry); err != nil {
+			s.log.ErrorContext(ctx, "failed to persist a directory sync result",
+				"user_id", row.UserID, "error", err)
+			return syncFailed
+		}
 	}
-	s.maybeReenable(ctx, &user)
+	s.maybeReenable(ctx, &user, run, opts)
 	return syncFound
 }
 
@@ -209,7 +339,7 @@ func (s *LDAPService) persistSync(ctx context.Context, userID string, entry *lda
 // one by hand, so a count would mean different things in different
 // deployments and would shrink every time someone pressed the button. The
 // counter is still written, for the operator reading a row.
-func (s *LDAPService) recordMiss(ctx context.Context, user *model.User, row *model.UserLDAP) {
+func (s *LDAPService) recordMiss(ctx context.Context, user *model.User, row *model.UserLDAP, run *model.LDAPSyncRun, opts SyncOptions) {
 	now := time.Now()
 	misses := row.ConsecutiveMisses + 1
 
@@ -220,18 +350,24 @@ func (s *LDAPService) recordMiss(ctx context.Context, user *model.User, row *mod
 		missingSince = &now
 	}
 
-	if err := s.db.WithContext(ctx).Model(&model.UserLDAP{}).
-		Where("user_id = ?", row.UserID).
-		Updates(map[string]any{
-			"consecutive_misses": misses,
-			"first_missing_at":   missingSince,
-			"last_synced_at":     now,
-			"updated_at":         now,
-		}).Error; err != nil {
-		s.log.ErrorContext(ctx, "failed to record a directory miss", "user_id", row.UserID, "error", err)
-		return
+	// A dry run leaves the window exactly where it is, including not
+	// opening one. It reports against the window as it stands, which for a
+	// newly missing user is zero elapsed — the honest answer to "what would
+	// this pass do right now".
+	if !opts.DryRun {
+		if err := s.db.WithContext(ctx).Model(&model.UserLDAP{}).
+			Where("user_id = ?", row.UserID).
+			Updates(map[string]any{
+				"consecutive_misses": misses,
+				"first_missing_at":   missingSince,
+				"last_synced_at":     now,
+				"updated_at":         now,
+			}).Error; err != nil {
+			s.log.ErrorContext(ctx, "failed to record a directory miss", "user_id", row.UserID, "error", err)
+			return
+		}
+		row.FirstMissingAt = missingSince
 	}
-	row.FirstMissingAt = missingSince
 
 	threshold := s.config.LDAP.Sync.DisableAfter
 	missingFor := now.Sub(*missingSince)
@@ -239,11 +375,23 @@ func (s *LDAPService) recordMiss(ctx context.Context, user *model.User, row *mod
 		s.log.InfoContext(ctx, "directory entry not found",
 			"user_id", row.UserID, "username", user.Username,
 			"first_missing_at", missingSince, "missing_for", missingFor.String(),
-			"consecutive_misses", misses, "disable_after", threshold.String())
+			"consecutive_misses", misses, "disable_after", threshold.String(),
+			"dry_run", opts.DryRun)
 		return
 	}
 
-	s.autoDisable(ctx, user, missingFor, now)
+	// A dry run counts the disable it would have performed and performs
+	// none.
+	if opts.DryRun {
+		run.Disabled++
+		s.log.InfoContext(ctx, "directory sync dry run: would auto-disable a user whose entry is gone",
+			"user_id", user.ID, "username", user.Username, "missing_for", missingFor.String())
+		return
+	}
+
+	if s.autoDisable(ctx, user, missingFor, now) {
+		run.Disabled++
+	}
 }
 
 // autoDisable disables a user whose directory entry has been missing for
@@ -253,7 +401,9 @@ func (s *LDAPService) recordMiss(ctx context.Context, user *model.User, row *mod
 // only disables it caused, so an operator's disable is never undone
 // automatically. DisabledByUserID stays NULL, since it is a users.id and
 // cannot represent the system actor.
-func (s *LDAPService) autoDisable(ctx context.Context, user *model.User, missingFor time.Duration, now time.Time) {
+// Returns whether the disable actually happened, so the run's count
+// reflects containment actions rather than attempts.
+func (s *LDAPService) autoDisable(ctx context.Context, user *model.User, missingFor time.Duration, now time.Time) bool {
 	source := model.DisabledSourceLDAPSync
 	reason := fmt.Sprintf("directory entry not found for %s of successful searches", missingFor.Round(time.Second))
 
@@ -293,11 +443,11 @@ func (s *LDAPService) autoDisable(ctx context.Context, user *model.User, missing
 	})
 	switch {
 	case errors.Is(err, errAlreadyDisabled):
-		return
+		return false
 	case err != nil:
 		s.log.ErrorContext(ctx, "failed to auto-disable a user whose directory entry is gone",
 			"user_id", user.ID, "error", err)
-		return
+		return false
 	}
 
 	if s.auditor != nil {
@@ -305,6 +455,7 @@ func (s *LDAPService) autoDisable(ctx context.Context, user *model.User, missing
 	}
 	s.log.WarnContext(ctx, "auto-disabled a user whose directory entry is gone",
 		"user_id", user.ID, "username", user.Username, "missing_for", missingFor.String())
+	return true
 }
 
 // errAlreadyDisabled unwinds the auto-disable transaction when someone else
@@ -317,11 +468,21 @@ var errAlreadyDisabled = errors.New("user was already disabled")
 // disabled by an admin or a SOC operator is never touched by the sync, in
 // either direction — and a NULL source (a row predating the column) can
 // never match, which is the safe direction.
-func (s *LDAPService) maybeReenable(ctx context.Context, user *model.User) {
+func (s *LDAPService) maybeReenable(ctx context.Context, user *model.User, run *model.LDAPSyncRun, opts SyncOptions) {
 	if !s.config.LDAP.Sync.Reenable || user.DisabledAt == nil {
 		return
 	}
 	if user.DisabledSource == nil || *user.DisabledSource != model.DisabledSourceLDAPSync {
+		return
+	}
+
+	// A dry run counts the re-enable it would have performed. Restoring
+	// access is as much a change as removing it, and an operator pressing
+	// dry run wants to see both.
+	if opts.DryRun {
+		run.Reenabled++
+		s.log.InfoContext(ctx, "directory sync dry run: would clear an automatic disable",
+			"user_id", user.ID, "username", user.Username)
 		return
 	}
 
@@ -368,6 +529,7 @@ func (s *LDAPService) maybeReenable(ctx context.Context, user *model.User) {
 	if s.auditor != nil {
 		s.auditor.LogOnly(auditEvent)
 	}
+	run.Reenabled++
 	s.log.InfoContext(ctx, "cleared an automatic disable after the directory entry reappeared",
 		"user_id", user.ID, "username", user.Username)
 }
