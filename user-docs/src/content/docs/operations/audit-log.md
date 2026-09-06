@@ -98,6 +98,8 @@ client must render an unknown action rather than assume the list is closed.
 | `user.disabled`, `user.enabled` | |
 | `user.auto_disabled` | A system action, so it carries no actor. Raised by the [LDAP sync](/ssoossh/operations/ldap/) |
 | `admin.user_viewed`, `admin.enrollment_viewed`, `admin.audit_viewed` | |
+| `ldap.sync_triggered` | An admin running the [directory sync](/ssoossh/operations/ldap/) by hand, with the counts the pass produced. A dry run records `dry_run: true` and no change to go with it |
+| `ldap.probed` | One directory probe, with the filter it sent and how many entries matched. The probe writes nothing, but it makes the server open an outbound connection and read an entry in full, which is worth a record |
 | `admin.config_viewed` | **No longer emitted.** The effective-config screen is read-only and is reloaded constantly while an operator works, so the event arrived several times a minute and buried the decisions this log exists to record. The action stays defined so older events still read back with a name |
 
 There is no logout event: sessions mostly end by expiry, so an explicit logout

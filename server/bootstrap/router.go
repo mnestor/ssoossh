@@ -34,6 +34,7 @@ import (
 	"github.com/mnestor/ssoossh/server/logging"
 	"github.com/mnestor/ssoossh/server/middleware"
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/server/service"
 )
 
 // gormSessionStore adapts *gormstore.Store to gin-contrib's sessions.Store
@@ -468,7 +469,50 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 	controller.NewEnrollmentController(apiGroup, a.svc.enrollment, enrollmentRateLimit, sessionAuth)
 	controller.NewAdminController(apiGroup, a.config, a.db, sessionAuth, adminAuth, socAuth, auditorAuth, csrf, a.svc.enrollment, a.svc.audit)
 
+	// The directory probe makes the server open an outbound connection and
+	// read an entry in full. Admins are trusted and every probe is audited,
+	// but a loop driving the endpoint should still hit a wall, so it is
+	// limited per caller rather than left to the global limiter.
+	var probeRateLimit gin.HandlerFunc
+	if a.config.Production || !a.config.HTTP.RateLimitDisableForDev {
+		probeRateLimit = middleware.NewEndpointRateLimiter().
+			PerKeys(rate.Every(ldapProbeInterval), ldapProbeBurst, ldapProbeRateLimitKeys)
+	}
+	// Explicitly nil rather than a typed nil in the interface: the handlers
+	// branch on "no directory configured", and a *LDAPService(nil) inside a
+	// non-nil interface would take the enabled path and report an empty
+	// configuration as a working one.
+	var ldapDiagnostics service.LDAPDiagnostics
+	if a.svc.ldap != nil {
+		ldapDiagnostics = a.svc.ldap
+	}
+	controller.NewLDAPAdminController(apiGroup, a.config, a.db, ldapDiagnostics,
+		sessionAuth, adminAuth, auditorAuth, csrf, probeRateLimit, a.svc.audit)
+
 	return nil
+}
+
+// LDAP probe rate limit. Deliberately not configurable: it is not tuning a
+// throughput, it is putting a wall in front of a loop. One probe a second
+// with a burst of ten is far more than an operator typing into a form and
+// far less than anything worth using the server as a relay for.
+const (
+	ldapProbeInterval = time.Second
+	ldapProbeBurst    = 10
+)
+
+// ldapProbeRateLimitKeys buckets probes by the calling admin. Per identity
+// rather than per address, because the thing being bounded is one caller's
+// use of the server as an outbound-connection primitive, and an admin
+// changing address does not make that a different question.
+func ldapProbeRateLimitKeys(c *gin.Context) []string {
+	identity, ok := middleware.Identity(c)
+	if !ok {
+		// not covered: the route is session-authed, so the middleware
+		// aborts before this runs when there is no identity.
+		return nil
+	}
+	return []string{"ldap-probe:" + identity.Subject}
 }
 
 // consoleCodeRateLimitKeys returns the buckets one console code submission

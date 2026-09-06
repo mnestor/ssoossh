@@ -49,6 +49,26 @@ func fullFixtures() map[string]any {
 	}
 
 	certificateValidSeconds := 28800
+
+	// One sync run, shared between its own fixture and the status response
+	// that embeds it, so the two cannot describe different shapes.
+	syncFinishedAt := issuedAt.Add(90 * time.Second)
+	syncRun := webtypes.LDAPSyncRunResponse{
+		ID:            "6f1d3b2a-8c4e-4f70-9a1b-2c3d4e5f6a7b",
+		StartedAt:     issuedAt,
+		FinishedAt:    &syncFinishedAt,
+		Trigger:       "manual",
+		DryRun:        true,
+		ActorUsername: "alice",
+		Instance:      "ssoosshd-1.example.org",
+		UsersSeen:     42,
+		Found:         39,
+		Missing:       2,
+		Failed:        1,
+		Disabled:      1,
+		Reenabled:     1,
+		Error:         "the directory refused the bind",
+	}
 	callerUID, callerGID, callerPID, callerPPID := int64(1000), int64(1000), int64(4242), int64(4200)
 
 	return map[string]any{
@@ -207,6 +227,68 @@ func fullFixtures() map[string]any {
 			ReportedMachineID:      "9f2c1e7b8a3d4f6099b1c2d3e4f5a6b7",
 			ReportedClient:         "pam_ssoossh-c/v1.2.0",
 		},
+		"ldap_status": webtypes.LDAPStatusResponse{
+			Enabled:               true,
+			URL:                   "ldaps://dir.example.net",
+			BaseDN:                "dc=example,dc=net",
+			UserFilter:            "(&(objectClass=person)(uid={{.Username}}))",
+			ConfiguredAttributes:  []string{"altSecurityIdentities", "memberOf"},
+			SyncIntervalSeconds:   900,
+			DisableAfterSeconds:   2700,
+			Reenable:              true,
+			TLSInsecureSkipVerify: true,
+			Running:               true,
+			LastRun:               &syncRun,
+		},
+		"ldap_sync_run": syncRun,
+		"ldap_probe": webtypes.LDAPProbeResponse{
+			BaseDN:     "dc=example,dc=net",
+			FilterSent: "(&(objectClass=person)(uid=alice))",
+			Mode:       "template",
+			Attributes: []string{"*"},
+			Matched:    1,
+			Entry: &webtypes.LDAPProbeEntry{
+				DN: "uid=alice,ou=People,dc=example,dc=net",
+				Attributes: []webtypes.LDAPProbeAttribute{{
+					Name:            "memberOf",
+					Values:          []string{"cn=ssh-users,ou=Groups,dc=example,dc=net"},
+					Configured:      true,
+					TruncatedValues: 3,
+				}},
+			},
+			Fields: []webtypes.LDAPProbeField{{
+				Name:             "groups",
+				Attribute:        "memberOf",
+				AttributePresent: true,
+				AttributeValues:  []string{"cn=ssh-users,ou=Groups,dc=example,dc=net"},
+				Searches: []webtypes.LDAPProbeSearch{{
+					Name:       "owned-services",
+					BaseDN:     "ou=Services,dc=example,dc=net",
+					FilterSent: "(owner=uid=alice,ou=People,dc=example,dc=net)",
+					Value:      "uid",
+					Entries:    1,
+					Values:     []string{"svc-deploy"},
+					Error:      "the search hit its size limit",
+				}},
+				Values: []string{"ssh-users"},
+				Error:  "one search failed",
+			}},
+			Merge: []webtypes.LDAPProbeMerge{{
+				Name:    "groups",
+				Action:  "persist-groups",
+				Kept:    []string{"ssh-users"},
+				Dropped: []string{"vpn-legacy"},
+				Note:    "stored as user_groups rows",
+			}},
+			Suggestions: []webtypes.LDAPProbeSuggestion{{
+				Reason: "employeeType is on the entry but no configured field reads it",
+				YAML:   "ldap:\n  fields:\n    employee_type: employeeType",
+			}},
+			ElapsedMS:             34,
+			TimeoutMS:             5000,
+			TLSInsecureSkipVerify: true,
+			Wrote:                 true,
+		},
 	}
 }
 
@@ -224,6 +306,9 @@ func zeroFixtures() map[string]any {
 		"service_enrollment":       webtypes.ServiceEnrollmentResponse{},
 		"enrollment_retrievals":    webtypes.EnrollmentRetrievalsResponse{},
 		"notification_preferences": webtypes.NotificationPreferencesResponse{},
+		"ldap_status":              webtypes.LDAPStatusResponse{},
+		"ldap_sync_run":            webtypes.LDAPSyncRunResponse{},
+		"ldap_probe":               webtypes.LDAPProbeResponse{},
 	}
 }
 

@@ -1045,3 +1045,291 @@ export interface AuditEventsResponse {
 	 */
 	next_offset?: number /* int */;
 }
+/**
+ * LDAPSyncRunResponse is one recorded directory sync pass.
+ * The counts are what the pass concluded; on a dry run they are what it
+ * would have concluded, since a dry run changes nothing but this record.
+ */
+export interface LDAPSyncRunResponse {
+	id: string;
+	started_at: string;
+	/**
+	 * FinishedAt is absent while the pass runs, which is also how a pass
+	 * that died with its process reads afterwards.
+	 */
+	finished_at?: string;
+	/**
+	 * Trigger is "schedule" or "manual".
+	 */
+	trigger: string;
+	dry_run: boolean;
+	/**
+	 * ActorUsername is the admin who triggered it, absent for a scheduled
+	 * pass. The username rather than the id, since it is displayed.
+	 */
+	actor_username?: string;
+	/**
+	 * Instance is the host that ran it. Jobs are not leader-elected, so
+	 * every instance runs its own pass and this says whose log to read.
+	 */
+	instance?: string;
+	users_seen: number /* int */;
+	found: number /* int */;
+	missing: number /* int */;
+	failed: number /* int */;
+	disabled: number /* int */;
+	reenabled: number /* int */;
+	/**
+	 * Error is why the pass could not run — an unreachable directory, a
+	 * failed bind. Empty for a pass that completed, whatever it concluded
+	 * about individual users.
+	 */
+	error?: string;
+}
+/**
+ * LDAPStatusResponse answers "is the sync even running", and describes the
+ * directory configuration the probe console runs against. Auditor-readable:
+ * it names no credential.
+ */
+export interface LDAPStatusResponse {
+	/**
+	 * Enabled is false when ldap.enabled is off, in which case everything
+	 * below is unset and there is nothing to probe.
+	 */
+	enabled: boolean;
+	/**
+	 * URL, BaseDN and UserFilter are the connection and query the probe is
+	 * pinned to. The probe cannot be re-pointed, so these are the whole
+	 * target.
+	 */
+	url?: string;
+	base_dn?: string;
+	user_filter?: string;
+	/**
+	 * ConfiguredAttributes are the attribute names the configured fields
+	 * read, which is what the console highlights in a returned entry.
+	 */
+	configured_attributes?: string[];
+	/**
+	 * SyncIntervalSeconds is zero when the scheduled sync is off, which is
+	 * itself the answer to "why has nothing synced".
+	 */
+	sync_interval_seconds: number /* int */;
+	/**
+	 * DisableAfterSeconds is how long an entry may stay missing before the
+	 * user is auto-disabled. Zero means never.
+	 */
+	disable_after_seconds: number /* int */;
+	/**
+	 * Reenable reports whether the sync clears its own disables when an
+	 * entry reappears.
+	 */
+	reenable: boolean;
+	/**
+	 * TLSInsecureSkipVerify reports that directory connections do not
+	 * verify the server certificate. Reported rather than silently
+	 * honoured: a probe that succeeds only because verification is off has
+	 * to say so.
+	 */
+	tls_insecure_skip_verify: boolean;
+	/**
+	 * Running reports a pass in progress on the instance that answered
+	 * this request. Passes are not leader-elected, so another instance may
+	 * be running one too.
+	 */
+	running: boolean;
+	/**
+	 * LastRun is the most recent pass on any instance, absent when none has
+	 * ever run.
+	 */
+	last_run?: LDAPSyncRunResponse;
+}
+/**
+ * LDAPSyncRequestBody is the body of the sync-now endpoint.
+ */
+export interface LDAPSyncRequestBody {
+	/**
+	 * DryRun reads the directory and reports what the pass would do,
+	 * changing nothing. It is what makes the button safe to press during an
+	 * incident.
+	 */
+	dry_run?: boolean;
+}
+/**
+ * LDAPProbeBindings are the identity a template-mode filter renders against.
+ * Typed values are what let an admin test an entry before that person has
+ * ever logged in.
+ */
+export interface LDAPProbeBindings {
+	username?: string;
+	email?: string;
+	subject?: string;
+	extra?: { [key: string]: string};
+}
+/**
+ * LDAPProbeRequestBody is one probe.
+ * There is deliberately no connection here. The probe always uses the
+ * running ldap.url, bind credentials and base_dn; what an operator varies is
+ * the question, not who is asked.
+ */
+export interface LDAPProbeRequestBody {
+	/**
+	 * Mode is "template" (render Filter against the bindings, with RFC 4515
+	 * escaping applied) or "literal" (send Filter exactly as typed).
+	 * Defaults to template.
+	 */
+	mode?: string;
+	/**
+	 * Filter is the filter to run. Empty in template mode means the
+	 * configured ldap.user_filter.
+	 */
+	filter?: string;
+	/**
+	 * Attributes are the attribute names to request. Empty requests every
+	 * user attribute, which is the point of the console.
+	 */
+	attributes?: string[];
+	/**
+	 * BindingSource selects where the template bindings come from: "self"
+	 * (the calling admin's own identity, the default), "user" (an existing
+	 * user named by UserID), or "custom" (the typed Bindings below).
+	 */
+	binding_source?: string;
+	/**
+	 * UserID names the user to bind against when BindingSource is "user".
+	 */
+	user_id?: string;
+	/**
+	 * Bindings are the typed values used when BindingSource is "custom".
+	 */
+	bindings?: LDAPProbeBindings;
+}
+/**
+ * LDAPProbeAttribute is one attribute of the entry the directory returned.
+ */
+export interface LDAPProbeAttribute {
+	name: string;
+	values: string[];
+	/**
+	 * Configured reports that a configured field reads this attribute,
+	 * which is what the console highlights.
+	 */
+	configured: boolean;
+	/**
+	 * TruncatedValues is how many values the probe's own cap dropped.
+	 */
+	truncated_values?: number /* int */;
+}
+/**
+ * LDAPProbeEntry is the matched entry, before any mapping.
+ */
+export interface LDAPProbeEntry {
+	dn: string;
+	attributes: LDAPProbeAttribute[];
+}
+/**
+ * LDAPProbeSearch is one secondary search's contribution to a field.
+ */
+export interface LDAPProbeSearch {
+	name: string;
+	/**
+	 * BaseDN and FilterSent are what actually went to the directory.
+	 */
+	base_dn?: string;
+	filter_sent?: string;
+	/**
+	 * Value is the attribute read off each matched entry.
+	 */
+	value?: string;
+	entries: number /* int */;
+	values?: string[];
+	error?: string;
+}
+/**
+ * LDAPProbeField is one configured field's resolution.
+ */
+export interface LDAPProbeField {
+	name: string;
+	/**
+	 * Attribute is the entry attribute the field reads, absent for a
+	 * search-only field.
+	 */
+	attribute?: string;
+	/**
+	 * AttributePresent distinguishes an attribute that is empty from one
+	 * that is not on the entry at all — which is usually a typo.
+	 */
+	attribute_present: boolean;
+	attribute_values?: string[];
+	searches?: LDAPProbeSearch[];
+	/**
+	 * Values is what the field resolved to, as the login path would
+	 * compute it.
+	 */
+	values: string[];
+	error?: string;
+}
+/**
+ * LDAPProbeMerge is one field's fate at the merge stage.
+ */
+export interface LDAPProbeMerge {
+	name: string;
+	/**
+	 * Action is "override", "persist-groups" or "extra".
+	 */
+	action: string;
+	/**
+	 * Kept and Dropped split the values by the group allowlist. Dropped is
+	 * only ever non-empty for the group field.
+	 */
+	kept?: string[];
+	dropped?: string[];
+	note?: string;
+}
+/**
+ * LDAPProbeSuggestion is a config block that would map something the probe
+ * found and the configuration ignores. A suggestion, not a decision.
+ */
+export interface LDAPProbeSuggestion {
+	reason: string;
+	yaml: string;
+}
+/**
+ * LDAPProbeResponse is everything one probe learned, in the three stages the
+ * login path runs: the entry as returned, the field mapping, then the merge
+ * and allowlist.
+ * Nothing here was written. No user_ldap row, no group rows, no miss
+ * windows, no auto-disable.
+ */
+export interface LDAPProbeResponse {
+	/**
+	 * BaseDN, FilterSent, Mode and Attributes are the request as it went
+	 * out, so an operator sees the rendered filter rather than the
+	 * template.
+	 */
+	base_dn: string;
+	filter_sent: string;
+	mode: string;
+	attributes: string[];
+	/**
+	 * Matched is how many entries the filter found, capped by the probe.
+	 * The login path refuses anything but exactly one.
+	 */
+	matched: number /* int */;
+	entry?: LDAPProbeEntry;
+	fields?: LDAPProbeField[];
+	merge?: LDAPProbeMerge[];
+	suggestions?: LDAPProbeSuggestion[];
+	elapsed_ms: number /* int */;
+	timeout_ms: number /* int */;
+	/**
+	 * TLSInsecureSkipVerify reports that the connection did not verify the
+	 * directory certificate.
+	 */
+	tls_insecure_skip_verify: boolean;
+	/**
+	 * Wrote is always false and is serialized anyway: the guarantee is part
+	 * of the response, not only of the documentation.
+	 */
+	wrote: boolean;
+}

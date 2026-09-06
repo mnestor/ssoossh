@@ -113,6 +113,13 @@ export const ErrorCodeUnavailable = "unavailable";
  */
 export const ErrorCodeRateLimited = "rate_limited";
 /**
+ * ErrorCodeConflict means the request cannot be applied to the
+ * resource's current state (409 Conflict) — an operation that is
+ * already running, say. Retrying later may succeed; retrying
+ * immediately will not.
+ */
+export const ErrorCodeConflict = "conflict";
+/**
  * ErrorCodeNotImplemented means the endpoint exists but the handler is not
  * yet implemented (501 Not Implemented).
  */

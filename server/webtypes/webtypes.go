@@ -911,3 +911,236 @@ type AuditEventsResponse struct {
 	// NextOffset is the offset for the following page, or 0 on the last one.
 	NextOffset int `json:"next_offset,omitempty"`
 }
+
+// LDAPSyncRunResponse is one recorded directory sync pass.
+//
+// The counts are what the pass concluded; on a dry run they are what it
+// would have concluded, since a dry run changes nothing but this record.
+type LDAPSyncRunResponse struct {
+	ID        string    `json:"id" validate:"required"`
+	StartedAt time.Time `json:"started_at" validate:"required"`
+	// FinishedAt is absent while the pass runs, which is also how a pass
+	// that died with its process reads afterwards.
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+
+	// Trigger is "schedule" or "manual".
+	Trigger string `json:"trigger" validate:"required"`
+	DryRun  bool   `json:"dry_run"`
+
+	// ActorUsername is the admin who triggered it, absent for a scheduled
+	// pass. The username rather than the id, since it is displayed.
+	ActorUsername string `json:"actor_username,omitempty"`
+
+	// Instance is the host that ran it. Jobs are not leader-elected, so
+	// every instance runs its own pass and this says whose log to read.
+	Instance string `json:"instance,omitempty"`
+
+	UsersSeen int `json:"users_seen"`
+	Found     int `json:"found"`
+	Missing   int `json:"missing"`
+	Failed    int `json:"failed"`
+	Disabled  int `json:"disabled"`
+	Reenabled int `json:"reenabled"`
+
+	// Error is why the pass could not run — an unreachable directory, a
+	// failed bind. Empty for a pass that completed, whatever it concluded
+	// about individual users.
+	Error string `json:"error,omitempty"`
+}
+
+// LDAPStatusResponse answers "is the sync even running", and describes the
+// directory configuration the probe console runs against. Auditor-readable:
+// it names no credential.
+type LDAPStatusResponse struct {
+	// Enabled is false when ldap.enabled is off, in which case everything
+	// below is unset and there is nothing to probe.
+	Enabled bool `json:"enabled"`
+
+	// URL, BaseDN and UserFilter are the connection and query the probe is
+	// pinned to. The probe cannot be re-pointed, so these are the whole
+	// target.
+	URL        string `json:"url,omitempty"`
+	BaseDN     string `json:"base_dn,omitempty"`
+	UserFilter string `json:"user_filter,omitempty"`
+
+	// ConfiguredAttributes are the attribute names the configured fields
+	// read, which is what the console highlights in a returned entry.
+	ConfiguredAttributes []string `json:"configured_attributes,omitempty"`
+
+	// SyncIntervalSeconds is zero when the scheduled sync is off, which is
+	// itself the answer to "why has nothing synced".
+	SyncIntervalSeconds int `json:"sync_interval_seconds"`
+	// DisableAfterSeconds is how long an entry may stay missing before the
+	// user is auto-disabled. Zero means never.
+	DisableAfterSeconds int `json:"disable_after_seconds"`
+	// Reenable reports whether the sync clears its own disables when an
+	// entry reappears.
+	Reenable bool `json:"reenable"`
+
+	// TLSInsecureSkipVerify reports that directory connections do not
+	// verify the server certificate. Reported rather than silently
+	// honoured: a probe that succeeds only because verification is off has
+	// to say so.
+	TLSInsecureSkipVerify bool `json:"tls_insecure_skip_verify"`
+
+	// Running reports a pass in progress on the instance that answered
+	// this request. Passes are not leader-elected, so another instance may
+	// be running one too.
+	Running bool `json:"running"`
+
+	// LastRun is the most recent pass on any instance, absent when none has
+	// ever run.
+	LastRun *LDAPSyncRunResponse `json:"last_run,omitempty"`
+}
+
+// LDAPSyncRequestBody is the body of the sync-now endpoint.
+type LDAPSyncRequestBody struct {
+	// DryRun reads the directory and reports what the pass would do,
+	// changing nothing. It is what makes the button safe to press during an
+	// incident.
+	DryRun bool `json:"dry_run,omitempty"`
+}
+
+// LDAPProbeBindings are the identity a template-mode filter renders against.
+// Typed values are what let an admin test an entry before that person has
+// ever logged in.
+type LDAPProbeBindings struct {
+	Username string            `json:"username,omitempty"`
+	Email    string            `json:"email,omitempty"`
+	Subject  string            `json:"subject,omitempty"`
+	Extra    map[string]string `json:"extra,omitempty"`
+}
+
+// LDAPProbeRequestBody is one probe.
+//
+// There is deliberately no connection here. The probe always uses the
+// running ldap.url, bind credentials and base_dn; what an operator varies is
+// the question, not who is asked.
+type LDAPProbeRequestBody struct {
+	// Mode is "template" (render Filter against the bindings, with RFC 4515
+	// escaping applied) or "literal" (send Filter exactly as typed).
+	// Defaults to template.
+	Mode string `json:"mode,omitempty"`
+
+	// Filter is the filter to run. Empty in template mode means the
+	// configured ldap.user_filter.
+	Filter string `json:"filter,omitempty"`
+
+	// Attributes are the attribute names to request. Empty requests every
+	// user attribute, which is the point of the console.
+	Attributes []string `json:"attributes,omitempty"`
+
+	// BindingSource selects where the template bindings come from: "self"
+	// (the calling admin's own identity, the default), "user" (an existing
+	// user named by UserID), or "custom" (the typed Bindings below).
+	BindingSource string `json:"binding_source,omitempty"`
+
+	// UserID names the user to bind against when BindingSource is "user".
+	UserID string `json:"user_id,omitempty"`
+
+	// Bindings are the typed values used when BindingSource is "custom".
+	Bindings *LDAPProbeBindings `json:"bindings,omitempty"`
+}
+
+// LDAPProbeAttribute is one attribute of the entry the directory returned.
+type LDAPProbeAttribute struct {
+	Name   string   `json:"name" validate:"required"`
+	Values []string `json:"values" validate:"required"`
+	// Configured reports that a configured field reads this attribute,
+	// which is what the console highlights.
+	Configured bool `json:"configured"`
+	// TruncatedValues is how many values the probe's own cap dropped.
+	TruncatedValues int `json:"truncated_values,omitempty"`
+}
+
+// LDAPProbeEntry is the matched entry, before any mapping.
+type LDAPProbeEntry struct {
+	DN         string               `json:"dn" validate:"required"`
+	Attributes []LDAPProbeAttribute `json:"attributes" validate:"required"`
+}
+
+// LDAPProbeSearch is one secondary search's contribution to a field.
+type LDAPProbeSearch struct {
+	Name string `json:"name" validate:"required"`
+	// BaseDN and FilterSent are what actually went to the directory.
+	BaseDN     string `json:"base_dn,omitempty"`
+	FilterSent string `json:"filter_sent,omitempty"`
+	// Value is the attribute read off each matched entry.
+	Value   string   `json:"value,omitempty"`
+	Entries int      `json:"entries"`
+	Values  []string `json:"values,omitempty"`
+	Error   string   `json:"error,omitempty"`
+}
+
+// LDAPProbeField is one configured field's resolution.
+type LDAPProbeField struct {
+	Name string `json:"name" validate:"required"`
+	// Attribute is the entry attribute the field reads, absent for a
+	// search-only field.
+	Attribute string `json:"attribute,omitempty"`
+	// AttributePresent distinguishes an attribute that is empty from one
+	// that is not on the entry at all — which is usually a typo.
+	AttributePresent bool     `json:"attribute_present"`
+	AttributeValues  []string `json:"attribute_values,omitempty"`
+
+	Searches []LDAPProbeSearch `json:"searches,omitempty"`
+	// Values is what the field resolved to, as the login path would
+	// compute it.
+	Values []string `json:"values" validate:"required"`
+	Error  string   `json:"error,omitempty"`
+}
+
+// LDAPProbeMerge is one field's fate at the merge stage.
+type LDAPProbeMerge struct {
+	Name string `json:"name" validate:"required"`
+	// Action is "override", "persist-groups" or "extra".
+	Action string `json:"action" validate:"required"`
+	// Kept and Dropped split the values by the group allowlist. Dropped is
+	// only ever non-empty for the group field.
+	Kept    []string `json:"kept,omitempty"`
+	Dropped []string `json:"dropped,omitempty"`
+	Note    string   `json:"note,omitempty"`
+}
+
+// LDAPProbeSuggestion is a config block that would map something the probe
+// found and the configuration ignores. A suggestion, not a decision.
+type LDAPProbeSuggestion struct {
+	Reason string `json:"reason" validate:"required"`
+	YAML   string `json:"yaml" validate:"required"`
+}
+
+// LDAPProbeResponse is everything one probe learned, in the three stages the
+// login path runs: the entry as returned, the field mapping, then the merge
+// and allowlist.
+//
+// Nothing here was written. No user_ldap row, no group rows, no miss
+// windows, no auto-disable.
+type LDAPProbeResponse struct {
+	// BaseDN, FilterSent, Mode and Attributes are the request as it went
+	// out, so an operator sees the rendered filter rather than the
+	// template.
+	BaseDN     string   `json:"base_dn" validate:"required"`
+	FilterSent string   `json:"filter_sent" validate:"required"`
+	Mode       string   `json:"mode" validate:"required"`
+	Attributes []string `json:"attributes" validate:"required"`
+
+	// Matched is how many entries the filter found, capped by the probe.
+	// The login path refuses anything but exactly one.
+	Matched int `json:"matched"`
+
+	Entry       *LDAPProbeEntry       `json:"entry,omitempty"`
+	Fields      []LDAPProbeField      `json:"fields,omitempty"`
+	Merge       []LDAPProbeMerge      `json:"merge,omitempty"`
+	Suggestions []LDAPProbeSuggestion `json:"suggestions,omitempty"`
+
+	ElapsedMS int `json:"elapsed_ms"`
+	TimeoutMS int `json:"timeout_ms"`
+
+	// TLSInsecureSkipVerify reports that the connection did not verify the
+	// directory certificate.
+	TLSInsecureSkipVerify bool `json:"tls_insecure_skip_verify"`
+
+	// Wrote is always false and is serialized anyway: the guarantee is part
+	// of the response, not only of the documentation.
+	Wrote bool `json:"wrote"`
+}

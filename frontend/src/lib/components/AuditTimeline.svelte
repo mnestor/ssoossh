@@ -41,6 +41,8 @@
 		'user.enabled': 're-enabled an account',
 		'user.auto_disabled': 'was disabled automatically',
 		'admin.user_viewed': 'viewed a user record',
+		'ldap.sync_triggered': 'ran the directory sync',
+		'ldap.probed': 'probed the directory',
 		'admin.enrollment_viewed': 'viewed an enrollment',
 		// No longer emitted, kept so events recorded before that still read
 		// as a sentence rather than as a raw action name.

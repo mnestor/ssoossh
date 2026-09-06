@@ -1,0 +1,11 @@
+{
+  "base_dn": "",
+  "filter_sent": "",
+  "mode": "",
+  "attributes": null,
+  "matched": 0,
+  "elapsed_ms": 0,
+  "timeout_ms": 0,
+  "tls_insecure_skip_verify": false,
+  "wrote": false
+}

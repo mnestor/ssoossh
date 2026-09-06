@@ -1,0 +1,72 @@
+{
+  "base_dn": "dc=example,dc=net",
+  "filter_sent": "(\u0026(objectClass=person)(uid=alice))",
+  "mode": "template",
+  "attributes": [
+    "*"
+  ],
+  "matched": 1,
+  "entry": {
+    "dn": "uid=alice,ou=People,dc=example,dc=net",
+    "attributes": [
+      {
+        "name": "memberOf",
+        "values": [
+          "cn=ssh-users,ou=Groups,dc=example,dc=net"
+        ],
+        "configured": true,
+        "truncated_values": 3
+      }
+    ]
+  },
+  "fields": [
+    {
+      "name": "groups",
+      "attribute": "memberOf",
+      "attribute_present": true,
+      "attribute_values": [
+        "cn=ssh-users,ou=Groups,dc=example,dc=net"
+      ],
+      "searches": [
+        {
+          "name": "owned-services",
+          "base_dn": "ou=Services,dc=example,dc=net",
+          "filter_sent": "(owner=uid=alice,ou=People,dc=example,dc=net)",
+          "value": "uid",
+          "entries": 1,
+          "values": [
+            "svc-deploy"
+          ],
+          "error": "the search hit its size limit"
+        }
+      ],
+      "values": [
+        "ssh-users"
+      ],
+      "error": "one search failed"
+    }
+  ],
+  "merge": [
+    {
+      "name": "groups",
+      "action": "persist-groups",
+      "kept": [
+        "ssh-users"
+      ],
+      "dropped": [
+        "vpn-legacy"
+      ],
+      "note": "stored as user_groups rows"
+    }
+  ],
+  "suggestions": [
+    {
+      "reason": "employeeType is on the entry but no configured field reads it",
+      "yaml": "ldap:\n  fields:\n    employee_type: employeeType"
+    }
+  ],
+  "elapsed_ms": 34,
+  "timeout_ms": 5000,
+  "tls_insecure_skip_verify": true,
+  "wrote": true
+}

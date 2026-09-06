@@ -1,0 +1,8 @@
+{
+  "enabled": false,
+  "sync_interval_seconds": 0,
+  "disable_after_seconds": 0,
+  "reenable": false,
+  "tls_insecure_skip_verify": false,
+  "running": false
+}

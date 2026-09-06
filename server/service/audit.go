@@ -111,6 +111,16 @@ const (
 	// AuditAdminAuditViewed is one event per visit to the audit feed, not
 	// one per event displayed — which settles the recursion question.
 	AuditAdminAuditViewed AuditAction = "admin.audit_viewed"
+
+	// AuditLDAPSyncTriggered is an admin running the directory sync by
+	// hand. Recorded with the counts the pass produced, and with dry_run,
+	// so a pass that only reported reads as one.
+	AuditLDAPSyncTriggered AuditAction = "ldap.sync_triggered"
+
+	// AuditLDAPProbed is one directory probe. The probe writes nothing,
+	// but it makes the server open an outbound connection and read an
+	// entry in full, so it is recorded with the filter it sent.
+	AuditLDAPProbed AuditAction = "ldap.probed"
 )
 
 // auditPayloadVersion is the payload schema version, carried on every

@@ -10,6 +10,7 @@ import (
 	"github.com/go-ldap/ldap/v3"
 
 	"github.com/mnestor/ssoossh/server/config"
+	"github.com/mnestor/ssoossh/server/model"
 )
 
 // Probe limits. The point of the feature is asking a directory for the whole
@@ -31,6 +32,21 @@ const (
 	// value was rather than posting it into a browser.
 	probeMaxValueBytes = 4096
 )
+
+// LDAPDiagnostics is the directory-diagnostics surface the admin HTTP
+// handlers drive: one read-only probe, the sync, and the record of the last
+// pass. Implemented by *LDAPService.
+//
+// An interface here rather than the concrete service because the handlers'
+// own logic — authorization, binding resolution, the wire mapping, the
+// conflict and the audit record — is worth testing without a directory, and
+// the alternative is a fake LDAP server in the controller package.
+type LDAPDiagnostics interface {
+	Probe(ctx context.Context, req ProbeRequest) (*ProbeResult, error)
+	SyncWithOptions(ctx context.Context, opts SyncOptions) (*model.LDAPSyncRun, error)
+	LastSyncRun(ctx context.Context) (*model.LDAPSyncRun, error)
+	SyncRunning() bool
+}
 
 // ProbeFilterMode says how the probe's filter text is turned into the string
 // sent to the directory.

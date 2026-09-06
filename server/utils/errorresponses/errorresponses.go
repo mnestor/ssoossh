@@ -39,6 +39,31 @@ func (e *MisdirectedRequestError) HTTPStatusCode() int { return http.StatusMisdi
 // ErrorCode reports the machine-readable error code.
 func (e *MisdirectedRequestError) ErrorCode() string { return apitypes.ErrorCodeForbidden }
 
+// ConflictError indicates the request cannot be applied to the resource's
+// current state. Distinct from a rate limit: the caller is not going too
+// fast, the operation is simply already in progress.
+type ConflictError struct {
+	// Reason describes the conflicting state, e.g. `a directory sync is
+	// already running`.
+	Reason string
+}
+
+// Error implements the error interface.
+func (e *ConflictError) Error() string {
+	if e.Reason == "" {
+		// not covered: every construction site supplies a reason; the
+		// fallback exists so a zero value still reads as an error.
+		return "Conflict"
+	}
+	return e.Reason
+}
+
+// HTTPStatusCode reports the HTTP status this error should be rendered as.
+func (e *ConflictError) HTTPStatusCode() int { return http.StatusConflict }
+
+// ErrorCode reports the machine-readable error code.
+func (e *ConflictError) ErrorCode() string { return apitypes.ErrorCodeConflict }
+
 // NotFoundError indicates the requested resource does not exist.
 type NotFoundError struct {
 	// Resource describes what wasn't found, e.g. `certificate request "abc"`.

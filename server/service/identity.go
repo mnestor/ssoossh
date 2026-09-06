@@ -129,3 +129,17 @@ func (i *Identity) EffectiveExtra() map[string]any {
 	}
 	return out
 }
+
+// ExtraScalars renders the identity's extra fields as the scalar map an LDAP
+// filter template renders against. List values are skipped, on the same
+// terms as the login path: a filter interpolates one value, and silently
+// joining a list would produce a filter nobody wrote.
+func (i *Identity) ExtraScalars() map[string]string {
+	out := make(map[string]string, len(i.Extra))
+	for name, value := range i.Extra {
+		if scalar, ok := value.Scalar(); ok {
+			out[name] = scalar
+		}
+	}
+	return out
+}

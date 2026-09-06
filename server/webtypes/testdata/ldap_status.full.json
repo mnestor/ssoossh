@@ -1,0 +1,31 @@
+{
+  "enabled": true,
+  "url": "ldaps://dir.example.net",
+  "base_dn": "dc=example,dc=net",
+  "user_filter": "(\u0026(objectClass=person)(uid={{.Username}}))",
+  "configured_attributes": [
+    "altSecurityIdentities",
+    "memberOf"
+  ],
+  "sync_interval_seconds": 900,
+  "disable_after_seconds": 2700,
+  "reenable": true,
+  "tls_insecure_skip_verify": true,
+  "running": true,
+  "last_run": {
+    "id": "6f1d3b2a-8c4e-4f70-9a1b-2c3d4e5f6a7b",
+    "started_at": "2026-08-14T09:30:00+02:00",
+    "finished_at": "2026-08-14T09:31:30+02:00",
+    "trigger": "manual",
+    "dry_run": true,
+    "actor_username": "alice",
+    "instance": "ssoosshd-1.example.org",
+    "users_seen": 42,
+    "found": 39,
+    "missing": 2,
+    "failed": 1,
+    "disabled": 1,
+    "reenabled": 1,
+    "error": "the directory refused the bind"
+  }
+}

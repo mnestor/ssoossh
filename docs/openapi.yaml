@@ -1351,6 +1351,362 @@ components:
       required:
       - reason
       type: object
+    webtypes.LDAPProbeAttribute:
+      properties:
+        configured:
+          description: |-
+            Configured reports that a configured field reads this attribute,
+            which is what the console highlights.
+          type: boolean
+        name:
+          type: string
+        truncated_values:
+          description: TruncatedValues is how many values the probe's own cap dropped.
+          type: integer
+        values:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+      required:
+      - name
+      - values
+      type: object
+    webtypes.LDAPProbeBindings:
+      description: Bindings are the typed values used when BindingSource is "custom".
+      properties:
+        email:
+          type: string
+        extra:
+          additionalProperties:
+            type: string
+          type: object
+        subject:
+          type: string
+        username:
+          type: string
+      type: object
+    webtypes.LDAPProbeEntry:
+      properties:
+        attributes:
+          items:
+            $ref: '#/components/schemas/webtypes.LDAPProbeAttribute'
+          type: array
+          uniqueItems: false
+        dn:
+          type: string
+      required:
+      - attributes
+      - dn
+      type: object
+    webtypes.LDAPProbeField:
+      properties:
+        attribute:
+          description: |-
+            Attribute is the entry attribute the field reads, absent for a
+            search-only field.
+          type: string
+        attribute_present:
+          description: |-
+            AttributePresent distinguishes an attribute that is empty from one
+            that is not on the entry at all — which is usually a typo.
+          type: boolean
+        attribute_values:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        error:
+          type: string
+        name:
+          type: string
+        searches:
+          items:
+            $ref: '#/components/schemas/webtypes.LDAPProbeSearch'
+          type: array
+          uniqueItems: false
+        values:
+          description: |-
+            Values is what the field resolved to, as the login path would
+            compute it.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+      required:
+      - name
+      - values
+      type: object
+    webtypes.LDAPProbeMerge:
+      properties:
+        action:
+          description: Action is "override", "persist-groups" or "extra".
+          type: string
+        dropped:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        kept:
+          description: |-
+            Kept and Dropped split the values by the group allowlist. Dropped is
+            only ever non-empty for the group field.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        name:
+          type: string
+        note:
+          type: string
+      required:
+      - action
+      - name
+      type: object
+    webtypes.LDAPProbeRequestBody:
+      properties:
+        attributes:
+          description: |-
+            Attributes are the attribute names to request. Empty requests every
+            user attribute, which is the point of the console.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        binding_source:
+          description: |-
+            BindingSource selects where the template bindings come from: "self"
+            (the calling admin's own identity, the default), "user" (an existing
+            user named by UserID), or "custom" (the typed Bindings below).
+          type: string
+        bindings:
+          $ref: '#/components/schemas/webtypes.LDAPProbeBindings'
+        filter:
+          description: |-
+            Filter is the filter to run. Empty in template mode means the
+            configured ldap.user_filter.
+          type: string
+        mode:
+          description: |-
+            Mode is "template" (render Filter against the bindings, with RFC 4515
+            escaping applied) or "literal" (send Filter exactly as typed).
+            Defaults to template.
+          type: string
+        user_id:
+          description: UserID names the user to bind against when BindingSource is
+            "user".
+          type: string
+      type: object
+    webtypes.LDAPProbeResponse:
+      properties:
+        attributes:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        base_dn:
+          description: |-
+            BaseDN, FilterSent, Mode and Attributes are the request as it went
+            out, so an operator sees the rendered filter rather than the
+            template.
+          type: string
+        elapsed_ms:
+          type: integer
+        entry:
+          $ref: '#/components/schemas/webtypes.LDAPProbeEntry'
+        fields:
+          items:
+            $ref: '#/components/schemas/webtypes.LDAPProbeField'
+          type: array
+          uniqueItems: false
+        filter_sent:
+          type: string
+        matched:
+          description: |-
+            Matched is how many entries the filter found, capped by the probe.
+            The login path refuses anything but exactly one.
+          type: integer
+        merge:
+          items:
+            $ref: '#/components/schemas/webtypes.LDAPProbeMerge'
+          type: array
+          uniqueItems: false
+        mode:
+          type: string
+        suggestions:
+          items:
+            $ref: '#/components/schemas/webtypes.LDAPProbeSuggestion'
+          type: array
+          uniqueItems: false
+        timeout_ms:
+          type: integer
+        tls_insecure_skip_verify:
+          description: |-
+            TLSInsecureSkipVerify reports that the connection did not verify the
+            directory certificate.
+          type: boolean
+        wrote:
+          description: |-
+            Wrote is always false and is serialized anyway: the guarantee is part
+            of the response, not only of the documentation.
+          type: boolean
+      required:
+      - attributes
+      - base_dn
+      - filter_sent
+      - mode
+      type: object
+    webtypes.LDAPProbeSearch:
+      properties:
+        base_dn:
+          description: BaseDN and FilterSent are what actually went to the directory.
+          type: string
+        entries:
+          type: integer
+        error:
+          type: string
+        filter_sent:
+          type: string
+        name:
+          type: string
+        value:
+          description: Value is the attribute read off each matched entry.
+          type: string
+        values:
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+      required:
+      - name
+      type: object
+    webtypes.LDAPProbeSuggestion:
+      properties:
+        reason:
+          type: string
+        yaml:
+          type: string
+      required:
+      - reason
+      - yaml
+      type: object
+    webtypes.LDAPStatusResponse:
+      properties:
+        base_dn:
+          type: string
+        configured_attributes:
+          description: |-
+            ConfiguredAttributes are the attribute names the configured fields
+            read, which is what the console highlights in a returned entry.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        disable_after_seconds:
+          description: |-
+            DisableAfterSeconds is how long an entry may stay missing before the
+            user is auto-disabled. Zero means never.
+          type: integer
+        enabled:
+          description: |-
+            Enabled is false when ldap.enabled is off, in which case everything
+            below is unset and there is nothing to probe.
+          type: boolean
+        last_run:
+          $ref: '#/components/schemas/webtypes.LDAPSyncRunResponse'
+        reenable:
+          description: |-
+            Reenable reports whether the sync clears its own disables when an
+            entry reappears.
+          type: boolean
+        running:
+          description: |-
+            Running reports a pass in progress on the instance that answered
+            this request. Passes are not leader-elected, so another instance may
+            be running one too.
+          type: boolean
+        sync_interval_seconds:
+          description: |-
+            SyncIntervalSeconds is zero when the scheduled sync is off, which is
+            itself the answer to "why has nothing synced".
+          type: integer
+        tls_insecure_skip_verify:
+          description: |-
+            TLSInsecureSkipVerify reports that directory connections do not
+            verify the server certificate. Reported rather than silently
+            honoured: a probe that succeeds only because verification is off has
+            to say so.
+          type: boolean
+        url:
+          description: |-
+            URL, BaseDN and UserFilter are the connection and query the probe is
+            pinned to. The probe cannot be re-pointed, so these are the whole
+            target.
+          type: string
+        user_filter:
+          type: string
+      type: object
+    webtypes.LDAPSyncRequestBody:
+      properties:
+        dry_run:
+          description: |-
+            DryRun reads the directory and reports what the pass would do,
+            changing nothing. It is what makes the button safe to press during an
+            incident.
+          type: boolean
+      type: object
+    webtypes.LDAPSyncRunResponse:
+      description: |-
+        LastRun is the most recent pass on any instance, absent when none has
+        ever run.
+      properties:
+        actor_username:
+          description: |-
+            ActorUsername is the admin who triggered it, absent for a scheduled
+            pass. The username rather than the id, since it is displayed.
+          type: string
+        disabled:
+          type: integer
+        dry_run:
+          type: boolean
+        error:
+          description: |-
+            Error is why the pass could not run — an unreachable directory, a
+            failed bind. Empty for a pass that completed, whatever it concluded
+            about individual users.
+          type: string
+        failed:
+          type: integer
+        finished_at:
+          description: |-
+            FinishedAt is absent while the pass runs, which is also how a pass
+            that died with its process reads afterwards.
+          type: string
+        found:
+          type: integer
+        id:
+          type: string
+        instance:
+          description: |-
+            Instance is the host that ran it. Jobs are not leader-elected, so
+            every instance runs its own pass and this says whose log to read.
+          type: string
+        missing:
+          type: integer
+        reenabled:
+          type: integer
+        started_at:
+          type: string
+        trigger:
+          description: Trigger is "schedule" or "manual".
+          type: string
+        users_seen:
+          type: integer
+      required:
+      - id
+      - started_at
+      - trigger
+      type: object
     webtypes.NotificationKindResponse:
       properties:
         description:
@@ -2117,6 +2473,169 @@ paths:
       security:
       - sessionCookie: []
       summary: Expire an enrollment (admin or SOC)
+      tags:
+      - admin
+  /api/admin/ldap/probe:
+    post:
+      description: |-
+        Runs one directory lookup through the login path's three
+        stages — lookup, field resolution, then the merge and
+        allowlist — and stops before the write. Reports the filter it
+        actually sent, every attribute the directory returned rather
+        than the ones the configuration names, what each field
+        resolved to, which group values the allowlist would drop, and
+        the config lines that would keep what is currently ignored.
+
+        The connection is not part of the request: the probe always
+        uses the running ldap.url, bind credentials and base_dn, so
+        it cannot be pointed at another host. It writes nothing.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/webtypes.LDAPProbeRequestBody'
+                description: What to ask the directory
+                summary: request
+        description: What to ask the directory
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/webtypes.LDAPProbeResponse'
+          description: What the probe found
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Invalid request, filter or bindings
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as admin
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The user to bind against does not exist
+        "429":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Too many probes
+      security:
+      - sessionCookie: []
+      summary: Probe the directory (admin-only, read-only)
+      tags:
+      - admin
+  /api/admin/ldap/status:
+    get:
+      description: |-
+        Reports whether directory enrichment is enabled, the
+        connection and query the probe is pinned to, the sync
+        settings, and the most recent sync pass on any instance.
+        Names no credential: the bind password is never part of this
+        response. Answers "is the sync even running", which before
+        the run record could only be answered by reading a log on
+        whichever instance happened to run it.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/webtypes.LDAPStatusResponse'
+          description: Directory status
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as auditor
+      security:
+      - sessionCookie: []
+      summary: Directory sync status and probe target (auditor-only)
+      tags:
+      - admin
+  /api/admin/ldap/sync:
+    post:
+      description: |-
+        Runs the same pass the scheduler runs, on this instance, and
+        returns what it concluded. One at a time: a pass already in
+        progress makes this a 409 rather than stacking a second one
+        over the same users. With dry_run the pass reads the
+        directory and changes nothing, reporting the disables and
+        re-enables it would have performed — which is what makes it
+        safe to press during an incident.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              oneOf:
+              - type: object
+              - $ref: '#/components/schemas/webtypes.LDAPSyncRequestBody'
+                description: Sync options
+                summary: request
+        description: Sync options
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/webtypes.LDAPSyncRunResponse'
+          description: What the pass concluded
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Invalid request body
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authenticated
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Not authorized as admin
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: A sync is already running
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: The directory could not be reached
+      security:
+      - sessionCookie: []
+      summary: Run the directory sync now (admin-only)
       tags:
       - admin
   /api/admin/users:

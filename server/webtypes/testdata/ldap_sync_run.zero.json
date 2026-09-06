@@ -1,0 +1,12 @@
+{
+  "id": "",
+  "started_at": "0001-01-01T00:00:00Z",
+  "trigger": "",
+  "dry_run": false,
+  "users_seen": 0,
+  "found": 0,
+  "missing": 0,
+  "failed": 0,
+  "disabled": 0,
+  "reenabled": 0
+}
