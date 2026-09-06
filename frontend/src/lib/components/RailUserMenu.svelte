@@ -45,14 +45,14 @@
 	let trigger = $state<HTMLButtonElement>();
 
 	const accountHref = $derived(resolve('/account'));
+	const onAccount = $derived(isCurrent(accountHref, page.url.pathname));
 
 	// The trigger carries the selected state for every page behind it.
 	// Without this, standing on /preferences would leave the rail with
 	// nothing marked, because the row that owns that page is inside a shut
 	// popover.
 	const ownsCurrentPage = $derived(
-		isCurrent(accountHref, page.url.pathname) ||
-			accountNav().some((item) => isCurrent(item.href, page.url.pathname))
+		onAccount || accountNav().some((item) => isCurrent(item.href, page.url.pathname))
 	);
 
 	// The display name, when the identity carries one distinct from the
@@ -122,25 +122,34 @@
 			class:ml-1.5={collapsed}
 			class:w-60={collapsed}
 		>
-			<div class="border-b border-border-subtle px-2.5 pt-1 pb-2">
-				{#if fullName}
-					<p class="truncate text-[13px] font-semibold">{fullName}</p>
-				{/if}
-				<p class="truncate text-xs text-ink-muted">{identity}</p>
+			<!-- The head names the identity and is itself the way to the
+			     account page. It used to be a caption sitting above a row
+			     labelled "Account", which spelled the same destination twice
+			     and left the name — the thing a viewer actually reaches for
+			     when they want their own record — inert. -->
+			<div class="border-b border-border-subtle pb-1.5">
+				<a
+					href={accountHref}
+					aria-current={onAccount ? 'page' : undefined}
+					onclick={navigated}
+					data-testid="rail-user-account"
+					class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 transition {onAccount
+						? 'bg-accent-wash text-accent'
+						: 'text-ink hover:bg-surface-muted'}"
+				>
+					<Icon name="user" size="sm" class="shrink-0" />
+					<span class="min-w-0">
+						{#if fullName}
+							<span class="block truncate text-[13px] font-semibold">{fullName}</span>
+						{/if}
+						<span class="block truncate text-xs {onAccount ? 'text-accent' : 'text-ink-muted'}"
+							>{identity}</span
+						>
+					</span>
+				</a>
 			</div>
 
 			<div class="pt-1.5">
-				<a
-					href={accountHref}
-					aria-current={isCurrent(accountHref, page.url.pathname) ? 'page' : undefined}
-					onclick={navigated}
-					data-testid="rail-user-menu-item"
-					class={railRowClass(false, isCurrent(accountHref, page.url.pathname))}
-				>
-					<Icon name="user" size="sm" />
-					<span class="truncate">Account</span>
-				</a>
-
 				{#each accountNav() as item (item.href)}
 					<a
 						href={item.href}

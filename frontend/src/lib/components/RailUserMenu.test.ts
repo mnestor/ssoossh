@@ -82,7 +82,51 @@ describe('rail user menu', () => {
 		const menu = within(screen.getByTestId('rail-user-menu'));
 		expect(
 			menu.getAllByTestId('rail-user-menu-item').map((item) => item.textContent?.trim())
-		).toEqual(['Account', 'Preferences']);
+		).toEqual(['Preferences']);
+	});
+
+	// The account page is reached through the identity itself, not through a
+	// row underneath it repeating the destination.
+	it('should make the head of the popover the link to the account page', async () => {
+		await open();
+
+		expect(screen.getByTestId('rail-user-account')).toHaveAttribute('href', '/account');
+	});
+
+	it('should name the account link by the identity it belongs to', async () => {
+		await open();
+
+		expect(screen.getByTestId('rail-user-account')).toHaveAccessibleName(
+			'Alice Ashworth alice@example.com'
+		);
+	});
+
+	it('should leave no separate Account row beneath the identity', async () => {
+		await open();
+
+		const menu = within(screen.getByTestId('rail-user-menu'));
+		expect(menu.queryByRole('link', { name: 'Account' })).not.toBeInTheDocument();
+	});
+
+	it('should mark the account link as current on the account page', async () => {
+		resetFakePage('http://localhost/account');
+		await open();
+
+		expect(screen.getByTestId('rail-user-account')).toHaveAttribute('aria-current', 'page');
+	});
+
+	it('should leave the account link unmarked away from the account page', async () => {
+		await open();
+
+		expect(screen.getByTestId('rail-user-account')).not.toHaveAttribute('aria-current');
+	});
+
+	it('should close the drawer when the account link is activated', async () => {
+		const onnavigate = vi.fn();
+		await open({ onnavigate });
+		await userEvent.click(screen.getByTestId('rail-user-account'));
+
+		expect(onnavigate).toHaveBeenCalledOnce();
 	});
 
 	it('should offer the theme control inside the popover', async () => {
