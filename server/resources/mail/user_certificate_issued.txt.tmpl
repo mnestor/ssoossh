@@ -36,6 +36,7 @@ The address is what the server observed.
 
 WHO APPROVED IT
 {{ if .ApprovedByUsername }}  Account               {{ .ApprovedByUsername }}{{ if .ApprovedByEmail }} <{{ .ApprovedByEmail }}>{{ end }}
+{{ end }}{{ if .ApprovedByName }}  Name                  {{ .ApprovedByName }}
 {{ end }}{{ if .ApproverSourceIP }}  Approved from         {{ .ApproverSourceIP }}
 {{ end }}{{ if .ApproverUserAgent }}  Browser               {{ .ApproverUserAgent }}
 {{ end }}{{ if not .ApprovedAt.IsZero }}  Approved at           {{ datetime .ApprovedAt }}

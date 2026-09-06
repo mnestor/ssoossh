@@ -461,7 +461,7 @@ func (h *SignedReplyHandler) applyApprover(ctx context.Context, payload *notify.
 
 	var decision model.CertificateRequestDecision
 	if err := h.db.WithContext(ctx).
-		Select("username", "email", "source_ip", "user_agent", "decided_at").
+		Select("subject", "username", "email", "source_ip", "user_agent", "decided_at").
 		First(&decision, "certificate_request_id = ?", *requestID).Error; err != nil {
 		slog.Warn("could not resolve the approver of an issued certificate for its notification",
 			"request_id", *requestID, "error", err)
@@ -469,10 +469,37 @@ func (h *SignedReplyHandler) applyApprover(ctx context.Context, payload *notify.
 	}
 
 	payload.ApprovedByUsername = decision.Username
+	payload.ApprovedByName = h.approverDisplayName(ctx, decision.Subject)
 	payload.ApprovedByEmail = decision.Email
 	payload.ApproverSourceIP = decision.SourceIP
 	payload.ApproverUserAgent = decision.UserAgent
 	payload.ApprovedAt = decision.DecidedAt
+}
+
+// approverDisplayName reads the approver's human-readable name from their
+// users row.
+//
+// A second read rather than a column on the decision row, because the
+// decision snapshot exists to freeze what was *authorized* — the subject,
+// the account lists, the groups — and a display name authorizes nothing. It
+// is a label, and a label is better fetched current than frozen: someone
+// who changed their name last month should read as their name in a message
+// sent today.
+//
+// Best effort in every direction. An empty subject, a deleted row, or a
+// failed query all yield an empty name, which the shipped templates fall
+// back from to the username.
+func (h *SignedReplyHandler) approverDisplayName(ctx context.Context, subject string) string {
+	if subject == "" {
+		return ""
+	}
+	var user model.User
+	if err := h.db.WithContext(ctx).
+		Select("display_name").
+		First(&user, "subject = ?", subject).Error; err != nil {
+		return ""
+	}
+	return user.DisplayName
 }
 
 // resolveRetrievalOwner resolves the audit linkage for a service

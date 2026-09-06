@@ -334,6 +334,7 @@ Templates:
 | `.RequestSourceIP` | `string` | The address the enrollment request was submitted from. |
 | `.ApprovedAt` | `time.Time` | When the request was approved and the code minted. |
 | `.ApprovedByUsername` | `string` | The username of the identity that approved the request. |
+| `.ApprovedByName` | `string` | The approver's human-readable name, or empty if none was captured. |
 | `.ApprovedByEmail` | `string` | The approver's email address, or empty if none was recorded. |
 | `.ApproverSourceIP` | `string` | The address the approval was made from, observed by the server. A different question from RequestSourceIP, which is the requester's. |
 | `.CodeExpiresAt` | `time.Time` | When the enrollment code stops being redeemable. Re-enroll before this to keep an unattended job running. |
@@ -472,6 +473,7 @@ Templates:
 | `.IssuedAt` | `time.Time` | When the certificate becomes valid. |
 | `.ExpiresAt` | `time.Time` | When the certificate stops being valid. |
 | `.ApprovedByUsername` | `string` | The account that approved the request, or empty if no decision record survives. |
+| `.ApprovedByName` | `string` | The approver's human-readable name, or empty if none was captured. |
 | `.ApprovedByEmail` | `string` | The approver's email address, or empty if none was recorded. |
 | `.ApproverSourceIP` | `string` | The address the approval was made from, observed by the server. On the unhappy path this is the fact that says whose session was used. |
 | `.ApproverUserAgent` | `string` | The browser that approved, as it identified itself. |
@@ -524,6 +526,7 @@ Templates:
 | `.IssuedAt` | `time.Time` | When the certificate becomes valid. |
 | `.ExpiresAt` | `time.Time` | When the certificate stops being valid. |
 | `.ApprovedByUsername` | `string` | The account that approved the request, or empty if no decision record survives. |
+| `.ApprovedByName` | `string` | The approver's human-readable name, or empty if none was captured. |
 | `.ApprovedByEmail` | `string` | The approver's email address, or empty if none was recorded. |
 | `.ApproverSourceIP` | `string` | The address the approval was made from, observed by the server. On the unhappy path this is the fact that says whose session was used. |
 | `.ApproverUserAgent` | `string` | The browser that approved, as it identified itself. |
@@ -576,6 +579,7 @@ Templates:
 | `.IssuedAt` | `time.Time` | When the certificate becomes valid. |
 | `.ExpiresAt` | `time.Time` | When the certificate stops being valid. |
 | `.ApprovedByUsername` | `string` | The account that approved the request, or empty if no decision record survives. |
+| `.ApprovedByName` | `string` | The approver's human-readable name, or empty if none was captured. |
 | `.ApprovedByEmail` | `string` | The approver's email address, or empty if none was recorded. |
 | `.ApproverSourceIP` | `string` | The address the approval was made from, observed by the server. On the unhappy path this is the fact that says whose session was used. |
 | `.ApproverUserAgent` | `string` | The browser that approved, as it identified itself. |

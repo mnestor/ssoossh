@@ -39,6 +39,7 @@
   <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Who approved it</h3>
   <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
     {{ if .ApprovedByUsername }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Account</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .ApprovedByUsername }}{{ if .ApprovedByEmail }} &lt;{{ .ApprovedByEmail }}&gt;{{ end }}</td></tr>{{ end }}
+    {{ if .ApprovedByName }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Name</td><td style="padding:4px 0">{{ .ApprovedByName }}</td></tr>{{ end }}
     {{ if .ApproverSourceIP }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Approved from</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .ApproverSourceIP }}</td></tr>{{ end }}
     {{ if .ApproverUserAgent }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Browser</td><td style="padding:4px 0">{{ .ApproverUserAgent }}</td></tr>{{ end }}
     {{ if not .ApprovedAt.IsZero }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Approved at</td><td style="padding:4px 0">{{ datetime .ApprovedAt }}</td></tr>{{ end }}

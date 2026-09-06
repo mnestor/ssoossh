@@ -69,7 +69,8 @@ REQUEST DETAIL
   Enrollment ID         {{ .EnrollmentID }}
   Requested from        {{ .RequestSourceIP }}
   Approved by           {{ if .ApprovedByUsername }}{{ .ApprovedByUsername }}{{ if .ApprovedByEmail }} <{{ .ApprovedByEmail }}>{{ end }}{{ else }}not recorded{{ end }}
-{{ if .ApproverSourceIP }}  Approved from         {{ .ApproverSourceIP }}
+{{ if .ApprovedByName }}  Approver name         {{ .ApprovedByName }}
+{{ end }}{{ if .ApproverSourceIP }}  Approved from         {{ .ApproverSourceIP }}
 {{ end }}  Approved at           {{ datetime .ApprovedAt }}
 
 This code mints certificates unattended until it expires. If the approval above

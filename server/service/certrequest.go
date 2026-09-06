@@ -1221,6 +1221,7 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 		RequestSourceIP:      req.SourceIP,
 		ApprovedAt:           now,
 		ApprovedByUsername:   identity.Username,
+		ApprovedByName:       identity.DisplayName,
 		ApprovedByEmail:      identity.Email,
 		// dc is the approver's own connection, the same values the decision
 		// row keeps. RequestSourceIP above is the requester's.

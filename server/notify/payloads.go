@@ -44,8 +44,13 @@ type ServiceEnrollmentCreated struct {
 	RequestSourceIP    string    `json:"request_source_ip"`
 	ApprovedAt         time.Time `json:"approved_at"`
 	ApprovedByUsername string    `json:"approved_by_username"`
-	ApprovedByEmail    string    `json:"approved_by_email,omitempty"`
-	ApproverSourceIP   string    `json:"approver_source_ip,omitempty"`
+	// ApprovedByName is the approver as a person reads them — "Ada
+	// Lovelace" rather than "alovelace". Display only, and empty when
+	// nothing supplied a name; a template wanting a guaranteed value uses
+	// ApprovedByUsername.
+	ApprovedByName   string `json:"approved_by_name,omitempty"`
+	ApprovedByEmail  string `json:"approved_by_email,omitempty"`
+	ApproverSourceIP string `json:"approver_source_ip,omitempty"`
 
 	// CodeExpiresAt bounds the code; CertificateLifetime bounds each
 	// certificate it produces, measured from each redemption. They are
@@ -245,10 +250,15 @@ type CertificateIssued struct {
 	// Empty on a certificate whose decision record has gone or predates
 	// them, which the shipped templates render as "not recorded" rather
 	// than as nobody.
-	ApprovedByUsername string    `json:"approved_by_username,omitempty"`
-	ApprovedByEmail    string    `json:"approved_by_email,omitempty"`
-	ApproverSourceIP   string    `json:"approver_source_ip,omitempty"`
-	ApproverUserAgent  string    `json:"approver_user_agent,omitempty"`
+	ApprovedByUsername string `json:"approved_by_username,omitempty"`
+	// ApprovedByName is the approver as a person reads them. Display only,
+	// and empty when nothing supplied a name — on the "was this you?"
+	// message it is what turns an unfamiliar account name into a
+	// recognizable colleague.
+	ApprovedByName    string    `json:"approved_by_name,omitempty"`
+	ApprovedByEmail   string    `json:"approved_by_email,omitempty"`
+	ApproverSourceIP  string    `json:"approver_source_ip,omitempty"`
+	ApproverUserAgent string    `json:"approver_user_agent,omitempty"`
 	ApprovedAt         time.Time `json:"approved_at,omitempty"`
 
 	Extensions      []string `json:"extensions,omitempty"`
