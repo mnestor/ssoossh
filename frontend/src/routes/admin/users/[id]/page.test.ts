@@ -364,9 +364,32 @@ describe('Admin user detail', () => {
 			});
 			render(Page);
 
-			const block = await screen.findByTestId('user-notification-preferences');
-			expect(block).toHaveTextContent('Service enrollment expiring');
-			expect(block).toHaveTextContent('close to expiring');
+			expect(await screen.findByTestId('user-notification-preferences')).toHaveTextContent(
+				'Service enrollment expiring'
+			);
+		});
+
+		// The registry's sentence explaining when a kind fires belongs on
+		// the preferences page, where someone is deciding. Here it was seven
+		// paragraphs between an admin and the two facts they came for.
+		it('should not repeat the registry description for every kind', async () => {
+			mockDetail({
+				notification_preferences: [
+					{
+						kind: 'service_enrollment_expiring',
+						title: 'Service enrollment expiring',
+						description: 'Sent while one of your enrollment codes is close to expiring.',
+						enabled: true,
+						default: true,
+						explicit: false,
+						registered: true
+					}
+				]
+			});
+			render(Page);
+
+			await screen.findByTestId('user-notification-preferences');
+			expect(screen.queryByText(/close to expiring/)).not.toBeInTheDocument();
 		});
 
 		it('should still show the raw kind alongside the readable name', async () => {
@@ -409,7 +432,9 @@ describe('Admin user detail', () => {
 			).toHaveTextContent('default');
 		});
 
-		it('should say when a choice is the user’s own and when it was made', async () => {
+		// A date in the Changed column is the whole signal that this row is
+		// the person's own decision rather than the registered default.
+		it('should date a choice the user made themselves', async () => {
 			mockDetail({
 				notification_preferences: [
 					{
@@ -425,9 +450,10 @@ describe('Admin user detail', () => {
 				]
 			});
 			render(Page);
-			expect(
-				await screen.findByTestId('user-notification-service_enrollment_expiring')
-			).toHaveTextContent('their choice');
+
+			const row = await screen.findByTestId('user-notification-service_enrollment_expiring');
+			expect(row).toHaveTextContent(new Date('2026-09-01T10:00:00Z').toLocaleDateString());
+			expect(row).not.toHaveTextContent('default');
 		});
 
 		// A stored row for a kind this build no longer has. Shown rather

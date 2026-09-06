@@ -589,15 +589,19 @@
 			</div>
 		{/if}
 
-		<!-- Notification choices: every kind the server can send, with what
-		     applies to this person and whether they chose it.
-		     
+		<!-- Notification choices: every kind the server can send, and
+		     whether it reaches this person.
+
 		     Listing only the stored rows meant the common case — someone who
 		     has never opened the preferences page — rendered as an empty
 		     section, which reads as "we send them nothing" and means the
-		     opposite. A raw kind string beside "on" left the reader to guess
-		     what that kind was, so the registry's own wording comes down the
-		     wire and is what is shown. -->
+		     opposite.
+
+		     A table, and no descriptions. The registry's sentence explaining
+		     when a kind fires belongs on the preferences page, where someone
+		     is deciding; here it was seven paragraphs between an admin and
+		     the two facts they came for, which are what this person receives
+		     and what they chose. The title carries the rest. -->
 		{#if user.notification_preferences.length > 0}
 			<div
 				class="rounded-lg border border-border-subtle bg-surface-muted p-4"
@@ -605,51 +609,60 @@
 			>
 				<h2 class="mb-1 font-semibold text-ink">Notification choices</h2>
 				<p class="mb-4 text-[13px] text-ink-muted">
-					Every notification this server can send, and whether it reaches this person. A row marked
-					<em>default</em> is one they have never changed.
+					Every notification this server can send. Rows reading <em>default</em> are ones this person
+					has never changed.
 				</p>
-				<div class="space-y-3">
-					{#each user.notification_preferences as pref (pref.kind)}
-						<div
-							class="flex items-start justify-between gap-3"
-							data-testid="user-notification-{pref.kind}"
-						>
-							<div class="min-w-0">
-								<p class="text-sm font-medium text-ink">
-									{pref.title || pref.kind}
-								</p>
-								{#if pref.description}
-									<p class="text-[13px] text-ink-muted">{pref.description}</p>
-								{/if}
-								<p class="mt-0.5 font-mono text-[11px] text-ink-muted">{pref.kind}</p>
-								{#if !pref.registered}
-									<!-- A stored row for a kind this build no
-									     longer has. Shown rather than dropped:
-									     the choice is real, still on disk, and
-									     comes back if the kind does. -->
-									<p class="text-[11px] text-ink-muted" data-testid="user-notification-retired">
-										This server no longer sends this notification. The stored choice is kept.
-									</p>
-								{/if}
-							</div>
-							<div class="flex flex-shrink-0 flex-col items-end gap-0.5">
-								<span
-									class="text-sm font-semibold"
-									class:text-danger={!pref.enabled}
-									class:text-granted={pref.enabled}
+				<div class="overflow-x-auto">
+					<table class="w-full text-sm" data-testid="user-notification-table">
+						<thead>
+							<tr class="border-b border-border-subtle text-left text-xs text-ink-muted">
+								<th class="py-2 pr-4 font-semibold">Notification</th>
+								<th class="py-2 pr-4 font-semibold">Kind</th>
+								<th class="py-2 pr-4 font-semibold">Sends</th>
+								<th class="py-2 font-semibold">Changed</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each user.notification_preferences as pref (pref.kind)}
+								<tr
+									class="border-b border-border-subtle last:border-0"
+									data-testid="user-notification-{pref.kind}"
 								>
-									{pref.enabled ? 'on' : 'off'}
-								</span>
-								{#if pref.explicit && pref.updated_at}
-									<span class="text-[11px] text-ink-muted">
-										their choice, {new Date(pref.updated_at).toLocaleString()}
-									</span>
-								{:else}
-									<span class="text-[11px] text-ink-muted">default</span>
-								{/if}
-							</div>
-						</div>
-					{/each}
+									<td class="py-2 pr-4">
+										{pref.title || pref.kind}
+										{#if !pref.registered}
+											<!-- A stored row for a kind this build no
+											     longer has. Kept rather than dropped:
+											     the choice is real, still on disk, and
+											     comes back if the kind does. One word,
+											     because that is the whole fact. -->
+											<span
+												class="ml-1 text-[11px] text-ink-muted"
+												data-testid="user-notification-retired">(retired)</span
+											>
+										{/if}
+									</td>
+									<td class="py-2 pr-4 font-mono text-[11px] text-ink-muted">{pref.kind}</td>
+									<td
+										class="py-2 pr-4 font-semibold"
+										class:text-danger={!pref.enabled}
+										class:text-granted={pref.enabled}
+									>
+										{pref.enabled ? 'on' : 'off'}
+									</td>
+									<!-- The date alone, not the time: a preference
+									     change is not an incident timestamp, and the
+									     column has to stay narrow enough to sit beside
+									     three others. -->
+									<td class="py-2 text-ink-muted">
+										{pref.explicit && pref.updated_at
+											? new Date(pref.updated_at).toLocaleDateString()
+											: 'default'}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
 				</div>
 			</div>
 		{/if}
