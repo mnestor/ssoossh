@@ -24,7 +24,19 @@
 		Server,
 		Clock,
 		Loader,
-		Search
+		Search,
+		Users,
+		Award,
+		KeyRound,
+		SlidersHorizontal,
+		BookOpen,
+		Code,
+		FileText,
+		Activity,
+		ShieldCheck,
+		PanelLeft,
+		LogOut,
+		Bell
 	} from '@lucide/svelte';
 
 	interface Props {
@@ -69,7 +81,19 @@
 		server: Server,
 		clock: Clock,
 		loader: Loader,
-		search: Search
+		search: Search,
+		users: Users,
+		award: Award,
+		'key-round': KeyRound,
+		'sliders-horizontal': SlidersHorizontal,
+		'book-open': BookOpen,
+		code: Code,
+		'file-text': FileText,
+		activity: Activity,
+		'shield-check': ShieldCheck,
+		'panel-left': PanelLeft,
+		'log-out': LogOut,
+		bell: Bell
 	};
 
 	const IconComponent = $derived(iconComponents[name]);

@@ -22,6 +22,10 @@
 	--color-accent: oklch(45% 0.06 200);
 	--color-accent-hover: oklch(38% 0.07 200);
 	--color-accent-ink: #ffffff;
+	/* A tint of the accent, for the ground under a selected rail item. Dark
+	   enough to read as chosen against the surface, light enough that the
+	   accent-coloured label on top of it keeps its contrast. */
+	--color-accent-wash: oklch(95% 0.018 200);
 
 	--color-granted: oklch(46% 0.08 155);
 	--color-granted-surface: oklch(95% 0.02 155);
@@ -74,6 +78,7 @@
 		--color-accent: oklch(72% 0.08 200);
 		--color-accent-hover: oklch(78% 0.07 200);
 		--color-accent-ink: oklch(18% 0.01 200);
+		--color-accent-wash: oklch(27% 0.03 200);
 
 		--color-granted: oklch(74% 0.1 155);
 		--color-granted-surface: oklch(27% 0.03 155);
