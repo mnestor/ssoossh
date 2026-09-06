@@ -6,9 +6,8 @@
 	import Icon from './Icon.svelte';
 	import RailGroup from './RailGroup.svelte';
 	import RailItem from './RailItem.svelte';
-	import ThemeToggle from './ThemeToggle.svelte';
-	import { railRowClass } from './railClasses';
-	import { accountNav, adminNav, isAdminRoute, isCurrent, primaryNav } from '$lib/nav';
+	import RailUserMenu from './RailUserMenu.svelte';
+	import { adminNav, isAdminRoute, isCurrent, primaryNav } from '$lib/nav';
 	import { rail } from '$lib/rail.svelte';
 	import { session } from '$lib/session.svelte';
 
@@ -81,33 +80,73 @@
 	class:w-[244px]={!collapsed}
 	class:w-[60px]={collapsed}
 >
-	<!-- Brand. Stays a link home at both widths: the mark is the only thing
-	     in the rail that is not a destination list, and dropping it on
-	     collapse would leave the column starting mid-list. -->
-	<a
-		href={resolve('/')}
-		onclick={navigated}
-		class="flex h-14 shrink-0 items-center gap-2 border-b border-border-subtle font-semibold"
-		class:justify-center={collapsed}
-		class:px-3.5={!collapsed}
-	>
-		<BrandMark size={22} />
-		{#if !collapsed}
-			<span class="flex min-w-0 items-baseline gap-2">
-				<span>ssoossh</span>
-				<!-- Capped rather than dropped: a deployment that set a name
-				     wants it on every screen, but an unbounded one would push
-				     the wordmark out of its own row. -->
-				{#if orgName}
-					<span
-						class="max-w-[6.5rem] truncate border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
-					>
-						{orgName}
-					</span>
-				{/if}
-			</span>
+	<!-- Brand, and the control for the rail's own width beside it. The width
+	     control belongs at the head of the column it resizes: it is the one
+	     thing here that acts on the rail rather than on the app, and down in
+	     the footer it sat among controls that act on the session.
+	  -->
+	<div class="flex h-14 shrink-0 items-center border-b border-border-subtle">
+		{#if collapsed}
+			<!-- At 60px there is one slot and it has to do both jobs. The mark
+			     stays, so the column still starts with the product rather than
+			     mid-list, and pressing it is what brings the rail back. Home
+			     gives up its link here: Dashboard is the row directly below,
+			     and stranding someone at 60px wide costs more.
+
+			     Not hidden below `lg`, unlike the expanded form: a drawer
+			     opened while the stored preference is collapsed has no other
+			     way out of icon width. -->
+			<button
+				type="button"
+				onclick={() => rail.toggleCollapsed()}
+				aria-label={collapseLabel}
+				title={collapseLabel}
+				data-testid="rail-collapse"
+				class="flex h-full w-full items-center justify-center transition hover:bg-surface-muted"
+			>
+				<BrandMark size={22} />
+			</button>
+		{:else}
+			<a
+				href={resolve('/')}
+				onclick={navigated}
+				class="flex h-full min-w-0 flex-1 items-center gap-2 pl-3.5 font-semibold"
+			>
+				<BrandMark size={22} />
+				<span class="flex min-w-0 items-baseline gap-2">
+					<span>ssoossh</span>
+					<!-- Capped rather than dropped: a deployment that set a name
+					     wants it on every screen, but an unbounded one would push
+					     the wordmark out of its own row. -->
+					{#if orgName}
+						<span
+							class="max-w-[6.5rem] truncate border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
+						>
+							{orgName}
+						</span>
+					{/if}
+				</span>
+			</a>
+
+			<!-- max-lg:hidden rather than "hidden lg:flex": the row already
+			     carries `flex`, and two unmodified utilities setting `display`
+			     resolve by stylesheet order rather than by the order they are
+			     written. A variant beats the plain utility, so hiding it at
+			     narrow widths is the form that is actually guaranteed. Narrow
+			     widths have no rail to collapse — the drawer is either open or
+			     it is not. -->
+			<button
+				type="button"
+				onclick={() => rail.toggleCollapsed()}
+				aria-label={collapseLabel}
+				title={collapseLabel}
+				data-testid="rail-collapse"
+				class="mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink-muted transition hover:bg-surface-muted hover:text-ink max-lg:hidden"
+			>
+				<Icon name="panel-left" size="sm" />
+			</button>
 		{/if}
-	</a>
+	</div>
 
 	<div class="flex-1 overflow-y-auto p-2">
 		{#each primaryNav() as item (item.href)}
@@ -146,62 +185,12 @@
 		{/if}
 	</div>
 
-	<!-- Identity and the controls that act on it, pinned to the bottom edge
-	     so they stay in reach of a thumb in the drawer and out of the way of
-	     the destination list on a desktop. -->
+	<!-- The identity, pinned to the bottom edge so it stays in reach of a
+	     thumb in the drawer and out of the way of the destination list on a
+	     desktop. One row now: account, preferences, theme and sign out are
+	     all things done to the session, and they belong behind the row that
+	     names it rather than stacked in the column beside destinations. -->
 	<div class="shrink-0 border-t border-border-subtle p-2">
-		<RailItem
-			href={resolve('/account')}
-			label={identity}
-			icon="user"
-			current={isCurrent(resolve('/account'), page.url.pathname)}
-			{collapsed}
-			onnavigate={navigated}
-		/>
-
-		{#each accountNav() as item (item.href)}
-			<RailItem
-				href={item.href}
-				label={item.label}
-				icon={item.icon}
-				current={isCurrent(item.href, page.url.pathname)}
-				{collapsed}
-				onnavigate={navigated}
-			/>
-		{/each}
-
-		<ThemeToggle variant="rail" {collapsed} />
-
-		<!-- max-lg:hidden rather than "hidden lg:flex": the row already
-		     carries `flex` from railRowClass, and two unmodified utilities
-		     setting `display` resolve by stylesheet order rather than by the
-		     order they are written. A variant beats the plain utility, so
-		     hiding it at narrow widths is the form that is actually
-		     guaranteed. Narrow widths have no rail to collapse — the drawer
-		     is either open or it is not. -->
-		<button
-			type="button"
-			onclick={() => rail.toggleCollapsed()}
-			aria-label={collapseLabel}
-			title={collapseLabel}
-			data-testid="rail-collapse"
-			class="{railRowClass(collapsed)} max-lg:hidden"
-		>
-			<Icon name="panel-left" size="sm" />
-			<span class:sr-only={collapsed} class="truncate">{collapseLabel}</span>
-		</button>
-
-		<button
-			type="button"
-			disabled={signingOut}
-			onclick={onsignout}
-			title={collapsed ? 'Sign out' : undefined}
-			class="{railRowClass(collapsed)} disabled:opacity-50"
-		>
-			<Icon name="log-out" size="sm" />
-			<span class:sr-only={collapsed} class="truncate">
-				{signingOut ? 'Signing out…' : 'Sign out'}
-			</span>
-		</button>
+		<RailUserMenu {identity} {collapsed} {signingOut} onnavigate={navigated} {onsignout} />
 	</div>
 </nav>

@@ -29,7 +29,7 @@ export function primaryNav(): NavItem[] {
 	return [
 		{ href: resolve('/dashboard'), label: 'Dashboard', icon: 'layout-grid' },
 		{ href: resolve('/logs/me'), label: 'History', icon: 'clock' },
-		{ href: resolve('/service-codes'), label: 'Service codes', icon: 'zap' },
+		{ href: resolve('/service-codes'), label: 'Service codes', icon: 'cog' },
 		// The console code box needs an entry point that is not a
 		// transcribed URL: the whole premise is that the machine in front of
 		// the user cannot print a link anyone will copy, so somebody already
