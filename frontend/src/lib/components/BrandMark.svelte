@@ -5,6 +5,14 @@
 	// login heading. It is the deployment logo slot: a deployment that sets
 	// logo_url gets its own image here, everything else gets ssoossh's own
 	// mark, so the slot is never empty.
+	//
+	// The default mark is a shell prompt and a key inside a cloud: the two
+	// halves of what the product does, single sign-on and an SSH session,
+	// in the one glyph. It is drawn to Lucide's conventions (a 24x24 box,
+	// round caps and joins, stroke only) so it sits with the rail's icons
+	// rather than beside them, and its geometry is centred in that box —
+	// every stroke keeps at least 2.5 units of clearance from the cloud
+	// wall, which is where 1.75-wide strokes start to close up.
 	interface Props {
 		/** Rendered edge length in pixels. */
 		size?: number;
@@ -12,7 +20,7 @@
 		strokeWidth?: number;
 	}
 
-	let { size = 22, strokeWidth = 2 }: Props = $props();
+	let { size = 22, strokeWidth = 1.75 }: Props = $props();
 
 	const branding = $derived(getBranding());
 
@@ -44,7 +52,12 @@
 		class="block flex-shrink-0 text-accent"
 		aria-hidden="true"
 	>
-		<circle cx="12" cy="12" r="9" />
-		<polyline points="8 12 11 15 16 9" />
+		<path
+			d="M3.6 19 A6 6 0 0 1 4.2 9.6 A4.4 4.4 0 0 1 11.5 6 A4.1 4.1 0 0 1 17.8 8.8 A6.6 6.6 0 0 1 20.8 19 Z"
+		/>
+		<polyline points="7 11.2 9.5 13.1 7 15" />
+		<circle cx="13.2" cy="15" r="1.5" />
+		<line x1="14.7" y1="15" x2="19.2" y2="15" />
+		<line x1="17.6" y1="15" x2="17.6" y2="12.8" />
 	</svg>
 {/if}
