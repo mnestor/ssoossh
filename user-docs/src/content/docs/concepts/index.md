@@ -29,6 +29,14 @@ to end.
   discards everything. It backs `sudo`, `su`, a password-less `sshd` stack,
   and console `login`.
 
+The first two are built and released together. `pam_ssoossh` is a separate
+project, written in C and released from
+[github.com/mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam); it
+shares no code with the server and is held to it by a versioned
+[wire contract](/ssoossh/internals/wire-types/) instead. Its documentation
+lives here, on this site, starting at
+[installing pam_ssoossh](/ssoossh/hosts/pam/install/).
+
 Two constraints shape all three:
 
 - The server never receives a private key. The client sends private keys
@@ -62,14 +70,14 @@ leaves the hardware.
 | --- | --- | --- |
 | **User** | interactive SSH | shipped end to end |
 | **PAM** | `sudo`/`su` via `pam_ssoossh` | shipped end to end |
-| **Console** | interactive login at a machine with no browser, approved by a typed code | server and web UI shipped; the console-side module ships separately as `pam_ssoossh` from the `ssoossh-pam` repository, which implements the console mode |
+| **Console** | interactive login at a machine with no browser, approved by a typed code | server and web UI shipped; `pam_ssoossh` implements console mode, but has been run only against a stub of these endpoints, never the real ones |
 | **Service** | non-interactive: enroll once, retrieve unattended, every retrieval logged | shipped end to end |
 
 The status vocabulary used across this site:
 
 | Status | What it means |
 | --- | --- |
-| shipped end to end | every half exists and is released: the server, the client or PAM module that drives it, and the configuration keys named on this site |
+| shipped end to end | every half exists and is released: the server, the client or PAM module that drives it, and the configuration keys named on this site. For the PAM types that release is `ssoossh-pam`'s own, on its own cadence |
 | server shipped | the server and web UI exist; the piece that runs on the host is separate and may be at a different stage |
 | not built | a design exists under `docs/proposals/` in the source repository and nothing else. Nothing on this site describes it as configurable |
 

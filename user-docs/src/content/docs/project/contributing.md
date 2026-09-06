@@ -52,7 +52,7 @@ you are not sure what exists.
 
 | Path | Contents |
 | --- | --- |
-| `/cmd/` | binary entrypoints (client, server, PAM module) |
+| `/cmd/` | binary entrypoints (`ssoossh` client, `ssoosshd` server) |
 | `/client/` | SSH client code (Go) |
 | `/server/` | server code (Go) |
 | `/internal/` | shared code (Go) |
