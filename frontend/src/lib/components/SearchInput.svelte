@@ -82,7 +82,15 @@
 	$effect(() => () => clearTimeout(timer));
 </script>
 
-<div class="relative flex items-center">
+<!-- w-full on the root, not only on the input inside it. The input's own
+     w-full resolves against this element, so as a bare flex item -- which is
+     what a call site produces by writing `<div class="flex">` around one of
+     these -- the whole thing shrank to the input's intrinsic ~20 characters
+     while every other search box on the site ran the width of its column.
+     Three of the four call sites were already working around it by hand with
+     flex-1 wrappers. Harmless where they still do: flex-1 sets flex-basis 0%,
+     which decides the main size ahead of width. -->
+<div class="relative flex w-full items-center">
 	<span class="pointer-events-none absolute left-3 text-ink-muted">
 		<Icon name="search" size="sm" />
 	</span>

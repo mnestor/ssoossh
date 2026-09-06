@@ -100,19 +100,17 @@
 		to see what it hands out, how often it's been redeemed, and reassign it if needed.
 	</p>
 
-	<div class="flex gap-4">
-		<!-- The placeholder names what the search actually matches. The
-		     enrollment id is first because it is the identifier every other
-		     record of a code carries -- the notification email, the
-		     enrollment.* audit events, the server log lines -- and an
-		     operator arriving with one had no way to know it would work. -->
-		<SearchInput
-			label="Search enrollments"
-			placeholder="enrollment ID, account, key ID, request ID, or approver..."
-			onsearch={onSearch}
-			testid="search-enrollments"
-		/>
-	</div>
+	<!-- The placeholder names what the search actually matches. The
+	     enrollment id is first because it is the identifier every other
+	     record of a code carries -- the notification email, the
+	     enrollment.* audit events, the server log lines -- and an operator
+	     arriving with one had no way to know it would work. -->
+	<SearchInput
+		label="Search enrollments"
+		placeholder="enrollment ID, account, key ID, request ID, or approver..."
+		onsearch={onSearch}
+		testid="search-enrollments"
+	/>
 
 	{#if loadError}
 		<Alert variant="error" title="Could not load service codes">{loadError}</Alert>
