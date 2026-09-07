@@ -69,10 +69,11 @@ function ssoosshSysctl(key)
 }
 
 // Whether the hardware is Apple silicon, which is not the same question as
-// what this process is running as. With hostArchitectures="x86_64" the
-// installer is itself translated on Apple silicon, so anything reporting the
-// process architecture reports Intel and would pass a check that should
-// fail. Three independent signals, cheapest first:
+// what this process is running as. Because the options element above names a
+// single architecture, the installer is itself translated on Apple silicon
+// when this is the Intel package, so anything reporting the process
+// architecture reports Intel and would pass a check that should fail. Three
+// independent signals, cheapest first:
 //
 //   sysctl.proc_translated    1 when the calling process is translated,
 //                             which for this package means the host is

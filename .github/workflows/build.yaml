@@ -584,8 +584,11 @@ jobs:
             pkg=$(ls dist/ssoossh-client_*_darwin_"$arch".pkg)
             rm -rf archexp
             pkgutil --expand-full "$pkg" archexp
-            declared=$(sed -n 's/.*hostArchitectures="\([^"]*\)".*/\1/p' \
-              archexp/Distribution)
+            # Read off the options element rather than matched out of the
+            # file. "hostArchitectures" appears in the Distribution's own
+            # prose as well as in the attribute, and a line-wise match
+            # collected both.
+            declared=$(python3 -c "import sys, xml.dom.minidom as x; print(x.parse(sys.argv[1]).getElementsByTagName('options')[0].getAttribute('hostArchitectures'))" archexp/Distribution)
             if [ "$declared" != "$macharch" ]; then
               echo "✗ $pkg declares hostArchitectures=\"$declared\"," \
                    "expected \"$macharch\"" >&2
