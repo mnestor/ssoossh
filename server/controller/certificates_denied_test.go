@@ -35,6 +35,10 @@ func aDenial(id string, decidedAt time.Time) service.DeniedRequest {
 			SourceIP:             "198.51.100.7",
 			ReportedUsername:     "deploy",
 			ReportedHostname:     "rack07",
+			PAMService:           "sudo",
+			TTY:                  "pts/3",
+			RemoteHost:           "10.1.2.9",
+			Client:               "ssoossh/1.2.0",
 			DecidedAt:            decidedAt,
 		},
 	}
@@ -73,6 +77,33 @@ func TestDeniedHandler_ShouldReturnTheCallersDenials(t *testing.T) {
 	if got.Denials[0].ReportedUsername != "deploy" || got.Denials[0].ReportedHostname != "rack07" {
 		t.Errorf("got reported %q@%q, want deploy@rack07",
 			got.Denials[0].ReportedUsername, got.Denials[0].ReportedHostname)
+	}
+}
+
+// The host context is what a row uses to say what was refused, so it has to
+// reach the wire rather than stop at the service.
+func TestDeniedHandler_ShouldReturnTheHostContextTheRequestClaimed(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertificateService{denials: []service.DeniedRequest{aDenial("dec-1", time.Now())}}
+
+	r := gin.New()
+	NewCertificateController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), nil)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/decisions/denied", nil))
+
+	var got webtypes.DeniedRequestListResponse
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+
+	if len(got.Denials) != 1 {
+		t.Fatalf("got %d denials, want 1", len(got.Denials))
+	}
+	d := got.Denials[0]
+	if d.PAMService != "sudo" || d.TTY != "pts/3" || d.RemoteHost != "10.1.2.9" || d.Client != "ssoossh/1.2.0" {
+		t.Errorf("host context = %q/%q/%q/%q, want the seeded values",
+			d.PAMService, d.TTY, d.RemoteHost, d.Client)
 	}
 }
 

@@ -39,8 +39,31 @@
 
 	// Filter and pagination state
 	let selectedType = $state<CertificateType | 'all'>('all');
+
+	// Approved by default, not "all". This page has always been the list of
+	// certificates somebody holds, and that is what most visits are for;
+	// opening it on a mixture would change what an existing reader gets
+	// without their asking. A refusal is one click away instead, which is
+	// the right place for a thing you go looking for.
+	type Outcome = 'approved' | 'denied' | 'all';
+	let selectedOutcome = $state<Outcome>('approved');
+
 	let currentPage = $state(1);
 	const pageSize = 10;
+
+	// What the page opens on, and the two other views of the same history.
+	// A segmented control rather than more pills: it is a different question
+	// from the type filter beside it, and three mutually exclusive options
+	// all worth reading at a glance.
+	const outcomes: { value: Outcome; label: string }[] = [
+		{ value: 'approved', label: 'Approved' },
+		{ value: 'denied', label: 'Denied' },
+		// "Both", not "All": the type tabs beside this already have an "All",
+		// and two adjacent controls offering the same word is ambiguous to
+		// read and worse to announce. There are exactly two outcomes, so
+		// naming them both is the more precise word anyway.
+		{ value: 'all', label: 'Both' }
+	];
 
 	// The filter tabs, in the order they read. "All" leads because it is the
 	// state the page opens in.
@@ -89,22 +112,33 @@
 		].sort((a, b) => b.at - a.at)
 	);
 
-	// A denial whose request row is gone reports no type, so it survives
-	// only the "all" filter. It has to survive that one: dropping it
-	// everywhere would quietly shorten the history rather than filter it.
-	const filtered = $derived(
-		selectedType === 'all'
+	// Outcome first, then type. A denial whose request row is gone reports
+	// no type, so it survives only the "all" type filter. It has to survive
+	// that one: dropping it everywhere would quietly shorten the history
+	// rather than filter it.
+	const byOutcome = $derived(
+		selectedOutcome === 'all'
 			? sorted
 			: sorted.filter((entry) =>
+					selectedOutcome === 'denied' ? entry.kind === 'denial' : entry.kind === 'certificate'
+				)
+	);
+
+	const filtered = $derived(
+		selectedType === 'all'
+			? byOutcome
+			: byOutcome.filter((entry) =>
 					entry.kind === 'certificate'
 						? entry.cert.type === selectedType
 						: entry.denial.type === selectedType
 				)
 	);
 
-	// Reset to page 1 when filter changes. Use void operator to suppress linter warning about unused value.
+	// Reset to page 1 when either filter changes. Use void operator to
+	// suppress the linter warning about an unused value.
 	$effect(() => {
 		void selectedType;
+		void selectedOutcome;
 		currentPage = 1;
 	});
 
@@ -200,7 +234,34 @@
 	{:else if sorted.length === 0}
 		<p class="text-sm text-ink-muted">You have not decided any certificate requests yet.</p>
 	{:else}
-		<div class="flex flex-wrap items-center gap-2">
+		<div class="flex flex-wrap items-center gap-3">
+			<!-- Two questions, two controls: what kind of thing, and how it
+			     was decided. The outcome is a segmented control rather than
+			     more pills so the two do not read as one row of eight
+			     equivalent choices. -->
+			<div
+				class="inline-flex overflow-hidden rounded-lg border border-border-subtle"
+				role="group"
+				aria-label="Filter by outcome"
+				data-testid="outcome-filter"
+			>
+				{#each outcomes as outcome (outcome.value)}
+					<button
+						type="button"
+						onclick={() => (selectedOutcome = outcome.value)}
+						aria-pressed={selectedOutcome === outcome.value}
+						data-testid="outcome-filter-{outcome.value}"
+						class="px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+						class:bg-accent={selectedOutcome === outcome.value}
+						class:text-accent-ink={selectedOutcome === outcome.value}
+						class:text-ink-muted={selectedOutcome !== outcome.value}
+						class:hover:bg-surface-muted={selectedOutcome !== outcome.value}
+					>
+						{outcome.label}
+					</button>
+				{/each}
+			</div>
+
 			{#each tabs as tab (tab.value)}
 				<button
 					type="button"

@@ -755,6 +755,21 @@ export interface DeniedRequestResponse {
 	 */
 	reported_username?: string;
 	reported_hostname?: string;
+	/**
+	 * The rest of the compact host-context snapshot the decision row
+	 * carries, and claims in exactly the same way: PAMService, TTY and
+	 * RemoteHost are what a PAM or console request said it was doing, and
+	 * Client is what a user request reported instead, since it has no PAM
+	 * service or terminal.
+	 * Present because "I refused a sudo on rack07 from 10.1.2.9" is a
+	 * memory a month later and "I refused request 4f2a" is not. All of it
+	 * is copied onto the decision at decision time, so unlike the request's
+	 * own columns it cannot go blank later.
+	 */
+	pam_service?: string;
+	tty?: string;
+	remote_host?: string;
+	client?: string;
 }
 /**
  * DeniedRequestListResponse is the data payload for the cursor-paginated

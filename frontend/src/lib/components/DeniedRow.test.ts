@@ -20,6 +20,9 @@ function aDenial(overrides: Partial<DeniedRequest> = {}): DeniedRequest {
 		decided_at: '2026-08-02T10:00:00Z',
 		reported_username: 'deploy',
 		reported_hostname: 'rack07',
+		pam_service: 'sudo',
+		tty: 'pts/3',
+		remote_host: '10.1.2.9',
 		...overrides
 	};
 }
@@ -75,6 +78,53 @@ describe('DeniedRow', () => {
 	it('should not be a link', () => {
 		const { container } = render(DeniedRow, { denial: aDenial(), now, testid: 'row' });
 		expect(container.querySelector('a')).toBeNull();
+	});
+
+	// The column a certificate row uses for the principals it granted. A
+	// denial granted none, and what the request claimed it was doing is
+	// what makes the refusal recognisable a month later.
+	it('should say what the request claimed it was doing', () => {
+		render(DeniedRow, { denial: aDenial(), now, testid: 'row' });
+		expect(screen.getByTestId('row')).toHaveTextContent('sudo · pts/3 · from 10.1.2.9');
+	});
+
+	// A user request has no PAM service and no terminal -- there is no
+	// session behind it -- so the reporting binary stands in.
+	it('should fall back to the reporting client when there was no session', () => {
+		render(DeniedRow, {
+			denial: aDenial({
+				type: 'user',
+				pam_service: undefined,
+				tty: undefined,
+				remote_host: undefined,
+				client: 'ssoossh/1.2.0'
+			}),
+			now,
+			testid: 'row'
+		});
+		expect(screen.getByTestId('row')).toHaveTextContent('ssoossh/1.2.0');
+	});
+
+	// The client is the fallback, not an addition: a PAM request reports
+	// both, and listing them together would push the session context out of
+	// a column that truncates.
+	it('should not name the client alongside the session context', () => {
+		render(DeniedRow, { denial: aDenial({ client: 'ssoossh/1.2.0' }), now, testid: 'row' });
+		expect(screen.getByTestId('row')).not.toHaveTextContent('ssoossh/1.2.0');
+	});
+
+	it('should say nothing about the claim when nothing was reported', () => {
+		render(DeniedRow, {
+			denial: aDenial({
+				pam_service: undefined,
+				tty: undefined,
+				remote_host: undefined,
+				client: undefined
+			}),
+			now,
+			testid: 'row'
+		});
+		expect(screen.getByTestId('row')).not.toHaveTextContent('claimed:');
 	});
 
 	it('should say how long ago it was refused', () => {

@@ -339,8 +339,9 @@ func (s *CertificateService) ListDeniedForIdentity(ctx context.Context, identity
 	}
 
 	// The type is the only thing worth joining for: everything else a denied
-	// row shows -- who denied it, when, and what the requesting host claimed
-	// about itself -- is on the decision already.
+	// row shows -- when it was refused, and what the requesting host claimed
+	// about itself -- is on the decision already, copied there at decision
+	// time so it cannot go blank if the request row ever does.
 	type rawRow struct {
 		DecisionID                   string
 		DecisionCertificateRequestID string
@@ -351,6 +352,10 @@ func (s *CertificateService) ListDeniedForIdentity(ctx context.Context, identity
 		DecisionSourceIP             string
 		DecisionReportedUsername     *string
 		DecisionReportedHostname     *string
+		DecisionPAMService           *string
+		DecisionTTY                  *string
+		DecisionRemoteHost           *string
+		DecisionClient               *string
 		DecisionDecidedAt            time.Time
 		RequestType                  *model.CertificateType
 	}
@@ -367,6 +372,10 @@ func (s *CertificateService) ListDeniedForIdentity(ctx context.Context, identity
 			certificate_request_decisions.source_ip as decision_source_ip,
 			certificate_request_decisions.reported_username as decision_reported_username,
 			certificate_request_decisions.reported_hostname as decision_reported_hostname,
+			certificate_request_decisions.pam_service as decision_pam_service,
+			certificate_request_decisions.tty as decision_tty,
+			certificate_request_decisions.remote_host as decision_remote_host,
+			certificate_request_decisions.client as decision_client,
 			certificate_request_decisions.decided_at as decision_decided_at,
 			certificate_requests.type as request_type`).
 		Joins("LEFT JOIN certificate_requests ON certificate_requests.id = certificate_request_decisions.certificate_request_id").
@@ -397,6 +406,10 @@ func (s *CertificateService) ListDeniedForIdentity(ctx context.Context, identity
 				SourceIP:             r.DecisionSourceIP,
 				ReportedUsername:     derefOrEmpty(r.DecisionReportedUsername),
 				ReportedHostname:     derefOrEmpty(r.DecisionReportedHostname),
+				PAMService:           derefOrEmpty(r.DecisionPAMService),
+				TTY:                  derefOrEmpty(r.DecisionTTY),
+				RemoteHost:           derefOrEmpty(r.DecisionRemoteHost),
+				Client:               derefOrEmpty(r.DecisionClient),
 				DecidedAt:            r.DecisionDecidedAt,
 			},
 		}

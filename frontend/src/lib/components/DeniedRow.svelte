@@ -45,6 +45,25 @@
 	// picking one: the row is still a real refusal, and an invented "user"
 	// would be a wrong answer rather than a missing one.
 	const what = $derived(denial.type ? `${denial.type} request` : 'request');
+
+	// What the request said it was doing, in the third column where a
+	// certificate row puts its principals. A denial granted none, and this
+	// is the fact that fills the space usefully: "sudo · pts/3 · from
+	// 10.1.2.9" is a refusal somebody can still recognise a month later,
+	// where a request id is not.
+	//
+	// A user request carries no PAM service or terminal — there is no
+	// session behind it — so the reporting binary stands in. Claims
+	// throughout, self-reported by an unauthenticated caller and never
+	// verified, which is what the "claimed" label says.
+	const claimed = $derived(
+		[
+			denial.pam_service,
+			denial.tty,
+			denial.remote_host ? `from ${denial.remote_host}` : '',
+			denial.pam_service || denial.tty || denial.remote_host ? '' : denial.client
+		].filter((part) => !!part)
+	);
 </script>
 
 <div
@@ -55,8 +74,10 @@
 		<TypeBadge type={denial.type} />
 		<!-- The same three-column grid CertRow uses above `xl`, so the two
 		     kinds of row read as one list rather than as two lists that
-		     happen to be adjacent. The third column stays empty: a denial
-		     granted no principals, and that absence is the fact. -->
+		     happen to be adjacent. Where a certificate row puts the
+		     principals it granted, a denial puts what the request claimed
+		     about itself: it granted nothing, and this is what makes the
+		     refusal recognisable later. -->
 		<span
 			class="grid min-w-0 flex-1 gap-x-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1fr)] xl:items-baseline"
 		>
@@ -64,6 +85,11 @@
 			<span class="mt-0.5 block truncate text-xs text-ink-muted xl:mt-0">
 				{what} denied {relativeTime(denial.decided_at, now)}
 			</span>
+			{#if claimed.length > 0}
+				<span class="mt-px block truncate text-xs text-ink-muted xl:mt-0">
+					claimed: <span class="font-mono">{claimed.join(' · ')}</span>
+				</span>
+			{/if}
 		</span>
 	</span>
 

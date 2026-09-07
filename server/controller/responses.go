@@ -435,6 +435,10 @@ func newDeniedRequestListResponse(denials []service.DeniedRequest, nextCursor *s
 			DecidedSourceIP:      d.Decision.SourceIP,
 			ReportedUsername:     d.Decision.ReportedUsername,
 			ReportedHostname:     d.Decision.ReportedHostname,
+			PAMService:           d.Decision.PAMService,
+			TTY:                  d.Decision.TTY,
+			RemoteHost:           d.Decision.RemoteHost,
+			Client:               d.Decision.Client,
 		})
 	}
 	return webtypes.DeniedRequestListResponse{Denials: out, NextCursor: nextCursor}

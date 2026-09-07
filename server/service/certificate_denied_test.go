@@ -53,6 +53,10 @@ func seedDecision(
 		SourceIP:             "198.51.100.7",
 		ReportedUsername:     "deploy",
 		ReportedHostname:     "rack07",
+		PAMService:           "sudo",
+		TTY:                  "pts/3",
+		RemoteHost:           "10.1.2.9",
+		Client:               "ssoossh/1.2.0",
 		DecidedAt:            decidedAt,
 	}
 	if err := svc.db.Create(&decision).Error; err != nil {
@@ -146,6 +150,51 @@ func TestListDeniedForIdentity_ShouldListADenialWhoseRequestIsGone(t *testing.T)
 	}
 	if got[0].Type != "" {
 		t.Errorf("ListDeniedForIdentity() type = %q, want empty for a request that is gone", got[0].Type)
+	}
+}
+
+// The host context is what makes a refusal identifiable a month later. It
+// is copied onto the decision at decision time, so it is read straight off
+// that row rather than through the join that may miss.
+func TestListDeniedForIdentity_ShouldCarryTheHostContextTheRequestClaimed(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+
+	seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionDenied, time.Now(), true, model.CertificateTypePAM)
+
+	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 100)
+	if err != nil {
+		t.Fatalf("ListDeniedForIdentity() error = %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("ListDeniedForIdentity() = %d rows, want 1", len(got))
+	}
+
+	d := got[0].Decision
+	if d.PAMService != "sudo" || d.TTY != "pts/3" || d.RemoteHost != "10.1.2.9" || d.Client != "ssoossh/1.2.0" {
+		t.Errorf("host context = %q/%q/%q/%q, want sudo/pts~3/10.1.2.9/ssoossh~1.2.0",
+			d.PAMService, d.TTY, d.RemoteHost, d.Client)
+	}
+}
+
+// It survives the request row going away, which is the reason it is copied
+// rather than joined for.
+func TestListDeniedForIdentity_ShouldKeepTheHostContextWhenTheRequestIsGone(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+
+	seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionDenied, time.Now(), false, "")
+
+	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 100)
+	if err != nil {
+		t.Fatalf("ListDeniedForIdentity() error = %v", err)
+	}
+	if len(got) != 1 || got[0].Decision.RemoteHost != "10.1.2.9" {
+		t.Errorf("remote host = %q, want it kept even with no request row", got[0].Decision.RemoteHost)
 	}
 }
 

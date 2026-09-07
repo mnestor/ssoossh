@@ -1656,6 +1656,8 @@ components:
         certificate_request_id:
           description: CertificateRequestID is the request that was refused.
           type: string
+        client:
+          type: string
         decided_at:
           type: string
         decided_source_ip:
@@ -1669,6 +1671,21 @@ components:
             ID is the decision's id, not a certificate's -- there is no
             certificate. It is what the audit event for this denial carries.
           type: string
+        pam_service:
+          description: |-
+            The rest of the compact host-context snapshot the decision row
+            carries, and claims in exactly the same way: PAMService, TTY and
+            RemoteHost are what a PAM or console request said it was doing, and
+            Client is what a user request reported instead, since it has no PAM
+            service or terminal.
+
+            Present because "I refused a sudo on rack07 from 10.1.2.9" is a
+            memory a month later and "I refused request 4f2a" is not. All of it
+            is copied onto the decision at decision time, so unlike the request's
+            own columns it cannot go blank later.
+          type: string
+        remote_host:
+          type: string
         reported_hostname:
           type: string
         reported_username:
@@ -1678,6 +1695,8 @@ components:
             never verified. They are here because they are what makes a denial
             identifiable a month later: "I refused a console login on rack07" is
             a memory, "I refused request 4f2a" is not.
+          type: string
+        tty:
           type: string
         type:
           $ref: '#/components/schemas/model.CertificateType'

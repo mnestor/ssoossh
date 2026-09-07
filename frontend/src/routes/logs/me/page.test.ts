@@ -132,14 +132,75 @@ describe('Certificate history page', () => {
 				decided_at: '2026-08-02T10:00:00Z',
 				reported_username: 'deploy',
 				reported_hostname: 'rack07',
+				pam_service: 'sudo',
+				tty: 'pts/3',
+				remote_host: '10.1.2.9',
 				...overrides
 			};
 		}
+
+		/** aCertificate is one issued certificate, for the interleaving cases. */
+		function aCertificate(issuedAt: string) {
+			return {
+				id: 'cert-1',
+				type: 'user' as const,
+				serial_number: '1',
+				principals: 'alice',
+				public_key_fingerprint: 'SHA256:abc123',
+				issued_at: issuedAt,
+				expires_at: '2026-08-01T18:00:00Z',
+				key_id: 'key-1'
+			};
+		}
+
+		/** show switches the outcome filter, which opens on "Approved". */
+		async function show(outcome: 'Approved' | 'Denied' | 'Both') {
+			await userEvent.click(screen.getByRole('button', { name: outcome }));
+		}
+
+		// The page has always been the list of certificates somebody holds,
+		// and opening it on a mixture would change what an existing reader
+		// gets without their asking.
+		it('should open on approvals only', async () => {
+			mockFetch({ certificates: [aCertificate('2026-08-01T10:00:00Z')] }, 200, {
+				denials: [aDenial()]
+			});
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.getByTestId('cert-row')).toBeInTheDocument();
+			expect(screen.queryByTestId('denied-row')).not.toBeInTheDocument();
+		});
+
+		it('should show only denials when the outcome filter asks for them', async () => {
+			mockFetch({ certificates: [aCertificate('2026-08-01T10:00:00Z')] }, 200, {
+				denials: [aDenial()]
+			});
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			await show('Denied');
+
+			expect(screen.getByTestId('denied-row')).toBeInTheDocument();
+			expect(screen.queryByTestId('cert-row')).not.toBeInTheDocument();
+		});
+
+		it('should show both when the outcome filter asks for both', async () => {
+			mockFetch({ certificates: [aCertificate('2026-08-01T10:00:00Z')] }, 200, {
+				denials: [aDenial()]
+			});
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			await show('Both');
+
+			expect(screen.getByTestId('cert-row')).toBeInTheDocument();
+			expect(screen.getByTestId('denied-row')).toBeInTheDocument();
+		});
 
 		it('should list a request the reader denied', async () => {
 			mockFetch({ certificates: [] }, 200, { denials: [aDenial()] });
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
+			await show('Denied');
 
 			expect(screen.getByTestId('denied-row')).toHaveTextContent('deploy@rack07');
 		});
@@ -148,33 +209,31 @@ describe('Certificate history page', () => {
 			mockFetch({ certificates: [] }, 200, { denials: [aDenial()] });
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
+			await show('Denied');
 
 			expect(screen.getByTestId('denied-row')).toHaveTextContent('denied');
+		});
+
+		// What makes a refusal recognisable a month later, in the column a
+		// certificate row uses for the principals it granted.
+		it('should say what the request claimed it was doing', async () => {
+			mockFetch({ certificates: [] }, 200, { denials: [aDenial()] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			await show('Denied');
+
+			expect(screen.getByTestId('denied-row')).toHaveTextContent('sudo · pts/3 · from 10.1.2.9');
 		});
 
 		// The point of interleaving rather than appending: a history read
 		// top to bottom has to be in time order whichever kind each row is.
 		it('should order a denial against the certificates by time', async () => {
-			mockFetch(
-				{
-					certificates: [
-						{
-							id: 'cert-1',
-							type: 'user',
-							serial_number: '1',
-							principals: 'alice',
-							public_key_fingerprint: 'SHA256:abc123',
-							issued_at: '2026-08-01T10:00:00Z',
-							expires_at: '2026-08-01T18:00:00Z',
-							key_id: 'key-1'
-						}
-					]
-				},
-				200,
-				{ denials: [aDenial({ decided_at: '2026-08-03T10:00:00Z' })] }
-			);
+			mockFetch({ certificates: [aCertificate('2026-08-01T10:00:00Z')] }, 200, {
+				denials: [aDenial({ decided_at: '2026-08-03T10:00:00Z' })]
+			});
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
+			await show('Both');
 
 			const denied = screen.getByTestId('denied-row');
 			const cert = screen.getByTestId('cert-row');
@@ -188,6 +247,7 @@ describe('Certificate history page', () => {
 			mockFetch({ certificates: [] }, 200, { denials: [aDenial()] });
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
+			await show('Denied');
 
 			expect(screen.getByTestId('denied-row').closest('a')).toBeNull();
 		});
@@ -196,7 +256,7 @@ describe('Certificate history page', () => {
 			mockFetch({ certificates: [] }, 200, { denials: [aDenial({ type: 'pam' })] });
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
-
+			await show('Denied');
 			await userEvent.click(screen.getByRole('button', { name: /PAM/ }));
 
 			expect(screen.getByTestId('denied-row')).toBeInTheDocument();
@@ -206,7 +266,7 @@ describe('Certificate history page', () => {
 			mockFetch({ certificates: [] }, 200, { denials: [aDenial({ type: 'pam' })] });
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
-
+			await show('Denied');
 			await userEvent.click(screen.getByRole('button', { name: /Console/ }));
 
 			expect(screen.queryByTestId('denied-row')).not.toBeInTheDocument();
@@ -214,23 +274,29 @@ describe('Certificate history page', () => {
 
 		// The decisions table outlives certificate_requests by design, so a
 		// denial whose request row is gone reports no type. It still has to
-		// be listed: dropping it would quietly shorten the history.
+		// be listed under "All": dropping it would quietly shorten the
+		// history.
 		it('should still list a denial whose request type is unknown', async () => {
 			mockFetch({ certificates: [] }, 200, { denials: [aDenial({ type: undefined })] });
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
+			await show('Denied');
 
 			expect(screen.getByTestId('denied-row')).toBeInTheDocument();
 		});
 
-		// The reader has to be able to see it exists even though no filter
-		// tab claims it.
 		it('should fall back to the request id when nothing was reported', async () => {
 			mockFetch({ certificates: [] }, 200, {
-				denials: [aDenial({ reported_username: undefined, reported_hostname: undefined })]
+				denials: [
+					aDenial({
+						reported_username: undefined,
+						reported_hostname: undefined
+					})
+				]
 			});
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
+			await show('Denied');
 
 			expect(screen.getByTestId('denied-row')).toHaveTextContent('req-1');
 		});
