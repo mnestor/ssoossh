@@ -98,7 +98,7 @@ worktree: ## Create a ready-to-use agent worktree: make worktree NAME=<name> [BA
 
 ##@ Build
 
-.PHONY: all frontend build binaries linux macos-client-pkg frontend-clean
+.PHONY: all frontend build binaries linux frontend-clean
 all: frontend binaries
 
 # Build the web UI into server/frontend/dist, which server/frontend embeds
@@ -162,24 +162,6 @@ server-linux-build-local: $(FRONTEND_DIST) ## Build ssoosshd for a local `docker
 server-linux-pkcs11-build-local: $(FRONTEND_DIST) ## Build ssoosshd with PKCS#11 for a local `docker build` (see Dockerfile.pkcs11)
 	mkdir -p linux/$(shell go env GOARCH)
 	CGO_ENABLED=1 go build -tags=nomsgpack,hsm $(LDFLAGS) -o linux/$(shell go env GOARCH)/ssoosshd ./cmd/ssoosshd
-
-# Wraps the darwin client archives already in dist/ as macOS installer
-# packages -- one per architecture, the same thing the release does
-# (.github/workflows/build.yaml's macos-client-pkg job). It does not build
-# them: `goreleaser release --snapshot` is what produces archives, and on a
-# non-Mac it is the only half of this that can run at all.
-#
-# Unsigned unless the QUILL_* signing material is in the environment, which
-# is fine for checking the payload and the installer panes and useless for
-# anything else. See packaging/README.md.
-macos-client-pkg: ## Package dist/'s darwin client archives as .pkg (macOS only)
-	@ls dist/ssoossh-client_*_darwin_*.zip >/dev/null 2>&1 || { \
-		echo "no dist/ssoossh-client_*_darwin_*.zip; run 'goreleaser release --snapshot --clean' first" >&2; \
-		exit 1; \
-	}
-	@for archive in dist/ssoossh-client_*_darwin_*.zip; do \
-		./packaging/macos/pkg.sh "$$archive" dist || exit 1; \
-	done
 
 frontend-clean: ## Remove the built web UI
 	rm -rf server/frontend/dist

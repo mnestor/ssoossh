@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<!--
+  The installer's description of itself: what it is called, what it refuses
+  to install on, and which panes it shows. Every @NAME@ is filled in by
+  packaging/macos/flatpkg.sh.
+
+  NOTE: no "..." double hyphens anywhere in this comment. XML forbids them
+  inside a comment, and this file is not merely decoration: Apple's notary
+  service parses it to find the component packages. An ill formed
+  Distribution makes it find none, and it reports that as "the contents of
+  the package could not be extracted" followed by "has no signed executables
+  or bundles", neither of which mentions XML. flatpkg.sh parses the filled
+  file before packing it so this cannot reach Apple again.
+
+  This is Distribution.xml's successor and differs from it in exactly two
+  places, both of which productbuild used to add on its own while rewriting
+  the file into the archive. Nothing rewrites it now (flatpkg.sh packs it
+  verbatim), so the final form has to be written here:
+
+    #component.pkg   the leading hash is what makes the reference resolve to
+                     a member of this archive rather than a file beside it
+    installKBytes    the installed size, which the installer shows before
+                     it commits and uses to check free space
+
+  hostArchitectures carries one architecture because the release builds one
+  package per architecture (see flatpkg.sh's header for why the two are not
+  lipo'd into a universal binary). An Intel Mac handed the arm64 package is
+  told so by the installer rather than by a binary that will not exec.
+
+  The OS floor is the deployment target the Go linker stamped into the
+  binary, read back out of the Mach-O at package time so a toolchain bump
+  carries it rather than leaving a constant here to go stale.
+
+  customize="never": there is one payload and nothing to opt out of.
+  rootVolumeOnly: the paths are absolute and outside SIP, so an install onto
+  anything but the boot volume would put the binary somewhere nothing looks.
+-->
+<installer-gui-script minSpecVersion="2">
+    <title>ssoossh @VERSION@</title>
+    <options customize="never" require-scripts="false" hostArchitectures="@HOSTARCH@" rootVolumeOnly="true"/>
+    <domains enable_localSystem="true"/>
+    <volume-check>
+        <allowed-os-versions>
+            <os-version min="@MINVER@"/>
+        </allowed-os-versions>
+    </volume-check>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <readme file="readme.html" mime-type="text/html"/>
+    <license file="LICENSE.txt" mime-type="text/plain"/>
+    <choices-outline>
+        <line choice="default">
+            <line choice="@IDENTIFIER@"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="@IDENTIFIER@" visible="false">
+        <pkg-ref id="@IDENTIFIER@"/>
+    </choice>
+    <pkg-ref id="@IDENTIFIER@" version="@PKGVER@" onConclusion="none" installKBytes="@INSTALLKB@" updateKBytes="0">#component.pkg</pkg-ref>
+    <pkg-ref id="@IDENTIFIER@">
+        <bundle-version/>
+    </pkg-ref>
+</installer-gui-script>

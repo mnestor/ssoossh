@@ -4,13 +4,30 @@ version: 2
 release:
   prerelease: auto
 
-  # Created as a draft, and published by build.yaml's publish job once the
-  # .pkg installers are attached and the checksums file has been rewritten
-  # to cover them. goreleaser finishes long before that, so publishing here
-  # would put a release on the page for the length of a macOS notarization
-  # with no macOS installers on it and a checksums file that does not
-  # describe them. use_existing_draft below is what lets a re-run of the
-  # tag reuse that draft rather than leave a second one behind.
+  # Complete when goreleaser finishes, but not yet visible. Every artifact a
+  # release carries is produced by this file now, the macOS installers
+  # included (the macos-build post-hook), so the draft is no longer waiting
+  # for a second job to attach anything. It is waiting for a verdict.
+  #
+  # macos-verify in .github/workflows/build.yaml asks a Mac the questions
+  # Apple's notary service does not: whether the BOM mkbom wrote matches the
+  # one pkgbuild writes from the same payload, whether the package installs,
+  # whether hostArchitectures still makes the Intel package decline on Apple
+  # silicon. It flips this draft when the answers are right and deletes it
+  # when they are not.
+  #
+  # The asymmetry is the whole reason for the draft. A deleted draft was
+  # never visible to anyone. A published release that has to be revoked has
+  # already sent a release email to every watcher, and that cannot be taken
+  # back -- so the installers are checked while nobody has been told.
+  #
+  # Notarization still gates the build itself, well before any of this:
+  # flatpkg.sh submits each installer to Apple, which extracts it and looks
+  # for a signed Mach-O inside, so a package Apple will not open fails
+  # build-most and no draft is created at all.
+  #
+  # use_existing_draft is what lets a re-run of a tag reuse the draft rather
+  # than leave a second one behind.
   draft: true
   disable: false
   skip_upload: false
@@ -67,6 +84,11 @@ release:
     - glob: ./docs/wire-contract.json
     - glob: ./docs/openapi.yaml
     - glob: ./.wire-contract/ssoossh-wire-contract.tar.gz
+    # Built by the macos-build post-hook, into the same dist/ every other
+    # artifact lands in. Unlike the wire-contract bundle above this is safe
+    # to glob out of dist/: --clean empties that directory before the build
+    # phase, and the hook writes during it.
+    - glob: ./dist/*.pkg
 
 before:
   hooks:
@@ -192,10 +214,29 @@ builds:
     ldflags: *build-ldflags
     hooks:
       # amd64/arm64 ship as separate binaries (no universal_binaries/lipo
-      # merge), so each is quill-signed and packaged into its own DMG as
-      # soon as it's built.
+      # merge), so each is quill-signed and notarized and then wrapped in
+      # its own installer package as soon as it's built.
+      #
+      # flatpkg.sh runs here, and not on a macOS runner afterwards, for two
+      # reasons. It can: a flat package is a xar archive with a fixed
+      # layout, and bomutils, bsdcpio, xar and rcodesign write and sign
+      # every part of it from this container. And it must, if the package is
+      # to be a release artifact like any other: the checksum pipe below
+      # globs dist/*.pkg, and a build hook is the last point at which the
+      # file exists in time for it. An `after:` hook would run past it.
+      #
+      # Ordering inside this list matters. quill has to sign the Mach-O
+      # first, because the notary service rejects a package whose payload
+      # carries no Developer ID signature, and flatpkg.sh refuses to build
+      # one rather than find that out from Apple.
       post:
         - cmd: quill sign-and-notarize "{{ .Path }}"
+        - cmd: >-
+            packaging/macos/flatpkg.sh
+            --binary "{{ .Path }}"
+            --version "{{ .Version }}"
+            --goarch "{{ .Arch }}"
+            --outdir dist
 
 nfpms:
   - id: client
@@ -350,6 +391,23 @@ nfpms:
       - src: server/resources/mail/*.tmpl
         dst: /usr/share/ssoossh/mail-templates/
 
+# The macOS installers are not produced by a goreleaser pipe -- they come
+# from the macos-build post-hook above -- so they are named here explicitly
+# to be hashed. Everything else in this list is a pipe's own artifact and is
+# covered without being named.
+#
+# This is what removed a hand-written pass over the release's checksums file
+# in .github/workflows/build.yaml. The packages used to be built on a
+# separate macOS runner after goreleaser had finished and uploaded its
+# checksums, so that job re-downloaded the file, appended the .pkg lines and
+# re-uploaded it. Nothing does that now.
+#
+# name_template is left at its default, which the workflow's older steps
+# already matched: {{ .ProjectName }}_{{ .Version }}_checksums.txt.
+checksum:
+  extra_files:
+    - glob: ./dist/*.pkg
+
 archives:
   - id: linux-clients-archives
     ids:
@@ -424,26 +482,34 @@ archives:
 # catch a broken Dockerfile but never pushes -- goreleaser skips its whole
 # publish phase in --snapshot mode.
 #
-# The only tag pushed here is the commit sha, and that is deliberate. This
-# pipe runs in build-most, well before the macOS installers exist, so a
-# release that dies in the macOS job would otherwise have already put
-# ghcr.io/mnestor/ssoossh-server:1.4.0 in front of the world -- a version
-# tag for a release that never published, and one a re-run of the tag then
-# silently overwrites. build.yaml's publish job copies these to their
-# version tags (docker buildx imagetools create, a server-side manifest
-# copy by digest) at the same moment it publishes the release draft, so a
-# version tag exists only for a release that does.
+# Every tag is written here, by this run: the commit sha, the exact version,
+# and the floating X.Y and X, so v1.2.4 is reachable as 1.2.4, 1.2 and 1.
+# There is no second job promoting one set to another any more.
 #
-# What stays behind on a failed release is the sha tag, which is fine: it
-# is immutable, it names the commit that built it, and it never claimed to
-# be a release. Nothing is deleted, so no delete:packages credential is
-# needed anywhere in this pipeline.
+# That does leave images tagged before the release they belong to is
+# visible, since macos-verify can still reject the macOS installers and
+# delete the draft afterwards. It is a deliberate trade and a narrow one:
+# these images are the server, built from the same binaries whatever the
+# macOS client package does, so a version tag surviving a rejected draft is
+# early rather than wrong, and a re-run of the tag overwrites it. The
+# alternative, holding every image on a sha tag and copying it to its
+# version tags in a later job, is what this replaced.
 #
-# The publish job writes X.Y and X alongside the exact version, so v1.2.4
-# is reachable as 1.2.4, 1.2 and 1. Both floating tags move only for a
-# final release that is the newest in its series, which is what keeps a
-# release candidate, or a re-run of an older tag, from becoming what `1.2`
-# means.
+# The sha tag stays even though the version tags now sit beside it. It is
+# immutable, it names the commit that built it, and it is the one tag that
+# still means something if a run dies partway. Nothing is ever deleted, so
+# no delete:packages credential is needed anywhere in this pipeline.
+#
+# The floating tags skip prereleases, so v1.3.0-rc1 is reachable as
+# 1.3.0-rc1 and nothing else. They do NOT check whether this tag is the
+# newest one shipped in its series, and that is a deliberate assumption
+# rather than an oversight: releases only ever go forward within a major
+# line. Two major lines may be alive at once (a 1.x and a 2.x), which these
+# tags handle on their own since X and X.Y are per-line. But re-running an
+# older tag inside a live line -- shipping v1.2.4 after v1.2.7 -- would move
+# 1.2 and 1 backwards onto it, silently. A goreleaser tag template cannot
+# see which tags have shipped, so if that policy ever changes this has to
+# move back out into a job that can ask the repository.
 #
 # `latest` is not published and is not going to be. Every tag this project
 # pushes names some piece of a version, so pinning one is a statement about
@@ -463,6 +529,9 @@ dockers_v2:
       - ghcr.io/mnestor/ssoossh-server
     tags:
       - "sha-{{ .FullCommit }}"
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}{{ end }}"
+      - "{{ if not .Prerelease }}{{ .Major }}{{ end }}"
     platforms:
       - linux/amd64
       - linux/arm64
@@ -490,6 +559,9 @@ dockers_v2:
     # first.
     tags:
       - "sha-{{ .FullCommit }}-pkcs11"
+      - "{{ .Version }}-pkcs11"
+      - "{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}-pkcs11{{ end }}"
+      - "{{ if not .Prerelease }}{{ .Major }}-pkcs11{{ end }}"
     platforms:
       - linux/amd64
       - linux/arm64

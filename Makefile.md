@@ -50,7 +50,7 @@ the matching `lint-*`) and the internal check halves
 | `make linux` | Snapshot build for linux/amd64 only |
 | `make binaries` | Snapshot build for every release target |
 | `make server-linux-build-local` | Build ssoosshd for a local `docker build` (see Dockerfile) |
-| `make macos-client-pkg` | Package dist/'s darwin client archives as .pkg (macOS only) |
+| `make server-linux-pkcs11-build-local` | Build ssoosshd with PKCS#11 for a local `docker build` (see Dockerfile.pkcs11) |
 | `make frontend-clean` | Remove the built web UI |
 
 ### Test
@@ -69,6 +69,7 @@ the matching `lint-*`) and the internal check halves
 | Target | What it does |
 | --- | --- |
 | `make test-hsm` | HSM key source tests against softhsm2 (needs softhsm2 + opensc) |
+| `make bench-hsm` | Signing benchmarks per CA key type (needs softhsm2 + opensc) |
 | `make test-e2e` | End-to-end suite (modifies host state, read test/e2e/README.md first) |
 | `make test-e2e-unlocked` | test-e2e without the serialising lock (for a deliberate parallel run) |
 | `make test-memory-leak` | Memory leak repro tests |

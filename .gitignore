@@ -109,3 +109,7 @@ yarn-error.log*
 # Personal scratch list. Untracked deliberately: it is a working note, and
 # tracking it turns every reordering into a diff for everyone else.
 /todo.md
+
+# macOS installer packages: built into dist/ by the goreleaser post-hook,
+# and downloaded here by hand when comparing against a shipped one.
+*.pkg

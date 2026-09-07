@@ -2,14 +2,20 @@ name: build
 
 # The release pipeline, plus the cheap check that stands in for it on PRs.
 #
-# On a v* tag push this publishes the real release (goreleaser
-# archives/packages, the ssoosshd Docker image). Nothing is visible under
-# a name anyone would look for until the publish job at the end: goreleaser
-# writes the release as a draft and tags the images with the commit sha
-# only, macos-client-pkg attaches the macOS installers, and publish then
-# flips the draft and copies the images to their version tags in one step.
-# A release that dies partway leaves a tag and an unreferenced sha tag, not
-# a half-published release. PRs no longer run that
+# On a v* tag push this builds the real release, and goreleaser builds all
+# of it in one run: archives, packages, the macOS installers, the checksums
+# covering them, and the ssoosshd images under both their sha and their
+# version tags. Nothing arrives after goreleaser any more -- the .pkg
+# installers are built, signed and notarized by a macos-build post-hook
+# inside that same run, which is what used to need a macOS runner of its own
+# and a hand-written pass over the checksums file.
+#
+# It is written as a draft all the same, because one question is still open
+# when goreleaser finishes: whether a Mac accepts the installers. macos-verify
+# asks it, then flips the draft, or deletes it. Nothing is visible under a
+# name anyone would look for until that job says so, and that is the point:
+# a draft can be deleted in silence, while a published release has already
+# emailed every watcher. PRs no longer run that
 # pipeline: they run `build-check`, which does the generated-artifact
 # staleness checks and a single-target snapshot build, with no release
 # secrets on the runner. The weekly run is what still exercises the full
@@ -322,17 +328,21 @@ jobs:
           "$BINARY" version || { echo "✗ static binary failed to run"; exit 1; }
           echo "✓ static binary runs with no dynamic loader"
 
-      # What the macos-client-pkg job below wraps as installer packages.
-      # Handing it the archives rather than the release assets is what lets
-      # that job run on a snapshot too: nothing is published in --snapshot
-      # mode, so a job that downloaded from the release would only ever run
-      # during an actual release -- and the weekly run exists precisely so
-      # the signed pipeline is exercised before then.
-      - name: Upload the darwin client archives
+      # The installers goreleaser just built, for the macOS job to assess.
+      # goreleaser has already attached them to the draft release itself
+      # (release.extra_files) and hashed them into the checksums file
+      # (checksum.extra_files), so this artifact exists only so that a Mac
+      # can be asked about them before publish makes the release visible.
+      #
+      # Uploaded on every event build-most runs, not only on tags: nothing
+      # is published in --snapshot mode, so a verification job fed from the
+      # release would only ever run during an actual release, and the weekly
+      # run exists precisely so the signed path is exercised before then.
+      - name: Upload the macOS client packages
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: darwin-client-archives
-          path: dist/ssoossh-client_*_darwin_*.zip
+          name: macos-client-packages
+          path: dist/*.pkg
           if-no-files-found: error
           retention-days: 7
 
@@ -349,80 +359,45 @@ jobs:
         run: |
           gh release delete -y "$TAG"
 
-  # The macOS client installer, one package per architecture.
+  # Gatekeeper's opinion, which is the one thing Linux cannot produce.
   #
-  # A second job on a Mac rather than a step in build-most, because
-  # pkgbuild, productbuild, productsign and notarytool exist only on macOS
-  # and that job runs in a Linux container. Nothing is compiled here: it
-  # takes the darwin archives build-most uploaded, whose binaries goreleaser
-  # already had quill sign and notarize, and wraps each one untouched.
+  # The installers themselves are built in build-most now. A flat package is
+  # a xar archive with a fixed layout, and packaging/macos/flatpkg.sh writes
+  # every part of it with open tools (bomutils for the BOM, bsdcpio for the
+  # payload, xar for the archive) and signs, notarizes and staples it with
+  # rcodesign, all inside the release container. That is why there is no
+  # longer a macOS job holding signing secrets, downloading darwin archives,
+  # or re-uploading anything to the release: goreleaser owns the packages
+  # the way it owns every other artifact, checksums included.
   #
-  # It runs on every event build-most does, not only on tags. On a snapshot
-  # the packages are still signed and notarized -- quill's post-hook runs in
-  # the build phase, which --snapshot does not skip -- and simply never
-  # reach a release. That is what keeps the weekly run an honest rehearsal
-  # of this half of the pipeline instead of it first executing during a real
-  # release.
-  macos-client-pkg:
-    name: macos client pkg
+  # What is left is verification, and it is not optional. The package is
+  # assembled by tools Apple did not write, so until this job runs nothing
+  # has asked macOS whether it accepts the result. It holds no secrets, and
+  # publish waits on it.
+  macos-verify:
+    name: macos verify installers
     needs: [changes, build-most]
     if: github.event_name != 'pull_request' && needs.changes.outputs.code == 'true'
-    # Pinned to a version rather than macos-latest, like every other version
-    # in this pipeline. Nothing is compiled here, so this is not an SDK
-    # choice: the newest image is simply the one whose notarytool and
-    # stapler are the ones Apple is currently changing, and the weekly run
-    # exists to meet those changes before a release does.
-    #
-    # It does not set the package's floor. allowed-os-versions comes from
-    # the client binary's LC_BUILD_VERSION minos, which packaging/macos/pkg.sh
-    # reads out of the binary itself, so the floor follows the Go toolchain
-    # and not this label.
-    runs-on: macos-26
-    timeout-minutes: 60
     permissions:
-      # gh release upload, on tag pushes only.
+      # gh release delete, on tag pushes only, when a Mac rejects what
+      # goreleaser already published.
       contents: write
+    # Pinned like every other version in this pipeline. Nothing is compiled
+    # and nothing is signed here, so this is not an SDK choice: the newest
+    # image is simply the one whose spctl, pkgutil and installer are the
+    # ones Apple is currently changing, and the weekly run exists to meet
+    # those changes before a release does.
+    runs-on: macos-26
+    timeout-minutes: 20
     steps:
-      # packaging/macos/ holds the script, Distribution.xml and the
-      # installer's HTML panes; the payload comes from the artifact below.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: darwin-client-archives
+          name: macos-client-packages
           path: dist
 
-      # The same 1Password item build-most reads for quill. QUILL_INSTALLER_P12
-      # is the field quill itself does not use: a Developer ID *Application*
-      # certificate signs a Mach-O and cannot sign an installer package, and
-      # Gatekeeper refuses a downloaded package that is not Installer-signed.
-      - uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
-        id: secrets
-        with:
-          export-env: false
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          QUILL_INSTALLER_P12: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_INSTALLER_P12
-          QUILL_SIGN_PASSWORD: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_SIGN_PASSWORD
-          QUILL_NOTARY_ISSUER: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_NOTARY_ISSUER
-          QUILL_NOTARY_KEY: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_NOTARY_KEY
-          QUILL_NOTARY_KEY_ID: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_NOTARY_KEY_ID
-
-      - name: Installer packages, signed and notarized
-        env:
-          QUILL_INSTALLER_P12: ${{ steps.secrets.outputs.QUILL_INSTALLER_P12 }}
-          QUILL_SIGN_PASSWORD: ${{ steps.secrets.outputs.QUILL_SIGN_PASSWORD }}
-          QUILL_NOTARY_ISSUER: ${{ steps.secrets.outputs.QUILL_NOTARY_ISSUER }}
-          QUILL_NOTARY_KEY: ${{ steps.secrets.outputs.QUILL_NOTARY_KEY }}
-          QUILL_NOTARY_KEY_ID: ${{ steps.secrets.outputs.QUILL_NOTARY_KEY_ID }}
-        run: |
-          set -euo pipefail
-          for archive in dist/ssoossh-client_*_darwin_*.zip; do
-            packaging/macos/pkg.sh "$archive" dist
-          done
-          ls -l dist/*.pkg
-
-      # Both architectures must be here. A glob that matched one archive
+      # Both architectures must be here. A glob that matched one package
       # because the other never got built would otherwise ship a release
       # with half its installers and no failure anywhere.
       - name: Both architectures were packaged
@@ -432,204 +407,117 @@ jobs:
             ls dist/ssoossh-client_*_darwin_"$arch".pkg >/dev/null
           done
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: macos-client-packages
-          path: dist/*.pkg
-          if-no-files-found: error
-          retention-days: 7
-
-      # goreleaser created the release in build-most -- as a draft, so none
-      # of this is visible yet -- and has finished with it, so these go up
-      # afterwards with gh. The checksums file it wrote is rewritten to
-      # cover them too -- a release whose checksums list describes only
-      # some of its assets is worse than one with none. Existing lines for
-      # these names are dropped first, so a re-run of this job replaces
-      # them rather than appending a second set.
-      - name: Attach the packages to the release
-        if: startsWith(github.ref, 'refs/tags/')
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+      # The signature, the stapled ticket, and what Gatekeeper will say when
+      # someone double-clicks it. spctl is the assertion that matters: it is
+      # the same check that runs on the user's Mac.
+      - name: Gatekeeper accepts the packages
         run: |
           set -euo pipefail
-          gh release upload "$TAG" dist/*.pkg --clobber
-
-          sums=$(gh release view "$TAG" --json assets \
-            --jq '.assets[].name | select(endswith("_checksums.txt"))')
-          if [ -z "$sums" ]; then
-            echo "no checksums asset on $TAG; nothing to amend"
-            exit 0
-          fi
-          gh release download "$TAG" --pattern "$sums" --dir dist --clobber
-          (
-            cd dist
-            shasum -a 256 -- *.pkg > pkg-sums.txt
-            # Every line of the release's file whose second field is not one
-            # of the names just hashed, then those names appended once. The
-            # sort is only so the result is stable between runs.
-            awk 'NR == FNR { seen[$2] = 1; next } !($2 in seen)' \
-              pkg-sums.txt "$sums" > kept.txt
-            cat kept.txt pkg-sums.txt | sort -k2 > "$sums"
-            rm -f kept.txt pkg-sums.txt
-          )
-          gh release upload "$TAG" "dist/$sums" --clobber
-          cat "dist/$sums"
-
-      # Same invariant build-most keeps: a published release is complete or
-      # it is not published. A failure here leaves the tag, and at most an
-      # unpublished draft -- never a release missing its macOS installers.
-      - name: remove the release, we failed
-        if: startsWith(github.ref, 'refs/tags/') && failure()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          gh release delete -y "$TAG"
-
-  # Where a release becomes visible, and the only job that makes anything
-  # public under a name someone would go looking for. Everything before it
-  # published to names nobody pulls: goreleaser wrote the release as a
-  # draft (.goreleaser.yml's release.draft) and tagged the images with the
-  # commit sha (its dockers_v2 tags), macos-client-pkg attached the
-  # installers to that draft. This flips both at the end, once every
-  # artifact for every platform is in place.
-  #
-  # Tag pushes only -- there is nothing to publish on the weekly run, which
-  # is exactly why that run rehearses everything except this job.
-  #
-  # No container and no build tooling: two registry calls and one API call.
-  # docker with the buildx plugin and gh are both on the stock runner
-  # image, so this does not pay for the ssoossh-build pull either.
-  publish:
-    name: publish
-    needs: [build-most, macos-client-pkg]
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      # gh release edit.
-      contents: write
-      # The version tags created below.
-      packages: write
-    # This job checks nothing out on purpose, so gh has no remote to read
-    # the repository from and every call would die on "fatal: not a
-    # repository". GH_REPO names it instead, for the whole job.
-    env:
-      GH_REPO: ${{ github.repository }}
-    steps:
-      - name: Log in to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # `imagetools create` copies the manifest list registry-side, by
-      # digest: the multi-arch index and the labels goreleaser baked in at
-      # build time carry over untouched and no layer moves, so this costs
-      # about a second per tag. It is a registry operation rather than a
-      # build, so unlike build-most this job needs no buildx builder and
-      # no setup-buildx-action.
-      #
-      # The version goreleaser tags with is the git tag without its v
-      # (.Version in its templates, and the value already in each image's
-      # org.opencontainers.image.version label), which is what these have
-      # to match.
-      #
-      # Every piece of the version gets a tag: v1.2.4 publishes 1.2.4, 1.2
-      # and 1, and the -pkcs11 variant of each. The exact version is the one
-      # an operator pins; the two floating tags are for the operator who
-      # wants patch, or minor and patch, to arrive without a change here.
-      #
-      # `latest` is not one of them and is not going to become one. Every
-      # tag here names some part of a version, so whatever an operator
-      # pins, they have said how far they are willing to be moved.
-      # `latest` is the one tag that says nothing, and the distance it
-      # would move someone is unbounded.
-      #
-      # Two calls because the two variants come from two different source
-      # images, but each is one call for all three of its tags -- so a
-      # failure between them leaves the -pkcs11 series a version behind and
-      # never a half-tagged variant. The re-run of the tag fixes it; that
-      # is the narrow case this ordering does not cover.
-      - name: Promote the images to their version tags
-        env:
-          IMAGE: ghcr.io/mnestor/ssoossh-server
-          TAG: ${{ github.ref_name }}
-          COMMIT: ${{ github.sha }}
-          REPO: ${{ github.repository }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          version="${TAG#v}"
-          tags=("$version")
-
-          # The floating tags are for final releases only. goreleaser's
-          # release.prerelease is auto, so v1.3.0-rc1 is a release like any
-          # other here -- and `1.3` resolving to a release candidate is
-          # exactly what someone tracking `1.3` is trusting will not happen.
-          if printf '%s' "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            major="${version%%.*}"
-            series="${version%.*}"
-
-            # And only when this tag is the newest in the series, so that
-            # re-running an old tag cannot walk a floating tag backwards
-            # onto an older image. Git tags rather than releases: the
-            # release this run is about to publish is still a draft, so it
-            # would not be in a release listing, and a tag whose release
-            # failed is still a version this one must not claim to be
-            # newer than.
-            shipped=$(gh api --paginate \
-              "/repos/$REPO/git/matching-refs/tags/v${major}." \
-              --jq '.[].ref | sub("^refs/tags/v"; "")' \
-              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
-            esc="${series//./\\.}"
-            newest_major=$(printf '%s\n' "$shipped" | tail -1)
-            newest_series=$(printf '%s\n' "$shipped" \
-              | grep -E "^${esc}\.[0-9]+$" | tail -1)
-
-            if [ "$newest_series" = "$version" ]; then
-              tags+=("$series")
-            else
-              echo "$TAG trails v${newest_series}; $series stays put"
-            fi
-            if [ "$newest_major" = "$version" ]; then
-              tags+=("$major")
-            else
-              echo "$TAG trails v${newest_major}; $major stays put"
-            fi
-          fi
-
-          echo "tagging: ${tags[*]}"
-          for variant in "" "-pkcs11"; do
-            args=()
-            for tag in "${tags[@]}"; do
-              args+=(-t "${IMAGE}:${tag}${variant}")
-            done
-            docker buildx imagetools create "${args[@]}" \
-              "${IMAGE}:sha-${COMMIT}${variant}"
-            docker buildx imagetools inspect "${IMAGE}:${version}${variant}"
+          for pkg in dist/*.pkg; do
+            echo "== $pkg"
+            pkgutil --check-signature "$pkg"
+            spctl --assess --type install --verbose=2 "$pkg"
           done
 
-      # Last, so a failure in the promote above leaves the release a draft
-      # rather than a published release whose images are half-named.
+      # The BOM bomutils wrote, against the one pkgbuild writes from the very
+      # same payload. This is the check that catches an open-source BOM
+      # drifting from Apple's: every other step here would still pass with a
+      # subtly wrong file list, wrong modes or wrong ownership.
+      #
+      # Paths, modes, uid and gid only. Size and checksum are the same files
+      # either way, and mtime differs for reasons that mean nothing.
+      - name: The BOM matches what pkgbuild would have written
+        run: |
+          set -euo pipefail
+          for pkg in dist/*.pkg; do
+            rm -rf exp ref refexp ref.pkg
+            pkgutil --expand-full "$pkg" exp
+            ver=$(sed -n 's/.*<pkg-info[^>]* version="\([^"]*\)".*/\1/p' \
+              exp/component.pkg/PackageInfo | head -1)
+            pkgbuild --quiet --root exp/component.pkg/Payload \
+              --identifier org.mikenestor.ssoossh-client --version "$ver" \
+              --install-location / --ownership recommended ref.pkg
+            pkgutil --expand-full ref.pkg refexp
+            diff <(lsbom -p fmUG refexp/*.pkg/Bom | sort) \
+                 <(lsbom -p fmUG exp/component.pkg/Bom | sort)
+            echo "✓ $pkg: BOM matches pkgbuild"
+          done
+
+      # The Distribution, parsed. flatpkg.sh packs this file verbatim rather
+      # than having productbuild rewrite it, and an ill formed one is not a
+      # cosmetic fault: Apple's notary service parses it to find the
+      # component packages, finds none, and reports that as a payload
+      # problem ("the contents of the package could not be extracted",
+      # "has no signed executables or bundles"). flatpkg.sh checks this
+      # before packing; this is the same check on the shipped artifact.
+      - name: The Distribution is well formed XML
+        run: |
+          set -euo pipefail
+          for pkg in dist/*.pkg; do
+            rm -rf dist-toc && mkdir dist-toc
+            (cd dist-toc && xar -xf "../$pkg" Distribution)
+            python3 -c "import sys, xml.dom.minidom; xml.dom.minidom.parse(sys.argv[1])" \
+              dist-toc/Distribution
+            echo "✓ $pkg: Distribution parses"
+          done
+
+      # It installs, the binary runs, the version it reports is this build's,
+      # and the man pages landed. The runner is Apple silicon, so this is the
+      # arm64 package.
+      - name: The arm64 package installs and runs
+        run: |
+          set -euo pipefail
+          sudo installer -pkg dist/ssoossh-client_*_darwin_arm64.pkg -target /
+          /usr/local/bin/ssoossh version
+          test -f /usr/local/share/man/man1/ssoossh.1
+          test -f /usr/local/share/man/man5/ssoossh.yaml.5
+          test -f /usr/local/share/ssoossh/ssoossh.yaml
+
+      # The opposite assertion, and the one that proves hostArchitectures is
+      # still doing its job: the Intel package must decline on this host
+      # rather than install a binary that cannot exec.
+      - name: The amd64 package is refused on Apple silicon
+        run: |
+          set -euo pipefail
+          if sudo installer -pkg dist/ssoossh-client_*_darwin_amd64.pkg \
+               -target / 2>err.log; then
+            echo "✗ the amd64 package installed on an arm64 host;" \
+                 "hostArchitectures is not being honored" >&2
+            exit 1
+          fi
+          echo "✓ refused, as hostArchitectures asks:"
+          sed 's/^/  /' err.log
+
+      # Everything above passed, so the release becomes visible. This is the
+      # only step in the pipeline that makes anything public under a name
+      # someone would go looking for, and it is deliberately the last thing
+      # that happens, on the machine that did the checking.
       #
       # Only draft is touched. Whether the release is a prerelease, and
       # whether it becomes /releases/latest, remain goreleaser's call
       # (.goreleaser.yml's release.prerelease: auto).
       - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: gh release edit "$TAG" --draft=false
 
-      # Same invariant the build jobs keep. The sha tags are left alone on
-      # purpose: they are immutable, they name the commit that built them,
-      # and they never claimed to be a release -- so nothing in this
-      # pipeline ever needs a credential that can delete a package version.
-      - name: remove the release, we failed
-        if: failure()
+      # The invariant this job exists to hold: a release that is visible is
+      # one a Mac accepted. Deleting an unpublished draft costs nothing and
+      # tells nobody, which is exactly why the release waits here instead of
+      # going out and being revoked. GitHub emails every watcher the moment
+      # a release is published, and that notification cannot be recalled.
+      #
+      # The images are left alone. They carry version tags from build-most
+      # rather than being promoted here, so a failure at this point leaves
+      # ghcr.io tags for a release that never appeared. They are not wrong,
+      # only early: the server images have nothing to do with the macOS
+      # client package that failed, and a re-run of the tag overwrites them.
+      # Nothing in this pipeline holds a credential that can delete a
+      # package version, which is deliberate.
+      - name: remove the draft, a Mac rejected it
+        if: startsWith(github.ref, 'refs/tags/') && failure()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
