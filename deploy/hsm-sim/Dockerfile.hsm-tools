@@ -1,0 +1,31 @@
+# ssoossh HSM tooling image. Never run alongside ssoosshd in production: it
+# carries pkcs11-tool, which is a complete token-manipulation CLI aimed at
+# the one asset the signer exists to protect. Its whole job is to run once,
+# provision a token, stage a PKCS#11 module, and exit before ssoosshd
+# accepts a request.
+#
+# debian:12-slim deliberately matches distroless/base|cc-debian12's own
+# Debian 12 base. A PKCS#11 module staged out of this image is then ABI-
+# compatible with the server image by construction rather than by luck --
+# mounting a module built on some other distribution is the failure mode
+# this exists to remove (see ../../docs/proposals/hsm-cloud-readiness.md).
+FROM debian:12-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      softhsm2 \
+      opensc \
+      p11-kit \
+      p11-kit-modules \
+      socat \
+      openssl \
+      ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/ /usr/local/bin/
+RUN chmod 0755 /usr/local/bin/*.sh
+
+# No ENTRYPOINT: every compose service below names the script it wants, so
+# the image reads as a toolbox rather than a daemon that might get left
+# running by accident.
+CMD ["/bin/sh", "-c", "echo 'specify a command: provision-token.sh | stage-client.sh | hsm-serve.sh | gen-certs.sh' >&2; exit 64"]

@@ -1,0 +1,30 @@
+# ssoosshd for the HSM simulation. Identical to the repo-root Dockerfile
+# except for the base image: distroless/cc-debian12 instead of
+# distroless/base-debian12.
+#
+# That one line is the whole difference between "HSM support is configured"
+# and "HSM support works". base-debian12 ships glibc and OpenSSL but no
+# libstdc++ or libgcc_s, and every PKCS#11 module worth loading -- SoftHSM2,
+# CloudHSM, Luna -- is C++:
+#
+#   $ docker run --rm --entrypoint /lib64/ld-linux-x86-64.so.2 \
+#       -v .../libsofthsm2.so:/tmp/m.so:ro \
+#       gcr.io/distroless/base-debian12:nonroot --list /tmp/m.so
+#   /tmp/m.so: error while loading shared libraries: libstdc++.so.6:
+#   cannot open shared object file: No such file or directory
+#
+# cc-debian12 resolves it, and costs 2.9MB (20.8MB -> 23.7MB). This file
+# exists so the simulation runs before that change lands upstream; see
+# ../../docs/proposals/hsm-cloud-readiness.md, Tier 1.
+#
+# Not buildable standalone: something must stage a binary at
+# linux/$TARGETARCH/ssoosshd first. From the repo root:
+#   make server-linux-build-local
+FROM gcr.io/distroless/cc-debian12:nonroot
+ARG TARGETARCH
+COPY linux/$TARGETARCH/ssoosshd /usr/local/sbin/ssoosshd
+COPY server/resources/mail/ /usr/share/ssoossh/mail-templates/
+USER nonroot:nonroot
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/sbin/ssoosshd"]
+CMD ["-c", "/etc/ssoossh/ssoosshd.yaml"]

@@ -1,0 +1,17 @@
+# HSM fragment for docker-compose.network.yml.
+#
+# Identical in shape to hsm.direct.yaml, which is the point: from ssoosshd's
+# side, a token across a network is just a different module path. No config
+# concept changes, and none would change for a real CloudHSM or Luna module
+# either.
+#
+# Note what did NOT move: pin_file. p11-kit forwards C_Login rather than
+# performing it on your behalf, so the signer still holds the PIN and still
+# opens an authenticated session. This topology separates the key bytes from
+# the signer, not the authority to use them. For that, use split mode.
+hsm:
+  module: /hsm/lib/p11-kit-client.so
+  token_label: ssoossh-ca
+  pin_file: /hsm/pin/pin
+  key_label: ssoossh-ca
+  key_id: "01"

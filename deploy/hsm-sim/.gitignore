@@ -1,0 +1,4 @@
+# Operator-supplied, never committed: the merged server config and any PIN
+# material dropped in by hand.
+config/ssoosshd.yaml
+secrets/

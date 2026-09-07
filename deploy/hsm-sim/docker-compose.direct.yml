@@ -1,0 +1,117 @@
+# Simulated production, option A: SoftHSM2 mounted directly into the signer.
+#
+# The token store is a volume, the module is staged out of the tools image,
+# and ssoosshd dlopen()s it exactly as it would a vendor's CloudHSM or Luna
+# library. This is the topology of "an HSM on the same machine".
+#
+#   docker compose -f docker-compose.direct.yml up -d
+#   docker compose -f docker-compose.direct.yml --profile verify run --rm hsm-verify
+#
+# What it does and does not model: it exercises the real PKCS#11 call path,
+# token selection, PIN handling and key lookup. It cannot produce the
+# failure modes that distinguish a network HSM -- latency, session death,
+# partition, credential expiry. Use docker-compose.network.yml for those.
+#
+# Before first run, prepare a config as deploy/docker-compose.yml describes:
+#   mkdir -p config
+#   cp ../../server/config/defaults.yaml config/ssoosshd.yaml
+# then merge config/hsm.direct.yaml into it and set http.address to 0.0.0.0.
+#
+# ssoosshd image: build it locally first. The published image is currently
+# distroless/base-debian12, which cannot dlopen a C++ PKCS#11 module at all
+# (see ../../docs/proposals/hsm-cloud-readiness.md, Tier 1). Until that
+# lands:
+#   make server-linux-build-local          # from the repo root
+#   docker compose -f docker-compose.direct.yml build ssoosshd
+
+name: ssoossh-hsm-sim-direct
+
+services:
+  # One-shot. Initializes the token, generates the CA key, stages
+  # libsofthsm2.so, and exits before ssoosshd starts. Re-running it is safe:
+  # provision-token.sh refuses to touch a token that already exists.
+  hsm-provision:
+    build:
+      context: .
+      dockerfile: Dockerfile.hsm-tools
+    image: ssoossh-hsm-tools:sim
+    command: provision-token.sh
+    environment:
+      TOKEN_LABEL: ssoossh-ca
+      KEY_LABEL: ssoossh-ca
+      KEY_ID: "01"
+      KEY_TYPE: EC:prime384v1
+    volumes:
+      - tokens:/hsm/tokens
+      - hsmlib:/hsm/lib
+      - pin:/hsm/pin
+    restart: "no"
+
+  ssoosshd:
+    build:
+      context: ../..
+      dockerfile: deploy/hsm-sim/Dockerfile.ssoosshd-sim
+    image: ssoossh-server:hsm-sim
+    depends_on:
+      hsm-provision:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Tells libsofthsm2.so which token directory to use. The conf was
+      # written into hsmlib by the provisioner and names an absolute path,
+      # so it reads the same from either container.
+      SOFTHSM2_CONF: /hsm/lib/softhsm2.conf
+    volumes:
+      - ./config:/etc/ssoossh:ro
+      # Read-only: the signer loads the module, it never writes one. A
+      # writable module directory in the process that holds the CA is a
+      # code-injection path.
+      - hsmlib:/hsm/lib:ro
+      # Writable: SoftHSM2 takes lock files in the token directory even for
+      # signing. This volume IS the CA -- back it up like a private key.
+      - tokens:/hsm/tokens
+      - pin:/hsm/pin:ro
+      - data:/var/lib/ssoossh
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # Optional check that the token, module and PIN agree, without involving
+  # ssoosshd. Signs a digest through the same module the signer loads.
+  hsm-verify:
+    image: ssoossh-hsm-tools:sim
+    profiles: [verify]
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        export SOFTHSM2_CONF=/hsm/lib/softhsm2.conf
+        echo "verify: objects visible on the token"
+        pkcs11-tool --module /hsm/lib/libsofthsm2.so \
+          --login --pin "$$(cat /hsm/pin/pin)" --list-objects
+        echo "verify: signing with the CA key"
+        head -c 48 /dev/urandom > /tmp/d
+        pkcs11-tool --module /hsm/lib/libsofthsm2.so \
+          --login --pin "$$(cat /hsm/pin/pin)" \
+          --sign --mechanism ECDSA --label ssoossh-ca \
+          --input-file /tmp/d --output-file /tmp/s
+        echo "verify: OK, produced $$(wc -c < /tmp/s) bytes of signature"
+    volumes:
+      - tokens:/hsm/tokens
+      - hsmlib:/hsm/lib:ro
+      - pin:/hsm/pin:ro
+    restart: "no"
+
+volumes:
+  # The CA lives here. Never make this a tmpfs or an anonymous volume: on a
+  # fresh volume the provisioner generates a NEW CA, and because the key
+  # registry keeps every announced key active you would silently accumulate
+  # CAs rather than get a loud failure.
+  tokens:
+  hsmlib:
+  pin:
+  data:

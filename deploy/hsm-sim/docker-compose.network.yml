@@ -1,0 +1,194 @@
+# Simulated production, option B: the token lives in a separate "appliance"
+# container and the signer reaches it over mTLS. This is the topology of a
+# network HSM (CloudHSM, Luna, NetHSM, YubiHSM via its connector).
+#
+#   docker compose -f docker-compose.network.yml up -d
+#   docker compose -f docker-compose.network.yml --profile verify run --rm hsm-verify
+#
+# Why this one exists: it is the only way to produce, with SoftHSM alone,
+# the failure modes a cloud HSM actually has. See "Fault injection" in
+# README.md -- stopping, pausing and restarting the hsm service exercises
+# session death, hangs and reconnection, none of which a local token can
+# produce, and all of which ssoosshd currently handles badly
+# (../../docs/proposals/hsm-cloud-readiness.md, Tier 3).
+#
+# The chain, and why it has as many links as it does:
+#
+#   ssoosshd
+#     -> p11-kit-client.so           (PKCS#11 is dlopen'd, in-process; the
+#                                     only way to put a boundary under it is
+#                                     a module that forwards)
+#     -> /run/p11/p11.sock           (p11-kit's ONLY transport is a Unix
+#                                     socket -- no host, port or TLS option
+#                                     exists)
+#     -> hsm-bridge (socat, mTLS)    (so the network hop and its security
+#                                     are ours to build, not p11-kit's)
+#     -> hsm:12345 (socat, mTLS)
+#     -> p11-kit server
+#     -> libsofthsm2.so -> token
+#
+# Read that as a warning, not a recipe. A real appliance authenticates its
+# clients itself. A PKCS#11 proxy does not: p11-kit's entire access control
+# is file permissions on the socket, which is why the mTLS above is bolted
+# on by hand. Do not run this shape in production; run split mode.
+
+name: ssoossh-hsm-sim-network
+
+services:
+  # One-shot. Throwaway CA plus server and client certificates for the
+  # tunnel. Idempotent.
+  hsm-certs:
+    build:
+      context: .
+      dockerfile: Dockerfile.hsm-tools
+    image: ssoossh-hsm-tools:sim
+    command: gen-certs.sh
+    environment:
+      HSM_CN: hsm
+    volumes:
+      - certs:/certs
+    restart: "no"
+
+  # One-shot. Provisions the token inside the appliance's own volumes. The
+  # signer never sees these: no token, no libsofthsm2.so, no SoftHSM conf.
+  hsm-provision:
+    image: ssoossh-hsm-tools:sim
+    depends_on:
+      hsm-certs:
+        condition: service_completed_successfully
+    command: provision-token.sh
+    environment:
+      TOKEN_LABEL: ssoossh-ca
+      KEY_LABEL: ssoossh-ca
+      KEY_ID: "01"
+      KEY_TYPE: EC:prime384v1
+      # The appliance runs the module as root inside its own container;
+      # nothing here is handed to the signer's UID.
+      RUN_AS_UID: "0"
+      RUN_AS_GID: "0"
+    volumes:
+      - tokens:/hsm/tokens
+      - hsmlib:/hsm/lib
+      - pin:/hsm/pin
+    restart: "no"
+
+  # The simulated appliance. Holds the token, the module and the PIN.
+  # Stopping this container is how you inject an HSM outage.
+  hsm:
+    image: ssoossh-hsm-tools:sim
+    depends_on:
+      hsm-provision:
+        condition: service_completed_successfully
+    command: hsm-serve.sh
+    environment:
+      TOKEN_LABEL: ssoossh-ca
+      LISTEN_PORT: "12345"
+    volumes:
+      - tokens:/hsm/tokens
+      - hsmlib:/hsm/lib
+      - certs:/certs:ro
+    restart: unless-stopped
+    # Deliberately not published to the host. The tunnel is reachable only
+    # on the compose network, which is the least this shape should do.
+    expose:
+      - "12345"
+
+  # One-shot. Stages p11-kit-client.so and libffi for the signer. This is
+  # the signer's entire view of PKCS#11: a forwarding module and nothing
+  # else.
+  hsm-stage:
+    image: ssoossh-hsm-tools:sim
+    command: stage-client.sh
+    volumes:
+      - clientlib:/hsm/lib
+    restart: "no"
+
+  # Client half of the tunnel. Exists as a sidecar because the signer image
+  # is distroless: no shell, no socat, and it should gain neither.
+  hsm-bridge:
+    image: ssoossh-hsm-tools:sim
+    depends_on:
+      hsm-certs:
+        condition: service_completed_successfully
+      hsm-stage:
+        condition: service_completed_successfully
+    command: hsm-bridge.sh
+    environment:
+      HSM_HOST: hsm
+      HSM_PORT: "12345"
+    volumes:
+      - certs:/certs:ro
+      - p11sock:/run/p11
+    restart: unless-stopped
+
+  ssoosshd:
+    build:
+      context: ../..
+      dockerfile: deploy/hsm-sim/Dockerfile.ssoosshd-sim
+    image: ssoossh-server:hsm-sim
+    depends_on:
+      - hsm-bridge
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Where p11-kit-client.so looks for the socket the bridge presents.
+      P11_KIT_SERVER_ADDRESS: unix:path=/run/p11/p11.sock
+      # Needed only because distroless/cc-debian12 has no libffi.so.8, which
+      # p11-kit-client.so links against. libsofthsm2.so needs no such thing.
+      # If the server image gains libffi, delete this line -- pointing
+      # LD_LIBRARY_PATH at a directory is a bigger lever than it looks.
+      LD_LIBRARY_PATH: /hsm/lib
+    volumes:
+      - ./config:/etc/ssoossh:ro
+      - clientlib:/hsm/lib:ro
+      - p11sock:/run/p11
+      - data:/var/lib/ssoossh
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # Proves the whole chain end to end from the signer's side of the tunnel,
+  # using the same forwarding module ssoosshd loads.
+  hsm-verify:
+    image: ssoossh-hsm-tools:sim
+    profiles: [verify]
+    depends_on:
+      - hsm-bridge
+    environment:
+      P11_KIT_SERVER_ADDRESS: unix:path=/run/p11/p11.sock
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        M=/hsm/lib/p11-kit-client.so
+        echo "verify: objects reachable through the tunnel"
+        pkcs11-tool --module $$M --login --pin "$$(cat /hsm/pin/pin)" --list-objects
+        echo "verify: signing across the tunnel"
+        head -c 48 /dev/urandom > /tmp/d
+        pkcs11-tool --module $$M --login --pin "$$(cat /hsm/pin/pin)" \
+          --sign --mechanism ECDSA --label ssoossh-ca \
+          --input-file /tmp/d --output-file /tmp/s
+        echo "verify: OK, produced $$(wc -c < /tmp/s) bytes of signature"
+    volumes:
+      - clientlib:/hsm/lib:ro
+      - p11sock:/run/p11
+      # Only so the check can read the generated PIN. ssoosshd gets it from
+      # its own config; note that it, too, must hold the PIN -- the proxy
+      # forwards C_Login rather than performing it for you, so this topology
+      # buys separation of the key bytes, not of the authority to use them.
+      - pin:/hsm/pin:ro
+    restart: "no"
+
+volumes:
+  # Appliance side. The signer mounts none of these.
+  tokens:
+  hsmlib:
+  pin:
+  # Signer side.
+  clientlib:
+  p11sock:
+  certs:
+  data:
