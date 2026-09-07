@@ -18,7 +18,8 @@ This transparency helps the maintainer understand the contribution's context and
 
 If you are Claude or another AI assistant working in this repository:
 
-- Read `client/CLAUDE.md` and `server/CLAUDE.md` for project-specific instructions.
+- Read `./CLAUDE.md` for project-wide instructions, then `client/CLAUDE.md` and
+  `server/CLAUDE.md` for each side's role and layout.
 - Read `./.claude/rules/` for language-specific conventions (Go, TypeScript) and the ssoossh-specific facts in `.claude/rules/ssoossh.md`.
 - Follow `AGENTS.md` if multiple agents are working in parallel.
 - The project uses `rtk` (Rust Token Killer) to minimize token usage; use it in bash commands.
@@ -50,10 +51,11 @@ Fixes #42
 
 - `/cmd/` — binary entrypoints (client, server)
 - `/client/` — SSH client code (Go)
-- `/server/` — SSH server code (Go)
+- `/server/` — `ssoosshd` server code (Go)
 - `/internal/` — shared code (Go)
 - `/frontend/` — web UI (SvelteKit, TypeScript)
-- `/docs/` — documentation
+- `/docs/` — design proposals, developer notes, and generated artifacts
+- `/user-docs/` — the documentation site (Astro Starlight)
 - `/test/` — end-to-end test harness
 
 ### Requirements
@@ -69,7 +71,9 @@ toolchain is not needed here. Its documentation is still maintained in this
 repository under `user-docs/`.
 
 `make help` lists every target with a one-line description. Run it first if
-you are not sure what exists.
+you are not sure what exists. [Makefile.md](Makefile.md) is the same list with
+the reasoning behind each group; it is generated, so `make makefile-docs`
+regenerates it when a target's help text changes.
 
 ### Running Tests Locally
 
@@ -83,10 +87,15 @@ go test ./server/service/...
 # Frontend tests (vitest)
 make frontend-test
 
+# Accessibility: an axe sweep of the app and of the docs site's pages
+make a11y
+
 # Tagged suites that are NOT part of `make test`
 make test-resilience     # shutdown, database loss, OIDC loss
 make test-load           # load, soak, concurrency (slow; weekly in CI)
 make test-migration      # SQLite/Postgres schema parity
+make test-hsm            # HSM key source against softhsm2 (needs softhsm2 + opensc)
+make test-memory-leak    # quarantined: these assert defects EXIST, so they fail
 
 # End-to-end. Tier 3 modifies host state: it creates and unlocks a local
 # account and runs sshd as root. Read test/e2e/README.md before running it.
@@ -168,7 +177,7 @@ and fail the merge gate over punctuation.
 | --- | --- | --- |
 | `make fmt` | gofmt plus prettier, in place | Formatting first, so nothing after it reports a formatting problem |
 | `make lint-fix` | `golangci-lint run --fix` | Fixes the mechanical findings before anything checks for them |
-| `make check-generated` | types, OpenAPI, man pages, Makefile.md | Catches a generated file you forgot to regenerate and commit |
+| `make check-generated` | all eight gates: wire types, OpenAPI (freshness and lint), man pages, the config reference, the CLI reference, Makefile.md, the wire contract | Catches a generated file you forgot to regenerate and commit |
 | `make ci-required` | every blocking CI check | The actual gate |
 
 Expect the first run to take a while: `ci-required` builds the web UI, runs
@@ -185,7 +194,7 @@ cover-ci cover-floors test-migration semgrep
 
 **Verify with `make pre-pr`, never with a hand-assembled subset.** `make lint`
 passes no build tags and `make test` does not build the tagged suites, so a
-test behind `e2e`, `resilience`, `load`, `dbparity`, `softhsm` or
+test behind `e2e`, `resilience`, `load`, `dbparity`, `hsm`, `softhsm` or
 `natsintegration` can fail to compile entirely while `lint`, `test`,
 `check-generated` and every frontend gate report success. `make lint` also
 runs with your own GOOS, so nothing in that list sees the Windows or macOS
@@ -220,8 +229,10 @@ the differences that have actually broken a build.
 | `build` | yes | On PRs: generated-artifact staleness plus a single-target snapshot build. The full signed multi-platform pipeline runs on tags, weekly, and manual dispatch |
 | `e2e` | yes | Three tiers plus the multi-signer job. sqlite only except tier 1, which runs both backends |
 | `client-matrix` | yes | macOS and Windows client and agent tests |
-| `resilience` | yes | Resilience and accessibility. The load job is weekly, not per-PR |
+| `resilience` | yes | Resilience, migration parity, frontend tests, and the axe sweep over both the app and the docs site. The load job is weekly, not per-PR |
+| `hsm` | when it runs | The HSM key source against a real SoftHSM2 token. Unlike the others it filters in `on:` rather than in a `changes` job, so on an unrelated PR it does not start at all rather than reporting as skipped |
 | `security` | partly | semgrep blocks; govulncheck and pnpm audit report to a PR comment |
+| `docs-site` | no | Builds and deploys the documentation site on a push to `main`. Skipped while the repository is private |
 
 Most workflows are behind a path filter, so a docs-only PR will show several
 checks as skipped. Skipped satisfies branch protection; it is not a failure.
@@ -236,7 +247,7 @@ checks as skipped. Skipped satisfies branch protection; it is not a failure.
 - **`semgrep`** — frontend only, and it is a merge gate rather than advisory.
   `make semgrep` reproduces it exactly (same pinned image, same rule packs).
 - **`client-matrix`** — a macOS or Windows path. Nothing local reproduces it;
-  read the job log.
+  read the job log, and see the note above on what differs per platform.
 
 ### PR Guidelines
 
