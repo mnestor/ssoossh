@@ -155,6 +155,7 @@ Exactly one of two sources, and startup fails without one:
 | --- | --- | --- |
 | Inline PEM in the config file | [`ssh_key`](/ssoossh/reference/config/top-level/#ssh_key) | the private key, in memory, readable by anyone who can read the config file |
 | A file beside the config | [`ssh_key_file`](/ssoossh/reference/config/top-level/#ssh_key_file) | the private key, in memory, readable by anyone who can read *that* file |
+| An `ssh-agent` | [`ssh_key_agent`](/ssoossh/operations/ssh-agent/) | nothing. The signer sends blobs to the agent and never sees the key |
 | A PKCS#11 token (HSM or SoftHSM2) | [`hsm.module`](/ssoossh/reference/config/hsm/#module) and the rest of the [`hsm`](/ssoossh/reference/config/hsm/) section | a handle. The private key never leaves the hardware |
 
 :::danger
@@ -162,6 +163,22 @@ Whatever holds `ssh_key` *is* the CA. Anyone who can read it can sign
 certificates for any principal your hosts accept. Treat it like the private
 key it contains, and prefer the token path where you have one.
 :::
+
+### The agent is the one that changes the trust model
+
+[`ssh_key_agent`](/ssoossh/operations/ssh-agent/) is the only source where
+the private key is neither in `ssoosshd`'s memory nor reachable from it. The
+agent protocol has no export operation, so a compromise of the server is a
+signing oracle, not a key disclosure.
+
+An agent can hold a PKCS#11 token (`ssh-add -s <module>`), so this is
+usually the better way to reach an HSM than `hsm` is: the vendor's library
+loads in the agent's address space rather than the signer's, and the default
+`ssoosshd` build needs no PKCS#11 support at all.
+
+What it does not give is least authority. The agent signs whatever it is
+handed, so a compromised signer can still issue any certificate the CA
+could. That bound comes from split mode, below, and the two compose.
 
 ### What `ssh_key_file` changes, and what it does not
 

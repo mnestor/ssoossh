@@ -299,7 +299,7 @@ func TestSignerConfig_ResolveCAKey_SourceExclusivity(t *testing.T) {
 				s.SSHKey = testCAKeyPEM
 				s.SSHKeyFile = writeKeyFile(t, "ca-key", testCAKeyPEM)
 			},
-			wantErr: "exactly one of ssh_key, ssh_key_file and hsm",
+			wantErr: "exactly one of ssh_key, ssh_key_file, hsm and ssh_key_agent",
 		},
 		{
 			name: "should reject when ssh_key_file and hsm are both set",
@@ -307,7 +307,7 @@ func TestSignerConfig_ResolveCAKey_SourceExclusivity(t *testing.T) {
 				s.SSHKeyFile = writeKeyFile(t, "ca-key", testCAKeyPEM)
 				s.HSM = validHSM
 			},
-			wantErr: "exactly one of ssh_key, ssh_key_file and hsm",
+			wantErr: "exactly one of ssh_key, ssh_key_file, hsm and ssh_key_agent",
 		},
 		{
 			name: "should name every source that was set when all three are",
@@ -543,4 +543,133 @@ func TestSignerConfig_ResolvedAccessors_WithoutValidate(t *testing.T) {
 			t.Errorf("ResolvedSSHKey() = %q, want the file contents", got)
 		}
 	})
+}
+
+func TestAgentConfig(t *testing.T) {
+	// Not parallel: the subtests use t.Setenv, which a parallel parent
+	// forbids.
+	tests := []struct {
+		name       string
+		agent      AgentConfig
+		env        string
+		wantSocket string
+		wantErr    string
+	}{
+		{
+			name:       "should use the configured socket",
+			agent:      AgentConfig{Socket: "/run/ssoossh/agent.sock"},
+			wantSocket: "/run/ssoossh/agent.sock",
+		},
+		{
+			name:       "should fall back to SSH_AUTH_SOCK when socket is unset",
+			agent:      AgentConfig{KeyFingerprint: "SHA256:abc"},
+			env:        "/tmp/inherited.sock",
+			wantSocket: "/tmp/inherited.sock",
+		},
+		{
+			name:       "should prefer the configured socket over SSH_AUTH_SOCK",
+			agent:      AgentConfig{Socket: "/run/explicit.sock"},
+			env:        "/tmp/inherited.sock",
+			wantSocket: "/run/explicit.sock",
+		},
+		{
+			name:    "should reject when neither socket nor SSH_AUTH_SOCK is set",
+			agent:   AgentConfig{KeyFingerprint: "SHA256:abc"},
+			wantErr: "socket is required",
+		},
+		{
+			name:    "should reject a fingerprint that is not SHA256",
+			agent:   AgentConfig{Socket: "/s.sock", KeyFingerprint: "MD5:aa:bb"},
+			wantErr: "not a SHA256 fingerprint",
+		},
+		{
+			name:  "should accept an absent fingerprint",
+			agent: AgentConfig{Socket: "/s.sock"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Not parallel: t.Setenv and parallel subtests are exclusive.
+			t.Setenv("SSH_AUTH_SOCK", tt.env)
+			err := tt.agent.validate()
+			assertErrContains(t, err, tt.wantErr)
+			if tt.wantSocket != "" && tt.agent.ResolvedSocket() != tt.wantSocket {
+				t.Errorf("ResolvedSocket() = %q, want %q", tt.agent.ResolvedSocket(), tt.wantSocket)
+			}
+		})
+	}
+}
+
+func TestAgentConfig_Enabled(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		agent AgentConfig
+		want  bool
+	}{
+		{"should be disabled when the block is empty", AgentConfig{}, false},
+		{"should be enabled when only socket is set", AgentConfig{Socket: "/s.sock"}, true},
+		{"should be enabled when only key_fingerprint is set", AgentConfig{KeyFingerprint: "SHA256:a"}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tt.agent.Enabled(); got != tt.want {
+				t.Errorf("Enabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSignerConfig_ResolveCAKey_AgentExclusivity(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		mutate  func(t *testing.T, s *SignerConfig)
+		wantErr string
+	}{
+		{
+			name: "should accept ssh_key_agent alone",
+			mutate: func(_ *testing.T, s *SignerConfig) {
+				s.Agent = AgentConfig{Socket: "/s.sock"}
+			},
+		},
+		{
+			name: "should reject ssh_key_agent alongside ssh_key",
+			mutate: func(_ *testing.T, s *SignerConfig) {
+				s.SSHKey = testCAKeyPEM
+				s.Agent = AgentConfig{Socket: "/s.sock"}
+			},
+			wantErr: "ssh_key and ssh_key_agent",
+		},
+		{
+			name: "should reject ssh_key_agent alongside hsm",
+			mutate: func(_ *testing.T, s *SignerConfig) {
+				s.HSM = HSMConfig{Module: "/m.so", TokenLabel: "t", PIN: "1", KeyLabel: "k"}
+				s.Agent = AgentConfig{Socket: "/s.sock"}
+			},
+			wantErr: "hsm and ssh_key_agent",
+		},
+		{
+			name: "should reject a passphrase alongside ssh_key_agent",
+			mutate: func(_ *testing.T, s *SignerConfig) {
+				s.Agent = AgentConfig{Socket: "/s.sock"}
+				s.SSHKeyPassphrase = "hunter2"
+			},
+			wantErr: "cannot be used with ssh_key_agent",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := &SignerConfig{}
+			tt.mutate(t, s)
+			assertErrContains(t, s.resolveCAKey(), tt.wantErr)
+		})
+	}
 }

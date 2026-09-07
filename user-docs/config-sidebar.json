@@ -74,6 +74,10 @@
     "slug": "reference/config/hsm"
   },
   {
+    "label": "ssh_key_agent",
+    "slug": "reference/config/ssh_key_agent"
+  },
+  {
     "label": "pubsub",
     "slug": "reference/config/pubsub"
   },

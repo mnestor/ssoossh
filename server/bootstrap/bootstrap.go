@@ -62,6 +62,21 @@ func (a *app) newCAKeySource() (signer.CAKeySource, error) {
 		return a.caKeySource, nil
 	}
 
+	// Agent-backed source. Checked before the HSM branch because it is the
+	// source that needs no PKCS#11 module in this process at all.
+	if a.config.Signer.Agent.Enabled() {
+		ks, err := signer.NewAgentKeySource(signer.AgentParams{
+			Socket:      a.config.Signer.Agent.ResolvedSocket(),
+			Fingerprint: a.config.Signer.Agent.KeyFingerprint,
+		})
+		if err != nil {
+			return nil, err
+		}
+		a.caKeySource = ks
+		a.closeCAKeySource = func(context.Context) error { return ks.Close() }
+		return ks, nil
+	}
+
 	// Select the key source based on config.
 	if !a.config.Signer.HSM.Enabled() {
 		// PEM-backed source from config

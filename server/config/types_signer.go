@@ -75,6 +75,53 @@ func (h *HSMConfig) validate() error {
 	return nil
 }
 
+// AgentConfig configures an ssh-agent as the CA key source. The agent holds
+// the private key; ssoosshd sends it blobs to sign and never sees the key.
+//
+// This is the only source that reaches an HSM without linking PKCS#11 into
+// ssoosshd: `ssh-add -s /path/to/module` loads a token into the agent, and
+// the signer then talks the agent protocol to a key that never left the
+// hardware. It is also the only source that can hold an Ed25519 CA key
+// outside the config file, since the PKCS#11 path cannot sign with one.
+//
+// See https://mnestor.github.io/ssoossh/operations/ssh-agent/.
+type AgentConfig struct {
+	// Socket is the agent's Unix socket path. Empty falls back to
+	// SSH_AUTH_SOCK, which is convenient interactively and worth setting
+	// explicitly for a service, where inheriting a socket from whatever
+	// environment systemd happened to pass is not a decision anyone made.
+	Socket string `mapstructure:"socket" example:"\"/run/ssoossh/agent.sock\""`
+
+	// KeyFingerprint selects the CA key by SHA256 fingerprint, the form
+	// `ssh-add -l` prints. Optional when the agent holds exactly one key;
+	// required when it holds more, because "the first key" depends on the
+	// order they were added and is not an identity.
+	KeyFingerprint string `mapstructure:"key_fingerprint" example:"\"SHA256:WdJsHl3uxM2S7QwPQKBXaHAW8bKNToZMbzrcGq4DZvA\""`
+}
+
+// Enabled reports whether an agent-backed CA key is configured.
+func (a *AgentConfig) Enabled() bool { return a.Socket != "" || a.KeyFingerprint != "" }
+
+// ResolvedSocket returns the agent socket path, falling back to
+// SSH_AUTH_SOCK when socket is unset.
+func (a *AgentConfig) ResolvedSocket() string {
+	if a.Socket != "" {
+		return a.Socket
+	}
+	return os.Getenv("SSH_AUTH_SOCK")
+}
+
+// validate rejects an agent block that cannot reach an agent.
+func (a *AgentConfig) validate() error {
+	if a.ResolvedSocket() == "" {
+		return fmt.Errorf("ssh_key_agent.socket is required when SSH_AUTH_SOCK is not set")
+	}
+	if a.KeyFingerprint != "" && !strings.HasPrefix(a.KeyFingerprint, "SHA256:") {
+		return fmt.Errorf("ssh_key_agent.key_fingerprint %q is not a SHA256 fingerprint: use the form ssh-add -l prints", a.KeyFingerprint)
+	}
+	return nil
+}
+
 // SignerConfig is everything the signer needs to run: the broker that
 // carries signing jobs and the CA private key that signs them. It is its
 // own struct so `ssoosshd sign` has a named, self-contained configuration
@@ -143,6 +190,14 @@ type SignerConfig struct {
 	// Supported: ECDSA P-256/384/521, RSA >= 2048. Ed25519 is not supported
 	// by PKCS#11 here; keep ssh_key for an Ed25519 CA.
 	HSM HSMConfig `mapstructure:"hsm"`
+
+	// Agent optionally sources the CA key from a running ssh-agent instead
+	// of ssh_key, ssh_key_file or hsm. Exactly one of the four may be set.
+	//
+	// Unlike hsm, this needs no PKCS#11 module in this process -- an agent
+	// with a token loaded (`ssh-add -s`) gives HSM-backed signing from a
+	// cgo-free build. Unlike hsm, it also supports Ed25519.
+	Agent AgentConfig `mapstructure:"ssh_key_agent"`
 
 	// PubSub configures the message broker behind the certificate pipeline.
 	// gochannel is in-process; NATS is required for multi-instance and
@@ -239,8 +294,9 @@ func (s *SignerConfig) Validate() error {
 // try to load it. See the Validate doc comment.
 func (s *SignerConfig) resolveCAKey() error {
 	hsmEnabled := s.HSM.Enabled()
+	agentEnabled := s.Agent.Enabled()
 
-	configured := make([]string, 0, 3)
+	configured := make([]string, 0, 4)
 	if s.SSHKey != "" {
 		configured = append(configured, "ssh_key")
 	}
@@ -250,15 +306,33 @@ func (s *SignerConfig) resolveCAKey() error {
 	if hsmEnabled {
 		configured = append(configured, "hsm")
 	}
+	if agentEnabled {
+		configured = append(configured, "ssh_key_agent")
+	}
 	if len(configured) > 1 {
-		return fmt.Errorf("exactly one of ssh_key, ssh_key_file and hsm may be set, got %s: two CA key sources would be ambiguous",
+		return fmt.Errorf("exactly one of ssh_key, ssh_key_file, hsm and ssh_key_agent may be set, got %s: two CA key sources would be ambiguous",
 			strings.Join(configured, " and "))
 	}
 
-	if hsmEnabled {
+	// A passphrase decrypts PEM. Neither a token nor an agent has any PEM
+	// to decrypt, so a passphrase set alongside one is a misunderstanding
+	// worth naming rather than ignoring.
+	if hsmEnabled || agentEnabled {
 		if s.SSHKeyPassphrase != "" || s.SSHKeyPassphraseFile != "" {
-			return fmt.Errorf("ssh_key_passphrase cannot be used with hsm: an HSM key is unlocked by hsm.pin, not by a passphrase")
+			source := "hsm"
+			unlock := "an HSM key is unlocked by hsm.pin, not by a passphrase"
+			if agentEnabled {
+				source = "ssh_key_agent"
+				unlock = "an agent holds an already-unlocked key; unlock it when you ssh-add it"
+			}
+			return fmt.Errorf("ssh_key_passphrase cannot be used with %s: %s", source, unlock)
 		}
+	}
+
+	if agentEnabled {
+		return s.Agent.validate()
+	}
+	if hsmEnabled {
 		return s.HSM.validate()
 	}
 

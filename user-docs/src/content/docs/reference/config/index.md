@@ -20,6 +20,7 @@ Every `ssoosshd.yaml` key, one page per top-level section. The pages are generat
 | [admin](/ssoossh/reference/config/admin/) | administrative and auditor access |
 | [audit](/ssoossh/reference/config/audit/) | how long the database copy is kept and where the durable log is shipped |
 | [hsm](/ssoossh/reference/config/hsm/) | optionally sources the CA key from a PKCS#11 token instead of ssh_key |
+| [ssh_key_agent](/ssoossh/reference/config/ssh_key_agent/) |  |
 | [pubsub](/ssoossh/reference/config/pubsub/) | the message broker behind the certificate pipeline |
 | [cert_options](/ssoossh/reference/config/cert_options/) | the issuance policy for each certificate type |
 | [mail](/ssoossh/reference/config/mail/) | the relay, the sender, and the local template overrides |

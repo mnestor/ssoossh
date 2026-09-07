@@ -801,6 +801,24 @@ Default:
 Selects the key pair by CKA_ID, hex\-encoded (pkcs11\-tool \-\-id).
 Default:
 .BR empty .
+.SS ssh_key_agent
+Optionally sources the CA key from a running ssh\-agent instead of ssh_key, ssh_key_file or hsm. Exactly one of the four may be set.
+.IP
+Unlike hsm, this needs no PKCS#11 module in this process \-\- an agent with a token loaded (`ssh\-add \-s`) gives HSM\-backed signing from a cgo\-free build. Unlike hsm, it also supports Ed25519.
+.IP
+This is the only source that reaches an HSM without linking PKCS#11 into ssoosshd: `ssh\-add \-s /path/to/module` loads a token into the agent, and the signer then talks the agent protocol to a key that never left the hardware. It is also the only source that can hold an Ed25519 CA key outside the config file, since the PKCS#11 path cannot sign with one.
+.IP
+See https://mnestor.github.io/ssoossh/operations/ssh\-agent/.
+.TP
+.BI ssh_key_agent.socket: " string"
+The agent's Unix socket path. Empty falls back to SSH_AUTH_SOCK, which is convenient interactively and worth setting explicitly for a service, where inheriting a socket from whatever environment systemd happened to pass is not a decision anyone made.
+Default:
+.BR empty .
+.TP
+.BI ssh_key_agent.key_fingerprint: " string"
+Selects the CA key by SHA256 fingerprint, the form `ssh\-add \-l` prints. Optional when the agent holds exactly one key; required when it holds more, because "the first key" depends on the order they were added and is not an identity.
+Default:
+.BR empty .
 .SS pubsub (the message broker behind the certificate pipeline)
 gochannel is in\-process; NATS is required for multi\-instance and split\-process deployments.  gochannel (in\-process) is the default and suitable for single\-instance deployments. NATS is required for multi\-instance deployments where multiple ssoosshd processes share a database.
 .TP
