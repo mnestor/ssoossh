@@ -511,6 +511,11 @@ jobs:
       contents: write
       # The version tags created below.
       packages: write
+    # This job checks nothing out on purpose, so gh has no remote to read
+    # the repository from and every call would die on "fatal: not a
+    # repository". GH_REPO names it instead, for the whole job.
+    env:
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
