@@ -56,7 +56,7 @@ everything.
 
 ## Invocation modes
 
-| | `Match exec` + `ssoossh ssh login` | `ProxyCommand` |
+| Behaviour | `Match exec` + `ssoossh ssh login` | `ProxyCommand` |
 | --- | --- | --- |
 | Client after issuance | exits | stays running, relays TCP for the session |
 | ssh-agent | optional | **required** (ssh won't re-read changed key files) |

@@ -12,7 +12,7 @@ certificate on stdout, and both have an environment equivalent for the
 invocations whose command line is not yours to edit -- an `ssh_config`
 `Match exec` line, a cron entry, a systemd unit.
 
-| | Flag | Environment | Answers |
+| Output | Flag | Environment | Answers |
 | --- | --- | --- | --- |
 | Trace | `-v`, `-vv`, `-vvv` | `SSOOSSH_VERBOSE=1..3` | what the client did, in order |
 | Report | `--debug` | `SSOOSSH_DEBUG=1` | what it resolved, and from where |

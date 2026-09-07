@@ -84,6 +84,16 @@ import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
 ```mermaid
 sequenceDiagram
+    accTitle: The shape of a certificate login
+    accDescr {
+      The user runs ssh to a host. Through Match exec or ProxyCommand, ssh
+      invokes the ssoossh client, which sends its public key and requested
+      options to ssoosshd and opens a browser. The user signs in at the
+      identity provider, which returns their identity and groups, and
+      approves. ssoosshd returns a signed certificate; the client loads it
+      into ssh-agent; ssh connects to the target host, which verifies the
+      certificate against TrustedUserCAKeys.
+    }
     autonumber
     actor U as You
     participant S as ssh

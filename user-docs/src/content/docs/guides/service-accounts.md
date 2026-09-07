@@ -16,6 +16,16 @@ obtained.
 
 ```mermaid
 sequenceDiagram
+    accTitle: Enrolling a service key once, then reissuing without a human
+    accDescr {
+      An operator runs service enroll with a key path. The client sends the
+      public key to the server, which opens an approval page in the operator’s
+      browser; the operator approves, choosing a service account. The server
+      returns an enrollment code, the account and an expiry, which the client
+      prints once and stores nowhere. Later, a scheduled job runs service
+      retrieve with that code and key: the client sends only the code, and the
+      server returns a certificate for the enrolled key.
+    }
     autonumber
     actor Operator
     participant Client as ssoossh client

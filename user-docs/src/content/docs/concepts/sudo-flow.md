@@ -21,6 +21,18 @@ disk, no cache, no key that outlives the attempt.
 
 ```mermaid
 sequenceDiagram
+    accTitle: What happens when sudo or su calls pam_ssoossh
+    accDescr {
+      The user runs sudo or su. pam_ssoossh generates an ephemeral keypair and
+      requests a certificate with a nonce. The server authenticates and
+      authorizes the user through the same browser approval an interactive
+      login uses, then returns a certificate and the seconds it is valid for.
+      PAM validates four things: the CA signature, that the certificate is
+      bound to the key it just generated, the principals and the nonce, and
+      the validity window. If all four pass, authentication succeeds; if the
+      certificate is invalid or expired, or the server could not be reached,
+      it fails and falls through the rest of the PAM stack.
+    }
     autonumber
     actor User
     participant PAM as pam_ssoossh

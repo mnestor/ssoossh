@@ -99,6 +99,15 @@ server side.
 
 ```mermaid
 flowchart LR
+    accTitle: The four certificate types and what trusts them
+    accDescr {
+      One CA, held by ssoosshd either as a PEM in configuration or on a
+      PKCS#11 token, issues four kinds of certificate: user certificates for
+      interactive SSH, service certificates for non-interactive jobs, PAM
+      certificates for sudo and su, and console certificates for logging in at
+      a machine with no browser. User and service certificates are presented
+      to target hosts, which trust the same CA.
+    }
     CA["ssoossh CA<br/>config PEM or PKCS#11 token"]
     CA --> U["User certificate<br/>interactive SSH<br/>shipped"]
     CA --> S["Service certificate<br/>non-interactive<br/>shipped"]

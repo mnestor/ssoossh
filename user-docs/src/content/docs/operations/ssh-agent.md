@@ -17,7 +17,7 @@ a compromise of `ssoosshd` is a signing oracle rather than a key disclosure.
 An agent can hold a PKCS#11 token, so this is usually the better way to
 reach an HSM:
 
-| | `ssh_key_agent` | `hsm` |
+| Property | `ssh_key_agent` | `hsm` |
 | --- | --- | --- |
 | Private key in `ssoosshd`'s memory | no | no |
 | PKCS#11 module loaded into `ssoosshd` | no | yes |

@@ -19,6 +19,20 @@ configuration would not already have allowed.
 
 ```mermaid
 flowchart LR
+    accTitle: Trust boundaries between client, browser, web tier, signer and host
+    accDescr {
+      Five separated areas. On the user’s machine the ssoossh client holds the
+      private key, in an agent or in a 0600 file, and sends only the public
+      key to the web tier. The browser holds an OIDC session cookie and is
+      what approves. The web tier — ssoosshd serve api — runs the HTTP API and
+      web UI against a database and an audit log, and hands the signer a
+      signing job containing no secrets. The signer, ssoosshd sign, holds the
+      CA private key and has no database of its own; it returns the signed
+      certificate, which the web tier delivers to the client over server-sent
+      events. On the target host, sshd trusts the CA through TrustedUserCAKeys
+      and pam_ssoossh reads the root-owned principals map; the user’s private
+      key never leaves their machine.
+    }
     subgraph U["User's machine"]
         CLI["ssoossh client"]
         PK["private key: agent or 0600 file"]

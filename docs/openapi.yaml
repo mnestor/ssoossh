@@ -2666,8 +2666,8 @@ components:
       name: ssoossh_session
       type: apiKey
 externalDocs:
-  description: ""
-  url: ""
+  description: ssoossh documentation
+  url: https://mnestor.github.io/ssoossh/
 info:
   contact:
     name: ssoossh
