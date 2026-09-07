@@ -329,37 +329,80 @@ func formatDate(t time.Time) string {
 	return t.Local().Format("2006-01-02")
 }
 
-// remainingLabel says what is left of a validity window, as the
-// parenthetical the web UI prints beside one: "8 hours left", or "expired"
-// once it has passed. `until` alone renders "already elapsed" there, which
-// reads as a sentence fragment rather than a state.
+// remainingLabel says what is left of a validity window, in the compact
+// units the web UI prints beside one: "~8h left", or "expired" once it has
+// passed. `until` alone renders "already elapsed" there, which reads as a
+// sentence fragment rather than a state.
+//
+// Approximate on purpose, and marked so. The figure is stale by the time
+// anyone reads it, and a single rounded unit is what the reader actually
+// wants from a window whose two exact ends are printed on the same row.
 func remainingLabel(t time.Time) string {
 	d := time.Until(t)
 	if d <= 0 {
 		return "expired"
 	}
-	return approxDuration(d) + " left"
+	return "~" + compactDuration(d) + " left"
+}
+
+// compactDuration renders a span as one rounded figure in the units the web
+// UI uses: "8h", "2d", "3mo", "45s".
+//
+// Rounded to the minute first, then to the display unit, because these
+// messages are sent moments after the certificate is signed: an eight hour
+// certificate has seven hours fifty-nine minutes left by the time the
+// template runs, and truncating printed "7h" for a certificate nobody would
+// describe that way. Working upward through whole hours does the same for
+// the tier boundaries, so a two day certificate reads "2d" rather than
+// falling into the hours below it as "48h".
+//
+// Nearest rather than always up: a year-long enrollment code is 12.2 months,
+// and rounding that up would announce thirteen.
+func compactDuration(d time.Duration) string {
+	if d >= time.Minute {
+		d = d.Round(time.Minute)
+	}
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int((d+500*time.Millisecond)/time.Second))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int((d+30*time.Second)/time.Minute))
+	}
+
+	hours := int((d + 30*time.Minute) / time.Hour)
+	if hours < 48 {
+		return fmt.Sprintf("%dh", hours)
+	}
+	days := (hours + 12) / 24
+	if days < 60 {
+		return fmt.Sprintf("%dd", days)
+	}
+	return fmt.Sprintf("%dmo", (days+15)/30)
 }
 
 // approxDuration renders a span in the largest unit that still says
 // something useful. time.Duration's own String prints "2159h58m12.4s" for
 // 90 days, which answers the question in a form nobody reads at a glance.
 //
-// Truncated rather than rounded, matching `ssoossh service enroll`'s
-// terminal output: for a credential's remaining life, understating is the
-// safe direction.
+// Rounded to the nearest unit rather than truncated. `ssoossh service
+// enroll` truncates the same span in its terminal output, on the grounds
+// that understating a credential's life is the safe direction, but that
+// terminal line is printed the instant the code is minted; a message about
+// a window that started before it was sent is always a minute or two short
+// of the round figure, and truncating turned every one of them into the
+// unit below.
 func approxDuration(d time.Duration) string {
 	if d <= 0 {
 		return "already elapsed"
 	}
 	switch {
 	case d >= 48*time.Hour:
-		return fmt.Sprintf("%d days", int(d.Hours()/24))
+		return fmt.Sprintf("%d days", int((d+12*time.Hour)/(24*time.Hour)))
 	case d >= 2*time.Hour:
-		return fmt.Sprintf("%d hours", int(d.Hours()))
+		return fmt.Sprintf("%d hours", int((d+30*time.Minute)/time.Hour))
 	case d >= 2*time.Minute:
-		return fmt.Sprintf("%d minutes", int(d.Minutes()))
+		return fmt.Sprintf("%d minutes", int((d+30*time.Second)/time.Minute))
 	default:
-		return fmt.Sprintf("%d seconds", int(d.Seconds()))
+		return fmt.Sprintf("%d seconds", int((d+500*time.Millisecond)/time.Second))
 	}
 }

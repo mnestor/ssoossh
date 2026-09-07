@@ -645,9 +645,9 @@ In addition, these functions are available in every template:
 | --- | --- | --- |
 | `datetime` | `{{ datetime .ApprovedAt }}` | `2026-08-24 15:04:05 CEST`, or `not set` for a zero time |
 | `date` | `{{ date .CodeExpiresAt }}` | `2026-11-22`, or `not set` |
-| `approx` | `{{ approx .CertificateLifetime }}` | `8 hours`, `90 days` -- the largest unit that still says something, truncated |
+| `approx` | `{{ approx .CertificateLifetime }}` | `8 hours`, `90 days` -- the largest unit that still says something, rounded to the nearest one |
 | `until` | `{{ until .CodeExpiresAt }}` | `89 days`, or `already elapsed` |
-| `remaining` | `{{ remaining .ExpiresAt }}` | `8 hours left`, or `expired` -- what the web UI prints beside a validity period |
+| `remaining` | `{{ remaining .ExpiresAt }}` | `~8h left`, or `expired` -- one rounded unit, in the compact form the web UI prints beside a validity period |
 | `join` | `{{ join .Principals ", " }}` | `deploy-bot, deploy-bot-2` |
 
 Timestamps render in the server's local zone, with the zone named.

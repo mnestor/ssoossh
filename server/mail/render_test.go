@@ -441,6 +441,73 @@ func TestApproxDuration_shouldPickAUsefulUnit(t *testing.T) {
 	}
 }
 
+// A window a minute or two short of a round figure is the normal case, not
+// an edge one: the message goes out after the certificate is signed, so
+// there is never a whole eight hours left of an eight hour certificate.
+func TestApproxDuration_shouldRoundToTheNearestUnit(t *testing.T) {
+	tests := []struct {
+		name string
+		in   time.Duration
+		want string
+	}{
+		{"a minute short of eight hours", 8*time.Hour - time.Minute, "8 hours"},
+		{"an hour short of six days", 6*24*time.Hour - time.Hour, "6 days"},
+		{"a second short of thirty minutes", 30*time.Minute - time.Second, "30 minutes"},
+		{"halfway between two hours rounds up", 7*time.Hour + 30*time.Minute, "8 hours"},
+		{"well short of the next hour rounds down", 7*time.Hour + 10*time.Minute, "7 hours"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := approxDuration(tt.in); got != tt.want {
+				t.Errorf("approxDuration(%s) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCompactDuration_shouldRenderOneRoundedUnit(t *testing.T) {
+	tests := []struct {
+		name string
+		in   time.Duration
+		want string
+	}{
+		{"seconds below a minute", 45 * time.Second, "45s"},
+		{"minutes below an hour", 15 * time.Minute, "15m"},
+		{"a second short of an hour is an hour", time.Hour - time.Second, "1h"},
+		{"a minute short of eight hours is eight", 8*time.Hour - time.Minute, "8h"},
+		{"a minute short of two days is two days", 48*time.Hour - time.Minute, "2d"},
+		{"hours up to the two day boundary", 30 * time.Hour, "30h"},
+		{"days up to the two month boundary", 45 * 24 * time.Hour, "45d"},
+		{"a quarter is three months", 90 * 24 * time.Hour, "3mo"},
+		{"a year is twelve months, not thirteen", 365 * 24 * time.Hour, "12mo"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := compactDuration(tt.in); got != tt.want {
+				t.Errorf("compactDuration(%s) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// The tilde is the whole point of the label: the figure beside it is one
+// rounded unit, and a reader who needs the real answer has both ends of the
+// window on the same row.
+func TestRemainingLabel_shouldMarkTheFigureApproximate(t *testing.T) {
+	got := remainingLabel(time.Now().Add(8*time.Hour - time.Minute))
+	if got != "~8h left" {
+		t.Errorf("remainingLabel = %q, want %q", got, "~8h left")
+	}
+}
+
+func TestRemainingLabel_shouldReportAClosedWindowAsExpired(t *testing.T) {
+	if got := remainingLabel(time.Now().Add(-time.Hour)); got != "expired" {
+		t.Errorf("remainingLabel = %q, want %q", got, "expired")
+	}
+}
+
 // writeTemplate drops a template override into dir.
 func writeTemplate(t *testing.T, dir, name, body string) {
 	t.Helper()
