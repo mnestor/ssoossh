@@ -2,7 +2,7 @@
 
 **ssoossh** (pronounced *sue-sssh*) is SSO for SSH: users authenticate via
 OIDC and receive short-lived SSH certificates instead of managing long-lived
-keys. Self-hosted, homelab-friendly, early development.
+keys. Self-hosted, homelab-friendly, and released on a 1.x line.
 
 **The documentation is at <https://mnestor.github.io/ssoossh/>.** It is built
 from `user-docs/` in this repository and covers users, host administrators,
@@ -90,7 +90,6 @@ part has.
 | [service-retrieval-anomaly-policy.md](proposals/service-retrieval-anomaly-policy.md) | Alerting and locking an enrollment code redeemed from too many source networks |
 | [config-coordination.md](proposals/config-coordination.md) | Detecting and reporting configuration divergence between instances |
 | [gui-client-approval-flow.md](proposals/gui-client-approval-flow.md) | Approving for a GUI SSH client, which has no terminal to print the URL to |
-| [pam-principal-source.md](proposals/pam-principal-source.md) | Defect: a PAM certificate carries the local account name the requester sent, not the approver. Prerequisite for console login |
 | [console-login-pam.md](proposals/console-login-pam.md) | Console login behind the identity provider: a typed code or terminal QR instead of a URL nobody can copy. Server half built; QR and push still deferred |
 | [certificate-lifetime-policy-rework.md](proposals/certificate-lifetime-policy-rework.md) | Untangling source-address pinning from the lifetime rule, and runtime-editable policy. Partly overtaken: see the doc |
 | [ldap-gssapi-bind.md](proposals/ldap-gssapi-bind.md) | Binding to the directory with a Kerberos keytab instead of a static password |
@@ -107,6 +106,7 @@ read instead.
 | [ldap-enrichment-and-sync.md](proposals/ldap-enrichment-and-sync.md) | [LDAP](https://mnestor.github.io/ssoossh/operations/ldap/) |
 | [enrollment-group-ownership.md](proposals/enrollment-group-ownership.md) | [How it works](https://mnestor.github.io/ssoossh/concepts/), "Service certificates" |
 | [notification-kinds-expansion.md](proposals/notification-kinds-expansion.md) | [Email notifications](https://mnestor.github.io/ssoossh/operations/email-notifications/) |
+| [pam-principal-source.md](proposals/pam-principal-source.md) | [Approving in the browser](https://mnestor.github.io/ssoossh/guides/approving/), "The approval page" -- PAM and console approvers pick principals from their own accounts (commit `88eb30c`) |
 
 ## dev/
 

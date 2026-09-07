@@ -12,7 +12,8 @@ Mutation testing validates test suite assertion strength by introducing intentio
 
 ### Go Mutation Testing Tools
 
-No actively maintained Go mutation testing tools exist for Go 1.26+:
+No actively maintained Go mutation testing tools existed for the Go version
+in use at the time (1.26; `go.mod` is now 1.27):
 
 - **github.com/gtramontina/ooze**: Library package only, no main/command
 - **github.com/zimmski/go-mutesting** (v0.0.0-20210610104036): Library package only, archived upstream
@@ -23,11 +24,11 @@ No actively maintained Go mutation testing tools exist for Go 1.26+:
 Stryker 8.7.1 + vitest runner attempted. **Status: Incompatible with Svelte 5**
 
 **Failures Encountered:**
-1. Svelte 5.56.9 compiler no longer exports `walk()` utility expected by Stryker instrumentation
+1. The Svelte 5 compiler (5.56.9 at the time) no longer exports the `walk()` utility expected by Stryker instrumentation
 2. Stryker process hung without output when executed, timing out after 180+ seconds
 3. Vitest runner plugin resolution (likely fixable with pnpm now available, not pursued further)
 
-**Mitigation:** Stryker is included in frontend/package.json and frontend/stryker.conf.mjs for future attempts as versions advance.
+**Mitigation:** None kept in the tree. Stryker and its `stryker.conf.mjs` were removed from `frontend/` rather than carried as a dependency that cannot run; re-add them when a Svelte 5-compatible instrumenter exists.
 
 ## Mutations Executed: Go (server/service/)
 
@@ -99,19 +100,10 @@ Stryker 8.7.1 + vitest runner attempted. **Status: Incompatible with Svelte 5**
 
 ## Configuration
 
-Makefile targets added for mutation testing:
-
-```makefile
-mutation-test-frontend: $(FRONTEND_DIST)
-	cd frontend && npx stryker run
-
-mutation-test-go:
-	@echo "Manual mutation testing focused on critical paths..."
-
-mutation-test: mutation-test-frontend mutation-test-go
-```
-
-Frontend config: `frontend/stryker.conf.mjs`
+There are no `mutation-test*` Makefile targets and no Stryker config in the
+tree. The Go mutations above were applied by hand and reverted; repeat them
+the same way. The mutation-testing targets and `frontend/stryker.conf.mjs`
+this section once described were removed with the Stryker dependency.
 
 ## References
 

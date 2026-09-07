@@ -52,7 +52,7 @@ kp2, err := keypair.LoadSSHKeypair(privPEM)
 
 ```go
 type Keypair interface {
-    Private() interface{}
+    Private() any
     Public() ssh.PublicKey
     MarshalAuthorizedKey() (string, error)
     MarshalPrivateKey() ([]byte, error)

@@ -169,14 +169,19 @@ report the address a service certificate was actually fetched from, which is a
 different fact from the approval's source IP -- that one belongs to the human
 who approved the code and is identical on every certificate it mints.
 
+![An admin's view of a service code: what it hands out, the code's valid period and approver, who has access, an admin actions section with the notification address, and the redemption history with the address and serial of each fetch](../../../assets/screens/admin-service-code.png)
+
+<p class="screen-caption">A code's record as SOC sees it. The redemption history is the retrieval log; each entry's serial is the one on the certificate that fetch produced.</p>
+
 Policy is evaluated at retrieval, so a certificate signed months after
 approval is still bounded by the ceilings in force when it is signed.
 
 Disabling the person who approved an enrollment does not stop the job. Service
 enrollments belong to the service account, not to the approver, so the
 account's other holders keep control and unattended work keeps running. Ending
-an enrollment early is its own action, in the admin **Service code directory**,
-and it is idempotent.
+an enrollment early is its own action -- **Expire this code** on the code's
+page, open to any holder of the account and, for any account, to SOC from
+**Admin → Service codes** -- and it is idempotent.
 
 ## Two worked shapes
 

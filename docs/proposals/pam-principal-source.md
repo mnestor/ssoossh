@@ -6,9 +6,9 @@
 > it stood in this repository at the anchor commit; look for the equivalent
 > in that repository instead.
 
-**Status: implemented in the working tree, not yet committed.** Anchors
-verified against `a009511` (2026-09-04); the code they point at has since
-changed, which is the point. Kept as the record of what was wrong and why
+**Status: implemented.** Shipped in commit `88eb30c` ("pick principals for
+pam and console approvals"). Anchors were verified against `a009511`
+(2026-09-04); the code they point at has since changed, which is the point. Kept as the record of what was wrong and why
 the fix is shaped the way it is. What landed differs from the draft below in
 two places, both noted inline: the `pamUsername` parameter was removed from
 the `principals` signature entirely rather than ignored, and the approval

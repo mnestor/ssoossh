@@ -10,7 +10,7 @@ ssoosshd - The ssoossh server — an SSH certificate authority that issues again
 
 
 .SH DESCRIPTION
-The ssoossh server is the trust anchor and policy decision point for SSH access. It authenticates users through OIDC, optionally enriches identity from LDAP, and signs SSH public keys into certificates carrying the principals, critical options, extensions, and validity window that policy allows. Lifetime is derived from issuance context rather than a single global setting, and the server configuration is the outer bound on every option a client or user can request. A web UI handles approval, shows what was issued and what was trimmed, and gives users a history of their own certificates. It issues user, host, and service certificates, and never receives a private key.
+The ssoossh server is the trust anchor and policy decision point for SSH access. It authenticates users through OIDC, optionally enriches identity from LDAP, and signs SSH public keys into certificates carrying the principals, critical options, extensions, and validity window that policy allows. Lifetime is derived from issuance context rather than a single global setting, and the server configuration is the outer bound on every option a client or user can request. A web UI handles approval, shows what was issued and what was trimmed, and gives users a history of their own certificates. It issues user, PAM, console, and service certificates -- never host certificates -- and never receives a private key.
 
 
 .SH OPTIONS

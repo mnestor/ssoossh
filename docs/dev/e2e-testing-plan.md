@@ -11,12 +11,14 @@ have-a-timeout chromedp gotcha for tier 2) kept showing up during the build.
 
 Prove, on every pull request, that the product works: `ssoossh ssh login` →
 a human approves in a browser → a certificate arrives → `ssh` authenticates
-with it. That sentence is the whole product, and today nothing in CI checks
-any of it.
+with it. That sentence is the whole product, and when this was written
+nothing in CI checked any of it. (It does now: `.github/workflows/e2e.yaml`
+is a blocking gate; the rest of this section is the case that was made for
+it.)
 
-The gap is not small. The unit and component suites are healthy — 109 frontend
-tests, a full Go pipeline test — but every one of them mocks the thing on the
-other side of the wire. Between them sit failures none can see:
+The gap was not small. The unit and component suites were healthy — a large
+frontend suite, a full Go pipeline test — but every one of them mocks the
+thing on the other side of the wire. Between them sit failures none can see:
 
 - The approval page fetches an endpoint the server does not serve, or serves
   under a different path (this was the state of the old frontend: every
@@ -43,8 +45,9 @@ go test -tags=e2e ./test/e2e/...
 Tagged rather than skipped, so `go test ./...` stays fast and hermetic and the
 cross-phase gate keeps its meaning.
 
-**Docker is available and is needed anyway** — the PAM build (Phase 7) and the
-release rehearsal (Phase 6) both require containers, so the harness's
+**Docker is available and is needed anyway** — the release rehearsal (Phase 6)
+requires containers (the PAM build that Phase 7 covered has since moved to
+github.com/mnestor/ssoossh-pam with the module), so the harness's
 no-Docker design is not a claim that Docker is unavailable. It is a claim
 about the *merge gate*: a container stack with a real identity provider is
 minutes slower and has more moving parts than a per-PR check should, and the
@@ -71,8 +74,10 @@ test/e2e/
 
 The tier a test runs in comes from its **name prefix**, not the file it sits
 in: `.github/workflows/e2e.yaml` selects tier 2 with `-run '^TestApproval_'`,
-tier 3 with `-run '^TestSSH_'`, and tier 1 takes the remainder via `-skip`
-over the same anchored list. Only the tier's own job
+tier 3 with `-run '^TestSSH_'`, the `multi-signer` job with
+`-run '^TestMultiSigner_'`, and tier 1 takes the remainder via
+`-skip '^(TestApproval_|TestSSH_|TestMultiSigner_|TestMultiInstance_)'`.
+Only the tier's own job
 installs that tier's prerequisites, so a test that drives a real sshd must be
 named `TestSSH_*` wherever it lives -- `keystorage_test.go`, `service_test.go`
 and `proxycommand_test.go` each contribute one that way. A sshd-driving test

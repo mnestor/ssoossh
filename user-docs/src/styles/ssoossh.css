@@ -204,3 +204,59 @@ body {
 	letter-spacing: 0.08em;
 	margin-bottom: 0.25rem;
 }
+
+/* Screenshots of the app. They are captured in the light theme at a fixed
+   width, so they read as one set; the frame is the app's own card treatment
+   and a caption follows each one in the muted ink. */
+.sl-markdown-content img.screen,
+.sl-markdown-content p > img {
+	display: block;
+	max-width: 100%;
+	height: auto;
+	border: 1px solid var(--ssoossh-border-subtle);
+	border-radius: 10px;
+	box-shadow:
+		0 1px 2px rgb(0 0 0 / 6%),
+		0 12px 32px -16px rgb(0 0 0 / 30%);
+}
+
+.sl-markdown-content .screen-caption {
+	margin-top: 0.5rem;
+	font-size: var(--sl-text-xs);
+	color: var(--ssoossh-ink-muted);
+}
+
+/* Two narrow screenshots side by side, as one figure. */
+.sl-markdown-content .screen-pair {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+	gap: 1rem;
+	align-items: start;
+}
+
+.sl-markdown-content .screen-pair > p {
+	margin-top: 0;
+}
+
+/* The landing page's hero screenshot: the same frame as the in-page ones,
+   shown whole. Starlight caps the hero figure at 25rem in a 7:4 grid, which
+   is sized for a square illustration, not a wide screenshot. */
+@media (min-width: 50rem) {
+	.hero {
+		grid-template-columns: 6fr 5fr;
+	}
+
+	.hero > .hero-html {
+		width: min(100%, 40rem);
+	}
+}
+
+.hero-html img {
+	width: 100%;
+	height: auto;
+	border: 1px solid var(--ssoossh-border-subtle);
+	border-radius: 10px;
+	box-shadow:
+		0 1px 2px rgb(0 0 0 / 6%),
+		0 24px 48px -24px rgb(0 0 0 / 40%);
+}

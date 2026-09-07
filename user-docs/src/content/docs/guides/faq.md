@@ -3,7 +3,7 @@ title: User FAQ
 description: The questions people connecting with ssoossh ask first.
 eyebrow: User guide
 sidebar:
-  order: 6
+  order: 7
 ---
 
 Questions from the person using ssoossh to connect. Host administrators and

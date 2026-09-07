@@ -94,8 +94,9 @@ miss:
   "there is no admin concept" prerequisite recorded in
   certificate-lifetime-policy.md is stale, which unblocks step 3 of that
   document's own roadmap.
-- **Only three certificate types exist**: `user`, `service`, `pam`
-  (`server/model/enums.go:17`). Host certificates are dead. Comments in
+- **Only four certificate types exist**: `user`, `service`, `pam`, and
+  (added after this document, by console-login-pam.md) `console`
+  (`server/model/certificate_request.go`). Host certificates are dead. Comments in
   `server/config/types_certificates.go:107` and `server/service/keyid.go`
   still reference a host type and a `CertOptions.KeyIDTemplate` field that
   does not exist. Unrelated cleanup, noted so the next reader does not chase

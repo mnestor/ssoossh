@@ -28,8 +28,9 @@ ldap:
 
 - Ticket acquisition and renewal handled by the server, logged to the
   existing LDAP log destination; an expired-and-unrenewable ticket is a
-  "directory unreachable" condition for the sync (counts nothing, disables
-  nobody), exactly like a failed simple bind.
+  "directory unreachable" condition for the sync (neither starts nor
+  extends anyone's missing window, disables nobody), exactly like a failed
+  simple bind.
 - Everything above the bind is untouched: filters, field mapping, searches,
   sync, and storage from the enrichment proposal are bind-mechanism
   agnostic by design.

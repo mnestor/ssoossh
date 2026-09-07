@@ -101,6 +101,7 @@ client must render an unknown action rather than assume the list is closed.
 | `admin.user_viewed`, `admin.audit_viewed` | **Shipped log only.** An auditor working through the directory generates one per user opened and one per page of the feed, and within a session they outnumber the decisions this log exists to record. They keep their archive line -- "who looked at this account" is a real question -- and lose the table copy the web UI renders. `admin.audit_viewed` also wrote a new row on every read of the feed, which shifted the offset window under the UI's "load more" |
 | `ldap.sync_triggered` | An admin running the [directory sync](/ssoossh/operations/ldap/) by hand, with the counts the pass produced. A dry run records `dry_run: true` and no change to go with it |
 | `ldap.probed` | One directory probe, with the filter it sent and how many entries matched. The probe writes nothing, but it makes the server open an outbound connection and read an entry in full, which is worth a record |
+| `admin.diagnostics_run` | One run of the [deployment diagnostics](/ssoossh/operations/diagnostics/), with the status each of the four checks returned. Like the probe it writes nothing and makes the server dial out, so it is recorded for the same reason |
 | `admin.config_viewed` | **No longer emitted.** The effective-config screen is read-only and is reloaded constantly while an operator works, so the event arrived several times a minute and buried the decisions this log exists to record. The action stays defined so older events still read back with a name |
 
 There is no logout event: sessions mostly end by expiry, so an explicit logout
@@ -145,6 +146,10 @@ survive audit pruning. The audit trail is the history; those columns are the
 current state.
 
 ## Reading it
+
+![The Audit log page: recent events newest first, each with an actor, a plain-language action, the action name and time, and the event's fields listed underneath](../../../assets/screens/admin-audit.png)
+
+<p class="screen-caption">The audit view. Each event names its actor, says what happened in words, and lists the payload underneath; the action string on the right is what the shipped log carries.</p>
 
 Both surfaces sit behind the auditor middleware, which admins and SOC members
 reach through the role hierarchy

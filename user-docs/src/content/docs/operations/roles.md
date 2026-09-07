@@ -61,7 +61,7 @@ a user is admin-only.
 | --- | --- | --- | --- |
 | Re-enable a user | yes | no | no |
 | Disable a user | yes | yes | no |
-| Expire an enrollment early | yes | yes | no |
+| Expire any account's enrollment early | yes | yes | no |
 | Effective configuration | yes | yes | yes |
 | User directory and per-user detail | yes | yes | yes |
 | Certificate history across all users | yes | yes | yes |
@@ -71,13 +71,20 @@ a user is admin-only.
 | Run the directory sync by hand | yes | no | no |
 | Probe the directory | yes | no | no |
 | Echo your own IdP claims | yes | no | no |
+| Run the deployment diagnostics | yes | no | no |
 
 Running the sync is admin-only rather than SOC, even though a pass can
 disable an account: it restores and refreshes access as readily as it removes
 it, and re-enabling is admin-only everywhere else. Probing is admin-only
 because it makes the server open an outbound connection and read a directory
 entry in full, which is a capability rather than a view. Reading the sync
-*status* is auditor-safe: it names no credential.
+*status* is auditor-safe: it names no credential. The
+[deployment diagnostics](/ssoossh/operations/diagnostics/) are admin-only for
+the probe's reason: a run makes the server dial its own public URL.
+
+One containment action needs no role at all. A holder of a service account
+can expire that account's own codes from the code's page; the row in the
+table is the cross-account version of the same action.
 
 What no role may do, at all:
 
@@ -99,6 +106,10 @@ one. The roles nest, so an admin's account page reads `Admin` `SOC` `Auditor`
 and a SOC member's reads `SOC` `Auditor`. Someone who holds no privileged
 role sees no access row at all.
 
+![The account page: an Identity card with name, username, email, account identifier and an Access row of Admin, SOC and Auditor badges; a card listing the principals for user certificates and the service accounts; and a Groups card of group chips](../../../assets/screens/account.png)
+
+<p class="screen-caption">An admin's account page. The Access row names every role the session holds; the cards below it are what the server will put in, and consult for, this person's certificates.</p>
+
 This is display only. The badges come from the same
 `admin.require_group` / `admin.soc_group` / `admin.auditor_group` membership
 the server evaluates, and the server re-checks it on every scoped request, so
@@ -109,21 +120,32 @@ a badge cannot grant anything and its absence cannot take anything away.
 One user's page carries everything the server has stored about them, all of
 it written by a login or a sync rather than captured for the page:
 
-- **Identity** -- username, email, subject, the account lists, and the extra
-  fields the configuration captures.
+- **OIDC record** -- exactly what the identity provider sent at this user's
+  last login: the account identifier (the claim
+  [`authentication.fields.subject`](/ssoossh/reference/config/authentication/)
+  names, and the only field stable across logins), username, name, email,
+  the account lists, and the extra fields the configuration captures. Where a
+  configured `ldap.fields` entry replaces an OIDC field outright, the list is
+  badged with the source the server actually acts on.
 - **Group membership** -- every persisted group row with its source (`oidc`
   or `ldap`) and when it was first and last seen. Only names the
   configuration references are stored, so a group missing here is often one
   nothing is configured to care about. Never an authorization input.
 - **Directory record** -- the LDAP bookkeeping row: the entry's DN, the
   stored field values, when the entry was last seen, and whether it is
-  currently missing (with how long it has been). Absent for a user who has
-  never been enriched.
+  currently missing (with how long it has been). Empty for a user who has
+  never been enriched, and absent entirely while `ldap.enabled` is false --
+  two states the page keeps apart, because one calls for a sync and the
+  other for nothing.
 - **Notification choices** -- only the ones this user has changed. Anything
   absent is on its default.
 - **What disabled the account**, when it is disabled: `admin`, `soc`, or
   `ldap_sync`. That last one is the only source the sync will clear
   automatically.
+
+![A user's detail page: the OIDC record card with account identifier, username, name, created and last-updated times, and the other-accounts and service-accounts lists badged LDAP; a Group membership table with one OIDC row; and the top of the Directory record card](../../../assets/screens/admin-user.png)
+
+<p class="screen-caption">A user's page. The service accounts carry an LDAP badge because the configuration takes them from the directory; the OIDC value, had there been one, would be shown struck through beside it.</p>
 
 Between the group rows and the directory record, "why is this person missing
 a group" is answerable from the page. What it cannot show is a group the
@@ -140,12 +162,20 @@ connection string, the LDAP bind password, the SMTP password, and the HSM PIN.
 A redacted value still tells an auditor whether the setting is configured,
 which keeps "is the client secret set?" answerable without disclosing it.
 
+![The Server configuration page: a filter box, a "Show unset keys" toggle, a count of keys set, and cards per section listing each key and value, with ldap.bind_password and ssh_key shown as [redacted] with a SECRET tag](../../../assets/screens/admin-config.png)
+
+<p class="screen-caption">The effective configuration, grouped by section. A secret shows as redacted with a tag, so its presence is visible and its value is not.</p>
+
 Prefer the file-based spellings for secrets --
 [`mail.smtp.password_file`](/ssoossh/reference/config/mail/smtp/#password_file),
 [`hsm.pin_file`](/ssoossh/reference/config/hsm/#pin_file) -- so the secret is
 not config text at all.
 
 ## Disabling a user
+
+![The Users page: a search box for name, username, email or subject, All/Active/Disabled filters, and a table of users with username, email, an Active badge and the created date](../../../assets/screens/admin-users.png)
+
+<p class="screen-caption">Admin → Users. A row opens the user's page, where the Disable control lives.</p>
 
 Disabling is the containment action. It is fail-closed at login: a transient
 database error during the check denies rather than admits. The person lands on

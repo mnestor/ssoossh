@@ -18,7 +18,7 @@ For the contribution *process* — what to run before a PR, in what order — se
 `pre-pr` is `fmt` → `lint-fix` → `check-generated` → `ci-required`, in that
 order: the autofix steps must run before anything checks for what they fix.
 **Do not hand-assemble a subset in its place** — see
-[the traps](#four-things-hide-code-from-the-obvious-command).
+[the traps](#three-things-hide-code-from-the-obvious-command).
 
 ## Targets
 
@@ -229,7 +229,7 @@ Deliberately **not** in `ci-required`: `test-e2e` (modifies host state),
 `test-load` (weekly), and the client-matrix macOS/Windows legs (need those
 OSes).
 
-## Four things hide code from the obvious command
+## Three things hide code from the obvious command
 
 Why `verify` and `pre-pr` are targets rather than habits. Each of these lets a
 plain command report success over code it never looked at:

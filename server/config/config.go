@@ -29,8 +29,10 @@ var defaultconfig string
 // If the command's --config/-c flag is set, that file is used. Otherwise,
 // the following locations are searched in order, and the first one found is used:
 //  1. ./ssoosshd.yaml (current directory)
-//  2. /etc/ssoosshd.yaml (system root)
-//  3. /etc/ssoossh/ssoosshd.yaml (ssoossh-specific directory)
+//  2. $HOME/.config/ssoosshd.yaml
+//  3. $HOME/.config/ssoossh/ssoosshd.yaml
+//  4. /etc/ssoosshd.yaml (system root)
+//  5. /etc/ssoossh/ssoosshd.yaml (ssoossh-specific directory)
 func NewConfig(cmd *cobra.Command) (*Config, error) {
 	v := viper.New()
 

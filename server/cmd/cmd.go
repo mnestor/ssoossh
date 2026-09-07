@@ -51,7 +51,7 @@ func (r *RootCommand) Init(cd *simplecobra.Commandeer) error {
 		"and the server configuration is the outer bound on every option a client or user can request. " +
 		"A web UI handles approval, shows what was issued and what was trimmed, " +
 		"and gives users a history of their own certificates. " +
-		"It issues user, host, and service certificates, and never receives a private key."
+		"It issues user, PAM, console, and service certificates -- never host certificates -- and never receives a private key."
 
 	cmd.PersistentFlags().StringP("config", "c", "", "path to the ssoosshd config file")
 

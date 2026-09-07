@@ -13,11 +13,12 @@ paths:
   and `server/resources/migrations/sqlite/` (golang-migrate). A schema change
   needs a matching migration in both — write and number them together, don't
   patch one dialect and forget the other.
-- Before the first release there is one migration per dialect and a schema
-  change edits it in place; nothing is deployed for an incremental migration
-  to describe. `test/migration`'s goldens are what make that safe — they pin
-  the schema each dialect's migration builds, so a reshape that lands
-  somewhere else fails rather than passing unnoticed. Refresh them with
-  `go test ./test/migration/ -update` (add `-tags dbparity`, which needs
-  docker, for the Postgres golden) only when the schema change is intended.
-  Once released, add a numbered migration instead of editing this one.
+- The project is released, so a schema change is a new, timestamp-numbered
+  migration pair (`YYYYMMDDHHMMSS_name.{up,down}.sql`) in both dialect trees.
+  Never edit an existing migration, `20260101000000_init` included: deployed
+  databases have already applied it and golang-migrate will not re-run it.
+  `test/migration`'s goldens pin the schema each dialect's chain builds, so a
+  change that lands somewhere else fails rather than passing unnoticed.
+  Refresh them with `go test ./test/migration/ -update` (add `-tags
+  dbparity`, which needs docker, for the Postgres golden) only when the
+  schema change is intended.

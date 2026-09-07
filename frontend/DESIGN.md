@@ -41,7 +41,7 @@ Both fonts are imported in `src/app.css` and serve the entire app; no fallback t
 
 ### Font Sizes
 
-All sizes use CSS custom properties (lines 36–40 in `app.css`):
+All sizes use CSS custom properties (the `--font-size-*` block in `app.css`):
 
 - `--font-size-xs`: `0.75rem` (12px) — auxiliary labels, helper text
 - `--font-size-sm`: `0.875rem` (14px) — body text, table data, secondary text
@@ -117,6 +117,8 @@ literal:
 **Utility:**
 
 - `search` — the search box on a paged list
+- `copy` — the copy-to-clipboard affordance on a `CopyableId`
+- `server` — a host or instance (in the map; no current screen renders it)
 - `zap` — generic or all-category indicator
 
 ### Size Scale
@@ -129,7 +131,7 @@ The `sizeMap` in `Icon.svelte` defines pixel dimensions:
 - `lg`: 24px
 - `xl`: 32px
 
-Icon utilities (`.icon-xs` through `.icon-xl`) are defined in `src/app.css` lines 95–115 for manual sizing if needed outside the `Icon` component.
+Icon utilities (`.icon-xs` through `.icon-xl`) are defined in `src/app.css` (the `.icon-*` block) for manual sizing if needed outside the `Icon` component.
 
 ## Component Patterns
 
@@ -363,6 +365,41 @@ the section it belongs to is marked in the rail — for its own path and for
 anything beneath it, so `/admin/users/<id>` keeps `Users` marked while
 `/admin/certificates-archive` does not light up `Certificates`.
 
+The eight sections, and what each screen is. Three of them have their own
+subsection below; the rest in brief:
+
+- **Users** (`/admin/users`, `full` width) — the directory of every account
+  with search and the disable/enable controls; **one user**
+  (`/admin/users/<id>`) shows everything the server stores about them: the
+  OIDC record as the ID token last carried it, with each field a configured
+  `ldap.fields` entry overrides struck through beside the value actually
+  used and an `oidc`/`ldap` source badge per row; group membership with
+  source and first/last seen; the directory record, with a
+  `directory_enabled` flag separating "never enriched" from "the directory
+  is off"; changed notification preferences; and what disabled the account.
+- **Certificates** and **Config** — see the subsections below.
+- **Service codes** (`/admin/service-codes`, and one code at
+  `/admin/service-codes/<id>`) — see "The service codes screen" below; the
+  detail is a page, shared with the holder-facing view through
+  `AdminServiceCodeDetail`/`ServiceCodeDetail`, carrying the Expire control
+  for SOC.
+- **Directory** (`/admin/directory`) — the LDAP console: sync status and the
+  last pass's counts for any auditor; *Sync now* (with a dry-run option) and
+  the read-only *Probe* for admins only, since both make the server reach
+  out to the directory.
+- **Claims echo** (`/admin/identity/echo`, admin-only) — re-authenticates
+  against the provider with `prompt=login` and renders the decoded ID token,
+  each claim annotated by the field that consumes it, plus the
+  `fields.extra` block that would capture the unread ones. Nothing is
+  stored; the token arrives in the URL fragment and the page clears it.
+- **Audit log** (`/admin/audit`, `full` width) — the bounded table copy of
+  the audit stream, with a "load more" pager.
+- **Diagnostics** (`/admin/diagnostics`, admin-only) — four read-only
+  deployment self-checks run on demand (public URL reachability, proxy
+  trust and client IP, security header hygiene, CORS/edge header
+  attribution), each rendered as a card with an OK / Warning / Critical /
+  Skipped badge and a remediation note. Skipped is deliberately not a pass.
+
 ### The effective configuration screen
 
 `src/routes/admin/config/+page.svelte` renders every configuration key in
@@ -437,7 +474,7 @@ Three states, not two: **system** (the default, follows the OS live), **light**,
 
 `src/lib/theme.svelte.ts` owns the preference, persists it to `localStorage` under `ssoossh:theme`, and tracks `prefers-color-scheme` with a live `matchMedia` listener so a system theme change takes effect without a reload. The root layout starts it and applies the resolved theme to `<html>`.
 
-`ThemeToggle` in the header steps system → light → dark → system. One cycling button rather than a switch, because a switch has nowhere to put the third state. Its accessible name states both where it is and where pressing it goes.
+`ThemeToggle` — inside the rail's identity drop-up (`RailUserMenu`) for a signed-in visitor, in the slim header on the signed-out screens — steps system → light → dark → system. One cycling button rather than a switch, because a switch has nowhere to put the third state. Its accessible name states both where it is and where pressing it goes.
 
 **Avoiding the flash:** an inline script in `src/app.html` resolves the theme and sets the class _before first paint_, so the page never shows light on its way to dark. It duplicates the resolution rule deliberately — it cannot import the store, because it has to run before any module does. If you change the storage key or the resolution rule in `theme.svelte.ts`, change it there too. ssoosshd injects a CSP nonce into every script tag it serves (`server/frontend/frontend_included.go`), so the inline script is allowed.
 
@@ -469,7 +506,7 @@ Dialogs get their box from a single component class in `app.css`, not from utili
 
 ### Runtime Branding Endpoint
 
-Deployment branding (org name, logo URL, login consent notice) is fetched at app startup via an unauthenticated API call to `/api/branding`. The fetch is non-blocking and fails closed — any error (404, network failure, timeout) treats it as "no branding configured," allowing the UI to work standalone and auto-enable branding once the backend endpoint exists.
+Deployment branding (org name, logo URL, login consent notice) is fetched at app startup via an unauthenticated API call to `/api/branding`. The fetch is non-blocking and fails closed — any error (404, network failure, timeout) treats it as "no branding configured," so the UI works standalone against a server that has set nothing.
 
 The `branding.svelte.ts` store handles this:
 
@@ -478,7 +515,7 @@ export async function loadBranding(): Promise<void>;
 export function getBranding(): BrandingConfig;
 ```
 
-The expected response shape (to be reconciled with real backend webtypes once implemented):
+The response shape (`BrandingResponse` in `server/webtypes`, from which the TypeScript type is generated):
 
 ```ts
 interface BrandingConfig {
@@ -501,7 +538,17 @@ export function getVersion(): VersionResponse | null;
 
 It fails closed like branding, but to `null` rather than an empty object: the repository URL is served rather than hardcoded, so with no response there is nothing honest to render and the footer is omitted entirely.
 
-A tagged build shows `v0.1.0` linked to its GitHub release. An untagged one has no release to point at, so it shows `development (7a3f9c1)` — the short commit is what identifies that build.
+A tagged build shows `v1.1.3` linked to its GitHub release. An untagged one has no release to point at, so it shows `development (7a3f9c1)` — the short commit is what identifies that build.
+
+What the endpoint reveals is the operator's choice, through `version.mode`
+(`server/config/types_version.go`). `show`, the default, is the above.
+`hide` returns every field empty, and the footer then renders no build
+identity at all. Any other string is served *as* the version, with no
+commit, repository, or release link that would give the real build away —
+so `show` and `hide` are reserved words that cannot be used as a fake
+version. The endpoint is unauthenticated and its exact version plus full
+commit is enough to match a deployment against known issues, which is the
+disclosure this trades away.
 
 **Brand placement** (`AppRail.svelte`, `src/routes/+layout.svelte`):
 
@@ -547,11 +594,11 @@ path, handled in the layout.
 
 ### Environment Variables
 
-The frontend build accepts only a few Vite build-time env vars (for development server settings). These do NOT include branding; branding is always runtime-fetched. See `.env.tpl` for the dev-server vars.
+The frontend build accepts only a few Vite build-time env vars (for development server settings). These do NOT include branding; branding is always runtime-fetched. The one that matters is `DEVELOPMENT_BACKEND_URL`, read from `.env` / `.env.local` by `vite.config.ts` (see `frontend/README.md`).
 
-## Accessibility (WCAG 2.0 Level AA / Section 508)
+## Accessibility (WCAG 2.1 Level AA / Section 508)
 
-The design and components are built for WCAG 2.0 Level AA compliance as a hard requirement:
+The design and components are built for WCAG 2.1 Level AA compliance as a hard requirement:
 
 - **Contrast**: All text meets AA contrast ratios (4.5:1 for body text, 3:1 for large text). Light text on light accent is avoided.
 - **Focus Visibility**: Interactive elements have visible `:focus` or `:focus-visible` states via browser defaults or explicit outline/background changes.
@@ -600,5 +647,5 @@ When adding or modifying styles:
 - [Public Sans](https://www.opensans.com/about) — UI typeface (OFL license)
 - [Fira Code](https://github.com/tonsky/FiraCode) — monospace typeface (OFL license)
 - [Lucide Icons](https://lucide.dev/) — icon library (@lucide/svelte)
-- [WCAG 2.0 Level AA](https://www.w3.org/WAI/WCAG21/quickref/?currentsetting=level%20aa) — accessibility guidelines
+- [WCAG 2.1 Level AA](https://www.w3.org/WAI/WCAG21/quickref/?currentsetting=level%20aa) — accessibility guidelines
 - [Svelte Documentation](https://svelte.dev/docs) — framework reference

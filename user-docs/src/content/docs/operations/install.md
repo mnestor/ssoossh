@@ -200,6 +200,24 @@ access log falls back to `logging.level`, where the shipped `WARN` means no
 successful request is ever recorded.
 :::
 
+## What the version endpoint discloses
+
+`/api/version` answers without authentication, and the web UI's footer
+renders what it says: a tagged build as its version linked to the GitHub
+release, an untagged one as `development` with a short commit. That is
+convenient for support, and it is also enough for anyone to match a build
+against known issues. [`version.mode`](/ssoossh/reference/config/version/#mode)
+decides how much to say:
+
+| `version.mode` | `/api/version` returns | The footer shows |
+| --- | --- | --- |
+| `show` (default) | the real version, commit, and release URL | the version, linked to its release |
+| `hide` | every field empty | no version at all |
+| any other string | that string as the version, with no commit, repository, or release link | that string, unlinked |
+
+`show` and `hide` are reserved words, so neither can itself be used as a
+decoy version.
+
 ## Next
 
 [Point it at your identity provider](/ssoossh/operations/identity-provider/).

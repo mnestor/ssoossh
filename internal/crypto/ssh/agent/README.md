@@ -48,7 +48,7 @@ if err := ag.SetCA(caPublicKeyString); err != nil {
 }
 
 // Add a freshly-issued keypair + certificate.
-if err := ag.AddKeypair(kp); err != nil { // kp is a *keypair.SshKeypair
+if err := ag.AddKeypair(kp); err != nil { // kp is a *keypair.SSHKeypair
     return err
 }
 
@@ -74,7 +74,7 @@ type Agent interface {
     Type() string
     Backend() string
     List(filterByCA bool) ([]*ssh.PublicKey, error)
-    Add(key interface{}) error
+    Add(key any) error
     Remove(key ssh.PublicKey) error
     RemoveAll() (int, error)
     Signers() ([]ssh.Signer, error)
@@ -103,7 +103,7 @@ type Agent interface {
   since a `FileAgent` manages exactly one identity. Errors if no CA is
   registered rather than treating every certificate as invalid and removing
   material that may be perfectly good.
-- **`AddKeypair(kp *keypair.SshKeypair)`** — adds a keypair (see the sibling
+- **`AddKeypair(kp *keypair.SSHKeypair)`** — adds a keypair (see the sibling
   `keypair` package) and its certificate to the backend: `Add` on a live
   agent, or writing `path`/`path.pub`/`path-cert.pub` for `FileAgent`.
   `FileAgent` creates the parent directory when missing, verifies each file

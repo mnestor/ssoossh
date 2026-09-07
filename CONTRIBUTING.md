@@ -18,8 +18,8 @@ This transparency helps the maintainer understand the contribution's context and
 
 If you are Claude or another AI assistant working in this repository:
 
-- Read `./CLAUDE.md` for project-specific instructions.
-- Read `./.claude/rules/` for language-specific conventions (Go, TypeScript).
+- Read `client/CLAUDE.md` and `server/CLAUDE.md` for project-specific instructions.
+- Read `./.claude/rules/` for language-specific conventions (Go, TypeScript) and the ssoossh-specific facts in `.claude/rules/ssoossh.md`.
 - Follow `AGENTS.md` if multiple agents are working in parallel.
 - The project uses `rtk` (Rust Token Killer) to minimize token usage; use it in bash commands.
 - Conventional commits are required; keep PRs focused on one concern.
@@ -58,7 +58,7 @@ Fixes #42
 
 ### Requirements
 
-- Go 1.26+
+- Go 1.27+
 - Node.js 26+, pnpm 11+
 - golangci-lint
 - Docker (for `make semgrep`; the e2e suite does not need it)
@@ -178,9 +178,9 @@ and semgrep scan.
 If you want to run one piece at a time, `make ci-required` is the list:
 
 ```
-fmt-check check-gitignore lint lint-tagged lint-cross frontend-lint
-frontend-check frontend-test actionlint check-generated build cover-ci
-cover-floors test-migration semgrep
+fmt-check check-gitignore check-go-version lint lint-tagged lint-cross
+frontend-lint frontend-check frontend-test actionlint check-generated build
+cover-ci cover-floors test-migration semgrep
 ```
 
 **Verify with `make pre-pr`, never with a hand-assembled subset.** `make lint`
@@ -247,9 +247,14 @@ checks as skipped. Skipped satisfies branch protection; it is not a failure.
 
 ## Documentation
 
-- Architecture and design decisions are in `/docs/`.
-- The `README.md` in each package (`/client/`, `/server/`, etc.) explains its role.
-- For larger features, add a design document to `/docs/` before implementing.
+- Architecture and design decisions are on the documentation site,
+  <https://mnestor.github.io/ssoossh/>, built from `user-docs/`. `/docs/`
+  holds only the design proposals, developer notes, and generated artifacts
+  (man pages, `openapi.yaml`, `wire-contract.json`); see `docs/README.md`.
+- `client/CLAUDE.md` and `server/CLAUDE.md` explain each side's role and
+  layout.
+- For larger features, add a design document to `/docs/proposals/` before
+  implementing.
 
 ## Reporting Issues
 
@@ -264,7 +269,8 @@ If you find a bug:
 
 ## Questions?
 
-- Check the docs in `/docs/`.
+- Check the documentation site, <https://mnestor.github.io/ssoossh/>, and
+  the proposals in `/docs/proposals/`.
 - Look at recent PRs and commits to understand patterns.
 - Open an issue to discuss architectural questions before coding.
 

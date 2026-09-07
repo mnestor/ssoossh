@@ -13,8 +13,8 @@ changed in any given version, see the GitHub releases:
 - The PAM module (`pam_ssoossh`):
   https://github.com/mnestor/ssoossh-pam/releases
 
-This page carries only what lives nowhere else: the build floors, the
-revocation stance, and the gaps worth knowing about before you deploy.
+This page carries only what lives nowhere else: the build floors and the
+revocation stance.
 For what ssoossh does today, and for what is coming, see
 [How it works](/ssoossh/concepts/) and the [roadmap](/ssoossh/project/roadmap/).
 
@@ -43,16 +43,3 @@ Linux (`.deb`/`.rpm`), Windows (`.zip`), and macOS (a Developer ID signed
 and notarized `.pkg` per architecture, plus the `.zip` for anyone who would
 rather unpack it by hand; the binary inside both is quill-signed and
 notarized).
-
-## Known gaps
-
-- LDAP configuration is parsed but not consumed: setting it has no effect
-  on authentication or on issued certificates.
-
-:::caution
-The LDAP entry above is the release-notes source's own wording and looks
-stale. [LDAP enrichment](/ssoossh/operations/ldap/) describes enrichment,
-the background sync, and group capture as implemented, and names the files
-that implement them. Check the release you are running before relying on
-either statement.
-:::

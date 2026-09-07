@@ -3,7 +3,7 @@ title: Diagnostics
 description: The -v and --debug flags, what each one prints, and what to attach when asking for help.
 eyebrow: User guide
 sidebar:
-  order: 5
+  order: 6
 ---
 
 Two flags answer the two different questions you can have about a failing

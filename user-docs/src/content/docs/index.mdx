@@ -11,6 +11,11 @@ hero:
     - text: How it works
       link: /ssoossh/concepts/
       variant: minimal
+  image:
+    # Raw HTML rather than `file`: Starlight renders a hero file at 400x400,
+    # which crops a wide screenshot to its middle. The file lives in public/
+    # so it is served as-is; src/styles/ssoossh.css frames it.
+    html: '<img src="/ssoossh/screens/dashboard-hero.png" alt="The ssoossh web UI, showing the navigation rail and a list of recently approved certificates" width="1372" height="760" loading="eager" decoding="async" />'
 ---
 
 import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';

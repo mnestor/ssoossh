@@ -142,7 +142,9 @@ exists for `WHERE service_account IN (?)` and joins.
 `isEligibleForReassignment`, the `PATCH
 /api/admin/enrollments/:id/reassign` route and handler
 (`server/controller/admin.go:59`, `:1221`), the reassign controls in
-`ServiceCodeDetailModal` and `AdminServiceCodeDetailModal`, and the
+`ServiceCodeDetailModal` and `AdminServiceCodeDetailModal` (since renamed
+`ServiceCodeDetail` and `AdminServiceCodeDetail`, and pages rather than
+modals), and the
 `service_enrollment_reassigned` kind from the notification proposal.
 Stop emitting `AuditEnrollmentReassigned`; the constant stays so
 existing audit rows still render.
@@ -239,7 +241,9 @@ Decided: the page is a three-level drill-down, account first.
    on expiry now; that logic moves down one level unchanged). Each row
    shows the approver as provenance, expiry, and retrieval count.
 3. **One code's detail.** Selecting a code opens the existing
-   `ServiceCodeDetailModal` content: fingerprint, options, the
+   `ServiceCodeDetail` content (a page at `/service-codes/<id>` since
+   commit `c155d8b`; it was a modal when this was written): fingerprint,
+   options, the
    retrieval log (capped at `RetrievalPageSize` with the total shown),
    and, once the notification proposal lands, the notification address
    editor. The reassignment controls are gone from it; historical
@@ -251,9 +255,12 @@ returns per-enrollment retrieval counts and last-retrieval times, so
 the level-one summaries aggregate from the same response and no new
 endpoint is needed.
 
-**As built.** Both levels are query parameters on the one page
-(`?account=`, then the pre-existing `?modal=`), shallow-routed like the
-certificate history's modal, so every level is linkable. The accounts the
+**As built.** The account level is a query parameter on the list page
+(`?account=`); a code's detail is its own route, `/service-codes/<id>`
+(and `/admin/service-codes/<id>` for the admin view), so every level is
+linkable, reloadable, and has browser Back. It first shipped as a
+shallow-routed `?modal=` dialog; commit `c155d8b` made it a page, because a
+dialog could not be reloaded or linked to. The accounts the
 identity holds come from `GET /api/users/me`, unioned with the accounts
 actually on the codes — an account that has left the claim keeps its codes
 visible rather than stranding a page that can still open them.

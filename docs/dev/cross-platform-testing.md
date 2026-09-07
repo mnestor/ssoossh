@@ -9,7 +9,7 @@ differences a test in `client/` has to be written around.
 
 | Leg | Workflow | Runs |
 | --- | --- | --- |
-| Linux | `codecover.yaml` | `CGO_ENABLED=1 go test ./...` plus the `pam` suite, on every PR. Owns coverage, the Codecov upload, and the `.coverage-floors` ratchet. |
+| Linux | `codecover.yaml` | `CGO_ENABLED=1 go test ./...` on every PR. Owns coverage, the Codecov upload, and the `.coverage-floors` ratchet. (The `pam` suite left with the module, to github.com/mnestor/ssoossh-pam.) |
 | macOS | `client-matrix.yaml` | `go test -count=1 ./client/... ./internal/crypto/ssh/agent/... ./internal/fileperm/...` on `macos-latest` (darwin/arm64). |
 | Windows | `client-matrix.yaml` | The same command on `windows-latest` (windows/amd64). |
 

@@ -316,6 +316,10 @@ If you do not know which one your directory has, run a probe from
 by name (they are operational attributes, so `*` does not return them) and
 names the one your entry actually carries.
 
+![The Directory page: a Sync card with the interval, the missing-for threshold, a Last pass box with its start and finish times and found/missing/failed/disabled/re-enabled counts, a Dry run checkbox and a "Dry run now" button; below it a Probe card naming the server and base DN, a warning that certificate verification is off, a filter with Template and Literal modes, an attributes field, bindings, and a "Run probe" button](../../../assets/screens/admin-directory.png)
+
+<p class="screen-caption">Admin → Directory. The sync half reports the last pass and lets an admin run one, dry or real; the probe half runs one read-only lookup with the server's own connection and shows what came back.</p>
+
 A binary identifier such as `objectGUID` is stored hex-encoded behind a `0x`
 marker, and rendered back into the `\a1\b2...` byte-escape form a directory
 matches against. Nothing about that is visible in configuration -- name the

@@ -26,14 +26,12 @@ It has both flows, the browser flow and the console code-and-QR flow, and the
 `mode=` argument that picks between them. `pam_ssoossh(8)` is the contract,
 and the [reference page](/ssoossh/hosts/pam/reference/) restates it in full.
 
-:::caution[Status]
-The module authenticates end to end through a real PAM stack against a stub
-`ssoosshd`, under ASan and UBSan, with fuzzing over every parser that reads
-network bytes. What has not happened yet is a run against a production
-`ssoosshd`; FreeBSD, whose build branch exists but has never been compiled;
-macOS in CI, which has been built and run by hand on Apple silicon but not on
-a hosted runner; and console mode against the real server endpoints rather
-than a stub written against them.
+:::note[Status]
+How far the module has been exercised -- what its CI runs, which platforms
+have only been built by hand, and what has not yet been run against a
+production `ssoosshd` -- is kept with the code in
+[its own repository](https://github.com/mnestor/ssoossh-pam), where it can be
+checked against the build that made the claim. It is not restated here.
 :::
 
 ## Supported platforms

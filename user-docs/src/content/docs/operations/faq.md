@@ -3,7 +3,7 @@ title: Operator FAQ
 description: Short answers to the questions people running ssoosshd ask, each pointing at the page with the detail.
 eyebrow: Server operations
 sidebar:
-  order: 14
+  order: 15
 ---
 
 Questions from people running the server. If yours is of the form "why

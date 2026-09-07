@@ -3,7 +3,7 @@ title: Service accounts
 description: Enroll a non-interactive identity once, then retrieve its certificate unattended.
 eyebrow: User guide
 sidebar:
-  order: 4
+  order: 5
 ---
 
 A service account is a non-interactive identity -- a backup job, a CI runner, a
@@ -227,11 +227,22 @@ the client:
 The key ID and principals render from the *approver's* login, because the
 approving identity is long gone by the time a scheduled job redeems the code.
 
-Afterwards the approver -- and every other holder of the account -- can see what
-was granted at **Service codes** in the web UI: the account, the options and
-lifetime fixed at approval, the keypair the code is bound to, when it stops
-being redeemable, its redemption log, and everyone else who holds the account.
-Never the code.
+Afterwards the approver -- and every other holder of the account -- can open
+the code's own page under **Service codes** in the web UI. It shows what the
+code hands out (the principal, the certificate lifetime, the key ID, and the
+fingerprint of the keypair the code is bound to), the code itself as one
+**valid period** with the time remaining, who approved it and with which
+options, everyone who holds the account, the notification address, and a
+redemption history naming each fetch's address and serial. Never the code.
+
+![A service code's page: What it hands out (principal, certificate life, key ID, bound key), The code itself (valid period, approved by, certificate options), Who has access (two holders), a Notifications address field, and a Redemption history entry with its address and serial](../../../assets/screens/service-code.png)
+
+<p class="screen-caption">A holder's view of an expired code. A live one carries an <strong>Expire this code</strong> control below the notification address; it asks for a reason, and the reason is recorded.</p>
+
+Any holder can end a code early from that page with **Expire this code**. A
+reason is required -- the control will not submit without one -- and it lands
+in the audit stream. Expiring a code that has already expired changes
+nothing: the original expiry stands.
 
 The holder list is bounded by who has signed in: the server never reads a
 directory to enumerate an account's holders, so it names everyone *known* to
@@ -240,11 +251,15 @@ in holds the account and does not appear.
 
 An operator with an enrollment id -- from a notification email, an
 `enrollment.*` audit event, or a server log line -- can paste it into the
-search on **Admin - Service codes**, or open `/admin/service-codes/<id>`
+search on **Admin → Service codes**, or open `/admin/service-codes/<id>`
 directly. The search also matches the service account, the key ID, the
 certificate request id, and the approver's username or email, and it is a
-substring match, so the shortened id the detail panel shows is enough. That
+substring match, so the shortened id the code's page shows is enough. That
 id is a button: clicking it copies the whole value.
+
+![Admin → Service codes: a search box accepting an enrollment ID, account, key ID, request ID or approver, and one code row summarising the account, who approved it, the certificate lifetime and its redemption count](../../../assets/screens/admin-service-codes.png)
+
+<p class="screen-caption">The admin view of every approved code across all accounts. The search is a substring match on any of the identifiers an operator is likely to be holding.</p>
 
 ## Enrolling under your own account
 
@@ -310,9 +325,11 @@ the new value.
 
 ## Containment
 
-Enrollments are visible and revocable to the admin and SOC roles, gated by
-[`admin.require_group` and `admin.soc_group`](/ssoossh/reference/config/admin/).
-Expiring an enrollment early stops it minting new certificates; certificates it
+Every holder of a service account can see its enrollments and end one early
+from the code's page, with no role at all. The admin and SOC roles, gated by
+[`admin.require_group` and `admin.soc_group`](/ssoossh/reference/config/admin/),
+can do the same for any account from **Admin → Service codes**. Both paths
+require a reason and record it. Expiring an enrollment early stops it minting new certificates; certificates it
 already issued stay valid until their own `valid_duration` runs out, which is
 what keeps that duration short.
 

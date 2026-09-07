@@ -157,6 +157,8 @@ Making a target host accept these certificates:
 ## Where to go next
 
 - [The ssoossh client](/ssoossh/guides/client/) -- every command and flag.
+- [The web UI](/ssoossh/guides/web-ui/) -- the rail, where each page lives,
+  and the detail pages you can link to.
 - [Approving in the browser](/ssoossh/guides/approving/) -- what the approval
   page shows and what else the web UI holds.
 - [Service accounts](/ssoossh/guides/service-accounts/) -- certificates for a

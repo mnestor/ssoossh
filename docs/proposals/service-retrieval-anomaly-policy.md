@@ -468,7 +468,8 @@ Each step is independently reviewable, and the tree is working after each.
 7. **Admin unlock.** `PATCH /api/admin/enrollments/{id}/unlock` beside the
    existing expire handler (`server/controller/admin.go:107`), OpenAPI
    regeneration, wire types.
-8. **UI.** Lock state on `ServiceCodeRow` / `ServiceCodeDetailModal`, the
+8. **UI.** Lock state on `ServiceCodeRow` / `ServiceCodeDetail` (the
+   `/service-codes/<id>` page), the
    unlock control for admins. Follow `frontend/DESIGN.md`.
 9. **Docs.** A section in `email-notifications.md` (the generated reference
    table updates itself), the config keys in `configuration.md`, the flow in

@@ -25,7 +25,7 @@ Reports touching these areas will be triaged first.
 
 ## Supported Versions
 
-ssoossh is pre-1.0 and under active development. Only the latest tagged release receives security fixes; older releases are not backported. If you're running from `main`, update to the latest commit before reporting.
+ssoossh ships a 1.x release line (latest tag `v1.1.3`). Only the latest tagged release receives security fixes; older releases are not backported. If you're running from `main`, update to the latest commit before reporting.
 
 ## Response Process
 
@@ -33,4 +33,4 @@ This is a single-maintainer project, so there's no fixed SLA — reports are ack
 
 ## Scope
 
-This policy covers the code in this repository (server, client, PAM module, and frontend). Vulnerabilities in third-party dependencies should be reported upstream, but let us know too if they affect ssoossh directly — see [NOTICE](NOTICE) for adapted third-party code.
+This policy covers the code in this repository (server, client, and frontend). The PAM module has its own repository and policy, [mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam). Vulnerabilities in third-party dependencies should be reported upstream, but let us know too if they affect ssoossh directly — see [NOTICE](NOTICE) for adapted third-party code.

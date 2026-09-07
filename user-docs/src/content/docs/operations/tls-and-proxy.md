@@ -137,6 +137,13 @@ the proxy's IP**. The list ships empty, and the router passes it to gin's
 proxy, so this is a deliberate fail-closed choice rather than an oversight.
 :::
 
+:::tip
+**Admin → Diagnostics** checks this for you. It reports the TCP peer, the
+`X-Forwarded-For` it received, and the client IP the server settled on, and
+it flags a `trusted_proxies` that is empty behind a proxy or that trusts every
+address. See [Deployment diagnostics](/ssoossh/operations/diagnostics/).
+:::
+
 That address is not cosmetic. It is the source address recorded on the
 request, which means it is:
 

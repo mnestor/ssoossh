@@ -4,6 +4,15 @@
 **Overall coverage**: 88.9% (1406 tests passing)
 **Baseline**: Run `go test -cover ./...` on main branch
 
+> **A dated snapshot.** Every number and package name below is as of the
+> measurement date. The package list has since changed (`server/utils` split
+> into `server/utils/{errorresponses,paging,tracing}`; `internal/hostinfo`,
+> `internal/tracelog`, `internal/tools/*`, `server/mail`, `server/notify`,
+> `server/webtypes` and `server/openapidoc` did not exist). The live
+> per-package numbers, including the packages currently at zero, are in
+> `.coverage-floors`, ratcheted by `make cover-floors`; re-measure with
+> `make cover` before acting on anything here.
+
 ## Summary
 
 Coverage varies by package, from 100% (well-tested packages) to 0% (no tests). This map identifies specific untested functions and paths that will be addressed in Phase 1-4.
@@ -11,7 +20,7 @@ Coverage varies by package, from 100% (well-tested packages) to 0% (no tests). T
 **Current status (after Phase 0):**
 - E2E tests: 11 tests passing in ~38s (tier-1 wire, tier-2 browser, tier-3 ssh)
 - Unit tests: 1462 passing across 36 packages (56 new tests added)
-- Zero-coverage packages: 5 remaining (cmd/ssoossh, cmd/ssoosshd, server/testutil, + 2 untestable)
+- Zero-coverage packages: 5 remaining at measurement time (cmd/ssoossh, cmd/ssoosshd, server/testutil, + 2 untestable); the current list is the `0.0` entries at the bottom of `.coverage-floors`
 - **Phase 0 completion**: 9 functions at 100% coverage
   - ✓ server/certmsg: 2/2 functions (WaitTopic, SignedReply.Failed)
   - ✓ server/model: 7/7 functions (all TableName methods)

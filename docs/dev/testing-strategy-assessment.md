@@ -2,11 +2,13 @@
 
 Assessment of 18 proposed testing investments for ssoossh. Each item includes feasibility, expected yield, build cost, recurring cost, and verdict.
 
+> **A dated snapshot.** The per-item status lines and the summary table record where things stood when this was written; several items have since been built (multi-instance concurrency, schema parity, coverage floors, cross-platform client CI, the rate-limiter shutdown) and the PAM module has left the repository. Where a status below is superseded, the correction is inline. The live picture is `make ci-required` (`Makefile`) and `.coverage-floors`.
+
 ## 1. Go Mutation Testing (gremlins)
 
 **Status:** In progress
 
-Feasibility: High (gremlins runs under Go 1.26 per task baseline; mutation-testing-findings.md used manual mutation approach successfully)
+Feasibility: High (gremlins ran under the Go 1.26 baseline of the time; `go.mod` is now 1.27. mutation-testing-findings.md used manual mutation approach successfully)
 
 Expected Yield: Very low to moderate. Manual mutation testing on server/service/ already caught one weak test (TTL enforcement) and one untested guard (binding race). Go mutation testing would systematize this for the entire codebase. However: security-critical packages (crypto/ssh, middleware, service) are already 90%+ covered. High-coverage packages like server/middleware (94.9%) may still have weak assertions, but mutation testing will only confirm what code review + focused test reading already identifies. The true problem is not missing mutations but missing test isolation (see Item 8).
 
@@ -18,13 +20,13 @@ Verdict: **Drop for now, revisit at next scale.** The one finding mutation testi
 
 ## 2. Frontend Mutation Testing (Stryker)
 
-**Status:** Configured, blocked
+**Status:** Blocked; nothing kept in the tree
 
-Feasibility: Low. Stryker 8.7.1 + vitest + Svelte 5.56.9 are incompatible. Stryker's instrumentation expects Svelte's `walk()` utility, which Svelte 5 no longer exports. Stryker hangs on execution (180+ second timeout, no output). Configuration is in place but non-functional.
+Feasibility: Low. Stryker 8.7.1 + vitest + Svelte 5 (5.56.9 at the time) were incompatible. Stryker's instrumentation expects Svelte's `walk()` utility, which Svelte 5 no longer exports. Stryker hung on execution (180+ second timeout, no output). The dependency and its `stryker.conf.mjs` were removed from `frontend/` rather than carried as dead configuration.
 
-Expected Yield: Moderate if it worked. 16 frontend test files exist (approval.test.ts, format.test.ts, paths.test.ts, client.test.ts, endpoints.test.ts, ApprovalView.test.ts, ConsentModal.test.ts, CertDetailModal.test.ts, CertRow.test.ts, PageHeading.test.ts, ThemeToggle.test.ts, UserMenu.test.ts, page.test.ts in multiple routes). Mutation testing would validate assertion strength on approval flow, cert rendering, and auth guards — high-value targets.
+Expected Yield: Moderate if it worked. The frontend suite has since grown to around sixty `.test.ts` files (the approval flow, cert rendering, the rail and `PageShell`, the detail pages, and the auth guards among them; `CertDetailModal` and `UserMenu` became the `/certs/[id]` route page and `RailUserMenu`). Mutation testing would validate assertion strength on those — high-value targets.
 
-Build Cost: Moderate if tool becomes compatible. Stryker config already exists; waiting for Stryker 10.x or later to add Svelte 5 support.
+Build Cost: Moderate if tool becomes compatible. Re-add Stryker and a config when Stryker 10.x or later adds Svelte 5 support.
 
 Recurring Cost: CI time and flake risk unknown until tool works.
 
@@ -204,11 +206,11 @@ Verdict: **Defer the cosmetic polish. Pair the parity test with Postgres e2e.** 
 
 ## 15. Release Rehearsal
 
-**Status:** Proposed
+**Status:** Proposed. Written before the first release; v1.0.0 through v1.1.3 have since shipped without a scripted rehearsal, and the `docs/release-rehearsal.md` this item asks for does not exist. Still a pre-release check rather than a merge gate.
 
 Feasibility: High (goreleaser already in build.yaml; compose stack exists in deploy/)
 
-Expected Yield: Moderate. Current CI validates: compilation on all platforms (build.yaml), binary signing (PAM build), docker image (deferred to release tag). Missing: integration against real pocket-id (only test harness IdP exists), end-to-end flow on a fresh install (docker-compose deploy + login + cert issuance), client package install + update path on macOS/Windows. These are pre-release checks, not merge gates.
+Expected Yield: Moderate. Current CI validates: compilation on all platforms (build.yaml), the signed macOS client package, docker image (deferred to release tag). Missing: integration against real pocket-id (only test harness IdP exists), end-to-end flow on a fresh install (docker-compose deploy + login + cert issuance), client package install + update path on macOS/Windows. These are pre-release checks, not merge gates.
 
 Build Cost: Moderate. Compose stack + pocket-id container + fresh database + cleanup. Estimated 5-10 minutes.
 
@@ -264,22 +266,22 @@ Ranked by value-per-unit-cost (highest priority first):
 
 | # | Technique | Build Cost | Recurring Cost | Expected Yield | Verdict | Status |
 |---|-----------|-----------|----------------|-----------------|---------|--------|
-| 8 | Graceful Shutdown + Goroutine Leak Fix | Low | Low | High | **Build now** | In flight |
-| 5 | Multi-Instance Concurrency | Moderate | Low | High | **Build now** | Designed |
+| 8 | Graceful Shutdown + Goroutine Leak Fix | Low | Low | High | **Build now** | Built (`test/resilience` shutdown tests; the rate-limiter cleanup loops are documented as run-for-life in `server/middleware/rate_limit.go`) |
+| 5 | Multi-Instance Concurrency | Moderate | Low | High | **Build now** | Built (`docs/dev/multi-instance-safety-plan.md`, `TestMultiInstance_*` in e2e) |
 | 3 | Fuzzing (SVG, keyid, principals, policy) | Low | Low | Medium-high | **Build now** | Proposed |
 | 9 | Load/Soak Testing | Moderate | Low | High | **Build now** | In flight |
 | 10 | Accessibility (focus-visible, aria-*) | Trivial | None | Medium | **Already planned** | Queue now |
-| 16 | Coverage Gating (conservative) | Trivial | Low | Low | **Build now** | Proposed |
+| 16 | Coverage Gating (conservative) | Trivial | Low | Low | **Build now** | Built (`.coverage-floors`, `make cover-floors` in `ci-required`) |
 | 4 | Postgres First-Class E2E | Moderate | Low | Medium | **Build after 5** | Infrastructure ready |
-| 14 | Schema Parity Test | Moderate | Low | Low | **Pair with 4** | Proposed |
-| 6 | PAM E2E Container | Moderate | High | Low | **Defer** | In flight |
-| 7 | Cross-Platform Client CI | High | Very High | Medium | **Defer** | In flight |
+| 14 | Schema Parity Test | Moderate | Low | Low | **Pair with 4** | Built (`test/migration`, `make test-migration` in `ci-required`, the `migrations` job in `resilience.yaml`) |
+| 6 | PAM E2E Container | Moderate | High | Low | **Defer** | Moved to github.com/mnestor/ssoossh-pam with the module |
+| 7 | Cross-Platform Client CI | High | Very High | Medium | **Defer** | Built (`client-matrix.yaml`, blocking; `docs/dev/cross-platform-testing.md`) |
 | 2 | Frontend Mutation (Stryker) | Low | Medium | Moderate | **Defer to v10** | Blocked |
 | 1 | Go Mutation Testing | High | High | Low | **Drop** | Proposed |
 | 11 | Browser Matrix (FF/WebKit) | Moderate | Very High | Low | **Defer** | Proposed |
 | 12 | Property-Based Testing | Low | Low | Low | **Defer to fuzz** | Proposed |
 | 13 | Golden-File Tests | Low | Very Low | Low | **Defer** | Proposed |
-| 15 | Release Rehearsal | Moderate | Manual | Moderate | **Defer to v1.0** | Proposed |
+| 15 | Release Rehearsal | Moderate | Manual | Moderate | **Pre-release, manual** | Proposed (v1.x has shipped without one) |
 | 17 | Benchmark Regression | Low | Low | Low | **Defer** | Proposed |
 | 18 | Custom Semgrep Rules | Moderate | Low | Low | **Defer** | Proposed |
 
@@ -289,7 +291,7 @@ Two branches should be discarded:
 
 1. **Agent 1 (Go Mutation Testing / gremlins):** 3.9GB scratch disk per run, no actionable signal beyond what manual mutation + code review already found. The TTL test bug was caught and fixed via mutation-testing-findings.md. Disk cost prohibitive at current scale.
 
-2. **Agent 6 / Item 6 (PAM E2E Container):** 78% unit coverage already validates PAM logic. E2E repeats what's covered at 3x execution time. Revisit only when a user reports a PAM integration failure in production.
+2. **Agent 6 / Item 6 (PAM E2E Container):** 78% unit coverage already validated PAM logic. E2E repeats what's covered at 3x execution time. Moot here since the module moved to github.com/mnestor/ssoossh-pam; that repository owns the question.
 
 The other four branches (Items 3, 4, 5, 8, 9 + Item 10 accessibility) are keepers: they address real gaps (fuzzing, multi-instance, graceful shutdown, load testing, accessibility) with clear payoff.
 
@@ -303,7 +305,7 @@ The other four branches (Items 3, 4, 5, 8, 9 + Item 10 accessibility) are keeper
 
 ## Real Bugs Noticed in Reading
 
-1. **Goroutine leaks in rate limiters** (rate_limit.go:31, endpoint_rate_limit.go:28, 72): Three `cleanupClients` goroutines spawned once per middleware constructor, run forever, never stop. Block graceful shutdown. Fix in flight (agent-a535e3a); test coverage masked by workaround (rate_limit_test.go:32-34 explicitly works around the leak rather than fixing it).
+1. **Goroutine leaks in rate limiters** (`server/middleware/rate_limit.go`, `endpoint_rate_limit.go`): `cleanupClients` goroutines spawned once per middleware constructor, run forever, never stop. As of this writing there are four such call sites, and `rate_limit.go` documents the forever loop as intentional with a `not covered:` note; the graceful-shutdown tests in `test/resilience` pass around it. Test coverage was masked by workaround (rate_limit_test.go explicitly worked around the leak rather than fixing it).
 
 2. **Middleware 94.9% coverage masks weak assertions:** rate_limit_test.go knows about and works around the goroutine leak. Coverage number is misleading when the test accommodates the bug rather than catching it. Mutation testing would have caught this earlier; graceful shutdown testing will catch similar issues in future.
 

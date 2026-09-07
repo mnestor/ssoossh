@@ -73,9 +73,12 @@ Delivery to the waiting client is the only copy of a certificate.
     top of the OIDC identity.
 12. [Audit log](/ssoossh/operations/audit-log/) -- the shipped archive and the
     bounded table behind the UI.
-13. [HSM and PKCS#11](/ssoossh/operations/hsm/) -- sourcing the CA key from a
+13. [Deployment diagnostics](/ssoossh/operations/diagnostics/) -- four
+    read-only checks of the public URL, proxy trust, and edge headers, to run
+    once the edge is in place.
+14. [HSM and PKCS#11](/ssoossh/operations/hsm/) -- sourcing the CA key from a
     token instead of the config file.
-14. [Operator FAQ](/ssoossh/operations/faq/) -- the short answers.
+15. [Operator FAQ](/ssoossh/operations/faq/) -- the short answers.
 
 Then trust the CA on the machines people log in to:
 [Trusting the CA in sshd](/ssoossh/hosts/sshd-trust/).

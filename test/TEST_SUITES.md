@@ -15,23 +15,20 @@ All test files use `//go:build <tag> || e2e` to enable running via either the sp
 ## Load and Concurrency Tests (`test/load/`)
 
 **Files:**
-- `concurrent_test.go` (7.9 KB): Concurrent operation tests
-- `soak_test.go` (6.5 KB): Sustained load and stress tests
-- `README.md` (3.9 KB): Documentation
+- `concurrent_test.go`: Concurrent operation tests
+- `soak_test.go`: Sustained load and stress tests
+- `README.md`: Documentation
 
 ### Test Coverage
 
-**Concurrent Operations** (6 tests):
-- 10 and 50 simultaneous logins with goroutine/memory leak detection
-- 100 concurrent SSE subscribers
-- 20 concurrent certificate serial number allocations (no duplicates)
-- Concurrent approval rate limiting accuracy
-- 30 concurrent certificate signing with throughput measurement
+**Concurrent Operations** (4 tests):
+- `TestConcurrentLogins_10Simultaneous`, `TestConcurrentLogins_50Simultaneous` -- simultaneous logins with goroutine/memory leak detection
+- `TestSerialNumberAllocation_Concurrent` -- concurrent certificate serial number allocations (no duplicates)
+- `TestCertificateSigningThroughput_HighLoad` -- concurrent certificate signing with throughput measurement
 
-**Soak and Stress** (4 tests):
-- 1-hour and 30-minute sustained load with 95%+ success rate requirement
-- Burst of 30 concurrent approvals (traffic spike simulation)
-- Long-lived SSE streams (placeholder for implementation)
+**Soak and Stress** (3 tests):
+- `TestSoak_SustainedLoad_ThreeWorkers`, `TestSoak_SustainedLoad_FiveWorkers` -- sustained load with a 95%+ success rate requirement
+- `TestStress_BurstApprovals` -- burst of concurrent approvals (traffic spike simulation)
 
 ### Assertions
 
@@ -47,7 +44,7 @@ Each test validates:
 # Quick test (just concurrent, skips soak)
 go test -tags=load -short -count=1 -timeout=5m ./test/load/...
 
-# Full suite (includes 30+ minute soak)
+# Full suite (includes the soak tests)
 go test -tags=load -count=1 -timeout=60m ./test/load/...
 
 # With race detector
@@ -57,53 +54,40 @@ CGO_ENABLED=1 go test -tags=load -race -count=1 -timeout=60m ./test/load/...
 ## Resilience Tests (`test/resilience/`)
 
 **Files:**
-- `database_test.go` (8.2 KB): Database failure scenarios
-- `oidc_test.go` (4.2 KB): Identity provider failure injection
-- `shutdown_test.go` (5.4 KB): Graceful shutdown and recovery
-- `resource_limits_test.go` (7.8 KB): Resource limits and edge cases
-- `fixture.go` (2.0 KB): Shared test infrastructure
-- `README.md` (3.9 KB): Documentation
+- `database_test.go`: Database failure scenarios
+- `oidc_test.go`: Identity provider recovery
+- `shutdown_test.go`: Graceful shutdown and recovery
+- `resource_limits_test.go`: Edge cases
+- `fixture.go`: Shared test infrastructure
+- `README.md`: Documentation
 
 ### Test Coverage
 
+Fourteen tests. The placeholder scenarios an earlier revision listed here
+(OIDC failure injection, resource limits, rate limits, SSE shutdown) were
+unconditional `t.Skip` calls and were deleted; see `TESTING_SUMMARY.md`.
+
 **Database Failures** (6 tests):
-- Slow queries don't block healthz
-- Certificate issuance succeeds under load
-- Context cancellation doesn't corrupt state
-- Parallel requests are isolated (ACID)
-- Graceful shutdown closes connections
-- Serial numbers are unique and incremented
+- `TestDatabase_HealthzSucceedsWithSlowQueries` -- slow queries don't block healthz
+- `TestDatabase_CertificateIssuanceSucceedsUnderLoad`
+- `TestDatabase_RequestContextCancelledDoesNotCorruptState`
+- `TestDatabase_MultipleParallelRequestsAreIsolated` (ACID)
+- `TestDatabase_ServerShutdownBlocksGracefully` -- graceful shutdown closes connections
+- `TestDatabase_CertificateSerialIsIncremented` -- serial numbers are unique and incremented
 
-**OIDC Provider Failures** (7 tests):
-- Token endpoint timeout handling
-- JWKS endpoint unreachability
-- OIDC key rotation mid-session
-- Malformed token responses
-- 5xx errors from token endpoint
-- TLS handshake failures
-- Recovery after IdP outage
+**OIDC Provider Recovery** (1 test):
+- `TestOIDC_LoginSucceedsAfterIdPRecovery` -- recovery after IdP outage
 
-**Graceful Shutdown** (6 tests):
-- SIGTERM with in-flight requests
-- SIGTERM with open SSE streams (placeholder)
-- SIGTERM during certificate signing
-- Database connections cleanly closed
-- Timeout mechanism prevents hang
-- State recovery after restart
+**Graceful Shutdown** (4 tests):
+- `TestShutdown_SIGTERMWithInFlightRequests`
+- `TestShutdown_SIGTERMDuringCertificateSigning`
+- `TestShutdown_GracefulWithDatabaseConnections` -- database connections cleanly closed
+- `TestRecovery_AfterShutdown` -- state recovery after restart
 
-**Resource Limits and Edge Cases** (12 tests):
-- Request body size limits
-- Header count limits (placeholder)
-- File descriptor exhaustion (placeholder)
-- Memory pressure handling (placeholder)
-- Per-user approval rate limits (placeholder)
-- Per-IP login rate limits (placeholder)
-- Empty/malformed approval requests
-- Duplicate approval clicks (idempotency)
-- Approval without prior login (placeholder)
-- Certificate validity independent of token expiry
-- Concurrent approvals of same login
-- Login timeout expiry and cleanup
+**Edge Cases** (3 tests):
+- `TestEdgeCase_DuplicateApprovalClick` (idempotency)
+- `TestEdgeCase_CertificateWithExpiredToken` -- certificate validity independent of token expiry
+- `TestEdgeCase_ConcurrentApprovalsOfSameLogin`
 
 ### Assertions
 
@@ -116,7 +100,7 @@ Each test validates:
 ### Running
 
 ```bash
-# Quick tests (skips placeholders and long-running scenarios)
+# Quick tests (skips long-running scenarios)
 go test -tags=resilience -short -count=1 -timeout=5m ./test/resilience/...
 
 # Full suite
@@ -128,7 +112,7 @@ CGO_ENABLED=1 go test -tags=resilience -race -count=1 -timeout=10m ./test/resili
 
 ## Frontend Accessibility Tests (`frontend/src/lib/components/`)
 
-**File:** `ConsentModal.a11y.test.ts` (2.8 KB)
+**File:** `ConsentModal.a11y.test.ts`
 
 ### Test Coverage (16 tests)
 
@@ -176,7 +160,8 @@ pnpm test:watch
 
 ## CI/CD Integration
 
-`.github/workflows/resilience.yaml` defines three jobs:
+`.github/workflows/resilience.yaml` defines four test jobs behind a
+`changes` path-filter gate:
 
 ```yaml
 resilience:
@@ -184,6 +169,9 @@ resilience:
 
 load:
   # go test -tags=load -race -count=1 -timeout=5m ./test/load/...
+
+migrations:
+  # go test -tags=dbparity ./test/migration/...  (schema parity, needs docker)
 
 a11y:
   # pnpm test (frontend accessibility)
@@ -229,18 +217,14 @@ Load tests use `sync.WaitGroup` and atomic counters:
 - Record baseline/peak/final goroutines and memory
 - Report metrics after all goroutines complete
 
-### Placeholder and Skip Pattern
+### No Placeholders
 
-Tests document scenarios that require infrastructure beyond the current harness:
-
-```go
-func TestOIDC_TokenEndpointTimeout(t *testing.T) {
-	t.Skip("requires IdP failure injection capability")
-	// Comment explains what the test will verify when implemented
-}
-```
-
-This keeps the full test suite visible while being honest about what can be tested today.
+A test that cannot run does not exist in these suites. An earlier revision
+kept scenarios beyond the harness as unconditional `t.Skip("requires X")`
+functions; all 26 were deleted (see `TESTING_SUMMARY.md`), because a skip
+reports green for something nobody checked. The only skips left are
+`testing.Short()` guards on the long-running tests. Scenarios the harness
+cannot reach are listed under "Known Limitations" below, not in code.
 
 ## Adding New Tests
 
@@ -258,7 +242,7 @@ All tests must:
 
 ## Known Limitations
 
-Tests currently placeholder these scenarios (require harness enhancements):
+The harness cannot reach these scenarios, so nothing tests them:
 
 - **SSE streaming**: No stream fan-out or event delivery testing
 - **Pub/Sub broker**: No message broker failure injection
@@ -267,4 +251,4 @@ Tests currently placeholder these scenarios (require harness enhancements):
 - **IdP failure injection**: Some OIDC scenarios require live IdP failure
 - **OS resource limits**: FD exhaustion and memory pressure need OS-level injection
 
-These are documented in test comments as `t.Skip()` calls.
+They are recorded here rather than as skipped tests.

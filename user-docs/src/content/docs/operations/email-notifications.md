@@ -239,8 +239,8 @@ address** closes both:
   team alias would do.
 
 Set the address on the browser approval page when approving the request, or
-afterwards from the service codes page (any holder) or the admin console's
-enrollment view (SOC). Clearing it restores fan-out.
+afterwards from the code's own page under **Service codes** (any holder) or
+under **Admin → Service codes** (SOC). Clearing it restores fan-out.
 
 A set address is the sole recipient and is sent **ungated**: with no single
 owning user there is no principled per-kind preference that could gate it, and

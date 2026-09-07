@@ -1,14 +1,21 @@
 # Testing Summary: Resilience, Load, and Accessibility Suites
 
+> **A dated work log.** This records the state of the load, resilience and
+> a11y suites when they were built (pre-1.0). Test counts and the frontend
+> total have moved since; the live inventory is `go test -tags=<tag> -list
+> '.*' ./test/<suite>/...` and `cd frontend && pnpm test`, and the CI
+> definition is `.github/workflows/resilience.yaml`. `TEST_SUITES.md` is
+> the maintained description.
+
 ## Executive Summary
 
-Completed comprehensive test suites with **37 real tests** across resilience, load, and frontend accessibility scenarios. Removed 26 placeholder tests that unconditionally skipped (lying to CI). All tests now compile and execute (failures are real infrastructure issues, not skips).
+Completed comprehensive test suites with **37 real tests** across resilience, load, and frontend accessibility scenarios (21 Go tests today: 7 load, 14 resilience). Removed 26 placeholder tests that unconditionally skipped (lying to CI). All tests now compile and execute (failures are real infrastructure issues, not skips).
 
-**Key Finding:** Detected potential memory leak in `server/service/certrequest.go` - the `s.resolved` map is never evicted, accumulating resolved request IDs for the process lifetime. Soak tests and memory delta tracking will catch this on sustained load.
+**Key Finding (since fixed):** Detected a memory leak in `server/service/certrequest.go` - the `s.resolved` map was never evicted, accumulating resolved request IDs for the process lifetime. It now has a sweep bounded by `ApprovalTTL` (`delete(s.resolved, id)` in the same file); the soak tests' memory delta tracking is what would catch a regression.
 
 ## Test Suite Status
 
-### Load and Concurrency Tests (6 tests, all executable)
+### Load and Concurrency Tests (7 tests, all executable)
 
 **File:** `test/load/`
 
@@ -17,8 +24,9 @@ Completed comprehensive test suites with **37 real tests** across resilience, lo
 2. `TestConcurrentLogins_50Simultaneous` - 50 concurrent (skips in short mode)
 3. `TestSerialNumberAllocation_Concurrent` - 20 concurrent cert issuances, validates serial uniqueness
 4. `TestCertificateSigningThroughput_HighLoad` - Throughput measurement (skips in short mode)
-5. `TestSoak_SustainedLoad_30Minutes` - 30-min sustained load (skips in short mode)
-6. `TestStress_BurstApprovals` - 30 simultaneous approvals (skips in short mode)
+5. `TestSoak_SustainedLoad_ThreeWorkers` - sustained load, three workers (skips in short mode; replaced the original 30-minute soak)
+6. `TestSoak_SustainedLoad_FiveWorkers` - sustained load, five workers (skips in short mode)
+7. `TestStress_BurstApprovals` - 30 simultaneous approvals (skips in short mode)
 
 **Removed (no real assertions):**
 - TestSSEFanOut_100Subscribers (placeholder, SSE not implemented)
@@ -31,7 +39,7 @@ Completed comprehensive test suites with **37 real tests** across resilience, lo
 - Memory growth <200 MB over baseline
 - Serial numbers unique and incremented
 
-### Resilience Tests (18 tests, all executable)
+### Resilience Tests (14 tests, all executable)
 
 **File:** `test/resilience/`
 
@@ -46,7 +54,7 @@ Completed comprehensive test suites with **37 real tests** across resilience, lo
 **OIDC Provider Recovery (1 test):**
 - Login succeeds after IdP outage resolves
 
-**Graceful Shutdown (5 tests):**
+**Graceful Shutdown (4 tests):**
 - SIGTERM with in-flight requests
 - SIGTERM during cert signing
 - Database connections closed gracefully
@@ -92,7 +100,7 @@ Completed comprehensive test suites with **37 real tests** across resilience, lo
 15. Focus management capability
 16. Button with text label
 
-**All pass.** Validates WCAG 2.1 Level A compliance.
+**All pass.** Validates WCAG 2.1 Level AA compliance (the level `frontend/DESIGN.md` sets).
 
 ## Real Test Execution Results
 
@@ -124,16 +132,17 @@ FAIL: server startup fails (expected in this environment)
 ### Frontend A11y Tests
 ```
 $ cd frontend && pnpm test
-PASS: 223/223 tests pass
+PASS: 223/223 tests pass   # at the time; the suite has since roughly tripled
 - 16 ConsentModal a11y tests all pass
 - 207 other component/page tests pass
 ```
 
 ## Key Findings
 
-### 1. Memory Leak in Certificate Request Resolution Cache
+### 1. Memory Leak in Certificate Request Resolution Cache (fixed)
 
-**Location:** `server/service/certrequest.go:128`
+**Location (as found):** `server/service/certrequest.go`, the `resolved`
+field on `CertRequestService` (now `map[string]WaitOutcome`)
 
 ```go
 type CertRequestService struct {
@@ -143,22 +152,22 @@ type CertRequestService struct {
     // for, so a Wait call arriving after resolution (a late reconnect, or
     // one that was never blocked in the first place) reads the cached
     // outcome instead of waiting on a wake message that already happened.
-    resolved map[string]requestOutcome  // <-- NEVER EVICTED
+    resolved map[string]requestOutcome  // <-- was never evicted
 }
 ```
 
-**Evidence:**
-- Written at lines 1140 and 1175
-- No `delete` statement in the file
-- Every resolved request ID and its certificate string stays resident for process lifetime
+**Evidence (as found):**
+- Written on every resolution; no `delete` statement in the file
+- Every resolved request ID and its certificate string stayed resident for process lifetime
 
-**Impact:**
-- Long-running servers (soak tests) will accumulate request data
-- Memory grows unbounded with request volume
-- High-concurrency scenarios degrade over time
+**Fix:** the map is now swept; entries older than `ApprovalTTL` are
+`delete`d, with the comment beside the sweep explaining why that TTL is the
+right bound (a waiter that has not reconnected inside it has no request to
+read). `server/service/certrequest_memory_leak_test.go` (`make
+test-memory-leak`) pins it.
 
 **Soak Test Detection:**
-The soak tests' memory delta tracking will catch this:
+The soak tests' memory delta tracking is what would catch a regression:
 ```go
 memoryGrowth := int64(finalMemStats.Alloc) - int64(baselineMemStats.Alloc)
 if memoryGrowth > 200_000_000 {
@@ -197,7 +206,7 @@ if testing.Short() {
 
 This is legitimate and used correctly for:
 - Concurrent login tests with 50 clients
-- 30-minute soak test
+- The two sustained-load soak tests
 - Throughput measurement test
 
 ### No Unconditional Skips
@@ -205,19 +214,22 @@ All 26 placeholder tests with unconditional `t.Skip("requires X")` were deleted.
 
 ## CI/CD Integration
 
-`.github/workflows/resilience.yaml` defines three jobs:
+`.github/workflows/resilience.yaml` defines four test jobs behind a `changes` path-filter gate:
 
 1. **resilience job**
    - `CGO_ENABLED=1 go test -tags=resilience -race -count=1 -timeout=5m ./test/resilience/...`
-   - 18 real tests, all executable
+   - 14 real tests, all executable
 
 2. **load job**
    - `CGO_ENABLED=1 go test -tags=load -race -count=1 -timeout=5m ./test/load/...`
-   - 6 real tests (soak tests skip with `-short` in CI)
+   - 7 real tests (soak tests skip with `-short` in CI)
 
-3. **a11y job**
+3. **migrations job**
+   - `go test -tags=dbparity ./test/migration/...` (schema parity across dialects; added after this summary was written)
+
+4. **a11y job**
    - `cd frontend && pnpm test`
-   - 16 a11y tests + 207 other component tests
+   - 16 a11y tests plus the rest of the component suite
 
 ## Metrics Reported by Tests
 
@@ -235,12 +247,13 @@ All 26 placeholder tests with unconditional `t.Skip("requires X")` were deleted.
 
 **A11y tests assert:**
 - Automated a11y violation count (jest-axe)
-- WCAG 2.1 Level A compliance
+- WCAG 2.1 Level AA compliance
 - Semantic HTML and ARIA correctness
 
 ## Commits
 
-4 clean commits with conventional format:
+Six commits with conventional format, all pre-1.0 history kept here for the
+record only:
 
 1. `f55f963` - Build tag fixes for harness imports
 2. `505a938` - Full load, resilience, and a11y test suite
@@ -291,7 +304,7 @@ The test suite now provides:
 - **Honest reporting**: 37 real, executable tests; zero fake skips
 - **Leak detection**: Goroutine and memory monitoring with tight thresholds
 - **Correctness validation**: Concurrent operations, state isolation, recovery
-- **Accessibility compliance**: WCAG 2.1 Level A for critical UI
-- **Production confidence**: Soak tests will catch the identified `s.resolved` leak
+- **Accessibility compliance**: WCAG 2.1 Level AA for critical UI
+- **Production confidence**: Soak tests would catch a regression of the (since fixed) `s.resolved` leak
 
 All tests compile and run. Test failures are real (server startup issues in this environment), not skips masking broken tests.

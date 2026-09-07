@@ -34,6 +34,15 @@ template can be added later if a directory needs one.
   answers "who should this reach"; no new notification kinds were added,
   since the proposal scoped those as following the existing registry
   pattern when someone needs one.
+- **`sync.disable_after` is a duration, not a count of passes** (commit
+  `cba2817`; `server/config/types_ldap.go`). Scheduled jobs are not
+  leader-elected, so three replicas produced three misses per interval and
+  a hand-run sync added more; a count was not a measure of time. The
+  window is anchored on a `missing_since` timestamp set by the first
+  successful search that found no entry (migration
+  `20260906000000_ldap_missing_since`); `consecutive_misses` survives as a
+  column but no longer drives the disable. The snippet and the sync
+  algorithm below carry the as-built wording inline.
 
 `config.LDAPConfig` (`server/config/types.go`) is parsed but unconsumed, and
 `model.User` ends with a TODO for LDAP-sourced fields. This proposal defines
@@ -121,7 +130,8 @@ ldap:
 
   sync:
     interval: 15m          # zero disables the sync job entirely
-    disable_after: 3       # consecutive successful-search misses before disable
+    disable_after: 45m     # how long an entry may stay missing before disable
+                           # (as built: a duration, not a pass count; see below)
     reenable: true         # sync may clear its own disables on reappearance
     extra_groups: []       # persisted in addition to config-derived groups;
                            # see "user_groups" for the allowlist rule
@@ -305,7 +315,8 @@ database per request. Nothing here reopens that.
 Side effect worth naming: the sync partially closes the revocation window
 described on `AdminConfig`. Today, removing a user from the identity provider
 takes effect at their next login. With the sync, removing them from the
-directory disables the account within `interval * disable_after`. Group
+directory disables the account once it has been missing for
+`disable_after` (as built; see the deviations above). Group
 downgrades (still in the directory, out of a role group) still ride out the
 session, unchanged.
 
@@ -344,9 +355,12 @@ Per user:
    values, see "Account linking"). If the user is disabled with
    `disabled_source = ldap_sync` and `sync.reenable` is true, clear the
    disable.
-3. **Not found (search succeeded, no entry):** increment
-   `consecutive_misses`. At `sync.disable_after`, disable the user with
-   `disabled_source = ldap_sync`.
+3. **Not found (search succeeded, no entry):** record `missing_since` if it
+   is not already set. Once the entry has been missing for
+   `sync.disable_after`, disable the user with
+   `disabled_source = ldap_sync`. (As drafted this was a
+   `consecutive_misses` counter; see the deviations above for why it became
+   a window.)
 4. **Directory unreachable or bind failed:** update nothing, count nothing,
    log loudly. An outage must never disable anyone; only a successful search
    that finds no entry is a miss.

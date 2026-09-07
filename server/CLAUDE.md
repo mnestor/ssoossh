@@ -30,22 +30,36 @@
 ## Architecture
 
 - `bootstrap/` - server startup and graceful shutdown
-- `cmd/` - entrypoint from `cmd/server/` using spf13/cobra
+- `certmsg/` - the signing-job message types carried between the web tier
+  and the signer
+- `cmd/` - the `ssoosshd` command tree (`serve`, `serve api`, `sign`,
+  `ldap probe`, `version`) using bep/simplecobra; the binary's entrypoint is
+  `cmd/ssoosshd/main.go` at the repo root
 - `config/` - config structs, defaults, and spf13/viper setup
 - `controller/` - gin router methods and structs for each type of
   controller to hold services needed for controller to work. maybe break this up
   into sub folders for the controller types.
+- `dbtime/` - time handling that is the same across sqlite and postgres
 - `frontend/` - simple framework for embedding frontend
   html,js,images,css
+- `job/` - the scheduler and its background jobs
 - `logging/` - everything loging setup for server
+- `mail/` - SMTP delivery and the notification templates
 - `model/` - database structs to match every table in the database with gorm
   struct tags
 - `middleware/` - gin middleswares
+- `notify/` - notification kinds, per-user preferences, and fan-out
+- `openapidoc/` - the swag-generated OpenAPI document
+- `pubsub/` - the in-process and NATS message buses
 - `resources/` - database migrations for both sqlite and postgres
 - `service/` - services used by controller, keeps separation of
   controller and model interactions
+- `signer/` - CA signing: config-file key or PKCS#11 token
+- `testutil/` - helpers shared by server tests
 - `utils/` - utility modules that don't fit any other other locations
-  under `server/`
+  under `server/` (`errorresponses`, `paging`, `tracing`)
+- `webtypes/` - the JSON request/response types the frontend's TypeScript is
+  generated from
 
 ## Security-Critical Code Rules
 

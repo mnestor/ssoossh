@@ -6,9 +6,9 @@ This guide explains how multiple AI agents (e.g., different Claude Code sessions
 
 1. **One worktree per agent.** Each agent gets its own git worktree so they don't interfere with each other's file state.
 2. **Schema is single-owner.** Only one agent at a time can edit `server/model/` or `server/resources/migrations/` (the database schema).
-3. **Coverage exclusions are single-owner per file.** Another agent adding lines to the same Go file will shift line numbers and break your coverage exclusion ranges.
+3. **Coverage is reported unfiltered.** There is no exclusion list to maintain: a block that cannot be tested carries a `not covered:` comment in place, and `.coverage-floors` ratchets each package's floor. Another agent's edits cannot invalidate either.
 4. **No parallel `make test-e2e`.** The end-to-end test suite uses fixed host resources (a local user account, sshd on fixed ports); run it serially.
-5. **After merging, regenerate.** When a branch lands, the integrator runs `make openapi && make types && go mod tidy && make cover` to catch stale generated files and shifted line numbers.
+5. **After merging, regenerate.** When a branch lands, the integrator runs `make check-generated` (or the full `make pre-pr`) to catch stale generated files: types, openapi, man pages, confdocs, clidocs, Makefile docs, and the wire contract.
 
 ## Detailed Setup
 
@@ -19,8 +19,8 @@ This guide explains how multiple AI agents (e.g., different Claude Code sessions
 git status
 git stash -u  # if needed
 
-# Create a new worktree for the agent
-git worktree add ../ssoossh-<feature> -b feat/<feature>
+# Create a new worktree for the agent (wraps `git worktree add`; see Makefile.md)
+make worktree NAME=<feature>            # BASE=main, WORKTREE_BRANCH=feat/<feature> by default
 cd ../ssoossh-<feature>
 ```
 
@@ -32,8 +32,7 @@ Before two agents start, assign:
 
 | Resource | Assigned To | Reason |
 | --- | --- | --- |
-| `server/model/` + `server/resources/migrations/` | [Agent Name] | One migration file per database driver; two branches editing the same file will drift silently. |
-| Coverage ranges in `<file>.go` | [Agent Name] | Line number shifts from another agent's edits invalidate the ranges. |
+| `server/model/` + `server/resources/migrations/` | [Agent Name] | Two branches each adding a numbered migration per dialect will collide on ordering; the schema is one sequence. |
 
 ### Parallel Work Phases
 
@@ -61,11 +60,10 @@ When a branch is ready to merge:
    cd <main-worktree>
    git pull
    
-   # Regenerate all generated files
-   make openapi && make types && go mod tidy
-   
-   # Recompute coverage exclusion line ranges
-   make cover
+   # Regenerate and verify every generated artifact (types, openapi, man,
+   # confdocs, clidocs, Makefile docs, wire contract)
+   go mod tidy
+   make check-generated
    
    # Verify the gate passes
    make lint && make test
@@ -79,8 +77,7 @@ When a branch is ready to merge:
 
 **Do NOT** skip step 4. If you merge two agent branches without regenerating between them:
 
-- Generated files (openapi.yaml, TypeScript types) will collide and produce wrong output.
-- Coverage exclusion ranges will shift silently and numbers will become unreliable.
+- Generated files (openapi.yaml, TypeScript types, man pages, the docs-site references, the wire contract) will collide and produce wrong output.
 
 ## What Merges Safely in Parallel
 
@@ -94,7 +91,6 @@ These can be edited by multiple branches without conflict:
 Merge **serially if**:
 
 - Both branches touch `server/model/` or `server/resources/migrations/`.
-- Both branches modify the same Go file's coverage exclusions.
 - The same frontend component is being rewritten.
 
 ## Central Collision Points
@@ -105,7 +101,7 @@ Features that add routes or services will conflict here (both sides keep their a
 - `server/bootstrap/bootstrap.go` — service construction
 - `server/model/model.go` — model list
 
-These conflicts are **mechanical:** take both sides, run `make types && make openapi`, and commit.
+These conflicts are **mechanical:** take both sides, run `make check-generated`, and commit.
 
 ## Cleanup
 
@@ -118,13 +114,12 @@ git worktree remove ssoossh-<feature>
 
 ## Why This Discipline Matters
 
-Three things merge cleanly but are wrong afterwards:
+Two things merge cleanly but are wrong afterwards:
 
 1. **Generated files** — The merger doesn't know that `openapi.yaml` is derived from Go annotations. Two branches both regenerate, outputs collide, and the merged result matches neither.
-2. **Coverage exclusions** — Line ranges are line-specific. Another branch's insertions shift those lines, and the merger doesn't know it. Exclusions silently stop excluding.
-3. **Migrations** — Two schema change branches both edit the same migration file. No merge marker because both edits are "additive" (columns added). But if one adds a column named `status` and the other adds a constraint on `status`, the order matters. Silent drift.
+2. **Migrations** — Two schema change branches each add a numbered migration. No merge marker because both are "additive" (new files). But if one adds a column named `status` and the other adds a constraint on `status`, the order matters. Silent drift.
 
-The post-merge ritual fixes all three.
+The post-merge ritual catches the first; serial schema ownership prevents the second.
 
 ## Worked Example
 

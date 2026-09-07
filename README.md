@@ -8,10 +8,11 @@ Pronounced *sue-sssh*. Self-hosted and homelab-friendly. The reference
 configuration uses [pocket-id](https://github.com/pocket-id/pocket-id) as
 the OIDC provider.
 
-> **Status: early development.** User, service, and PAM (`sudo`/`su`)
-> certificates all work end to end today. ssoosshd deliberately issues no
-> host certificates — see [Decisions](https://mnestor.github.io/ssoossh/project/decisions/).
-> Interfaces and configuration are expected to change.
+> **Status: released.** ssoossh is on its 1.x line (latest tag `v1.1.3`; see
+> [releases](https://github.com/mnestor/ssoossh/releases)). User, service,
+> PAM (`sudo`/`su`) and console certificates all work end to end. ssoosshd
+> deliberately issues no host certificates — see
+> [Decisions](https://mnestor.github.io/ssoossh/project/decisions/).
 
 ## Is it AI slop?
 
