@@ -12,7 +12,7 @@
 	import Button from '$lib/components/Button.svelte';
 	import CertRow from '$lib/components/CertRow.svelte';
 	import DeniedRow from '$lib/components/DeniedRow.svelte';
-	import Icon from '$lib/components/Icon.svelte';
+	import FilterChip from '$lib/components/FilterChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 
@@ -52,17 +52,22 @@
 	const pageSize = 10;
 
 	// What the page opens on, and the two other views of the same history.
-	// A segmented control rather than more pills: it is a different question
-	// from the type filter beside it, and three mutually exclusive options
-	// all worth reading at a glance.
-	const outcomes: { value: Outcome; label: string }[] = [
-		{ value: 'approved', label: 'Approved' },
-		{ value: 'denied', label: 'Denied' },
+	// The same chip as the type filter beside it: two controls answering two
+	// questions about one list should not look like two kinds of thing.
+	// A rule between the groups is what separates them instead.
+	//
+	// The tick and the cross are the glyphs StatusBadge gives an approval
+	// and a denial, so a chip is the badge of the rows it selects. "Both"
+	// takes `layout-grid`, the same "no filter applied" glyph the type
+	// row's "All" uses.
+	const outcomes: { value: Outcome; label: string; icon: string }[] = [
+		{ value: 'approved', label: 'Approved', icon: 'check-circle' },
+		{ value: 'denied', label: 'Denied', icon: 'x-circle' },
 		// "Both", not "All": the type tabs beside this already have an "All",
 		// and two adjacent controls offering the same word is ambiguous to
 		// read and worse to announce. There are exactly two outcomes, so
 		// naming them both is the more precise word anyway.
-		{ value: 'all', label: 'Both' }
+		{ value: 'all', label: 'Both', icon: 'layout-grid' }
 	];
 
 	// The filter tabs, in the order they read. "All" leads because it is the
@@ -234,51 +239,40 @@
 	{:else if sorted.length === 0}
 		<p class="text-sm text-ink-muted">You have not decided any certificate requests yet.</p>
 	{:else}
-		<div class="flex flex-wrap items-center gap-3">
-			<!-- Two questions, two controls: what kind of thing, and how it
-			     was decided. The outcome is a segmented control rather than
-			     more pills so the two do not read as one row of eight
-			     equivalent choices. -->
-			<div
-				class="inline-flex overflow-hidden rounded-lg border border-border-subtle"
-				role="group"
-				aria-label="Filter by outcome"
-				data-testid="outcome-filter"
-			>
+		<div class="flex flex-wrap items-center gap-2">
+			<!-- Two questions about one list — how it was decided, and what
+			     kind of thing it was — as one row of the same chip, with a
+			     rule between the groups rather than two different controls.
+			     Every chip drops its label below `sm`; see FilterChip. -->
+			<div class="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by outcome">
 				{#each outcomes as outcome (outcome.value)}
-					<button
-						type="button"
+					<FilterChip
+						label={outcome.label}
+						icon={outcome.icon}
+						selected={selectedOutcome === outcome.value}
 						onclick={() => (selectedOutcome = outcome.value)}
-						aria-pressed={selectedOutcome === outcome.value}
-						data-testid="outcome-filter-{outcome.value}"
-						class="px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
-						class:bg-accent={selectedOutcome === outcome.value}
-						class:text-accent-ink={selectedOutcome === outcome.value}
-						class:text-ink-muted={selectedOutcome !== outcome.value}
-						class:hover:bg-surface-muted={selectedOutcome !== outcome.value}
-					>
-						{outcome.label}
-					</button>
+						testid="outcome-filter-{outcome.value}"
+					/>
 				{/each}
 			</div>
 
-			{#each tabs as tab (tab.value)}
-				<button
-					type="button"
-					onclick={() => (selectedType = tab.value)}
-					aria-pressed={selectedType === tab.value}
-					class="inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition"
-					class:border-accent={selectedType === tab.value}
-					class:bg-accent={selectedType === tab.value}
-					class:text-accent-ink={selectedType === tab.value}
-					class:border-border-subtle={selectedType !== tab.value}
-					class:text-ink-muted={selectedType !== tab.value}
-					class:hover:bg-surface-muted={selectedType !== tab.value}
-				>
-					<Icon name={tab.icon} size="xs" />
-					{tab.label}
-				</button>
-			{/each}
+			<span class="h-5 w-px bg-border-subtle" aria-hidden="true"></span>
+
+			<div
+				class="flex flex-wrap items-center gap-2"
+				role="group"
+				aria-label="Filter by certificate type"
+			>
+				{#each tabs as tab (tab.value)}
+					<FilterChip
+						label={tab.label}
+						icon={tab.icon}
+						selected={selectedType === tab.value}
+						onclick={() => (selectedType = tab.value)}
+						testid="type-filter-{tab.value}"
+					/>
+				{/each}
+			</div>
 		</div>
 
 		{#if filtered.length === 0}

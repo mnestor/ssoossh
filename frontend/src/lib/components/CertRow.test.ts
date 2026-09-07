@@ -26,6 +26,44 @@ function cert(overrides: Partial<CertificateRecord> = {}): CertificateRecord {
 }
 
 describe('CertRow', () => {
+	// The decision badge beside it cannot answer this: every row in a
+	// certificate list was approved, and what a reader brings to one is
+	// "can I still use this".
+	describe('the validity indicator', () => {
+		it('should mark a certificate inside its window as still valid', () => {
+			render(CertRow, { cert: cert(), now, href: '/certs/cert-1' });
+			expect(screen.getByTestId('cert-validity')).toHaveAttribute('data-valid', 'true');
+		});
+
+		it('should mark a certificate past its expiry as expired', () => {
+			render(CertRow, {
+				cert: cert({ expires_at: '2026-08-22T11:00:00Z' }),
+				now,
+				href: '/certs/cert-1'
+			});
+			expect(screen.getByTestId('cert-validity')).toHaveAttribute('data-valid', 'false');
+		});
+
+		// The icon is the whole indicator, so it has to carry a name: a
+		// pointer gets the title, everything else gets the label.
+		it('should name the state it is reporting', () => {
+			render(CertRow, {
+				cert: cert({ expires_at: '2026-08-22T11:00:00Z' }),
+				now,
+				href: '/certs/cert-1'
+			});
+			expect(screen.getByLabelText('Expired')).toBeInTheDocument();
+		});
+
+		// It is a state rather than a record, so it moves with the clock the
+		// list is rendered against.
+		it('should follow the clock it is given', () => {
+			const row = cert({ expires_at: '2026-08-22T13:00:00Z' });
+			render(CertRow, { cert: row, now: new Date('2026-08-22T14:00:00Z'), href: '/certs/cert-1' });
+			expect(screen.getByTestId('cert-validity')).toHaveAttribute('data-valid', 'false');
+		});
+	});
+
 	it('should name the row by the client that asked for the certificate', () => {
 		render(CertRow, { cert: cert(), now, href: '/certs/cert-1' });
 		expect(screen.getByText('alice@alice-laptop')).toBeInTheDocument();

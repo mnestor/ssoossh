@@ -1,7 +1,8 @@
 <script lang="ts">
 	import type { CertificateRecord } from '$lib/api/types';
-	import { formatDuration, relativeTime } from '$lib/format';
+	import { formatDuration, isExpired, relativeTime } from '$lib/format';
 	import type { Snippet } from 'svelte';
+	import Icon from './Icon.svelte';
 	import StatusBadge from './StatusBadge.svelte';
 	import TypeBadge from './TypeBadge.svelte';
 
@@ -81,6 +82,23 @@
 	// A certificate exists only because a request was approved, so an absent
 	// decision record still means approved — it just predates the audit trail.
 	const decision = $derived(cert.decided_by_outcome === 'denied' ? 'denied' : 'approved');
+
+	// Whether the certificate still works, which the decision badge beside
+	// it cannot say: every row in a certificate list was approved, and the
+	// question a reader actually brings to one is "can I still use this".
+	// An icon rather than a second pill — two badges on one row compete, and
+	// this one is a yes or a no.
+	//
+	// A shield, deliberately not the tick StatusBadge gives an approval:
+	// they sit next to each other, and two ticks in a row would read as one
+	// fact said twice rather than as two answers to different questions.
+	// The warning triangle is the glyph StatusBadge already uses for an
+	// expired request, which is the same meaning.
+	//
+	// It is a state, not a record, so it is the one thing on the row that
+	// changes while the page is open: `now` ticks, and a certificate that
+	// expires under the reader's eyes says so.
+	const expired = $derived(isExpired(cert.expires_at, now));
 </script>
 
 <!-- eslint-disable svelte/no-navigation-without-resolve --
@@ -115,6 +133,20 @@
 	{#if trailing}
 		{@render trailing()}
 	{:else}
-		<StatusBadge status={decision} />
+		<span class="flex flex-shrink-0 items-center gap-2">
+			<!-- Title as well as an accessible name: on a pointer the icon is
+			     the only thing there, and "expired" has to be readable
+			     without opening the row. -->
+			<span
+				title={expired ? 'Expired' : 'Still valid'}
+				aria-label={expired ? 'Expired' : 'Still valid'}
+				data-testid="cert-validity"
+				data-valid={expired ? 'false' : 'true'}
+				class={expired ? 'text-ink-muted' : 'text-granted'}
+			>
+				<Icon name={expired ? 'alert-triangle' : 'shield-check'} size="sm" />
+			</span>
+			<StatusBadge status={decision} />
+		</span>
 	{/if}
 </a>

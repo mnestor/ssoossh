@@ -5,6 +5,7 @@
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
 	import CertRow from '$lib/components/CertRow.svelte';
+	import FilterChip from '$lib/components/FilterChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import Pager from '$lib/components/Pager.svelte';
@@ -20,8 +21,26 @@
 	let isLoading = $state(false);
 	let hasLoaded = $state(false);
 
-	const certTypes = ['user', 'service', 'pam', 'console'];
-	const statusOptions = ['live', 'expired'];
+	// The same chips the certificate history uses, with the same icons: two
+	// screens listing the same rows should not filter them through two
+	// different-looking controls. "All" leads the types because clearing the
+	// filter is a choice like any other; the two status chips have no "All"
+	// of their own because pressing the selected one clears it.
+	const typeFilters = [
+		{ value: '', label: 'All', icon: 'layout-grid' },
+		{ value: 'user', label: 'User', icon: 'user' },
+		{ value: 'service', label: 'Service', icon: 'cog' },
+		{ value: 'pam', label: 'PAM', icon: 'terminal' },
+		{ value: 'console', label: 'Console', icon: 'monitor' }
+	];
+
+	// The same pair, and the same glyphs, as the validity indicator on the
+	// rows below — a reader filtering to "expired" should see the icon they
+	// filtered on.
+	const statusFilters = [
+		{ value: 'live', label: 'Live', icon: 'shield-check' },
+		{ value: 'expired', label: 'Expired', icon: 'alert-triangle' }
+	];
 
 	// Which load is allowed to write to the page. Nothing cancels a request
 	// in flight, and the search box stays live while one is running, so two
@@ -133,45 +152,29 @@
 		/>
 
 		<div class="flex flex-col gap-2">
-			<div data-testid="type-filter" class="flex gap-2">
+			<div data-testid="type-filter" class="flex flex-wrap items-center gap-2">
 				<span class="text-xs font-semibold text-ink-muted">Type:</span>
-				<button
-					type="button"
-					onclick={() => handleTypeFilter('')}
-					class="inline-flex items-center gap-2 rounded-md border {typeFilter === ''
-						? 'border-accent bg-accent text-accent-ink'
-						: 'border-border-subtle text-ink hover:bg-surface-muted'} px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50"
-					disabled={isLoading}
-				>
-					All
-				</button>
-				{#each certTypes as type (type)}
-					<button
-						type="button"
-						onclick={() => handleTypeFilter(type)}
-						class="inline-flex items-center gap-2 rounded-md border {typeFilter === type
-							? 'border-accent bg-accent text-accent-ink'
-							: 'border-border-subtle text-ink hover:bg-surface-muted'} px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50"
+				{#each typeFilters as filter (filter.value)}
+					<FilterChip
+						label={filter.label}
+						icon={filter.icon}
+						selected={typeFilter === filter.value}
 						disabled={isLoading}
-					>
-						{type}
-					</button>
+						onclick={() => handleTypeFilter(filter.value)}
+					/>
 				{/each}
 			</div>
 
-			<div class="flex gap-2">
+			<div class="flex flex-wrap items-center gap-2">
 				<span class="text-xs font-semibold text-ink-muted">Status:</span>
-				{#each statusOptions as status (status)}
-					<button
-						type="button"
-						onclick={() => handleStatusFilter(status)}
-						class="inline-flex items-center gap-2 rounded-md border {statusFilter === status
-							? 'border-accent bg-accent text-accent-ink'
-							: 'border-border-subtle text-ink hover:bg-surface-muted'} px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50"
+				{#each statusFilters as filter (filter.value)}
+					<FilterChip
+						label={filter.label}
+						icon={filter.icon}
+						selected={statusFilter === filter.value}
 						disabled={isLoading}
-					>
-						{status}
-					</button>
+						onclick={() => handleStatusFilter(filter.value)}
+					/>
 				{/each}
 			</div>
 		</div>
