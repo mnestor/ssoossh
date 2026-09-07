@@ -10,8 +10,10 @@
 	import FilterGroup from '$lib/components/FilterGroup.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
+	import ListStatus from '$lib/components/ListStatus.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import { outcomeFilters, statusFilters, typeFilters } from '$lib/filters';
+	import { describeList } from '$lib/listStatus';
 
 	// Cursor-paginated decision history: what was issued, and what was
 	// refused. The type filter and client-side pagination apply only to
@@ -118,6 +120,23 @@
 	const paginated = $derived(filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize));
 
 	const totalPages = $derived(Math.ceil(filtered.length / pageSize));
+
+	// What the list just became, for a reader who cannot see the rows
+	// change under a filter chip. Counts what has been loaded rather than
+	// what exists: this list pages client-side over a growing window, so
+	// "loaded" is the honest number and the Load more button below says the
+	// rest. See $lib/listStatus.
+	const listStatus = $derived(
+		describeList({
+			noun: 'certificate',
+			total: filtered.length,
+			loading: isLoading,
+			ready: hasLoaded,
+			page: currentPage,
+			pageCount: totalPages,
+			query: searchQuery
+		})
+	);
 
 	// A row opens the certificate's own page rather than a dialog over the
 	// list. `from` is what the back chip there reads: this list, not the
@@ -268,6 +287,8 @@
 		     empty-state branch: the page opens on approvals, so somebody
 		     whose only history is a refusal would land on "nothing here"
 		     with no control on screen to go and find it. -->
+		<ListStatus message={listStatus} />
+
 		<div class="flex flex-col gap-3">
 			<SearchInput
 				label="Search your history"

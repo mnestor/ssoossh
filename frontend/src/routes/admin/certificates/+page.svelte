@@ -8,9 +8,11 @@
 	import FilterGroup from '$lib/components/FilterGroup.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
+	import ListStatus from '$lib/components/ListStatus.svelte';
 	import Pager from '$lib/components/Pager.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import { statusFilters, typeFilters } from '$lib/filters';
+	import { describeList } from '$lib/listStatus';
 
 	let certificates = $state<CertificateResponse[]>([]);
 	let pageInfo = $state({ total: 0, limit: 25, offset: 0, page: 1, page_count: 1 });
@@ -114,6 +116,20 @@
 	function handlePage(next: number) {
 		offset = next;
 	}
+
+	// What the list just became, for a reader who cannot see the rows
+	// change under a filter. See $lib/listStatus.
+	const status = $derived(
+		describeList({
+			noun: 'certificate',
+			total: pageInfo.total,
+			loading: isLoading,
+			ready: hasLoaded,
+			page: pageInfo.page,
+			pageCount: pageInfo.page_count,
+			query: searchQuery
+		})
+	);
 </script>
 
 <svelte:head><title>Certificates · ssoossh</title></svelte:head>
@@ -155,6 +171,8 @@
 			/>
 		</div>
 	</div>
+
+	<ListStatus message={status} />
 
 	{#if !hasLoaded}
 		<p class="text-sm text-ink-muted">Loading…</p>

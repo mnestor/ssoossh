@@ -110,7 +110,7 @@
 				disabled={busy}
 				data-testid={reasonTestid}
 				placeholder={reasonPlaceholder}
-				class="w-full rounded border border-border-subtle bg-surface-muted p-2 text-sm disabled:opacity-50"
+				class="w-full rounded border border-border-control bg-surface-muted p-2 text-sm disabled:opacity-50"
 			></textarea>
 			{#if reasonHelp}
 				<span class="mt-1 block text-xs text-ink-muted">{reasonHelp}</span>

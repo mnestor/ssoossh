@@ -42,7 +42,7 @@
 	class:border-accent={selected}
 	class:bg-accent={selected}
 	class:text-accent-ink={selected}
-	class:border-border-subtle={!selected}
+	class:border-border-control={!selected}
 	class:text-ink-muted={!selected}
 	class:hover:bg-surface-muted={!selected && !disabled}
 >

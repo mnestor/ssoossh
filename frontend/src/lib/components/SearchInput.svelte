@@ -102,7 +102,7 @@
 		bind:value={term}
 		oninput={schedule}
 		onkeydown={submit}
-		class="w-full rounded-md border border-border-subtle bg-surface py-2 pr-9 pl-9 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none"
+		class="w-full rounded-md border border-border-control bg-surface py-2 pr-9 pl-9 text-sm text-ink placeholder:text-ink-muted focus:border-accent"
 	/>
 	{#if term !== ''}
 		<button

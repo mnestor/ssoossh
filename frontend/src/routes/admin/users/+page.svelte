@@ -5,9 +5,11 @@
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
+	import ListStatus from '$lib/components/ListStatus.svelte';
 	import Pager from '$lib/components/Pager.svelte';
 	import { getAdminUsers } from '$lib/api/endpoints';
 	import type { AdminUsersListResponse } from '$lib/api/types';
+	import { describeList } from '$lib/listStatus';
 
 	/** The account-state filter, matching the server's `status` parameter. */
 	type StatusFilter = 'all' | 'active' | 'disabled';
@@ -67,13 +69,37 @@
 		loadUsers();
 	}
 
+	// What the list just became, for a reader who cannot see the rows
+	// change under a search or a state filter. See $lib/listStatus.
+	// `$derived.by` rather than `$derived`: at this point in the module the
+	// only assignment TypeScript has seen to `users` is the `null` it was
+	// declared with, so it narrows the whole union away and `users?.meta`
+	// types as `never`. Reading it inside a function body resets that — the
+	// same reason the markup below can say `users.meta` after an `{#if}`.
+	const listStatus = $derived.by(() => {
+		const meta = users?.meta;
+		return describeList({
+			noun: 'user',
+			total: meta?.total ?? 0,
+			loading: busy,
+			ready: meta !== undefined,
+			page: meta?.page,
+			pageCount: meta?.page_count,
+			query: searchQuery
+		});
+	});
+
 	onMount(loadUsers);
 </script>
+
+<svelte:head><title>Users · ssoossh</title></svelte:head>
 
 <PageShell width="full">
 	<PageHeading title="Users">
 		{#snippet sub()}Directory of all users, with disable controls.{/snippet}
 	</PageHeading>
+
+	<ListStatus message={listStatus} />
 
 	<div class="flex flex-wrap items-end justify-between gap-4">
 		<div class="min-w-[240px] flex-1">
@@ -90,7 +116,7 @@
 		     view am I looking at" has to be answerable without opening
 		     anything. -->
 		<div
-			class="inline-flex overflow-hidden rounded-lg border border-border-subtle"
+			class="inline-flex overflow-hidden rounded-lg border border-border-control"
 			role="group"
 			aria-label="Filter by account state"
 			data-testid="status-filter"
@@ -103,7 +129,7 @@
 					data-testid="status-filter-{filter.value}"
 					class="px-3 py-2 text-sm transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
 					class:bg-accent={status === filter.value}
-					class:text-white={status === filter.value}
+					class:text-accent-ink={status === filter.value}
 					class:text-ink-muted={status !== filter.value}
 					class:hover:bg-surface-muted={status !== filter.value}
 				>
@@ -126,11 +152,11 @@
 			<table class="data-table">
 				<thead>
 					<tr>
-						<th>Name</th>
-						<th>Username</th>
-						<th>Email</th>
-						<th>Status</th>
-						<th>Created</th>
+						<th scope="col">Name</th>
+						<th scope="col">Username</th>
+						<th scope="col">Email</th>
+						<th scope="col">Status</th>
+						<th scope="col">Created</th>
 					</tr>
 				</thead>
 				<tbody>

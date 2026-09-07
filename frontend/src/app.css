@@ -16,6 +16,18 @@
 	--color-surface-muted: oklch(97% 0.002 200);
 	--color-border-subtle: oklch(88% 0.003 200);
 	--color-border: oklch(88% 0.003 200);
+	/* The edge of something a reader operates: a field, a textarea, a ghost
+	   button, a pager control, an unselected chip.
+
+	   Separate from --color-border-subtle because the two are held to
+	   different standards. A row separator or a card hairline is decoration
+	   and WCAG says nothing about it, so `subtle` is free to be quiet — it
+	   measures 1.43:1 against the surface, which is what it is for. But
+	   1.4.11 requires 3:1 of whatever draws a control's boundary, and
+	   `subtle` was drawing every one of them. This value clears it: 3.35:1
+	   against surface, 3.08:1 against surface-muted. Both matter — a field
+	   sits on `surface` on a page and on `surface-muted` inside a modal. */
+	--color-border-control: oklch(64% 0.006 200);
 	--color-ink: oklch(20% 0.005 200);
 	--color-ink-muted: oklch(45% 0.005 200);
 
@@ -78,6 +90,10 @@
 		--color-surface-muted: oklch(17% 0.004 200);
 		--color-border-subtle: oklch(30% 0.006 200);
 		--color-border: oklch(30% 0.006 200);
+		/* 3.23:1 against surface, 3.48:1 against surface-muted. Lighter than
+		   the light theme's control border is dark, because the dark surface
+		   it has to separate from is nearer the middle of the range. */
+		--color-border-control: oklch(52% 0.008 200);
 		--color-ink: oklch(92% 0.004 200);
 		--color-ink-muted: oklch(68% 0.006 200);
 
@@ -207,6 +223,33 @@
 		clip: rect(0, 0, 0, 0);
 		white-space: nowrap;
 		border-width: 0;
+	}
+
+	/* Hidden until focused, then a real control in the top-left corner.
+
+	   The skip link is the one thing in the app that has to be invisible to
+	   a mouse and unmissable to a Tab key, so it cannot be `sr-only` (never
+	   visible, so a sighted keyboard user cannot tell where the caret went)
+	   and it cannot be an ordinary offscreen link (it would come back on
+	   every render). Every property `sr-only` sets is undone here on focus,
+	   including `clip` — dropping the box to 1px without clearing the clip
+	   rect leaves the label invisible inside a visible outline. */
+	.skip-link:focus {
+		position: fixed;
+		top: 0.75rem;
+		left: 0.75rem;
+		z-index: 100;
+		width: auto;
+		height: auto;
+		margin: 0;
+		padding: 0.5rem 0.9rem;
+		overflow: visible;
+		clip: auto;
+		border-radius: 0.375rem;
+		background-color: var(--color-accent);
+		color: var(--color-accent-ink);
+		font-size: 0.875rem;
+		font-weight: 500;
 	}
 
 	.icon-xs {

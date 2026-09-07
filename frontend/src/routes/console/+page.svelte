@@ -136,7 +136,7 @@
 				placeholder="K7M4-QP2X"
 				aria-describedby="console-code-hint"
 				data-testid="console-code-input"
-				class="mt-2 w-full rounded-md border border-border-subtle bg-surface px-4 py-3 text-center font-mono text-2xl tracking-[0.2em] text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none"
+				class="mt-2 w-full rounded-md border border-border-control bg-surface px-4 py-3 text-center font-mono text-2xl tracking-[0.2em] text-ink placeholder:text-ink-muted focus:border-accent"
 			/>
 			<p id="console-code-hint" class="mt-2 text-xs text-ink-muted">
 				{CODE_LENGTH} characters, in two groups. Case does not matter, and there are no letters I, L or
