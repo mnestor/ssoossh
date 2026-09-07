@@ -1,41 +1,36 @@
 An enrollment code for unattended certificate issuance was created from a
 request you approved{{ if .ApprovedByUsername }} as {{ .ApprovedByUsername }}{{ end }}.
 
-The code itself is not in this message and never will be. It was shown once,
-in the terminal that ran `ssoossh service enroll`, and is stored nowhere else.
-If that terminal is gone, enroll again rather than looking for it.
+The code is not in this message and never will be. It was shown once, in the
+terminal that ran `ssoossh service enroll`, and is stored nowhere else. If
+that terminal is gone, enroll again.
 
-WHAT IT ISSUES
+WHAT IT HANDS OUT
 
-  Service account       {{ .ServiceAccount }}
-  Certificate principal {{ join .Principals ", " }}
+  Principal             {{ .ServiceAccount }}
+  Certificate life      {{ approx .CertificateLifetime }} from each redemption
   Key ID                {{ .KeyID }}
-  Certificate lifetime  {{ approx .CertificateLifetime }} from each redemption
-{{ if .Extensions }}  Extensions            {{ join .Extensions ", " }}
-{{ end }}{{ if .ForceCommand }}  Forced command        {{ .ForceCommand }}
-{{ end }}{{ if .SourceAddresses }}  Source addresses      {{ join .SourceAddresses ", " }}
-{{ end }}{{ if .NoTouchRequired }}  No touch required     yes (hardware-backed key)
-{{ end }}
-The service account is the only principal of every certificate this code
-produces. Your own username is not.
+  Bound key             {{ .PublicKeyType }} {{ .PublicKeyFingerprint }}
+  Certificate options   {{ if .Extensions }}{{ join .Extensions ", " }}{{ end }}{{ if .NoTouchRequired }}{{ if .Extensions }}, {{ end }}no-touch-required{{ end }}{{ if .SourceAddresses }}{{ if or .Extensions .NoTouchRequired }}, {{ end }}from={{ join .SourceAddresses "," }}{{ end }}{{ if .ForceCommand }}{{ if or .Extensions .NoTouchRequired .SourceAddresses }}, {{ end }}command={{ .ForceCommand }}{{ end }}{{ if not (or .Extensions .NoTouchRequired .SourceAddresses .ForceCommand) }}None - the server's defaults{{ end }}
 
-WHICH KEY IT IS BOUND TO
+The service account is the only principal on every certificate this code
+produces; your own username is not. The code only ever issues for that key, so
+a stolen code cannot be paired with someone else's keypair. If you do not
+recognize the key, expire the enrollment.
 
-  Fingerprint           {{ .PublicKeyFingerprint }}
-  Type                  {{ .PublicKeyType }}
+THE CODE ITSELF
 
-The code only ever produces certificates for that key. `service retrieve`
-never resubmits a public key, so a stolen code cannot be paired with someone
-else's keypair. If you do not recognize this key, treat the enrollment as
-unwanted and expire it.
+  Valid period          {{ datetime .ApprovedAt }} - {{ datetime .CodeExpiresAt }} ({{ remaining .CodeExpiresAt }})
+  Approved by           {{ if .ApprovedByUsername }}{{ .ApprovedByUsername }}{{ if .ApprovedByEmail }} <{{ .ApprovedByEmail }}>{{ end }}{{ else }}not recorded{{ end }}
+{{ if .ApprovedByName }}  Name                  {{ .ApprovedByName }}
+{{ end }}{{ if .ApproverSourceIP }}  Approved from         {{ .ApproverSourceIP }}
+{{ end }}  Requested from        {{ .RequestSourceIP }}
+  Enrollment ID         {{ .EnrollmentID }}
+  Request ID            {{ .RequestID }}
 
-WHEN IT STOPS WORKING
-
-  Code expires          {{ datetime .CodeExpiresAt }} (in {{ until .CodeExpiresAt }})
-
-Enroll again before then to keep an unattended job running. The code outliving
-each certificate is the point: that is what lets a cron job keep renewing
-without a human re-approving it.
+The code mints certificates unattended until it expires; enroll again before
+then to keep the job running. If the approval above was not yours, say so now:
+the address it was approved from is what says whose session was used.
 
 SETTING THE JOB UP
 
@@ -46,40 +41,21 @@ Add this to the ~/.ssh/config of the account that runs the job, replacing
     IdentityFile /path/to/key
     IdentitiesOnly yes
 
-`Match user` names the account being connected to on the far side, which for
-these certificates is always the service account above: it is the sole
-principal, so ssh cannot present the certificate as anyone else.
+`Match user` names the account being connected to, which is always the service
+account above: it is the sole principal, so ssh cannot present the certificate
+as anyone else.
 
-No CertificateFile line is needed. ssh derives /path/to/key-cert.pub from
-IdentityFile's name, which is why the three file names are not negotiable:
-the private key is <name>, the public key is <name>.pub, and the certificate
-is <name>-cert.pub, all in one directory. Match exec runs before ssh reads
-the key files, so this needs no agent.
+No CertificateFile line is needed. ssh derives the certificate's name from
+IdentityFile, so the three files must be <name>, <name>.pub and <name>-cert.pub
+in one directory. Match exec runs before ssh reads them, so this needs no agent.
 
-The certificate is refreshed automatically when it has expired or expires
-within a minute. Change that with --grace <time>, or refresh unconditionally
-with --force. <time> is a number followed by s, m, or h.
-
-The code is reusable until it expires, so the same command is safe to run
-from cron or a systemd timer.
-
-REQUEST DETAIL
-
-  Request ID            {{ .RequestID }}
-  Enrollment ID         {{ .EnrollmentID }}
-  Requested from        {{ .RequestSourceIP }}
-  Approved by           {{ if .ApprovedByUsername }}{{ .ApprovedByUsername }}{{ if .ApprovedByEmail }} <{{ .ApprovedByEmail }}>{{ end }}{{ else }}not recorded{{ end }}
-{{ if .ApprovedByName }}  Approver name         {{ .ApprovedByName }}
-{{ end }}{{ if .ApproverSourceIP }}  Approved from         {{ .ApproverSourceIP }}
-{{ end }}  Approved at           {{ datetime .ApprovedAt }}
-
-This code mints certificates unattended until it expires. If the approval above
-was not yours, say so now: the address it was approved from is what says whose
-session was used.
+The certificate is refreshed when it has expired or expires within a minute.
+Change that with --grace <time>, or refresh unconditionally with --force.
+<time> is a number followed by s, m, or h. The code is reusable until it
+expires, so the same command is safe from cron or a systemd timer.
 {{ if .ServerURL }}
-Every redemption of this code is logged. Review it at
-{{ .ServerURL }}/logs/me
+This code, and every redemption of it: {{ .ServerURL }}/service-codes/{{ .EnrollmentID }}
 {{ end }}
-You are receiving this because "Service enrollment created" is enabled in your
-notification preferences{{ if .ServerURL }} at {{ .ServerURL }}/preferences{{ end }}, or
-because this address is set as the enrollment's notification address.
+Sent because "Service enrollment created" is on in your notification
+preferences{{ if .ServerURL }} ({{ .ServerURL }}/preferences){{ end }}, or because this
+address is the enrollment's notification address.

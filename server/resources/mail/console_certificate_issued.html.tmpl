@@ -1,72 +1,68 @@
 <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;color:#1c1e21;max-width:640px">
   <p>
-    A certificate was issued to log in as you at a console &mdash; a physical terminal, a serial
-    console, or a BMC viewer on the machine below.
+    A certificate was issued to log in as you at a console: a physical terminal, a serial console,
+    or a BMC viewer on the machine below.
   </p>
-  <p>If you just typed a code from that screen into the web UI and approved the login, this is it and there is nothing to do.</p>
+  <p>
+    If you just typed a code from that screen into the web UI and approved the login, this is it.
+  </p>
   <p style="background:#fdeced;border-left:3px solid #c0392b;padding:10px 14px;margin:0 0 18px">
-    If you did not, someone got a console login in your name approved. That takes your web session,
-    so treat it as a compromised session: sign out everywhere, change whatever protects your
-    identity provider account, then tell whoever runs that machine. The certificate below is live
-    until it expires and cannot be recalled.
+    If you did not, someone got a console login in your name approved, which takes your web
+    session. Sign out everywhere, change whatever protects your identity provider account, then
+    tell whoever runs that machine: the certificate is live until it expires and cannot be
+    recalled.
   </p>
 
-  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Login</h3>
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Certificate</h3>
+  <p style="margin:0 0 10px;color:#6b7280;font-size:13px">
+    A console certificate authorizes one login session on that machine. It is not an SSH login
+    credential and cannot open a session elsewhere.
+  </p>
   <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Authenticated as</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ join .Principals ", " }}</td></tr>
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Issued at</td><td style="padding:4px 0">{{ datetime .IssuedAt }}</td></tr>
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Valid until</td><td style="padding:4px 0">{{ datetime .ExpiresAt }} (in {{ until .ExpiresAt }})</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Principals</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ join .Principals ", " }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Key ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .KeyID }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Serial number</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .Serial }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Key fingerprint</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .PublicKeyFingerprint }}</td></tr>
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Valid period</td><td style="padding:4px 0">{{ datetime .IssuedAt }} &ndash; {{ datetime .ExpiresAt }} <span style="color:#6b7280">({{ remaining .ExpiresAt }})</span></td></tr>
+    {{ if or .Extensions .NoTouchRequired }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Extensions</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ join .Extensions ", " }}{{ if .NoTouchRequired }}{{ if .Extensions }}, {{ end }}no-touch-required{{ end }}</td></tr>{{ end }}
+    {{ if or .ForceCommand .SourceAddresses }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Critical options</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ if .ForceCommand }}force-command = {{ .ForceCommand }}{{ end }}{{ if and .ForceCommand .SourceAddresses }}<br>{{ end }}{{ if .SourceAddresses }}source-address = {{ join .SourceAddresses ", " }}{{ end }}</td></tr>{{ end }}
   </table>
-  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">What asked</h3>
+
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Decision</h3>
+  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
+    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Approved by</td><td style="padding:4px 0">{{ if .ApprovedByUsername }}<span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .ApprovedByUsername }}{{ if .ApprovedByEmail }} &lt;{{ .ApprovedByEmail }}&gt;{{ end }}</span>{{ if not .ApprovedAt.IsZero }} <span style="color:#6b7280">at {{ datetime .ApprovedAt }}</span>{{ end }}{{ else }}<span style="color:#6b7280">not recorded</span>{{ end }}</td></tr>
+    {{ if .ApprovedByName }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Name</td><td style="padding:4px 0">{{ .ApprovedByName }}</td></tr>{{ end }}
+    {{ if .ApproverSourceIP }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Source address</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .ApproverSourceIP }}</td></tr>{{ end }}
+    {{ if .ApproverUserAgent }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Browser</td><td style="padding:4px 0">{{ .ApproverUserAgent }}</td></tr>{{ end }}
+  </table>
+  <p style="color:#6b7280;font-size:13px">
+    If that address is not one you were at, the approving account was not being used by you.
+  </p>
+
+  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">What asked for it</h3>
+  <p style="margin:0 0 10px;color:#6b7280;font-size:13px">
+    Reported by the requesting host and never verified. Only the address is what the server observed.
+  </p>
   <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
     {{ if or .LocalUsername .LocalHostname }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Reported as</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .LocalUsername }}{{ if and .LocalUsername .LocalHostname }}@{{ end }}{{ .LocalHostname }}</td></tr>{{ end }}
-    {{ if .RequestingUser }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Invoked by</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .RequestingUser }}</td></tr>{{ end }}
-    {{ if .Process }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Command</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .Process }}</td></tr>{{ end }}
-    {{ if .PAMService }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">PAM service</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .PAMService }}</td></tr>{{ end }}
+    {{ if .PAMService }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Service</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .PAMService }}</td></tr>{{ end }}
     {{ if .TTY }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Terminal</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .TTY }}</td></tr>{{ end }}
     {{ if .RemoteHost }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Remote host</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .RemoteHost }}</td></tr>{{ end }}
+    {{ if .RequestingUser }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Invoked by</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .RequestingUser }}</td></tr>{{ end }}
+    {{ if .Process }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Command</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .Process }}</td></tr>{{ end }}
     {{ if .MachineID }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Machine ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .MachineID }}</td></tr>{{ end }}
-    {{ if .OS }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Platform</td><td style="padding:4px 0">{{ .OS }}</td></tr>{{ end }}
     {{ if .Client }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Client</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .Client }}{{ if .ClientMode }} (mode={{ .ClientMode }}){{ end }}</td></tr>{{ end }}
+    {{ if .OS }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Platform</td><td style="padding:4px 0">{{ .OS }}</td></tr>{{ end }}
     {{ if or .CallerUID .CallerPID }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Process ids</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ if .CallerUID }}uid {{ .CallerUID }}{{ if .CallerGID }}, gid {{ .CallerGID }}{{ end }}{{ if .CallerPID }}, {{ end }}{{ end }}{{ if .CallerPID }}pid {{ .CallerPID }}{{ if .CallerPPID }}, ppid {{ .CallerPPID }}{{ end }}{{ end }}</td></tr>{{ end }}
     <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Requested from</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .SourceIP }}</td></tr>
     <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Request ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .RequestID }}</td></tr>
   </table>
-  <p style="color:#6b7280;font-size:13px">
-    Everything above except the address is what the requesting machine said about itself. None of it
-    is verified, and none of it decided anything &mdash; the principals came from the approver's own
-    accounts and the lifetime from policy. The address is what the server observed.
-  </p>
 
-  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Who approved it</h3>
-  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
-    {{ if .ApprovedByUsername }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Account</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .ApprovedByUsername }}{{ if .ApprovedByEmail }} &lt;{{ .ApprovedByEmail }}&gt;{{ end }}</td></tr>{{ end }}
-    {{ if .ApprovedByName }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Name</td><td style="padding:4px 0">{{ .ApprovedByName }}</td></tr>{{ end }}
-    {{ if .ApproverSourceIP }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Approved from</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .ApproverSourceIP }}</td></tr>{{ end }}
-    {{ if .ApproverUserAgent }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Browser</td><td style="padding:4px 0">{{ .ApproverUserAgent }}</td></tr>{{ end }}
-    {{ if not .ApprovedAt.IsZero }}<tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Approved at</td><td style="padding:4px 0">{{ datetime .ApprovedAt }}</td></tr>{{ end }}
-    {{ if not .ApprovedByUsername }}<tr><td colspan="2" style="padding:4px 0">Not recorded. The decision behind this certificate is no longer on file.</td></tr>{{ end }}
-  </table>
-  <p style="color:#6b7280;font-size:13px">
-    If that address is not one you were at, the account that approved this was not being used by you.
-  </p>
-
-  <h3 style="margin:24px 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#6b7280">Certificate</h3>
-  <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;font-size:14px">
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Serial</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .Serial }}</td></tr>
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">Key ID</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .KeyID }}</td></tr>
-    <tr><td style="padding:4px 12px 4px 0;color:#6b7280;white-space:nowrap">For key</td><td style="padding:4px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ .PublicKeyFingerprint }}</td></tr>
-  </table>
-  <p style="color:#6b7280;font-size:13px">
-    A console certificate authorizes one login session on that machine. It is not an SSH login
-    credential, and nothing here can be used to open a session elsewhere.
-  </p>
-
-  {{ if .ServerURL }}<p style="font-size:13px">Your <a href="{{ .ServerURL }}/certs" style="color:#1d4ed8">certificate history</a>.</p>{{ end }}
+  {{ if .ServerURL }}<p style="font-size:13px">Your <a href="{{ .ServerURL }}/logs/me" style="color:#1d4ed8">certificate history</a>.</p>{{ end }}
 
   <p style="margin-top:28px;padding-top:14px;border-top:1px solid #e5e7eb;color:#9099a8;font-size:12px">
-    You are receiving this because "Console certificate issued" is enabled in your
+    Sent because "Console certificate issued" is on in your
     {{ if .ServerURL }}<a href="{{ .ServerURL }}/preferences" style="color:#6b7280">notification preferences</a>{{ else }}notification preferences{{ end }}.
-    It is off by default; turn it off there if one message per login is more than you want.
+    It is off by default.
   </p>
 </div>

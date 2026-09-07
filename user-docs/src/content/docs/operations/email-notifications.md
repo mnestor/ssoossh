@@ -56,7 +56,7 @@ from.
 :::caution[None of it is verified]
 Every one of those fields is self-reported by an unauthenticated caller, and
 none of it decided anything: principals come from the approver's own accounts
-and the lifetime from policy. The shipped templates say so in a line under the
+and the lifetime from policy. The shipped templates say so in a line above the
 block, and an override that renders them should keep that line or say the same
 thing. `SourceIP` and `ApproverSourceIP` are the exceptions -- the server
 observed both.
@@ -647,6 +647,7 @@ In addition, these functions are available in every template:
 | `date` | `{{ date .CodeExpiresAt }}` | `2026-11-22`, or `not set` |
 | `approx` | `{{ approx .CertificateLifetime }}` | `8 hours`, `90 days` -- the largest unit that still says something, truncated |
 | `until` | `{{ until .CodeExpiresAt }}` | `89 days`, or `already elapsed` |
+| `remaining` | `{{ remaining .ExpiresAt }}` | `8 hours left`, or `expired` -- what the web UI prints beside a validity period |
 | `join` | `{{ join .Principals ", " }}` | `deploy-bot, deploy-bot-2` |
 
 Timestamps render in the server's local zone, with the zone named.

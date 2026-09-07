@@ -1,65 +1,58 @@
-A certificate was issued to log in as you at a console -- a physical
-terminal, a serial console, or a BMC viewer on the machine below.
+A certificate was issued to log in as you at a console: a physical terminal, a
+serial console, or a BMC viewer on the machine below.
 
 If you just typed a code from that screen into the web UI and approved the
-login, this is it and there is nothing to do.
+login, this is it.
 
-If you did not, someone got a console login in your name approved. That takes
-your web session, so treat it as a compromised session: sign out everywhere,
-change whatever protects your identity provider account, then tell whoever
-runs that machine. The certificate below is live until it expires and cannot
-be recalled.
-
-LOGIN
-
-  Authenticated as      {{ join .Principals ", " }}
-  Issued at             {{ datetime .IssuedAt }}
-  Valid until           {{ datetime .ExpiresAt }} (in {{ until .ExpiresAt }})
-
-WHAT ASKED
-{{ if or .LocalUsername .LocalHostname }}  Reported as           {{ .LocalUsername }}{{ if and .LocalUsername .LocalHostname }}@{{ end }}{{ .LocalHostname }}
-{{ end }}{{ if .RequestingUser }}  Invoked by            {{ .RequestingUser }}
-{{ end }}{{ if .Process }}  Command               {{ .Process }}
-{{ end }}{{ if .PAMService }}  PAM service           {{ .PAMService }}
-{{ end }}{{ if .TTY }}  Terminal              {{ .TTY }}
-{{ end }}{{ if .RemoteHost }}  Remote host           {{ .RemoteHost }}
-{{ end }}{{ if .MachineID }}  Machine ID            {{ .MachineID }}
-{{ end }}{{ if .OS }}  Platform              {{ .OS }}
-{{ end }}{{ if .Client }}  Client                {{ .Client }}{{ if .ClientMode }} (mode={{ .ClientMode }}){{ end }}
-{{ end }}{{ if or .CallerUID .CallerPID }}  Process ids           {{ if .CallerUID }}uid {{ .CallerUID }}{{ if .CallerGID }}, gid {{ .CallerGID }}{{ end }}{{ if .CallerPID }}, {{ end }}{{ end }}{{ if .CallerPID }}pid {{ .CallerPID }}{{ if .CallerPPID }}, ppid {{ .CallerPPID }}{{ end }}{{ end }}
-{{ end }}  Requested from        {{ .SourceIP }}
-  Request ID            {{ .RequestID }}
-
-Everything above except the address is what the requesting machine said about
-itself. None of it is verified, and none of it decided anything -- the
-principals came from the approver's own accounts and the lifetime from policy.
-The address is what the server observed.
-
-WHO APPROVED IT
-{{ if .ApprovedByUsername }}  Account               {{ .ApprovedByUsername }}{{ if .ApprovedByEmail }} <{{ .ApprovedByEmail }}>{{ end }}
-{{ end }}{{ if .ApprovedByName }}  Name                  {{ .ApprovedByName }}
-{{ end }}{{ if .ApproverSourceIP }}  Approved from         {{ .ApproverSourceIP }}
-{{ end }}{{ if .ApproverUserAgent }}  Browser               {{ .ApproverUserAgent }}
-{{ end }}{{ if not .ApprovedAt.IsZero }}  Approved at           {{ datetime .ApprovedAt }}
-{{ end }}{{ if not .ApprovedByUsername }}  Not recorded. The decision behind this certificate is no longer on file.
-{{ end }}
-If that address is not one you were at, the account that approved this was not
-being used by you.
-
+If you did not, someone got a console login in your name approved, which takes
+your web session. Sign out everywhere, change whatever protects your identity
+provider account, then tell whoever runs that machine: the certificate is live
+until it expires and cannot be recalled.
 
 CERTIFICATE
 
-  Serial                {{ .Serial }}
-  Key ID                {{ .KeyID }}
-  For key               {{ .PublicKeyFingerprint }}
-
 A console certificate authorizes one login session on that machine. It is not
-an SSH login credential, and nothing here can be used to open a session
-elsewhere.
-{{ if .ServerURL }}
-Your certificate history is at
-{{ .ServerURL }}/certs
+an SSH login credential and cannot open a session elsewhere.
+
+  Principals            {{ join .Principals ", " }}
+  Key ID                {{ .KeyID }}
+  Serial number         {{ .Serial }}
+  Key fingerprint       {{ .PublicKeyFingerprint }}
+  Valid period          {{ datetime .IssuedAt }} - {{ datetime .ExpiresAt }} ({{ remaining .ExpiresAt }})
+{{ if or .Extensions .NoTouchRequired }}  Extensions            {{ join .Extensions ", " }}{{ if .NoTouchRequired }}{{ if .Extensions }}, {{ end }}no-touch-required{{ end }}
+{{ end }}{{ if .ForceCommand }}  Critical options      force-command = {{ .ForceCommand }}
+{{ end }}{{ if .SourceAddresses }}                        source-address = {{ join .SourceAddresses ", " }}
 {{ end }}
-You are receiving this because "Console certificate issued" is enabled in your
-notification preferences{{ if .ServerURL }} at {{ .ServerURL }}/preferences{{ end }}. It is off by
-default; turn it off there if one message per login is more than you want.
+DECISION
+
+{{ if .ApprovedByUsername }}  Approved by           {{ .ApprovedByUsername }}{{ if .ApprovedByEmail }} <{{ .ApprovedByEmail }}>{{ end }}{{ if not .ApprovedAt.IsZero }} at {{ datetime .ApprovedAt }}{{ end }}
+{{ else }}  Approved by           not recorded
+{{ end }}{{ if .ApprovedByName }}  Name                  {{ .ApprovedByName }}
+{{ end }}{{ if .ApproverSourceIP }}  Source address        {{ .ApproverSourceIP }}
+{{ end }}{{ if .ApproverUserAgent }}  Browser               {{ .ApproverUserAgent }}
+{{ end }}
+If that address is not one you were at, the approving account was not being
+used by you.
+
+WHAT ASKED FOR IT
+
+Reported by the requesting host and never verified. Only the address is what
+the server observed.
+
+{{ if or .LocalUsername .LocalHostname }}  Reported as           {{ .LocalUsername }}{{ if and .LocalUsername .LocalHostname }}@{{ end }}{{ .LocalHostname }}
+{{ end }}{{ if .PAMService }}  Service               {{ .PAMService }}
+{{ end }}{{ if .TTY }}  Terminal              {{ .TTY }}
+{{ end }}{{ if .RemoteHost }}  Remote host           {{ .RemoteHost }}
+{{ end }}{{ if .RequestingUser }}  Invoked by            {{ .RequestingUser }}
+{{ end }}{{ if .Process }}  Command               {{ .Process }}
+{{ end }}{{ if .MachineID }}  Machine ID            {{ .MachineID }}
+{{ end }}{{ if .Client }}  Client                {{ .Client }}{{ if .ClientMode }} (mode={{ .ClientMode }}){{ end }}
+{{ end }}{{ if .OS }}  Platform              {{ .OS }}
+{{ end }}{{ if or .CallerUID .CallerPID }}  Process ids           {{ if .CallerUID }}uid {{ .CallerUID }}{{ if .CallerGID }}, gid {{ .CallerGID }}{{ end }}{{ if .CallerPID }}, {{ end }}{{ end }}{{ if .CallerPID }}pid {{ .CallerPID }}{{ if .CallerPPID }}, ppid {{ .CallerPPID }}{{ end }}{{ end }}
+{{ end }}  Requested from        {{ .SourceIP }}
+  Request ID            {{ .RequestID }}
+{{ if .ServerURL }}
+Your certificate history: {{ .ServerURL }}/logs/me
+{{ end }}
+Sent because "Console certificate issued" is on in your notification preferences{{ if .ServerURL }}
+({{ .ServerURL }}/preferences){{ end }}. It is off by default.

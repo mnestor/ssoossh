@@ -297,11 +297,12 @@ func foldSubject(s string) string {
 // templates still render something a person wants to read.
 func textFuncs() texttemplate.FuncMap {
 	return texttemplate.FuncMap{
-		"datetime": formatDateTime,
-		"date":     formatDate,
-		"approx":   approxDuration,
-		"until":    func(t time.Time) string { return approxDuration(time.Until(t)) },
-		"join":     func(items []string, sep string) string { return strings.Join(items, sep) },
+		"datetime":  formatDateTime,
+		"date":      formatDate,
+		"approx":    approxDuration,
+		"until":     func(t time.Time) string { return approxDuration(time.Until(t)) },
+		"remaining": remainingLabel,
+		"join":      func(items []string, sep string) string { return strings.Join(items, sep) },
 	}
 }
 
@@ -326,6 +327,18 @@ func formatDate(t time.Time) string {
 		return "not set"
 	}
 	return t.Local().Format("2006-01-02")
+}
+
+// remainingLabel says what is left of a validity window, as the
+// parenthetical the web UI prints beside one: "8 hours left", or "expired"
+// once it has passed. `until` alone renders "already elapsed" there, which
+// reads as a sentence fragment rather than a state.
+func remainingLabel(t time.Time) string {
+	d := time.Until(t)
+	if d <= 0 {
+		return "expired"
+	}
+	return approxDuration(d) + " left"
 }
 
 // approxDuration renders a span in the largest unit that still says

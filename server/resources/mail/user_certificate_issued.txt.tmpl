@@ -1,64 +1,51 @@
-An SSH certificate was issued to you. If you just approved a certificate
-request in your browser, this is that certificate and there is nothing to do.
+An SSH certificate was issued to you. If you just approved a request in your
+browser, this is it.
 
 If you did not, someone signed in as you and approved a request. Change
 whatever protects your identity provider account, then tell whoever runs this
-server -- the certificate below is live until it expires and cannot be
-recalled.
+server: the certificate is live until it expires and cannot be recalled.
 
 CERTIFICATE
 
-  Serial                {{ .Serial }}
-  Key ID                {{ .KeyID }}
   Principals            {{ join .Principals ", " }}
-  Issued at             {{ datetime .IssuedAt }}
-  Valid until           {{ datetime .ExpiresAt }} (in {{ until .ExpiresAt }})
-  For key               {{ .PublicKeyFingerprint }}
+  Key ID                {{ .KeyID }}
+  Serial number         {{ .Serial }}
+  Key fingerprint       {{ .PublicKeyFingerprint }}
+  Valid period          {{ datetime .IssuedAt }} - {{ datetime .ExpiresAt }} ({{ remaining .ExpiresAt }})
+  Extensions            {{ if .Extensions }}{{ join .Extensions ", " }}{{ if .NoTouchRequired }}, no-touch-required{{ end }}{{ else if .NoTouchRequired }}no-touch-required{{ else }}None{{ end }}
+  Critical options      {{ if .ForceCommand }}force-command = {{ .ForceCommand }}{{ else if .SourceAddresses }}source-address = {{ join .SourceAddresses ", " }}{{ else }}None{{ end }}
+{{ if and .ForceCommand .SourceAddresses }}                        source-address = {{ join .SourceAddresses ", " }}
+{{ end }}
+DECISION
 
-WHAT ASKED
+{{ if .ApprovedByUsername }}  Approved by           {{ .ApprovedByUsername }}{{ if .ApprovedByEmail }} <{{ .ApprovedByEmail }}>{{ end }}{{ if not .ApprovedAt.IsZero }} at {{ datetime .ApprovedAt }}{{ end }}
+{{ else }}  Approved by           not recorded
+{{ end }}{{ if .ApprovedByName }}  Name                  {{ .ApprovedByName }}
+{{ end }}{{ if .ApproverSourceIP }}  Source address        {{ .ApproverSourceIP }}
+{{ end }}{{ if .ApproverUserAgent }}  Browser               {{ .ApproverUserAgent }}
+{{ end }}
+If that address is not one you were at, the approving account was not being
+used by you.
+
+WHAT ASKED FOR IT
+
+Reported by the requesting host and never verified. Only the address is what
+the server observed.
+
 {{ if or .LocalUsername .LocalHostname }}  Reported as           {{ .LocalUsername }}{{ if and .LocalUsername .LocalHostname }}@{{ end }}{{ .LocalHostname }}
-{{ end }}{{ if .RequestingUser }}  Invoked by            {{ .RequestingUser }}
-{{ end }}{{ if .Process }}  Command               {{ .Process }}
-{{ end }}{{ if .PAMService }}  PAM service           {{ .PAMService }}
+{{ end }}{{ if .PAMService }}  Service               {{ .PAMService }}
 {{ end }}{{ if .TTY }}  Terminal              {{ .TTY }}
 {{ end }}{{ if .RemoteHost }}  Remote host           {{ .RemoteHost }}
+{{ end }}{{ if .RequestingUser }}  Invoked by            {{ .RequestingUser }}
+{{ end }}{{ if .Process }}  Command               {{ .Process }}
 {{ end }}{{ if .MachineID }}  Machine ID            {{ .MachineID }}
-{{ end }}{{ if .OS }}  Platform              {{ .OS }}
 {{ end }}{{ if .Client }}  Client                {{ .Client }}{{ if .ClientMode }} (mode={{ .ClientMode }}){{ end }}
+{{ end }}{{ if .OS }}  Platform              {{ .OS }}
 {{ end }}{{ if or .CallerUID .CallerPID }}  Process ids           {{ if .CallerUID }}uid {{ .CallerUID }}{{ if .CallerGID }}, gid {{ .CallerGID }}{{ end }}{{ if .CallerPID }}, {{ end }}{{ end }}{{ if .CallerPID }}pid {{ .CallerPID }}{{ if .CallerPPID }}, ppid {{ .CallerPPID }}{{ end }}{{ end }}
 {{ end }}  Requested from        {{ .SourceIP }}
   Request ID            {{ .RequestID }}
-
-Everything above except the address is what the requesting machine said about
-itself. None of it is verified, and none of it decided anything -- the
-principals came from the approver's own accounts and the lifetime from policy.
-The address is what the server observed.
-
-WHO APPROVED IT
-{{ if .ApprovedByUsername }}  Account               {{ .ApprovedByUsername }}{{ if .ApprovedByEmail }} <{{ .ApprovedByEmail }}>{{ end }}
-{{ end }}{{ if .ApprovedByName }}  Name                  {{ .ApprovedByName }}
-{{ end }}{{ if .ApproverSourceIP }}  Approved from         {{ .ApproverSourceIP }}
-{{ end }}{{ if .ApproverUserAgent }}  Browser               {{ .ApproverUserAgent }}
-{{ end }}{{ if not .ApprovedAt.IsZero }}  Approved at           {{ datetime .ApprovedAt }}
-{{ end }}{{ if not .ApprovedByUsername }}  Not recorded. The decision behind this certificate is no longer on file.
+{{ if .ServerURL }}
+Your certificate history: {{ .ServerURL }}/logs/me
 {{ end }}
-If that address is not one you were at, the account that approved this was not
-being used by you.
-
-WHAT IT CAN DO
-{{ if .Extensions }}
-  Extensions            {{ join .Extensions ", " }}
-{{ else }}
-  Extensions            none
-{{ end }}{{ if .ForceCommand }}  Forced command        {{ .ForceCommand }}
-{{ end }}{{ if .SourceAddresses }}  Usable from           {{ join .SourceAddresses ", " }}
-{{ else }}  Usable from           anywhere
-{{ end }}{{ if .NoTouchRequired }}  Touch                 not required -- this certificate can be used without
-                        touching the hardware key
-{{ end }}{{ if .ServerURL }}
-Your certificate history is at
-{{ .ServerURL }}/certs
-{{ end }}
-You are receiving this because "User certificate issued" is enabled in your
-notification preferences{{ if .ServerURL }} at {{ .ServerURL }}/preferences{{ end }}. It is off by
-default; turn it off there if one message per login is more than you want.
+Sent because "User certificate issued" is on in your notification preferences{{ if .ServerURL }}
+({{ .ServerURL }}/preferences){{ end }}. It is off by default.
