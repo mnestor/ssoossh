@@ -311,6 +311,15 @@ rebuilt by hand somewhere, and the copies had drifted:
 text-sm` paragraph after the heading, a `-mt-2 text-[13px]` one, and a
   `text-sm` one with no pull at all. The snippet is the only one now, so
   every subtitle is the same size at the same distance from its title.
+- The **`sub` line is a sentence about the screen, never a field lifted out
+  of it.** `/service-codes/<id>` briefly put the key ID there, which is a
+  labelled row in "What it hands out" a few lines below, and
+  `/admin/users/<id>` led its line with the username whenever the title was
+  a display name, restating the "Username" field in the OIDC record directly
+  under it. A heading that pre-announces a field the page is about to state
+  properly is saying it twice and labelling it neither time. The one
+  identifier a sub line may carry is one stated nowhere else — the user
+  page's email address.
 - The **`h1`** was written out with its four classes on five pages that had
   no eyebrow — the error page, both approval-unavailable states, and the two
   load-failure screens. A change to the heading scale would have moved most
@@ -418,7 +427,7 @@ none of that.
 - **ExpireCodeAction**: The retire-this-code button and its `ConfirmModal`, for a page heading's `action` slot. One component for both sides of a code — an admin on `/admin/service-codes/<id>` and a holder on `/service-codes/<id>` — because the two differ only in which endpoint they call, and the reason field, the confirmation and the error wording are what is worth keeping identical.
 - **StatusBadge**: Maps request/certificate statuses (pending, approved, denied, etc.) to colored pills with status-appropriate icons. Rendered capitalised — the wire value is lowercase, the label is not.
 - **DetailRow**: A label–value pair for metadata lists, with optional icon and monospace rendering. A 140px label column at 13px, stacking on narrow viewports.
-- **PageHeading**: The whole of a page's opening — back chip, eyebrow, `h1`, `sub` line, and a right-aligned `action` where a page's destructive control goes (see Destructive actions). `sub` is a snippet rather than a string because several are not prose: the user detail page names the account in mono beside its address, and two lists put a `<code>` in theirs. See Page Structure for why all four parts live here.
+- **PageHeading**: The whole of a page's opening — back chip, eyebrow, `h1`, `sub` line, and a right-aligned `action` where a page's destructive control goes (see Destructive actions). `sub` is a snippet rather than a string because two lists put a `<code>` in theirs. See Page Structure for why all four parts live here.
 - **SectionLabel**: The same small muted uppercase label as `PageSection`'s heading, but as a plain `div` with no frame, for a group _inside_ a section — a form group, the lifetime-policy block within a certificate's decision, the three groups inside the approval card. Not a heading, and must not become one: nesting `h2`s under each other would flatten the page's real structure. Quieter than `PageHeading`'s eyebrow, which takes the accent.
 - **CertRow**: One certificate as a standalone, clickable card — type badge, subject, what happened and when, principals, and the decision badge. Stacked below `xl`, aligned columns above it: a list of rows is the same fields over and over, and stretching a stacked row only pushes the last field further from the first.
 - **ServiceCodeRow**: One approved service enrollment as the same kind of card — the account the code mints for, when it was approved and what it hands out, how often it has been redeemed, and an active/expired pill. Never the code.

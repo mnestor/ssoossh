@@ -247,12 +247,12 @@
 		     a value the branch has already settled. -->
 		{@const account = user}
 		<PageHeading eyebrow="Admin" title={account.name || account.username}>
-			{#snippet sub()}
-				{#if account.name}<span class="font-mono" data-testid="user-username"
-						>{account.username}</span
-					> ·
-				{/if}{account.email || 'No email'}
-			{/snippet}
+			<!-- The address alone. The username used to lead this line
+			     whenever the title was a display name, which restated the
+			     "Username" field in the OIDC record immediately below it;
+			     the address is the one identifier not stated anywhere else
+			     on the page. -->
+			{#snippet sub()}{account.email || 'No email'}{/snippet}
 			{#snippet action()}
 				<div class="flex gap-2">
 					{#if account.disabled_at}
@@ -299,7 +299,7 @@
 				</div>
 				<div>
 					<p class="text-xs font-semibold text-ink-muted">Username</p>
-					<p class="font-mono text-sm">{user.username}</p>
+					<p class="font-mono text-sm" data-testid="user-username">{user.username}</p>
 				</div>
 				<div data-testid="user-name">
 					<p class="text-xs font-semibold text-ink-muted">Name</p>

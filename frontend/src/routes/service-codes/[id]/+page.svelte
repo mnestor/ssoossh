@@ -93,18 +93,19 @@
 	<!-- A visible heading, where there used to be an sr-only one. The page
 	     needs somewhere to hang its action: retiring the code is the one
 	     thing here that ends it rather than describing it, and it belongs in
-	     the top right, the same place an account is disabled from. The title
-	     is the account rather than the key ID, because that is what the code
-	     is for; the key ID is the sub line and also a row below. -->
+	     the top right, the same place an account is disabled from.
+	
+	     No sub line. It briefly carried the key ID, which is a row in "What
+	     it hands out" a few lines below — the heading is not the place to
+	     say a thing the page is about to say properly, with a label on it.
+	     Every other sub line in the app is a sentence about the screen, not
+	     a field lifted out of it. -->
 	<PageHeading
 		eyebrow="Service code"
 		title={account || 'Service code'}
 		testid="service-code-heading"
 		back={{ href: backHref, label: backLabel, testid: 'service-code-back' }}
 	>
-		{#snippet sub()}
-			<span class="font-mono">{enrollment?.key_id ?? ''}</span>
-		{/snippet}
 		{#snippet action()}
 			{#if enrollment && !expired}
 				{@const enrollmentId = enrollment.id}
