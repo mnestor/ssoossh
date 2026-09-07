@@ -402,8 +402,16 @@ archives:
 # be a release. Nothing is deleted, so no delete:packages credential is
 # needed anywhere in this pipeline.
 #
-# No floating tag is published at all -- no `latest`, and no X.Y, which is
-# `latest` with extra steps. An operator pins the version they tested.
+# The publish job writes X.Y and X alongside the exact version, so v1.2.4
+# is reachable as 1.2.4, 1.2 and 1. Both floating tags move only for a
+# final release that is the newest in its series, which is what keeps a
+# release candidate, or a re-run of an older tag, from becoming what `1.2`
+# means.
+#
+# `latest` is not published and is not going to be. Every tag this project
+# pushes names some piece of a version, so pinning one is a statement about
+# how far the operator is willing to be moved. `latest` is the tag that
+# makes no such statement, and there is no upper bound on where it goes.
 #
 # dockers_v2 (not the older dockers:/docker_manifests:) is what's current
 # in goreleaser v2; see https://goreleaser.com/customization/package/dockers_v2/.

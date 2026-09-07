@@ -32,12 +32,18 @@ which makes it the same content as `ssoosshd.yaml(5)` and the
 
 There are also container images, `ghcr.io/mnestor/ssoossh-server:<version>`
 (glibc, distroless) and `ghcr.io/mnestor/ssoossh-server:<version>-musl`
-(Alpine). `<version>` carries no leading `v` -- release v1.2.3 publishes the
-image tag `1.2.3`. No floating tag is published: pin an explicit released
-version, because a floating tag would let a restart silently change what is
-running. Each build also keeps an immutable `sha-<commit>` tag, which is what
-the version tag is promoted from; pinning that works too, it just names a
-commit rather than a release. A Compose deployment ships at
+(Alpine). `<version>` carries no leading `v` -- release v1.2.4 publishes the
+image tag `1.2.4`, and points the floating tags `1.2` and `1` at it too.
+Which one you pin decides how much a restart is allowed to change: `1.2.4`
+never moves, `1.2` follows patch releases, `1` follows minor releases as
+well. Both floating tags move only for a final release that is the newest in
+its series, so a release candidate never becomes what `1.2` means. There is
+no `latest` and there will not be: every tag published here names a piece of
+a version, so the one you pin says how far an upgrade may carry you, and
+`latest` is the tag that would say nothing at all. Each build also keeps an
+immutable `sha-<commit>` tag, which is what all three version tags are
+promoted from; pinning that works too, it just names a commit rather than a
+release. A Compose deployment ships at
 [deploy/docker-compose.yml](https://github.com/mnestor/ssoossh/blob/main/deploy/docker-compose.yml).
 
 :::note

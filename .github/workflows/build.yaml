@@ -536,21 +536,77 @@ jobs:
       # org.opencontainers.image.version label), which is what these have
       # to match.
       #
+      # Every piece of the version gets a tag: v1.2.4 publishes 1.2.4, 1.2
+      # and 1, and the -musl variant of each. The exact version is the one
+      # an operator pins; the two floating tags are for the operator who
+      # wants patch, or minor and patch, to arrive without a change here.
+      #
+      # `latest` is not one of them and is not going to become one. Every
+      # tag here names some part of a version, so whatever an operator
+      # pins, they have said how far they are willing to be moved.
+      # `latest` is the one tag that says nothing, and the distance it
+      # would move someone is unbounded.
+      #
       # Two calls because the two variants come from two different source
-      # images. A failure between them leaves one version tag behind, which
-      # the re-run of the tag overwrites -- the narrow case this ordering
-      # does not cover.
+      # images, but each is one call for all three of its tags -- so a
+      # failure between them leaves the -musl series a version behind and
+      # never a half-tagged variant. The re-run of the tag fixes it; that
+      # is the narrow case this ordering does not cover.
       - name: Promote the images to their version tags
         env:
           IMAGE: ghcr.io/mnestor/ssoossh-server
           TAG: ${{ github.ref_name }}
           COMMIT: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           version="${TAG#v}"
+          tags=("$version")
+
+          # The floating tags are for final releases only. goreleaser's
+          # release.prerelease is auto, so v1.3.0-rc1 is a release like any
+          # other here -- and `1.3` resolving to a release candidate is
+          # exactly what someone tracking `1.3` is trusting will not happen.
+          if printf '%s' "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            major="${version%%.*}"
+            series="${version%.*}"
+
+            # And only when this tag is the newest in the series, so that
+            # re-running an old tag cannot walk a floating tag backwards
+            # onto an older image. Git tags rather than releases: the
+            # release this run is about to publish is still a draft, so it
+            # would not be in a release listing, and a tag whose release
+            # failed is still a version this one must not claim to be
+            # newer than.
+            shipped=$(gh api --paginate \
+              "/repos/$REPO/git/matching-refs/tags/v${major}." \
+              --jq '.[].ref | sub("^refs/tags/v"; "")' \
+              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
+            esc="${series//./\\.}"
+            newest_major=$(printf '%s\n' "$shipped" | tail -1)
+            newest_series=$(printf '%s\n' "$shipped" \
+              | grep -E "^${esc}\.[0-9]+$" | tail -1)
+
+            if [ "$newest_series" = "$version" ]; then
+              tags+=("$series")
+            else
+              echo "$TAG trails v${newest_series}; $series stays put"
+            fi
+            if [ "$newest_major" = "$version" ]; then
+              tags+=("$major")
+            else
+              echo "$TAG trails v${newest_major}; $major stays put"
+            fi
+          fi
+
+          echo "tagging: ${tags[*]}"
           for variant in "" "-musl"; do
-            docker buildx imagetools create \
-              -t "${IMAGE}:${version}${variant}" \
+            args=()
+            for tag in "${tags[@]}"; do
+              args+=(-t "${IMAGE}:${tag}${variant}")
+            done
+            docker buildx imagetools create "${args[@]}" \
               "${IMAGE}:sha-${COMMIT}${variant}"
             docker buildx imagetools inspect "${IMAGE}:${version}${variant}"
           done

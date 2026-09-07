@@ -12,17 +12,22 @@
 # https://mnestor.github.io/ssoossh/operations/hsm/) is assembled by goreleaser's dockers_v2 pipe
 # (.goreleaser.yml) from the Dockerfile at the repo root, as part of the
 # build-most job in .github/workflows/build.yaml, and pushed to
-# ghcr.io/mnestor/ssoossh-server only on a v* release tag — there is no
-# `latest`, and no X.Y either, deliberately: a floating tag means `docker
-# compose pull` can silently change what's running on a restart, so every
-# image here is meant to be pinned by an explicit version instead.
+# ghcr.io/mnestor/ssoossh-server only on a v* release tag.
 #
-# The image tag drops the leading v — release v0.2.0 publishes the image
-# tag 0.2.0. Published alongside it is an immutable sha-<commit> tag, the
-# name the release pipeline pushes first and promotes to the version tag
-# once the release is complete (see .goreleaser.yml's dockers_v2).
-# Pinning that instead is fine; it just names a commit rather than a
-# release. Set SSOOSSHD_VERSION before starting:
+# The image tag drops the leading v — release v1.2.4 publishes the image
+# tag 1.2.4, and moves the floating tags 1.2 and 1 onto it as well. What
+# you put in SSOOSSHD_VERSION decides how much a `docker compose pull` is
+# allowed to change: 1.2.4 never moves, 1.2 picks up patch releases, 1
+# picks up minor ones too. There is no `latest` and there is not going to
+# be: every tag published here names a piece of a version, so setting
+# SSOOSSHD_VERSION is a statement about how far a restart may carry this
+# host. `latest` is the one value that would make no such statement.
+#
+# Published alongside those is an immutable sha-<commit> tag, the name the
+# release pipeline pushes first and promotes the rest from once the
+# release is complete (see .goreleaser.yml's dockers_v2). Pinning that
+# instead is fine; it just names a commit rather than a release. Set
+# SSOOSSHD_VERSION before starting:
 #   mkdir -p config
 #   cp ../server/config/defaults.yaml config/ssoosshd.yaml  # then edit it
 #   echo SSOOSSHD_VERSION=0.2.0 > .env    # a real tag; see the packages
