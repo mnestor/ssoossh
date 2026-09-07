@@ -40,6 +40,31 @@ function lastRequest(fragment: string): string | undefined {
 	return [...requested].reverse().find((url) => url.includes(fragment));
 }
 
+/**
+ * stubViewport installs the matchMedia jsdom does not provide, reporting the
+ * given width, and returns the switch that resizes it afterwards — which is
+ * what a rotation or a dragged window looks like to the page.
+ */
+function stubViewport(narrow: boolean) {
+	const listeners = new Set<(event: MediaQueryListEvent) => void>();
+	const list = {
+		matches: narrow,
+		addEventListener: (_: string, fn: (event: MediaQueryListEvent) => void) => {
+			listeners.add(fn);
+		},
+		removeEventListener: (_: string, fn: (event: MediaQueryListEvent) => void) => {
+			listeners.delete(fn);
+		}
+	};
+	vi.stubGlobal('matchMedia', () => list);
+	return (next: boolean) => {
+		list.matches = next;
+		for (const fn of listeners) {
+			fn({ matches: next } as MediaQueryListEvent);
+		}
+	};
+}
+
 /** mockFetchError stubs the global fetch to reject with an error message. */
 function mockFetchError(message = 'network error') {
 	vi.stubGlobal(
@@ -328,6 +353,20 @@ describe('Certificate history page', () => {
 			};
 		}
 
+		// Ordered by how often a reader reaches for one: the type is what
+		// most visits narrow by, and the outcome is the last thing they
+		// would change.
+		it('should put the outcome group last on the line', async () => {
+			mockFetch({ certificates: [aCert()] });
+			const { container } = render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			const groups = [...container.querySelectorAll('[data-testid$="-filter"]')].map((group) =>
+				group.getAttribute('data-testid')
+			);
+			expect(groups).toEqual(['type-filter', 'status-filter', 'outcome-filter']);
+		});
+
 		it('should name each filter group', async () => {
 			mockFetch({ certificates: [aCert()] });
 			render(Page);
@@ -478,6 +517,103 @@ describe('Certificate history page', () => {
 				'href',
 				'/certs/cert-1?from=history'
 			);
+		});
+	});
+
+	// A phone-width row has space for the subject, the detail line and one
+	// indicator. The outcome chip is what had to go, so the page has to
+	// guarantee what the missing chip would have said.
+	describe('on a phone-width viewport', () => {
+		function aCert(): CertificateListResponse['certificates'][number] {
+			return {
+				id: 'cert-1',
+				type: 'user',
+				serial_number: '1',
+				principals: 'alice',
+				public_key_fingerprint: 'SHA256:abc123',
+				issued_at: '2026-08-01T10:00:00Z',
+				expires_at: '2026-08-01T18:00:00Z',
+				key_id: 'key-1'
+			};
+		}
+
+		it('should not offer the outcome filter', async () => {
+			stubViewport(true);
+			mockFetch({ certificates: [aCert()] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.queryByTestId('outcome-filter')).not.toBeInTheDocument();
+		});
+
+		it('should still offer the other filter groups', async () => {
+			stubViewport(true);
+			mockFetch({ certificates: [aCert()] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.getByTestId('type-filter')).toBeInTheDocument();
+		});
+
+		it('should not read the denial endpoint', async () => {
+			stubViewport(true);
+			mockFetch({ certificates: [aCert()] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(lastRequest('/decisions/denied')).toBeUndefined();
+		});
+
+		// The space the mark was taking is the whole point of pinning the
+		// filter — every row here is an approval, so nothing is lost.
+		it('should not mark the outcome on a row', async () => {
+			stubViewport(true);
+			mockFetch({ certificates: [aCert()] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.queryByTestId('cert-outcome')).not.toBeInTheDocument();
+		});
+
+		// Wider than a phone, the list mixes approvals and refusals, so the
+		// row has to say which it is.
+		it('should mark the outcome on a row once the viewport widens', async () => {
+			const resize = stubViewport(true);
+			mockFetch({ certificates: [aCert()] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			resize(false);
+
+			await vi.waitFor(() =>
+				expect(screen.getByTestId('cert-outcome')).toHaveAttribute('data-outcome', 'approved')
+			);
+		});
+
+		// Pinned, not merely hidden: a reader who asked for refusals on a
+		// wide window must not be left looking at rows that no longer say
+		// they were refused.
+		it('should return a denied selection to approvals when the viewport narrows', async () => {
+			const resize = stubViewport(false);
+			mockFetch({ certificates: [aCert()] }, 200, {
+				denials: [
+					{
+						id: 'denial-1',
+						certificate_request_id: 'req-1',
+						type: 'user',
+						decided_at: '2026-08-01T09:00:00Z'
+					} as DeniedRequest
+				]
+			});
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			await userEvent.click(screen.getByTestId('outcome-filter-denied'));
+			await vi.waitFor(() => expect(screen.getByTestId('denied-row')).toBeInTheDocument());
+
+			resize(true);
+
+			await vi.waitFor(() => expect(screen.getByTestId('cert-row')).toBeInTheDocument());
+			expect(screen.queryByTestId('denied-row')).not.toBeInTheDocument();
 		});
 	});
 });

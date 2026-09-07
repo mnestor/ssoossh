@@ -26,9 +26,9 @@ function cert(overrides: Partial<CertificateRecord> = {}): CertificateRecord {
 }
 
 describe('CertRow', () => {
-	// The decision badge beside it cannot answer this: every row in a
-	// certificate list was approved, and what a reader brings to one is
-	// "can I still use this".
+	// The one indicator every row carries: the outcome mark beside it
+	// cannot say whether a certificate still works, and that is what a
+	// reader actually brings to a row.
 	describe('the validity indicator', () => {
 		it('should mark a certificate inside its window as still valid', () => {
 			render(CertRow, { cert: cert(), now, href: '/certs/cert-1' });
@@ -155,15 +155,38 @@ describe('CertRow', () => {
 		expect(screen.queryByText(/principals:/)).not.toBeInTheDocument();
 	});
 
-	it('should read as approved when a certificate exists without a decision record', () => {
-		const record = cert({ decided_by_outcome: undefined });
-		render(CertRow, { cert: record, now, href: '/certs/cert-1' });
-		expect(screen.getByText('approved')).toBeInTheDocument();
-	});
+	// A list of certificates is approvals by definition, so the mark is
+	// opt-in: it is only worth its width where refusals are interleaved.
+	describe('the outcome mark', () => {
+		it('should be absent unless the list asks for it', () => {
+			render(CertRow, { cert: cert(), now, href: '/certs/cert-1' });
+			expect(screen.queryByTestId('cert-outcome')).not.toBeInTheDocument();
+		});
 
-	it('should read as denied when the decision record says so', () => {
-		render(CertRow, { cert: cert({ decided_by_outcome: 'denied' }), now, href: '/certs/cert-1' });
-		expect(screen.getByText('denied')).toBeInTheDocument();
+		it('should mark an approval when the list asks for it', () => {
+			render(CertRow, { cert: cert(), now, showOutcome: true, href: '/certs/cert-1' });
+			expect(screen.getByTestId('cert-outcome')).toHaveAttribute('data-outcome', 'approved');
+		});
+
+		// A certificate exists only because a request was approved, so an
+		// absent decision record predates the audit trail rather than
+		// meaning anything else.
+		it('should read as approved when a certificate has no decision record', () => {
+			const record = cert({ decided_by_outcome: undefined });
+			render(CertRow, { cert: record, now, showOutcome: true, href: '/certs/cert-1' });
+			expect(screen.getByTestId('cert-outcome')).toHaveAttribute('data-outcome', 'approved');
+		});
+
+		it('should read as denied when the decision record says so', () => {
+			const record = cert({ decided_by_outcome: 'denied' });
+			render(CertRow, { cert: record, now, showOutcome: true, href: '/certs/cert-1' });
+			expect(screen.getByTestId('cert-outcome')).toHaveAttribute('data-outcome', 'denied');
+		});
+
+		it('should name the outcome for assistive technology', () => {
+			render(CertRow, { cert: cert(), now, showOutcome: true, href: '/certs/cert-1' });
+			expect(screen.getByLabelText('Approved')).toBeInTheDocument();
+		});
 	});
 
 	it('should name the certificate type for assistive technology', () => {

@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
 import type { CertificateResponse } from '$lib/api/types';
+import { formatDateTime, formatDateTimeRange } from '$lib/format';
 import Page from './+page.svelte';
 
 function mockFetch(response: object, status = 200) {
@@ -288,6 +289,38 @@ describe('Certificate detail page', () => {
 			decided_at: new Date('2024-08-24T09:59:00Z').toISOString()
 		};
 
+		// Who and when are one event, so they are one row: a row apiece made
+		// the reader carry a name down the list to the timestamp it belongs
+		// to.
+		it('should say when the decision was made beside who made it', async () => {
+			mockFetch(decided);
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			// The junction, not just the timestamp: Svelte trims markup
+			// whitespace at an element's edge, so the space between the two
+			// has to be an expression to survive.
+			expect(screen.getByTestId('cert-decided-by')).toHaveTextContent(
+				`approver@example.com at ${formatDateTime(decided.decided_at ?? '')}`
+			);
+		});
+
+		it('should not carry a separate decided-at row', async () => {
+			mockFetch(decided);
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.queryByText('Decided at')).not.toBeInTheDocument();
+		});
+
+		it('should name the approver alone when no decision time was recorded', async () => {
+			mockFetch({ ...decided, decided_at: undefined });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.getByTestId('cert-decided-by')).toHaveTextContent('approver@example.com');
+		});
+
 		it('should name the approver when the request was approved', async () => {
 			mockFetch(decided);
 			render(Page);
@@ -466,7 +499,62 @@ describe('Certificate detail page', () => {
 			await new Promise((resolve) => setTimeout(resolve, 0));
 			const section = screen.getByTestId('cert-decision');
 			expect(within(section).getByText('Ceiling')).toBeInTheDocument();
-			expect(within(section).getAllByText('8h0m0s').length).toBe(2);
+			expect(within(section).getAllByText('8h').length).toBe(2);
+		});
+
+		// The engine records these by calling String() on a Go Duration, so
+		// they arrive as "8h0m0s" and have to be read as a length of time.
+		it('should render the ceiling the way every other lifetime reads', async () => {
+			mockFetch({
+				...decidedWithGrant,
+				decided_policy_explanation: JSON.stringify({
+					v: 1,
+					cert_type: 'user',
+					policy_configured: true,
+					ceiling: '24h0m0s',
+					effective_duration: '1h30m0s'
+				})
+			});
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.getByTestId('policy-ceiling')).toHaveTextContent('1d');
+		});
+
+		it('should render a part-hour effective duration in hours and minutes', async () => {
+			mockFetch({
+				...decidedWithGrant,
+				decided_policy_explanation: JSON.stringify({
+					v: 1,
+					cert_type: 'user',
+					policy_configured: true,
+					ceiling: '24h0m0s',
+					effective_duration: '1h30m0s'
+				})
+			});
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.getByTestId('policy-effective-duration')).toHaveTextContent('1h 30m');
+		});
+
+		// The field is opaque on the wire, so a value the UI cannot read is
+		// shown as it arrived rather than swallowed.
+		it('should show a ceiling it cannot parse as it arrived', async () => {
+			mockFetch({
+				...decidedWithGrant,
+				decided_policy_explanation: JSON.stringify({
+					v: 1,
+					cert_type: 'user',
+					policy_configured: true,
+					ceiling: 'unbounded',
+					effective_duration: '8h0m0s'
+				})
+			});
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.getByTestId('policy-ceiling')).toHaveTextContent('unbounded');
 		});
 
 		it('should show the source rule cidr when the lifetime policy explanation carries one', async () => {
@@ -532,6 +620,114 @@ describe('Certificate detail page', () => {
 		it('should show loading state initially', () => {
 			render(Page);
 			expect(screen.getByText(/loading|loading\.\.\./i)).toBeInTheDocument();
+		});
+	});
+
+	// Issued, expires and the lifetime between them used to be three rows,
+	// which made a reader subtract one date from another to answer "does this
+	// still work?".
+	describe('the validity window', () => {
+		function aCert(expiresAt: string): CertificateResponse {
+			return {
+				id: 'cert-123',
+				type: 'user',
+				serial_number: '42',
+				key_id: 'my-key',
+				principals: 'alice',
+				public_key_fingerprint: 'SHA256:abcd1234',
+				issued_at: new Date('2024-08-24T10:00:00Z').toISOString(),
+				expires_at: expiresAt
+			};
+		}
+
+		/** live is a certificate whose window is still open, whenever the
+		 *  suite runs. */
+		function live(): CertificateResponse {
+			return aCert(new Date(Date.now() + 8 * 3600 * 1000).toISOString());
+		}
+
+		/** dead is a certificate whose window closed in 2024. */
+		function dead(): CertificateResponse {
+			return aCert(new Date('2024-08-24T18:00:00Z').toISOString());
+		}
+
+		it('should state both ends of the window in one row', async () => {
+			const cert = live();
+			mockFetch(cert);
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.getByTestId('cert-valid-period')).toHaveTextContent(
+				formatDateTimeRange(cert.issued_at, cert.expires_at)
+			);
+		});
+
+		it('should not carry a separate issued row', async () => {
+			mockFetch(live());
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.queryByText('Issued at')).not.toBeInTheDocument();
+		});
+
+		it('should not carry a separate expiry row', async () => {
+			mockFetch(live());
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.queryByText('Expires at')).not.toBeInTheDocument();
+		});
+
+		it('should say how much of the window is left', async () => {
+			mockFetch(live());
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.getByTestId('cert-valid-period')).toHaveTextContent('left');
+		});
+
+		// Only what is left: the granted lifetime is the distance between two
+		// dates the row already prints.
+		it('should not restate the granted lifetime beside it', async () => {
+			mockFetch(live());
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.getByTestId('cert-valid-period')).not.toHaveTextContent('·');
+		});
+
+		it('should mark a certificate inside its window as still valid', async () => {
+			mockFetch(live());
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.getByTestId('cert-validity')).toHaveAttribute('data-valid', 'true');
+		});
+
+		it('should mark a certificate past its expiry as expired', async () => {
+			mockFetch(dead());
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.getByTestId('cert-validity')).toHaveAttribute('data-valid', 'false');
+		});
+
+		it('should say the window has closed rather than how long is left', async () => {
+			mockFetch(dead());
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.getByTestId('cert-valid-period')).toHaveTextContent('(expired)');
+		});
+
+		// A certificate page exists because a request was approved, so a pill
+		// saying so answered a question nobody arrived with.
+		it('should not label the outcome in the identity strip', async () => {
+			mockFetch(live());
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.queryByText('approved')).not.toBeInTheDocument();
 		});
 	});
 });

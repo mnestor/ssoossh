@@ -3,7 +3,6 @@
 	import { formatDuration, isExpired, relativeTime } from '$lib/format';
 	import type { Snippet } from 'svelte';
 	import Icon from './Icon.svelte';
-	import StatusBadge from './StatusBadge.svelte';
 	import TypeBadge from './TypeBadge.svelte';
 
 	// One certificate as a standalone card. Rows are separate cards rather
@@ -16,8 +15,15 @@
 		event?: string;
 		/** Pinned clock, so a list of rows agrees with itself and tests can fix it. */
 		now?: Date;
-		/** Replaces the decision badge on the right, for a different summary. */
+		/** Replaces the indicators on the right, for a different summary. */
 		trailing?: Snippet;
+		/**
+		 * Whether to mark how the request was decided. Off by default: a
+		 * certificate list is approvals by definition, so the mark is only
+		 * worth its width in a list that also carries refusals — and only
+		 * where there is width for it. See `outcome` below.
+		 */
+		showOutcome?: boolean;
 		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
 		testid?: string;
 		/**
@@ -33,6 +39,7 @@
 		event = 'certificate requested',
 		now = new Date(),
 		trailing,
+		showOutcome = false,
 		testid,
 		href
 	}: Props = $props();
@@ -79,25 +86,29 @@
 			: `${event} ${relativeTime(cert.issued_at, now)}`
 	);
 
-	// A certificate exists only because a request was approved, so an absent
-	// decision record still means approved — it just predates the audit trail.
-	const decision = $derived(cert.decided_by_outcome === 'denied' ? 'denied' : 'approved');
+	// How the request was decided. A certificate exists only because one was
+	// approved, so an absent decision record still means approved — it just
+	// predates the audit trail.
+	//
+	// Shown only where a list mixes the two: on `/logs/me` above `sm`, where
+	// refusals are interleaved (see DeniedRow) and the mark is what tells
+	// the two kinds of row apart at a glance. Not on the admin list or the
+	// dashboard, which read the certificates table alone and would carry the
+	// same green tick down every row, and not at phone width, where the
+	// history is pinned to approvals precisely so the row can spend that
+	// space on the subject and the detail line instead.
+	//
+	// An icon rather than the pill this used to be: a pill costs a word's
+	// width plus its padding on every row to answer a yes or a no.
+	const outcome = $derived(cert.decided_by_outcome === 'denied' ? 'denied' : 'approved');
 
-	// Whether the certificate still works, which the decision badge beside
-	// it cannot say: every row in a certificate list was approved, and the
-	// question a reader actually brings to one is "can I still use this".
-	// An icon rather than a second pill — two badges on one row compete, and
-	// this one is a yes or a no.
+	// Whether the certificate still works, which is the question the outcome
+	// mark beside it cannot answer — and the one a reader actually brings to
+	// a row they are looking at.
 	//
-	// A shield, deliberately not the tick StatusBadge gives an approval:
-	// they sit next to each other, and two ticks in a row would read as one
-	// fact said twice rather than as two answers to different questions.
-	// The warning triangle is the glyph StatusBadge already uses for an
-	// expired request, which is the same meaning.
-	//
-	// It is a state, not a record, so it is the one thing on the row that
-	// changes while the page is open: `now` ticks, and a certificate that
-	// expires under the reader's eyes says so.
+	// It is a state rather than a record, so it is the one thing on the row
+	// that changes while the page is open: `now` ticks, and a certificate
+	// that expires under the reader's eyes says so.
 	const expired = $derived(isExpired(cert.expires_at, now));
 </script>
 
@@ -133,10 +144,10 @@
 	{#if trailing}
 		{@render trailing()}
 	{:else}
+		<!-- Titles as well as accessible names: on a pointer these icons are
+		     the only thing there, and "expired" or "denied" has to be
+		     readable without opening the row. -->
 		<span class="flex flex-shrink-0 items-center gap-2">
-			<!-- Title as well as an accessible name: on a pointer the icon is
-			     the only thing there, and "expired" has to be readable
-			     without opening the row. -->
 			<span
 				title={expired ? 'Expired' : 'Still valid'}
 				aria-label={expired ? 'Expired' : 'Still valid'}
@@ -145,12 +156,25 @@
 				class={expired ? 'text-ink-muted' : 'text-granted'}
 			>
 				<!-- One drawing in two conditions. The expired state used to
-				     borrow a warning triangle, which asks the reader to act;
-				     a certificate past its validity is a settled fact and
-				     needs nothing from them. -->
+				     borrow a warning triangle, which asks the reader to act; a
+				     certificate past its validity is a settled fact and needs
+				     nothing from them. -->
 				<Icon name={expired ? 'certificate-off' : 'certificate'} size="sm" />
 			</span>
-			<StatusBadge status={decision} />
+			{#if showOutcome}
+				<!-- StatusBadge's own glyphs for the two outcomes, which are
+				     also the ones the outcome filter chips carry, so the mark
+				     on a row is the chip that selected it. -->
+				<span
+					title={outcome === 'denied' ? 'Denied' : 'Approved'}
+					aria-label={outcome === 'denied' ? 'Denied' : 'Approved'}
+					data-testid="cert-outcome"
+					data-outcome={outcome}
+					class={outcome === 'denied' ? 'text-danger' : 'text-granted'}
+				>
+					<Icon name={outcome === 'denied' ? 'circle-x' : 'circle-check'} size="sm" />
+				</span>
+			{/if}
 		</span>
 	{/if}
 </a>

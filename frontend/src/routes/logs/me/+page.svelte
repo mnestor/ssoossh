@@ -12,6 +12,7 @@
 	import PageShell from '$lib/components/PageShell.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import { outcomeFilters, statusFilters, typeFilters } from '$lib/filters';
+	import { watchNarrow } from '$lib/viewport';
 
 	// Cursor-paginated decision history: what was issued, and what was
 	// refused. The type filter and client-side pagination apply only to
@@ -37,7 +38,9 @@
 	// Filter state. The vocabulary is shared with /admin/certificates —
 	// same labels, same icons, same order; see $lib/filters. Only the
 	// outcome group is this page's alone, because the admin list reads the
-	// certificates table and a denial never writes a row there.
+	// certificates table and a denial never writes a row there — which is
+	// also why this is the only list whose rows carry an outcome mark at
+	// all.
 	//
 	// Approved by default, not both. This page has always been the list of
 	// certificates somebody holds, and that is what most visits are for;
@@ -48,6 +51,29 @@
 	let selectedType = $state('');
 	let selectedStatus = $state('');
 	let searchQuery = $state('');
+
+	// Below `sm` this page shows approvals and nothing else, and the outcome
+	// group is not offered at all.
+	//
+	// The rows are why. A phone-width row has space for the subject, the
+	// detail line and one indicator, and the outcome mark was the thing that
+	// had to go for the rest to fit — but dropping it is only honest while
+	// every row on screen is an approval. So the filter is pinned rather
+	// than merely hidden: a reader who chose "Denied" on a wide window and
+	// then narrowed it gets moved back to approvals, not left looking at
+	// refusals no longer labelled as such.
+	//
+	// Above `sm` the mark comes back, because above `sm` the list mixes the
+	// two: `showOutcome` on the rows below.
+	let isNarrow = $state(false);
+	$effect(() =>
+		watchNarrow((narrow) => {
+			isNarrow = narrow;
+			if (narrow) {
+				selectedOutcome = 'approved';
+			}
+		})
+	);
 
 	let currentPage = $state(1);
 	const pageSize = 10;
@@ -277,15 +303,14 @@
 				testid="search-input"
 			/>
 
+			<!-- Type, then Status, then Outcome. Ordered by how often a
+			     reader reaches for one: the type of certificate is what most
+			     visits narrow by, and the outcome is the last thing they
+			     would change — this list is what somebody holds, and asking
+			     for refusals is a separate errand. It also puts the two
+			     groups the admin list shares first and in the same order, so
+			     the two lists open identically as far as they go. -->
 			<div class="flex flex-wrap items-center gap-x-5 gap-y-2">
-				<FilterGroup
-					label="Outcome"
-					options={outcomeFilters}
-					selected={selectedOutcome}
-					disabled={isLoading}
-					onselect={(value) => (selectedOutcome = value)}
-					testid="outcome-filter"
-				/>
 				<FilterGroup
 					label="Type"
 					options={typeFilters}
@@ -302,6 +327,18 @@
 					onselect={(value) => (selectedStatus = value)}
 					testid="status-filter"
 				/>
+				<!-- Outcome is a wide-viewport control: see isNarrow above for
+				     why a phone gets approvals only. -->
+				{#if !isNarrow}
+					<FilterGroup
+						label="Outcome"
+						options={outcomeFilters}
+						selected={selectedOutcome}
+						disabled={isLoading}
+						onselect={(value) => (selectedOutcome = value)}
+						testid="outcome-filter"
+					/>
+				{/if}
 			</div>
 		</div>
 
@@ -323,6 +360,7 @@
 							cert={entry.cert}
 							{now}
 							event={rowEvents[entry.cert.type] ?? 'certificate requested'}
+							showOutcome={!isNarrow}
 							testid="cert-row"
 							href={certHref(entry.cert.id)}
 						/>

@@ -55,6 +55,87 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
+ * The units a Go duration string can carry, in seconds. Go writes the
+ * micro sign two ways depending on the source of the value, and both have
+ * appeared on this wire, so both are accepted.
+ */
+const GO_DURATION_UNITS: Record<string, number> = {
+	ns: 1e-9,
+	us: 1e-6,
+	'\u00b5s': 1e-6,
+	'\u03bcs': 1e-6,
+	ms: 1e-3,
+	s: 1,
+	m: 60,
+	h: 3600
+};
+
+/** One number-and-unit pair of a Go duration, e.g. the "30m" of "1h30m0s". */
+const GO_DURATION_PART = /(\d+(?:\.\d+)?)(ns|us|\u00b5s|\u03bcs|ms|s|m|h)/gy;
+
+/**
+ * parseGoDuration converts a Go `time.Duration.String()` value — "8h0m0s",
+ * "1h30m0s", "30s", "1.5s" — to seconds, or null if the string is not one.
+ *
+ * The lifetime policy engine records its ceilings and results by calling
+ * String() on a Duration, and that document is stored on the decision, so
+ * every certificate ever issued carries this shape. Parsing it here rather
+ * than changing the wire is what lets the rows already written render
+ * legibly too.
+ */
+export function parseGoDuration(raw: string): number | null {
+	const text = raw.trim();
+	if (text === '') {
+		return null;
+	}
+
+	// Go writes a zero duration as "0s", but a bare "0" is valid input to
+	// ParseDuration and has turned up in hand-written config.
+	const negative = text.startsWith('-');
+	const body = negative || text.startsWith('+') ? text.slice(1) : text;
+	if (body === '0') {
+		return 0;
+	}
+
+	GO_DURATION_PART.lastIndex = 0;
+	let seconds = 0;
+	let matched = 0;
+	let match = GO_DURATION_PART.exec(body);
+	while (match !== null) {
+		seconds += Number(match[1]) * GO_DURATION_UNITS[match[2]];
+		matched = GO_DURATION_PART.lastIndex;
+		match = GO_DURATION_PART.exec(body);
+	}
+
+	// A sticky regex only ever matches from where the last one ended, so
+	// this is "every character belonged to a part" — "8h junk" is not a
+	// duration, and neither is "".
+	if (matched !== body.length) {
+		return null;
+	}
+	return negative ? -seconds : seconds;
+}
+
+/**
+ * formatGoDuration renders a Go duration string the way the rest of the UI
+ * renders a lifetime — "8h0m0s" becomes "8h", "1h30m0s" becomes "1h 30m".
+ *
+ * Anything that does not parse is passed through untouched. The field is an
+ * opaque string on the wire, and showing a value the UI does not recognise
+ * beats showing a dash where a policy ceiling should be. So is anything
+ * under a second, including a zero: formatDuration works in whole seconds
+ * and would render "500ms" as "0s", where Go's own spelling is both shorter
+ * and true.
+ */
+export function formatGoDuration(raw: string): string {
+	const seconds = parseGoDuration(raw);
+	if (seconds === null || seconds < 1) {
+		return raw;
+	}
+	return formatDuration(seconds);
+}
+
+/**
  * formatDateTime renders an RFC 3339 timestamp in the viewer's locale and
  * timezone. Invalid input renders as an em dash rather than "Invalid Date".
  *

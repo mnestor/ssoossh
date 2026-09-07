@@ -14,9 +14,14 @@
 	import PageSection from '$lib/components/PageSection.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
-	import StatusBadge from '$lib/components/StatusBadge.svelte';
 	import TypeChip from '$lib/components/TypeChip.svelte';
-	import { formatDateTime, formatDuration } from '$lib/format';
+	import {
+		formatDateTime,
+		formatDateTimeRange,
+		formatGoDuration,
+		isExpired,
+		remainingLabel
+	} from '$lib/format';
 	import { parsePolicyExplanation } from '$lib/policyExplanation';
 
 	const id = $derived(page.params.id ?? '');
@@ -79,20 +84,45 @@
 			: []
 	);
 
-	const validFor = $derived(
-		cert
-			? Math.floor(
-					(new Date(cert.expires_at).getTime() - new Date(cert.issued_at).getTime()) / 1000
-				)
-			: 0
-	);
+	// The window's two ends are printed as one row, so the page needs a clock
+	// that moves: "2h left" on a page left open in a tab should not still say
+	// that tomorrow.
+	let now = $state(new Date());
+	$effect(() => {
+		const timer = setInterval(() => (now = new Date()), 30_000);
+		return () => clearInterval(timer);
+	});
+
+	// Whether the certificate still works. The identity strip used to answer
+	// this with an "approved" pill, which answered a different question and
+	// always the same way — a certificate page exists because a request was
+	// approved. This is the state a reader actually opens the page for, and
+	// it belongs on the row that says when the window closes rather than in a
+	// strip three sections above it.
+	const expired = $derived(cert ? isExpired(cert.expires_at, now) : false);
+
+	// What is left of the window, as a note on the row that prints both its
+	// ends — the same parenthetical the service code page carries. Only what
+	// is left: the granted lifetime is the distance between two dates the row
+	// already shows, and saying "8h · 2h left" spends a second number on
+	// arithmetic the reader did not ask for.
+	const remaining = $derived(cert ? remainingLabel(cert.expires_at, now) : '');
 
 	// A certificate exists because a request was approved; an absent decision
-	// record means the audit trail predates it, not that it was denied.
+	// record means the audit trail predates it, not that it was denied. Kept
+	// for the label on the decision row: the identity strip no longer carries
+	// an outcome pill, because a certificate detail page that says "approved"
+	// is answering a question nobody arrived with.
 	const decision = $derived(cert && cert.decided_by_outcome === 'denied' ? 'denied' : 'approved');
 	const decidedBy = $derived(
 		cert ? cert.decided_by_email || cert.decided_by_username || cert.decided_by_subject : null
 	);
+
+	// " at 24 Aug 2024, 09:59", to follow the name on the same row. The
+	// leading space is inside the value rather than in the markup because
+	// Svelte trims whitespace at an element's edge, and a space written
+	// there is dropped — leaving the name run into "at".
+	const decidedAt = $derived(cert?.decided_at ? ` at ${formatDateTime(cert.decided_at)}` : '');
 	const decidedByGroups = $derived(cert?.decided_by_groups ?? []);
 
 	// What the certificate actually grants on the far side. Extensions are a
@@ -198,7 +228,6 @@
 				class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[10px] border border-border-subtle bg-surface-muted px-4 py-3"
 			>
 				<TypeChip type={cert.type} />
-				<StatusBadge status={decision} />
 				<span class="ml-auto"><CopyableId value={cert.id} testid="cert-id" /></span>
 			</div>
 
@@ -225,12 +254,34 @@
 					</DetailRow>
 					<DetailRow label="Key fingerprint" mono>{cert.public_key_fingerprint}</DetailRow>
 
-					{#if validFor > 0}
-						<DetailRow label="Valid for">{formatDuration(validFor)}</DetailRow>
-					{/if}
-
-					<DetailRow label="Issued at">{formatDateTime(cert.issued_at)}</DetailRow>
-					<DetailRow label="Expires at">{formatDateTime(cert.expires_at)}</DetailRow>
+					<!-- One row, not three. Issued, expires and the lifetime
+					     between them are the two ends of a single fact and the
+					     distance between them, and as separate rows they made a
+					     reader subtract one date from another to answer "does
+					     this still work?". The service code page states its own
+					     window the same way. -->
+					<DetailRow label="Valid period">
+						<span class="flex flex-wrap items-center gap-2">
+							<!-- Title as well as an accessible name: the glyph is
+							     the only thing carrying the state, and it is the
+							     same pair a history row uses. -->
+							<span
+								title={expired ? 'Expired' : 'Still valid'}
+								aria-label={expired ? 'Expired' : 'Still valid'}
+								data-testid="cert-validity"
+								data-valid={expired ? 'false' : 'true'}
+								class="flex flex-shrink-0 items-center {expired
+									? 'text-ink-muted'
+									: 'text-granted'}"
+							>
+								<Icon name={expired ? 'certificate-off' : 'certificate'} size="sm" />
+							</span>
+							<span data-testid="cert-valid-period">
+								{formatDateTimeRange(cert.issued_at, cert.expires_at)}
+								<span class="text-ink-muted">({remaining})</span>
+							</span>
+						</span>
+					</DetailRow>
 
 					<!-- What it grants, in the same list rather than a section of
 					     its own. Extensions and critical options are two more
@@ -286,14 +337,19 @@
 					testid="cert-decision"
 				>
 					<dl class="divide-y divide-border-subtle">
+						<!-- Who and when as one row: "alice@example.com at 24 Aug
+						     2024, 09:59". They are one event, and a row apiece made
+						     the reader carry a name down the list to the timestamp
+						     that belongs to it. The time is muted because the name
+						     is what the row is for — the same weight the validity
+						     window gives what is left of it. -->
 						<DetailRow label={decision === 'denied' ? 'Denied by' : 'Approved by'} icon="user">
-							{decidedBy}
+							<span data-testid="cert-decided-by">
+								{decidedBy}{#if decidedAt}<span class="text-ink-muted">{decidedAt}</span>{/if}
+							</span>
 						</DetailRow>
 						{#if cert.decided_source_ip}
 							<DetailRow label="Source address" mono>{cert.decided_source_ip}</DetailRow>
-						{/if}
-						{#if cert.decided_at}
-							<DetailRow label="Decided at">{formatDateTime(cert.decided_at)}</DetailRow>
 						{/if}
 						{#if decidedByGroups.length > 0}
 							<DetailRow label="Approver groups">
@@ -365,10 +421,22 @@
 										<span class="text-ink-muted">— {policyExplanation.tier.condition}</span>
 									</DetailRow>
 								{/if}
-								<DetailRow label="Ceiling" mono>{policyExplanation.ceiling}</DetailRow>
-								<DetailRow label="Effective duration" mono
-									>{policyExplanation.effective_duration}</DetailRow
-								>
+								<!-- Both come off the wire as Go duration strings —
+								     "8h0m0s" — because the policy engine records them
+								     by calling String() on a Duration. Rendered the way
+								     every other lifetime on the site reads, and no
+								     longer mono: they are a length of time now, not a
+								     token to copy. -->
+								<DetailRow label="Ceiling">
+									<span data-testid="policy-ceiling"
+										>{formatGoDuration(policyExplanation.ceiling)}</span
+									>
+								</DetailRow>
+								<DetailRow label="Effective duration">
+									<span data-testid="policy-effective-duration"
+										>{formatGoDuration(policyExplanation.effective_duration)}</span
+									>
+								</DetailRow>
 								{#if policyExplanation.source_rule}
 									<DetailRow label="Source rule" mono
 										>{policyExplanation.source_rule.cidr}</DetailRow

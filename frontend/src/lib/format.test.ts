@@ -6,7 +6,9 @@ import {
 	formatDateTime,
 	formatDateTimeRange,
 	formatDuration,
+	formatGoDuration,
 	isExpired,
+	parseGoDuration,
 	relativeTime,
 	remainingLabel
 } from './format';
@@ -244,4 +246,67 @@ describe('relativeTime', () => {
 	it('should say just now for a timestamp in the future', () => {
 		expect(relativeTime('2026-08-22T12:05:00Z', now)).toBe('just now');
 	});
+});
+
+// The lifetime policy engine records its ceilings by calling String() on a
+// Go Duration, and that document is stored on the decision, so every
+// certificate ever issued carries this shape.
+describe('parseGoDuration', () => {
+	const cases: { name: string; raw: string; want: number | null }[] = [
+		{ name: 'should read the hours-minutes-seconds form Go writes', raw: '8h0m0s', want: 28800 },
+		{ name: 'should read a duration with every part set', raw: '1h30m15s', want: 5415 },
+		{ name: 'should read a bare seconds value', raw: '30s', want: 30 },
+		{ name: 'should read a fractional value', raw: '1.5s', want: 1.5 },
+		{ name: 'should read milliseconds', raw: '500ms', want: 0.5 },
+		{ name: 'should read the micro sign form', raw: '250\u00b5s', want: 0.00025 },
+		{ name: 'should read the Greek mu form', raw: '250\u03bcs', want: 0.00025 },
+		{ name: 'should read the ASCII microseconds form', raw: '250us', want: 0.00025 },
+		{ name: 'should read nanoseconds', raw: '100ns', want: 1e-7 },
+		{ name: 'should read the zero Go writes', raw: '0s', want: 0 },
+		{ name: 'should read a bare zero, which ParseDuration accepts', raw: '0', want: 0 },
+		{ name: 'should read a negative duration', raw: '-30m0s', want: -1800 },
+		{ name: 'should ignore surrounding whitespace', raw: '  8h0m0s  ', want: 28800 },
+		{ name: 'should reject a value with no units', raw: '3600', want: null },
+		{ name: 'should reject a value with an unknown unit', raw: '8y', want: null },
+		{ name: 'should reject trailing junk after a valid part', raw: '8h junk', want: null },
+		{ name: 'should reject leading junk before a valid part', raw: 'about 8h', want: null },
+		{ name: 'should reject an empty string', raw: '', want: null },
+		{ name: 'should reject whitespace alone', raw: '   ', want: null }
+	];
+
+	for (const testCase of cases) {
+		it(testCase.name, () => {
+			const got = parseGoDuration(testCase.raw);
+			if (testCase.want === null) {
+				expect(got).toBeNull();
+			} else {
+				expect(got).toBeCloseTo(testCase.want, 10);
+			}
+		});
+	}
+});
+
+describe('formatGoDuration', () => {
+	const cases: { name: string; raw: string; want: string }[] = [
+		{ name: 'should render whole hours as hours', raw: '8h0m0s', want: '8h' },
+		{ name: 'should render hours and minutes', raw: '1h30m0s', want: '1h 30m' },
+		{ name: 'should render a seconds-only lifetime', raw: '30s', want: '30s' },
+		{ name: 'should render a week in days', raw: '168h0m0s', want: '7d' },
+		// The field is opaque on the wire: a value this does not recognise
+		// is shown as it arrived rather than swallowed.
+		{ name: 'should pass through a value it cannot parse', raw: 'forever', want: 'forever' },
+		{ name: 'should pass through a zero rather than claim a length', raw: '0s', want: '0s' },
+		{
+			// formatDuration works in whole seconds and would call this "0s".
+			name: 'should pass through a sub-second value',
+			raw: '500ms',
+			want: '500ms'
+		}
+	];
+
+	for (const testCase of cases) {
+		it(testCase.name, () => {
+			expect(formatGoDuration(testCase.raw)).toBe(testCase.want);
+		});
+	}
 });

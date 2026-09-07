@@ -67,9 +67,16 @@ describe('DeniedRow', () => {
 		expect(screen.getByTestId('row')).toHaveTextContent('request denied');
 	});
 
+	// The same mark a certificate row carries where the two are
+	// interleaved, so one list reads as one list.
 	it('should mark the row as denied', () => {
 		render(DeniedRow, { denial: aDenial(), now, testid: 'row' });
-		expect(screen.getByTestId('row')).toHaveTextContent('denied');
+		expect(screen.getByTestId('denial-outcome')).toHaveAttribute('data-outcome', 'denied');
+	});
+
+	it('should name the refusal for assistive technology', () => {
+		render(DeniedRow, { denial: aDenial(), now, testid: 'row' });
+		expect(screen.getByLabelText('Denied')).toBeInTheDocument();
 	});
 
 	// A denial issues nothing, so there is no certificate page to open. A

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { DeniedRequest } from '$lib/api/types';
 	import { relativeTime } from '$lib/format';
-	import StatusBadge from './StatusBadge.svelte';
+	import Icon from './Icon.svelte';
 	import TypeBadge from './TypeBadge.svelte';
 
 	// One refusal in a decision history, laid out to line up with the
@@ -93,5 +93,22 @@
 		</span>
 	</span>
 
-	<StatusBadge status="denied" />
+	<!-- The refusal itself, in the column where a certificate row puts its
+	     own outcome mark — the same glyph the Denied filter chip carries.
+	     An icon rather than the pill this used to be: the two kinds of row
+	     sit in one list, and a pill on one and an icon on the other reads
+	     as two lists that happen to be adjacent.
+
+	     Title as well as an accessible name: on a pointer the icon is the
+	     only thing there. The detail line says "denied" in words too, which
+	     is what keeps the row readable if the glyph is missed. -->
+	<span
+		title="Denied"
+		aria-label="Denied"
+		data-testid="denial-outcome"
+		data-outcome="denied"
+		class="flex flex-shrink-0 items-center text-danger"
+	>
+		<Icon name="circle-x" size="sm" />
+	</span>
 </div>
