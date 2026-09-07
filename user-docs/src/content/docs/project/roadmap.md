@@ -13,8 +13,9 @@ Everything under "Coming later" and "Outstanding designs" is a design, not a
 feature, except where a row says which part has shipped. Designs are kept in
 the repository under `docs/proposals/`; each one states its own status and the
 commit its `file:line` anchors were verified against, because those anchors
-drift. The last table on this page lists the designs that have been built, and
-the site page that now describes each. For what exists today, see
+drift. A design whose work ships in full is deleted rather than kept: the
+reasoning stays in the commits that implemented it, and the page on this site
+becomes the reference. For what exists today, see
 [How it works](/ssoossh/concepts/).
 :::
 
@@ -33,8 +34,15 @@ the site page that now describes each. For what exists today, see
 - **Config coordination** -- detecting and reporting configuration
   divergence between instances sharing a database and a NATS cluster
   ([design](https://github.com/mnestor/ssoossh/blob/main/docs/proposals/config-coordination.md)).
-- **Cloud KMS signing**, behind the same key-source interface the config
-  and PKCS#11 backends use today.
+- **Approval from a GUI SSH client** -- VS Code Remote-SSH, JetBrains, a
+  Finder-mounted SSHFS: clients with no terminal for the approval URL to be
+  printed to. The hardening the flow made newly relevant has shipped -- an
+  approval URL is now claimed by the first browser that opens it -- but the
+  five client-side changes have not
+  ([design](https://github.com/mnestor/ssoossh/blob/main/docs/proposals/gui-client-approval-flow.md)).
+- **Cloud KMS signing**, behind the same key-source interface the config,
+  key-file, ssh-agent and PKCS#11 backends use today
+  ([design](https://github.com/mnestor/ssoossh/blob/main/docs/proposals/hsm-cloud-readiness.md)).
 - **QR-code approval at the console**, so the verification URL can be
   photographed instead of typed. The server already returns the short
   `/c/<code>` URL a QR has to encode; drawing it is the console module's
@@ -48,17 +56,17 @@ the site page that now describes each. For what exists today, see
 
 ## Outstanding designs
 
-Nothing below has been built. A design whose work ships is removed rather
-than kept: the page on this site becomes the record.
+Nothing below has been built, except where a row says which part has. A
+design whose work ships in full is removed rather than kept: the page on this
+site becomes the record.
 
 | Design | What it covers |
 | --- | --- |
 | [source-address-restrictions.md](https://github.com/mnestor/ssoossh/blob/main/docs/proposals/source-address-restrictions.md) | Approver-chosen source-address pinning and a retrieval allowlist |
 | [service-retrieval-anomaly-policy.md](https://github.com/mnestor/ssoossh/blob/main/docs/proposals/service-retrieval-anomaly-policy.md) | Alerting and locking an enrollment code redeemed from too many source networks |
 | [config-coordination.md](https://github.com/mnestor/ssoossh/blob/main/docs/proposals/config-coordination.md) | Detecting and reporting configuration divergence between instances |
-| [gui-client-approval-flow.md](https://github.com/mnestor/ssoossh/blob/main/docs/proposals/gui-client-approval-flow.md) | Approving for a GUI SSH client, which has no terminal to print the URL to |
+| [gui-client-approval-flow.md](https://github.com/mnestor/ssoossh/blob/main/docs/proposals/gui-client-approval-flow.md) | Approving for a GUI SSH client, which has no terminal to print the URL to. Section 6, the approval-URL claim, has shipped; sections 1-5 have not |
 | [certificate-lifetime-policy-rework.md](https://github.com/mnestor/ssoossh/blob/main/docs/proposals/certificate-lifetime-policy-rework.md) | Untangling source-address pinning from the lifetime rule, and runtime-editable policy. Partly overtaken: see the doc |
-| [hsm-cloud-readiness.md](https://github.com/mnestor/ssoossh/blob/main/docs/proposals/hsm-cloud-readiness.md) | What a cloud HSM/KMS backend needs, and what the SoftHSM simulation can and cannot rehearse |
+| [hsm-cloud-readiness.md](https://github.com/mnestor/ssoossh/blob/main/docs/proposals/hsm-cloud-readiness.md) | What a cloud HSM/KMS backend needs, and what the SoftHSM simulation can and cannot rehearse. Partly built: the ssh-agent CA key source and the static/PKCS#11 release split are in |
 | [ldap-gssapi-bind.md](https://github.com/mnestor/ssoossh/blob/main/docs/proposals/ldap-gssapi-bind.md) | Binding to the directory with a Kerberos keytab instead of a static password |
 | [enhancements.md](https://github.com/mnestor/ssoossh/blob/main/docs/proposals/enhancements.md) | Small feature modifications logged for later, each too small for its own doc |
-

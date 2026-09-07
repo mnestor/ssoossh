@@ -28,13 +28,14 @@ Claude or another AI tool to help with your contribution:
    and verify it matches what you intended.
 
 An AI assistant working in the repository should read `./CLAUDE.md` for
-project-specific instructions, `./.claude/rules/` for the Go and TypeScript
+project-specific instructions, `client/CLAUDE.md` and `server/CLAUDE.md` for
+each side's role and layout, `./.claude/rules/` for the Go and TypeScript
 conventions, and `AGENTS.md` when several agents work in parallel. The project
 uses `rtk` to minimize token usage in bash commands.
 
 ### Requirements
 
-- Go 1.26+
+- Go 1.27+
 - Node.js 26+, pnpm 11+
 - golangci-lint
 - Docker, for `make semgrep`. The e2e suite does not need it.
@@ -56,7 +57,7 @@ you are not sure what exists.
 | `/server/` | server code (Go) |
 | `/internal/` | shared code (Go) |
 | `/frontend/` | web UI (SvelteKit, TypeScript) |
-| `/docs/` | documentation |
+| `/docs/` | design proposals, developer notes, and generated artifacts (man pages, `openapi.yaml`, `wire-contract.json`) |
 | `/user-docs/` | this documentation site (Astro Starlight) |
 | `/test/` | end-to-end test harness |
 
@@ -94,8 +95,8 @@ fix.
 
 :::caution[Do not hand-assemble a subset in place of `pre-pr`]
 `make lint` passes no build tags and `make test` does not build the tagged
-suites, so a test behind `e2e`, `resilience`, `load`, `dbparity`, `softhsm` or
-`natsintegration` can fail to compile entirely while `lint`, `test`,
+suites, so a test behind `e2e`, `resilience`, `load`, `dbparity`, `hsm`,
+`softhsm` or `natsintegration` can fail to compile entirely while `lint`, `test`,
 `check-generated` and every frontend gate report success. `make lint` also
 runs with your own `GOOS`, so nothing in that list sees the Windows or macOS
 build. `lint-tagged` and `lint-cross` close those gaps, and they are the two a
@@ -130,7 +131,8 @@ through `check-generated`) are deliberately left out of both.
 | `make build` | Build all Go packages |
 | `make linux` | Snapshot build for linux/amd64 only |
 | `make binaries` | Snapshot build for every release target |
-| `make server-linux-build-local` | Build `ssoosshd` for a local `docker build` |
+| `make server-linux-build-local` | Build `ssoosshd` for a local `docker build` (see `Dockerfile`) |
+| `make server-linux-pkcs11-build-local` | Build `ssoosshd` with PKCS#11 for a local `docker build` (see `Dockerfile.pkcs11`) |
 | `make frontend-clean` | Remove the built web UI |
 
 ### Test
@@ -142,13 +144,17 @@ through `check-generated`) are deliberately left out of both.
 | `make cover` | Coverage HTML report at `.coverage/coverage.html` |
 | `make cover-ci` | Coverage exactly as `codecover.yaml` runs it |
 | `make cover-floors` | Fail if any package dropped below its floor in `.coverage-floors` |
-| `make frontend-test` | Frontend unit and a11y tests (vitest) |
+| `make frontend-test` | Frontend unit tests (vitest) |
+| `make a11y` | Accessibility sweeps over the app and the docs site |
+| `make a11y-frontend` | axe sweep over every frontend component |
+| `make a11y-docs` | axe sweep over the built documentation site |
 
 ### Test: tagged suites, not part of `make test`
 
 | Target | What it does |
 | --- | --- |
 | `make test-hsm` | HSM key source tests against softhsm2 (needs softhsm2 + opensc) |
+| `make bench-hsm` | Signing benchmarks per CA key type (needs softhsm2 + opensc) |
 | `make test-e2e` | End-to-end suite (modifies host state) |
 | `make test-e2e-unlocked` | `test-e2e` without the serialising lock, for a deliberate parallel run |
 | `make test-memory-leak` | Memory leak repro tests |
@@ -156,8 +162,9 @@ through `check-generated`) are deliberately left out of both.
 | `make test-migration` | SQLite/Postgres migration parity checks |
 | `make test-load` | Load, soak, and concurrency suite (slow) |
 
-Each needs its tag: `e2e`, `resilience`, `load`, `dbparity`, `softhsm`,
-`memory_leak_test`. `test-memory-leak` is quarantined: those tests assert
+Each needs its tag: `e2e`, `resilience`, `load`, `dbparity`, `hsm`,
+`softhsm`, `memory_leak_test`. `test-hsm` and `bench-hsm` need both `hsm` and
+`softhsm`. `test-memory-leak` is quarantined: those tests assert
 defects **exist**, so they are meant to fail.
 
 :::danger[`test-e2e` tier 3 modifies host state]
@@ -180,6 +187,7 @@ before running it. That is why it is deliberately absent from `ci-required`.
 | `make frontend-check` | `svelte-check` the frontend against `tsconfig.json` |
 | `make actionlint` | Lint the GitHub Actions workflow files |
 | `make check-gitignore` | Assert the `.gitignore` invariants hold |
+| `make check-go-version` | Assert the images' Go is new enough for `go.mod` |
 
 `lint-fix` matters more than it looks, and must run **before** `lint`: several
 enabled linters are mechanically fixable (`godot` comment full stops, the
@@ -197,7 +205,10 @@ Svelte.
 | `make openapi` | Regenerate `docs/openapi.yaml` from swag annotations |
 | `make gendocs` | Regenerate man pages from the cobra commands |
 | `make confdocs` | Regenerate the config reference and `defaults.yaml` comments |
+| `make clidocs` | Regenerate the docs site's CLI reference from the cobra commands |
 | `make makefile-docs` | Regenerate the target tables in `Makefile.md` |
+| `make wire-contract` | Regenerate `docs/wire-contract.json` from the goldens and the spec |
+| `make wire-contract-bundle` | Build the release's wire-contract tarball into `.wire-contract/` |
 | `make third-party-licenses` | Regenerate `THIRD-PARTY-LICENSES.md` |
 
 **Edit the source, never the generated file.** Each gate regenerates into the
@@ -255,14 +266,14 @@ Deliberately **not** in `ci-required`: `test-e2e` (modifies host state),
 `test-load` (weekly), and the client-matrix macOS/Windows legs (they need
 those operating systems).
 
-### Four things hide code from the obvious command
+### Three things hide code from the obvious command
 
 Why `verify` and `pre-pr` are targets rather than habits. Each of these lets a
 plain command report success over code it never looked at.
 
 | What hides | Hidden from | How it bit | Covered by |
 | --- | --- | --- | --- |
-| **Build tags** | `lint` passes none; `test` builds none | A suite behind `e2e`, `resilience`, `load`, `dbparity`, `softhsm`, or `natsintegration` can fail to compile outright while both report success | `lint-tagged` |
+| **Build tags** | `lint` passes none; `test` builds none | A suite behind `e2e`, `resilience`, `load`, `dbparity`, `hsm`, `softhsm`, or `natsintegration` can fail to compile outright while both report success | `lint-tagged` |
 | **GOOS** | `lint` runs with the host's | A G115 overflow bug sat in `client/config/policy_windows.go`, on a value an admin sets through Group Policy | `lint-cross` |
 | **cgo** | golangci-lint cannot see into a cgo file | Every symbol referenced only from one reports as unused. The devcontainer defaults `CGO_ENABLED=0` | Explicit `CGO_ENABLED=1` per recipe |
 
@@ -339,8 +350,10 @@ typecheck, and semgrep scan.
 | `build` | yes | On PRs: generated-artifact staleness plus a single-target snapshot build. The full signed multi-platform pipeline runs on tags, weekly, and manual dispatch |
 | `e2e` | yes | Three tiers plus the multi-signer job. sqlite only except tier 1, which runs both backends |
 | `client-matrix` | yes | macOS and Windows client and agent tests |
-| `resilience` | yes | Resilience and accessibility. The load job is weekly, not per-PR |
+| `resilience` | yes | Resilience, migration parity, frontend tests, and the axe sweep over both the app and this site. The load job is weekly, not per-PR |
+| `hsm` | when it runs | The HSM key source against a real SoftHSM2 token. Unlike the others it filters in `on:` rather than in a `changes` job, so on an unrelated PR it does not start at all rather than reporting as skipped |
 | `security` | partly | semgrep blocks; govulncheck and pnpm audit report to a PR comment |
+| `docs-site` | no | Builds and deploys this site on a push to `main`. Skipped while the repository is private |
 
 Most workflows are behind a path filter, so a docs-only PR will show several
 checks as skipped. Skipped satisfies branch protection; it is not a failure.
