@@ -9,9 +9,9 @@
 	import { errorMessage } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
 	import Button from '$lib/components/Button.svelte';
-	import Card from '$lib/components/Card.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageSection from '$lib/components/PageSection.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
 	import { session } from '$lib/session.svelte';
@@ -140,10 +140,11 @@
 <svelte:head><title>Directory · ssoossh</title></svelte:head>
 
 <PageShell width="wide">
-	<PageHeading eyebrow="Admin" title="Directory" />
-	<p class="-mt-2 text-sm text-ink-muted">
-		What the LDAP sync last did, and what the directory actually returns for a person.
-	</p>
+	<PageHeading eyebrow="Admin" title="Directory">
+		{#snippet sub()}
+			What the LDAP sync last did, and what the directory actually returns for a person.
+		{/snippet}
+	</PageHeading>
 
 	{#if statusError}
 		<Alert variant="error" title="Could not load the directory status">{statusError}</Alert>
@@ -158,7 +159,7 @@
 		<!-- Status and sync. The run record is what makes a sync reportable:
 		     before it, a pass that ran and one that never fired looked
 		     identical from outside the log. -->
-		<Card
+		<PageSection
 			title="Sync"
 			description="The scheduled pass, and the last one that ran on any instance."
 			testid="ldap-sync-card"
@@ -187,10 +188,7 @@
 				{/if}
 
 				{#if lastRun}
-					<div
-						class="rounded-md border border-border-subtle bg-surface-muted p-4"
-						data-testid="ldap-last-run"
-					>
+					<div data-testid="ldap-last-run">
 						<div class="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
 							<SectionLabel>Last pass</SectionLabel>
 							<span class="text-xs text-ink-muted">
@@ -282,13 +280,13 @@
 					</div>
 				{/if}
 			</div>
-		</Card>
+		</PageSection>
 
 		{#if isAdmin}
 			<!-- Probe console. Read-only by construction: it runs the login
 			     path's lookup and field resolution and stops before the
 			     write. -->
-			<Card
+			<PageSection
 				title="Probe"
 				description="One read-only lookup against the configured directory. Nothing is written."
 				testid="ldap-probe-card"
@@ -630,7 +628,7 @@
 						</div>
 					{/if}
 				</div>
-			</Card>
+			</PageSection>
 		{/if}
 	{/if}
 </PageShell>

@@ -126,6 +126,33 @@ describe('Service code page', () => {
 		expect(await screen.findByText('Could not load this service code')).toBeInTheDocument();
 	});
 
+	// Retiring the code is the page's own action, in the heading's top right
+	// rather than a section near the foot of it, and an already-expired code
+	// needs no control: the outcome it would produce is already true.
+	it('should offer to retire a code that still works', async () => {
+		mockFetch([deployCode()]);
+		render(Page);
+		await screen.findByTestId('service-code-account');
+		expect(screen.getByTestId('expire-code')).toBeInTheDocument();
+	});
+
+	it('should not offer to retire a code that has already expired', async () => {
+		mockFetch([deployCode({ expires_at: '2026-08-21T12:00:00Z' })]);
+		render(Page);
+		await screen.findByTestId('service-code-account');
+		expect(screen.queryByTestId('expire-code')).not.toBeInTheDocument();
+	});
+
+	// The heading is where the action hangs, so it has to name the code
+	// rather than stay screen-reader-only the way it used to.
+	it('should name the account in the heading', async () => {
+		mockFetch([deployCode()]);
+		render(Page);
+		expect(
+			await screen.findByRole('heading', { name: 'svc-deploy', level: 1 })
+		).toBeInTheDocument();
+	});
+
 	// The page exists because the code cannot be shown. A regression that put
 	// one on the wire should fail here as loudly as it does server-side.
 	it('should never render an enrollment code', async () => {

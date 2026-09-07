@@ -173,13 +173,15 @@ describe('AdminServiceCodeDetail', () => {
 	});
 
 	// Last on the page, as on the holder's: an operator who opened the code to
-	// read what it grants or to expire it should not scroll a year of cron
-	// redemptions to reach either.
+	// read what it grants should not scroll a year of cron redemptions to
+	// reach the controls.
 	it('should put the history below the admin actions', () => {
 		stubHolders();
 		render(AdminServiceCodeDetail, { detail: detail(enrollment(), [aRedemption()]), now });
 		const history = screen.getByText('Redemption history');
-		const position = screen.getByTestId('admin-expire-code').compareDocumentPosition(history);
+		const position = screen
+			.getByTestId('notification-email-input')
+			.compareDocumentPosition(history);
 		expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 	});
 
@@ -192,14 +194,11 @@ describe('AdminServiceCodeDetail', () => {
 		expect(screen.getByText('Expired')).toBeInTheDocument();
 	});
 
-	// An expired code needs no expire control: the outcome it would produce
-	// is already true.
-	it('should not offer to expire a code that has already expired', () => {
+	// Expiring a code is the page's action, in its heading, not this
+	// component's: see routes/admin/service-codes/[id]/page.test.ts.
+	it('should not carry an expire control of its own', () => {
 		stubHolders();
-		render(AdminServiceCodeDetail, {
-			detail: detail(enrollment({ expires_at: '2026-08-21T12:00:00Z' })),
-			now
-		});
+		render(AdminServiceCodeDetail, { detail: detail(enrollment()), now });
 		expect(screen.queryByTestId('admin-expire-code')).not.toBeInTheDocument();
 	});
 

@@ -3,13 +3,18 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { ApiError } from '$lib/api/client';
-	import { getAdminEnrollmentDetail, type AdminEnrollmentDetail } from '$lib/api/endpoints';
+	import {
+		expireEnrollment,
+		getAdminEnrollmentDetail,
+		type AdminEnrollmentDetail
+	} from '$lib/api/endpoints';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import AdminServiceCodeDetail from '$lib/components/AdminServiceCodeDetail.svelte';
 	import Alert from '$lib/components/Alert.svelte';
-	import Icon from '$lib/components/Icon.svelte';
+	import ExpireCodeAction from '$lib/components/ExpireCodeAction.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
+	import { isExpired } from '$lib/format';
 
 	// One enrollment, addressed by id. This is where an operator lands from
 	// the list, and where they land with an id copied out of a notification
@@ -25,6 +30,11 @@
 	let hasLoaded = $state(false);
 
 	const listHref = resolve('/admin/service-codes');
+
+	// An already-expired code needs no control: the outcome it would produce
+	// is already true. Read here rather than inside the detail component
+	// because retiring is the page's action, not the reading's.
+	const expired = $derived(detail ? isExpired(detail.enrollment.expires_at) : false);
 
 	$effect(() => {
 		const controller = new AbortController();
@@ -68,19 +78,27 @@
 </svelte:head>
 
 <PageShell width="wide">
-	<!-- Always the list, whatever route reached this page: it is the one
-	     place every code is, and an operator who arrived from a log line was
-	     nowhere before this. -->
-	<a
-		href={listHref}
-		data-testid="admin-service-code-back"
-		class="-mb-2 inline-flex w-fit items-center gap-1 text-sm text-accent transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+	<!-- The chip always names the list, whatever route reached this page: it
+	     is the one place every code is, and an operator who arrived from a
+	     log line was nowhere before this. The retire control sits opposite
+	     it, the same place an account is disabled from: it is the one thing
+	     here that ends the code rather than describing it. -->
+	<PageHeading
+		eyebrow="Admin"
+		title="Service code details"
+		back={{ href: listHref, label: 'All service codes', testid: 'admin-service-code-back' }}
 	>
-		<Icon name="chevron-left" size="xs" />
-		All service codes
-	</a>
-
-	<PageHeading eyebrow="Admin" title="Service code details" />
+		{#snippet action()}
+			{#if detail && !expired}
+				{@const enrollmentId = detail.enrollment.id}
+				<ExpireCodeAction
+					testid="admin-expire-code"
+					expire={(reason) => expireEnrollment(enrollmentId, reason)}
+					onexpired={() => goto(listHref)}
+				/>
+			{/if}
+		{/snippet}
+	</PageHeading>
 
 	{#if loadError}
 		<Alert variant="error" title="Could not load enrollment">{loadError}</Alert>
@@ -90,6 +108,6 @@
 		<!-- The detail is handed over rather than fetched again: the
 		     endpoint is audited, so a second read would write two
 		     admin.enrollment_viewed events for one look. -->
-		<AdminServiceCodeDetail {detail} onexpired={() => goto(listHref)} />
+		<AdminServiceCodeDetail {detail} />
 	{/if}
 </PageShell>

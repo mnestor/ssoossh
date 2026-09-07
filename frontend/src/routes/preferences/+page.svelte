@@ -4,9 +4,9 @@
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
 	import Button from '$lib/components/Button.svelte';
-	import Card from '$lib/components/Card.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageSection from '$lib/components/PageSection.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 
 	// The list of notifications is served, not hardcoded here: adding a
@@ -96,7 +96,7 @@
 
 <svelte:head><title>Preferences · ssoossh</title></svelte:head>
 
-<PageShell width="default">
+<PageShell width="wide">
 	<PageHeading eyebrow="Preferences" title="Notifications" />
 
 	{#if loadError}
@@ -116,11 +116,15 @@
 			</Alert>
 		{/if}
 
-		<Card
+		<PageSection
 			title="Email notifications"
 			description="Choose which events ssoossh emails you about. These are notifications about your own certificates and enrollments."
 		>
-			<div class="flex flex-col gap-4">
+			<!-- The card is the page's width; the toggles are not. Each row is
+			     a title and a sentence explaining when the notification
+			     fires, and a sentence set 1100px wide is one the eye loses
+			     its place in on the way back to the left. -->
+			<div class="flex max-w-[70ch] flex-col gap-4">
 				{#if preferences.address}
 					<p class="text-[13px] text-ink-muted">
 						Sent to <MonoChip>{preferences.address}</MonoChip>
@@ -147,7 +151,7 @@
 					<p class="text-[13px] text-ink-muted">This server offers no email notifications.</p>
 				{/if}
 			</div>
-		</Card>
+		</PageSection>
 
 		{#if saveError}
 			<Alert variant="error" title="Could not save your preferences">{saveError}</Alert>

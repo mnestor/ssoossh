@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import CardGrid from '$lib/components/CardGrid.svelte';
+	import Alert from '$lib/components/Alert.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
@@ -82,22 +82,19 @@
 </script>
 
 <PageShell width="wide">
-	<PageHeading eyebrow="Admin" title="Server configuration" />
-
-	<p class="-mt-2 text-[13px] text-ink-muted">
-		Every key in effect on this server, read-only. Secrets are redacted; a redacted key still says
-		whether a value is set.
-	</p>
+	<PageHeading eyebrow="Admin" title="Server configuration">
+		{#snippet sub()}
+			Every key in effect on this server, read-only. Secrets are redacted; a redacted key still says
+			whether a value is set.
+		{/snippet}
+	</PageHeading>
 
 	{#if busy}
 		<p class="text-sm text-ink-muted">Loading…</p>
 	{:else if error}
-		<div
-			data-testid="config-error"
-			class="rounded-[10px] border border-danger-surface bg-danger-surface p-4 text-sm text-danger"
-		>
+		<Alert variant="error" title="Could not load the configuration" testid="config-error">
 			{error}
-		</div>
+		</Alert>
 	{:else if config}
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
 			<div class="flex-1">
@@ -123,26 +120,31 @@
 				No configuration key matches this filter.
 			</p>
 		{:else}
-			<!-- Weighted by how many settings a section carries: they run from
-			     one to over fifty, so balancing by section count alone would
-			     put a wall of keys beside almost nothing. -->
-			<CardGrid items={sections} weight={(section) => section.settings.length}>
-				{#snippet card(section)}
+			<!-- One column, not a two-abreast grid of boxes. Sections run from
+			     one key to over fifty, so the grid was forever putting a wall
+			     of keys beside almost nothing however it was weighted — and a
+			     configuration is one list read top to bottom, in the order the
+			     file is written, which a masonry layout cannot preserve. The
+			     key column is capped rather than a percentage: at this page's
+			     full width, 45% would put a value half a screen away from the
+			     key it belongs to. -->
+			<div class="flex flex-col gap-6">
+				{#each sections as section (section.name)}
 					<section
 						data-testid="config-section"
-						class="rounded-[10px] border border-border-subtle bg-surface p-4"
+						class="rounded-lg border border-border-subtle bg-surface-muted p-4"
 					>
 						<h2
-							class="mb-2 font-mono text-[11px] font-semibold tracking-[0.06em] text-ink-muted uppercase"
+							class="mb-1.5 font-mono text-[11px] font-semibold tracking-[0.06em] text-ink-muted uppercase"
 						>
 							{section.name}
 						</h2>
-						<dl class="flex flex-col">
+						<dl class="flex flex-col divide-y divide-border-subtle">
 							{#each section.settings as setting (setting.key)}
-								<div
-									class="flex flex-col gap-0.5 border-t border-border-subtle py-1.5 first:border-t-0 first:pt-0 sm:flex-row sm:items-baseline sm:gap-4"
-								>
-									<dt class="font-mono text-[12px] break-all text-ink-muted sm:w-[45%] sm:shrink-0">
+								<div class="flex flex-col gap-0.5 py-1.5 sm:flex-row sm:items-baseline sm:gap-4">
+									<dt
+										class="font-mono text-[12px] break-all text-ink-muted sm:w-[22rem] sm:shrink-0"
+									>
 										{setting.key}
 									</dt>
 									<dd class="flex items-baseline gap-2 font-mono text-[12px] break-all">
@@ -163,8 +165,8 @@
 							{/each}
 						</dl>
 					</section>
-				{/snippet}
-			</CardGrid>
+				{/each}
+			</div>
 		{/if}
 	{/if}
 </PageShell>

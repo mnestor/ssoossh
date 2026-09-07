@@ -109,7 +109,7 @@ describe('Admin user detail', () => {
 		mockDetail();
 		render(Page);
 		await screen.findByTestId('user-username');
-		expect(screen.queryByText(/Disable User\?/)).not.toBeInTheDocument();
+		expect(screen.queryByText(/Disable this account\?/)).not.toBeInTheDocument();
 	});
 
 	it('should count the enrollments the disable leaves alone', async () => {
@@ -165,10 +165,10 @@ describe('Admin user detail', () => {
 		await screen.findByTestId('user-username');
 
 		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
-		await screen.findByText(/Disable User\?/);
+		await screen.findByText(/Disable this account\?/);
 		await userEvent.click(screen.getByRole('button', { name: /Cancel/ }));
 
-		expect(screen.queryByText(/Disable User\?/)).not.toBeInTheDocument();
+		expect(screen.queryByText(/Disable this account\?/)).not.toBeInTheDocument();
 	});
 
 	it('should report who disabled an already-disabled user', async () => {
@@ -185,7 +185,7 @@ describe('Admin user detail', () => {
 		await screen.findByTestId('user-username');
 
 		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
-		await screen.findByText(/Disable User\?/);
+		await screen.findByText(/Disable this account\?/);
 
 		expect(screen.getByTestId('confirm-disable')).toBeDisabled();
 
@@ -199,7 +199,7 @@ describe('Admin user detail', () => {
 		await screen.findByTestId('user-username');
 
 		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
-		await screen.findByText(/Disable User\?/);
+		await screen.findByText(/Disable this account\?/);
 		await userEvent.type(screen.getByTestId('disable-reason'), '   ');
 
 		expect(screen.getByTestId('confirm-disable')).toBeDisabled();
@@ -225,7 +225,7 @@ describe('Admin user detail', () => {
 		await screen.findByTestId('user-username');
 
 		await userEvent.click(screen.getByTestId('enable-user'));
-		await screen.findByText(/Re-enable User\?/);
+		await screen.findByText(/Re-enable this account\?/);
 
 		expect(screen.getByTestId('confirm-enable')).toBeDisabled();
 

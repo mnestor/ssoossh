@@ -4,7 +4,6 @@
 	import { currentPath, goToLogin, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
 	import Button from '$lib/components/Button.svelte';
-	import Card from '$lib/components/Card.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import { session } from '$lib/session.svelte';
@@ -107,11 +106,17 @@
 <PageShell width="focus">
 	<PageHeading eyebrow="Console login" title="Enter the code on the screen" />
 
-	<Card
-		description="A machine with no browser shows a short code when someone logs in at its console. Type it here to see what is being asked for."
-		testid="console-code-entry"
+	<div
+		data-testid="console-code-entry"
+		class="rounded-lg border border-border-subtle bg-surface-muted p-4"
 	>
+		<p class="text-sm text-ink-muted">
+			A machine with no browser shows a short code when someone logs in at its console. Type it here
+			to see what is being asked for.
+		</p>
+
 		<form
+			class="mt-5"
 			onsubmit={(event) => {
 				event.preventDefault();
 				submit();
@@ -152,5 +157,5 @@
 				</Alert>
 			</div>
 		{/if}
-	</Card>
+	</div>
 </PageShell>

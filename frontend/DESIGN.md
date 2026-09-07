@@ -9,7 +9,7 @@ The app uses a curated set of CSS custom properties defined in `src/app.css`. Al
 ### Light Mode (default)
 
 - `--color-surface`: `#ffffff` — main background
-- `--color-surface-muted`: `oklch(97% 0.002 200)` — secondary surfaces, cards, light hover states
+- `--color-surface-muted`: `oklch(97% 0.002 200)` — the ground of every `PageSection`, the identity strip, light hover states
 - `--color-border-subtle`: `oklch(88% 0.003 200)` — borders, dividers
 - `--color-ink`: `oklch(20% 0.005 200)` — primary text
 - `--color-ink-muted`: `oklch(45% 0.005 200)` — secondary text, placeholders, hints
@@ -137,14 +137,14 @@ Icon utilities (`.icon-xs` through `.icon-xl`) are defined in `src/app.css` (the
 
 ### Test ids: the prop is `testid`, not `data-testid`
 
-Components that the e2e browser tier selects on (`Button`, `Card`, `Alert`,
-`Pager`, `SearchInput`, `CertRow`, `PageHeading`, `ServiceCodeRow`) each
-declare a `testid` prop and render `data-testid={testid}` on their root
+Components that the e2e browser tier selects on (`Button`, `PageSection`,
+`Alert`, `Pager`, `SearchInput`, `CertRow`, `PageHeading`, `ServiceCodeRow`)
+each declare a `testid` prop and render `data-testid={testid}` on their root
 element themselves:
 
 ```svelte
-<Card testid="account-identity-card">   <!-- right -->
-<Card data-testid="account-identity-card">  <!-- wrong: silently dropped -->
+<PageSection testid="account-identity-card">   <!-- right -->
+<PageSection data-testid="account-identity-card">  <!-- wrong: silently dropped -->
 ```
 
 `data-testid` on a component is an unknown prop. Svelte drops it at runtime
@@ -255,31 +255,74 @@ so the exemption lives in `RailItem.svelte`.
 ### Page Structure
 
 Every page is a `PageShell`. It owns the container, so no page spells out
-its own `max-w-`, and it names four widths rather than the nine that had
+its own `max-w-`, and it names three widths rather than the nine that had
 accumulated across twenty-two hand-rolled containers:
 
-| Width     | Cap      | Used by                                                                |
-| --------- | -------- | ---------------------------------------------------------------------- |
-| `focus`   | `560px`  | sign-in, an approval, a console code, the error page                   |
-| `default` | `760px`  | account, preferences, certificate detail, service code detail          |
-| `wide`    | `1120px` | dashboard, history, service codes, and the admin card and list screens |
-| `full`    | none     | the admin tables — users, user detail, audit                           |
+| Width   | Cap      | Used by                                              |
+| ------- | -------- | ---------------------------------------------------- |
+| `focus` | `560px`  | sign-in, an approval, a console code, the error page |
+| `wide`  | `1120px` | every page inside the app — the default              |
+| `full`  | none     | the admin tables — users, user detail, audit         |
 
-`full` is not a fifth number: it opts out of the cap entirely, for the
-screens where a horizontal scrollbar inside a centred column is worse than
-using the glass.
+`wide` is the default because it is what the app is: every screen the rail
+navigates between, every list, and every page a list opens. `focus` is not a
+narrower version of that — it is for the screens outside the app entirely,
+signed out or holding a single decision and nothing else. `full` is not a
+fourth number: it opts out of the cap, for the screens where a horizontal
+scrollbar inside a centred column is worse than using the glass.
+
+There was a fourth, `default`, at 760px. By the end only `/account` and
+`/preferences` were still on it, which made them 360px narrower than
+everything else the rail reaches: the content column jumped inward on the way
+to them and back out on the way to anything else, and both are reached from
+the user menu, so that happened on every visit. They are `wide` now, and the
+width is gone rather than left unused — an unused width is how a fifth one
+gets added.
+
+Width is not a licence to stretch prose. A `DetailRow`'s value starts after
+its 140px label column and wraps where it wraps, but a paragraph or a form
+caps itself at a readable measure: the notification toggles on `/preferences`
+sit in a `70ch` column inside a full-width card, because a sentence set
+1100px wide is one the eye loses its place in on the way back to the left.
 
 `PageShell` also takes an optional `aside` snippet — a secondary column that
 sits beside the main one above `xl` and stacks under it below — and a
-`center` flag. Only sign-in sets `center`: it is a single card with nothing
-above or below it, and every other page starts at the top so it does not
-move as content loads.
+`center` flag. Only sign-in sets `center`: it is one short column with
+nothing above or below it, and every other page starts at the top so it does
+not move as content loads.
 
-Each page opens with a `PageHeading`: an accent eyebrow naming the area
-("Activity", "History", "Admin") above the page's `h1`, with an optional
-`sub` snippet beneath. The eyebrow is what makes a screen identifiable at a
-glance without reading the title, so it is required rather than optional,
-and there is exactly one `h1` per page.
+Every page opens with a `PageHeading`, and the whole of the opening lives in
+it: an optional back chip, an accent eyebrow naming the area ("Activity",
+"History", "Admin"), the page's `h1`, an optional `sub` line, and an optional
+right-aligned `action`. The eyebrow is what makes a screen identifiable at a
+glance without reading the title, so it is required rather than optional, and
+there is exactly one `h1` per page.
+
+All four parts are in the component because every one of them had been
+rebuilt by hand somewhere, and the copies had drifted:
+
+- The **back chip** was the same nine-class string on `/certs/<id>`,
+  `/service-codes/<id>` and `/admin/service-codes/<id>` as an `<a>`, and on
+  `/service-codes` as a `<button>` — each with a `-mb-2` cancelling
+  `PageShell`'s gap. It is now `back={{ href, label, testid }}`, or
+  `back={{ onclick, ... }}` for the one list that opens an account without
+  changing route.
+- The **sub line** existed in four shapes: the `sub` snippet, a `-mt-2
+text-sm` paragraph after the heading, a `-mt-2 text-[13px]` one, and a
+  `text-sm` one with no pull at all. The snippet is the only one now, so
+  every subtitle is the same size at the same distance from its title.
+- The **`h1`** was written out with its four classes on five pages that had
+  no eyebrow — the error page, both approval-unavailable states, and the two
+  load-failure screens. A change to the heading scale would have moved most
+  of the app and left those behind. They take an eyebrow now ("Error 404",
+  "Approval", "Console login", "Certificate request"), which is what they
+  were missing rather than a reason to skip the component.
+
+Sign-in is the one screen that does not use it, and deliberately: it is a
+centred 380px column with the `BrandMark` above a 22px `h1`, addressed to
+somebody who is not signed in and has no rail, no area to name and no page to
+go back to. An eyebrow and a left-aligned 26px title would break the lockup
+rather than unify it.
 
 ### Breakpoints
 
@@ -287,16 +330,74 @@ Three, and they mean specific things:
 
 - `sm` (640px) — phone to tablet, inside a component
 - `lg` (1024px) — the rail becomes a persistent column instead of a drawer
-- `xl` (1280px) — cards go two abreast, and a cert row's fields become
-  aligned columns. The fold is at `xl` rather than `lg` because the rail
-  takes 244px off the front: 1280px is where the page column reaches about
-  980px and two cards stop being cramped.
+- `xl` (1280px) — a cert row's fields become aligned columns. The fold is at
+  `xl` rather than `lg` because the rail takes 244px off the front: 1280px is
+  where the page column reaches about 980px and a row has space to lay its
+  fields out side by side.
 
-Lists are stacks of standalone cards — 1px border, 10px radius, `surface`
-background — not divided rows inside one panel. A list of certificates is a
-list of things that happened, and each one should read as discrete. Cards
-that do not depend on each other go in a `CardGrid`; a sequence the reader
-works through in order stays a column.
+### Sections are subtle cards
+
+Two frames, meaning two different things.
+
+A **row card** — 1px border, 10px radius, `surface` (white) background — says
+"this is one discrete thing among several". `CertRow`, `ServiceCodeRow` and
+`ServiceAccountRow` are each one event standing beside others of the same
+kind, and a list of them is a list of things that happened.
+
+A **section card** — 1px border, `rounded-lg`, `bg-surface-muted`, `p-4`, no
+shadow — says "this is one group of fields within this page". That is
+`PageSection`, and it is what every screen's own content sits in. It replaced
+`Card`, which was a white panel with a shadow and a ruled-off header: that
+read as a component floating over the page rather than as a region of it, and
+stacking a border, a shadow, a tint and a header divider said the same thing
+four times. The tint alone says it once.
+
+Inside a section, nothing gets a frame of its own. A card inside a card says
+the inner thing is separate from the page, which is the one thing it is not.
+So a `dl` uses `divide-y divide-border-subtle` for its rows, a `SectionLabel`
+opens a sub-group, and the hairline is the only rule needed below the section
+level. Two consequences worth naming: the approval screen is one card with
+labelled groups inside it, not six cards, because an approval is a single
+decision read straight through; and the "Last pass" block on
+`/admin/directory` is flat, because the Sync section it sits in is already
+the card.
+
+Above the section level, `PageShell` puts `gap-5` between sections and
+nothing else. There is no card grid: `/admin/config` and `/admin/diagnostics`
+used to balance boxes two abreast by weight, which reordered content by
+height. A configuration is read in the order the file is written and a
+diagnostics run in the order the checks ran, so both are one column of
+sections.
+
+The identity strip a certificate or service-code page opens with — type
+chip, status badge, full id — keeps the same tint and border as a section
+but carries no heading, which is what marks it as the page's subject rather
+than a part of it.
+
+### Destructive actions: the heading, then a dialog
+
+An action that ends something lives in `PageHeading`'s `action` slot, in the
+page's top right, and opens a `ConfirmModal`. Disabling an account,
+re-enabling one, and retiring a service code are all the same shape: a
+button where the eye starts, a modal over the page naming the consequence, a
+required reason, and Cancel beside the confirming button.
+
+The alternative, which two of these used, was a panel that expanded inline
+partway down the page. That put the control that ends a service code
+wherever the sections above it happened to finish, and left the reason field
+competing with the page behind it while it was being typed. It also meant a
+reader had to scroll to discover the page had an action at all.
+
+Every one of these reasons is server-validated (`enrollment.expired`,
+`user.disabled`, `user.enabled`), so `ConfirmModal` keeps the confirming
+button disabled until a non-empty one is typed. A button whose only possible
+outcome is a 400 is not a button.
+
+`ConfirmModal` is a native `<dialog>` opened with `showModal()`, which is
+what gives top-layer stacking, a `::backdrop` and a focus trap; Escape fires
+`cancel` and is routed to the same handler as the Cancel button. The two
+hand-rolled `fixed inset-0` overlays it replaced on `/admin/users/<id>` had
+none of that.
 
 ### Common Components
 
@@ -309,19 +410,20 @@ works through in order stays a column.
 - **RailItem**: One destination in the rail. Keeps its label in the DOM when the rail is collapsed, so the accessible name never becomes an unlabelled icon.
 - **RailGroup**: A named, collapsible band of rail items. The head is a button, not a link: the group has no page of its own, and giving it one would mean inventing an admin landing screen whose only content is the list already on show.
 - **RailUserMenu**: The rail's bottom row — the identity — and the drop-up behind it holding account, preferences, theme and sign out. A disclosure rather than a `role="menu"`; see The app shell.
-- **PageShell**: The container every page sits in. Four named widths, an optional `aside` column, and the `center` flag sign-in uses. See Page Structure.
-- **CardGrid**: Independent cards two abreast above `xl`, one column below.
-- **Card**: Wraps content in a bordered box with optional title/description header and footer slot. `px-5 py-4` in the body, `px-5 py-3.5` in the header and footer.
+- **PageShell**: The container every page sits in. Three named widths, an optional `aside` column, and the `center` flag sign-in uses. See Page Structure.
+- **PageSection**: One group of fields as a subtle card — `rounded-lg border border-border-subtle bg-surface-muted p-4` — opening with a quiet uppercase `h2` and an optional line of copy. What replaced `Card`; see Sections are subtle cards. A real heading rather than a styled `div`, because a section is a landmark a screen reader navigates by and it was the card's header, not its border, that said so. Never nested inside another.
 - **Footer**: The bar closing every page — the running build's version, a link to the release it was cut from, and links back to the project on GitHub. Presentational: the build identity arrives as a prop, so the fetch happens once in the layout. Renders nothing at all while the version is unknown.
 - **Alert**: Variants: `error`, `warning`, `info`. Each includes an icon and a color from the token set.
+- **ConfirmModal**: The one shape a confirmation takes — a native `<dialog>` holding the consequence, a required reason, Cancel and the confirming button. Callers supply the wording and the endpoint and nothing else. See Destructive actions.
+- **ExpireCodeAction**: The retire-this-code button and its `ConfirmModal`, for a page heading's `action` slot. One component for both sides of a code — an admin on `/admin/service-codes/<id>` and a holder on `/service-codes/<id>` — because the two differ only in which endpoint they call, and the reason field, the confirmation and the error wording are what is worth keeping identical.
 - **StatusBadge**: Maps request/certificate statuses (pending, approved, denied, etc.) to colored pills with status-appropriate icons. Rendered capitalised — the wire value is lowercase, the label is not.
 - **DetailRow**: A label–value pair for metadata lists, with optional icon and monospace rendering. A 140px label column at 13px, stacking on narrow viewports.
-- **PageHeading**: The eyebrow + `h1` pair every screen opens with, with an optional right-aligned `action` and an optional `sub` line beneath the title. `sub` is a snippet rather than a string because two of them are not prose: the user detail page names the account in mono beside its address.
-- **SectionLabel**: The small muted uppercase label that opens a group of fields inside a card. Quieter than `PageHeading`'s eyebrow, which takes the accent.
+- **PageHeading**: The whole of a page's opening — back chip, eyebrow, `h1`, `sub` line, and a right-aligned `action` where a page's destructive control goes (see Destructive actions). `sub` is a snippet rather than a string because several are not prose: the user detail page names the account in mono beside its address, and two lists put a `<code>` in theirs. See Page Structure for why all four parts live here.
+- **SectionLabel**: The same small muted uppercase label as `PageSection`'s heading, but as a plain `div` with no frame, for a group _inside_ a section — a form group, the lifetime-policy block within a certificate's decision, the three groups inside the approval card. Not a heading, and must not become one: nesting `h2`s under each other would flatten the page's real structure. Quieter than `PageHeading`'s eyebrow, which takes the accent.
 - **CertRow**: One certificate as a standalone, clickable card — type badge, subject, what happened and when, principals, and the decision badge. Stacked below `xl`, aligned columns above it: a list of rows is the same fields over and over, and stretching a stacked row only pushes the last field further from the first.
 - **ServiceCodeRow**: One approved service enrollment as the same kind of card — the account the code mints for, when it was approved and what it hands out, how often it has been redeemed, and an active/expired pill. Never the code.
-- **ServiceCodeDetail**: The enrollment in full, the body of `/service-codes/<id>`: what a redemption grants, the options fixed at approval, the code's own dates, its redemption log, who else holds the account, where notifications go, and the control that retires it. The server caps that log at its newest 100 rows and reports the true total, so the page says what it is showing a slice of rather than letting the last row read as the first redemption. Structurally unable to show a code.
-- **AdminServiceCodeDetail**: The same enrollment as an operator sees it, the body of `/admin/service-codes/<id>` — the approver's name and address as well, and the admin controls. The detail is handed in as a prop rather than fetched here: `GET /api/admin/enrollments/:id` is audited, and a component that fetched on mount would write a second `admin.enrollment_viewed` event for the one look the route already recorded.
+- **ServiceCodeDetail**: The enrollment in full, the body of `/service-codes/<id>`: what a redemption grants, the options fixed at approval, the code's own dates, its redemption log, who else holds the account, and where notifications go. Retiring the code is not here — that is the route's own action, in the heading. The server caps that log at its newest 100 rows and reports the true total, so the page says what it is showing a slice of rather than letting the last row read as the first redemption. Structurally unable to show a code.
+- **AdminServiceCodeDetail**: The same enrollment as an operator sees it, the body of `/admin/service-codes/<id>` — the approver's name and address as well, and the notification address an operator can set. Expiring the code is the route's action, in the heading. The detail is handed in as a prop rather than fetched here: `GET /api/admin/enrollments/:id` is audited, and a component that fetched on mount would write a second `admin.enrollment_viewed` event for the one look the route already recorded.
 - **TypeBadge**: The certificate type as a fixed 26×26 square. Fixed rather than content-sized so rows align vertically whatever the type is called, and always shown: on a row the type is the primary identifier, not decoration.
 - **TypeChip**: The labelled form of `TypeBadge`, for detail views with room to name the type.
 - **MonoChip**: One monospace value as a bordered chip — a principal, an IP. Chips rather than a comma-separated string so set boundaries are unambiguous.
@@ -329,11 +431,13 @@ works through in order stays a column.
 - **OptionDiffList**: Shows granted vs. trimmed options (extensions, critical options) with strike-through for trimmed items.
 - **ApprovalView**: Composite component rendering a full certificate-request approval form.
 - **Rows are links, not buttons**: every `CertRow` and `ServiceCodeRow` is an `<a>` carrying an href its list resolved. Opening one is a navigation to the thing's own page, so middle-click, ctrl-click and "copy link address" all work, and the browser's own Back leaves it. Both used to open a `<dialog>` over the list through shallow routing (`page.state` plus a `?modal=<id>` fallback), which could not be reloaded, linked to, or dismissed with Back, and which had to hold a screenful of fields inside a scrolling dialog.
-- **Certificate Detail Page**: The only view of a single certificate, at `/certs/<id>`. Accessible to the user who approved the underlying request and to auditors/admins. Opens with an identity strip — type chip, decision badge, full id — above three `Card`s: the certificate's own metadata, what it grants (the extensions and critical options signed into it, stated as "None" when empty rather than omitted), and the decision audit record (who approved or denied it, when, from where, and the approver's groups). A service certificate adds a fourth for the redemption that produced it and the link back to its service code. Returns 404 (uniformly for both "not found" and "not authorized") to prevent existence leakage.
+- **Certificate Detail Page**: The only view of a single certificate, at `/certs/<id>`. Accessible to the user who approved the underlying request and to auditors/admins. Opens with an identity strip — type chip, decision badge, full id — above three sections: the certificate itself, the decision audit record (who approved or denied it, when, from where, and the approver's groups), and what the requesting host claimed about itself. A service certificate adds a fourth for the redemption that produced it and the link back to its service code.
+
+  Extensions and critical options are rows in the certificate section rather than a section of their own. They are two more things signed into this certificate, exactly like the key id and the validity window above them, and splitting them off made a reader cross a heading to finish reading one certificate. They stay one addressable block (`cert-grants`) because the whole pair is dropped for a PAM or console certificate that carries neither — stated as "None" when empty rather than omitted, for every certificate that could carry them. Returns 404 (uniformly for both "not found" and "not authorized") to prevent existence leakage.
 
   It is `wide`, the width of the lists that open it, rather than the narrower reading width: both are centred in the same space, so a detail page 360px narrower moves the left edge inward on every click and opens a gap beside it. It opens with a back chip naming the list the reader came from, chosen by a `from` search parameter the linking list writes — `history`, `dashboard` or `admin`. The parameter is only ever looked up in that table: it is a hint from our own links, not a destination to follow because a URL said so. A certificate reached from a notification or an audit line carries no `from` and falls back to the reader's own history.
 
-  The field lists sit inside `Card` rather than a hand-rolled bordered `<dl>`: `DetailRow` carries vertical padding only, on the assumption that its horizontal padding comes from the container. A bordered box around a bare `dl` puts every label and value flush against the border.
+  `DetailRow` carries vertical padding only, on the assumption that its horizontal padding comes from the container. That container is `PageSection`'s `p-4`: a bare `dl` inside a bordered box would put every label and value flush against the border.
 
   The two option columns are decoded server-side (`setIssuedOptionsOnCertificate` in `server/controller/responses.go`) and reach the browser as an array and an object, not as strings of JSON. Only the detail endpoint fills them — a list row does not show them, and a hundred-row page should not carry them. `CertificateService.GetByID` has to name both columns in its `Select` for any of that to happen: it builds `model.Certificate` from an explicit column list rather than the whole row, so a column left out of the query arrives empty however faithfully it was written.
 
@@ -384,8 +488,8 @@ subsection below; the rest in brief:
   `AdminServiceCodeDetail`/`ServiceCodeDetail`, carrying the Expire control
   for SOC.
 - **Directory** (`/admin/directory`) — the LDAP console: sync status and the
-  last pass's counts for any auditor; *Sync now* (with a dry-run option) and
-  the read-only *Probe* for admins only, since both make the server reach
+  last pass's counts for any auditor; _Sync now_ (with a dry-run option) and
+  the read-only _Probe_ for admins only, since both make the server reach
   out to the directory.
 - **Claims echo** (`/admin/identity/echo`, admin-only) — re-authenticates
   against the provider with `prompt=login` and renders the decoded ID token,
@@ -393,12 +497,15 @@ subsection below; the rest in brief:
   `fields.extra` block that would capture the unread ones. Nothing is
   stored; the token arrives in the URL fragment and the page clears it.
 - **Audit log** (`/admin/audit`, `full` width) — the bounded table copy of
-  the audit stream, with a "load more" pager.
+  the audit stream, with a "load more" pager. `AuditTimeline` is unboxed
+  here: it already rules between rows and bars the side of each, so a frame
+  around it would be a border around a border.
 - **Diagnostics** (`/admin/diagnostics`, admin-only) — four read-only
   deployment self-checks run on demand (public URL reachability, proxy
   trust and client IP, security header hygiene, CORS/edge header
-  attribution), each rendered as a card with an OK / Warning / Critical /
-  Skipped badge and a remediation note. Skipped is deliberately not a pass.
+  attribution), one card per check in a single column, each with an OK /
+  Warning / Critical / Skipped badge and a remediation note. Skipped is
+  deliberately not a pass.
 
 ### The effective configuration screen
 
@@ -543,7 +650,7 @@ A tagged build shows `v1.1.3` linked to its GitHub release. An untagged one has 
 What the endpoint reveals is the operator's choice, through `version.mode`
 (`server/config/types_version.go`). `show`, the default, is the above.
 `hide` returns every field empty, and the footer then renders no build
-identity at all. Any other string is served *as* the version, with no
+identity at all. Any other string is served _as_ the version, with no
 commit, repository, or release link that would give the real build away —
 so `show` and `hide` are reserved words that cannot be used as a fake
 version. The endpoint is unauthenticated and its exact version plus full

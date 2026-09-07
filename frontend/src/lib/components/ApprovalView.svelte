@@ -9,7 +9,6 @@
 	} from '$lib/approval';
 	import Alert from '$lib/components/Alert.svelte';
 	import Button from '$lib/components/Button.svelte';
-	import Card from '$lib/components/Card.svelte';
 	import DetailRow from '$lib/components/DetailRow.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
@@ -175,7 +174,7 @@
 	// it authorizes a whole interactive session on the machine, and the
 	// person approving it is being asked to vouch for someone standing at a
 	// keyboard they cannot see.
-	const cardCopy = $derived.by(() => {
+	const pageCopy = $derived.by(() => {
 		if (detail.type === 'console') {
 			return {
 				title: 'Approve a console login',
@@ -333,9 +332,15 @@
 </script>
 
 <div class="flex w-full max-w-[560px] flex-col gap-4">
-	<PageHeading eyebrow="Certificate request" title={cardCopy.title} />
+	<PageHeading eyebrow="Certificate request" title={pageCopy.title} />
 
-	<Card testid="approval-view">
+	<!-- One card, not six. An approval is a single decision read straight
+	     through, so the frame goes round the whole of it and the groups
+	     inside are labels rather than panels. -->
+	<div
+		data-testid="approval-view"
+		class="flex flex-col rounded-lg border border-border-subtle bg-surface-muted p-4"
+	>
 		<!-- Live region for screen reader announcements of action outcomes. -->
 		<div aria-live="polite" aria-atomic="true" class="sr-only">{liveMessage}</div>
 
@@ -351,7 +356,7 @@
 			</span>
 		</div>
 
-		<p class="pb-4 text-[13px] text-ink-muted">{cardCopy.description}</p>
+		<p class="pb-4 text-[13px] text-ink-muted">{pageCopy.description}</p>
 
 		<dl class="divide-y divide-border-subtle">
 			<DetailRow label="Principals">
@@ -551,7 +556,7 @@
 			{/if}
 		</div>
 
-		{#snippet footer()}
+		<div class="mt-6 border-t border-border-subtle pt-5">
 			{#if outcome === 'approved'}
 				<Alert variant="info" title="Approved" testid="outcome-approved">
 					The certificate is being signed and will reach the waiting client on its own connection —
@@ -680,8 +685,8 @@
 					</div>
 				</div>
 			{/if}
-		{/snippet}
-	</Card>
+		</div>
+	</div>
 
 	<p class="text-center text-[11px] text-ink-muted">
 		Requests are logged. See the audit trail for details.

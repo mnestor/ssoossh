@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
 import { createRawSnippet } from 'svelte';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import PageHeading from './PageHeading.svelte';
 
@@ -33,6 +34,41 @@ describe('PageHeading', () => {
 	it('should render no sub line when none is given', () => {
 		const { container } = render(PageHeading, { eyebrow: 'Admin', title: 'Users' });
 		expect(container.querySelector('p')).toBeNull();
+	});
+
+	// The chip was the same nine-class string copied onto three pages as an
+	// <a> and a fourth as a <button>, each cancelling the shell's gap with
+	// its own negative margin.
+	it('should render a back chip as a link when it is given an href', () => {
+		render(PageHeading, {
+			eyebrow: 'Certificate',
+			title: 'Details',
+			back: { href: '/logs/me', label: 'Certificate history' }
+		});
+		expect(screen.getByRole('link', { name: /Certificate history/ })).toHaveAttribute(
+			'href',
+			'/logs/me'
+		);
+	});
+
+	// One list opens an account without changing route, so its chip has to
+	// be a button rather than a link to nowhere.
+	it('should render a back chip as a button when it is given an onclick', async () => {
+		const onclick = vi.fn();
+		render(PageHeading, {
+			eyebrow: 'Service account',
+			title: 'svc-deploy',
+			back: { onclick, label: 'All service accounts' }
+		});
+
+		await userEvent.click(screen.getByRole('button', { name: /All service accounts/ }));
+
+		expect(onclick).toHaveBeenCalledOnce();
+	});
+
+	it('should render no back chip when none is given', () => {
+		render(PageHeading, { eyebrow: 'Activity', title: 'Recent decisions' });
+		expect(screen.queryByRole('link')).toBeNull();
 	});
 
 	it('should render a trailing action when one is given', () => {

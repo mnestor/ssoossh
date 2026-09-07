@@ -6,7 +6,6 @@
 	import type { ServiceEnrollment } from '$lib/api/types';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
-	import Icon from '$lib/components/Icon.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
@@ -155,36 +154,31 @@
 
 <PageShell width="wide">
 	{#if openAccount}
-		<button
-			type="button"
-			onclick={closeAccountView}
-			data-testid="service-codes-back"
-			class="-mb-2 inline-flex w-fit items-center gap-1 text-sm text-accent transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-		>
-			<Icon name="chevron-left" size="xs" />
-			All service accounts
-		</button>
-
-		<PageHeading eyebrow="Service account" title={openAccount} testid="service-codes-heading" />
-
-		<p class="text-sm text-ink-muted">
-			Every enrollment code approved for <code class="font-mono">{openAccount}</code>. Anyone with
-			access to this account can see and manage them, whoever approved each one. Open a row for what
-			it hands out and how long it stays redeemable.
-		</p>
-	{:else}
 		<PageHeading
-			eyebrow="Service"
-			title="Service enrollment codes"
+			eyebrow="Service account"
+			title={openAccount}
 			testid="service-codes-heading"
-		/>
-
-		<p class="text-sm text-ink-muted">
-			The service accounts you have access to, and the codes approved for each. A code belongs to
-			its account rather than to whoever approved it, so you see every code for these accounts. The
-			codes themselves are not shown: <code class="font-mono">ssoossh service enroll</code> prints each
-			one once, and the server keeps it only to match a redemption against.
-		</p>
+			back={{
+				onclick: closeAccountView,
+				label: 'All service accounts',
+				testid: 'service-codes-back'
+			}}
+		>
+			{#snippet sub()}
+				Every enrollment code approved for <code class="font-mono">{openAccount}</code>. Anyone with
+				access to this account can see and manage them, whoever approved each one. Open a row for
+				what it hands out and how long it stays redeemable.
+			{/snippet}
+		</PageHeading>
+	{:else}
+		<PageHeading eyebrow="Service" title="Service enrollment codes" testid="service-codes-heading">
+			{#snippet sub()}
+				The service accounts you have access to, and the codes approved for each. A code belongs to
+				its account rather than to whoever approved it, so you see every code for these accounts.
+				The codes themselves are not shown: <code class="font-mono">ssoossh service enroll</code>
+				prints each one once, and the server keeps it only to match a redemption against.
+			{/snippet}
+		</PageHeading>
 	{/if}
 
 	{#if loadError}

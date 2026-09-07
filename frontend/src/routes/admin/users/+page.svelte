@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
+	import Alert from '$lib/components/Alert.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
@@ -113,9 +114,7 @@
 	</div>
 
 	{#if error}
-		<div class="rounded-lg border border-danger-surface bg-danger-surface p-4 text-sm text-danger">
-			{error}
-		</div>
+		<Alert variant="error" title="Could not load the user list">{error}</Alert>
 		<!--
 		Length, not the array itself: an empty array is truthy, so testing
 		`users?.users` renders a table of headers with no rows for a search

@@ -2,14 +2,15 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { listServiceEnrollments } from '$lib/api/endpoints';
+	import { expireOwnEnrollment, listServiceEnrollments } from '$lib/api/endpoints';
 	import type { ServiceEnrollment } from '$lib/api/types';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
-	import Icon from '$lib/components/Icon.svelte';
-
+	import ExpireCodeAction from '$lib/components/ExpireCodeAction.svelte';
+	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import ServiceCodeDetail from '$lib/components/ServiceCodeDetail.svelte';
+	import { isExpired } from '$lib/format';
 
 	// One service enrollment code, at its own address. This used to be a
 	// dialog over the list, which meant a code could not be linked to,
@@ -38,6 +39,10 @@
 	});
 
 	const enrollment = $derived(enrollments.find((e) => e.id === id));
+
+	// An already-expired code needs no retire control: the outcome it would
+	// produce is already true.
+	const expired = $derived(enrollment ? isExpired(enrollment.expires_at, now) : false);
 
 	// The account owning the code, which is both what the back chip returns
 	// to and, on a code whose account has since left the identity's claim,
@@ -85,23 +90,32 @@
 <svelte:head><title>Service code · ssoossh</title></svelte:head>
 
 <PageShell width="wide">
-	<a
-		href="{resolve('/service-codes')}{accountQuery}"
-		data-testid="service-code-back"
-		class="-mb-2 inline-flex w-fit items-center gap-1 text-sm text-accent transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+	<!-- A visible heading, where there used to be an sr-only one. The page
+	     needs somewhere to hang its action: retiring the code is the one
+	     thing here that ends it rather than describing it, and it belongs in
+	     the top right, the same place an account is disabled from. The title
+	     is the account rather than the key ID, because that is what the code
+	     is for; the key ID is the sub line and also a row below. -->
+	<PageHeading
+		eyebrow="Service code"
+		title={account || 'Service code'}
+		testid="service-code-heading"
+		back={{ href: backHref, label: backLabel, testid: 'service-code-back' }}
 	>
-		<Icon name="chevron-left" size="xs" />
-		{backLabel}
-	</a>
-
-	<!-- No visible heading: the key ID this used to repeat is a row in
-	     "What it hands out" a few lines below, and the identity strip and
-	     the account sentence under it already say what this page is. The
-	     h1 stays for anything reading the page as a document rather than
-	     looking at it. -->
-	<h1 class="sr-only" data-testid="service-code-heading">
-		Service code{enrollment?.key_id ? ` ${enrollment.key_id}` : ''}
-	</h1>
+		{#snippet sub()}
+			<span class="font-mono">{enrollment?.key_id ?? ''}</span>
+		{/snippet}
+		{#snippet action()}
+			{#if enrollment && !expired}
+				{@const enrollmentId = enrollment.id}
+				<ExpireCodeAction
+					testid="expire-code"
+					expire={(reason) => expireOwnEnrollment(enrollmentId, reason)}
+					onexpired={afterExpired}
+				/>
+			{/if}
+		{/snippet}
+	</PageHeading>
 
 	{#if loadError}
 		<Alert variant="error" title="Could not load this service code">{loadError}</Alert>
@@ -117,6 +131,6 @@
 			No code with that ID is approved for any service account you have access to.
 		</Alert>
 	{:else}
-		<ServiceCodeDetail {enrollment} {now} onexpired={afterExpired} />
+		<ServiceCodeDetail {enrollment} {now} />
 	{/if}
 </PageShell>

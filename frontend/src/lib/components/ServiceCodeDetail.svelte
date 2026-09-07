@@ -1,20 +1,14 @@
 <script lang="ts">
 	import { ApiError } from '$lib/api/client';
-	import {
-		expireOwnEnrollment,
-		listRetrievals,
-		setEnrollmentNotificationEmail
-	} from '$lib/api/endpoints';
+	import { listRetrievals, setEnrollmentNotificationEmail } from '$lib/api/endpoints';
 	import type { EnrollmentRetrievalsResponse, ServiceEnrollment } from '$lib/api/types';
 	import { errorMessage } from '$lib/auth';
-	import { isExpired } from '$lib/format';
 	import { session } from '$lib/session.svelte';
 	import AccountHoldersPanel from './AccountHoldersPanel.svelte';
-	import ExpireCodeAction from './ExpireCodeAction.svelte';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
+	import PageSection from './PageSection.svelte';
 	import RedemptionHistory from './RedemptionHistory.svelte';
-	import SectionLabel from './SectionLabel.svelte';
 	import ServiceCodeFacts from './ServiceCodeFacts.svelte';
 
 	// One service enrollment in full, the body of /service-codes/[id].
@@ -24,7 +18,9 @@
 	//
 	// The one thing here that can be changed is where notifications about the
 	// code go. Everything else was fixed at approval, and the code belongs to
-	// its service account, so there is no owner to transfer it to.
+	// its service account, so there is no owner to transfer it to. Retiring
+	// it is the page's own action, in the heading's top right, because it is
+	// the one thing here that ends the code rather than describing it.
 	//
 	// A page rather than the dialog this used to be: this is a screenful of
 	// fields, a redemption log and two controls, which is a page's worth of
@@ -34,11 +30,9 @@
 		enrollment: ServiceEnrollment;
 		/** Pinned clock, so the remaining lifetime matches the list it came from. */
 		now?: Date;
-		/** Called once the code is retired, so the page can leave. */
-		onexpired?: () => void;
 	}
 
-	let { enrollment, now = new Date(), onexpired }: Props = $props();
+	let { enrollment, now = new Date() }: Props = $props();
 
 	let retrievals = $state<EnrollmentRetrievalsResponse | null>(null);
 
@@ -124,8 +118,6 @@
 		enrollment.service_account ||
 			(enrollment.principals.length > 0 ? enrollment.principals.join(', ') : 'unknown account')
 	);
-
-	const expired = $derived(isExpired(enrollment.expires_at, now));
 </script>
 
 <div class="flex flex-col gap-5" data-testid="service-code-detail">
@@ -145,8 +137,7 @@
 	     serve: an account whose holders have never logged in reaches nobody,
 	     and a large holder set turns every redemption into a mailshot where a
 	     team alias would do. -->
-	<div>
-		<SectionLabel>Notifications</SectionLabel>
+	<PageSection title="Notifications">
 		<p class="mb-2 text-[13px] text-ink-muted">
 			{#if storedEmail}
 				Notifications about this code go to
@@ -189,26 +180,7 @@
 				{emailDraft ? 'Saved.' : 'Cleared — notifications go to everyone with access again.'}
 			</p>
 		{/if}
-	</div>
-
-	<!-- Retiring the code, for the people who live with it. An enrollment
-	     belongs to its service account rather than to whoever approved it, so
-	     a holder is the one who knows the job behind it has been
-	     decommissioned — and until now they had to ask an admin to retire it
-	     for them. An already-expired code needs no control: the outcome is
-	     already true. -->
-	{#if !expired}
-		<div>
-			<SectionLabel>Retire this code</SectionLabel>
-			<div class="max-w-[560px]">
-				<ExpireCodeAction
-					testid="expire-code"
-					expire={(reason) => expireOwnEnrollment(enrollment.id, reason)}
-					onexpired={() => onexpired?.()}
-				/>
-			</div>
-		</div>
-	{/if}
+	</PageSection>
 
 	<!-- Last, as on the admin's page. It is the only part that grows without
 	     bound, and a reader who came to check what the code grants or to

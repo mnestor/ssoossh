@@ -1,13 +1,20 @@
 <script lang="ts">
 	import { ApiError } from '$lib/api/client';
-	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
+	import ConfirmModal from './ConfirmModal.svelte';
 
 	// Retiring a service enrollment code, from either side of it: an admin
 	// on the admin panel, or somebody who holds the account on their own.
 	// One component because the two differ in exactly one thing — which
 	// endpoint they call — and the reason field, the confirmation step and
 	// the error wording are the parts worth keeping identical.
+	//
+	// A button meant for a page's top right, opening the same ConfirmModal
+	// that disabling an account opens. It used to expand a panel inline in a
+	// section near the foot of the page, which put the control that ends a
+	// code wherever the sections above it happened to finish — and left the
+	// reason field competing with the page behind it while it was being
+	// typed.
 	//
 	// The reason is not optional decoration. enrollment.expired is one of
 	// the three actions the server validates a reason for, so a request
@@ -25,23 +32,19 @@
 	let { expire, onexpired, testid }: Props = $props();
 
 	let confirming = $state(false);
-	let reason = $state('');
 	let busy = $state(false);
 	let error = $state<string | null>(null);
 
-	const ready = $derived(reason.trim().length > 0);
-
 	function cancel() {
 		confirming = false;
-		reason = '';
 		error = null;
 	}
 
-	async function run() {
+	async function run(reason: string) {
 		busy = true;
 		error = null;
 		try {
-			await expire(reason.trim());
+			await expire(reason);
 			onexpired();
 		} catch (cause) {
 			if (cause instanceof ApiError && cause.status === 404) {
@@ -58,40 +61,26 @@
 </script>
 
 <div data-testid={testid}>
-	{#if !confirming}
-		<Button variant="danger" onclick={() => (confirming = true)}>Expire this code</Button>
-	{:else}
-		<div class="flex flex-col gap-2 rounded-lg bg-danger-surface p-3">
-			<p class="text-[13px] text-ink">
-				Nothing will be able to redeem this code again. Certificates already issued keep working
-				until they expire on their own.
-			</p>
+	<Button variant="danger" onclick={() => (confirming = true)}>Expire this code</Button>
 
-			<!-- Required, and said so before the button is pressed rather than
-			     after the server refuses: the reason is what the next person
-			     reading this code's history has to go on. -->
-			<label class="flex flex-col gap-1 text-[13px]">
-				<span class="font-medium text-ink">Why is it being retired?</span>
-				<input
-					type="text"
-					bind:value={reason}
-					disabled={busy}
-					data-testid="expire-reason"
-					placeholder="the job behind it was decommissioned"
-					class="rounded-md border border-border-subtle bg-surface px-2.5 py-1.5 text-[13px] disabled:opacity-50"
-				/>
-			</label>
-
-			<div class="flex gap-2">
-				<Button variant="danger" disabled={busy || !ready} onclick={run} testid="expire-confirm">
-					{busy ? 'Retiring…' : 'Confirm expiry'}
-				</Button>
-				<Button variant="ghost" disabled={busy} onclick={cancel}>Cancel</Button>
-			</div>
-
-			{#if error}
-				<Alert variant="error" title="The code was not retired">{error}</Alert>
-			{/if}
-		</div>
+	{#if confirming}
+		<ConfirmModal
+			title="Expire this code?"
+			confirmLabel="Confirm expiry"
+			busyLabel="Retiring…"
+			{busy}
+			{error}
+			errorTitle="The code was not retired"
+			reasonLabel="Why is it being retired?"
+			reasonPlaceholder="the job behind it was decommissioned"
+			reasonHelp="Shown to whoever next reads this code's history."
+			reasonTestid="expire-reason"
+			confirmTestid="expire-confirm"
+			onconfirm={run}
+			oncancel={cancel}
+		>
+			Nothing will be able to redeem this code again. Certificates already issued keep working until
+			they expire on their own.
+		</ConfirmModal>
 	{/if}
 </div>

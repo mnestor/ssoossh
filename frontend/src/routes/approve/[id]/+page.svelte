@@ -7,7 +7,7 @@
 	import { session } from '$lib/session.svelte';
 	import Alert from '$lib/components/Alert.svelte';
 	import ApprovalView from '$lib/components/ApprovalView.svelte';
-	import Card from '$lib/components/Card.svelte';
+	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 
 	// The page a client prints as approval_url. It is the only place a human
@@ -142,9 +142,19 @@
 
 <PageShell width="focus">
 	{#if failure}
-		<Card title={failure.title} testid="load-failure-{failure.kind}">
-			<p class="text-sm text-ink-muted">{failure.message}</p>
-		</Card>
+		<!-- Bound once: a snippet is its own closure, so the `failure` the
+		     branch narrowed does not reach inside one. -->
+		{@const loadFailure = failure}
+		<div
+			data-testid="load-failure-{failure.kind}"
+			class="rounded-lg border border-border-subtle bg-surface-muted p-4"
+		>
+			<!-- The same eyebrow the approval itself carries, so a refused
+			     link still reads as the screen it was meant to be. -->
+			<PageHeading eyebrow="Certificate request" title={loadFailure.title}>
+				{#snippet sub()}{loadFailure.message}{/snippet}
+			</PageHeading>
+		</div>
 	{:else if detail}
 		<ApprovalView
 			{detail}

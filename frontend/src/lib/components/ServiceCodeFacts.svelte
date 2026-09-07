@@ -5,7 +5,7 @@
 	import DetailRow from './DetailRow.svelte';
 	import Icon from './Icon.svelte';
 	import MonoChip from './MonoChip.svelte';
-	import SectionLabel from './SectionLabel.svelte';
+	import PageSection from './PageSection.svelte';
 	import TypeChip from './TypeChip.svelte';
 
 	// Everything both service-code pages say about a code, in one place.
@@ -88,8 +88,7 @@
 	<span class="ml-auto"><CopyableId value={enrollment.id} testid="enrollment-id" /></span>
 </div>
 
-<div>
-	<SectionLabel>What it hands out</SectionLabel>
+<PageSection title="What it hands out">
 	<dl class="divide-y divide-border-subtle">
 		<!-- The principal leads the way the decider leads on a certificate: it
 		     is the account every certificate this code mints is for, fixed at
@@ -101,10 +100,9 @@
 		<DetailRow label="Key ID" mono>{enrollment.key_id || '—'}</DetailRow>
 		<DetailRow label="Bound key" mono>{enrollment.public_key_fingerprint || '—'}</DetailRow>
 	</dl>
-</div>
+</PageSection>
 
-<div>
-	<SectionLabel>The code itself</SectionLabel>
+<PageSection title="The code itself">
 	<dl class="divide-y divide-border-subtle">
 		<!-- Approval and expiry as one window rather than two rows: they are
 		     the two ends of a single fact, and apart they made the reader
@@ -127,4 +125,4 @@
 			{/if}
 		</DetailRow>
 	</dl>
-</div>
+</PageSection>

@@ -3,12 +3,11 @@
 	import type { CurrentUser } from '$lib/api/types';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
-	import Card from '$lib/components/Card.svelte';
 	import DetailRow from '$lib/components/DetailRow.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageSection from '$lib/components/PageSection.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
-	import SectionLabel from '$lib/components/SectionLabel.svelte';
 
 	// Fetched here rather than read from the app-wide session store: this
 	// page's whole content is the identity, so it should reflect what the
@@ -53,7 +52,7 @@
 
 <svelte:head><title>Account · ssoossh</title></svelte:head>
 
-<PageShell width="default">
+<PageShell width="wide">
 	<PageHeading eyebrow="Account" title="Your account" />
 
 	{#if loadError}
@@ -61,12 +60,15 @@
 	{:else if !hasLoaded}
 		<p class="text-sm text-ink-muted">Loading…</p>
 	{:else if user}
-		<Card
+		<PageSection
 			title="Identity"
 			description="Who the server sees this session as."
 			testid="account-identity-card"
 		>
-			<dl data-testid="identity-fields">
+			<!-- Ruled between rows like every other field list. It was the one
+			     that was not, which mattered less at 760px than it does now
+			     the column is 1120. -->
+			<dl data-testid="identity-fields" class="divide-y divide-border-subtle">
 				{#if user.name}
 					<DetailRow label="Name" icon="user">{user.name}</DetailRow>
 				{/if}
@@ -110,55 +112,50 @@
 					</DetailRow>
 				{/if}
 			</dl>
-		</Card>
+		</PageSection>
 
-		<Card
-			title="Accounts you can mint certificates for"
-			description="The principals the server will put in certificates issued to or approved by you."
+		<!-- Flat, rather than the two nested labels this used to carry inside
+		     an "Accounts you can mint certificates for" box. Without the box
+		     there is no group to name, and the wrapper's own sentence said
+		     nothing the two sections below do not each say for themselves. -->
+		<PageSection
+			title="Principals for user certificates"
+			description="Your username and any alternate account names you can use as principals. Your username is the primary identity."
+			testid="principals-section"
 		>
-			<div class="flex flex-col gap-5">
-				<div data-testid="principals-section">
-					<SectionLabel>Principals for user certificates</SectionLabel>
-					<p class="mb-2 text-[13px] text-ink-muted">
-						Your username and any alternate account names you can use as principals. Your username
-						is the primary identity.
-					</p>
-					<span class="flex flex-wrap gap-1.5" data-testid="principals-list">
-						<MonoChip>{user.username} <span class="text-ink-muted">(primary)</span></MonoChip>
-						{#each user.other_accounts as account (account)}
-							<MonoChip>{account}</MonoChip>
-						{/each}
-					</span>
-					{#if user.other_accounts.length === 0}
-						<p class="mt-2 text-[13px] text-ink-muted">
-							Only your primary username is available; no alternate account names are linked.
-						</p>
-					{/if}
-				</div>
+			<span class="flex flex-wrap gap-1.5" data-testid="principals-list">
+				<MonoChip>{user.username} <span class="text-ink-muted">(primary)</span></MonoChip>
+				{#each user.other_accounts as account (account)}
+					<MonoChip>{account}</MonoChip>
+				{/each}
+			</span>
+			{#if user.other_accounts.length === 0}
+				<p class="mt-2 text-[13px] text-ink-muted">
+					Only your primary username is available; no alternate account names are linked.
+				</p>
+			{/if}
+		</PageSection>
 
-				<div>
-					<SectionLabel>Service accounts</SectionLabel>
-					{#if user.service_accounts.length === 0}
-						<p class="text-[13px] text-ink-muted">
-							No service accounts are linked to your identity, so you cannot approve service
-							certificates.
-						</p>
-					{:else}
-						<p class="mb-2 text-[13px] text-ink-muted">
-							You can approve service certificates for these accounts; the one you pick becomes the
-							certificate's principal.
-						</p>
-						<span class="flex flex-wrap gap-1.5">
-							{#each user.service_accounts as account (account)}
-								<MonoChip>{account}</MonoChip>
-							{/each}
-						</span>
-					{/if}
-				</div>
-			</div>
-		</Card>
+		<PageSection title="Service accounts">
+			{#if user.service_accounts.length === 0}
+				<p class="text-[13px] text-ink-muted">
+					No service accounts are linked to your identity, so you cannot approve service
+					certificates.
+				</p>
+			{:else}
+				<p class="mb-2 text-[13px] text-ink-muted">
+					You can approve service certificates for these accounts; the one you pick becomes the
+					certificate's principal.
+				</p>
+				<span class="flex flex-wrap gap-1.5">
+					{#each user.service_accounts as account (account)}
+						<MonoChip>{account}</MonoChip>
+					{/each}
+				</span>
+			{/if}
+		</PageSection>
 
-		<Card
+		<PageSection
 			title="Groups"
 			description="Group membership feeds certificate policy (approval eligibility and lifetime) but never appears in a certificate."
 		>
@@ -171,6 +168,6 @@
 					{/each}
 				</span>
 			{/if}
-		</Card>
+		</PageSection>
 	{/if}
 </PageShell>

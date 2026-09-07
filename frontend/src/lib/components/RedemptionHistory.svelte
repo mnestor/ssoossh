@@ -2,7 +2,7 @@
 	import type { EnrollmentRetrievalResponse } from '$lib/api/generated/webtypes';
 	import { formatDateTime } from '$lib/format';
 	import MonoChip from './MonoChip.svelte';
-	import SectionLabel from './SectionLabel.svelte';
+	import PageSection from './PageSection.svelte';
 
 	// Every redemption of one code: when, from where, and whether a
 	// certificate actually came out. Shared by both service-code pages, and
@@ -28,8 +28,7 @@
 	const truncated = $derived(retrievals.length < total);
 </script>
 
-<div>
-	<SectionLabel>Redemption history</SectionLabel>
+<PageSection title="Redemption history">
 	{#if retrievals.length === 0}
 		<p class="text-[13px] text-ink-muted">Never redeemed.</p>
 	{:else}
@@ -63,4 +62,4 @@
 			{/each}
 		</dl>
 	{/if}
-</div>
+</PageSection>

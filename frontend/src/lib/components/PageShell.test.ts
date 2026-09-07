@@ -25,7 +25,7 @@ describe('page shell', () => {
 		expect(screen.getByTestId('shell-child')).toBeInTheDocument();
 	});
 
-	const widths = ['focus', 'default', 'wide', 'full'] as const;
+	const widths = ['focus', 'wide', 'full'] as const;
 	for (const width of widths) {
 		it(`should apply the ${width} width when a page asks for it`, () => {
 			render(PageShell, { children, width, testid: 'shell' });
@@ -34,12 +34,14 @@ describe('page shell', () => {
 		});
 	}
 
-	// A page that says nothing about its width is a reading page, not a
-	// table: defaulting to the widest would stretch prose across the glass.
-	it('should default to the reading width when a page names none', () => {
+	// A page that says nothing about its width is a page inside the app, and
+	// every one of those is `wide`. The 760px reading width it used to fall
+	// back to left /account and /preferences narrower than their neighbours,
+	// so the column jumped on the way to them.
+	it('should default to the width every page inside the app uses', () => {
 		render(PageShell, { children, testid: 'shell' });
 
-		expect(screen.getByTestId('shell')).toHaveAttribute('data-page-width', 'default');
+		expect(screen.getByTestId('shell')).toHaveAttribute('data-page-width', 'wide');
 	});
 
 	// The cap sits on the column inside the outer box, which is what

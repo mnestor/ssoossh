@@ -2,7 +2,7 @@
 	import { ApiError } from '$lib/api/client';
 	import { listEnrollmentHolders } from '$lib/api/endpoints';
 	import type { AccountHolder } from '$lib/api/types';
-	import SectionLabel from './SectionLabel.svelte';
+	import PageSection from './PageSection.svelte';
 
 	// Who else can use and manage one enrollment code.
 	//
@@ -65,9 +65,7 @@
 	}
 </script>
 
-<div data-testid="account-holders">
-	<SectionLabel>Who has access</SectionLabel>
-
+<PageSection title="Who has access" testid="account-holders">
 	<p class="mb-2 text-[13px] text-ink-muted">
 		Everyone holding
 		{#if serviceAccount}<span class="font-mono">{serviceAccount}</span>{:else}this service account{/if}
@@ -119,7 +117,7 @@
 		</dl>
 		{@render signInCaveat()}
 	{/if}
-</div>
+</PageSection>
 
 {#snippet signInCaveat()}
 	<!-- What this list is, stated plainly, because it is a snapshot rather

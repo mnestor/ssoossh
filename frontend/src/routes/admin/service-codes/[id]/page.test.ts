@@ -19,7 +19,7 @@ vi.mock('$app/state', async () => {
 });
 
 /** adminEnrollment builds one admin enrollment row. */
-function adminEnrollment(id: string): AdminEnrollment {
+function adminEnrollment(id: string, overrides: Partial<AdminEnrollment> = {}): AdminEnrollment {
 	return {
 		id,
 		service_account: 'svc-deploy',
@@ -31,8 +31,9 @@ function adminEnrollment(id: string): AdminEnrollment {
 		options: { extensions: [], no_touch_required: false },
 		certificate_valid_seconds: 3600,
 		created_at: '2026-08-20T12:00:00Z',
-		expires_at: '2026-11-20T12:00:00Z',
-		retrieval_count: 3
+		expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+		retrieval_count: 3,
+		...overrides
 	} as AdminEnrollment;
 }
 
@@ -149,6 +150,29 @@ describe('admin service code detail page', () => {
 		render(Page);
 
 		expect(await screen.findByText('Could not load enrollment')).toBeInTheDocument();
+	});
+
+	// Expiring a code is the page's action, in the heading's top right —
+	// the same place an account is disabled from — rather than a control
+	// buried in the admin-actions section near the foot of the page.
+	it('should offer to expire a code that still works', async () => {
+		stubDetail(adminEnrollment('enr-1'));
+
+		render(Page);
+		await screen.findByTestId('enrollment-id');
+
+		expect(screen.getByTestId('admin-expire-code')).toBeInTheDocument();
+	});
+
+	// An expired code needs no control: the outcome it would produce is
+	// already true.
+	it('should not offer to expire a code that has already expired', async () => {
+		stubDetail(adminEnrollment('enr-1', { expires_at: '2020-01-01T00:00:00Z' }));
+
+		render(Page);
+		await screen.findByTestId('enrollment-id');
+
+		expect(screen.queryByTestId('admin-expire-code')).not.toBeInTheDocument();
 	});
 
 	// Always the list, whatever reached the page: an operator who arrived

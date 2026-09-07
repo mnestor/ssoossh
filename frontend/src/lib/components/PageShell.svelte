@@ -13,24 +13,39 @@
 	// `full` is not "very wide": it opts out of the cap entirely, for the
 	// three table pages where a horizontal scrollbar inside a centred column
 	// is worse than using the glass.
-	export type PageWidth = 'focus' | 'default' | 'wide' | 'full';
+	//
+	// There used to be a fourth, `default`, at 760px, and by the end only
+	// /account and /preferences were on it. Two pages 360px narrower than
+	// everything the rail navigates between meant the content column jumped
+	// inward on the way to them and back out on the way to anything else —
+	// the same "reads as a different app" problem the note below describes
+	// for detail pages, on the two screens somebody reaches from the user
+	// menu. Deleted rather than left unused, because an unused width is how
+	// a fifth one gets added.
+	export type PageWidth = 'focus' | 'wide' | 'full';
 
 	interface Props {
 		/**
-		 * focus   560px — sign-in, an approval, a console code
-		 * default 760px — reading pages that stand on their own
-		 * wide   1120px — card and row lists, and the pages they open
-		 * full          — uncapped, for tables
+		 * focus  560px — sign-in, an approval, a console code, an error
+		 * wide  1120px — every page inside the app
+		 * full         — uncapped, for tables
 		 *
-		 * A page reached by opening a row takes its list's width rather than
-		 * the narrower reading one. Both are centred in the same space, so a
-		 * detail page 360px narrower than the list behind it moves the left
-		 * edge inward by half that on every click — the content shifts and a
-		 * gap opens beside it, which reads as a different app rather than as
-		 * the next screen. Long values are the reason 760 exists, and a
-		 * DetailRow does not stretch them: its value starts right after the
-		 * 140px label column and only wraps later. Forms are the exception
-		 * and cap themselves — an email field 900px wide looks like a bug.
+		 * `wide` is the default because it is what the app is: every screen
+		 * the rail navigates between, every list, and every page a list
+		 * opens. They are all centred in the same space, so one page
+		 * narrower than its neighbours moves the left edge inward by half
+		 * the difference on every click — the content shifts and a gap opens
+		 * beside it, which reads as a different app rather than as the next
+		 * screen.
+		 *
+		 * `focus` is not a narrower version of that. It is for the screens
+		 * outside the app entirely: signed out, or holding a single decision
+		 * and nothing else.
+		 *
+		 * Width is not a licence to stretch prose. A `DetailRow`'s value
+		 * starts after its 140px label column and wraps where it wraps, but
+		 * a paragraph or a form caps itself at a readable measure — an email
+		 * field 900px wide looks like a bug.
 		 */
 		width?: PageWidth;
 		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
@@ -55,14 +70,13 @@
 		center?: boolean;
 	}
 
-	let { width = 'default', testid, children, aside, center = false }: Props = $props();
+	let { width = 'wide', testid, children, aside, center = false }: Props = $props();
 
 	// Written out per width rather than interpolated: Tailwind scans source
 	// text for literal class names, so `max-w-[${n}px]` would never be
 	// generated.
 	const caps: Record<PageWidth, string> = {
 		focus: 'max-w-[560px]',
-		default: 'max-w-[760px]',
 		wide: 'max-w-[1120px]',
 		full: 'max-w-none'
 	};

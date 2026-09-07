@@ -2,9 +2,12 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { getAdminUser, disableUser, enableUser, getUserAudit } from '$lib/api/endpoints';
-	import Button from '$lib/components/Button.svelte';
+	import Alert from '$lib/components/Alert.svelte';
 	import AuditTimeline from '$lib/components/AuditTimeline.svelte';
+	import Button from '$lib/components/Button.svelte';
+	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageSection from '$lib/components/PageSection.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import type {
 		AdminUserDetail,
@@ -19,11 +22,11 @@
 	let actionBusy = $state(false);
 	let showDisableConfirm = $state(false);
 	let disableConsequences: DisableUserConsequences | null = $state(null);
-	// Both reasons are required by the server, so the buttons stay disabled
-	// until one is typed rather than letting the request fail.
-	let disableReason = $state('');
 	let showEnableConfirm = $state(false);
-	let enableReason = $state('');
+	// A failed attempt is reported inside the dialog that made it, so the
+	// reason someone typed is still on screen to try again with. Both
+	// reasons themselves live in ConfirmModal, which requires one.
+	let actionError: string | null = $state(null);
 	let auditEvents: AuditEvent[] = $state([]);
 	let auditError: string | null = $state(null);
 
@@ -173,35 +176,45 @@
 		showDisableConfirm = true;
 	}
 
-	async function handleDisable() {
+	async function handleDisable(reason: string) {
 		actionBusy = true;
+		actionError = null;
 		try {
-			await disableUser(userId, { reason: disableReason });
+			await disableUser(userId, { reason });
 			await loadUser();
 			await loadAudit();
-			showDisableConfirm = false;
-			disableConsequences = null;
-			disableReason = '';
+			closeDisableConfirm();
 		} catch (cause) {
-			error = cause instanceof Error ? cause.message : 'Failed to disable user';
+			actionError = cause instanceof Error ? cause.message : 'Failed to disable user';
 		} finally {
 			actionBusy = false;
 		}
 	}
 
-	async function handleEnable() {
+	async function handleEnable(reason: string) {
 		actionBusy = true;
+		actionError = null;
 		try {
-			await enableUser(userId, { reason: enableReason });
+			await enableUser(userId, { reason });
 			await loadUser();
 			await loadAudit();
-			showEnableConfirm = false;
-			enableReason = '';
+			closeEnableConfirm();
 		} catch (cause) {
-			error = cause instanceof Error ? cause.message : 'Failed to enable user';
+			actionError = cause instanceof Error ? cause.message : 'Failed to enable user';
 		} finally {
 			actionBusy = false;
 		}
+	}
+
+	function closeDisableConfirm() {
+		showDisableConfirm = false;
+		disableConsequences = null;
+		actionError = null;
+	}
+
+	function closeEnableConfirm() {
+		showEnableConfirm = false;
+		actionError = null;
 	}
 
 	// The timeline is a separate, auditor-scoped read, so its failure is
@@ -226,9 +239,7 @@
 	{#if busy}
 		<div class="text-center text-ink-muted">Loading...</div>
 	{:else if error}
-		<div class="rounded-lg border border-danger-surface bg-danger-surface p-4 text-sm text-danger">
-			{error}
-		</div>
+		<Alert variant="error" title="Could not load this account">{error}</Alert>
 	{:else if user}
 		<!-- A snippet is its own closure, so the `user` narrowed by the
 		     branch above does not reach inside one. Bind it once here and
@@ -272,16 +283,11 @@
 		     view — where the directory overrides one of these, both sides
 		     are shown and the override is named, because a claim mapping
 		     that is quietly wrong is invisible otherwise. -->
-		<div
-			class="rounded-lg border border-border-subtle bg-surface-muted p-4"
-			data-testid="user-oidc-record"
+		<PageSection
+			title="OIDC record"
+			description="What the identity provider sent at this user's last login. The account lists below are badged with the source the server actually acts on, since a configured ldap.fields entry replaces its OIDC counterpart outright."
+			testid="user-oidc-record"
 		>
-			<h2 class="mb-1 font-semibold text-ink">OIDC record</h2>
-			<p class="mb-4 text-[13px] text-ink-muted">
-				What the identity provider sent at this user's last login. The account lists below are
-				badged with the source the server actually acts on, since a configured
-				<code>ldap.fields</code> entry replaces its OIDC counterpart outright.
-			</p>
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div>
 					<p class="text-xs font-semibold text-ink-muted">Account identifier</p>
@@ -447,19 +453,16 @@
 					<p>{user.disabled_by_username}</p>
 				</div>
 			{/if}
-		</div>
+		</PageSection>
 
 		<!-- Group membership. Never an authorization input: this is what the
 		     server recorded for notification fan-out and display, and it is
 		     what answers "why did this reach them" or "why is the group I
 		     expected missing". -->
-		<div class="rounded-lg border border-border-subtle bg-surface-muted p-4">
-			<h2 class="mb-1 font-semibold text-ink">Group membership</h2>
-			<p class="mb-4 text-[13px] text-ink-muted">
-				Captured at login (OIDC) and by the directory sync (LDAP). Only group names the
-				configuration references are stored, so a group missing here may simply be unconfigured.
-				Never used to authorize anything.
-			</p>
+		<PageSection
+			title="Group membership"
+			description="Captured at login (OIDC) and by the directory sync (LDAP). Only group names the configuration references are stored, so a group missing here may simply be unconfigured. Never used to authorize anything."
+		>
 			<!-- With the directory off, its rows are withheld everywhere: from
 			     this table, from the directory record below, and from
 			     notification fan-out. Saying so beats an operator wondering
@@ -503,24 +506,18 @@
 					</table>
 				</div>
 			{/if}
-		</div>
+		</PageSection>
 
 		<!-- Directory record. Present only while the directory is on and for a
 		     user who has been enriched at least once; either absence is an
 		     answer rather than an error, and directory_enabled is what tells
 		     them apart. -->
 		{#if user.directory_enabled && user.directory}
-			<div
-				class="rounded-lg border border-border-subtle bg-surface-muted p-4"
-				data-testid="user-directory"
+			<PageSection
+				title="Directory record"
+				description="What the LDAP sync last read for this user, and whether their entry still resolves. Absent entirely while ldap.enabled is false, since nothing refreshes it and nothing acts on it."
+				testid="user-directory"
 			>
-				<h2 class="mb-1 font-semibold text-ink">Directory record</h2>
-				<p class="mb-4 text-[13px] text-ink-muted">
-					What the LDAP sync last read for this user, and whether their entry still resolves. Absent
-					entirely while <code>ldap.enabled</code> is false, since nothing refreshes it and nothing acts
-					on it.
-				</p>
-
 				<div class="grid gap-4 sm:grid-cols-2">
 					<div class="sm:col-span-2">
 						<p class="text-xs font-semibold text-ink-muted">Unique identifier</p>
@@ -590,7 +587,7 @@
 						</div>
 					</div>
 				{/if}
-			</div>
+			</PageSection>
 		{/if}
 
 		<!-- Notification choices: every kind the server can send, and
@@ -607,15 +604,11 @@
 		     the two facts they came for, which are what this person receives
 		     and what they chose. The title carries the rest. -->
 		{#if user.notification_preferences.length > 0}
-			<div
-				class="rounded-lg border border-border-subtle bg-surface-muted p-4"
-				data-testid="user-notification-preferences"
+			<PageSection
+				title="Notification choices"
+				description="Every notification this server can send. Rows reading “default” are ones this person has never changed."
+				testid="user-notification-preferences"
 			>
-				<h2 class="mb-1 font-semibold text-ink">Notification choices</h2>
-				<p class="mb-4 text-[13px] text-ink-muted">
-					Every notification this server can send. Rows reading <em>default</em> are ones this person
-					has never changed.
-				</p>
 				<div class="overflow-x-auto">
 					<table class="data-table" data-testid="user-notification-table">
 						<thead>
@@ -664,134 +657,96 @@
 						</tbody>
 					</table>
 				</div>
-			</div>
+			</PageSection>
 		{/if}
 
-		<!-- Activity section -->
-		<div class="grid gap-4 sm:grid-cols-2">
-			<div class="rounded-lg border border-border-subtle bg-surface-muted p-4">
-				<p class="text-xs font-semibold text-ink-muted">Certificates</p>
-				<p class="text-2xl font-bold text-accent">{user.certificate_count}</p>
-			</div>
-			<div class="rounded-lg border border-border-subtle bg-surface-muted p-4">
-				<p class="text-xs font-semibold text-ink-muted">Active Service Enrollments</p>
-				<p class="text-2xl font-bold text-accent">{user.service_enrollment_count}</p>
-			</div>
-		</div>
-
-		<!-- Disable confirmation modal -->
-		{#if showDisableConfirm && user && disableConsequences}
-			<div class="fixed inset-0 flex items-center justify-center bg-black/50 p-4">
-				<div class="w-full max-w-md rounded-lg bg-surface p-6 shadow-lg">
-					<h3 class="mb-4 text-lg font-semibold text-ink">Disable User?</h3>
-					<p data-testid="disable-consequences" class="mb-4 text-sm text-ink-muted">
-						This will prevent <strong>{user.username}</strong> from authenticating immediately.
-						{#if disableConsequences.service_enrollment_count > 0}
-							The <strong>{disableConsequences.service_enrollment_count}</strong> live service enrollment(s)
-							they approved keep working: those belong to their service accounts, not to this person,
-							and everyone else holding the account keeps them.
-						{:else}
-							They have approved no live service enrollments.
-						{/if}
-					</p>
-					<label class="mb-4 block">
-						<span class="mb-1 block text-xs font-semibold text-ink-muted"> Reason (required) </span>
-						<textarea
-							data-testid="disable-reason"
-							bind:value={disableReason}
-							rows="3"
-							placeholder="Why is this account being disabled? e.g. offboarded, SEC-1234"
-							class="w-full rounded border border-border-subtle bg-surface-muted p-2 text-sm"
-						></textarea>
-						<span class="mt-1 block text-xs text-ink-muted">
-							Shown to whoever decides whether to re-enable this account.
-						</span>
-					</label>
-					<div class="flex justify-end gap-2">
-						<Button
-							variant="ghost"
-							disabled={actionBusy}
-							onclick={() => {
-								showDisableConfirm = false;
-								disableConsequences = null;
-								disableReason = '';
-							}}
-						>
-							Cancel
-						</Button>
-						<Button
-							variant="danger"
-							testid="confirm-disable"
-							disabled={actionBusy || disableReason.trim() === ''}
-							onclick={handleDisable}
-						>
-							{actionBusy ? 'Disabling...' : 'Disable'}
-						</Button>
-					</div>
+		<!-- Two counts, not two tiles. A number this size with its own label
+		     under a section heading is already legible as a statistic; the
+		     boxes were drawing a frame around eight characters. -->
+		<PageSection title="Activity">
+			<div class="grid gap-4 sm:grid-cols-2">
+				<div>
+					<p class="text-xs font-semibold text-ink-muted">Certificates</p>
+					<p class="text-2xl font-bold text-accent">{user.certificate_count}</p>
+				</div>
+				<div>
+					<p class="text-xs font-semibold text-ink-muted">Active service enrollments</p>
+					<p class="text-2xl font-bold text-accent">{user.service_enrollment_count}</p>
 				</div>
 			</div>
-		{/if}
+		</PageSection>
 
-		<!-- Re-enable confirmation, which exists for its reason field: the
-		     next reader of this account benefits from "cleared with security,
-		     SEC-1234" as much as from why it was disabled. -->
-		{#if showEnableConfirm && user}
-			<div class="fixed inset-0 flex items-center justify-center bg-black/50 p-4">
-				<div class="w-full max-w-md rounded-lg bg-surface p-6 shadow-lg">
-					<h3 class="mb-4 text-lg font-semibold text-ink">Re-enable User?</h3>
-					<p class="mb-4 text-sm text-ink-muted">
-						This restores <strong>{user.username}</strong>'s ability to authenticate. Service
-						enrollments that already expired are not restored.
-					</p>
-					{#if user.disabled_reason}
-						<p class="mb-4 rounded bg-surface-muted p-2 text-sm">
-							<span class="font-semibold text-ink-muted">Disabled because:</span>
-							{user.disabled_reason}
-						</p>
+		<!-- Disabling and re-enabling both go through the shared confirmation
+		     dialog, which is the same one that retires a service code: a
+		     modal over the page, what the action does, and the reason the
+		     server requires. These two used to hand-roll a `fixed inset-0`
+		     overlay apiece — no role, no focus trap, and Escape did
+		     nothing. -->
+		{#if showDisableConfirm && disableConsequences}
+			<ConfirmModal
+				title="Disable this account?"
+				confirmLabel="Disable"
+				busyLabel="Disabling…"
+				busy={actionBusy}
+				error={actionError}
+				errorTitle="The account was not disabled"
+				reasonPlaceholder="Why is this account being disabled? e.g. offboarded, SEC-1234"
+				reasonHelp="Shown to whoever decides whether to re-enable this account."
+				reasonTestid="disable-reason"
+				confirmTestid="confirm-disable"
+				onconfirm={handleDisable}
+				oncancel={closeDisableConfirm}
+			>
+				<span data-testid="disable-consequences">
+					This will prevent <strong>{account.username}</strong> from authenticating immediately.
+					{#if disableConsequences.service_enrollment_count > 0}
+						The <strong>{disableConsequences.service_enrollment_count}</strong> live service enrollment(s)
+						they approved keep working: those belong to their service accounts, not to this person, and
+						everyone else holding the account keeps them.
+					{:else}
+						They have approved no live service enrollments.
 					{/if}
-					<label class="mb-4 block">
-						<span class="mb-1 block text-xs font-semibold text-ink-muted"> Reason (required) </span>
-						<textarea
-							data-testid="enable-reason"
-							bind:value={enableReason}
-							rows="3"
-							placeholder="Why is this account being restored? e.g. cleared with security, SEC-1234"
-							class="w-full rounded border border-border-subtle bg-surface-muted p-2 text-sm"
-						></textarea>
-					</label>
-					<div class="flex justify-end gap-2">
-						<Button
-							variant="ghost"
-							disabled={actionBusy}
-							onclick={() => {
-								showEnableConfirm = false;
-								enableReason = '';
-							}}
-						>
-							Cancel
-						</Button>
-						<Button
-							variant="primary"
-							testid="confirm-enable"
-							disabled={actionBusy || enableReason.trim() === ''}
-							onclick={handleEnable}
-						>
-							{actionBusy ? 'Enabling...' : 'Re-enable'}
-						</Button>
-					</div>
-				</div>
-			</div>
+				</span>
+			</ConfirmModal>
+		{/if}
+
+		<!-- Re-enabling asks for a reason too: the next reader of this
+		     account benefits from "cleared with security, SEC-1234" as much
+		     as from why it was disabled. -->
+		{#if showEnableConfirm}
+			<ConfirmModal
+				title="Re-enable this account?"
+				confirmLabel="Re-enable"
+				busyLabel="Re-enabling…"
+				variant="primary"
+				busy={actionBusy}
+				error={actionError}
+				errorTitle="The account was not re-enabled"
+				reasonPlaceholder="Why is this account being restored? e.g. cleared with security, SEC-1234"
+				reasonTestid="enable-reason"
+				confirmTestid="confirm-enable"
+				onconfirm={handleEnable}
+				oncancel={closeEnableConfirm}
+			>
+				This restores <strong>{account.username}</strong>'s ability to authenticate. Service
+				enrollments that already expired are not restored.
+				{#if account.disabled_reason}
+					<span class="mt-2 block rounded bg-surface-muted p-2 text-sm">
+						<span class="font-semibold text-ink-muted">Disabled because:</span>
+						{account.disabled_reason}
+					</span>
+				{/if}
+			</ConfirmModal>
 		{/if}
 
 		<!-- Audit timeline: everything this account did and everything done
 		     to it, from the same rows. -->
-		<div class="rounded-lg border border-border-subtle bg-surface p-4">
-			<h2 class="mb-4 font-semibold text-ink">Audit Timeline</h2>
+		<PageSection title="Audit timeline">
 			{#if auditError}
 				<p class="text-sm text-danger">{auditError}</p>
 			{:else}
 				<AuditTimeline events={auditEvents} subjectUserId={userId} />
 			{/if}
-		</div>
+		</PageSection>
 	{/if}
 </PageShell>

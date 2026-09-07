@@ -59,9 +59,7 @@
 	{#if busy && events.length === 0}
 		<p class="text-ink-muted">Loading...</p>
 	{:else}
-		<div class="rounded-lg border border-border-subtle bg-surface p-4">
-			<AuditTimeline {events} />
-		</div>
+		<AuditTimeline {events} />
 
 		<div class="flex items-center gap-4">
 			<!-- The rendered count, not the loaded one: the timeline drops

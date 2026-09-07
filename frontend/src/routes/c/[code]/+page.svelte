@@ -5,7 +5,7 @@
 	import { resolveConsoleCode } from '$lib/api/endpoints';
 	import { redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
-	import Card from '$lib/components/Card.svelte';
+	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import { describeCodeError, formatCode, normalizeCode, type CodeFailure } from '$lib/consolecode';
 
@@ -62,14 +62,22 @@
 
 <PageShell width="focus">
 	{#if failure}
-		<Card title={failure.title} testid="console-link-failure-{failure.kind}">
-			<p class="text-sm text-ink-muted">{failure.message}</p>
+		<!-- Bound once: a snippet is its own closure, so the `failure` the
+		     branch narrowed does not reach inside one. -->
+		{@const loadFailure = failure}
+		<div
+			data-testid="console-link-failure-{failure.kind}"
+			class="rounded-lg border border-border-subtle bg-surface-muted p-4"
+		>
+			<PageHeading eyebrow="Console login" title={loadFailure.title}>
+				{#snippet sub()}{loadFailure.message}{/snippet}
+			</PageHeading>
 			<p class="mt-3 text-sm text-ink-muted">
 				<!-- Resolved route id, so a rename of /console fails the build
 				     rather than 404ing here. -->
 				<a class="text-accent underline" href={resolve('/console')}>Type the code instead</a>
 			</p>
-		</Card>
+		</div>
 	{:else}
 		<Alert testid="console-link-resolving">
 			Checking code {formatCode(code)}…

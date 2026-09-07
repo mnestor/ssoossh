@@ -4,9 +4,9 @@
 	import { errorMessage } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
 	import Button from '$lib/components/Button.svelte';
-	import Card from '$lib/components/Card.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageSection from '$lib/components/PageSection.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
 
@@ -107,12 +107,13 @@
 <svelte:head><title>Claims echo · ssoossh</title></svelte:head>
 
 <PageShell width="wide">
-	<PageHeading eyebrow="Admin" title="Claims echo" />
-	<p class="-mt-2 text-sm text-ink-muted">
-		What your identity provider actually sends, annotated against the configuration.
-	</p>
+	<PageHeading eyebrow="Admin" title="Claims echo">
+		{#snippet sub()}
+			What your identity provider actually sends, annotated against the configuration.
+		{/snippet}
+	</PageHeading>
 
-	<Card
+	<PageSection
 		title="How this works"
 		description="The server keeps only the claims the configuration maps, so there is no stored copy to show."
 		testid="echo-explainer"
@@ -146,7 +147,7 @@
 				</Alert>
 			{/if}
 		</div>
-	</Card>
+	</PageSection>
 
 	{#if readError}
 		<Alert variant="error" title="Could not read the result" testid="echo-read-error">
@@ -155,7 +156,7 @@
 	{/if}
 
 	{#if payload}
-		<Card
+		<PageSection
 			title="Your ID token"
 			description="Every claim it carried, and which configured field consumes each one."
 			testid="echo-result"
@@ -221,6 +222,6 @@
 					</p>
 				{/if}
 			</div>
-		</Card>
+		</PageSection>
 	{/if}
 </PageShell>

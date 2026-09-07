@@ -1,14 +1,12 @@
 <script lang="ts">
-	import { expireEnrollment, setEnrollmentNotificationEmail } from '$lib/api/endpoints';
+	import { setEnrollmentNotificationEmail } from '$lib/api/endpoints';
 	import type { AdminEnrollmentDetail } from '$lib/api/endpoints';
 	import { errorMessage } from '$lib/auth';
-	import { isExpired } from '$lib/format';
 	import AccountHoldersPanel from './AccountHoldersPanel.svelte';
-	import ExpireCodeAction from './ExpireCodeAction.svelte';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
+	import PageSection from './PageSection.svelte';
 	import RedemptionHistory from './RedemptionHistory.svelte';
-	import SectionLabel from './SectionLabel.svelte';
 	import ServiceCodeFacts from './ServiceCodeFacts.svelte';
 
 	// One enrollment as an operator sees it, the body of
@@ -26,11 +24,9 @@
 	interface Props {
 		detail: AdminEnrollmentDetail;
 		now?: Date;
-		/** Called once the code is retired, so the page can leave. */
-		onexpired?: () => void;
 	}
 
-	let { detail, now = new Date(), onexpired }: Props = $props();
+	let { detail, now = new Date() }: Props = $props();
 
 	const enrollment = $derived(detail.enrollment);
 
@@ -76,8 +72,6 @@
 		}
 	}
 
-	const expired = $derived(isExpired(enrollment.expires_at, now));
-
 	// The approver in full. An operator reading an audit trail needs to be
 	// able to tell two people with similar usernames apart, which is the one
 	// place this audience is shown more than the holder's page shows.
@@ -94,14 +88,16 @@
 	     the "Approved by" row above; this is ownership. -->
 	<AccountHoldersPanel enrollmentId={enrollment.id} serviceAccount={enrollment.service_account} />
 
-	<!-- Admin controls -->
-	<div class="space-y-4 border-t border-border-subtle pt-4">
-		<SectionLabel>Admin actions</SectionLabel>
-
-		<!-- The address is editable here as well as on the holder's own page,
-		     for the deployment where the account's holders are outside ssoossh
-		     entirely and so have no page to set it on. Changing it is
-		     audited. -->
+	<!-- Admin controls, in their own card like every other block: what only
+	     an operator can do is separated from what any holder sees by being a
+	     section of its own. Retiring the code is not among them — that is the
+	     page's action, in the heading's top right, the same place an account
+	     is disabled from. -->
+	<PageSection title="Admin actions">
+		<!-- The address is editable here as well as on the holder's own
+			     page, for the deployment where the account's holders are
+			     outside ssoossh entirely and so have no page to set it on.
+			     Changing it is audited. -->
 		<div class="space-y-2">
 			<p class="text-[13px] text-ink-muted">
 				{#if storedEmail}
@@ -144,18 +140,7 @@
 				</p>
 			{/if}
 		</div>
-
-		<!-- Expire control -->
-		{#if !expired}
-			<div class="max-w-[560px]">
-				<ExpireCodeAction
-					testid="admin-expire-code"
-					expire={(reason) => expireEnrollment(enrollment.id, reason)}
-					onexpired={() => onexpired?.()}
-				/>
-			</div>
-		{/if}
-	</div>
+	</PageSection>
 
 	<!-- Last, as on the holder's page. It is the only part that grows without
 	     bound — a year of an hourly cron's redemptions — and an operator who

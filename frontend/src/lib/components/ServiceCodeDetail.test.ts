@@ -220,12 +220,15 @@ describe('ServiceCodeDetail', () => {
 	});
 
 	// Last on the page, as on the admin's: it is the only part that grows
-	// without bound, and the reader came for the facts and the controls.
-	it('should put the history below the retire control', async () => {
+	// without bound, and the reader came for the facts and the one control
+	// this component still carries.
+	it('should put the history below the notification address', async () => {
 		mockRetrievals([aRedemption()]);
 		render(ServiceCodeDetail, { enrollment: enrollment(), now });
 		const history = await screen.findByText('Redemption history');
-		const position = screen.getByTestId('expire-code').compareDocumentPosition(history);
+		const position = screen
+			.getByTestId('notification-email-input')
+			.compareDocumentPosition(history);
 		expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 	});
 
@@ -236,18 +239,11 @@ describe('ServiceCodeDetail', () => {
 		expect(screen.getByText('Expired')).toBeInTheDocument();
 	});
 
-	// Retiring a code the reader holds. An expired one needs no control: the
-	// outcome it would produce is already true.
-	it('should offer to retire a code that still works', () => {
+	// Retiring a code is the page's action, in its heading, not this
+	// component's: see routes/service-codes/[id]/page.test.ts.
+	it('should not carry a retire control of its own', () => {
 		mockRetrievals([]);
 		render(ServiceCodeDetail, { enrollment: enrollment(), now });
-		expect(screen.getByTestId('expire-code')).toBeInTheDocument();
-	});
-
-	it('should not offer to retire a code that has already expired', () => {
-		mockRetrievals([]);
-		const row = enrollment({ expires_at: '2026-08-21T12:00:00Z' });
-		render(ServiceCodeDetail, { enrollment: row, now });
 		expect(screen.queryByTestId('expire-code')).not.toBeInTheDocument();
 	});
 

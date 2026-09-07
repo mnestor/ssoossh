@@ -6,11 +6,11 @@
 	import { ApiError } from '$lib/api/client';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
-	import Card from '$lib/components/Card.svelte';
 	import DetailRow from '$lib/components/DetailRow.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import PageSection from '$lib/components/PageSection.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
 	import StatusBadge from '$lib/components/StatusBadge.svelte';
@@ -168,16 +168,11 @@
 <svelte:head><title>Certificate · ssoossh</title></svelte:head>
 
 <PageShell width="wide">
-	<a
-		href={resolve(back.route)}
-		data-testid="cert-back"
-		class="-mb-2 inline-flex w-fit items-center gap-1 text-sm text-accent transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-	>
-		<Icon name="chevron-left" size="xs" />
-		{back.label}
-	</a>
-
-	<PageHeading eyebrow="Certificate" title="Details" />
+	<PageHeading
+		eyebrow="Certificate"
+		title="Details"
+		back={{ href: resolve(back.route), label: back.label, testid: 'cert-back' }}
+	/>
 
 	{#if loadError}
 		<Alert variant="error" title="Could not load certificate">{loadError}</Alert>
@@ -204,7 +199,10 @@
 				<span class="ml-auto font-mono text-xs break-all text-ink-muted">{cert.id}</span>
 			</div>
 
-			<Card title="Certificate" description="What this certificate carries, and how long for.">
+			<PageSection
+				title="Certificate"
+				description="What this certificate carries, what it grants, and how long for."
+			>
 				<dl class="divide-y divide-border-subtle">
 					{#if principals.length > 0}
 						<DetailRow label="Principals">
@@ -230,46 +228,48 @@
 
 					<DetailRow label="Issued at">{formatDateTime(cert.issued_at)}</DetailRow>
 					<DetailRow label="Expires at">{formatDateTime(cert.expires_at)}</DetailRow>
+
+					<!-- What it grants, in the same list rather than a section of
+					     its own. Extensions and critical options are two more
+					     things signed into this certificate, exactly like the key
+					     id and the validity window above them; splitting them off
+					     made a reader cross a heading to finish reading one
+					     certificate. Still one addressable block, because the
+					     whole pair is dropped for a PAM or console certificate
+					     that carries neither. -->
+					{#if showGrants}
+						<div data-testid="cert-grants" class="divide-y divide-border-subtle">
+							<DetailRow label="Extensions">
+								{#if extensions.length > 0}
+									<span class="flex flex-wrap gap-1.5">
+										{#each extensions as extension (extension)}
+											<MonoChip>{extension}</MonoChip>
+										{/each}
+									</span>
+								{:else}
+									<span class="text-ink-muted">None</span>
+								{/if}
+							</DetailRow>
+
+							<!-- Stated even when empty: "no critical options" is a
+							     fact about the certificate worth reading, not an
+							     absence. A force-command that is not there is why an
+							     interactive shell works. -->
+							<DetailRow label="Critical options">
+								{#if criticalOptions.length > 0}
+									<span class="flex flex-col items-start gap-1.5">
+										{#each criticalOptions as [name, value] (name)}
+											<MonoChip>{name} <span class="text-ink-muted">=</span> {value}</MonoChip>
+										{/each}
+									</span>
+								{:else}
+									<span class="text-ink-muted">None</span>
+								{/if}
+							</DetailRow>
+						</div>
+					{/if}
 				</dl>
-			</Card>
-
-			{#if showGrants}
-				<Card
-					title="What it grants"
-					description="The extensions and critical options signed into the certificate."
-					testid="cert-grants"
-				>
-					<dl class="divide-y divide-border-subtle">
-						<DetailRow label="Extensions">
-							{#if extensions.length > 0}
-								<span class="flex flex-wrap gap-1.5">
-									{#each extensions as extension (extension)}
-										<MonoChip>{extension}</MonoChip>
-									{/each}
-								</span>
-							{:else}
-								<span class="text-ink-muted">None</span>
-							{/if}
-						</DetailRow>
-
-						<!-- Stated even when empty: "no critical options" is a fact
-					     about the certificate worth reading, not an absence. A
-					     force-command that is not there is why an interactive
-					     shell works. -->
-						<DetailRow label="Critical options">
-							{#if criticalOptions.length > 0}
-								<span class="flex flex-col items-start gap-1.5">
-									{#each criticalOptions as [name, value] (name)}
-										<MonoChip>{name} <span class="text-ink-muted">=</span> {value}</MonoChip>
-									{/each}
-								</span>
-							{:else}
-								<span class="text-ink-muted">None</span>
-							{/if}
-						</DetailRow>
-					</dl>
-				</Card>
-			{/if}
+			</PageSection>
 
 			{#if decidedBy}
 				<!-- Who decided, from where, and when. The modal states this as a
@@ -277,7 +277,7 @@
 				     for the fields themselves, including the approver's groups —
 				     the policy input that decided they were allowed to approve at
 				     all, and which appears nowhere in the certificate. -->
-				<Card
+				<PageSection
 					title="Decision"
 					description="The approval this certificate was issued against."
 					testid="cert-decision"
@@ -374,7 +374,7 @@
 							</dl>
 						</div>
 					{/if}
-				</Card>
+				</PageSection>
 			{/if}
 
 			{#if hasReportedContext}
@@ -390,7 +390,7 @@
 				     held accounts and the lifetime from policy. The one
 				     address the server established itself is the decision's
 				     source address above, and that is the approver's. -->
-				<Card
+				<PageSection
 					title="What asked for it"
 					description="Reported by the requesting host and never verified."
 					testid="cert-reported-context"
@@ -403,7 +403,7 @@
 							<DetailRow {label} mono>{value}</DetailRow>
 						{/each}
 					</dl>
-				</Card>
+				</PageSection>
 			{/if}
 
 			{#if cert.retrieved_source_ip}
@@ -412,7 +412,7 @@
 				     question from the decision above: that names the human who
 				     approved the code, months earlier and from a browser, and is
 				     identical on every certificate the code has ever minted. -->
-				<Card
+				<PageSection
 					title="Where it was fetched"
 					description="The redemption of the service code that produced this certificate."
 				>
@@ -433,7 +433,7 @@
 							</DetailRow>
 						{/if}
 					</dl>
-				</Card>
+				</PageSection>
 			{/if}
 		</div>
 	{/if}

@@ -4,11 +4,10 @@
 	import { errorMessage } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
 	import Button from '$lib/components/Button.svelte';
-	import Card from '$lib/components/Card.svelte';
-	import CardGrid from '$lib/components/CardGrid.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
+	import SectionLabel from '$lib/components/SectionLabel.svelte';
 	import { session } from '$lib/session.svelte';
 
 	const isAdmin = $derived(session.user?.is_admin ?? false);
@@ -84,17 +83,14 @@
 				</p>
 			{/if}
 
-			<!-- A check's height is its findings list plus the remediation
-			     note when one is shown; a passing check is title and summary
-			     alone. -->
-			<CardGrid
-				testid="diagnostics-results"
-				items={report.checks}
-				weight={(check) =>
-					check.findings.length + (check.remediation && needsAttention(check) ? 3 : 0)}
-			>
-				{#snippet card(check)}
-					<Card>
+			<!-- One column of checks separated by a rule, rather than boxes
+			     two abreast. A run is a report read in the order the server
+			     ran it: a masonry grid reordered it by height, and a reader
+			     comparing this run to the last one had to find each check
+			     again rather than read down the same list. -->
+			<div data-testid="diagnostics-results" class="flex flex-col gap-4">
+				{#each report.checks as check (check.id)}
+					<section class="rounded-lg border border-border-subtle bg-surface-muted p-4">
 						<div class="flex items-start justify-between gap-4">
 							<div>
 								<h2 class="text-base font-semibold text-ink">{check.title}</h2>
@@ -118,16 +114,14 @@
 						{/if}
 
 						{#if check.remediation && needsAttention(check)}
-							<div class="mt-3 rounded-md border border-border-subtle bg-surface-muted px-3 py-2">
-								<div class="mb-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">
-									How to fix
-								</div>
+							<div class="mt-3">
+								<SectionLabel>How to fix</SectionLabel>
 								<p class="text-sm text-ink">{check.remediation}</p>
 							</div>
 						{/if}
-					</Card>
-				{/snippet}
-			</CardGrid>
+					</section>
+				{/each}
+			</div>
 		{:else if !error}
 			<p class="text-sm text-ink-muted">
 				Press <strong>Run checks</strong> to test this deployment.
