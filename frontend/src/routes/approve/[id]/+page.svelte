@@ -140,7 +140,12 @@
 
 <svelte:head><title>Approve a certificate request · ssoossh</title></svelte:head>
 
-<PageShell width="focus">
+<!-- `wide`, the width every signed-in page uses, and with the rail beside
+     it (see $lib/nav's focusRoutes). Reaching this page means signing in, so
+     its reader is already inside the app; a 560px column floating in an
+     otherwise empty window read as a different site rather than as a focused
+     screen of this one. -->
+<PageShell width="wide">
 	{#if failure}
 		<!-- Bound once: a snippet is its own closure, so the `failure` the
 		     branch narrowed does not reach inside one. -->

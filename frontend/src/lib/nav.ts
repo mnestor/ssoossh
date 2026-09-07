@@ -64,13 +64,21 @@ export function accountNav(): NavItem[] {
 /**
  * Routes that render without the rail.
  *
- * These are unauthenticated or kiosk screens: a sign-in form, an approval
- * raised by a session elsewhere, a console code transcribed off a machine
- * that cannot print a link. A navigation column on any of them offers
- * destinations the visitor cannot follow, and on the approval screens it
- * invites the reader to wander off mid-decision.
+ * These are the screens a visitor reaches without an identity, or before
+ * one is established: a sign-in form, a console code transcribed off a
+ * machine that cannot print a link, and the notice that says an approval
+ * link is no longer good for anything. A navigation column on any of them
+ * offers destinations the visitor cannot follow.
+ *
+ * The approval screen itself is deliberately not here any more. It used to
+ * be, on the grounds that a rail beside a decision invites wandering off
+ * mid-decision — but reaching it means signing in first, so its reader is
+ * inside the app by the time they see it, and a page with no chrome read as
+ * a different site rather than as a focused one. Nothing is lost by
+ * leaving: the approval link is still there when they come back, and the
+ * decision is recorded on the server, not in the page.
  */
-const focusRoutes = ['/login', '/approve', '/c', '/approval-unavailable'];
+const focusRoutes = ['/login', '/c', '/approval-unavailable'];
 
 /**
  * isFocusRoute reports whether pathname is one of the screens that renders

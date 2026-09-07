@@ -131,18 +131,30 @@ describe('root layout', () => {
 		expect(screen.queryByText('Sign in')).not.toBeInTheDocument();
 	});
 
-	// A single-task screen gets no navigation column even for someone who
-	// could use one: an approval is a decision raised by a session
-	// elsewhere, and a rail beside it invites wandering off mid-decision.
-	it('should withhold the rail on a single-task screen', async () => {
+	// A screen reached without an identity gets no navigation column: the
+	// destinations on it are all behind a 401.
+	it('should withhold the rail on a screen reached without an identity', async () => {
 		stubAppFetch(alice);
-		resetFakePage('http://localhost/approve/req-123');
+		resetFakePage('http://localhost/c/ABCD-1234');
 
 		render(Layout, { children });
 
 		await waitFor(() => expect(session.resolved).toBe(true));
 		expect(screen.queryByTestId('app-rail')).not.toBeInTheDocument();
 		expect(screen.getByTestId('page-child')).toBeInTheDocument();
+	});
+
+	// An approval is reached by signing in, so its reader is inside the app
+	// and keeps the app's chrome. It used to be treated as a kiosk screen,
+	// which left a decision floating in an otherwise empty window.
+	it('should keep the rail on an approval', async () => {
+		stubAppFetch(alice);
+		resetFakePage('http://localhost/approve/req-123');
+
+		render(Layout, { children });
+
+		await waitFor(() => expect(session.resolved).toBe(true));
+		expect(screen.getByTestId('app-rail')).toBeInTheDocument();
 	});
 
 	// Below `lg` the rail is off-canvas, and this button is the only way

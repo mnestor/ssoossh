@@ -332,16 +332,28 @@ Every page is a `PageShell`. It owns the container, so no page spells out
 its own `max-w-`, and it names three widths rather than the nine that had
 accumulated across twenty-two hand-rolled containers:
 
-| Width   | Cap      | Used by                                              |
-| ------- | -------- | ---------------------------------------------------- |
-| `focus` | `560px`  | sign-in, an approval, a console code, the error page |
-| `wide`  | `1120px` | every page inside the app — the default              |
-| `full`  | none     | the admin tables — users, user detail, audit         |
+| Width   | Cap      | Used by                                      |
+| ------- | -------- | -------------------------------------------- |
+| `focus` | `560px`  | sign-in, a console code, the error page      |
+| `wide`  | `1120px` | every page inside the app — the default      |
+| `full`  | none     | the admin tables — users, user detail, audit |
 
 `wide` is the default because it is what the app is: every screen the rail
 navigates between, every list, and every page a list opens. `focus` is not a
 narrower version of that — it is for the screens outside the app entirely,
-signed out or holding a single decision and nothing else. `full` is not a
+reached without an identity or before one is established.
+
+The approval page moved off `focus` and onto `wide`, and out of the rail's
+focus-route list with it. Reaching it means signing in, so its reader is
+inside the app by the time they see it, and a 560px card floating in an
+otherwise empty window read as a different site rather than as a focused
+screen of this one. The argument for keeping it bare was that a navigation
+column invites wandering off mid-decision; nothing is lost by wandering,
+since the link still works on return and the decision is recorded on the
+server rather than in the page. `ApprovalView` dropped its own 560px cap for
+this — a component inside `PageShell` does not get a second opinion about
+width — and the select and email field inside it grew caps of their own,
+because a form control a thousand pixels wide looks like a bug. `full` is not a
 fourth number: it opts out of the cap, for the screens where a horizontal
 scrollbar inside a centred column is worse than using the glass.
 

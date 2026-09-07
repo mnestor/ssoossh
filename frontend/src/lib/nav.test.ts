@@ -11,7 +11,6 @@ import { adminNav, isAdminRoute, isCurrent, isFocusRoute, primaryNav, accountNav
 describe('isFocusRoute', () => {
 	const cases: Array<{ name: string; pathname: string; want: boolean }> = [
 		{ name: 'the sign-in page', pathname: '/login', want: true },
-		{ name: 'an approval', pathname: '/approve/req-123', want: true },
 		{ name: 'a console code', pathname: '/c/ABCD-1234', want: true },
 		{ name: 'the approval-unavailable notice', pathname: '/approval-unavailable', want: true },
 		{ name: 'the dashboard', pathname: '/dashboard', want: false },
@@ -19,7 +18,10 @@ describe('isFocusRoute', () => {
 		// "/console" starts with "/c" but is a signed-in destination that
 		// must keep its rail.
 		{ name: 'the console login page', pathname: '/console', want: false },
-		{ name: 'a page merely starting with approve', pathname: '/approvers', want: false }
+		{ name: 'a page merely starting with approve', pathname: '/approvers', want: false },
+		// Reaching an approval means signing in first, so its reader is
+		// inside the app and keeps the app's chrome.
+		{ name: 'an approval', pathname: '/approve/req-123', want: false }
 	];
 
 	for (const { name, pathname, want } of cases) {

@@ -331,7 +331,12 @@
 	};
 </script>
 
-<div class="flex w-full max-w-[560px] flex-col gap-4">
+<!-- No width of its own: PageShell decides that, and this used to cap
+     itself at 560px, which left the card hugging the left edge once the
+     approval page moved to the app's own width. The controls inside still
+     cap themselves — a select or an email field a thousand pixels wide
+     looks like a bug. -->
+<div class="flex w-full flex-col gap-4">
 	<PageHeading title={pageCopy.title} />
 
 	<!-- One card, not six. An approval is a single decision read straight
@@ -578,7 +583,7 @@
 						<div>
 							<SectionLabel>Select service account</SectionLabel>
 							<div class="flex flex-col gap-2.5">
-								<label class="flex flex-col gap-1">
+								<label class="flex max-w-[420px] flex-col gap-1">
 									<span class="text-[13px] text-ink-muted">Account</span>
 									<select
 										bind:value={selectedServiceAccount}
@@ -640,7 +645,7 @@
 								     empty, notifications reach everyone holding the
 								     account; a team alias reaches the people who
 								     actually run the job. Editable later either way. -->
-								<label class="flex flex-col gap-1">
+								<label class="flex max-w-[420px] flex-col gap-1">
 									<span class="text-[13px] text-ink-muted">Notification address (optional)</span>
 									<input
 										type="email"
