@@ -39,6 +39,76 @@
     <title>ssoossh @VERSION@</title>
     <options customize="never" require-scripts="false" hostArchitectures="@HOSTARCH@" rootVolumeOnly="true"/>
     <domains enable_localSystem="true"/>
+
+    <!--
+      The architecture gate. hostArchitectures above does not refuse
+      anything: it declares which architectures the installer process can
+      run on natively, so an Apple silicon Mac handed this x86_64 package
+      runs the installer under Rosetta 2 and installs an Intel binary
+      happily. Only the reverse is a refusal on its own, because an Intel
+      Mac cannot execute arm64 code at all. This check is what makes the
+      wrong package say so.
+
+      The script element has to come before installation-check in document
+      order, and both are filled per package: @HOSTARCH@ is this package's
+      architecture, so one template serves both and each refuses the host it
+      is not for.
+    -->
+    <script><![CDATA[
+// Read a sysctl without letting a missing key abort the check. Keys are not
+// uniformly present: hw.optional.arm64 does not exist on Intel, and
+// sysctl.proc_translated does not exist outside Rosetta.
+function ssoosshSysctl(key)
+{
+    try {
+        var value = system.sysctl(key);
+        return value ? String(value) : '';
+    } catch (err) {
+        return '';
+    }
+}
+
+// Whether the hardware is Apple silicon, which is not the same question as
+// what this process is running as. With hostArchitectures="x86_64" the
+// installer is itself translated on Apple silicon, so anything reporting the
+// process architecture reports Intel and would pass a check that should
+// fail. Three independent signals, cheapest first:
+//
+//   sysctl.proc_translated    1 when the calling process is translated,
+//                             which for this package means the host is
+//                             Apple silicon
+//   hw.optional.arm64         1 on Apple silicon hardware
+//   machdep.cpu.brand_string  the physical CPU, "Apple M..." on Apple
+//                             silicon, an Intel string otherwise
+function ssoosshOnAppleSilicon()
+{
+    if (ssoosshSysctl('sysctl.proc_translated') == '1') {
+        return true;
+    }
+    if (ssoosshSysctl('hw.optional.arm64') == '1') {
+        return true;
+    }
+    return ssoosshSysctl('machdep.cpu.brand_string').indexOf('Apple') >= 0;
+}
+
+function ssoosshArchCheck()
+{
+    var want = '@HOSTARCH@';
+    var have = ssoosshOnAppleSilicon() ? 'arm64' : 'x86_64';
+    if (want == have) {
+        return true;
+    }
+    my.result.title = 'Wrong package for this Mac';
+    my.result.message = 'This is the @ARCHNAME@ build of the ssoossh client '
+        + '(@HOSTARCH@), and this Mac is not @ARCHNAME@. Installing it would '
+        + 'put a binary here that this Mac cannot run natively. Download the '
+        + 'package for this Mac from the ssoossh @VERSION@ release and install '
+        + 'that one instead.';
+    my.result.type = 'Fatal';
+    return false;
+}
+    ]]></script>
+    <installation-check script="ssoosshArchCheck();"/>
     <volume-check>
         <allowed-os-versions>
             <os-version min="@MINVER@"/>

@@ -599,6 +599,34 @@ jobs:
             echo "✓ $pkg: declares $declared, carries $carried"
           done
 
+      # And now the refusal itself, which is a real assertion again: the
+      # installation-check in Distribution.flat.xml is what declines the
+      # wrong package, since hostArchitectures never did. This is the only
+      # place the gate can be exercised -- it needs a Mac, and it needs one
+      # of the architecture the package is not for.
+      #
+      # Nothing is asserted about the message, only that the install does
+      # not happen and the previously installed arm64 binary is untouched.
+      - name: The amd64 package is refused on Apple silicon
+        run: |
+          set -euo pipefail
+          before=$(/usr/local/bin/ssoossh version)
+          if sudo installer -pkg dist/ssoossh-client_*_darwin_amd64.pkg \
+               -target / 2>err.log; then
+            echo "✗ the amd64 package installed on an Apple silicon host;" \
+                 "the installation-check did not run or did not refuse" >&2
+            exit 1
+          fi
+          echo "✓ refused, as the installation-check asks:"
+          sed 's/^/  /' err.log
+          after=$(/usr/local/bin/ssoossh version)
+          if [ "$before" != "$after" ]; then
+            echo "✗ the refused install still replaced the binary:" \
+                 "was '$before', now '$after'" >&2
+            exit 1
+          fi
+          echo "✓ the installed arm64 client is untouched"
+
       # The invariant this job exists to hold: nothing public is anything a
       # Mac has not accepted. Deleting an unpublished draft costs nothing and
       # tells nobody, which is exactly why the release waits here instead of
