@@ -277,18 +277,48 @@ jobs:
           # refuses, because an Application certificate cannot sign a .pkg.
           QUILL_INSTALLER_P12: ${{ steps.secrets.outputs.QUILL_INSTALLER_P12 }}
 
-      - name: Verify glibc floor (GNU build)
+      # The pkcs11 build, not the default one. Only that build is cgo, and
+      # only that build is cross-linked by zig against glibc 2.28
+      # (.goreleaser.yml); the default server build is CGO_ENABLED=0 and
+      # static, so it carries no GLIBC symbols at all and has no floor to
+      # check -- which is exactly what the step below asserts about it. This
+      # step read that artifact until now and died on its own "static
+      # binary?" branch.
+      #
+      # Both arches, for the same reason the step below takes both: the floor
+      # comes from a per-arch zig target string, so a wrong one on arm64 is
+      # invisible from amd64.
+      #
+      # At most 2.28, not exactly 2.28. A floor is a ceiling on what the
+      # binary may require, and the two arches need not reach the same
+      # highest symbol; only a version above the floor costs someone a
+      # platform.
+      - name: Verify glibc floor (pkcs11 build)
         run: |
           set -euo pipefail
-          GLIBC_MAX=$(objdump -T dist/server-linux-build_linux_amd64_v1/ssoosshd 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -1)
-          echo "Maximum GLIBC version in ssoosshd: $GLIBC_MAX"
-          if [ "$GLIBC_MAX" = "GLIBC_2.28" ]; then
-            echo "✓ glibc floor is 2.28 (expected)"
-          elif [ -z "$GLIBC_MAX" ]; then
-            echo "✗ Could not determine GLIBC version (static binary?)"
-            exit 1
-          else
-            echo "✗ GLIBC version $GLIBC_MAX is newer than 2.28 floor"
+          FLOOR=GLIBC_2.28
+          found=0
+          for BINARY in dist/server-linux-pkcs11-build_linux_*/ssoosshd; do
+            [ -f "$BINARY" ] || continue
+            found=$((found + 1))
+            # `|| true` so that no match reaches the checks below rather than
+            # killing the step under pipefail having printed nothing at all.
+            GLIBC_MAX=$(objdump -T "$BINARY" 2>/dev/null | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -1 || true)
+            echo "Maximum GLIBC version in $BINARY: ${GLIBC_MAX:-none}"
+            if [ -z "$GLIBC_MAX" ]; then
+              echo "✗ no GLIBC symbols; this build lost cgo and cannot dlopen a PKCS#11 module"
+              exit 1
+            fi
+            HIGHEST=$(printf '%s\n%s\n' "$GLIBC_MAX" "$FLOOR" | sort -V | tail -1)
+            if [ "$HIGHEST" = "$FLOOR" ]; then
+              echo "✓ $GLIBC_MAX is at or below the $FLOOR floor"
+            else
+              echo "✗ $GLIBC_MAX is newer than the $FLOOR floor"
+              exit 1
+            fi
+          done
+          if [ "$found" -eq 0 ]; then
+            echo "✗ no binaries matched dist/server-linux-pkcs11-build_linux_*/ssoosshd"
             exit 1
           fi
 
