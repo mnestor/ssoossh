@@ -74,16 +74,35 @@
 			.join(', ')
 	);
 
+	// Whether the certificate still works, which is the question the outcome
+	// mark cannot answer — and the one a reader actually brings to a row they
+	// are looking at.
+	//
+	// It is a state rather than a record, so it is the one thing on the row
+	// that changes while the page is open: `now` ticks, and a certificate
+	// that expires under the reader's eyes says so.
+	const expired = $derived(isExpired(cert.expires_at, now));
+
 	// Validity is the requested lifetime, not the time left — the row records
 	// what was granted, and "valid for 8h" stays true after it expires.
 	const validFor = $derived(
 		Math.floor((new Date(cert.expires_at).getTime() - new Date(cert.issued_at).getTime()) / 1000)
 	);
 
-	const detail = $derived(
-		Number.isFinite(validFor) && validFor > 0
-			? `${event} ${relativeTime(cert.issued_at, now)} · valid for ${formatDuration(validFor)}`
-			: `${event} ${relativeTime(cert.issued_at, now)}`
+	const detail = $derived(`${event} ${relativeTime(cert.issued_at, now)}`);
+
+	// The granted lifetime, or the state that replaces it. "Valid for 8h" is
+	// what was granted and stays true forever; once the window has closed it
+	// is also no longer the thing the reader wants from the row, so the
+	// expired certificate says so instead of reciting a lifetime it no
+	// longer has. Empty when the record carries no usable window at all,
+	// which drops the whole indicator rather than printing "valid for 0s".
+	const validity = $derived(
+		expired
+			? 'expired'
+			: Number.isFinite(validFor) && validFor > 0
+				? `valid for ${formatDuration(validFor)}`
+				: ''
 	);
 
 	// How the request was decided. A certificate exists only because one was
@@ -101,15 +120,6 @@
 	// An icon rather than the pill this used to be: a pill costs a word's
 	// width plus its padding on every row to answer a yes or a no.
 	const outcome = $derived(cert.decided_by_outcome === 'denied' ? 'denied' : 'approved');
-
-	// Whether the certificate still works, which is the question the outcome
-	// mark beside it cannot answer — and the one a reader actually brings to
-	// a row they are looking at.
-	//
-	// It is a state rather than a record, so it is the one thing on the row
-	// that changes while the page is open: `now` ticks, and a certificate
-	// that expires under the reader's eyes says so.
-	const expired = $derived(isExpired(cert.expires_at, now));
 </script>
 
 <!-- eslint-disable svelte/no-navigation-without-resolve --
@@ -132,7 +142,36 @@
 			class="grid min-w-0 flex-1 gap-x-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1fr)] xl:items-baseline"
 		>
 			<span class="block truncate font-mono text-[13px]">{subject}</span>
-			<span class="mt-0.5 block truncate text-xs text-ink-muted xl:mt-0">{detail}</span>
+			<!-- The lifetime and the state of it, on one line: the mark used to
+			     sit in the indicators on the far right, a column away from the
+			     "valid for 8h" it qualifies, so a reader had to pair them
+			     across the row. -->
+			<span class="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-ink-muted xl:mt-0">
+				<span class="truncate">{detail}</span>
+				{#if validity}
+					<span aria-hidden="true">·</span>
+					<!-- The words carry the state now, so the glyph beside them is
+					     decorative and hidden: an aria-label here would replace
+					     "valid for 8h" with "Still valid" and lose the lifetime.
+					     The title stays for a pointer, which gets no text on
+					     hover otherwise. -->
+					<span
+						title={expired ? 'Expired' : 'Still valid'}
+						data-testid="cert-validity"
+						data-valid={expired ? 'false' : 'true'}
+						class="flex flex-shrink-0 items-center gap-1"
+					>
+						<span aria-hidden="true" class={expired ? 'text-ink-muted' : 'text-granted'}>
+							<!-- One drawing in two conditions. The expired state used
+							     to borrow a warning triangle, which asks the reader to
+							     act; a certificate past its validity is a settled fact
+							     and needs nothing from them. -->
+							<Icon name={expired ? 'certificate-off' : 'certificate'} size="xs" />
+						</span>
+						<span class="whitespace-nowrap">{validity}</span>
+					</span>
+				{/if}
+			</span>
 			{#if principals}
 				<span class="mt-px block truncate text-xs text-ink-muted xl:mt-0">
 					principals: <span class="font-mono">{principals}</span>
@@ -143,38 +182,24 @@
 
 	{#if trailing}
 		{@render trailing()}
-	{:else}
-		<!-- Titles as well as accessible names: on a pointer these icons are
-		     the only thing there, and "expired" or "denied" has to be
-		     readable without opening the row. -->
+	{:else if showOutcome}
+		<!-- Titles as well as accessible names: on a pointer this icon is the
+		     only thing there, and "denied" has to be readable without opening
+		     the row.
+
+		     StatusBadge's own glyphs for the two outcomes, which are also the
+		     ones the outcome filter chips carry, so the mark on a row is the
+		     chip that selected it. -->
 		<span class="flex flex-shrink-0 items-center gap-2">
 			<span
-				title={expired ? 'Expired' : 'Still valid'}
-				aria-label={expired ? 'Expired' : 'Still valid'}
-				data-testid="cert-validity"
-				data-valid={expired ? 'false' : 'true'}
-				class={expired ? 'text-ink-muted' : 'text-granted'}
+				title={outcome === 'denied' ? 'Denied' : 'Approved'}
+				aria-label={outcome === 'denied' ? 'Denied' : 'Approved'}
+				data-testid="cert-outcome"
+				data-outcome={outcome}
+				class={outcome === 'denied' ? 'text-danger' : 'text-granted'}
 			>
-				<!-- One drawing in two conditions. The expired state used to
-				     borrow a warning triangle, which asks the reader to act; a
-				     certificate past its validity is a settled fact and needs
-				     nothing from them. -->
-				<Icon name={expired ? 'certificate-off' : 'certificate'} size="sm" />
+				<Icon name={outcome === 'denied' ? 'circle-x' : 'circle-check'} size="sm" />
 			</span>
-			{#if showOutcome}
-				<!-- StatusBadge's own glyphs for the two outcomes, which are
-				     also the ones the outcome filter chips carry, so the mark
-				     on a row is the chip that selected it. -->
-				<span
-					title={outcome === 'denied' ? 'Denied' : 'Approved'}
-					aria-label={outcome === 'denied' ? 'Denied' : 'Approved'}
-					data-testid="cert-outcome"
-					data-outcome={outcome}
-					class={outcome === 'denied' ? 'text-danger' : 'text-granted'}
-				>
-					<Icon name={outcome === 'denied' ? 'circle-x' : 'circle-check'} size="sm" />
-				</span>
-			{/if}
 		</span>
 	{/if}
 </a>

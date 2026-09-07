@@ -44,15 +44,36 @@ describe('CertRow', () => {
 			expect(screen.getByTestId('cert-validity')).toHaveAttribute('data-valid', 'false');
 		});
 
-		// The icon is the whole indicator, so it has to carry a name: a
-		// pointer gets the title, everything else gets the label.
+		// The indicator names its own state in words, so a reader who cannot
+		// see the glyph beside them still gets it. A pointer gets the title.
 		it('should name the state it is reporting', () => {
 			render(CertRow, {
 				cert: cert({ expires_at: '2026-08-22T11:00:00Z' }),
 				now,
 				href: '/certs/cert-1'
 			});
-			expect(screen.getByLabelText('Expired')).toBeInTheDocument();
+			expect(screen.getByTitle('Expired')).toBeInTheDocument();
+		});
+
+		// The mark sits beside the lifetime it qualifies, and once the window
+		// has closed the lifetime is no longer what the reader wants from the
+		// row: the state replaces it rather than sitting next to it.
+		it('should say expired in place of the lifetime when the window has closed', () => {
+			render(CertRow, {
+				cert: cert({ expires_at: '2026-08-22T11:00:00Z' }),
+				now,
+				href: '/certs/cert-1'
+			});
+			expect(screen.getByTestId('cert-validity')).toHaveTextContent('expired');
+		});
+
+		it('should not recite the granted lifetime once the certificate has expired', () => {
+			render(CertRow, {
+				cert: cert({ expires_at: '2026-08-22T11:00:00Z' }),
+				now,
+				href: '/certs/cert-1'
+			});
+			expect(screen.queryByText(/valid for/)).not.toBeInTheDocument();
 		});
 
 		// It is a state rather than a record, so it moves with the clock the
@@ -129,6 +150,13 @@ describe('CertRow', () => {
 	it('should report the granted lifetime rather than the time remaining', () => {
 		render(CertRow, { cert: cert(), now, href: '/certs/cert-1' });
 		expect(screen.getByText(/valid for 8h/)).toBeInTheDocument();
+	});
+
+	// The lifetime and the mark that qualifies it are one indicator, so the
+	// mark carries the words rather than sitting a column away from them.
+	it('should carry the lifetime inside the validity indicator', () => {
+		render(CertRow, { cert: cert(), now, href: '/certs/cert-1' });
+		expect(screen.getByTestId('cert-validity')).toHaveTextContent('valid for 8h');
 	});
 
 	it('should use the event wording it is given', () => {
