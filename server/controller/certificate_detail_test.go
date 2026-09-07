@@ -39,6 +39,13 @@ func (d *detailCertService) ListForIdentity(_ context.Context, _ *service.Identi
 	return nil, nil, nil
 }
 
+// not covered: the detail route never lists denials; this exists only to
+// satisfy service.CertificateProvider. The denial list is exercised in
+// certificates_denied_test.go.
+func (d *detailCertService) ListDeniedForIdentity(_ context.Context, _ *service.Identity, _ *string, _ int) ([]service.DeniedRequest, *string, error) {
+	return nil, nil, nil
+}
+
 func (d *detailCertService) GetByID(_ context.Context, id string, _ *service.Identity, _ *config.Config) (service.CertificateWithDecision, error) {
 	d.gotID = id
 	return d.result, d.err

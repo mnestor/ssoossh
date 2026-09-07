@@ -192,6 +192,14 @@ type CertificateListEnvelope struct {
 	Error *string                          `json:"error"`
 }
 
+// DeniedRequestListEnvelope is GET /api/decisions/denied's body. Cursor
+// pagination, same "after" and "limit" parameters as the certificate list
+// it is read alongside.
+type DeniedRequestListEnvelope struct {
+	Data  webtypes.DeniedRequestListResponse `json:"data" validate:"required"`
+	Error *string                            `json:"error"`
+}
+
 // CertificateListAdminEnvelope is GET /api/admin/certificates/history's body.
 type CertificateListAdminEnvelope struct {
 	Data  webtypes.CertificateListAdminResponse `json:"data" validate:"required"`

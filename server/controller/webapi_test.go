@@ -32,6 +32,12 @@ type fakeCertificateService struct {
 	certs      []model.Certificate
 	err        error
 	gotSubject string
+
+	denials        []service.DeniedRequest
+	deniedCursor   *string
+	deniedErr      error
+	deniedSubject  string
+	gotDeniedAfter *string
 }
 
 func (f *fakeCertificateService) ListForIdentity(_ context.Context, identity *service.Identity, _ *string, _ int) ([]service.CertificateWithDecision, *string, error) {
@@ -41,6 +47,14 @@ func (f *fakeCertificateService) ListForIdentity(_ context.Context, identity *se
 		out = append(out, service.CertificateWithDecision{Certificate: c, Decision: nil})
 	}
 	return out, nil, f.err
+}
+
+// denials is what ListDeniedForIdentity answers with, and deniedSubject
+// records the identity it was scoped by.
+func (f *fakeCertificateService) ListDeniedForIdentity(_ context.Context, identity *service.Identity, after *string, _ int) ([]service.DeniedRequest, *string, error) {
+	f.deniedSubject = identity.Subject
+	f.gotDeniedAfter = after
+	return f.denials, f.deniedCursor, f.deniedErr
 }
 
 // mockUserDatabase implements a minimal interface for testing CurrentUserHandler's

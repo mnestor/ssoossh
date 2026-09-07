@@ -656,6 +656,51 @@ type CertificateListResponse struct {
 	NextCursor   *string               `json:"next_cursor,omitempty"`
 }
 
+// DeniedRequestResponse is one denial in the caller's own history.
+//
+// Deliberately not a CertificateResponse with empty fields: a denial issues
+// nothing, so it has no serial, key id, fingerprint or validity window, and
+// zero values for those would put a row on the history page that reads like
+// a certificate nobody can find. The client renders this shape as its own
+// kind of row.
+type DeniedRequestResponse struct {
+	// ID is the decision's id, not a certificate's -- there is no
+	// certificate. It is what the audit event for this denial carries.
+	ID string `json:"id" validate:"required"`
+
+	// CertificateRequestID is the request that was refused.
+	CertificateRequestID string `json:"certificate_request_id" validate:"required"`
+
+	// Type is what was asked for. Empty when the request row behind the
+	// decision is gone: the decisions table is the permanent one by design,
+	// so the client must render a row whose type it does not know.
+	Type model.CertificateType `json:"type,omitempty"`
+
+	DecidedAt time.Time `json:"decided_at" validate:"required"`
+
+	// DecidedSourceIP is the address the denial was made from -- the
+	// decider's browser, server-observed, not anything the requester
+	// claimed.
+	DecidedSourceIP string `json:"decided_source_ip,omitempty"`
+
+	// ReportedUsername and ReportedHostname are the "user@host" the request
+	// claimed for itself, self-reported by an unauthenticated caller and
+	// never verified. They are here because they are what makes a denial
+	// identifiable a month later: "I refused a console login on rack07" is
+	// a memory, "I refused request 4f2a" is not.
+	ReportedUsername string `json:"reported_username,omitempty"`
+	ReportedHostname string `json:"reported_hostname,omitempty"`
+}
+
+// DeniedRequestListResponse is the data payload for the cursor-paginated
+// denial list. Ordered newest first. NextCursor is the id of the last
+// decision in this page, passed as "after" for the next; nil when no more
+// pages exist.
+type DeniedRequestListResponse struct {
+	Denials    []DeniedRequestResponse `json:"denials" validate:"required"`
+	NextCursor *string                 `json:"next_cursor,omitempty"`
+}
+
 // CertificateListAdminResponse is the payload for the admin certificate history
 // endpoint, showing certificates across all users with offset pagination and metadata.
 type CertificateListAdminResponse struct {

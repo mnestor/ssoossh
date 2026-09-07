@@ -390,6 +390,10 @@ components:
       - CertificateRequestStatusExpired
       - CertificateRequestStatusFailed
     model.CertificateType:
+      description: |-
+        Type is what was asked for. Empty when the request row behind the
+        decision is gone: the decisions table is the permanent one by design,
+        so the client must render a row whose type it does not know.
       enum:
       - user
       - service
@@ -477,6 +481,15 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/webtypes.CurrentUserResponse'
+        error:
+          type: string
+      required:
+      - data
+      type: object
+    openapidoc.DeniedRequestListEnvelope:
+      properties:
+        data:
+          $ref: '#/components/schemas/webtypes.DeniedRequestListResponse'
         error:
           type: string
       required:
@@ -1625,6 +1638,53 @@ components:
       - subject
       - user_own_service_accounts
       - username
+      type: object
+    webtypes.DeniedRequestListResponse:
+      properties:
+        denials:
+          items:
+            $ref: '#/components/schemas/webtypes.DeniedRequestResponse'
+          type: array
+          uniqueItems: false
+        next_cursor:
+          type: string
+      required:
+      - denials
+      type: object
+    webtypes.DeniedRequestResponse:
+      properties:
+        certificate_request_id:
+          description: CertificateRequestID is the request that was refused.
+          type: string
+        decided_at:
+          type: string
+        decided_source_ip:
+          description: |-
+            DecidedSourceIP is the address the denial was made from -- the
+            decider's browser, server-observed, not anything the requester
+            claimed.
+          type: string
+        id:
+          description: |-
+            ID is the decision's id, not a certificate's -- there is no
+            certificate. It is what the audit event for this denial carries.
+          type: string
+        reported_hostname:
+          type: string
+        reported_username:
+          description: |-
+            ReportedUsername and ReportedHostname are the "user@host" the request
+            claimed for itself, self-reported by an unauthenticated caller and
+            never verified. They are here because they are what makes a denial
+            identifiable a month later: "I refused a console login on rack07" is
+            a memory, "I refused request 4f2a" is not.
+          type: string
+        type:
+          $ref: '#/components/schemas/model.CertificateType'
+      required:
+      - certificate_request_id
+      - decided_at
+      - id
       type: object
     webtypes.DiagnosticCheckResult:
       properties:
@@ -4271,6 +4331,51 @@ paths:
       summary: Create a user certificate request
       tags:
       - client
+  /api/decisions/denied:
+    get:
+      description: |-
+        The half of a decision history that issues nothing. /api/certs
+        reads the certificates table, and a denial never produces a
+        row in it, so denials are served here and the client
+        interleaves the two by time.
+
+        Scoped by the caller's own decision records, with no parameter
+        to widen it. Uses cursor-based pagination (not offset).
+      parameters:
+      - description: Decision ID to start after (cursor)
+        in: query
+        name: after
+        schema:
+          type: string
+      - description: Maximum denials to return (default 25, max 100)
+        in: query
+        name: limit
+        schema:
+          type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.DeniedRequestListEnvelope'
+          description: Denials, newest first, with cursor for next page
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: Invalid limit or cursor
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
+          description: No valid session
+      security:
+      - sessionCookie: []
+      summary: The caller's denied certificate requests
+      tags:
+      - web
   /api/users/me:
     get:
       description: Sourced primarily from the session, with extra fields hydrated

@@ -16,10 +16,12 @@
 	// *their* key. The approval URL reaches a human one way: their own client
 	// prints it.
 	//
-	// Denied requests cannot appear here yet: the list endpoint returns
-	// issued certificates, and a denial never produces one. Every row is
-	// therefore an approval until the server exposes decisions in their own
-	// right.
+	// Every row here is an approval, which is now a choice rather than a
+	// limit: /api/decisions/denied exists and the full history at /logs/me
+	// interleaves it. This page is the five most recent things, and it is
+	// the one screen somebody lands on rather than navigates to — a refusal
+	// belongs in the history they open deliberately, not in the summary
+	// they get by signing in.
 	let allCertificates = $state<CertificateRecord[]>([]);
 	let nextCursor = $state<string | null>(null);
 	let loadError = $state<string | null>(null);

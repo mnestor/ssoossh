@@ -51,6 +51,12 @@ type CertificateProvider interface {
 	// Scoped by the requesting identity's user row.
 	ListForIdentity(ctx context.Context, identity *Identity, after *string, limit int) ([]CertificateWithDecision, *string, error)
 
+	// ListDeniedForIdentity returns the requests identity denied, newest
+	// first, with the same cursor paging. Separate from ListForIdentity
+	// because a denial produces no certificate and so has no row in the
+	// table that one reads. Scoped by the decision's own subject snapshot.
+	ListDeniedForIdentity(ctx context.Context, identity *Identity, after *string, limit int) ([]DeniedRequest, *string, error)
+
 	// GetByID returns the certificate identified by id if the caller has
 	// permission to read it. Authorization: the certificate's approving user
 	// (the one whose users.id matches certificate.user_id), or any identity with
@@ -272,6 +278,132 @@ func (s *CertificateService) ListForIdentity(ctx context.Context, identity *Iden
 			Decision:    decision,
 			Retrieval:   retrieval,
 		})
+	}
+
+	return out, nextCursor, nil
+}
+
+// DeniedRequest is one denial out of the caller's own history: a decision
+// row with no certificate behind it, because a denial issues nothing.
+//
+// It is deliberately not a model.Certificate with empty fields. A denied
+// request has no serial, no key id, no fingerprint and no validity window,
+// and inventing zero values for them would put a row on a history page that
+// reads like a certificate nobody can find.
+type DeniedRequest struct {
+	Decision model.CertificateRequestDecision
+
+	// Type is what was asked for, read from the request the decision names.
+	// Empty when that row is gone: certificate_requests is not pruned today,
+	// but the decisions table is the permanent one by design (see
+	// model.CertificateRequestDecision), so this join is allowed to miss.
+	Type model.CertificateType
+}
+
+// ListDeniedForIdentity returns the requests this identity denied, newest
+// first, with the same cursor-based paging as ListForIdentity.
+//
+// It exists because a certificate history built from the certificates table
+// can only ever show approvals: a denial produces no certificate, so the
+// half of somebody's decisions that says "no" was invisible. That is the
+// half an incident review asks about first.
+//
+// Scoped by the decision's own subject snapshot rather than by a users row.
+// Decisions carry copied identity values and no user foreign key on purpose
+// -- a decider's identity is frozen at decision time -- and subject is the
+// one field of that snapshot that is stable across renames, which is why it
+// is what authentication.fields.subject names.
+func (s *CertificateService) ListDeniedForIdentity(ctx context.Context, identity *Identity, after *string, limit int) ([]DeniedRequest, *string, error) {
+	query := s.db.WithContext(ctx).
+		Where("certificate_request_decisions.subject = ?", identity.Subject).
+		Where("certificate_request_decisions.outcome = ?", model.CertificateRequestDecisionDenied)
+
+	// Seek predicate on (decided_at, id), matching ListForIdentity's on
+	// (issued_at, id): two denials can land in the same second, and ordering
+	// by the timestamp alone would let one of them fall through a page
+	// boundary.
+	if after != nil {
+		var cursor model.CertificateRequestDecision
+		err := s.db.WithContext(ctx).
+			Where("subject = ? AND id = ?", identity.Subject, *after).
+			First(&cursor).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil, fmt.Errorf("cursor decision not found or does not belong to this user")
+			}
+			return nil, nil, fmt.Errorf("failed to look up cursor decision: %w", err)
+		}
+		query = query.Where(
+			"certificate_request_decisions.decided_at < ? OR (certificate_request_decisions.decided_at = ? AND certificate_request_decisions.id < ?)",
+			cursor.DecidedAt, cursor.DecidedAt, *after)
+	}
+
+	// The type is the only thing worth joining for: everything else a denied
+	// row shows -- who denied it, when, and what the requesting host claimed
+	// about itself -- is on the decision already.
+	type rawRow struct {
+		DecisionID                   string
+		DecisionCertificateRequestID string
+		DecisionOutcome              model.CertificateRequestDecisionOutcome
+		DecisionSubject              string
+		DecisionUsername             string
+		DecisionEmail                string
+		DecisionSourceIP             string
+		DecisionReportedUsername     *string
+		DecisionReportedHostname     *string
+		DecisionDecidedAt            time.Time
+		RequestType                  *model.CertificateType
+	}
+
+	var results []rawRow
+	if err := query.
+		Model(&model.CertificateRequestDecision{}).
+		Select(`certificate_request_decisions.id as decision_id,
+			certificate_request_decisions.certificate_request_id as decision_certificate_request_id,
+			certificate_request_decisions.outcome as decision_outcome,
+			certificate_request_decisions.subject as decision_subject,
+			certificate_request_decisions.username as decision_username,
+			certificate_request_decisions.email as decision_email,
+			certificate_request_decisions.source_ip as decision_source_ip,
+			certificate_request_decisions.reported_username as decision_reported_username,
+			certificate_request_decisions.reported_hostname as decision_reported_hostname,
+			certificate_request_decisions.decided_at as decision_decided_at,
+			certificate_requests.type as request_type`).
+		Joins("LEFT JOIN certificate_requests ON certificate_requests.id = certificate_request_decisions.certificate_request_id").
+		Order("certificate_request_decisions.decided_at DESC, certificate_request_decisions.id DESC").
+		Limit(limit + 1).
+		Scan(&results).Error; err != nil {
+		return nil, nil, fmt.Errorf("failed to list denied requests: %w", err)
+	}
+
+	var nextCursor *string
+	if len(results) > limit {
+		results = results[:limit]
+		if len(results) > 0 {
+			nextCursor = &results[len(results)-1].DecisionID
+		}
+	}
+
+	out := make([]DeniedRequest, 0, len(results))
+	for _, r := range results {
+		denied := DeniedRequest{
+			Decision: model.CertificateRequestDecision{
+				ID:                   r.DecisionID,
+				CertificateRequestID: r.DecisionCertificateRequestID,
+				Outcome:              r.DecisionOutcome,
+				Subject:              r.DecisionSubject,
+				Username:             r.DecisionUsername,
+				Email:                r.DecisionEmail,
+				SourceIP:             r.DecisionSourceIP,
+				ReportedUsername:     derefOrEmpty(r.DecisionReportedUsername),
+				ReportedHostname:     derefOrEmpty(r.DecisionReportedHostname),
+				DecidedAt:            r.DecisionDecidedAt,
+			},
+		}
+		if r.RequestType != nil {
+			denied.Type = *r.RequestType
+		}
+		out = append(out, denied)
 	}
 
 	return out, nextCursor, nil

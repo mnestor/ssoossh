@@ -422,6 +422,24 @@ func newCertificateListResponse(certsWithDecisions []service.CertificateWithDeci
 	}
 }
 
+// newDeniedRequestListResponse converts denied decisions to their wire
+// shape, wrapped with the cursor for the next page.
+func newDeniedRequestListResponse(denials []service.DeniedRequest, nextCursor *string) webtypes.DeniedRequestListResponse {
+	out := make([]webtypes.DeniedRequestResponse, 0, len(denials))
+	for _, d := range denials {
+		out = append(out, webtypes.DeniedRequestResponse{
+			ID:                   d.Decision.ID,
+			CertificateRequestID: d.Decision.CertificateRequestID,
+			Type:                 d.Type,
+			DecidedAt:            d.Decision.DecidedAt,
+			DecidedSourceIP:      d.Decision.SourceIP,
+			ReportedUsername:     d.Decision.ReportedUsername,
+			ReportedHostname:     d.Decision.ReportedHostname,
+		})
+	}
+	return webtypes.DeniedRequestListResponse{Denials: out, NextCursor: nextCursor}
+}
+
 // newCertificateResponseFromWithDecision converts a single certificate+decision pair
 // to its wire shape for the detail endpoint.
 func newCertificateResponseFromWithDecision(cd service.CertificateWithDecision) webtypes.CertificateResponse {

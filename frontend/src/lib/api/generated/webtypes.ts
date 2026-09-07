@@ -716,6 +716,57 @@ export interface CertificateListResponse {
 	next_cursor?: string;
 }
 /**
+ * DeniedRequestResponse is one denial in the caller's own history.
+ * Deliberately not a CertificateResponse with empty fields: a denial issues
+ * nothing, so it has no serial, key id, fingerprint or validity window, and
+ * zero values for those would put a row on the history page that reads like
+ * a certificate nobody can find. The client renders this shape as its own
+ * kind of row.
+ */
+export interface DeniedRequestResponse {
+	/**
+	 * ID is the decision's id, not a certificate's -- there is no
+	 * certificate. It is what the audit event for this denial carries.
+	 */
+	id: string;
+	/**
+	 * CertificateRequestID is the request that was refused.
+	 */
+	certificate_request_id: string;
+	/**
+	 * Type is what was asked for. Empty when the request row behind the
+	 * decision is gone: the decisions table is the permanent one by design,
+	 * so the client must render a row whose type it does not know.
+	 */
+	type?: CertificateType;
+	decided_at: string;
+	/**
+	 * DecidedSourceIP is the address the denial was made from -- the
+	 * decider's browser, server-observed, not anything the requester
+	 * claimed.
+	 */
+	decided_source_ip?: string;
+	/**
+	 * ReportedUsername and ReportedHostname are the "user@host" the request
+	 * claimed for itself, self-reported by an unauthenticated caller and
+	 * never verified. They are here because they are what makes a denial
+	 * identifiable a month later: "I refused a console login on rack07" is
+	 * a memory, "I refused request 4f2a" is not.
+	 */
+	reported_username?: string;
+	reported_hostname?: string;
+}
+/**
+ * DeniedRequestListResponse is the data payload for the cursor-paginated
+ * denial list. Ordered newest first. NextCursor is the id of the last
+ * decision in this page, passed as "after" for the next; nil when no more
+ * pages exist.
+ */
+export interface DeniedRequestListResponse {
+	denials: DeniedRequestResponse[];
+	next_cursor?: string;
+}
+/**
  * CertificateListAdminResponse is the payload for the admin certificate history
  * endpoint, showing certificates across all users with offset pagination and metadata.
  */

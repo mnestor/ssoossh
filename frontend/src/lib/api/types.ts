@@ -32,6 +32,8 @@ export type {
 	ConfigSection,
 	ConfigSetting,
 	CurrentUserResponse as CurrentUser,
+	DeniedRequestListResponse,
+	DeniedRequestResponse as DeniedRequest,
 	DiagnosticCheckResult,
 	DiagnosticsResponse,
 	DisableUserConsequences,

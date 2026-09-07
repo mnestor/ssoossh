@@ -7,7 +7,14 @@
 	// is, and always shown rather than gated behind an icon-scope preference:
 	// on a list row the type is the primary identifier, not decoration.
 	interface Props {
-		type: CertificateType;
+		/**
+		 * Undefined only for a denial whose request row has gone: the
+		 * decisions table outlives certificate_requests by design, so what
+		 * was asked for is not always still knowable. The badge says so
+		 * rather than picking a type, since an invented one is a wrong
+		 * answer where a blank is a missing one.
+		 */
+		type?: CertificateType;
 	}
 
 	let { type }: Props = $props();
@@ -28,8 +35,8 @@
 </script>
 
 <span
-	aria-label="Certificate type: {labels[type] ?? type}"
+	aria-label="Certificate type: {(type && (labels[type] ?? type)) || 'unknown'}"
 	class="inline-flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-md border border-border-subtle text-ink-muted"
 >
-	<Icon name={icons[type] ?? 'zap'} size="xs" />
+	<Icon name={(type && icons[type]) || 'zap'} size="xs" />
 </span>

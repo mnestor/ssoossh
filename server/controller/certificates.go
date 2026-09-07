@@ -22,6 +22,10 @@ func NewCertificateController(
 	cc := &certificateController{certificateService: certificateService, config: cfg}
 
 	group.GET("/certs", sessionAuthMiddleware, cc.listHandler)
+	// Its own path rather than a segment under /certs, which is already a
+	// wildcard: /certs/:id would swallow it, and a denial is not a
+	// certificate anyway -- that is the whole reason this route exists.
+	group.GET("/decisions/denied", sessionAuthMiddleware, cc.deniedHandler)
 	group.GET("/certs/:id", sessionAuthMiddleware, cc.detailHandler)
 }
 
@@ -29,6 +33,23 @@ func NewCertificateController(
 type certificateController struct {
 	certificateService service.CertificateProvider
 	config             *config.Config
+}
+
+// parsePageLimit reads the shared page size for both history endpoints:
+// 25 by default, 100 at most, and the default for anything unparseable
+// rather than an error -- a bad limit is a client bug, not a reason to
+// refuse somebody their own history.
+func parsePageLimit(raw string) int {
+	const defaultPageSize = 25
+	const maxPageSize = 100
+	if raw == "" {
+		return defaultPageSize
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed <= 0 {
+		return defaultPageSize
+	}
+	return min(parsed, maxPageSize)
 }
 
 // Scoping is the service's job (see CertificateService.ListForIdentity) and
@@ -66,18 +87,7 @@ func (cc *certificateController) listHandler(g *gin.Context) {
 		after = &afterStr
 	}
 
-	// Parse limit with defaults and bounds.
-	const defaultPageSize = 25
-	const maxPageSize = 100
-	limit := defaultPageSize
-	if limitStr := g.Query("limit"); limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
-			if parsed > maxPageSize {
-				parsed = maxPageSize
-			}
-			limit = parsed
-		}
-	}
+	limit := parsePageLimit(g.Query("limit"))
 
 	certs, nextCursor, err := cc.certificateService.ListForIdentity(g.Request.Context(), identity, after, limit)
 	if err != nil {
@@ -86,6 +96,53 @@ func (cc *certificateController) listHandler(g *gin.Context) {
 	}
 
 	respondData(g, newCertificateListResponse(certs, nextCursor))
+}
+
+// deniedHandler returns the caller's own denials, newest first, with the
+// same cursor paging /api/certs uses. Query parameters: after (cursor,
+// optional), limit (default 25, max 100).
+//
+// Scoped by the decision's subject snapshot, with no parameter to widen it,
+// for the same reason listHandler has none.
+//
+// @Summary     The caller's denied certificate requests
+// @Description The half of a decision history that issues nothing. /api/certs
+// @Description reads the certificates table, and a denial never produces a
+// @Description row in it, so denials are served here and the client
+// @Description interleaves the two by time.
+// @Description
+// @Description Scoped by the caller's own decision records, with no parameter
+// @Description to widen it. Uses cursor-based pagination (not offset).
+// @Tags        web
+// @Produce     json
+// @Param       after   query    string false   "Decision ID to start after (cursor)"
+// @Param       limit   query    int    false   "Maximum denials to return (default 25, max 100)"
+// @Success     200 {object} openapidoc.DeniedRequestListEnvelope "Denials, newest first, with cursor for next page"
+// @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid limit or cursor"
+// @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
+// @Security    sessionCookie
+// @Router      /api/decisions/denied [get]
+func (cc *certificateController) deniedHandler(g *gin.Context) {
+	identity, ok := middleware.Identity(g)
+	if !ok {
+		handleError(g, &errorresponses.UnauthorizedError{})
+		return
+	}
+
+	var after *string
+	if afterStr := g.Query("after"); afterStr != "" {
+		after = &afterStr
+	}
+
+	limit := parsePageLimit(g.Query("limit"))
+
+	denials, nextCursor, err := cc.certificateService.ListDeniedForIdentity(g.Request.Context(), identity, after, limit)
+	if err != nil {
+		handleError(g, err)
+		return
+	}
+
+	respondData(g, newDeniedRequestListResponse(denials, nextCursor))
 }
 
 // detailHandler handles GET /api/certs/:id: returns a single certificate by ID

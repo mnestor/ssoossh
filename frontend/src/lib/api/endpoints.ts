@@ -10,6 +10,7 @@ import type {
 	ApproveResult,
 	CertificateListAdminResponse,
 	CertificateListResponse,
+	DeniedRequestListResponse,
 	CertificateResponse,
 	CurrentUser,
 	DenyResult,
@@ -145,6 +146,29 @@ export function listCertificates(
 	}
 	const url = params.toString() ? `/certs?${params.toString()}` : '/certs';
 	return request<CertificateListResponse>(url, { signal });
+}
+
+/**
+ * GET /api/decisions/denied — the requests the caller denied, newest first.
+ *
+ * Its own endpoint because /api/certs reads the certificates table and a
+ * denial never writes a row there. The history page interleaves the two by
+ * time.
+ */
+export function listDeniedRequests(
+	signal?: AbortSignal,
+	after?: string | null,
+	limit?: number
+): Promise<DeniedRequestListResponse> {
+	const params = new URLSearchParams();
+	if (after) {
+		params.append('after', after);
+	}
+	if (limit) {
+		params.append('limit', limit.toString());
+	}
+	const url = params.toString() ? `/decisions/denied?${params.toString()}` : '/decisions/denied';
+	return request<DeniedRequestListResponse>(url, { signal });
 }
 
 /** GET /api/certs/:id — a single certificate's full details. */
