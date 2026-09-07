@@ -430,7 +430,7 @@ func containsGroup(haystack []string, needle string) bool {
 
 // AuditConfig configures the append-only administrative audit stream: an
 // ordered record of who did what, to whom, and when. See
-// docs/proposals/audit-log.md.
+// https://mnestor.github.io/ssoossh/operations/audit-log/.
 //
 // The stream has two sinks and they are not equals. The Logging destination
 // below is the archive: one JSON line per event, unconditionally, for an

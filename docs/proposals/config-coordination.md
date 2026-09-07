@@ -4,6 +4,12 @@
 `file:line` anchors below were verified against `5d23809` (2026-08-24) and
 will drift.
 
+**Re-validated at `03d090d` (2026-09-07):** both load-bearing facts still
+hold. Leader election still does not exist (`server/bootstrap/scheduler.go`
+names it as future work and nothing implements it), and `ssoosshd sign`
+still runs without a database (`server/cmd/sign.go:14`). Line numbers in the
+table below have drifted; the facts they carry have not.
+
 > **Before planning from this document**, re-run the checks in
 > [Provenance](#provenance-what-was-verified-and-how). Two of the load-bearing
 > facts (that leader election does not exist, and that `ssoosshd sign` has no
@@ -68,7 +74,7 @@ The output is a report an admin acts on by editing a file and restarting.
 | `SignerConfig` is squashed, so its keys are top-level in YAML | `server/config/types.go:41` |
 | `FIPS` is a `*bool`, so unset differs from false | `server/config/types.go:65` |
 | `Config.FIPSEnabled()` resolves unset against the runtime's own FIPS mode | `server/config/types.go`, `internal/fipsmode` |
-| Three startup modes exist, and `ssoosshd sign` has **no database** | `docs/configuration.md:154-158` |
+| Three startup modes exist, and `ssoosshd sign` has **no database** | [Startup modes](https://mnestor.github.io/ssoossh/operations/startup-modes/), `server/cmd/sign.go:14` |
 | Auditors already have a redacted effective-config endpoint | `server/controller/admin.go:37` (route), `:61` (handler) |
 | Its response shape is a hand-written subset of the config | `server/webtypes/webtypes.go:349` (`EffectiveConfigResponse`) |
 | Jobs are registered on a shared scheduler with no leader gating | `server/job/scheduler.go:87`, `server/service/scheduler.go:11` |
@@ -333,7 +339,9 @@ have.
 Each instance exposes `/api/admin/config/digest`, the UI polls them all. A
 load balancer hides individual instances, so there is nothing to address.
 This only works in a deployment that already has per-instance DNS, which is
-not the deployment shape `docs/configuration.md:129` describes.
+not the deployment shape
+[Startup modes](https://mnestor.github.io/ssoossh/operations/startup-modes/)
+describes.
 
 ### Rejected: a shared config source
 
@@ -605,7 +613,7 @@ Steps 1 and 2 are worth doing even if nothing after them is ever built.
 | Config is loaded once, from file plus embedded defaults | `grep -n "func NewConfig" -A 40 server/config/config.go` |
 | `cookie_key` is the only cross-instance rule today | `grep -n "multi_instance is enabled" server/config/config.go` |
 | Signer config is squashed to top-level keys | `grep -n "squash" server/config/types.go` |
-| `ssoosshd sign` runs without a database | `sed -n '154,159p' docs/configuration.md` |
+| `ssoosshd sign` runs without a database | `sed -n '10,20p' server/cmd/sign.go` |
 | Leader election does not exist | `grep -rn "leader" server/ --include=*.go` |
 | Notifications already deduplicate by queue group | `grep -n "notifiers" -B 6 server/pubsub/pubsub.go` |
 | Unlisted topics get fan-out, not a queue group | `grep -n "func subjectCalculator" -A 22 server/pubsub/pubsub.go` |

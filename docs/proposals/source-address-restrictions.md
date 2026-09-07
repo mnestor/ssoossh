@@ -4,6 +4,12 @@
 `file:line` anchor below was verified against `5d23809` (2026-08-24) and will
 drift.
 
+**Re-validated at `03d090d` (2026-09-07):** every fact in "What exists today"
+still holds, including the three the design leans on. Only the line numbers
+have moved -- the pin is still rebuilt from the observed IP at
+`server/service/lifetimepolicy.go:410`, and `service enroll` still sends no
+addresses.
+
 > **Before planning from this document**, re-run the verification pass in
 > [Provenance](#provenance-what-was-verified-and-how), and read the reasoning
 > in [Decisions](#decisions-and-the-reasoning-behind-each) rather than only
@@ -101,7 +107,7 @@ deployment can configure either, both, or neither.
 | Retrieval row shape | `server/model/enrollment.go:62-81` | `source_ip`, `certificate_serial`, `succeeded` |
 | Notification registry | `server/notify/notify.go:72-76` | Appending a `Definition` adds a kind |
 | Notification queueing | `server/service/notification.go:76` | Never blocks the caller, never fails the operation |
-| User certificates are not pinned | `docs/decisions.md:87-92` | Decided: people move, services sit still |
+| User certificates are not pinned | [Decisions](https://mnestor.github.io/ssoossh/project/decisions/), "Pinning user certificates to a source address" | Decided: people move, services sit still |
 
 Three facts from that table drive most of what follows:
 
@@ -636,7 +642,8 @@ questions; this document answers them:
    *checked* at retrieval, but the networks it checks against are frozen at
    approval.
 4. **Whether user certificates get a pin.** No, unchanged
-   (`docs/decisions.md:87-92`).
+   ([Decisions](https://mnestor.github.io/ssoossh/project/decisions/),
+   "Pinning user certificates to a source address").
 5. **Startup validation of a `/0` pin.** Unrepresentable rather than warned
    about: `max_expansion` is validated into 8..32 and 32..128, so no selection
    can reach a default route.
@@ -783,7 +790,8 @@ decided it should.
 administrator's bound on what approvers may do. An approver who can raise
 their own ceiling does not have one.
 
-**Pinning user certificates.** `docs/decisions.md:87-92`, unchanged. People
+**Pinning user certificates.** [Decisions](https://mnestor.github.io/ssoossh/project/decisions/),
+"Pinning user certificates to a source address", unchanged. People
 move between office, VPN, hotel, and tether; a pinned user certificate turns
 every network change into a failed login for no gain that a shorter lifetime
 does not already provide. The note there about users who ssh onward from
@@ -883,7 +891,8 @@ Verified by direct read: `client/cmd/service_enroll.go:73`;
 `server/service/notification.go:72-80`; `server/mail/sender.go:15-22`;
 `server/webtypes/webtypes.go:140`; `server/config/types_certificates.go:82-88`;
 `frontend/src/lib/components/ApprovalView.svelte:160-200`;
-`docs/decisions.md:87-92`; `docs/email-notifications.md:13`.
+[Decisions](https://mnestor.github.io/ssoossh/project/decisions/);
+[Email notifications](https://mnestor.github.io/ssoossh/operations/email-notifications/).
 
 Verified by listing: `server/resources/migrations/postgres/` contains the init
 pair plus `20260824000000_retrieval_serial_index`; `frontend/DESIGN.md` and

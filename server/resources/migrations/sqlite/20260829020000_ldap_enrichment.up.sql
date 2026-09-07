@@ -1,6 +1,6 @@
 -- LDAP enrichment, directory sync, and the first persisted group storage.
 -- See https://mnestor.github.io/ssoossh/operations/ldap/ and
--- docs/proposals/ldap-enrichment-and-sync.md.
+-- https://mnestor.github.io/ssoossh/operations/ldap/.
 
 -- Sync bookkeeping, one row per user who has logged in while LDAP was
 -- enabled. Only known users sync: the server never enumerates the

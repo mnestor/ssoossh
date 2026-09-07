@@ -1,6 +1,6 @@
 -- Group ownership of service enrollments. An enrollment is owned by every
 -- user holding its service account, not by the single user who approved it.
--- See docs/proposals/enrollment-group-ownership.md.
+-- See https://mnestor.github.io/ssoossh/concepts/service-certificates/.
 
 -- The enrollment's service account, denormalized out of the principals JSON
 -- array it has always been the sole element of (see

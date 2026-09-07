@@ -1,9 +1,14 @@
 # Certificate lifetime policy: the unfinished half
 
-**Status:** proposal. Not scheduled.
+**Status:** proposal. Not scheduled. Partly overtaken: the claim-driven
+policy rework (2026-08-29) closed three of the items below, each marked
+**[closed]** in place.
 
-**Anchors verified at:** `73eba7c`. `file:line` references drift; re-check
-before relying on one.
+**Anchors verified at:** `73eba7c`; **Re-validated at `03d090d` (2026-09-07).** `file:line` references
+drift; re-check before relying on one. Two function names in this document
+were renamed by that rework: `evaluateSourceRule` is now `matchSourceRule`,
+and `narrowRequestedOptionsWithPolicy` is now the `narrowOptions` method on
+`policyOutcome`.
 
 The lifetime policy engine ships and is documented in
 [Certificate policy](https://mnestor.github.io/ssoossh/operations/certificate-policy/).
@@ -41,22 +46,20 @@ the rule list, the match, the tie-break, and the enable condition.
    is pinned is therefore decided by which rule grants less time, a comparison
    with no bearing on address restriction.
 3. **Two copies of the matcher**, kept in sync by hand, because one caller
-   wants a duration and the other wants an option.
+   wants a duration and the other wants an option. **[closed]** There is one
+   matcher now, `matchSourceRule` (`server/service/lifetimepolicy.go:420`),
+   called once per evaluation. Item 1 is unaffected: a single match still
+   answers both questions.
 4. **Enabling either enables both.** `isLifetimePolicyConfigured` treats a
    non-empty `source_policy` as a configured lifetime policy, switching on
    tier evaluation. An operator who wants pinning without tiering gets the
    tier machinery anyway, and walks into the next item.
-5. **Pin-only config yields zero-length certificates.**
-   `LifetimePolicy.DefaultDuration`'s doc comment promises that a zero falls
-   back to the enclosing `ValidDuration`. `evaluateDuration` does not
-   implement that fallback. With no tier matched and no `default_duration`,
-   the effective duration is zero and survives both the `min` against the
-   source rule and the ceiling clamp. The enrollment is live, but every
-   redemption produces a zero-length span the signer rejects
-   (`server/signer/sign.go`). Config that only wanted a pin must set an
-   unrelated duration to work at all. It fails closed, and it fails at
-   redemption rather than approval, so the operator sees it only when the
-   unattended job first runs.
+5. **Pin-only config yields zero-length certificates. [closed]** A
+   configured policy with no `default_duration` used to reach the signer as
+   a zero-second span, several layers from the config line that caused it.
+   `parseLifetimePolicy` (`server/service/lifetimepolicy.go:118`) now
+   rejects it at startup instead. The pin-without-tiering case still has to
+   name a `default_duration`, which is item 4's complaint, not this one's.
 6. **`extensions` has the same shape of problem**, less sharply: per-network
    extension narrowing is answered by whichever entry won the duration match.
 
@@ -90,8 +93,9 @@ CIDR. Neither is what happens.
 
 ### Related: `service enroll` reports no addresses
 
-`ssh login` and `pam_ssoossh` both populate
-`RequestedOptions.SourceAddresses` from `api.LocalInterfaceAddresses()`.
+`ssh login` populates `RequestedOptions.SourceAddresses` from
+`api.LocalInterfaceAddresses()` (`client/cmd/ssh_login.go:364`), and the PAM
+module ([ssoossh-pam](https://github.com/mnestor/ssoossh-pam)) does the same.
 `service enroll` sends an empty option set, so the only address recorded for
 an enrollment is the one ssoosshd observed. It should send them too, for
 parity and because a service host is precisely the NAT case that function's
@@ -145,25 +149,30 @@ Two supporting requirements:
 - The approval page must show a shortened lifetime *and its reason* ("this
   network: 1h") before anyone approves, for the same reason it already shows
   trimmed options.
-- **Record the decision, not just the log line.** Which rule applied belongs
-  on the approval record, not only in the access log. "Why did this
-  certificate get one hour?" is asked months later by someone reading
-  issuance history, not by someone with that day's logs open.
+- **Record the decision, not just the log line. [closed]** Which rule
+  applied is on the approval record: `policy_explanation` on
+  `certificate_request_decisions` carries the winning tier, the condition it
+  matched, the source rule, the ceilings and the effective values as one
+  structured document (`server/model/certificate_request_decision.go:81`).
+  Runtime editing would extend that record rather than introduce it.
 
 ### Prerequisites
 
 None of this is buildable today:
 
-- **There is no admin concept.** No role on `model.User`, no admin-scoped
-  endpoints. Editable policy needs an answer to "who may edit", and that
-  answer is an authorization model, not a checkbox.
+- ~~**There is no admin concept.**~~ **Met.** Admin, SOC and auditor roles
+  now exist (`server/config/types.go`, `AdminConfig`), with admin-scoped
+  endpoints in `server/controller/admin.go` and an audit stream that records
+  who did what. "Who may edit" has an answer; what it does not yet have is a
+  policy-editing permission distinct from the rest of admin.
 - **Persistence.** A policy table, plus precedence rules against the config
   file that survive a config change.
 - **An audit trail.** Who changed which rule, when, and what it was before. A
   policy that can be changed at runtime and cannot be reviewed afterwards is
   worse than one that cannot be changed.
 
-The engine has none of those prerequisites, which is why it was built first.
+The engine was built before any of these, which is why it reads from a
+config file. Two of the three now exist.
 A UI becomes a second source of rules for the same engine rather than a
 parallel implementation of it.
 

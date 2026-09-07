@@ -99,9 +99,9 @@ func TestServiceCodes_OwnerPageLoads(t *testing.T) {
 //
 // The account level is the part worth driving end to end. Ownership is
 // membership in the service account rather than a stored owner (see
-// docs/proposals/enrollment-group-ownership.md), so what this proves is that
-// a browser session holding an account reaches a code nothing in that session
-// approved.
+// https://mnestor.github.io/ssoossh/concepts/service-certificates/), so what
+// this proves is that a browser session holding an account reaches a code
+// nothing in that session approved.
 func TestServiceCodes_OwnerDrillsIntoAnAccount(t *testing.T) {
 	// A code approved through the API by alice, who holds the account.
 	svc := newServiceFixture(t)

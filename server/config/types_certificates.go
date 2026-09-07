@@ -336,7 +336,7 @@ type CertOptionsPAM struct {
 // certificate that authenticates an interactive console login on a machine
 // with no browser in front of it, where the approval travels as a short
 // code the human reads off the screen and types into the web UI (see
-// docs/proposals/console-login-pam.md).
+// https://mnestor.github.io/ssoossh/concepts/console-flow/).
 //
 // Deliberately its own type rather than a flag on cert_options.pam. A
 // console certificate buys a whole interactive session where a PAM one

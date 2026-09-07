@@ -24,9 +24,10 @@ type Enrollment struct {
 
 	// ServiceAccount is the account this enrollment was approved for, and
 	// the whole of its ownership: every user holding it owns this
-	// enrollment (see docs/proposals/enrollment-group-ownership.md). It is
-	// Principals' sole element, denormalized out of that JSON string so
-	// ownership is an indexed query in both dialects rather than a
+	// enrollment (see
+	// https://mnestor.github.io/ssoossh/concepts/service-certificates/).
+	// It is Principals' sole element, denormalized out of that JSON string
+	// so ownership is an indexed query in both dialects rather than a
 	// per-dialect JSON expression.
 	//
 	// Empty only on a row whose principals never parsed, which matches no
@@ -72,7 +73,8 @@ type Enrollment struct {
 	// of ServiceAccount. It exists for the two cases fan-out cannot reach —
 	// an account whose holders have never logged in, and a team alias that
 	// should hear about the job instead of everyone who happens to hold the
-	// account (see docs/proposals/notification-kinds-expansion.md).
+	// account (see
+	// https://mnestor.github.io/ssoossh/operations/email-notifications/).
 	//
 	// A set address sends ungated: with no single owning user there is no
 	// principled person whose per-kind preference could gate it, and the
@@ -131,9 +133,10 @@ func (EnrollmentRetrieval) TableName() string { return "enrollment_retrievals" }
 // transfer, from when an enrollment had a single owner that could be moved.
 //
 // Historical and read-only: group ownership removed reassignment (see
-// docs/proposals/enrollment-group-ownership.md), so no new rows are ever
-// written. The existing ones are kept and still rendered — they record
-// transfers that really happened, and dropping the table would erase that.
+// https://mnestor.github.io/ssoossh/concepts/service-certificates/), so no
+// new rows are ever written. The existing ones are kept and still
+// rendered — they record transfers that really happened, and dropping the
+// table would erase that.
 //
 // The distinction between FromUserID and ReassignedByUserID is why they are
 // both here: an owner moving their own code has them equal, an admin moving

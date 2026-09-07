@@ -163,9 +163,8 @@ and `pam_ssh_agent_auth` is rejected because it requires agent forwarding.
   `POST /api/certs/console`, the typed-code resolve endpoint, and the web UI
   that accepts a code. The module that drives it from a console is written
   separately in C. What is left is the QR rendering and the deferred push
-  channel; see
-  [console-login-pam.md](https://github.com/mnestor/ssoossh/blob/main/docs/proposals/console-login-pam.md).
-  Note the one correction that design makes to the line this bullet used to
+  channel; see [Console login](/ssoossh/concepts/console-flow/).
+  Note the one correction that design made to the line this bullet used to
   carry: the per-host *group* restriction belongs in the host's PAM stack
   (`pam_succeed_if` above the ssoossh line), not on the wire, because a field
   an unauthenticated caller sends can be omitted. What the server keeps is the

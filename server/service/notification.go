@@ -31,7 +31,7 @@ type Notifier interface {
 	// NotifyServiceAccount addresses every holder of a service account,
 	// resolved at delivery. A service enrollment is owned by everyone
 	// holding its account, so there is no single user to name (see
-	// docs/proposals/enrollment-group-ownership.md).
+	// https://mnestor.github.io/ssoossh/concepts/service-certificates/).
 	NotifyServiceAccount(ctx context.Context, kind notify.Kind, serviceAccount string, payload any)
 
 	// NotifyEnrollment addresses one enrollment: its own notification
@@ -664,10 +664,10 @@ func (s *NotificationService) GroupRecipients(ctx context.Context, groupName str
 // email address.
 //
 // This is the delivery half of group ownership (see
-// docs/proposals/enrollment-group-ownership.md). With no single owning
-// user there is no single address to send to, so the recipient set is
-// exactly the set of owners, resolved fresh at delivery rather than
-// captured when the event was published.
+// https://mnestor.github.io/ssoossh/concepts/service-certificates/).
+// With no single owning user there is no single address to send to, so
+// the recipient set is exactly the set of owners, resolved fresh at
+// delivery rather than captured when the event was published.
 //
 // Who holds an account is answered by usersHoldingAccount, which reads the
 // same two places a session is rebuilt from: the OIDC claim on the users

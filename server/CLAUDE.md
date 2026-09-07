@@ -18,7 +18,8 @@
   account identifiers), **Service** (non-interactive, a User-type cert),
   **PAM** (a User-type cert issued for a local PAM authentication),
   **Console** (a User-type cert for an interactive console login, approved
-  in the web UI by a typed code; see docs/proposals/console-login-pam.md)
+  in the web UI by a typed code;
+  https://mnestor.github.io/ssoossh/concepts/console-flow/)
 - There is no host certificate type, and no secure host verification to
   justify one (https://mnestor.github.io/ssoossh/project/decisions/). `ssoossh host` is local
   principal-mapping tooling only. Do not add a host type

@@ -1,5 +1,6 @@
 -- The append-only administrative audit stream. See
--- docs/proposals/audit-log.md and model.AuditEvent.
+-- https://mnestor.github.io/ssoossh/operations/audit-log/ and
+-- model.AuditEvent.
 --
 -- No foreign keys, by design: an audit entry must read the same in five
 -- years as it did the day it was written, so identity is copied into the

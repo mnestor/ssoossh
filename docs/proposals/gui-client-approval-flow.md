@@ -1,9 +1,13 @@
 # Approval flow for GUI SSH clients
 
-**Status:** proposal. Not scheduled.
+**Status:** proposal, except section 6, which shipped on 2026-08-29
+(`middleware.ApprovalClaimMiddleware`, the `claim_token_hash` /`claimed_at` /
+`claim_user_agent` columns, and the `/approve/<id>` cookie). Sections 1-5 are
+not scheduled.
 
-**Anchors verified at:** `f948499`. `file:line` references drift; re-check
-before relying on one.
+**Anchors verified at:** `f948499`; re-validated at `03d090d` (2026-09-07).
+`file:line` references drift; re-check before relying on one. One fact in
+"What exists today" has since changed and is corrected in place.
 
 A user connecting through a GUI SSH client (VS Code Remote-SSH, JetBrains,
 Fork, Tower, Cyberduck, a DBeaver tunnel, Finder-mounted SSHFS) has no
@@ -55,9 +59,15 @@ the security model plainly: "The request ID is the capability, it is an
 unguessable UUID, and holding it is what authorizes waiting on the outcome"
 (`server/controller/certrequests.go:174`). There is no binding to a client.
 
-For PAM requests the certificate's principal is the requested local username,
-not the identity that approves in the browser
-(`internal/apitypes/certrequest.go:26`).
+~~For PAM requests the certificate's principal is the requested local
+username, not the identity that approves in the browser.~~ **No longer
+true**, and the change matters to section 2: a PAM or console certificate
+now carries the accounts the *approver* holds, never the username the
+unauthenticated caller sent
+(`server/service/certtypepolicy.go:63`,
+[Approving in the browser](https://mnestor.github.io/ssoossh/guides/approving/)).
+The requested username survives as a claim the approval page renders and the
+approver judges, which is what section 2 needs it for.
 
 `ApprovalView.svelte` already renders `local_username` and `local_hostname`
 (`frontend/src/lib/components/ApprovalView.svelte:166`) and already handles

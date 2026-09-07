@@ -487,7 +487,7 @@ const maxNotificationEmailLength = 320
 // whoever sets one is already trusted to approve certificates for the
 // account, and an operator who wants a restriction can be given a config
 // knob later without a migration (see
-// docs/proposals/notification-kinds-expansion.md, "Open questions").
+// https://mnestor.github.io/ssoossh/operations/email-notifications/).
 func validateNotificationEmail(address string) (string, error) {
 	address = strings.TrimSpace(address)
 	if address == "" {
@@ -771,7 +771,7 @@ func (s *EnrollmentService) heldServiceAccounts(identity *Identity) []string {
 // ownsEnrollment reports whether identity holds enrollment's service
 // account, which is the whole of enrollment ownership — there is no stored
 // owner and no transfer (see
-// docs/proposals/enrollment-group-ownership.md).
+// https://mnestor.github.io/ssoossh/concepts/service-certificates/).
 //
 // Answered from the session identity rather than the users row, the same
 // source every other authorization decision in this server reads, so

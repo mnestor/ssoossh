@@ -124,7 +124,7 @@ func TestNewCertTypePolicies_Principals_ShouldUseUsernameForUserAndServiceCertif
 // of the field the certificate is authorized on. With no selection it now
 // names every account the approver holds, and pam_ssoossh's check 3 matches
 // those against the local account on the host. See
-// docs/proposals/pam-principal-source.md.
+// https://mnestor.github.io/ssoossh/guides/approving/.
 func TestNewCertTypePolicies_Principals_ShouldDefaultToApproverAccountsForLocalAuth(t *testing.T) {
 	t.Parallel()
 

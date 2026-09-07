@@ -24,7 +24,8 @@ const (
 	// web UI. Distinct from CertificateTypePAM because a console
 	// certificate buys a whole session where a PAM one buys a single
 	// local operation, and an operator needs to gate, time, and audit
-	// those separately (docs/proposals/console-login-pam.md).
+	// those separately
+	// (https://mnestor.github.io/ssoossh/concepts/console-flow/).
 	CertificateTypeConsole CertificateType = "console"
 )
 

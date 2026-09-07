@@ -1,6 +1,6 @@
 -- Console login: a fourth certificate type, plus the console context an
 -- approver needs to recognise the login they are being asked to authorize.
--- See docs/proposals/console-login-pam.md.
+-- See https://mnestor.github.io/ssoossh/concepts/console-flow/.
 --
 -- Postgres can alter a CHECK constraint in place, so this is the whole of
 -- it here; the SQLite side of the same migration has to rebuild both

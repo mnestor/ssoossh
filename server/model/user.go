@@ -49,7 +49,7 @@ type User struct {
 	// not disabled. A disabled user cannot authenticate and is excluded
 	// from notification fan-out; their service enrollments are untouched,
 	// belonging to the accounts rather than to them (see
-	// docs/proposals/enrollment-group-ownership.md).
+	// https://mnestor.github.io/ssoossh/concepts/service-certificates/).
 	DisabledAt *time.Time `gorm:"column:disabled_at"`
 
 	// DisabledByUserID records which admin user disabled this user (foreign

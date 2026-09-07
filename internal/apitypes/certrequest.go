@@ -166,7 +166,7 @@ type PAMRequestBody struct {
 // and a separate endpoint. The certificate type decides the approval gate,
 // the lifetime, the key ID and the approval budget, and a console session
 // and a single `sudo` want different answers to all four — see
-// docs/proposals/console-login-pam.md.
+// https://mnestor.github.io/ssoossh/concepts/console-flow/.
 //
 // The response carries a short code (CreateRequestResponse.UserCode) rather
 // than expecting anyone to transcribe an approval URL: there is nothing to

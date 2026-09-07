@@ -80,8 +80,8 @@ type CreatedRequest struct {
 	//
 	// This is the one place it is ever returned. It never reaches an SSE
 	// payload, an audit Detail map, or any response to a caller who has not
-	// authenticated — see docs/proposals/console-login-pam.md, "The code is
-	// not a capability".
+	// authenticated — see
+	// https://mnestor.github.io/ssoossh/concepts/console-flow/.
 	UserCode string
 }
 
@@ -585,8 +585,8 @@ func isUniqueConstraintViolation(err error) bool {
 // Per type because a type may shorten its own budget — today only console
 // does, and it does so because the approval window is the attacker's
 // working time in the consent-phishing case (see
-// docs/proposals/console-login-pam.md). config guarantees no type exceeds
-// the global budget.
+// https://mnestor.github.io/ssoossh/concepts/console-flow/). config
+// guarantees no type exceeds the global budget.
 //
 // An unrecognized type falls back to the global TTL rather than erroring.
 // It can only come from a hand-edited or corrupted row, and the global is

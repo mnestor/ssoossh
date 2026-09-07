@@ -23,9 +23,9 @@ const Topic = "notification.send"
 // UserID names a single recipient by users.id. ServiceAccount names an
 // audience instead — everyone holding that account — because a service
 // enrollment has no single owning user to address (see
-// docs/proposals/enrollment-group-ownership.md). Exactly one of the two is
-// set: a user-scoped kind has no account to fan out over, and an
-// enrollment-scoped one has nobody in particular to name.
+// https://mnestor.github.io/ssoossh/concepts/service-certificates/).
+// Exactly one of the two is set: a user-scoped kind has no account to fan
+// out over, and an enrollment-scoped one has nobody in particular to name.
 //
 // Neither form carries an address. Delivery resolves the current
 // recipients, their current addresses, and their current preferences at

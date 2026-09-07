@@ -19,9 +19,10 @@
 	//
 	// Account first because that is what ownership is now — a code belongs to
 	// its service account, and everyone holding the account holds the code
-	// (see docs/proposals/enrollment-group-ownership.md). The codes themselves
-	// are never part of any level: `service enroll` prints one once and the
-	// server keeps it only to match a redemption against.
+	// (see https://mnestor.github.io/ssoossh/concepts/service-certificates/).
+	// The codes themselves are never part of any level: `service enroll`
+	// prints one once and the server keeps it only to match a redemption
+	// against.
 	let enrollments = $state<ServiceEnrollment[]>([]);
 	let heldAccounts = $state<string[]>([]);
 	let loadError = $state<string | null>(null);

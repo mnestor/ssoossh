@@ -535,9 +535,9 @@ func (a *adminController) getUserHandler(g *gin.Context) {
 //
 // Service enrollments are deliberately untouched. They belong to their
 // service accounts rather than to the person who approved them (see
-// docs/proposals/enrollment-group-ownership.md), so the unattended jobs
-// behind them keep running and the account's other holders keep control of
-// them.
+// https://mnestor.github.io/ssoossh/concepts/service-certificates/), so
+// the unattended jobs behind them keep running and the account's other
+// holders keep control of them.
 //
 // @Summary     Disable a user (admin or SOC)
 // @Description Marks a user as disabled, preventing authentication. Service
@@ -1025,9 +1025,10 @@ func (a *adminController) certificateHistoryHandler(g *gin.Context) {
 // countActiveEnrollments counts the live (not yet expired) service
 // enrollments a user *approved*. Deliberately keyed on user_id, which is
 // provenance rather than ownership — the codes belong to their service
-// accounts (see docs/proposals/enrollment-group-ownership.md), so this
-// answers "what did this person create", not "what would disabling them
-// take away".
+// accounts (see
+// https://mnestor.github.io/ssoossh/concepts/service-certificates/), so
+// this answers "what did this person create", not "what would disabling
+// them take away".
 //
 // The error is returned rather than folded into a zero so each caller can
 // decide what a missing count means to it.

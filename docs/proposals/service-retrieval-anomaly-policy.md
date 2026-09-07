@@ -5,6 +5,11 @@ design below is settled to the point where an implementation plan can be
 derived from it. Every `file:line` anchor was verified against `5d23809`
 (2026-08-24) and will drift.
 
+**Re-validated at `03d090d` (2026-09-07): both facts this design leans on
+have changed.** Neither breaks the design, and both make it cheaper -- see
+the two corrections under "What exists today". Re-read that pair before
+planning from the addressing sections.
+
 > **Before planning from this document**, re-run the verification pass in
 > [Provenance](#provenance-what-was-verified-and-how), and re-read the
 > reasoning in [Decisions](#decisions-and-the-reasoning-behind-each) rather
@@ -54,7 +59,7 @@ human should look at this". The second is "do not wait for a human".
 | Admin expire lever | `server/controller/admin.go:107` | `PATCH /api/admin/enrollments/{id}/expire`, sets `expires_at = now` |
 | Notification registry | `server/notify/notify.go:74` | Adding a kind is four local edits, everything else is driven off it |
 | Notification delivery | `server/service/notification.go:314` | Resolves `users.id` -> address, checks the stored preference, renders, sends |
-| Recipient addressing | `server/notify/event.go:25` | `Event` names a recipient **only** by `users.id` |
+| Recipient addressing | `server/notify/event.go` | `Event` names a recipient by `users.id`, **or** an audience by `service_account` (+ `enrollment_id`) |
 | Transport recipient | `server/mail/sender.go:17-21` | `Outgoing.To` is already a plain address string |
 | Source address derivation | `server/controller/enrollment.go:60` | `g.ClientIP()`, i.e. subject to `http.trusted_proxies` |
 
@@ -62,11 +67,25 @@ Two facts from that table drive most of the design below:
 
 1. **`Outgoing.To` is already just a string.** Sending to a security mailbox
    needs no transport change — only a way for an `Event` to name a literal
-   address instead of a user.
-2. **Group membership is never persisted** (`server/CLAUDE.md:23`; groups
-   arrive as OIDC claims per session and are dropped). There is no query
-   that returns "the admins". Anything addressed to an administrator must be
-   addressed by configuration, not by role lookup.
+   address instead of a user. See correction 3 below.
+2. ~~**Group membership is never persisted.**~~ **No longer true.** LDAP
+   enrichment (2026-08-29) added `user_groups`
+   (`server/model/user_ldap.go:124`), indexed by `group_name` precisely for
+   notification fan-out, so a query that returns "the admins" is now
+   possible for LDAP-enriched deployments. It is still not available in an
+   OIDC-only deployment, where groups arrive as per-session claims and are
+   dropped, so **addressing by configuration remains the design that works
+   everywhere**; group lookup is an optional refinement, not a replacement.
+
+3. **`Event` can already address more than one user.** Group ownership and
+   the notification-kinds work added `ServiceAccount` and `EnrollmentID` to
+   `Event`, and delivery resolves an enrollment's own notification address
+   before falling back to fanning out over the account
+   (`server/service/notification.go`, `NotifyEnrollment`). The "name a
+   literal address instead of a user" step this design asks for is a
+   smaller change than the table above implies -- but note that no field
+   carries an address in the event itself, by deliberate design: the row is
+   read at delivery so a retried event honours the current address.
 
 ## The model
 

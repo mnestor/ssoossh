@@ -1,8 +1,11 @@
 # LDAP bind via Kerberos GSSAPI
 
-**Status:** idea. Not scheduled. Depends on
-[ldap-enrichment-and-sync.md](ldap-enrichment-and-sync.md) landing first;
-tracked separately so the enrichment work does not grow an authentication
+**Status:** idea. Not scheduled. Its one prerequisite is met: LDAP
+enrichment and directory sync shipped on 2026-08-29
+([LDAP](https://mnestor.github.io/ssoossh/operations/ldap/)), and it shipped
+with the flat `bind_dn` / `bind_password` keys this document expects to
+treat as the implicit "simple" mechanism (`server/config/types.go:218`).
+Tracked separately so the enrichment work did not grow an authentication
 subsystem.
 
 ## What

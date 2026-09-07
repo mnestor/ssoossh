@@ -4,11 +4,11 @@ package migration_test
 
 // The SQLite side of the console migration is pinned by console_test.go.
 // This is the Postgres half the design asked for
-// (docs/proposals/console-login-pam.md, "Certificate type"): the widened
-// CHECK on both tables admits a console row and still refuses anything
-// else. The two dialects change the constraint by different means (a
-// rebuild on SQLite, DROP/ADD CONSTRAINT on Postgres), so a green SQLite
-// run says nothing about this one.
+// (https://mnestor.github.io/ssoossh/concepts/console-flow/, "Its own
+// certificate type"): the widened CHECK on both tables admits a console row and
+// still refuses anything else. The two dialects change the constraint by
+// different means (a rebuild on SQLite, DROP/ADD CONSTRAINT on Postgres), so a
+// green SQLite run says nothing about this one.
 
 import (
 	"strconv"

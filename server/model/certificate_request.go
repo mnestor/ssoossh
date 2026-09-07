@@ -37,7 +37,7 @@ type CertificateRequest struct {
 	// is the host's decision, made by pam_ssoossh's check 3: an exact match
 	// against the account, or a match through its local principals-map. It
 	// used to become the certificate's principal directly; see
-	// docs/proposals/pam-principal-source.md for why that changed.
+	// https://mnestor.github.io/ssoossh/guides/approving/ for why that changed.
 	Username string `gorm:"column:username"`
 
 	// RequestedOptions is JSON-encoded. Server config (config.CertificateOptions)
@@ -120,7 +120,7 @@ type CertificateRequest struct {
 	// capability: resolving one requires a session, and it is never
 	// returned to an unauthenticated caller, written to an SSE payload, or
 	// recorded in an audit Detail map. See
-	// docs/proposals/console-login-pam.md, "The code is not a capability".
+	// https://mnestor.github.io/ssoossh/concepts/console-flow/.
 	UserCode string `gorm:"column:user_code"`
 
 	// Hostname, PAMService, TTY and RemoteHost are the console context an

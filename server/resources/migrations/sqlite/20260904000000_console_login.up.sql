@@ -1,6 +1,6 @@
 -- Console login: a fourth certificate type, plus the console context an
 -- approver needs to recognise the login they are being asked to authorize.
--- See docs/proposals/console-login-pam.md.
+-- See https://mnestor.github.io/ssoossh/concepts/console-flow/.
 --
 -- SQLite cannot alter a CHECK constraint, so both tables carrying a
 -- certificate-type CHECK are rebuilt with the documented 12-step procedure

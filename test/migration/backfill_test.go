@@ -4,8 +4,9 @@ package migration_test
 // one of them does to the rows that were already there: enrollments.
 // service_account is derived from the principals JSON, and a wrong or
 // failed derivation would silently hand every pre-existing enrollment to
-// nobody (see docs/proposals/enrollment-group-ownership.md, where the column
-// is the whole of ownership).
+// nobody (see
+// https://mnestor.github.io/ssoossh/concepts/service-certificates/, where
+// the column is the whole of ownership).
 
 import (
 	"testing"

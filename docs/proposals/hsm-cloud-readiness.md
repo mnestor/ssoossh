@@ -1,8 +1,12 @@
 # Cloud HSM readiness, and what SoftHSM can and cannot rehearse
 
-**Status: designed, nothing built.** No production code has been written for
-this. The simulation in `deploy/hsm-sim/` exists and works; every finding
-below was reproduced against commit `3ae74f6` (2026-09-07) and will drift.
+**Status: partly built.** The two pieces marked "What shipped" below are in
+the tree: the ssh-agent CA key source (`ssh_key_agent`, a fourth
+`CAKeySource`) and the static/pkcs11 build split in the release pipeline
+(`server-linux-build` and `server-linux-pkcs11-build` in `.goreleaser.yml`).
+Findings 1-5 and Decisions 1-4 are unbuilt. The simulation in
+`deploy/hsm-sim/` exists and works; every finding below was reproduced
+against commit `3ae74f6` (2026-09-07) and will drift.
 
 > **Before planning from this document**, re-run the checks in
 > [Provenance](#provenance-what-was-verified-and-how). They are cheap, and

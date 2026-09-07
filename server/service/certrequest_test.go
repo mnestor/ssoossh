@@ -1083,9 +1083,9 @@ func TestCertRequestService_Approve_ShouldRejectWhenIdentityLacksRequiredGroup(t
 // sent (req.Username), with the two set to different values so a regression
 // cannot pass by coincidence. req.Username reaching the certificate meant an
 // unauthenticated caller chose the field the certificate is authorized on;
-// see docs/proposals/pam-principal-source.md. Also checks the PAM-only
-// defaults: extensions dropped (nothing configured-permitted) and the PAM
-// key ID template rather than the user one.
+// see https://mnestor.github.io/ssoossh/guides/approving/. Also checks the PAM-only
+// defaults: extensions dropped (nothing configured-permitted) and the PAM key ID
+// template rather than the user one.
 func TestCertRequestService_Approve_ShouldQueuePAMRequestWithApproverAccountsAsPrincipals(t *testing.T) {
 	t.Parallel()
 
@@ -3483,8 +3483,8 @@ func TestEvictResolved_ShouldSucceedOnAnEmptyCache(t *testing.T) {
 // createRequestID is CreateRequest for the tests that only ever want the ID
 // out of it. CreateRequest returns a CreatedRequest so a caller can also
 // reach the request's deadline and, for a console request, its user code
-// (see docs/proposals/console-login-pam.md); almost every test here
-// predates that and cares about neither.
+// (see https://mnestor.github.io/ssoossh/concepts/console-flow/); almost
+// every test here predates that and cares about neither.
 //
 // A method rather than a free function so the call sites read the same as
 // before, and defined in a _test.go file so nothing ships it.

@@ -15,7 +15,7 @@ left here is what has no site page.
 
 | Path | What it is |
 | --- | --- |
-| [proposals/](proposals/) | Designs, mostly for work not yet built |
+| [proposals/](proposals/) | Designs for work not yet built |
 | [dev/](dev/) | Contributing and testing notes |
 | [man/](man/) | Man pages (`.1` client, `.5` config formats, `.8` server) |
 | [openapi.yaml](openapi.yaml) | The HTTP API wire contract |
@@ -77,12 +77,13 @@ pages. Run `make gendocs`.
 
 ## proposals/
 
-Designs, mostly for work that has not been built. Each states its status and
-the commit its `file:line` anchors were verified against, because those
-anchors drift.
+Designs for work that has not been built. Each states its status and the
+commit its `file:line` anchors were verified against, because those anchors
+drift.
 
-**Outstanding.** Nothing below has been built, except where a row says which
-part has.
+Nothing below has been built. Designs whose work has shipped are removed
+rather than kept: the operator-facing page on the site becomes the record,
+and the design's reasoning is in the commit that implemented it.
 
 | Document | What it covers |
 | --- | --- |
@@ -90,23 +91,10 @@ part has.
 | [service-retrieval-anomaly-policy.md](proposals/service-retrieval-anomaly-policy.md) | Alerting and locking an enrollment code redeemed from too many source networks |
 | [config-coordination.md](proposals/config-coordination.md) | Detecting and reporting configuration divergence between instances |
 | [gui-client-approval-flow.md](proposals/gui-client-approval-flow.md) | Approving for a GUI SSH client, which has no terminal to print the URL to |
-| [console-login-pam.md](proposals/console-login-pam.md) | Console login behind the identity provider: a typed code or terminal QR instead of a URL nobody can copy. Server half built; QR and push still deferred |
 | [certificate-lifetime-policy-rework.md](proposals/certificate-lifetime-policy-rework.md) | Untangling source-address pinning from the lifetime rule, and runtime-editable policy. Partly overtaken: see the doc |
+| [hsm-cloud-readiness.md](proposals/hsm-cloud-readiness.md) | What a cloud HSM/KMS backend needs, and what the SoftHSM simulation can and cannot rehearse |
 | [ldap-gssapi-bind.md](proposals/ldap-gssapi-bind.md) | Binding to the directory with a Kerberos keytab instead of a static password |
 | [enhancements.md](proposals/enhancements.md) | Small feature modifications logged for later, each too small for its own doc |
-
-**Built.** Kept for the reasoning behind each decision, which the
-operator-facing references deliberately do not carry. Each names the page to
-read instead.
-
-| Document | Now documented in |
-| --- | --- |
-| [claim-driven-certificate-policy.md](proposals/claim-driven-certificate-policy.md) | [Certificate policy](https://mnestor.github.io/ssoossh/operations/certificate-policy/) |
-| [audit-log.md](proposals/audit-log.md) | [Audit log](https://mnestor.github.io/ssoossh/operations/audit-log/) |
-| [ldap-enrichment-and-sync.md](proposals/ldap-enrichment-and-sync.md) | [LDAP](https://mnestor.github.io/ssoossh/operations/ldap/) |
-| [enrollment-group-ownership.md](proposals/enrollment-group-ownership.md) | [How it works](https://mnestor.github.io/ssoossh/concepts/), "Service certificates" |
-| [notification-kinds-expansion.md](proposals/notification-kinds-expansion.md) | [Email notifications](https://mnestor.github.io/ssoossh/operations/email-notifications/) |
-| [pam-principal-source.md](proposals/pam-principal-source.md) | [Approving in the browser](https://mnestor.github.io/ssoossh/guides/approving/), "The approval page" -- PAM and console approvers pick principals from their own accounts (commit `88eb30c`) |
 
 ## dev/
 

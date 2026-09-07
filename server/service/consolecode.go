@@ -8,7 +8,7 @@ import (
 
 // The console user code: what a machine with no browser in front of it puts
 // on screen for a human to read aloud to themselves and type into the web
-// UI. See docs/proposals/console-login-pam.md.
+// UI. See https://mnestor.github.io/ssoossh/concepts/console-flow/.
 //
 // It is a lookup key for an already-authenticated approver, never a
 // capability. Resolving one requires a session; an unauthenticated caller

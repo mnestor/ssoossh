@@ -60,7 +60,7 @@ type certTypePolicy struct {
 	// "Principal mapping"). That is why this takes no per-request context. A PAM
 	// request's req.Username used to be returned here verbatim, which made an
 	// unauthenticated caller the author of the one field the certificate is
-	// authorized on. See docs/proposals/pam-principal-source.md.
+	// authorized on. See https://mnestor.github.io/ssoossh/guides/approving/.
 	//
 	// User-type requests return the selection, or default to the approver's
 	// username when none was made. PAM requests always return every account
@@ -92,7 +92,8 @@ type certTypePolicy struct {
 
 	// usesUserCode marks a type whose requests carry a short code a human
 	// types into the web UI instead of opening a URL the client printed
-	// (docs/proposals/console-login-pam.md). Console only.
+	// (https://mnestor.github.io/ssoossh/concepts/console-flow/). Console
+	// only.
 	usesUserCode bool
 }
 

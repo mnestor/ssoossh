@@ -7,11 +7,12 @@
 	// Who else can use and manage one enrollment code.
 	//
 	// A code belongs to its service account rather than to whoever approved
-	// it (see docs/proposals/enrollment-group-ownership.md), so the row
-	// itself cannot answer "who else has this" — the approver's name is
-	// provenance, not ownership. This is that answer, and it is the same
-	// panel on the holder's page and the admin's, because it is the same
-	// fact.
+	// it (see
+	// https://mnestor.github.io/ssoossh/concepts/service-certificates/), so
+	// the row itself cannot answer "who else has this" — the approver's
+	// name is provenance, not ownership. This is that answer, and it is the
+	// same panel on the holder's page and the admin's, because it is the
+	// same fact.
 	//
 	// Loaded here rather than passed in: the list is one query per opened
 	// code, and it would be N queries on a list that never shows it.

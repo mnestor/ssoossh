@@ -205,7 +205,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 // This assertion is inverted from what it was: the certificate must name the
 // approver and the accounts they hold, and must NOT be assembled from the
 // local account the request carried. See
-// docs/proposals/pam-principal-source.md.
+// https://mnestor.github.io/ssoossh/guides/approving/.
 func TestPipeline_EndToEnd_PAM(t *testing.T) {
 	t.Parallel()
 

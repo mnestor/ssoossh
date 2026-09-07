@@ -246,9 +246,9 @@ type ServiceEnrollmentResponse struct {
 
 	// ServiceAccount is the account this code was approved for, and who
 	// owns it: everyone holding the account (see
-	// docs/proposals/enrollment-group-ownership.md). It is what the service
-	// codes page groups by, which is why it is its own field rather than
-	// left to be read out of Principals.
+	// https://mnestor.github.io/ssoossh/concepts/service-certificates/). It
+	// is what the service codes page groups by, which is why it is its own
+	// field rather than left to be read out of Principals.
 	ServiceAccount string `json:"service_account" validate:"required"`
 
 	// ApprovedByUsername is who approved this code. Provenance, not
@@ -347,7 +347,7 @@ type AdminEnrollmentResponse struct {
 
 	// ServiceAccount is the account this code was approved for, and who owns
 	// it: everyone holding the account (see
-	// docs/proposals/enrollment-group-ownership.md).
+	// https://mnestor.github.io/ssoossh/concepts/service-certificates/).
 	ServiceAccount string `json:"service_account" validate:"required"`
 
 	// ApprovedByUsername and ApprovedByEmail name the user who approved this
@@ -972,7 +972,8 @@ type AdminUserDetail struct {
 	// ServiceEnrollmentCount is how many live (not expired) service
 	// enrollments this user approved. Provenance, not a consequence of
 	// disabling them: the codes belong to their service accounts and keep
-	// working (see docs/proposals/enrollment-group-ownership.md).
+	// working (see
+	// https://mnestor.github.io/ssoossh/concepts/service-certificates/).
 	ServiceEnrollmentCount int `json:"service_enrollment_count" validate:"required"`
 
 	// CertificateCount is how many certificates have been issued to this user.
@@ -1160,9 +1161,9 @@ type AdminUserNotificationPreference struct {
 // What it mostly describes now is what disabling does *not* do. A service
 // enrollment is owned by every holder of its service account rather than by
 // the person who approved it (see
-// docs/proposals/enrollment-group-ownership.md), so a disable revokes this
-// person's access and nothing else: no enrollment expires, and every
-// unattended job keeps running.
+// https://mnestor.github.io/ssoossh/concepts/service-certificates/), so a
+// disable revokes this person's access and nothing else: no enrollment
+// expires, and every unattended job keeps running.
 type DisableUserConsequences struct {
 	// ServiceEnrollmentCount is how many live enrollments this user
 	// approved. They are unaffected — reported so the dialog can say so

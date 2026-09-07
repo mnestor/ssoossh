@@ -1,6 +1,6 @@
 -- Expanded notification catalogue: a per-enrollment notification address,
 -- and the two send-once claims the enrollment-scoped kinds need.
--- See docs/proposals/notification-kinds-expansion.md.
+-- See https://mnestor.github.io/ssoossh/operations/email-notifications/.
 
 -- The address a notification about this enrollment goes to instead of
 -- fanning out to every holder of its service account.
