@@ -383,6 +383,30 @@ chip, status badge, full id — keeps the same tint and border as a section
 but carries no heading, which is what marks it as the page's subject rather
 than a part of it.
 
+### The two certificate lists are one design
+
+`/logs/me` and `/admin/certificates` show the same rows, and they had grown
+their own answers to the same questions: different filter labels, different
+icons, different orders, the admin filters on two lines, and a search box on
+one page and not the other. `$lib/filters` states the vocabulary once —
+`typeFilters`, `statusFilters`, `outcomeFilters` — and both pages open the
+same way: search, then the filter groups on one line, then the rows, then
+the pager.
+
+The only group that differs is Outcome, and only because the data does: a
+denial issues no certificate, and the admin list reads the certificates
+table. Everything else is the same chips in the same order with the same
+glyphs, and the Status pair is the one `CertRow`'s validity indicator uses,
+so a reader filtering on "expired" sees the icon they filtered on.
+
+What is still not shared is where the filtering happens. The admin endpoint
+takes `q`, `type` and `status` and pages by offset, so its filters are
+server-side and exact. `/api/certs` takes none of them and pages by cursor,
+so the caller's own history filters what it has loaded — which means
+narrowing can empty the page until "load more" fetches the rest. That is a
+property of the two endpoints rather than of these two screens, and closing
+it means giving `/api/certs` the same parameters.
+
 ### Destructive actions: the heading, then a dialog
 
 An action that ends something lives in `PageHeading`'s `action` slot, in the
@@ -433,6 +457,7 @@ none of that.
 
   The page opens on approvals. It has always been the list of certificates somebody holds, and opening it on a mixture would change what an existing reader gets without their asking; a refusal is a thing you go looking for, so it is one click away on the outcome filter instead. That filter's third option is "Both" rather than "All", because the type tabs beside it already have an "All" and two adjacent controls offering the same word are ambiguous to read and worse to announce.
 
+- **FilterGroup**: One named group of chips — "Type: [All][User][PAM]…". The name is not decoration: below `sm` a chip is its icon alone, so without a word in front of the row there is nothing on screen saying what a tick or a shield selects; above `sm` it is what keeps two or three groups on one line from reading as one long row of unrelated buttons. Every group carries its own "any" option rather than clearing by pressing the selected chip again, which looked identical to selecting it.
 - **FilterChip**: One choice in a filter row — icon, label, pressed state. Every filter on every list is this chip: `/logs/me` filters by outcome and by type, `/admin/certificates` by type and by validity, and before this they were four controls in three styles (pill chips with icons and no focus ring, a joined segmented control with one, and `rounded-md` buttons with neither a focus ring nor `aria-pressed`). Two controls answering two questions about one list should not look like two kinds of thing; a rule between the groups is what separates them instead. Every chip is named from `sm` up and an icon below it: eight chips carrying their words wrap a filter row onto three lines on a phone, and each chip's glyph is the one the rows it selects already carry. The label stays as `sr-only` rather than `hidden`, so a chip never announces as a bare icon. That is the component's decision rather than a prop, because "which of these collapse" is not something one filter row should get to answer differently from the next.
 - **CertRow**: One certificate as a standalone, clickable card — type badge, subject, what happened and when, principals, a still-valid/expired icon, and the decision badge. The validity icon answers what the decision badge cannot: every row in a certificate list was approved, and the question a reader brings to one is "can I still use this". An icon rather than a second pill, since two badges on one row compete and this one is a yes or a no. It is a state rather than a record, so it is the one thing on the row that moves with the clock the list is rendered against. A shield, deliberately not the tick `StatusBadge` gives an approval: the two sit next to each other, and two ticks in a row would read as one fact said twice rather than as two answers to different questions. Expired takes the warning triangle `StatusBadge` already uses for an expired request, and `/admin/certificates`'s Live/Expired filter takes the same pair, so a reader filtering on "expired" sees the glyph they filtered on. Stacked below `xl`, aligned columns above it: a list of rows is the same fields over and over, and stretching a stacked row only pushes the last field further from the first.
 - **ServiceCodeRow**: One approved service enrollment as the same kind of card — the account the code mints for, when it was approved and what it hands out, how often it has been redeemed, and an active/expired pill. Never the code.

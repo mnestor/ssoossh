@@ -302,6 +302,132 @@ describe('Certificate history page', () => {
 		});
 	});
 
+	// The same three groups and the same search box the admin certificate
+	// list opens with. Everything here narrows what has been loaded, which
+	// is the tradeoff load-more paging carries.
+	describe('the filters', () => {
+		/** aCert is one issued certificate, overridable per case. */
+		function aCert(overrides: Record<string, unknown> = {}) {
+			return {
+				id: 'cert-1',
+				type: 'user' as const,
+				serial_number: '1',
+				principals: 'alice',
+				public_key_fingerprint: 'SHA256:abc123',
+				key_id: 'workstation',
+				issued_at: '2026-08-01T10:00:00Z',
+				expires_at: '2099-01-01T00:00:00Z',
+				reported_username: 'alice',
+				reported_hostname: 'alice-laptop',
+				...overrides
+			};
+		}
+
+		it('should name each filter group', async () => {
+			mockFetch({ certificates: [aCert()] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.getByTestId('outcome-filter')).toBeInTheDocument();
+			expect(screen.getByTestId('type-filter')).toBeInTheDocument();
+			expect(screen.getByTestId('status-filter')).toBeInTheDocument();
+		});
+
+		it('should narrow the list to rows matching the search term', async () => {
+			mockFetch({
+				certificates: [aCert(), aCert({ id: 'cert-2', key_id: 'buildbox' })]
+			});
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			await userEvent.type(screen.getByTestId('search-input'), 'buildbox');
+
+			await vi.waitFor(() => expect(screen.getAllByTestId('cert-row')).toHaveLength(1));
+		});
+
+		// The same fields the admin list searches, so the two boxes answer
+		// the same question.
+		it('should match a search on the principal as well as the key id', async () => {
+			mockFetch({ certificates: [aCert({ principals: 'deploy-bot' })] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			await userEvent.type(screen.getByTestId('search-input'), 'deploy-bot');
+
+			await vi.waitFor(() => expect(screen.getAllByTestId('cert-row')).toHaveLength(1));
+		});
+
+		it('should say so when the search matches nothing', async () => {
+			mockFetch({ certificates: [aCert()] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			await userEvent.type(screen.getByTestId('search-input'), 'nothing-matches-this');
+
+			await vi.waitFor(() =>
+				expect(
+					screen.getByText('Nothing in your history matches the selected filter.')
+				).toBeInTheDocument()
+			);
+		});
+
+		it('should keep only expired certificates under the expired status', async () => {
+			mockFetch({
+				certificates: [
+					aCert(),
+					aCert({ id: 'cert-2', key_id: 'old', expires_at: '2020-01-01T00:00:00Z' })
+				]
+			});
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			await userEvent.click(screen.getByTestId('status-filter-expired'));
+
+			expect(screen.getAllByTestId('cert-row')).toHaveLength(1);
+		});
+
+		it('should keep only working certificates under the live status', async () => {
+			mockFetch({
+				certificates: [
+					aCert(),
+					aCert({ id: 'cert-2', key_id: 'old', expires_at: '2020-01-01T00:00:00Z' })
+				]
+			});
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			await userEvent.click(screen.getByTestId('status-filter-live'));
+
+			expect(screen.getAllByTestId('cert-row')).toHaveLength(1);
+		});
+
+		// Validity is a property of an issued certificate. A denial is
+		// neither live nor expired, and saying otherwise would be inventing
+		// a state for something that was never issued.
+		it('should drop denials under either validity filter', async () => {
+			mockFetch({ certificates: [] }, 200, {
+				denials: [
+					{
+						id: 'dec-1',
+						certificate_request_id: 'req-1',
+						type: 'pam',
+						decided_at: '2026-08-02T10:00:00Z',
+						reported_username: 'deploy',
+						reported_hostname: 'rack07'
+					}
+				]
+			});
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			await userEvent.click(screen.getByTestId('outcome-filter-denied'));
+			expect(screen.getByTestId('denied-row')).toBeInTheDocument();
+
+			await userEvent.click(screen.getByTestId('status-filter-live'));
+			expect(screen.queryByTestId('denied-row')).not.toBeInTheDocument();
+		});
+	});
+
 	it('should display Loading… initially', () => {
 		mockFetch({ certificates: [] });
 		render(Page);

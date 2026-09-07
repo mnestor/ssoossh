@@ -5,11 +5,12 @@
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
 	import CertRow from '$lib/components/CertRow.svelte';
-	import FilterChip from '$lib/components/FilterChip.svelte';
+	import FilterGroup from '$lib/components/FilterGroup.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import Pager from '$lib/components/Pager.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
+	import { statusFilters, typeFilters } from '$lib/filters';
 
 	let certificates = $state<CertificateResponse[]>([]);
 	let pageInfo = $state({ total: 0, limit: 25, offset: 0, page: 1, page_count: 1 });
@@ -20,27 +21,6 @@
 	let loadError = $state<string | null>(null);
 	let isLoading = $state(false);
 	let hasLoaded = $state(false);
-
-	// The same chips the certificate history uses, with the same icons: two
-	// screens listing the same rows should not filter them through two
-	// different-looking controls. "All" leads the types because clearing the
-	// filter is a choice like any other; the two status chips have no "All"
-	// of their own because pressing the selected one clears it.
-	const typeFilters = [
-		{ value: '', label: 'All', icon: 'layout-grid' },
-		{ value: 'user', label: 'User', icon: 'user' },
-		{ value: 'service', label: 'Service', icon: 'cog' },
-		{ value: 'pam', label: 'PAM', icon: 'terminal' },
-		{ value: 'console', label: 'Console', icon: 'monitor' }
-	];
-
-	// The same pair, and the same glyphs, as the validity indicator on the
-	// rows below — a reader filtering to "expired" should see the icon they
-	// filtered on.
-	const statusFilters = [
-		{ value: 'live', label: 'Live', icon: 'shield-check' },
-		{ value: 'expired', label: 'Expired', icon: 'alert-triangle' }
-	];
 
 	// Which load is allowed to write to the page. Nothing cancels a request
 	// in flight, and the search box stays live while one is running, so two
@@ -118,13 +98,16 @@
 		offset = 0;
 	}
 
+	// Plain setters, not toggles. Each group carries its own "any" chip now,
+	// so clearing a filter is a chip you press rather than pressing the
+	// selected one a second time — which looked identical to selecting it.
 	function handleTypeFilter(type: string) {
-		typeFilter = typeFilter === type ? '' : type;
+		typeFilter = type;
 		offset = 0;
 	}
 
 	function handleStatusFilter(status: string) {
-		statusFilter = statusFilter === status ? '' : status;
+		statusFilter = status;
 		offset = 0;
 	}
 
@@ -142,41 +125,34 @@
 		<Alert variant="error" title="Could not load certificates">{loadError}</Alert>
 	{/if}
 
+	<!-- Search, then the filter groups on one line. Both lists that show
+	     certificate rows open the same way; see $lib/filters. -->
 	<div class="flex flex-col gap-3">
 		<SearchInput
 			label="Search certificates"
-			placeholder="Key ID, principal, fingerprint, username, email…"
+			placeholder="Key ID, principal, serial, fingerprint, owner"
 			value={searchQuery}
 			onsearch={handleSearch}
 			testid="search-input"
 		/>
 
-		<div class="flex flex-col gap-2">
-			<div data-testid="type-filter" class="flex flex-wrap items-center gap-2">
-				<span class="text-xs font-semibold text-ink-muted">Type:</span>
-				{#each typeFilters as filter (filter.value)}
-					<FilterChip
-						label={filter.label}
-						icon={filter.icon}
-						selected={typeFilter === filter.value}
-						disabled={isLoading}
-						onclick={() => handleTypeFilter(filter.value)}
-					/>
-				{/each}
-			</div>
-
-			<div class="flex flex-wrap items-center gap-2">
-				<span class="text-xs font-semibold text-ink-muted">Status:</span>
-				{#each statusFilters as filter (filter.value)}
-					<FilterChip
-						label={filter.label}
-						icon={filter.icon}
-						selected={statusFilter === filter.value}
-						disabled={isLoading}
-						onclick={() => handleStatusFilter(filter.value)}
-					/>
-				{/each}
-			</div>
+		<div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+			<FilterGroup
+				label="Type"
+				options={typeFilters}
+				selected={typeFilter}
+				disabled={isLoading}
+				onselect={handleTypeFilter}
+				testid="type-filter"
+			/>
+			<FilterGroup
+				label="Status"
+				options={statusFilters}
+				selected={statusFilter}
+				disabled={isLoading}
+				onselect={handleStatusFilter}
+				testid="status-filter"
+			/>
 		</div>
 	</div>
 

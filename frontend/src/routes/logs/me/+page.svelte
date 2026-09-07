@@ -1,20 +1,18 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { listCertificates, listDeniedRequests } from '$lib/api/endpoints';
-	import type {
-		CertificateListResponse,
-		CertificateRecord,
-		CertificateType,
-		DeniedRequest
-	} from '$lib/api/types';
+	import type { CertificateListResponse, CertificateRecord, DeniedRequest } from '$lib/api/types';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import CertRow from '$lib/components/CertRow.svelte';
 	import DeniedRow from '$lib/components/DeniedRow.svelte';
-	import FilterChip from '$lib/components/FilterChip.svelte';
+	import FilterGroup from '$lib/components/FilterGroup.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
+	import SearchInput from '$lib/components/SearchInput.svelte';
+	import { outcomeFilters, statusFilters, typeFilters } from '$lib/filters';
+	import { isExpired } from '$lib/format';
 
 	// Cursor-paginated decision history: what was issued, and what was
 	// refused. The type filter and client-side pagination apply only to
@@ -37,48 +35,23 @@
 	let isLoading = $state(false);
 	let hasLoaded = $state(false);
 
-	// Filter and pagination state
-	let selectedType = $state<CertificateType | 'all'>('all');
-
-	// Approved by default, not "all". This page has always been the list of
+	// Filter state. The vocabulary is shared with /admin/certificates —
+	// same labels, same icons, same order; see $lib/filters. Only the
+	// outcome group is this page's alone, because the admin list reads the
+	// certificates table and a denial never writes a row there.
+	//
+	// Approved by default, not both. This page has always been the list of
 	// certificates somebody holds, and that is what most visits are for;
 	// opening it on a mixture would change what an existing reader gets
 	// without their asking. A refusal is one click away instead, which is
 	// the right place for a thing you go looking for.
-	type Outcome = 'approved' | 'denied' | 'all';
-	let selectedOutcome = $state<Outcome>('approved');
+	let selectedOutcome = $state('approved');
+	let selectedType = $state('');
+	let selectedStatus = $state('');
+	let searchQuery = $state('');
 
 	let currentPage = $state(1);
 	const pageSize = 10;
-
-	// What the page opens on, and the two other views of the same history.
-	// The same chip as the type filter beside it: two controls answering two
-	// questions about one list should not look like two kinds of thing.
-	// A rule between the groups is what separates them instead.
-	//
-	// The tick and the cross are the glyphs StatusBadge gives an approval
-	// and a denial, so a chip is the badge of the rows it selects. "Both"
-	// takes `layout-grid`, the same "no filter applied" glyph the type
-	// row's "All" uses.
-	const outcomes: { value: Outcome; label: string; icon: string }[] = [
-		{ value: 'approved', label: 'Approved', icon: 'check-circle' },
-		{ value: 'denied', label: 'Denied', icon: 'x-circle' },
-		// "Both", not "All": the type tabs beside this already have an "All",
-		// and two adjacent controls offering the same word is ambiguous to
-		// read and worse to announce. There are exactly two outcomes, so
-		// naming them both is the more precise word anyway.
-		{ value: 'all', label: 'Both', icon: 'layout-grid' }
-	];
-
-	// The filter tabs, in the order they read. "All" leads because it is the
-	// state the page opens in.
-	const tabs = [
-		{ value: 'all' as const, label: 'All', icon: 'layout-grid' },
-		{ value: 'user' as const, label: 'User', icon: 'user' },
-		{ value: 'pam' as const, label: 'PAM', icon: 'terminal' },
-		{ value: 'console' as const, label: 'Console', icon: 'monitor' },
-		{ value: 'service' as const, label: 'Service', icon: 'cog' }
-	];
 
 	// What each certificate type's row is a record of.
 	const rowEvents: Record<string, string> = {
@@ -117,20 +90,22 @@
 		].sort((a, b) => b.at - a.at)
 	);
 
-	// Outcome first, then type. A denial whose request row is gone reports
-	// no type, so it survives only the "all" type filter. It has to survive
-	// that one: dropping it everywhere would quietly shorten the history
-	// rather than filter it.
+	// Outcome, then type, then validity, then the search term. Each stage
+	// narrows what the last one left, and every one of them works on what
+	// has been loaded rather than on what the server holds.
 	const byOutcome = $derived(
-		selectedOutcome === 'all'
+		selectedOutcome === ''
 			? sorted
 			: sorted.filter((entry) =>
 					selectedOutcome === 'denied' ? entry.kind === 'denial' : entry.kind === 'certificate'
 				)
 	);
 
-	const filtered = $derived(
-		selectedType === 'all'
+	// A denial whose request row is gone reports no type, so it survives
+	// only the "All" type filter. It has to survive that one: dropping it
+	// everywhere would quietly shorten the history rather than filter it.
+	const byType = $derived(
+		selectedType === ''
 			? byOutcome
 			: byOutcome.filter((entry) =>
 					entry.kind === 'certificate'
@@ -139,11 +114,67 @@
 				)
 	);
 
+	// Validity is a property of an issued certificate, so a denial is
+	// neither live nor expired and is excluded by either. That is the
+	// honest answer rather than a bug: nothing was issued to still be
+	// working.
+	const byStatus = $derived(
+		selectedStatus === ''
+			? byType
+			: byType.filter(
+					(entry) =>
+						entry.kind === 'certificate' &&
+						isExpired(entry.cert.expires_at, now) === (selectedStatus === 'expired')
+				)
+	);
+
+	/** haystack is everything about one row that a search should match. */
+	function haystack(entry: Entry): string {
+		if (entry.kind === 'certificate') {
+			const c = entry.cert;
+			return [
+				c.key_id,
+				c.principals,
+				c.serial_number,
+				c.public_key_fingerprint,
+				c.reported_username,
+				c.reported_hostname,
+				c.retrieved_source_ip
+			]
+				.filter(Boolean)
+				.join(' ')
+				.toLowerCase();
+		}
+		const d = entry.denial;
+		return [
+			d.certificate_request_id,
+			d.reported_username,
+			d.reported_hostname,
+			d.pam_service,
+			d.tty,
+			d.remote_host,
+			d.client
+		]
+			.filter(Boolean)
+			.join(' ')
+			.toLowerCase();
+	}
+
+	// The same fields the admin list searches, minus the owner: on your own
+	// history every row is yours, so searching by owner would match
+	// everything or nothing.
+	const needle = $derived(searchQuery.trim().toLowerCase());
+	const filtered = $derived(
+		needle === '' ? byStatus : byStatus.filter((entry) => haystack(entry).includes(needle))
+	);
+
 	// Reset to page 1 when either filter changes. Use void operator to
 	// suppress the linter warning about an unused value.
 	$effect(() => {
 		void selectedType;
 		void selectedOutcome;
+		void selectedStatus;
+		void needle;
 		currentPage = 1;
 	});
 
@@ -239,39 +270,39 @@
 	{:else if sorted.length === 0}
 		<p class="text-sm text-ink-muted">You have not decided any certificate requests yet.</p>
 	{:else}
-		<div class="flex flex-wrap items-center gap-2">
-			<!-- Two questions about one list — how it was decided, and what
-			     kind of thing it was — as one row of the same chip, with a
-			     rule between the groups rather than two different controls.
-			     Every chip drops its label below `sm`; see FilterChip. -->
-			<div class="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by outcome">
-				{#each outcomes as outcome (outcome.value)}
-					<FilterChip
-						label={outcome.label}
-						icon={outcome.icon}
-						selected={selectedOutcome === outcome.value}
-						onclick={() => (selectedOutcome = outcome.value)}
-						testid="outcome-filter-{outcome.value}"
-					/>
-				{/each}
-			</div>
+		<!-- Search, then the filter groups on one line. The admin
+		     certificate list opens exactly the same way; see $lib/filters. -->
+		<div class="flex flex-col gap-3">
+			<SearchInput
+				label="Search your history"
+				placeholder="Key ID, principal, serial, fingerprint, host"
+				value={searchQuery}
+				onsearch={(term) => (searchQuery = term)}
+				testid="search-input"
+			/>
 
-			<span class="h-5 w-px bg-border-subtle" aria-hidden="true"></span>
-
-			<div
-				class="flex flex-wrap items-center gap-2"
-				role="group"
-				aria-label="Filter by certificate type"
-			>
-				{#each tabs as tab (tab.value)}
-					<FilterChip
-						label={tab.label}
-						icon={tab.icon}
-						selected={selectedType === tab.value}
-						onclick={() => (selectedType = tab.value)}
-						testid="type-filter-{tab.value}"
-					/>
-				{/each}
+			<div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+				<FilterGroup
+					label="Outcome"
+					options={outcomeFilters}
+					selected={selectedOutcome}
+					onselect={(value) => (selectedOutcome = value)}
+					testid="outcome-filter"
+				/>
+				<FilterGroup
+					label="Type"
+					options={typeFilters}
+					selected={selectedType}
+					onselect={(value) => (selectedType = value)}
+					testid="type-filter"
+				/>
+				<FilterGroup
+					label="Status"
+					options={statusFilters}
+					selected={selectedStatus}
+					onselect={(value) => (selectedStatus = value)}
+					testid="status-filter"
+				/>
 			</div>
 		</div>
 
