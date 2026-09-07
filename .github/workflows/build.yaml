@@ -243,6 +243,11 @@ jobs:
           QUILL_NOTARY_KEY_ID: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_NOTARY_KEY_ID
           QUILL_SIGN_P12: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_SIGN_P12
           QUILL_SIGN_PASSWORD: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_SIGN_PASSWORD
+          # Two identities, and they are not interchangeable: quill signs the
+          # Mach-O with the Developer ID Application certificate, while the flat
+          # package around it must be signed with the Developer ID Installer one
+          # or Gatekeeper refuses the download. Both share QUILL_SIGN_PASSWORD.
+          QUILL_INSTALLER_P12: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_INSTALLER_P12
 
       - name: Save gpg key
         run: |
@@ -267,6 +272,10 @@ jobs:
           QUILL_NOTARY_KEY_ID: ${{ steps.secrets.outputs.QUILL_NOTARY_KEY_ID }}
           QUILL_SIGN_P12: ${{ steps.secrets.outputs.QUILL_SIGN_P12 }}
           QUILL_SIGN_PASSWORD: ${{ steps.secrets.outputs.QUILL_SIGN_PASSWORD }}
+          # Read by the macos-build post-hook (packaging/macos/flatpkg.sh), not
+          # by quill. Without it the script falls back to QUILL_SIGN_P12 and then
+          # refuses, because an Application certificate cannot sign a .pkg.
+          QUILL_INSTALLER_P12: ${{ steps.secrets.outputs.QUILL_INSTALLER_P12 }}
 
       - name: Verify glibc floor (GNU build)
         run: |
@@ -368,6 +377,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
+          # The step runs on any failure, including one that happened before
+          # goreleaser drafted anything. `gh release delete` treats a missing
+          # release as an error, which turns "nothing to clean up" into a
+          # second red step that buries the failure that actually mattered.
+          gh release view "$TAG" >/dev/null 2>&1 || {
+            echo "no release for $TAG; nothing to remove"
+            exit 0
+          }
           gh release delete -y "$TAG"
 
   # Gatekeeper's opinion, which is the one thing Linux cannot produce.
@@ -515,6 +532,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
+          # The step runs on any failure, including one that happened before
+          # goreleaser drafted anything. `gh release delete` treats a missing
+          # release as an error, which turns "nothing to clean up" into a
+          # second red step that buries the failure that actually mattered.
+          gh release view "$TAG" >/dev/null 2>&1 || {
+            echo "no release for $TAG; nothing to remove"
+            exit 0
+          }
           gh release delete -y "$TAG"
 
   # The Windows counterpart to macos-verify, and it exists for the same
@@ -739,7 +764,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
-        run: gh release delete -y "$env:TAG"
+        run: |
+          # Same reason as the other cleanup steps: a failure before the draft
+          # exists must not add a red step of its own.
+          # PowerShell 7.4 turns a nonzero native exit code into a terminating
+          # error under the `stop` preference GitHub prepends, so the probe is
+          # run with that off and read from $LASTEXITCODE instead.
+          $PSNativeCommandUseErrorActionPreference = $false
+          gh release view $env:TAG *> $null
+          $exists = $LASTEXITCODE -eq 0
+          $PSNativeCommandUseErrorActionPreference = $true
+          if (-not $exists) {
+            Write-Host "no release for $env:TAG; nothing to remove"
+            exit 0
+          }
+          gh release delete -y $env:TAG
 
   # Where a release becomes visible, and the only job that makes anything
   # public under a name someone would go looking for. Everything before it
@@ -894,4 +933,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
+          # The step runs on any failure, including one that happened before
+          # goreleaser drafted anything. `gh release delete` treats a missing
+          # release as an error, which turns "nothing to clean up" into a
+          # second red step that buries the failure that actually mattered.
+          gh release view "$TAG" >/dev/null 2>&1 || {
+            echo "no release for $TAG; nothing to remove"
+            exit 0
+          }
           gh release delete -y "$TAG"
