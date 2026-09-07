@@ -461,86 +461,59 @@ the vendor's C++ module -- the agent's, not the signer's. That is a
 containment win on its own: a memory-safety bug in a vendor PKCS#11 library
 can no longer corrupt the process holding the certificate pipeline.
 
-### The signer-only build
+### What shipped in the release pipeline
 
-**Status: designed, not built.** The remaining question is packaging.
+The distribution matrix, with the axis changed from "which libc" -- an
+implementation detail operators should never have had to reason about -- to
+"do you need the module in-process", which is an actual deployment decision.
+
+| | default (static) | pkcs11 (dynamic) |
+| --- | --- | --- |
+| goreleaser build | `server-linux-build`, `CGO_ENABLED=0` | `server-linux-pkcs11-build`, `-tags=nomsgpack,hsm` |
+| binaries per arch | **1** | 1, glibc 2.28 via zig |
+| `.deb` / `.rpm` | `ssoosshd` | `ssoosshd-pkcs11` |
+| `.apk` | **the same binary again** | none |
+| image | `:<ver>`, distroless/static, 2.11MB base | `:<ver>-pkcs11`, distroless/cc, 23.7MB base |
+
+Three decisions worth recording:
+
+- **`-pkcs11`, not `-hsm`.** The default build supports HSMs perfectly well
+  through ssh-agent. Naming the variant `-hsm` would imply it does not,
+  which is the confusion this whole change exists to remove.
+- **`ssoosshd-pkcs11` is a separate package name** with `Conflicts`,
+  `Replaces` and `Provides` on `ssoosshd`, because both install the same
+  `/usr/local/sbin/ssoosshd`. Without those, two packages fight over one
+  path and nobody can tell which is installed.
+- **The `-musl` image and the musl build are gone.** They existed so a
+  musl-built module could be mounted into a musl container, and
+  `alpine:3.20` ships no `libstdc++`, so that never worked. The static
+  default build removes the reason for a musl variant anyway: it runs on
+  Alpine like anywhere else, and the `.apk` now carries it. This also
+  retires the unresolved `apk` cross-install question from Decision 1
+  rather than answering it.
+
+The release workflow's musl linkage check is replaced by one asserting the
+invariant that actually matters now: the default build is statically linked
+and the pkcs11 build is not. A regression in either direction is otherwise
+silent -- cgo creeping back into the default build gives it an undeclared
+libc floor, and cgo falling out of the pkcs11 build makes PKCS#11 dead on
+arrival.
+
+### The signer-only question, still open
 
 `BootstrapSigner` is already clean -- pub/sub, CA key, signer handler, key
-announcer, and no database, HTTP, OIDC or LDAP. So an `hsm`-tagged artifact
-intended to run `ssoosshd sign` on the machine the token is attached to fits
-the architecture the documentation already recommends, and aligns packaging
-with the split the security model already argues for.
+announcer, and no database, HTTP, OIDC or LDAP -- so restricting the pkcs11
+artifact to `sign` mode would fit the architecture the documentation already
+recommends.
 
-Two shapes, and the choice is not obvious:
-
-- **A tagged build of the same binary** (`ssoosshd-hsm`), all modes
-  available. Simple, no capability loss, no new `cmd/`. Someone running full
-  mode with a directly attached HSM on one box keeps working.
-- **A separate `cmd/ssoosshd-signer` restricted to sign mode.** Smaller
-  surface, forces the recommended architecture -- and removes single-box
-  full-mode-plus-HSM, which is a legitimate deployment today.
-
-**[judgement]** Prefer the first as the build mechanism and let packaging
-and documentation steer people toward running it as a signer. Restricting
-the binary removes a working deployment to enforce a preference, and the
-tag already delivers the security benefit that motivated the split: the
-internet-facing default build has no `dlopen`, no cgo, and no vendor C++ in
-its address space. Note also that a separate `cmd/` would not shrink the
-binary much without splitting `server/bootstrap`, since the signer path
-still links the package that imports the database layer.
-
-Not yet done either way: `.goreleaser.yml` build entries, the image
-variants, and `deploy/` wiring.
-
-## Work items
-
-| Tier | Item | Blocks |
-| --- | --- | --- |
-| 1 | `distroless/cc-debian12` for the glibc image; update `Dockerfile`'s header | every PKCS#11 module, vendor and software alike |
-| 1 | musl `libstdc++` route, per Decision 1 | the `-musl` image only |
-| 1 | Fix the "Docker and containers" recipe in `hsm.md` | operators following documentation that cannot work |
-| 2 | Tri-state PIN (Finding 2) | providers authenticating out of band |
-| 2 | Session-death detection and bounded re-`Configure` in `HSMKeySource` (Finding 3) | any network-attached HSM, after any transient event |
-| 2 | Deadline on the signing path (Finding 4) | a hung appliance taking the request goroutine with it |
-| 3 | HSM reachability in readiness, distinct from liveness (Finding 5) | traffic routed to a signer that cannot sign |
-| 3 | Fault-injection tests behind a build tag, mirroring `Makefile:229`'s `softhsm` tag | makes tier 2 verifiable at all |
-| 4 | Per-provider documentation, including the environment variables vendor modules require | operators integrating a specific cloud HSM |
-| 4 | `ssoossh-hsm-tools` release wiring in `.goreleaser.yml` | the provisioning story outside the simulation |
-| 1 | `.goreleaser.yml` entries and images for the two builds, per the build-split section | shipping any of the above |
-| 4 | Decide the signer-only packaging shape | how HSM operators get a binary |
-
-**Done since this document was first written**, in order:
-
-- `ssh_key_file`, `ssh_key_passphrase`, `ssh_key_passphrase_file`. These
-  address no finding above -- a file-backed key is still read into the
-  signer's memory -- but they remove the requirement that the CA sit inside
-  the config file.
-- `ssh_key_agent` (`AgentKeySource`), which does: the key never enters the
-  signer's address space, Ed25519 works, and it carries the Finding 3
-  reconnect fix the HSM path still lacks.
-- The `hsm` build tag, making the default build cgo-free and static.
-
-**What this does to the findings.** For the default build, Finding 1 no
-longer applies -- there is no module to load, and the image base is
-`distroless/static`. Finding 2 is unchanged but now only affects the tagged
-build. Findings 3, 4 and 5 remain open **for the PKCS#11 path**, and are
-solved on the agent path (3) or unchanged (4, 5).
-
-The honest summary: the recommended arrangement is now split mode, with the
-signer reaching its token through an ssh-agent, and PKCS#11 linked directly
-only where an operator has a specific reason to. The tagged build exists for
-that reason, not as the default.
-
-Sketch for the tier-2 recovery work, to keep it inside the existing
-struct-based DI: keep the fail-at-startup behaviour untouched, and have
-`Signer(ctx)` return a wrapper that, on a session-level PKCS#11 error, takes
-a mutex, closes `ctx11`, re-`Configure`s with bounded backoff, re-resolves
-the key pair, and retries once. `wrapCASigner`'s algorithm gating is
-unaffected. Distinguishing session-level errors from genuine signing
-failures is the part that needs care: `CKR_DEVICE_ERROR`,
-`CKR_SESSION_HANDLE_INVALID`, `CKR_SESSION_CLOSED`, `CKR_TOKEN_NOT_PRESENT`,
-`CKR_USER_NOT_LOGGED_IN` all warrant a reconnect, while a key-type or
-mechanism rejection must not trigger an endless retry loop.
+**[judgement]** Not done, and I would leave it. The pkcs11 artifact is
+currently the same binary with a tag, so all modes work. Restricting it
+would remove single-box full-mode-plus-HSM, a legitimate deployment, to
+enforce a preference; and the tag already delivers the security benefit that
+motivated the split, since the internet-facing default build has no
+`dlopen`, no cgo and no vendor C++ in its address space. A separate `cmd/`
+would also not shrink the binary much without splitting `server/bootstrap`,
+which still imports the database layer.
 
 ## Provenance: what was verified, and how
 

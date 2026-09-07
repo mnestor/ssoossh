@@ -17,11 +17,10 @@
 #   cp ../../server/config/defaults.yaml config/ssoosshd.yaml
 # then merge config/hsm.direct.yaml into it and set http.address to 0.0.0.0.
 #
-# ssoosshd image: build it locally first. The published image is currently
-# distroless/base-debian12, which cannot dlopen a C++ PKCS#11 module at all
-# (see ../../docs/proposals/hsm-cloud-readiness.md, Tier 1). Until that
-# lands:
-#   make server-linux-build-local          # from the repo root
+# ssoosshd image: build it locally first. These compose files configure
+# `hsm:`, which the default (cgo-free) build refuses at startup, so the
+# binary has to carry -tags=hsm:
+#   make server-linux-pkcs11-build-local   # from the repo root
 #   docker compose -f docker-compose.direct.yml build ssoosshd
 
 name: ssoossh-hsm-sim-direct
@@ -50,8 +49,8 @@ services:
   ssoosshd:
     build:
       context: ../..
-      dockerfile: deploy/hsm-sim/Dockerfile.ssoosshd-sim
-    image: ssoossh-server:hsm-sim
+      dockerfile: Dockerfile.pkcs11
+    image: ssoossh-server:pkcs11-sim
     depends_on:
       hsm-provision:
         condition: service_completed_successfully

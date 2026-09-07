@@ -17,14 +17,14 @@ real HSM. The reasoning is in
 
 ## Prerequisites
 
-The published `ssoossh-server` image is currently built on
-`distroless/base-debian12`, which cannot `dlopen` a C++ PKCS#11 module at
-all. `Dockerfile.ssoosshd-sim` is the same image on `distroless/cc-debian12`,
-which can. Build a server binary first:
+These compose files configure `hsm:`, which the default (cgo-free) server
+build refuses at startup. They build the image from the repo's
+`Dockerfile.pkcs11` (`distroless/cc-debian12`), so the binary has to carry
+`-tags=hsm`:
 
 ```bash
 cd ../..            # repo root
-make server-linux-build-local
+make server-linux-pkcs11-build-local
 ```
 
 Then prepare a config, following the same convention as
@@ -163,8 +163,7 @@ announced key active, that accumulates CAs rather than failing loudly.
 
 | Path | Purpose |
 | --- | --- |
-| `Dockerfile.hsm-tools` | `debian:12-slim` plus softhsm2, opensc, p11-kit, socat. Matches the server image's Debian base so staged modules are ABI-correct |
-| `Dockerfile.ssoosshd-sim` | the server image on `cc-debian12`, pending that change upstream |
+| `Dockerfile.hsm-tools` | `debian:12-slim` plus softhsm2, opensc, p11-kit, socat. Matches `Dockerfile.pkcs11`'s Debian base so staged modules are ABI-correct |
 | `scripts/provision-token.sh` | idempotent token and CA key creation; stages `libsofthsm2.so` |
 | `scripts/stage-client.sh` | stages `p11-kit-client.so` and `libffi` for the network topology |
 | `scripts/gen-certs.sh` | throwaway CA and mTLS keypairs for the tunnel |

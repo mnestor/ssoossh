@@ -1,24 +1,33 @@
-# Runtime image for ssoosshd, glibc/linux-amd64+arm64: ghcr.io/mnestor/ssoossh-server
+# Runtime image for ssoosshd, linux-amd64+arm64: ghcr.io/mnestor/ssoossh-server
 # (unsuffixed tags). Assembled by goreleaser's dockers_v2 pipe
 # (.goreleaser.yml) straight from the server-linux-build binary that step
 # already compiled and version-stamped (internal/version) -- there is no
-# compile step here, and no ARG to override the stamp with. See
-# Dockerfile.musl for the Alpine/musl counterpart image, and
-# https://mnestor.github.io/ssoossh/operations/hsm/ for why the two exist (musl for a bind-mounted
-# PKCS#11 module built against musl, not host-OS compatibility -- Docker
-# already abstracts that away).
+# compile step here, and no ARG to override the stamp with.
+#
+# base-static, not base-debian12: the default server build is
+# CGO_ENABLED=0 and statically linked, so it needs no libc at all. That is
+# what removed the glibc/musl image split this project used to carry --
+# there is no Dockerfile.musl any more, because a static binary runs on
+# Alpine as readily as anywhere else. This base is 2.11MB against
+# base-debian12's 20.8MB, and it has no shell, no package manager and no
+# libc for anything to link against.
+#
+# static-debian12 still carries what ssoosshd actually needs:
+# /etc/ssl/certs/ca-certificates.crt for HTTPS to an OIDC provider,
+# /etc/passwd for the nonroot user, and zoneinfo.
+#
+# This image cannot dlopen a PKCS#11 module, deliberately -- see
+# Dockerfile.pkcs11 for the variant that can, and
+# https://mnestor.github.io/ssoossh/operations/ssh-agent/ for why most
+# HSM deployments do not need it: `ssh-add -s <module>` puts the token
+# behind an ssh-agent, and the key still never leaves the hardware.
 #
 # Not buildable standalone: `docker build .` has nothing to put at
 # linux/$TARGETARCH/ssoosshd unless goreleaser (or something reproducing
 # its build context) placed a binary there first. For a local dev build,
 # `make server-linux-build-local` (Makefile) does that, then
 # `docker compose build` in deploy/ picks it up.
-#
-# base-debian12 (not static-) because ssoosshd is dynamically linked (cgo,
-# dlopen for PKCS#11 modules). To use an HSM in-container, mount the
-# PKCS#11 module and its deps into the image (see
-# https://mnestor.github.io/ssoossh/operations/hsm/).
-FROM gcr.io/distroless/base-debian12:nonroot
+FROM gcr.io/distroless/static-debian12:nonroot
 ARG TARGETARCH
 COPY linux/$TARGETARCH/ssoosshd /usr/local/sbin/ssoosshd
 # Reference copies of the mail notification templates the binary embeds, so

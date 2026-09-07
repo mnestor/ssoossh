@@ -429,18 +429,20 @@ high availability.
 
 ## Docker and containers
 
-`ghcr.io/mnestor/ssoossh-server` ships two image variants per version, both
-dynamically linked so a PKCS#11 module can be `dlopen`'d:
+Everything on this page needs the **`-pkcs11` image**. The default image has
+no PKCS#11 support at all.
 
-- `ghcr.io/mnestor/ssoossh-server:<version>` -- glibc, built on
-  `distroless/base-debian12`.
-- `ghcr.io/mnestor/ssoossh-server:<version>-musl` -- musl, built on Alpine.
+- `ghcr.io/mnestor/ssoossh-server:<version>` -- the default. Statically
+  linked, built on `distroless/static-debian12` (2.11MB base), no libc, no
+  `dlopen`. Configuring `hsm` here fails at startup.
+- `ghcr.io/mnestor/ssoossh-server:<version>-pkcs11` -- built on
+  `distroless/cc-debian12`, which carries `libstdc++` and `libgcc_s`. This
+  is the one that can load a module.
 
-Which one to run has nothing to do with the *host* OS; Docker abstracts that
-away, and either image runs on any host with a container runtime. It matters
-only for option 1 below: a module built against glibc cannot be loaded from
-inside a musl container, or vice versa. Match the image variant to the libc
-the module you are mounting was built against.
+The old `-musl` tag is gone. It existed so a musl-built module could be
+mounted into a musl container, but `alpine:3.20` ships no `libstdc++`, so
+that never actually worked. The default image being static also removes the
+reason to have a musl variant at all: it runs on Alpine like anywhere else.
 
 ### Option 1: mount the module and token store
 
@@ -448,8 +450,22 @@ the module you are mounting was built against.
 docker run -v /usr/lib/softhsm/libsofthsm2.so:/usr/lib/softhsm/libsofthsm2.so:ro \
   -v /var/lib/softhsm/tokens/:/var/lib/softhsm/tokens/:rw \
   -v /etc/ssoossh/ssoosshd.yaml:/etc/ssoosshd.yaml:ro \
-  ghcr.io/mnestor/ssoossh-server:<version>
+  ghcr.io/mnestor/ssoossh-server:<version>-pkcs11
 ```
+
+The module must be built against glibc, and against a glibc no newer than
+Debian 12's. Versioned symbols skew in both directions, and a module built
+on a newer distribution fails at startup naming the module rather than the
+toolchain. `deploy/hsm-sim/` stages one out of a `debian:12-slim` image for
+exactly that reason.
+
+:::tip
+Option 0, which is not on this page: put the token behind an `ssh-agent`
+with `ssh-add -s <module>` and use the default image. The key still never
+leaves the token, the vendor library loads in the agent's process rather
+than the signer's, and there is no module to match a libc against. See
+[The CA key in an ssh-agent](/ssoossh/operations/ssh-agent/).
+:::
 
 ### Option 2: split signer, recommended for production
 
@@ -475,17 +491,26 @@ signer's announcement.
 
 ## Platform matrix
 
-`ssoosshd` is dynamically linked (cgo-enabled) to support PKCS#11 module
-loading.
+The default `ssoosshd` build is `CGO_ENABLED=0` and statically linked, so it
+has no libc requirement. PKCS#11 needs cgo, which is why it is a separate
+artifact.
 
 | Build | Ships as | Requires |
 | --- | --- | --- |
-| glibc | `.deb`, `.rpm`, `.tar.gz`, and the default image | glibc 2.28 or newer (RHEL 8, Ubuntu 20.04, Debian 11+). The recommended build for most distributions |
-| musl | `.apk`, `.tar.gz`, and the `-musl` image | Alpine and other musl systems. Also dynamic, so modules load at runtime |
+| default | `.deb`, `.rpm`, `.apk`, `.tar.gz`, and the `:<version>` image | nothing. One binary per architecture, any distribution |
+| pkcs11 | `.deb`, `.rpm`, `.tar.gz`, and the `:<version>-pkcs11` image | glibc 2.28 or newer (RHEL 8, Ubuntu 20.04, Debian 11+) |
 
-Both are built for linux/amd64 and linux/arm64, and all four combinations
-support HSM configuration. Client binaries (`ssoossh`) remain statically
-linked and cross-platform.
+`ssoosshd-pkcs11` declares `Conflicts`, `Replaces` and `Provides` against
+`ssoosshd`: both install the same `/usr/local/sbin/ssoosshd`, so a host runs
+one or the other, and anything depending on `ssoosshd` is satisfied by
+either.
 
-Choose the build matching your OS package format and C library. For the
-container images, it is the mounted module's libc that decides, not the host's.
+There is no musl package or image for the PKCS#11 build. The `.apk` above is
+the static binary, which needs no musl build to run on Alpine.
+
+Both are built for linux/amd64 and linux/arm64. Client binaries (`ssoossh`)
+remain statically linked and cross-platform.
+
+Choose by whether you need the module in-process, not by your host's libc:
+the default build has no libc to match, and for the `-pkcs11` image it is the
+mounted module's libc that has to match Debian 12's, not the host's.

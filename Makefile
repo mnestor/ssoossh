@@ -142,14 +142,26 @@ binaries: ## Snapshot build for every release target
 	$(call BUILDALL)
 
 # Places the binary at linux/$(GOARCH)/ssoosshd, the same layout goreleaser's
-# dockers_v2 docker build context has (Dockerfile / Dockerfile.musl both
+# dockers_v2 docker build context has (Dockerfile / Dockerfile.pkcs11 both
 # `COPY linux/$TARGETARCH/ssoosshd`), so `docker build .` or
 # `docker compose build` (deploy/docker-compose.yml) works without
 # goreleaser. Host arch only -- for iterating on the Dockerfile locally,
 # not a release artifact.
 server-linux-build-local: $(FRONTEND_DIST) ## Build ssoosshd for a local `docker build` (see Dockerfile)
 	mkdir -p linux/$(shell go env GOARCH)
-	CGO_ENABLED=1 go build -tags=nomsgpack $(LDFLAGS) -o linux/$(shell go env GOARCH)/ssoosshd ./cmd/ssoosshd
+	CGO_ENABLED=0 go build -tags=nomsgpack $(LDFLAGS) -o linux/$(shell go env GOARCH)/ssoosshd ./cmd/ssoosshd
+
+# The same, with PKCS#11 compiled in, for Dockerfile.pkcs11 and for
+# deploy/hsm-sim -- whose compose files configure `hsm:` and would otherwise
+# be refused at startup by a default build. Needs cgo, so it links against
+# the host's glibc rather than the 2.28 floor the release pins with zig;
+# that is fine against distroless/cc-debian12 only if this host's glibc is
+# no newer than Debian 12's, which is exactly the skew the sim's tools image
+# exists to avoid for the module itself.
+.PHONY: server-linux-pkcs11-build-local
+server-linux-pkcs11-build-local: $(FRONTEND_DIST) ## Build ssoosshd with PKCS#11 for a local `docker build` (see Dockerfile.pkcs11)
+	mkdir -p linux/$(shell go env GOARCH)
+	CGO_ENABLED=1 go build -tags=nomsgpack,hsm $(LDFLAGS) -o linux/$(shell go env GOARCH)/ssoosshd ./cmd/ssoosshd
 
 # Wraps the darwin client archives already in dist/ as macOS installer
 # packages -- one per architecture, the same thing the release does

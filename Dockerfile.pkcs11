@@ -1,0 +1,46 @@
+# Runtime image for ssoosshd with direct PKCS#11 support:
+# ghcr.io/mnestor/ssoossh-server (":*-pkcs11" tags). Assembled by
+# goreleaser's dockers_v2 pipe from the server-linux-pkcs11-build binary,
+# which is compiled with -tags=hsm and therefore with cgo -- see Dockerfile
+# for the default static image and the full explanation this only
+# summarizes.
+#
+# cc-debian12, not base-debian12, and this is the point of the file. A
+# PKCS#11 module is dlopen()'d at runtime, and every module worth loading is
+# C++: SoftHSM2, the CloudHSM client, Luna. base-debian12 ships glibc and
+# OpenSSL but no libstdc++ or libgcc_s, so mounting a module into it fails
+# with:
+#
+#   libstdc++.so.6: cannot open shared object file: No such file or directory
+#
+# That is why the previously documented "mount the module" recipe could not
+# work on either of the old image variants. cc-debian12 resolves the whole
+# dependency set, for 2.9MB over base.
+#
+# Mount your module and its token store in, and point hsm.module at it:
+#   docker run -v /usr/lib/softhsm/libsofthsm2.so:/usr/lib/softhsm/libsofthsm2.so:ro \
+#              -v /var/lib/softhsm/tokens/:/var/lib/softhsm/tokens/:rw ...
+#
+# The module must be built against glibc, and against a glibc no newer than
+# Debian 12's -- versioned symbols skew in both directions, and a module
+# built on a newer distribution fails at startup naming the module rather
+# than the toolchain. deploy/hsm-sim/ stages one out of a debian:12-slim
+# image for exactly that reason.
+#
+# There is no musl counterpart. Mounting a musl-built module would need an
+# Alpine image carrying libstdc++, which the old Dockerfile.musl never did.
+#
+# Most deployments should not use this image. An ssh-agent holding the token
+# (`ssh-add -s <module>`) gives the same key protection from the default
+# static image, with the vendor's C++ library in the agent's address space
+# instead of the one running the certificate pipeline. See
+# https://mnestor.github.io/ssoossh/operations/ssh-agent/.
+FROM gcr.io/distroless/cc-debian12:nonroot
+ARG TARGETARCH
+COPY linux/$TARGETARCH/ssoosshd /usr/local/sbin/ssoosshd
+# See Dockerfile for why this reference copy exists.
+COPY server/resources/mail/ /usr/share/ssoossh/mail-templates/
+USER nonroot:nonroot
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/sbin/ssoosshd"]
+CMD ["-c", "/etc/ssoossh/ssoosshd.yaml"]

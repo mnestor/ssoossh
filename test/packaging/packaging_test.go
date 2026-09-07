@@ -49,10 +49,15 @@ type goreleaserConfig struct {
 		Formats []string      `yaml:"formats"`
 		Files   []archiveFile `yaml:"files"`
 	} `yaml:"archives"`
-	Builds []struct {
-		ID  string   `yaml:"id"`
-		Env []string `yaml:"env"`
-	} `yaml:"builds"`
+	Builds []goreleaserBuild `yaml:"builds"`
+}
+
+// goreleaserBuild is one entry under builds:. Flags carries the -tags
+// argument, which is what decides whether crypto11 is compiled in at all.
+type goreleaserBuild struct {
+	ID    string   `yaml:"id"`
+	Env   []string `yaml:"env"`
+	Flags []string `yaml:"flags"`
 }
 
 // archiveFile is one entry in an archive's files list. GoReleaser accepts
@@ -204,8 +209,8 @@ const mailTemplateDir = "server/resources/mail"
 // serverPackageIDs and serverArchiveIDs are the ssoosshd artifacts. Mail
 // templates and the server man pages belong to these and not to the client.
 var (
-	serverPackageIDs = []string{"server", "server-musl"}
-	serverArchiveIDs = []string{"linux-server-archives", "linux-server-musl-archives"}
+	serverPackageIDs = []string{"server", "server-pkcs11"}
+	serverArchiveIDs = []string{"linux-server-archives", "linux-server-pkcs11-archives"}
 )
 
 // should ship the mail templates the server binary embeds, so an operator
@@ -496,56 +501,68 @@ func expandManGlob(t *testing.T, src string) []string {
 	return names
 }
 
-// muslBuildID is the goreleaser build the Alpine packages and the musl
-// archives are cut from, and muslTarget is the zig target triple suffix it
-// compiles against.
+// The two server builds and the one invariant that separates them: the
+// default is cgo-free and the pkcs11 build is not. crypto11 is the only
+// cgo dependency in ssoosshd, so that single difference is what makes the
+// default binary static, gives it no libc floor, and lets its image sit on
+// distroless/static.
 const (
-	muslBuildID = "server-linux-musl-build"
-	muslTarget  = "-linux-musl"
+	defaultBuildID = "server-linux-build"
+	pkcs11BuildID  = "server-linux-pkcs11-build"
+	pkcs11Tag      = "hsm"
 )
 
-// should keep the musl server build cgo-enabled and dynamically linked.
-// musl's static libc answers every dlopen with "Dynamic loading not
-// supported", so a statically linked Alpine binary cannot load a PKCS#11
-// module at all: the HSM signer would be dead weight in the package, and
-// nothing about the binary would say so until an operator pointed it at a
-// module. build.yaml checks the linkage of what goreleaser actually
-// produced, but that job does not run on a pull request — this checks the
-// config the pull request is changing.
-func TestMuslServerBuildShouldLinkDynamically(t *testing.T) {
+// buildByID returns the named goreleaser build, failing when it is absent.
+func buildByID(t *testing.T, cfg goreleaserConfig, id string) goreleaserBuild {
+	t.Helper()
+	for _, build := range cfg.Builds {
+		if build.ID == id {
+			return build
+		}
+	}
+	t.Fatalf("no goreleaser build %q", id)
+	return goreleaserBuild{}
+}
+
+// should keep the default server build free of cgo. It is what makes the
+// binary static, and a static binary is what removed the glibc/musl split
+// from the packages and images: one artifact per architecture, no libc
+// floor, and distroless/static as the image base. cgo creeping back in
+// would reintroduce a libc requirement that nothing declares and nothing
+// tests, and the binary would keep working on the build host either way.
+//
+// build.yaml checks the linkage of what goreleaser actually produced, but
+// that job does not run on a pull request; this checks the config the pull
+// request is changing.
+func TestDefaultServerBuildShouldNotUseCgo(t *testing.T) {
 	t.Parallel()
 
-	cfg := loadGoreleaser(t)
+	build := buildByID(t, loadGoreleaser(t), defaultBuildID)
 
-	var env []string
-	found := false
-	for _, build := range cfg.Builds {
-		if build.ID == muslBuildID {
-			found, env = true, build.Env
-		}
+	joined := strings.Join(build.Env, "\n")
+	if strings.Contains(joined, "CGO_ENABLED=1") {
+		t.Errorf("build %q enables cgo, which makes it dynamically linked and gives it an undeclared libc floor: %q", defaultBuildID, joined)
 	}
-	if !found {
-		t.Fatalf("no goreleaser build %q; the Alpine packages are built from it", muslBuildID)
+	if strings.Contains(strings.Join(build.Flags, " "), pkcs11Tag) {
+		t.Errorf("build %q is compiled with the %q tag, which pulls in crypto11 and requires cgo: %q", defaultBuildID, pkcs11Tag, build.Flags)
 	}
+}
 
-	joined := strings.Join(env, "\n")
+// should keep the pkcs11 server build cgo-enabled and tagged. Without cgo
+// the crypto11 binding does not compile in; without the tag the file is not
+// built at all, and NewHSMKeySource becomes the refusal stub. Either way the
+// package would install a binary whose whole reason for existing is missing,
+// and nothing about it would say so until an operator pointed it at a module.
+func TestPKCS11ServerBuildShouldEnableCgoAndTheHSMTag(t *testing.T) {
+	t.Parallel()
+
+	build := buildByID(t, loadGoreleaser(t), pkcs11BuildID)
+
+	joined := strings.Join(build.Env, "\n")
 	if !strings.Contains(joined, "CGO_ENABLED=1") {
-		t.Errorf("build %q does not set CGO_ENABLED=1, so it has no PKCS#11 support to link: %q", muslBuildID, joined)
+		t.Errorf("build %q does not set CGO_ENABLED=1, so it has no PKCS#11 support to link: %q", pkcs11BuildID, joined)
 	}
-
-	targets := 0
-	for rest := joined; ; {
-		i := strings.Index(rest, muslTarget)
-		if i < 0 {
-			break
-		}
-		targets++
-		rest = rest[i+len(muslTarget):]
-		if !strings.HasPrefix(rest, " -dynamic") {
-			t.Errorf("build %q compiles a musl target without -dynamic, which links libc statically: %q", muslBuildID, joined)
-		}
-	}
-	if targets == 0 {
-		t.Errorf("build %q compiles for no musl target at all: %q", muslBuildID, joined)
+	if !strings.Contains(strings.Join(build.Flags, " "), pkcs11Tag) {
+		t.Errorf("build %q is not compiled with the %q tag, so hsmkeysource.go is excluded and hsm: config is refused at startup: %q", pkcs11BuildID, pkcs11Tag, build.Flags)
 	}
 }

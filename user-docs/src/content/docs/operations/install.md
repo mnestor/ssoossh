@@ -12,11 +12,19 @@ and multi-instance work comes later.
 
 ## Packages
 
-The server ships as a `ssoosshd` package. The `.deb` and `.rpm` builds are
-glibc; the `.apk` build is musl, for Alpine. Both are dynamically linked so a
-PKCS#11 module can be loaded at runtime (see
-[HSM and PKCS#11](/ssoossh/operations/hsm/)), and both are built for
-linux/amd64 and linux/arm64.
+The server ships as a `ssoosshd` package in `.deb`, `.rpm` and `.apk`, all
+carrying the same statically linked binary, built for linux/amd64 and
+linux/arm64. There is no libc to choose: the default build is cgo-free, so
+one binary per architecture runs on any distribution.
+
+An `ssoosshd-pkcs11` package (`.deb` and `.rpm`) exists for operators who
+need to load a PKCS#11 module into the server process itself. It is
+dynamically linked and needs glibc 2.28 or newer, and it declares
+`Conflicts`/`Replaces`/`Provides` against `ssoosshd` because both install the
+same binary path. Most HSM deployments do not need it -- an `ssh-agent`
+holding the token reaches the same hardware from the default package. See
+[HSM and PKCS#11](/ssoossh/operations/hsm/) and
+[The CA key in an ssh-agent](/ssoossh/operations/ssh-agent/).
 
 | What | Where it lands |
 | --- | --- |
@@ -31,8 +39,9 @@ which makes it the same content as `ssoosshd.yaml(5)` and the
 [configuration reference](/ssoossh/reference/config/) on this site.
 
 There are also container images, `ghcr.io/mnestor/ssoossh-server:<version>`
-(glibc, distroless) and `ghcr.io/mnestor/ssoossh-server:<version>-musl`
-(Alpine). `<version>` carries no leading `v` -- release v1.2.4 publishes the
+(the default, on `distroless/static-debian12`) and
+`ghcr.io/mnestor/ssoossh-server:<version>-pkcs11` (on
+`distroless/cc-debian12`, the one that can load a module). `<version>` carries no leading `v` -- release v1.2.4 publishes the
 image tag `1.2.4`, and points the floating tags `1.2` and `1` at it too.
 Which one you pin decides how much a restart is allowed to change: `1.2.4`
 never moves, `1.2` follows patch releases, `1` follows minor releases as

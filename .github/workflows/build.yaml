@@ -187,11 +187,11 @@ jobs:
       - name: Build the wire-contract bundle
         run: make wire-contract-bundle
 
-      # 0.16 is a floor, not a preference: earlier zig cc accepted -dynamic
-      # on a musl target and linked libc statically anyway, and a static musl
-      # binary cannot dlopen a PKCS#11 module (see .goreleaser.yml). Keep in
-      # sync with ZIG_VERSION in .github/docker/Dockerfile.runner. The
-      # tarball name changed shape in 0.15 (zig-x86_64-linux-, not
+      # zig cross-links the pkcs11 build against glibc 2.28 so the floor is
+      # pinned from a newer builder. The default build needs no zig at all
+      # (CGO_ENABLED=0), so this only serves server-linux-pkcs11-build.
+      # Keep in sync with ZIG_VERSION in .github/docker/Dockerfile.runner.
+      # The tarball name changed shape in 0.15 (zig-x86_64-linux-, not
       # zig-linux-x86_64-).
       - name: Set up Zig
         env:
@@ -277,49 +277,50 @@ jobs:
             exit 1
           fi
 
-      # Both arches, not just amd64: a toolchain that quietly drops -dynamic
-      # (see .goreleaser.yml) drops it for arm64 too, and an Alpine package
-      # whose PKCS#11 support is dead on arrival looks identical from here.
-      - name: Verify musl builds are dynamically linked
+      # The two server builds must differ in exactly this way, and a
+      # regression in either direction is silent otherwise. If the default
+      # build ever picks up cgo it stops being portable and needs a libc
+      # floor nobody declared; if the pkcs11 build ever loses it, PKCS#11
+      # support is dead on arrival and looks identical from here.
+      #
+      # Both arches, not just amd64: a toolchain change affects arm64 too.
+      - name: Verify the default build is static and the pkcs11 build is not
         run: |
           set -euo pipefail
-          found=0
-          for MUSL_BINARY in dist/server-linux-musl-build_linux_*/ssoosshd; do
-            [ -f "$MUSL_BINARY" ] || continue
-            found=$((found + 1))
-            FILE_OUTPUT=$(file "$MUSL_BINARY")
-            echo "File output: $FILE_OUTPUT"
-            if echo "$FILE_OUTPUT" | grep -q "dynamically linked"; then
-              echo "✓ $MUSL_BINARY is dynamically linked (supports dlopen)"
-            else
-              echo "✗ $MUSL_BINARY is statically linked (cannot dlopen PKCS#11 modules)"
+          check() {
+            pattern="$1"; want="$2"; label="$3"
+            found=0
+            for BINARY in $pattern; do
+              [ -f "$BINARY" ] || continue
+              found=$((found + 1))
+              FILE_OUTPUT=$(file "$BINARY")
+              echo "File output: $FILE_OUTPUT"
+              if echo "$FILE_OUTPUT" | grep -q "$want"; then
+                echo "✓ $BINARY is $label"
+              else
+                echo "✗ $BINARY is not $label"
+                exit 1
+              fi
+            done
+            if [ "$found" -eq 0 ]; then
+              echo "✗ no binaries matched $pattern"
               exit 1
             fi
-          done
-          if [ "$found" -eq 0 ]; then
-            echo "✗ no musl binaries under dist/server-linux-musl-build_linux_*/"
-            exit 1
-          fi
+          }
+          check 'dist/server-linux-build_linux_*/ssoosshd' \
+                'statically linked' 'statically linked (no libc floor)'
+          check 'dist/server-linux-pkcs11-build_linux_*/ssoosshd' \
+                'dynamically linked' 'dynamically linked (can dlopen a PKCS#11 module)'
 
-      # Run the binary rather than docker run alpine: even though this job
-      # now has docker (for goreleaser's dockers_v2 step above), installing
-      # Ubuntu's musl package and running the binary directly is simpler
-      # than a throwaway alpine container just for this check, and it
-      # verifies the same thing -- the package installs
-      # /lib/ld-musl-x86_64.so.1, the exact interpreter path zig wrote into
-      # the ELF header, so the loader here is the one Alpine would use.
       # Linking is checked above; this catches a binary that links but
-      # cannot start. Installed here rather than baked into the runner
-      # image on purpose: a release must not depend on that image having
-      # been republished first.
-      - name: Smoke test musl binary
+      # cannot start. The default build needs no loader at all, so it runs
+      # here directly.
+      - name: Smoke test the static binary
         run: |
           set -euo pipefail
-          apt-get update -qq
-          apt-get install -y -qq --no-install-recommends musl
-          MUSL_BINARY="dist/server-linux-musl-build_linux_amd64_v1/ssoosshd"
-          "$MUSL_BINARY" version || { echo "✗ musl binary failed to run under the musl loader"; exit 1; }
-          echo "✓ musl binary runs under the musl loader"
+          BINARY="dist/server-linux-build_linux_amd64_v1/ssoosshd"
+          "$BINARY" version || { echo "✗ static binary failed to run"; exit 1; }
+          echo "✓ static binary runs with no dynamic loader"
 
       # What the macos-client-pkg job below wraps as installer packages.
       # Handing it the archives rather than the release assets is what lets
@@ -537,7 +538,7 @@ jobs:
       # to match.
       #
       # Every piece of the version gets a tag: v1.2.4 publishes 1.2.4, 1.2
-      # and 1, and the -musl variant of each. The exact version is the one
+      # and 1, and the -pkcs11 variant of each. The exact version is the one
       # an operator pins; the two floating tags are for the operator who
       # wants patch, or minor and patch, to arrive without a change here.
       #
@@ -549,7 +550,7 @@ jobs:
       #
       # Two calls because the two variants come from two different source
       # images, but each is one call for all three of its tags -- so a
-      # failure between them leaves the -musl series a version behind and
+      # failure between them leaves the -pkcs11 series a version behind and
       # never a half-tagged variant. The re-run of the tag fixes it; that
       # is the narrow case this ordering does not cover.
       - name: Promote the images to their version tags
@@ -601,7 +602,7 @@ jobs:
           fi
 
           echo "tagging: ${tags[*]}"
-          for variant in "" "-musl"; do
+          for variant in "" "-pkcs11"; do
             args=()
             for tag in "${tags[@]}"; do
               args+=(-t "${IMAGE}:${tag}${variant}")

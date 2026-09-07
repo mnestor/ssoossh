@@ -89,6 +89,16 @@ env:
   - GOFIPS140=v1.0.0
 
 builds:
+  # The default server build: no cgo, so it links statically and has no libc
+  # floor at all. That is possible because crypto11 is gated behind the
+  # `hsm` tag (server/signer/hsmkeysource.go) and was the only cgo
+  # dependency in ssoosshd -- sqlite is glebarez, which is pure Go. An HSM
+  # is still reachable from this build through ssh-agent: `ssh-add -s
+  # <module>` puts a PKCS#11 token behind an agent, and the vendor library
+  # then loads in the agent's process rather than the signer's. See
+  # https://mnestor.github.io/ssoossh/operations/ssh-agent/.
+  #
+  # No CC override and no zig: there is nothing to cross-link against.
   - id: server-linux-build
     binary: ssoosshd
     dir: ./cmd/ssoosshd
@@ -99,11 +109,6 @@ builds:
     flags: &flags
       - -trimpath
       - -tags=nomsgpack
-    env:
-      - CGO_ENABLED=1
-      - >-
-        {{- if eq .Arch "amd64" }}CC=zig cc -target x86_64-linux-gnu.2.28{{- end }}
-        {{- if eq .Arch "arm64" }}CC=zig cc -target aarch64-linux-gnu.2.28{{- end }}
     goos:
       - linux
     goarch:
@@ -115,21 +120,35 @@ builds:
       -X github.com/mnestor/ssoossh/internal/version.Date={{.Date}}
       -X github.com/mnestor/ssoossh/internal/version.BuiltBy={{- if index .Env "github" }}{{.Env.github.runner.name}}{{ else }}goreleaser{{ end }}
 
-  # -dynamic is load-bearing, and so is the zig version behind it: a static
-  # musl binary's dlopen is a stub that always answers "Dynamic loading not
-  # supported", which would leave the Alpine packages unable to load a
-  # PKCS#11 module at all. zig cc only honors -dynamic on musl targets from
-  # 0.16 on; older zig accepted the flag and linked libc statically anyway,
-  # silently. build.yaml re-checks the linkage on every release.
-  - id: server-linux-musl-build
+  # The PKCS#11 build: `-tags=hsm` compiles server/signer/hsmkeysource.go,
+  # which binds libpkcs11 through crypto11 and dlopen()s a vendor module at
+  # runtime. That needs cgo, which means dynamic linking and a glibc floor,
+  # which is the whole reason it is a separate artifact rather than the
+  # default.
+  #
+  # Only for operators who need the module in this process. Everyone else,
+  # including everyone using SoftHSM2 and most people with a real HSM,
+  # wants the default build plus ssh_key_agent.
+  #
+  # glibc 2.28 is kept deliberately low (RHEL 8, Ubuntu 20.04, Debian 11+).
+  # Raising it removes compatibility without enabling anything: Go needs no
+  # newer symbols, and zig pins the floor with one flag either way.
+  #
+  # No musl counterpart yet. Mounting a musl-built module needs a musl
+  # image carrying libstdc++, and Dockerfile.musl never could -- alpine:3.20
+  # has no libstdc++, so the documented recipe could not have worked. See
+  # docs/proposals/hsm-cloud-readiness.md.
+  - id: server-linux-pkcs11-build
     binary: ssoosshd
     dir: ./cmd/ssoosshd
-    flags: *flags
+    flags:
+      - -trimpath
+      - -tags=nomsgpack,hsm
     env:
       - CGO_ENABLED=1
       - >-
-        {{- if eq .Arch "amd64" }}CC=zig cc -target x86_64-linux-musl -dynamic{{- end }}
-        {{- if eq .Arch "arm64" }}CC=zig cc -target aarch64-linux-musl -dynamic{{- end }}
+        {{- if eq .Arch "amd64" }}CC=zig cc -target x86_64-linux-gnu.2.28{{- end }}
+        {{- if eq .Arch "arm64" }}CC=zig cc -target aarch64-linux-gnu.2.28{{- end }}
     goos:
       - linux
     goarch:
@@ -236,7 +255,14 @@ nfpms:
     ids:
       - server-linux-build
     bindir: /usr/local/sbin
-    formats: *nfpmFormats
+    # apk as well as deb and rpm, from this one binary. Package format is
+    # about the OS's package manager, not its libc, and a static binary
+    # runs on Alpine as readily as on Debian -- so the separate musl build
+    # that used to source the apk is gone.
+    formats:
+      - rpm
+      - deb
+      - apk
     rpm:
       signature:
         key_file: private.pgp
@@ -272,18 +298,34 @@ nfpms:
       - src: server/resources/mail/*.tmpl
         dst: /usr/share/ssoossh/mail-templates/
 
-  - id: server-musl
-    package_name: ssoosshd
-    file_name_template: 'ssoossh-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}_musl{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
+  # Separate package name, not a variant of ssoosshd: both install the same
+  # /usr/local/sbin/ssoosshd, so they cannot be co-installed. conflicts and
+  # replaces make the package manager say that plainly instead of letting
+  # two packages fight over one path, and provides lets anything depending
+  # on ssoosshd be satisfied by either.
+  - id: server-pkcs11
+    package_name: ssoosshd-pkcs11
+    file_name_template: 'ssoossh-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}_pkcs11{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
     license: *license
     maintainer: *maintainer
     homepage: *website
-    description: "server to authorize and sign ssh public keys with a certificate (musl, Alpine Linux)"
+    description: "server to authorize and sign ssh public keys with a certificate (PKCS#11/HSM support, dynamically linked)"
     ids:
-      - server-linux-musl-build
+      - server-linux-pkcs11-build
     bindir: /usr/local/sbin
-    formats:
-      - apk
+    formats: *nfpmFormats
+    conflicts:
+      - ssoosshd
+    replaces:
+      - ssoosshd
+    provides:
+      - ssoosshd
+    rpm:
+      signature:
+        key_file: private.pgp
+    deb:
+      signature:
+        key_file: private.pgp
     contents:
       - src: server/config/defaults.yaml
         dst: /etc/ssoossh/ssoosshd.yaml
@@ -348,10 +390,10 @@ archives:
         dst: mail-templates
         strip_parent: true
 
-  - id: linux-server-musl-archives
+  - id: linux-server-pkcs11-archives
     ids:
-      - server-linux-musl-build
-    name_template: "ssoossh-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}_musl"
+      - server-linux-pkcs11-build
+    name_template: "ssoossh-server_{{ .Version }}_{{ .Os }}_{{ .Arch }}_pkcs11"
     files:
       - src: server/config/defaults.yaml
         dst: .
@@ -374,8 +416,8 @@ archives:
     name_template: *client_archive_name
 
 # Builds and pushes ghcr.io/mnestor/ssoossh-server, one multi-arch (linux/amd64 +
-# linux/arm64) manifest per libc, straight from the server-linux-build /
-# server-linux-musl-build binaries above -- no separate compile step, so
+# linux/arm64) manifest per variant, straight from the server-linux-build /
+# server-linux-pkcs11-build binaries above -- no separate compile step, so
 # the image gets the same -X version.Version/Commit/Date/BuiltBy stamp
 # (see internal/version) as every other release artifact for free. `docker
 # buildx build --platform ... --push` runs once per entry
@@ -418,7 +460,7 @@ archives:
 # sbom is off: a cosign/syft SBOM attachment isn't set up in this project's
 # release pipeline yet, and dockers_v2 defaults it to on.
 dockers_v2:
-  - id: docker-glibc
+  - id: docker-static
     ids:
       - server-linux-build
     dockerfile: Dockerfile
@@ -442,17 +484,17 @@ dockers_v2:
       org.opencontainers.image.licenses: "MIT"
     sbom: false
 
-  - id: docker-musl
+  - id: docker-pkcs11
     ids:
-      - server-linux-musl-build
-    dockerfile: Dockerfile.musl
+      - server-linux-pkcs11-build
+    dockerfile: Dockerfile.pkcs11
     images:
       - ghcr.io/mnestor/ssoossh-server
-    # Distinct from the glibc entry's tag: both entries push to the same
+    # Distinct from the default entry's tag: both entries push to the same
     # image, so sharing one sha tag would have the second overwrite the
     # first.
     tags:
-      - "sha-{{ .FullCommit }}-musl"
+      - "sha-{{ .FullCommit }}-pkcs11"
     platforms:
       - linux/amd64
       - linux/arm64

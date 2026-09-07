@@ -8,7 +8,8 @@
 # the devcontainer image and is not meant to run ssoosshd at all.
 #
 # Usage — this pulls a published image; nothing on this host needs to be
-# built. The image (both this glibc build and the -musl variant; see
+# built. The image (both this default static build and the -pkcs11
+# variant; see
 # https://mnestor.github.io/ssoossh/operations/hsm/) is assembled by goreleaser's dockers_v2 pipe
 # (.goreleaser.yml) from the Dockerfile at the repo root, as part of the
 # build-most job in .github/workflows/build.yaml, and pushed to

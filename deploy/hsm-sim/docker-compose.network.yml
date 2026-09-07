@@ -124,8 +124,8 @@ services:
   ssoosshd:
     build:
       context: ../..
-      dockerfile: deploy/hsm-sim/Dockerfile.ssoosshd-sim
-    image: ssoossh-server:hsm-sim
+      dockerfile: Dockerfile.pkcs11
+    image: ssoossh-server:pkcs11-sim
     depends_on:
       - hsm-bridge
     restart: unless-stopped
