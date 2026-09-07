@@ -153,14 +153,53 @@ Exactly one of two sources, and startup fails without one:
 
 | Source | Configured by | What the process holds |
 | --- | --- | --- |
-| Inline PEM in the config file | [`ssh_key`](/ssoossh/reference/config/top-level/#ssh_key) | the private key, in memory, readable by anyone who can read the file |
+| Inline PEM in the config file | [`ssh_key`](/ssoossh/reference/config/top-level/#ssh_key) | the private key, in memory, readable by anyone who can read the config file |
+| A file beside the config | [`ssh_key_file`](/ssoossh/reference/config/top-level/#ssh_key_file) | the private key, in memory, readable by anyone who can read *that* file |
 | A PKCS#11 token (HSM or SoftHSM2) | [`hsm.module`](/ssoossh/reference/config/hsm/#module) and the rest of the [`hsm`](/ssoossh/reference/config/hsm/) section | a handle. The private key never leaves the hardware |
 
 :::danger
-A config file containing `ssh_key` *is* the CA. Anyone who can read it can
-sign certificates for any principal your hosts accept. Treat the file like
-the private key it contains, and prefer the token path where you have one.
+Whatever holds `ssh_key` *is* the CA. Anyone who can read it can sign
+certificates for any principal your hosts accept. Treat it like the private
+key it contains, and prefer the token path where you have one.
 :::
+
+### What `ssh_key_file` changes, and what it does not
+
+[`ssh_key_file`](/ssoossh/reference/config/top-level/#ssh_key_file) moves the
+key out of the config file into a file of its own. That is worth doing --
+the config file can then be world-readable, rendered from a template, or
+committed to configuration management without carrying the CA with it, and
+the key file gets ownership and a mode chosen for a private key rather than
+for a config file.
+
+It does not change the trust model. The signer still reads the key into
+memory, so the process holds the whole private key exactly as it does with
+an inline one. It moves *which* file is the CA; it does not stop there being
+one.
+
+### What a passphrase changes, and what it does not
+
+[`ssh_key_passphrase_file`](/ssoossh/reference/config/top-level/#ssh_key_passphrase_file)
+decrypts a passphrase-protected key at startup. It protects the key **at
+rest** and nothing else: after parsing, the private key is plaintext in the
+signer's memory whether or not it was encrypted on disk.
+
+The threat it actually addresses is the key file escaping on its own -- in a
+backup, a volume snapshot, a support bundle, a stray `scp`. That is a real
+threat and flat PEM has no answer to it.
+
+:::caution
+A passphrase stored beside the key it decrypts buys nothing. If
+`ssh_key_passphrase_file` sits in the same directory, with the same
+ownership, as `ssh_key_file`, then whoever can read one can read the other,
+and the pair is exactly as strong as an unencrypted key. It is worth having
+only when the passphrase comes from somewhere the key file does not: a
+systemd credential, a mounted secret with different RBAC, a secrets manager.
+:::
+
+The same warning applies to
+[`hsm.pin_file`](/ssoossh/reference/config/hsm/#pin_file) next to a SoftHSM2
+token directory, for the same reason.
 
 Independently of which source you choose, the key does not have to sit in the
 web tier at all. Run `ssoosshd sign` as its own process against

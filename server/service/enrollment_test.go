@@ -60,7 +60,7 @@ func startTestPipeline(t *testing.T, svc *CertRequestService) ssh.PublicKey {
 	if err != nil {
 		t.Fatalf("failed to marshal CA private key: %v", err)
 	}
-	keys, err := signer.NewConfigKeySource(string(caPEM))
+	keys, err := signer.NewConfigKeySource(string(caPEM), "")
 	if err != nil {
 		t.Fatalf("failed to build key source: %v", err)
 	}

@@ -45,15 +45,35 @@ type ConfigKeySource struct {
 	signer ssh.Signer
 }
 
-// NewConfigKeySource parses a PEM-encoded private key. It takes the raw PEM
-// string rather than a *config.Config so this package doesn't depend on the
-// server's configuration types (see the package doc).
-func NewConfigKeySource(privateKeyPEM string) (*ConfigKeySource, error) {
+// NewConfigKeySource parses a PEM-encoded private key, decrypting it with
+// passphrase when one is supplied. It takes the raw PEM string rather than a
+// *config.Config so this package doesn't depend on the server's
+// configuration types (see the package doc).
+//
+// The passphrase protects the key at rest and nothing else: once parsed, the
+// private key is plaintext in this process's memory exactly as an
+// unencrypted one would be. It buys resistance to the key file leaking on
+// its own -- a backup, a volume snapshot, a stray copy -- and only if the
+// passphrase is not sitting beside it.
+func NewConfigKeySource(privateKeyPEM, passphrase string) (*ConfigKeySource, error) {
 	if privateKeyPEM == "" {
 		return nil, errors.New("no CA private key configured")
 	}
 
-	signer, err := ssh.ParsePrivateKey([]byte(privateKeyPEM))
+	var signer ssh.Signer
+	var err error
+	if passphrase == "" {
+		signer, err = ssh.ParsePrivateKey([]byte(privateKeyPEM))
+		// An encrypted key with no passphrase configured otherwise fails
+		// as the bare "ssh: this private key is passphrase protected",
+		// which does not say what to do about it.
+		var missing *ssh.PassphraseMissingError
+		if errors.As(err, &missing) {
+			return nil, fmt.Errorf("CA private key is passphrase protected: set ssh_key_passphrase_file (or ssh_key_passphrase)")
+		}
+	} else {
+		signer, err = ssh.ParsePrivateKeyWithPassphrase([]byte(privateKeyPEM), []byte(passphrase))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse CA private key: %w", err)
 	}

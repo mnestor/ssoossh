@@ -237,3 +237,310 @@ func TestHSMConfigResolvePIN(t *testing.T) {
 		}
 	})
 }
+
+// writeKeyFile drops content at a fresh path under t.TempDir and returns it,
+// so each case gets a path nothing else has touched.
+func writeKeyFile(t *testing.T, name, content string) string {
+	t.Helper()
+	path := t.TempDir() + "/" + name
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", name, err)
+	}
+	return path
+}
+
+// testCAKeyPEM is an unencrypted ECDSA P-256 key. Its only job is to be
+// parseable; nothing here signs with it.
+const testCAKeyPEM = `-----BEGIN OPENSSH PRIVATE KEY-----
+placeholder
+-----END OPENSSH PRIVATE KEY-----
+`
+
+func TestSignerConfig_ResolveCAKey_SourceExclusivity(t *testing.T) {
+	t.Parallel()
+
+	validHSM := HSMConfig{
+		Module:     "/usr/lib/softhsm/libsofthsm2.so",
+		TokenLabel: "ssoossh-ca",
+		PIN:        "1234",
+		KeyLabel:   "ssoossh-ca",
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(t *testing.T, s *SignerConfig)
+		wantErr string
+	}{
+		{
+			name:   "should accept no key source at all when in api mode",
+			mutate: func(*testing.T, *SignerConfig) {},
+		},
+		{
+			name: "should accept ssh_key alone",
+			mutate: func(_ *testing.T, s *SignerConfig) {
+				s.SSHKey = testCAKeyPEM
+			},
+		},
+		{
+			name: "should accept ssh_key_file alone",
+			mutate: func(t *testing.T, s *SignerConfig) {
+				s.SSHKeyFile = writeKeyFile(t, "ca-key", testCAKeyPEM)
+			},
+		},
+		{
+			name: "should accept hsm alone",
+			mutate: func(_ *testing.T, s *SignerConfig) {
+				s.HSM = validHSM
+			},
+		},
+		{
+			name: "should reject when ssh_key and ssh_key_file are both set",
+			mutate: func(t *testing.T, s *SignerConfig) {
+				s.SSHKey = testCAKeyPEM
+				s.SSHKeyFile = writeKeyFile(t, "ca-key", testCAKeyPEM)
+			},
+			wantErr: "exactly one of ssh_key, ssh_key_file and hsm",
+		},
+		{
+			name: "should reject when ssh_key_file and hsm are both set",
+			mutate: func(t *testing.T, s *SignerConfig) {
+				s.SSHKeyFile = writeKeyFile(t, "ca-key", testCAKeyPEM)
+				s.HSM = validHSM
+			},
+			wantErr: "exactly one of ssh_key, ssh_key_file and hsm",
+		},
+		{
+			name: "should name every source that was set when all three are",
+			mutate: func(t *testing.T, s *SignerConfig) {
+				s.SSHKey = testCAKeyPEM
+				s.SSHKeyFile = writeKeyFile(t, "ca-key", testCAKeyPEM)
+				s.HSM = validHSM
+			},
+			wantErr: "ssh_key and ssh_key_file and hsm",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := &SignerConfig{}
+			tt.mutate(t, s)
+			err := s.resolveCAKey()
+			assertErrContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestSignerConfig_ResolveCAKey_FileReading(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		mutate  func(t *testing.T, s *SignerConfig)
+		wantKey string
+		wantErr string
+	}{
+		{
+			name: "should read the key verbatim from ssh_key_file",
+			mutate: func(t *testing.T, s *SignerConfig) {
+				s.SSHKeyFile = writeKeyFile(t, "ca-key", testCAKeyPEM)
+			},
+			wantKey: testCAKeyPEM,
+		},
+		{
+			name: "should not trim trailing newline from the key",
+			mutate: func(t *testing.T, s *SignerConfig) {
+				s.SSHKeyFile = writeKeyFile(t, "ca-key", "abc\n")
+			},
+			wantKey: "abc\n",
+		},
+		{
+			name: "should pass through inline ssh_key unchanged",
+			mutate: func(_ *testing.T, s *SignerConfig) {
+				s.SSHKey = testCAKeyPEM
+			},
+			wantKey: testCAKeyPEM,
+		},
+		{
+			name: "should report the path when ssh_key_file does not exist",
+			mutate: func(t *testing.T, s *SignerConfig) {
+				s.SSHKeyFile = t.TempDir() + "/absent"
+			},
+			wantErr: "read ssh_key_file",
+		},
+		{
+			name: "should reject an empty ssh_key_file",
+			mutate: func(t *testing.T, s *SignerConfig) {
+				s.SSHKeyFile = writeKeyFile(t, "ca-key", "")
+			},
+			wantErr: "is empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := &SignerConfig{}
+			tt.mutate(t, s)
+			err := s.resolveCAKey()
+			assertErrContains(t, err, tt.wantErr)
+			if tt.wantErr == "" && s.ResolvedSSHKey() != tt.wantKey {
+				t.Errorf("ResolvedSSHKey() = %q, want %q", s.ResolvedSSHKey(), tt.wantKey)
+			}
+		})
+	}
+}
+
+func TestSignerConfig_ResolveCAKey_Passphrase(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		mutate  func(t *testing.T, s *SignerConfig)
+		wantPP  string
+		wantErr string
+	}{
+		{
+			name: "should use an inline passphrase",
+			mutate: func(_ *testing.T, s *SignerConfig) {
+				s.SSHKey = testCAKeyPEM
+				s.SSHKeyPassphrase = "hunter2"
+			},
+			wantPP: "hunter2",
+		},
+		{
+			name: "should read a passphrase from ssh_key_passphrase_file",
+			mutate: func(t *testing.T, s *SignerConfig) {
+				s.SSHKey = testCAKeyPEM
+				s.SSHKeyPassphraseFile = writeKeyFile(t, "pp", "hunter2")
+			},
+			wantPP: "hunter2",
+		},
+		{
+			name: "should trim trailing whitespace from the passphrase file",
+			mutate: func(t *testing.T, s *SignerConfig) {
+				s.SSHKey = testCAKeyPEM
+				s.SSHKeyPassphraseFile = writeKeyFile(t, "pp", "hunter2\n")
+			},
+			wantPP: "hunter2",
+		},
+		{
+			name: "should leave the passphrase empty when none is configured",
+			mutate: func(_ *testing.T, s *SignerConfig) {
+				s.SSHKey = testCAKeyPEM
+			},
+			wantPP: "",
+		},
+		{
+			name: "should reject both passphrase and passphrase_file",
+			mutate: func(t *testing.T, s *SignerConfig) {
+				s.SSHKey = testCAKeyPEM
+				s.SSHKeyPassphrase = "hunter2"
+				s.SSHKeyPassphraseFile = writeKeyFile(t, "pp", "hunter2")
+			},
+			wantErr: "exactly one of ssh_key_passphrase and ssh_key_passphrase_file",
+		},
+		{
+			name: "should report the path when the passphrase file is missing",
+			mutate: func(t *testing.T, s *SignerConfig) {
+				s.SSHKey = testCAKeyPEM
+				s.SSHKeyPassphraseFile = t.TempDir() + "/absent"
+			},
+			wantErr: "read ssh_key_passphrase_file",
+		},
+		{
+			name: "should reject an empty passphrase file",
+			mutate: func(t *testing.T, s *SignerConfig) {
+				s.SSHKey = testCAKeyPEM
+				s.SSHKeyPassphraseFile = writeKeyFile(t, "pp", "\n")
+			},
+			wantErr: "is empty",
+		},
+		{
+			name: "should reject a passphrase with no key source",
+			mutate: func(_ *testing.T, s *SignerConfig) {
+				s.SSHKeyPassphrase = "hunter2"
+			},
+			wantErr: "no ssh_key or ssh_key_file",
+		},
+		{
+			name: "should reject a passphrase alongside hsm",
+			mutate: func(_ *testing.T, s *SignerConfig) {
+				s.HSM = HSMConfig{
+					Module: "/m.so", TokenLabel: "t", PIN: "1", KeyLabel: "k",
+				}
+				s.SSHKeyPassphrase = "hunter2"
+			},
+			wantErr: "cannot be used with hsm",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := &SignerConfig{}
+			tt.mutate(t, s)
+			err := s.resolveCAKey()
+			assertErrContains(t, err, tt.wantErr)
+			if tt.wantErr == "" && s.ResolvedSSHKeyPassphrase() != tt.wantPP {
+				t.Errorf("ResolvedSSHKeyPassphrase() = %q, want %q",
+					s.ResolvedSSHKeyPassphrase(), tt.wantPP)
+			}
+		})
+	}
+}
+
+// assertErrContains folds the "want an error containing X, or want no error"
+// check every table above shares.
+func assertErrContains(t *testing.T, err error, want string) {
+	t.Helper()
+	if want == "" {
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		return
+	}
+	if err == nil {
+		t.Fatalf("expected error containing %q, got nil", want)
+	}
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("error = %v, want it to contain %q", err, want)
+	}
+}
+
+// The accessors are what bootstrap calls, and a SignerConfig built as a
+// struct literal never runs Validate. These pin that an inline key still
+// arrives, and that a file-backed one does not appear from nowhere.
+func TestSignerConfig_ResolvedAccessors_WithoutValidate(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should return the inline key when Validate has not run", func(t *testing.T) {
+		t.Parallel()
+		s := &SignerConfig{SSHKey: testCAKeyPEM, SSHKeyPassphrase: "hunter2"}
+		if got := s.ResolvedSSHKey(); got != testCAKeyPEM {
+			t.Errorf("ResolvedSSHKey() = %q, want the inline key", got)
+		}
+		if got := s.ResolvedSSHKeyPassphrase(); got != "hunter2" {
+			t.Errorf("ResolvedSSHKeyPassphrase() = %q, want %q", got, "hunter2")
+		}
+	})
+
+	t.Run("should return empty for an unread ssh_key_file", func(t *testing.T) {
+		t.Parallel()
+		s := &SignerConfig{SSHKeyFile: "/etc/ssoossh/ca-key"}
+		if got := s.ResolvedSSHKey(); got != "" {
+			t.Errorf("ResolvedSSHKey() = %q, want empty so the caller fails loudly", got)
+		}
+	})
+
+	t.Run("should prefer the resolved key over the inline one after Validate", func(t *testing.T) {
+		t.Parallel()
+		s := &SignerConfig{SSHKeyFile: writeKeyFile(t, "ca-key", "from-file\n")}
+		if err := s.resolveCAKey(); err != nil {
+			t.Fatalf("resolveCAKey: %v", err)
+		}
+		if got := s.ResolvedSSHKey(); got != "from-file\n" {
+			t.Errorf("ResolvedSSHKey() = %q, want the file contents", got)
+		}
+	})
+}

@@ -6,7 +6,6 @@ package bootstrap
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -52,7 +51,8 @@ type app struct {
 
 // newCAKeySource builds and memoizes the CAKeySource the signer handler signs
 // with and the CA key announcer publishes: PKCS#11-backed when the HSM block
-// is configured, otherwise the inline ssh_key PEM. Only constructed once per
+// is configured, otherwise the PEM from ssh_key or ssh_key_file. Only
+// constructed once per
 // process, regardless of how many times this method is called. Config
 // validation has already enforced exactly one source is configured for
 // signing modes.
@@ -65,7 +65,13 @@ func (a *app) newCAKeySource() (signer.CAKeySource, error) {
 	// Select the key source based on config.
 	if !a.config.Signer.HSM.Enabled() {
 		// PEM-backed source from config
-		ks, err := signer.NewConfigKeySource(a.config.Signer.SSHKey)
+		// ResolvedSSHKey, not SSHKey: it is the inline ssh_key or the
+		// contents of ssh_key_file, whichever was configured, already read
+		// by config validation.
+		ks, err := signer.NewConfigKeySource(
+			a.config.Signer.ResolvedSSHKey(),
+			a.config.Signer.ResolvedSSHKeyPassphrase(),
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -135,7 +141,7 @@ func BootstrapServe(cmd *cobra.Command, mode ServerMode) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize OpenTelemetry: %w", err)
 	}
-	slog.InfoContext(ctx, "ssoosshd is starting", "mode", mode.String())
+	logStarting(ctx, mode)
 	shutdowns.Add(shutdownFns...)
 
 	// Connect to the database
@@ -265,7 +271,7 @@ func BootstrapSigner(cmd *cobra.Command) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize OpenTelemetry: %w", err)
 	}
-	slog.InfoContext(ctx, "ssoosshd signer is starting")
+	logStarting(ctx, SignerModeOnly)
 	shutdowns.Add(shutdownFns...)
 
 	// Build the pub/sub broker connection (NATS only at this point)

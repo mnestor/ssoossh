@@ -11,6 +11,9 @@ eyebrow: "Configuration"
 | [`metrics`](#metrics) | bool | `false` |
 | [`production`](#production) | bool | `true` |
 | [`ssh_key`](#ssh_key) | string | `empty` |
+| [`ssh_key_file`](#ssh_key_file) | string | `empty` |
+| [`ssh_key_passphrase`](#ssh_key_passphrase) | string | `empty` |
+| [`ssh_key_passphrase_file`](#ssh_key_passphrase_file) | string | `empty` |
 | [`max_cert_lifetime`](#max_cert_lifetime) | duration | `2160h` |
 | [`max_service_cert_lifetime`](#max_service_cert_lifetime) | duration | `17544h` |
 | [`fips`](#fips) | bool | `false` |
@@ -50,12 +53,52 @@ production: true
 
 `string`, default `empty`
 
-The SSH CA private key used to sign issued certificates. Inline PEM, not a file path. Exactly one of ssh_key or hsm may be set, and one of them must be: startup fails without a CA key.
+The SSH CA private key used to sign issued certificates. Inline PEM, not a file path. Exactly one of ssh_key, ssh_key_file or hsm may be set, and one of them must be: startup fails without a CA key.
 
 ```yaml
 ssh_key: |
   -----BEGIN OPENSSH PRIVATE KEY-----
   -----END OPENSSH PRIVATE KEY-----
+```
+
+## `ssh_key_file`
+
+`string`, default `empty`
+
+Reads the CA private key from a file instead of holding it inline, so the key can be a mounted secret, a systemd credential or a file with its own ownership and mode, rather than config text. It is the middle option between an inline key and a PKCS#11 token: the key is still a file on disk that the process reads, but it is no longer part of the config file, so the config can be world-readable, checked into configuration management, or rendered by a template without carrying the CA with it.
+
+Read once at startup, so an unreadable or malformed key is a boot failure rather than a signing failure later. The contents are used verbatim: unlike a PIN or a password, PEM is whitespace-sensitive at its delimiters and nothing is trimmed.
+
+```yaml
+ssh_key_file: /etc/ssoossh/ca-key
+```
+
+```yaml
+ssh_key_file: "/etc/ssoossh/ca-key"
+```
+
+## `ssh_key_passphrase`
+
+`string`, default `empty`
+
+Decrypts a passphrase-protected CA key, from either ssh_key or ssh_key_file. Prefer ssh_key_passphrase_file: this value is a secret sitting in a config file.
+
+Understand what it protects before relying on it. The passphrase guards the key AT REST and nothing else: once parsed, the private key is plaintext in the signer's memory exactly as an unencrypted one would be. It defends against the key file leaking on its own -- a backup, a volume snapshot, a stray copy in a support bundle -- and it defends against that only if the passphrase is not stored beside the key. A passphrase in the same config file as ssh_key, or in a file mounted next to ssh_key_file with the same ownership, buys nothing: whoever reads one reads the other.
+
+```yaml
+ssh_key_passphrase: ""
+```
+
+## `ssh_key_passphrase_file`
+
+`string`, default `empty`
+
+Reads the passphrase from a file instead, so it can come from a mounted secret or a systemd credential with different ownership than the key itself -- which is the arrangement that makes a passphrase worth having at all. Exactly one of ssh_key_passphrase or ssh_key_passphrase_file may be set.
+
+Read once at startup. Trailing whitespace is trimmed, since an editor's newline is never part of a passphrase.
+
+```yaml
+ssh_key_passphrase_file: "/run/secrets/ssoossh-ca-passphrase"
 ```
 
 ## `max_cert_lifetime`

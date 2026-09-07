@@ -59,7 +59,7 @@ func TestPipeline_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to marshal CA private key: %v", err)
 	}
-	keys, err := signer.NewConfigKeySource(string(caPEM))
+	keys, err := signer.NewConfigKeySource(string(caPEM), "")
 	if err != nil {
 		t.Fatalf("failed to build key source: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestPipeline_EndToEnd_PAM(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to marshal CA private key: %v", err)
 	}
-	keys, err := signer.NewConfigKeySource(string(caPEM))
+	keys, err := signer.NewConfigKeySource(string(caPEM), "")
 	if err != nil {
 		t.Fatalf("failed to build key source: %v", err)
 	}

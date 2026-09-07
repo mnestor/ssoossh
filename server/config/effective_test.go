@@ -352,13 +352,14 @@ func TestConfigEffective_ShouldTagEverySecretBearingKey(t *testing.T) {
 	// added it remembered the tag, and this view is where a missed tag
 	// discloses it.
 	sensitive := map[string]bool{
-		"bind_password":     true,
-		"client_secret":     true,
-		"connection_string": true,
-		"cookie_key":        true,
-		"password":          true,
-		"pin":               true,
-		"ssh_key":           true,
+		"bind_password":      true,
+		"client_secret":      true,
+		"connection_string":  true,
+		"cookie_key":         true,
+		"password":           true,
+		"pin":                true,
+		"ssh_key":            true,
+		"ssh_key_passphrase": true,
 	}
 
 	for _, setting := range (&Config{}).Effective() {

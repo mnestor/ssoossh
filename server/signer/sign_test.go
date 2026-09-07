@@ -54,7 +54,7 @@ func (s *staticKeySource) Signer(context.Context) (ssh.Signer, error) {
 }
 
 // newTestPublicKey returns a fresh public key in authorized_keys format.
-func newTestPublicKey(t *testing.T) string {
+func newTestPublicKey(t testing.TB) string {
 	t.Helper()
 
 	kp, err := keypair.NewEd25519KeyPair()
@@ -69,7 +69,7 @@ func newTestPublicKey(t *testing.T) string {
 }
 
 // newTestJob returns a valid user-certificate signing job.
-func newTestJob(t *testing.T) certmsg.SigningJob {
+func newTestJob(t testing.TB) certmsg.SigningJob {
 	t.Helper()
 
 	now := time.Now().Truncate(time.Second)
@@ -550,10 +550,10 @@ func TestSign_FIPS(t *testing.T) {
 func TestNewConfigKeySource_ShouldRejectEmptyAndInvalidKeys(t *testing.T) {
 	t.Parallel()
 
-	if _, err := NewConfigKeySource(""); err == nil {
+	if _, err := NewConfigKeySource("", ""); err == nil {
 		t.Error("expected an error for an empty key, got nil")
 	}
-	if _, err := NewConfigKeySource("not a private key"); err == nil {
+	if _, err := NewConfigKeySource("not a private key", ""); err == nil {
 		t.Error("expected an error for an invalid key, got nil")
 	}
 }
@@ -570,7 +570,7 @@ func TestNewConfigKeySource_ShouldReturnTheParsedSigner(t *testing.T) {
 		t.Fatalf("failed to marshal private key: %v", err)
 	}
 
-	ks, err := NewConfigKeySource(string(pem))
+	ks, err := NewConfigKeySource(string(pem), "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
