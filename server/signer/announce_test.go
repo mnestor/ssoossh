@@ -23,31 +23,53 @@ import (
 // behaviors: request-driven re-announce, startup announce, and periodic
 // announce.
 
-// receiveAnnounce subscribes to CAKeyAnnounceTopic and waits for the next
-// message, timing out after 2 seconds. Returns the parsed announce or fails
-// the test.
-func receiveAnnounce(t *testing.T, channel *gochannel.GoChannel) certmsg.CAKeyAnnounce {
+// subscribeAnnounce subscribes to CAKeyAnnounceTopic and returns a function
+// that waits for the next announcement, timing out after 2 seconds.
+//
+// Subscribing has to happen before whatever triggers the announcement. The
+// test channel is non-persistent (see newTestChannel), so gochannel drops a
+// publish that has no subscriber -- it logs "No subscribers to send message"
+// and moves on. Subscribing afterwards therefore races the publish, and
+// losing that race means waiting out the full timeout for a message that was
+// already thrown away. That is what made
+// TestAnnouncer_ShouldAnnounceAtStartup fail intermittently in CI: the
+// startup announce fires the moment Run starts, before the test could
+// subscribe.
+func subscribeAnnounce(t *testing.T, channel *gochannel.GoChannel) func() certmsg.CAKeyAnnounce {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	// The subscription lives as long as the test; the wait below carries its
+	// own deadline.
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 
 	announcements, err := channel.Subscribe(ctx, certmsg.CAKeyAnnounceTopic)
 	if err != nil {
 		t.Fatalf("failed to subscribe to announcements: %v", err)
 	}
 
-	select {
-	case msg := <-announcements:
-		var announce certmsg.CAKeyAnnounce
-		if err := announce.Unmarshal(msg.Payload); err != nil {
-			t.Fatalf("failed to decode announcement: %v", err)
+	return func() certmsg.CAKeyAnnounce {
+		t.Helper()
+
+		timeout := time.NewTimer(2 * time.Second)
+		defer timeout.Stop()
+
+		select {
+		case msg, ok := <-announcements:
+			if !ok {
+				t.Fatal("announcement subscription closed before an announcement arrived")
+				return certmsg.CAKeyAnnounce{}
+			}
+			var announce certmsg.CAKeyAnnounce
+			if err := announce.Unmarshal(msg.Payload); err != nil {
+				t.Fatalf("failed to decode announcement: %v", err)
+			}
+			msg.Ack()
+			return announce
+		case <-timeout.C:
+			t.Fatal("timed out waiting for an announcement")
+			return certmsg.CAKeyAnnounce{}
 		}
-		msg.Ack()
-		return announce
-	case <-ctx.Done():
-		t.Fatal("timed out waiting for an announcement")
-		return certmsg.CAKeyAnnounce{}
 	}
 }
 
@@ -94,11 +116,15 @@ func TestAnnouncer_ShouldAnnounceOnRequestMessage(t *testing.T) {
 		<-routerDone
 	})
 
+	// Subscribe before publishing, so the announcement the request triggers
+	// cannot be dropped for want of a subscriber
+	awaitAnnounce := subscribeAnnounce(t, channel)
+
 	// Publish a request to the CAKeyRequestTopic
 	newRequestChannel(t, channel)
 
 	// Receive the announcement triggered by the request
-	announce := receiveAnnounce(t, channel)
+	announce := awaitAnnounce()
 
 	// Verify the announced key matches the source key (in trimmed authorized_keys form)
 	want := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(caPub)))
@@ -120,8 +146,12 @@ func TestAnnouncer_ShouldAnnounceAtStartup(t *testing.T) {
 	// Start the announcer directly (not via Router) to test Run's startup announce.
 	// Use a longer timeout than we need to avoid context timeout being the limiting
 	// factor in the test.
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	// Subscribe first: Run announces as its very first act, and an announce
+	// published before this subscription exists is discarded, not queued
+	awaitAnnounce := subscribeAnnounce(t, channel)
 
 	// Start Run in a goroutine and collect its result
 	runDone := make(chan error, 1)
@@ -130,7 +160,7 @@ func TestAnnouncer_ShouldAnnounceAtStartup(t *testing.T) {
 	}()
 
 	// Wait for an announcement to be published
-	announce := receiveAnnounce(t, channel)
+	announce := awaitAnnounce()
 
 	// Verify the startup announcement was received with the correct key
 	want := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(caPub)))
@@ -174,11 +204,15 @@ func TestAnnouncer_ShouldAnnounceMarshaledAuthorizedKeysForm(t *testing.T) {
 		<-routerDone
 	})
 
+	// Subscribe before publishing, so the announcement the request triggers
+	// cannot be dropped for want of a subscriber
+	awaitAnnounce := subscribeAnnounce(t, channel)
+
 	// Publish a request to trigger an announcement
 	newRequestChannel(t, channel)
 
 	// Receive the announcement
-	announce := receiveAnnounce(t, channel)
+	announce := awaitAnnounce()
 
 	// Parse the announced key and verify it's a valid public key in authorized_keys format
 	pubKey, _, _, _, err := ssh.ParseAuthorizedKey([]byte(announce.PublicKey))
