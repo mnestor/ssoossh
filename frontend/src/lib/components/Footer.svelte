@@ -65,8 +65,10 @@
 					rel="noopener noreferrer"
 					class="flex items-center gap-1.5 hover:text-ink"
 				>
-					<!-- The GitHub mark, inline: this lucide version dropped its brand
-					     icons, so Icon.svelte has nothing to map a name to. -->
+					<!-- The GitHub mark, inline. Tabler does ship brand-github and
+					     brand-github-filled, but both are redrawn on its own grid;
+					     this is the official mark, and a project link is the one
+					     place where the real one is worth keeping. -->
 					<svg
 						viewBox="0 0 16 16"
 						width="14"

@@ -62,64 +62,138 @@ All sizes use CSS custom properties (the `--font-size-*` block in `app.css`):
 
 ## Iconography
 
-Icons come from [@lucide/svelte](https://lucide.dev/), wrapped in the `Icon.svelte` component for consistent sizing and labeling. The component accepts a size token and an optional `aria-label` for semantic/meaningful icons (decorative icons hide from screen readers via `aria-hidden`).
+Icons come from [@tabler/icons-svelte](https://tabler.io/icons), wrapped in
+the `Icon.svelte` component for consistent sizing and labeling. The component
+accepts a size token and an optional `aria-label` for semantic/meaningful
+icons (decorative icons hide from screen readers via `aria-hidden`).
+
+Tabler draws on the same 24-unit grid at the same 2px stroke the app was
+already built around, so nothing else in the interface had to be re-tuned
+when it replaced Lucide. What it adds is the vocabulary this product is
+actually about: a certificate, a certificate that no longer counts, a
+signature, a history.
+
+### The rule: noun, then state
+
+**Every glyph does exactly one job, and a state is a modifier on a noun
+rather than a different noun.**
+
+`certificate` and `certificate-off` are one drawing in two conditions, not
+two unrelated glyphs; the same holds for `clock` / `clock-cancel` and
+`filter` / `filter-off`. A reader who learns the noun gets every state of it
+for free, and a state the app has not needed yet already has a glyph
+waiting.
+
+Two corollaries, both of which the previous set broke:
+
+- **Severity walks the road-sign ladder** — `info-circle`, then
+  `alert-triangle`, then `alert-octagon`. A triangle asks the reader to act
+  now; it is not the glyph for a settled fact like an expired certificate.
+- **No glyph appears in two semantic domains.** The set before this one had
+  `monitor` doing three jobs, `clock` three, and `alert-triangle` four, and
+  the `cog` / `key-round` split existed only to dodge a duplicate in the
+  collapsed rail.
+
+When adding an icon, find the noun already in the map and take its modifier.
+Add a new noun only when the app genuinely gained a new object.
 
 ### Supported Icons
 
-The `iconComponents` map in `src/lib/components/Icon.svelte` includes:
+The `iconComponents` map in `src/lib/components/Icon.svelte` is the whole
+vocabulary. Nothing outside this list is available, and an unmapped name
+renders a visible red `?` rather than nothing.
 
-**Semantic / Status:**
+**Certificate types** (`TypeBadge`, `TypeChip`, `typeFilters`) — four
+rectilinear objects, so the family reads as one group before any single
+glyph is recognised:
 
-- `alert-circle` — information or notice
-- `alert-triangle` — warning or caution
-- `check`, `check-circle` — success or approved
-- `x`, `x-circle` — error or denied
-- `clock` — pending or waiting
-- `loader` — in-progress or loading
+- `id-badge` — user certificates
+- `terminal-2` — PAM certificates
+- `server-cog` — service certificates
+- `device-desktop` — console certificates
 
-**Navigation & UI:**
+**Request status** (`StatusBadge`) — seven states, seven glyphs:
 
-- `menu` — the drawer trigger below `lg`
-- `chevron-down`, `chevron-left`, `chevron-right`, `chevron-up` — directional indicators
-- `arrow-right` — forward movement in a primary action (the login button)
-- `layout-grid` — the dashboard, and the "All" option in a type filter
-- `link` — a shareable link to the thing on screen
-- `sun`, `moon`, `monitor` — the light, dark, and follow-the-system theme states
-- `panel-left` — collapse or expand the rail, from the control beside the wordmark
-- `log-out` — end the session
+- `hourglass-high` — pending, waiting on a human
+- `loader-2` — signing; the only animated icon in the app, spun with
+  `motion-safe:animate-spin` so a transient state does not read as stuck
+- `circle-check` — approved: a certificate exists
+- `circle-key` — enrolled: a code exists that nothing has redeemed yet
+- `circle-x` — denied: a person refused
+- `clock-cancel` — expired: nobody answered before the window closed. The
+  clock face is a circle, so this stays in the status family while saying
+  the thing a slashed circle cannot
+- `alert-octagon` — failed: the signer could not produce a certificate,
+  which is a fault to retry, not a decision to appeal
 
-**Rail destinations:**
+**Certificate validity** (`CertRow`, `statusFilters`):
 
-Each entry in the rail carries an icon, because a collapsed rail is icons
-only. They are chosen to be distinguishable at 16px rather than to be
-literal:
+- `certificate` — still valid
+- `certificate-off` — expired, the same drawing struck through
 
-- `layout-grid` — Dashboard
-- `clock` — History
-- `cog` — Service codes (user), matching the `service` certificate chip, since the two name the same object; `key-round` — Service codes (admin), kept distinct so a collapsed rail does not show the same icon twice
-- `monitor` — Console login
-- `shield-check` — the Admin group head
+**Alert severity** (`Alert`):
+
+- `info-circle` — information
+- `alert-triangle` — warning
+- `alert-octagon` — error
+
+Info and error drew the same circle before this and let colour carry the
+whole difference, which is an accessibility failure, not a style choice.
+
+**Filters** (`filters.ts`):
+
+- `filter-off` — the "All" / "Any" / "Both" chip. It states "nothing is
+  filtered" outright; a destination glyph in a filter row reads as a link.
+
+**Rail destinations** — each entry carries an icon, because a collapsed
+rail is icons only. They are chosen to be distinguishable at 16px:
+
+- `layout-dashboard` — Dashboard
+- `history` — History
+- `key` — Service codes (the caller's own)
+- `keyboard` — Console login: the machine with no browser, where somebody
+  types a code
+- `shield-lock` — the Admin group head
 - `users` — Users
-- `award` — Certificates
-- `sliders-horizontal` — Config
-- `book-open` — Directory
-- `code` — Claims echo
-- `file-text` — Audit log
-- `activity` — Diagnostics
-- `bell` — Preferences
+- `file-certificate` — Certificates: the records, distinct from the
+  `certificate` an individual row carries
+- `circle-key` — Service codes (admin): the same noun as the caller's own
+  view in a different enclosure. `RailGroup.svelte` drops the group's indent
+  and rule when the rail collapses, so an admin row has no visual parent at
+  that width and the two scopes cannot share one glyph
+- `adjustments-horizontal` — Config
+- `address-book` — Directory
+- `braces` — Claims echo
+- `logs` — Audit log
+- `activity-heartbeat` — Diagnostics
+- `user-cog` — Preferences, in the rail's footer
 
-**Certificate Types:**
+**Account, theme and chrome:**
 
-- `user` — user certificates
-- `terminal` — PAM certificates
-- `cog` — service certificates
-
-**Utility:**
-
+- `user-circle` — the signed-in identity
+- `logout` — end the session
+- `sun`, `moon`, `device-laptop` — the light, dark, and follow-the-system
+  theme states. The system state takes a laptop because a monitor is what a
+  console certificate is
+- `menu-2` — the drawer trigger below `lg`
+- `layout-sidebar` — collapse or expand the rail
+- `chevron-down`, `chevron-left`, `chevron-right`, `chevron-up` —
+  directional indicators
+- `arrow-right` — forward movement in a primary action (the login button)
 - `search` — the search box on a paged list
-- `copy` — the copy-to-clipboard affordance on a `CopyableId`
-- `server` — a host or instance (in the map; no current screen renders it)
-- `zap` — generic or all-category indicator
+- `x` — clear the search
+- `copy` and `check` — the two states of a `CopyableId`
+
+**Detail rows** (`DetailRow`):
+
+- `user` — a person
+- `clock` — a span of time
+
+**Fallback:**
+
+- `help-circle` — a certificate type outside the four the schema allows.
+  It cannot reach the browser, so this marks a contract break rather than
+  decorating one.
 
 ### Size Scale
 
@@ -804,6 +878,6 @@ When adding or modifying styles:
 - [OKLch Color Space](https://oklch.com/) — perceptual color uniformity
 - [Public Sans](https://www.opensans.com/about) — UI typeface (OFL license)
 - [Fira Code](https://github.com/tonsky/FiraCode) — monospace typeface (OFL license)
-- [Lucide Icons](https://lucide.dev/) — icon library (@lucide/svelte)
+- [Tabler Icons](https://tabler.io/icons) — icon library (@tabler/icons-svelte, MIT)
 - [WCAG 2.1 Level AA](https://www.w3.org/WAI/WCAG21/quickref/?currentsetting=level%20aa) — accessibility guidelines
 - [Svelte Documentation](https://svelte.dev/docs) — framework reference

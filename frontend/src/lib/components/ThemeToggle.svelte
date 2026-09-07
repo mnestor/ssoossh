@@ -21,8 +21,12 @@
 
 	let { variant = 'icon', collapsed = false }: Props = $props();
 
+	// The system state used to draw `monitor`, which the console
+	// certificate type and the Console login destination were both using
+	// for a screen. A laptop is the machine the preference belongs to and
+	// collides with nothing.
 	const icons: Record<ThemePreference, string> = {
-		system: 'monitor',
+		system: 'device-laptop',
 		light: 'sun',
 		dark: 'moon'
 	};

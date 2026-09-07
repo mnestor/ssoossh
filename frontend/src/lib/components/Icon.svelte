@@ -1,44 +1,85 @@
 <script lang="ts">
+	// The app's whole icon vocabulary, in one place.
+	//
+	// Every glyph comes from @tabler/icons-svelte and every call site passes
+	// a string, so the library appears in exactly this import list and this
+	// map. Tabler is drawn on the same 24-unit grid at the same 2px stroke
+	// the app was already using, and — unlike a general-purpose set — it
+	// carries the nouns this product is about: a certificate, a certificate
+	// that no longer counts, a signature, a history.
+	//
+	// The naming rule the set obeys is noun, then state. `certificate` and
+	// `certificate-off` are one drawing in two conditions rather than two
+	// unrelated glyphs, and the same holds for `clock` / `clock-cancel` and
+	// `filter` / `filter-off`. A state this app has not needed yet already
+	// has a glyph waiting, which is what stops the map drifting back into
+	// one symbol doing three jobs. See frontend/DESIGN.md, "Iconography".
 	import {
-		AlertCircle,
-		AlertTriangle,
-		Check,
-		CheckCircle,
-		Copy,
-		X,
-		XCircle,
-		ArrowRight,
-		LayoutGrid,
-		Link,
-		Monitor,
-		Moon,
-		Sun,
-		ChevronDown,
-		ChevronLeft,
-		ChevronRight,
-		ChevronUp,
-		Menu,
-		Zap,
-		User,
-		Terminal,
-		Cog,
-		Server,
-		Clock,
-		Loader,
-		Search,
-		Users,
-		Award,
-		KeyRound,
-		SlidersHorizontal,
-		BookOpen,
-		Code,
-		FileText,
-		Activity,
-		ShieldCheck,
-		PanelLeft,
-		LogOut,
-		Bell
-	} from '@lucide/svelte';
+		// Certificate types. Four rectilinear objects, so the family reads
+		// as one group before any single glyph is recognised.
+		IconIdBadge,
+		IconTerminal2,
+		IconServerCog,
+		IconDeviceDesktop,
+		// Request status. The clock face is a circle, so `clock-cancel`
+		// stays inside the circle family while still saying "time ran out".
+		IconHourglassHigh,
+		IconLoader2,
+		IconCircleCheck,
+		IconCircleKey,
+		IconCircleX,
+		IconClockCancel,
+		IconAlertOctagon,
+		// Certificate validity, as one object in two conditions.
+		IconCertificate,
+		IconCertificateOff,
+		// Alert severity, on the road-sign ladder: circle, triangle, octagon.
+		IconInfoCircle,
+		IconAlertTriangle,
+		// Filters. `filter-off` states "nothing is filtered" rather than
+		// borrowing a wildcard or a destination glyph to imply it.
+		IconFilterOff,
+		// Primary destinations.
+		IconLayoutDashboard,
+		IconHistory,
+		IconKey,
+		IconKeyboard,
+		// Admin destinations.
+		IconShieldLock,
+		IconUsers,
+		IconFileCertificate,
+		IconAdjustmentsHorizontal,
+		IconAddressBook,
+		IconBraces,
+		IconLogs,
+		IconActivityHeartbeat,
+		// Account and theme.
+		IconUserCog,
+		IconSun,
+		IconMoon,
+		IconDeviceLaptop,
+		IconUserCircle,
+		IconLogout,
+		// Chrome and controls.
+		IconMenu2,
+		IconLayoutSidebar,
+		IconChevronDown,
+		IconChevronLeft,
+		IconChevronRight,
+		IconChevronUp,
+		IconArrowRight,
+		IconSearch,
+		IconX,
+		IconCopy,
+		IconCheck,
+		// Detail rows: a person, and a span of time.
+		IconUser,
+		IconClock,
+		// The only fallback. A certificate type outside the four the schema
+		// allows cannot reach the browser, so this marks a contract break
+		// rather than decorating one.
+		IconHelpCircle
+	} from '@tabler/icons-svelte';
 
 	interface Props {
 		name: string;
@@ -58,44 +99,65 @@
 	};
 
 	const iconComponents: Record<string, any> = {
-		'alert-circle': AlertCircle,
-		'alert-triangle': AlertTriangle,
-		check: Check,
-		'check-circle': CheckCircle,
-		copy: Copy,
-		x: X,
-		'x-circle': XCircle,
-		'arrow-right': ArrowRight,
-		'layout-grid': LayoutGrid,
-		link: Link,
-		monitor: Monitor,
-		moon: Moon,
-		sun: Sun,
-		'chevron-down': ChevronDown,
-		'chevron-left': ChevronLeft,
-		'chevron-right': ChevronRight,
-		'chevron-up': ChevronUp,
-		menu: Menu,
-		zap: Zap,
-		user: User,
-		terminal: Terminal,
-		cog: Cog,
-		server: Server,
-		clock: Clock,
-		loader: Loader,
-		search: Search,
-		users: Users,
-		award: Award,
-		'key-round': KeyRound,
-		'sliders-horizontal': SlidersHorizontal,
-		'book-open': BookOpen,
-		code: Code,
-		'file-text': FileText,
-		activity: Activity,
-		'shield-check': ShieldCheck,
-		'panel-left': PanelLeft,
-		'log-out': LogOut,
-		bell: Bell
+		// Certificate types
+		'id-badge': IconIdBadge,
+		'terminal-2': IconTerminal2,
+		'server-cog': IconServerCog,
+		'device-desktop': IconDeviceDesktop,
+		// Request status
+		'hourglass-high': IconHourglassHigh,
+		'loader-2': IconLoader2,
+		'circle-check': IconCircleCheck,
+		'circle-key': IconCircleKey,
+		'circle-x': IconCircleX,
+		'clock-cancel': IconClockCancel,
+		'alert-octagon': IconAlertOctagon,
+		// Certificate validity
+		certificate: IconCertificate,
+		'certificate-off': IconCertificateOff,
+		// Alert severity
+		'info-circle': IconInfoCircle,
+		'alert-triangle': IconAlertTriangle,
+		// Filters
+		'filter-off': IconFilterOff,
+		// Primary destinations
+		'layout-dashboard': IconLayoutDashboard,
+		history: IconHistory,
+		key: IconKey,
+		keyboard: IconKeyboard,
+		// Admin destinations
+		'shield-lock': IconShieldLock,
+		users: IconUsers,
+		'file-certificate': IconFileCertificate,
+		'adjustments-horizontal': IconAdjustmentsHorizontal,
+		'address-book': IconAddressBook,
+		braces: IconBraces,
+		logs: IconLogs,
+		'activity-heartbeat': IconActivityHeartbeat,
+		// Account and theme
+		'user-cog': IconUserCog,
+		sun: IconSun,
+		moon: IconMoon,
+		'device-laptop': IconDeviceLaptop,
+		'user-circle': IconUserCircle,
+		logout: IconLogout,
+		// Chrome and controls
+		'menu-2': IconMenu2,
+		'layout-sidebar': IconLayoutSidebar,
+		'chevron-down': IconChevronDown,
+		'chevron-left': IconChevronLeft,
+		'chevron-right': IconChevronRight,
+		'chevron-up': IconChevronUp,
+		'arrow-right': IconArrowRight,
+		search: IconSearch,
+		x: IconX,
+		copy: IconCopy,
+		check: IconCheck,
+		// Detail rows
+		user: IconUser,
+		clock: IconClock,
+		// Fallback
+		'help-circle': IconHelpCircle
 	};
 
 	const IconComponent = $derived(iconComponents[name]);

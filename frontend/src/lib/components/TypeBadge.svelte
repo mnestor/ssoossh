@@ -19,11 +19,14 @@
 
 	let { type }: Props = $props();
 
+	// Four rectilinear objects, so the family reads as one group before
+	// any single glyph is recognised: a person's badge, a terminal, a
+	// server doing a job, a screen.
 	const icons: Record<CertificateType, string> = {
-		user: 'user',
-		pam: 'terminal',
-		service: 'cog',
-		console: 'monitor'
+		user: 'id-badge',
+		pam: 'terminal-2',
+		service: 'server-cog',
+		console: 'device-desktop'
 	};
 
 	const labels: Record<CertificateType, string> = {
@@ -38,5 +41,5 @@
 	aria-label="Certificate type: {(type && (labels[type] ?? type)) || 'unknown'}"
 	class="inline-flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-md border border-border-subtle text-ink-muted"
 >
-	<Icon name={(type && icons[type]) || 'zap'} size="xs" />
+	<Icon name={(type && icons[type]) || 'help-circle'} size="xs" />
 </span>

@@ -24,10 +24,14 @@
 		error: 'bg-danger-surface text-danger border-danger/30'
 	};
 
+	// Severity walks the road-sign ladder: circle, triangle, octagon. Info
+	// and error drew the same circle until now and let colour carry the
+	// whole difference, which left anyone who cannot separate the two hues
+	// looking at one undifferentiated banner.
 	const iconMap = {
-		info: 'alert-circle',
+		info: 'info-circle',
 		warning: 'alert-triangle',
-		error: 'alert-circle'
+		error: 'alert-octagon'
 	};
 </script>
 

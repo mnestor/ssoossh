@@ -144,7 +144,11 @@
 				data-valid={expired ? 'false' : 'true'}
 				class={expired ? 'text-ink-muted' : 'text-granted'}
 			>
-				<Icon name={expired ? 'alert-triangle' : 'shield-check'} size="sm" />
+				<!-- One drawing in two conditions. The expired state used to
+				     borrow a warning triangle, which asks the reader to act;
+				     a certificate past its validity is a settled fact and
+				     needs nothing from them. -->
+				<Icon name={expired ? 'certificate-off' : 'certificate'} size="sm" />
 			</span>
 			<StatusBadge status={decision} />
 		</span>

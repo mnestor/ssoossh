@@ -10,11 +10,12 @@
 
 	let { type }: Props = $props();
 
+	// The same four glyphs TypeBadge carries; see the note there.
 	const icons: Record<CertificateType, string> = {
-		user: 'user',
-		pam: 'terminal',
-		service: 'cog',
-		console: 'monitor'
+		user: 'id-badge',
+		pam: 'terminal-2',
+		service: 'server-cog',
+		console: 'device-desktop'
 	};
 
 	const labels: Record<CertificateType, string> = {
@@ -28,6 +29,6 @@
 <span
 	class="inline-flex w-fit flex-shrink-0 items-center gap-1 rounded border border-border-subtle px-[7px] py-[3px] text-[10px] font-semibold tracking-[0.05em] text-ink-muted uppercase"
 >
-	<Icon name={icons[type] ?? 'zap'} size="xs" class="h-[11px] w-[11px]" />
+	<Icon name={icons[type] ?? 'help-circle'} size="xs" class="h-[11px] w-[11px]" />
 	{labels[type] ?? type}
 </span>

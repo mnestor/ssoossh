@@ -148,7 +148,7 @@
 					aria-label={rail.drawerOpen ? 'Close navigation menu' : 'Open navigation menu'}
 					class="-ml-1 flex shrink-0 p-1 text-ink-muted transition hover:text-ink"
 				>
-					<Icon name="menu" size="md" />
+					<Icon name="menu-2" size="md" />
 				</button>
 
 				<a href={resolve('/')} class="flex min-w-0 items-center gap-2 font-semibold">

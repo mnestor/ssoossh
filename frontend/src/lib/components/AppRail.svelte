@@ -143,7 +143,7 @@
 				data-testid="rail-collapse"
 				class="mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink-muted transition hover:bg-surface-muted hover:text-ink max-lg:hidden"
 			>
-				<Icon name="panel-left" size="sm" />
+				<Icon name="layout-sidebar" size="sm" />
 			</button>
 		{/if}
 	</div>
@@ -165,7 +165,7 @@
 
 			<RailGroup
 				label="Admin"
-				icon="shield-check"
+				icon="shield-lock"
 				open={adminOpen}
 				{collapsed}
 				testid="rail-admin-group"

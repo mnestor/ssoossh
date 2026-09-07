@@ -27,14 +27,14 @@ export interface NavItem {
  */
 export function primaryNav(): NavItem[] {
 	return [
-		{ href: resolve('/dashboard'), label: 'Dashboard', icon: 'layout-grid' },
-		{ href: resolve('/logs/me'), label: 'History', icon: 'clock' },
-		{ href: resolve('/service-codes'), label: 'Service codes', icon: 'cog' },
+		{ href: resolve('/dashboard'), label: 'Dashboard', icon: 'layout-dashboard' },
+		{ href: resolve('/logs/me'), label: 'History', icon: 'history' },
+		{ href: resolve('/service-codes'), label: 'Service codes', icon: 'key' },
 		// The console code box needs an entry point that is not a
 		// transcribed URL: the whole premise is that the machine in front of
 		// the user cannot print a link anyone will copy, so somebody already
 		// signed in has to be able to find this from the app itself.
-		{ href: resolve('/console'), label: 'Console login', icon: 'monitor' }
+		{ href: resolve('/console'), label: 'Console login', icon: 'keyboard' }
 	];
 }
 
@@ -42,18 +42,23 @@ export function primaryNav(): NavItem[] {
  * plain hrefs. */
 export const adminNav: readonly NavItem[] = [
 	{ href: '/admin/users', label: 'Users', icon: 'users' },
-	{ href: '/admin/certificates', label: 'Certificates', icon: 'award' },
-	{ href: '/admin/service-codes', label: 'Service codes', icon: 'key-round' },
-	{ href: '/admin/config', label: 'Config', icon: 'sliders-horizontal' },
-	{ href: '/admin/directory', label: 'Directory', icon: 'book-open' },
-	{ href: '/admin/identity/echo', label: 'Claims echo', icon: 'code' },
-	{ href: '/admin/audit', label: 'Audit log', icon: 'file-text' },
-	{ href: '/admin/diagnostics', label: 'Diagnostics', icon: 'activity' }
+	{ href: '/admin/certificates', label: 'Certificates', icon: 'file-certificate' },
+	// The caller's own codes take `key` and the registry of every code
+	// takes `circle-key`: one noun, two enclosures. A collapsed rail drops
+	// the group's indent and rule (see RailGroup.svelte), so an admin row
+	// has no visual parent at that width and the two scopes cannot share
+	// a glyph without becoming indistinguishable.
+	{ href: '/admin/service-codes', label: 'Service codes', icon: 'circle-key' },
+	{ href: '/admin/config', label: 'Config', icon: 'adjustments-horizontal' },
+	{ href: '/admin/directory', label: 'Directory', icon: 'address-book' },
+	{ href: '/admin/identity/echo', label: 'Claims echo', icon: 'braces' },
+	{ href: '/admin/audit', label: 'Audit log', icon: 'logs' },
+	{ href: '/admin/diagnostics', label: 'Diagnostics', icon: 'activity-heartbeat' }
 ] as const;
 
 /** accountNav sits in the rail's footer, below the destinations. */
 export function accountNav(): NavItem[] {
-	return [{ href: resolve('/preferences'), label: 'Preferences', icon: 'bell' }];
+	return [{ href: resolve('/preferences'), label: 'Preferences', icon: 'user-cog' }];
 }
 
 /**

@@ -21,15 +21,28 @@
 		failed: 'bg-danger-surface text-danger'
 	};
 
+	// Seven states, seven glyphs. Approved and enrolled used to share a
+	// tick and denied and failed used to share a cross, which hid the two
+	// distinctions a reader most needs: approved means a certificate
+	// exists where enrolled means a code exists that nothing has redeemed
+	// yet, and denied is a decision to appeal where failed is a signer
+	// fault to retry. `clock-cancel` keeps the circle of a clock face
+	// while saying the window closed, which is what expired means here —
+	// nobody refused the request, nobody answered it.
 	const iconMap: Record<RequestStatus, string> = {
-		pending: 'clock',
-		signing: 'loader',
-		approved: 'check-circle',
-		enrolled: 'check-circle',
-		denied: 'x-circle',
-		expired: 'alert-triangle',
-		failed: 'x-circle'
+		pending: 'hourglass-high',
+		signing: 'loader-2',
+		approved: 'circle-check',
+		enrolled: 'circle-key',
+		denied: 'circle-x',
+		expired: 'clock-cancel',
+		failed: 'alert-octagon'
 	};
+
+	// Signing is the one transient state in the set, and a motionless
+	// spinner reads as stuck. motion-safe keeps it still for anyone who
+	// asked the OS for reduced motion.
+	const spin = $derived(status === 'signing' ? 'motion-safe:animate-spin' : '');
 </script>
 
 <span
@@ -37,6 +50,6 @@
 		status
 	] ?? 'bg-surface-muted text-ink-muted'}"
 >
-	<Icon name={iconMap[status]} size="xs" />
+	<Icon name={iconMap[status]} size="xs" class={spin} />
 	{status}
 </span>

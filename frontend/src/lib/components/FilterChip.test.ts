@@ -12,18 +12,18 @@ import FilterChip from './FilterChip.svelte';
 
 describe('FilterChip', () => {
 	it('should report itself pressed when it is the selection', () => {
-		render(FilterChip, { label: 'Denied', icon: 'x-circle', selected: true, onclick: vi.fn() });
+		render(FilterChip, { label: 'Denied', icon: 'circle-x', selected: true, onclick: vi.fn() });
 		expect(screen.getByRole('button', { name: 'Denied' })).toHaveAttribute('aria-pressed', 'true');
 	});
 
 	it('should report itself unpressed when it is not', () => {
-		render(FilterChip, { label: 'Denied', icon: 'x-circle', selected: false, onclick: vi.fn() });
+		render(FilterChip, { label: 'Denied', icon: 'circle-x', selected: false, onclick: vi.fn() });
 		expect(screen.getByRole('button', { name: 'Denied' })).toHaveAttribute('aria-pressed', 'false');
 	});
 
 	it('should call back when pressed', async () => {
 		const onclick = vi.fn();
-		render(FilterChip, { label: 'Denied', icon: 'x-circle', selected: false, onclick });
+		render(FilterChip, { label: 'Denied', icon: 'circle-x', selected: false, onclick });
 
 		await userEvent.click(screen.getByRole('button', { name: 'Denied' }));
 
@@ -35,7 +35,7 @@ describe('FilterChip', () => {
 	it('should name itself from sm up and hide the label below it', () => {
 		render(FilterChip, {
 			label: 'Approved',
-			icon: 'check-circle',
+			icon: 'circle-check',
 			selected: false,
 			onclick: vi.fn()
 		});
@@ -47,7 +47,7 @@ describe('FilterChip', () => {
 	it('should keep its accessible name at every width', () => {
 		render(FilterChip, {
 			label: 'Approved',
-			icon: 'check-circle',
+			icon: 'circle-check',
 			selected: false,
 			onclick: vi.fn()
 		});
@@ -57,7 +57,7 @@ describe('FilterChip', () => {
 	it('should not be pressable while the list behind it is reloading', () => {
 		render(FilterChip, {
 			label: 'PAM',
-			icon: 'terminal',
+			icon: 'terminal-2',
 			selected: false,
 			disabled: true,
 			onclick: vi.fn()

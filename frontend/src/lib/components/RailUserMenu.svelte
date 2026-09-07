@@ -137,7 +137,7 @@
 						? 'bg-accent-wash text-accent'
 						: 'text-ink hover:bg-surface-muted'}"
 				>
-					<Icon name="user" size="sm" class="shrink-0" />
+					<Icon name="user-circle" size="sm" class="shrink-0" />
 					<span class="min-w-0">
 						{#if fullName}
 							<span class="block truncate text-[13px] font-semibold">{fullName}</span>
@@ -176,7 +176,7 @@
 					data-testid="rail-sign-out"
 					class="{railRowClass(false)} disabled:opacity-50"
 				>
-					<Icon name="log-out" size="sm" />
+					<Icon name="logout" size="sm" />
 					<span class="truncate">{signingOut ? 'Signing out…' : 'Sign out'}</span>
 				</button>
 			</div>
@@ -195,7 +195,7 @@
 		data-testid="rail-user-trigger"
 		class={railRowClass(collapsed, ownsCurrentPage)}
 	>
-		<Icon name="user" size="sm" />
+		<Icon name="user-circle" size="sm" />
 		<span class:sr-only={collapsed} class="truncate">{identity}</span>
 		{#if !collapsed}
 			<Icon name={open ? 'chevron-down' : 'chevron-up'} size="xs" class="ml-auto" />

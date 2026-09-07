@@ -101,7 +101,7 @@
 		<span
 			class="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full bg-granted-surface px-2.5 py-1 text-xs font-semibold text-granted"
 		>
-			<Icon name="check-circle" size="xs" />
+			<Icon name="circle-check" size="xs" />
 			Active
 		</span>
 	{/if}
