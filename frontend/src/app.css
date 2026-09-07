@@ -34,8 +34,14 @@
 	--color-danger: oklch(48% 0.13 25);
 	--color-danger-surface: oklch(95% 0.03 25);
 
-	--font-family-sans: 'Public Sans', system-ui, sans-serif;
-	--font-family-mono: 'Fira Code', ui-monospace, monospace;
+	/* --font-* and not --font-family-*, because --font-* is Tailwind v4's
+	   font namespace and the longer names are not. Under the old names the
+	   theme emitted no font utilities, so `font-mono` fell through to
+	   Tailwind's built-in ui-monospace stack and Fira Code rendered nowhere
+	   except the one rule below that reads the variable directly -- while
+	   still being downloaded and shipped on every page load. */
+	--font-sans: 'Public Sans', system-ui, sans-serif;
+	--font-mono: 'Fira Code', ui-monospace, monospace;
 
 	--font-size-xs: 0.75rem;
 	--font-size-sm: 0.875rem;
@@ -62,7 +68,7 @@
 		   defaults (a dialog's `CanvasText`, form controls) from the OS
 		   preference while the tokens said otherwise. */
 		color-scheme: light;
-		font-family: var(--font-family-sans);
+		font-family: var(--font-sans);
 	}
 
 	.dark {
@@ -159,7 +165,7 @@
 	.data-table thead th {
 		padding: 0.5rem 0.75rem;
 		text-align: left;
-		font-family: var(--font-family-mono);
+		font-family: var(--font-mono);
 		font-size: 0.625rem;
 		font-weight: 500;
 		letter-spacing: 0.09em;
