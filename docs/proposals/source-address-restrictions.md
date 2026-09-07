@@ -614,9 +614,9 @@ pass.
   because refused rows are rows in the same table with the same `source_ip`.
 - **Either way**, the index the detector needs
   (`enrollment_retrievals(enrollment_id, retrieved_at)`) belongs to whichever
-  ships first. Note the existing index covers `enrollment_id` alone
-  (`...init.up.sql:240`), and a separate serial index already landed
-  (`20260824000000_retrieval_serial_index`).
+  ships first. Note the existing indexes cover `enrollment_id` alone and
+  `certificate_serial` alone, both in `...init.up.sql`; neither is the
+  composite the detector wants.
 
 A refusal notification copied to a security mailbox rather than the owner
 requires the anomaly design's one extension to `server/notify` (an `Event`
@@ -895,8 +895,8 @@ Verified by direct read: `client/cmd/service_enroll.go:73`;
 [Email notifications](https://mnestor.github.io/ssoossh/operations/email-notifications/).
 
 Verified by listing: `server/resources/migrations/postgres/` contains the init
-pair plus `20260824000000_retrieval_serial_index`; `frontend/DESIGN.md` and
-`internal/api/localaddrs_test.go` both exist.
+pair and nothing else; `frontend/DESIGN.md` and `internal/api/localaddrs_test.go`
+both exist.
 
 Taken from `service-retrieval-anomaly-policy.md` rather than re-derived: the
 counting model, the normalization prefixes, the state machine, the config

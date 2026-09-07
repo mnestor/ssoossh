@@ -7,6 +7,10 @@
 
 DROP TABLE IF EXISTS server_secrets;
 DROP TABLE IF EXISTS ca_signer_keys;
+DROP TABLE IF EXISTS ldap_sync_runs;
+DROP TABLE IF EXISTS user_groups;
+DROP TABLE IF EXISTS user_ldap;
+DROP TABLE IF EXISTS audit_events;
 DROP TABLE IF EXISTS notification_preferences;
 DROP TABLE IF EXISTS enrollment_reassignments;
 DROP TABLE IF EXISTS enrollment_retrievals;

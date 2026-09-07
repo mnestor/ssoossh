@@ -68,6 +68,10 @@ func RunDown(t *testing.T, db *gorm.DB) error {
 // It exists for testing a migration's data handling rather than its schema:
 // step back to the version before one, write rows as the old schema had
 // them, then RunUp and read back what the migration made of them.
+//
+// Nothing calls it while the schema is one collapsed init migration -- there
+// is no version to step back to. It is kept for the first migration added
+// after release, which will carry rows through and need exactly this.
 func RunTo(t *testing.T, db *gorm.DB, version uint) error {
 	t.Helper()
 	return doMigrate(db, func(m *migrate.Migrate) error { return m.Migrate(version) })

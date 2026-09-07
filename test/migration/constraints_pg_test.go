@@ -2,13 +2,14 @@
 
 package migration_test
 
-// The SQLite side of the console migration is pinned by console_test.go.
+// The SQLite side of these constraints is pinned by constraints_test.go.
 // This is the Postgres half the design asked for
 // (https://mnestor.github.io/ssoossh/concepts/console-flow/, "Its own
-// certificate type"): the widened CHECK on both tables admits a console row and
-// still refuses anything else. The two dialects change the constraint by
-// different means (a rebuild on SQLite, DROP/ADD CONSTRAINT on Postgres), so a
-// green SQLite run says nothing about this one.
+// certificate type"): the CHECK on both tables admits a console row and
+// still refuses anything else. The two dialects spell the constraint
+// differently -- Postgres normalizes IN (...) to = ANY (ARRAY[...]) -- and
+// each engine enforces its own, so a green SQLite run says nothing about
+// this one.
 
 import (
 	"strconv"
@@ -17,7 +18,7 @@ import (
 	"github.com/mnestor/ssoossh/test/postgres"
 )
 
-func TestConsoleMigration_PostgresShouldAdmitConsoleAndStillRefuseUnknownTypes(t *testing.T) {
+func TestCertificateTypeCheck_PostgresShouldAdmitTheFourTypesAndRefuseTheRest(t *testing.T) {
 	// Not t.Parallel() — see TestMigrationParity_SchemasShouldBeIdentical.
 	ctx := t.Context()
 

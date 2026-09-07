@@ -83,7 +83,7 @@ The output is a report an admin acts on by editing a file and restarting.
 | Notifications already use a queue group so only one instance sends each mail | `server/pubsub/pubsub.go:298`, `server/notify/event.go:18` |
 | A golden test already guards config values against silent change | `server/config/defaults_golden_test.go`, `test/configgolden/configgolden.go` |
 | `configgolden.Flatten` renders YAML as sorted `dotted.key = value` lines | `test/configgolden/configgolden.go` |
-| Migrations are per-dialect SQL pairs | `server/resources/migrations/{postgres,sqlite}/`, e.g. `20260824000000_retrieval_serial_index.up.sql` |
+| Migrations are per-dialect SQL pairs | `server/resources/migrations/{postgres,sqlite}/`, e.g. `20260101000000_init.up.sql` |
 
 Two of these deserve emphasis, because they constrain the design more than
 the rest.
