@@ -211,8 +211,27 @@ cover-ci: $(FRONTEND_DIST) ## Coverage exactly as codecover.yaml runs it
 cover-floors: $(FRONTEND_DIST) ## Fail if any package dropped below its floor in .coverage-floors
 	./scripts/check-coverage-floors.sh
 
-frontend-test: ## Frontend unit and a11y tests (vitest)
+frontend-test: ## Frontend unit tests (vitest)
 	cd frontend && CI=true pnpm install --frozen-lockfile && pnpm test
+
+# The accessibility gate, in the two halves CI runs it in.
+#
+# `a11y` used to be the name of a CI job that ran the whole vitest suite, of
+# which one file was about accessibility. These are the real thing: an axe
+# sweep of every component the app renders, and an axe sweep of all 166 pages
+# `astro build` writes. Split so a docs-only change does not pay for a
+# frontend install, and a frontend-only change does not pay for a site build.
+.PHONY: a11y a11y-frontend a11y-docs
+a11y: a11y-frontend a11y-docs ## Accessibility sweeps over the app and the docs site
+
+a11y-frontend: ## axe sweep over every frontend component
+	cd frontend && CI=true pnpm install --frozen-lockfile && \
+		pnpm exec vitest run src/lib/components/a11y.test.ts src/lib/components/ConsentModal.a11y.test.ts
+
+# Builds first: the scan reads dist, so it has to be looking at the pages this
+# checkout would actually publish rather than whatever was left behind.
+a11y-docs: ## axe sweep over the built documentation site
+	cd user-docs && npm ci && npm run build:a11y
 
 ##@ Test (tagged suites, not part of `make test`)
 

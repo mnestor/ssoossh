@@ -1,8 +1,13 @@
 name: resilience
 
-# Resilience, load/concurrency, and frontend accessibility suites. These
-# jobs used to run `pnpm` on bare ubuntu-latest without ever installing
-# node or pnpm, so none of them could actually run.
+# Resilience, load/concurrency, frontend unit and accessibility suites.
+# These jobs used to run `pnpm` on bare ubuntu-latest without ever
+# installing node or pnpm, so none of them could actually run.
+#
+# The Accessibility job is a real gate over both halves of the product: an
+# axe sweep of every frontend component, and an axe sweep of all 166 built
+# pages of the documentation site. Before it, a job named `a11y` ran the
+# whole vitest suite and nothing in it checked the documentation at all.
 on:
   workflow_dispatch:
   pull_request:
@@ -28,6 +33,7 @@ jobs:
     outputs:
       go: ${{ steps.filter.outputs.go || 'true' }}
       frontend: ${{ steps.filter.outputs.frontend || 'true' }}
+      docs: ${{ steps.filter.outputs.docs || 'true' }}
       migrations: ${{ steps.filter.outputs.migrations || 'true' }}
     steps:
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -44,6 +50,10 @@ jobs:
               - '.github/workflows/resilience.yaml'
             frontend:
               - 'frontend/**'
+              - '.github/workflows/resilience.yaml'
+            docs:
+              - 'user-docs/**'
+              - 'docs/openapi.yaml'
               - '.github/workflows/resilience.yaml'
             migrations:
               - 'server/resources/migrations/**'
@@ -139,7 +149,7 @@ jobs:
           SSOOSSH_REQUIRE_DOCKER: "1"
         run: go test -buildvcs=false -tags=dbparity -count=1 -timeout=10m ./test/migration/...
 
-  a11y:
+  frontend:
     name: Frontend Tests
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
@@ -154,16 +164,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install dependencies
         run: CI=true pnpm install --frozen-lockfile
-      # `pnpm test` is the whole vitest suite -- 20 files, of which one is
-      # about accessibility. The job and this step were both named for that
-      # one file, which is why the frontend suite was widely believed to run
-      # nowhere: people looked for a "frontend tests" job and there wasn't
-      # one.
+
+      # The whole vitest suite, including the accessibility sweep. This job
+      # used to be called `a11y` for the one file in it that was about
+      # accessibility, which is why the frontend suite was widely believed to
+      # run nowhere -- people looked for a "frontend tests" job and there was
+      # not one. Renamed to what it is; the accessibility gate that used to
+      # be implied by the name is now the separate job below.
+      #
       # test:coverage rather than test: the v8 provider and its excludes were
       # already configured in vite.config.ts and nothing ever invoked them, so
       # frontend coverage was collectable and collected by nobody. Running the
       # suite with it costs nothing extra -- it is the same run.
-      - name: Run frontend unit and a11y tests
+      - name: Run frontend unit tests
         run: pnpm test:coverage
 
       - name: Upload frontend coverage
@@ -173,3 +186,53 @@ jobs:
           name: frontend-coverage
           path: frontend/coverage/
           retention-days: 7
+
+  # The accessibility gate, in one job over both halves of the product.
+  #
+  # There was a job named `a11y` before this one, and it ran the whole vitest
+  # suite -- of which exactly one file, ConsentModal.a11y.test.ts, asserted
+  # anything about accessibility. Thirty-odd components and all 166 pages of
+  # the documentation site were checked by nothing, which is how a Level A
+  # defect in TypeBadge (an aria-label on a role that prohibits it, so no
+  # certificate type had a text alternative anywhere in the app) survived
+  # until somebody read the source.
+  #
+  # Two steps, because the two halves fail differently: a component sweep
+  # catches a bad control the day it is written, and a build-output sweep
+  # catches what a static site generator and its plugins emit around content
+  # nobody in this repository wrote by hand.
+  a11y:
+    name: Accessibility
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      # An axe pass over every component the app renders. The roster test in
+      # that file fails the build when a component is added to
+      # frontend/src/lib/components without a case, so the sweep cannot
+      # silently fall behind the directory it covers.
+      - name: Frontend component sweep
+        if: needs.changes.outputs.frontend == 'true'
+        working-directory: frontend
+        run: |
+          corepack enable
+          CI=true pnpm install --frozen-lockfile
+          pnpm exec vitest run src/lib/components/a11y.test.ts src/lib/components/ConsentModal.a11y.test.ts
+
+      # An axe pass over the built documentation site. Runs against dist
+      # rather than a dev server, so it sees exactly what GitHub Pages will
+      # serve -- Starlight's chrome, starlight-openapi's generated reference,
+      # and the mermaid diagrams' markup included.
+      - name: Documentation site sweep
+        if: needs.changes.outputs.docs == 'true'
+        working-directory: user-docs
+        run: |
+          npm ci
+          npm run build:a11y
