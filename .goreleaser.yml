@@ -190,11 +190,6 @@ builds:
       - amd64
       - arm64
     ldflags: *build-ldflags
-    # env:
-    #   # complex, templated envs (v1.14+):
-    #   - >-
-    #     {{- if eq .Arch "amd64"}}CC=o64-clang{{- end }}
-    #     {{- if eq .Arch "arm64"}}CC=aarch64-apple-darwin20.2-clang{{- end }}
     hooks:
       # amd64/arm64 ship as separate binaries (no universal_binaries/lipo
       # merge), so each is quill-signed and packaged into its own DMG as
