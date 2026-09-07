@@ -115,10 +115,18 @@
         and it is the reason an installer exists at all rather than just a
         zip.
 
-        The folder is deliberately left in place on uninstall (no
-        RemoveFolder): it holds an administrator's enforced configuration,
-        which must survive a client upgrade that goes through remove-then-
-        install.
+        The folder must survive uninstall: it holds an administrator's
+        enforced configuration, which has to outlive a client upgrade that
+        goes through remove-then-install. Leaving out RemoveFolder does not
+        achieve that on its own, which is what windows-verify caught. The
+        Component table reference is explicit that "folders created by the
+        installer are deleted when they become empty", and CreateFolder only
+        gets the empty folder installed; it says nothing about uninstall. The
+        bit that keeps it is Permanent on the component: "If this bit is set,
+        the installer does not remove the component during an uninstall."
+        wixl maps Permanent="yes" to attributes=16, which is
+        msidbComponentAttributesPermanent, confirmed by building this file
+        and reading the Component table back with msiinfo.
 
         Tightening the inherited ACL further would need util:PermissionEx,
         which wixl has no extension support for. Logged in
@@ -126,7 +134,8 @@
       -->
       <Directory Id="CommonAppDataFolder">
         <Directory Id="ProgramDataSsoossh" Name="ssoossh">
-          <Component Id="ProgramDataDirectory" Guid="5f647b9d-a48f-43b8-830d-d0de048794f4">
+          <Component Id="ProgramDataDirectory" Guid="5f647b9d-a48f-43b8-830d-d0de048794f4"
+                     Permanent="yes">
             <CreateFolder/>
           </Component>
         </Directory>

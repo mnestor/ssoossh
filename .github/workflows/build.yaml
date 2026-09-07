@@ -559,20 +559,45 @@ jobs:
           test -f /usr/local/share/man/man5/ssoossh.yaml.5
           test -f /usr/local/share/ssoossh/ssoossh.yaml
 
-      # The opposite assertion, and the one that proves hostArchitectures is
-      # still doing its job: the Intel package must decline on this host
-      # rather than install a binary that cannot exec.
-      - name: The amd64 package is refused on Apple silicon
+      # This used to install the Intel package here and require the installer
+      # to refuse it. That is not what hostArchitectures does, and the step
+      # failed because the package installed exactly as macOS intends: the
+      # attribute declares which architectures the *installer process* can
+      # run on natively, so an Apple silicon Mac handed an x86_64-only
+      # package runs the installer under Rosetta 2 rather than declining it.
+      # Only the other direction is a real refusal, because an Intel Mac
+      # cannot execute arm64 code at all, and this runner cannot test that.
+      #
+      # What is worth asserting on either host is that the two packages are
+      # not cross-wired, which is the fault that would actually strand a
+      # user: each package's declared hostArchitectures and the Mach-O it
+      # carries must both match the architecture in its name. Nothing else
+      # in this job looks inside the payload at all.
+      - name: Each package declares and carries its own architecture
         run: |
           set -euo pipefail
-          if sudo installer -pkg dist/ssoossh-client_*_darwin_amd64.pkg \
-               -target / 2>err.log; then
-            echo "✗ the amd64 package installed on an arm64 host;" \
-                 "hostArchitectures is not being honored" >&2
-            exit 1
-          fi
-          echo "✓ refused, as hostArchitectures asks:"
-          sed 's/^/  /' err.log
+          for arch in amd64 arm64; do
+            case $arch in
+            amd64) macharch=x86_64 ;;
+            arm64) macharch=arm64 ;;
+            esac
+            pkg=$(ls dist/ssoossh-client_*_darwin_"$arch".pkg)
+            rm -rf archexp
+            pkgutil --expand-full "$pkg" archexp
+            declared=$(sed -n 's/.*hostArchitectures="\([^"]*\)".*/\1/p' \
+              archexp/Distribution)
+            if [ "$declared" != "$macharch" ]; then
+              echo "✗ $pkg declares hostArchitectures=\"$declared\"," \
+                   "expected \"$macharch\"" >&2
+              exit 1
+            fi
+            carried=$(lipo -archs archexp/component.pkg/Payload/usr/local/bin/ssoossh)
+            if [ "$carried" != "$macharch" ]; then
+              echo "✗ $pkg carries a $carried binary, expected $macharch" >&2
+              exit 1
+            fi
+            echo "✓ $pkg: declares $declared, carries $carried"
+          done
 
       # The invariant this job exists to hold: nothing public is anything a
       # Mac has not accepted. Deleting an unpublished draft costs nothing and
