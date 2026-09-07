@@ -3,6 +3,7 @@ package signer
 import (
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rsa"
 	"fmt"
@@ -88,4 +89,35 @@ func cryptoPublicKey(pub ssh.PublicKey) (crypto.PublicKey, error) {
 		return nil, fmt.Errorf("CA key type %q does not expose a crypto public key, so it cannot be checked", pub.Type())
 	}
 	return cpk.CryptoPublicKey(), nil
+}
+
+// wrapCASigner converts an HSM-backed crypto.Signer into the ssh.Signer the
+// pipeline signs certificates with, then applies the CA key algorithm policy
+// shared with every other key source (gateCASigner).
+//
+// Ed25519 is rejected here rather than allowed as it is on the agent path:
+// crypto11 cannot sign with an Ed25519 token key at all. In practice
+// FindKeyPair rejects one first, with "unsupported key type: 40"; this is
+// the belt to that braces. Use ssh_key, ssh_key_file or ssh_key_agent for
+// an Ed25519 CA.
+func wrapCASigner(s crypto.Signer) (ssh.Signer, error) {
+	// Ed25519 has to be caught before NewSignerFromSigner, which would
+	// happily wrap a key crypto11 cannot then use.
+	if _, ok := s.Public().(ed25519.PublicKey); ok {
+		return nil, fmt.Errorf("key type %T is not supported for HSM CA keys (ECDSA P-256/384/521 or RSA >= 2048; Ed25519 requires the ssh_key, ssh_key_file or ssh_key_agent source)", s.Public())
+	}
+	signer, err := ssh.NewSignerFromSigner(s)
+	if err != nil {
+		return nil, fmt.Errorf("wrap HSM CA key: %w", err)
+	}
+	return gateCASigner(signer, ed25519Rejected)
+}
+
+// HSMParams configures a connection to a PKCS#11 token.
+type HSMParams struct {
+	Module     string // path to PKCS#11 .so
+	TokenLabel string
+	PIN        string
+	KeyID      []byte // nil when selecting by label only
+	KeyLabel   string // "" when selecting by id only
 }

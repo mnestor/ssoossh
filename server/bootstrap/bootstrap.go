@@ -94,30 +94,10 @@ func (a *app) newCAKeySource() (signer.CAKeySource, error) {
 		return ks, nil
 	}
 
-	// HSM-backed source
-	pin, err := a.config.Signer.HSM.ResolvePIN()
-	if err != nil {
-		return nil, err
-	}
-	keyID, err := a.config.Signer.HSM.KeyIDBytes()
-	if err != nil {
-		return nil, err
-	}
-	ks, err := signer.NewHSMKeySource(signer.HSMParams{
-		Module:     a.config.Signer.HSM.Module,
-		TokenLabel: a.config.Signer.HSM.TokenLabel,
-		PIN:        pin,
-		KeyID:      keyID,
-		KeyLabel:   a.config.Signer.HSM.KeyLabel,
-	})
-	if err != nil {
-		return nil, err
-	}
-	a.caKeySource = ks
-	// Wrap ks.Close to match servicerunner.Service signature (accepts context,
-	// returns error).
-	a.closeCAKeySource = func(context.Context) error { return ks.Close() }
-	return ks, nil
+	// HSM-backed source. The construction lives in a build-tagged file
+	// because it is the only thing in ssoosshd that needs cgo; see
+	// cakeysource_hsm.go and cakeysource_nohsm.go.
+	return a.newHSMCAKeySource()
 }
 
 // BootstrapServe wires up and runs the server (full or API mode).

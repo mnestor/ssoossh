@@ -11,18 +11,164 @@ security module, or a software emulator -- instead of holding it inline in the
 config file. The signer reaches the key through the token during issuance, and
 the private key never leaves it.
 
-Supported algorithms: ECDSA P-256, P-384, P-521, and RSA keys of 2048 bits or
-more (signed with `rsa-sha2-512`).
+:::tip[Consider an ssh-agent before this page]
+`ssh-add -s <module>` loads a PKCS#11 token into an `ssh-agent`, and
+`ssoosshd` can take its CA key from there. The key still never leaves the
+token, but the vendor's library loads in the agent's process rather than the
+signer's, and it works with the default `ssoosshd` build.
+
+The default build has **no PKCS#11 support**: it is cgo-free and statically
+linked, and configuring `hsm` in it fails at startup. Everything on this
+page needs an `hsm`-tagged build. See
+[The CA key in an ssh-agent](/ssoossh/operations/ssh-agent/).
+:::
+
+## Which CA keys work on a token
+
+The HSM path accepts a narrower set of keys than
+[`ssh_key`](/ssoossh/reference/config/top-level/#ssh_key) does. This is the
+whole list:
+
+| CA key on the token | Works | FIPS-approved | Notes |
+| --- | --- | --- | --- |
+| ECDSA P-256 | yes | yes | |
+| ECDSA P-384 | yes | yes | the default elsewhere in ssoossh |
+| ECDSA P-521 | yes | yes | |
+| RSA >= 2048 | yes | yes | restricted to `rsa-sha2-512` and `rsa-sha2-256` |
+| RSA < 2048 | no | no | rejected at startup |
+| ECDSA on any other curve | no | no | rejected at startup |
+| Ed25519 | no | no | see the caution below |
+| DSA, and anything else | no | no | |
+
+RSA of at least 3072 bits is worth preferring over 2048: that is NIST's
+recommendation for security beyond 2030, and it is what `ssoossh` itself
+defaults to when it generates an RSA key.
+
+### Signing cost
+
+One certificate costs one signature, and that signature is the only
+per-request work that depends on the CA key type. Measured with
+`make bench-hsm` on a Ryzen 7 5700G, medians of five runs:
+
+| CA key | Signature, token | Signature, `ssh_key` | Whole job, token | Jobs/s, one signer |
+| --- | --- | --- | --- | --- |
+| ECDSA P-256 | 0.09 ms | 0.04 ms | 0.12 ms | ~8,400 |
+| ECDSA P-384 | 0.3 ms | 0.2 ms | 0.34 ms | ~2,900 |
+| ECDSA P-521 | 0.4 ms | 0.6 ms | 0.38 ms | ~2,600 |
+| RSA 2048 | 0.9 ms | 1.0 ms | 1.1 ms | ~900 |
+| RSA 3072 | 2.2 ms | 2.5 ms | 3.2 ms | ~310 |
+| RSA 4096 | 4.8 ms | 5.5 ms | 5.1 ms | ~195 |
+
+"Whole job" is `Sign()`: lifetime checks, public-key parsing, certificate
+construction, the signature, and marshalling the reply -- everything the
+signer's handler does per message. For the fast curves it is noticeably
+more than the signature alone, which is why the rate column is derived
+from it and not from the signature.
+
+:::caution[The rate column is a ceiling, not a capacity]
+Even "whole job" stops at the edge of the process. It excludes NATS
+delivery, the acknowledgement round trip, and everything the API tier and
+database do per request -- and for an ECDSA CA those dominate completely.
+A real deployment will not see 8,400 certificates a second from a P-256
+signer; it will see whatever the broker and the database allow, with the
+signature invisible in the noise. Use the column to compare key types, and
+measure your own pipeline before planning capacity from it.
+:::
+
+The rate is per signer process, because a signer works through its queue
+one job at a time: the NATS subscription hands over the next job only once
+the previous one is acknowledged. A second `ssoosshd sign` process roughly
+doubles that ceiling -- both compete on the `signer` queue group and the
+work divides -- provided they are not sharing a CPU, and provided signing
+was the constraint in the first place. At ECDSA rates it will not have
+been. See [Multi-instance and NATS](/ssoossh/operations/multi-instance/).
+
+Read the ratios, not the absolute figures. ECDSA P-256 signs roughly forty
+times faster than RSA 4096, and that ordering holds anywhere. The absolute
+numbers do not: they come from SoftHSM2, a **software** emulator that does
+the arithmetic on the same CPU as everything else.
+
+:::caution[A real HSM is not this fast]
+Nothing in the table measures hardware. A physical token adds command,
+transport, and session latency -- typically a few milliseconds over PCIe or
+USB, tens of milliseconds over a network appliance -- and that latency
+usually dominates the arithmetic entirely. Treat the token columns as a
+floor, benchmark your own device, and expect the gap between key types to
+matter less on real hardware than it does here.
+:::
+
+Notice that RSA on the token is not slower than RSA in process, and P-521
+is actually faster there. SoftHSM2 is not paying any hardware cost, so what
+the comparison really shows is that PKCS#11 call overhead is small next to
+the arithmetic itself for the larger keys.
+
+None of this is a reason to pick a key type on its own. Even the slowest
+row is around five milliseconds, against a flow whose other half is a human
+deciding whether to approve a request. Pick ECDSA P-384 for the reasons in
+the table above -- FIPS-approved, supported everywhere on this path -- and
+the cost will not be what you notice.
+
+### Under `fips: true`
+
+[`fips`](/ssoossh/reference/config/top-level/#fips) applies to the CA key
+whatever its source, so an HSM key is checked the same way an inline one is.
+ECDSA and RSA are approved; nothing else is, and the process refuses to start
+rather than issue a certificate it should not.
+
+On the HSM path that gate never actually fires: every key type the token path
+accepts is already FIPS-approved, so the two lists coincide. Turning FIPS on
+takes nothing away from an HSM deployment.
+
+It is `ssh_key` where the distinction bites, because Ed25519 works there
+normally and is refused under FIPS:
+
+```text
+ssoosshd: failed to initialize signer:
+CA key algorithm "ssh-ed25519" is not FIPS-approved
+```
+
+So "move the CA into an HSM" and "turn FIPS on" push toward the same key
+choice from opposite directions, and an ECDSA P-384 CA satisfies both.
+
+`ssoossh` treats Ed25519 as not FIPS-approved deliberately, even though EdDSA
+entered FIPS 186-5 in 2023: several FIPS policies still reject `ssh-ed25519`
+outright, so a key generated with it may be unusable against a FIPS-mode
+server. Leaving `fips` unset follows the Go runtime's own mode,
+`crypto/fips140.Enabled()`.
+
+### What rejection looks like
+
+Each of these fails at startup, not at the first signature:
+
+| Key | Error |
+| --- | --- |
+| Ed25519 | `find CA key pair in HSM: unsupported key type: 40` |
+| ECDSA on a non-NIST curve | `unsupported ECDSA curve "..." for HSM CA key` |
+| RSA below 2048 | `HSM CA RSA key is 1024 bits, must be at least 2048` |
+| Ed25519 via `ssh_key`, under `fips: true` | `CA key algorithm "ssh-ed25519" is not FIPS-approved` |
 
 :::caution
 Ed25519 is **not** supported on the HSM path, a limitation of the PKCS#11
 library in use. For an Ed25519 CA key, keep
 [`ssh_key`](/ssoossh/reference/config/top-level/#ssh_key).
+
+The token will accept such a key if you import one, and `ssoosshd` will then
+fail at startup rather than at first signature --
+[Ed25519 needs a third tool](#ed25519-needs-a-third-tool) has the conversion,
+the error, and why it is a dead end.
 :::
 
-Exactly one of `ssh_key` or [`hsm`](/ssoossh/reference/config/hsm/) may be
-set: two CA key sources would be ambiguous, and configuring both fails at
-startup. API-mode instances have neither; signing modes require one.
+Exactly one of `ssh_key`,
+[`ssh_key_file`](/ssoossh/reference/config/top-level/#ssh_key_file),
+[`ssh_key_agent`](/ssoossh/operations/ssh-agent/) or
+[`hsm`](/ssoossh/reference/config/hsm/) may be set: two CA key sources would
+be ambiguous, and configuring more than one fails at startup. API-mode
+instances have none; signing modes require one.
+
+An Ed25519 CA that cannot go on a token has two homes rather than one:
+inline `ssh_key`, or `ssh_key_file`, which at least keeps it out of the
+config file. It can also carry a passphrase; see
+[what that does and does not buy](/ssoossh/concepts/security-model/#what-a-passphrase-changes-and-what-it-does-not).
 
 ## Configuration
 
@@ -127,7 +273,8 @@ Both the public and private key objects should appear.
 
 ### 4. Or import an existing PEM CA key
 
-Convert to PKCS#8 first:
+`softhsm2-util --import` takes PKCS#8, so convert first. If the key is
+already in a format OpenSSL can read:
 
 ```bash
 openssl pkcs8 -topk8 -inform PEM -outform PEM \
@@ -136,6 +283,73 @@ openssl pkcs8 -topk8 -inform PEM -outform PEM \
 sudo softhsm2-util --import ca-key-pkcs8.pem \
   --slot 0 --label ssoossh-ca --id 01 --pin 1234
 ```
+
+A CA key generated with `ssh-keygen` is not in that format: it is an
+`OPENSSH PRIVATE KEY`, which OpenSSL cannot decode at all.
+
+```text
+Could not find private key of key from ca-key.pem
+error:1E08010C:DECODER routines:OSSL_DECODER_from_bio:unsupported
+```
+
+For an ECDSA or RSA key, `ssh-keygen` will rewrite it in place:
+
+```bash
+cp ca-key ca-key-pkcs8.pem
+ssh-keygen -p -N "" -m PKCS8 -f ca-key-pkcs8.pem
+head -1 ca-key-pkcs8.pem     # -----BEGIN PRIVATE KEY-----
+```
+
+#### Ed25519 needs a third tool
+
+Neither `openssl` nor `ssh-keygen` will convert an OpenSSH-format Ed25519
+private key to PKCS#8. OpenSSL cannot read the input, and `ssh-keygen` has
+no Ed25519 support on this path:
+
+```text
+do_convert_to_pkcs8: unsupported key type ED25519
+```
+
+:::danger[`ssh-keygen -p -m PKCS8` fails silently on Ed25519]
+The in-place rewrite above reports success on an Ed25519 key --
+`Your identification has been saved with the new passphrase.` -- and leaves
+the file in OpenSSH format, unchanged. Check the first line of the file
+rather than the exit code. `-m PEM` behaves the same way.
+:::
+
+Python's [`cryptography`](https://cryptography.io/) reads the OpenSSH
+container and writes PKCS#8:
+
+```python
+from cryptography.hazmat.primitives import serialization
+
+with open("ca-key", "rb") as f:
+    key = serialization.load_ssh_private_key(f.read(), password=None)
+
+with open("ca-key-pkcs8.pem", "wb") as f:
+    f.write(key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ))
+```
+
+Pass `password=b"..."` if the key has a passphrase. The result is an
+ordinary PKCS#8 file that `openssl pkey` and `softhsm2-util --import` both
+accept.
+
+That conversion is worth knowing, but it will not get an Ed25519 CA onto
+the HSM path in `ssoosshd`. SoftHSM2 imports the key happily, and the
+signer then refuses it at startup:
+
+```text
+ssoosshd: failed to initialize signer: failed to load CA signing key:
+find CA key pair in HSM: unsupported key type: 40
+```
+
+`40` is `CKK_EC_EDWARDS`. See the caution at the top of this page: an
+Ed25519 CA belongs in
+[`ssh_key`](/ssoossh/reference/config/top-level/#ssh_key), not a token.
 
 ### 5. Token directory permissions
 

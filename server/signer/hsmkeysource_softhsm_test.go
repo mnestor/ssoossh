@@ -1,4 +1,4 @@
-//go:build softhsm
+//go:build hsm && softhsm
 
 package signer
 
@@ -99,7 +99,7 @@ func TestMain(m *testing.M) {
 // provisionToken creates a new SoftHSM2 token with the given label,
 // generates one key of the given type, and returns the module path.
 // keyType is "EC:prime256v1" or "RSA:2048".
-func provisionToken(t *testing.T, tokenLabel, keyType, keyLabel, keyID string) string {
+func provisionToken(t testing.TB, tokenLabel, keyType, keyLabel, keyID string) string {
 	t.Helper()
 
 	if softhsmMgr == nil {
@@ -135,7 +135,7 @@ func provisionToken(t *testing.T, tokenLabel, keyType, keyLabel, keyID string) s
 // buildTestCert constructs a minimal ssh.Certificate for testing,
 // using the given public key string (authorized_keys format).
 // This mirrors the certificate construction from sign_test.go.
-func buildTestCert(t *testing.T, publicKeyStr string) *ssh.Certificate {
+func buildTestCert(t testing.TB, publicKeyStr string) *ssh.Certificate {
 	t.Helper()
 
 	pub, _, _, _, err := ssh.ParseAuthorizedKey([]byte(publicKeyStr))
@@ -317,7 +317,7 @@ func TestHSMKeySource_ShouldFailWhenPINWrong(t *testing.T) {
 // newTestPublicKeyString returns a fresh Ed25519 public key in
 // authorized_keys format, as a string. This is used for certificate
 // signing tests to have a distinct key to sign, separate from the CA key.
-func newTestPublicKeyString(t *testing.T) (string, error) {
+func newTestPublicKeyString(t testing.TB) (string, error) {
 	t.Helper()
 
 	// Generate a temporary Ed25519 key just for the user part of the cert.

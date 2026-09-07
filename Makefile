@@ -222,12 +222,20 @@ frontend-test: ## Frontend unit and a11y tests (vitest)
 
 ##@ Test (tagged suites, not part of `make test`)
 
-.PHONY: test-e2e test-memory-leak test-resilience test-load test-migration test-hsm
+.PHONY: test-e2e test-memory-leak test-resilience test-load test-migration test-hsm bench-hsm
 # The HSM key source against a real PKCS#11 token. Behind the `softhsm` tag
 # so `make test` never needs softhsm2 installed; CI installs softhsm2 and
 # opensc for it (see the runner image).
 test-hsm: ## HSM key source tests against softhsm2 (needs softhsm2 + opensc)
-	CGO_ENABLED=1 go test -tags=softhsm ./server/signer/ -run TestHSMKeySource -v
+	CGO_ENABLED=1 go test -tags=hsm,softhsm ./server/signer/ -run TestHSMKeySource -v
+
+# Per-key-type signing cost, both on a token and in process. Sources the
+# table on https://mnestor.github.io/ssoossh/operations/hsm/ -- rerun this
+# before editing those numbers. SoftHSM2 is a software emulator, so the
+# figures bound the arithmetic, not real hardware.
+bench-hsm: ## Signing benchmarks per CA key type (needs softhsm2 + opensc)
+	CGO_ENABLED=1 go test -tags=hsm,softhsm ./server/signer/ -run XXX \
+		-bench 'SignCert|SignJob' -benchtime 1000x -count 5
 
 # The merge-gate end-to-end suite (docs/dev/e2e-testing-plan.md): a real
 # ssoosshd and ssoossh, a harness-provided OIDC IdP, a private ssh-agent,
@@ -326,7 +334,7 @@ lint: ## golangci-lint over the whole module (merge gate)
 # One invocation per tag set rather than a single combined one: the tags
 # select mutually exclusive views of the tree in places, so a combined run
 # does not typecheck.
-LINT_TAGGED := e2e resilience load dbparity softhsm natsintegration
+LINT_TAGGED := e2e resilience load dbparity hsm softhsm natsintegration
 
 .PHONY: lint-tagged
 lint-tagged: ## golangci-lint over the build-tagged suites lint(1) cannot see
