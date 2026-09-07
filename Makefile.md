@@ -62,7 +62,10 @@ the matching `lint-*`) and the internal check halves
 | `make cover` | Coverage HTML report at .coverage/coverage.html |
 | `make cover-ci` | Coverage exactly as codecover.yaml runs it |
 | `make cover-floors` | Fail if any package dropped below its floor in .coverage-floors |
-| `make frontend-test` | Frontend unit and a11y tests (vitest) |
+| `make frontend-test` | Frontend unit tests (vitest) |
+| `make a11y` | Accessibility sweeps over the app and the docs site |
+| `make a11y-frontend` | axe sweep over every frontend component |
+| `make a11y-docs` | axe sweep over the built documentation site |
 
 ### Test (tagged suites, not part of `make test`)
 
