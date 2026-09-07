@@ -13,6 +13,10 @@
 //	type=<tag>, no file but a level set     ALL of the general destinations,
 //	                                        filtered at that tag's own level
 //	                                        rather than logging.level
+//	type=startup                            ALL of the general destinations,
+//	                                        filtered at INFO or logging.level,
+//	                                        whichever is lower (see
+//	                                        startupLevel)
 //	everything else                         ALL of the general destinations,
 //	                                        filtered at logging.level:
 //	  - the main log file                     when logging.filename is set
@@ -82,6 +86,13 @@ func New(c *config.Config) (closeFns []func(context.Context) error, err error) {
 			router = router.Add(h, slogmulti.AttrValueIs(AttrKeyType, nl.tag))
 		}
 	}
+	// Before the catch-all, and so ahead of it in FirstMatch order: the
+	// startup records, which have to survive the default WARN level.
+	router = router.Add(
+		generalFanout(c, isTerminal, startupLevel(c)),
+		slogmulti.AttrValueIs(AttrKeyType, TagStartup),
+	)
+
 	router = router.Add(generalFanout(c, isTerminal, LevelFromString(c.Logging.Level)))
 
 	logger := slog.New(router.FirstMatch().Handler())
@@ -136,6 +147,18 @@ func namedRoute(c *config.Config, nl namedLoggerConfig, isTerminal bool) slog.Ha
 		return generalFanout(c, isTerminal, LevelFromString(level))
 	}
 	return nil
+}
+
+// startupLevel is the threshold for the TagStartup route: INFO, or
+// logging.level when that is lower.
+//
+// The floor is the whole point — logging.level defaults to WARN, which
+// silences an INFO startup record and leaves a healthy process looking
+// like a dead one. Taking the minimum rather than a flat INFO keeps a
+// debug run consistent with the rest of its output (AddSource included)
+// instead of singling this route out.
+func startupLevel(c *config.Config) slog.Level {
+	return min(LevelFromString(c.Logging.Level), slog.LevelInfo)
 }
 
 // generalFanout builds the broadcast handler for the general destinations:

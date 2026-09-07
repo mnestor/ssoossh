@@ -1,5 +1,11 @@
 package bootstrap
 
+import (
+	"context"
+
+	"github.com/mnestor/ssoossh/server/logging"
+)
+
 // ServerMode specifies which mode to run the server in.
 type ServerMode int
 
@@ -30,4 +36,16 @@ func (m ServerMode) String() string {
 	default:
 		return "unknown"
 	}
+}
+
+// logStarting announces that the process is up and which mode it is in.
+//
+// Tagged rather than logged plainly so it survives the default logging
+// level: logging.level defaults to WARN, so an ordinary Info record here
+// prints nothing at all, and a correctly configured process looks
+// identical to one that has hung. See server/logging's destination
+// contract for the routing.
+func logStarting(ctx context.Context, mode ServerMode) {
+	logging.Tagged(logging.TagStartup).
+		InfoContext(ctx, "ssoosshd is starting", "mode", mode.String())
 }

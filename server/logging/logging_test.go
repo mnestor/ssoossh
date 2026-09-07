@@ -690,3 +690,123 @@ func TestNew_ShouldPreferAConfiguredFileOverTheLevelRoute(t *testing.T) {
 		t.Errorf("expected the dedicated file to be exclusive, but stdout also got it:\n%s", stdout)
 	}
 }
+
+// The startup route exists so "the process is up" survives the default
+// WARN level. Its whole value is that no configuration is required for it
+// to appear, so the cases below pin both halves: it prints when the app
+// log is quiet, and it is not a back door for ordinary records.
+//
+// Mutates the default logger; must not run in parallel.
+func TestNew_ShouldEmitStartupRecordsBelowTheConfiguredLevel(t *testing.T) {
+	tests := []struct {
+		name       string
+		mainLevel  string
+		log        func()
+		wantStdout []string
+		notStdout  []string
+	}{
+		{
+			name:      "should print a startup record at the default warn level",
+			mainLevel: "warn",
+			log: func() {
+				Tagged(TagStartup).Info("startup-marker")
+				slog.Info("app-info-marker")
+			},
+			wantStdout: []string{"startup-marker"},
+			notStdout:  []string{"app-info-marker"},
+		},
+		{
+			name:       "should print a startup record when the app log is at error",
+			mainLevel:  "error",
+			log:        func() { Tagged(TagStartup).Info("quiet-config-marker") },
+			wantStdout: []string{"quiet-config-marker"},
+		},
+		{
+			name:       "should still print a startup record at debug",
+			mainLevel:  "debug",
+			log:        func() { Tagged(TagStartup).Info("debug-config-marker") },
+			wantStdout: []string{"debug-config-marker"},
+		},
+		{
+			name:       "should keep the type attr, having no dedicated destination",
+			mainLevel:  "warn",
+			log:        func() { Tagged(TagStartup).Info("typed-startup-marker") },
+			wantStdout: []string{"typed-startup-marker", "type=" + TagStartup},
+		},
+		{
+			name:      "should drop a startup-tagged record below info",
+			mainLevel: "warn",
+			log:       func() { Tagged(TagStartup).Debug("debug-startup-marker") },
+			notStdout: []string{"debug-startup-marker"},
+		},
+	}
+
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &config.Config{}
+			c.Logging.Level = tt.mainLevel
+
+			stdout, _ := captureStdouterr(t, func() {
+				if _, err := New(c); err != nil {
+					t.Fatalf("New() error = %v", err)
+				}
+				tt.log()
+			})
+
+			for _, want := range tt.wantStdout {
+				if !strings.Contains(stdout, want) {
+					t.Errorf("stdout missing %q; got:\n%s", want, stdout)
+				}
+			}
+			for _, not := range tt.notStdout {
+				if strings.Contains(stdout, not) {
+					t.Errorf("stdout unexpectedly contains %q; got:\n%s", not, stdout)
+				}
+			}
+		})
+	}
+}
+
+// A tag with a dedicated file must keep winning over the startup route:
+// the router is FirstMatch, and the named-logger routes are added first.
+// This pins that ordering, since a startup route added ahead of them would
+// silently steal nothing today and everything the moment TagStartup were
+// given a file.
+//
+// Mutates the default logger; must not run in parallel.
+func TestNew_ShouldNotLetTheStartupRouteStealANamedLoggersFile(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	dir := t.TempDir()
+	accessFile := filepath.Join(dir, "access.log")
+
+	c := &config.Config{}
+	c.Logging.Level = "warn"
+	c.HTTP.AccessLogging.Filename = accessFile
+
+	stdout, _ := captureStdouterr(t, func() {
+		if _, err := New(c); err != nil {
+			t.Fatalf("New() error = %v", err)
+		}
+		Tagged(TagAccessLog).Info("access-marker")
+		Tagged(TagStartup).Info("startup-marker")
+	})
+
+	got, err := os.ReadFile(accessFile)
+	if err != nil {
+		t.Fatalf("read access log: %v", err)
+	}
+	if !strings.Contains(string(got), "access-marker") {
+		t.Errorf("access log missing its own record; got:\n%s", got)
+	}
+	if strings.Contains(string(got), "startup-marker") {
+		t.Errorf("access log unexpectedly captured the startup record; got:\n%s", got)
+	}
+	if !strings.Contains(stdout, "startup-marker") {
+		t.Errorf("stdout missing the startup record; got:\n%s", stdout)
+	}
+}

@@ -38,6 +38,18 @@ its CA public key so the web tier can serve it. It needs no database, no HTTP
 listener, and no OIDC or LDAP configuration, so it runs happily on a machine
 with restricted network access -- or the machine the HSM is attached to.
 
+Whichever you run, the process announces itself on stdout at startup, and
+that one line ignores [`logging.level`](/ssoossh/reference/config/logging/#level)
+so a healthy process is never completely silent:
+
+```text
+INF ssoosshd is starting type=startup mode=api
+```
+
+`mode` is `full`, `api`, or `sign`. Everything after it -- the broker
+connection, the database, the subscriptions -- is `INFO`, and so hidden by the
+default `WARN` level until you set `logging.level: info`.
+
 ```ini
 # systemd drop-in for an API instance
 [Service]

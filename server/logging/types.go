@@ -21,6 +21,18 @@ const (
 	TagQueue     = "queue"
 	TagLDAP      = "ldap"
 	TagAudit     = "audit"
+
+	// TagStartup is not a named logger like the ones above: it has no
+	// config block and no destination of its own. It marks the handful of
+	// records that must be visible whatever logging.level says — "the
+	// process is up, in this mode" — and New routes it at INFO or lower so
+	// the default WARN level cannot swallow it.
+	//
+	// A silent healthy process is indistinguishable from a wedged one, and
+	// operators read that silence as a bug in the process rather than in
+	// their log level. Keep this list to records that answer "did it
+	// start?"; anything else belongs at its natural level.
+	TagStartup = "startup"
 )
 
 // Tagged returns a logger whose records carry the named-logger tag, for
