@@ -49,9 +49,11 @@ a binary quill did not sign.
 ask: whether the BOM `mkbom` wrote matches the one `pkgbuild` writes from
 the same payload, whether `spctl` accepts the package, whether it installs,
 and whether `hostArchitectures` still makes the Intel package decline on
-Apple silicon. goreleaser writes the release as a draft and this job is what
-publishes it, or deletes it. A draft can be deleted in silence; a published
-release has already emailed every watcher.
+Apple silicon. goreleaser writes the release as a draft and tags the images
+with the commit sha only; the `publish` job flips the draft and promotes the
+images to their version tags, and runs only if this job passed. A draft can
+be deleted in silence, and a sha tag never claimed to be a release; a
+published release has already emailed every watcher.
 
 ## Two things that will bite you
 

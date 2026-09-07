@@ -488,36 +488,173 @@ jobs:
           echo "✓ refused, as hostArchitectures asks:"
           sed 's/^/  /' err.log
 
-      # Everything above passed, so the release becomes visible. This is the
-      # only step in the pipeline that makes anything public under a name
-      # someone would go looking for, and it is deliberately the last thing
-      # that happens, on the machine that did the checking.
+      # The invariant this job exists to hold: nothing public is anything a
+      # Mac has not accepted. Deleting an unpublished draft costs nothing and
+      # tells nobody, which is exactly why the release waits here instead of
+      # going out and being revoked -- GitHub emails every watcher the moment
+      # a release is published, and that notification cannot be recalled.
+      #
+      # The images need no cleanup for the same reason: they still carry
+      # only their sha tags at this point, and publish promotes them to
+      # version tags after this job passes. A sha tag is immutable, names
+      # the commit that built it, and never claimed to be a release.
+      - name: remove the draft, a Mac rejected it
+        if: startsWith(github.ref, 'refs/tags/') && failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release delete -y "$TAG"
+
+  # Where a release becomes visible, and the only job that makes anything
+  # public under a name someone would go looking for. Everything before it
+  # published to names nobody pulls: goreleaser wrote the release as a
+  # draft (.goreleaser.yml's release.draft) and tagged the images with the
+  # commit sha (its dockers_v2 tags), and macos-verify confirmed on a real
+  # Mac that the installers goreleaser built are ones macOS accepts. This
+  # flips both at the end, once every artifact for every platform is in
+  # place and checked.
+  #
+  # Both halves wait, deliberately. Publishing the release emails every
+  # watcher and cannot be undone; a version tag on a public image is pulled
+  # by anything tracking it. Neither is worth doing while an installer is
+  # still unverified, and the cost of waiting is one job.
+  #
+  # Tag pushes only -- there is nothing to publish on the weekly run, which
+  # is exactly why that run rehearses everything except this job.
+  #
+  # No container and no build tooling: two registry calls and one API call.
+  # docker with the buildx plugin and gh are both on the stock runner
+  # image, so this does not pay for the ssoossh-build pull either.
+  publish:
+    name: publish
+    needs: [build-most, macos-verify]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # gh release edit.
+      contents: write
+      # The version tags created below.
+      packages: write
+    # This job checks nothing out on purpose, so gh has no remote to read
+    # the repository from and every call would die on "fatal: not a
+    # repository". GH_REPO names it instead, for the whole job.
+    env:
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `imagetools create` copies the manifest list registry-side, by
+      # digest: the multi-arch index and the labels goreleaser baked in at
+      # build time carry over untouched and no layer moves, so this costs
+      # about a second per tag. It is a registry operation rather than a
+      # build, so unlike build-most this job needs no buildx builder and
+      # no setup-buildx-action.
+      #
+      # The version goreleaser tags with is the git tag without its v
+      # (.Version in its templates, and the value already in each image's
+      # org.opencontainers.image.version label), which is what these have
+      # to match.
+      #
+      # Every piece of the version gets a tag: v1.2.4 publishes 1.2.4, 1.2
+      # and 1, and the -pkcs11 variant of each. The exact version is the one
+      # an operator pins; the two floating tags are for the operator who
+      # wants patch, or minor and patch, to arrive without a change here.
+      #
+      # `latest` is not one of them and is not going to become one. Every
+      # tag here names some part of a version, so whatever an operator
+      # pins, they have said how far they are willing to be moved.
+      # `latest` is the one tag that says nothing, and the distance it
+      # would move someone is unbounded.
+      #
+      # Two calls because the two variants come from two different source
+      # images, but each is one call for all three of its tags -- so a
+      # failure between them leaves the -pkcs11 series a version behind and
+      # never a half-tagged variant. The re-run of the tag fixes it; that
+      # is the narrow case this ordering does not cover.
+      - name: Promote the images to their version tags
+        env:
+          IMAGE: ghcr.io/mnestor/ssoossh-server
+          TAG: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          tags=("$version")
+
+          # The floating tags are for final releases only. goreleaser's
+          # release.prerelease is auto, so v1.3.0-rc1 is a release like any
+          # other here -- and `1.3` resolving to a release candidate is
+          # exactly what someone tracking `1.3` is trusting will not happen.
+          if printf '%s' "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            major="${version%%.*}"
+            series="${version%.*}"
+
+            # And only when this tag is the newest in the series, so that
+            # re-running an old tag cannot walk a floating tag backwards
+            # onto an older image. Git tags rather than releases: the
+            # release this run is about to publish is still a draft, so it
+            # would not be in a release listing, and a tag whose release
+            # failed is still a version this one must not claim to be
+            # newer than.
+            shipped=$(gh api --paginate \
+              "/repos/$REPO/git/matching-refs/tags/v${major}." \
+              --jq '.[].ref | sub("^refs/tags/v"; "")' \
+              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
+            esc="${series//./\\.}"
+            newest_major=$(printf '%s\n' "$shipped" | tail -1)
+            newest_series=$(printf '%s\n' "$shipped" \
+              | grep -E "^${esc}\.[0-9]+$" | tail -1)
+
+            if [ "$newest_series" = "$version" ]; then
+              tags+=("$series")
+            else
+              echo "$TAG trails v${newest_series}; $series stays put"
+            fi
+            if [ "$newest_major" = "$version" ]; then
+              tags+=("$major")
+            else
+              echo "$TAG trails v${newest_major}; $major stays put"
+            fi
+          fi
+
+          echo "tagging: ${tags[*]}"
+          for variant in "" "-pkcs11"; do
+            args=()
+            for tag in "${tags[@]}"; do
+              args+=(-t "${IMAGE}:${tag}${variant}")
+            done
+            docker buildx imagetools create "${args[@]}" \
+              "${IMAGE}:sha-${COMMIT}${variant}"
+            docker buildx imagetools inspect "${IMAGE}:${version}${variant}"
+          done
+
+      # Last, so a failure in the promote above leaves the release a draft
+      # rather than a published release whose images are half-named.
       #
       # Only draft is touched. Whether the release is a prerelease, and
       # whether it becomes /releases/latest, remain goreleaser's call
       # (.goreleaser.yml's release.prerelease: auto).
       - name: Publish the release
-        if: startsWith(github.ref, 'refs/tags/')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: gh release edit "$TAG" --draft=false
 
-      # The invariant this job exists to hold: a release that is visible is
-      # one a Mac accepted. Deleting an unpublished draft costs nothing and
-      # tells nobody, which is exactly why the release waits here instead of
-      # going out and being revoked. GitHub emails every watcher the moment
-      # a release is published, and that notification cannot be recalled.
-      #
-      # The images are left alone. They carry version tags from build-most
-      # rather than being promoted here, so a failure at this point leaves
-      # ghcr.io tags for a release that never appeared. They are not wrong,
-      # only early: the server images have nothing to do with the macOS
-      # client package that failed, and a re-run of the tag overwrites them.
-      # Nothing in this pipeline holds a credential that can delete a
-      # package version, which is deliberate.
-      - name: remove the draft, a Mac rejected it
-        if: startsWith(github.ref, 'refs/tags/') && failure()
+      # Same invariant the build jobs keep. The sha tags are left alone on
+      # purpose: they are immutable, they name the commit that built them,
+      # and they never claimed to be a release -- so nothing in this
+      # pipeline ever needs a credential that can delete a package version.
+      - name: remove the release, we failed
+        if: failure()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}

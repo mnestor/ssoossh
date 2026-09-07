@@ -482,23 +482,35 @@ archives:
 # catch a broken Dockerfile but never pushes -- goreleaser skips its whole
 # publish phase in --snapshot mode.
 #
-# Every tag is written here, by this run: the commit sha, the exact version,
-# and the floating X.Y and X, so v1.2.4 is reachable as 1.2.4, 1.2 and 1.
-# There is no second job promoting one set to another any more.
+# The only tag pushed here is the commit sha, and that is deliberate. This
+# pipe runs in build-most, before any Mac has been asked whether it accepts
+# the release's macOS installers, so a version tag written here would put
+# ghcr.io/mnestor/ssoossh-server:1.4.0 in front of the world for a release
+# that macos-verify may still reject. build.yaml's publish job copies these
+# to their version tags (docker buildx imagetools create, a server-side
+# manifest copy by digest) at the same moment it publishes the release
+# draft, so a version tag exists only for a release that does.
 #
-# That does leave images tagged before the release they belong to is
-# visible, since macos-verify can still reject the macOS installers and
-# delete the draft afterwards. It is a deliberate trade and a narrow one:
-# these images are the server, built from the same binaries whatever the
-# macOS client package does, so a version tag surviving a rejected draft is
-# early rather than wrong, and a re-run of the tag overwrites it. The
-# alternative, holding every image on a sha tag and copying it to its
-# version tags in a later job, is what this replaced.
+# This was briefly moved into these templates, on the reasoning that
+# goreleaser now builds every artifact including the .pkg installers and so
+# nothing arrives afterwards. That is true and it is not the point: what
+# arrives afterwards is not an artifact, it is a verdict. Publishing is
+# irreversible in a way building is not -- a release emails every watcher,
+# a version tag gets pulled by whatever tracks it -- so the rule is that
+# nothing acquires a public name until the last check has passed, however
+# complete the artifacts already are. See docs in build.yaml's publish job.
 #
-# The sha tag stays even though the version tags now sit beside it. It is
-# immutable, it names the commit that built it, and it is the one tag that
-# still means something if a run dies partway. Nothing is ever deleted, so
-# no delete:packages credential is needed anywhere in this pipeline.
+# What stays behind on a failed release is the sha tag, which is fine: it
+# is immutable, it names the commit that built it, and it never claimed to
+# be a release. Nothing is deleted, so no delete:packages credential is
+# needed anywhere in this pipeline.
+#
+# The publish job writes X.Y and X alongside the exact version, so v1.2.4
+# is reachable as 1.2.4, 1.2 and 1. Both floating tags move only for a
+# final release that is the newest in its series, which is what keeps a
+# release candidate, or a re-run of an older tag, from becoming what `1.2`
+# means. A goreleaser template cannot see which tags have shipped, which is
+# the second reason this lives in a job.
 #
 # The floating tags skip prereleases, so v1.3.0-rc1 is reachable as
 # 1.3.0-rc1 and nothing else. They do NOT check whether this tag is the
@@ -529,9 +541,6 @@ dockers_v2:
       - ghcr.io/mnestor/ssoossh-server
     tags:
       - "sha-{{ .FullCommit }}"
-      - "{{ .Version }}"
-      - "{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}{{ end }}"
-      - "{{ if not .Prerelease }}{{ .Major }}{{ end }}"
     platforms:
       - linux/amd64
       - linux/arm64
@@ -559,9 +568,6 @@ dockers_v2:
     # first.
     tags:
       - "sha-{{ .FullCommit }}-pkcs11"
-      - "{{ .Version }}-pkcs11"
-      - "{{ if not .Prerelease }}{{ .Major }}.{{ .Minor }}-pkcs11{{ end }}"
-      - "{{ if not .Prerelease }}{{ .Major }}-pkcs11{{ end }}"
     platforms:
       - linux/amd64
       - linux/arm64
