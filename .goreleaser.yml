@@ -5,16 +5,20 @@ release:
   prerelease: auto
 
   # Complete when goreleaser finishes, but not yet visible. Every artifact a
-  # release carries is produced by this file now, the macOS installers
-  # included (the macos-build post-hook), so the draft is no longer waiting
-  # for a second job to attach anything. It is waiting for a verdict.
+  # release carries is produced by this file now, both platforms' installers
+  # included (the macos-build and windows-build post-hooks), so the draft is
+  # no longer waiting for a second job to attach anything. It is waiting for
+  # a verdict.
   #
   # macos-verify in .github/workflows/build.yaml asks a Mac the questions
   # Apple's notary service does not: whether the BOM mkbom wrote matches the
   # one pkgbuild writes from the same payload, whether the package installs,
   # whether hostArchitectures still makes the Intel package decline on Apple
-  # silicon. It flips this draft when the answers are right and deletes it
-  # when they are not.
+  # silicon. windows-verify asks a Windows host the equivalent: whether the
+  # package wixl wrote installs and uninstalls silently, whether it is still
+  # per-machine, and whether it still creates the ProgramData directory the
+  # client's enforcement depends on. Between them they flip this draft when
+  # the answers are right and delete it when they are not.
   #
   # The asymmetry is the whole reason for the draft. A deleted draft was
   # never visible to anyone. A published release that has to be revoked has
@@ -89,6 +93,8 @@ release:
     # to glob out of dist/: --clean empties that directory before the build
     # phase, and the hook writes during it.
     - glob: ./dist/*.pkg
+    # Built by the windows-build post-hook, same story as the .pkg above.
+    - glob: ./dist/*.msi
 
 before:
   hooks:
@@ -199,6 +205,32 @@ builds:
       - amd64
       - arm64
     ldflags: *build-ldflags
+    hooks:
+      # The Windows installer, assembled here rather than on a Windows
+      # runner, for the same two reasons the macOS package is (see below).
+      # It can: wixl (msitools) reads WiX v3 source and writes the MSI from
+      # this container, with no wine, no .NET and no Windows SDK. And it
+      # must, if the package is to be a release artifact like any other:
+      # the checksum pipe globs dist/*.msi, and a build hook is the last
+      # point at which the file exists in time for it.
+      #
+      # This runs for both windows architectures and produces a package for
+      # one: wixl rejects arm64, so windows/arm64 ships the zip alone. The
+      # script says so and exits 0 rather than failing the build.
+      #
+      # No signing step yet. The package is unsigned, deliberately and
+      # temporarily -- Azure Artifact Signing driven by jsign is the
+      # decision, and when it lands it adds one hook line above this one
+      # (the exe, before the MSI embeds a copy of it) and one line inside
+      # msi.sh (the MSI, after). See the header of msi.sh and
+      # docs/proposals/enhancements.md.
+      post:
+        - cmd: >-
+            packaging/windows/msi.sh
+            --binary "{{ .Path }}"
+            --version "{{ .Version }}"
+            --goarch "{{ .Arch }}"
+            --outdir dist
 
   - id: macos-build
     binary: *name
@@ -391,10 +423,10 @@ nfpms:
       - src: server/resources/mail/*.tmpl
         dst: /usr/share/ssoossh/mail-templates/
 
-# The macOS installers are not produced by a goreleaser pipe -- they come
-# from the macos-build post-hook above -- so they are named here explicitly
-# to be hashed. Everything else in this list is a pipe's own artifact and is
-# covered without being named.
+# The installers are not produced by a goreleaser pipe -- they come from
+# the macos-build and windows-build post-hooks above -- so they are named
+# here explicitly to be hashed. Everything else in this list is a pipe's own
+# artifact and is covered without being named.
 #
 # This is what removed a hand-written pass over the release's checksums file
 # in .github/workflows/build.yaml. The packages used to be built on a
@@ -407,6 +439,7 @@ nfpms:
 checksum:
   extra_files:
     - glob: ./dist/*.pkg
+    - glob: ./dist/*.msi
 
 archives:
   - id: linux-clients-archives

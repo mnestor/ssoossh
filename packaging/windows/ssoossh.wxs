@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Windows Installer source for the ssoossh client, built by msi.sh with
+  wixl (msitools). WiX v3 schema, because that is the dialect wixl parses;
+  none of the v4+ syntax works here and neither do the WiX extension
+  namespaces (util:, ui:), so everything below is core tables only.
+
+  Preprocessor variables are supplied by msi.sh via -D:
+
+    Version      MSI ProductVersion, already reduced to major.minor.build
+    PayloadDir   staging directory holding the files listed below
+
+  Every Guid here is fixed and must stay fixed. UpgradeCode identifies the
+  product across its whole life, and the component GUIDs are what the
+  installer matches when deciding whether a file is already present, so a
+  regenerated GUID orphans the copy an earlier version installed instead of
+  replacing it. Product/@Id is the exception: "*" makes wixl generate a new
+  package code per build, which is what MajorUpgrade needs to recognise one
+  version replacing another.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*"
+           Name="ssoossh"
+           Language="1033"
+           Version="$(var.Version)"
+           Manufacturer="Mike Nestor"
+           UpgradeCode="3b8f0af1-b88c-4d02-8f00-f6bed4a4d80c">
+
+    <!--
+      perMachine because the client has a machine-wide half: the enforced
+      configuration in %ProgramData%\ssoossh and the Group Policy key under
+      SOFTWARE\Policies (client/config/policy_windows.go). A per-user
+      install would put the binary somewhere the user can rewrite, which
+      makes enforcement theatre.
+
+      It is also what lets this deploy silently through GPO software
+      installation, Intune and ConfigMgr, all of which install as SYSTEM.
+    -->
+    <Package InstallerVersion="200"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Description="ssoossh client"
+             Manufacturer="Mike Nestor"/>
+
+    <!--
+      Uninstall the older version before laying down the new one. Note that
+      MSI compares ProductVersion only, and ProductVersion cannot carry a
+      pre-release suffix, so 1.4.0-rc1 and 1.4.0 are the same version to
+      Windows: an rc is not upgraded by its own release. See msi.sh.
+    -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of ssoossh is already installed."/>
+
+    <Media Id="1" Cabinet="ssoossh.cab" EmbedCab="yes"/>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLDIR" Name="ssoossh">
+
+          <Component Id="MainExecutable" Guid="6c046444-9f59-443f-8e7a-12daacb1d054">
+            <File Id="ssoosshExe" Name="ssoossh.exe"
+                  Source="$(var.PayloadDir)/ssoossh.exe" KeyPath="yes"/>
+            <!--
+              System="yes" writes the machine PATH, matching perMachine.
+              Part="last" appends rather than replacing, and Action="set"
+              with a Component means the entry is removed again on
+              uninstall.
+            -->
+            <Environment Id="PathEntry" Name="PATH" Value="[INSTALLDIR]"
+                         Part="last" Action="set" System="yes"/>
+          </Component>
+
+          <!--
+            The same reference files the windows zip carries, minus the man
+            pages: nothing on Windows reads them. defaults.yaml is a copy of
+            what the binary already has embedded (client/config), shipped so
+            an admin writing %ProgramData%\ssoossh\ssoossh.yaml has the full
+            list of keys in front of them.
+          -->
+          <Component Id="ReferenceFiles" Guid="9c37c330-fd39-468f-b459-66103d9ed49b">
+            <File Id="LicenseTxt" Name="LICENSE" Source="$(var.PayloadDir)/LICENSE" KeyPath="yes"/>
+            <File Id="NoticeTxt" Name="NOTICE" Source="$(var.PayloadDir)/NOTICE"/>
+            <File Id="ThirdPartyLicenses" Name="THIRD-PARTY-LICENSES.md"
+                  Source="$(var.PayloadDir)/THIRD-PARTY-LICENSES.md"/>
+            <File Id="DefaultsYaml" Name="defaults.yaml" Source="$(var.PayloadDir)/defaults.yaml"/>
+          </Component>
+        </Directory>
+      </Directory>
+
+      <!--
+        %ProgramData%\ssoossh, created empty and owned by whoever ran the
+        install (SYSTEM, or an elevated administrator).
+
+        This is not housekeeping. client/config/paths.go says it outright:
+        ProgramData's default ACLs let any user create a subdirectory, and
+        the creator owns it, so if this directory does not exist a
+        non-administrator can create it first and then own the file that is
+        supposed to constrain them. Creating it here is what closes that,
+        and it is the reason an installer exists at all rather than just a
+        zip.
+
+        The folder is deliberately left in place on uninstall (no
+        RemoveFolder): it holds an administrator's enforced configuration,
+        which must survive a client upgrade that goes through remove-then-
+        install.
+
+        Tightening the inherited ACL further would need util:PermissionEx,
+        which wixl has no extension support for. Logged in
+        docs/proposals/enhancements.md.
+      -->
+      <Directory Id="CommonAppDataFolder">
+        <Directory Id="ProgramDataSsoossh" Name="ssoossh">
+          <Component Id="ProgramDataDirectory" Guid="5f647b9d-a48f-43b8-830d-d0de048794f4">
+            <CreateFolder/>
+          </Component>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <Feature Id="Complete" Level="1" Title="ssoossh client">
+      <ComponentRef Id="MainExecutable"/>
+      <ComponentRef Id="ReferenceFiles"/>
+      <ComponentRef Id="ProgramDataDirectory"/>
+    </Feature>
+  </Product>
+</Wix>

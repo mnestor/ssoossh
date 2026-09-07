@@ -65,7 +65,25 @@ sudo rpm -i ssoossh-client_*.rpm
 Both packages put the binary in `/usr/local/bin` and an annotated copy of the
 client defaults at `/etc/ssoossh/ssoossh.yaml`.
 
-**Windows** -- download the `.zip`, extract `ssoossh.exe` somewhere on `PATH`.
+**Windows** -- run the `.msi`, or install it silently:
+
+```powershell
+msiexec /i .\ssoossh-client_<version>_windows_amd64.msi /qn
+```
+
+It installs per machine into `Program Files\ssoossh`, adds that directory to
+the system `PATH`, and creates `%ProgramData%\ssoossh` for an administrator's
+[enforced configuration](/ssoossh/hosts/client-enforcement/). Being per
+machine and silent, it deploys through Group Policy software installation,
+Intune and Configuration Manager unchanged.
+
+The package is not signed yet, so Windows shows an "Unknown Publisher"
+prompt when you run it by hand, and a WDAC policy in enforcement will need a
+rule for it. Machine-managed deployment is unaffected, since those install
+as SYSTEM and check no publisher.
+
+There is no arm64 installer: on `windows/arm64`, download the `.zip` and
+extract `ssoossh.exe` somewhere on `PATH`.
 
 **macOS**
 

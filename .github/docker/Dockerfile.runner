@@ -69,6 +69,12 @@ RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sourc
     # from every stored path, leaving the payload disagreeing with the BOM
     # about every file in the package.
     xar libarchive-tools \
+    # The Windows installer is assembled here too
+    # (packaging/windows/msi.sh): wixl reads WiX v3 source and writes the
+    # MSI, with no wine, no .NET and no Windows SDK. In universe, which the
+    # ubuntu base image enables by default. msitools is the sibling package
+    # holding msiinfo, used to inspect a built package.
+    wixl msitools \
   && curl -sL -o /tmp/quill.deb $(curl -s https://api.github.com/repos/anchore/quill/releases/latest | jq -r '.assets[] |select(.name|match("linux_amd64.deb$")) | .browser_download_url') \
   && dpkg -i /tmp/quill.deb \
   # mkbom, which writes the flat package's BOM. Pinned to a commit and not

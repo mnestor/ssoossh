@@ -346,6 +346,17 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # Consumed by windows-verify, which installs it on a real Windows
+      # host. Uploaded on every event build-most runs, not only on tags,
+      # for the same reason as the macOS packages above.
+      - name: Upload the Windows client installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: windows-client-installer
+          path: dist/*.msi
+          if-no-files-found: error
+          retention-days: 7
+
       - name: cleanup
         if: always()
         run: |
@@ -506,14 +517,238 @@ jobs:
         run: |
           gh release delete -y "$TAG"
 
+  # The Windows counterpart to macos-verify, and it exists for the same
+  # reason. packaging/windows/msi.sh builds the package with wixl, which
+  # Microsoft did not write, so until this job runs nothing has asked
+  # Windows whether it accepts the result. It holds no secrets, and publish
+  # waits on it.
+  #
+  # What it covers that reading ssoossh.wxs cannot: that the package
+  # installs and uninstalls with no UI and no reboot. That is the only mode
+  # Group Policy software installation, Intune and Configuration Manager
+  # ever use, so it is the mode that has to work.
+  #
+  # The package is unsigned today, so there is no signature to verify here
+  # yet. When Azure Artifact Signing lands (docs/proposals/enhancements.md)
+  # this job gains one step: Get-AuthenticodeSignature on both the MSI and
+  # the installed exe, asserting Valid.
+  windows-verify:
+    name: windows verify installer
+    needs: [changes, build-most]
+    if: github.event_name != 'pull_request' && needs.changes.outputs.code == 'true'
+    permissions:
+      # gh release delete, on tag pushes only, when Windows rejects what
+      # goreleaser already built.
+      contents: write
+    # Pinned, not windows-latest as client-matrix.yaml uses: a verification
+    # job should name the OS it verified against, so a failure is
+    # attributable to a version and a runner image rollover is a deliberate
+    # bump here rather than a surprise in the middle of a release.
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      # No checkout. Everything this job reads comes out of the artifact,
+      # and gh gets its repository from GH_REPO in the one step that needs
+      # it rather than from a working copy cloned for that alone.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: windows-client-installer
+          path: dist
+
+      # One package, and it is the amd64 one. wixl cannot target arm64
+      # (packaging/windows/msi.sh), so a second file here means that
+      # changed, and everything below -- which installs one package on an
+      # x64 runner -- would then be testing half of what ships.
+      - name: Exactly one installer, and it is amd64
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = @(Get-ChildItem dist -Filter *.msi)
+          if ($msi.Count -ne 1) {
+            throw "expected exactly one .msi in dist, found $($msi.Count)"
+          }
+          # [regex]::Match rather than -notmatch, so the captured version
+          # comes from an object this code owns. $Matches after a -notmatch
+          # is a side effect, and one that reads as a bug the next time
+          # someone edits the condition.
+          $m = [regex]::Match($msi[0].Name,
+            '^ssoossh-client_(.+)_windows_amd64\.msi$')
+          if (-not $m.Success) {
+            throw "unexpected installer name: $($msi[0].Name)"
+          }
+          $version = $m.Groups[1].Value
+          "MSI=$($msi[0].FullName)" | Out-File $env:GITHUB_ENV -Append
+          "VERSION=$version" | Out-File $env:GITHUB_ENV -Append
+          Write-Host "OK $($msi[0].Name) (version $version)"
+
+      # The package describes itself the way ssoossh.wxs says it should,
+      # read out of the MSI database before anything is installed.
+      #
+      # UpgradeCode is asserted against a literal deliberately. It is the
+      # one identifier that must never change for the life of the product:
+      # regenerate it and every already-installed copy stops being
+      # recognised as an earlier version of this one, so upgrades silently
+      # become side-by-side installs. A test is the only thing that catches
+      # that, because nothing about the resulting package looks wrong.
+      #
+      # ALLUSERS=1 is the per-machine scope every managed deployment path
+      # depends on. A package that quietly became per-user would still
+      # install by hand and still fail through GPO and Intune.
+      - name: The package declares what it should
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = New-Object -ComObject WindowsInstaller.Installer
+          $db = $installer.GetType().InvokeMember(
+            'OpenDatabase', 'InvokeMethod', $null, $installer, @($env:MSI, 0))
+
+          function Get-MsiProperty($db, $name) {
+            $view = $db.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $db,
+              @("SELECT Value FROM Property WHERE Property = '$name'"))
+            $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
+            $rec = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
+            if ($null -eq $rec) { return $null }
+            $rec.GetType().InvokeMember('StringData', 'GetProperty', $null, $rec, 1)
+          }
+
+          # ProductVersion is the release version with any pre-release
+          # suffix dropped, because MSI has no field for one. msi.sh does
+          # that reduction; this repeats it and compares.
+          $want = ($env:VERSION -split '-')[0]
+          $got = Get-MsiProperty $db 'ProductVersion'
+          if ($got -ne $want) {
+            throw "ProductVersion is '$got', expected '$want' (from $env:VERSION)"
+          }
+
+          $allusers = Get-MsiProperty $db 'ALLUSERS'
+          if ($allusers -ne '1') {
+            throw "ALLUSERS is '$allusers', expected '1' -- the package is not per-machine"
+          }
+
+          $upgrade = Get-MsiProperty $db 'UpgradeCode'
+          if ($upgrade -ne '{3b8f0af1-b88c-4d02-8f00-f6bed4a4d80c}') {
+            throw "UpgradeCode changed to '$upgrade'; every installed copy stops upgrading"
+          }
+
+          Write-Host "OK ProductVersion $got, ALLUSERS $allusers, UpgradeCode $upgrade"
+
+      # /qn is the whole point: no dialogs, no reboot, an exit code. The
+      # verbose log is kept and tailed on failure, because a non-zero
+      # msiexec exit code on its own says almost nothing.
+      - name: It installs silently
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
+            '/i', "`"$env:MSI`"", '/qn', '/norestart', '/l*v', 'install.log')
+          if ($p.ExitCode -ne 0) {
+            Get-Content install.log -Tail 80
+            throw "msiexec /i exited $($p.ExitCode)"
+          }
+          Write-Host "OK installed"
+
+      # What the package promised the administrator, checked on the machine
+      # rather than in the database: the binary is where the docs say, it
+      # runs, it is this build, the machine PATH can find it, the reference
+      # files are beside it, and %ProgramData%\ssoossh exists.
+      #
+      # That last one is the security-relevant assertion, not housekeeping.
+      # client/config/paths.go relies on the installer creating that
+      # directory: ProgramData's default ACLs let any user create a
+      # subdirectory and own it, so if the package ever stops creating it a
+      # non-administrator can create it first and own the file that is
+      # supposed to constrain them. The owner is logged rather than
+      # asserted -- CI installs as an administrator, so the value here is
+      # not the one a fleet deployment produces -- but its existence is not
+      # negotiable.
+      - name: What it installed is right
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:ProgramFiles 'ssoossh'
+          $exe = Join-Path $dir 'ssoossh.exe'
+
+          foreach ($f in @('ssoossh.exe', 'LICENSE', 'NOTICE',
+                           'THIRD-PARTY-LICENSES.md', 'defaults.yaml')) {
+            $path = Join-Path $dir $f
+            if (-not (Test-Path -LiteralPath $path)) { throw "missing: $path" }
+          }
+
+          # Out-String, so a command that grew a second line of output is
+          # compared as one string rather than filtered as an array, which
+          # is what -notmatch would silently do instead.
+          $out = (& $exe version | Out-String).Trim()
+          if ($out -notmatch "^ssoossh $([regex]::Escape($env:VERSION)) ") {
+            throw "'ssoossh version' printed '$out', expected version $env:VERSION"
+          }
+
+          $machinePath = [Environment]::GetEnvironmentVariable('PATH', 'Machine')
+          if (($machinePath -split ';') -notcontains $dir) {
+            throw "the machine PATH does not contain '$dir'"
+          }
+
+          $data = Join-Path $env:ProgramData 'ssoossh'
+          if (-not (Test-Path -LiteralPath $data)) {
+            throw "the installer did not create '$data'"
+          }
+          Write-Host "OK $out"
+          Write-Host "OK machine PATH carries $dir"
+          Write-Host "OK $data exists, owner $((Get-Acl $data).Owner)"
+
+      # Uninstall has to be as clean as install, and it has to leave one
+      # thing behind. %ProgramData%\ssoossh holds an administrator's
+      # enforced configuration, and a major upgrade is a remove followed by
+      # an install, so a package that removed that directory would discard
+      # the fleet's policy on every version bump. ssoossh.wxs omits
+      # RemoveFolder for exactly this reason; here is where that stays true.
+      - name: It uninstalls, and leaves the enforced config behind
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
+            '/x', "`"$env:MSI`"", '/qn', '/norestart', '/l*v', 'uninstall.log')
+          if ($p.ExitCode -ne 0) {
+            Get-Content uninstall.log -Tail 80
+            throw "msiexec /x exited $($p.ExitCode)"
+          }
+
+          $dir = Join-Path $env:ProgramFiles 'ssoossh'
+          if (Test-Path -LiteralPath (Join-Path $dir 'ssoossh.exe')) {
+            throw "ssoossh.exe survived the uninstall in '$dir'"
+          }
+
+          $machinePath = [Environment]::GetEnvironmentVariable('PATH', 'Machine')
+          if (($machinePath -split ';') -contains $dir) {
+            throw "the machine PATH still contains '$dir' after uninstall"
+          }
+
+          $data = Join-Path $env:ProgramData 'ssoossh'
+          if (-not (Test-Path -LiteralPath $data)) {
+            throw "uninstall removed '$data'; an upgrade would discard the enforced config"
+          }
+          Write-Host "OK uninstalled, $data left in place"
+
+      # Same invariant macos-verify holds, for the same reason: nothing
+      # public is anything Windows has not accepted. Deleting an
+      # unpublished draft tells nobody; publishing a release emails every
+      # watcher and cannot be recalled.
+      - name: remove the draft, Windows rejected it
+        if: startsWith(github.ref, 'refs/tags/') && failure()
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release delete -y "$env:TAG"
+
   # Where a release becomes visible, and the only job that makes anything
   # public under a name someone would go looking for. Everything before it
   # published to names nobody pulls: goreleaser wrote the release as a
   # draft (.goreleaser.yml's release.draft) and tagged the images with the
-  # commit sha (its dockers_v2 tags), and macos-verify confirmed on a real
-  # Mac that the installers goreleaser built are ones macOS accepts. This
-  # flips both at the end, once every artifact for every platform is in
-  # place and checked.
+  # commit sha (its dockers_v2 tags), and macos-verify and windows-verify
+  # confirmed on a real Mac and a real Windows host that the installers
+  # goreleaser built are ones those systems accept. This flips both at the
+  # end, once every artifact for every platform is in place and checked.
   #
   # Both halves wait, deliberately. Publishing the release emails every
   # watcher and cannot be undone; a version tag on a public image is pulled
@@ -528,7 +763,7 @@ jobs:
   # image, so this does not pay for the ssoossh-build pull either.
   publish:
     name: publish
-    needs: [build-most, macos-verify]
+    needs: [build-most, macos-verify, windows-verify]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 10
