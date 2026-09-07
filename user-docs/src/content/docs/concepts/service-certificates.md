@@ -1,7 +1,6 @@
 ---
 title: Service certificates
 description: Enroll once with a human present, then reissue unattended from a code.
-eyebrow: How it works
 sidebar:
   order: 5
 ---

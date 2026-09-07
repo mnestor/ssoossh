@@ -1,7 +1,6 @@
 ---
 title: Options and lifetime resolution
 description: How a request is narrowed to what the config permits, and how long the result lives.
-eyebrow: How it works
 sidebar:
   order: 4
 ---

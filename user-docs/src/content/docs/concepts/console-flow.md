@@ -1,7 +1,6 @@
 ---
-title: Console login
+title: The console login flow
 description: A short code instead of an approval URL, for a machine with no browser in front of it.
-eyebrow: How it works
 sidebar:
   order: 7
 ---

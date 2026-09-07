@@ -1,7 +1,6 @@
 ---
 title: Host context
 description: What a PAM or console request reports about the process and machine that asked, and how far each field travels.
-eyebrow: Internals
 sidebar:
   order: 2
 ---

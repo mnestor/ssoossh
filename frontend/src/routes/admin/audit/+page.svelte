@@ -45,7 +45,7 @@
 </script>
 
 <PageShell width="full">
-	<PageHeading eyebrow="Admin" title="Audit log">
+	<PageHeading title="Audit log">
 		{#snippet sub()}
 			Recent administrative activity, newest first. This is a bounded cache of recent events kept
 			for this view; the shipped audit log is the archive, and searching happens there.

@@ -1,7 +1,6 @@
 ---
 title: HSM and PKCS#11
 description: Sourcing the CA private key from a PKCS#11 token so it never leaves the hardware, with a SoftHSM2 quick start.
-eyebrow: Server operations
 sidebar:
   order: 14
 ---

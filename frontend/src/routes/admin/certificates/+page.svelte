@@ -119,7 +119,7 @@
 <svelte:head><title>Certificates · ssoossh</title></svelte:head>
 
 <PageShell width="wide">
-	<PageHeading eyebrow="Admin" title="Certificate history" />
+	<PageHeading title="All certificates" />
 
 	{#if loadError}
 		<Alert variant="error" title="Could not load certificates">{loadError}</Alert>

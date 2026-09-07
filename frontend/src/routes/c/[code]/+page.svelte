@@ -69,7 +69,7 @@
 			data-testid="console-link-failure-{failure.kind}"
 			class="rounded-lg border border-border-subtle bg-surface-muted p-4"
 		>
-			<PageHeading eyebrow="Console login" title={loadFailure.title}>
+			<PageHeading title={loadFailure.title}>
 				{#snippet sub()}{loadFailure.message}{/snippet}
 			</PageHeading>
 			<p class="mt-3 text-sm text-ink-muted">

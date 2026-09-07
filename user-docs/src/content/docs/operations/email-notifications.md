@@ -1,7 +1,6 @@
 ---
 title: Email notifications
 description: Optional outbound mail telling people when something happens to a credential they hold, and every notification kind it can send.
-eyebrow: Server operations
 sidebar:
   order: 10
 ---

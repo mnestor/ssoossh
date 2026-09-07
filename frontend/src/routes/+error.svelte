@@ -11,9 +11,14 @@
 		     hand-written h1. An error page is still a page, and it was one of
 		     five that copied the h1's classes out of PageHeading and would
 		     have been left behind by a change to it. -->
-		<PageHeading eyebrow="Error {page.status}" title="That page isn't here">
+		<PageHeading title="That page isn't here">
+			<!-- The status code used to sit above the title as an eyebrow.
+			     It is not the page's name, it is a fact about what went
+			     wrong, so it reads as the first half of the sentence that
+			     explains it. -->
 			{#snippet sub()}
-				{page.error?.message ?? 'The link may be incomplete, or the page may have moved.'}
+				Error {page.status}. {page.error?.message ??
+					'The link may be incomplete, or the page may have moved.'}
 			{/snippet}
 		</PageHeading>
 		<p class="mt-4 text-sm">

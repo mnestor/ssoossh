@@ -82,7 +82,7 @@
 </script>
 
 <PageShell width="wide">
-	<PageHeading eyebrow="Admin" title="Server configuration">
+	<PageHeading title="Server configuration">
 		{#snippet sub()}
 			Every key in effect on this server, read-only. Secrets are redacted; a redacted key still says
 			whether a value is set.

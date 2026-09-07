@@ -1,7 +1,6 @@
 ---
 title: Trusting the CA in sshd
 description: Point TrustedUserCAKeys at the ssoossh CA public key, map principals, and rotate without an outage.
-eyebrow: Host administration
 sidebar:
   order: 1
 ---

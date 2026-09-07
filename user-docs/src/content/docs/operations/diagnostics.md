@@ -1,7 +1,6 @@
 ---
 title: Deployment diagnostics
 description: "Four read-only checks, run from the admin UI, for the mistakes in front of ssoosshd that fail silently: public URL, proxy trust, security headers, and CORS."
-eyebrow: Server operations
 sidebar:
   order: 13
 ---

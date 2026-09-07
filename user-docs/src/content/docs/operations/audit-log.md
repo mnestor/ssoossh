@@ -1,7 +1,6 @@
 ---
 title: Audit log
 description: An ordered, append-only record of who did what, to whom, and when -- shipped to a log system and cached in the database.
-eyebrow: Server operations
 sidebar:
   order: 12
 ---

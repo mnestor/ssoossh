@@ -1,7 +1,6 @@
 ---
 title: Contributing
 description: How to work with the ssoossh codebase, what to run before a PR, and what CI blocks on.
-eyebrow: Project
 sidebar:
   order: 4
 ---

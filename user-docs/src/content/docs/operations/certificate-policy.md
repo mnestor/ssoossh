@@ -1,7 +1,6 @@
 ---
 title: Certificate lifetime policy
 description: How long an issued certificate lives and which options survive, derived from the approver's identity and the network the request came from.
-eyebrow: Server operations
 sidebar:
   order: 7
 ---

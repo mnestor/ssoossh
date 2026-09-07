@@ -332,7 +332,7 @@
 </script>
 
 <div class="flex w-full max-w-[560px] flex-col gap-4">
-	<PageHeading eyebrow="Certificate request" title={pageCopy.title} />
+	<PageHeading title={pageCopy.title} />
 
 	<!-- One card, not six. An approval is a single decision read straight
 	     through, so the frame goes round the whole of it and the groups

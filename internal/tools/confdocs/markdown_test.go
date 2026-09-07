@@ -417,12 +417,16 @@ func TestMdUsage_ShouldSkipKeysWithNoHonestValue(t *testing.T) {
 	}
 }
 
-func TestMarkdownPages_ShouldSetTheEyebrowOnEveryPage(t *testing.T) {
+// Every page used to carry an `eyebrow: "Configuration"` line, which the
+// docs site rendered as a small accent label above the h1. It said what the
+// sidebar group already said, so it went; the assertion stays inverted so a
+// generator change cannot bring it back unnoticed.
+func TestMarkdownPages_ShouldNotSetAnEyebrowOnAnyPage(t *testing.T) {
 	t.Parallel()
 
 	for name, page := range mdPages(t) {
-		if !strings.Contains(page, `eyebrow: "Configuration"`) {
-			t.Errorf("expected %s to carry the Configuration eyebrow", name)
+		if strings.Contains(page, "eyebrow:") {
+			t.Errorf("expected %s to carry no eyebrow, got one", name)
 		}
 	}
 }

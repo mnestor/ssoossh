@@ -1,7 +1,6 @@
 ---
 title: The web UI
 description: "Signing in, the navigation rail, where every page lives, and the detail pages you can link to."
-eyebrow: User guide
 sidebar:
   order: 3
 ---

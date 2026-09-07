@@ -1,7 +1,6 @@
 ---
 title: Invariants
 description: Rules the ssoossh code depends on, each one load-bearing somewhere else.
-eyebrow: Internals
 sidebar:
   order: 1
 ---

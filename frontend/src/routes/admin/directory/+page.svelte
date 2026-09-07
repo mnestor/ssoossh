@@ -140,7 +140,7 @@
 <svelte:head><title>Directory · ssoossh</title></svelte:head>
 
 <PageShell width="wide">
-	<PageHeading eyebrow="Admin" title="Directory">
+	<PageHeading title="Directory">
 		{#snippet sub()}
 			What the LDAP sync last did, and what the directory actually returns for a person.
 		{/snippet}

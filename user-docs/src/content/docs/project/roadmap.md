@@ -1,7 +1,6 @@
 ---
 title: Roadmap
 description: What is designed but not built, and where each design lives.
-eyebrow: Project
 sidebar:
   order: 2
 ---

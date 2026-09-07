@@ -71,7 +71,7 @@
 </script>
 
 <PageShell width="full">
-	<PageHeading eyebrow="Admin" title="Users">
+	<PageHeading title="Users">
 		{#snippet sub()}Directory of all users, with disable controls.{/snippet}
 	</PageHeading>
 

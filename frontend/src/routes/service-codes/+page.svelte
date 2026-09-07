@@ -155,7 +155,6 @@
 <PageShell width="wide">
 	{#if openAccount}
 		<PageHeading
-			eyebrow="Service account"
 			title={openAccount}
 			testid="service-codes-heading"
 			back={{
@@ -171,7 +170,7 @@
 			{/snippet}
 		</PageHeading>
 	{:else}
-		<PageHeading eyebrow="Service" title="Service enrollment codes" testid="service-codes-heading">
+		<PageHeading title="Service enrollment codes" testid="service-codes-heading">
 			{#snippet sub()}
 				The service accounts you have access to, and the codes approved for each. A code belongs to
 				its account rather than to whoever approved it, so you see every code for these accounts.

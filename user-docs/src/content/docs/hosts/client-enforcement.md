@@ -1,7 +1,6 @@
 ---
 title: Client settings enforcement
 description: Lock ssoossh client settings across a fleet with the enforce file, Windows Group Policy, or macOS managed preferences.
-eyebrow: Host administration
 sidebar:
   order: 10
 ---

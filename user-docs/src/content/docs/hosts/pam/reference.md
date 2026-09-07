@@ -1,7 +1,6 @@
 ---
 title: pam_ssoossh reference
 description: Every argument, mode, check, return value and log line of the PAM module, from its manual page.
-eyebrow: Host administration
 sidebar:
   order: 8
 ---

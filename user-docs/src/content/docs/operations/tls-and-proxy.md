@@ -1,7 +1,6 @@
 ---
 title: TLS and reverse proxies
 description: Terminating TLS in ssoosshd or in front of it, renewing certificates without a restart, and keeping the client's real address.
-eyebrow: Server operations
 sidebar:
   order: 3
 ---

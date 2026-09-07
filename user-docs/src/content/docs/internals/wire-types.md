@@ -1,7 +1,6 @@
 ---
 title: Wire types
 description: How the server, the Go client, and the web UI are kept from drifting apart.
-eyebrow: Internals
 sidebar:
   order: 3
 ---

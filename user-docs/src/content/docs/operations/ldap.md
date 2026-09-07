@@ -1,7 +1,6 @@
 ---
 title: LDAP enrichment
 description: Optional directory data on top of the OIDC identity -- extra principals, persisted groups, and auto-disable when someone leaves.
-eyebrow: Server operations
 sidebar:
   order: 11
 ---

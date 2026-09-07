@@ -1,7 +1,6 @@
 ---
 title: PAM troubleshooting
 description: What each failure looks like in syslog, what each return code means, and how to test without risk.
-eyebrow: Host administration
 sidebar:
   order: 9
 ---

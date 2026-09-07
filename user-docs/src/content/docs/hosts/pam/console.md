@@ -1,7 +1,6 @@
 ---
 title: Console login
 description: A typed code and a QR code instead of an approval URL, for a machine with no browser in front of it.
-eyebrow: Host administration
 sidebar:
   order: 4
 ---

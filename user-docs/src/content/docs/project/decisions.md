@@ -1,7 +1,6 @@
 ---
 title: Decisions
 description: What ssoossh deliberately does not do, and why.
-eyebrow: Project
 sidebar:
   order: 0
 ---

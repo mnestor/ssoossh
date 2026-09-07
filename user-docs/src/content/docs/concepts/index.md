@@ -1,7 +1,6 @@
 ---
-title: Overview
+title: How ssoossh works
 description: The components, the four certificate types, and the shape every issuance takes.
-eyebrow: How it works
 sidebar:
   order: 0
 ---

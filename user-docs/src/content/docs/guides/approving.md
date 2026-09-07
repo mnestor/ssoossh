@@ -1,7 +1,6 @@
 ---
 title: Approving in the browser
 description: "What the ssoossh web UI shows you: the approval page, your history, service codes, and notification preferences."
-eyebrow: User guide
 sidebar:
   order: 4
 ---

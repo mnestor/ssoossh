@@ -192,19 +192,6 @@ body {
 	border-radius: 10px;
 }
 
-/* The eyebrow above a page title, mirroring the app's PageHeading: the
-   small accent label that names the area before the h1 says which page.
-   Set from frontmatter, so a page without one renders nothing. */
-.content-panel .sl-markdown-content > .eyebrow:first-child {
-	display: block;
-	color: var(--ssoossh-accent);
-	font-size: var(--sl-text-xs);
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.08em;
-	margin-bottom: 0.25rem;
-}
-
 /* Screenshots of the app. They are captured in the light theme at a fixed
    width, so they read as one set; the frame is the app's own card treatment
    and a caption follows each one in the muted ink. */

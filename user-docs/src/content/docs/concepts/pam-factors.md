@@ -1,7 +1,6 @@
 ---
 title: Passwords, tokens, and pam_ssoossh
 description: What each factor actually proves, where each one can physically be used, and why a VM console is the case hardware tokens cannot cover.
-eyebrow: How it works
 sidebar:
   order: 8
 ---

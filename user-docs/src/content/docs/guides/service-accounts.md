@@ -1,7 +1,6 @@
 ---
 title: Service accounts
 description: Enroll a non-interactive identity once, then retrieve its certificate unattended.
-eyebrow: User guide
 sidebar:
   order: 5
 ---

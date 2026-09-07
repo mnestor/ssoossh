@@ -1,7 +1,6 @@
 ---
 title: Startup modes
 description: serve, serve api, and sign -- what each process holds, and why the split modes refuse the in-process broker.
-eyebrow: Server operations
 sidebar:
   order: 4
 ---

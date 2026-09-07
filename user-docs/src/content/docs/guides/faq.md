@@ -1,7 +1,6 @@
 ---
 title: User FAQ
 description: The questions people connecting with ssoossh ask first.
-eyebrow: User guide
 sidebar:
   order: 7
 ---

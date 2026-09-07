@@ -1,7 +1,6 @@
 ---
 title: ssh_config integration
 description: The two ways ssh can invoke the ssoossh client, and how to choose between them.
-eyebrow: User guide
 sidebar:
   order: 1
 ---

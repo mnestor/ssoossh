@@ -1,7 +1,6 @@
 ---
 title: sudo and su
 description: Put sudo and su behind a browser approval with pam_ssoossh, without locking yourself out.
-eyebrow: Host administration
 sidebar:
   order: 3
 ---

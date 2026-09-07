@@ -1,7 +1,6 @@
 ---
 title: The trusted CA file
 description: The authorized_keys-format file that decides whose signature pam_ssoossh accepts.
-eyebrow: Host administration
 sidebar:
   order: 7
 ---

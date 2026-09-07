@@ -1,7 +1,6 @@
 ---
 title: Multi-instance and NATS
 description: Running several ssoosshd processes behind a load balancer, with NATS carrying the certificate pipeline between them -- PKI, nats-server.conf, authorization, and the order to bring it up in.
-eyebrow: Server operations
 sidebar:
   order: 5
 ---

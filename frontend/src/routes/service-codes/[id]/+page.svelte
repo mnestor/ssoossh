@@ -99,10 +99,14 @@
 	     it hands out" a few lines below — the heading is not the place to
 	     say a thing the page is about to say properly, with a label on it.
 	     Every other sub line in the app is a sentence about the screen, not
-	     a field lifted out of it. -->
+	     a field lifted out of it.
+
+	     The title names the thing rather than the account: the chip above it
+	     already says which account these codes belong to, and the account
+	     name as an h1 directly under "All codes for svc-deploy" was the same
+	     word twice in three lines. -->
 	<PageHeading
-		eyebrow="Service code"
-		title={account || 'Service code'}
+		title="Service code"
 		testid="service-code-heading"
 		back={{ href: backHref, label: backLabel, testid: 'service-code-back' }}
 	>

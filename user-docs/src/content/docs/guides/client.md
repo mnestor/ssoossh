@@ -1,7 +1,6 @@
 ---
 title: The ssoossh client
 description: Every ssoossh subcommand, what it does, and the flags it takes.
-eyebrow: User guide
 sidebar:
   order: 0
 ---

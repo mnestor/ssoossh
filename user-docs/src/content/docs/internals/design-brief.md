@@ -1,7 +1,6 @@
 ---
 title: Design brief
 description: The original ssoossh design brief, kept for the record.
-eyebrow: Internals
 sidebar:
   order: 4
 ---

@@ -1,7 +1,6 @@
 ---
 title: Server configuration examples
 description: Complete, working ssoosshd.yaml configurations for common deployments.
-eyebrow: Examples
 sidebar:
   order: 1
 ---

@@ -1,7 +1,6 @@
 ---
 title: Signing pipeline
 description: The create, approve, sign, and deliver pipeline as built, and the decisions that still constrain the code.
-eyebrow: Internals
 sidebar:
   order: 0
 ---

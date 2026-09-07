@@ -97,7 +97,7 @@
 <svelte:head><title>Preferences · ssoossh</title></svelte:head>
 
 <PageShell width="wide">
-	<PageHeading eyebrow="Preferences" title="Notifications" />
+	<PageHeading title="Notification preferences" />
 
 	{#if loadError}
 		<Alert variant="error" title="Could not load your preferences">{loadError}</Alert>

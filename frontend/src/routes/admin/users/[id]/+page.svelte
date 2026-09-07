@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { getAdminUser, disableUser, enableUser, getUserAudit } from '$lib/api/endpoints';
 	import Alert from '$lib/components/Alert.svelte';
@@ -246,7 +247,13 @@
 		     the heading's two snippets can read it without each re-testing
 		     a value the branch has already settled. -->
 		{@const account = user}
-		<PageHeading eyebrow="Admin" title={account.name || account.username}>
+		<!-- The chip is where the "Admin" eyebrow used to be, and says
+		     something the eyebrow could not: this page has a list behind it,
+		     and that is the way back to it. -->
+		<PageHeading
+			title={account.name || account.username}
+			back={{ href: resolve('/admin/users'), label: 'All users', testid: 'admin-user-back' }}
+		>
 			<!-- The address alone. The username used to lead this line
 			     whenever the title was a display name, which restated the
 			     "Username" field in the OIDC record immediately below it;

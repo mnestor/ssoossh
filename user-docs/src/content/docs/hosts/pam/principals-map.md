@@ -1,7 +1,6 @@
 ---
 title: The principals map
 description: Which certificate principals may assume which local account, and why a host almost always needs the file.
-eyebrow: Host administration
 sidebar:
   order: 6
 ---

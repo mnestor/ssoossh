@@ -1,7 +1,6 @@
 ---
 title: Dependency scanning
 description: The three scanners behind make security, what each one gates on, and how to raise the bar.
-eyebrow: Project
 sidebar:
   order: 3
 ---

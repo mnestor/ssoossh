@@ -170,8 +170,7 @@
 
 <PageShell width="wide">
 	<PageHeading
-		eyebrow="Certificate"
-		title="Details"
+		title="Certificate details"
 		back={{ href: resolve(back.route), label: back.label, testid: 'cert-back' }}
 	/>
 

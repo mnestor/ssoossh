@@ -1,7 +1,6 @@
 ---
 title: Hosts overview
 description: What a machine has to be told to accept ssoossh certificates, and what pam_ssoossh adds on top.
-eyebrow: Host administration
 sidebar:
   order: 0
 ---

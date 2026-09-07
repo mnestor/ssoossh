@@ -1,9 +1,10 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
-	// The small uppercase label that opens a group of fields. Quieter than the
-	// eyebrow on PageHeading — this one names a section within a card, so it
-	// stays muted rather than taking the accent.
+	// The small uppercase label that opens a group of fields. It is the only
+	// small uppercase label left in the app now that PageHeading's accent
+	// eyebrow is gone, and it stays muted: it names a section within a card,
+	// not the page.
 	interface Props {
 		children: Snippet;
 	}

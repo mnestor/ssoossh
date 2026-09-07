@@ -1,16 +1,14 @@
-import { defineCollection, z } from 'astro:content';
+import { defineCollection } from 'astro:content';
 import { docsLoader } from '@astrojs/starlight/loaders';
 import { docsSchema } from '@astrojs/starlight/schema';
 
+// Starlight's own schema, unextended. It briefly carried an `eyebrow` field
+// -- the accent label the app used to show above a page's heading -- which
+// went with the app's own (frontend/DESIGN.md): on every page here it said
+// what the sidebar group already said.
 export const collections = {
 	docs: defineCollection({
 		loader: docsLoader(),
-		// `eyebrow` is the accent label the app shows above a page's heading
-		// (frontend/DESIGN.md); src/components/PageTitle.astro renders it.
-		schema: docsSchema({
-			extend: z.object({
-				eyebrow: z.string().optional(),
-			}),
-		}),
+		schema: docsSchema(),
 	}),
 };

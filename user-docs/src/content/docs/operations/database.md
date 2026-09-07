@@ -1,7 +1,6 @@
 ---
 title: Database
 description: SQLite or PostgreSQL, connection strings, pooling, migrations, and what is actually stored.
-eyebrow: Server operations
 sidebar:
   order: 6
 ---

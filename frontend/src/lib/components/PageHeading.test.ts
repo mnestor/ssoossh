@@ -15,24 +15,36 @@ const action = createRawSnippet(() => ({
 
 describe('PageHeading', () => {
 	it('should render the title as the page heading', () => {
-		render(PageHeading, { eyebrow: 'Activity', title: 'Recent decisions' });
+		render(PageHeading, { title: 'Recent decisions' });
 		expect(screen.getByRole('heading', { level: 1, name: 'Recent decisions' })).toBeInTheDocument();
 	});
 
-	it('should render the eyebrow above the title', () => {
-		render(PageHeading, { eyebrow: 'Activity', title: 'Recent decisions' });
-		expect(screen.getByText('Activity')).toBeInTheDocument();
+	// The title used to sit under a small accent eyebrow naming the area,
+	// which on most pages said the title again in fewer words. The h1 is the
+	// only naming a page gets now, so nothing may render above it but the
+	// back chip.
+	it('should render nothing above the title when there is no back chip', () => {
+		render(PageHeading, { title: 'Recent decisions' });
+		const heading = screen.getByRole('heading', { level: 1 });
+		expect(heading.parentElement?.firstElementChild).toBe(heading);
+	});
+
+	// 26px is a desktop size: on a phone a two-line title pushed the page's
+	// first content off the screen, so the h1 steps down below `sm`.
+	it('should set a smaller title size below the sm breakpoint', () => {
+		render(PageHeading, { title: 'Recent decisions' });
+		expect(screen.getByRole('heading', { level: 1 })).toHaveClass('text-xl', 'sm:text-[26px]');
 	});
 
 	// The three admin table pages opened with a bare h1 and a paragraph
 	// rather than this component, which is why the sub line exists.
 	it('should render a sub line under the title when one is given', () => {
-		render(PageHeading, { eyebrow: 'Admin', title: 'Users', sub });
+		render(PageHeading, { title: 'Users', sub });
 		expect(screen.getByText('Directory of all users')).toBeInTheDocument();
 	});
 
 	it('should render no sub line when none is given', () => {
-		const { container } = render(PageHeading, { eyebrow: 'Admin', title: 'Users' });
+		const { container } = render(PageHeading, { title: 'Users' });
 		expect(container.querySelector('p')).toBeNull();
 	});
 
@@ -41,7 +53,6 @@ describe('PageHeading', () => {
 	// its own negative margin.
 	it('should render a back chip as a link when it is given an href', () => {
 		render(PageHeading, {
-			eyebrow: 'Certificate',
 			title: 'Details',
 			back: { href: '/logs/me', label: 'Certificate history' }
 		});
@@ -56,7 +67,6 @@ describe('PageHeading', () => {
 	it('should render a back chip as a button when it is given an onclick', async () => {
 		const onclick = vi.fn();
 		render(PageHeading, {
-			eyebrow: 'Service account',
 			title: 'svc-deploy',
 			back: { onclick, label: 'All service accounts' }
 		});
@@ -67,12 +77,12 @@ describe('PageHeading', () => {
 	});
 
 	it('should render no back chip when none is given', () => {
-		render(PageHeading, { eyebrow: 'Activity', title: 'Recent decisions' });
+		render(PageHeading, { title: 'Recent decisions' });
 		expect(screen.queryByRole('link')).toBeNull();
 	});
 
 	it('should render a trailing action when one is given', () => {
-		render(PageHeading, { eyebrow: 'Activity', title: 'Recent decisions', action });
+		render(PageHeading, { title: 'Recent decisions', action });
 		expect(screen.getByRole('link', { name: 'View all history' })).toBeInTheDocument();
 	});
 });

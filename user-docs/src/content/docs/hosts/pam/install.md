@@ -1,7 +1,6 @@
 ---
 title: Installing pam_ssoossh
 description: Packages, platforms, CA key types, install paths, and verifying a download.
-eyebrow: Host administration
 sidebar:
   order: 2
 ---

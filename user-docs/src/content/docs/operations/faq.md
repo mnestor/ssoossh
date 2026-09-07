@@ -1,7 +1,6 @@
 ---
 title: Operator FAQ
 description: Short answers to the questions people running ssoosshd ask, each pointing at the page with the detail.
-eyebrow: Server operations
 sidebar:
   order: 15
 ---

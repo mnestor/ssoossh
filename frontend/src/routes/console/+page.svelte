@@ -104,7 +104,7 @@
 <svelte:head><title>Console login · ssoossh</title></svelte:head>
 
 <PageShell width="focus">
-	<PageHeading eyebrow="Console login" title="Enter the code on the screen" />
+	<PageHeading title="Enter the code on the screen" />
 
 	<div
 		data-testid="console-code-entry"

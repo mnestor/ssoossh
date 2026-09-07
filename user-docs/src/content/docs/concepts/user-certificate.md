@@ -1,7 +1,6 @@
 ---
 title: Interactive user certificates
 description: The everyday path, from ssh host to a shell, in four stages.
-eyebrow: How it works
 sidebar:
   order: 2
 ---

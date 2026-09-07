@@ -366,14 +366,49 @@ nothing above or below it, and every other page starts at the top so it does
 not move as content loads.
 
 Every page opens with a `PageHeading`, and the whole of the opening lives in
-it: an optional back chip, an accent eyebrow naming the area ("Activity",
-"History", "Admin"), the page's `h1`, an optional `sub` line, and an optional
-right-aligned `action`. The eyebrow is what makes a screen identifiable at a
-glance without reading the title, so it is required rather than optional, and
-there is exactly one `h1` per page.
+it: an optional back chip naming where the page was opened from, the page's
+`h1`, an optional `sub` line, and an optional right-aligned `action`. There is
+exactly one `h1` per page, and at most one line above it.
 
-All four parts are in the component because every one of them had been
-rebuilt by hand somewhere, and the copies had drifted:
+**One line of naming above the title, not two.** There used to be a small
+accent eyebrow between the chip and the `h1`, naming the area. On most pages
+it said the title again in fewer words — "Account" over "Your account",
+"History" over "Certificate history", "Service" over "Service enrollment
+codes" — and on a detail page it stacked a third level of naming above the
+content: "All codes for svc-deploy", then "Service code", then `svc-deploy`
+again as the `h1`. A page can only be in one place, the rail already marks
+which section that is, and the chip already says what this page was opened
+from. So the eyebrow went, and what it was genuinely carrying moved into the
+titles:
+
+- `/admin/certificates` and `/admin/service-codes` were titled exactly like
+  their non-admin counterparts, told apart only by an "Admin" eyebrow. They
+  are "All certificates" and "All service codes" now, which names the
+  difference that matters: everyone's records rather than yours.
+- `/certs/<id>` was titled "Details" under a "Certificate" eyebrow. It is
+  "Certificate details".
+- `/preferences` was "Notifications" under a "Preferences" eyebrow, one word
+  short of matching its rail entry. It is "Notification preferences".
+- `/service-codes/<id>` titled itself with the account name, directly under a
+  chip reading "All codes for `<account>`". It is "Service code": the chip
+  carries the account, the title names the thing.
+- `/admin/users/<id>` had an "Admin" eyebrow and no way back to the list. It
+  has the chip instead, which is what a detail page's top line is for.
+- The error page's `Error 404` was never a name, it was a fact about what
+  went wrong, and it reads as the first half of the sub line now.
+
+A title has to stand on its own, because nothing above it explains it.
+
+The docs site (`user-docs/`) mirrored this pattern with a Starlight
+`PageTitle` override and an `eyebrow` frontmatter field, and it went the same
+way and for the same reason: the value was the sidebar group's own label on
+every one of the 113 pages that set one. Its two collisions came out in the
+same pass — `concepts/index` was "Overview" beside a "Hosts overview" and a
+"Deployment overview", and two different pages were both called "Console
+login".
+
+The parts that remain are in the component because both had been rebuilt by
+hand somewhere, and the copies had drifted:
 
 - The **back chip** was the same nine-class string on `/certs/<id>`,
   `/service-codes/<id>` and `/admin/service-codes/<id>` as an `<a>`, and on
@@ -394,18 +429,21 @@ text-sm` paragraph after the heading, a `-mt-2 text-[13px]` one, and a
   properly is saying it twice and labelling it neither time. The one
   identifier a sub line may carry is one stated nowhere else — the user
   page's email address.
-- The **`h1`** was written out with its four classes on five pages that had
-  no eyebrow — the error page, both approval-unavailable states, and the two
-  load-failure screens. A change to the heading scale would have moved most
-  of the app and left those behind. They take an eyebrow now ("Error 404",
-  "Approval", "Console login", "Certificate request"), which is what they
-  were missing rather than a reason to skip the component.
+- The **`h1`** was written out with its four classes on five pages — the
+  error page, both approval-unavailable states, and the two load-failure
+  screens. A change to the heading scale would have moved most of the app and
+  left those behind. They all go through the component now.
 
-Sign-in is the one screen that does not use it, and deliberately: it is a
-centred 380px column with the `BrandMark` above a 22px `h1`, addressed to
-somebody who is not signed in and has no rail, no area to name and no page to
-go back to. An eyebrow and a left-aligned 26px title would break the lockup
-rather than unify it.
+The `h1` is 26px above `sm` and 20px below it. 26px is a desktop size: on a
+phone, a title of any length runs to two or three lines and pushes the page's
+first real content under the fold, and an `h1` only has to be the largest
+thing on the page to read as one.
+
+Sign-in is the one screen that does not use `PageHeading`, and deliberately:
+it is a centred 380px column with the `BrandMark` above a 22px `h1`,
+addressed to somebody who is not signed in and has no rail and no page to go
+back to. A left-aligned 26px title would break the lockup rather than unify
+it.
 
 ### Breakpoints
 
@@ -536,8 +574,8 @@ none of that.
 - **ExpireCodeAction**: The retire-this-code button and its `ConfirmModal`, for a page heading's `action` slot. One component for both sides of a code — an admin on `/admin/service-codes/<id>` and a holder on `/service-codes/<id>` — because the two differ only in which endpoint they call, and the reason field, the confirmation and the error wording are what is worth keeping identical.
 - **StatusBadge**: Maps request/certificate statuses (pending, approved, denied, etc.) to colored pills with status-appropriate icons. Rendered capitalised — the wire value is lowercase, the label is not.
 - **DetailRow**: A label–value pair for metadata lists, with optional icon and monospace rendering. A 140px label column at 13px, stacking on narrow viewports.
-- **PageHeading**: The whole of a page's opening — back chip, eyebrow, `h1`, `sub` line, and a right-aligned `action` where a page's destructive control goes (see Destructive actions). `sub` is a snippet rather than a string because two lists put a `<code>` in theirs. See Page Structure for why all four parts live here.
-- **SectionLabel**: The same small muted uppercase label as `PageSection`'s heading, but as a plain `div` with no frame, for a group _inside_ a section — a form group, the lifetime-policy block within a certificate's decision, the three groups inside the approval card. Not a heading, and must not become one: nesting `h2`s under each other would flatten the page's real structure. Quieter than `PageHeading`'s eyebrow, which takes the accent.
+- **PageHeading**: The whole of a page's opening — back chip, `h1`, `sub` line, and a right-aligned `action` where a page's destructive control goes (see Destructive actions). `sub` is a snippet rather than a string because two lists put a `<code>` in theirs. See Page Structure for why these parts live here, and for why there is no eyebrow above the `h1`.
+- **SectionLabel**: The same small muted uppercase label as `PageSection`'s heading, but as a plain `div` with no frame, for a group _inside_ a section — a form group, the lifetime-policy block within a certificate's decision, the three groups inside the approval card. Not a heading, and must not become one: nesting `h2`s under each other would flatten the page's real structure. It is the app's only small uppercase label now that `PageHeading`'s accent eyebrow is gone, and it stays muted: it names a section within a card, not the page.
 - **DeniedRow**: One refusal in a decision history, laid out to line up with the `CertRow` beside it and deliberately not a link: a denial issues nothing, so there is no certificate page to open. Its own component rather than a mode of `CertRow` because a denial genuinely has none of what a certificate row shows — no serial, no key id, no fingerprint, no principals granted, no validity window — and feeding empty strings into `CertRow` would render a row that reads like a certificate whose details nobody can find. `/logs/me` reads two endpoints for this: `/api/certs` is the certificates table and a denial never writes a row there, so `/api/decisions/denied` serves the other half and the page interleaves the two by time. Where a certificate row lists the principals it granted, a denial's third column says what the request claimed it was doing — the PAM service, terminal and remote host, or the reporting client for a user request, which has no session behind it. Claims throughout, self-reported and unverified, which is why the column is labelled "claimed". It is copied onto the decision row at decision time, so unlike the request's own columns it cannot go blank later.
 
   The page opens on approvals. It has always been the list of certificates somebody holds, and opening it on a mixture would change what an existing reader gets without their asking; a refusal is a thing you go looking for, so it is one click away on the outcome filter instead. That filter's third option is "Both" rather than "All", because the type tabs beside it already have an "All" and two adjacent controls offering the same word are ambiguous to read and worse to announce.

@@ -84,7 +84,6 @@
 	     it, the same place an account is disabled from: it is the one thing
 	     here that ends the code rather than describing it. -->
 	<PageHeading
-		eyebrow="Admin"
 		title="Service code details"
 		back={{ href: listHref, label: 'All service codes', testid: 'admin-service-code-back' }}
 	>

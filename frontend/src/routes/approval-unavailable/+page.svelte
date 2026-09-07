@@ -19,7 +19,7 @@
 			data-testid="claim-cookies-blocked"
 			class="rounded-lg border border-border-subtle bg-surface-muted p-4"
 		>
-			<PageHeading eyebrow="Approval" title="This site needs cookies to approve requests">
+			<PageHeading title="This site needs cookies to approve requests">
 				{#snippet sub()}
 					Approval links are tied to the first browser that opens them, and that tie is carried by a
 					cookie this browser did not send back. Allow cookies for this site, then run the client
@@ -36,7 +36,7 @@
 			data-testid="claim-already-opened"
 			class="rounded-lg border border-border-subtle bg-surface-muted p-4"
 		>
-			<PageHeading eyebrow="Approval" title="This approval link was already opened">
+			<PageHeading title="This approval link was already opened">
 				{#snippet sub()}
 					Approval links are single-use, and something opened this one first. If you did not open
 					it, that is often security software scanning links in mail or chat. Nothing was approved.

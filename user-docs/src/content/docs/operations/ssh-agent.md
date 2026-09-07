@@ -1,7 +1,6 @@
 ---
 title: The CA key in an ssh-agent
 description: Holding the CA private key in an ssh-agent so it never enters ssoosshd's memory, including HSM-backed keys without a PKCS#11 module in the server.
-eyebrow: Server operations
 sidebar:
   order: 15
 ---

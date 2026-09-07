@@ -1,7 +1,6 @@
 ---
 title: Keys and certificates compared
 description: What actually changes on identity proofing, hopping without agent forwarding, alternate accounts, unattended jobs, and day-to-day key management.
-eyebrow: How it works
 sidebar:
   order: 1
 ---
@@ -227,8 +226,8 @@ Worth stating plainly, because none of it is free:
 
 ## Related
 
-- [Overview](/ssoossh/concepts/) -- the components and the four certificate
-  types.
+- [How ssoossh works](/ssoossh/concepts/) -- the components and the four
+  certificate types.
 - [Interactive user certificates](/ssoossh/concepts/user-certificate/) -- the
   everyday path in four stages.
 - [Service certificates](/ssoossh/concepts/service-certificates/) -- enrollment

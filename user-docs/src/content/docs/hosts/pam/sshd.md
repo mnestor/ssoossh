@@ -1,7 +1,6 @@
 ---
 title: sshd keyboard-interactive
 description: Run pam_ssoossh inside sshd, on its own or as a second factor after a public key.
-eyebrow: Host administration
 sidebar:
   order: 5
 ---

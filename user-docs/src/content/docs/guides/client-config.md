@@ -1,7 +1,6 @@
 ---
 title: Client configuration
 description: Where ssoossh.yaml is found, what it can set, and which source wins when two disagree.
-eyebrow: User guide
 sidebar:
   order: 2
 ---

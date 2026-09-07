@@ -62,7 +62,7 @@
 </svelte:head>
 
 <PageShell width="wide">
-	<PageHeading eyebrow="Admin" title="Service enrollment codes" />
+	<PageHeading title="All service codes" />
 
 	<p class="text-sm text-ink-muted">
 		All approved service enrollment codes across users. Codes themselves are never shown. Open a row

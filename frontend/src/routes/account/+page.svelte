@@ -53,7 +53,7 @@
 <svelte:head><title>Account · ssoossh</title></svelte:head>
 
 <PageShell width="wide">
-	<PageHeading eyebrow="Account" title="Your account" />
+	<PageHeading title="Your account" />
 
 	{#if loadError}
 		<Alert variant="error" title="Could not load your account">{loadError}</Alert>

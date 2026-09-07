@@ -1,7 +1,6 @@
 ---
 title: Deployment overview
 description: What an ssoosshd deployment is made of, and the order to build it in.
-eyebrow: Server operations
 sidebar:
   order: 0
 ---

@@ -1,7 +1,6 @@
 ---
 title: Host admin FAQ
 description: The questions people who run the target hosts ask first.
-eyebrow: Host administration
 sidebar:
   order: 11
 ---

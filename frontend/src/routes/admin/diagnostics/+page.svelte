@@ -48,7 +48,7 @@
 </script>
 
 <PageShell width="wide">
-	<PageHeading eyebrow="Admin" title="Diagnostics">
+	<PageHeading title="Diagnostics">
 		{#snippet action()}
 			{#if isAdmin}
 				<Button onclick={run} busy={running} testid="run-diagnostics">

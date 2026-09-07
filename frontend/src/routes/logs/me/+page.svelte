@@ -252,7 +252,7 @@
 <svelte:head><title>Certificate history · ssoossh</title></svelte:head>
 
 <PageShell width="wide">
-	<PageHeading eyebrow="History" title="Certificate history" />
+	<PageHeading title="Certificate history" />
 
 	{#if loadError}
 		<Alert variant="error" title="Could not load your history">{loadError}</Alert>

@@ -1,7 +1,6 @@
 ---
 title: Diagnostics
 description: The -v and --debug flags, what each one prints, and what to attach when asking for help.
-eyebrow: User guide
 sidebar:
   order: 6
 ---

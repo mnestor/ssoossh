@@ -107,7 +107,7 @@
 <svelte:head><title>Claims echo · ssoossh</title></svelte:head>
 
 <PageShell width="wide">
-	<PageHeading eyebrow="Admin" title="Claims echo">
+	<PageHeading title="Claims echo">
 		{#snippet sub()}
 			What your identity provider actually sends, annotated against the configuration.
 		{/snippet}

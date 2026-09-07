@@ -1,7 +1,6 @@
 ---
 title: Identity provider
 description: Registering the OIDC client, mapping claims to ssoossh fields, and fixing a rejected redirect URI.
-eyebrow: Server operations
 sidebar:
   order: 2
 ---

@@ -1,7 +1,6 @@
 ---
 title: ssoossh.yaml reference
 description: Every key the ssoossh client reads, with its type, default, and effect.
-eyebrow: Reference
 sidebar:
   order: 1
 ---

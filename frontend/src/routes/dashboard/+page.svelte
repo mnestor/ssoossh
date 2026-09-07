@@ -95,7 +95,7 @@
 <svelte:head><title>Dashboard · ssoossh</title></svelte:head>
 
 <PageShell width="wide">
-	<PageHeading eyebrow="Activity" title="Recent decisions">
+	<PageHeading title="Recent decisions">
 		{#snippet action()}
 			<a
 				href={resolve('/logs/me')}

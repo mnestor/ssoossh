@@ -33,10 +33,6 @@ export default defineConfig({
 			// The app's design system, applied to the docs; see
 			// frontend/DESIGN.md for the tokens these mirror.
 			customCss: ['./src/styles/ssoossh.css'],
-			components: {
-				// Adds the app's accent eyebrow above the page heading.
-				PageTitle: './src/components/PageTitle.astro',
-			},
 			social: [
 				{ icon: 'github', label: 'GitHub', href: 'https://github.com/mnestor/ssoossh' },
 			],

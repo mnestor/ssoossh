@@ -149,9 +149,10 @@
 			data-testid="load-failure-{failure.kind}"
 			class="rounded-lg border border-border-subtle bg-surface-muted p-4"
 		>
-			<!-- The same eyebrow the approval itself carries, so a refused
-			     link still reads as the screen it was meant to be. -->
-			<PageHeading eyebrow="Certificate request" title={loadFailure.title}>
+			<!-- The failure names itself: "This link was already used" is
+			     the whole answer, and the card it sits in is what marks it
+			     as a refusal rather than the screen it replaced. -->
+			<PageHeading title={loadFailure.title}>
 				{#snippet sub()}{loadFailure.message}{/snippet}
 			</PageHeading>
 		</div>

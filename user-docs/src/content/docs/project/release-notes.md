@@ -1,7 +1,6 @@
 ---
 title: Release notes
 description: Build floors, the revocation stance, and the gaps worth knowing about before you deploy.
-eyebrow: Project
 sidebar:
   order: 1
 ---

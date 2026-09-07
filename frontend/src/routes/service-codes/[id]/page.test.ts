@@ -143,13 +143,15 @@ describe('Service code page', () => {
 		expect(screen.queryByTestId('expire-code')).not.toBeInTheDocument();
 	});
 
-	// The heading is where the action hangs, so it has to name the code
-	// rather than stay screen-reader-only the way it used to.
-	it('should name the account in the heading', async () => {
+	// The heading is where the action hangs, so it has to name the page
+	// rather than stay screen-reader-only the way it used to. It names the
+	// thing, not the account: the back chip above it already says which
+	// account the code belongs to.
+	it('should name the page in the heading', async () => {
 		mockFetch([deployCode()]);
 		render(Page);
 		expect(
-			await screen.findByRole('heading', { name: 'svc-deploy', level: 1 })
+			await screen.findByRole('heading', { name: 'Service code', level: 1 })
 		).toBeInTheDocument();
 	});
 

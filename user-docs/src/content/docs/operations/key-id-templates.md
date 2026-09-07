@@ -1,7 +1,6 @@
 ---
 title: Key ID templates
 description: Shaping the certificate key ID sshd writes to its auth log, per certificate type.
-eyebrow: Server operations
 sidebar:
   order: 8
 ---

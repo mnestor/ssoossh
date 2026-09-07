@@ -1,7 +1,6 @@
 ---
 title: Roles and containment
 description: The admin, SOC, and auditor groups, what each may do, and why the session lifetime is the revocation window.
-eyebrow: Server operations
 sidebar:
   order: 9
 ---
