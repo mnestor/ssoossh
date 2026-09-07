@@ -5,11 +5,13 @@ LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.description="ubuntu image with build tools and certficate chain"
 
 ARG DEBIAN_FRONTEND=noninteractive
-# zig cross-compiles ssoosshd's cgo (PKCS#11) build against a pinned glibc
-# floor and musl; keep in sync with the zig version pinned in ssoossh's
-# release workflow. 0.16 is a floor: earlier zig cc took -dynamic on a musl
-# target and linked libc statically anyway, and a static musl binary cannot
-# dlopen a PKCS#11 module.
+# zig cross-compiles ssoosshd's cgo build -- server-linux-pkcs11-build, the
+# only one that needs it -- against a pinned glibc 2.28 floor. The default
+# server build is CGO_ENABLED=0 and needs no cross-toolchain at all. Keep in
+# sync with the zig version pinned in ssoossh's release workflow. 0.16 is
+# kept as the floor because that pin is shared, not because the musl
+# reasoning that first chose it still applies: there is no musl server build
+# any more.
 ARG ZIG_VERSION=0.16.0
 # Tools baked in so CI steps don't fetch them on every run. Each is pinned,
 # and each pin is the one the workflow that used to install it asked for:
@@ -43,7 +45,8 @@ RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sourc
     sudo build-essential git curl unzip jq gh goreleaser \
     # Both ship on the stock ubuntu-latest runner but not here, and
     # --no-install-recommends means nothing else drags them in: `file`
-    # backs build.yaml's musl linkage check, netcat backs the e2e
+    # backs build.yaml's linkage check (the default build must be static
+    # and the pkcs11 build must not be), netcat backs the e2e
     # proxycommand tests, which exec /usr/bin/nc.
     file netcat-openbsd \
     # CLI only, no daemon: GitHub-hosted runners mount the host's

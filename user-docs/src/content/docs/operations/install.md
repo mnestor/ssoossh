@@ -1,7 +1,6 @@
 ---
 title: Installing the server
 description: Packages, the CA key, the systemd unit, the minimum config, and the first health check.
-eyebrow: Server operations
 sidebar:
   order: 1
 ---
@@ -41,7 +40,17 @@ which makes it the same content as `ssoosshd.yaml(5)` and the
 There are also container images, `ghcr.io/mnestor/ssoossh-server:<version>`
 (the default, on `distroless/static-debian12`) and
 `ghcr.io/mnestor/ssoossh-server:<version>-pkcs11` (on
-`distroless/cc-debian12`, the one that can load a module). `<version>` carries no leading `v` -- release v1.2.4 publishes the
+`distroless/cc-debian12`, the one that can load a module).
+
+:::caution[If you pin a `-musl` tag, move off it]
+The `-musl` images are no longer built. Nothing deletes the tags already in
+the registry, so a pin like `1.2-musl` keeps resolving -- to the last image
+ever published under it. It will not error; it will simply stop receiving
+updates, which is the more dangerous failure of the two.
+
+Move to the unsuffixed tag. The default image is statically linked, so it
+runs anywhere the musl one did and needs no libc match.
+::: `<version>` carries no leading `v` -- release v1.2.4 publishes the
 image tag `1.2.4`, and points the floating tags `1.2` and `1` at it too.
 Which one you pin decides how much a restart is allowed to change: `1.2.4`
 never moves, `1.2` follows patch releases, `1` follows minor releases as
