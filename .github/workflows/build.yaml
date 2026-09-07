@@ -407,15 +407,23 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          # The step runs on any failure, including one that happened before
-          # goreleaser drafted anything. `gh release delete` treats a missing
-          # release as an error, which turns "nothing to clean up" into a
-          # second red step that buries the failure that actually mattered.
-          gh release view "$TAG" >/dev/null 2>&1 || {
+          # "Nothing to remove" is a normal outcome here and must not add a
+          # red step on top of the failure that actually mattered. It arises
+          # two ways: the run failed before goreleaser drafted anything, and
+          # macos-verify and windows-verify both delete this same draft while
+          # running in parallel, so either can find the other got there
+          # first. Probing before deleting does not settle the second case --
+          # the draft can go between the probe and the delete -- so the
+          # delete is attempted first and only a release that is still there
+          # afterwards is a real failure.
+          if gh release delete -y "$TAG"; then
+            echo "removed the release $TAG"
+          elif gh release view "$TAG" >/dev/null 2>&1; then
+            echo "could not delete the release $TAG" >&2
+            exit 1
+          else
             echo "no release for $TAG; nothing to remove"
-            exit 0
-          }
-          gh release delete -y "$TAG"
+          fi
 
   # Gatekeeper's opinion, which is the one thing Linux cannot produce.
   #
@@ -490,8 +498,17 @@ jobs:
           for pkg in dist/*.pkg; do
             rm -rf exp ref refexp ref.pkg
             pkgutil --expand-full "$pkg" exp
-            ver=$(sed -n 's/.*<pkg-info[^>]* version="\([^"]*\)".*/\1/p' \
-              exp/component.pkg/PackageInfo | head -1)
+            # flatpkg.sh wraps the pkg-info element across lines, so its
+            # attributes are not all on the line that opens it and a line-wise
+            # sed matches nothing. Newlines are folded first. An empty result
+            # is caught here rather than handed to pkgbuild, which answers an
+            # empty --version with "error: (null)" and names nothing.
+            ver=$(tr '\n' ' ' < exp/component.pkg/PackageInfo |
+              sed -n 's/.*<pkg-info[^>]*[[:space:]]version="\([^"]*\)".*/\1/p')
+            if [ -z "$ver" ]; then
+              echo "✗ no version attribute in $pkg's PackageInfo" >&2
+              exit 1
+            fi
             pkgbuild --quiet --root exp/component.pkg/Payload \
               --identifier org.mikenestor.ssoossh-client --version "$ver" \
               --install-location / --ownership recommended ref.pkg
@@ -562,15 +579,23 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          # The step runs on any failure, including one that happened before
-          # goreleaser drafted anything. `gh release delete` treats a missing
-          # release as an error, which turns "nothing to clean up" into a
-          # second red step that buries the failure that actually mattered.
-          gh release view "$TAG" >/dev/null 2>&1 || {
+          # "Nothing to remove" is a normal outcome here and must not add a
+          # red step on top of the failure that actually mattered. It arises
+          # two ways: the run failed before goreleaser drafted anything, and
+          # macos-verify and windows-verify both delete this same draft while
+          # running in parallel, so either can find the other got there
+          # first. Probing before deleting does not settle the second case --
+          # the draft can go between the probe and the delete -- so the
+          # delete is attempted first and only a release that is still there
+          # afterwards is a real failure.
+          if gh release delete -y "$TAG"; then
+            echo "removed the release $TAG"
+          elif gh release view "$TAG" >/dev/null 2>&1; then
+            echo "could not delete the release $TAG" >&2
+            exit 1
+          else
             echo "no release for $TAG; nothing to remove"
-            exit 0
-          }
-          gh release delete -y "$TAG"
+          fi
 
   # The Windows counterpart to macos-verify, and it exists for the same
   # reason. packaging/windows/msi.sh builds the package with wixl, which
@@ -737,8 +762,22 @@ jobs:
             throw "'ssoossh version' printed '$out', expected version $env:VERSION"
           }
 
+          # Compared with trailing separators trimmed, because the entry the
+          # MSI writes need not be spelled the way this step spells it: the
+          # Environment row's value is [~];[INSTALLDIR], and INSTALLDIR is a
+          # Directory property. An exact -contains against the split list
+          # turns a cosmetic difference into a failure that reads as a
+          # missing PATH entry.
+          #
+          # The entries are printed before the assertion so that a real
+          # absence is told apart from a spelling difference in the log,
+          # rather than needing another run to find out which it was.
           $machinePath = [Environment]::GetEnvironmentVariable('PATH', 'Machine')
-          if (($machinePath -split ';') -notcontains $dir) {
+          $entries = $machinePath -split ';' |
+            Where-Object { $_ } |
+            ForEach-Object { $_.TrimEnd('\', '/') }
+          Write-Host "machine PATH entries:`n$($entries -join "`n")"
+          if ($entries -notcontains $dir.TrimEnd('\', '/')) {
             throw "the machine PATH does not contain '$dir'"
           }
 
@@ -772,8 +811,14 @@ jobs:
             throw "ssoossh.exe survived the uninstall in '$dir'"
           }
 
+          # Trimmed for the mirror-image reason to the install check above: an
+          # untrimmed comparison would let an entry that survived uninstall
+          # pass unnoticed purely because of a trailing separator.
           $machinePath = [Environment]::GetEnvironmentVariable('PATH', 'Machine')
-          if (($machinePath -split ';') -contains $dir) {
+          $entries = $machinePath -split ';' |
+            Where-Object { $_ } |
+            ForEach-Object { $_.TrimEnd('\', '/') }
+          if ($entries -contains $dir.TrimEnd('\', '/')) {
             throw "the machine PATH still contains '$dir' after uninstall"
           }
 
@@ -795,20 +840,32 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          # Same reason as the other cleanup steps: a failure before the draft
-          # exists must not add a red step of its own.
+          # Same shape as the other cleanup steps, and it matters most here:
+          # macos-verify deletes this same draft in parallel with this job, so
+          # losing that race is the expected outcome rather than an error.
+          # Delete first, and treat only a release that is still there
+          # afterwards as a failure.
+          #
           # PowerShell 7.4 turns a nonzero native exit code into a terminating
-          # error under the `stop` preference GitHub prepends, so the probe is
-          # run with that off and read from $LASTEXITCODE instead.
+          # error under the `stop` preference GitHub prepends, so both calls
+          # are made with that off and read from $LASTEXITCODE instead.
           $PSNativeCommandUseErrorActionPreference = $false
-          gh release view $env:TAG *> $null
-          $exists = $LASTEXITCODE -eq 0
-          $PSNativeCommandUseErrorActionPreference = $true
-          if (-not $exists) {
-            Write-Host "no release for $env:TAG; nothing to remove"
-            exit 0
+          gh release delete -y $env:TAG *> $null
+          $deleted = $LASTEXITCODE -eq 0
+          $stillThere = $false
+          if (-not $deleted) {
+            gh release view $env:TAG *> $null
+            $stillThere = $LASTEXITCODE -eq 0
           }
-          gh release delete -y $env:TAG
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ($deleted) {
+            Write-Host "removed the release $env:TAG"
+          } elseif ($stillThere) {
+            Write-Host "could not delete the release $env:TAG"
+            exit 1
+          } else {
+            Write-Host "no release for $env:TAG; nothing to remove"
+          }
 
   # Where a release becomes visible, and the only job that makes anything
   # public under a name someone would go looking for. Everything before it
@@ -963,12 +1020,20 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          # The step runs on any failure, including one that happened before
-          # goreleaser drafted anything. `gh release delete` treats a missing
-          # release as an error, which turns "nothing to clean up" into a
-          # second red step that buries the failure that actually mattered.
-          gh release view "$TAG" >/dev/null 2>&1 || {
+          # "Nothing to remove" is a normal outcome here and must not add a
+          # red step on top of the failure that actually mattered. It arises
+          # two ways: the run failed before goreleaser drafted anything, and
+          # macos-verify and windows-verify both delete this same draft while
+          # running in parallel, so either can find the other got there
+          # first. Probing before deleting does not settle the second case --
+          # the draft can go between the probe and the delete -- so the
+          # delete is attempted first and only a release that is still there
+          # afterwards is a real failure.
+          if gh release delete -y "$TAG"; then
+            echo "removed the release $TAG"
+          elif gh release view "$TAG" >/dev/null 2>&1; then
+            echo "could not delete the release $TAG" >&2
+            exit 1
+          else
             echo "no release for $TAG; nothing to remove"
-            exit 0
-          }
-          gh release delete -y "$TAG"
+          fi
