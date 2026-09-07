@@ -17,6 +17,16 @@ optional and adds a capability rather than a requirement.
 
 ```mermaid
 flowchart LR
+    accTitle: What a deployment consists of
+    accDescr {
+      Approver browsers, ssoossh clients and pam_ssoossh on hosts all reach
+      ssoosshd. ssoosshd requires an OIDC provider and a database, either
+      SQLite or PostgreSQL. Optionally it also uses an SMTP relay for mail, an
+      LDAP directory for enrichment and sync, and a NATS broker — which in
+      turn allows a separate ssoosshd sign process holding the CA key in
+      configuration or on a PKCS#11 token. Clients present certificates to
+      target hosts, whose sshd trusts the CA.
+    }
     Browser["Approver browser"] --> D
     Client["ssoossh client"] --> D
     Pam["pam_ssoossh on a host"] --> D

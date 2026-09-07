@@ -81,6 +81,8 @@
 	const setCount = $derived(all.filter((setting) => setting.value !== '').length);
 </script>
 
+<svelte:head><title>Server configuration · ssoossh</title></svelte:head>
+
 <PageShell width="wide">
 	<PageHeading title="Server configuration">
 		{#snippet sub()}

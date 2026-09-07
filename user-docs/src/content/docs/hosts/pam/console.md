@@ -62,6 +62,21 @@ flow.
 
 ```mermaid
 sequenceDiagram
+    accTitle: Console login flow, end to end
+    accDescr {
+      A user types their account name at a machine with no browser.
+      pam_ssoossh generates an ephemeral keypair and posts it with the
+      account, host, service and tty to ssoosshd, which refuses the request if
+      the host falls outside the allowed networks and otherwise returns a user
+      code, the /console URL, the /c shortcut and an expiry. PAM displays the
+      code and the URL. The user types the code at /console in a browser that
+      already holds a session; the server resolves it, claims it for that
+      session and redirects to the approval page, which shows the host,
+      service, tty and account before anything is approved. The certificate
+      goes back to PAM, which runs the same four checks as sudo: valid means
+      the session starts, and invalid, expired or unreachable means an
+      authentication failure that falls through the stack.
+    }
     autonumber
     actor User as User at the console
     participant PAM as pam_ssoossh

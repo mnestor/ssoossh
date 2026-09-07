@@ -46,6 +46,12 @@ the directory and the enrollment lists to find what to contain.
 
 ```mermaid
 flowchart TD
+    accTitle: How the three admin groups nest
+    accDescr {
+      Three configuration keys, each a superset of the one below it.
+      admin.require_group grants restorative writes, admin.soc_group grants
+      containment writes, and admin.auditor_group grants read-only views.
+    }
     A["admin.require_group<br/>restorative writes"] --> S["admin.soc_group<br/>containment writes"]
     S --> V["admin.auditor_group<br/>read-only views"]
 ```

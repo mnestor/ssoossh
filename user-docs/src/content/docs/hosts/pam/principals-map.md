@@ -83,6 +83,17 @@ Three consequences worth stating plainly:
 
 ```mermaid
 flowchart TD
+    accTitle: How pam_ssoossh decides check 3, the principal check
+    accDescr {
+      If no principals map is configured, the question is simply whether the
+      local account name is itself one of the certificate’s principals — yes
+      passes on to check 4, no denies with PAM_AUTH_ERR. If a map is
+      configured but failed to load, a warning is logged and the same fallback
+      question is asked. If a map is configured and loaded, the account must
+      have an entry in it, and one of the certificate’s principals must be
+      listed under that entry; a missing entry or an unlisted principal
+      denies.
+    }
     A["Check 3: principal"] --> B{"principals-map configured?"}
     B -- no --> C{"Is the local account name itself a principal?"}
     B -- "yes, but it did not load" --> W["Log a warning"]

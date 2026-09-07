@@ -12,7 +12,7 @@ what is *not* in there is as important as what is.
 
 ## SQLite or PostgreSQL
 
-| | SQLite | PostgreSQL |
+| Setting | SQLite | PostgreSQL |
 | --- | --- | --- |
 | [`db.provider`](/ssoossh/reference/config/db/#provider) | `sqlite` (the default) | `postgres` |
 | Instances | one | any number |

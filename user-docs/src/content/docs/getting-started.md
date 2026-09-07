@@ -26,6 +26,15 @@ their own pointers at the end.
 
 ```mermaid
 flowchart LR
+    accTitle: The three components and how they connect
+    accDescr {
+      The user drives the ssoossh client, which sends a public key to
+      ssoosshd. ssoosshd authenticates the user against an identity provider
+      over OIDC, and the user approves in a browser. ssoosshd returns a signed
+      certificate to the client, which presents it to the target host’s sshd.
+      On that same host, pam_ssoossh talks directly to ssoosshd for sudo, su
+      and console logins.
+    }
     You[You] --> Client[ssoossh client]
     Client -->|public key| Server[ssoosshd]
     Server -->|OIDC login| IdP[Identity provider]

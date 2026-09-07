@@ -211,20 +211,29 @@ describe('CertRow', () => {
 			expect(screen.getByTestId('cert-outcome')).toHaveAttribute('data-outcome', 'denied');
 		});
 
+		// getByText, not getByLabelText: the mark names itself with an sr-only
+		// string. An aria-label on its bare span was prohibited by ARIA and
+		// dropped by every browser, so this passed against markup no reader
+		// could hear.
 		it('should name the outcome for assistive technology', () => {
 			render(CertRow, { cert: cert(), now, showOutcome: true, href: '/certs/cert-1' });
-			expect(screen.getByLabelText('Approved')).toBeInTheDocument();
+			expect(screen.getByText('Approved')).toBeInTheDocument();
 		});
 	});
 
+	// getByText, not getByLabelText: the badge names itself with an sr-only
+	// string in the document rather than an aria-label on its span. ARIA
+	// prohibits naming the `generic` role, so the label this used to assert
+	// on was being dropped by every browser and the test passed against
+	// markup no reader could hear. See TypeBadge.svelte.
 	it('should name the certificate type for assistive technology', () => {
 		render(CertRow, { cert: cert({ type: 'pam' }), now, href: '/certs/cert-1' });
-		expect(screen.getByLabelText('Certificate type: PAM')).toBeInTheDocument();
+		expect(screen.getByText('Certificate type: PAM')).toBeInTheDocument();
 	});
 
 	it('should name a console certificate for assistive technology', () => {
 		render(CertRow, { cert: cert({ type: 'console' }), now, href: '/certs/cert-1' });
-		expect(screen.getByLabelText('Certificate type: Console')).toBeInTheDocument();
+		expect(screen.getByText('Certificate type: Console')).toBeInTheDocument();
 	});
 
 	it('should link to the certificate the row is about', () => {

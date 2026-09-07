@@ -21,7 +21,7 @@ This page compares the three. For how the module itself works, see
 
 ## What each one proves
 
-| | Local password | Hardware-backed token | `pam_ssoossh` |
+| Property | Local password | Hardware-backed token | `pam_ssoossh` |
 | --- | --- | --- | --- |
 | The claim it checks | you know a secret this host has a hash of | you hold this device, and unlocked it with a PIN or a touch | you authenticated at the identity provider just now, and a human approved this specific request |
 | Where the authority lives | on this host, per account | on the device in someone's hand | at the identity provider |
@@ -68,6 +68,17 @@ authenticating**. That assumption is invisible until the machine is virtual.
 
 ```mermaid
 flowchart LR
+    accTitle: Why a hardware token cannot cover a VM console
+    accDescr {
+      Two arrangements side by side. With a hardware token the factor has to
+      reach the machine being logged into: the person puts a token in a
+      reader, and the machine needs USB, PC/SC, a driver and a physical port
+      to see it. With pam_ssoossh the factor stays with the person: their
+      phone or laptop holds the token, passkey or biometric and authenticates
+      to the identity provider, which the ssoossh server trusts; the machine
+      being logged into only has to print eight characters and reach ssoosshd
+      over the network.
+    }
     subgraph TOK["A token: the factor must reach the machine"]
         P1["Person"] --> D1["Token in a reader"]
         D1 --> M1["The machine being logged into"]
@@ -115,7 +126,7 @@ on the address the server observed rather than a hostname the caller typed:
 Where the three differ once they are running, rather than at the moment of a
 login.
 
-| | Local password | Hardware-backed token | `pam_ssoossh` |
+| Cost | Local password | Hardware-backed token | `pam_ssoossh` |
 | --- | --- | --- | --- |
 | Enrollment | set a password per account per host | issue and personalize a device, then register it | none on the host: the person already exists at the identity provider |
 | Adding a host | provision accounts and passwords | distribute trust anchors and a certificate-to-account mapping | one CA public key, one principals map |

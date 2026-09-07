@@ -239,6 +239,22 @@ over every user with a `user_ldap` row.
 
 ```mermaid
 flowchart TD
+    accTitle: What one LDAP sync tick does for each known user
+    accDescr {
+      For each user the sync first searches by id_attribute. Found means
+      refresh: attributes and groups are updated, last_seen_at and the DN are
+      written, and any open first_missing_at is cleared. If the attribute is
+      unset, absent or the search failed, the entry is read by DN instead, and
+      that too leads to a refresh when found. A failed DN read falls back to
+      one filter search, which re-anchors an entry that has moved. A search
+      that succeeded but found nothing opens first_missing_at if it is not
+      already open; once the user has been missing for at least disable_after,
+      they are disabled with disabled_source set to ldap_sync, and otherwise
+      the next tick waits. A directory that is unreachable, or a bind that
+      failed, changes nothing and counts nothing but logs loudly. Finally, a
+      refreshed user who had been disabled by ldap_sync has that disable
+      cleared if re-enabling is switched on.
+    }
     S["Sync tick, per known user"] --> I{"Search by id_attribute"}
     I -- "found" --> R["Refresh attributes and groups,<br/>update last_seen_at and DN,<br/>clear first_missing_at"]
     I -- "unset, absent or failed" --> D{"Read entry by DN"}

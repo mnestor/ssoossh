@@ -5,6 +5,8 @@
 	import PageShell from '$lib/components/PageShell.svelte';
 </script>
 
+<svelte:head><title>Page not found · ssoossh</title></svelte:head>
+
 <PageShell width="focus">
 	<div class="rounded-lg border border-border-subtle bg-surface-muted p-4">
 		<!-- The same heading every other screen opens with, rather than a

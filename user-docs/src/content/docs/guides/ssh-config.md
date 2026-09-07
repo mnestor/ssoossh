@@ -16,7 +16,7 @@ for when the connection is the broken thing.
 
 ## Choosing a mode
 
-| | `Match exec` + `ssh login` | `ProxyCommand` |
+| Behaviour | `Match exec` + `ssh login` | `ProxyCommand` |
 | --- | --- | --- |
 | Client after issuance | exits | stays running, relays the connection |
 | ssh-agent | optional; key files on disk also work | **required** |
@@ -28,6 +28,15 @@ is never re-read.
 
 ```mermaid
 flowchart TD
+    accTitle: Choosing between Match exec and ProxyCommand
+    accDescr {
+      Starting from an ssh to some host, the question is whether reaching that
+      host needs a relay command. If it does not, use Match exec with ssoossh
+      ssh login. If it does, the next question is whether an ssh-agent is
+      available: with one, use ProxyCommand with ssoossh ssh proxycommand;
+      without one, the combination is not supported, because ProxyCommand
+      requires an agent.
+    }
     A["ssh host"] --> B{"Does reaching the host<br/>need a relay command?"}
     B -->|no| C["Match exec + ssoossh ssh login"]
     B -->|yes| D{"Is an ssh-agent<br/>available?"}

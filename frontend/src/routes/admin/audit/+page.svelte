@@ -4,9 +4,11 @@
 	import type { AuditEvent } from '$lib/api/types';
 	import { dedupeAuditEvents, visibleAuditEvents } from '$lib/audit';
 	import AuditTimeline from '$lib/components/AuditTimeline.svelte';
+	import ListStatus from '$lib/components/ListStatus.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
+	import { describeList } from '$lib/listStatus';
 
 	const pageSize = 50;
 
@@ -41,8 +43,21 @@
 
 	const shownCount = $derived(visibleAuditEvents(events).length);
 
+	// What the timeline just became, for a reader who cannot see rows
+	// arrive under Load more. See $lib/listStatus.
+	const listStatus = $derived(
+		describeList({
+			noun: 'audit event',
+			total: shownCount,
+			loading: busy,
+			ready: events.length > 0 || !busy
+		})
+	);
+
 	onMount(() => load(0));
 </script>
+
+<svelte:head><title>Audit log · ssoossh</title></svelte:head>
 
 <PageShell width="full">
 	<PageHeading title="Audit log">
@@ -55,6 +70,8 @@
 	{#if error}
 		<p class="text-sm text-danger" data-testid="audit-error">{error}</p>
 	{/if}
+
+	<ListStatus message={listStatus} />
 
 	{#if busy && events.length === 0}
 		<p class="text-ink-muted">Loading...</p>

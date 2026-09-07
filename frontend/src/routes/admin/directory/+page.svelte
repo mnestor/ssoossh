@@ -39,6 +39,22 @@
 	let bindEmail = $state('');
 	let bindSubject = $state('');
 
+	/**
+	 * modeButton is the class for one option in a segmented control.
+	 *
+	 * A pressed option is filled, not merely tinted, and that is the point:
+	 * both of these rows used to mark their selection with the accent hue
+	 * alone. Matches FilterChip, which is the shape the rest of the app's
+	 * two-state controls already take.
+	 */
+	function modeButton(pressed: boolean): string {
+		const base =
+			'rounded border px-3 py-1 text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
+		return pressed
+			? `${base} border-accent bg-accent text-accent-ink`
+			: `${base} border-border-control text-ink-muted hover:bg-surface-muted`;
+	}
+
 	let probing = $state(false);
 	let probeResult = $state<LDAPProbeResponse | null>(null);
 	let probeError = $state<string | null>(null);
@@ -320,37 +336,41 @@
 
 					<div class="grid gap-4 sm:grid-cols-2">
 						<div>
-							<SectionLabel>Filter</SectionLabel>
-							<div class="mb-2 flex gap-1">
+							<SectionLabel for="ldap-filter">Filter</SectionLabel>
+							<!-- Not a decorative pair of buttons: Template escapes the
+							     value per RFC 4515 and Literal sends it verbatim, so
+							     which one is pressed decides what reaches the
+							     directory. It used to be said in the accent hue and
+							     nothing else — invisible to a screen reader, and to
+							     anyone who cannot separate teal from grey. -->
+							<div class="mb-2 flex gap-1" role="group" aria-label="Filter mode">
 								<button
 									type="button"
-									class="rounded border px-3 py-1 text-xs font-medium"
-									class:border-accent={mode === 'template'}
-									class:text-accent={mode === 'template'}
-									class:border-border-subtle={mode !== 'template'}
+									class={modeButton(mode === 'template')}
+									aria-pressed={mode === 'template'}
 									data-testid="ldap-mode-template"
 									onclick={() => (mode = 'template')}>Template</button
 								>
 								<button
 									type="button"
-									class="rounded border px-3 py-1 text-xs font-medium"
-									class:border-accent={mode === 'literal'}
-									class:text-accent={mode === 'literal'}
-									class:border-border-subtle={mode !== 'literal'}
+									class={modeButton(mode === 'literal')}
+									aria-pressed={mode === 'literal'}
 									data-testid="ldap-mode-literal"
 									onclick={() => (mode = 'literal')}>Literal</button
 								>
 							</div>
 							<input
+								id="ldap-filter"
 								type="text"
 								bind:value={filter}
 								data-testid="ldap-filter"
+								aria-describedby="ldap-filter-help"
 								placeholder={mode === 'template'
 									? status.user_filter
 									: '(&(objectClass=person)(uid=mnestor))'}
-								class="w-full rounded border border-border-subtle bg-surface px-3 py-2 font-mono text-sm"
+								class="w-full rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
 							/>
-							<p class="mt-1 text-[13px] text-ink-muted">
+							<p id="ldap-filter-help" class="mt-1 text-[13px] text-ink-muted">
 								{#if mode === 'template'}
 									Rendered against the bindings below, with RFC 4515 escaping applied — which is the
 									only way to see what your configured filter really sends. Empty uses
@@ -362,15 +382,17 @@
 						</div>
 
 						<div>
-							<SectionLabel>Attributes</SectionLabel>
+							<SectionLabel for="ldap-attributes">Attributes</SectionLabel>
 							<input
+								id="ldap-attributes"
 								type="text"
 								bind:value={attributes}
 								data-testid="ldap-attributes"
+								aria-describedby="ldap-attributes-help"
 								placeholder="* (every user attribute)"
-								class="w-full rounded border border-border-subtle bg-surface px-3 py-2 font-mono text-sm"
+								class="w-full rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
 							/>
-							<p class="mt-1 text-[13px] text-ink-muted">
+							<p id="ldap-attributes-help" class="mt-1 text-[13px] text-ink-muted">
 								Empty asks for everything. Attributes the configuration reads are highlighted in the
 								result.
 							</p>
@@ -380,49 +402,60 @@
 					{#if mode === 'template'}
 						<div>
 							<SectionLabel>Bindings</SectionLabel>
-							<div class="mb-2 flex gap-1">
+							<div class="mb-2 flex gap-1" role="group" aria-label="Binding source">
 								<button
 									type="button"
-									class="rounded border px-3 py-1 text-xs font-medium"
-									class:border-accent={bindingSource === 'self'}
-									class:text-accent={bindingSource === 'self'}
-									class:border-border-subtle={bindingSource !== 'self'}
+									class={modeButton(bindingSource === 'self')}
+									aria-pressed={bindingSource === 'self'}
 									data-testid="ldap-binding-self"
 									onclick={() => (bindingSource = 'self')}>My session</button
 								>
 								<button
 									type="button"
-									class="rounded border px-3 py-1 text-xs font-medium"
-									class:border-accent={bindingSource === 'custom'}
-									class:text-accent={bindingSource === 'custom'}
-									class:border-border-subtle={bindingSource !== 'custom'}
+									class={modeButton(bindingSource === 'custom')}
+									aria-pressed={bindingSource === 'custom'}
 									data-testid="ldap-binding-custom"
 									onclick={() => (bindingSource = 'custom')}>Typed values</button
 								>
 							</div>
 							{#if bindingSource === 'custom'}
+								<!-- Three fields that differ only in what they hold, so
+								     the placeholder was the whole of each one's name —
+								     and a placeholder is gone the moment anything is
+								     typed. Named properly, because guessing which of
+								     three identical boxes is the subject is not a game
+								     to play during an LDAP incident. -->
 								<div class="grid gap-2 sm:grid-cols-3" data-testid="ldap-binding-fields">
-									<input
-										type="text"
-										bind:value={bindUsername}
-										placeholder="Username"
-										data-testid="ldap-bind-username"
-										class="rounded border border-border-subtle bg-surface px-3 py-2 font-mono text-sm"
-									/>
-									<input
-										type="text"
-										bind:value={bindEmail}
-										placeholder="Email"
-										data-testid="ldap-bind-email"
-										class="rounded border border-border-subtle bg-surface px-3 py-2 font-mono text-sm"
-									/>
-									<input
-										type="text"
-										bind:value={bindSubject}
-										placeholder="Subject"
-										data-testid="ldap-bind-subject"
-										class="rounded border border-border-subtle bg-surface px-3 py-2 font-mono text-sm"
-									/>
+									<label class="flex flex-col gap-1">
+										<span class="text-[13px] text-ink-muted">Username</span>
+										<input
+											type="text"
+											bind:value={bindUsername}
+											placeholder="alice"
+											data-testid="ldap-bind-username"
+											class="rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
+										/>
+									</label>
+									<label class="flex flex-col gap-1">
+										<span class="text-[13px] text-ink-muted">Email</span>
+										<input
+											type="text"
+											bind:value={bindEmail}
+											placeholder="alice@example.com"
+											data-testid="ldap-bind-email"
+											class="rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
+										/>
+									</label>
+									<label class="flex flex-col gap-1">
+										<span class="text-[13px] text-ink-muted">Subject</span>
+										<input
+											type="text"
+											bind:value={bindSubject}
+											placeholder="0f8c…"
+											data-testid="ldap-bind-subject"
+											class="rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
+										/>
+									</label>
 								</div>
 								<p class="mt-1 text-[13px] text-ink-muted">
 									Typed values are what let you test someone's entry before they have ever logged

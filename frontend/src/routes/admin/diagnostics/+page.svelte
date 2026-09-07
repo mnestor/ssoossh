@@ -47,6 +47,8 @@
 	}
 </script>
 
+<svelte:head><title>Diagnostics · ssoossh</title></svelte:head>
+
 <PageShell width="wide">
 	<PageHeading title="Diagnostics">
 		{#snippet action()}

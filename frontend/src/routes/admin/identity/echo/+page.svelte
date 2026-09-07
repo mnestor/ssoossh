@@ -172,9 +172,9 @@
 							<tr
 								class="border-b border-border-subtle bg-surface-muted text-left text-xs text-ink-muted"
 							>
-								<th class="px-3 py-2 font-semibold">Claim</th>
-								<th class="px-3 py-2 font-semibold">Value</th>
-								<th class="px-3 py-2 font-semibold">Status</th>
+								<th scope="col" class="px-3 py-2 font-semibold">Claim</th>
+								<th scope="col" class="px-3 py-2 font-semibold">Value</th>
+								<th scope="col" class="px-3 py-2 font-semibold">Status</th>
 							</tr>
 						</thead>
 						<tbody data-testid="echo-claims">

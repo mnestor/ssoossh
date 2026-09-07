@@ -166,6 +166,16 @@ until the code expires. `max_enrollment_duration` is the lever against that.
 
 ```mermaid
 flowchart TD
+    accTitle: How a certificate’s duration is chosen
+    accDescr {
+      Starting from an approval, the first policy tier whose when clause
+      matches supplies its max_duration; with no tier matching,
+      default_duration is used instead. That figure then meets the source
+      rules: the longest-prefix matching rule reduces it to the smaller of the
+      two, and no match leaves it alone. The result is clamped to
+      valid_duration, and the explanation of how it was reached is recorded on
+      the decision row.
+    }
     R["Approval"] --> T{"First tier whose<br/>when matches?"}
     T -- "yes" --> TM["tier.max_duration"]
     T -- "no match" --> DD["default_duration"]

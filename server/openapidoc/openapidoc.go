@@ -49,6 +49,16 @@ import (
 // @contact.url                https://github.com/mnestor/ssoossh
 // @license.name               MIT
 //
+// swag emits an externalDocs block whether or not anything fills it in, and
+// starlight-openapi renders that block unconditionally — so leaving these
+// unset put a link with no text and no destination on the API reference's
+// landing page, which is a focusable element a screen reader announces as
+// nothing. Naming the documentation site is both the accessible answer and
+// the useful one.
+//
+// @externalDocs.description   ssoossh documentation
+// @externalDocs.url           https://mnestor.github.io/ssoossh/
+//
 // @tag.name                   client
 // @tag.description            Called by the ssoossh client, unauthenticated
 // @tag.name                   web

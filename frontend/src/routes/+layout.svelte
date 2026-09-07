@@ -70,20 +70,72 @@
 	 */
 	const showRail = $derived(session.signedIn && !isFocusRoute(page.url.pathname));
 
+	let drawerEl = $state<HTMLDivElement>();
+	let drawerTrigger = $state<HTMLButtonElement>();
+
+	/** drawerFocusables lists what the drawer can hand the caret to, in tab
+	 * order. Recomputed per keystroke rather than cached: the identity menu
+	 * inside the drawer opens and closes, and a stale list would trap the
+	 * caret on a row that is no longer there. */
+	function drawerFocusables(): HTMLElement[] {
+		if (!drawerEl) {
+			return [];
+		}
+		return [
+			...drawerEl.querySelectorAll<HTMLElement>(
+				'a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])'
+			)
+		];
+	}
+
 	// A drawer that only closes by re-pressing its trigger is a trap for
-	// anyone who opened it by accident. The trigger is behind the drawer
-	// itself once it is open, so Escape and the scrim are the ways out.
+	// anyone who opened it by accident, and one the caret never enters is
+	// furniture. Both were true here: the drawer renders earlier in the
+	// document than the header that opens it, so focus stayed on the
+	// trigger and the next Tab went straight past the menu into the page
+	// behind it. The menu was reachable only by shift-tabbing backwards.
+	//
+	// So: the caret moves in on open, cycles inside while the drawer is up,
+	// and goes back to the trigger on the way out — whichever way out was
+	// taken, since the cleanup runs for Escape, for the scrim, and for a
+	// tap on a destination alike.
 	$effect(() => {
 		if (!rail.drawerOpen) {
 			return;
 		}
+
+		drawerFocusables()[0]?.focus();
+
 		function onKeyDown(event: KeyboardEvent) {
 			if (event.key === 'Escape') {
 				rail.closeDrawer();
+				return;
+			}
+			if (event.key !== 'Tab') {
+				return;
+			}
+			const items = drawerFocusables();
+			if (items.length === 0) {
+				return;
+			}
+			const first = items[0];
+			const last = items[items.length - 1];
+			// Only the two ends are handled. Everything between them is the
+			// browser's own tab order, which is the one a reader expects.
+			if (event.shiftKey && document.activeElement === first) {
+				event.preventDefault();
+				last.focus();
+			} else if (!event.shiftKey && document.activeElement === last) {
+				event.preventDefault();
+				first.focus();
 			}
 		}
+
 		document.addEventListener('keydown', onKeyDown);
-		return () => document.removeEventListener('keydown', onKeyDown);
+		return () => {
+			document.removeEventListener('keydown', onKeyDown);
+			drawerTrigger?.focus();
+		};
 	});
 
 	/** signOut ends the server-side session, then reloads onto the login
@@ -101,6 +153,19 @@
 		}
 	}
 </script>
+
+<!-- The first focusable thing in the document, on every screen.
+
+     Without it the signed-in shell puts the whole rail — brand, four
+     destinations, the admin group and its eight, the identity menu — ahead
+     of the page, and a keyboard user walked all of it again on every
+     navigation. `sr-only` keeps it out of the way of a mouse; `skip-link`
+     brings the whole control back the moment it takes focus, because a
+     bypass a sighted keyboard user cannot see is one they cannot trust.
+
+     Outside the branch below so there is exactly one of these, whichever
+     shell renders. -->
+<a href="#main-content" class="skip-link sr-only">Skip to main content</a>
 
 {#if showRail}
 	<div class="flex min-h-screen">
@@ -125,9 +190,37 @@
 			<!-- collapsed={false}: the icon-only width is a desktop
 			     preference, and the control that undoes it is hidden at this
 			     width. Inheriting it here would hand a phone a strip of
-			     unlabelled icons with no way back. -->
-			<div id="app-rail-drawer" class="fixed inset-y-0 left-0 z-50 lg:hidden">
+			     unlabelled icons with no way back.
+
+			     `aria-modal` rather than `inert` on the page behind it: the
+			     Tab cycle above already keeps the caret inside, and setting
+			     inert on the wrapper would make the trigger unfocusable at
+			     the exact moment the drawer closes and wants to hand focus
+			     back to it. -->
+			<div
+				bind:this={drawerEl}
+				id="app-rail-drawer"
+				role="dialog"
+				aria-modal="true"
+				aria-label="Navigation menu"
+				class="fixed inset-y-0 left-0 z-50 lg:hidden"
+			>
 				<AppRail orgName={branding.org_name} collapsed={false} {signingOut} onsignout={signOut} />
+
+				<!-- The way out that is not a keystroke. The scrim behind the
+				     drawer is decorative and cannot take focus, so without
+				     this the only exit from the keyboard was Escape — which
+				     is a shortcut, not an affordance. Sits over the rail's
+				     brand row, where the collapse control lives above `lg`
+				     and nothing does below it. -->
+				<button
+					type="button"
+					onclick={() => rail.closeDrawer()}
+					aria-label="Close navigation menu"
+					class="absolute top-3 right-2 flex h-8 w-8 items-center justify-center rounded-md text-ink-muted transition hover:bg-surface-muted hover:text-ink"
+				>
+					<Icon name="x" size="sm" />
+				</button>
 			</div>
 		{/if}
 
@@ -140,12 +233,22 @@
 			<header
 				class="flex items-center gap-3 border-b border-border-subtle bg-surface px-4 py-3 lg:hidden"
 			>
+				<!-- One name, not two. This label used to flip to "Close
+				     navigation menu" while the drawer was up, from when this
+				     really was the only way back — but the scrim covers it at
+				     z-40 and the drawer's Tab cycle holds the caret, so while
+				     the drawer is open this button can be neither clicked nor
+				     focused. The drawer carries its own close button now, and
+				     two controls both announcing "Close navigation menu" is
+				     one more than a reader can tell apart. `aria-expanded` is
+				     what says which way this one currently sits. -->
 				<button
+					bind:this={drawerTrigger}
 					type="button"
 					onclick={() => rail.toggleDrawer()}
 					aria-expanded={rail.drawerOpen}
 					aria-controls="app-rail-drawer"
-					aria-label={rail.drawerOpen ? 'Close navigation menu' : 'Open navigation menu'}
+					aria-label="Open navigation menu"
 					class="-ml-1 flex shrink-0 p-1 text-ink-muted transition hover:text-ink"
 				>
 					<Icon name="menu-2" size="md" />
@@ -164,7 +267,7 @@
 				</a>
 			</header>
 
-			<main class="flex flex-1 flex-col items-center px-4 py-8 sm:px-8 sm:py-10">
+			<main id="main-content" class="flex flex-1 flex-col items-center px-4 py-8 sm:px-8 sm:py-10">
 				{@render children()}
 			</main>
 
@@ -198,7 +301,10 @@
 			</div>
 		</header>
 
-		<main class="flex w-full flex-1 flex-col items-center px-4 py-8 sm:px-8 sm:py-10">
+		<main
+			id="main-content"
+			class="flex w-full flex-1 flex-col items-center px-4 py-8 sm:px-8 sm:py-10"
+		>
 			{@render children()}
 		</main>
 

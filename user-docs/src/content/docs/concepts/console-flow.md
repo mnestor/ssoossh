@@ -32,6 +32,21 @@ phone.
 
 ```mermaid
 sequenceDiagram
+    accTitle: Console login flow, end to end
+    accDescr {
+      A user types their account name at a machine with no browser. The
+      console PAM module generates an ephemeral keypair and posts it to the
+      ssoossh server, which refuses the request if the host falls outside
+      cert_options.console.allowed_networks and otherwise returns a short user
+      code and a URL. PAM shows both. The user types the code at /console on a
+      phone or another desk, in a browser that already holds a session; the
+      server resolves the code, claims it for that session and redirects to
+      the approval page, where the host, service, tty and account are shown
+      before the approval. The signed certificate goes back to PAM, which runs
+      the same four checks as the sudo flow. If they pass the session starts;
+      if the certificate is invalid or expired, or the server was unreachable,
+      authentication fails and falls through to the rest of the PAM stack.
+    }
     autonumber
     actor User as User at the console
     participant PAM as console PAM module

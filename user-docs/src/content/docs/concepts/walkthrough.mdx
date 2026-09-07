@@ -21,7 +21,7 @@ export const figure = {
 ## Step 1: You type the command
 
 <div style={figure}>
-<svg viewBox="0 0 280 240" role="img" aria-label="A terminal window showing the ssoossh command, printing a URL and waiting for approval">
+<svg viewBox="0 0 280 240" focusable="false" role="img" aria-label="A terminal window showing the ssoossh command, printing a URL and waiting for approval">
 <rect x="20" y="40" width="240" height="160" fill="currentColor" opacity="0.08" rx="4" />
 <rect x="20" y="40" width="240" height="160" fill="none" stroke="currentColor" stroke-width="2" rx="4" />
 <rect x="20" y="40" width="240" height="24" fill="currentColor" opacity="0.12" rx="4" />
@@ -30,7 +30,12 @@ export const figure = {
 <circle cx="56" cy="52" r="3" fill="currentColor" opacity="0.5" />
 <text x="30" y="90" font-family="var(--sl-font-mono)" font-size="11" fill="currentColor">$ ssoossh ssh login</text>
 <text x="30" y="110" font-family="var(--sl-font-mono)" font-size="11" fill="var(--sl-color-accent)">Opening browser...</text>
-<text x="30" y="135" font-family="var(--sl-font-mono)" font-size="11" fill="currentColor">Visit: https://ssh.company.com/auth/xyz123</text>
+{/* The URL goes through a JSX expression rather than being written as text.
+    As text, remark-gfm's autolink rule turned it into an <a href> — a real,
+    focusable link, sitting inside an SVG that declares role="img". A picture
+    of a terminal is not somewhere a keyboard can tab into, and the link led
+    to a domain that does not exist. */}
+<text x="30" y="135" font-family="var(--sl-font-mono)" font-size="11" fill="currentColor">Visit: {'https://ssh.company.com/auth/xyz123'}</text>
 <rect x="30" y="145" width="8" height="2" fill="var(--sl-color-green)" opacity="0.7" />
 <text x="30" y="170" font-family="var(--sl-font-mono)" font-size="10" fill="var(--sl-color-gray-3)">Waiting for approval...</text>
 </svg>
@@ -50,7 +55,7 @@ machine.
 ## Step 2: Your browser opens automatically
 
 <div style={figure}>
-<svg viewBox="0 0 280 240" role="img" aria-label="A browser window on the ssoossh sign-in page, offering a login with SSO button">
+<svg viewBox="0 0 280 240" focusable="false" role="img" aria-label="A browser window on the ssoossh sign-in page, offering a login with SSO button">
 <rect x="20" y="30" width="240" height="180" fill="currentColor" opacity="0.08" rx="4" />
 <rect x="20" y="30" width="240" height="180" fill="none" stroke="currentColor" stroke-width="2" rx="4" />
 <rect x="20" y="30" width="240" height="28" fill="currentColor" opacity="0.12" rx="4" />
@@ -74,7 +79,7 @@ including any multi-factor step your company requires.
 ## Step 3: You see exactly what you are approving
 
 <div style={figure}>
-<svg viewBox="0 0 280 240" role="img" aria-label="An approval page listing what is granted in green and what policy trimmed in amber, with approve and decline buttons">
+<svg viewBox="0 0 280 240" focusable="false" role="img" aria-label="An approval page listing what is granted in green and what policy trimmed in amber, with approve and decline buttons">
 <rect x="20" y="20" width="240" height="200" fill="currentColor" opacity="0.08" rx="4" />
 <rect x="20" y="20" width="240" height="200" fill="none" stroke="currentColor" stroke-width="2" rx="4" />
 <rect x="20" y="20" width="240" height="32" fill="currentColor" opacity="0.12" rx="4" />
@@ -111,7 +116,7 @@ it as a screenshot.
 ## Step 4: You approve, and your part is over
 
 <div style={figure}>
-<svg viewBox="0 0 280 240" role="img" aria-label="A pointer clicking the approve button, with a confirmation checkmark appearing">
+<svg viewBox="0 0 280 240" focusable="false" role="img" aria-label="A pointer clicking the approve button, with a confirmation checkmark appearing">
 <path d="M 100 80 L 110 60 L 115 70 L 120 55 L 120 75 L 115 80 Z" fill="var(--sl-color-accent)" opacity="0.8" />
 <rect x="80" y="120" width="120" height="45" fill="var(--sl-color-green)" rx="4" opacity="0.8" />
 <text x="140" y="150" font-size="14" font-weight="600" fill="var(--sl-color-accent-low)" text-anchor="middle">Approve</text>
@@ -132,7 +137,7 @@ certificate is never stored on the server, so that delivery is the only copy.
 ## Step 5: Your certificate arrives, automatically
 
 <div style={figure}>
-<svg viewBox="0 0 280 240" role="img" aria-label="The waiting terminal receiving the certificate, shown as a badge valid for twelve hours">
+<svg viewBox="0 0 280 240" focusable="false" role="img" aria-label="The waiting terminal receiving the certificate, shown as a badge valid for twelve hours">
 <rect x="20" y="40" width="240" height="160" fill="currentColor" opacity="0.08" rx="4" />
 <rect x="20" y="40" width="240" height="160" fill="none" stroke="currentColor" stroke-width="2" rx="4" />
 <rect x="20" y="40" width="240" height="24" fill="currentColor" opacity="0.12" rx="4" />
@@ -166,7 +171,7 @@ the time you spent logging in.
 ## Step 6: SSH connects and works immediately
 
 <div style={figure}>
-<svg viewBox="0 0 280 240" role="img" aria-label="A laptop presenting its certificate to a server, which verifies it against the CA and lets the user in">
+<svg viewBox="0 0 280 240" focusable="false" role="img" aria-label="A laptop presenting its certificate to a server, which verifies it against the CA and lets the user in">
 <defs>
 <marker id="wt-arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
 <polygon points="0 0, 10 3, 0 6" fill="currentColor" />
@@ -207,7 +212,7 @@ ancient key from years ago that nobody remembers.
 ## Step 7: It expires on its own, by design
 
 <div style={figure}>
-<svg viewBox="0 0 280 240" role="img" aria-label="A timeline showing the certificate valid at first and expired after twelve hours">
+<svg viewBox="0 0 280 240" focusable="false" role="img" aria-label="A timeline showing the certificate valid at first and expired after twelve hours">
 <rect x="20" y="60" width="100" height="40" fill="var(--sl-color-green)" opacity="0.3" rx="3" />
 <text x="70" y="88" font-size="10" fill="var(--sl-color-green)" text-anchor="middle" font-weight="600">Valid</text>
 <rect x="160" y="60" width="100" height="40" fill="currentColor" opacity="0.08" rx="3" stroke="currentColor" stroke-width="1" stroke-dasharray="2,2" />

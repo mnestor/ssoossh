@@ -50,6 +50,16 @@ CA's public half and decides for itself what a certificate signed by it may do.
 
 ```mermaid
 flowchart LR
+    accTitle: What a target host trusts, and where each file comes from
+    accDescr {
+      ssoosshd holds the CA private key and publishes the matching CA public
+      key. That public key is copied to two places on each target host:
+      /etc/ssh/ca.pub, which sshd reads through TrustedUserCAKeys, and
+      /etc/ssoossh/ca.pub, which pam_ssoossh reads through trusted-ca-file. A
+      third file, /etc/ssoossh/principals.yaml, is the principals map
+      pam_ssoossh consults. pam_ssoossh — loaded into sudo, su, sshd and login
+      — reaches the server over HTTPS to request and await approval.
+    }
     Server["ssoosshd (holds the CA private key)"]
     CA["ssoossh CA public key"]
     Server -->|publishes| CA

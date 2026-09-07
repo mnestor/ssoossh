@@ -17,6 +17,16 @@ defines what exists at all; nothing reachable over HTTP can exceed it.
 
 ```mermaid
 flowchart TD
+    accTitle: How a request’s options are narrowed before signing
+    accDescr {
+      The client asks for principals, extensions, a force-command and a
+      source-address restriction. Each is tested against what the server
+      configuration permits. Anything not permitted is trimmed and recorded as
+      removed rather than silently dropped; anything permitted is kept. The
+      approval page then shows the candidate set together with the trimmed
+      options, the user narrows it further or approves as-is, the lifetime
+      policy is applied, and the certificate is signed.
+    }
     A["Client request:<br/>principals, extensions,<br/>force-command, source-address"] --> B{"Permitted by<br/>server config?"}
     B -- "no" --> C["Trim, record as removed"]
     B -- "yes" --> D["Keep"]
@@ -67,6 +77,17 @@ result.
 
 ```mermaid
 flowchart TD
+    accTitle: How certificate lifetime policy reaches a decision
+    accDescr {
+      A certificate request carries signals: the source network, the
+      requester’s group membership, the certificate type and the options asked
+      for. Those are matched against the policy rules. With no rule matched
+      the request is denied, because the default is deny. Where rules do match
+      they are intersected — the shortest lifetime wins and the narrowest
+      principal set wins — producing a validity window and its constraints.
+      The certificate is signed and the signals behind the decision are logged
+      with it.
+    }
     R["Certificate request"] --> S["Signals:<br/>source network, group membership,<br/>certificate type, requested options"]
     S --> M{"Any policy rule<br/>matched? (default deny)"}
     M -- "no" --> X["Deny"]

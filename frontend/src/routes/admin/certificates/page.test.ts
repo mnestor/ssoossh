@@ -116,7 +116,10 @@ describe('Admin certificates page', () => {
 		it('should display type filter', async () => {
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
-			expect(screen.getByText(/type|filter/i)).toBeInTheDocument();
+			// By role and name rather than by loose text: /type|filter/i also
+			// matches the type badge on every row, so this passed for reasons
+			// unrelated to the filter existing.
+			expect(screen.getByRole('group', { name: 'Filter by type' })).toBeInTheDocument();
 		});
 
 		it('should not display pager when single page', async () => {
@@ -169,7 +172,10 @@ describe('Admin certificates page', () => {
 		it('should show empty state message', async () => {
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
-			expect(screen.getByText(/no certificates|empty/i)).toBeInTheDocument();
+			// The visible message, not any text mentioning "no certificates":
+			// the live region announcing "No certificates found." matches that
+			// too, and the case is about what is on screen.
+			expect(screen.getByText('No certificates found matching your search.')).toBeInTheDocument();
 		});
 	});
 

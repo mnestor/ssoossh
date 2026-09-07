@@ -15,6 +15,15 @@ story told for a newcomer, with pictures, see the
 
 ```mermaid
 sequenceDiagram
+    accTitle: Step 1a — ssh invokes the client, which requests a certificate
+    accDescr {
+      The user runs ssh to a host. Through a ProxyCommand or a Match exec
+      rule, ssh invokes the ssoossh client. A valid certificate already in the
+      agent or on disk is reused and the flow ends there. Otherwise the client
+      generates an SSH keypair, posts the public key and the host IP list,
+      receives an authorization URL, prints it and tries to open a browser,
+      then opens a server-sent events stream and waits.
+    }
     autonumber
     actor User
     participant SSH as ssh
@@ -56,6 +65,15 @@ This runs in the browser while 1a waits. The client is not a participant.
 
 ```mermaid
 sequenceDiagram
+    accTitle: Step 1b — the user authenticates and approves in a browser
+    accDescr {
+      The user opens the authorization URL. The server sends an authorization
+      request to the OIDC provider, which returns identity claims; an LDAP
+      lookup fills in claims that arrived incomplete. The server trims the
+      requested options to what its configuration permits and applies the
+      lifetime policy, then renders the approval page showing exactly what
+      will be issued, with trimmed options struck through. The user approves.
+    }
     autonumber
     actor User
     participant Browser
@@ -95,6 +113,15 @@ privileged process.
 
 ```mermaid
 sequenceDiagram
+    accTitle: Step 1c — the server signs and delivers
+    accDescr {
+      The web tier publishes a signing job. The signer, which has no database,
+      signs with the CA key and publishes the signed certificate. The listener
+      records the audit row and resolves the request, then delivers the
+      certificate to the client over the server-sent events stream it has been
+      holding open. The client loads it into ssh-agent, or writes key files
+      when there is no agent.
+    }
     autonumber
     participant Server as ssoossh server
     participant Signer as signer (no database)
@@ -127,6 +154,13 @@ is only relaying bytes, and this is ordinary SSH certificate authentication.
 
 ```mermaid
 sequenceDiagram
+    accTitle: Step 1d — ssh connects to the target host
+    accDescr {
+      ssh presents the certificate to the target host’s sshd, which asks two
+      questions: was it signed by a CA listed in TrustedUserCAKeys, and is the
+      requested login name one of the certificate’s principals. Both yes gives
+      the user a session; either no gives an authentication failure.
+    }
     autonumber
     actor User
     participant SSH as ssh
@@ -169,6 +203,14 @@ when did nobody answer" answerable afterwards:
 
 ```mermaid
 stateDiagram-v2
+    accTitle: The states a certificate request moves through
+    accDescr {
+      A request starts as requested. From there it either expires because
+      nobody answered in time, or becomes claimed when the first browser opens
+      its approval page. A claimed request is approved or denied. An approved
+      request becomes issued, or sign_failed if signing did not complete.
+      Issued is the end of the line.
+    }
     [*] --> requested
     requested --> claimed: first browser opens the approval page
     requested --> expired: nobody answered in time

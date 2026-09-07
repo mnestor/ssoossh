@@ -899,16 +899,69 @@ The frontend build accepts only a few Vite build-time env vars (for development 
 
 ## Accessibility (WCAG 2.1 Level AA / Section 508)
 
-The design and components are built for WCAG 2.1 Level AA compliance as a hard requirement:
+WCAG 2.1 Level AA is a hard requirement, and `make a11y` is what holds it.
+The list below is what the rules mean here; the sweep is what stops the list
+from drifting away from the code. It has drifted before: this section used to
+promise six things while the app broke four of them, because nothing checked.
 
-- **Contrast**: All text meets AA contrast ratios (4.5:1 for body text, 3:1 for large text). Light text on light accent is avoided.
-- **Focus Visibility**: Interactive elements have visible `:focus` or `:focus-visible` states via browser defaults or explicit outline/background changes.
-- **Keyboard Navigation**: All buttons and interactive elements are keyboard-accessible via semantic HTML (`<button>`, `<a>`) and logical tab order.
-- **Icon Usage**: Meaningful icons always carry an `aria-label`. Decorative icons have `aria-hidden="true"`.
-- **Color Alone**: Status is never conveyed by color alone; icons, text, or other markers supplement it.
-- **Modals**: The native `<dialog>` element with `.showModal()` provides focus management and an inert background.
+- **A bypass**: the layout's first focusable element is a skip link to
+  `#main-content`, on every screen. Without it a keyboard user walks the
+  rail's fifteen controls again on every navigation. `.skip-link` in
+  `app.css` is what brings it back into view when it takes focus — an
+  invisible bypass is one a sighted keyboard user cannot trust.
+- **Accessible names**: every form control has one from a real `<label>`,
+  a wrapping `<label>`, or `aria-label`. A `placeholder` is not a name: it
+  disappears the moment anything is typed. `SectionLabel` takes a `for` when
+  it names one control, and stays a `div` when it heads a group.
+- **Contrast**: all text meets AA (4.5:1 body, 3:1 large), measured from the
+  OKLch token values rather than eyeballed. The narrowest passing pair is
+  `trimmed` on `trimmed-surface` at 4.81:1.
+- **Control boundaries**: `--color-border-control` (3.35:1 light, 3.23:1
+  dark) draws anything a reader operates — fields, ghost buttons, pager
+  controls, unselected chips. `--color-border-subtle` (1.43:1) is for
+  decoration only: row separators, card hairlines, the rail divider. 1.4.11
+  governs the first list and says nothing about the second, and using one
+  token for both meant every field in the app had an edge nobody could see.
+- **Focus visibility**: the base layer's `:focus-visible` outline is the
+  app's focus ring. Never cancel it with `focus:outline-none` — Tailwind
+  emits utilities in a later layer, so that utility silently wins and the
+  control is left with a 1px colour change.
+- **Icon usage**: decorative icons are `aria-hidden`. A meaningful one needs
+  a name the platform will actually keep: `aria-label` on a bare `<span>` is
+  prohibited by ARIA and dropped by browsers, which is how `TypeBadge` spent
+  its life announcing nothing. Put the words in the document with `sr-only`.
+- **Colour alone**: state is never colour alone. A two-state control is
+  filled when pressed and carries `aria-pressed` — see `FilterChip`, which
+  is the shape every one of them should take.
+- **Status messages**: a list that reloads under a search, a filter or a page
+  announces what it became, through `ListStatus` and `describeList`. Silence
+  after an action the reader took is 4.1.3.
+- **Modals and drawers**: the native `<dialog>` with `.showModal()` gives
+  focus management and an inert background. Anything hand-rolled has to
+  supply the same by hand — the mobile drawer moves focus in on open, cycles
+  Tab inside, and returns focus to its trigger on every way out.
+- **Tables**: `<th scope="col">`. Browsers infer the association for a simple
+  table and the inference is not guaranteed.
+- **Page titles**: every route sets `<svelte:head><title>Name · ssoossh</title>`.
+  Six of twenty-two once did not, and all six read as "ssoossh" in history.
 
-Run a contrast checker against the light and dark palettes before deploying new colors.
+### Keeping it true
+
+`make a11y` runs both halves and is a required CI job:
+
+- `make a11y-frontend` — axe over every component, from
+  `src/lib/components/a11y.test.ts`. **A new component needs a case in that
+  file**; the roster test at the bottom reads the directory with
+  `import.meta.glob` and fails the build when one has no entry, so the sweep
+  cannot quietly fall behind what it covers.
+- `make a11y-docs` — axe over all 166 pages `astro build` writes, from
+  `user-docs/scripts/axe-check.mjs`. Two rules are off there with the reason
+  stated in the file, and one is off for the generated API reference only.
+
+What the sweep cannot decide, you still have to: run a contrast check against
+both palettes before deploying a new colour, and tab through a change to see
+that focus is visible and lands somewhere sensible. Automated tooling reaches
+roughly a third of WCAG.
 
 ## Testing
 

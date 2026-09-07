@@ -104,11 +104,16 @@
 	     is what keeps the row readable if the glyph is missed. -->
 	<span
 		title="Denied"
-		aria-label="Denied"
 		data-testid="denial-outcome"
 		data-outcome="denied"
 		class="flex flex-shrink-0 items-center text-danger"
 	>
 		<Icon name="circle-x" size="sm" />
+		<!-- The word in the document, not an `aria-label` on the span. ARIA
+		     prohibits naming the `generic` role a bare span has, so a label
+		     here is discarded by every browser and the mark announces
+		     nothing — the same defect TypeBadge carried. `title` stays: it
+		     is for the pointer, where the glyph is all there is. -->
+		<span class="sr-only">Denied</span>
 	</span>
 </div>

@@ -21,6 +21,17 @@ option set, and every redemption is logged against the account it mints for.
 
 ```mermaid
 sequenceDiagram
+    accTitle: Service enrollment, step one: registering the key
+    accDescr {
+      An operator asks the ssoossh client to enroll a service keypair. If the
+      keypair already exists on disk it is used as-is — the private key may
+      live on an HSM or PKCS#11 token that ssoossh never sees. If neither file
+      exists the client generates the pair, writing the private key 0600
+      (owner-only on Windows) and the public key alongside it with a .pub
+      suffix; neither file is ever overwritten. The client posts the public
+      key, receives an authorization URL, and opens a server-sent events
+      stream to wait.
+    }
     autonumber
     actor User
     participant Client as ssoossh client
@@ -62,6 +73,15 @@ What comes back is different.
 
 ```mermaid
 sequenceDiagram
+    accTitle: Service enrollment, step two: approval and the enrollment code
+    accDescr {
+      The operator authenticates in a browser and approves, choosing which
+      service account the enrollment is for. The server binds an enrollment
+      code to both that public key and the authorized option set, then returns
+      the code, the service account and the code’s expiry to the waiting
+      client, which prints the code, whose it is, when it dies and how to use
+      it.
+    }
     autonumber
     actor User
     participant Browser
@@ -121,6 +141,15 @@ them.
 
 ```mermaid
 sequenceDiagram
+    accTitle: Unattended reissue with an enrollment code
+    accDescr {
+      A scheduled job asks the ssoossh client for a certificate. The client
+      posts the enrollment code and nothing else. The server looks up the
+      public key that code was enrolled against, applies the authorized option
+      set recorded with it, and returns a certificate. The client
+      authenticates to the target host’s sshd, and the job gets its session.
+      No browser and no human are involved.
+    }
     autonumber
     participant Job as scheduled job
     participant Client as ssoossh client

@@ -236,6 +236,8 @@
 	});
 </script>
 
+<svelte:head><title>User · ssoossh</title></svelte:head>
+
 <PageShell width="full">
 	{#if busy}
 		<div class="text-center text-ink-muted">Loading...</div>
@@ -490,10 +492,10 @@
 					<table class="data-table" data-testid="user-groups-table">
 						<thead>
 							<tr class="border-b border-border-subtle text-left text-xs text-ink-muted">
-								<th>Group</th>
-								<th>Source</th>
-								<th>First seen</th>
-								<th>Last seen</th>
+								<th scope="col">Group</th>
+								<th scope="col">Source</th>
+								<th scope="col">First seen</th>
+								<th scope="col">Last seen</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -620,10 +622,10 @@
 					<table class="data-table" data-testid="user-notification-table">
 						<thead>
 							<tr class="border-b border-border-subtle text-left text-xs text-ink-muted">
-								<th>Notification</th>
-								<th>Kind</th>
-								<th>Sends</th>
-								<th>Changed</th>
+								<th scope="col">Notification</th>
+								<th scope="col">Kind</th>
+								<th scope="col">Sends</th>
+								<th scope="col">Changed</th>
 							</tr>
 						</thead>
 						<tbody>

@@ -70,6 +70,16 @@ machine.
 
 ```mermaid
 flowchart LR
+    accTitle: Why splitting the signer is worth it on a single instance
+    accDescr {
+      Browsers and clients reach ssoosshd serve api, which owns the database.
+      Signing goes out over NATS: serve api publishes on certrequest.sign, the
+      separate ssoosshd sign process consumes it, signs with the CA key held
+      in ssh_key or on a PKCS#11 token, and publishes on certrequest.signed
+      for serve api to consume. The signer also announces its CA key on
+      ca.key.announce. The CA key is only ever in the sign process, never in
+      the one facing the network.
+    }
     B["Browser and clients"] --> A["ssoosshd serve api"]
     A --> DB[("Database")]
     A -- "certrequest.sign" --> N["NATS"]

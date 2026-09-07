@@ -74,9 +74,13 @@ describe('DeniedRow', () => {
 		expect(screen.getByTestId('denial-outcome')).toHaveAttribute('data-outcome', 'denied');
 	});
 
+	// getByText, not getByLabelText: the mark names itself with an sr-only
+	// string. An aria-label on its bare span was prohibited by ARIA and
+	// dropped by every browser, so this passed against markup no reader
+	// could hear.
 	it('should name the refusal for assistive technology', () => {
 		render(DeniedRow, { denial: aDenial(), now, testid: 'row' });
-		expect(screen.getByLabelText('Denied')).toBeInTheDocument();
+		expect(screen.getByText('Denied')).toBeInTheDocument();
 	});
 
 	// A denial issues nothing, so there is no certificate page to open. A

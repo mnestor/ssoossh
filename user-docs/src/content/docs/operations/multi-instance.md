@@ -12,6 +12,14 @@ and stay on `ssoosshd serve`.
 
 ```mermaid
 flowchart TB
+    accTitle: A highly available deployment
+    accDescr {
+      Browsers, ssoossh clients and pam_ssoossh reach a load balancer, which
+      spreads them across two ssoosshd serve api instances. Both instances
+      share one PostgreSQL database and both connect to NATS over mutual TLS.
+      Two ssoosshd sign instances connect to the same NATS, and both reach the
+      CA key — either an ssh_key in configuration or a PKCS#11 token.
+    }
     C["Browsers, ssoossh clients, pam_ssoossh"] --> LB["Load balancer"]
     LB --> A1["ssoosshd serve api #1"]
     LB --> A2["ssoosshd serve api #2"]

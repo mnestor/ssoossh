@@ -83,6 +83,17 @@ them, and the database on the api side only. Numbers trace one request.
 
 ```mermaid
 flowchart LR
+    accTitle: How the processes and NATS subjects fit together
+    accDescr {
+      Ten numbered steps. The ssoossh client posts a request to serve api and
+      waits on a server-sent events stream. A browser approves. serve api
+      publishes a signing job on the NATS subject certrequest.sign; the sign
+      process, which holds the CA key and has no database, consumes it and
+      publishes the signed certificate on certrequest.signed. serve api writes
+      the audit row to PostgreSQL, then wakes the waiting request on
+      certrequest.wait.id, which fans out to whichever instance is holding the
+      client’s stream, and the certificate is delivered over it.
+    }
     C["ssoossh client"]
     C -->|"1: POST + wait on SSE"| API
 
@@ -138,6 +149,18 @@ process.
 
 ```mermaid
 sequenceDiagram
+    accTitle: The request lifecycle across api, signer and listener
+    accDescr {
+      The client posts a request and gets back an events URL and an approval
+      URL, then opens the events stream, which subscribes a waiter. An
+      approver authenticates and approves in a browser. serve api resolves
+      policy and moves the row to signing, then publishes the job on
+      certrequest.sign. The signer signs with the CA key and replies on
+      certrequest.signed. The listener writes the audit row, caches the
+      certificate and marks the request terminal, then wakes the waiter on
+      certrequest.wait.id, and serve api sends the certificate down the
+      client’s stream.
+    }
     autonumber
     participant Client as ssoossh client
     participant API as serve api

@@ -193,12 +193,17 @@
 		<span class="flex flex-shrink-0 items-center gap-2">
 			<span
 				title={outcome === 'denied' ? 'Denied' : 'Approved'}
-				aria-label={outcome === 'denied' ? 'Denied' : 'Approved'}
 				data-testid="cert-outcome"
 				data-outcome={outcome}
 				class={outcome === 'denied' ? 'text-danger' : 'text-granted'}
 			>
 				<Icon name={outcome === 'denied' ? 'circle-x' : 'circle-check'} size="sm" />
+				<!-- The word in the document, not an `aria-label` on the span.
+				     ARIA prohibits naming the `generic` role a bare span has,
+				     so a label here is discarded by every browser and the
+				     mark announces nothing. `title` stays: it is for the
+				     pointer, where the glyph is all there is. -->
+				<span class="sr-only">{outcome === 'denied' ? 'Denied' : 'Approved'}</span>
 			</span>
 		</span>
 	{/if}

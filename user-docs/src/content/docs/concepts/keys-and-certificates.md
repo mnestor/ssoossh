@@ -14,7 +14,7 @@ This page is the comparison. The pages after it are the mechanism.
 
 ## The structural difference
 
-| | An `authorized_keys` entry | An ssoossh certificate |
+| Property | An `authorized_keys` entry | An ssoossh certificate |
 | --- | --- | --- |
 | What the host trusts | that specific public key, copied there ahead of time | one CA public key, named once in `TrustedUserCAKeys` |
 | What the credential asserts | possession of the matching private key | a signed statement: these principals, these options, valid between these two timestamps |
@@ -77,6 +77,18 @@ event stream, to the remote machine, and `ssh` connects onward.
 
 ```mermaid
 sequenceDiagram
+    accTitle: Getting a certificate on a remote host without agent forwarding
+    accDescr {
+      From an existing session on an intermediate host, the user runs ssh to a
+      further host. The ssoossh client on the intermediate host generates a
+      keypair there and sends only the public key to the server, which returns
+      an authorization URL. The client prints the URL; the user opens it in
+      their laptop browser, authenticates at the identity provider and
+      approves. The certificate comes back over the client’s own stream on the
+      intermediate host, which then connects onward. The laptop and the
+      intermediate host are two separate machines with no agent socket between
+      them.
+    }
     autonumber
     actor User as You, at your laptop
     participant Laptop as Laptop browser

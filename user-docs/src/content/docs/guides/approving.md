@@ -28,6 +28,14 @@ shorten the issued lifetime -- never lengthen it.
 
 ```mermaid
 sequenceDiagram
+    accTitle: Signing in to approve a request
+    accDescr {
+      The approver opens the approval URL. The server sends an authorization
+      request to the OIDC provider and receives identity claims back, trims
+      the requested options to what configuration permits, applies the
+      lifetime policy, and renders the approval page. The approver approves or
+      denies.
+    }
     autonumber
     actor User
     participant Browser

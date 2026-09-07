@@ -157,19 +157,62 @@ describe('root layout', () => {
 		expect(screen.getByTestId('app-rail')).toBeInTheDocument();
 	});
 
-	// Below `lg` the rail is off-canvas, and this button is the only way
-	// back to it, so what it will do has to be legible from its name.
-	it('should say whether the menu button opens or closes the drawer', async () => {
+	// Below `lg` the rail is off-canvas and this button is what opens it, so
+	// its name has to say so. The name no longer flips to "Close navigation
+	// menu" while the drawer is up: the scrim covers this button and the
+	// drawer's Tab cycle holds the caret, so it cannot be reached while open,
+	// and the drawer has its own close button with that name. Two controls
+	// answering to one name is what the flip produced.
+	it('should name the menu button for what pressing it does', async () => {
 		stubAppFetch(alice);
 
 		render(Layout, { children });
 
 		const trigger = await screen.findByRole('button', { name: 'Open navigation menu' });
 		expect(trigger).toHaveAttribute('aria-controls', 'app-rail-drawer');
+	});
+
+	it('should report the drawer state on the menu button', async () => {
+		stubAppFetch(alice);
+
+		render(Layout, { children });
+
+		const trigger = await screen.findByRole('button', { name: 'Open navigation menu' });
+		expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
 		await userEvent.click(trigger);
 
-		expect(screen.getByRole('button', { name: 'Close navigation menu' })).toBeInTheDocument();
+		expect(trigger).toHaveAttribute('aria-expanded', 'true');
+	});
+
+	// The drawer covers the control that opened it, and the scrim behind it
+	// is decorative — `aria-hidden` and out of the tab order — so without a
+	// close button of its own the only way out from a keyboard was Escape.
+	it('should give the drawer its own close control', async () => {
+		stubAppFetch(alice);
+
+		render(Layout, { children });
+
+		await userEvent.click(await screen.findByRole('button', { name: 'Open navigation menu' }));
+
+		const close = screen.getByRole('button', { name: 'Close navigation menu' });
+		await userEvent.click(close);
+
+		expect(screen.queryByRole('dialog', { name: 'Navigation menu' })).not.toBeInTheDocument();
+	});
+
+	// The drawer renders earlier in the document than the header that opens
+	// it, so leaving focus on the trigger sent the next Tab past the menu and
+	// into the page behind it.
+	it('should move focus into the drawer when it opens', async () => {
+		stubAppFetch(alice);
+
+		render(Layout, { children });
+
+		await userEvent.click(await screen.findByRole('button', { name: 'Open navigation menu' }));
+
+		const drawer = screen.getByRole('dialog', { name: 'Navigation menu' });
+		expect(drawer.contains(document.activeElement)).toBe(true);
 	});
 
 	it('should show the rail a second time as a drawer once it is opened', async () => {

@@ -89,7 +89,7 @@ does the right thing for a serial console and for an SSH session.
 Arguments are `key=value` words on the `pam.d` line. A value containing spaces
 uses libpam's bracket form, `key=[a value]`.
 
-| Option | Default | |
+| Option | Default | Notes |
 | --- | --- | --- |
 | [`server=URL`](#serverurl) | -- | required; a missing scheme becomes `https://` |
 | [`trusted-ca-file=PATH`](#trusted-ca-filepath) | -- | required; `authorized_keys` format, one CA per line |

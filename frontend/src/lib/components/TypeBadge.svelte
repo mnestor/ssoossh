@@ -38,8 +38,15 @@
 </script>
 
 <span
-	aria-label="Certificate type: {(type && (labels[type] ?? type)) || 'unknown'}"
 	class="inline-flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-md border border-border-subtle text-ink-muted"
 >
 	<Icon name={(type && icons[type]) || 'help-circle'} size="xs" />
+	<!-- The name in the document rather than an `aria-label` on the span.
+	     ARIA prohibits naming the `generic` role, which is what a bare span
+	     has, so the label this badge used to carry was discarded by every
+	     browser — leaving the one identifier a history row leads with with
+	     no text alternative at all. A real (hidden) string cannot be
+	     dropped, and it survives the span becoming a div or a flex wrapper
+	     later, which `role="img"` would not. -->
+	<span class="sr-only">Certificate type: {(type && (labels[type] ?? type)) || 'unknown'}</span>
 </span>
