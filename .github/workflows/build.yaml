@@ -513,7 +513,18 @@ jobs:
               --identifier org.mikenestor.ssoossh-client --version "$ver" \
               --install-location / --ownership recommended ref.pkg
             pkgutil --expand-full ref.pkg refexp
-            diff <(lsbom -p fmUG refexp/*.pkg/Bom | sort) \
+            # pkgbuild writes a component package, so its expansion puts Bom
+            # at the top level. Only a product archive -- which is what
+            # flatpkg.sh builds, and why our own side of the diff is one
+            # level down -- nests it under a *.pkg directory. The reference
+            # was read through that same glob and matched nothing, which
+            # lsbom reported as "can't open" against an empty left side.
+            refbom=$(find refexp -name Bom | head -1)
+            if [ -z "$refbom" ]; then
+              echo "✗ no Bom in the pkgbuild reference expansion" >&2
+              exit 1
+            fi
+            diff <(lsbom -p fmUG "$refbom" | sort) \
                  <(lsbom -p fmUG exp/component.pkg/Bom | sort)
             echo "✓ $pkg: BOM matches pkgbuild"
           done
@@ -858,13 +869,19 @@ jobs:
             $stillThere = $LASTEXITCODE -eq 0
           }
           $PSNativeCommandUseErrorActionPreference = $true
+          # Every branch exits explicitly. A PowerShell script that ends
+          # without one hands the process $LASTEXITCODE, which is still the
+          # failure from whichever gh call above was expected to fail -- so
+          # the step went red having printed "nothing to remove".
           if ($deleted) {
             Write-Host "removed the release $env:TAG"
+            exit 0
           } elseif ($stillThere) {
             Write-Host "could not delete the release $env:TAG"
             exit 1
           } else {
             Write-Host "no release for $env:TAG; nothing to remove"
+            exit 0
           }
 
   # Where a release becomes visible, and the only job that makes anything

@@ -61,11 +61,28 @@
                   Source="$(var.PayloadDir)/ssoossh.exe" KeyPath="yes"/>
             <!--
               System="yes" writes the machine PATH, matching perMachine.
-              Part="last" appends rather than replacing, and Action="set"
-              with a Component means the entry is removed again on
-              uninstall.
+              Part="last" appends rather than replacing.
+
+              The leading "-" on the name is not a typo and not part of the
+              variable's name. The MSI Environment table encodes the action
+              as prefix characters on the Name column, and the installer
+              only removes the entry on uninstall when "-" is among them
+              (Environment table reference: "Remove the environment variable
+              when the component is removed. This symbol can be combined
+              with any prefix"). Action="set" alone gets "=", System="yes"
+              gets "*", and neither wixl nor Permanent="no" adds the "-".
+              That was verified by building both spellings and reading the
+              table back with msiinfo. So the package used to append to the
+              machine PATH on install and leave the entry behind forever on
+              uninstall, which is what windows-verify caught.
+
+              Written this way the row reads "=*-PATH", and prefix order does
+              not matter to the installer ("there is no effect in the
+              ordering of the symbols used in a prefix"). Because Value
+              carries [~], the prefixes apply only to our own portion of the
+              string: uninstall removes this entry, not the whole PATH.
             -->
-            <Environment Id="PathEntry" Name="PATH" Value="[INSTALLDIR]"
+            <Environment Id="PathEntry" Name="-PATH" Value="[INSTALLDIR]"
                          Part="last" Action="set" System="yes"/>
           </Component>
 
