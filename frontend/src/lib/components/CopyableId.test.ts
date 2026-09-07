@@ -5,10 +5,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import CopyableId from './CopyableId.svelte';
 
 // Test methodology: render the button and drive it with a stubbed clipboard.
-// What matters is that the value on the clipboard is the whole identifier
-// rather than the shortened one on screen -- the short form exists only so a
-// UUID fits in a panel header -- and that a clipboard the browser refuses
-// does not turn into an error state.
+// What matters is that the identifier is on screen in full, that the
+// shortened form is there as the narrow-viewport fallback rather than as the
+// only thing rendered, that the clipboard gets the whole value either way,
+// and that a clipboard the browser refuses does not turn into an error
+// state.
 
 const FULL = '1f0a9c3e-0000-4000-8000-000000000001';
 
@@ -24,20 +25,33 @@ afterEach(() => {
 });
 
 describe('CopyableId', () => {
-	it('should show only the leading characters of the identifier', () => {
+	// The whole identifier is what an operator quotes in a ticket or pastes
+	// into a search box, and it is what the audit events and log lines
+	// carry. A five-character stub made them read it out of a tooltip.
+	it('should show the identifier in full', () => {
 		stubClipboard();
 		render(CopyableId, { value: FULL });
-		expect(screen.getByRole('button')).toHaveTextContent('1f0a9');
+		expect(screen.getByText(FULL)).toBeInTheDocument();
+	});
+
+	// Both forms are rendered and CSS picks one, so the shortened form is
+	// the fallback for a row with no space rather than the default.
+	it('should keep a shortened form for a row with no room for the whole thing', () => {
+		stubClipboard();
+		render(CopyableId, { value: FULL });
+
+		expect(screen.getByText(FULL)).toHaveClass('hidden', 'sm:inline');
+		expect(screen.getByText('1f0a9')).toHaveClass('sm:hidden');
 	});
 
 	it('should honour a requested length', () => {
 		stubClipboard();
 		render(CopyableId, { value: FULL, length: 8 });
-		expect(screen.getByRole('button')).toHaveTextContent('1f0a9c3e');
+		expect(screen.getByText('1f0a9c3e')).toBeInTheDocument();
 	});
 
-	// The whole point: the value on screen is truncated, and the value that
-	// has to reach a search box or a ticket is not.
+	// True in both forms, and the reason the shortened one is safe to fall
+	// back to: what reaches the clipboard never depends on the viewport.
 	it('should copy the whole identifier, not the shortened one', async () => {
 		const writeText = stubClipboard();
 		render(CopyableId, { value: FULL });

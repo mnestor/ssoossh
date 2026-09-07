@@ -9,6 +9,7 @@
 	} from '$lib/approval';
 	import Alert from '$lib/components/Alert.svelte';
 	import Button from '$lib/components/Button.svelte';
+	import CopyableId from '$lib/components/CopyableId.svelte';
 	import DetailRow from '$lib/components/DetailRow.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
@@ -163,7 +164,6 @@
 	// to tell two requests apart when comparing against a log line. Labelled
 	// rather than prefixed with a bare "#", which reads as a colour code.
 	// The full id is on the title attribute for anyone who needs all of it.
-	const shortId = $derived(detail.id.slice(0, 5));
 
 	// PAM authenticates a single local operation (e.g. `sudo`) to
 	// pam_ssoossh, not an interactive SSH session — "requesting an SSH
@@ -351,9 +351,7 @@
 				<StatusBadge status={detail.status} />
 				<TypeChip type={detail.type} />
 			</div>
-			<span class="text-xs text-ink-muted" title={detail.id}>
-				Request <span class="font-mono">{shortId}</span>
-			</span>
+			<CopyableId value={detail.id} label="Request" testid="request-id" />
 		</div>
 
 		<p class="pb-4 text-[13px] text-ink-muted">{pageCopy.description}</p>

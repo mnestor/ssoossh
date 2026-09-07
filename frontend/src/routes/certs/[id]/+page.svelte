@@ -6,6 +6,7 @@
 	import { ApiError } from '$lib/api/client';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
+	import CopyableId from '$lib/components/CopyableId.svelte';
 	import DetailRow from '$lib/components/DetailRow.svelte';
 	import Icon from '$lib/components/Icon.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
@@ -190,13 +191,16 @@
 			<!-- The identity strip: what kind of certificate this is, what
 			     happened to the request behind it, and the id to quote in a
 			     ticket. Wraps rather than squeezes, because the id is a full
-			     uuid and the badges must not shrink to make room for it. -->
+			     uuid and the badges must not shrink to make room for it.
+			     The id is a CopyableId like every other strip's, so it is one
+			     click onto the clipboard rather than a value to select by
+			     hand — it is what the audit events and the log lines carry. -->
 			<div
 				class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[10px] border border-border-subtle bg-surface-muted px-4 py-3"
 			>
 				<TypeChip type={cert.type} />
 				<StatusBadge status={decision} />
-				<span class="ml-auto font-mono text-xs break-all text-ink-muted">{cert.id}</span>
+				<span class="ml-auto"><CopyableId value={cert.id} testid="cert-id" /></span>
 			</div>
 
 			<PageSection

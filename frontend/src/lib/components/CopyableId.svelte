@@ -1,14 +1,19 @@
 <script lang="ts">
 	import Icon from './Icon.svelte';
 
-	// An identifier shown short and copied in full.
+	// The identifier a page is about, in full where there is room for it.
 	//
-	// A UUID is too long to render inline and too long to retype, so the
-	// panel showed a five-character prefix with the whole value in a title
-	// tooltip. That is unreachable from a keyboard, invisible on a touch
-	// screen, and impossible to select — and this is exactly the value an
-	// operator needs on the clipboard, since it is what the notification
-	// email, the audit events and the server log lines all carry.
+	// This is the value an operator needs: it is what the notification
+	// email, the audit events and the server log lines all carry. So it is
+	// shown whole and it is one click to the clipboard. The prefix survives
+	// only as the narrow-viewport fallback — a 36-character UUID needs
+	// about 260px at this size, which a phone in portrait does not have to
+	// spare beside the badges it sits next to.
+	//
+	// It replaced a five-character stub with the whole value in a `title`
+	// tooltip, which is unreachable from a keyboard, invisible on a touch
+	// screen, and impossible to select. The tooltip stays for the shortened
+	// case, where it is the only way to read the rest.
 	interface Props {
 		/** The full identifier. What lands on the clipboard. */
 		value: string;
@@ -20,7 +25,7 @@
 		 * to a screen reader that has just announced the dialog.
 		 */
 		label?: string;
-		/** How many leading characters to show. */
+		/** How many leading characters the shortened form keeps. */
 		length?: number;
 		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
 		testid?: string;
@@ -62,6 +67,12 @@
 	class:text-granted={copied}
 >
 	{label}
-	<span class="font-mono">{short}</span>
+	<!-- Both forms are rendered and one is hidden, rather than measured in
+	     script: the answer is "does this row have room", which is a
+	     question CSS can answer on its own and JavaScript can only answer
+	     after a paint. `sm` is the app's phone-to-tablet fold, and below it
+	     this row is wrapping anyway. -->
+	<span class="hidden font-mono break-all sm:inline">{value}</span>
+	<span class="font-mono sm:hidden">{short}</span>
 	<Icon name={copied ? 'check' : 'copy'} size="xs" />
 </button>
