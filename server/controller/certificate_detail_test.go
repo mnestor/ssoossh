@@ -35,14 +35,14 @@ type detailCertService struct {
 	gotID  string
 }
 
-func (d *detailCertService) ListForIdentity(_ context.Context, _ *service.Identity, _ *string, _ int) ([]service.CertificateWithDecision, *string, error) {
+func (d *detailCertService) ListForIdentity(_ context.Context, _ *service.Identity, _ service.CertificateFilter, _ *string, _ int) ([]service.CertificateWithDecision, *string, error) {
 	return nil, nil, nil
 }
 
 // not covered: the detail route never lists denials; this exists only to
 // satisfy service.CertificateProvider. The denial list is exercised in
 // certificates_denied_test.go.
-func (d *detailCertService) ListDeniedForIdentity(_ context.Context, _ *service.Identity, _ *string, _ int) ([]service.DeniedRequest, *string, error) {
+func (d *detailCertService) ListDeniedForIdentity(_ context.Context, _ *service.Identity, _ service.CertificateFilter, _ *string, _ int) ([]service.DeniedRequest, *string, error) {
 	return nil, nil, nil
 }
 

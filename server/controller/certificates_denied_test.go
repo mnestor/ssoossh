@@ -282,3 +282,102 @@ func TestParsePageLimit(t *testing.T) {
 		})
 	}
 }
+
+// The three filters both history endpoints take. What is pinned here is
+// the parsing: which values reach the service, and which are dropped
+// rather than refused.
+
+func TestCertificateFilter_ShouldPassTheFiltersToTheService(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertificateService{}
+
+	r := gin.New()
+	NewCertificateController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), nil)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs?q=buildbox&type=pam&status=expired", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d", w.Code, http.StatusOK)
+	}
+	want := service.CertificateFilter{Query: "buildbox", Type: "pam", Status: "expired"}
+	if svc.gotFilter != want {
+		t.Errorf("filter = %+v, want %+v", svc.gotFilter, want)
+	}
+}
+
+// The denial list takes the same parameters under the same names, so a
+// reader who learns one URL knows the other.
+func TestCertificateFilter_ShouldPassTheFiltersToTheDenialList(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertificateService{}
+
+	r := gin.New()
+	NewCertificateController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), nil)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/decisions/denied?q=rack07&type=console", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got status %d, want %d", w.Code, http.StatusOK)
+	}
+	want := service.CertificateFilter{Query: "rack07", Type: "console"}
+	if svc.gotDeniedFilter != want {
+		t.Errorf("filter = %+v, want %+v", svc.gotDeniedFilter, want)
+	}
+}
+
+// A filter is a narrowing. Answering a typo with a 400 tells somebody
+// their own history is broken; answering with an unfiltered list tells
+// them their filter did nothing, which is what happened.
+func TestCertificateFilter_ShouldDropUnrecognisedValues(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		query string
+		want  service.CertificateFilter
+	}{
+		{
+			name:  "should drop a type that is not a certificate type",
+			query: "?type=banana",
+			want:  service.CertificateFilter{},
+		},
+		{
+			name:  "should drop a status that is neither live nor expired",
+			query: "?status=pending",
+			want:  service.CertificateFilter{},
+		},
+		{
+			name:  "should keep the parameters it does recognise beside a bad one",
+			query: "?type=banana&q=alice",
+			want:  service.CertificateFilter{Query: "alice"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			gin.SetMode(gin.TestMode)
+			svc := &fakeCertificateService{}
+			r := gin.New()
+			NewCertificateController(&r.RouterGroup, svc,
+				identityMiddleware(&service.Identity{Subject: "sub-alice"}), nil)
+
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/certs"+tt.query, nil))
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("got status %d, want %d -- a bad filter is not a refusal", w.Code, http.StatusOK)
+			}
+			if svc.gotFilter != tt.want {
+				t.Errorf("filter = %+v, want %+v", svc.gotFilter, tt.want)
+			}
+		})
+	}
+}

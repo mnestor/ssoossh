@@ -7,6 +7,7 @@ import (
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/middleware"
+	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
@@ -33,6 +34,33 @@ func NewCertificateController(
 type certificateController struct {
 	certificateService service.CertificateProvider
 	config             *config.Config
+}
+
+// parseCertificateFilter reads the three filters both history endpoints
+// take, in the same names and spellings the admin history uses -- q, type
+// and status -- so a reader who learns one list's URL knows the other's.
+//
+// Anything unrecognised is dropped rather than refused. A filter is a
+// narrowing, and answering a typo with a 400 tells somebody their own
+// history is broken; answering with an unfiltered list tells them their
+// filter did nothing, which is what happened.
+func parseCertificateFilter(g *gin.Context) service.CertificateFilter {
+	filter := service.CertificateFilter{Query: g.Query("q")}
+
+	switch t := g.Query("type"); t {
+	case string(model.CertificateTypeUser),
+		string(model.CertificateTypeService),
+		string(model.CertificateTypePAM),
+		string(model.CertificateTypeConsole):
+		filter.Type = t
+	}
+
+	switch st := g.Query("status"); st {
+	case "live", "expired":
+		filter.Status = st
+	}
+
+	return filter
 }
 
 // parsePageLimit reads the shared page size for both history endpoints:
@@ -69,6 +97,9 @@ func parsePageLimit(raw string) int {
 // @Produce     json
 // @Param       after   query    string false   "Certificate ID to start after (cursor)"
 // @Param       limit   query    int    false   "Maximum certificates to return (default 25, max 100)"
+// @Param       q       query    string false   "Search over key ID, principals, serial and fingerprint"
+// @Param       type    query    string false   "Filter by certificate type (user/service/pam/console)"
+// @Param       status  query    string false   "Filter by expiration (live/expired)"
 // @Success     200 {object} openapidoc.CertificateListEnvelope "Issued certificates, newest first, with cursor for next page"
 // @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid limit or cursor"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
@@ -89,7 +120,8 @@ func (cc *certificateController) listHandler(g *gin.Context) {
 
 	limit := parsePageLimit(g.Query("limit"))
 
-	certs, nextCursor, err := cc.certificateService.ListForIdentity(g.Request.Context(), identity, after, limit)
+	certs, nextCursor, err := cc.certificateService.ListForIdentity(
+		g.Request.Context(), identity, parseCertificateFilter(g), after, limit)
 	if err != nil {
 		handleError(g, err)
 		return
@@ -117,6 +149,9 @@ func (cc *certificateController) listHandler(g *gin.Context) {
 // @Produce     json
 // @Param       after   query    string false   "Decision ID to start after (cursor)"
 // @Param       limit   query    int    false   "Maximum denials to return (default 25, max 100)"
+// @Param       q       query    string false   "Search over request ID and the reported host context"
+// @Param       type    query    string false   "Filter by certificate type (user/service/pam/console)"
+// @Param       status  query    string false   "Live or expired; a denial is neither, so either returns nothing"
 // @Success     200 {object} openapidoc.DeniedRequestListEnvelope "Denials, newest first, with cursor for next page"
 // @Failure     400 {object} openapidoc.ErrorEnvelope "Invalid limit or cursor"
 // @Failure     401 {object} openapidoc.ErrorEnvelope "No valid session"
@@ -136,7 +171,8 @@ func (cc *certificateController) deniedHandler(g *gin.Context) {
 
 	limit := parsePageLimit(g.Query("limit"))
 
-	denials, nextCursor, err := cc.certificateService.ListDeniedForIdentity(g.Request.Context(), identity, after, limit)
+	denials, nextCursor, err := cc.certificateService.ListDeniedForIdentity(
+		g.Request.Context(), identity, parseCertificateFilter(g), after, limit)
 	if err != nil {
 		handleError(g, err)
 		return

@@ -33,15 +33,19 @@ type fakeCertificateService struct {
 	err        error
 	gotSubject string
 
-	denials        []service.DeniedRequest
-	deniedCursor   *string
-	deniedErr      error
-	deniedSubject  string
-	gotDeniedAfter *string
+	gotFilter service.CertificateFilter
+
+	denials         []service.DeniedRequest
+	deniedCursor    *string
+	deniedErr       error
+	deniedSubject   string
+	gotDeniedAfter  *string
+	gotDeniedFilter service.CertificateFilter
 }
 
-func (f *fakeCertificateService) ListForIdentity(_ context.Context, identity *service.Identity, _ *string, _ int) ([]service.CertificateWithDecision, *string, error) {
+func (f *fakeCertificateService) ListForIdentity(_ context.Context, identity *service.Identity, filter service.CertificateFilter, _ *string, _ int) ([]service.CertificateWithDecision, *string, error) {
 	f.gotSubject = identity.Subject
+	f.gotFilter = filter
 	out := make([]service.CertificateWithDecision, 0, len(f.certs))
 	for _, c := range f.certs {
 		out = append(out, service.CertificateWithDecision{Certificate: c, Decision: nil})
@@ -51,9 +55,10 @@ func (f *fakeCertificateService) ListForIdentity(_ context.Context, identity *se
 
 // denials is what ListDeniedForIdentity answers with, and deniedSubject
 // records the identity it was scoped by.
-func (f *fakeCertificateService) ListDeniedForIdentity(_ context.Context, identity *service.Identity, after *string, _ int) ([]service.DeniedRequest, *string, error) {
+func (f *fakeCertificateService) ListDeniedForIdentity(_ context.Context, identity *service.Identity, filter service.CertificateFilter, after *string, _ int) ([]service.DeniedRequest, *string, error) {
 	f.deniedSubject = identity.Subject
 	f.gotDeniedAfter = after
+	f.gotDeniedFilter = filter
 	return f.denials, f.deniedCursor, f.deniedErr
 }
 

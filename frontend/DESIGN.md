@@ -399,13 +399,24 @@ table. Everything else is the same chips in the same order with the same
 glyphs, and the Status pair is the one `CertRow`'s validity indicator uses,
 so a reader filtering on "expired" sees the icon they filtered on.
 
-What is still not shared is where the filtering happens. The admin endpoint
-takes `q`, `type` and `status` and pages by offset, so its filters are
-server-side and exact. `/api/certs` takes none of them and pages by cursor,
-so the caller's own history filters what it has loaded — which means
-narrowing can empty the page until "load more" fetches the rest. That is a
-property of the two endpoints rather than of these two screens, and closing
-it means giving `/api/certs` the same parameters.
+Both filter server-side, under the same parameter names. `/api/certs` and
+`/api/decisions/denied` take `q`, `type` and `status` exactly as the admin
+history does, so narrowing asks the server rather than sieving whatever has
+been loaded — which used to mean a filter could empty a page that had
+matches further down. An unrecognised value is dropped rather than refused:
+answering a typo with a 400 tells somebody their own history is broken,
+where an unfiltered list tells them their filter did nothing, which is what
+happened.
+
+The outcome group does more than narrow: it decides which endpoint is read.
+Approved reads certificates alone, Denied reads decisions alone, Both reads
+each. And a validity filter returns no denials at all — a denial issued
+nothing that could still be working, so asking for "live" is asking for
+certificates.
+
+The two lists still page differently, because their endpoints do: the admin
+one by offset with a `Pager`, the caller's own by cursor with "load more"
+and a page-of-ten over what has arrived.
 
 ### Destructive actions: the heading, then a dialog
 

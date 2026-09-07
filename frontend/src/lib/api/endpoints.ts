@@ -131,12 +131,19 @@ export function denyRequest(id: string): Promise<DenyResult> {
 	return request<DenyResult>(`/certs/requests/${encodeURIComponent(id)}/deny`, { method: 'POST' });
 }
 
-/** GET /api/certs — the caller's own issued-certificate history. Supports cursor-based pagination. */
-export function listCertificates(
-	signal?: AbortSignal,
-	after?: string | null,
-	limit?: number
-): Promise<CertificateListResponse> {
+/**
+ * HistoryFilter is the narrowing both history endpoints take, in the same
+ * names the admin list uses: a free-text term, a certificate type, and
+ * live/expired. Empty fields are left off the URL.
+ */
+export interface HistoryFilter {
+	q?: string;
+	type?: string;
+	status?: string;
+}
+
+/** historyParams builds the shared query string for both history endpoints. */
+function historyParams(filter?: HistoryFilter, after?: string | null, limit?: number): string {
 	const params = new URLSearchParams();
 	if (after) {
 		params.append('after', after);
@@ -144,8 +151,31 @@ export function listCertificates(
 	if (limit) {
 		params.append('limit', limit.toString());
 	}
-	const url = params.toString() ? `/certs?${params.toString()}` : '/certs';
-	return request<CertificateListResponse>(url, { signal });
+	if (filter?.q) {
+		params.append('q', filter.q);
+	}
+	if (filter?.type) {
+		params.append('type', filter.type);
+	}
+	if (filter?.status) {
+		params.append('status', filter.status);
+	}
+	return params.toString();
+}
+
+/**
+ * GET /api/certs — the caller's own issued-certificate history. Cursor
+ * pagination, and the same q/type/status filters the admin list takes, so
+ * narrowing asks the server rather than sieving whatever has been loaded.
+ */
+export function listCertificates(
+	signal?: AbortSignal,
+	after?: string | null,
+	limit?: number,
+	filter?: HistoryFilter
+): Promise<CertificateListResponse> {
+	const query = historyParams(filter, after, limit);
+	return request<CertificateListResponse>(query ? `/certs?${query}` : '/certs', { signal });
 }
 
 /**
@@ -158,17 +188,14 @@ export function listCertificates(
 export function listDeniedRequests(
 	signal?: AbortSignal,
 	after?: string | null,
-	limit?: number
+	limit?: number,
+	filter?: HistoryFilter
 ): Promise<DeniedRequestListResponse> {
-	const params = new URLSearchParams();
-	if (after) {
-		params.append('after', after);
-	}
-	if (limit) {
-		params.append('limit', limit.toString());
-	}
-	const url = params.toString() ? `/decisions/denied?${params.toString()}` : '/decisions/denied';
-	return request<DeniedRequestListResponse>(url, { signal });
+	const query = historyParams(filter, after, limit);
+	return request<DeniedRequestListResponse>(
+		query ? `/decisions/denied?${query}` : '/decisions/denied',
+		{ signal }
+	);
 }
 
 /** GET /api/certs/:id — a single certificate's full details. */

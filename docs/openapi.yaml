@@ -3564,6 +3564,21 @@ paths:
         name: limit
         schema:
           type: integer
+      - description: Search over key ID, principals, serial and fingerprint
+        in: query
+        name: q
+        schema:
+          type: string
+      - description: Filter by certificate type (user/service/pam/console)
+        in: query
+        name: type
+        schema:
+          type: string
+      - description: Filter by expiration (live/expired)
+        in: query
+        name: status
+        schema:
+          type: string
       responses:
         "200":
           content:
@@ -4371,6 +4386,21 @@ paths:
         name: limit
         schema:
           type: integer
+      - description: Search over request ID and the reported host context
+        in: query
+        name: q
+        schema:
+          type: string
+      - description: Filter by certificate type (user/service/pam/console)
+        in: query
+        name: type
+        schema:
+          type: string
+      - description: Live or expired; a denial is neither, so either returns nothing
+        in: query
+        name: status
+        schema:
+          type: string
       responses:
         "200":
           content:

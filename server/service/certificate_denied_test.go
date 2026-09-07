@@ -78,7 +78,7 @@ func TestListDeniedForIdentity_ShouldReturnOnlyTheCallersOwnDenials(t *testing.T
 	mine := seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionDenied, now, true, model.CertificateTypePAM)
 	seedDecision(t, reqSvc, "sub-bob", model.CertificateRequestDecisionDenied, now, true, model.CertificateTypePAM)
 
-	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 100)
+	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 100)
 	if err != nil {
 		t.Fatalf("ListDeniedForIdentity() error = %v", err)
 	}
@@ -100,7 +100,7 @@ func TestListDeniedForIdentity_ShouldLeaveOutApprovals(t *testing.T) {
 	now := time.Now()
 	seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionApproved, now, true, model.CertificateTypeUser)
 
-	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 100)
+	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 100)
 	if err != nil {
 		t.Fatalf("ListDeniedForIdentity() error = %v", err)
 	}
@@ -118,7 +118,7 @@ func TestListDeniedForIdentity_ShouldReportTheTypeThatWasAskedFor(t *testing.T) 
 
 	seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionDenied, time.Now(), true, model.CertificateTypeConsole)
 
-	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 100)
+	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 100)
 	if err != nil {
 		t.Fatalf("ListDeniedForIdentity() error = %v", err)
 	}
@@ -140,7 +140,7 @@ func TestListDeniedForIdentity_ShouldListADenialWhoseRequestIsGone(t *testing.T)
 
 	seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionDenied, time.Now(), false, "")
 
-	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 100)
+	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 100)
 	if err != nil {
 		t.Fatalf("ListDeniedForIdentity() error = %v", err)
 	}
@@ -164,7 +164,7 @@ func TestListDeniedForIdentity_ShouldCarryTheHostContextTheRequestClaimed(t *tes
 
 	seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionDenied, time.Now(), true, model.CertificateTypePAM)
 
-	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 100)
+	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 100)
 	if err != nil {
 		t.Fatalf("ListDeniedForIdentity() error = %v", err)
 	}
@@ -189,7 +189,7 @@ func TestListDeniedForIdentity_ShouldKeepTheHostContextWhenTheRequestIsGone(t *t
 
 	seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionDenied, time.Now(), false, "")
 
-	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 100)
+	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 100)
 	if err != nil {
 		t.Fatalf("ListDeniedForIdentity() error = %v", err)
 	}
@@ -208,7 +208,7 @@ func TestListDeniedForIdentity_ShouldOrderNewestFirst(t *testing.T) {
 	older := seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionDenied, now.Add(-time.Hour), true, model.CertificateTypeUser)
 	newer := seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionDenied, now, true, model.CertificateTypeUser)
 
-	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 100)
+	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 100)
 	if err != nil {
 		t.Fatalf("ListDeniedForIdentity() error = %v", err)
 	}
@@ -228,7 +228,7 @@ func TestListDeniedForIdentity_ShouldPageWithTheCursorItReturns(t *testing.T) {
 	older := seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionDenied, now.Add(-time.Hour), true, model.CertificateTypeUser)
 	newer := seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionDenied, now, true, model.CertificateTypeUser)
 
-	first, cursor, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 1)
+	first, cursor, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 1)
 	if err != nil {
 		t.Fatalf("ListDeniedForIdentity() error = %v", err)
 	}
@@ -239,7 +239,7 @@ func TestListDeniedForIdentity_ShouldPageWithTheCursorItReturns(t *testing.T) {
 		t.Fatalf("cursor = %v, want %s", cursor, newer)
 	}
 
-	second, next, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, cursor, 1)
+	second, next, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, cursor, 1)
 	if err != nil {
 		t.Fatalf("ListDeniedForIdentity(after) error = %v", err)
 	}
@@ -261,7 +261,7 @@ func TestListDeniedForIdentity_ShouldRefuseACursorFromAnotherDecider(t *testing.
 
 	theirs := seedDecision(t, reqSvc, "sub-bob", model.CertificateRequestDecisionDenied, time.Now(), true, model.CertificateTypeUser)
 
-	if _, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, &theirs, 25); err == nil {
+	if _, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, &theirs, 25); err == nil {
 		t.Error("ListDeniedForIdentity() with another decider's cursor = nil error, want a refusal")
 	}
 }
@@ -272,7 +272,7 @@ func TestListDeniedForIdentity_ShouldReturnNothingForADeciderWithNoDenials(t *te
 	reqSvc := newTestCertRequestService(t, time.Hour)
 	svc := newTestCertificateService(t, reqSvc)
 
-	got, cursor, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-nobody"}, nil, 25)
+	got, cursor, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-nobody"}, CertificateFilter{}, nil, 25)
 	if err != nil {
 		t.Fatalf("ListDeniedForIdentity() error = %v", err)
 	}
@@ -288,7 +288,137 @@ func TestListDeniedForIdentity_ShouldSurfaceADatabaseError(t *testing.T) {
 	svc := newTestCertificateService(t, reqSvc)
 	closeUnderlyingDB(t, reqSvc.db)
 
-	if _, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 25); err == nil {
+	if _, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 25); err == nil {
 		t.Error("ListDeniedForIdentity() on a closed database = nil error, want an error")
+	}
+}
+
+// The filters exist so the browser stops narrowing what it happens to have
+// loaded. These pin what each one selects on a denial, including the two
+// that behave differently here than on a certificate.
+
+func TestListDeniedForIdentity_ShouldMatchTheSearchAgainstTheReportedHost(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+
+	now := time.Now()
+	seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionDenied, now, true, model.CertificateTypePAM)
+
+	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"},
+		CertificateFilter{Query: "rack07"}, nil, 100)
+	if err != nil {
+		t.Fatalf("ListDeniedForIdentity() error = %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("search for the reported hostname = %d rows, want 1", len(got))
+	}
+
+	got, _, err = svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"},
+		CertificateFilter{Query: "some-other-box"}, nil, 100)
+	if err != nil {
+		t.Fatalf("ListDeniedForIdentity() error = %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("search for a host that did not ask = %d rows, want 0", len(got))
+	}
+}
+
+func TestListDeniedForIdentity_ShouldMatchTheSearchAgainstTheRequestID(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+
+	seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionDenied, time.Now(), true, model.CertificateTypePAM)
+
+	all, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"},
+		CertificateFilter{}, nil, 100)
+	if err != nil || len(all) != 1 {
+		t.Fatalf("seed failed: %d rows, err %v", len(all), err)
+	}
+
+	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"},
+		CertificateFilter{Query: all[0].Decision.CertificateRequestID}, nil, 100)
+	if err != nil {
+		t.Fatalf("ListDeniedForIdentity() error = %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("search for the request id = %d rows, want 1", len(got))
+	}
+}
+
+func TestListDeniedForIdentity_ShouldKeepOnlyTheTypeAsked(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+
+	now := time.Now()
+	seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionDenied, now, true, model.CertificateTypePAM)
+	seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionDenied, now, true, model.CertificateTypeConsole)
+
+	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"},
+		CertificateFilter{Type: string(model.CertificateTypeConsole)}, nil, 100)
+	if err != nil {
+		t.Fatalf("ListDeniedForIdentity() error = %v", err)
+	}
+	if len(got) != 1 || got[0].Type != model.CertificateTypeConsole {
+		t.Errorf("type filter = %d rows of type %q, want 1 console", len(got), got[0].Type)
+	}
+}
+
+// The request row is where the type lives, so a denial that has outlived
+// its request cannot answer a type filter. Excluding it is the same answer
+// the browser gave when it filtered these client-side.
+func TestListDeniedForIdentity_ShouldDropATypelessDenialFromATypeFilter(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+
+	seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionDenied, time.Now(), false, "")
+
+	got, _, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"},
+		CertificateFilter{Type: string(model.CertificateTypePAM)}, nil, 100)
+	if err != nil {
+		t.Fatalf("ListDeniedForIdentity() error = %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("type filter over a denial with no request = %d rows, want 0", len(got))
+	}
+}
+
+// A denial issued nothing, so it is neither live nor expired. Asking for
+// either is asking for certificates.
+func TestListDeniedForIdentity_ShouldReturnNothingUnderAValidityFilter(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		status string
+	}{
+		{name: "should return nothing when live is asked for", status: "live"},
+		{name: "should return nothing when expired is asked for", status: "expired"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			reqSvc := newTestCertRequestService(t, time.Hour)
+			svc := newTestCertificateService(t, reqSvc)
+			seedDecision(t, reqSvc, "sub-alice", model.CertificateRequestDecisionDenied, time.Now(), true, model.CertificateTypePAM)
+
+			got, cursor, err := svc.ListDeniedForIdentity(context.Background(), &Identity{Subject: "sub-alice"},
+				CertificateFilter{Status: tt.status}, nil, 100)
+			if err != nil {
+				t.Fatalf("ListDeniedForIdentity() error = %v", err)
+			}
+			if len(got) != 0 || cursor != nil {
+				t.Errorf("validity filter = %d rows / cursor %v, want 0 and nil", len(got), cursor)
+			}
+		})
 	}
 }

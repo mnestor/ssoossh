@@ -15,10 +15,13 @@ import Page from './+page.svelte';
  * page mixed them up.
  */
 function mockFetch(response: object, status = 200, denials: object = { denials: [] }) {
+	requested.length = 0;
 	vi.stubGlobal(
 		'fetch',
 		vi.fn((input: RequestInfo | URL) => {
-			const body = String(input).includes('/decisions/denied') ? denials : response;
+			const url = String(input);
+			requested.push(url);
+			const body = url.includes('/decisions/denied') ? denials : response;
 			return Promise.resolve(
 				new Response(JSON.stringify({ data: body, error: null }), {
 					status,
@@ -27,6 +30,14 @@ function mockFetch(response: object, status = 200, denials: object = { denials: 
 			);
 		})
 	);
+}
+
+/** requested records every URL the page fetched, newest last. */
+const requested: string[] = [];
+
+/** lastRequest is the most recent URL matching a path fragment. */
+function lastRequest(fragment: string): string | undefined {
+	return [...requested].reverse().find((url) => url.includes(fragment));
 }
 
 /** mockFetchError stubs the global fetch to reject with an error message. */
@@ -252,31 +263,24 @@ describe('Certificate history page', () => {
 			expect(screen.getByTestId('denied-row').closest('a')).toBeNull();
 		});
 
-		it('should count a denial toward the type filter it was requested under', async () => {
+		// Which denials match a type is the server's answer now -- see
+		// ListDeniedForIdentity, which reads it off the joined request row.
+		// What this page owes is asking the question.
+		it('should send the type filter to the denial endpoint too', async () => {
 			mockFetch({ certificates: [] }, 200, { denials: [aDenial({ type: 'pam' })] });
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
 			await show('Denied');
-			await userEvent.click(screen.getByRole('button', { name: /PAM/ }));
+			await userEvent.click(screen.getByTestId('type-filter-console'));
 
-			expect(screen.getByTestId('denied-row')).toBeInTheDocument();
-		});
-
-		it('should hide a denial under a type filter it does not match', async () => {
-			mockFetch({ certificates: [] }, 200, { denials: [aDenial({ type: 'pam' })] });
-			render(Page);
-			await new Promise((resolve) => setTimeout(resolve, 0));
-			await show('Denied');
-			await userEvent.click(screen.getByRole('button', { name: /Console/ }));
-
-			expect(screen.queryByTestId('denied-row')).not.toBeInTheDocument();
+			await vi.waitFor(() => expect(lastRequest('/decisions/denied')).toContain('type=console'));
 		});
 
 		// The decisions table outlives certificate_requests by design, so a
-		// denial whose request row is gone reports no type. It still has to
-		// be listed under "All": dropping it would quietly shorten the
-		// history.
-		it('should still list a denial whose request type is unknown', async () => {
+		// denial whose request row is gone reports no type. The row still
+		// has to render: the server drops it from a type filter, but under
+		// "All" it is a real refusal like any other.
+		it('should still render a denial whose request type is unknown', async () => {
 			mockFetch({ certificates: [] }, 200, { denials: [aDenial({ type: undefined })] });
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
@@ -303,8 +307,9 @@ describe('Certificate history page', () => {
 	});
 
 	// The same three groups and the same search box the admin certificate
-	// list opens with. Everything here narrows what has been loaded, which
-	// is the tradeoff load-more paging carries.
+	// list opens with, and like that list they ask the server. What is
+	// pinned here is that the page sends what was asked for; what the
+	// server does with it is pinned in server/service.
 	describe('the filters', () => {
 		/** aCert is one issued certificate, overridable per case. */
 		function aCert(overrides: Record<string, unknown> = {}) {
@@ -333,98 +338,107 @@ describe('Certificate history page', () => {
 			expect(screen.getByTestId('status-filter')).toBeInTheDocument();
 		});
 
-		it('should narrow the list to rows matching the search term', async () => {
-			mockFetch({
-				certificates: [aCert(), aCert({ id: 'cert-2', key_id: 'buildbox' })]
-			});
+		// The page opens on approvals, so somebody whose only history is a
+		// refusal would otherwise land on "nothing here" with no control on
+		// screen to go and find it.
+		it('should keep the filters on screen when nothing matches', async () => {
+			mockFetch({ certificates: [] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(screen.getByTestId('outcome-filter')).toBeInTheDocument();
+			expect(
+				screen.getByText('You have not decided any certificate requests yet.')
+			).toBeInTheDocument();
+		});
+
+		it('should send the search term to the server', async () => {
+			mockFetch({ certificates: [aCert()] });
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
 
 			await userEvent.type(screen.getByTestId('search-input'), 'buildbox');
 
-			await vi.waitFor(() => expect(screen.getAllByTestId('cert-row')).toHaveLength(1));
+			await vi.waitFor(() => expect(lastRequest('/certs')).toContain('q=buildbox'));
 		});
 
-		// The same fields the admin list searches, so the two boxes answer
-		// the same question.
-		it('should match a search on the principal as well as the key id', async () => {
-			mockFetch({ certificates: [aCert({ principals: 'deploy-bot' })] });
-			render(Page);
-			await new Promise((resolve) => setTimeout(resolve, 0));
-
-			await userEvent.type(screen.getByTestId('search-input'), 'deploy-bot');
-
-			await vi.waitFor(() => expect(screen.getAllByTestId('cert-row')).toHaveLength(1));
-		});
-
-		it('should say so when the search matches nothing', async () => {
+		it('should send the type to the server', async () => {
 			mockFetch({ certificates: [aCert()] });
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
 
-			await userEvent.type(screen.getByTestId('search-input'), 'nothing-matches-this');
+			await userEvent.click(screen.getByTestId('type-filter-pam'));
+
+			await vi.waitFor(() => expect(lastRequest('/certs')).toContain('type=pam'));
+		});
+
+		it('should send the validity to the server', async () => {
+			mockFetch({ certificates: [aCert()] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			await userEvent.click(screen.getByTestId('status-filter-expired'));
+
+			await vi.waitFor(() => expect(lastRequest('/certs')).toContain('status=expired'));
+		});
+
+		it('should send no filter parameters when nothing is narrowed', async () => {
+			mockFetch({ certificates: [aCert()] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			const url = lastRequest('/certs') ?? '';
+			expect(url).not.toContain('q=');
+			expect(url).not.toContain('type=');
+			expect(url).not.toContain('status=');
+		});
+
+		// The outcome does not sieve what arrived — it decides what is
+		// fetched, so the endpoint that cannot contribute is never called.
+		it('should not read the denial endpoint while showing approvals', async () => {
+			mockFetch({ certificates: [aCert()] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(lastRequest('/decisions/denied')).toBeUndefined();
+		});
+
+		it('should not read the certificate endpoint while showing denials', async () => {
+			mockFetch({ certificates: [] }, 200, { denials: [] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			requested.length = 0;
+
+			await userEvent.click(screen.getByTestId('outcome-filter-denied'));
+
+			await vi.waitFor(() => expect(lastRequest('/decisions/denied')).toBeDefined());
+			expect(lastRequest('/certs')).toBeUndefined();
+		});
+
+		it('should read both endpoints when either outcome will do', async () => {
+			mockFetch({ certificates: [] }, 200, { denials: [] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			requested.length = 0;
+
+			await userEvent.click(screen.getByTestId('outcome-filter-any'));
+
+			await vi.waitFor(() => expect(lastRequest('/decisions/denied')).toBeDefined());
+			expect(lastRequest('/certs')).toBeDefined();
+		});
+
+		it('should say so when a narrowed history comes back empty', async () => {
+			mockFetch({ certificates: [] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			await userEvent.click(screen.getByTestId('type-filter-pam'));
 
 			await vi.waitFor(() =>
 				expect(
 					screen.getByText('Nothing in your history matches the selected filter.')
 				).toBeInTheDocument()
 			);
-		});
-
-		it('should keep only expired certificates under the expired status', async () => {
-			mockFetch({
-				certificates: [
-					aCert(),
-					aCert({ id: 'cert-2', key_id: 'old', expires_at: '2020-01-01T00:00:00Z' })
-				]
-			});
-			render(Page);
-			await new Promise((resolve) => setTimeout(resolve, 0));
-
-			await userEvent.click(screen.getByTestId('status-filter-expired'));
-
-			expect(screen.getAllByTestId('cert-row')).toHaveLength(1);
-		});
-
-		it('should keep only working certificates under the live status', async () => {
-			mockFetch({
-				certificates: [
-					aCert(),
-					aCert({ id: 'cert-2', key_id: 'old', expires_at: '2020-01-01T00:00:00Z' })
-				]
-			});
-			render(Page);
-			await new Promise((resolve) => setTimeout(resolve, 0));
-
-			await userEvent.click(screen.getByTestId('status-filter-live'));
-
-			expect(screen.getAllByTestId('cert-row')).toHaveLength(1);
-		});
-
-		// Validity is a property of an issued certificate. A denial is
-		// neither live nor expired, and saying otherwise would be inventing
-		// a state for something that was never issued.
-		it('should drop denials under either validity filter', async () => {
-			mockFetch({ certificates: [] }, 200, {
-				denials: [
-					{
-						id: 'dec-1',
-						certificate_request_id: 'req-1',
-						type: 'pam',
-						decided_at: '2026-08-02T10:00:00Z',
-						reported_username: 'deploy',
-						reported_hostname: 'rack07'
-					}
-				]
-			});
-			render(Page);
-			await new Promise((resolve) => setTimeout(resolve, 0));
-
-			await userEvent.click(screen.getByTestId('outcome-filter-denied'));
-			expect(screen.getByTestId('denied-row')).toBeInTheDocument();
-
-			await userEvent.click(screen.getByTestId('status-filter-live'));
-			expect(screen.queryByTestId('denied-row')).not.toBeInTheDocument();
 		});
 	});
 

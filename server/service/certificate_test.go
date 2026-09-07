@@ -112,7 +112,7 @@ func TestCertificateService_ShouldReturnOnlyTheCallersCertificates(t *testing.T)
 	seedCertificate(t, reqSvc, &bobID, 3, now)
 	seedCertificate(t, reqSvc, nil, 4, now)
 
-	got, nextCursor, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 100)
+	got, nextCursor, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 100)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestCertificateService_ShouldSurfaceAGenericDBErrorOnUserLookup(t *testing.
 	svc := newTestCertificateService(t, reqSvc)
 	closeUnderlyingDB(t, reqSvc.db)
 
-	if _, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 25); err == nil {
+	if _, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 25); err == nil {
 		t.Error("ListForIdentity() error = nil, want error")
 	}
 }
@@ -166,7 +166,7 @@ func TestCertificateService_ShouldSurfaceAGenericDBErrorListingCertificates(t *t
 		t.Fatalf("failed to drop the certificates table: %v", err)
 	}
 
-	if _, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 25); err == nil {
+	if _, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 25); err == nil {
 		t.Error("ListForIdentity() error = nil, want error")
 	}
 }
@@ -180,7 +180,7 @@ func TestCertificateService_ShouldReturnNothingForAnIdentityWithNoUserRecord(t *
 	reqSvc := newTestCertRequestService(t, time.Hour)
 	svc := newTestCertificateService(t, reqSvc)
 
-	got, nextCursor, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-ghost"}, nil, 25)
+	got, nextCursor, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-ghost"}, CertificateFilter{}, nil, 25)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestCertificateService_PaginationBasics(t *testing.T) {
 				seedCertificate(t, reqSvc, &userID, uint64(i), now.Add(-time.Duration(i)*time.Second))
 			}
 
-			got, nextCursor, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, tt.pageSize)
+			got, nextCursor, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, tt.pageSize)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -281,7 +281,7 @@ func TestCertificateService_CursorPagination(t *testing.T) {
 	}
 
 	// Get first page (5 results).
-	page1, cursor1, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 5)
+	page1, cursor1, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 5)
 	if err != nil {
 		t.Fatalf("unexpected error on page 1: %v", err)
 	}
@@ -300,7 +300,7 @@ func TestCertificateService_CursorPagination(t *testing.T) {
 	}
 
 	// Get second page using cursor.
-	page2, cursor2, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, cursor1, 5)
+	page2, cursor2, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, cursor1, 5)
 	if err != nil {
 		t.Fatalf("unexpected error on page 2: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestCertificateService_CursorWithConcurrentIssuance(t *testing.T) {
 	seedCertificate(t, reqSvc, &userID, 6, sharedTime2)
 
 	// Get first page (3 results) — should be certs at sharedTime1.
-	page1, cursor1, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 3)
+	page1, cursor1, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 3)
 	if err != nil {
 		t.Fatalf("unexpected error on page 1: %v", err)
 	}
@@ -377,7 +377,7 @@ func TestCertificateService_CursorWithConcurrentIssuance(t *testing.T) {
 	}
 
 	// Get second page using cursor — should be certs 4, 5, 6.
-	page2, cursor2, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, cursor1, 3)
+	page2, cursor2, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, cursor1, 3)
 	if err != nil {
 		t.Fatalf("unexpected error on page 2: %v", err)
 	}
@@ -433,7 +433,7 @@ func TestCertificateService_InvalidCursor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: tt.user}, &tt.cursor, 25)
+			_, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: tt.user}, CertificateFilter{}, &tt.cursor, 25)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("got error = %v, want error = %v", err, tt.wantErr)
 			}
@@ -441,7 +441,7 @@ func TestCertificateService_InvalidCursor(t *testing.T) {
 	}
 
 	// Sanity check: alice's own certificate as cursor should work.
-	_, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, &aliceCert.ID, 25)
+	_, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, &aliceCert.ID, 25)
 	if err != nil {
 		t.Errorf("got error with alice's own certificate as cursor: %v", err)
 	}
@@ -468,7 +468,7 @@ func TestCertificateService_CertificateWithDecision(t *testing.T) {
 	}
 	cert := seedCertificateWithRequest(t, reqSvc, &userID, 1, now, decision)
 
-	got, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 25)
+	got, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 25)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -517,7 +517,7 @@ func TestCertificateService_ShouldReadTheReportedUserAndHostOnAListRow(t *testin
 	}
 	seedCertificateWithRequest(t, reqSvc, &userID, 1, now, decision)
 
-	got, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 25)
+	got, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 25)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -556,7 +556,7 @@ func TestCertificateService_ShouldLeaveTheRestOfTheHostContextOffAListRow(t *tes
 	}
 	seedCertificateWithRequest(t, reqSvc, &userID, 1, now, decision)
 
-	got, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 25)
+	got, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 25)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -586,7 +586,7 @@ func TestCertificateService_CertificateWithoutDecision(t *testing.T) {
 	// Seed certificate without a request.
 	cert := seedCertificate(t, reqSvc, &userID, 1, now)
 
-	got, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 25)
+	got, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 25)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -647,7 +647,7 @@ func TestCertificateService_ServiceCertificateRetrieval(t *testing.T) {
 		t.Parallel()
 		certs, _, subject := seed(t, false)
 
-		rows, _, err := certs.ListForIdentity(context.Background(), &Identity{Subject: subject}, nil, 25)
+		rows, _, err := certs.ListForIdentity(context.Background(), &Identity{Subject: subject}, CertificateFilter{}, nil, 25)
 		if err != nil {
 			t.Fatalf("ListForIdentity() error = %v", err)
 		}
@@ -665,7 +665,7 @@ func TestCertificateService_ServiceCertificateRetrieval(t *testing.T) {
 		t.Parallel()
 		certs, enrollmentID, subject := seed(t, false)
 
-		rows, _, err := certs.ListForIdentity(context.Background(), &Identity{Subject: subject}, nil, 25)
+		rows, _, err := certs.ListForIdentity(context.Background(), &Identity{Subject: subject}, CertificateFilter{}, nil, 25)
 		if err != nil {
 			t.Fatalf("ListForIdentity() error = %v", err)
 		}
@@ -678,7 +678,7 @@ func TestCertificateService_ServiceCertificateRetrieval(t *testing.T) {
 		t.Parallel()
 		certs, _, subject := seed(t, true)
 
-		rows, _, err := certs.ListForIdentity(context.Background(), &Identity{Subject: subject}, nil, 25)
+		rows, _, err := certs.ListForIdentity(context.Background(), &Identity{Subject: subject}, CertificateFilter{}, nil, 25)
 		if err != nil {
 			t.Fatalf("ListForIdentity() error = %v", err)
 		}
@@ -698,7 +698,7 @@ func TestCertificateService_ShouldLeaveANonServiceCertificateWithoutARetrieval(t
 	userID := seedUser(t, svc.db, "sub-alice")
 	seedCertificate(t, svc, &userID, 4242, time.Now())
 
-	rows, _, err := certs.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, nil, 25)
+	rows, _, err := certs.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"}, CertificateFilter{}, nil, 25)
 	if err != nil {
 		t.Fatalf("ListForIdentity() error = %v", err)
 	}
@@ -899,5 +899,139 @@ func TestCertificateService_GetByID_ShouldReadTheIssuedOptions(t *testing.T) {
 	}
 	if result.Certificate.CriticalOptions != criticalOptions {
 		t.Errorf("CriticalOptions = %q, want %q", result.Certificate.CriticalOptions, criticalOptions)
+	}
+}
+
+// The caller's own history takes the same three filters the admin one
+// does, so the browser stops narrowing whatever it happens to have loaded.
+// These pin what each selects; the admin equivalents are exercised through
+// its handler in server/controller.
+
+func TestCertificateService_ShouldMatchTheSearchAgainstTheKeyID(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+	aliceID := seedUser(t, reqSvc.db, "sub-alice")
+
+	now := time.Now()
+	wanted := seedCertificate(t, reqSvc, &aliceID, 1, now)
+	wanted.KeyID = "buildbox"
+	if err := reqSvc.db.Save(wanted).Error; err != nil {
+		t.Fatalf("failed to set the key id: %v", err)
+	}
+	other := seedCertificate(t, reqSvc, &aliceID, 2, now.Add(-time.Hour))
+	other.KeyID = "workstation"
+	if err := reqSvc.db.Save(other).Error; err != nil {
+		t.Fatalf("failed to set the key id: %v", err)
+	}
+
+	got, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"},
+		CertificateFilter{Query: "buildbox"}, nil, 100)
+	if err != nil {
+		t.Fatalf("ListForIdentity() error = %v", err)
+	}
+	if len(got) != 1 || got[0].Certificate.KeyID != "buildbox" {
+		t.Errorf("search for a key id = %d rows, want just buildbox", len(got))
+	}
+}
+
+// A search term is matched literally: LIKE wildcards a reader types are
+// their own characters, not a pattern that matches everything.
+func TestCertificateService_ShouldNotTreatASearchWildcardAsAPattern(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+	aliceID := seedUser(t, reqSvc.db, "sub-alice")
+	seedCertificate(t, reqSvc, &aliceID, 1, time.Now())
+
+	got, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"},
+		CertificateFilter{Query: "%"}, nil, 100)
+	if err != nil {
+		t.Fatalf("ListForIdentity() error = %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("search for a bare %% = %d rows, want 0", len(got))
+	}
+}
+
+func TestCertificateService_ShouldKeepOnlyTheTypeAsked(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+	aliceID := seedUser(t, reqSvc.db, "sub-alice")
+
+	now := time.Now()
+	seedCertificate(t, reqSvc, &aliceID, 1, now)
+	pam := seedCertificate(t, reqSvc, &aliceID, 2, now.Add(-time.Hour))
+	pam.Type = model.CertificateTypePAM
+	if err := reqSvc.db.Save(pam).Error; err != nil {
+		t.Fatalf("failed to set the type: %v", err)
+	}
+
+	got, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"},
+		CertificateFilter{Type: string(model.CertificateTypePAM)}, nil, 100)
+	if err != nil {
+		t.Fatalf("ListForIdentity() error = %v", err)
+	}
+	if len(got) != 1 || got[0].Certificate.Type != model.CertificateTypePAM {
+		t.Errorf("type filter = %d rows, want 1 pam", len(got))
+	}
+}
+
+func TestCertificateService_ShouldSplitLiveFromExpired(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+	aliceID := seedUser(t, reqSvc.db, "sub-alice")
+
+	now := time.Now()
+	// seedCertificate gives an hour of life from the issue time, so one an
+	// hour and a half back has already gone.
+	seedCertificate(t, reqSvc, &aliceID, 1, now)
+	seedCertificate(t, reqSvc, &aliceID, 2, now.Add(-90*time.Minute))
+
+	live, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"},
+		CertificateFilter{Status: "live"}, nil, 100)
+	if err != nil {
+		t.Fatalf("ListForIdentity(live) error = %v", err)
+	}
+	if len(live) != 1 || live[0].Certificate.SerialNumber != 1 {
+		t.Errorf("live = %d rows, want only the one still inside its window", len(live))
+	}
+
+	expired, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"},
+		CertificateFilter{Status: "expired"}, nil, 100)
+	if err != nil {
+		t.Fatalf("ListForIdentity(expired) error = %v", err)
+	}
+	if len(expired) != 1 || expired[0].Certificate.SerialNumber != 2 {
+		t.Errorf("expired = %d rows, want only the one past its window", len(expired))
+	}
+}
+
+// Filters narrow one identity's own history; they must never widen it.
+func TestCertificateService_ShouldStayScopedWhileFiltering(t *testing.T) {
+	t.Parallel()
+
+	reqSvc := newTestCertRequestService(t, time.Hour)
+	svc := newTestCertificateService(t, reqSvc)
+	aliceID := seedUser(t, reqSvc.db, "sub-alice")
+	bobID := seedUser(t, reqSvc.db, "sub-bob")
+
+	now := time.Now()
+	seedCertificate(t, reqSvc, &aliceID, 1, now)
+	seedCertificate(t, reqSvc, &bobID, 2, now)
+
+	got, _, err := svc.ListForIdentity(context.Background(), &Identity{Subject: "sub-alice"},
+		CertificateFilter{Status: "live"}, nil, 100)
+	if err != nil {
+		t.Fatalf("ListForIdentity() error = %v", err)
+	}
+	if len(got) != 1 || got[0].Certificate.SerialNumber != 1 {
+		t.Errorf("filtered list = %d rows, want only alice's", len(got))
 	}
 }

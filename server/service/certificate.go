@@ -11,6 +11,7 @@ import (
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/utils/errorresponses"
+	"github.com/mnestor/ssoossh/server/utils/paging"
 )
 
 // CertificateWithDecision combines a Certificate with its related decision
@@ -40,6 +41,34 @@ type CertificateRetrieval struct {
 	RetrievedAt  time.Time
 }
 
+// CertificateFilter narrows a history listing to what a reader asked for.
+//
+// It exists because the caller's own history and the admin one were
+// filtering in two different places: the admin endpoint took q/type/status
+// and answered exactly, while /api/certs took nothing and the browser
+// filtered whatever it had already loaded — so narrowing could empty a page
+// that had matches further down. Same struct for both listings here, so the
+// two screens ask the same question of the same columns.
+type CertificateFilter struct {
+	// Query is free text matched against the columns a reader would search
+	// by: key id, principals, serial and fingerprint on a certificate, and
+	// the request id and reported host context on a denial. Empty matches
+	// everything.
+	Query string
+
+	// Type is a model.CertificateType, or empty for any. On a denial this
+	// reads the request row, so a denial whose request is gone reports no
+	// type and is excluded by any type filter -- the same answer the
+	// browser gave when it filtered these client-side.
+	Type string
+
+	// Status is "live", "expired", or empty for either. It has no meaning
+	// for a denial, which issued nothing that could still be working, so
+	// ListDeniedForIdentity returns nothing at all when it is set rather
+	// than inventing a state for a row that has none.
+	Status string
+}
+
 // CertificateProvider reads the issued-certificate audit trail.
 // CertificateService is the production implementation.
 type CertificateProvider interface {
@@ -49,13 +78,13 @@ type CertificateProvider interface {
 	// nil for the first page. limit controls the maximum number of rows returned.
 	// Returns certificates, the next cursor (or nil if no more pages), and any error.
 	// Scoped by the requesting identity's user row.
-	ListForIdentity(ctx context.Context, identity *Identity, after *string, limit int) ([]CertificateWithDecision, *string, error)
+	ListForIdentity(ctx context.Context, identity *Identity, filter CertificateFilter, after *string, limit int) ([]CertificateWithDecision, *string, error)
 
 	// ListDeniedForIdentity returns the requests identity denied, newest
 	// first, with the same cursor paging. Separate from ListForIdentity
 	// because a denial produces no certificate and so has no row in the
 	// table that one reads. Scoped by the decision's own subject snapshot.
-	ListDeniedForIdentity(ctx context.Context, identity *Identity, after *string, limit int) ([]DeniedRequest, *string, error)
+	ListDeniedForIdentity(ctx context.Context, identity *Identity, filter CertificateFilter, after *string, limit int) ([]DeniedRequest, *string, error)
 
 	// GetByID returns the certificate identified by id if the caller has
 	// permission to read it. Authorization: the certificate's approving user
@@ -98,7 +127,7 @@ func NewCertificateService(db *gorm.DB) *CertificateService {
 // certificate's issued_at is looked up and scoped by user_id to prevent cross-user
 // access probes. Each certificate is paired with its originating request's decision
 // record (if any) via LEFT JOIN.
-func (s *CertificateService) ListForIdentity(ctx context.Context, identity *Identity, after *string, limit int) ([]CertificateWithDecision, *string, error) {
+func (s *CertificateService) ListForIdentity(ctx context.Context, identity *Identity, filter CertificateFilter, after *string, limit int) ([]CertificateWithDecision, *string, error) {
 	var user model.User
 	err := s.db.WithContext(ctx).First(&user, "subject = ?", identity.Subject).Error
 	if err != nil {
@@ -109,6 +138,7 @@ func (s *CertificateService) ListForIdentity(ctx context.Context, identity *Iden
 	}
 
 	query := s.db.WithContext(ctx).Where("certificates.user_id = ?", user.ID)
+	query = applyCertificateFilter(query, filter)
 
 	// If a cursor is provided, look it up to get its issued_at, then build the
 	// seek predicate.
@@ -283,6 +313,39 @@ func (s *CertificateService) ListForIdentity(ctx context.Context, identity *Iden
 	return out, nextCursor, nil
 }
 
+// applyCertificateFilter narrows a certificates query to what a reader
+// asked for. The columns match the admin history's, minus the owner: on
+// somebody's own history every row is theirs, so searching by owner would
+// match everything or nothing.
+func applyCertificateFilter(query *gorm.DB, filter CertificateFilter) *gorm.DB {
+	if filter.Query != "" {
+		whereClause, args := paging.Filter(filter.Query,
+			"certificates.key_id",
+			"certificates.principals",
+			"certificates.public_key_fingerprint",
+			"CAST(certificates.serial_number AS TEXT)",
+		)
+		if whereClause != "" {
+			query = query.Where(whereClause, args...)
+		}
+	}
+	if filter.Type != "" {
+		query = query.Where("certificates.type = ?", filter.Type)
+	}
+
+	// Read once here rather than per row: a listing is one answer about one
+	// moment, and a cutoff that moved mid-query could put a certificate in
+	// both halves of live/expired across two pages.
+	now := time.Now()
+	switch filter.Status {
+	case "live":
+		query = query.Where("certificates.expires_at > ?", now)
+	case "expired":
+		query = query.Where("certificates.expires_at <= ?", now)
+	}
+	return query
+}
+
 // DeniedRequest is one denial out of the caller's own history: a decision
 // row with no certificate behind it, because a denial issues nothing.
 //
@@ -313,10 +376,39 @@ type DeniedRequest struct {
 // -- a decider's identity is frozen at decision time -- and subject is the
 // one field of that snapshot that is stable across renames, which is why it
 // is what authentication.fields.subject names.
-func (s *CertificateService) ListDeniedForIdentity(ctx context.Context, identity *Identity, after *string, limit int) ([]DeniedRequest, *string, error) {
+func (s *CertificateService) ListDeniedForIdentity(ctx context.Context, identity *Identity, filter CertificateFilter, after *string, limit int) ([]DeniedRequest, *string, error) {
+	// A denial issued nothing, so it is neither live nor expired. Asking
+	// for either is asking for certificates, and the honest answer is that
+	// no denial qualifies -- not that every denial does.
+	if filter.Status != "" {
+		return []DeniedRequest{}, nil, nil
+	}
+
 	query := s.db.WithContext(ctx).
 		Where("certificate_request_decisions.subject = ?", identity.Subject).
 		Where("certificate_request_decisions.outcome = ?", model.CertificateRequestDecisionDenied)
+
+	if filter.Type != "" {
+		// Reads the joined request row, so a denial whose request is gone
+		// reports no type and drops out of any type filter.
+		query = query.Where("certificate_requests.type = ?", filter.Type)
+	}
+	if filter.Query != "" {
+		// The same fields a denied row shows: what it was, who claimed to
+		// be asking, and from where.
+		whereClause, args := paging.Filter(filter.Query,
+			"certificate_request_decisions.certificate_request_id",
+			"certificate_request_decisions.reported_username",
+			"certificate_request_decisions.reported_hostname",
+			"certificate_request_decisions.pam_service",
+			"certificate_request_decisions.tty",
+			"certificate_request_decisions.remote_host",
+			"certificate_request_decisions.client",
+		)
+		if whereClause != "" {
+			query = query.Where(whereClause, args...)
+		}
+	}
 
 	// Seek predicate on (decided_at, id), matching ListForIdentity's on
 	// (issued_at, id): two denials can land in the same second, and ordering
