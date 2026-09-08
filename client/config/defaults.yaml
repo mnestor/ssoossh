@@ -62,8 +62,19 @@
 # server:
 
 # The server's CA public key. Left empty, the client fetches it from the
-# server on first use. Pin it here to avoid trusting a fetched key.
+# server on first use and caches it for a day under ~/.cache/ssoossh (or
+# %LocalAppData%\ssoossh on Windows), so later commands neither pay a round
+# trip nor fail while the server is restarting. Pin it here to avoid
+# trusting a fetched key: a pinned key is also the only one reported to the
+# server, so an approval page can warn before this client refuses a
+# certificate.
 # capubkey:
+#
+# A list pins more than one, which is what a CA rotation needs -- both keys
+# are live at once while the old one ages out.
+# capubkey:
+#   - "ssh-ed25519 AAAA... ssoossh-ca-old"
+#   - "ssh-ed25519 AAAA... ssoossh-ca-new"
 
 # Skip TLS verification of the server. For development against a self-signed
 # certificate; it defeats the point of pinning capubkey above.

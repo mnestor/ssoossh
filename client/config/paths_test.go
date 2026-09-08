@@ -137,3 +137,76 @@ func TestDefaultSearchPaths_ShouldProduceAbsoluteSystemPath(t *testing.T) {
 func isWindowsAbs(p string) bool {
 	return len(p) >= 3 && p[1] == ':' && (p[2] == '\\' || p[2] == '/')
 }
+
+// The cache is machine state, not configuration, so it must land outside
+// every directory searchPaths merges — a cached key written into the
+// per-user config would outrank a capubkey an administrator later set in
+// the system one.
+func TestCACacheFile(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		goos         string
+		home         string
+		xdgCacheHome string
+		localAppData string
+		want         string
+	}{
+		{
+			name: "should use ~/.cache on linux",
+			goos: "linux", home: "/home/u",
+			want: "/home/u/.cache/ssoossh/ca.json",
+		},
+		{
+			name: "should use ~/.cache on macos, matching the config file's choice to ignore ~/Library",
+			goos: "darwin", home: "/Users/u",
+			want: "/Users/u/.cache/ssoossh/ca.json",
+		},
+		{
+			name: "should honor XDG_CACHE_HOME when it is set",
+			goos: "linux", home: "/home/u", xdgCacheHome: "/var/tmp/cache",
+			want: "/var/tmp/cache/ssoossh/ca.json",
+		},
+		{
+			name: "should prefer XDG_CACHE_HOME even with no home directory",
+			goos: "linux", home: "", xdgCacheHome: "/var/tmp/cache",
+			want: "/var/tmp/cache/ssoossh/ca.json",
+		},
+		{
+			name: "should return nothing when there is no home and no XDG_CACHE_HOME",
+			goos: "linux", home: "",
+			want: "",
+		},
+		{
+			name: "should use LocalAppData on windows, not the roaming profile a cache has no business in",
+			goos: "windows", home: `C:\Users\u`, localAppData: `C:\Users\u\AppData\Local`,
+			want: filepath.Join(`C:\Users\u\AppData\Local`, "ssoossh", "ca.json"),
+		},
+		{
+			name: "should fall back to the standard local path when LocalAppData is missing",
+			goos: "windows", home: `C:\Users\u`,
+			want: filepath.Join(`C:\Users\u`, "AppData", "Local", "ssoossh", "ca.json"),
+		},
+		{
+			name: "should return nothing on windows with neither LocalAppData nor a home",
+			goos: "windows", home: "",
+			want: "",
+		},
+		{
+			name: "should ignore XDG_CACHE_HOME on windows",
+			goos: "windows", home: `C:\Users\u`, xdgCacheHome: "/var/tmp/cache", localAppData: `C:\Users\u\AppData\Local`,
+			want: filepath.Join(`C:\Users\u\AppData\Local`, "ssoossh", "ca.json"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := caCacheFile(tt.goos, tt.home, tt.xdgCacheHome, tt.localAppData); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

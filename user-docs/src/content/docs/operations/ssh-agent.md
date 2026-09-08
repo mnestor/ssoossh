@@ -227,12 +227,59 @@ systemctl start ssoosshd
 0600 under its own account, which is also what keeps every other user on
 the box away from a signing oracle.
 
+### Delegating those two steps without full root
+
+Loading the key does not start the server. `ssh-add` speaks to the agent
+over its socket and knows nothing about systemd, and `BindsTo=` is a
+`Requires=`-style dependency: it propagates a start from `ssoosshd` to the
+agent, and a stop back the other way, never a start. So `systemctl start
+ssoosshd` stays a second, separate action, and it has to come after the key
+is in. Run it first and it pulls the agent up empty, then fails on the
+missing key.
+
+Both steps can be granted on their own:
+
+```text
+# /etc/sudoers.d/ssoossh-agent
+Cmnd_Alias SSOOSSH_AGENT = /usr/bin/ssh-add -, /usr/bin/ssh-add -l
+Cmnd_Alias SSOOSSH_START = /usr/bin/systemctl start ssoosshd.service
+
+mnestor ALL=(ssoossh) NOPASSWD:SETENV: SSOOSSH_AGENT
+mnestor ALL=(root)    NOPASSWD: SSOOSSH_START
+```
+
+`NOPASSWD` is not a convenience here. Standard input is the key, and
+`ssh ca-host '...'` allocates no terminal, so a rule that prompts for a
+password has nowhere to ask. Do not reach for `ssh -t` to supply one: a pty
+makes standard input a terminal, which echoes the key into the scrollback
+the pipe exists to keep it out of.
+
+`SETENV:` is what permits the inline `SSH_AUTH_SOCK=`. sudoers implies that
+tag only when the command matched is `ALL`, so a rule naming `ssh-add` has
+to say it, and without it `sudo` refuses before running anything:
+
+```text
+sudo: sorry, you are not allowed to set the following environment variables: SSH_AUTH_SOCK
+```
+
+`sudo -u ssoossh env SSH_AUTH_SOCK=... ssh-add -` avoids the tag by
+permitting `/usr/bin/env` instead, which is a wildcard for running anything
+at all as `ssoossh`. Prefer the tag.
+
+The argument lists matter too. sudoers matches them exactly, so the alias
+grants the stdin form and the listing and nothing else: not `ssh-add -D`,
+which empties the agent and leaves a server that is up and cannot sign, and
+not `ssh-add /path/to/key`, which is the disk copy this page exists to
+avoid.
+
 :::note[Clients during the window]
-While `ssoosshd` is stopped, a client that has already pinned the CA public
-key reuses a still-valid certificate and never contacts the server, so an
-unexpired session is unaffected. A client that has not will fail, because it
-fetches `/api/ca` during startup before anything else. Pin `capubkey` in the
-client configuration you distribute if this window is ever more than brief.
+While `ssoosshd` is stopped, a client holding a still-valid certificate
+reuses it and never contacts the server, so an unexpired session is
+unaffected. That works whether the client pinned `capubkey` or is running on
+[its cached copy](/ssoossh/reference/client-config/#the-ca-key-cache) of the
+key, which is what a client that has ever reached this server has. Only a
+client that has never talked to it, or whose certificate expired during the
+window, has to wait for the key to be loaded.
 :::
 
 ## Supported CA key types

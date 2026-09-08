@@ -278,7 +278,7 @@ func TestStorageDescription_ShouldReportTheResolvedBackend(t *testing.T) {
 // The truncation is the part worth pinning: the summary exists so two
 // deployments can be compared at a glance, which stops working if it prints
 // the whole blob or too little of it to tell two CAs apart.
-func TestCASummary(t *testing.T) {
+func TestCAKeySummary(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -302,7 +302,48 @@ func TestCASummary(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := caSummary(tt.ca); got != tt.want {
+			if got := caKeySummary(tt.ca); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// A rotation puts two keys in the report at once, and showing only one of
+// them is what sends a reader looking for a bug that is not there.
+func TestCASummary_ShouldRenderEveryKey(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		cas  []string
+		want string
+	}{
+		{name: "should render nothing when there are no keys", cas: nil, want: ""},
+		{
+			name: "should render one key on its own",
+			cas:  []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJirRcsGXT31qUGNbgTkbI6sxq1SbSLN++XEr705S8ko ca@example"},
+			want: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA…",
+		},
+		{
+			name: "should join both keys during a rotation",
+			cas: []string{
+				"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJirRcsGXT31qUGNbgTkbI6sxq1SbSLN++XEr705S8ko ca-old@example",
+				"ssh-ed25519 BBBBC3NzaC1lZDI1NTE5AAAAIJirRcsGXT31qUGNbgTkbI6sxq1SbSLN++XEr705S8ko ca-new@example",
+			},
+			want: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA…, ssh-ed25519 BBBBC3NzaC1lZDI1NTE5AAAA…",
+		},
+		{
+			name: "should skip an empty entry rather than render a stray separator",
+			cas:  []string{"ssh-ed25519 AAAA", ""},
+			want: "ssh-ed25519 AAAA",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := caSummary(tt.cas); got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)
 			}
 		})

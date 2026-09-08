@@ -175,10 +175,26 @@ func storageDescription(ssh agentDescriber) string {
 	return fmt.Sprintf("%s (%s)", ssh.Type(), ssh.Backend())
 }
 
-// caSummary shortens the CA public key to its comment-free key material,
+// caSummary shortens each CA public key to its comment-free key material,
 // truncated: the full base64 blob is several lines of terminal noise and
 // nobody reads it, but enough of it to compare two deployments is useful.
-func caSummary(ca string) string {
+//
+// Joined with ", " when there is more than one, which is what a CA rotation
+// looks like while both keys are live. Seeing both is the point: a report
+// showing one key during a rotation is the report that sends someone
+// looking for a bug that is not there.
+func caSummary(cas []string) string {
+	summaries := make([]string, 0, len(cas))
+	for _, ca := range cas {
+		if s := caKeySummary(ca); s != "" {
+			summaries = append(summaries, s)
+		}
+	}
+	return strings.Join(summaries, ", ")
+}
+
+// caKeySummary shortens one authorized_keys line.
+func caKeySummary(ca string) string {
 	if ca == "" {
 		return ""
 	}

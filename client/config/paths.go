@@ -107,3 +107,51 @@ func userConfigFile(goos, home, appData string) string {
 	}
 	return filepath.Join(home, ".config", configFileName)
 }
+
+// caCacheFileName is the CA key cache's name inside the cache directory.
+const caCacheFileName = "ca.json"
+
+// CACacheFile returns the path of the CA public key cache, or "" when the
+// platform gives no usable answer (no home directory), in which case the
+// client simply does not cache.
+func CACacheFile() string {
+	return caCacheFile(runtime.GOOS, homeDir(), os.Getenv("XDG_CACHE_HOME"), os.Getenv("LocalAppData"))
+}
+
+// caCacheFile returns the CA key cache path for goos.
+//
+// Cached data, not configuration: it is machine state the client rewrites
+// on its own schedule, so it stays out of the configuration directories
+// entirely. Putting it in ssoossh.yaml would be worse than untidy — the
+// per-user config outranks the system one (see searchPaths), so a cached
+// key written there would silently shadow a capubkey an administrator
+// added to /etc/ssoossh/ssoossh.yaml afterwards.
+//
+// XDG_CACHE_HOME is honored here even though XDG_CONFIG_HOME is not for
+// the configuration file. That inconsistency is deliberate: the
+// configuration path is a compatibility constraint (moving an existing
+// installation's config is worse than being unconventional), while this
+// file is new and has nothing to stay compatible with.
+//
+// On Windows it is %LocalAppData%\ssoossh\ca.json — local rather than
+// roaming, unlike the config, because a cache has no business being
+// synchronized between a user's machines.
+func caCacheFile(goos, home, xdgCacheHome, localAppData string) string {
+	if goos == "windows" {
+		if localAppData == "" {
+			if home == "" {
+				return ""
+			}
+			localAppData = filepath.Join(home, "AppData", "Local")
+		}
+		return filepath.Join(localAppData, appDirName, caCacheFileName)
+	}
+
+	if xdgCacheHome != "" {
+		return filepath.Join(xdgCacheHome, appDirName, caCacheFileName)
+	}
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".cache", appDirName, caCacheFileName)
+}

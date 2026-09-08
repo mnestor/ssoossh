@@ -212,7 +212,13 @@ type fakeAPIClient struct {
 	retrieveCalled bool
 }
 
-func (f *fakeAPIClient) GetCA(ctx context.Context) (string, error) { return "", nil }
+// testCAKey is what the fake server answers /api/ca with. A real key
+// rather than an empty string: the client refuses to proceed without a CA
+// key, and a fake that hands back nothing exercises a response the real
+// server never sends (it returns an error when no signer has registered).
+const testCAKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJirRcsGXT31qUGNbgTkbI6sxq1SbSLN++XEr705S8ko ca@example"
+
+func (f *fakeAPIClient) GetCA(ctx context.Context) (string, error) { return testCAKey, nil }
 func (f *fakeAPIClient) CreateUserRequest(_ context.Context, hc hostinfo.HostContext, publicKey string, trustedCAFingerprints []string, opts api.RequestedOptions) (*api.PendingRequest, error) {
 	f.createdWith = append(f.createdWith, publicKey)
 	f.createdWithOpts = append(f.createdWithOpts, opts)

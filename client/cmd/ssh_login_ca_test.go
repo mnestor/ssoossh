@@ -27,12 +27,12 @@ func TestPinnedCAFingerprints(t *testing.T) {
 	}{
 		{
 			name: "should report the fingerprint when the key was pinned",
-			cfg:  &config.Config{CAPubkey: caKey, CAPubkeyPinned: true},
+			cfg:  &config.Config{CAPubkey: []string{caKey}, CAPubkeyPinned: true},
 			want: 1,
 		},
 		{
 			name: "should report nothing when the key was fetched from the server",
-			cfg:  &config.Config{CAPubkey: caKey, CAPubkeyPinned: false},
+			cfg:  &config.Config{CAPubkey: []string{caKey}, CAPubkeyPinned: false},
 			want: 0,
 		},
 		{
@@ -44,7 +44,7 @@ func TestPinnedCAFingerprints(t *testing.T) {
 		// will not parse is reported as no fingerprint.
 		{
 			name: "should report nothing when the pinned key will not parse",
-			cfg:  &config.Config{CAPubkey: "not-a-key", CAPubkeyPinned: true},
+			cfg:  &config.Config{CAPubkey: []string{"not-a-key"}, CAPubkeyPinned: true},
 			want: 0,
 		},
 		{
@@ -72,7 +72,7 @@ func TestPinnedCAFingerprints_ShouldUseTheOpenSSHForm(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config.Config{
-		CAPubkey:       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJirRcsGXT31qUGNbgTkbI6sxq1SbSLN++XEr705S8ko ca@example",
+		CAPubkey:       []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJirRcsGXT31qUGNbgTkbI6sxq1SbSLN++XEr705S8ko ca@example"},
 		CAPubkeyPinned: true,
 	}
 
