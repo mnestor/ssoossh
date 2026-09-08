@@ -171,7 +171,7 @@ describe('rail user menu', () => {
 		await open();
 		await userEvent.keyboard('{Escape}');
 
-		expect(screen.queryByTestId('rail-user-menu')).not.toBeInTheDocument();
+		await waitFor(() => expect(screen.queryByTestId('rail-user-menu')).not.toBeInTheDocument());
 	});
 
 	// Escape must not leave the caret at the top of the document, or a
@@ -194,7 +194,7 @@ describe('rail user menu', () => {
 		await open();
 		await userEvent.click(screen.getByTestId('rail-user-trigger'));
 
-		expect(screen.queryByTestId('rail-user-menu')).not.toBeInTheDocument();
+		await waitFor(() => expect(screen.queryByTestId('rail-user-menu')).not.toBeInTheDocument());
 	});
 
 	// A destination inside the popover leaves two layers over the page it

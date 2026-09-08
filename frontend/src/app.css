@@ -106,6 +106,17 @@
 	   -0.01em on both headings. That is drift, not a scale. The eyebrow
 	   width is Tailwind tracking-widest already, so only the two it lacks
 	   are defined here. */
+	/* The two durations everything that appears or disappears is drawn from.
+	   An entrance is slow enough to be followed and short enough not to be
+	   waited on; an exit is about 40% faster, because a reader who has
+	   dismissed something has already stopped looking at it.
+
+	   Stated again as ENTER_MS and EXIT_MS in $lib/motion, for the overlays
+	   that are animated by a Svelte transition rather than by CSS. The two
+	   have to agree and there is no way to read one from the other. */
+	--duration-enter: 220ms;
+	--duration-exit: 130ms;
+
 	--tracking-heading: -0.01em;
 	--tracking-label: 0.06em;
 
@@ -198,8 +209,26 @@
 		backdrop-filter: blur(4px);
 	}
 
+	/* The backdrop is painted the instant showModal() runs, so its arrival
+	   needs @starting-style rather than a transition from a previous value:
+	   there is no previous value to leave.
+
+	   Its departure is not animated and cannot be from here. Every caller
+	   dismisses one of these dialogs by unmounting the component rather than
+	   by calling close(), so the element and its backdrop leave the DOM
+	   together. Giving the backdrop an exit means giving the dialog control
+	   over when its own removal happens, which is a change to the contract
+	   it has with its callers rather than a change to how it looks. The
+	   panel inside does animate out, which is what the eye is following. */
 	.modal-dialog::backdrop {
 		background-color: var(--color-scrim);
+		transition: background-color var(--duration-enter) var(--ease-out);
+	}
+
+	@starting-style {
+		.modal-dialog[open]::backdrop {
+			background-color: transparent;
+		}
 	}
 
 	/* The shared look of a data table.
@@ -294,6 +323,35 @@
 	:focus-visible {
 		outline: 2px solid var(--color-accent);
 		outline-offset: 2px;
+	}
+}
+
+@layer base {
+	/* Everything the app animates, turned down to nothing for a reader who
+	   asked their system for less motion.
+
+	   Near-zero rather than `animation: none`, so an animation still starts
+	   and still ends: a component listening for `animationend` to clean up
+	   after itself keeps working, where switching the animation off would
+	   leave it waiting for an event that never comes. `::backdrop` is named
+	   explicitly because `*` does not match a pseudo-element, and the modal
+	   backdrop is animated.
+
+	   The Svelte transitions on the drawer, the identity popover and the two
+	   dialogs are driven from JavaScript and cannot be reached from here;
+	   they ask $lib/motion for a duration instead, which returns zero under
+	   the same query. */
+	@media (prefers-reduced-motion: reduce) {
+		*,
+		*::before,
+		*::after,
+		*::backdrop {
+			animation-duration: 0.01ms !important;
+			animation-delay: 0ms !important;
+			transition-duration: 0.01ms !important;
+			transition-delay: 0ms !important;
+			scroll-behavior: auto !important;
+		}
 	}
 }
 

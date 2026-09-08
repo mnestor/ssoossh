@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -168,7 +168,11 @@ describe('Admin user detail', () => {
 		await screen.findByText(/Disable this account\?/);
 		await userEvent.click(screen.getByRole('button', { name: /Cancel/ }));
 
-		expect(screen.queryByText(/Disable this account\?/)).not.toBeInTheDocument();
+		// The dialog has an exit now, so it is still in the document for the
+		// length of one after Cancel is pressed.
+		await waitFor(() =>
+			expect(screen.queryByText(/Disable this account\?/)).not.toBeInTheDocument()
+		);
 	});
 
 	it('should report who disabled an already-disabled user', async () => {

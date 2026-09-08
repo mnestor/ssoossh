@@ -31,7 +31,85 @@ on top floating on a grey that reads as another surface. It is used by the
 `.modal-dialog::backdrop` rule and by the navigation drawer, which disagreed
 about the value (0.55 against 0.40) until they were given one name.
 
-### Dark Mode
+### Motion
+
+Two durations, two curves, one rule: **everything that appears has to
+disappear on purpose.** An element that animates in and then vanishes on the
+frame it is removed reads as a glitch rather than as a dismissal.
+
+- `--duration-enter`: `220ms` — anything arriving. Slow enough to be
+  followed, short enough not to be waited on.
+- `--duration-exit`: `130ms` — anything leaving. About 40% faster, because a
+  reader who has dismissed something has already stopped looking at it.
+- Entrances ease **out** (`cubicOut`): a thing that has come to rest
+  decelerates into place.
+- Exits ease **in** (`cubicIn`): a thing that is gone accelerates away.
+- `linear` is for a spinner and for the skeleton shimmer, and for nothing
+  that starts or stops.
+
+The same two numbers live in two places and have to agree, because there is
+no way to read one from the other:
+
+- `--duration-enter` / `--duration-exit` in `app.css`, for what CSS animates
+  (the modal backdrop).
+- `ENTER_MS` / `EXIT_MS` in `$lib/motion`, for what a Svelte transition
+  animates (the navigation drawer, the identity popover, both dialogs).
+
+`$lib/motion` also exports `enterMs()` and `exitMs()`, which return **zero**
+when the reader has asked their system for reduced motion. Use those rather
+than the constants: a Svelte transition runs from JavaScript, so the
+`prefers-reduced-motion` block in `app.css` cannot reach it.
+
+```svelte
+{#if open}
+	<div
+		in:scale={{ start: 0.96, opacity: 0, duration: enterMs(), easing: easeEnter }}
+		out:scale={{ start: 0.96, opacity: 0, duration: exitMs(), easing: easeExit }}
+	>
+```
+
+### What is animated
+
+| Surface                               | Entrance                                | Exit                                     |
+| ------------------------------------- | --------------------------------------- | ---------------------------------------- |
+| Navigation drawer (below `lg`)        | fly in from `-260px` + scrim fade       | the same, reversed, at the exit duration |
+| Rail identity popover                 | scale from `0.96` + fade                | the same, reversed                       |
+| `ConfirmModal` / `ConsentModal` panel | scale from `0.96` + fade                | the same, reversed                       |
+| `.modal-dialog::backdrop`             | `@starting-style` fade from transparent | **not animated** — see below             |
+| `Button` press                        | `active:scale-98` at `100ms`            | released at the same speed               |
+| `StatusBadge` signing spinner         | `motion-safe:animate-spin`, continuous  | n/a                                      |
+| `.skeleton` shimmer                   | continuous `linear` sweep               | n/a                                      |
+
+The modal backdrop arrives but does not leave. Every caller dismisses a
+dialog by unmounting the component rather than by calling `close()`, so the
+element and its backdrop leave the DOM together and there is nothing left to
+transition. Giving the backdrop an exit means giving the dialog control over
+when its own removal happens, which is a change to the contract it has with
+its callers rather than a change to how it looks. The panel inside does
+animate out, which is what the eye is following.
+
+`RailGroup` still expands with no transition at all, deliberately: a group
+that animated its height would fight the rail's own width transition on a
+collapse, and the two together read as the whole panel wobbling. The caret is
+the only thing that moves.
+
+### Reduced motion
+
+Two halves, because there are two animation engines:
+
+- CSS: one block in `app.css` turns every `animation-duration` and
+  `transition-duration` down to `0.01ms` under
+  `prefers-reduced-motion: reduce`. Near-zero rather than `animation: none`,
+  so an animation still starts and still ends and a component listening for
+  `animationend` keeps working. `::backdrop` is named explicitly, because `*`
+  does not match a pseudo-element.
+- JavaScript: `enterMs()` and `exitMs()` return zero under the same query.
+
+The one exception is `.skeleton`, whose sweep stops outright. Nothing listens
+for an `animationend` it will never fire, and a near-zero infinite loop is a
+strobe.
+
+## Dark Mode
 
 The `.dark` class on `<html>` inverts all tokens while keeping the semantic meaning intact, and flips `color-scheme` with them. See the `.dark` block in `src/app.css`.
 
@@ -638,9 +716,11 @@ none of that.
   Nothing renders for the first 300ms, because below that a load is quicker than a reader registers a change and a placeholder that appears and vanishes inside a third of a second reads as a flicker rather than as progress. The gate re-arms on every mount, so a filter chip or a page turn earns its own 300ms of silence.
 
   The bars are `aria-hidden`: none of it is content. The `label` prop adds an `sr-only` `role="status"` sentence and is **empty by default**, which is deliberate. The lists carry `ListStatus`, which stays silent until a request settles precisely so a debounced search does not announce "Loading" once per keystroke; announcing here as well would put back the noise that component exists to keep out. A detail page that loads once has no such problem and passes a label.
+
 - **EmptyState**: A list with nothing in it, said properly — an icon, a short title, the sentence that says what would fill it, and optionally one real control. The screens that had an empty state wrote a single muted line ("No users found"), which leaves a reader unable to tell apart the two cases that matter: a list empty because nothing has happened yet, and a list empty because the filters on screen exclude everything in it. The first says what would fill it; the second offers a way back to the full set. `/admin/certificates` and `/admin/service-codes` now branch on exactly that, and the filtered branch carries a Clear filters button.
 
   The icon is decoration and hidden from assistive technology: the title says the same thing in words.
+
 - **ConfirmModal**: The one shape a confirmation takes — a native `<dialog>` holding the consequence, a required reason, Cancel and the confirming button. Callers supply the wording and the endpoint and nothing else. See Destructive actions.
 - **ExpireCodeAction**: The retire-this-code button and its `ConfirmModal`, for a page heading's `action` slot. One component for both sides of a code — an admin on `/admin/service-codes/<id>` and a holder on `/service-codes/<id>` — because the two differ only in which endpoint they call, and the reason field, the confirmation and the error wording are what is worth keeping identical.
 - **Lifetime policy rows** (certificate detail page): the policy engine records its ceiling and result by calling `String()` on a Go `time.Duration`, so they arrive as `8h0m0s`. `formatGoDuration` in `$lib/format` parses that and hands it to `formatDuration`, so a policy ceiling reads the way every other lifetime on the site does — `8h`, `1h 30m`, `7d`. Parsed on the client rather than fixed on the wire because the explanation document is stored on the decision: every certificate already issued carries the old spelling. A value that does not parse is passed through as it arrived, and so is anything under a second, which `formatDuration` would round to `0s`. The rows lost their `mono` for it: they are a length of time now, not a token to copy.
@@ -989,6 +1069,10 @@ promise six things while the app broke four of them, because nothing checked.
   a name the platform will actually keep: `aria-label` on a bare `<span>` is
   prohibited by ARIA and dropped by browsers, which is how `TypeBadge` spent
   its life announcing nothing. Put the words in the document with `sr-only`.
+- **Reduced motion**: `prefers-reduced-motion: reduce` is honoured in both
+  engines — a CSS block in `app.css` for what CSS animates, and `enterMs()` /
+  `exitMs()` in `$lib/motion` for the Svelte transitions CSS cannot reach.
+  See Motion.
 - **Colour alone**: state is never colour alone. A two-state control is
   filled when pressed and carries `aria-pressed` — see `FilterChip`, which
   is the shape every one of them should take.

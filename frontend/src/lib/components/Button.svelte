@@ -29,6 +29,11 @@
 		children
 	}: Props = $props();
 
+	// A press has to answer inside 100ms or it does not read as a press at
+	// all, which is why the whole transition runs at 100 rather than at the
+	// 150 Tailwind gives a bare `transition`. The scale is 2%: enough to
+	// register under a finger, small enough that a row of buttons does not
+	// appear to wobble.
 	const variants = {
 		primary: 'bg-accent text-accent-ink hover:bg-accent-hover',
 		danger: 'bg-danger-surface text-danger hover:brightness-95',
@@ -42,7 +47,7 @@
 	{onclick}
 	aria-busy={busy}
 	data-testid={testid}
-	class="inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition disabled:opacity-50 {full
+	class="inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition duration-100 active:scale-98 disabled:opacity-50 {full
 		? 'w-full'
 		: ''} {variants[variant]}"
 >

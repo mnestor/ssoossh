@@ -1,5 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { scale } from 'svelte/transition';
+	import { easeEnter, easeExit, enterMs, exitMs } from '$lib/motion';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
 
@@ -95,7 +97,11 @@
 	aria-labelledby="confirm-modal-heading"
 	class="modal-dialog z-50"
 >
+	<!-- The panel animates, the backdrop only arrives: see the ::backdrop
+	     note in app.css for why its departure cannot be timed from here. -->
 	<div
+		in:scale={{ start: 0.96, opacity: 0, duration: enterMs(), easing: easeEnter }}
+		out:scale={{ start: 0.96, opacity: 0, duration: exitMs(), easing: easeExit }}
 		class="flex w-full max-w-md flex-col gap-4 rounded-xl border border-border-subtle bg-surface p-6 shadow-lg"
 	>
 		<h2 id="confirm-modal-heading" class="text-lg font-semibold text-ink">{title}</h2>

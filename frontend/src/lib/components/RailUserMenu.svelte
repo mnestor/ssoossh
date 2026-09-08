@@ -10,6 +10,8 @@
 	import Icon from './Icon.svelte';
 	import ThemeToggle from './ThemeToggle.svelte';
 	import { railRowClass } from './railClasses';
+	import { scale } from 'svelte/transition';
+	import { easeEnter, easeExit, enterMs, exitMs } from '$lib/motion';
 	import { accountNav, isCurrent } from '$lib/nav';
 	import { session } from '$lib/session.svelte';
 
@@ -112,6 +114,8 @@
 		     truncate every row it exists to spell out. -->
 		<div
 			data-testid="rail-user-menu"
+			in:scale={{ start: 0.96, opacity: 0, duration: enterMs(), easing: easeEnter }}
+			out:scale={{ start: 0.96, opacity: 0, duration: exitMs(), easing: easeExit }}
 			class="absolute z-50 rounded-lg border border-border-subtle bg-surface p-1.5 shadow-lg"
 			class:right-0={!collapsed}
 			class:left-0={!collapsed}

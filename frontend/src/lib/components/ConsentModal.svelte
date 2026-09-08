@@ -1,5 +1,8 @@
 <script lang="ts">
+	import { scale } from 'svelte/transition';
+
 	import Button from './Button.svelte';
+	import { easeEnter, easeExit, enterMs, exitMs } from '$lib/motion';
 
 	interface Props {
 		notice: string;
@@ -45,6 +48,8 @@
 		class="modal-dialog z-50"
 	>
 		<div
+			in:scale={{ start: 0.96, opacity: 0, duration: enterMs(), easing: easeEnter }}
+			out:scale={{ start: 0.96, opacity: 0, duration: exitMs(), easing: easeExit }}
 			class="flex w-full max-w-[520px] flex-col gap-4 rounded-xl border border-border-subtle bg-surface p-7 shadow-lg"
 		>
 			<h2 id="consent-notice-heading" class="sr-only">Notice</h2>
