@@ -67,18 +67,18 @@
 </script>
 
 <PageSection title="Who has access" testid="account-holders">
-	<p class="mb-2 text-[13px] text-ink-muted">
+	<p class="mb-2 text-dense text-ink-muted">
 		Everyone holding
 		{#if serviceAccount}<span class="font-mono">{serviceAccount}</span>{:else}this service account{/if}
 		can see and manage this code, whoever approved it.
 	</p>
 
 	{#if loadError}
-		<p class="text-[13px] text-ink-muted" data-testid="account-holders-error">{loadError}</p>
+		<p class="text-dense text-ink-muted" data-testid="account-holders-error">{loadError}</p>
 	{:else if holders === null}
-		<p class="text-[13px] text-ink-muted">Loading…</p>
+		<p class="text-dense text-ink-muted">Loading…</p>
 	{:else if holders.length === 0}
-		<p class="text-[13px] text-ink-muted" data-testid="account-holders-empty">
+		<p class="text-dense text-ink-muted" data-testid="account-holders-empty">
 			Nobody who has signed in holds this account. Notifications about this code reach nobody unless
 			an address is set below.
 		</p>
@@ -88,20 +88,20 @@
 			{#each holders as holder (holder.user_id)}
 				<div class="flex items-start justify-between gap-3 py-2" data-testid="account-holder">
 					<div class="min-w-0">
-						<div class="flex flex-wrap items-baseline gap-x-2 text-[13px]">
+						<div class="flex flex-wrap items-baseline gap-x-2 text-dense">
 							<span class="font-medium text-ink">{label(holder)}</span>
 							{#if holder.name}
-								<span class="font-mono text-[11px] text-ink-muted">{holder.username}</span>
+								<span class="font-mono text-meta text-ink-muted">{holder.username}</span>
 							{/if}
 							{#if viewerUsername && holder.username === viewerUsername}
-								<span class="text-[11px] text-ink-muted">(you)</span>
+								<span class="text-meta text-ink-muted">(you)</span>
 							{/if}
 						</div>
 						{#if holder.email}
-							<div class="text-[11px] text-ink-muted">{holder.email}</div>
+							<div class="text-meta text-ink-muted">{holder.email}</div>
 						{/if}
 					</div>
-					<div class="flex flex-shrink-0 flex-col items-end gap-0.5 text-[11px]">
+					<div class="flex flex-shrink-0 flex-col items-end gap-0.5 text-meta">
 						{#if holder.disabled}
 							<!-- Listed rather than dropped: the claim is still
 							     on their row and comes back with the account,
@@ -128,7 +128,7 @@
 	     property that matters — somebody who has lost the account drops off
 	     this list and loses access at the same moment, on their next sign-in,
 	     rather than one changing without the other. -->
-	<p class="mt-2 text-[11px] text-ink-muted" data-testid="account-holders-caveat">
+	<p class="mt-2 text-meta text-ink-muted" data-testid="account-holders-caveat">
 		Built from what each person's last sign-in or directory sync reported, so somebody the server
 		has never seen is not listed, and a change made since is not reflected until it is read again.
 		Access is decided from the same records, so this list and what the server allows never disagree.

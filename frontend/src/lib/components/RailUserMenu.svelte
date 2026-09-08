@@ -140,7 +140,7 @@
 					<Icon name="user-circle" size="sm" class="shrink-0" />
 					<span class="min-w-0">
 						{#if fullName}
-							<span class="block truncate text-[13px] font-semibold">{fullName}</span>
+							<span class="block truncate text-dense font-semibold">{fullName}</span>
 						{/if}
 						<span class="block truncate text-xs {onAccount ? 'text-accent' : 'text-ink-muted'}"
 							>{identity}</span

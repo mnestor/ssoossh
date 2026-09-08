@@ -23,6 +23,13 @@ The app uses a curated set of CSS custom properties defined in `src/app.css`. Al
 - `--color-trimmed-surface`: `oklch(95% 0.02 75)` — trimmed/warning backgrounds
 - `--color-danger`: `oklch(48% 0.13 25)` — error/denied status (red)
 - `--color-danger-surface`: `oklch(95% 0.03 25)` — danger/error backgrounds
+- `--color-scrim`: `rgb(0 0 0 / 0.55)` — the dim behind anything that takes over the screen
+
+`--color-scrim` is the one token that is not restated for dark mode. A scrim
+is an absence of light in both themes, and lightening it would leave the panel
+on top floating on a grey that reads as another surface. It is used by the
+`.modal-dialog::backdrop` rule and by the navigation drawer, which disagreed
+about the value (0.55 against 0.40) until they were given one name.
 
 ### Dark Mode
 
@@ -41,24 +48,51 @@ Both fonts are imported in `src/app.css` and serve the entire app; no fallback t
 
 ### Font Sizes
 
-All sizes use CSS custom properties (the `--font-size-*` block in `app.css`):
+All sizes use CSS custom properties (the `--text-*` block in `app.css`), and
+every one of them has a utility: `text-micro`, `text-meta`, `text-dense` and
+`text-display` alongside Tailwind's own `text-xs` through `text-2xl`.
 
-- `--font-size-xs`: `0.75rem` (12px) — auxiliary labels, helper text
-- `--font-size-sm`: `0.875rem` (14px) — body text, table data, secondary text
-- `--font-size-base`: `1rem` (16px) — default base size
-- `--font-size-lg`: `1.125rem` (18px) — subheadings, prominent labels
-- `--font-size-xl`: `1.25rem` (20px) — main headings
+- `--text-micro`: `0.625rem` (10px) — uppercase micro-labels inside a chip
+- `--text-meta`: `0.6875rem` (11px) — eyebrow labels, timestamps, secondary meta
+- `--text-xs`: `0.75rem` (12px) — auxiliary labels, helper text
+- `--text-dense`: `0.8125rem` (13px) — the body size of a dense row or detail value
+- `--text-sm`: `0.875rem` (14px) — body text, table data, secondary text
+- `--text-base`: `1rem` (16px) — default base size
+- `--text-lg`: `1.125rem` (18px) — subheadings, prominent labels
+- `--text-xl`: `1.25rem` (20px) — main headings, and the page heading below `sm`
+- `--text-display`: `1.625rem` (26px) — the page heading above `sm`, the largest size in the app
 
-### Line Heights & Weights
+The names matter as much as the values. `--font-size-*` and `--line-height-*`
+are not Tailwind v4 namespaces — `--text-*` and `--leading-*` are — so under
+the old spelling this block emitted no utilities and every `text-sm` in the
+app was falling through to a built-in default that happened to agree. Same
+trap the `--font-family-*` note in `app.css` describes. If you add a size,
+add it as `--text-<name>` or it will not exist.
 
-- `--line-height-tight`: `1.25` — headings, dense content
-- `--line-height-snug`: `1.375` — small text blocks
-- `--line-height-normal`: `1.5` — body text (default)
-- `--line-height-relaxed`: `1.625` — spacious, accessible reading
+`micro`, `meta` and `dense` are the three steps Tailwind's scale skips, and
+they were written 87 times as bracketed pixel values before they were named.
+They deliberately carry no paired line height, because a bracketed font size
+did not either: the line height keeps coming from whatever the row set.
+
+### Line Heights, Tracking & Weights
+
+- `--leading-tight`: `1.25` — headings, dense content
+- `--leading-snug`: `1.375` — small text blocks
+- `--leading-normal`: `1.5` — body text (default)
+- `--leading-relaxed`: `1.625` — spacious, accessible reading
+- `--tracking-heading`: `-0.01em` — the two display headings (`PageHeading`, the login splash)
+- `--tracking-label`: `0.06em` — small uppercase labels and chips
+- `tracking-widest`: `0.1em` (Tailwind's own) — the widest uppercase eyebrow: rail group heads, `.data-table` column heads
 - `--font-weight-normal`: `400`
 - `--font-weight-medium`: `500`
 - `--font-weight-semibold`: `600`
 - `--font-weight-bold`: `700`
+
+Two tracking values, not six. The tree carried 0.04, 0.05 and 0.06em on small
+uppercase labels and 0.09 and 0.1em on the widest of them, which is drift
+rather than a scale. The one deliberate exception is the console pairing-code
+input, which spaces its characters at `0.2em` so a code can be read back a
+character at a time; that is letter-spacing doing a different job.
 
 ## Iconography
 

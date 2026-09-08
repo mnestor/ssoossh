@@ -126,7 +126,7 @@
 			     its place in on the way back to the left. -->
 			<div class="flex max-w-[70ch] flex-col gap-4">
 				{#if preferences.address}
-					<p class="text-[13px] text-ink-muted">
+					<p class="text-dense text-ink-muted">
 						Sent to <MonoChip>{preferences.address}</MonoChip>
 					</p>
 				{/if}
@@ -142,13 +142,13 @@
 						/>
 						<span class="flex flex-col gap-0.5">
 							<span class="text-sm font-medium text-ink">{kind.title}</span>
-							<span class="text-[13px] text-ink-muted">{kind.description}</span>
+							<span class="text-dense text-ink-muted">{kind.description}</span>
 						</span>
 					</label>
 				{/each}
 
 				{#if preferences.kinds.length === 0}
-					<p class="text-[13px] text-ink-muted">This server offers no email notifications.</p>
+					<p class="text-dense text-ink-muted">This server offers no email notifications.</p>
 				{/if}
 			</div>
 		</PageSection>

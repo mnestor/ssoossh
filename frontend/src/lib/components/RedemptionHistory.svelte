@@ -30,13 +30,13 @@
 
 <PageSection title="Redemption history">
 	{#if retrievals.length === 0}
-		<p class="text-[13px] text-ink-muted">Never redeemed.</p>
+		<p class="text-dense text-ink-muted">Never redeemed.</p>
 	{:else}
 		{#if truncated}
 			<!-- Said before the list, not after it: a reader who stops scrolling
 			     partway through still needs to know this is the recent end of a
 			     longer history, not all of it. -->
-			<p class="mb-2 text-[13px] text-ink-muted">
+			<p class="mb-2 text-dense text-ink-muted">
 				The {retrievals.length} most recent of {total} redemptions.
 			</p>
 		{/if}
@@ -47,15 +47,15 @@
 			{#each retrievals as retrieval, index (index)}
 				<div class="flex items-center justify-between gap-3 py-3">
 					<div>
-						<div class="text-[13px]">{formatDateTime(retrieval.retrieved_at)}</div>
+						<div class="text-dense">{formatDateTime(retrieval.retrieved_at)}</div>
 						<div class="mt-1 flex items-center gap-1.5">
 							<MonoChip>{retrieval.source_ip}</MonoChip>
 							{#if !retrieval.succeeded}
-								<span class="text-[11px] font-semibold text-danger">Failed</span>
+								<span class="text-meta font-semibold text-danger">Failed</span>
 							{/if}
 						</div>
 					</div>
-					<span class="text-[11px] text-ink-muted">
+					<span class="text-meta text-ink-muted">
 						Serial <span class="font-mono">{retrieval.certificate_serial}</span>
 					</span>
 				</div>

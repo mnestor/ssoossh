@@ -99,7 +99,7 @@
 			     outside ssoossh entirely and so have no page to set it on.
 			     Changing it is audited. -->
 		<div class="space-y-2">
-			<p class="text-[13px] text-ink-muted">
+			<p class="text-dense text-ink-muted">
 				{#if storedEmail}
 					Notifications about this code go to
 					<span class="font-mono">{storedEmail}</span>. Clear the field to send them to everyone
@@ -118,7 +118,7 @@
 						data-testid="notification-email-input"
 						placeholder="deploys@example.com"
 						disabled={savingEmail}
-						class="rounded border border-border-control bg-surface px-3 py-2 text-[13px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+						class="rounded border border-border-control bg-surface px-3 py-2 text-dense text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 					/>
 				</label>
 				<Button
@@ -135,7 +135,7 @@
 					{emailError}
 				</Alert>
 			{:else if emailSaved}
-				<p class="text-[13px] text-granted" data-testid="notification-email-saved">
+				<p class="text-dense text-granted" data-testid="notification-email-saved">
 					{emailDraft ? 'Saved.' : 'Cleared — notifications go to everyone with access again.'}
 				</p>
 			{/if}

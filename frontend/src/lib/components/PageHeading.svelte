@@ -24,7 +24,7 @@
 	// hand somewhere. The chip was the same nine-class string copied onto
 	// three pages as an <a> and a fourth as a <button>, each with a `-mb-2`
 	// cancelling the shell's gap. The sub line existed in four shapes: this
-	// snippet, a `-mt-2 text-sm` paragraph, a `-mt-2 text-[13px]` one, and a
+	// snippet, a `-mt-2 text-sm` paragraph, a `-mt-2 text-dense` one, and a
 	// `text-sm` one with no pull at all.
 	interface Props {
 		/**
@@ -89,7 +89,7 @@
 			     or three lines and pushes the page's first real content off
 			     the screen, so it steps down to 20px below `sm` — still the
 			     largest thing on the page, which is all the h1 has to be. -->
-			<h1 class="text-xl leading-tight font-bold tracking-[-0.01em] sm:text-[26px]">{title}</h1>
+			<h1 class="text-xl leading-tight font-bold tracking-heading sm:text-display">{title}</h1>
 			{#if sub}
 				<p class="mt-1.5 text-sm text-ink-muted">{@render sub()}</p>
 			{/if}

@@ -39,16 +39,14 @@
 <PageShell width="focus" center>
 	<div
 		data-testid="login-view"
-		class="mx-auto flex w-full max-w-[380px] flex-col items-center gap-[22px] text-center {blocked
+		class="mx-auto flex w-full max-w-[380px] flex-col items-center gap-6 text-center {blocked
 			? 'pointer-events-none opacity-50 blur-[2px]'
 			: ''}"
 	>
 		<BrandMark size={40} strokeWidth={1.6} />
 
 		<div>
-			<h1 class="mb-2 text-[22px] leading-tight font-bold tracking-[-0.01em]">
-				Sign in to ssoossh
-			</h1>
+			<h1 class="mb-2 text-2xl leading-tight font-bold tracking-heading">Sign in to ssoossh</h1>
 			{#if session.signedIn}
 				<p class="text-sm text-ink-muted">
 					You are already signed in as <strong class="text-ink"

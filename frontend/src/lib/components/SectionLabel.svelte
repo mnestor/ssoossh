@@ -21,7 +21,7 @@
 
 	let { for: forId, children }: Props = $props();
 
-	const cls = 'mb-1.5 block text-[11px] font-semibold tracking-[0.06em] text-ink-muted uppercase';
+	const cls = 'mb-1.5 block text-meta font-semibold tracking-label text-ink-muted uppercase';
 </script>
 
 {#if forId}

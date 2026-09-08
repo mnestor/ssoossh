@@ -99,7 +99,7 @@
 		{#snippet action()}
 			<a
 				href={resolve('/logs/me')}
-				class="text-[13px] font-medium whitespace-nowrap text-accent hover:underline"
+				class="text-dense font-medium whitespace-nowrap text-accent hover:underline"
 			>
 				View all history &rarr;
 			</a>

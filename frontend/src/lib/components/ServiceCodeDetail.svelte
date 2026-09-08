@@ -138,7 +138,7 @@
 	     and a large holder set turns every redemption into a mailshot where a
 	     team alias would do. -->
 	<PageSection title="Notifications">
-		<p class="mb-2 text-[13px] text-ink-muted">
+		<p class="mb-2 text-dense text-ink-muted">
 			{#if storedEmail}
 				Notifications about this code go to
 				<span class="font-mono">{storedEmail}</span>. Clear the field to send them to everyone with
@@ -157,7 +157,7 @@
 					data-testid="notification-email-input"
 					placeholder="deploys@example.com"
 					disabled={savingEmail}
-					class="rounded border border-border-control bg-surface px-3 py-2 text-[13px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+					class="rounded border border-border-control bg-surface px-3 py-2 text-dense text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 				/>
 			</label>
 			<Button
@@ -176,7 +176,7 @@
 				</Alert>
 			</div>
 		{:else if emailSaved}
-			<p class="mt-2 text-[13px] text-granted" data-testid="notification-email-saved">
+			<p class="mt-2 text-dense text-granted" data-testid="notification-email-saved">
 				{emailDraft ? 'Saved.' : 'Cleared — notifications go to everyone with access again.'}
 			</p>
 		{/if}

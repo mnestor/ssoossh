@@ -121,7 +121,7 @@
 							<strong>{onWhom(event)}</strong>
 						{/if}
 					</p>
-					<div class="flex items-baseline gap-2 font-mono text-[11px] text-ink-muted">
+					<div class="flex items-baseline gap-2 font-mono text-meta text-ink-muted">
 						<span>{event.action}</span>
 						<time datetime={event.created_at}>{formatDateTime(event.created_at)}</time>
 					</div>
@@ -140,7 +140,7 @@
 				     to precede it, and the block reads as a field list. -->
 				{#if details(event).length > 0}
 					<dl
-						class="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 font-mono text-[11px] text-ink-muted"
+						class="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 font-mono text-meta text-ink-muted"
 					>
 						{#each details(event) as [key, value] (key)}
 							<dt>{key}</dt>

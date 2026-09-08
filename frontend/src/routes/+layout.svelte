@@ -185,7 +185,7 @@
 				aria-hidden="true"
 				tabindex="-1"
 				onclick={() => rail.closeDrawer()}
-				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+				class="fixed inset-0 z-40 bg-scrim lg:hidden"
 			></button>
 			<!-- collapsed={false}: the icon-only width is a desktop
 			     preference, and the control that undoes it is hidden at this

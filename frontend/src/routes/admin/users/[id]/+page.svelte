@@ -368,7 +368,7 @@
 						<p class="text-xs font-semibold text-ink-muted">{block.label}</p>
 						{#if block.source}
 							<span
-								class="rounded bg-surface px-2 py-0.5 text-[10px] text-ink-muted uppercase"
+								class="rounded bg-surface px-2 py-0.5 text-micro text-ink-muted uppercase"
 								data-testid="user-account-source-{block.field}">{block.source}</span
 							>
 						{/if}
@@ -477,7 +477,7 @@
 			     notification fan-out. Saying so beats an operator wondering
 			     where the memberships they remember went. -->
 			{#if !user.directory_enabled}
-				<p class="mb-4 text-[13px] text-ink-muted" data-testid="user-groups-oidc-only">
+				<p class="mb-4 text-dense text-ink-muted" data-testid="user-groups-oidc-only">
 					Only OIDC memberships are listed. <code>ldap.enabled</code> is false, so any directory-sourced
 					rows are frozen at whatever the last sync read and are withheld here and from notification fan-out.
 					They are kept on disk and come back if the directory is switched on again.
@@ -643,12 +643,12 @@
 											     comes back if the kind does. One word,
 											     because that is the whole fact. -->
 											<span
-												class="ml-1 text-[11px] text-ink-muted"
+												class="ml-1 text-meta text-ink-muted"
 												data-testid="user-notification-retired">(retired)</span
 											>
 										{/if}
 									</td>
-									<td class="font-mono text-[11px] text-ink-muted">{pref.kind}</td>
+									<td class="font-mono text-meta text-ink-muted">{pref.kind}</td>
 									<td class:text-danger={!pref.enabled} class:text-granted={pref.enabled}>
 										{pref.enabled ? 'on' : 'off'}
 									</td>

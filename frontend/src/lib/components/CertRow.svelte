@@ -129,7 +129,7 @@
 <a
 	{href}
 	data-testid={testid}
-	class="flex w-full items-center justify-between gap-4 rounded-[10px] border border-border-subtle bg-surface px-4 py-3 text-left text-ink no-underline transition hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+	class="flex w-full items-center justify-between gap-4 rounded-xl border border-border-subtle bg-surface px-4 py-3 text-left text-ink no-underline transition hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 >
 	<span class="flex min-w-0 flex-1 items-center gap-3">
 		<TypeBadge type={cert.type} />
@@ -141,7 +141,7 @@
 		<span
 			class="grid min-w-0 flex-1 gap-x-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1fr)] xl:items-baseline"
 		>
-			<span class="block truncate font-mono text-[13px]">{subject}</span>
+			<span class="block truncate font-mono text-dense">{subject}</span>
 			<!-- The lifetime and the state of it, on one line: the mark used to
 			     sit in the indicators on the far right, a column away from the
 			     "valid for 8h" it qualifies, so a reader had to pair them
