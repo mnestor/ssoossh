@@ -49,6 +49,7 @@ export default defineConfig({
 				]),
 			],
 			sidebar: [
+				{ label: 'Why ssoossh', slug: 'why' },
 				{ label: 'Getting started', slug: 'getting-started' },
 				{ label: 'How it works', items: [{ autogenerate: { directory: 'concepts' } }] },
 				{ label: 'User guide', items: [{ autogenerate: { directory: 'guides' } }] },
