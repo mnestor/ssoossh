@@ -119,6 +119,122 @@ The agent must be loaded before `ssoosshd` starts, and reloaded if the agent
 restarts. `ssoosshd` reconnects to a restarted agent on its own, but it
 cannot re-add a key nobody added.
 
+## Loading the key without writing it to disk
+
+The recipe above runs `ssh-add /etc/ssoossh/ca-key`, which means the CA key
+is a file on the server. If the point of using an agent is that the key
+never lands on that disk at all, the loading step must not be the thing
+that puts it there.
+
+`ssh-add -` reads the key from standard input:
+
+```bash
+pass show ssoossh/ca-key |
+  sudo -u ssoossh SSH_AUTH_SOCK=/run/ssoossh/agent.sock ssh-add -
+```
+
+```text
+Identity added: (stdin) (ssoossh-ca)
+```
+
+Any command that prints the key works in place of `pass show`: a password
+manager, `op read`, a `vault kv get` field, `gpg --decrypt`. What matters is
+that the key travels through a pipe and never appears as an argument, so it
+reaches neither the shell's history file nor anyone's `ps` output.
+
+The same thing from a workstation, without an interactive login on the CA
+host:
+
+```bash
+pass show ssoossh/ca-key |
+  ssh ca-host 'sudo -u ssoossh SSH_AUTH_SOCK=/run/ssoossh/agent.sock ssh-add -'
+```
+
+With no secret store to pipe from, run `ssh-add -` and paste the key, then
+press Ctrl-D. Be aware of what that costs: the terminal echoes the key as it
+arrives, so the private key ends up in scrollback, and in any session
+recording or `script` transcript that is running. Clear the scrollback
+afterwards, and prefer a pipe wherever there is something to pipe from.
+
+:::caution[Three ways to spill it anyway]
+
+- `ssh-add /path/to/key` puts the key on the disk, which is the thing this
+  whole arrangement exists to avoid.
+- `echo "$CAKEY" | ssh-add -` leaks through the assignment, not the pipe.
+  Whatever set `$CAKEY` is in the shell's history file, and if it was
+  exported, the key is readable in `/proc/<pid>/environ` for every process
+  the operator runs. Relying on `HISTCONTROL=ignorespace` to suppress the
+  first half is one forgotten space away from failing.
+- `ssh-add - <<< "$CAKEY"` depends on the shell, invisibly. Bash 5.2 backs a
+  here-string with a pipe; zsh 5.9 writes it to a temporary file under
+  `/tmp` and unlinks it, so on an operator's zsh the key does reach the
+  disk, in an unlinked file whose contents survive in free blocks.
+
+:::
+
+## Running it under systemd
+
+`ssoosshd` resolves the CA key while it starts, so an agent holding no key
+is a boot failure, not a degraded mode:
+
+```text
+ssoosshd: failed to initialize certificate pipeline: failed to load CA signing key:
+ssh-agent holds no keys: load the CA key with ssh-add, or ssh-add -s <pkcs11 module> for a token
+```
+
+That rules out starting the server at boot. It is a deliberate trade rather
+than a limitation: a key that exists only in an agent's memory does not
+survive a reboot, so a reboot is supposed to need a human. Until one loads
+the key, no certificates are issued.
+
+Two files carry the arrangement:
+
+```bash
+cp deploy/ssoossh-agent.service /etc/systemd/system/ssoossh-agent.service
+install -Dm644 deploy/ssoosshd.service.d/ssh-agent.conf \
+  /etc/systemd/system/ssoosshd.service.d/ssh-agent.conf
+systemctl daemon-reload
+systemctl disable ssoosshd
+```
+
+`systemctl disable ssoosshd` is the part a drop-in cannot express: the base
+unit's `WantedBy=multi-user.target` has to be undone, or the server tries to
+start at boot and fails every time.
+
+Three things in those files are load-bearing:
+
+- **`BindsTo=ssoossh-agent.service`** stops `ssoosshd` when the agent stops.
+  Without it an agent that dies leaves a running certificate authority that
+  cannot issue certificates, and a stopped unit is far more likely to be
+  noticed than a healthy-looking one that fails every signature.
+- **`Restart=no` on the agent** is deliberate. A restarted agent comes back
+  empty, and that is the state above.
+- **`ReadWritePaths=/run/ssoossh`** on `ssoosshd`. The shipped unit sets
+  `ProtectSystem=strict`, which makes the whole hierarchy read-only, and
+  connecting to a Unix socket needs write access to it.
+
+Starting up, in order:
+
+```bash
+systemctl start ssoossh-agent
+pass show ssoossh/ca-key |
+  sudo -u ssoossh SSH_AUTH_SOCK=/run/ssoossh/agent.sock ssh-add -
+sudo -u ssoossh SSH_AUTH_SOCK=/run/ssoossh/agent.sock ssh-add -l
+systemctl start ssoosshd
+```
+
+`ssh-add` runs as `ssoossh` because the agent creates its socket at mode
+0600 under its own account, which is also what keeps every other user on
+the box away from a signing oracle.
+
+:::note[Clients during the window]
+While `ssoosshd` is stopped, a client that has already pinned the CA public
+key reuses a still-valid certificate and never contacts the server, so an
+unexpired session is unaffected. A client that has not will fail, because it
+fetches `/api/ca` during startup before anything else. Pin `capubkey` in the
+client configuration you distribute if this window is ever more than brief.
+:::
+
 ## Supported CA key types
 
 The same algorithm policy as everywhere else, plus Ed25519:
