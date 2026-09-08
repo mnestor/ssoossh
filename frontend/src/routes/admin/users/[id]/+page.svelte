@@ -5,6 +5,7 @@
 	import { getAdminUser, disableUser, enableUser, getUserAudit } from '$lib/api/endpoints';
 	import Alert from '$lib/components/Alert.svelte';
 	import AuditTimeline from '$lib/components/AuditTimeline.svelte';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
@@ -240,7 +241,7 @@
 
 <PageShell width="full">
 	{#if busy}
-		<div class="text-center text-ink-muted">Loading...</div>
+		<LoadingBlock shape="lines" count={5} label="Loading this account…" testid="user-loading" />
 	{:else if error}
 		<Alert variant="error" title="Could not load this account">{error}</Alert>
 	{:else if user}

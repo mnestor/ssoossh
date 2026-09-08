@@ -8,6 +8,7 @@
 	} from '$lib/api/types';
 	import { errorMessage } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
@@ -165,7 +166,12 @@
 	{#if statusError}
 		<Alert variant="error" title="Could not load the directory status">{statusError}</Alert>
 	{:else if !statusLoaded}
-		<p class="text-sm text-ink-muted">Loading…</p>
+		<LoadingBlock
+			shape="lines"
+			count={3}
+			label="Loading the directory status…"
+			testid="directory-loading"
+		/>
 	{:else if status && !status.enabled}
 		<Alert variant="info" title="Directory enrichment is off" testid="ldap-disabled">
 			<code>ldap.enabled</code> is false, so nothing is synced and there is nothing to probe. OIDC claims

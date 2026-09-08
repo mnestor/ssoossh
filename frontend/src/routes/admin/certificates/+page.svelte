@@ -4,11 +4,14 @@
 	import type { CertificateResponse } from '$lib/api/types';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
+	import Button from '$lib/components/Button.svelte';
 	import CertRow from '$lib/components/CertRow.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 	import FilterGroup from '$lib/components/FilterGroup.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import ListStatus from '$lib/components/ListStatus.svelte';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import Pager from '$lib/components/Pager.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import { statusFilters, typeFilters } from '$lib/filters';
@@ -117,6 +120,33 @@
 		offset = next;
 	}
 
+	// The way out of a failed load. The effect below only re-runs when one of
+	// the four inputs changes, so without this a reader whose first request
+	// failed had to touch a filter to get a second attempt, and the page said
+	// nothing about that being the trick.
+	function retry() {
+		loadError = null;
+		loadCertificates({ offset, q: searchQuery, type: typeFilter, status: statusFilter });
+	}
+
+	// Whether anything on screen is narrowing the list. An empty result means
+	// two different things either side of this, and only one of them is worth
+	// offering a way back from.
+	const filtered = $derived(searchQuery !== '' || typeFilter !== '' || statusFilter !== '');
+
+	// Clearing the filters remounts the search box: it owns what is typed in
+	// it and does not watch `value` afterwards, so resetting the term alone
+	// would leave the old text on screen under an unfiltered list.
+	let searchKey = $state(0);
+
+	function clearFilters() {
+		searchQuery = '';
+		typeFilter = '';
+		statusFilter = '';
+		offset = 0;
+		searchKey += 1;
+	}
+
 	// What the list just became, for a reader who cannot see the rows
 	// change under a filter. See $lib/listStatus.
 	const status = $derived(
@@ -138,19 +168,26 @@
 	<PageHeading title="All certificates" />
 
 	{#if loadError}
-		<Alert variant="error" title="Could not load certificates">{loadError}</Alert>
+		<Alert variant="error" title="Could not load certificates">
+			{loadError}
+			<div class="mt-3">
+				<Button variant="ghost" onclick={retry} testid="certificates-retry">Try again</Button>
+			</div>
+		</Alert>
 	{/if}
 
 	<!-- Search, then the filter groups on one line. Both lists that show
 	     certificate rows open the same way; see $lib/filters. -->
 	<div class="flex flex-col gap-3">
-		<SearchInput
-			label="Search certificates"
-			placeholder="Key ID, principal, serial, fingerprint, owner"
-			value={searchQuery}
-			onsearch={handleSearch}
-			testid="search-input"
-		/>
+		{#key searchKey}
+			<SearchInput
+				label="Search certificates"
+				placeholder="Key ID, principal, serial, fingerprint, owner"
+				value={searchQuery}
+				onsearch={handleSearch}
+				testid="search-input"
+			/>
+		{/key}
 
 		<div class="flex flex-wrap items-center gap-x-5 gap-y-2">
 			<FilterGroup
@@ -175,9 +212,21 @@
 	<ListStatus message={status} />
 
 	{#if !hasLoaded}
-		<p class="text-sm text-ink-muted">Loading…</p>
+		<LoadingBlock shape="rows" count={5} testid="certificates-loading" />
+	{:else if certificates.length === 0 && filtered}
+		<EmptyState icon="filter-off" title="No certificates match" testid="certificates-empty">
+			{#snippet action()}
+				<Button variant="ghost" onclick={clearFilters} testid="certificates-clear-filters">
+					Clear filters
+				</Button>
+			{/snippet}
+			Nothing on this deployment matches the search and filters above.
+		</EmptyState>
 	{:else if certificates.length === 0}
-		<p class="text-sm text-ink-muted">No certificates found matching your search.</p>
+		<EmptyState icon="certificate-off" title="No certificates yet" testid="certificates-empty">
+			Nothing has been issued on this deployment. Certificates appear here as soon as the first
+			request is approved.
+		</EmptyState>
 	{:else}
 		<div data-testid="cert-list" class="flex flex-col gap-2.5">
 			{#each certificates as cert (cert.id)}

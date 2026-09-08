@@ -3,6 +3,7 @@
 	import type { NotificationPreferences } from '$lib/api/types';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
@@ -102,7 +103,12 @@
 	{#if loadError}
 		<Alert variant="error" title="Could not load your preferences">{loadError}</Alert>
 	{:else if !hasLoaded}
-		<p class="text-sm text-ink-muted">Loading…</p>
+		<LoadingBlock
+			shape="lines"
+			count={4}
+			label="Loading your preferences…"
+			testid="preferences-loading"
+		/>
 	{:else if preferences}
 		{#if !preferences.mail_enabled}
 			<Alert variant="warning" title="Email is not configured">

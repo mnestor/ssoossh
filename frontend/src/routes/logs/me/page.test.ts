@@ -481,11 +481,23 @@ describe('Certificate history page', () => {
 		});
 	});
 
-	it('should display Loading… initially', () => {
-		mockFetch({ certificates: [] });
-		render(Page);
-		// Before the effect runs, should show loading
-		expect(screen.getByText('Loading…')).toBeInTheDocument();
+	// A request that never answers, so the wait itself is what is on screen.
+	// With a resolving stub the response lands inside the same 300ms and the
+	// gate is never the thing under test.
+	it('should hold the rows back until the first response settles', async () => {
+		vi.useFakeTimers();
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(() => new Promise(() => {}))
+		);
+		try {
+			render(Page);
+			expect(screen.queryByTestId('history-loading')).not.toBeInTheDocument();
+			await vi.advanceTimersByTimeAsync(300);
+			expect(screen.getByTestId('history-loading')).toBeInTheDocument();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	// A row is a link to the certificate's own page. It used to open a

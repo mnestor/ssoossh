@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Alert from '$lib/components/Alert.svelte';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
@@ -92,7 +93,12 @@
 	</PageHeading>
 
 	{#if busy}
-		<p class="text-sm text-ink-muted">Loading…</p>
+		<LoadingBlock
+			shape="lines"
+			count={6}
+			label="Loading the configuration…"
+			testid="config-loading"
+		/>
 	{:else if error}
 		<Alert variant="error" title="Could not load the configuration" testid="config-error">
 			{error}

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/svelte';
+import { render, screen, waitFor, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
@@ -169,13 +169,28 @@ describe('Admin certificates page', () => {
 			mockFetch(response);
 		});
 
-		it('should show empty state message', async () => {
+		// The visible empty state, not any text mentioning "no certificates":
+		// the live region announcing "No certificates found." matches that
+		// too, and the case is about what is on screen.
+		it('should show the first-run empty state when nothing is filtering', async () => {
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
-			// The visible message, not any text mentioning "no certificates":
-			// the live region announcing "No certificates found." matches that
-			// too, and the case is about what is on screen.
-			expect(screen.getByText('No certificates found matching your search.')).toBeInTheDocument();
+			expect(screen.getByTestId('certificates-empty')).toHaveTextContent('No certificates yet');
+		});
+
+		// The two empties are not the same answer. Nothing issued yet says
+		// what would fill the list; nothing matching says how to get back to
+		// the full one, and offers the control that does it.
+		it('should offer a way back to the full list when a search is filtering', async () => {
+			const user = userEvent.setup();
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			await user.type(screen.getByTestId('search-input'), 'nobody');
+			await waitFor(() =>
+				expect(screen.getByTestId('certificates-empty')).toHaveTextContent('No certificates match')
+			);
+			expect(screen.getByTestId('certificates-clear-filters')).toBeInTheDocument();
 		});
 	});
 
@@ -288,9 +303,23 @@ describe('Admin certificates page', () => {
 			});
 		});
 
-		it('should show loading state initially', () => {
-			render(Page);
-			expect(screen.getByText(/loading|loading\.\.\./i)).toBeInTheDocument();
+		// A request that never answers, so the wait itself is what is on
+		// screen. With the resolving stub above, the response lands inside
+		// the same 300ms and the gate is never the thing under test.
+		it('should hold the rows back until the first response settles', async () => {
+			vi.useFakeTimers();
+			vi.stubGlobal(
+				'fetch',
+				vi.fn(() => new Promise(() => {}))
+			);
+			try {
+				render(Page);
+				expect(screen.queryByTestId('certificates-loading')).not.toBeInTheDocument();
+				await vi.advanceTimersByTimeAsync(300);
+				expect(screen.getByTestId('certificates-loading')).toBeInTheDocument();
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 	});
 });

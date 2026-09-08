@@ -246,6 +246,48 @@
 	.data-table tbody tr:last-child td {
 		border-bottom: none;
 	}
+
+	/* One bar of a loading placeholder, drawn in the border colour so it
+	   reads on both grounds the app has: a card sits on `surface`, a
+	   PageSection sits on `surface-muted`, and a bar tinted for one of them
+	   disappears on the other.
+
+	   The sweep is the only infinite animation in the app and the only place
+	   `linear` is the right easing. A shimmer is a marquee: easing it makes
+	   the highlight hesitate at each end, as though the wait had stalled.
+
+	   Under `prefers-reduced-motion` the sweep stops outright rather than
+	   collapsing to a near-zero duration, which is the answer everywhere
+	   else. Nothing listens for an `animationend` that never comes, and a
+	   near-zero infinite loop is a strobe. The bar stays, so the shape of
+	   what is coming is still on screen. */
+	.skeleton {
+		position: relative;
+		overflow: hidden;
+		border-radius: var(--radius-sm);
+		background-color: var(--color-border-subtle);
+	}
+
+	.skeleton::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		transform: translateX(-100%);
+		background-image: linear-gradient(90deg, transparent, var(--color-surface-muted), transparent);
+		animation: skeleton-sweep 1.4s linear infinite;
+	}
+
+	@keyframes skeleton-sweep {
+		to {
+			transform: translateX(100%);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.skeleton::after {
+			animation: none;
+		}
+	}
 }
 
 @layer base {

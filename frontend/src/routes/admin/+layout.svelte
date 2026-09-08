@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { session } from '$lib/session.svelte';
 	import { goToLogin } from '$lib/auth';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
@@ -41,7 +42,7 @@
 	</div>
 {:else}
 	<!-- Loading -->
-	<div class="flex flex-col items-center justify-center gap-4 py-12">
-		<p class="text-ink-muted">Loading...</p>
+	<div class="flex flex-col justify-center gap-4 py-12">
+		<LoadingBlock shape="lines" count={3} label="Loading…" testid="admin-loading" />
 	</div>
 {/if}

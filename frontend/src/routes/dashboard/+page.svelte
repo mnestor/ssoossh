@@ -6,6 +6,8 @@
 	import Alert from '$lib/components/Alert.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import CertRow from '$lib/components/CertRow.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 
@@ -111,11 +113,12 @@
 	{/if}
 
 	{#if !hasLoaded}
-		<p class="text-sm text-ink-muted">Loading…</p>
+		<LoadingBlock shape="rows" count={3} testid="dashboard-loading" />
 	{:else if allCertificates.length === 0}
-		<p class="text-sm text-ink-muted">
-			Nothing yet. Run <code class="font-mono">ssoossh login</code> to request a certificate.
-		</p>
+		<EmptyState icon="certificate-off" title="Nothing yet" testid="dashboard-empty">
+			Run <code class="font-mono">ssoossh login</code> to request a certificate. It appears here as soon
+			as it is issued.
+		</EmptyState>
 	{:else}
 		<div class="flex flex-col gap-2.5">
 			{#each allCertificates as cert (cert.id)}

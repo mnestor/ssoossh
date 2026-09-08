@@ -5,7 +5,7 @@
 	import { describeLoadError, type LoadFailure } from '$lib/approval';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import { session } from '$lib/session.svelte';
-	import Alert from '$lib/components/Alert.svelte';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import ApprovalView from '$lib/components/ApprovalView.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
@@ -177,6 +177,6 @@
 			ondeny={() => decide('denied')}
 		/>
 	{:else}
-		<Alert testid="loading-request">Loading request…</Alert>
+		<LoadingBlock shape="lines" count={5} label="Loading request…" testid="loading-request" />
 	{/if}
 </PageShell>

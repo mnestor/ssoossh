@@ -633,6 +633,14 @@ none of that.
 - **PageSection**: One group of fields as a subtle card — `rounded-lg border border-border-subtle bg-surface-muted p-4` — opening with a quiet uppercase `h2` and an optional line of copy. What replaced `Card`; see Sections are subtle cards. A real heading rather than a styled `div`, because a section is a landmark a screen reader navigates by and it was the card's header, not its border, that said so. Never nested inside another.
 - **Footer**: The bar closing every page — the running build's version, a link to the release it was cut from, and links back to the project on GitHub. Presentational: the build identity arrives as a prop, so the fetch happens once in the layout. Renders nothing at all while the version is unknown.
 - **Alert**: Variants: `error`, `warning`, `info`. Each includes an icon and a color from the token set.
+- **LoadingBlock**: What a surface shows while its content is on the way, in three shapes: `rows` for the card lists, `table` for the admin tables, `lines` for a detail panel. Replaced fourteen hand-written `<p>Loading…</p>` paragraphs — half of them spelled with three dots, one of them centred — which told a reader that a request was out and nothing about what was coming back. A shape that matches the answer stops the page jumping when the rows land.
+
+  Nothing renders for the first 300ms, because below that a load is quicker than a reader registers a change and a placeholder that appears and vanishes inside a third of a second reads as a flicker rather than as progress. The gate re-arms on every mount, so a filter chip or a page turn earns its own 300ms of silence.
+
+  The bars are `aria-hidden`: none of it is content. The `label` prop adds an `sr-only` `role="status"` sentence and is **empty by default**, which is deliberate. The lists carry `ListStatus`, which stays silent until a request settles precisely so a debounced search does not announce "Loading" once per keystroke; announcing here as well would put back the noise that component exists to keep out. A detail page that loads once has no such problem and passes a label.
+- **EmptyState**: A list with nothing in it, said properly — an icon, a short title, the sentence that says what would fill it, and optionally one real control. The screens that had an empty state wrote a single muted line ("No users found"), which leaves a reader unable to tell apart the two cases that matter: a list empty because nothing has happened yet, and a list empty because the filters on screen exclude everything in it. The first says what would fill it; the second offers a way back to the full set. `/admin/certificates` and `/admin/service-codes` now branch on exactly that, and the filtered branch carries a Clear filters button.
+
+  The icon is decoration and hidden from assistive technology: the title says the same thing in words.
 - **ConfirmModal**: The one shape a confirmation takes — a native `<dialog>` holding the consequence, a required reason, Cancel and the confirming button. Callers supply the wording and the endpoint and nothing else. See Destructive actions.
 - **ExpireCodeAction**: The retire-this-code button and its `ConfirmModal`, for a page heading's `action` slot. One component for both sides of a code — an admin on `/admin/service-codes/<id>` and a holder on `/service-codes/<id>` — because the two differ only in which endpoint they call, and the reason field, the confirmation and the error wording are what is worth keeping identical.
 - **Lifetime policy rows** (certificate detail page): the policy engine records its ceiling and result by calling `String()` on a Go `time.Duration`, so they arrive as `8h0m0s`. `formatGoDuration` in `$lib/format` parses that and hands it to `formatDuration`, so a policy ceiling reads the way every other lifetime on the site does — `8h`, `1h 30m`, `7d`. Parsed on the client rather than fixed on the wire because the explanation document is stored on the decision: every certificate already issued carries the old spelling. A value that does not parse is passed through as it arrived, and so is anything under a second, which `formatDuration` would round to `0s`. The rows lost their `mono` for it: they are a length of time now, not a token to copy.
@@ -832,6 +840,23 @@ It is a component style rather than utilities because the rules reach
 descendants: every `th` and `td` of a table, without a class on each of a few
 hundred generated cells. Sitting in the components layer means a page can
 still override one property on one cell with a utility.
+
+### The `.skeleton` class
+
+One bar of a loading placeholder, used by `LoadingBlock`. Drawn in
+`--color-border-subtle` rather than in a surface tint because the app has two
+grounds — a card sits on `surface`, a `PageSection` sits on `surface-muted` —
+and a bar tinted for one of them disappears on the other.
+
+The sweep across it is the only infinite animation in the app and the only
+place `linear` easing is right: a shimmer is a marquee, and easing it makes
+the highlight hesitate at each end as though the wait had stalled.
+
+Under `prefers-reduced-motion` the sweep stops outright rather than collapsing
+to a near-zero duration, which is the answer everywhere else in the app.
+Nothing listens for an `animationend` that never comes, and a near-zero
+infinite loop is a strobe. The bar stays, so the shape of what is coming is
+still on screen.
 
 ### The `.modal-dialog` class
 

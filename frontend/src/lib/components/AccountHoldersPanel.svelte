@@ -3,6 +3,7 @@
 	import { listEnrollmentHolders } from '$lib/api/endpoints';
 	import type { AccountHolder } from '$lib/api/types';
 	import PageSection from './PageSection.svelte';
+	import LoadingBlock from './LoadingBlock.svelte';
 
 	// Who else can use and manage one enrollment code.
 	//
@@ -76,7 +77,7 @@
 	{#if loadError}
 		<p class="text-dense text-ink-muted" data-testid="account-holders-error">{loadError}</p>
 	{:else if holders === null}
-		<p class="text-dense text-ink-muted">Loading…</p>
+		<LoadingBlock shape="lines" count={3} label="Loading account holders…" />
 	{:else if holders.length === 0}
 		<p class="text-dense text-ink-muted" data-testid="account-holders-empty">
 			Nobody who has signed in holds this account. Notifications about this code reach nobody unless
