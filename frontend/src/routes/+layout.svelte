@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { fade, fly } from 'svelte/transition';
+	import { easeEnter, easeExit, enterMs, exitMs } from '$lib/motion';
 	import { page } from '$app/state';
 	import '../app.css';
 	import { logout } from '$lib/api/endpoints';
@@ -185,7 +187,9 @@
 				aria-hidden="true"
 				tabindex="-1"
 				onclick={() => rail.closeDrawer()}
-				class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+				in:fade={{ duration: enterMs(), easing: easeEnter }}
+				out:fade={{ duration: exitMs(), easing: easeExit }}
+				class="fixed inset-0 z-40 bg-scrim lg:hidden"
 			></button>
 			<!-- collapsed={false}: the icon-only width is a desktop
 			     preference, and the control that undoes it is hidden at this
@@ -203,6 +207,8 @@
 				role="dialog"
 				aria-modal="true"
 				aria-label="Navigation menu"
+				in:fly={{ x: -260, opacity: 1, duration: enterMs(), easing: easeEnter }}
+				out:fly={{ x: -260, opacity: 1, duration: exitMs(), easing: easeExit }}
 				class="fixed inset-y-0 left-0 z-50 lg:hidden"
 			>
 				<AppRail orgName={branding.org_name} collapsed={false} {signingOut} onsignout={signOut} />

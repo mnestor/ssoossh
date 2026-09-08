@@ -6,6 +6,7 @@
 	import { ApiError } from '$lib/api/client';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import CopyableId from '$lib/components/CopyableId.svelte';
 	import DetailRow from '$lib/components/DetailRow.svelte';
 	import Icon from '$lib/components/Icon.svelte';
@@ -214,7 +215,12 @@
 			</Alert>
 		</div>
 	{:else if !hasLoaded}
-		<p class="text-sm text-ink-muted">Loading…</p>
+		<LoadingBlock
+			shape="lines"
+			count={5}
+			label="Loading this certificate…"
+			testid="certificate-loading"
+		/>
 	{:else if cert}
 		<div data-testid="cert-details" class="flex flex-col gap-5">
 			<!-- The identity strip: what kind of certificate this is, what
@@ -225,7 +231,7 @@
 			     click onto the clipboard rather than a value to select by
 			     hand — it is what the audit events and the log lines carry. -->
 			<div
-				class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[10px] border border-border-subtle bg-surface-muted px-4 py-3"
+				class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border-subtle bg-surface-muted px-4 py-3"
 			>
 				<TypeChip type={cert.type} />
 				<span class="ml-auto"><CopyableId value={cert.id} testid="cert-id" /></span>

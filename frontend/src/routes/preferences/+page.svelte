@@ -3,6 +3,7 @@
 	import type { NotificationPreferences } from '$lib/api/types';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
@@ -102,7 +103,12 @@
 	{#if loadError}
 		<Alert variant="error" title="Could not load your preferences">{loadError}</Alert>
 	{:else if !hasLoaded}
-		<p class="text-sm text-ink-muted">Loading…</p>
+		<LoadingBlock
+			shape="lines"
+			count={4}
+			label="Loading your preferences…"
+			testid="preferences-loading"
+		/>
 	{:else if preferences}
 		{#if !preferences.mail_enabled}
 			<Alert variant="warning" title="Email is not configured">
@@ -126,7 +132,7 @@
 			     its place in on the way back to the left. -->
 			<div class="flex max-w-[70ch] flex-col gap-4">
 				{#if preferences.address}
-					<p class="text-[13px] text-ink-muted">
+					<p class="text-dense text-ink-muted">
 						Sent to <MonoChip>{preferences.address}</MonoChip>
 					</p>
 				{/if}
@@ -142,13 +148,13 @@
 						/>
 						<span class="flex flex-col gap-0.5">
 							<span class="text-sm font-medium text-ink">{kind.title}</span>
-							<span class="text-[13px] text-ink-muted">{kind.description}</span>
+							<span class="text-dense text-ink-muted">{kind.description}</span>
 						</span>
 					</label>
 				{/each}
 
 				{#if preferences.kinds.length === 0}
-					<p class="text-[13px] text-ink-muted">This server offers no email notifications.</p>
+					<p class="text-dense text-ink-muted">This server offers no email notifications.</p>
 				{/if}
 			</div>
 		</PageSection>

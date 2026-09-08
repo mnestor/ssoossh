@@ -16,12 +16,14 @@ import ConfirmModal from './ConfirmModal.svelte';
 import CopyableId from './CopyableId.svelte';
 import DeniedRow from './DeniedRow.svelte';
 import DetailRow from './DetailRow.svelte';
+import EmptyState from './EmptyState.svelte';
 import ExpireCodeAction from './ExpireCodeAction.svelte';
 import FilterChip from './FilterChip.svelte';
 import FilterGroup from './FilterGroup.svelte';
 import Footer from './Footer.svelte';
 import Icon from './Icon.svelte';
 import ListStatus from './ListStatus.svelte';
+import LoadingBlock from './LoadingBlock.svelte';
 import MonoChip from './MonoChip.svelte';
 import OptionDiffList from './OptionDiffList.svelte';
 import PageHeading from './PageHeading.svelte';
@@ -172,6 +174,17 @@ const cases: [string, any, Record<string, unknown>][] = [
 		}
 	],
 	['CopyableId', CopyableId, { value: 'cert-1', label: 'Request' }],
+	['EmptyState', EmptyState, { icon: 'certificate-off', title: 'No certificates yet' }],
+	[
+		'EmptyState (with action)',
+		EmptyState,
+		{
+			icon: 'filter-off',
+			title: 'No certificates match',
+			children: text('Nothing matches the filters above.'),
+			action: text('Clear filters')
+		}
+	],
 	['DeniedRow', DeniedRow, { denial: denial(), now }],
 	['DetailRow', DetailRow, { label: 'Principals', children: text('alice') }],
 	['ExpireCodeAction', ExpireCodeAction, { expire: vi.fn(), onexpired: vi.fn() }],
@@ -193,6 +206,12 @@ const cases: [string, any, Record<string, unknown>][] = [
 	['Icon (decorative)', Icon, { name: 'certificate' }],
 	['Icon (labelled)', Icon, { name: 'certificate', ariaLabel: 'Certificate' }],
 	['ListStatus', ListStatus, { message: '12 certificates found.' }],
+	// Only the labelled case. The bars are gated behind 300ms and are
+	// `aria-hidden` when they do arrive, so an unlabelled LoadingBlock hands
+	// axe an empty container and a passing case that checked nothing. The
+	// label is the part that reaches a reader; LoadingBlock.test.ts covers
+	// the gate and the aria-hidden.
+	['LoadingBlock', LoadingBlock, { shape: 'lines', label: 'Loading your account…' }],
 	['MonoChip', MonoChip, { children: text('10.1.2.9') }],
 	['OptionDiffList', OptionDiffList, { entries: [], emptyLabel: 'Nothing was trimmed' }],
 	['PageHeading', PageHeading, { title: 'Certificate history' }],

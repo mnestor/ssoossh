@@ -3,6 +3,8 @@
 	import { resolve } from '$app/paths';
 	import Alert from '$lib/components/Alert.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
 	import ListStatus from '$lib/components/ListStatus.svelte';
@@ -200,8 +202,11 @@
 
 		<Pager meta={users.meta} onpage={handlePage} {busy} />
 	{:else if busy}
-		<div class="py-8 text-center text-ink-muted">Loading...</div>
+		<LoadingBlock shape="table" count={6} testid="users-loading" />
 	{:else}
-		<div class="py-8 text-center text-ink-muted">No users found</div>
+		<EmptyState icon="users" title="No users found" testid="users-empty">
+			Nobody matching the search above has signed in to this deployment. A record appears the first
+			time an identity completes a sign-in.
+		</EmptyState>
 	{/if}
 </PageShell>

@@ -101,7 +101,7 @@ describe('admin layout', () => {
 
 		render(Layout, { children });
 
-		expect(screen.getByText('Loading...')).toBeInTheDocument();
+		expect(screen.getByRole('status')).toHaveTextContent('Loading…');
 		expect(screen.queryByTestId('admin-child')).not.toBeInTheDocument();
 		expect(screen.queryByTestId('admin-access-denied')).not.toBeInTheDocument();
 	});

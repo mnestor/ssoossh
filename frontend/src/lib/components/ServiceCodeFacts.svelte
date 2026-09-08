@@ -67,7 +67,7 @@
      kind of thing this is, whether it still works, and the id to quote in a
      ticket. -->
 <div
-	class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[10px] border border-border-subtle bg-surface-muted px-4 py-3"
+	class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border-subtle bg-surface-muted px-4 py-3"
 >
 	<TypeChip type="service" />
 	{#if expired}

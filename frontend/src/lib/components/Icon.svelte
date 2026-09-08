@@ -172,7 +172,9 @@
 		aria-hidden={!ariaLabel}
 	/>
 {:else}
-	<div class="flex h-5 w-5 items-center justify-center bg-red-200 text-xs font-bold text-red-600">
+	<div
+		class="flex h-5 w-5 items-center justify-center bg-danger-surface text-xs font-bold text-danger"
+	>
 		?
 	</div>
 {/if}

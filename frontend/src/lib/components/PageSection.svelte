@@ -35,11 +35,11 @@
 </script>
 
 <section data-testid={testid} class="rounded-lg border border-border-subtle bg-surface-muted p-4">
-	<h2 class="text-[11px] font-semibold tracking-[0.06em] text-ink-muted uppercase">
+	<h2 class="text-meta font-semibold tracking-label text-ink-muted uppercase">
 		{title}
 	</h2>
 	{#if description}
-		<p class="mt-1 text-[13px] text-ink-muted">{description}</p>
+		<p class="mt-1 text-dense text-ink-muted">{description}</p>
 	{/if}
 	<div class="mt-3">
 		{@render children()}

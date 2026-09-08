@@ -162,12 +162,12 @@
 			testid="echo-result"
 		>
 			<div class="flex flex-col gap-4">
-				<p class="text-[13px] text-ink-muted">
+				<p class="text-dense text-ink-muted">
 					Issued {new Date(payload.issued_at).toLocaleString()}. Nothing here was stored.
 				</p>
 
 				<div class="overflow-x-auto rounded-md border border-border-subtle">
-					<table class="w-full text-[13px]">
+					<table class="w-full text-dense">
 						<thead>
 							<tr
 								class="border-b border-border-subtle bg-surface-muted text-left text-xs text-ink-muted"
@@ -201,23 +201,23 @@
 				{#if payload.suggestions?.length}
 					<div data-testid="echo-suggestions">
 						<SectionLabel>Config that would capture what is being dropped</SectionLabel>
-						<p class="mb-2 text-[13px] text-ink-muted">
+						<p class="mb-2 text-dense text-ink-muted">
 							Suggestions, not decisions. Each one names the key the value would land under; review
 							before committing it.
 						</p>
 						{#each payload.suggestions as suggestion (suggestion.claim)}
 							<div class="mb-3 last:mb-0">
-								<p class="flex flex-wrap items-baseline gap-2 text-[13px]">
+								<p class="flex flex-wrap items-baseline gap-2 text-dense">
 									<MonoChip>{suggestion.claim}</MonoChip>
 									<span class="text-ink-muted">{suggestion.reason}</span>
 								</p>
 								<pre
-									class="mt-1 overflow-x-auto rounded bg-surface-muted p-3 font-mono text-[13px]">{suggestion.yaml}</pre>
+									class="mt-1 overflow-x-auto rounded bg-surface-muted p-3 font-mono text-dense">{suggestion.yaml}</pre>
 							</div>
 						{/each}
 					</div>
 				{:else}
-					<p class="text-[13px] text-ink-muted" data-testid="echo-no-suggestions">
+					<p class="text-dense text-ink-muted" data-testid="echo-no-suggestions">
 						Every claim in this token is either read by the configuration or protocol mechanics.
 					</p>
 				{/if}

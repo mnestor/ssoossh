@@ -3,6 +3,7 @@
 	import type { CurrentUser } from '$lib/api/types';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import DetailRow from '$lib/components/DetailRow.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
@@ -58,7 +59,7 @@
 	{#if loadError}
 		<Alert variant="error" title="Could not load your account">{loadError}</Alert>
 	{:else if !hasLoaded}
-		<p class="text-sm text-ink-muted">Loading…</p>
+		<LoadingBlock shape="lines" count={4} label="Loading your account…" testid="account-loading" />
 	{:else if user}
 		<PageSection
 			title="Identity"
@@ -130,7 +131,7 @@
 				{/each}
 			</span>
 			{#if user.other_accounts.length === 0}
-				<p class="mt-2 text-[13px] text-ink-muted">
+				<p class="mt-2 text-dense text-ink-muted">
 					Only your primary username is available; no alternate account names are linked.
 				</p>
 			{/if}
@@ -138,12 +139,12 @@
 
 		<PageSection title="Service accounts">
 			{#if user.service_accounts.length === 0}
-				<p class="text-[13px] text-ink-muted">
+				<p class="text-dense text-ink-muted">
 					No service accounts are linked to your identity, so you cannot approve service
 					certificates.
 				</p>
 			{:else}
-				<p class="mb-2 text-[13px] text-ink-muted">
+				<p class="mb-2 text-dense text-ink-muted">
 					You can approve service certificates for these accounts; the one you pick becomes the
 					certificate's principal.
 				</p>
@@ -160,7 +161,7 @@
 			description="Group membership feeds certificate policy (approval eligibility and lifetime) but never appears in a certificate."
 		>
 			{#if user.groups.length === 0}
-				<p class="text-[13px] text-ink-muted">Your identity carries no groups.</p>
+				<p class="text-dense text-ink-muted">Your identity carries no groups.</p>
 			{:else}
 				<span class="flex flex-wrap gap-1.5">
 					{#each user.groups as group (group)}

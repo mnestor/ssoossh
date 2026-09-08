@@ -4,6 +4,7 @@
 	import type { CertificateRecord, DeniedRequest } from '$lib/api/types';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import CertRow from '$lib/components/CertRow.svelte';
 	import DeniedRow from '$lib/components/DeniedRow.svelte';
@@ -304,7 +305,7 @@
 	{/if}
 
 	{#if !hasLoaded}
-		<p class="text-sm text-ink-muted">Loading…</p>
+		<LoadingBlock shape="rows" count={4} testid="history-loading" />
 	{:else}
 		<!-- Search, then the filter groups on one line. The admin certificate
 		     list opens exactly the same way; see $lib/filters.

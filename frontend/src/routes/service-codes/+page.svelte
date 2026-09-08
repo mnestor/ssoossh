@@ -6,6 +6,8 @@
 	import type { ServiceEnrollment } from '$lib/api/types';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import SectionLabel from '$lib/components/SectionLabel.svelte';
@@ -184,13 +186,13 @@
 	{#if loadError}
 		<Alert variant="error" title="Could not load your service codes">{loadError}</Alert>
 	{:else if !hasLoaded}
-		<p class="text-sm text-ink-muted">Loading…</p>
+		<LoadingBlock shape="rows" count={3} testid="service-codes-loading" />
 	{:else if openAccount}
 		{#if accountCodes.length === 0}
-			<p class="text-sm text-ink-muted" data-testid="account-empty">
-				No enrollment codes for this account yet. One is created when a request from
-				<code class="font-mono">ssoossh service enroll</code> is approved for it.
-			</p>
+			<EmptyState icon="key" title="No enrollment codes yet" testid="account-empty">
+				One is created when a request from
+				<code class="font-mono">ssoossh service enroll</code> is approved for this account.
+			</EmptyState>
 		{:else}
 			{#if live.length > 0}
 				<div class="flex flex-col gap-2.5">

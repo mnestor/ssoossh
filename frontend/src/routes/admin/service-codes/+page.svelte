@@ -4,6 +4,8 @@
 	import type { AdminEnrollment } from '$lib/api/types';
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import Pager from '$lib/components/Pager.svelte';
@@ -84,16 +86,16 @@
 	{#if loadError}
 		<Alert variant="error" title="Could not load service codes">{loadError}</Alert>
 	{:else if !hasLoaded}
-		<p class="text-sm text-ink-muted">Loading…</p>
+		<LoadingBlock shape="rows" count={4} testid="enrollments-loading" />
+	{:else if enrollments.length === 0 && searchQuery}
+		<EmptyState icon="filter-off" title="No service codes match" testid="enrollments-empty">
+			No service enrollment code on this deployment matches the search above.
+		</EmptyState>
 	{:else if enrollments.length === 0}
-		<p data-testid="enrollments-empty" class="text-sm text-ink-muted">
-			No service enrollment codes found
-			{#if searchQuery}
-				matching your search.
-			{:else}
-				.
-			{/if}
-		</p>
+		<EmptyState icon="key" title="No service codes yet" testid="enrollments-empty">
+			A code is created when a request from <code class="font-mono">ssoossh service enroll</code> is approved.
+			None has been yet.
+		</EmptyState>
 	{:else}
 		<div class="flex flex-col gap-2.5">
 			{#each enrollments as enrollment (enrollment.id)}

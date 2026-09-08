@@ -11,6 +11,7 @@
 	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
 	import AdminServiceCodeDetail from '$lib/components/AdminServiceCodeDetail.svelte';
 	import Alert from '$lib/components/Alert.svelte';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import ExpireCodeAction from '$lib/components/ExpireCodeAction.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
@@ -102,7 +103,12 @@
 	{#if loadError}
 		<Alert variant="error" title="Could not load enrollment">{loadError}</Alert>
 	{:else if !hasLoaded}
-		<p class="text-sm text-ink-muted">Loading…</p>
+		<LoadingBlock
+			shape="lines"
+			count={4}
+			label="Loading this enrollment…"
+			testid="enrollment-loading"
+		/>
 	{:else if detail}
 		<!-- The detail is handed over rather than fetched again: the
 		     endpoint is audited, so a second read would write two

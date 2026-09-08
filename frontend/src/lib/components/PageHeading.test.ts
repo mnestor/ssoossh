@@ -33,7 +33,7 @@ describe('PageHeading', () => {
 	// first content off the screen, so the h1 steps down below `sm`.
 	it('should set a smaller title size below the sm breakpoint', () => {
 		render(PageHeading, { title: 'Recent decisions' });
-		expect(screen.getByRole('heading', { level: 1 })).toHaveClass('text-xl', 'sm:text-[26px]');
+		expect(screen.getByRole('heading', { level: 1 })).toHaveClass('text-xl', 'sm:text-display');
 	});
 
 	// The three admin table pages opened with a bare h1 and a paragraph

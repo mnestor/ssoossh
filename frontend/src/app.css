@@ -46,6 +46,14 @@
 	--color-danger: oklch(48% 0.13 25);
 	--color-danger-surface: oklch(95% 0.03 25);
 
+	/* The dim behind anything that takes over the screen. One value, so the
+	   navigation drawer and a modal backdrop do not disagree about how dark
+	   "the page is not available right now" looks. They used to, at 0.40 and
+	   0.55. Not inverted for dark mode: a scrim is an absence of light in
+	   both themes, and lightening it there would leave the panel floating on
+	   a grey that reads as another surface. */
+	--color-scrim: rgb(0 0 0 / 0.55);
+
 	/* --font-* and not --font-family-*, because --font-* is Tailwind v4's
 	   font namespace and the longer names are not. Under the old names the
 	   theme emitted no font utilities, so `font-mono` fell through to
@@ -55,16 +63,62 @@
 	--font-sans: 'Public Sans', system-ui, sans-serif;
 	--font-mono: 'Fira Code', ui-monospace, monospace;
 
-	--font-size-xs: 0.75rem;
-	--font-size-sm: 0.875rem;
-	--font-size-base: 1rem;
-	--font-size-lg: 1.125rem;
-	--font-size-xl: 1.25rem;
+	/* --text-* and --leading-*, for the same reason --font-* is spelled that
+	   way above: those two are the v4 font-size and line-height namespaces,
+	   and the --font-size and --line-height spellings this block used to
+	   carry are not. Under those names it emitted no utilities at all, so
+	   every `text-sm` and `leading-tight` in the app resolved against a
+	   Tailwind built-in default. The values agreed, so nothing looked
+	   wrong. The scale was simply not ours. Restated here with the paired
+	   line heights the built-ins carry, so these numbers are the ones that
+	   ship.
 
-	--line-height-tight: 1.25;
-	--line-height-snug: 1.375;
-	--line-height-normal: 1.5;
-	--line-height-relaxed: 1.625;
+	   Three steps the built-in scale does not have, because the app kept
+	   reaching past it: micro, meta and dense were written 87 times as
+	   bracketed 10px, 11px and 13px font sizes. They carry no paired line
+	   height, which is what an arbitrary font-size did: the line height
+	   keeps coming from whatever the row already set. */
+	--text-micro: 0.625rem;
+	--text-meta: 0.6875rem;
+	--text-xs: 0.75rem;
+	--text-xs--line-height: calc(1 / 0.75);
+	--text-dense: 0.8125rem;
+	--text-sm: 0.875rem;
+	--text-sm--line-height: calc(1.25 / 0.875);
+	--text-base: 1rem;
+	--text-base--line-height: calc(1.5 / 1);
+	--text-lg: 1.125rem;
+	--text-lg--line-height: calc(1.75 / 1.125);
+	--text-xl: 1.25rem;
+	--text-xl--line-height: calc(1.75 / 1.25);
+	/* The page heading above `sm`. Larger than --text-2xl by a step the
+	   built-in scale skips, and the only size in the app over 24px. */
+	--text-display: 1.625rem;
+
+	--leading-tight: 1.25;
+	--leading-snug: 1.375;
+	--leading-normal: 1.5;
+	--leading-relaxed: 1.625;
+
+	/* The two letter-spacings the app actually uses, named for the job.
+	   Six values were in the tree for two roles: 0.04, 0.05 and 0.06em on
+	   small uppercase labels, 0.09 and 0.1em on the widest of them, and
+	   -0.01em on both headings. That is drift, not a scale. The eyebrow
+	   width is Tailwind tracking-widest already, so only the two it lacks
+	   are defined here. */
+	/* The two durations everything that appears or disappears is drawn from.
+	   An entrance is slow enough to be followed and short enough not to be
+	   waited on; an exit is about 40% faster, because a reader who has
+	   dismissed something has already stopped looking at it.
+
+	   Stated again as ENTER_MS and EXIT_MS in $lib/motion, for the overlays
+	   that are animated by a Svelte transition rather than by CSS. The two
+	   have to agree and there is no way to read one from the other. */
+	--duration-enter: 220ms;
+	--duration-exit: 130ms;
+
+	--tracking-heading: -0.01em;
+	--tracking-label: 0.06em;
 
 	--font-weight-normal: 400;
 	--font-weight-medium: 500;
@@ -155,8 +209,26 @@
 		backdrop-filter: blur(4px);
 	}
 
+	/* The backdrop is painted the instant showModal() runs, so its arrival
+	   needs @starting-style rather than a transition from a previous value:
+	   there is no previous value to leave.
+
+	   Its departure is not animated and cannot be from here. Every caller
+	   dismisses one of these dialogs by unmounting the component rather than
+	   by calling close(), so the element and its backdrop leave the DOM
+	   together. Giving the backdrop an exit means giving the dialog control
+	   over when its own removal happens, which is a change to the contract
+	   it has with its callers rather than a change to how it looks. The
+	   panel inside does animate out, which is what the eye is following. */
 	.modal-dialog::backdrop {
-		background-color: rgb(0 0 0 / 0.55);
+		background-color: var(--color-scrim);
+		transition: background-color var(--duration-enter) var(--ease-out);
+	}
+
+	@starting-style {
+		.modal-dialog[open]::backdrop {
+			background-color: transparent;
+		}
 	}
 
 	/* The shared look of a data table.
@@ -175,16 +247,16 @@
 	.data-table {
 		width: 100%;
 		border-collapse: collapse;
-		font-size: 0.8125rem;
+		font-size: var(--text-dense);
 	}
 
 	.data-table thead th {
 		padding: 0.5rem 0.75rem;
 		text-align: left;
 		font-family: var(--font-mono);
-		font-size: 0.625rem;
-		font-weight: 500;
-		letter-spacing: 0.09em;
+		font-size: var(--text-micro);
+		font-weight: var(--font-weight-medium);
+		letter-spacing: var(--tracking-widest);
 		text-transform: uppercase;
 		white-space: nowrap;
 		color: var(--color-ink-muted);
@@ -203,12 +275,83 @@
 	.data-table tbody tr:last-child td {
 		border-bottom: none;
 	}
+
+	/* One bar of a loading placeholder, drawn in the border colour so it
+	   reads on both grounds the app has: a card sits on `surface`, a
+	   PageSection sits on `surface-muted`, and a bar tinted for one of them
+	   disappears on the other.
+
+	   The sweep is the only infinite animation in the app and the only place
+	   `linear` is the right easing. A shimmer is a marquee: easing it makes
+	   the highlight hesitate at each end, as though the wait had stalled.
+
+	   Under `prefers-reduced-motion` the sweep stops outright rather than
+	   collapsing to a near-zero duration, which is the answer everywhere
+	   else. Nothing listens for an `animationend` that never comes, and a
+	   near-zero infinite loop is a strobe. The bar stays, so the shape of
+	   what is coming is still on screen. */
+	.skeleton {
+		position: relative;
+		overflow: hidden;
+		border-radius: var(--radius-sm);
+		background-color: var(--color-border-subtle);
+	}
+
+	.skeleton::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		transform: translateX(-100%);
+		background-image: linear-gradient(90deg, transparent, var(--color-surface-muted), transparent);
+		animation: skeleton-sweep 1.4s linear infinite;
+	}
+
+	@keyframes skeleton-sweep {
+		to {
+			transform: translateX(100%);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.skeleton::after {
+			animation: none;
+		}
+	}
 }
 
 @layer base {
 	:focus-visible {
 		outline: 2px solid var(--color-accent);
 		outline-offset: 2px;
+	}
+}
+
+@layer base {
+	/* Everything the app animates, turned down to nothing for a reader who
+	   asked their system for less motion.
+
+	   Near-zero rather than `animation: none`, so an animation still starts
+	   and still ends: a component listening for `animationend` to clean up
+	   after itself keeps working, where switching the animation off would
+	   leave it waiting for an event that never comes. `::backdrop` is named
+	   explicitly because `*` does not match a pseudo-element, and the modal
+	   backdrop is animated.
+
+	   The Svelte transitions on the drawer, the identity popover and the two
+	   dialogs are driven from JavaScript and cannot be reached from here;
+	   they ask $lib/motion for a duration instead, which returns zero under
+	   the same query. */
+	@media (prefers-reduced-motion: reduce) {
+		*,
+		*::before,
+		*::after,
+		*::backdrop {
+			animation-duration: 0.01ms !important;
+			animation-delay: 0ms !important;
+			transition-duration: 0.01ms !important;
+			transition-delay: 0ms !important;
+			scroll-behavior: auto !important;
+		}
 	}
 }
 
@@ -245,11 +388,11 @@
 		padding: 0.5rem 0.9rem;
 		overflow: visible;
 		clip: auto;
-		border-radius: 0.375rem;
+		border-radius: var(--radius-md);
 		background-color: var(--color-accent);
 		color: var(--color-accent-ink);
-		font-size: 0.875rem;
-		font-weight: 500;
+		font-size: var(--text-sm);
+		font-weight: var(--font-weight-medium);
 	}
 
 	.icon-xs {

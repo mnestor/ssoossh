@@ -62,12 +62,12 @@
 	type="button"
 	{onclick}
 	data-testid={testid}
-	class="flex w-full items-center justify-between gap-4 rounded-[10px] border border-border-subtle bg-surface px-5 py-3.5 text-left transition hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+	class="flex w-full items-center justify-between gap-4 rounded-xl border border-border-subtle bg-surface px-5 py-3.5 text-left transition hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 >
 	<span class="flex min-w-0 items-center gap-3">
 		<TypeBadge type="service" />
 		<span class="min-w-0">
-			<span class="block truncate font-mono text-[13px]">{account}</span>
+			<span class="block truncate font-mono text-dense">{account}</span>
 			<span class="mt-0.5 block text-xs text-ink-muted">{detail}</span>
 			<span class="mt-px block truncate text-xs text-ink-muted">{usage}</span>
 		</span>

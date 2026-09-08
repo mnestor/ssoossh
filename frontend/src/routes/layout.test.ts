@@ -198,7 +198,9 @@ describe('root layout', () => {
 		const close = screen.getByRole('button', { name: 'Close navigation menu' });
 		await userEvent.click(close);
 
-		expect(screen.queryByRole('dialog', { name: 'Navigation menu' })).not.toBeInTheDocument();
+		await waitFor(() =>
+			expect(screen.queryByRole('dialog', { name: 'Navigation menu' })).not.toBeInTheDocument()
+		);
 	});
 
 	// The drawer renders earlier in the document than the header that opens

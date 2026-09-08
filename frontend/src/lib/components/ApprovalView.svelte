@@ -359,7 +359,7 @@
 			<CopyableId value={detail.id} label="Request" testid="request-id" />
 		</div>
 
-		<p class="pb-4 text-[13px] text-ink-muted">{pageCopy.description}</p>
+		<p class="pb-4 text-dense text-ink-muted">{pageCopy.description}</p>
 
 		<dl class="divide-y divide-border-subtle">
 			<DetailRow label="Principals">
@@ -425,7 +425,7 @@
 							<span class="font-sans text-ink-muted">reported by the client</span>
 						</span>
 						{#if row.sub}
-							<span class="font-mono text-[11px] text-ink-muted">{row.sub}</span>
+							<span class="font-mono text-meta text-ink-muted">{row.sub}</span>
 						{/if}
 					</span>
 				</DetailRow>
@@ -524,7 +524,7 @@
 				<!-- Not a warning: plenty of deployments run sudo unattended on
 				     purpose. Just worth naming, since the approver otherwise has
 				     to notice the absence of two rows themselves. -->
-				<p class="text-[13px] text-ink-muted" data-testid="pam-headless-note">
+				<p class="text-dense text-ink-muted" data-testid="pam-headless-note">
 					No terminal and no remote host: this looks like a script or a service, not a person at a
 					keyboard.
 				</p>
@@ -584,12 +584,12 @@
 							<SectionLabel>Select service account</SectionLabel>
 							<div class="flex flex-col gap-2.5">
 								<label class="flex max-w-[420px] flex-col gap-1">
-									<span class="text-[13px] text-ink-muted">Account</span>
+									<span class="text-dense text-ink-muted">Account</span>
 									<select
 										bind:value={selectedServiceAccount}
 										aria-label="Service account to approve for"
 										data-testid="service-account-select"
-										class="rounded border border-border-control bg-surface px-3 py-2 text-[13px] text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+										class="rounded border border-border-control bg-surface px-3 py-2 text-dense text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 									>
 										<option value="">Select an account...</option>
 										<!-- Grouped only when there is something to
@@ -635,7 +635,7 @@
 										to sign in as yourself.
 									</Alert>
 								{:else if offeredOwnAccounts.length > 0}
-									<p class="text-[11px] text-ink-muted" data-testid="own-account-hint">
+									<p class="text-meta text-ink-muted" data-testid="own-account-hint">
 										Accounts under "Your own accounts" still approve a service certificate for an
 										unattended job, with the service options above rather than the interactive ones.
 									</p>
@@ -646,16 +646,16 @@
 								     account; a team alias reaches the people who
 								     actually run the job. Editable later either way. -->
 								<label class="flex max-w-[420px] flex-col gap-1">
-									<span class="text-[13px] text-ink-muted">Notification address (optional)</span>
+									<span class="text-dense text-ink-muted">Notification address (optional)</span>
 									<input
 										type="email"
 										bind:value={notificationEmail}
 										data-testid="notification-email-input"
 										placeholder="deploys@example.com"
 										aria-describedby="notification-email-help"
-										class="rounded border border-border-control bg-surface px-3 py-2 text-[13px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+										class="rounded border border-border-control bg-surface px-3 py-2 text-dense text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 									/>
-									<span id="notification-email-help" class="text-[11px] text-ink-muted">
+									<span id="notification-email-help" class="text-meta text-ink-muted">
 										Where notifications about this enrollment go — redemptions, the expiry reminder,
 										and any use of the code after it expires. Leave empty to notify everyone holding
 										the account.
@@ -691,7 +691,7 @@
 		</div>
 	</div>
 
-	<p class="text-center text-[11px] text-ink-muted">
+	<p class="text-center text-meta text-ink-muted">
 		Requests are logged. See the audit trail for details.
 	</p>
 </div>

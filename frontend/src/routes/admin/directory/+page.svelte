@@ -8,6 +8,7 @@
 	} from '$lib/api/types';
 	import { errorMessage } from '$lib/auth';
 	import Alert from '$lib/components/Alert.svelte';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import Button from '$lib/components/Button.svelte';
 	import MonoChip from '$lib/components/MonoChip.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
@@ -165,7 +166,12 @@
 	{#if statusError}
 		<Alert variant="error" title="Could not load the directory status">{statusError}</Alert>
 	{:else if !statusLoaded}
-		<p class="text-sm text-ink-muted">Loading…</p>
+		<LoadingBlock
+			shape="lines"
+			count={3}
+			label="Loading the directory status…"
+			testid="directory-loading"
+		/>
 	{:else if status && !status.enabled}
 		<Alert variant="info" title="Directory enrichment is off" testid="ldap-disabled">
 			<code>ldap.enabled</code> is false, so nothing is synced and there is nothing to probe. OIDC claims
@@ -267,7 +273,7 @@
 							/>
 							<span>
 								<span class="font-medium">Dry run</span>
-								<span class="block text-[13px] text-ink-muted">
+								<span class="block text-dense text-ink-muted">
 									Read the directory and report what the pass would do, changing nothing. Safe to
 									press during an incident.
 								</span>
@@ -281,7 +287,7 @@
 						</div>
 
 						{#if !dryRun}
-							<p class="text-[13px] text-trimmed" data-testid="ldap-live-warning">
+							<p class="text-dense text-trimmed" data-testid="ldap-live-warning">
 								A live pass can disable an account whose directory entry has been missing longer
 								than {formatDuration(status.disable_after_seconds)}. It runs on this instance and
 								behaves exactly like the scheduled one.
@@ -318,7 +324,7 @@
 							<dd class="font-mono text-sm break-all">{status.base_dn}</dd>
 						</div>
 					</dl>
-					<p class="-mt-2 text-[13px] text-ink-muted">
+					<p class="-mt-2 text-dense text-ink-muted">
 						The connection is not part of the probe. It always uses the running server, bind
 						credentials and base DN, so it cannot be pointed anywhere else.
 					</p>
@@ -370,7 +376,7 @@
 									: '(&(objectClass=person)(uid=mnestor))'}
 								class="w-full rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
 							/>
-							<p id="ldap-filter-help" class="mt-1 text-[13px] text-ink-muted">
+							<p id="ldap-filter-help" class="mt-1 text-dense text-ink-muted">
 								{#if mode === 'template'}
 									Rendered against the bindings below, with RFC 4515 escaping applied — which is the
 									only way to see what your configured filter really sends. Empty uses
@@ -392,7 +398,7 @@
 								placeholder="* (every user attribute)"
 								class="w-full rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
 							/>
-							<p id="ldap-attributes-help" class="mt-1 text-[13px] text-ink-muted">
+							<p id="ldap-attributes-help" class="mt-1 text-dense text-ink-muted">
 								Empty asks for everything. Attributes the configuration reads are highlighted in the
 								result.
 							</p>
@@ -427,7 +433,7 @@
 								     to play during an LDAP incident. -->
 								<div class="grid gap-2 sm:grid-cols-3" data-testid="ldap-binding-fields">
 									<label class="flex flex-col gap-1">
-										<span class="text-[13px] text-ink-muted">Username</span>
+										<span class="text-dense text-ink-muted">Username</span>
 										<input
 											type="text"
 											bind:value={bindUsername}
@@ -437,7 +443,7 @@
 										/>
 									</label>
 									<label class="flex flex-col gap-1">
-										<span class="text-[13px] text-ink-muted">Email</span>
+										<span class="text-dense text-ink-muted">Email</span>
 										<input
 											type="text"
 											bind:value={bindEmail}
@@ -447,7 +453,7 @@
 										/>
 									</label>
 									<label class="flex flex-col gap-1">
-										<span class="text-[13px] text-ink-muted">Subject</span>
+										<span class="text-dense text-ink-muted">Subject</span>
 										<input
 											type="text"
 											bind:value={bindSubject}
@@ -457,7 +463,7 @@
 										/>
 									</label>
 								</div>
-								<p class="mt-1 text-[13px] text-ink-muted">
+								<p class="mt-1 text-dense text-ink-muted">
 									Typed values are what let you test someone's entry before they have ever logged
 									in.
 								</p>
@@ -486,7 +492,7 @@
 										Never writes
 									</span>
 								</div>
-								<p class="mt-1 text-[13px] text-ink-muted">
+								<p class="mt-1 text-dense text-ink-muted">
 									{probeResult.matched} entr{probeResult.matched === 1 ? 'y' : 'ies'} matched in
 									{probeResult.elapsed_ms} ms of a {Math.round(probeResult.timeout_ms / 1000)}s
 									timeout.
@@ -498,7 +504,7 @@
 								     because it is the thing that decides whether this entry
 								     can still be found after the filter stops matching it. -->
 								{#if probeResult.matched > 0}
-									<p class="mt-1 text-[13px] text-ink-muted" data-testid="ldap-probe-identifier">
+									<p class="mt-1 text-dense text-ink-muted" data-testid="ldap-probe-identifier">
 										{#if probeResult.id_attribute}
 											Anchored on <code>{probeResult.id_attribute}</code> =
 											<code class="break-all"
@@ -524,7 +530,7 @@
 									{#each [['entry', 'Entry as returned'], ['fields', 'Field mapping'], ['merge', 'Merge and allowlist']] as [id, label] (id)}
 										<button
 											type="button"
-											class="border-b-2 px-4 py-2 text-[13px] font-medium whitespace-nowrap"
+											class="border-b-2 px-4 py-2 text-dense font-medium whitespace-nowrap"
 											class:border-accent={tab === id}
 											class:text-accent={tab === id}
 											class:border-transparent={tab !== id}
@@ -538,13 +544,13 @@
 								{#if tab === 'entry' && probeResult.entry}
 									<div data-testid="ldap-panel-entry">
 										<div
-											class="border-b border-border-subtle px-4 py-2 font-mono text-[13px] break-all"
+											class="border-b border-border-subtle px-4 py-2 font-mono text-dense break-all"
 										>
 											{probeResult.entry.dn}
 										</div>
 										{#each probeResult.entry.attributes as attr (attr.name)}
 											<div
-												class="grid grid-cols-[minmax(9rem,14rem)_1fr] gap-4 border-b border-border-subtle px-4 py-2 text-[13px] last:border-0"
+												class="grid grid-cols-[minmax(9rem,14rem)_1fr] gap-4 border-b border-border-subtle px-4 py-2 text-dense last:border-0"
 												class:bg-granted-surface={attr.configured}
 											>
 												<span class="font-mono break-all" class:text-granted={attr.configured}>
@@ -566,9 +572,7 @@
 								{:else if tab === 'fields'}
 									<div data-testid="ldap-panel-fields">
 										{#each probeResult.fields ?? [] as field (field.name)}
-											<div
-												class="border-b border-border-subtle px-4 py-3 text-[13px] last:border-0"
-											>
+											<div class="border-b border-border-subtle px-4 py-3 text-dense last:border-0">
 												<p class="font-mono font-semibold">{field.name}</p>
 												{#if field.attribute}
 													<p class="text-ink-muted">
@@ -605,9 +609,7 @@
 								{:else if tab === 'merge'}
 									<div data-testid="ldap-panel-merge">
 										{#each probeResult.merge ?? [] as merge (merge.name)}
-											<div
-												class="border-b border-border-subtle px-4 py-3 text-[13px] last:border-0"
-											>
+											<div class="border-b border-border-subtle px-4 py-3 text-dense last:border-0">
 												<p class="font-mono font-semibold">
 													{merge.name}
 													<span class="ml-2 font-sans text-xs text-ink-muted">{merge.action}</span>
@@ -632,7 +634,7 @@
 												{/if}
 											</div>
 										{/each}
-										<p class="bg-surface-muted px-4 py-2 text-[13px] text-ink-muted">
+										<p class="bg-surface-muted px-4 py-2 text-dense text-ink-muted">
 											Nothing was written. No directory record, no group rows, no miss window, no
 											auto-disable.
 										</p>
@@ -645,14 +647,14 @@
 										data-testid="ldap-suggestions"
 									>
 										<SectionLabel>Config that would keep what is being ignored</SectionLabel>
-										<p class="mb-2 text-[13px] text-ink-muted">
+										<p class="mb-2 text-dense text-ink-muted">
 											Suggestions, not decisions. Review each one before committing it.
 										</p>
 										{#each probeResult.suggestions as suggestion (suggestion.yaml)}
 											<div class="mb-3 last:mb-0">
-												<p class="text-[13px] text-ink-muted">{suggestion.reason}</p>
+												<p class="text-dense text-ink-muted">{suggestion.reason}</p>
 												<pre
-													class="mt-1 overflow-x-auto rounded bg-surface-muted p-3 font-mono text-[13px]">{suggestion.yaml}</pre>
+													class="mt-1 overflow-x-auto rounded bg-surface-muted p-3 font-mono text-dense">{suggestion.yaml}</pre>
 											</div>
 										{/each}
 									</div>

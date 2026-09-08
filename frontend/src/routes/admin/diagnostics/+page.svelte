@@ -30,11 +30,18 @@
 
 	// The badge colour and label for a check's status. Skipped is deliberately
 	// neutral, not a pass: a check that could not run is not an all-clear.
+	//
+	// The same four pairs StatusBadge uses, from the same tokens. These were
+	// raw Tailwind palette literals with a hand-written `dark:` override on
+	// each one, which is the only place in the app that carried a colour the
+	// theme did not know about: the light values came from a different green
+	// and a different red than the rest of the app, and the dark values had
+	// to be maintained by hand because a literal cannot follow a token swap.
 	const badges: Record<string, { label: string; class: string }> = {
-		ok: { label: 'OK', class: 'bg-green-500/15 text-green-700 dark:text-green-400' },
-		warn: { label: 'Warning', class: 'bg-amber-500/15 text-amber-700 dark:text-amber-400' },
-		critical: { label: 'Critical', class: 'bg-red-500/15 text-red-700 dark:text-red-400' },
-		skipped: { label: 'Skipped', class: 'bg-ink-muted/15 text-ink-muted' }
+		ok: { label: 'OK', class: 'bg-granted-surface text-granted' },
+		warn: { label: 'Warning', class: 'bg-trimmed-surface text-trimmed' },
+		critical: { label: 'Critical', class: 'bg-danger-surface text-danger' },
+		skipped: { label: 'Skipped', class: 'bg-surface-muted text-ink-muted' }
 	};
 
 	function badge(status: string): { label: string; class: string } {

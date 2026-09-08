@@ -68,7 +68,7 @@
 
 <div
 	data-testid={testid}
-	class="flex w-full items-center justify-between gap-4 rounded-[10px] border border-border-subtle bg-surface px-4 py-3 text-left text-ink"
+	class="flex w-full items-center justify-between gap-4 rounded-xl border border-border-subtle bg-surface px-4 py-3 text-left text-ink"
 >
 	<span class="flex min-w-0 flex-1 items-center gap-3">
 		<TypeBadge type={denial.type} />
@@ -81,7 +81,7 @@
 		<span
 			class="grid min-w-0 flex-1 gap-x-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1fr)] xl:items-baseline"
 		>
-			<span class="block truncate font-mono text-[13px]">{subject}</span>
+			<span class="block truncate font-mono text-dense">{subject}</span>
 			<span class="mt-0.5 block truncate text-xs text-ink-muted xl:mt-0">
 				{what} denied {relativeTime(denial.decided_at, now)}
 			</span>

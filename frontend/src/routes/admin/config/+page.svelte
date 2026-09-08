@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Alert from '$lib/components/Alert.svelte';
+	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
 	import PageHeading from '$lib/components/PageHeading.svelte';
 	import PageShell from '$lib/components/PageShell.svelte';
 	import SearchInput from '$lib/components/SearchInput.svelte';
@@ -92,7 +93,12 @@
 	</PageHeading>
 
 	{#if busy}
-		<p class="text-sm text-ink-muted">Loading…</p>
+		<LoadingBlock
+			shape="lines"
+			count={6}
+			label="Loading the configuration…"
+			testid="config-loading"
+		/>
 	{:else if error}
 		<Alert variant="error" title="Could not load the configuration" testid="config-error">
 			{error}
@@ -107,7 +113,7 @@
 					onsearch={(term: string) => (query = term)}
 				/>
 			</div>
-			<label class="flex items-center gap-2 text-[13px] whitespace-nowrap text-ink-muted">
+			<label class="flex items-center gap-2 text-dense whitespace-nowrap text-ink-muted">
 				<input type="checkbox" bind:checked={showUnset} class="accent-accent" />
 				Show unset keys
 			</label>
@@ -137,19 +143,17 @@
 						class="rounded-lg border border-border-subtle bg-surface-muted p-4"
 					>
 						<h2
-							class="mb-1.5 font-mono text-[11px] font-semibold tracking-[0.06em] text-ink-muted uppercase"
+							class="mb-1.5 font-mono text-meta font-semibold tracking-label text-ink-muted uppercase"
 						>
 							{section.name}
 						</h2>
 						<dl class="flex flex-col divide-y divide-border-subtle">
 							{#each section.settings as setting (setting.key)}
 								<div class="flex flex-col gap-0.5 py-1.5 sm:flex-row sm:items-baseline sm:gap-4">
-									<dt
-										class="font-mono text-[12px] break-all text-ink-muted sm:w-[22rem] sm:shrink-0"
-									>
+									<dt class="font-mono text-xs break-all text-ink-muted sm:w-[22rem] sm:shrink-0">
 										{setting.key}
 									</dt>
-									<dd class="flex items-baseline gap-2 font-mono text-[12px] break-all">
+									<dd class="flex items-baseline gap-2 font-mono text-xs break-all">
 										{#if setting.value === ''}
 											<span class="text-ink-muted italic">not set</span>
 										{:else}
@@ -157,7 +161,7 @@
 										{/if}
 										{#if setting.secret}
 											<span
-												class="shrink-0 rounded border border-border-subtle px-1 text-[10px] tracking-[0.04em] text-ink-muted uppercase"
+												class="shrink-0 rounded border border-border-subtle px-1 text-micro tracking-label text-ink-muted uppercase"
 											>
 												secret
 											</span>

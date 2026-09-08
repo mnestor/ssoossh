@@ -39,6 +39,22 @@ describe('expire code action', () => {
 		expect(screen.getByTestId('expire-confirm')).toBeDisabled();
 	});
 
+	// A native <dialog> returns the caret to whatever opened it, but only on
+	// close(), and this control dismisses by unmounting instead. Without the
+	// teardown in ConfirmModal the caret landed on <body> and a keyboard
+	// reader had to tab the whole page again to get back to where they were.
+	it('should return focus to the trigger when the dialog is cancelled', async () => {
+		const user = userEvent.setup();
+
+		render(ExpireCodeAction, { expire: vi.fn(), onexpired: () => {} });
+		const trigger = screen.getByRole('button', { name: 'Expire this code' });
+		await open(user);
+
+		await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+		await waitFor(() => expect(trigger).toHaveFocus());
+	});
+
 	it('should refuse to submit a reason of only spaces', async () => {
 		const user = userEvent.setup();
 		const expire = vi.fn();
