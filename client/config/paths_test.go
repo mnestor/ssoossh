@@ -156,22 +156,22 @@ func TestCACacheFile(t *testing.T) {
 		{
 			name: "should use ~/.cache on linux",
 			goos: "linux", home: "/home/u",
-			want: "/home/u/.cache/ssoossh/ca.json",
+			want: filepath.Join("/home/u", ".cache", "ssoossh", "ca.json"),
 		},
 		{
 			name: "should use ~/.cache on macos, matching the config file's choice to ignore ~/Library",
 			goos: "darwin", home: "/Users/u",
-			want: "/Users/u/.cache/ssoossh/ca.json",
+			want: filepath.Join("/Users/u", ".cache", "ssoossh", "ca.json"),
 		},
 		{
 			name: "should honor XDG_CACHE_HOME when it is set",
 			goos: "linux", home: "/home/u", xdgCacheHome: "/var/tmp/cache",
-			want: "/var/tmp/cache/ssoossh/ca.json",
+			want: filepath.Join("/var/tmp/cache", "ssoossh", "ca.json"),
 		},
 		{
 			name: "should prefer XDG_CACHE_HOME even with no home directory",
 			goos: "linux", home: "", xdgCacheHome: "/var/tmp/cache",
-			want: "/var/tmp/cache/ssoossh/ca.json",
+			want: filepath.Join("/var/tmp/cache", "ssoossh", "ca.json"),
 		},
 		{
 			name: "should return nothing when there is no home and no XDG_CACHE_HOME",
