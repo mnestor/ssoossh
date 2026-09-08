@@ -77,8 +77,26 @@
 	// <dialog> only gets top-layer stacking, a ::backdrop and a focus trap
 	// from showModal(); the open attribute alone gives none of it. Same
 	// reason ConsentModal calls it imperatively.
+	//
+	// The teardown puts the caret back where it came from. A native <dialog>
+	// does that for free, but only on close(), and none of the three callers
+	// here closes one: each is wrapped in an `{#if}` and dismisses the dialog
+	// by unmounting it, so the element and the focus it was holding leave
+	// together and the caret lands on <body>. A keyboard reader who retired a
+	// code then had to tab the whole page again to get back to where they
+	// were, which is the same defect the navigation drawer fixed for itself.
+	//
+	// Read before showModal() rather than after, because showModal() moves
+	// the caret into the dialog and `document.activeElement` would then be
+	// the dialog itself.
 	$effect(() => {
+		const opener = document.activeElement;
 		dialogEl?.showModal();
+		return () => {
+			if (opener instanceof HTMLElement && opener.isConnected) {
+				opener.focus();
+			}
+		};
 	});
 
 	// Escape fires the native cancel event. Let it through to the caller so

@@ -1083,6 +1083,17 @@ promise six things while the app broke four of them, because nothing checked.
   focus management and an inert background. Anything hand-rolled has to
   supply the same by hand — the mobile drawer moves focus in on open, cycles
   Tab inside, and returns focus to its trigger on every way out.
+
+  `showModal()` gives one thing less than it looks like: a `<dialog>` returns
+  the caret to whatever opened it, but only on `close()`. Every caller of
+  `ConfirmModal` wraps it in an `{#if}` and dismisses it by unmounting, so
+  the element and the focus it was holding used to leave together and the
+  caret landed on `<body>` — a keyboard reader who retired a service code
+  then had to tab the whole page again to get back. `ConfirmModal` captures
+  `document.activeElement` before it calls `showModal()` and restores it in
+  the effect teardown, which covers Cancel, Escape and a completed action
+  alike. A dialog that dismisses by unmounting has to do this for itself.
+
 - **Tables**: `<th scope="col">`. Browsers infer the association for a simple
   table and the inference is not guaranteed.
 - **Page titles**: every route sets `<svelte:head><title>Name · ssoossh</title>`.
