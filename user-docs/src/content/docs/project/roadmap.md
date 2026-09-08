@@ -43,10 +43,6 @@ becomes the reference. For what exists today, see
 - **Cloud KMS signing**, behind the same key-source interface the config,
   key-file, ssh-agent and PKCS#11 backends use today
   ([design](https://github.com/mnestor/ssoossh/blob/main/docs/proposals/hsm-cloud-readiness.md)).
-- **QR-code approval at the console**, so the verification URL can be
-  photographed instead of typed. The server already returns the short
-  `/c/<code>` URL a QR has to encode; drawing it is the console module's
-  half, in [ssoossh-pam](https://github.com/mnestor/ssoossh-pam).
 - **Push approval to a registered device**, deferred rather than rejected:
   request creation is unauthenticated, so an opt-in, per-target-user rate
   limit has to come first.

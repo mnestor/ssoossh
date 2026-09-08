@@ -162,8 +162,8 @@ and `pam_ssh_agent_auth` is rejected because it requires agent forwarding.
 - Console login: the server half is built -- a `console` certificate type,
   `POST /api/certs/console`, the typed-code resolve endpoint, and the web UI
   that accepts a code. The module that drives it from a console is written
-  separately in C. What is left is the QR rendering and the deferred push
-  channel; see [Console login](/ssoossh/concepts/console-flow/).
+  separately in C, and it now draws the QR code as well. What is left is the
+  deferred push channel; see [Console login](/ssoossh/concepts/console-flow/).
   Note the one correction that design made to the line this bullet used to
   carry: the per-host *group* restriction belongs in the host's PAM stack
   (`pam_succeed_if` above the ssoossh line), not on the wire, because a field
