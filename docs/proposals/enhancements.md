@@ -66,3 +66,13 @@ worth doing: a custom action, or move the check into the client so it
 refuses to honour an enforced config file whose owner is not an
 administrator or SYSTEM. The second is better -- it defends the
 installations that predate the installer as well.
+
+## Cache the CA public key on the client
+
+Promoted to its own document: [client-ca-cache.md](client-ca-cache.md).
+
+An unpinned client fetches `GET /api/ca` on every invocation, so every
+`Match exec` pays a round trip, and a client holding a valid certificate
+still fails when the server is unreachable. Cache the fetched key, refresh
+it daily and best-effort, and keep the cache out of the config merge so it
+cannot shadow a `capubkey` an administrator sets later.
