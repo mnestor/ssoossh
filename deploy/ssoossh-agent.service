@@ -1,0 +1,51 @@
+[Unit]
+Description=ssoossh CA agent — holds the CA private key ssoosshd signs with
+Documentation=https://mnestor.github.io/ssoossh/operations/ssh-agent/
+
+[Service]
+# -D keeps ssh-agent in the foreground so systemd tracks this process
+# directly. Without it the agent forks, prints shell assignments to stdout
+# and exits, which systemd reads as the service dying at startup.
+Type=exec
+ExecStart=/usr/bin/ssh-agent -D -a /run/ssoossh/agent.sock
+
+# Deliberately NOT Restart=always, which is the wrong instinct here. A
+# restarted agent comes back EMPTY, and ssoosshd cannot re-add a key nobody
+# added: the server stays up, looks healthy, and fails every signature. A
+# unit that stays stopped is the failure that gets noticed; a silently
+# restarted one is the failure that does not.
+Restart=no
+
+# /run/ssoossh holds the agent socket. Preserved so the directory outlives
+# a stop, which matters because ssoosshd's drop-in names it in
+# ReadWritePaths= and a missing path there is a startup failure.
+RuntimeDirectory=ssoossh
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+
+# The same account ssoosshd runs as, so the server can open the socket
+# ssh-agent creates at mode 0600. An operator loading the key therefore
+# does it as this user; see the ssh-agent operations page.
+#   useradd --system --no-create-home --shell /usr/sbin/nologin ssoossh
+User=ssoossh
+Group=ssoossh
+
+# --- sandboxing -----------------------------------------------------------
+# Lighter than ssoosshd's, on purpose. `ssh-add -s <module>` makes this
+# process dlopen a vendor PKCS#11 library, which is the whole reason to put
+# an HSM behind an agent rather than inside the signer. Restrictions that
+# would break that mapping are left off rather than debugged later at 3am.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+
+# No [Install] section. This unit is started by the operator (or pulled in
+# by ssoosshd's BindsTo=), never enabled at boot, because a running agent
+# with no key in it is not a useful thing to start automatically.

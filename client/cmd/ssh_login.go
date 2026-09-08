@@ -284,7 +284,7 @@ func runLoginPreflight(root *RootCommand, cfg *config.Config, out io.Writer) err
 		if err != nil {
 			return fmt.Errorf("agent storage check failed and fallback is unavailable: %w (fallback error: %w)", preflightErr, err)
 		}
-		if setCAErr := fileAgent.SetCA(cfg.CAPubkey); setCAErr != nil {
+		if setCAErr := fileAgent.SetCA(cfg.CAPubkey...); setCAErr != nil {
 			return fmt.Errorf("agent storage check failed and fallback setup failed: %w (setup error: %w)", preflightErr, setCAErr)
 		}
 		// Fallback succeeded, replace the agent
@@ -419,14 +419,21 @@ func runLogin(ctx context.Context, root *RootCommand, out io.Writer, force bool)
 // Best-effort, like the rest of the host context: a key that will not parse
 // is reported as no fingerprint rather than failing a login over metadata.
 func pinnedCAFingerprints(cfg *config.Config) []string {
-	if cfg == nil || !cfg.CAPubkeyPinned || cfg.CAPubkey == "" {
+	if cfg == nil || !cfg.CAPubkeyPinned || len(cfg.CAPubkey) == 0 {
 		return nil
 	}
-	parsed, _, _, _, err := ssh.ParseAuthorizedKey([]byte(cfg.CAPubkey)) //nolint:dogsled // the comment/options/rest say nothing about the key
-	if err != nil {
+	prints := make([]string, 0, len(cfg.CAPubkey))
+	for _, key := range cfg.CAPubkey {
+		parsed, _, _, _, err := ssh.ParseAuthorizedKey([]byte(key))
+		if err != nil {
+			continue
+		}
+		prints = append(prints, ssh.FingerprintSHA256(parsed))
+	}
+	if len(prints) == 0 {
 		return nil
 	}
-	return []string{ssh.FingerprintSHA256(parsed)}
+	return prints
 }
 
 // pruneSuperseded removes the certificates this login replaces: everything

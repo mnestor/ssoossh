@@ -3,13 +3,30 @@ package config
 import "github.com/mnestor/ssoossh/internal/fipsmode"
 
 type Config struct {
-	Server   string `mapstructure:"server"`
-	CAPubkey string `mapstructure:"capubkey"`
+	Server string `mapstructure:"server"`
+
+	// CAPubkey is the server's CA public key or keys, in authorized_keys
+	// form. A list rather than a single key because a CA rotation is live
+	// on both keys at once: /api/ca returns every active signer key, and a
+	// client that could hold only one would reject half the certificates
+	// issued during the changeover.
+	//
+	// Either YAML shape is accepted, so an existing scalar keeps working:
+	//
+	//	capubkey: "ssh-ed25519 AAAA... ca@example"
+	//
+	//	capubkey:
+	//	  - "ssh-ed25519 AAAA... ca-old@example"
+	//	  - "ssh-ed25519 BBBB... ca-new@example"
+	//
+	// A multi-line scalar works too, since a string is split on newlines on
+	// the way in — that is the form /api/ca itself returns.
+	CAPubkey []string `mapstructure:"capubkey"`
 
 	// CAPubkeyPinned records that CAPubkey came from configuration rather
 	// than from the server. The runner overwrites CAPubkey with a fetched
-	// key when none is configured (client/cmd/cmd.go), so by the time a
-	// request is built the field alone no longer says which it was.
+	// or cached key when none is configured (client/cmd/cmd.go), so by the
+	// time a request is built the field alone no longer says which it was.
 	//
 	// It matters because only a pinned key is worth reporting as
 	// trusted_ca_fingerprints: telling the server the fingerprint of the

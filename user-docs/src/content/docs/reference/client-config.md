@@ -19,7 +19,7 @@ content ships as the `ssoossh.yaml(5)` man page and as the annotated
 | Key | Type | Default |
 | --- | --- | --- |
 | [`server`](#server) | string | `empty` |
-| [`capubkey`](#capubkey) | string | `empty` |
+| [`capubkey`](#capubkey) | string or list | `empty` |
 | [`insecure_skip_verify`](#insecure_skip_verify) | bool | `false` |
 
 ### `server`
@@ -36,16 +36,59 @@ server: "https://ssh.example.com"
 
 ### `capubkey`
 
-`string`, default `empty`
+`string` or list of strings, default `empty`
 
 The server's CA public key, in `authorized_keys` format. When set, the client
-skips fetching the CA key from the server at startup, which pins the key rather
-than trusting a fetched one. When empty, it is fetched from the server on first
-use.
+skips asking the server for the CA key entirely, which pins the key rather than
+trusting a fetched one, and is the only form reported to the server as a
+trusted CA so an approval page can warn before this client refuses a
+certificate.
 
 ```yaml
 capubkey: "ecdsa-sha2-nistp384 AAAAE2VjZHNh... ssoossh-ca"
 ```
+
+A list holds more than one, which is what a CA rotation needs: both keys are
+live at once while the old one ages out, and a client trusting only one would
+refuse half the certificates issued in between.
+
+```yaml
+capubkey:
+  - "ecdsa-sha2-nistp384 AAAAE2VjZHNh... ssoossh-ca-old"
+  - "ecdsa-sha2-nistp384 AAAAE2VjZHNh... ssoossh-ca-new"
+```
+
+When empty, the client fetches the key from the server and caches it, so
+later commands neither pay a round trip nor fail while the server is
+restarting. See [the CA key cache](#the-ca-key-cache).
+
+### The CA key cache
+
+With no `capubkey` set, the client stores the keys it fetched and reuses them
+for a day before asking again. This is what keeps a client working while the
+server is down: an already-valid certificate is reused without any network
+call, where before the client failed at startup fetching a key it already
+had.
+
+| Platform | Path |
+| --- | --- |
+| Linux, macOS | `$XDG_CACHE_HOME/ssoossh/ca.json`, else `~/.cache/ssoossh/ca.json` |
+| Windows | `%LocalAppData%\ssoossh\ca.json` |
+
+Deliberately not the configuration file. The per-user config outranks the
+system one, so a cached key written there would silently shadow a `capubkey`
+an administrator set in `/etc/ssoossh/ssoossh.yaml` afterwards.
+
+A refresh that fails changes nothing: the cached keys stay in use and the
+command carries on. A refresh with something already cached is given two
+seconds, because the client runs from `Match exec` with `ssh` waiting on it.
+
+It is a cache, not a trust decision. The keys are used only to recognise this
+client's own certificates, never to verify a host, and they are never
+reported to the server as pinned. If the server's key set is ever replaced
+outright the client adopts the new one and warns, since it cannot tell a
+rotation it slept through from a server rebuilt around a new CA. Set
+`capubkey` to refuse a change instead of adopting it.
 
 ### `insecure_skip_verify`
 

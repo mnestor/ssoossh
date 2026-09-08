@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -141,8 +142,17 @@ func newConfig(cmd *cobra.Command, paths searchPaths, loadPolicy func() (map[str
 	}
 	sources = append(sources, ConfigSource{Label: "platform policy", Status: policyStatus, AdminLock: true})
 
+	// The hook chain is spelled out rather than left to viper's default
+	// because capubkey accepts a scalar as well as a sequence, and the
+	// default StringToSliceHookFunc(",") would split a single key on a
+	// comma in its comment. Ours runs first and takes the conversion; the
+	// two defaults follow so nothing else changes.
 	var c Config
-	if err := v.Unmarshal(&c); err != nil {
+	if err := v.Unmarshal(&c, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
+		stringToKeyListHook(),
+		mapstructure.StringToTimeDurationHookFunc(),
+		mapstructure.StringToSliceHookFunc(","),
+	))); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 	c.FIPSEnforced = (enforceSetsFIPS || policySetsFIPS) && c.FIPS != nil && *c.FIPS

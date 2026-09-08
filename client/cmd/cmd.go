@@ -35,13 +35,19 @@ type RootCommand struct {
 	ssh     agent.Agent
 	initErr error
 
-	// newConfig, newAPIClient, newSSHAgent, and newFileAgent are overridable
-	// seams for PreRun, so tests can inject fakes instead of hitting a real
-	// server/ssh-agent/config file on disk.
+	// newConfig, newAPIClient, newSSHAgent, newFileAgent and caCachePath are
+	// overridable seams for PreRun, so tests can inject fakes instead of
+	// hitting a real server/ssh-agent/config file on disk.
 	newConfig    func(cmd *cobra.Command) (*config.Config, error)
 	newAPIClient func(cfg *config.Config) (api.Client, error)
 	newSSHAgent  func() (agent.Agent, error)
 	newFileAgent func(path string) (agent.Agent, error)
+	// caCachePath returns where the CA key cache lives. A seam of its own
+	// because it is the one path here that resolves against $HOME without
+	// the config file having named it, and a test that wrote there would be
+	// writing to the developer's own cache. Returning "" disables the cache
+	// entirely, which is what an unset HOME does in production too.
+	caCachePath func() string
 
 	// cobraRoot is the assembled *cobra.Command, captured by Init. It is the
 	// only way out of simplecobra to the tree itself: simplecobra.Exec keeps
@@ -161,12 +167,15 @@ func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 		return nil
 	}
 	r.api = apiClient
-	// Recorded before the fetch below overwrites it: afterwards a configured
-	// key and a fetched one are indistinguishable, and only the first is
-	// worth reporting as a trusted CA (see config.Config.CAPubkeyPinned).
-	cfg.CAPubkeyPinned = cfg.CAPubkey != ""
-	if cfg.CAPubkey == "" {
-		cfg.CAPubkey, err = apiClient.GetCA(runner.CobraCommand.Context())
+	// Recorded before the lookup below overwrites it: afterwards a
+	// configured key and a fetched one are indistinguishable, and only the
+	// first is worth reporting as a trusted CA (see
+	// config.Config.CAPubkeyPinned). A cached key is a fetched key, not a
+	// pinned one -- reporting it would tell the server the fingerprint of a
+	// key it handed us itself.
+	cfg.CAPubkeyPinned = len(cfg.CAPubkey) > 0
+	if !cfg.CAPubkeyPinned {
+		cfg.CAPubkey, err = resolveCAKeys(runner.CobraCommand.Context(), apiClient, r.caCacheFile())
 		if err != nil {
 			r.initErr = fmt.Errorf("get CA public key: %w", err)
 			return nil
@@ -180,9 +189,21 @@ func (r *RootCommand) PreRun(this, runner *simplecobra.Commandeer) error {
 	}
 	r.ssh = a
 	slog.Info("key storage resolved", "type", a.Type(), "backend", a.Backend())
-	r.initErr = r.ssh.SetCA(cfg.CAPubkey)
+	r.initErr = r.ssh.SetCA(cfg.CAPubkey...)
 
 	return nil
+}
+
+// caCacheFile returns where the CA key cache lives, or "" when no seam is
+// installed. A RootCommand built as a struct literal rather than by
+// newExec — which is every test — gets a disabled cache that way, instead
+// of a nil dereference or, worse, a write into the developer's own
+// ~/.cache.
+func (r *RootCommand) caCacheFile() string {
+	if r.caCachePath == nil {
+		return ""
+	}
+	return r.caCachePath()
 }
 
 // agentForDebug returns the resolved agent for the debug report, or nil
@@ -277,6 +298,7 @@ func newExec() (*simplecobra.Exec, error) {
 		newAPIClient: newAPIClientFromConfig,
 		newSSHAgent:  agent.NewSSHAgent,
 		newFileAgent: agent.NewFileAgent,
+		caCachePath:  config.CACacheFile,
 	}
 	root.commands = []simplecobra.Commander{
 		newCACommand(),
