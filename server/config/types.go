@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"net/mail"
 	"time"
 
 	"github.com/mnestor/ssoossh/internal/fipsmode"
@@ -124,6 +126,50 @@ type BrandingSettings struct {
 	// LoginNotice is a plain-text message shown on the login page before authentication.
 	// Empty disables the notice. Supports newlines for multi-line text.
 	LoginNotice string `mapstructure:"login_notice" default:""`
+
+	// SupportEmail is the address of whoever answers for this deployment —
+	// the local help desk, not the project. Empty leaves the web UI
+	// pointing at its defaults: "contact your administrator" on the login
+	// page, and the project's GitHub issue tracker in the footer.
+	//
+	// Set it and both become a mailto: link to this address. One setting
+	// covers both because it is one question — "who do I ask about this
+	// deployment?" — and a second key would let an operator answer it in
+	// one place and forget the other, which is the failure this exists to
+	// prevent.
+	//
+	// It is served by the unauthenticated /api/branding endpoint and
+	// rendered on the login page, so it is public: use the shared support
+	// address, never a personal one. It is parsed at startup and a value
+	// that is not an address fails the server rather than producing a dead
+	// link on the one page a locked-out user can reach.
+	SupportEmail string `mapstructure:"support_email" default:"" example:"\"support@example.com\""`
+
+	// SupportLabel is the link text for SupportEmail, e.g. "the IT service
+	// desk". Ignored when SupportEmail is unset.
+	//
+	// Empty falls back to whatever reads best in each place: the address
+	// itself on the login page, where it sits in a sentence and is a
+	// complete instruction on its own, and "Contact support" in the footer,
+	// where a bare address would be noise in a row of links.
+	SupportLabel string `mapstructure:"support_label" default:"" example:"\"the IT service desk\""`
+}
+
+// Validate checks the branding values that can be wrong in a way the web UI
+// cannot recover from.
+//
+// Only the support address qualifies today: it becomes an href on the login
+// page, which is the one page a locked-out user can reach, and a typo there
+// produces a link that fails silently in their mail client rather than
+// anywhere an operator would see it.
+func (b *BrandingSettings) Validate() error {
+	if b.SupportEmail == "" {
+		return nil
+	}
+	if _, err := mail.ParseAddress(b.SupportEmail); err != nil {
+		return fmt.Errorf("branding.support_email %q is not a valid email address: %w", b.SupportEmail, err)
+	}
+	return nil
 }
 
 // FIPSEnabled reports whether FIPS steering is in effect. See

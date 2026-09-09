@@ -28,6 +28,16 @@
 	// form behind it is blurred, dimmed, and untouchable, so there is no
 	// version of this screen where someone signs in without accepting.
 	const blocked = $derived(!!branding.login_notice && !consentAccepted);
+
+	// The deployment's own support contact. This is the one page a user
+	// locked out of everything else can still reach, so when an operator
+	// has named someone, say who rather than "your administrator".
+	//
+	// The label falls back to the address itself here: read inline in a
+	// sentence, "Contact support@example.com" is a complete instruction,
+	// which is not true of the footer's nav link (see Footer.svelte).
+	const supportEmail = $derived(branding.support_email ?? '');
+	const supportLabel = $derived(branding.support_label || supportEmail);
 </script>
 
 <svelte:head><title>Sign in · ssoossh</title></svelte:head>
@@ -72,6 +82,19 @@
 			</Button>
 		{/if}
 
-		<p class="text-xs text-ink-muted">Trouble signing in? Contact your administrator.</p>
+		{#if supportEmail}
+			<p class="text-xs text-ink-muted">
+				Trouble signing in? Contact
+				<!-- A mailto:, not a route: resolve() validates route ids against
+				     this app's route tree and has nothing to check a mail client
+				     handoff against. -->
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+				<a class="font-medium text-accent hover:underline" href="mailto:{supportEmail}"
+					>{supportLabel}</a
+				>.
+			</p>
+		{:else}
+			<p class="text-xs text-ink-muted">Trouble signing in? Contact your administrator.</p>
+		{/if}
 	</div>
 </PageShell>

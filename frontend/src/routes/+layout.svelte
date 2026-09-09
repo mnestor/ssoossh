@@ -277,7 +277,7 @@
 				{@render children()}
 			</main>
 
-			<Footer {version} />
+			<Footer {version} {branding} />
 		</div>
 	</div>
 {:else}
@@ -314,6 +314,6 @@
 			{@render children()}
 		</main>
 
-		<Footer {version} />
+		<Footer {version} {branding} />
 	</div>
 {/if}

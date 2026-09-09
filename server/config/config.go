@@ -120,6 +120,13 @@ func NewConfig(cmd *cobra.Command) (*Config, error) {
 		return nil, err
 	}
 
+	// And the support contact: it is rendered as a link on the login page,
+	// so a bad address surfaces to a locked-out user rather than to anyone
+	// who could fix it.
+	if err := c.Branding.Validate(); err != nil {
+		return nil, err
+	}
+
 	// Require an explicit cookie_key when multi-instance is enabled, so
 	// sessions don't break between instances. The default per-process
 	// random key would leave users logging out unexpectedly.

@@ -1270,6 +1270,18 @@ components:
             OrgName is the organization name displayed in the web UI (e.g., "Acme Corp").
             Empty disables organization-specific branding.
           type: string
+        support_email:
+          description: |-
+            SupportEmail is the deployment's own support address, validated at
+            startup. When set, the login page's "contact your administrator" and
+            the footer's issue link both become mailto: links to it; when unset,
+            both keep their defaults. Omitted entirely when unconfigured.
+          type: string
+        support_label:
+          description: |-
+            SupportLabel is the link text for SupportEmail. Omitted when unset,
+            and the client falls back to showing the address itself.
+          type: string
       type: object
     webtypes.CertificateListAdminResponse:
       properties:

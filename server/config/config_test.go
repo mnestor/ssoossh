@@ -436,3 +436,91 @@ authentication:
 		t.Error("got AuthConfig.DisablePKCE false, want true from the config file")
 	}
 }
+
+// The support contact binds from the branding block, and the label is
+// carried alongside the address rather than in a block of its own.
+func TestNewConfig_ShouldReadTheBrandingSupportContact(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "support.yaml")
+	writeFile(t, path, `
+ssh_key: "test-key-material"
+branding:
+  support_email: "support@example.com"
+  support_label: "the IT service desk"
+`)
+
+	cc := newTestCommand()
+	if err := cc.Flags().Set("config", path); err != nil {
+		t.Fatalf("failed to set --config flag: %v", err)
+	}
+
+	c, err := NewConfig(cc)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	tests := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"support email", c.Branding.SupportEmail, "support@example.com"},
+		{"support label", c.Branding.SupportLabel, "the IT service desk"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.got != tc.want {
+				t.Errorf("got %q, want %q", tc.got, tc.want)
+			}
+		})
+	}
+}
+
+// An unconfigured deployment says nothing about support, and the web UI
+// keeps its own defaults.
+func TestNewConfig_ShouldLeaveTheSupportContactEmptyByDefault(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.yaml")
+	writeFile(t, path, `ssh_key: "test-key-material"`)
+
+	cc := newTestCommand()
+	if err := cc.Flags().Set("config", path); err != nil {
+		t.Fatalf("failed to set --config flag: %v", err)
+	}
+
+	c, err := NewConfig(cc)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if c.Branding.SupportEmail != "" {
+		t.Errorf("got Branding.SupportEmail %q, want empty (default)", c.Branding.SupportEmail)
+	}
+}
+
+// The address becomes an href on the login page — the one page a locked-out
+// user can reach — so a typo fails the server rather than producing a dead
+// link nobody who could fix it will ever click.
+func TestNewConfig_ShouldRejectAnUnparseableSupportEmail(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad-support.yaml")
+	writeFile(t, path, `
+ssh_key: "test-key-material"
+branding:
+  support_email: "not an address"
+`)
+
+	cc := newTestCommand()
+	if err := cc.Flags().Set("config", path); err != nil {
+		t.Fatalf("failed to set --config flag: %v", err)
+	}
+
+	if _, err := NewConfig(cc); err == nil {
+		t.Error("NewConfig() error = nil, want an error for an unparseable branding.support_email")
+	}
+}

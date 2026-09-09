@@ -39,8 +39,15 @@ type brandingController struct {
 // @Router      /api/branding [get]
 func (b *brandingController) getBrandingHandler(gc *gin.Context) {
 	resp := webtypes.BrandingResponse{
-		OrgName:     b.config.Branding.OrgName,
-		LoginNotice: b.config.Branding.LoginNotice,
+		OrgName:      b.config.Branding.OrgName,
+		LoginNotice:  b.config.Branding.LoginNotice,
+		SupportEmail: b.config.Branding.SupportEmail,
+	}
+
+	// The label is only meaningful alongside an address: sending one on its
+	// own would give the client a caption for a link it cannot build.
+	if resp.SupportEmail != "" {
+		resp.SupportLabel = b.config.Branding.SupportLabel
 	}
 
 	// Only include logo_url if a logo is configured

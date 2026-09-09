@@ -4,17 +4,31 @@
 	   against this app's route tree. The URLs come from the server's
 	   /api/version payload, which the lint rule cannot see through. */
 	/* eslint-disable svelte/no-navigation-without-resolve */
-	import type { VersionResponse } from '$lib/api/generated/webtypes';
+	import type { BrandingResponse, VersionResponse } from '$lib/api/generated/webtypes';
 
 	// The bar closing every page: what build is running, and where the
 	// project lives. Presentational on purpose — the caller supplies the
-	// build identity so this stays trivially testable, and so the fetch
-	// happens once in the layout rather than per render.
+	// build identity and the branding so this stays trivially testable, and
+	// so both fetches happen once in the layout rather than per render.
 	interface Props {
 		version: VersionResponse | null;
+		branding?: BrandingResponse | null;
 	}
 
-	let { version }: Props = $props();
+	let { version, branding = null }: Props = $props();
+
+	// Where a user reports a problem. A deployment that names its own
+	// support address takes over this slot entirely: end users filing
+	// GitHub issues about someone else's SSH infrastructure helps nobody,
+	// and an operator who set a support contact has already said who
+	// handles this. The project links (the GitHub mark, the release tag)
+	// stay put — those are attribution, not a support funnel.
+	//
+	// The label falls back to a generic action rather than to the raw
+	// address, unlike the login page: a bare address reads as a caption in
+	// a sentence and as noise in a row of nav links.
+	const supportEmail = $derived(branding?.support_email ?? '');
+	const supportLabel = $derived(branding?.support_label || 'Contact support');
 
 	/** shortCommit trims a git sha to the usual seven characters, and leaves
 	 * anything that is not a sha (the unstamped "commit" default) alone. */
@@ -83,12 +97,16 @@
 					</svg>
 					GitHub
 				</a>
-				<a
-					href={`${version.github_url}/issues`}
-					target="_blank"
-					rel="noopener noreferrer"
-					class="hover:text-ink">Report an issue</a
-				>
+				{#if supportEmail}
+					<a href={`mailto:${supportEmail}`} class="hover:text-ink">{supportLabel}</a>
+				{:else}
+					<a
+						href={`${version.github_url}/issues`}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="hover:text-ink">Report an issue</a
+					>
+				{/if}
 			</nav>
 		</div>
 	</footer>
