@@ -5,17 +5,23 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
 
 // runHostPrincipals is what sshd invokes through AuthorizedPrincipalsCommand
 // on every login attempt, as root, with no network. Its contract with sshd
-// is unusual and worth pinning precisely: no output and exit 0 means "this
-// account has no principals", so the only case that may fail loudly is a
-// file that is there and unusable. Getting that backwards either denies
-// every login on a host whose mapping is simply empty, or silently denies
-// them on a host whose mapping is corrupt.
+// is unusual and worth pinning precisely: the only case that may fail
+// loudly is a file that is there and unusable, because treating a corrupt
+// mapping as an empty one silently denies every login on the host.
+//
+// The account name itself is always among the principals printed. That is
+// what sshd does unaided -- with no AuthorizedPrincipalsCommand configured
+// it accepts a certificate carrying the target account name -- so
+// installing this command no longer takes that away from an account whose
+// mapping does not restate it. The floor applies on the success paths
+// only; a file that will not load prints nothing at all.
 
 func TestRunHostPrincipals_ShouldPrintOnePrincipalPerLine(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "principals.yaml")
@@ -29,9 +35,12 @@ func TestRunHostPrincipals_ShouldPrintOnePrincipalPerLine(t *testing.T) {
 		}
 	})
 
+	// The file's own order first, then the account name appended: anything
+	// parsing this output sees the lines it saw before, in the same places.
 	got := strings.Fields(out)
-	if len(got) != 2 || got[0] != "alice" || got[1] != "bob" {
-		t.Errorf("got %v, want [alice bob]", got)
+	want := []string{"alice", "bob", "deploy"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
 	}
 	// Another account's principals must not leak in. This is an
 	// authorization boundary, not a formatting detail.
@@ -40,7 +49,11 @@ func TestRunHostPrincipals_ShouldPrintOnePrincipalPerLine(t *testing.T) {
 	}
 }
 
-func TestRunHostPrincipals_ShouldSucceedSilentlyWhenNothingMatches(t *testing.T) {
+// With nothing mapped for the account, the floor is the whole answer: the
+// account name, once, and nothing else. This is the case that used to print
+// nothing, which left an identity unable to use its own principal on a host
+// whose mapping simply did not mention it.
+func TestRunHostPrincipals_ShouldPrintTheAccountNameWhenNothingMatches(t *testing.T) {
 	dir := t.TempDir()
 	populated := filepath.Join(dir, "principals.yaml")
 	if err := os.WriteFile(populated, []byte("deploy:\n  - alice\n"), 0o600); err != nil {
@@ -54,9 +67,8 @@ func TestRunHostPrincipals_ShouldSucceedSilentlyWhenNothingMatches(t *testing.T)
 	}{
 		{name: "unknown account", path: populated, account: "nobody"},
 		{name: "missing file", path: filepath.Join(dir, "absent.yaml"), account: "deploy"},
-		// An empty path is what an operator gets from `--file ""`. sshd
-		// reads the empty answer as "no principals", which is the safe
-		// reading of "no mapping was configured".
+		// An empty path is what an operator gets from `--file ""`: no
+		// mapping was configured, so the floor is all there is to say.
 		{name: "no path at all", path: "", account: "deploy"},
 	}
 
@@ -64,14 +76,72 @@ func TestRunHostPrincipals_ShouldSucceedSilentlyWhenNothingMatches(t *testing.T)
 		t.Run(tt.name, func(t *testing.T) {
 			out := captureStdout(t, func() {
 				if err := runHostPrincipals(context.Background(), tt.account, tt.path); err != nil {
-					t.Fatalf("expected a silent success, got %v", err)
+					t.Fatalf("expected a success, got %v", err)
 				}
 			})
 
-			if strings.TrimSpace(out) != "" {
-				t.Errorf("expected no output, got %q", out)
+			if got, want := strings.Fields(out), []string{tt.account}; !slices.Equal(got, want) {
+				t.Errorf("got %v, want %v", got, want)
 			}
 		})
+	}
+}
+
+// A mapping that already lists the account gets no second copy, and keeps
+// the order the file gave it.
+func TestRunHostPrincipals_ShouldNotRepeatAnAlreadyMappedAccountName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "principals.yaml")
+	if err := os.WriteFile(path, []byte("deploy:\n  - alice\n  - deploy\n  - bob\n"), 0o600); err != nil {
+		t.Fatalf("write mapping: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runHostPrincipals(context.Background(), "deploy", path); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	got := strings.Fields(out)
+	if want := []string{"alice", "deploy", "bob"}; !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v (the file's order, untouched)", got, want)
+	}
+	if n := slices.Index(got[slices.Index(got, "deploy")+1:], "deploy"); n != -1 {
+		t.Errorf("the account name was printed more than once: %v", got)
+	}
+}
+
+// An account explicitly present with no principals still gets the floor.
+// The mapping file can say "these principals and no others"; it can no
+// longer say "not even your own name".
+func TestRunHostPrincipals_ShouldFloorAnAccountMappedToNothing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "principals.yaml")
+	if err := os.WriteFile(path, []byte("deploy:\nother:\n  - alice\n"), 0o600); err != nil {
+		t.Fatalf("write mapping: %v", err)
+	}
+
+	out := captureStdout(t, func() {
+		if err := runHostPrincipals(context.Background(), "deploy", path); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	if got, want := strings.Fields(out), []string{"deploy"}; !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+// An empty account name has nothing to floor with. sshd always passes %u,
+// so this is a hand-run command with a blank argument, and a blank line is
+// not a principal.
+func TestRunHostPrincipals_ShouldNotPrintABlankLineForAnEmptyAccount(t *testing.T) {
+	out := captureStdout(t, func() {
+		if err := runHostPrincipals(context.Background(), "", ""); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	if strings.TrimSpace(out) != "" || strings.Contains(out, "\n") {
+		t.Errorf("expected no output at all, got %q", out)
 	}
 }
 
@@ -84,12 +154,21 @@ func TestRunHostPrincipals_ShouldFailWhenTheMappingIsMalformed(t *testing.T) {
 		t.Fatalf("write mapping: %v", err)
 	}
 
-	err := runHostPrincipals(context.Background(), "deploy", path)
+	var err error
+	out := captureStdout(t, func() {
+		err = runHostPrincipals(context.Background(), "deploy", path)
+	})
 	if err == nil {
 		t.Fatal("expected a malformed mapping file to be an error")
 	}
 	if !strings.Contains(err.Error(), "parse principals map") {
 		t.Errorf("got %q, want it to say the map would not parse", err.Error())
+	}
+	// Not even the floor: sshd refuses the login on a non-zero exit either
+	// way, and printing a usable principal while failing would invite
+	// whoever reads the output to act on half an answer.
+	if strings.TrimSpace(out) != "" {
+		t.Errorf("expected no output on the error path, got %q", out)
 	}
 }
 
