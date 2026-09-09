@@ -46,6 +46,7 @@ the matching `lint-*`) and the internal check halves
 | Target | What it does |
 | --- | --- |
 | `make frontend` | Build the web UI into server/frontend/dist |
+| `make csp-check` | Assert the built UI's assets are allowed by the served CSP |
 | `make build` | Build all Go packages |
 | `make linux` | Snapshot build for linux/amd64 only |
 | `make binaries` | Snapshot build for every release target |

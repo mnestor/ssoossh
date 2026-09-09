@@ -130,6 +130,15 @@ FRONTEND_SRC := $(shell find frontend/src frontend/static -type f 2>/dev/null) \
 $(FRONTEND_DIST): $(FRONTEND_SRC)
 	$(MAKE) frontend
 
+# The served Content-Security-Policy is written in Go and the assets it has
+# to permit are decided by Vite, so the two drift apart with nothing to
+# notice: an asset slipping under Vite's inline threshold becomes a data:
+# URI that `font-src 'self'` refuses, and the only symptom is a console
+# violation. Depends on the built bundle because it has nothing to check
+# without one.
+csp-check: $(FRONTEND_DIST) ## Assert the built UI's assets are allowed by the served CSP
+	./scripts/check-csp-assets.sh
+
 # CGO_ENABLED=1 because server/signer's HSM key source reaches libpkcs11
 # through crypto11: with cgo off the server packages do not build at all.
 build: $(FRONTEND_DIST) ## Build all Go packages
@@ -168,7 +177,7 @@ frontend-clean: ## Remove the built web UI
 
 ##@ Test
 
-.PHONY: test test-server test-client test-internal test-race cover cover-ci frontend-test
+.PHONY: test test-server test-client test-internal test-race cover cover-ci frontend-test csp-check
 # server/frontend embeds server/frontend/dist. The unit suite includes tests
 # that assert on real UI assets, so the UI has to exist first.
 test: $(FRONTEND_DIST) test-server test-client test-internal ## Unit tests per component, with coverage
@@ -705,7 +714,7 @@ security: govulncheck pnpm-audit semgrep ## Run every security scanner
 # reverses its up; it was wired into no workflow whatsoever. The e2e tier-1
 # matrix proves the app works on both backends, which is a different claim
 # from the schemas agreeing.
-ci-required: fmt-check check-gitignore check-go-version lint lint-tagged lint-cross frontend-lint frontend-check frontend-test actionlint check-generated build cover-ci cover-floors test-migration semgrep ## Every blocking check CI runs
+ci-required: fmt-check check-gitignore check-go-version lint lint-tagged lint-cross frontend-lint frontend-check frontend-test actionlint check-generated build csp-check cover-ci cover-floors test-migration semgrep ## Every blocking check CI runs
 
 # Advisory: govulncheck and pnpm audit report to the PR summary rather than
 # blocking, because both can surface a dependency you cannot fix in the same

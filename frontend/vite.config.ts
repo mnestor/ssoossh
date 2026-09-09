@@ -19,6 +19,30 @@ export default defineConfig(({ mode }) => {
 	return {
 		plugins: [sveltekit(), tailwindcss()],
 
+		build: {
+			// Never inline a font as a data: URI, whatever its size.
+			//
+			// Vite inlines any asset under assetsInlineLimit (4096 bytes by
+			// default), which quietly caught Fira Code's symbols2 subsets —
+			// box-drawing glyphs, a few hundred bytes each. The served CSP
+			// is `font-src 'self'` (server/middleware/csp_middleware.go), so
+			// the browser refused both, logged two violations per page load,
+			// and fell back to the .woff files sitting next to them.
+			//
+			// Emitting them as files rather than widening the CSP, because
+			// nothing chose to inline them: `data:` is allowed by no
+			// directive in that policy, and a font parser is a poor place to
+			// make the first exception. It is also faster. These are
+			// unicode-range subsets — as files they are fetched only by a
+			// page that actually draws a box character, while inlined they
+			// ride inside the main stylesheet for every visitor on first
+			// paint.
+			//
+			// undefined for everything else defers to the default limit.
+			assetsInlineLimit: (filePath: string) =>
+				/\.(?:woff2?|ttf|otf|eot)$/i.test(filePath) ? false : undefined
+		},
+
 		server: {
 			host: env.HOST,
 			allowedHosts: true,
