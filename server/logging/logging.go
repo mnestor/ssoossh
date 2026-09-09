@@ -1,5 +1,6 @@
 // Package logging sets up the process's slog default from config.Logging
-// plus the "type"-tagged named loggers (access log, db, queue, ldap, audit).
+// plus the "type"-tagged named loggers (access log, db, queue, ldap, audit,
+// mail).
 //
 // # The destination contract
 //
@@ -13,10 +14,14 @@
 //	type=<tag>, no file but a level set     ALL of the general destinations,
 //	                                        filtered at that tag's own level
 //	                                        rather than logging.level
+//	type=audit, no file and no level set    ALL of the general destinations,
+//	                                        filtered at INFO or logging.level,
+//	                                        whichever is lower (see
+//	                                        namedLoggerConfig.floorAtInfo)
 //	type=startup                            ALL of the general destinations,
 //	                                        filtered at INFO or logging.level,
 //	                                        whichever is lower (see
-//	                                        startupLevel)
+//	                                        infoFloor)
 //	everything else                         ALL of the general destinations,
 //	                                        filtered at logging.level:
 //	  - the main log file                     when logging.filename is set
@@ -27,12 +32,19 @@
 //	  - stderr, ERROR and up only             when NOT in a terminal (the
 //	                                          container/systemd convention)
 //
-// The middle row is what lets the access log run at INFO while the
+// The level row is what lets the access log run at INFO while the
 // application log stays at WARN, with both on stdout — a container wants its
 // requests logged without every INFO the rest of the process emits. Without
 // it a named logger's level did nothing at all until it was also given a
 // file, which is not what "the minimum log level for this destination"
 // says, and left the shipped config logging no requests anywhere.
+//
+// The audit row is the same failure caught one step later. Audit events are
+// emitted entirely at INFO, audit.logging ships with no level and no file,
+// and the catch-all's WARN therefore discarded every one of them — while the
+// config block promised that leaving it unset still reached the general log.
+// A deployment that configured nothing lost the archive, which was the
+// documented tradeoff, and the trail with it, which was not.
 //
 // # Exclusive routes versus broadcast — read before editing
 //
@@ -89,7 +101,7 @@ func New(c *config.Config) (closeFns []func(context.Context) error, err error) {
 	// Before the catch-all, and so ahead of it in FirstMatch order: the
 	// startup records, which have to survive the default WARN level.
 	router = router.Add(
-		generalFanout(c, isTerminal, startupLevel(c)),
+		generalFanout(c, isTerminal, infoFloor(c)),
 		slogmulti.AttrValueIs(AttrKeyType, TagStartup),
 	)
 
@@ -109,12 +121,13 @@ func New(c *config.Config) (closeFns []func(context.Context) error, err error) {
 		func(context.Context) error { return c.HTTP.AccessLogging.Close() },
 		func(context.Context) error { return c.DB.Logging.Close() },
 		func(context.Context) error { return c.Queue.Logging.Close() },
-		// LDAP and audit are named loggers like the ones above, so their
-		// rotating files need releasing on the same terms. LDAP's was
+		// LDAP, audit and mail are named loggers like the ones above, so
+		// their rotating files need releasing on the same terms. LDAP's was
 		// missing: a deployment that set ldap.logging.filename leaked the
 		// handle and its rotation goroutine across shutdown.
 		func(context.Context) error { return c.LDAP.Logging.Close() },
 		func(context.Context) error { return c.Audit.Logging.Close() },
+		func(context.Context) error { return c.Mail.Logging.Close() },
 	}, nil
 }
 
@@ -127,7 +140,12 @@ func namedLoggers(c *config.Config) []namedLoggerConfig {
 		{tag: TagDB, src: &c.DB.Logging},
 		{tag: TagQueue, src: &c.Queue.Logging},
 		{tag: TagLDAP, src: &c.LDAP.Logging},
-		{tag: TagAudit, src: &c.Audit.Logging},
+		// Audit alone carries the floor: every audit event is emitted at
+		// INFO (AuditService.emit), and an audit trail that the shipped log
+		// level silently discards is the one destination here whose whole
+		// purpose is to have kept the record.
+		{tag: TagAudit, src: &c.Audit.Logging, floorAtInfo: true},
+		{tag: TagMail, src: &c.Mail.Logging},
 	}
 }
 
@@ -146,18 +164,27 @@ func namedRoute(c *config.Config, nl namedLoggerConfig, isTerminal bool) slog.Ha
 	if level := nl.src.LogLevelString(); level != "" {
 		return generalFanout(c, isTerminal, LevelFromString(level))
 	}
+	// A tag that must stay visible keeps the general destinations at the
+	// INFO floor rather than falling through to logging.level. Without
+	// this its records are filtered at the shipped WARN and land nowhere,
+	// which is not what "leave it unset and the events still reach the
+	// general log" says — see namedLoggerConfig.floorAtInfo.
+	if nl.floorAtInfo {
+		return generalFanout(c, isTerminal, infoFloor(c))
+	}
 	return nil
 }
 
-// startupLevel is the threshold for the TagStartup route: INFO, or
-// logging.level when that is lower.
+// infoFloor is the threshold for a route whose records have to survive
+// logging.level: INFO, or logging.level itself when that is lower.
 //
 // The floor is the whole point — logging.level defaults to WARN, which
-// silences an INFO startup record and leaves a healthy process looking
-// like a dead one. Taking the minimum rather than a flat INFO keeps a
-// debug run consistent with the rest of its output (AddSource included)
-// instead of singling this route out.
-func startupLevel(c *config.Config) slog.Level {
+// silences an INFO record and leaves a healthy process looking like a dead
+// one, or an audit trail looking like a deployment nobody touched. Taking
+// the minimum rather than a flat INFO keeps a debug run consistent with the
+// rest of its output (AddSource included) instead of singling these routes
+// out.
+func infoFloor(c *config.Config) slog.Level {
 	return min(LevelFromString(c.Logging.Level), slog.LevelInfo)
 }
 

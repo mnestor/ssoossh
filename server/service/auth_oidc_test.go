@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +42,12 @@ type fakeOIDCProvider struct {
 
 	tokenExchangeFails bool // when true, /token responds with an error status
 	omitIDToken        bool // when true, /token's response has no id_token field at all
+
+	// tokenForm is the form the last /token request carried, so a test can
+	// assert on what the exchange actually sent — code_verifier in
+	// particular, which is the only externally visible difference PKCE
+	// makes to the exchange.
+	tokenForm url.Values
 }
 
 func newFakeOIDCProvider(t *testing.T) *fakeOIDCProvider {
@@ -69,6 +76,8 @@ func newFakeOIDCProvider(t *testing.T) *fakeOIDCProvider {
 		_ = json.NewEncoder(w).Encode(josejwt.JSONWebKeySet{Keys: []josejwt.JSONWebKey{jwk}})
 	})
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		p.tokenForm = r.Form
 		if p.tokenExchangeFails {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
@@ -504,5 +513,112 @@ func TestHandleCallback_ShouldFallBackToTheStandardEmailClaim(t *testing.T) {
 	}
 	if identity.Email != "bob@example.com" {
 		t.Errorf("got Email %q, want %q", identity.Email, "bob@example.com")
+	}
+}
+
+// newTestAuthConfigNoPKCE is newTestAuthConfig with authentication.disable_pkce
+// set, for the provider that refuses a code challenge.
+func newTestAuthConfigNoPKCE(provider *fakeOIDCProvider, clientID string) *config.Config {
+	c := newTestAuthConfig(provider, clientID)
+	c.AuthConfig.DisablePKCE = true
+	return c
+}
+
+// With PKCE disabled the authorization request carries no code_challenge at
+// all: a provider that refuses the parameter refuses it however it is
+// spelled, so an empty one would be no better than the challenge itself.
+func TestAuthorizationURL_ShouldOmitTheCodeChallengeWhenPKCEIsDisabled(t *testing.T) {
+	t.Parallel()
+
+	provider := newFakeOIDCProvider(t)
+	svc, err := NewAuthService(context.Background(), newTestAuthConfigNoPKCE(provider, "client-1"), newTestUserDB(t), provider.srv.Client())
+	if err != nil {
+		t.Fatalf("NewAuthService() error = %v", err)
+	}
+
+	authURL, nonce, pkceVerifier, err := svc.AuthorizationURL(context.Background(), "state-1")
+	if err != nil {
+		t.Fatalf("AuthorizationURL() error = %v", err)
+	}
+	if pkceVerifier != "" {
+		t.Errorf("AuthorizationURL() returned verifier %q, want an empty one", pkceVerifier)
+	}
+	if strings.Contains(authURL, "code_challenge") {
+		t.Errorf("authURL = %q, want no code_challenge parameter", authURL)
+	}
+	if !strings.Contains(authURL, "nonce="+nonce) {
+		t.Errorf("authURL = %q, want the nonce to survive disabling PKCE", authURL)
+	}
+}
+
+// The claims echo takes the same switch, and keeps prompt=login either way.
+func TestEchoAuthorizationURL_ShouldOmitTheCodeChallengeWhenPKCEIsDisabled(t *testing.T) {
+	t.Parallel()
+
+	provider := newFakeOIDCProvider(t)
+	svc, err := NewAuthService(context.Background(), newTestAuthConfigNoPKCE(provider, "client-1"), newTestUserDB(t), provider.srv.Client())
+	if err != nil {
+		t.Fatalf("NewAuthService() error = %v", err)
+	}
+
+	authURL, _, pkceVerifier, err := svc.EchoAuthorizationURL(context.Background(), "state-1")
+	if err != nil {
+		t.Fatalf("EchoAuthorizationURL() error = %v", err)
+	}
+	if pkceVerifier != "" {
+		t.Errorf("EchoAuthorizationURL() returned verifier %q, want an empty one", pkceVerifier)
+	}
+	if strings.Contains(authURL, "code_challenge") {
+		t.Errorf("authURL = %q, want no code_challenge parameter", authURL)
+	}
+	if !strings.Contains(authURL, "prompt=login") {
+		t.Errorf("authURL = %q, want prompt=login", authURL)
+	}
+}
+
+// An exchange for a login that issued no verifier sends no code_verifier:
+// an empty one is a malformed parameter rather than an absent one.
+func TestHandleCallback_ShouldOmitTheCodeVerifierWhenNoneWasIssued(t *testing.T) {
+	t.Parallel()
+
+	provider := newFakeOIDCProvider(t)
+	svc, err := NewAuthService(context.Background(), newTestAuthConfigNoPKCE(provider, "client-1"), newTestUserDB(t), provider.srv.Client())
+	if err != nil {
+		t.Fatalf("NewAuthService() error = %v", err)
+	}
+
+	provider.nextID = provider.signIDToken(t, "sub-alice", "client-1", "nonce-1", map[string]any{
+		"preferred_username": "alice",
+	})
+
+	if _, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1", ""); err != nil {
+		t.Fatalf("HandleCallback() error = %v", err)
+	}
+	if _, ok := provider.tokenForm["code_verifier"]; ok {
+		t.Errorf("token request sent code_verifier=%q, want the parameter left out entirely", provider.tokenForm.Get("code_verifier"))
+	}
+}
+
+// And the default path still sends it, so the switch is what decides and
+// not an accident of the exchange.
+func TestHandleCallback_ShouldSendTheCodeVerifierWhenOneWasIssued(t *testing.T) {
+	t.Parallel()
+
+	provider := newFakeOIDCProvider(t)
+	svc, err := NewAuthService(context.Background(), newTestAuthConfig(provider, "client-1"), newTestUserDB(t), provider.srv.Client())
+	if err != nil {
+		t.Fatalf("NewAuthService() error = %v", err)
+	}
+
+	provider.nextID = provider.signIDToken(t, "sub-alice", "client-1", "nonce-1", map[string]any{
+		"preferred_username": "alice",
+	})
+
+	verifier := oauth2.GenerateVerifier()
+	if _, err := svc.HandleCallback(context.Background(), "auth-code", "nonce-1", verifier); err != nil {
+		t.Fatalf("HandleCallback() error = %v", err)
+	}
+	if got := provider.tokenForm.Get("code_verifier"); got != verifier {
+		t.Errorf("token request sent code_verifier=%q, want %q", got, verifier)
 	}
 }

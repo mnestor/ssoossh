@@ -25,6 +25,16 @@ copy is disposable. A deployment that configures no audit log destination
 loses the archive, not the audit trail's correctness -- but it should
 configure one.
 
+Unconditional means unconditional: audit events are emitted at `INFO`, and
+the shipped [`logging.level`](/ssoossh/reference/config/logging/#level) is
+`WARN`, so the audit destination is held at an `INFO` floor when it has
+neither a filename nor a
+[`level`](/ssoossh/reference/config/audit/#logginglevel) of its own. Without
+that floor an unconfigured deployment would discard every event rather than
+merely fail to archive it. Setting `audit.logging.level` overrides the floor,
+which is the point -- turning the trail down is an operator's call to make
+deliberately, not one to arrive at by leaving a block empty.
+
 ```yaml
 audit:
   retention: 1440h        # 60 days in the table; zero disables age pruning

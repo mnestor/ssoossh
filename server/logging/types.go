@@ -21,6 +21,7 @@ const (
 	TagQueue     = "queue"
 	TagLDAP      = "ldap"
 	TagAudit     = "audit"
+	TagMail      = "mail"
 
 	// TagStartup is not a named logger like the ones above: it has no
 	// config block and no destination of its own. It marks the handful of
@@ -67,4 +68,16 @@ type loggerSource interface {
 type namedLoggerConfig struct {
 	tag string
 	src loggerSource
+
+	// floorAtInfo keeps this destination's records visible at INFO even
+	// when it has neither a file nor a level of its own and logging.level
+	// is higher — the same floor TagStartup gets, and for the same reason.
+	//
+	// It is for a destination whose records are the product rather than
+	// commentary on it: the audit trail is emitted entirely at INFO, its
+	// config block promises that leaving it unset still reaches the general
+	// log, and the shipped logging.level of WARN otherwise makes that
+	// promise false in silence. Do not add it to a destination that is
+	// merely useful; the catch-all's level is the right answer for those.
+	floorAtInfo bool
 }

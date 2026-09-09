@@ -1,11 +1,13 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"log/slog"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -814,4 +816,47 @@ func TestNotifyServiceAccount_shouldRefuseAnEmptyAccount(t *testing.T) {
 		notify.KindServiceEnrollmentCreated, "", sampleCreated())
 
 	f.assertNoMessages(t)
+}
+
+// captureDefaultLogger installs a JSON logger over the process default for
+// the duration of the test and returns the buffer it writes to. It must be
+// installed before the service or handler under test is constructed:
+// logging.Tagged derives its logger from the default at that moment.
+func captureDefaultLogger(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prior := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prior) })
+	return &buf
+}
+
+// The publishing half's records carry the "mail" named-logger tag, which is
+// what routes them to mail.logging. Without it that config block names a
+// destination nothing ever writes to.
+func TestNotify_shouldTagItsRecordsForTheMailLog(t *testing.T) {
+	buf := captureDefaultLogger(t)
+
+	svc := NewNotificationService(nil, nil, true, false, false)
+	svc.Notify(context.Background(), notify.KindServiceEnrollmentCreated, "", sampleCreated())
+
+	if !strings.Contains(buf.String(), `"type":"mail"`) {
+		t.Errorf("expected the record to carry type=mail, got: %s", buf.String())
+	}
+}
+
+// The delivery half is tagged for the same reason, and is the half an
+// operator reading the mail log is usually after.
+func TestNotificationHandler_shouldTagItsRecordsForTheMailLog(t *testing.T) {
+	f := newNotificationFixture(t)
+	buf := captureDefaultLogger(t)
+
+	handler := NewNotificationHandler(f.db, mustRenderer(t), f.sender)
+	if err := handler.handle(message.NewMessage(watermill.NewUUID(), []byte("{not json"))); err != nil {
+		t.Fatalf("handle returned %v, want the message acknowledged", err)
+	}
+
+	if !strings.Contains(buf.String(), `"type":"mail"`) {
+		t.Errorf("expected the record to carry type=mail, got: %s", buf.String())
+	}
 }

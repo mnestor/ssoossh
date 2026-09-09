@@ -65,7 +65,9 @@ type AuthProvider interface {
 	// AuthorizationURL returns the URL to redirect the browser to for OIDC
 	// login, and the nonce and PKCE verifier embedded in it. State, nonce,
 	// and pkceVerifier must all be stored (e.g. in the session) and
-	// re-checked by HandleCallback.
+	// re-checked by HandleCallback. pkceVerifier is empty when PKCE is
+	// disabled (authentication.disable_pkce), and the callback must pass
+	// back whatever it was given either way.
 	AuthorizationURL(ctx context.Context, state string) (authURL string, nonce string, pkceVerifier string, err error)
 	// HandleCallback exchanges code for tokens using the PKCE verifier and
 	// verifies the ID token, including that its nonce claim matches nonce.
@@ -185,6 +187,16 @@ func NewAuthService(ctx context.Context, c *config.Config, db *gorm.DB, httpClie
 	redirectURL := origin + "/auth/callback"
 	slog.Debug("oauth setting", slog.String("redirectURL", redirectURL))
 
+	// Warned rather than refused, for the same reason
+	// mail.smtp.insecure_skip_verify is: an operator whose provider rejects
+	// code_challenge has no other way in. Said once, at startup, so a login
+	// flow without PKCE is a choice someone made rather than one they
+	// drifted into.
+	if authConfig.DisablePKCE {
+		slog.Warn("PKCE is disabled for OIDC login: an authorization code observed in transit can be redeemed by anyone holding it; unset authentication.disable_pkce once the provider accepts a code challenge",
+			"authentication.disable_pkce", true, "authentication.provider_url", authConfig.ProviderURL)
+	}
+
 	return &AuthService{
 		config:   c,
 		db:       db,
@@ -203,8 +215,9 @@ func NewAuthService(ctx context.Context, c *config.Config, db *gorm.DB, httpClie
 // AuthorizationURL returns the URL to redirect the browser to for OIDC
 // login, embedding state (CSRF protection for the redirect, checked by the
 // caller), a freshly generated nonce (replay protection for the ID token,
-// checked by HandleCallback), and a PKCE code challenge (checked by
-// HandleCallback during code exchange).
+// checked by HandleCallback), and — unless authentication.disable_pkce is
+// set — a PKCE code challenge (checked by HandleCallback during code
+// exchange). The returned verifier is empty when PKCE is off.
 func (s *AuthService) AuthorizationURL(ctx context.Context, state string) (authURL string, nonce string, pkceVerifier string, err error) {
 	nonce, err = randomToken()
 	if err != nil {
@@ -213,17 +226,45 @@ func (s *AuthService) AuthorizationURL(ctx context.Context, state string) (authU
 		return "", "", "", fmt.Errorf("failed to generate OIDC nonce: %w", err)
 	}
 
-	pkceVerifier = oauth2.GenerateVerifier()
+	opts, pkceVerifier := s.authCodeOptions(nonce)
 
-	return s.oauth2Config.AuthCodeURL(state, oidc.Nonce(nonce), oauth2.S256ChallengeOption(pkceVerifier)), nonce, pkceVerifier, nil
+	return s.oauth2Config.AuthCodeURL(state, opts...), nonce, pkceVerifier, nil
 }
 
-// HandleCallback exchanges code for tokens using the PKCE verifier, verifies
+// authCodeOptions builds the options both authorization URLs share: the
+// nonce, and a PKCE code challenge unless authentication.disable_pkce is
+// set. The verifier it returns is empty in that case, and an empty verifier
+// is what tells exchangeOptions to leave code_verifier off the exchange —
+// so the two halves of one login can never disagree about PKCE even if the
+// configuration changes between them.
+func (s *AuthService) authCodeOptions(nonce string) (opts []oauth2.AuthCodeOption, pkceVerifier string) {
+	opts = []oauth2.AuthCodeOption{oidc.Nonce(nonce)}
+	if s.config.AuthConfig.DisablePKCE {
+		return opts, ""
+	}
+
+	pkceVerifier = oauth2.GenerateVerifier()
+	return append(opts, oauth2.S256ChallengeOption(pkceVerifier)), pkceVerifier
+}
+
+// exchangeOptions turns the verifier stored at login into the code-exchange
+// options. An empty verifier means the authorization request carried no
+// challenge, so the exchange must carry no code_verifier either: sending an
+// empty one is a malformed request that a provider is right to refuse.
+func exchangeOptions(pkceVerifier string) []oauth2.AuthCodeOption {
+	if pkceVerifier == "" {
+		return nil
+	}
+	return []oauth2.AuthCodeOption{oauth2.VerifierOption(pkceVerifier)}
+}
+
+// HandleCallback exchanges code for tokens using the PKCE verifier issued at
+// login (none when authentication.disable_pkce is set), verifies
 // the ID token (signature, audience, expiry, and that its nonce claim matches
 // nonce), extracts identity fields per config.OAuthFields, and upserts the
 // corresponding model.User.
 func (s *AuthService) HandleCallback(ctx context.Context, code string, nonce string, pkceVerifier string) (*Identity, error) {
-	token, err := s.oauth2Config.Exchange(ctx, code, oauth2.VerifierOption(pkceVerifier))
+	token, err := s.oauth2Config.Exchange(ctx, code, exchangeOptions(pkceVerifier)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange OIDC authorization code: %w", err)
 	}
@@ -651,13 +692,10 @@ func (s *AuthService) EchoAuthorizationURL(ctx context.Context, state string) (a
 		return "", "", "", fmt.Errorf("failed to generate OIDC nonce: %w", err)
 	}
 
-	pkceVerifier = oauth2.GenerateVerifier()
+	opts, pkceVerifier := s.authCodeOptions(nonce)
+	opts = append(opts, oauth2.SetAuthURLParam("prompt", "login"))
 
-	return s.oauth2Config.AuthCodeURL(state,
-		oidc.Nonce(nonce),
-		oauth2.S256ChallengeOption(pkceVerifier),
-		oauth2.SetAuthURLParam("prompt", "login"),
-	), nonce, pkceVerifier, nil
+	return s.oauth2Config.AuthCodeURL(state, opts...), nonce, pkceVerifier, nil
 }
 
 // EchoCallback verifies the callback exactly as HandleCallback does and
@@ -669,7 +707,7 @@ func (s *AuthService) EchoAuthorizationURL(ctx context.Context, state string) (a
 // echo that quietly kept the rest would be the thing this feature exists to
 // avoid.
 func (s *AuthService) EchoCallback(ctx context.Context, code string, nonce string, pkceVerifier string) (map[string]any, error) {
-	token, err := s.oauth2Config.Exchange(ctx, code, oauth2.VerifierOption(pkceVerifier))
+	token, err := s.oauth2Config.Exchange(ctx, code, exchangeOptions(pkceVerifier)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to exchange OIDC authorization code: %w", err)
 	}
