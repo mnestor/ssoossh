@@ -54,6 +54,8 @@ audit:
 
 The durable export: a dedicated destination that receives one JSON line per event, routed by a type=audit attribute like the LDAP and queue logs. Set its filename to split it into its own rotating file; leave it unset and the events still reach the general log. A deployment that configures nothing here loses the archive, not the audit trail's correctness.
 
+Unconditional means unconditional: audit events are emitted at INFO and logging.level ships at WARN, so this destination is held at an INFO floor whenever it has neither a filename nor a level of its own. Setting a level here overrides that floor, which is the point — turning the trail down is a deliberate choice, not one to arrive at by leaving this block empty.
+
 ## `logging.*`
 
 Log-file rotation for this destination, via the embedded timberjack logger, with the same keys and meanings as logging.* above. This destination is only split out of the main log once its filename is set; until then its records go to the general log.

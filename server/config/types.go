@@ -464,5 +464,12 @@ type AuditConfig struct {
 	// rotating file; leave it unset and the events still reach the general
 	// log. A deployment that configures nothing here loses the archive, not
 	// the audit trail's correctness.
+	//
+	// Unconditional means unconditional: audit events are emitted at INFO
+	// and logging.level ships at WARN, so this destination is held at an
+	// INFO floor whenever it has neither a filename nor a level of its own.
+	// Setting a level here overrides that floor, which is the point —
+	// turning the trail down is a deliberate choice, not one to arrive at
+	// by leaving this block empty.
 	Logging GenericLogging `mapstructure:"logging" default_log_json:"true"`
 }

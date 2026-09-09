@@ -171,9 +171,12 @@ Anything wrong here fails the server at startup rather than at first delivery
 not compile. A notification that never arrives looks exactly like one that was
 never triggered, which is the worst thing this feature could do quietly.
 
-Delivery logs route separately, as
-[`mail.logging.level`](/ssoossh/reference/config/mail/logging/#level) (default
-`info`) and friends.
+Delivery logs route separately, by a `type=mail` attribute like the LDAP and
+audit logs: [`mail.logging.level`](/ssoossh/reference/config/mail/logging/#level)
+(default `info`) sets the threshold for what both halves of the mail path say,
+and setting a
+[`filename`](/ssoossh/reference/config/mail/logging/#maillogging) moves those
+records out of the general log into their own rotating file.
 
 ### Multi-instance deployments
 

@@ -386,3 +386,53 @@ ldap:
 		t.Error("expected ldap.logging.filename in the effective configuration, got no such key")
 	}
 }
+
+// PKCE is on unless a config file says otherwise, and the switch is a plain
+// bool key: the zero value has to be the secure one, since every code path
+// that builds a config.Config without reading a file gets it.
+func TestNewConfig_ShouldKeepPKCEEnabledByDefault(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "empty.yaml")
+	writeFile(t, path, `ssh_key: "test-key-material"`)
+
+	cc := newTestCommand()
+	if err := cc.Flags().Set("config", path); err != nil {
+		t.Fatalf("failed to set --config flag: %v", err)
+	}
+
+	c, err := NewConfig(cc)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if c.AuthConfig.DisablePKCE {
+		t.Error("got AuthConfig.DisablePKCE true, want false (default): PKCE must stay on unless it is explicitly turned off")
+	}
+}
+
+// And an operator whose provider refuses a code challenge can turn it off.
+func TestNewConfig_ShouldReadDisablePKCEFromTheConfigFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "no-pkce.yaml")
+	writeFile(t, path, `
+ssh_key: "test-key-material"
+authentication:
+  disable_pkce: true
+`)
+
+	cc := newTestCommand()
+	if err := cc.Flags().Set("config", path); err != nil {
+		t.Fatalf("failed to set --config flag: %v", err)
+	}
+
+	c, err := NewConfig(cc)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !c.AuthConfig.DisablePKCE {
+		t.Error("got AuthConfig.DisablePKCE false, want true from the config file")
+	}
+}
