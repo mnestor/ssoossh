@@ -12,6 +12,8 @@ All fields are optional; empty values mean no branding is configured.
 | [`branding.org_name`](#org_name) | string | `empty` |
 | [`branding.logo_path`](#logo_path) | string | `empty` |
 | [`branding.login_notice`](#login_notice) | string | `empty` |
+| [`branding.support_email`](#support_email) | string | `empty` |
+| [`branding.support_label`](#support_label) | string | `empty` |
 
 ## `org_name`
 
@@ -48,4 +50,32 @@ A plain-text message shown on the login page before authentication. Empty disabl
 ```yaml
 branding:
   login_notice: ""
+```
+
+## `support_email`
+
+`string`, default `empty`
+
+The address of whoever answers for this deployment — the local help desk, not the project. Empty leaves the web UI pointing at its defaults: "contact your administrator" on the login page, and the project's GitHub issue tracker in the footer.
+
+Set it and both become a mailto: link to this address. One setting covers both because it is one question — "who do I ask about this deployment?" — and a second key would let an operator answer it in one place and forget the other, which is the failure this exists to prevent.
+
+It is served by the unauthenticated /api/branding endpoint and rendered on the login page, so it is public: use the shared support address, never a personal one. It is parsed at startup and a value that is not an address fails the server rather than producing a dead link on the one page a locked-out user can reach.
+
+```yaml
+branding:
+  support_email: "support@example.com"
+```
+
+## `support_label`
+
+`string`, default `empty`
+
+The link text for `support_email`, e.g. "the IT service desk". Ignored when `support_email` is unset.
+
+Empty falls back to whatever reads best in each place: the address itself on the login page, where it sits in a sentence and is a complete instruction on its own, and "Contact support" in the footer, where a bare address would be noise in a row of links.
+
+```yaml
+branding:
+  support_label: "the IT service desk"
 ```

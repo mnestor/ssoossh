@@ -812,6 +812,18 @@ export interface BrandingResponse {
 	 * Empty disables the notice. Supports newlines for multi-line text.
 	 */
 	login_notice?: string;
+	/**
+	 * SupportEmail is the deployment's own support address, validated at
+	 * startup. When set, the login page's "contact your administrator" and
+	 * the footer's issue link both become mailto: links to it; when unset,
+	 * both keep their defaults. Omitted entirely when unconfigured.
+	 */
+	support_email?: string;
+	/**
+	 * SupportLabel is the link text for SupportEmail. Omitted when unset,
+	 * and the client falls back to showing the address itself.
+	 */
+	support_label?: string;
 }
 /**
  * ConfigSetting is one leaf of the server's effective configuration.

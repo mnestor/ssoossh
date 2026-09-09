@@ -10,7 +10,11 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 const { pageState, startLogin, branding } = vi.hoisted(() => ({
 	pageState: { url: new URL('http://localhost/login') },
 	startLogin: vi.fn(),
-	branding: { login_notice: undefined as string | undefined }
+	branding: {
+		login_notice: undefined as string | undefined,
+		support_email: undefined as string | undefined,
+		support_label: undefined as string | undefined
+	}
 }));
 
 vi.mock('$app/state', () => ({ page: pageState }));
@@ -22,6 +26,8 @@ import Page from './+page.svelte';
 beforeEach(() => {
 	pageState.url = new URL('http://localhost/login');
 	branding.login_notice = undefined;
+	branding.support_email = undefined;
+	branding.support_label = undefined;
 	startLogin.mockClear();
 });
 
@@ -59,6 +65,40 @@ describe('Login page', () => {
 		render(Page);
 		await userEvent.click(screen.getByRole('button', { name: /Continue with SSO/ }));
 		expect(startLogin).toHaveBeenCalledWith('/dashboard');
+	});
+
+	describe('when the deployment names a support contact', () => {
+		beforeEach(() => {
+			branding.support_email = 'support@example.com';
+		});
+
+		it('should link the contact by mail', () => {
+			branding.support_label = 'the IT service desk';
+			render(Page);
+			expect(screen.getByRole('link', { name: 'the IT service desk' })).toHaveAttribute(
+				'href',
+				'mailto:support@example.com'
+			);
+		});
+
+		it('should fall back to the address itself when no label is configured', () => {
+			render(Page);
+			expect(screen.getByRole('link', { name: 'support@example.com' })).toHaveAttribute(
+				'href',
+				'mailto:support@example.com'
+			);
+		});
+
+		it('should drop the generic administrator wording', () => {
+			render(Page);
+			expect(screen.queryByText(/Contact your administrator/)).toBeNull();
+		});
+	});
+
+	it('should keep the generic wording when only a label is configured', () => {
+		branding.support_label = 'the IT service desk';
+		render(Page);
+		expect(screen.getByText(/Contact your administrator/)).toBeInTheDocument();
 	});
 
 	describe('when the deployment sets a consent notice', () => {

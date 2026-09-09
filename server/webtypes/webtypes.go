@@ -740,6 +740,16 @@ type BrandingResponse struct {
 	// LoginNotice is a plain-text message shown on the login page before authentication.
 	// Empty disables the notice. Supports newlines for multi-line text.
 	LoginNotice string `json:"login_notice,omitempty"`
+
+	// SupportEmail is the deployment's own support address, validated at
+	// startup. When set, the login page's "contact your administrator" and
+	// the footer's issue link both become mailto: links to it; when unset,
+	// both keep their defaults. Omitted entirely when unconfigured.
+	SupportEmail string `json:"support_email,omitempty"`
+
+	// SupportLabel is the link text for SupportEmail. Omitted when unset,
+	// and the client falls back to showing the address itself.
+	SupportLabel string `json:"support_label,omitempty"`
 }
 
 // ConfigSetting is one leaf of the server's effective configuration.

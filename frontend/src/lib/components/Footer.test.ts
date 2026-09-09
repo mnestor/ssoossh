@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 
-import type { VersionResponse } from '$lib/api/generated/webtypes';
+import type { BrandingResponse, VersionResponse } from '$lib/api/generated/webtypes';
 import Footer from './Footer.svelte';
 
 const release: VersionResponse = {
@@ -73,5 +73,47 @@ describe('Footer', () => {
 	it('should leave the version bare when the commit is not a sha', () => {
 		render(Footer, { props: { version: { ...untagged, commit: 'commit' } } });
 		expect(screen.getByText('development')).toBeInTheDocument();
+	});
+
+	describe('when the deployment names a support contact', () => {
+		const support: BrandingResponse = {
+			support_email: 'support@example.com',
+			support_label: 'the IT service desk'
+		};
+
+		it('should link the support contact by mail', () => {
+			render(Footer, { props: { version: release, branding: support } });
+			expect(screen.getByRole('link', { name: 'the IT service desk' })).toHaveAttribute(
+				'href',
+				'mailto:support@example.com'
+			);
+		});
+
+		it('should drop the issue tracker link', () => {
+			render(Footer, { props: { version: release, branding: support } });
+			expect(screen.queryByRole('link', { name: 'Report an issue' })).toBeNull();
+		});
+
+		it('should keep the repository link, which is attribution rather than support', () => {
+			render(Footer, { props: { version: release, branding: support } });
+			expect(screen.getByRole('link', { name: 'GitHub' })).toBeInTheDocument();
+		});
+
+		it('should fall back to a generic label when only an address is configured', () => {
+			render(Footer, {
+				props: { version: release, branding: { support_email: 'support@example.com' } }
+			});
+			expect(screen.getByRole('link', { name: 'Contact support' })).toHaveAttribute(
+				'href',
+				'mailto:support@example.com'
+			);
+		});
+
+		it('should ignore a label with no address behind it', () => {
+			render(Footer, {
+				props: { version: release, branding: { support_label: 'the IT service desk' } }
+			});
+			expect(screen.getByRole('link', { name: 'Report an issue' })).toBeInTheDocument();
+		});
 	});
 });

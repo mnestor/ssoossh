@@ -20,6 +20,8 @@ func TestGetBrandingHandler(t *testing.T) {
 		expectedOrgName string
 		expectedLogoURL string
 		expectedNotice  string
+		expectedEmail   string
+		expectedLabel   string
 	}{
 		{
 			name:            "should return empty branding when config is empty and no logo",
@@ -68,6 +70,39 @@ func TestGetBrandingHandler(t *testing.T) {
 			expectedLogoURL: "",
 			expectedNotice:  "Line 1\nLine 2\nLine 3",
 		},
+		{
+			name: "should return the support contact when one is configured",
+			branding: config.BrandingSettings{
+				SupportEmail: "support@example.com",
+				SupportLabel: "the IT service desk",
+			},
+			logoImg:       nil,
+			expectedCode:  http.StatusOK,
+			expectedEmail: "support@example.com",
+			expectedLabel: "the IT service desk",
+		},
+		{
+			name: "should return the address with no label when none is configured",
+			branding: config.BrandingSettings{
+				SupportEmail: "support@example.com",
+			},
+			logoImg:       nil,
+			expectedCode:  http.StatusOK,
+			expectedEmail: "support@example.com",
+			expectedLabel: "",
+		},
+		{
+			// A label with nothing behind it is a caption for a link the
+			// client cannot build, so it is not sent at all.
+			name: "should omit a support label with no address behind it",
+			branding: config.BrandingSettings{
+				SupportLabel: "the IT service desk",
+			},
+			logoImg:       nil,
+			expectedCode:  http.StatusOK,
+			expectedEmail: "",
+			expectedLabel: "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -93,9 +128,11 @@ func TestGetBrandingHandler(t *testing.T) {
 
 			var body struct {
 				Data struct {
-					OrgName     string `json:"org_name"`
-					LogoURL     string `json:"logo_url"`
-					LoginNotice string `json:"login_notice"`
+					OrgName      string `json:"org_name"`
+					LogoURL      string `json:"logo_url"`
+					LoginNotice  string `json:"login_notice"`
+					SupportEmail string `json:"support_email"`
+					SupportLabel string `json:"support_label"`
 				} `json:"data"`
 				Error any `json:"error"`
 			}
@@ -112,6 +149,12 @@ func TestGetBrandingHandler(t *testing.T) {
 			}
 			if body.Data.LoginNotice != tt.expectedNotice {
 				t.Errorf("expected login_notice %q, got %q", tt.expectedNotice, body.Data.LoginNotice)
+			}
+			if body.Data.SupportEmail != tt.expectedEmail {
+				t.Errorf("expected support_email %q, got %q", tt.expectedEmail, body.Data.SupportEmail)
+			}
+			if body.Data.SupportLabel != tt.expectedLabel {
+				t.Errorf("expected support_label %q, got %q", tt.expectedLabel, body.Data.SupportLabel)
 			}
 			if body.Error != nil {
 				t.Errorf("expected error to be nil, got %v", body.Error)
