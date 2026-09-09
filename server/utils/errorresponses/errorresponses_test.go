@@ -7,6 +7,7 @@ package errorresponses
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/mnestor/ssoossh/internal/apitypes"
@@ -240,6 +241,7 @@ func TestErrorCode_ShouldReportTheWireCodeForEachError(t *testing.T) {
 		{name: "user disabled", err: &UserDisabledError{}, wantCode: apitypes.ErrorCodeForbidden, wantStatus: http.StatusForbidden},
 		{name: "user status check", err: &UserStatusCheckError{}, wantCode: apitypes.ErrorCodeUnavailable, wantStatus: http.StatusServiceUnavailable},
 		{name: "conflict", err: &ConflictError{Reason: "a directory sync is already running"}, wantCode: apitypes.ErrorCodeConflict, wantStatus: http.StatusConflict},
+		{name: "session write", err: &SessionWriteError{}, wantCode: apitypes.ErrorCodeInternalError, wantStatus: http.StatusInternalServerError},
 	}
 
 	for _, tt := range tests {
@@ -326,5 +328,27 @@ func TestUserStatusCheckError_ShouldNotRenderAsUserDisabled(t *testing.T) {
 	}
 	if check.Error() == disabled.Error() {
 		t.Errorf("both errors say %q", check.Error())
+	}
+}
+
+func TestSessionWriteError_ShouldNameTheStepThatFailed(t *testing.T) {
+	t.Parallel()
+
+	err := &SessionWriteError{}
+	if got := err.Error(); !strings.Contains(got, "the session could not be saved") {
+		t.Errorf("got %q, want it to say which step failed", got)
+	}
+}
+
+// The message reaches the caller, so it must carry nothing about the store
+// that refused the write or the size of what it refused.
+func TestSessionWriteError_ShouldNotDiscloseTheUnderlyingCause(t *testing.T) {
+	t.Parallel()
+
+	err := &SessionWriteError{}
+	for _, leak := range []string{"securecookie", "gormstore", "database", "bytes"} {
+		if strings.Contains(err.Error(), leak) {
+			t.Errorf("message contains %q, which is the operator's detail rather than the caller's: %q", leak, err.Error())
+		}
 	}
 }

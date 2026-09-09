@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -195,9 +196,15 @@ func (a *authController) callbackHandler(g *gin.Context) {
 	}
 
 	if err := middleware.SetIdentitySession(g, identity); err != nil {
-		handleError(g, err)
-		// not covered: same as PopOIDCNonce above, further down the same
-		// Save() chain.
+		// Logged here rather than left to the error handler, which only
+		// logs errors that fell through to its generic 500. The typed
+		// error below is what the caller sees; this is the line an
+		// operator needs, and the group count is on it because an
+		// oversized group list is what put this branch in production —
+		// see the MaxLength call in bootstrap.initEngine.
+		slog.ErrorContext(g.Request.Context(), "failed to save the login session",
+			"error", err, "groups", len(identity.Groups))
+		handleError(g, &errorresponses.SessionWriteError{})
 		return
 	}
 

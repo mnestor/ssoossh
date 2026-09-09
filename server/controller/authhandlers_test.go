@@ -10,6 +10,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -431,5 +432,49 @@ func TestRandomState_ShouldReturnDistinctURLSafeValues(t *testing.T) {
 	}
 	if a == b {
 		t.Error("expected two calls to randomState() to return distinct values")
+	}
+}
+
+// TestCallbackHandler_ShouldExplainAnUnsavableIdentitySession covers the
+// production failure this branch exists for, from the caller's side: an
+// identity whose group list is too large for the session store used to
+// fall through the error handler's generic 500 and tell a user whose login
+// had just succeeded only "internal server error".
+//
+// A cookie store stands in for an undersized store of any kind — what is
+// under test is the callback's response, not which store refused it.
+func TestCallbackHandler_ShouldExplainAnUnsavableIdentitySession(t *testing.T) {
+	t.Parallel()
+
+	groups := make([]string, 0, 2000)
+	for i := range 2000 {
+		groups = append(groups, fmt.Sprintf("cn=group-%04d,ou=groups,dc=example,dc=com", i))
+	}
+	identity := &service.Identity{Subject: "sub-alice", Username: "alice", Groups: groups}
+	svc := &fakeAuthService{authURL: "https://idp.example.com/authorize", nonce: "n-1", identity: identity}
+	r := newAuthTestRouter(svc, passthrough)
+
+	loginResp := doRequest(r, httptest.NewRequest(http.MethodGet, "/login", nil), nil)
+	state, err := extractSetOIDCState(r, loginResp)
+	if err != nil {
+		t.Fatalf("failed to recover the state value from the session: %v", err)
+	}
+
+	w := doRequest(r, httptest.NewRequest(http.MethodGet, "/callback?code=c&state="+state, nil), loginResp)
+
+	if w.Code == http.StatusFound {
+		t.Fatalf("expected an error response when the identity session cannot be saved, got a redirect to %q", w.Header().Get("Location"))
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "internal server error") {
+		t.Errorf("the response still carries the generic message; got: %s", body)
+	}
+	if !strings.Contains(body, "the session could not be saved") {
+		t.Errorf("expected the response to say which step failed; got: %s", body)
+	}
+	// The store's own message names sizes and libraries, and it is the
+	// operator's to read in the log, not the caller's.
+	if strings.Contains(body, "securecookie") {
+		t.Errorf("the response leaks the underlying store error; got: %s", body)
 	}
 }
