@@ -21,6 +21,7 @@ const (
 	TagQueue     = "queue"
 	TagLDAP      = "ldap"
 	TagAudit     = "audit"
+	TagMail      = "mail"
 
 	// TagStartup is not a named logger like the ones above: it has no
 	// config block and no destination of its own. It marks the handful of

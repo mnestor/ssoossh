@@ -297,8 +297,8 @@ func TestNew_ShouldReturnACloseFuncPerRotatingLogger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if len(closeFns) != 6 {
-		t.Fatalf("got %d close functions, want 6 (main, accesslog, db, queue, ldap, audit)", len(closeFns))
+	if len(closeFns) != 7 {
+		t.Fatalf("got %d close functions, want 7 (main, accesslog, db, queue, ldap, audit, mail)", len(closeFns))
 	}
 	for i, closeFn := range closeFns {
 		if err := closeFn(t.Context()); err != nil {
@@ -321,6 +321,7 @@ func TestNew_ShouldRouteTypedRecordsToConfiguredFiles(t *testing.T) {
 	mainLog := filepath.Join(dir, "main.log")
 	accessLog := filepath.Join(dir, "access.log")
 	dbLog := filepath.Join(dir, "db.log")
+	mailLog := filepath.Join(dir, "mail.log")
 
 	c := &config.Config{}
 	c.Logging.Level = "info"
@@ -329,6 +330,8 @@ func TestNew_ShouldRouteTypedRecordsToConfiguredFiles(t *testing.T) {
 	c.HTTP.AccessLogging.LogJSON = true
 	c.DB.Logging.Filename = dbLog
 	c.DB.Logging.LogJSON = true
+	c.Mail.Logging.Filename = mailLog
+	c.Mail.Logging.LogJSON = true
 
 	if _, err := New(c); err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -336,6 +339,7 @@ func TestNew_ShouldRouteTypedRecordsToConfiguredFiles(t *testing.T) {
 
 	slog.Info("access-entry", "type", "accesslog")
 	slog.Info("db-entry", "type", "db")
+	Tagged(TagMail).Info("mail-entry")
 	slog.Info("main-entry")
 
 	tests := []struct {
@@ -345,6 +349,7 @@ func TestNew_ShouldRouteTypedRecordsToConfiguredFiles(t *testing.T) {
 	}{
 		{"should write access log records to the access log file", accessLog, "access-entry"},
 		{"should write db log records to the db log file", dbLog, "db-entry"},
+		{"should write mail log records to the mail log file", mailLog, "mail-entry"},
 		{"should write untyped records to the main log file", mainLog, "main-entry"},
 	}
 	for _, tt := range tests {

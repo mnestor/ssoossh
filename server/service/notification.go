@@ -14,6 +14,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/mnestor/ssoossh/server/logging"
 	"github.com/mnestor/ssoossh/server/mail"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/notify"
@@ -61,6 +62,12 @@ type NotificationService struct {
 	db        *gorm.DB
 	publisher message.Publisher
 
+	// log carries the "mail" named-logger tag, so everything this service
+	// and NotificationHandler say about a notification lands wherever
+	// mail.logging points. Without the tag mail.logging.* configures a
+	// destination nothing writes to.
+	log *slog.Logger
+
 	// enabled mirrors config.MailConfig.Enabled. With it false, Notify is
 	// a no-op: no delivery handler is registered either, so a published
 	// event would sit unconsumed.
@@ -93,6 +100,7 @@ func NewNotificationService(db *gorm.DB, publisher message.Publisher, enabled, l
 	return &NotificationService{
 		db:                    db,
 		publisher:             publisher,
+		log:                   logging.Tagged(logging.TagMail),
 		enabled:               enabled,
 		ldapEnabled:           ldapEnabled,
 		userAccountsAsService: userAccountsAsService,
@@ -117,7 +125,7 @@ func (s *NotificationService) Notify(ctx context.Context, kind notify.Kind, user
 	if userID == "" {
 		// Nothing to deliver to. Worth a log line rather than silence: it
 		// means a calling path lost track of who it was acting for.
-		slog.WarnContext(ctx, "skipping a notification with no recipient", "kind", kind)
+		s.log.WarnContext(ctx, "skipping a notification with no recipient", "kind", kind)
 		return
 	}
 	s.publish(ctx, kind, func() (notify.Event, error) {
@@ -137,7 +145,7 @@ func (s *NotificationService) NotifyServiceAccount(ctx context.Context, kind not
 		// An enrollment whose stored principals never parsed. It is owned
 		// by nobody, so there is nobody to tell — but the caller thought
 		// there was, which is worth saying out loud.
-		slog.WarnContext(ctx, "skipping a notification for an enrollment with no service account", "kind", kind)
+		s.log.WarnContext(ctx, "skipping a notification for an enrollment with no service account", "kind", kind)
 		return
 	}
 	s.publish(ctx, kind, func() (notify.Event, error) {
@@ -165,7 +173,7 @@ func (s *NotificationService) NotifyEnrollment(ctx context.Context, kind notify.
 		// if it has one, is still a reachable recipient — an enrollment
 		// owned by nobody is precisely the case an address covers — so this
 		// publishes rather than dropping the way NotifyServiceAccount does.
-		slog.WarnContext(ctx, "notifying an enrollment with no service account: only its notification address can be reached",
+		s.log.WarnContext(ctx, "notifying an enrollment with no service account: only its notification address can be reached",
 			"kind", kind, "enrollment_id", enrollmentID)
 	}
 	s.publish(ctx, kind, func() (notify.Event, error) {
@@ -181,7 +189,7 @@ func (s *NotificationService) publish(ctx context.Context, kind notify.Kind, bui
 
 	event, err := build()
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to build a notification event", "kind", kind, "error", err)
+		s.log.ErrorContext(ctx, "failed to build a notification event", "kind", kind, "error", err)
 		return
 	}
 
@@ -189,12 +197,12 @@ func (s *NotificationService) publish(ctx context.Context, kind notify.Kind, bui
 	if err != nil {
 		// not covered: Event is a plain struct whose only dynamic member
 		// is an already-marshalled json.RawMessage.
-		slog.ErrorContext(ctx, "failed to encode a notification event", "kind", kind, "error", err)
+		s.log.ErrorContext(ctx, "failed to encode a notification event", "kind", kind, "error", err)
 		return
 	}
 
 	if err := s.publisher.Publish(notify.Topic, message.NewMessage(watermill.NewUUID(), encoded)); err != nil {
-		slog.ErrorContext(ctx, "failed to queue a notification", "kind", kind, "error", err)
+		s.log.ErrorContext(ctx, "failed to queue a notification", "kind", kind, "error", err)
 	}
 }
 
@@ -386,11 +394,16 @@ type NotificationHandler struct {
 	db       *gorm.DB
 	renderer *mail.Renderer
 	sender   mail.Sender
+
+	// log carries the "mail" named-logger tag, as NotificationService.log
+	// does — delivery is the half of the mail path an operator reading
+	// mail.logging is usually after.
+	log *slog.Logger
 }
 
 // NewNotificationHandler constructs the delivery handler.
 func NewNotificationHandler(db *gorm.DB, renderer *mail.Renderer, sender mail.Sender) *NotificationHandler {
-	return &NotificationHandler{db: db, renderer: renderer, sender: sender}
+	return &NotificationHandler{db: db, renderer: renderer, sender: sender, log: logging.Tagged(logging.TagMail)}
 }
 
 // Register adds the notification consumer to r.
@@ -417,13 +430,13 @@ func (h *NotificationHandler) handle(msg *message.Message) error {
 
 	var event notify.Event
 	if err := json.Unmarshal(msg.Payload, &event); err != nil {
-		slog.ErrorContext(ctx, "discarding an unparseable notification event", "error", err)
+		h.log.ErrorContext(ctx, "discarding an unparseable notification event", "error", err)
 		return nil
 	}
 
 	payload, err := event.DecodePayload()
 	if err != nil {
-		slog.ErrorContext(ctx, "discarding a notification event this build cannot render",
+		h.log.ErrorContext(ctx, "discarding a notification event this build cannot render",
 			"kind", event.Kind, "error", err)
 		return nil
 	}
@@ -465,7 +478,7 @@ func (h *NotificationHandler) handle(msg *message.Message) error {
 		// A template that does not render will not render on redelivery
 		// either: every template is parsed and executed at startup, so
 		// reaching here means the payload itself is the problem.
-		slog.ErrorContext(ctx, "discarding a notification that could not be rendered",
+		h.log.ErrorContext(ctx, "discarding a notification that could not be rendered",
 			"kind", event.Kind, "error", err)
 		return nil
 	}
@@ -478,9 +491,9 @@ func (h *NotificationHandler) handle(msg *message.Message) error {
 		// address is identified by the enrollment instead, which is what an
 		// operator would look it up by anyway.
 		if send.UserID != "" {
-			slog.InfoContext(ctx, "notification sent", "kind", event.Kind, "user_id", send.UserID)
+			h.log.InfoContext(ctx, "notification sent", "kind", event.Kind, "user_id", send.UserID)
 		} else {
-			slog.InfoContext(ctx, "notification sent to an enrollment's notification address",
+			h.log.InfoContext(ctx, "notification sent to an enrollment's notification address",
 				"kind", event.Kind, "enrollment_id", event.EnrollmentID)
 		}
 	}
@@ -531,7 +544,7 @@ func (h *NotificationHandler) recipients(ctx context.Context, event notify.Event
 			return nil, err
 		}
 		if len(holders) == 0 {
-			slog.InfoContext(ctx, "no reachable holders for a service account notification",
+			h.log.InfoContext(ctx, "no reachable holders for a service account notification",
 				"kind", event.Kind, "service_account", event.ServiceAccount)
 		}
 		sends := make([]delivery, 0, len(holders))
@@ -544,7 +557,7 @@ func (h *NotificationHandler) recipients(ctx context.Context, event notify.Event
 	var user model.User
 	if err := h.db.WithContext(ctx).First(&user, "id = ?", event.UserID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			slog.WarnContext(ctx, "dropping a notification for a user that no longer exists",
+			h.log.WarnContext(ctx, "dropping a notification for a user that no longer exists",
 				"kind", event.Kind, "user_id", event.UserID)
 			return nil, nil
 		}
@@ -553,7 +566,7 @@ func (h *NotificationHandler) recipients(ctx context.Context, event notify.Event
 	if user.Email == "" {
 		// Common rather than exceptional: an identity provider that does
 		// not release an email claim leaves every user here.
-		slog.DebugContext(ctx, "skipping a notification for a user with no address",
+		h.log.DebugContext(ctx, "skipping a notification for a user with no address",
 			"kind", event.Kind, "user_id", event.UserID)
 		return nil, nil
 	}
@@ -578,7 +591,7 @@ func (h *NotificationHandler) enrollmentAddress(ctx context.Context, event notif
 		First(&enrollment, "id = ?", event.EnrollmentID).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			slog.DebugContext(ctx, "notification names an enrollment that no longer exists; falling back to the account holders",
+			h.log.DebugContext(ctx, "notification names an enrollment that no longer exists; falling back to the account holders",
 				"kind", event.Kind, "enrollment_id", event.EnrollmentID)
 			return "", nil
 		}
