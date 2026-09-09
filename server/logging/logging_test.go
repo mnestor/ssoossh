@@ -815,3 +815,157 @@ func TestNew_ShouldNotLetTheStartupRouteStealANamedLoggersFile(t *testing.T) {
 		t.Errorf("stdout missing the startup record; got:\n%s", stdout)
 	}
 }
+
+// TestNew_ShouldEmitAuditRecordsBelowTheConfiguredLevel pins the audit
+// floor. Audit events are emitted entirely at INFO and audit.logging ships
+// with neither a file nor a level, so under the shipped logging.level of
+// WARN the catch-all discarded every one of them — while the config block
+// promised that leaving it unset still reached the general log.
+//
+// The cases below pin both halves: the trail survives a quiet app log, and
+// the floor is not a back door that lifts every other named logger or every
+// level of audit's own records.
+//
+// Mutates the default logger; must not run in parallel.
+func TestNew_ShouldEmitAuditRecordsBelowTheConfiguredLevel(t *testing.T) {
+	tests := []struct {
+		name       string
+		mainLevel  string
+		log        func()
+		wantStdout []string
+		notStdout  []string
+	}{
+		{
+			name:      "should print an audit record at the default warn level",
+			mainLevel: "warn",
+			log: func() {
+				Tagged(TagAudit).Info("audit-marker")
+				slog.Info("app-info-marker")
+			},
+			wantStdout: []string{"audit-marker"},
+			notStdout:  []string{"app-info-marker"},
+		},
+		{
+			name:       "should print an audit record when the app log is at error",
+			mainLevel:  "error",
+			log:        func() { Tagged(TagAudit).Info("quiet-config-audit-marker") },
+			wantStdout: []string{"quiet-config-audit-marker"},
+		},
+		{
+			name:       "should keep the type attr, having no dedicated destination",
+			mainLevel:  "warn",
+			log:        func() { Tagged(TagAudit).Info("typed-audit-marker") },
+			wantStdout: []string{"typed-audit-marker", "type=" + TagAudit},
+		},
+		{
+			name:      "should drop an audit-tagged record below info",
+			mainLevel: "warn",
+			log:       func() { Tagged(TagAudit).Debug("debug-audit-marker") },
+			notStdout: []string{"debug-audit-marker"},
+		},
+		{
+			// The floor is audit's alone. Every other named logger with no
+			// file and no level of its own is still filtered at
+			// logging.level, which is what its config documents.
+			name:      "should not lift any other named logger to the floor",
+			mainLevel: "warn",
+			log: func() {
+				Tagged(TagLDAP).Info("ldap-marker")
+				Tagged(TagQueue).Info("queue-marker")
+				Tagged(TagDB).Info("db-marker")
+			},
+			notStdout: []string{"ldap-marker", "queue-marker", "db-marker"},
+		},
+	}
+
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &config.Config{}
+			c.Logging.Level = tt.mainLevel
+
+			stdout, _ := captureStdouterr(t, func() {
+				if _, err := New(c); err != nil {
+					t.Fatalf("New() error = %v", err)
+				}
+				tt.log()
+			})
+
+			for _, want := range tt.wantStdout {
+				if !strings.Contains(stdout, want) {
+					t.Errorf("stdout missing %q; got:\n%s", want, stdout)
+				}
+			}
+			for _, not := range tt.notStdout {
+				if strings.Contains(stdout, not) {
+					t.Errorf("stdout unexpectedly contains %q; got:\n%s", not, stdout)
+				}
+			}
+		})
+	}
+}
+
+// An explicit audit.logging.level still wins: the floor exists for the
+// unconfigured deployment, not to override an operator who turned the
+// audit destination down on purpose.
+//
+// Mutates the default logger; must not run in parallel.
+func TestNew_ShouldLetAnExplicitAuditLevelOverrideTheFloor(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	c := &config.Config{}
+	c.Logging.Level = "warn"
+	c.Audit.Logging.Level = "error"
+
+	stdout, _ := captureStdouterr(t, func() {
+		if _, err := New(c); err != nil {
+			t.Fatalf("New() error = %v", err)
+		}
+		Tagged(TagAudit).Info("suppressed-audit-marker")
+		Tagged(TagAudit).Error("kept-audit-marker")
+	})
+
+	if strings.Contains(stdout, "suppressed-audit-marker") {
+		t.Errorf("stdout unexpectedly contains the INFO record; got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "kept-audit-marker") {
+		t.Errorf("stdout missing the ERROR record; got:\n%s", stdout)
+	}
+}
+
+// And a configured file still wins over the floor: the floor only decides
+// where records go when audit has no destination of its own.
+//
+// Mutates the default logger; must not run in parallel.
+func TestNew_ShouldPreferAConfiguredAuditFileOverTheFloor(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	dir := t.TempDir()
+	auditFile := filepath.Join(dir, "audit.log")
+
+	c := &config.Config{}
+	c.Logging.Level = "warn"
+	c.Audit.Logging.Filename = auditFile
+
+	stdout, _ := captureStdouterr(t, func() {
+		if _, err := New(c); err != nil {
+			t.Fatalf("New() error = %v", err)
+		}
+		Tagged(TagAudit).Info("filed-audit-marker")
+	})
+
+	if strings.Contains(stdout, "filed-audit-marker") {
+		t.Errorf("stdout unexpectedly contains the audit record; got:\n%s", stdout)
+	}
+	data, err := os.ReadFile(auditFile)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", auditFile, err)
+	}
+	if !strings.Contains(string(data), "filed-audit-marker") {
+		t.Errorf("expected %s to contain the audit record, got: %s", auditFile, string(data))
+	}
+}
