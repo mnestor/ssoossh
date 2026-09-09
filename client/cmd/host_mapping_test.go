@@ -251,15 +251,18 @@ func TestRunHostPrincipals(t *testing.T) {
 		}
 	})
 
-	t.Run("should error on malformed file", func(t *testing.T) {
+	// A malformed file no longer refuses to answer: it logs and falls back
+	// to the account name alone, matching what pam_ssoossh does with a map
+	// it cannot load. See TestRunHostPrincipals_ShouldFloorWhenTheMappingIsMalformed
+	// in host_principals_test.go for the full contract.
+	t.Run("should answer with the account name on a malformed file", func(t *testing.T) {
 		t.Parallel()
 		path := filepath.Join(t.TempDir(), "mapping.json")
 		if err := os.WriteFile(path, []byte("not json"), 0600); err != nil {
 			t.Fatalf("write file error = %v", err)
 		}
-		err := runHostPrincipals(context.Background(), "testuser", path)
-		if err == nil {
-			t.Fatal("runHostPrincipals() error = nil, want error for malformed file")
+		if err := runHostPrincipals(context.Background(), "testuser", path); err != nil {
+			t.Fatalf("runHostPrincipals() error = %v, want a floored answer", err)
 		}
 	})
 }

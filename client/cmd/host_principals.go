@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"slices"
 
 	"github.com/bep/simplecobra"
@@ -27,8 +28,12 @@ func newHostPrincipalsCommand(mappingFileFunc func() string) simplecobra.Command
 			"file, so give sshd's AuthorizedPrincipalsCommandUser a dedicated unprivileged " +
 			"account rather than root. Expects one argument: the local username to look " +
 			"up. Prints one principal per line, always including the looked-up name " +
-			"itself, so an unknown account or a missing file still prints that one line. " +
-			"An unreadable or malformed file exits non-zero and prints nothing.",
+			"itself: the mapping file adds principals to an account and can never take " +
+			"the account's own name away. An unknown account, a missing file, and a file " +
+			"that will not load all still print that one line and exit 0 -- a file that " +
+			"will not load is reported on stderr rather than by refusing to answer, so " +
+			"this host stays consistent with pam_ssoossh, which falls back to the same " +
+			"rule when it cannot read the map.",
 	}
 	cmd.run = func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
 		if len(args) < 1 {
@@ -45,22 +50,35 @@ func runHostPrincipals(ctx context.Context, username, mappingPath string) error 
 		return printPrincipals(username, nil)
 	}
 
-	// A file that is not there yet is not an error: the account keeps the
+	// A file that is not there yet is not a failure: the account keeps the
 	// floor below and nothing more, which is the right answer for a host
-	// whose mapping has not been written. Anything else -- unreadable,
-	// malformed -- is reported, because answering for a file that exists
-	// and says otherwise would apply a policy the operator did not write.
+	// whose mapping has not been written.
 	//
-	// Note the error path prints nothing at all, floor included. sshd
-	// refuses the login on a non-zero exit either way, and a command that
-	// printed a usable principal while failing would be inviting whoever
-	// reads its output to use half an answer.
+	// A file that is there and will not load -- unreadable, malformed --
+	// is a failure, and it is logged, but it still answers with the floor
+	// and exits 0. That is deliberately not "fail closed": pam_ssoossh
+	// treats a map it cannot load as no map at all and falls back to
+	// requiring the certificate to carry the local account name, and the
+	// two must not read one file differently. Denying here while sudo
+	// still admitted the account would be a worse outcome than either
+	// behaviour on its own.
+	//
+	// The log goes to stderr, where slog's default handler is installed
+	// (see installTracing). It must never reach stdout: sshd parses stdout
+	// as the principal list, so a diagnostic printed there would be read
+	// as a principal.
 	mapping, err := principalsmap.LoadFromFile(mappingPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return printPrincipals(username, nil)
 		}
-		return err
+		// Error, not Warn: this is a file the operator wrote and the host
+		// is now ignoring, and the default client verbosity shows Warn and
+		// above, so either would surface. Error says the mapping is not in
+		// effect, which is the part worth noticing.
+		slog.Error("the principals map could not be loaded; answering with the account name alone",
+			"path", mappingPath, "account", username, "error", err)
+		return printPrincipals(username, nil)
 	}
 
 	return printPrincipals(username, mapping[username])

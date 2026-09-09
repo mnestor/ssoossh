@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -145,10 +147,15 @@ func TestRunHostPrincipals_ShouldNotPrintABlankLineForAnEmptyAccount(t *testing.
 	}
 }
 
-// A mapping file that is there and will not parse is the one case that must
-// fail. Treating it as empty would silently deny every login on the host
-// while everything looked healthy.
-func TestRunHostPrincipals_ShouldFailWhenTheMappingIsMalformed(t *testing.T) {
+// A mapping file that is there and will not parse still answers, with the
+// floor and nothing else, and exits 0.
+//
+// Not fail-closed, deliberately: pam_ssoossh treats a map it cannot load as
+// no map at all and falls back to requiring the certificate to carry the
+// local account name. One file must not mean two policies, so denying here
+// while sudo still admitted the account would be worse than either
+// behaviour alone. The failure is reported on stderr instead.
+func TestRunHostPrincipals_ShouldFloorWhenTheMappingIsMalformed(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "principals.yaml")
 	if err := os.WriteFile(path, []byte("  deploy:\n"), 0o600); err != nil {
 		t.Fatalf("write mapping: %v", err)
@@ -158,23 +165,55 @@ func TestRunHostPrincipals_ShouldFailWhenTheMappingIsMalformed(t *testing.T) {
 	out := captureStdout(t, func() {
 		err = runHostPrincipals(context.Background(), "deploy", path)
 	})
-	if err == nil {
-		t.Fatal("expected a malformed mapping file to be an error")
+	if err != nil {
+		t.Fatalf("expected a malformed mapping file to still answer, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "parse principals map") {
-		t.Errorf("got %q, want it to say the map would not parse", err.Error())
-	}
-	// Not even the floor: sshd refuses the login on a non-zero exit either
-	// way, and printing a usable principal while failing would invite
-	// whoever reads the output to act on half an answer.
-	if strings.TrimSpace(out) != "" {
-		t.Errorf("expected no output on the error path, got %q", out)
+	if got, want := strings.Fields(out), []string{"deploy"}; !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
 	}
 }
 
-// An unreadable file is not the same as a missing one: reporting it as
-// "no principals" would hide a permissions mistake behind a denied login.
-func TestRunHostPrincipals_ShouldFailWhenTheMappingCannotBeRead(t *testing.T) {
+// The failure is reported rather than swallowed, and on stderr: sshd parses
+// stdout as the principal list, so a diagnostic printed there would be read
+// as a principal.
+func TestRunHostPrincipals_ShouldLogAMalformedMappingToStderr(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "principals.yaml")
+	if err := os.WriteFile(path, []byte("  deploy:\n"), 0o600); err != nil {
+		t.Fatalf("write mapping: %v", err)
+	}
+
+	var logged bytes.Buffer
+	prior := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prior) })
+
+	out := captureStdout(t, func() {
+		if err := runHostPrincipals(context.Background(), "deploy", path); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	if !strings.Contains(logged.String(), "could not be loaded") {
+		t.Errorf("expected the load failure to be logged, got: %s", logged.String())
+	}
+	if !strings.Contains(logged.String(), path) {
+		t.Errorf("expected the log to name the file, got: %s", logged.String())
+	}
+	// The log must not have leaked into the principal list.
+	if strings.Contains(out, "could not be loaded") {
+		t.Errorf("the diagnostic reached stdout, where sshd reads principals: %q", out)
+	}
+	// Default client verbosity is Warn, so an Error record is visible
+	// without anyone passing -v.
+	if !strings.Contains(logged.String(), "ERROR") {
+		t.Errorf("expected the record at ERROR so it shows at the default verbosity, got: %s", logged.String())
+	}
+}
+
+// An unreadable file takes the same path as a malformed one: the floor, a
+// zero exit, and a logged failure. A permissions mistake is reported rather
+// than turned into a denied login sudo would have allowed.
+func TestRunHostPrincipals_ShouldFloorWhenTheMappingCannotBeRead(t *testing.T) {
 	// Windows has no POSIX permission bits to take the read away with:
 	// os.Chmod there only toggles the read-only attribute, so a 0000 file
 	// still reads back fine and the condition cannot be built. Nothing is
@@ -192,12 +231,23 @@ func TestRunHostPrincipals_ShouldFailWhenTheMappingCannotBeRead(t *testing.T) {
 		t.Skip("running as root, which can read a 0000 file")
 	}
 
-	err := runHostPrincipals(context.Background(), "deploy", path)
-	if err == nil {
-		t.Fatal("expected an unreadable mapping file to be an error")
+	var logged bytes.Buffer
+	prior := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prior) })
+
+	var err error
+	out := captureStdout(t, func() {
+		err = runHostPrincipals(context.Background(), "deploy", path)
+	})
+	if err != nil {
+		t.Fatalf("expected an unreadable mapping file to still answer, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "read principals map") {
-		t.Errorf("got %q, want it to name the read failure", err.Error())
+	if got, want := strings.Fields(out), []string{"deploy"}; !slices.Equal(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	if !strings.Contains(logged.String(), "read principals map") {
+		t.Errorf("expected the read failure to be logged, got: %s", logged.String())
 	}
 }
 
