@@ -24,6 +24,34 @@ func (e *TooManyRequestsError) HTTPStatusCode() int { return http.StatusTooManyR
 // ErrorCode reports the machine-readable error code.
 func (e *TooManyRequestsError) ErrorCode() string { return apitypes.ErrorCodeRateLimited }
 
+// SessionWriteError indicates a login that authenticated successfully but
+// whose session could not be persisted, so the browser has no way to prove
+// it is signed in.
+//
+// It exists to give that failure a message the person reading it can act
+// on. Left untyped it fell through to the error handler's generic 500 and
+// told a user whose login just failed only "internal server error", while
+// the reason — a session payload larger than the store would take, a
+// database that would not write — was visible to the operator alone.
+//
+// The status stays 500 because nothing the caller sent is wrong and
+// retrying will not help; what changes is that the response says which
+// step failed and who can fix it.
+type SessionWriteError struct{}
+
+// Error implements the error interface. Deliberately caller-safe: it names
+// the step that failed and who to ask, and nothing about the store, the
+// schema, or the size of anyone's group list.
+func (e *SessionWriteError) Error() string {
+	return "signed in successfully, but the session could not be saved, so the login could not be completed; contact your administrator"
+}
+
+// HTTPStatusCode reports the HTTP status this error should be rendered as.
+func (e *SessionWriteError) HTTPStatusCode() int { return http.StatusInternalServerError }
+
+// ErrorCode reports the machine-readable error code.
+func (e *SessionWriteError) ErrorCode() string { return apitypes.ErrorCodeInternalError }
+
 // MisdirectedRequestError indicates a request addressed to a server name
 // this server is not configured to answer for.
 type MisdirectedRequestError struct{}

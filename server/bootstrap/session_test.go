@@ -1,9 +1,16 @@
 package bootstrap
 
 import (
+	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-gonic/gin"
+	"github.com/wader/gormstore/v2"
 
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
@@ -216,4 +223,119 @@ func TestSessionCookieOptions_ShouldNeverProduceAZeroMaxAge(t *testing.T) {
 			}
 		})
 	}
+}
+
+// bigGroupList returns a comma-joined group list in the shape
+// middleware.SetIdentitySession writes, sized past the 47KB seen in
+// production and well past securecookie's 4096-byte default.
+func bigGroupList(t *testing.T) string {
+	t.Helper()
+
+	groups := make([]string, 0, 2000)
+	for i := range 2000 {
+		groups = append(groups, fmt.Sprintf("cn=group-%04d,ou=groups,dc=example,dc=com", i))
+	}
+	joined := strings.Join(groups, ",")
+	if len(joined) < 60_000 {
+		t.Fatalf("fixture too small to exercise the limit: %d bytes", len(joined))
+	}
+	return joined
+}
+
+// TestInitEngine_ShouldSaveASessionCarryingALargeGroupList pins the fix for
+// the production failure: a directory handing back hundreds of group
+// memberships produced a 47KB session payload, and securecookie's
+// 4096-byte default — a browser cookie limit, which gormstore applies to a
+// payload that lives in a database column and never reaches a cookie —
+// failed the save with "securecookie: the value is too long" and 500'd
+// /auth/callback.
+//
+// Through the engine initEngine actually builds, not a store assembled by
+// the test: the thing that regressed would be forgetting to configure the
+// store, which a hand-built store would hide.
+func TestInitEngine_ShouldSaveASessionCarryingALargeGroupList(t *testing.T) {
+	t.Parallel()
+
+	a := newTestApp(t, &config.Config{})
+	r, err := a.initEngine()
+	if err != nil {
+		t.Fatalf("initEngine() error = %v", err)
+	}
+
+	var saveErr error
+	r.GET("/save-big-session", func(gc *gin.Context) {
+		sess := sessions.Default(gc)
+		sess.Set("identity_groups", bigGroupList(t))
+		saveErr = sess.Save()
+		gc.Status(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/save-big-session", nil)
+	req.Host = a.config.HTTP.PublicHost()
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	if saveErr != nil {
+		t.Errorf("saving a session with a large group list failed: %v", saveErr)
+	}
+}
+
+// And the default really is what would have refused it, so the line in
+// initEngine is load-bearing rather than decorative. A store left at
+// securecookie's default takes the same payload the engine above accepted
+// and rejects it.
+func TestSessionStore_ShouldRefuseALargeGroupListAtTheSecurecookieDefault(t *testing.T) {
+	t.Parallel()
+
+	store, req, w := newTestSessionStore(t, 0)
+
+	sess, err := store.New(req, "ssoossh_session")
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	sess.Values["identity_groups"] = bigGroupList(t)
+
+	if err := store.Save(req, w, sess); err == nil {
+		t.Error("a store at securecookie's 4096-byte default accepted a 60KB payload; the default this fix works around is gone, so the fix needs revisiting")
+	}
+}
+
+// The cap is still a cap: a payload past it is refused rather than written,
+// so an unbounded session is a visible failure and not a database row that
+// quietly grows without limit.
+func TestSessionStore_ShouldRefuseAPayloadPastTheCap(t *testing.T) {
+	t.Parallel()
+
+	store, req, w := newTestSessionStore(t, maxSessionPayloadBytes)
+
+	sess, err := store.New(req, "ssoossh_session")
+	if err != nil {
+		t.Fatalf("store.New() error = %v", err)
+	}
+	sess.Values["identity_groups"] = strings.Repeat("x", maxSessionPayloadBytes+1)
+
+	if err := store.Save(req, w, sess); err == nil {
+		t.Error("saving a session past the cap returned no error, want the store to refuse it")
+	}
+}
+
+// newTestSessionStore builds a gormstore against a throwaway database, with
+// maxLength applied when non-zero (zero leaves securecookie's own default in
+// place, which is the case one of the tests above is about).
+func newTestSessionStore(t *testing.T, maxLength int) (*gormSessionStore, *http.Request, *httptest.ResponseRecorder) {
+	t.Helper()
+
+	a := newTestApp(t, &config.Config{})
+	secret, err := resolveSessionSecret(a.config, a.db)
+	if err != nil {
+		t.Fatalf("resolveSessionSecret() error = %v", err)
+	}
+
+	gs := gormstore.New(a.db, secret)
+	if maxLength > 0 {
+		gs.MaxLength(maxLength)
+	}
+	store := &gormSessionStore{Store: gs}
+	store.Options(sessions.Options{Path: "/", MaxAge: 3600})
+
+	return store, httptest.NewRequest(http.MethodGet, "/auth/callback", nil), httptest.NewRecorder()
 }

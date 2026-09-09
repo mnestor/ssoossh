@@ -51,6 +51,12 @@ func (s *gormSessionStore) Options(options sessions.Options) {
 	s.SessionOpts = options.ToGorillaOptions()
 }
 
+// maxSessionPayloadBytes caps the encoded session payload gormstore will
+// write to its database column. See the MaxLength call in initEngine for why
+// securecookie's 4096-byte default is the wrong limit here and why this one
+// is finite.
+const maxSessionPayloadBytes = 256 * 1024
+
 // Server wraps the Gin router and the HTTP(S) server that serves it.
 type Server struct {
 	router      *gin.Engine
@@ -213,6 +219,30 @@ func (a *app) initEngine() (*gin.Engine, error) {
 	// own the quit channel here and close it from a shutdown hook (see
 	// a.stopSessionCleanup, wired in BootstrapServe).
 	gs := gormstore.New(a.db, sessionSecret)
+
+	// gormstore encodes the session's *values* with the same securecookie
+	// codec it uses for the id cookie (gormstore.Store.Save), then writes
+	// that blob to a database column; only the session id travels in the
+	// cookie. securecookie's MaxLength defaults to 4096 because that is
+	// what browsers accept in a cookie — so without this call a browser
+	// limit is enforced against a payload no browser ever sees, and a
+	// login fails with "securecookie: the value is too long" while the
+	// cookie itself stays a few dozen bytes.
+	//
+	// That is not hypothetical: a directory that hands back hundreds of
+	// group memberships produced a 47KB session payload and a 500 at
+	// /auth/callback. The groups have to be carried — authorization and
+	// the decision audit snapshot both read them off the identity (see
+	// middleware.SetIdentitySession) — so the limit is what has to move.
+	//
+	// Finite rather than 0 (which disables the check outright): this bounds
+	// a row this server writes on every login and rewrites on every
+	// sliding-expiry refresh, and a session that genuinely needs a quarter
+	// of a megabyte is a configuration to look at, not one to absorb in
+	// silence. Raising it costs cookie bytes nowhere; it only widens what
+	// this server will accept from its own database.
+	gs.MaxLength(maxSessionPayloadBytes)
+
 	sessionCleanupQuit := make(chan struct{})
 	go gs.PeriodicCleanup(1*time.Hour, sessionCleanupQuit)
 	a.stopSessionCleanup = func(context.Context) error {
