@@ -17,6 +17,11 @@ Any OIDC-compliant provider. `ssoosshd` uses standard discovery
 and reads its identity out of the ID token. There is no provider-specific
 code.
 
+PKCE can be switched off with
+[`authentication.disable_pkce`](/ssoossh/reference/config/authentication/#disable_pkce)
+for a provider that refuses a code challenge -- see the troubleshooting entry
+below before you reach for it.
+
 [pocket-id](https://github.com/pocket-id/pocket-id) is the reference provider
 the project's own configuration assumes, and the worked example below. Nothing
 about the setup is specific to it.
@@ -220,6 +225,17 @@ and that
 [`fields.groups`](/ssoossh/reference/config/authentication/#fieldsgroups)
 names the claim your provider actually emits. Roles fail closed: no identity,
 no group, or no configured group all deny.
+
+**The provider rejects the authorization request over `code_challenge`.** A
+few providers refuse PKCE parameters from a confidential client. Set
+[`authentication.disable_pkce`](/ssoossh/reference/config/authentication/#disable_pkce)
+to `true` and the login drops both the challenge and the code verifier;
+nothing else about the flow changes, and the `state` and ID token `nonce`
+checks are untouched. It is a last resort and the server warns at every
+startup while it is set: PKCE is what stops an authorization code observed in
+transit -- in a proxy log, a browser history, a referrer header -- from being
+redeemed by whoever found it. Prefer registering the client as one your
+provider will accept a challenge from.
 
 **Requests are rejected with 421 Misdirected Request.** The request was
 addressed to a host name other than `public_url`'s. The health endpoints are

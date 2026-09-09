@@ -13,6 +13,7 @@ See OAuthConfig for details on provider URL, scopes, and field mapping from OIDC
 | [`authentication.client_secret`](#client_secret) | string | `empty` |
 | [`authentication.provider_url`](#provider_url) | string | `empty` |
 | [`authentication.scopes`](#scopes) | string | `profile email` |
+| [`authentication.disable_pkce`](#disable_pkce) | bool | `false` |
 | [`authentication.fields.subject`](#fieldssubject) | string | `sub` |
 | [`authentication.fields.username`](#fieldsusername) | string | `preferred_username` |
 | [`authentication.fields.name`](#fieldsname) | string | `name` |
@@ -64,6 +65,21 @@ A space-separated list of additional scopes to request alongside the always-incl
 ```yaml
 authentication:
   scopes: "profile email"
+```
+
+## `disable_pkce`
+
+`bool`, default `false`
+
+Drops the PKCE (RFC 7636) code challenge from the authorization request and the code verifier from the token exchange. Off by default: PKCE is what stops an authorization code stolen in transit — out of a proxy log, a browser history, a referrer header — from being redeemed by anyone but the browser that started the login.
+
+It exists because a few providers reject an authorization request carrying code_challenge for a confidential client, and an operator who cannot change that at the provider would otherwise have no way to log in at all. Nothing else in the login changes: state and the ID token nonce are unaffected and still checked.
+
+Turn it on only against a provider that demonstrably refuses the parameters, and treat it as temporary — every provider ssoossh supports otherwise handles PKCE, and the server warns at startup whenever this is set.
+
+```yaml
+authentication:
+  disable_pkce: false
 ```
 
 ## `fields`

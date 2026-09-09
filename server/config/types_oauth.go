@@ -16,7 +16,26 @@ type OAuthConfig struct {
 
 	// Scopes is a space-separated list of additional scopes to request
 	// alongside the always-included "openid" scope, e.g. "profile email".
-	Scopes string      `mapstructure:"scopes" default:"profile email"`
+	Scopes string `mapstructure:"scopes" default:"profile email"`
+
+	// DisablePKCE drops the PKCE (RFC 7636) code challenge from the
+	// authorization request and the code verifier from the token exchange.
+	// Off by default: PKCE is what stops an authorization code stolen in
+	// transit — out of a proxy log, a browser history, a referrer header —
+	// from being redeemed by anyone but the browser that started the login.
+	//
+	// It exists because a few providers reject an authorization request
+	// carrying code_challenge for a confidential client, and an operator
+	// who cannot change that at the provider would otherwise have no way to
+	// log in at all. Nothing else in the login changes: state and the ID
+	// token nonce are unaffected and still checked.
+	//
+	// Turn it on only against a provider that demonstrably refuses the
+	// parameters, and treat it as temporary — every provider ssoossh
+	// supports otherwise handles PKCE, and the server warns at startup
+	// whenever this is set.
+	DisablePKCE bool `mapstructure:"disable_pkce" default:"false"`
+
 	Fields OAuthFields `mapstructure:"fields"`
 }
 
