@@ -5,6 +5,7 @@ package e2e
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -56,9 +57,11 @@ func TestHostPrincipals_ShouldPrintMappedPrincipalsWhenTheAccountIsKnown(t *test
 	if res.ExitCode != 0 {
 		t.Fatalf("expected host principals to succeed, got exit %d\nstderr:\n%s", res.ExitCode, res.Stderr)
 	}
-	// One principal per line, which is the format sshd parses.
+	// One principal per line, which is the format sshd parses: the file's
+	// own principals in file order, then the account name itself, which
+	// this command guarantees whatever the mapping says.
 	got := strings.Fields(res.Stdout)
-	want := []string{"alice", "bob"}
+	want := []string{"alice", "bob", "deploy"}
 	if len(got) != len(want) {
 		t.Fatalf("got principals %v, want %v", got, want)
 	}
@@ -74,11 +77,12 @@ func TestHostPrincipals_ShouldPrintMappedPrincipalsWhenTheAccountIsKnown(t *test
 	}
 }
 
-// sshd treats "no output, exit 0" as "this account has no principals", so
-// both of these must succeed silently rather than error. An unknown account
+// An account the mapping does not cover still gets its own name, and
+// nothing else. These must succeed rather than error: an unknown account
 // erroring would deny every login on a host whose mapping simply has no
-// entry yet.
-func TestHostPrincipals_ShouldExitZeroWithNoOutputWhenNothingMatches(t *testing.T) {
+// entry yet, and printing nothing would leave an identity unable to use the
+// one principal sshd would have accepted with no command configured at all.
+func TestHostPrincipals_ShouldPrintTheAccountNameWhenNothingMatches(t *testing.T) {
 	_, bin := harness.Binaries(t)
 
 	tests := []struct {
@@ -104,8 +108,9 @@ func TestHostPrincipals_ShouldExitZeroWithNoOutputWhenNothingMatches(t *testing.
 			if res.ExitCode != 0 {
 				t.Fatalf("expected exit 0, got %d\nstderr:\n%s", res.ExitCode, res.Stderr)
 			}
-			if strings.TrimSpace(res.Stdout) != "" {
-				t.Errorf("expected no output, got %q", res.Stdout)
+			got := strings.Fields(res.Stdout)
+			if len(got) != 1 || got[0] != tt.account {
+				t.Errorf("got principals %v, want [%s]", got, tt.account)
 			}
 		})
 	}
@@ -121,6 +126,12 @@ func TestHostPrincipals_ShouldFailWhenTheMappingFileIsMalformed(t *testing.T) {
 
 	if res.ExitCode == 0 {
 		t.Fatalf("expected a non-zero exit for a malformed mapping file, got 0\nstdout:\n%s", res.Stdout)
+	}
+	// Not even the account name: sshd refuses the login on a non-zero exit
+	// either way, and a command that printed a usable principal while
+	// failing would invite acting on half an answer.
+	if strings.TrimSpace(res.Stdout) != "" {
+		t.Errorf("expected no output on the error path, got %q", res.Stdout)
 	}
 	// The parser's own wording is free to change; what must reach the
 	// operator is that this file is why, so match the command's wrapper
@@ -183,12 +194,17 @@ func TestHostMapping_ShouldRoundTripAddListRemove(t *testing.T) {
 		t.Errorf("bob was removed along with alice:\n%s", after.Stdout)
 	}
 
-	// `host principals` reads the same file, so it has to agree with list.
-	// These are the two halves of the feature and nothing had checked they
-	// see the same thing.
+	// `host principals` reads the same file, so it has to agree with list
+	// on what the file says. These are the two halves of the feature and
+	// nothing had checked they see the same thing.
+	//
+	// They are not identical, and deliberately so: `mapping list` reports
+	// the file, while `host principals` answers sshd's question, which
+	// includes the account's own name whether or not the file lists it. So
+	// the assertion is that principals is list plus exactly that floor.
 	principals := runHost(t, bin, mapping, "principals", "deploy")
-	if got := strings.Fields(principals.Stdout); len(got) != 1 || got[0] != "bob" {
-		t.Errorf("host principals disagrees with mapping list: got %v, want [bob]", got)
+	if got, want := strings.Fields(principals.Stdout), []string{"bob", "deploy"}; !slices.Equal(got, want) {
+		t.Errorf("host principals disagrees with mapping list: got %v, want %v", got, want)
 	}
 }
 
