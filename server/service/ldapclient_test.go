@@ -190,6 +190,16 @@ func TestReduceGroupName(t *testing.T) {
 		{name: "a bare name is kept", value: "soc", want: "soc"},
 		{name: "a name with spaces is kept", value: "SSH Users", want: "SSH Users"},
 		{name: "an empty value is kept", value: "", want: ""},
+		// A comma inside the CN is escaped in the DN (RFC 4514), and
+		// reduceGroupName has to honour that escape rather than treat it
+		// as an RDN boundary. A naive split here would hand the allowlist
+		// "Team" and lose every member of "Team, EMEA" their access.
+		{name: "an escaped comma stays inside the CN", value: `CN=Team\, EMEA,OU=Groups,DC=example,DC=net`, want: "Team, EMEA"},
+		{name: "a bare name containing a comma is kept whole", value: "Team, EMEA", want: "Team, EMEA"},
+		// The other RFC 4514 escapes that can appear in a CN, for the same
+		// reason: what the directory said is what the allowlist compares.
+		{name: "an escaped plus stays inside the CN", value: `CN=Ops\+Eng,OU=Groups,DC=example,DC=net`, want: "Ops+Eng"},
+		{name: "an escaped equals stays inside the CN", value: `CN=A\=B,OU=Groups,DC=example,DC=net`, want: "A=B"},
 	}
 
 	for _, tt := range tests {

@@ -708,3 +708,124 @@ func TestSessionAuthMiddleware_ShouldNotRefreshGroups(t *testing.T) {
 		t.Errorf("got groups %v, want the session claim [ssh-admins]", got.Groups)
 	}
 }
+
+// roundTripIdentity writes identity to a session and reads back whatever
+// SessionAuthMiddleware rebuilds from it, which is the path every
+// authorization decision and every audit snapshot depends on.
+func roundTripIdentity(t *testing.T, identity *service.Identity) *service.Identity {
+	t.Helper()
+
+	setResp := doSessionRequest(t, func(c *gin.Context) {
+		if err := SetIdentitySession(c, identity); err != nil {
+			t.Fatalf("SetIdentitySession() error = %v", err)
+		}
+	}, nil)
+
+	r := newSessionTestRouter()
+	var got *service.Identity
+	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour, nil).Add(), func(c *gin.Context) {
+		got, _ = Identity(c)
+	})
+	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)
+	for _, c := range setResp.Result().Cookies() {
+		req.AddCookie(c)
+	}
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	if got == nil {
+		t.Fatal("the middleware rebuilt no identity from the session")
+	}
+	return got
+}
+
+// A group name containing a comma used to come back as two names, neither
+// of which matched any rule: a member of "Team, EMEA" lost the access that
+// group granted, and the decision audit record showed two groups nobody
+// held. Directory CNs contain commas ("CN=Team, EMEA,OU=..."), so this is
+// an ordinary value rather than an exotic one.
+func TestSessionIdentity_ShouldPreserveCommasInGroupNames(t *testing.T) {
+	t.Parallel()
+
+	groups := []string{"Team, EMEA", "platform-admins", "Ops, On-Call, Tier 1"}
+	got := roundTripIdentity(t, &service.Identity{Subject: "s", Username: "u", Groups: groups})
+
+	if !reflect.DeepEqual(got.Groups, groups) {
+		t.Errorf("got Groups %#v, want %#v", got.Groups, groups)
+	}
+}
+
+// The same encoding carries the account lists, and service certificate
+// approval is authorized against ServiceAccounts.
+func TestSessionIdentity_ShouldPreserveCommasInAccountLists(t *testing.T) {
+	t.Parallel()
+
+	other := []string{"alice, contractor", "alice2"}
+	serviceAccounts := []string{"svc, batch", "svc-web"}
+	got := roundTripIdentity(t, &service.Identity{
+		Subject: "s", Username: "u", OtherAccounts: other, ServiceAccounts: serviceAccounts,
+	})
+
+	if !reflect.DeepEqual(got.OtherAccounts, other) {
+		t.Errorf("got OtherAccounts %#v, want %#v", got.OtherAccounts, other)
+	}
+	if !reflect.DeepEqual(got.ServiceAccounts, serviceAccounts) {
+		t.Errorf("got ServiceAccounts %#v, want %#v", got.ServiceAccounts, serviceAccounts)
+	}
+}
+
+// Quotes, backslashes and the RFC 4514 escape a DN uses for a literal
+// comma all survive too — the encoding has to be total, not merely
+// comma-safe, since the next surprise will be a different character.
+func TestSessionIdentity_ShouldPreserveAwkwardCharactersInGroupNames(t *testing.T) {
+	t.Parallel()
+
+	groups := []string{`Team\, EMEA`, `say "hi"`, `back\slash`, "unicode ✓", "trailing space "}
+	got := roundTripIdentity(t, &service.Identity{Subject: "s", Username: "u", Groups: groups})
+
+	if !reflect.DeepEqual(got.Groups, groups) {
+		t.Errorf("got Groups %#v, want %#v", got.Groups, groups)
+	}
+}
+
+// A session established before the JSON keys existed still carries the
+// comma-joined ones. It keeps working — signing every logged-in user out
+// on upgrade, or silently stripping an admin's roles, would be worse than
+// letting the old encoding live out the session's idle window.
+func TestSessionIdentity_ShouldStillReadAPreUpgradeSession(t *testing.T) {
+	t.Parallel()
+
+	setResp := doSessionRequest(t, func(c *gin.Context) {
+		sess := sessions.Default(c)
+		sess.Set(sessionKeyIdentitySubject, "sub-alice")
+		sess.Set(sessionKeyIdentityUsername, "alice")
+		sess.Set(legacySessionKeyIdentityGroups, "platform-admins,operators")
+		sess.Set(legacySessionKeyIdentityServiceAccounts, "svc-web")
+		now := time.Now().Unix()
+		sess.Set(sessionKeyIdentityIssuedAt, now)
+		sess.Set(sessionKeyIdentityRefreshedAt, now)
+		if err := sess.Save(); err != nil {
+			t.Fatalf("seeding a pre-upgrade session failed: %v", err)
+		}
+	}, nil)
+
+	r := newSessionTestRouter()
+	var got *service.Identity
+	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour, nil).Add(), func(c *gin.Context) {
+		got, _ = Identity(c)
+	})
+	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)
+	for _, c := range setResp.Result().Cookies() {
+		req.AddCookie(c)
+	}
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	if got == nil {
+		t.Fatal("a pre-upgrade session rebuilt no identity")
+	}
+	if want := []string{"platform-admins", "operators"}; !reflect.DeepEqual(got.Groups, want) {
+		t.Errorf("got Groups %#v, want %#v", got.Groups, want)
+	}
+	if want := []string{"svc-web"}; !reflect.DeepEqual(got.ServiceAccounts, want) {
+		t.Errorf("got ServiceAccounts %#v, want %#v", got.ServiceAccounts, want)
+	}
+}
