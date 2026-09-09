@@ -754,6 +754,33 @@ func TestSessionIdentity_ShouldPreserveCommasInGroupNames(t *testing.T) {
 	}
 }
 
+// Groups also arrive as complete LDAP paths rather than bare names: an
+// identity provider is free to emit the full DN, and every DN is a string
+// of comma-separated RDNs. The old encoding shredded one group into four
+// fragments, none of which was a group.
+func TestSessionIdentity_ShouldPreserveFullDNGroupValues(t *testing.T) {
+	t.Parallel()
+
+	groups := []string{
+		"CN=Some Group,OU=Groups,DC=example,DC=com",
+		`CN=Team\, EMEA,OU=Groups,DC=example,DC=com`,
+		"cn=soc,ou=groups,dc=example,dc=net",
+	}
+	got := roundTripIdentity(t, &service.Identity{Subject: "s", Username: "u", Groups: groups})
+
+	if !reflect.DeepEqual(got.Groups, groups) {
+		t.Errorf("got Groups %#v, want %#v", got.Groups, groups)
+	}
+	// Byte-for-byte, not merely the right count: authorization compares
+	// these by string equality against the configured group, so a value
+	// that survives in the wrong form is as broken as one that is split.
+	for i := range groups {
+		if got.Groups[i] != groups[i] {
+			t.Errorf("group %d round-tripped as %q, want %q", i, got.Groups[i], groups[i])
+		}
+	}
+}
+
 // The same encoding carries the account lists, and service certificate
 // approval is authorized against ServiceAccounts.
 func TestSessionIdentity_ShouldPreserveCommasInAccountLists(t *testing.T) {

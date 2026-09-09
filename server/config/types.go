@@ -462,6 +462,21 @@ func (a *AdminConfig) GrantsAuditor(groups []string) bool {
 // containsGroup reports whether needle is in haystack. An empty needle
 // never matches, so an unconfigured group cannot accidentally authorize a
 // caller.
+//
+// The comparison is exact, and haystack holds the group values the identity
+// provider emitted, verbatim — see service.AuthService's groups claim
+// handling, which does not rewrite them, and note that LDAP group values
+// never reach this list at all (they are persisted, never merged into the
+// session identity). So a provider that emits bare names has to be
+// configured with bare names, and one that emits full DNs
+// ("CN=admins,OU=Groups,DC=example,DC=com") has to be configured with the
+// full DN.
+//
+// Deliberately not reduced to a CN here, however tempting the symmetry with
+// service.reduceGroupName on the directory side. Two DNs may share a CN —
+// "CN=admins,OU=Platform" and "CN=admins,OU=Contractors" are different
+// groups — and matching on the CN alone would silently grant one the
+// other's access. An exact comparison can only fail closed.
 func containsGroup(haystack []string, needle string) bool {
 	if needle == "" {
 		return false

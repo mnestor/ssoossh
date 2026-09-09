@@ -237,6 +237,18 @@ func (f *filterTemplate) execute(data filterData) (string, error) {
 // the allowlist matches against. memberOf yields DNs, so a value that
 // parses as one is reduced to its first RDN value — conventionally the CN.
 // Anything that is not a DN is already a name and is kept as-is.
+//
+// The parse is go-ldap's, which is RFC 4514: a comma escaped inside an RDN
+// value ("CN=Team\, EMEA,OU=Groups") stays part of the CN rather than
+// ending it. Splitting on "," by hand here would hand the allowlist "Team"
+// and quietly drop every member of that group.
+//
+// Scope: this is the directory-sync path only, deciding which group rows to
+// persist. It is not an authorization step. Authorization compares
+// config.AdminConfig's group names against the identity's own group list
+// with exact string equality (config.containsGroup), and that list comes
+// from the OIDC claim rather than from here — so nothing reduces a DN on
+// the path that grants access, by design. See containsGroup for why.
 func reduceGroupName(value string) string {
 	dn, err := ldap.ParseDN(value)
 	if err != nil || len(dn.RDNs) == 0 || len(dn.RDNs[0].Attributes) == 0 {
