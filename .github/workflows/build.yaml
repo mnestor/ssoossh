@@ -123,6 +123,14 @@ jobs:
       - name: Build web UI
         run: make frontend
 
+      # The CSP is written in Go and the assets it must permit are decided
+      # by Vite, so they drift apart silently -- an asset slipping under
+      # Vite's inline threshold becomes a data: URI the policy refuses, with
+      # a console violation as the only symptom. Runs here because it needs
+      # the bundle the step above just produced.
+      - name: Check the built UI against the served CSP
+        run: ./scripts/check-csp-assets.sh
+
       - name: Snapshot build (linux/amd64)
         run: |
           git config --global --add safe.directory "$(pwd)"
