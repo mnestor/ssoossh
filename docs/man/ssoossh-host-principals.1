@@ -10,7 +10,7 @@ ssoossh-host-principals - Print the local principal mapping for sshd's Authorize
 
 
 .SH DESCRIPTION
-Implements AuthorizedPrincipalsCommand. Called on every login attempt, and must never touch the network -- it answers only from whatever local mapping files were written. It needs no privilege beyond read access to the mapping file, so give sshd's AuthorizedPrincipalsCommandUser a dedicated unprivileged account rather than root. Expects one argument: the local username to look up. Prints one principal per line; unknown account or missing file exits 0 with no output (sshd treats as no principals). An unreadable or malformed file exits non-zero.
+Implements AuthorizedPrincipalsCommand. Called on every login attempt, and must never touch the network -- it answers only from whatever local mapping files were written. It needs no privilege beyond read access to the mapping file, so give sshd's AuthorizedPrincipalsCommandUser a dedicated unprivileged account rather than root. Expects one argument: the local username to look up. Prints one principal per line, always including the looked-up name itself, so an unknown account or a missing file still prints that one line. An unreadable or malformed file exits non-zero and prints nothing.
 
 
 .SH OPTIONS

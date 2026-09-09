@@ -248,11 +248,17 @@ and never touches the network -- it answers only from the local mapping file.
 It expects one argument, the local username to look up, and prints one
 principal per line.
 
+The looked-up name is always among them. That is what `sshd` accepts unaided
+-- with no `AuthorizedPrincipalsCommand` configured it admits a certificate
+carrying the target account name -- so installing this command does not take
+it away from an account whose mapping does not restate it. The mapping file
+adds principals; it cannot remove the account's own name.
+
 | Situation | Behavior |
 | --- | --- |
-| Account found | Prints its principals, one per line, exit 0 |
-| Unknown account, or missing file | No output, exit 0 (sshd reads that as no principals) |
-| Unreadable or malformed file | Non-zero exit |
+| Account found | Prints its principals in file order, then the account name if the file did not already list it, exit 0 |
+| Unknown account, or missing file | Prints the account name alone, exit 0 |
+| Unreadable or malformed file | Non-zero exit, no output at all |
 
 It needs no privilege beyond read access to the mapping file, so run it as a
 dedicated unprivileged account rather than as root:
