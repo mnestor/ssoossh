@@ -77,7 +77,17 @@ type LDAPFieldSearch struct {
 	Filter string `mapstructure:"filter" example:"(manager={{.DN}})"`
 
 	// Value names the attribute on each matched entry that contributes to
-	// the field, e.g. "uid".
+	// the field. It is directory-specific and there is no portable answer:
+	// "uid" on OpenLDAP, "sAMAccountName" on Active Directory, which has no
+	// uid attribute at all.
+	//
+	// Getting it wrong is silent. The search still matches, the attribute
+	// is simply absent from the result, and the field resolves empty with
+	// nothing logged — because a field search requests only this one
+	// attribute, unlike ldapsearch or the probe's primary lookup, which
+	// return the whole entry and so hide the mistake. `ssoosshd ldap probe
+	// --json` shows it as a search with entries but no values; see
+	// https://mnestor.github.io/ssoossh/operations/ldap/#reading-the-json.
 	Value string `mapstructure:"value" example:"uid"`
 }
 

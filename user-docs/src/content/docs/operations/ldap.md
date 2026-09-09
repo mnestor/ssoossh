@@ -472,6 +472,13 @@ asked.
 `user_ldap` row, no group rows, no miss window, no auto-disable. The response
 carries that guarantee and a test asserts it.
 
+That also means it cannot exercise anything the write does. In particular
+[`ldap.limits.max_attributes_bytes`](/ssoossh/reference/config/ldap/#limitsmax_attributes_bytes)
+is enforced when the row is serialized, so a probe that resolves a very large
+field set still succeeds while the login that resolves the same set fails.
+The probe answers "what does the directory return and what will the
+configuration make of it", not "will it store".
+
 It is still admin-only and rate-limited per caller, and every probe is audited
 as `ldap.probed` with the filter it sent. If
 [`tls_insecure_skip_verify`](/ssoossh/reference/config/ldap/#tls_insecure_skip_verify)
@@ -489,10 +496,147 @@ ssoosshd ldap probe --literal --filter '(&(objectClass=person)(uid=alice))'
 ssoosshd ldap probe --username alice --json
 ```
 
-Useful before the first start, since building the service parses every filter
-template: a bad one fails here with the message the next restart would have
-produced. It never opens the database. Whoever can run it can already read the
-config file, and so already has the bind password.
+| Flag | What it binds |
+| --- | --- |
+| `--username`, `--email`, `--subject` | the `{{.Username}}`, `{{.Email}}` and `{{.Subject}}` bindings the filter renders against |
+| `--extra name=value` | one `{{.Extra.<name>}}` binding; repeatable |
+| `--filter` | **replaces** the configured `user_filter` for the primary lookup -- see below |
+| `--literal` | send `--filter` exactly as typed, interpolating and escaping nothing |
+| `--attributes` | which attributes to request; empty asks for every user attribute |
+| `--json` | print the whole result as JSON, which is the form worth diagnosing from |
+
+It reads the same config file the server does and binds as the same
+[`ldap.bind_dn`](/ssoossh/reference/config/ldap/#bind_dn), which is what makes
+it representative of login. Useful before the first start, since building the
+service parses every filter template: a bad one fails here with the message
+the next restart would have produced. It never opens the database. Whoever can
+run it can already read the config file, and so already has the bind password.
+
+### Leave `--filter` empty
+
+This is the single most important thing to know about the probe, and the
+easiest way to spend an afternoon testing the wrong thing.
+
+**Empty** runs your configured
+[`user_filter`](/ssoossh/reference/config/ldap/#user_filter) as the primary
+lookup -- exactly what login does.
+
+**Set** replaces `user_filter` with what you passed, and runs *that* as the
+primary lookup against
+[`ldap.base_dn`](/ssoossh/reference/config/ldap/#base_dn). You are no longer
+testing your configuration; you are testing the filter you just typed.
+
+Field searches run either way, against whichever entry the primary lookup
+found. That is what makes the trap quiet rather than loud: pass a filter that
+finds the right person and everything downstream still resolves, so the report
+looks healthy while the `user_filter` you were trying to validate was never
+sent. The same applies to the filter box in the web console.
+
+Use `--filter` to answer "would this filter find the entry", and empty to
+answer "does my configuration work".
+
+### Reading the JSON
+
+`--json` is the useful form, because the diagnosis is per search rather than
+per field. Under each entry in `Fields[].Searches[]`:
+
+| What you see | What it means |
+| --- | --- |
+| `Entries: 0` | The filter, the `base_dn`, or the bind. Nothing matched, so nothing could be read. |
+| `Entries: 1+`, `Values: []` | The search found the entry and the `value:` attribute was not on it, or the bind account cannot read it. **This is the silent one** -- login logs nothing and the field is simply empty. |
+| `Error` set | The search failed outright. In the probe the remaining fields still resolve, deliberately, so you see every problem at once. At login the first such failure aborts the whole enrichment -- not just that field -- and the identity keeps its previously cached values. |
+| the search absent entirely | That config block is not being loaded. Check where it sits in the file and that the field name is spelled as the server expects. |
+
+Then check the `Merge` entry for the field. `other_accounts` and
+`service_accounts` should read `Action: "override"`. If one reads
+`Action: "extra"`, the field name is wrong: the server did not recognise it,
+so it is being treated as a template field rather than an account list, and
+nothing about the search itself will tell you that.
+
+### A search's `base_dn` replaces the global one
+
+[`ldap.fields.<name>.searches[].base_dn`](/ssoossh/reference/config/ldap/#fieldsnamesearchesbase_dn)
+is used *instead of*
+[`ldap.base_dn`](/ssoossh/reference/config/ldap/#base_dn), not appended to it.
+It must be a complete DN. Leave it empty and the search inherits `ldap.base_dn`
+whole, which is usually what you want.
+
+Writing a relative fragment there -- `ou=Groups` rather than
+`ou=Groups,dc=example,dc=com` -- produces `Entries: 0` and looks exactly like
+a filter that does not match.
+
+### "It works from `ldapsearch` but not in the app"
+
+Two different things differ, and both look like a filter problem.
+
+**You are not binding as the same identity.** A hand-run `ldapsearch` binds as
+you; the server binds as
+[`ldap.bind_dn`](/ssoossh/reference/config/ldap/#bind_dn). Active Directory
+answers a read the service account is not permitted with success and zero
+results rather than a permission error, so an ACL gap presents as an empty
+search. If the probe disagrees with your shell, suspect permissions before
+syntax -- and note the probe binds as the service account, which is exactly
+why it is the tool to trust here.
+
+**You are not asking for the same attributes.** `ldapsearch` with no attribute
+list, and the probe's own primary lookup, return every attribute on the entry.
+A field search does not: it requests only the single attribute named by
+`value:`. An attribute that appears in your shell output can still come back
+empty from a field search, because the search never asked for that one.
+
+### Worked example: `uid` against Active Directory
+
+A field configured like this against AD:
+
+```yaml
+ldap:
+  fields:
+    other_accounts:
+      searches:
+        - base_dn: "ou=Service,dc=example,dc=com"
+          filter: "(manager={{.DN}})"
+          value: "uid"
+```
+
+Linked accounts never appeared at login, and nothing was logged. `ldapsearch`
+showed the entries fine. The probe says why:
+
+```bash
+ssoosshd -c /etc/ssoossh/ssoosshd.yaml ldap probe --username alice --json
+```
+
+```json
+{
+  "Fields": [
+    {
+      "Name": "other_accounts",
+      "Values": [],
+      "Searches": [
+        {
+          "BaseDN": "ou=Service,dc=example,dc=com",
+          "FilterSent": "(manager=CN=Alice,OU=People,DC=example,DC=com)",
+          "Value": "uid",
+          "Entries": 1,
+          "Values": []
+        }
+      ]
+    }
+  ]
+}
+```
+
+`Entries: 1` with `Values: []` is the second row of the table: the filter is
+right and the entry was found, but `value:` names an attribute that is not
+there. Active Directory has no `uid` -- it uses `sAMAccountName`. `ldapsearch`
+hid this because it returned the whole entry, while the field search asked for
+`uid` alone and got nothing back.
+
+Changing `value:` to `sAMAccountName` fixes it, and the same probe then shows
+`Entries: 1` with the account in `Values`.
+
+The `uid` in the configuration reference is an OpenLDAP-flavoured example.
+There is no portable answer here: the attribute that holds an account name is
+directory-specific, and the probe is how you find out which one yours uses.
 
 ## Cost and freshness
 
