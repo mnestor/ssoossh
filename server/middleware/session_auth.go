@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"encoding/json"
 	"log/slog"
 	"strings"
 	"time"
@@ -38,22 +39,43 @@ const (
 	// only, and re-read from the database on every refreshed request, so a
 	// stale value here is corrected rather than acted on.
 	sessionKeyIdentityDisplayName = "identity_display_name"
-	// sessionKeyIdentityGroups is comma-joined. Group names sourced from
-	// OIDC/LDAP aren't expected to contain commas; revisit if that changes.
-	sessionKeyIdentityGroups = "identity_groups"
-	// sessionKeyIdentityOtherAccounts and sessionKeyIdentityServiceAccounts
-	// are comma-joined too, same convention and same caveat as the groups
-	// key above. Both have to survive the round trip: service certificate
-	// approval is authorized against identity.ServiceAccounts (see
-	// service.checkServiceAccountLinkage), and both are snapshotted into
-	// the decision audit record, so an identity rebuilt without them is an
-	// identity that cannot approve anything and audits as account-less.
+	// sessionKeyIdentityGroups, sessionKeyIdentityOtherAccounts and
+	// sessionKeyIdentityServiceAccounts hold JSON arrays. All three have to
+	// survive the round trip: authorization reads groups off the rebuilt
+	// identity (config.Admin.GrantsAdmin/GrantsSOC/GrantsAuditor and the
+	// enrollment access checks), service certificate approval is authorized
+	// against identity.ServiceAccounts (see
+	// service.checkServiceAccountLinkage), and all three are snapshotted
+	// into the decision audit record — so an identity rebuilt wrongly both
+	// authorizes wrongly and audits wrongly.
+	//
+	// JSON rather than the comma-joined strings these used to hold. That
+	// encoding assumed no value contained a comma, which is false of every
+	// source they come from: an LDAP CN may contain one ("CN=Team, EMEA"),
+	// and an OIDC provider is free to emit one in any claim. A single group
+	// then split into two names that matched no rule, so a member of
+	// "Team, EMEA" silently lost the access that group granted and the
+	// audit record showed two groups nobody held.
 	//
 	// Cheap to carry: gormstore keeps the session payload in a database
 	// column and the cookie holds only the session id, so this costs text
 	// on the session row, not cookie bytes.
-	sessionKeyIdentityOtherAccounts   = "identity_other_accounts"
-	sessionKeyIdentityServiceAccounts = "identity_service_accounts"
+	sessionKeyIdentityGroups          = "identity_groups_json"
+	sessionKeyIdentityOtherAccounts   = "identity_other_accounts_json"
+	sessionKeyIdentityServiceAccounts = "identity_service_accounts_json"
+
+	// The pre-JSON keys, read but never written. A session established
+	// before the upgrade still carries these, and dropping them on sight
+	// would sign every logged-in user out — worse, it would silently strip
+	// an admin's roles until they noticed and logged in again. They keep
+	// the old comma-split behaviour, bug included, for the remainder of
+	// their idle window; every new login writes the JSON keys above.
+	//
+	// Safe to delete once no deployment can still hold a session older than
+	// its http.session_idle_timeout from the release that added this.
+	legacySessionKeyIdentityGroups          = "identity_groups"
+	legacySessionKeyIdentityOtherAccounts   = "identity_other_accounts"
+	legacySessionKeyIdentityServiceAccounts = "identity_service_accounts"
 	// sessionKeyIdentityRefreshedAt is the Unix time the session was last
 	// written, set by SetIdentitySession and updated by the sliding-expiry
 	// refresh in SessionAuthMiddleware. It exists so the middleware can
@@ -77,15 +99,46 @@ func sessionString(sess sessions.Session, key string) string {
 	return v
 }
 
-// sessionStringSlice reads a comma-joined list written by
-// SetIdentitySession, returning nil for an absent or empty value rather
-// than the one-element slice strings.Split would give for "".
-func sessionStringSlice(sess sessions.Session, key string) []string {
-	raw := sessionString(sess, key)
-	if raw == "" {
+// sessionStringList reads a JSON array written by SetIdentitySession,
+// falling back to legacyKey's comma-joined form for a session established
+// before the JSON keys existed.
+//
+// Returns nil for an absent, empty or unparseable value rather than a
+// one-element slice holding junk: a list that cannot be read is better
+// treated as "no memberships" than as one membership named after the
+// encoding, since these feed authorization. An unparseable value can only
+// mean a session written by a different build, which the next login
+// replaces.
+func sessionStringList(sess sessions.Session, key, legacyKey string) []string {
+	if raw := sessionString(sess, key); raw != "" {
+		var values []string
+		if err := json.Unmarshal([]byte(raw), &values); err != nil {
+			return nil
+		}
+		return values
+	}
+
+	// The pre-JSON encoding, kept only so sessions predating the upgrade
+	// stay usable. It splits on commas and so mis-splits any value
+	// containing one — the bug the JSON keys exist to fix.
+	legacy := sessionString(sess, legacyKey)
+	if legacy == "" {
 		return nil
 	}
-	return strings.Split(raw, ",")
+	return strings.Split(legacy, ",")
+}
+
+// setSessionStringList writes a list as a JSON array. Marshaling a
+// []string cannot fail, so the error is dropped rather than propagated
+// into every caller's signature for a branch that cannot execute.
+func setSessionStringList(sess sessions.Session, key string, values []string) {
+	// not covered: json.Marshal of a []string has no failing input —
+	// no channels, no funcs, no NaN, no cycles.
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		return
+	}
+	sess.Set(key, string(encoded))
 }
 
 // SetOIDCState stores state in the session for a later PopOIDCState call to
@@ -221,9 +274,9 @@ func SetIdentitySession(c *gin.Context, identity *service.Identity) error {
 	sess.Set(sessionKeyIdentityUsername, identity.Username)
 	sess.Set(sessionKeyIdentityEmail, identity.Email)
 	sess.Set(sessionKeyIdentityDisplayName, identity.DisplayName)
-	sess.Set(sessionKeyIdentityGroups, strings.Join(identity.Groups, ","))
-	sess.Set(sessionKeyIdentityOtherAccounts, strings.Join(identity.OtherAccounts, ","))
-	sess.Set(sessionKeyIdentityServiceAccounts, strings.Join(identity.ServiceAccounts, ","))
+	setSessionStringList(sess, sessionKeyIdentityGroups, identity.Groups)
+	setSessionStringList(sess, sessionKeyIdentityOtherAccounts, identity.OtherAccounts)
+	setSessionStringList(sess, sessionKeyIdentityServiceAccounts, identity.ServiceAccounts)
 	now := time.Now().Unix()
 	sess.Set(sessionKeyIdentityIssuedAt, now)
 	sess.Set(sessionKeyIdentityRefreshedAt, now)
@@ -341,9 +394,9 @@ func (m *SessionAuthMiddleware) Add() gin.HandlerFunc {
 			Username:        username,
 			Email:           email,
 			DisplayName:     sessionString(sess, sessionKeyIdentityDisplayName),
-			Groups:          sessionStringSlice(sess, sessionKeyIdentityGroups),
-			OtherAccounts:   sessionStringSlice(sess, sessionKeyIdentityOtherAccounts),
-			ServiceAccounts: sessionStringSlice(sess, sessionKeyIdentityServiceAccounts),
+			Groups:          sessionStringList(sess, sessionKeyIdentityGroups, legacySessionKeyIdentityGroups),
+			OtherAccounts:   sessionStringList(sess, sessionKeyIdentityOtherAccounts, legacySessionKeyIdentityOtherAccounts),
+			ServiceAccounts: sessionStringList(sess, sessionKeyIdentityServiceAccounts, legacySessionKeyIdentityServiceAccounts),
 		}
 
 		// What the person holds now, not what they held at login. The
