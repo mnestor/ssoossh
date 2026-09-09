@@ -116,28 +116,40 @@ func TestHostPrincipals_ShouldPrintTheAccountNameWhenNothingMatches(t *testing.T
 	}
 }
 
-// A malformed file is the one case that must fail loudly. Treating it as
-// empty would silently deny every login on the host while looking healthy.
-func TestHostPrincipals_ShouldFailWhenTheMappingFileIsMalformed(t *testing.T) {
+// A malformed file still answers, with the account name alone, and reports
+// the breakage on stderr.
+//
+// It is not fail-closed on purpose: pam_ssoossh treats a map it cannot load
+// as no map at all and falls back to requiring the certificate to carry the
+// local account name. One file must not mean two policies, so refusing here
+// while sudo still admitted the account would be worse than either
+// behaviour alone. The file being broken is made loud in the log rather
+// than in a denied login.
+func TestHostPrincipals_ShouldFloorAndLogWhenTheMappingFileIsMalformed(t *testing.T) {
 	_, bin := harness.Binaries(t)
 	mapping := writeMapping(t, "  deploy:\n")
 
 	res := runHost(t, bin, mapping, "principals", "deploy")
 
-	if res.ExitCode == 0 {
-		t.Fatalf("expected a non-zero exit for a malformed mapping file, got 0\nstdout:\n%s", res.Stdout)
+	if res.ExitCode != 0 {
+		t.Fatalf("expected exit 0 for a malformed mapping file, got %d\nstderr:\n%s", res.ExitCode, res.Stderr)
 	}
-	// Not even the account name: sshd refuses the login on a non-zero exit
-	// either way, and a command that printed a usable principal while
-	// failing would invite acting on half an answer.
-	if strings.TrimSpace(res.Stdout) != "" {
-		t.Errorf("expected no output on the error path, got %q", res.Stdout)
+	if got, want := strings.Fields(res.Stdout), []string{"deploy"}; !slices.Equal(got, want) {
+		t.Errorf("got principals %v, want %v", got, want)
 	}
 	// The parser's own wording is free to change; what must reach the
 	// operator is that this file is why, so match the command's wrapper
 	// rather than whichever syntax rule the file broke.
 	if !strings.Contains(res.Stderr, "parse principals map") {
-		t.Errorf("expected the error to say the mapping would not parse, got:\n%s", res.Stderr)
+		t.Errorf("expected stderr to say the mapping would not parse, got:\n%s", res.Stderr)
+	}
+	if !strings.Contains(res.Stderr, mapping) {
+		t.Errorf("expected stderr to name the file, got:\n%s", res.Stderr)
+	}
+	// stdout is the principal list sshd parses; a diagnostic there would be
+	// read as a principal.
+	if strings.Contains(res.Stdout, "parse principals map") {
+		t.Errorf("the diagnostic reached stdout, where sshd reads principals:\n%s", res.Stdout)
 	}
 }
 

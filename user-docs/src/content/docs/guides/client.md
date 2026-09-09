@@ -248,17 +248,24 @@ and never touches the network -- it answers only from the local mapping file.
 It expects one argument, the local username to look up, and prints one
 principal per line.
 
-The looked-up name is always among them. That is what `sshd` accepts unaided
--- with no `AuthorizedPrincipalsCommand` configured it admits a certificate
-carrying the target account name -- so installing this command does not take
-it away from an account whose mapping does not restate it. The mapping file
-adds principals; it cannot remove the account's own name.
+The looked-up name is always among them. The mapping file is **additive**: it
+enriches the set of names allowed to assume an account, and it can never take
+the account's own name away -- not by omission, and not by listing the account
+with no principals. That is also what `sshd` accepts unaided, since with no
+`AuthorizedPrincipalsCommand` configured it admits a certificate carrying the
+target account name.
 
 | Situation | Behavior |
 | --- | --- |
 | Account found | Prints its principals in file order, then the account name if the file did not already list it, exit 0 |
 | Unknown account, or missing file | Prints the account name alone, exit 0 |
-| Unreadable or malformed file | Non-zero exit, no output at all |
+| Unreadable or malformed file | Prints the account name alone, exit 0, and logs the failure to stderr |
+
+A file that will not load is reported rather than refused. `pam_ssoossh` treats
+a map it cannot read as no map at all and falls back to the same rule, and one
+file must not mean two policies -- so this host stays consistent, and the
+broken file is made loud in the log rather than in a denied login. The
+diagnostic goes to stderr because `sshd` parses stdout as the principal list.
 
 It needs no privilege beyond read access to the mapping file, so run it as a
 dedicated unprivileged account rather than as root:
