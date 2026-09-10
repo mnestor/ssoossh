@@ -185,20 +185,30 @@ func (a *app) initEngine() (*gin.Engine, error) {
 		r.Use(middleware.NewHstsMiddleware(c.HTTP.Hsts).Add())
 	}
 
+	// The response security headers sit before the health routes for the
+	// same reason HSTS does: they only add information and never reject, so
+	// every response should carry them, /healthz and /ping included. A
+	// directly-exposed deployment answers those two on the public URL like
+	// any other path, and they are what the diagnostics header-hygiene
+	// check probes through the edge — registered after the routes, the
+	// app's own headers were missing from exactly the response that check
+	// reads, and it reported the app as not setting them at all.
+	r.Use(middleware.NewCspMiddleware().Add())
+	r.Use(middleware.NewXFrameOptionsMiddleware().Add())
+	r.Use(middleware.NewXContentTypeOptionsMiddleware().Add())
+	r.Use(middleware.NewReferrerPolicyMiddleware().Add())
+
 	// basic health checks
 	r.GET("/healthz", healthzHandler)
 	r.GET("/ping", pingHandler)
 
 	// Setup global middleware
 	// The healthz and ping routes above predate these Use calls, so health
-	// probes (often addressed by IP) stay reachable regardless of Host.
+	// probes (often addressed by IP) stay reachable regardless of Host, and
+	// are not subject to the app's CORS or cache-control policy.
 	r.Use(middleware.NewServerNameMiddleware().Add(c.HTTP.PublicHost()))
 	r.Use(middleware.NewCacheControlMiddleware().Add())
 	r.Use(middleware.NewCorsMiddleware().Add())
-	r.Use(middleware.NewCspMiddleware().Add())
-	r.Use(middleware.NewXFrameOptionsMiddleware().Add())
-	r.Use(middleware.NewXContentTypeOptionsMiddleware().Add())
-	r.Use(middleware.NewReferrerPolicyMiddleware().Add())
 
 	sessionSecret, err := resolveSessionSecret(c, a.db)
 	if err != nil {

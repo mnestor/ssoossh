@@ -45,6 +45,10 @@ func (s *DiagnosticsService) checkReachability(origin string, p edgeProbe) Diagn
 // The dangerous configuration is an over-broad http.trusted_proxies: if it
 // trusts every address, any caller can set X-Forwarded-For and be attributed
 // to an IP of their choosing, which defeats per-IP rate limiting.
+//
+// An empty list is not itself a fault. It is right for a directly exposed
+// server and wrong only behind a proxy, so the admin's own request decides
+// which of the two this is.
 func (s *DiagnosticsService) checkProxyTrust(req DiagnosticsRequest) DiagnosticCheck {
 	c := DiagnosticCheck{ID: "proxy_trust", Title: "Proxy trust and client IP"}
 
@@ -67,9 +71,28 @@ func (s *DiagnosticsService) checkProxyTrust(req DiagnosticsRequest) DiagnosticC
 	}
 
 	if len(trusted) == 0 {
+		// Trusting nothing is the correct configuration for a directly
+		// exposed server, and this request is enough to tell: the TCP peer
+		// is the client IP the server resolved, and no edge added an
+		// X-Forwarded-For on the way in. Both have to hold. An
+		// X-Forwarded-For arriving at all means something is in front of
+		// this process even though the header is (rightly) ignored, and a
+		// peer that does not match the resolved IP, or one that could not be
+		// parsed at all, leaves the question open.
+		if req.ForwardedFor == "" && peerHost != "" && peerHost == req.ClientIP {
+			c.Status = DiagnosticOK
+			c.Summary = "Nothing sits in front of this server, so the connecting address is the client."
+			c.Findings = append(c.Findings, "This request arrived directly: its TCP peer is the client IP the server resolved, and it carried no X-Forwarded-For. Trusting no proxies is correct for that. If a reverse proxy is ever put in front, set http.trusted_proxies to its address so the real client IP is recovered.")
+			return c
+		}
+
 		c.Status = DiagnosticWarn
 		c.Summary = "No proxies are trusted, so client IPs are whoever connects to the process."
-		c.Findings = append(c.Findings, "If this server sits behind a reverse proxy, every request's client IP is the proxy's, so per-IP rate limits are shared across all users and the audit log records the proxy rather than the caller. If nothing sits in front of it, this is correct.")
+		if req.ForwardedFor != "" {
+			c.Findings = append(c.Findings, "An X-Forwarded-For arrived, so something does sit in front of this server. No proxy is trusted, so that header is ignored and every request's client IP is the proxy's: per-IP rate limits are shared across all users and the audit log records the proxy rather than the caller.")
+		} else {
+			c.Findings = append(c.Findings, "This request's TCP peer and the client IP the server resolved do not match, so whether something sits in front cannot be told from it. If a reverse proxy does, every request's client IP is the proxy's, so per-IP rate limits are shared across all users and the audit log records the proxy rather than the caller.")
+		}
 		c.Remediation = "If you run behind a proxy, set http.trusted_proxies to its address so the real client IP is recovered. If you do not, leave this empty."
 		return c
 	}

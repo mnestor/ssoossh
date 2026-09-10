@@ -64,22 +64,63 @@ func findCheck(report DiagnosticsReport, id string) DiagnosticCheck {
 func TestDiagnostics_ProxyTrust(t *testing.T) {
 	t.Parallel()
 
+	// An empty trusted list is only a warning when something looks to be in
+	// front of the server, so the request shape matters as much as the
+	// config: peer == resolved client IP with no X-Forwarded-For is a
+	// directly exposed server, which is the correct configuration.
 	tests := []struct {
-		name    string
-		trusted []string
-		want    DiagnosticStatus
+		name         string
+		trusted      []string
+		remoteAddr   string
+		clientIP     string
+		forwardedFor string
+		want         DiagnosticStatus
 	}{
-		{name: "should be critical when a default route is trusted", trusted: []string{"0.0.0.0/0"}, want: DiagnosticCritical},
-		{name: "should be critical when the ipv6 default route is trusted", trusted: []string{"::/0"}, want: DiagnosticCritical},
-		{name: "should warn when no proxy is trusted", trusted: nil, want: DiagnosticWarn},
-		{name: "should be ok when a specific proxy is trusted", trusted: []string{"10.0.10.1/32"}, want: DiagnosticOK},
+		{
+			name:       "should be critical when a default route is trusted",
+			trusted:    []string{"0.0.0.0/0"},
+			remoteAddr: "10.0.10.1:5000", clientIP: "203.0.113.9",
+			want: DiagnosticCritical,
+		},
+		{
+			name:       "should be critical when the ipv6 default route is trusted",
+			trusted:    []string{"::/0"},
+			remoteAddr: "10.0.10.1:5000", clientIP: "203.0.113.9",
+			want: DiagnosticCritical,
+		},
+		{
+			name:       "should be ok when a specific proxy is trusted",
+			trusted:    []string{"10.0.10.1/32"},
+			remoteAddr: "10.0.10.1:5000", clientIP: "203.0.113.9",
+			want: DiagnosticOK,
+		},
+		{
+			name:       "should be ok when nothing is trusted and nothing sits in front",
+			remoteAddr: "203.0.113.9:5000", clientIP: "203.0.113.9",
+			want: DiagnosticOK,
+		},
+		{
+			name:       "should warn when nothing is trusted but a forwarded-for arrives",
+			remoteAddr: "203.0.113.9:5000", clientIP: "203.0.113.9", forwardedFor: "198.51.100.4",
+			want: DiagnosticWarn,
+		},
+		{
+			name:       "should warn when nothing is trusted and the peer is not the resolved client",
+			remoteAddr: "10.0.10.1:5000", clientIP: "203.0.113.9",
+			want: DiagnosticWarn,
+		},
+		{
+			name:     "should warn when nothing is trusted and the peer cannot be parsed",
+			clientIP: "203.0.113.9",
+			want:     DiagnosticWarn,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			s := NewDiagnosticsService(cfgWith("https://x.example", tt.trusted), &fakeDoer{})
 			got := s.Run(context.Background(), DiagnosticsRequest{
-				RemoteAddr: "10.0.10.1:5000", ClientIP: "203.0.113.9",
+				RemoteAddr: tt.remoteAddr, ClientIP: tt.clientIP, ForwardedFor: tt.forwardedFor,
 			})
 			if c := findCheck(got, "proxy_trust"); c.Status != tt.want {
 				t.Errorf("got %q, want %q (summary: %s)", c.Status, tt.want, c.Summary)
@@ -159,7 +200,18 @@ func TestDiagnostics_HeaderHygiene(t *testing.T) {
 		want DiagnosticStatus
 	}{
 		{name: "should be ok when every expected header is present", hdr: good, want: DiagnosticOK},
+		{
+			name: "should be ok when a CSP frame-ancestors stands in for X-Frame-Options",
+			hdr: http.Header{
+				"Strict-Transport-Security": {"max-age=1"}, "X-Content-Type-Options": {"nosniff"},
+				"Content-Security-Policy": {"default-src 'self'; frame-ancestors 'none'"}, "Referrer-Policy": {"x"},
+			},
+			want: DiagnosticOK,
+		},
 		{name: "should warn when HSTS is missing", hdr: http.Header{"X-Content-Type-Options": {"nosniff"}, "X-Frame-Options": {"DENY"}, "Referrer-Policy": {"x"}}, want: DiagnosticWarn},
+		{name: "should warn when X-Content-Type-Options is not nosniff", hdr: http.Header{"Strict-Transport-Security": {"max-age=1"}, "X-Content-Type-Options": {"sniff"}, "X-Frame-Options": {"DENY"}, "Referrer-Policy": {"x"}}, want: DiagnosticWarn},
+		{name: "should warn when neither X-Frame-Options nor frame-ancestors is present", hdr: http.Header{"Strict-Transport-Security": {"max-age=1"}, "X-Content-Type-Options": {"nosniff"}, "Referrer-Policy": {"x"}}, want: DiagnosticWarn},
+		{name: "should warn when Referrer-Policy is missing", hdr: http.Header{"Strict-Transport-Security": {"max-age=1"}, "X-Content-Type-Options": {"nosniff"}, "X-Frame-Options": {"DENY"}}, want: DiagnosticWarn},
 		{
 			name: "should warn when a legacy X-XSS-Protection is present",
 			hdr: http.Header{

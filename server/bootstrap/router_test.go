@@ -229,6 +229,44 @@ func TestInitRouter_ShouldRegisterHealthzRoute(t *testing.T) {
 	}
 }
 
+// TestInitRouter_ShouldSetSecurityHeadersOnHealthz verifies the response
+// security headers reach /healthz. They are registered before the health
+// routes for that reason: a directly-exposed deployment serves those paths
+// on its public URL like any other, and the diagnostics header-hygiene
+// check probes /healthz through the edge, so headers missing here read as
+// the app not setting them at all.
+func TestInitRouter_ShouldSetSecurityHeadersOnHealthz(t *testing.T) {
+	t.Parallel()
+
+	c := &config.Config{}
+	c.HTTP.Hsts = "max-age=63072000"
+	a := newTestApp(t, c)
+
+	srv, err := a.initRouter()
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	srv.router.ServeHTTP(w, req)
+
+	want := map[string]string{
+		"Strict-Transport-Security": "max-age=63072000",
+		"X-Content-Type-Options":    "nosniff",
+		"X-Frame-Options":           "DENY",
+		"Referrer-Policy":           "strict-origin-when-cross-origin",
+	}
+	for header, value := range want {
+		if got := w.Header().Get(header); got != value {
+			t.Errorf("%s: got %q, want %q", header, got, value)
+		}
+	}
+	if csp := w.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Errorf("Content-Security-Policy: got %q, want it to contain frame-ancestors 'none'", csp)
+	}
+}
+
 // TestInitRouter_ShouldBindTheApprovalPageToItsFirstClient verifies the
 // approval-claim middleware is actually wired into the engine: the first
 // document GET of /approve/<id> sets the claim cookie, and a second client
