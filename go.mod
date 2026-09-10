@@ -58,8 +58,8 @@ require (
 	golang.org/x/time v0.15.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.6.2
-	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.2
+	howett.net/plist v1.0.1
 )
 
 require (

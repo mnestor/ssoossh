@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+	"math"
 	"strconv"
+
+	"howett.net/plist"
 )
 
 // parsePolicyPlist decodes a flat plist <dict> into a Go map, recognizing
@@ -23,6 +26,23 @@ import (
 // A document that isn't well-formed XML, or has no root <dict>, is an
 // error.
 func parsePolicyPlist(data []byte) (map[string]any, error) {
+	// macOS does not keep managed preferences as the XML an administrator
+	// uploaded: it rewrites every file under /Library/Managed Preferences
+	// as an Apple binary property list, Apple's own MCX and loginwindow
+	// files included. An XML-only parser therefore failed on every real
+	// managed Mac, reporting the bplist00 magic as "XML syntax error ...
+	// invalid UTF-8" and taking the whole config load down with it -- so
+	// device-scoped policy had never once loaded on managed hardware.
+	//
+	// Sniffed and branched rather than routed wholesale through the binary
+	// library: the XML path below is fuzzed and its skip-what-we-do-not-
+	// understand semantics are pinned by tests, and a hand-written .plist
+	// or a .mobileconfig payload is still XML. Only files macOS has
+	// rewritten take the new path.
+	if bytes.HasPrefix(data, []byte("bplist00")) {
+		return parseBinaryPolicyPlist(data)
+	}
+
 	dec := xml.NewDecoder(bytes.NewReader(data))
 
 	if err := seekRootDict(dec); err != nil {
@@ -223,4 +243,72 @@ func skipToEnd(dec *xml.Decoder) error {
 		}
 	}
 	return nil
+}
+
+// parseBinaryPolicyPlist decodes an Apple binary property list into the
+// same shape the XML path produces: a flat map of the value types the
+// policy settings use.
+//
+// The format is not hand-rolled here. It has an offset table, variable
+// width object references and its own string encodings, and a decoder for
+// it is a great deal of offset arithmetic to get wrong in a path that
+// decides security settings. howett.net/plist is pure Go, so it costs
+// nothing against the CGO_ENABLED=0 cross-compile the macOS client is
+// built with -- which is the same constraint that rules out reading these
+// values through CFPreferences, the API Apple actually intends for this.
+func parseBinaryPolicyPlist(data []byte) (map[string]any, error) {
+	var root map[string]any
+	if _, err := plist.Unmarshal(data, &root); err != nil {
+		return nil, fmt.Errorf("decode binary plist: %w", err)
+	}
+	if root == nil {
+		return nil, fmt.Errorf("no root <dict> found: binary plist has no top-level dictionary")
+	}
+
+	// Filtered to the same accepted types as the XML path, so which
+	// on-disk format macOS happened to write cannot change which settings
+	// apply. Anything else -- a nested dict, a date, a real, raw data --
+	// is skipped rather than rejected, exactly as it is there.
+	out := make(map[string]any, len(root))
+	for key, value := range root {
+		if v, ok := acceptPolicyValue(value); ok {
+			out[key] = v
+		}
+	}
+	return out, nil
+}
+
+// acceptPolicyValue narrows one decoded binary-plist value to the types a
+// policy setting may take, mirroring readScalarValue's choices on the XML
+// side. Integers arrive from the decoder in whichever width fits, and are
+// normalised to int64 so a setting reads the same either way.
+func acceptPolicyValue(value any) (any, bool) {
+	switch v := value.(type) {
+	case string, bool:
+		return v, true
+	case int64:
+		return v, true
+	case uint64:
+		// Out of int64 range is not a setting anyone wrote: the integers
+		// here are key sizes. Skipped rather than wrapped, since a
+		// silently negative sshkey.size is worse than an absent one.
+		if v > math.MaxInt64 {
+			return nil, false
+		}
+		return int64(v), true
+	case []any:
+		// An array of strings, as the XML path builds for
+		// forbidden_certificate_extensions. Non-string elements are
+		// dropped rather than failing the whole file, matching
+		// readArrayOfStrings.
+		out := make([]any, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out, true
+	default:
+		return nil, false
+	}
 }
