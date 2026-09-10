@@ -66,3 +66,18 @@ worth doing: a custom action, or move the check into the client so it
 refuses to honour an enforced config file whose owner is not an
 administrator or SYSTEM. The second is better -- it defends the
 installations that predate the installer as well.
+
+## User-certificate extensions picker at approval time
+
+Paused, not dropped. The design is written up in
+[client-policy-assertions.md](client-policy-assertions.md) along with the
+reason it waits: letting an approver add extensions to a *user* certificate
+is exactly where `forbidden_certificate_extensions` is documented to apply
+and currently does, so shipping the picker before the server can see a
+requester's locked settings would let an approver's tick put back what an
+MDM took away, with neither side aware.
+
+The equivalent picker for *service* certificates ships without that
+prerequisite, because the key has never applied to service certificates —
+see the same document for the confirmation and for why that asymmetry has
+to be stated in the operator docs rather than left to be discovered.
