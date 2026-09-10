@@ -93,6 +93,32 @@ For a service enrollment, you also pick which of your service accounts the code
 mints for, and may set a notification address for it. See
 [Service accounts](/ssoossh/guides/service-accounts/).
 
+### Choosing extensions on a service enrollment
+
+Where the deployment configures
+[`cert_options.service.extensions`](/ssoossh/reference/config/cert_options/service/#extensions),
+a service enrollment's extensions appear as toggles, the same chips the
+principal picker uses.
+
+Three things about them are worth knowing, because this is the one place an
+approver can grant more than was asked for:
+
+- **They start at what the enrollment requested**, not at everything on offer.
+  Approving without touching them grants exactly the request -- which for an
+  enrollment made without `--extensions` is nothing at all. Configuring the
+  setting makes toggles available; it does not by itself change what an
+  untouched approval grants.
+- **You may add as well as remove**, up to the configured list. Nothing
+  outside it can be selected or granted, whatever is ticked.
+- **No extensions is a valid answer.** Unlike principals, an empty selection
+  approves normally. A service certificate carrying no extensions is the
+  ordinary posture for an unattended account.
+
+What you choose is fixed at approval and stored on the enrollment. Every
+certificate the code later mints carries that set -- redemption replays the
+decision rather than recomputing it, so nothing changes underneath the job
+between one retrieval and the next.
+
 ### Approve or deny
 
 Both record a decision, and the decision is final for that request. Denial

@@ -140,6 +140,23 @@ type ApproveRequestBody struct {
 	// here reaches the people who run the job rather than the one person
 	// who clicked approve. It stays editable afterwards.
 	NotificationEmail string `json:"notification_email,omitempty"`
+
+	// Extensions is the approver's chosen certificate extension set, for
+	// service-type requests only and ignored for others.
+	//
+	// Absent (JSON null, or the field omitted) means the approver made no
+	// choice and the requester's own set stands — which is what an
+	// approval nobody touched sends, so configuring
+	// cert_options.service.extensions cannot by itself change the outcome
+	// of an untouched approval. An empty array is a different thing: a
+	// deliberate "no extensions", which is legitimate here in a way an
+	// empty Principals is not.
+	//
+	// Bounded by cert_options.service.extensions server-side. The
+	// selection replaces the requested set and then goes through the same
+	// ceiling intersection every request does, so naming something outside
+	// the ceiling drops it rather than granting it.
+	Extensions []string `json:"extensions,omitempty"`
 }
 
 // ResolveCodeRequestBody is the body of the console code-submission
@@ -488,15 +505,25 @@ type RequestDetailResponse struct {
 	// a request that has already died.
 	ExpiresAt time.Time `json:"expires_at" validate:"required"`
 
-	PublicKey     string                     `json:"public_key" validate:"required"`
-	Principals    []string                   `json:"principals" validate:"required"`
-	ValidSeconds  int                        `json:"valid_seconds" validate:"required"`
-	Requested     CertificateOptionsResponse `json:"requested" validate:"required"`
-	Granted       CertificateOptionsResponse `json:"granted" validate:"required"`
-	CreatedAt     time.Time                  `json:"created_at" validate:"required"`
-	ApprovalURL   string                     `json:"approval_url" validate:"required"`
-	IsOwnedByYou  bool                       `json:"is_owned_by_you" validate:"required"`
-	AlreadyClosed bool                       `json:"already_closed" validate:"required"`
+	PublicKey    string                     `json:"public_key" validate:"required"`
+	Principals   []string                   `json:"principals" validate:"required"`
+	ValidSeconds int                        `json:"valid_seconds" validate:"required"`
+	Requested    CertificateOptionsResponse `json:"requested" validate:"required"`
+	Granted      CertificateOptionsResponse `json:"granted" validate:"required"`
+
+	// SelectableExtensions is cert_options.<type>.extensions — the ceiling,
+	// and so exactly the set an approver may choose from. Empty means there
+	// is nothing to choose and the UI offers no picker.
+	//
+	// Distinct from Granted.Extensions, which is what this request would
+	// get if approved untouched: for a request that asked for nothing, that
+	// is empty while the ceiling may be large. The picker needs the ceiling
+	// to know which toggles exist and Granted to know which start on.
+	SelectableExtensions []string  `json:"selectable_extensions,omitempty"`
+	CreatedAt            time.Time `json:"created_at" validate:"required"`
+	ApprovalURL          string    `json:"approval_url" validate:"required"`
+	IsOwnedByYou         bool      `json:"is_owned_by_you" validate:"required"`
+	AlreadyClosed        bool      `json:"already_closed" validate:"required"`
 
 	DecidedByOutcome         string     `json:"decided_by_outcome,omitempty"`
 	DecidedBySubject         string     `json:"decided_by_subject,omitempty"`

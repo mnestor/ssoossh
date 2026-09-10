@@ -22,6 +22,10 @@
 	let outcome = $state<'approved' | 'denied' | null>(null);
 	let selectedServiceAccount = $state<string | null>(null);
 	let selectedPrincipals = $state<string[]>([]);
+	// Seeded from the request itself, never from the ceiling — see the
+	// $effect below.
+	let selectedExtensions = $state<string[]>([]);
+	let extensionsSeeded = $state(false);
 	let notificationEmail = $state('');
 
 	// Build the list of principals the approver holds: username plus other accounts,
@@ -62,6 +66,22 @@
 				actsLocally && target && userPrincipals.includes(target)
 					? [target]
 					: [session.user.username];
+		}
+	});
+
+	// The extension picker starts at what the enrollment asked for, so an
+	// approver who touches nothing approves exactly the request. That is
+	// deliberately NOT the principal preselection above, which infers a
+	// sensible default from the approver's own accounts: an extension is a
+	// permission, and inferring one nobody asked for is how a ceiling turns
+	// into a grant by accident.
+	//
+	// Seeded once rather than whenever the selection empties, because
+	// clearing every extension is a legitimate choice here and must stick.
+	$effect(() => {
+		if (detail && !extensionsSeeded) {
+			selectedExtensions = detail.granted?.extensions ?? [];
+			extensionsSeeded = true;
 		}
 	});
 
@@ -124,6 +144,11 @@
 				await approveRequest(id, {
 					serviceAccount: selectedServiceAccount ?? undefined,
 					principals: selectedPrincipals,
+					// Sent only where a picker was actually offered. Elsewhere
+					// the field stays absent, which the server reads as "the
+					// approver expressed no choice" and leaves the request's
+					// own set alone.
+					extensions: detail?.type === 'service' ? selectedExtensions : undefined,
 					notificationEmail: notificationEmail.trim() || undefined
 				});
 			} else {
@@ -173,6 +198,7 @@
 			bind:notificationEmail
 			{userPrincipals}
 			bind:selectedPrincipals
+			bind:selectedExtensions
 			onapprove={() => decide('approved')}
 			ondeny={() => decide('denied')}
 		/>

@@ -121,16 +121,20 @@ func fullFixtures() map[string]any {
 			ClientTime:            &issuedAt,
 			TrustedCAFingerprints: []string{"SHA256:2Fd4rIWZ8kQnGx0mJvKp1YhLcTzXbA3sNeR5uW7oPqM"},
 
-			ExpiresAt:     issuedAt,
-			PublicKey:     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample alice@laptop",
-			Principals:    []string{"alice", "alice@example.org"},
-			ValidSeconds:  28800,
-			Requested:     options,
-			Granted:       options,
-			CreatedAt:     issuedAt,
-			ApprovalURL:   "/approve/0b4f2b1a-7c3d-4e5f-8a9b-0c1d2e3f4a5b",
-			IsOwnedByYou:  true,
-			AlreadyClosed: true,
+			ExpiresAt:    issuedAt,
+			PublicKey:    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample alice@laptop",
+			Principals:   []string{"alice", "alice@example.org"},
+			ValidSeconds: 28800,
+			Requested:    options,
+			Granted:      options,
+			// The ceiling, deliberately wider than what this request was
+			// granted: that difference is the whole reason the field
+			// exists, so a fixture where they matched would prove nothing.
+			SelectableExtensions: []string{"permit-agent-forwarding", "permit-port-forwarding", "permit-pty"},
+			CreatedAt:            issuedAt,
+			ApprovalURL:          "/approve/0b4f2b1a-7c3d-4e5f-8a9b-0c1d2e3f4a5b",
+			IsOwnedByYou:         true,
+			AlreadyClosed:        true,
 
 			DecidedByOutcome:         "approved",
 			DecidedBySubject:         "9c1f0f8e-1d0a-4a37-9d1e-2f6a1b4c5d6e",

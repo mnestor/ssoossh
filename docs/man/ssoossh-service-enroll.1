@@ -24,8 +24,15 @@ The key files follow OpenSSH naming: the private key is <name>, the public key i
 .PP
 With --retrieve, the command immediately redeems the code once, writing the certificate to <name>-cert.pub and reporting its details. If retrieval fails after the code is printed, an error is returned but the code is not lost.
 
+.PP
+--extensions asks for certificate extensions. Nothing is requested by default, which is the right posture for an unattended account: a service certificate that needs no agent forwarding should not carry the permission to do it. What is asked for is a request, not a grant — the approver sees it, can change it, and the server bounds the result by cert_options.service.extensions either way, so this flag cannot obtain anything the deployment has not permitted.
+
 
 .SH OPTIONS
+\fB--extensions\fP=[]
+	certificate extensions to request, comma-separated (e.g. permit-pty); none by default, and the approver may change the set
+
+.PP
 \fB-h\fP, \fB--help\fP[=false]
 	help for enroll
 

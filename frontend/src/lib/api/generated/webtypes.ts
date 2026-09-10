@@ -154,6 +154,22 @@ export interface ApproveRequestBody {
 	 * who clicked approve. It stays editable afterwards.
 	 */
 	notification_email?: string;
+	/**
+	 * Extensions is the approver's chosen certificate extension set, for
+	 * service-type requests only and ignored for others.
+	 * Absent (JSON null, or the field omitted) means the approver made no
+	 * choice and the requester's own set stands — which is what an
+	 * approval nobody touched sends, so configuring
+	 * cert_options.service.extensions cannot by itself change the outcome
+	 * of an untouched approval. An empty array is a different thing: a
+	 * deliberate "no extensions", which is legitimate here in a way an
+	 * empty Principals is not.
+	 * Bounded by cert_options.service.extensions server-side. The
+	 * selection replaces the requested set and then goes through the same
+	 * ceiling intersection every request does, so naming something outside
+	 * the ceiling drops it rather than granting it.
+	 */
+	extensions?: string[];
 }
 /**
  * ResolveCodeRequestBody is the body of the console code-submission
@@ -552,6 +568,16 @@ export interface RequestDetailResponse {
 	valid_seconds: number /* int */;
 	requested: CertificateOptionsResponse;
 	granted: CertificateOptionsResponse;
+	/**
+	 * SelectableExtensions is cert_options.<type>.extensions — the ceiling,
+	 * and so exactly the set an approver may choose from. Empty means there
+	 * is nothing to choose and the UI offers no picker.
+	 * Distinct from Granted.Extensions, which is what this request would
+	 * get if approved untouched: for a request that asked for nothing, that
+	 * is empty while the ceiling may be large. The picker needs the ceiling
+	 * to know which toggles exist and Granted to know which start on.
+	 */
+	selectable_extensions?: string[];
 	created_at: string;
 	approval_url: string;
 	is_owned_by_you: boolean;

@@ -21,6 +21,7 @@ import (
 func newServiceEnrollCommand() simplecobra.Commander {
 	var keyPath string
 	var retrieve bool
+	var extensions []string
 
 	cmd := &simpleCommand{
 		name:  "enroll",
@@ -39,17 +40,26 @@ func newServiceEnrollCommand() simplecobra.Commander {
 			"The three files must be in the same directory for ssh to find them.\n\n" +
 			"With --retrieve, the command immediately redeems the code once, writing the " +
 			"certificate to <name>-cert.pub and reporting its details. If retrieval fails " +
-			"after the code is printed, an error is returned but the code is not lost.",
+			"after the code is printed, an error is returned but the code is not lost.\n\n" +
+			"--extensions asks for certificate extensions. Nothing is requested by default, " +
+			"which is the right posture for an unattended account: a service certificate that " +
+			"needs no agent forwarding should not carry the permission to do it. What is asked " +
+			"for is a request, not a grant — the approver sees it, can change it, and the " +
+			"server bounds the result by cert_options.service.extensions either way, so this " +
+			"flag cannot obtain anything the deployment has not permitted.",
 		init: func(cd *simplecobra.Commandeer) error {
 			cd.CobraCommand.Flags().StringVar(&keyPath, "key", "",
 				"keypair path (relative or absolute); generates both if neither <name> nor <name>.pub "+
 					"exist, enrolls the existing <name>.pub otherwise")
 			cd.CobraCommand.Flags().BoolVar(&retrieve, "retrieve", false,
 				"immediately redeem the code and write the certificate to <name>-cert.pub")
+			cd.CobraCommand.Flags().StringSliceVar(&extensions, "extensions", nil,
+				"certificate extensions to request, comma-separated (e.g. permit-pty); "+
+					"none by default, and the approver may change the set")
 			return nil
 		},
 		run: func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error {
-			return runServiceEnroll(ctx, root, os.Stdout, keyPath, retrieve)
+			return runServiceEnroll(ctx, root, os.Stdout, keyPath, retrieve, extensions)
 		},
 	}
 	return cmd
@@ -58,7 +68,7 @@ func newServiceEnrollCommand() simplecobra.Commander {
 // runServiceEnroll enrolls a public key and prints the resulting enrollment
 // code. See resolveServiceKey for how keyPath decides between generating a
 // keypair and enrolling one that is already there.
-func runServiceEnroll(ctx context.Context, root *RootCommand, out io.Writer, keyPath string, retrieve bool) error {
+func runServiceEnroll(ctx context.Context, root *RootCommand, out io.Writer, keyPath string, retrieve bool, extensions []string) error {
 	if keyPath == "" {
 		return errors.New("--key is required")
 	}
@@ -70,7 +80,14 @@ func runServiceEnroll(ctx context.Context, root *RootCommand, out io.Writer, key
 		return err
 	}
 
-	pending, err := root.API().CreateServiceEnrollment(ctx, publicKey, api.RequestedOptions{})
+	// Sent as asked, with no client-side defaulting: an empty set is the
+	// default posture for a service certificate, and inventing a request
+	// here would silently change what every existing enrollment gets. The
+	// server applies the type ceiling and the grant axis regardless, so
+	// this is a request rather than a claim.
+	pending, err := root.API().CreateServiceEnrollment(ctx, publicKey, api.RequestedOptions{
+		Extensions: extensions,
+	})
 	if err != nil {
 		return fmt.Errorf("request enrollment: %w", err)
 	}
