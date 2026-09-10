@@ -65,31 +65,48 @@ that this is not a boundary against the user, "binding" only binds honest
 clients — it buys little over advisory and costs a denial path when an
 assertion is stale.
 
-## Open questions, before implementing
+## Decided
 
-1. **Advisory or binding**, per above. Everything else is mechanical once
-   this is settled.
-2. **Scope.** Only the forbidden-extension list, or a general locked-settings
-   map? Most client settings (`key_filename`, `try_open_browser`) mean
-   nothing server-side, so a general mechanism still needs a decision about
-   which keys are worth sending.
-3. **The client cannot currently tell.** `mergePlatformPolicy` merges the
-   policy map into viper and then discards which keys came from it: only
-   `policySetsFIPS` and `policyForbiddenExtensions` survive as
-   policy-sourced, and every other locked value becomes indistinguishable
-   from a config-file one. Retaining that key set is a small prerequisite
-   that does not exist today.
-4. **Service certificates may be out of scope.** The enrolling machine is not
-   necessarily the machine that retrieves or uses the certificate — the code
-   is portable and `service retrieve` only posts it — so an assertion made at
-   enrollment describes a machine that may be irrelevant. Either the service
-   path is excluded, or "whose policy applies" needs an answer.
-5. **The approver needs a reason, not a shorter list.** The whole UX payoff is
-   a disabled toggle that says why, which means a wire field carrying the
-   reason rather than only the narrowed set.
-6. **Staleness.** A service enrollment fixes its extensions at approval; the
-   requesting machine's policy can change afterwards and nothing revisits
-   it.
+Settled 2026-09-10. What is left is implementation.
+
+**Advisory, not binding.** The server narrows what the approver is offered
+and says why; issuance is never refused over an assertion. Binding would only
+bind honest clients — a client that wants the extension omits the assertion —
+so it buys almost nothing over advisory and adds a path where a stale
+assertion denies a legitimate certificate.
+
+**Scope: forbidden extensions and FIPS.** Not a general locked-settings map.
+Most client settings (`key_filename`, `try_open_browser`) mean nothing to the
+server, and these two are the ones that change an approval decision:
+forbidden extensions bound what an approver may grant, and FIPS bounds which
+key types are acceptable.
+
+This choice also dissolves what looked like a prerequisite. The client
+already tracks exactly these two as policy-sourced —`policySetsFIPS` and
+`policyForbiddenExtensions` survive `mergePlatformPolicy` while every other
+locked value is merged into viper and becomes indistinguishable from a
+config-file one. Asserting these two needs no new bookkeeping; a general map
+would have needed the discarded key set retained first.
+
+**User certificates only.** Service certificates are excluded. An assertion
+made at enrollment describes the enrolling machine, and the code is portable
+— `service retrieve` only posts it — so the machine that redeems and uses the
+certificate may be a different one entirely. An answer that looks
+authoritative and is not is worse than no answer. This also removes the
+staleness problem: there is no stored enrollment decision to go out of date.
+
+Service certificates therefore keep `cert_options.service.extensions` as
+their only bound, which is what the operator documentation already says.
+
+**The documentation correction ships with the feature**, not before it, so
+the page is reworded once and describes the behaviour that actually exists.
+
+## What implementation still has to work out
+
+The approver needs a **reason, not a shorter list**. The payoff is a disabled
+toggle that says why it is disabled, which means the wire carries the reason
+alongside the narrowed set rather than silently omitting options. A toggle
+that is simply absent teaches an approver nothing and looks like a bug.
 
 ## What it unblocks: the user-certificate extensions picker
 
