@@ -41,6 +41,7 @@ var issuedAt = time.Date(2026, 8, 14, 9, 30, 0, 0, time.FixedZone("CEST", 2*60*6
 // let a new optional field slip in without appearing in any golden.
 // assertAllFieldsSet enforces it.
 func fullFixtures() map[string]any {
+	fipsEnforced := true
 	options := webtypes.CertificateOptionsResponse{
 		Extensions:      []string{"permit-pty", "permit-agent-forwarding"},
 		ForceCommand:    "/usr/local/bin/audit-shell",
@@ -131,10 +132,17 @@ func fullFixtures() map[string]any {
 			// granted: that difference is the whole reason the field
 			// exists, so a fixture where they matched would prove nothing.
 			SelectableExtensions: []string{"permit-agent-forwarding", "permit-port-forwarding", "permit-pty"},
-			CreatedAt:            issuedAt,
-			ApprovalURL:          "/approve/0b4f2b1a-7c3d-4e5f-8a9b-0c1d2e3f4a5b",
-			IsOwnedByYou:         true,
-			AlreadyClosed:        true,
+			// A requesting machine under administrative policy, so the
+			// shape of both halves is pinned — including that FIPS is a
+			// pointer and so keeps "silent" distinct from "false".
+			ClientPolicy: &webtypes.ClientPolicyResponse{
+				ForbiddenExtensions: []string{"permit-port-forwarding"},
+				FIPS:                &fipsEnforced,
+			},
+			CreatedAt:     issuedAt,
+			ApprovalURL:   "/approve/0b4f2b1a-7c3d-4e5f-8a9b-0c1d2e3f4a5b",
+			IsOwnedByYou:  true,
+			AlreadyClosed: true,
 
 			DecidedByOutcome:         "approved",
 			DecidedBySubject:         "9c1f0f8e-1d0a-4a37-9d1e-2f6a1b4c5d6e",

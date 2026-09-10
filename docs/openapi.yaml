@@ -17,6 +17,28 @@ components:
       required:
       - ca
       type: object
+    apitypes.ClientPolicy:
+      description: |-
+        ClientPolicy is what the requesting machine's administrative policy
+        locks, so an approver can tell a user's own opt-out from a rule
+        imposed on them. Optional, and absent from an older client.
+      properties:
+        fips:
+          description: |-
+            FIPS reports that the machine is held to FIPS-approved algorithms by
+            policy. A pointer so "policy is silent" stays distinct from "policy
+            says false".
+          type: boolean
+        forbidden_extensions:
+          description: |-
+            ForbiddenExtensions is forbidden_certificate_extensions as the
+            requesting machine has it. The client has already subtracted these
+            from what it asked for; sending them says why they are absent.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+      type: object
     apitypes.ConsoleRequestBody:
       properties:
         caller_gid:
@@ -294,6 +316,8 @@ components:
             Client names the implementation and version ("ssoossh/1.2.3"), which
             is what tells this client and pam_ssoossh apart in a log.
           type: string
+        client_policy:
+          $ref: '#/components/schemas/apitypes.ClientPolicy'
         client_time:
           description: |-
             ClientTime is the machine's own clock when it built the request, so
@@ -1530,6 +1554,32 @@ components:
       - serial_number
       - type
       type: object
+    webtypes.ClientPolicyResponse:
+      description: |-
+        ClientPolicy is the administrative policy the requesting machine
+        claimed was in force on it, so the page can say why an option is
+        missing rather than only that it is. Absent when nothing was claimed.
+
+        A claim, like every other self-reported field on this response, and
+        advisory by design: it narrows and explains what an approver is
+        offered, and never decides whether a certificate is issued. A client
+        that wants an option simply does not send this.
+      properties:
+        fips:
+          description: |-
+            FIPS reports the machine is held to FIPS-approved algorithms.
+            Omitted when policy was silent, which is not the same as false.
+          type: boolean
+        forbidden_extensions:
+          description: |-
+            ForbiddenExtensions are the extensions the requesting machine's
+            policy forbids. The client already removed them from what it asked
+            for; this says which rule accounts for the gap.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+      type: object
     webtypes.ConfigSection:
       properties:
         name:
@@ -2351,6 +2401,8 @@ components:
           type: string
         client_mode:
           type: string
+        client_policy:
+          $ref: '#/components/schemas/webtypes.ClientPolicyResponse'
         client_time:
           type: string
         created_at:

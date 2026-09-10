@@ -59,6 +59,7 @@ table certificate_requests
   column claimed_at type=DATETIME nullable=true pk=false default=<none>
   column client type=TEXT nullable=false pk=false default=''
   column client_mode type=TEXT nullable=false pk=false default=''
+  column client_policy type=TEXT nullable=true pk=false default=<none>
   column client_time type=DATETIME nullable=true pk=false default=<none>
   column created_at type=DATETIME nullable=false pk=false default=<none>
   column enrollment_token type=TEXT nullable=false pk=false default=''

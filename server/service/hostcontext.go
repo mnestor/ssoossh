@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/server/model"
 )
 
@@ -26,12 +27,28 @@ type HostContext struct {
 	Mode                  string
 	ClientTime            *time.Time
 	TrustedCAFingerprints []string
+
+	// ClientPolicy is the administrative policy the requesting machine says
+	// is in force on it. Nil when it said nothing, which is every request
+	// from a machine with no MDM, Group Policy or enforce file — and every
+	// request from a client older than the field.
+	//
+	// Same trust as everything above it: self-reported by an
+	// unauthenticated caller and shown as a claim. It is advisory by
+	// design, never an input to whether a certificate is issued. See
+	// apitypes.ClientPolicy.
+	ClientPolicy *apitypes.ClientPolicy
 }
 
 // maxTrustedCAFingerprints bounds the fingerprint list the same way
 // maxContextFieldLen bounds each string: a caller cannot write arbitrary
 // volume into the row.
 const maxTrustedCAFingerprints = 8
+
+// maxClientPolicyExtensions bounds the asserted forbidden list on the same
+// terms as maxTrustedCAFingerprints: a caller may not write arbitrary volume
+// into the row by claiming a very long policy.
+const maxClientPolicyExtensions = 32
 
 // applyHostContext copies hc onto req, bounding every string and the
 // fingerprint list on the way in and encoding the list as JSON. Bounded
@@ -57,7 +74,10 @@ func applyHostContext(req *model.CertificateRequest, hc HostContext) error {
 	}
 	if len(fingerprints) == 0 {
 		req.TrustedCAFingerprints = ""
-		return nil
+		// Not a bare return: the asserted policy is independent of the
+		// fingerprint list, and a request that pins no CA — which is most
+		// of them — must still record what its machine claimed.
+		return applyClientPolicy(req, hc.ClientPolicy)
 	}
 	bounded := make([]string, 0, len(fingerprints))
 	for _, fp := range fingerprints {
@@ -69,7 +89,51 @@ func applyHostContext(req *model.CertificateRequest, hc HostContext) error {
 		return fmt.Errorf("failed to encode trusted CA fingerprints: %w", err)
 	}
 	req.TrustedCAFingerprints = string(encoded)
+
+	return applyClientPolicy(req, hc.ClientPolicy)
+}
+
+// applyClientPolicy encodes the requesting machine's asserted policy onto
+// req, bounding each name the same way every other self-reported string is
+// bounded. Absent policy leaves the column empty rather than storing "null",
+// so "said nothing" and "said nothing forbidden" read alike downstream.
+func applyClientPolicy(req *model.CertificateRequest, policy *apitypes.ClientPolicy) error {
+	if policy == nil || (len(policy.ForbiddenExtensions) == 0 && policy.FIPS == nil) {
+		req.ClientPolicy = ""
+		return nil
+	}
+
+	bounded := &apitypes.ClientPolicy{FIPS: policy.FIPS}
+	forbidden := policy.ForbiddenExtensions
+	if len(forbidden) > maxClientPolicyExtensions {
+		forbidden = forbidden[:maxClientPolicyExtensions]
+	}
+	for _, ext := range forbidden {
+		bounded.ForbiddenExtensions = append(bounded.ForbiddenExtensions, truncateContextField(ext))
+	}
+
+	encoded, err := json.Marshal(bounded)
+	if err != nil {
+		// not covered: strings and a *bool, so json.Marshal cannot fail.
+		return fmt.Errorf("failed to encode client policy: %w", err)
+	}
+	req.ClientPolicy = string(encoded)
 	return nil
+}
+
+// decodeClientPolicy reads the asserted policy back. An empty or unreadable
+// column reads as no assertion rather than an error, for the same reason
+// decodeTrustedCAFingerprints does: this is display context, not an input to
+// any decision, so a malformed one must not fail an approval page.
+func decodeClientPolicy(encoded string) *apitypes.ClientPolicy {
+	if encoded == "" {
+		return nil
+	}
+	var policy apitypes.ClientPolicy
+	if err := json.Unmarshal([]byte(encoded), &policy); err != nil {
+		return nil
+	}
+	return &policy
 }
 
 // decodeTrustedCAFingerprints reads the JSON list back. An empty or

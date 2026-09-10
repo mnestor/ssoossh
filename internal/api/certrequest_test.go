@@ -78,7 +78,7 @@ func TestCreateUserRequest_ShouldReturnApprovedOutcome(t *testing.T) {
 		t.Fatalf("unexpected error building client: %v", err)
 	}
 
-	pending, err := c.CreateUserRequest(context.Background(), hostinfo.HostContext{Username: "alice", Hostname: "alice-laptop"}, "ssh-ed25519 AAAA... test", nil, RequestedOptions{Extensions: []string{"permit-pty"}})
+	pending, err := c.CreateUserRequest(context.Background(), hostinfo.HostContext{Username: "alice", Hostname: "alice-laptop"}, "ssh-ed25519 AAAA... test", nil, RequestedOptions{Extensions: []string{"permit-pty"}}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestCreateUserRequest_ShouldReturnResponseErrorWhenCreateFails(t *testing.T
 		t.Fatalf("unexpected error building client: %v", err)
 	}
 
-	_, err = c.CreateUserRequest(context.Background(), hostinfo.HostContext{}, "", nil, RequestedOptions{})
+	_, err = c.CreateUserRequest(context.Background(), hostinfo.HostContext{}, "", nil, RequestedOptions{}, nil)
 	respErr := &ResponseError{}
 	ok := errors.As(err, &respErr)
 	if !ok {
@@ -239,7 +239,7 @@ func TestAwaitCertificate_ShouldReturnResponseErrorWhenEventsConnectionFails(t *
 		t.Fatalf("unexpected error building client: %v", err)
 	}
 
-	pending, err := c.CreateUserRequest(context.Background(), hostinfo.HostContext{}, "ssh-ed25519 AAAA... test", nil, RequestedOptions{})
+	pending, err := c.CreateUserRequest(context.Background(), hostinfo.HostContext{}, "ssh-ed25519 AAAA... test", nil, RequestedOptions{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error creating the request: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestAwaitCertificate_ShouldReconnectAfterDroppedEventsConnection(t *testing
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	pending, err := c.CreateUserRequest(ctx, hostinfo.HostContext{}, "ssh-ed25519 AAAA... test", nil, RequestedOptions{})
+	pending, err := c.CreateUserRequest(ctx, hostinfo.HostContext{}, "ssh-ed25519 AAAA... test", nil, RequestedOptions{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -352,7 +352,7 @@ func TestCreateUserRequest_ShouldReturnApprovalURLBeforeAnyoneApproves(t *testin
 	defer cancel()
 
 	// The point of the test: this returns while the request is unresolved.
-	pending, err := c.CreateUserRequest(ctx, hostinfo.HostContext{}, "ssh-ed25519 AAAA... test", nil, RequestedOptions{})
+	pending, err := c.CreateUserRequest(ctx, hostinfo.HostContext{}, "ssh-ed25519 AAAA... test", nil, RequestedOptions{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -460,7 +460,7 @@ func TestCreateUserRequest_ShouldSendTheWholeHostContext(t *testing.T) {
 		Client: "ssoossh/1.2.3", ClientTime: &at,
 	}
 	if _, err := c.CreateUserRequest(context.Background(), hc, "ssh-ed25519 AAAA... test",
-		[]string{"SHA256:pinned"}, RequestedOptions{}); err != nil {
+		[]string{"SHA256:pinned"}, RequestedOptions{}, nil); err != nil {
 		t.Fatalf("unexpected error creating the request: %v", err)
 	}
 
@@ -516,7 +516,7 @@ func TestCreateUserRequest_ShouldOmitAnEmptyHostContext(t *testing.T) {
 		t.Fatalf("unexpected error building the client: %v", err)
 	}
 	if _, err := c.CreateUserRequest(context.Background(), hostinfo.HostContext{},
-		"ssh-ed25519 AAAA... test", nil, RequestedOptions{}); err != nil {
+		"ssh-ed25519 AAAA... test", nil, RequestedOptions{}, nil); err != nil {
 		t.Fatalf("unexpected error creating the request: %v", err)
 	}
 
@@ -609,7 +609,7 @@ func TestCreateUserRequest_ShouldFailWhenTheServerReturnsACrossOriginURL(t *test
 				t.Fatalf("unexpected error building client: %v", err)
 			}
 
-			_, err = c.CreateUserRequest(context.Background(), hostinfo.HostContext{Username: "alice"}, "ssh-ed25519 AAAA... test", nil, RequestedOptions{})
+			_, err = c.CreateUserRequest(context.Background(), hostinfo.HostContext{Username: "alice"}, "ssh-ed25519 AAAA... test", nil, RequestedOptions{}, nil)
 			if err == nil {
 				t.Fatalf("got no error, want the cross-origin %s refused", tt.name)
 			}

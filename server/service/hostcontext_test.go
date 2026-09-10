@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/server/certmsg"
 	"github.com/mnestor/ssoossh/server/model"
 )
@@ -733,5 +735,105 @@ func TestNewDecision_ShouldKeyTheRecordOnTheRequestID(t *testing.T) {
 	}
 	if decision.CertificateRequestID != "req-42" {
 		t.Errorf("certificate_request_id = %q, want req-42", decision.CertificateRequestID)
+	}
+}
+
+// The asserted policy is self-reported by an unauthenticated caller, so it
+// is bounded on the way in like every other string here, and a malformed
+// one must never fail a page that only wants to display it.
+func TestApplyClientPolicy_ShouldRoundTripAnAssertion(t *testing.T) {
+	t.Parallel()
+
+	enforced := true
+	var req model.CertificateRequest
+	err := applyHostContext(&req, HostContext{
+		ClientPolicy: &apitypes.ClientPolicy{
+			ForbiddenExtensions: []string{"permit-port-forwarding"},
+			FIPS:                &enforced,
+		},
+	})
+	if err != nil {
+		t.Fatalf("applyHostContext() error = %v", err)
+	}
+
+	got := decodeClientPolicy(req.ClientPolicy)
+	if got == nil {
+		t.Fatal("the asserted policy did not survive the round trip")
+	}
+	if !slices.Equal(got.ForbiddenExtensions, []string{"permit-port-forwarding"}) {
+		t.Errorf("got forbidden %v, want [permit-port-forwarding]", got.ForbiddenExtensions)
+	}
+	if got.FIPS == nil || !*got.FIPS {
+		t.Errorf("got FIPS %v, want true", got.FIPS)
+	}
+}
+
+// A machine that claims nothing stores nothing, so "said nothing" and "said
+// nothing forbidden" read alike downstream rather than one arriving as the
+// string "null".
+func TestApplyClientPolicy_ShouldStoreNothingForNoAssertion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		policy *apitypes.ClientPolicy
+	}{
+		{name: "no policy at all", policy: nil},
+		{name: "an empty policy", policy: &apitypes.ClientPolicy{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var req model.CertificateRequest
+			if err := applyHostContext(&req, HostContext{ClientPolicy: tt.policy}); err != nil {
+				t.Fatalf("applyHostContext() error = %v", err)
+			}
+			if req.ClientPolicy != "" {
+				t.Errorf("stored %q, want an empty column", req.ClientPolicy)
+			}
+			if decodeClientPolicy(req.ClientPolicy) != nil {
+				t.Error("an empty column decoded to a non-nil policy")
+			}
+		})
+	}
+}
+
+// A caller may not write arbitrary volume into the row by claiming a very
+// long policy, on the same terms as the fingerprint list.
+func TestApplyClientPolicy_ShouldBoundALongAssertion(t *testing.T) {
+	t.Parallel()
+
+	forbidden := make([]string, maxClientPolicyExtensions+10)
+	for i := range forbidden {
+		forbidden[i] = "permit-something"
+	}
+
+	var req model.CertificateRequest
+	if err := applyHostContext(&req, HostContext{
+		ClientPolicy: &apitypes.ClientPolicy{ForbiddenExtensions: forbidden},
+	}); err != nil {
+		t.Fatalf("applyHostContext() error = %v", err)
+	}
+
+	got := decodeClientPolicy(req.ClientPolicy)
+	if got == nil {
+		t.Fatal("expected a stored policy")
+	}
+	if len(got.ForbiddenExtensions) != maxClientPolicyExtensions {
+		t.Errorf("stored %d extensions, want the cap of %d", len(got.ForbiddenExtensions), maxClientPolicyExtensions)
+	}
+}
+
+// Display context must never fail an approval page: a column written by an
+// older build, or corrupted, reads as no assertion rather than an error.
+func TestDecodeClientPolicy_ShouldTreatGarbageAsNoAssertion(t *testing.T) {
+	t.Parallel()
+
+	for _, encoded := range []string{"", "not json", "{", "[]"} {
+		if got := decodeClientPolicy(encoded); got != nil && len(got.ForbiddenExtensions) > 0 {
+			t.Errorf("decodeClientPolicy(%q) = %v, want no usable assertion", encoded, got)
+		}
 	}
 }

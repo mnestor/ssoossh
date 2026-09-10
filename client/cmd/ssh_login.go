@@ -16,6 +16,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/mnestor/ssoossh/internal/api"
+	"github.com/mnestor/ssoossh/internal/apitypes"
 	sshagent "github.com/mnestor/ssoossh/internal/crypto/ssh/agent"
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 	"github.com/mnestor/ssoossh/internal/hostinfo"
@@ -362,7 +363,7 @@ func runLogin(ctx context.Context, root *RootCommand, out io.Writer, force bool)
 	pending, err := root.API().CreateUserRequest(ctx, hostContext, publicKey, pinnedCAFingerprints(cfg), api.RequestedOptions{
 		Extensions:      effectiveExts,
 		SourceAddresses: api.LocalInterfaceAddresses(),
-	})
+	}, clientPolicy(cfg))
 	if err != nil {
 		return fmt.Errorf("request a certificate: %w", err)
 	}
@@ -627,4 +628,33 @@ func expiryPhrase(cert *ssh.Certificate) string {
 		return "already expired"
 	}
 	return fmt.Sprintf("valid until %s (%s from now)", expires.Local().Format("15:04 MST"), remaining)
+}
+
+// clientPolicy reports the administrative policy in force on this machine,
+// so an approver can tell a rule imposed on the requester from a choice the
+// requester made.
+//
+// effectiveExtensions has already subtracted the forbidden set from what is
+// asked for, which is what makes this worth sending: without it the server
+// sees only an absence and cannot distinguish --no-port-forwarding from an
+// MDM rule. Nil when policy says nothing, so a machine with no policy adds
+// no field.
+//
+// Advisory by construction — see apitypes.ClientPolicy. Nothing here is
+// verified, nothing is enforced against it, and a caller who does not want
+// to be narrowed simply does not send it.
+func clientPolicy(cfg *config.Config) *apitypes.ClientPolicy {
+	policy := &apitypes.ClientPolicy{}
+	if len(cfg.ForbiddenCertificateExtensions) > 0 {
+		policy.ForbiddenExtensions = cfg.ForbiddenCertificateExtensions
+	}
+	if cfg.FIPSEnforced {
+		enforced := true
+		policy.FIPS = &enforced
+	}
+
+	if len(policy.ForbiddenExtensions) == 0 && policy.FIPS == nil {
+		return nil
+	}
+	return policy
 }

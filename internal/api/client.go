@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/internal/hostinfo"
 	"github.com/mnestor/ssoossh/internal/tracelog"
 	"github.com/mnestor/ssoossh/internal/version"
@@ -38,7 +39,7 @@ type Client interface {
 	// ssoosshd has created the request, so the caller can show
 	// PendingRequest.ApprovalURL to a human before blocking on
 	// AwaitCertificate.
-	CreateUserRequest(ctx context.Context, hc hostinfo.HostContext, publicKey string, trustedCAFingerprints []string, opts RequestedOptions) (*PendingRequest, error)
+	CreateUserRequest(ctx context.Context, hc hostinfo.HostContext, publicKey string, trustedCAFingerprints []string, opts RequestedOptions, policy *apitypes.ClientPolicy) (*PendingRequest, error)
 
 	// CreateServiceEnrollment asks to enroll publicKey for unattended
 	// service certificate issuance. Returns without waiting, like

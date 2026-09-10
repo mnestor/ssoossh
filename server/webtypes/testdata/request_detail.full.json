@@ -55,6 +55,12 @@
     ],
     "no_touch_required": true
   },
+  "client_policy": {
+    "forbidden_extensions": [
+      "permit-port-forwarding"
+    ],
+    "fips": true
+  },
   "selectable_extensions": [
     "permit-agent-forwarding",
     "permit-port-forwarding",

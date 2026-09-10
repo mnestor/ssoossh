@@ -305,6 +305,12 @@ export interface UserRequestBody {
 	 */
 	os?: string;
 	/**
+	 * ClientPolicy is what the requesting machine's administrative policy
+	 * locks, so an approver can tell a user's own opt-out from a rule
+	 * imposed on them. Optional, and absent from an older client.
+	 */
+	client_policy?: ClientPolicy;
+	/**
 	 * Client names the implementation and version ("ssoossh/1.2.3"), which
 	 * is what tells this client and pam_ssoossh apart in a log.
 	 */
@@ -535,6 +541,40 @@ export interface ApproveResponse {
  */
 export interface DenyResponse {
 	status: string;
+}
+/**
+ * ClientPolicy is the administrative policy in force on the machine making
+ * a request — MDM managed preferences on macOS, Group Policy on Windows, or
+ * an enforce file — reported so the server can say why an option is missing
+ * rather than only that it is.
+ * # This is a claim, not a control
+ * It is self-reported by an unauthenticated caller, exactly like the host
+ * context beside it, and it is deliberately advisory: it narrows what an
+ * approver is offered and explains the gap, and it never refuses issuance.
+ * It cannot be otherwise. Assertions may only narrow — a client that could
+ * widen by claiming a policy would gain privilege by lying — and a client
+ * that wants the option simply omits the assertion, so nothing here binds a
+ * caller who does not wish to be bound. Anyone can also call the API
+ * directly and send none of it.
+ * What it buys is accuracy for the honest case, which is the common one: an
+ * approver is not offered a toggle that grants something the requesting
+ * machine will refuse to honour, and the page can say which rule accounts
+ * for a missing extension. Treat it as documentation of the request, never
+ * as authorization.
+ */
+export interface ClientPolicy {
+	/**
+	 * ForbiddenExtensions is forbidden_certificate_extensions as the
+	 * requesting machine has it. The client has already subtracted these
+	 * from what it asked for; sending them says why they are absent.
+	 */
+	forbidden_extensions?: string[];
+	/**
+	 * FIPS reports that the machine is held to FIPS-approved algorithms by
+	 * policy. A pointer so "policy is silent" stays distinct from "policy
+	 * says false".
+	 */
+	fips?: boolean;
 }
 
 //////////

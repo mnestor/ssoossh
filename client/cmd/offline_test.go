@@ -210,7 +210,7 @@ func TestOfflineAPIClientRefusesEveryCall(t *testing.T) {
 	}{
 		{name: "should refuse GetCA", call: func() error { _, err := c.GetCA(ctx); return err }},
 		{name: "should refuse CreateUserRequest", call: func() error {
-			_, err := c.CreateUserRequest(ctx, hostinfo.HostContext{}, "key", nil, api.RequestedOptions{})
+			_, err := c.CreateUserRequest(ctx, hostinfo.HostContext{}, "key", nil, api.RequestedOptions{}, nil)
 			return err
 		}},
 		{name: "should refuse CreateServiceEnrollment", call: func() error {

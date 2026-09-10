@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
+	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/server/config"
 	"github.com/mnestor/ssoossh/server/model"
 	"github.com/mnestor/ssoossh/server/service"
@@ -194,6 +195,7 @@ func newRequestDetailResponse(d *service.RequestDetail) webtypes.RequestDetailRe
 		// type has a picker today; sending the ceiling regardless costs a
 		// short list and keeps the response shape the same for every type.
 		SelectableExtensions: d.SelectableExtensions,
+		ClientPolicy:         newClientPolicyResponse(d.ClientPolicy),
 		CreatedAt:            d.Request.CreatedAt,
 		ApprovalURL:          approvalURL(d.Request.ID),
 		// Detail binds the request to the caller, so reaching this point at
@@ -534,5 +536,17 @@ func setIssuedOptionsOnCertificate(resp *webtypes.CertificateResponse, cert mode
 		} else {
 			resp.CriticalOptions = criticalOptions
 		}
+	}
+}
+
+// newClientPolicyResponse converts the requesting machine's asserted policy
+// for the wire, or nil when it asserted none.
+func newClientPolicyResponse(policy *apitypes.ClientPolicy) *webtypes.ClientPolicyResponse {
+	if policy == nil {
+		return nil
+	}
+	return &webtypes.ClientPolicyResponse{
+		ForbiddenExtensions: policy.ForbiddenExtensions,
+		FIPS:                policy.FIPS,
 	}
 }
