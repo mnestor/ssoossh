@@ -200,7 +200,7 @@ Two things that catch people out, both visible above:
 
 ### Jamf custom profile schema
 
-[`packaging/macos/com.github.mnestor.ssoossh.json`](https://github.com/mnestor/ssoossh/blob/main/packaging/macos/com.github.mnestor.ssoossh.json)
+[`deploy/macos/com.github.mnestor.ssoossh.json`](https://github.com/mnestor/ssoossh/blob/main/deploy/macos/com.github.mnestor.ssoossh.json)
 is a Jamf Pro custom profile schema for the same domain, so the settings can be
 filled in through the Jamf UI with titles, descriptions and validation instead
 of hand-written XML. In Jamf Pro: **Computers → Configuration Profiles → New →
