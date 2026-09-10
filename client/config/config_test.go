@@ -654,3 +654,30 @@ func TestNewConfig_ShouldStillIgnoreAbsentSearchPathFiles(t *testing.T) {
 		t.Errorf("expected absent search-path files to be tolerated, got %v", err)
 	}
 }
+
+// TestNewConfig_ShouldThreadTheCommandThroughToTheLoader covers the
+// exported wrapper itself, which every other test here deliberately avoids:
+// NewConfig binds the real search paths and the real platform policy, and a
+// test that exercised those would read the developer's home directory and
+// whatever configuration profile their laptop is enrolled in — which is the
+// failure this file's other change exists to remove.
+//
+// A missing --config file is the one outcome that cannot depend on the host.
+// mergeConfigFiles fails long before mergePlatformPolicy is reached, so no
+// registry key and no managed-preferences plist is consulted on the way to
+// this error, and an explicit --config means the search paths are not
+// consulted for locating the file either.
+//
+// What it proves is bounded and worth stating: NewConfig threads its command
+// through to newConfig and returns its error rather than swallowing it. It
+// does not prove which search paths or which policy loader were passed —
+// nothing reaches them on this path. Those are covered against injected
+// values by the tests above, which is the only way they can be covered
+// without reading the machine the suite happens to be running on.
+func TestNewConfig_ShouldThreadTheCommandThroughToTheLoader(t *testing.T) {
+	cmd := newConfigCommand(t, "--config", filepath.Join(t.TempDir(), "absent.yaml"))
+
+	if _, err := NewConfig(cmd); err == nil {
+		t.Error("NewConfig() error = nil, want an error for a --config file that does not exist")
+	}
+}
