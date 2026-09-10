@@ -18,20 +18,32 @@ Today the server sees only the already-narrowed request. It cannot tell
 arrive as the same thing: an extension that simply is not in
 `RequestedOptions.Extensions`.
 
-## Why this rather than verifying on receipt
+## What this is not: a boundary against the user
 
-The narrower fix — have the client check the returned certificate's
-extensions against `ForbiddenCertificateExtensions` and refuse to load it —
-was considered and rejected as the primary answer. It closes one hole for
-one setting. This generalises: any locked client setting becomes legible to
-the server, and the approval UI can say *why* a toggle is unavailable rather
-than offering something the requesting machine will refuse to use.
+Decided 2026-09-10, and it shapes everything below.
 
-Verifying on receipt is still worth having as a defence-in-depth layer
-underneath this, and is the only layer that also covers a server that is
-compromised, buggy, or simply not this deployment's — the certificate is
-signed by the CA the client pins, and nothing inside it says an extension
-was never requested. It is not a substitute for the server knowing.
+Assertions must be **narrowing only** (see the trust question). But a client
+that wants the extension can then simply not assert, and get exactly what it
+would have got anyway. Nor does anything stop a user calling the API
+directly and skipping this client altogether.
+
+So this cannot bind a determined user, and neither could the narrower fix it
+replaced — checking the returned certificate against
+`ForbiddenCertificateExtensions` before loading it. That check was considered
+and **dropped**: it is bypassed by the same person in the same way, and
+"refuse to load" is a control the user owns.
+
+What is left is worth having anyway, but it is a different thing and the
+documentation has to say so: this makes an honest client's administrative
+policy **legible to the server**, so an approver is not offered a toggle that
+would grant something the requesting machine will refuse to honour, and so
+the UI can say why. That is correctness, not enforcement.
+
+The consequence for the operator docs is not optional.
+`forbidden_certificate_extensions` currently reads as a guarantee. It is not
+one, and was not one before this proposal existed — it shapes a request made
+by a cooperating client. The page needs to say that plainly whether or not
+this ships.
 
 ## The trust question, which is the hard part
 
@@ -48,11 +60,36 @@ more subtraction, so a client that lies can only ever harm itself.
 
 Worth deciding explicitly: whether an assertion is advisory to the UI only
 (the approver sees a disabled toggle and an explanation) or binding on
-issuance (the server refuses to sign it whatever the approver ticks). The
-second is stronger and is what an administrator reading
-[client enforcement](https://mnestor.github.io/ssoossh/hosts/client-enforcement/)
-would assume, but it means a stale or spoofed assertion can deny a
-legitimate certificate.
+issuance (the server refuses to sign it whatever the approver ticks). Given
+that this is not a boundary against the user, "binding" only binds honest
+clients — it buys little over advisory and costs a denial path when an
+assertion is stale.
+
+## Open questions, before implementing
+
+1. **Advisory or binding**, per above. Everything else is mechanical once
+   this is settled.
+2. **Scope.** Only the forbidden-extension list, or a general locked-settings
+   map? Most client settings (`key_filename`, `try_open_browser`) mean
+   nothing server-side, so a general mechanism still needs a decision about
+   which keys are worth sending.
+3. **The client cannot currently tell.** `mergePlatformPolicy` merges the
+   policy map into viper and then discards which keys came from it: only
+   `policySetsFIPS` and `policyForbiddenExtensions` survive as
+   policy-sourced, and every other locked value becomes indistinguishable
+   from a config-file one. Retaining that key set is a small prerequisite
+   that does not exist today.
+4. **Service certificates may be out of scope.** The enrolling machine is not
+   necessarily the machine that retrieves or uses the certificate — the code
+   is portable and `service retrieve` only posts it — so an assertion made at
+   enrollment describes a machine that may be irrelevant. Either the service
+   path is excluded, or "whose policy applies" needs an answer.
+5. **The approver needs a reason, not a shorter list.** The whole UX payoff is
+   a disabled toggle that says why, which means a wire field carrying the
+   reason rather than only the narrowed set.
+6. **Staleness.** A service enrollment fixes its extensions at approval; the
+   requesting machine's policy can change afterwards and nothing revisits
+   it.
 
 ## What it unblocks: the user-certificate extensions picker
 
