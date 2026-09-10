@@ -18,6 +18,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"gorm.io/gorm"
 
+	"github.com/mnestor/ssoossh/internal/apitypes"
 	sshcrypto "github.com/mnestor/ssoossh/internal/crypto/ssh"
 	"github.com/mnestor/ssoossh/internal/fipsmode"
 	"github.com/mnestor/ssoossh/internal/serial"
@@ -685,6 +686,12 @@ type RequestDetail struct {
 	// Narrowed is what would actually be granted, after server config.
 	Narrowed RequestedOptions
 
+	// ClientPolicy is the administrative policy the requesting machine
+	// claimed, decoded. Nil when it claimed none. Advisory display context:
+	// it lets the page say why an option is absent instead of only that it
+	// is. See apitypes.ClientPolicy for why it is never more than that.
+	ClientPolicy *apitypes.ClientPolicy
+
 	// SelectableExtensions is the certificate type's extension ceiling
 	// (cert_options.<type>.extensions), which is the set an approver may
 	// choose from where choosing is offered at all.
@@ -786,6 +793,7 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 		// The ceiling itself, not this request's slice of it — see the
 		// field's own doc for why the two cannot be conflated.
 		SelectableExtensions: policy.extensions,
+		ClientPolicy:         decodeClientPolicy(req.ClientPolicy),
 		Principals:           principals,
 		ValidDuration:        policy.validDuration,
 		ExpiresAt:            req.CreatedAt.Add(policy.approvalTTL()),

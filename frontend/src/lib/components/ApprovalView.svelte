@@ -162,6 +162,12 @@
 	// so the page keeps showing what was actually chosen.
 	const showsPicker = $derived(picksPrincipals && !hasDecisionRecord && !blocked);
 
+	// What the requesting machine says its administrative policy forbids.
+	// Self-reported and unverified — rendered as a claim, never used to
+	// decide anything — but it is the difference between an approver seeing
+	// an extension absent and understanding why.
+	const forbiddenByClientPolicy = $derived(detail.client_policy?.forbidden_extensions ?? []);
+
 	// The extension picker is the service type's counterpart to the
 	// principal picker, bounded by cert_options.service.extensions — the
 	// ceiling the server sends as selectable_extensions. Nothing configured
@@ -526,6 +532,21 @@
 			{#if !isLocalAuth}
 				<div>
 					<SectionLabel>Extensions this certificate will carry</SectionLabel>
+					{#if forbiddenByClientPolicy.length > 0}
+						<!-- The reason, not merely a shorter list. Without this the
+						     approver sees an extension simply missing and cannot tell
+						     a requester's own opt-out from a rule imposed on their
+						     machine — which is the whole point of the assertion.
+						     Worded as a claim because that is what it is: the
+						     requesting machine said so, and nothing verified it. -->
+						<p class="mb-2 text-xs text-ink-muted" data-testid="client-policy-forbidden">
+							The requesting machine reports that its administrative policy forbids
+							{#each forbiddenByClientPolicy as extension, i (extension)}<code class="font-mono"
+									>{extension}</code
+								>{#if i < forbiddenByClientPolicy.length - 1},
+								{/if}{/each}. It was not requested for that reason.
+						</p>
+					{/if}
 					{#if showsExtensionPicker}
 						<!-- Same toggle-button group as the principal picker above,
 						     deliberately: this is the same kind of choice and should

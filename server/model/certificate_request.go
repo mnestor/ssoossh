@@ -157,6 +157,11 @@ type CertificateRequest struct {
 	ClientMode            string     `gorm:"column:client_mode"`
 	ClientTime            *time.Time `gorm:"column:client_time"`
 	TrustedCAFingerprints string     `gorm:"column:trusted_ca_fingerprints"`
+	// ClientPolicy is a JSON-encoded apitypes.ClientPolicy: the
+	// administrative policy the requesting machine claimed was in force on
+	// it. Empty when none was claimed. Display context with the same trust
+	// as every other self-reported column here.
+	ClientPolicy string `gorm:"column:client_policy"`
 }
 
 // TableName overrides GORM's default pluralization to match the migration.

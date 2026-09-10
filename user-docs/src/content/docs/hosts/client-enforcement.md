@@ -69,6 +69,34 @@ mechanisms, admin's choice.
 -- makes a non-FIPS-approved `sshkey.type` a hard error at startup rather than
 a silent downgrade.
 
+### `forbidden_certificate_extensions`
+
+Worth spelling out, because what it does is narrower than the name suggests.
+
+It is subtracted from the set `ssh login` asks for, before the request is
+sent, and it cannot be re-added by a flag. That is the whole of its effect:
+it shapes a **request**, made by a client that is choosing to honour it. Per
+the caution above, it is a guardrail rather than a boundary -- a user who
+does not want it can run their own binary or call the API directly.
+
+Two limits follow, and neither is obvious from the setting's name:
+
+- **It does not apply to service certificates.** The subtraction happens only
+  on the interactive login path. A service certificate is bounded by
+  [`cert_options.service.extensions`](/ssoossh/reference/config/cert_options/service/#extensions)
+  on the server and by nothing on the client, so an extension forbidden here
+  can still reach a service certificate on this machine.
+- **The server cannot infer it.** It sees an extension absent from the
+  request and, on its own, cannot tell your policy from the user having
+  passed `--no-port-forwarding`.
+
+The client therefore reports the setting alongside the request, so the
+approval page can say *"the requesting machine reports that its
+administrative policy forbids permit-port-forwarding"* rather than leaving an
+approver to guess. That report is a claim like every other self-reported
+field on that page: it is displayed and used to explain, never to decide, and
+a client that omits it is not refused anything.
+
 ## Agent preflight verification
 
 Before requesting a certificate, `ssoossh ssh login` verifies that the resolved

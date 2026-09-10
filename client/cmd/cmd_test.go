@@ -14,6 +14,7 @@ import (
 
 	"github.com/mnestor/ssoossh/client/config"
 	"github.com/mnestor/ssoossh/internal/api"
+	"github.com/mnestor/ssoossh/internal/apitypes"
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/agent"
 	"github.com/mnestor/ssoossh/internal/crypto/ssh/keypair"
 	"github.com/mnestor/ssoossh/internal/hostinfo"
@@ -219,7 +220,7 @@ type fakeAPIClient struct {
 const testCAKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJirRcsGXT31qUGNbgTkbI6sxq1SbSLN++XEr705S8ko ca@example"
 
 func (f *fakeAPIClient) GetCA(ctx context.Context) (string, error) { return testCAKey, nil }
-func (f *fakeAPIClient) CreateUserRequest(_ context.Context, hc hostinfo.HostContext, publicKey string, trustedCAFingerprints []string, opts api.RequestedOptions) (*api.PendingRequest, error) {
+func (f *fakeAPIClient) CreateUserRequest(_ context.Context, hc hostinfo.HostContext, publicKey string, trustedCAFingerprints []string, opts api.RequestedOptions, policy *apitypes.ClientPolicy) (*api.PendingRequest, error) {
 	f.createdWith = append(f.createdWith, publicKey)
 	f.createdWithOpts = append(f.createdWithOpts, opts)
 	f.createdWithContext = append(f.createdWithContext, hc)
@@ -233,10 +234,10 @@ func (f *fakeAPIClient) CreateUserRequest(_ context.Context, hc hostinfo.HostCon
 	return f.pending, nil
 }
 func (f *fakeAPIClient) CreateServiceEnrollment(ctx context.Context, publicKey string, opts api.RequestedOptions) (*api.PendingRequest, error) {
-	return f.CreateUserRequest(ctx, hostinfo.HostContext{}, publicKey, nil, opts)
+	return f.CreateUserRequest(ctx, hostinfo.HostContext{}, publicKey, nil, opts, nil)
 }
 func (f *fakeAPIClient) CreatePAMRequest(ctx context.Context, publicKey, username string, opts api.RequestedOptions) (*api.PendingRequest, error) {
-	return f.CreateUserRequest(ctx, hostinfo.HostContext{}, publicKey, nil, opts)
+	return f.CreateUserRequest(ctx, hostinfo.HostContext{}, publicKey, nil, opts, nil)
 }
 func (f *fakeAPIClient) AwaitCertificate(ctx context.Context, req *api.PendingRequest) (*api.CertificateResult, error) {
 	f.awaitCalled = true

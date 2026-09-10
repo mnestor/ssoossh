@@ -420,6 +420,19 @@ type AdminEnrollmentsResponse struct {
 	Meta        PageMeta                  `json:"meta" validate:"required"`
 }
 
+// ClientPolicyResponse is the requesting machine's asserted administrative
+// policy, as the approval page sees it. See apitypes.ClientPolicy.
+type ClientPolicyResponse struct {
+	// ForbiddenExtensions are the extensions the requesting machine's
+	// policy forbids. The client already removed them from what it asked
+	// for; this says which rule accounts for the gap.
+	ForbiddenExtensions []string `json:"forbidden_extensions,omitempty"`
+
+	// FIPS reports the machine is held to FIPS-approved algorithms.
+	// Omitted when policy was silent, which is not the same as false.
+	FIPS *bool `json:"fips,omitempty"`
+}
+
 // CertificateOptionsResponse is one side of the requested/granted pair the
 // approval page shows.
 type CertificateOptionsResponse struct {
@@ -510,6 +523,16 @@ type RequestDetailResponse struct {
 	ValidSeconds int                        `json:"valid_seconds" validate:"required"`
 	Requested    CertificateOptionsResponse `json:"requested" validate:"required"`
 	Granted      CertificateOptionsResponse `json:"granted" validate:"required"`
+
+	// ClientPolicy is the administrative policy the requesting machine
+	// claimed was in force on it, so the page can say why an option is
+	// missing rather than only that it is. Absent when nothing was claimed.
+	//
+	// A claim, like every other self-reported field on this response, and
+	// advisory by design: it narrows and explains what an approver is
+	// offered, and never decides whether a certificate is issued. A client
+	// that wants an option simply does not send this.
+	ClientPolicy *ClientPolicyResponse `json:"client_policy,omitempty"`
 
 	// SelectableExtensions is cert_options.<type>.extensions — the ceiling,
 	// and so exactly the set an approver may choose from. Empty means there

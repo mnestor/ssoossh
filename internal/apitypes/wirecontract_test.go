@@ -50,10 +50,11 @@ var expiresAt = time.Date(2026, 9, 5, 11, 34, 5, 0, time.UTC)
 // design (see ConsoleRequestBody's doc comment) and a fixture that drifted
 // between them would hide exactly the divergence that matters.
 var (
-	callerUID  = int64(1000)
-	callerGID  = int64(1000)
-	callerPID  = int64(4242)
-	callerPPID = int64(4200)
+	fipsEnforced = true
+	callerUID    = int64(1000)
+	callerGID    = int64(1000)
+	callerPID    = int64(4242)
+	callerPPID   = int64(4200)
 )
 
 // requestedOptions is populated for every request body that carries one, so
@@ -96,6 +97,14 @@ func fullFixtures() map[string]any {
 			ClientTime:            &clientTime,
 			TrustedCAFingerprints: []string{"SHA256:1yQ0mE2xExampleFingerprintOne"},
 			RequestedOptions:      requestedOptions,
+			// A machine under administrative policy: the fixture carries
+			// both halves so the wire shape of each is pinned, including
+			// that FIPS is a pointer and so distinguishes silent from
+			// false.
+			ClientPolicy: &apitypes.ClientPolicy{
+				ForbiddenExtensions: []string{"permit-port-forwarding"},
+				FIPS:                &fipsEnforced,
+			},
 		},
 
 		"service_enroll_request": apitypes.ServiceEnrollRequestBody{

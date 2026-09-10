@@ -59,6 +59,7 @@ table certificate_requests
   column claimed_at type=timestamp with time zone nullable=true default=<none>
   column client type=text nullable=false default=''::text
   column client_mode type=text nullable=false default=''::text
+  column client_policy type=text nullable=true default=<none>
   column client_time type=timestamp with time zone nullable=true default=<none>
   column created_at type=timestamp with time zone nullable=false default=<none>
   column enrollment_token type=text nullable=false default=''::text

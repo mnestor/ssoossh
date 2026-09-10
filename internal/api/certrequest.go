@@ -40,8 +40,9 @@ type PendingRequest struct {
 // carries LocalUsername and LocalHostname too, so the caller does not read
 // the same two values twice, and the rest of the host context rides with
 // them -- see apitypes.UserRequestBody for the set and what it is for.
-func (c *HTTPClient) CreateUserRequest(ctx context.Context, hc hostinfo.HostContext, publicKey string, trustedCAFingerprints []string, opts RequestedOptions) (*PendingRequest, error) {
+func (c *HTTPClient) CreateUserRequest(ctx context.Context, hc hostinfo.HostContext, publicKey string, trustedCAFingerprints []string, opts RequestedOptions, policy *apitypes.ClientPolicy) (*PendingRequest, error) {
 	return c.create(ctx, "/certs/user", apitypes.UserRequestBody{
+		ClientPolicy:          policy,
 		PublicKey:             publicKey,
 		LocalUsername:         hc.Username,
 		LocalHostname:         hc.Hostname,

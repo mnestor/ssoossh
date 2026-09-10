@@ -255,6 +255,7 @@ func (cr *certRequestController) createUserRequestHandler(g *gin.Context) {
 			Client:                body.Client,
 			ClientTime:            body.ClientTime,
 			TrustedCAFingerprints: body.TrustedCAFingerprints,
+			ClientPolicy:          body.ClientPolicy,
 		},
 		RequestedOptions: toServiceOptions(body.RequestedOptions),
 	})

@@ -135,7 +135,7 @@ func TestContract_RequestUserCertificate(t *testing.T) {
 
 	pending, err := client.CreateUserRequest(ctx, hostinfo.HostContext{Username: "alice", Hostname: "alice-laptop"}, "ssh-ed25519 AAAA test", nil, api.RequestedOptions{
 		Extensions: []string{"permit-pty"},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
