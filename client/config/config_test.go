@@ -44,7 +44,7 @@ func TestNewConfig_ShouldLetTheServerFlagOverrideTheConfigFile(t *testing.T) {
 	path := writeConfig(t, "server: https://from-file.example.com\n")
 	cmd := newConfigCommand(t, "--config", path, "--server", "https://from-flag.example.com")
 
-	cfg, err := NewConfig(cmd)
+	cfg, err := newConfig(cmd, testPaths(t.TempDir()), noPolicy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestNewConfig_ShouldLetTheKeyTypeFlagOverrideTheConfigFile(t *testing.T) {
 	path := writeConfig(t, "sshkey:\n  type: rsa\n")
 	cmd := newLoginConfigCommand(t, "--config", path, "--key-type", "ecdsa")
 
-	cfg, err := NewConfig(cmd)
+	cfg, err := newConfig(cmd, testPaths(t.TempDir()), noPolicy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestNewConfig_ShouldKeepTheConfiguredKeyTypeWhenTheFlagIsAbsent(t *testing.
 	path := writeConfig(t, "sshkey:\n  type: rsa\n  size: 3072\n")
 	cmd := newLoginConfigCommand(t, "--config", path)
 
-	cfg, err := NewConfig(cmd)
+	cfg, err := newConfig(cmd, testPaths(t.TempDir()), noPolicy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestNewConfig_ShouldLetTheKeySizeFlagOverrideTheConfigFile(t *testing.T) {
 	path := writeConfig(t, "sshkey:\n  type: ecdsa\n  size: 256\n")
 	cmd := newLoginConfigCommand(t, "--config", path, "--key-size", "384")
 
-	cfg, err := NewConfig(cmd)
+	cfg, err := newConfig(cmd, testPaths(t.TempDir()), noPolicy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestNewConfig_ShouldKeepTheConfiguredServerWhenTheFlagIsAbsent(t *testing.T
 	path := writeConfig(t, "server: https://from-file.example.com\n")
 	cmd := newConfigCommand(t, "--config", path)
 
-	cfg, err := NewConfig(cmd)
+	cfg, err := newConfig(cmd, testPaths(t.TempDir()), noPolicy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestNewConfig_ShouldKeepTheConfiguredServerWhenTheFlagIsAbsent(t *testing.T
 func TestNewConfig_ShouldDefaultToUsingTheAgent(t *testing.T) {
 	cmd := newConfigCommand(t, "--config", writeConfig(t, "server: https://ssh.example.com\n"))
 
-	cfg, err := NewConfig(cmd)
+	cfg, err := newConfig(cmd, testPaths(t.TempDir()), noPolicy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestNewConfig_ShouldLetTheFileTurnTheAgentOff(t *testing.T) {
 	path := writeConfig(t, "server: https://ssh.example.com\nuse_agent: false\n")
 	cmd := newConfigCommand(t, "--config", path)
 
-	cfg, err := NewConfig(cmd)
+	cfg, err := newConfig(cmd, testPaths(t.TempDir()), noPolicy)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -165,14 +165,25 @@ func TestNewConfig_ShouldRejectAnUnusableKeyConfiguration(t *testing.T) {
 	path := writeConfig(t, "sshkey:\n  type: rsa\n  size: 512\n")
 	cmd := newConfigCommand(t, "--config", path)
 
-	if _, err := NewConfig(cmd); err == nil {
+	if _, err := newConfig(cmd, testPaths(t.TempDir()), noPolicy); err == nil {
 		t.Fatal("expected an RSA size below the minimum to fail at load time")
 	}
 }
 
 // noPolicy stands in for loadPlatformPolicy in tests that aren't exercising
 // platform-native policy, so they run identically regardless of the CI
-// machine's GOOS.
+// machine's GOOS -- and, just as importantly, regardless of what is
+// installed on the machine running them.
+//
+// Use it (with testPaths) rather than the exported NewConfig, which reads
+// the real search paths and the real platform policy. Eight tests here
+// called NewConfig and passed everywhere the suite was run, because none of
+// those machines had a configuration profile installed. On an MDM-managed
+// Mac they failed: the profile's server and sshkey.type won over the values
+// the test had just written, and one failure was a size validated against
+// an algorithm the test never set. A developer on a managed laptop could
+// not run this package green, and no amount of CI would have shown it --
+// the suite was green precisely where the code path did not exist.
 func noPolicy() (map[string]any, error) { return nil, nil }
 
 // errPlatformPolicyTest is a sentinel for
@@ -641,5 +652,32 @@ func TestNewConfig_ShouldStillIgnoreAbsentSearchPathFiles(t *testing.T) {
 
 	if _, err := newConfig(cmd, testPaths(t.TempDir()), noPolicy); err != nil {
 		t.Errorf("expected absent search-path files to be tolerated, got %v", err)
+	}
+}
+
+// TestNewConfig_ShouldThreadTheCommandThroughToTheLoader covers the
+// exported wrapper itself, which every other test here deliberately avoids:
+// NewConfig binds the real search paths and the real platform policy, and a
+// test that exercised those would read the developer's home directory and
+// whatever configuration profile their laptop is enrolled in — which is the
+// failure this file's other change exists to remove.
+//
+// A missing --config file is the one outcome that cannot depend on the host.
+// mergeConfigFiles fails long before mergePlatformPolicy is reached, so no
+// registry key and no managed-preferences plist is consulted on the way to
+// this error, and an explicit --config means the search paths are not
+// consulted for locating the file either.
+//
+// What it proves is bounded and worth stating: NewConfig threads its command
+// through to newConfig and returns its error rather than swallowing it. It
+// does not prove which search paths or which policy loader were passed —
+// nothing reaches them on this path. Those are covered against injected
+// values by the tests above, which is the only way they can be covered
+// without reading the machine the suite happens to be running on.
+func TestNewConfig_ShouldThreadTheCommandThroughToTheLoader(t *testing.T) {
+	cmd := newConfigCommand(t, "--config", filepath.Join(t.TempDir(), "absent.yaml"))
+
+	if _, err := NewConfig(cmd); err == nil {
+		t.Error("NewConfig() error = nil, want an error for a --config file that does not exist")
 	}
 }
