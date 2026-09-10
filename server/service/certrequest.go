@@ -112,6 +112,26 @@ type ApprovalSelection struct {
 	ServiceAccount string
 	Principals     []string
 
+	// Extensions is the approver's chosen extension set, for the service
+	// type only. Nil means the approver expressed no choice and the
+	// requester's own set stands — which is what an untouched approval
+	// sends, so configuring cert_options.service.extensions cannot change
+	// the outcome of an approval nobody acted on.
+	//
+	// A non-nil empty slice is a real choice, distinct from nil: it means
+	// the approver deliberately cleared the set. Empty is a legitimate
+	// outcome here in a way it is not for Principals, since a certificate
+	// with no extensions is the default posture for a service account.
+	//
+	// This is the one place an approver may widen rather than only narrow,
+	// and the ceiling is what bounds it: the selection replaces the
+	// requested set and then goes through the same
+	// narrowRequestedOptions intersection with cert_options.service.
+	// extensions that every request does, so a selection naming something
+	// outside the ceiling is dropped rather than honoured. See
+	// https://mnestor.github.io/ssoossh/operations/certificate-policy/.
+	Extensions []string
+
 	// NotificationEmail optionally becomes the resulting enrollment's sole
 	// notification recipient, in place of fanning out to every holder of
 	// ServiceAccount. Service-type requests only; ignored for others. Empty
@@ -665,6 +685,16 @@ type RequestDetail struct {
 	// Narrowed is what would actually be granted, after server config.
 	Narrowed RequestedOptions
 
+	// SelectableExtensions is the certificate type's extension ceiling
+	// (cert_options.<type>.extensions), which is the set an approver may
+	// choose from where choosing is offered at all.
+	//
+	// Not derivable from the two above: Narrowed is what this request would
+	// get untouched, which for a request that asked for nothing is empty
+	// however large the ceiling is. The approval page needs the ceiling to
+	// know which toggles exist and Narrowed to know which of them start on.
+	SelectableExtensions []string
+
 	// Principals and ValidDuration are the other two things the certificate
 	// would carry that the requester does not choose.
 	Principals    []string
@@ -750,13 +780,16 @@ func (s *CertRequestService) Detail(ctx context.Context, requestID string, ident
 	}
 
 	return &RequestDetail{
-		Request:       req,
-		Requested:     requested,
-		Narrowed:      narrowRequestedOptions(policy, requested),
-		Principals:    principals,
-		ValidDuration: policy.validDuration,
-		ExpiresAt:     req.CreatedAt.Add(policy.approvalTTL()),
-		Decision:      decision,
+		Request:   req,
+		Requested: requested,
+		Narrowed:  narrowRequestedOptions(policy, requested),
+		// The ceiling itself, not this request's slice of it — see the
+		// field's own doc for why the two cannot be conflated.
+		SelectableExtensions: policy.extensions,
+		Principals:           principals,
+		ValidDuration:        policy.validDuration,
+		ExpiresAt:            req.CreatedAt.Add(policy.approvalTTL()),
+		Decision:             decision,
 
 		TrustedCAFingerprints: decodeTrustedCAFingerprints(req.TrustedCAFingerprints),
 	}, nil
@@ -853,6 +886,22 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 	if err != nil {
 		return err
 	}
+	// An approver's extension choice replaces what the requester asked for
+	// *before* the ceiling is applied, never after: the intersection below
+	// is what stops a selection exceeding cert_options.<type>.extensions,
+	// and routing the choice through it means the approver cannot be
+	// granted something the configuration does not permit even if the UI
+	// or an API caller offers it.
+	// Narrowed before the substitution as well as after, so the decision
+	// record can show both what the requester asked for and what the
+	// approver chose, on the same footing. Without it "requested" would
+	// mean the client's set on one path and the approver's on the other,
+	// and the explanation is the thing operators read to work out why a
+	// certificate came out as it did.
+	clientNarrowed := narrowRequestedOptions(policy, requested)
+	if selection.Extensions != nil {
+		requested.Extensions = selection.Extensions
+	}
 	narrowed := narrowRequestedOptions(policy, requested)
 
 	// The session-built identity carries no Extra (see
@@ -884,7 +933,7 @@ func (s *CertRequestService) Approve(ctx context.Context, requestID string, iden
 
 	switch policy.flow {
 	case flowEnrollment:
-		return s.approveServiceEnrollment(ctx, req, narrowed, identity, policy, dc, selection)
+		return s.approveServiceEnrollment(ctx, req, narrowed, clientNarrowed.Extensions, identity, policy, dc, selection)
 	case flowSigning:
 		return s.approveForSigning(ctx, req, identity, policy, narrowed, dc, selection.Principals)
 	default:
@@ -1012,10 +1061,28 @@ func (s *CertRequestService) resolveUser(ctx context.Context, identity *Identity
 	return user, nil
 }
 
+// recordApproverExtensions rewrites the extension explanation so an
+// approver's choice reads as the input stage it is.
+//
+// narrowOptions sets Requested to whatever set it was handed, which on this
+// path is the approver's rather than the requester's. Left alone,
+// "requested" would mean two different things depending on whether anyone
+// touched the picker, and the decision record is precisely what someone
+// reads later to work out why a certificate came out as it did.
+//
+// A no-op when the approver made no choice, which is the common path.
+func recordApproverExtensions(outcome policyOutcome, selected, narrowed, requestedByClient []string) {
+	if selected == nil || outcome.explanation.Extensions == nil {
+		return
+	}
+	outcome.explanation.Extensions.ApproverSelected = narrowed
+	outcome.explanation.Extensions.Requested = requestedByClient
+}
+
 // approveServiceEnrollment implements Approve's service branch — see its
 // doc comment. narrowed is req's already-resolved, server-config-bounded
 // RequestedOptions. policy is req.Type's certTypePolicy.
-func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req model.CertificateRequest, narrowed RequestedOptions, identity *Identity, policy *certTypePolicy, dc DecisionContext, selection ApprovalSelection) error {
+func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req model.CertificateRequest, narrowed RequestedOptions, requestedByClient []string, identity *Identity, policy *certTypePolicy, dc DecisionContext, selection ApprovalSelection) error {
 	serviceAccount := selection.ServiceAccount
 
 	// Validated before anything is written, so a typo'd address fails the
@@ -1032,6 +1099,8 @@ func (s *CertRequestService) approveServiceEnrollment(ctx context.Context, req m
 	outcome := s.engine.evaluate(req.Type, identity, req.SourceIP, policy.validDuration, policy.enrollmentDuration)
 	effectiveDuration := outcome.duration
 	narrowed = outcome.narrowOptions(narrowed, req.SourceIP)
+
+	recordApproverExtensions(outcome, selection.Extensions, narrowed.Extensions, requestedByClient)
 
 	narrowedJSON, err := json.Marshal(narrowed)
 	if err != nil {

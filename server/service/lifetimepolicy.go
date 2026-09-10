@@ -256,8 +256,22 @@ type EnrollmentExplanation struct {
 // ExtensionsExplanation records each stage of the extensions algebra:
 // requested & ceiling & granted - removed.
 type ExtensionsExplanation struct {
+	// Requested is what the requester asked for, narrowed to the type
+	// ceiling. It always means that, on every path — see ApproverSelected.
 	Requested []string `json:"requested"`
-	Granted   []string `json:"granted,omitempty"`
+
+	// ApproverSelected is the extension set the approver chose at approval
+	// time, narrowed to the type ceiling, and is set only when they made a
+	// choice at all. Present, it is the set the rest of the algebra was
+	// applied to, in place of Requested.
+	//
+	// A separate field rather than overwriting Requested: an approver may
+	// widen as well as narrow within the ceiling, so a record that folded
+	// the two together could show an effective set larger than the
+	// requested one with nothing to explain where it came from.
+	ApproverSelected []string `json:"approver_selected,omitempty"`
+
+	Granted []string `json:"granted,omitempty"`
 	// GrantSource says where Granted came from: "tier", "default", or
 	// empty when the grant axis is inactive (no tiers configured).
 	GrantSource string   `json:"grant_source,omitempty"`

@@ -311,10 +311,29 @@ already present on disk.
 | --- | --- | --- |
 | `--key <path>` | none, required | Keypair path, relative or absolute. Generates both files if neither `<path>` nor `<path>.pub` exists; enrolls the existing `<path>.pub` otherwise |
 | `--retrieve` | off | Immediately redeem the code once and write the certificate to `<path>-cert.pub` |
+| `--extensions <list>` | none | Certificate extensions to request, comma-separated. The approver sees them and can change the set |
 
 ```bash
 ssoossh service enroll --key /etc/backup/id --retrieve
+ssoossh service enroll --key /etc/backup/id --extensions permit-pty
 ```
+
+Nothing is requested by default, which is the right posture for an unattended
+account: a job that needs no agent forwarding should not hold the permission
+to do it. What this flag sends is a *request* -- the approver sees it, may
+change it, and the server bounds the result by
+[`cert_options.service.extensions`](/ssoossh/reference/config/cert_options/service/#extensions)
+either way, so it cannot obtain anything the deployment has not permitted.
+
+:::caution
+The client-side
+[`forbidden_certificate_extensions`](/ssoossh/hosts/client-enforcement/) policy
+does **not** apply to service certificates. It is subtracted only on the
+interactive login path, so an extension permitted by
+`cert_options.service.extensions` reaches a service certificate even on a
+machine whose administrative policy forbids that extension for its interactive
+users. `cert_options.service.extensions` is the only bound here.
+:::
 
 ## `ssoossh service retrieve`
 

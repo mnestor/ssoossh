@@ -183,7 +183,13 @@ cert_options:
 
 `list`, default `empty`
 
-The SSH certificate extensions a service certificate may carry. A request is narrowed to the intersection of what it asked for and this list.
+The SSH certificate extensions a service certificate may carry: the ceiling, and so also exactly the set an approver is offered at approval time. A request is narrowed to the intersection of what it asked for and this list, and so is an approver's choice — nothing outside it can be granted by either.
+
+Two things follow that are worth knowing before setting it.
+
+Setting it alone grants nothing. It makes toggles available on the approval page; an approval nobody touches still produces exactly what the enrollment asked for, which for every enrollment made before `service enroll --extensions` existed is nothing at all.
+
+It is the only bound on a service certificate's extensions. The client-side forbidden_certificate_extensions policy (https://mnestor.github.io/ssoossh/hosts/client-enforcement/) has never applied to service certificates and still does not — it is subtracted only on the interactive login path — so an extension ticked here reaches a service certificate even on a machine whose administrative policy forbids that extension for its interactive users. Closing that is tracked in docs/proposals/client-policy-assertions.md.
 
 ```yaml
 cert_options:

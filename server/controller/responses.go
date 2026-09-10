@@ -190,8 +190,12 @@ func newRequestDetailResponse(d *service.RequestDetail) webtypes.RequestDetailRe
 		ValidSeconds: int(d.ValidDuration.Seconds()),
 		Requested:    newCertificateOptionsResponse(d.Requested),
 		Granted:      newCertificateOptionsResponse(d.Narrowed),
-		CreatedAt:    d.Request.CreatedAt,
-		ApprovalURL:  approvalURL(d.Request.ID),
+		// Offered to the approver as the choosable set. Only the service
+		// type has a picker today; sending the ceiling regardless costs a
+		// short list and keeps the response shape the same for every type.
+		SelectableExtensions: d.SelectableExtensions,
+		CreatedAt:            d.Request.CreatedAt,
+		ApprovalURL:          approvalURL(d.Request.ID),
 		// Detail binds the request to the caller, so reaching this point at
 		// all means they own it. Present as a field anyway so the UI does
 		// not have to infer ownership from the absence of an error.

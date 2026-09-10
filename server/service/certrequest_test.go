@@ -406,7 +406,7 @@ func TestCertRequestService_ShouldSurfaceGenericDBErrors(t *testing.T) {
 		}
 		closeUnderlyingDB(t, svc.db)
 		policy, _ := svc.policyFor(model.CertificateTypeService)
-		if err := svc.approveServiceEnrollment(context.Background(), req, RequestedOptions{}, &Identity{Username: "approver", Subject: "sub-approver"}, policy, DecisionContext{}, ApprovalSelection{ServiceAccount: "svc-account"}); err == nil {
+		if err := svc.approveServiceEnrollment(context.Background(), req, RequestedOptions{}, nil, &Identity{Username: "approver", Subject: "sub-approver"}, policy, DecisionContext{}, ApprovalSelection{ServiceAccount: "svc-account"}); err == nil {
 			t.Error("approveServiceEnrollment() error = nil, want error")
 		}
 	})
@@ -2346,7 +2346,7 @@ func TestApproveServiceEnrollment_ShouldRefuseARequestThatIsNoLongerPending(t *t
 		t.Fatalf("failed to load request: %v", err)
 	}
 	policy, _ := svc.policyFor(model.CertificateTypeService)
-	if err := svc.approveServiceEnrollment(context.Background(), req, RequestedOptions{}, &Identity{Username: "approver", Subject: "sub-approver"}, policy, DecisionContext{}, ApprovalSelection{ServiceAccount: "svc-account"}); err == nil {
+	if err := svc.approveServiceEnrollment(context.Background(), req, RequestedOptions{}, nil, &Identity{Username: "approver", Subject: "sub-approver"}, policy, DecisionContext{}, ApprovalSelection{ServiceAccount: "svc-account"}); err == nil {
 		t.Error("approveServiceEnrollment() error = nil, want error for a request that lost the pending race")
 	}
 }
@@ -3663,5 +3663,113 @@ func TestApprovableServiceAccountsShouldAllPassTheLinkageCheck(t *testing.T) {
 				t.Errorf("allow_user_accounts=%v offered %q but the check refused it: %v", allow, account, err)
 			}
 		}
+	}
+}
+
+// The approver's extension selection is the one place in the pipeline where
+// a decision may widen rather than only narrow, so what bounds it matters
+// more than the happy path. Every case asserts against the option set
+// stored on the enrollment, which is what redemption reuses — recomputing
+// at retrieve time is exactly what the enrollment contract forbids.
+func TestApprove_ShouldBoundTheApproversExtensionSelectionByTheCeiling(t *testing.T) {
+	tests := []struct {
+		name      string
+		requested []string
+		selection []string
+		want      []string
+	}{
+		{
+			// The inert case, and the important one: configuring a ceiling
+			// must not by itself change what an approval nobody touched
+			// grants. Every enrollment that exists today takes this path.
+			name:      "no selection leaves the request's own set alone",
+			requested: []string{"permit-pty"},
+			selection: nil,
+			want:      []string{"permit-pty"},
+		},
+		{
+			name:      "no selection and no request stays empty",
+			requested: nil,
+			selection: nil,
+			want:      nil,
+		},
+		{
+			// The widening the user asked for: the approver may add
+			// something the requester never asked for, up to the ceiling.
+			name:      "the approver may add within the ceiling",
+			requested: nil,
+			selection: []string{"permit-pty", "permit-agent-forwarding"},
+			// Selection order, not sorted: intersectStrings preserves the
+			// order of the set being narrowed, and the stored option set is
+			// what redemption replays.
+			want: []string{"permit-pty", "permit-agent-forwarding"},
+		},
+		{
+			// The bound. A selection naming something outside
+			// cert_options.service.extensions is dropped, not granted —
+			// the selection goes through the same ceiling intersection as
+			// any request, so the UI cannot be tricked into exceeding it
+			// and neither can a direct API caller.
+			name:      "an extension outside the ceiling is dropped",
+			requested: nil,
+			selection: []string{"permit-pty", "permit-port-forwarding"},
+			want:      []string{"permit-pty"},
+		},
+		{
+			// Empty is a real choice here, unlike an empty principal list:
+			// a service certificate carrying no extensions is the default
+			// posture, so clearing the set must stick rather than fall
+			// back to what was requested.
+			name:      "a deliberately emptied selection clears the set",
+			requested: []string{"permit-pty"},
+			selection: []string{},
+			want:      nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			svc := newTestCertRequestServiceWithOptions(t, config.CertificateOptions{
+				Service: config.CertOptionsService{
+					Extensions:         []string{"permit-pty", "permit-agent-forwarding"},
+					ValidDuration:      time.Hour,
+					EnrollmentDuration: 90 * 24 * time.Hour,
+				},
+			})
+
+			requestID, err := svc.createRequestID(context.Background(), NewCertRequestParams{
+				Type:             model.CertificateTypeService,
+				PublicKey:        "ssh-ed25519 AAAA...",
+				RequestedOptions: RequestedOptions{Extensions: tt.requested},
+			})
+			if err != nil {
+				t.Fatalf("create request: %v", err)
+			}
+
+			identity := &Identity{Username: "alice", Subject: "sub-1", ServiceAccounts: []string{"svc-alice"}}
+			seedUser(t, svc.db, identity.Subject)
+			err = svc.Approve(context.Background(), requestID, identity, DecisionContext{}, ApprovalSelection{
+				ServiceAccount: "svc-alice",
+				Extensions:     tt.selection,
+			})
+			if err != nil {
+				t.Fatalf("approve: %v", err)
+			}
+
+			var enrollment model.Enrollment
+			if err := svc.db.First(&enrollment, "certificate_request_id = ?", requestID).Error; err != nil {
+				t.Fatalf("load enrollment: %v", err)
+			}
+			var stored RequestedOptions
+			if err := json.Unmarshal([]byte(enrollment.OptionSet), &stored); err != nil {
+				t.Fatalf("decode stored options: %v", err)
+			}
+
+			if !slices.Equal(stored.Extensions, tt.want) {
+				t.Errorf("stored extensions = %v, want %v", stored.Extensions, tt.want)
+			}
+		})
 	}
 }

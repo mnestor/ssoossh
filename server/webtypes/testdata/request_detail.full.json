@@ -55,6 +55,11 @@
     ],
     "no_touch_required": true
   },
+  "selectable_extensions": [
+    "permit-agent-forwarding",
+    "permit-port-forwarding",
+    "permit-pty"
+  ],
   "created_at": "2026-08-14T09:30:00+02:00",
   "approval_url": "/approve/0b4f2b1a-7c3d-4e5f-8a9b-0c1d2e3f4a5b",
   "is_owned_by_you": true,

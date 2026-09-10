@@ -85,20 +85,38 @@ export function approveRequest(
 		serviceAccount?: string;
 		principals?: string[];
 		notificationEmail?: string;
+		/**
+		 * The approver's chosen extension set (service-type requests).
+		 * undefined means they were offered no choice and the request's own
+		 * set stands; an empty array is a deliberate "no extensions" and is
+		 * sent as such, because the server reads absent and empty
+		 * differently.
+		 */
+		extensions?: string[];
 	}
 ): Promise<ApproveResult> {
 	// The options object is camelCase for callers; the wire field names are
 	// webtypes.ApproveRequestBody's snake_case json tags. Mapping here rather
 	// than posting `options` verbatim, which would send `serviceAccount` and
 	// silently fail to bind server-side.
+	//
+	// extensions is tested against undefined rather than for truthiness:
+	// an empty array means the approver cleared the set on purpose, which
+	// is a legitimate outcome and a different instruction from saying
+	// nothing at all. Dropping it here would silently fall back to what the
+	// enrollment requested.
 	const hasSelection =
 		!!options &&
-		(!!options.serviceAccount || !!options.principals?.length || !!options.notificationEmail);
+		(!!options.serviceAccount ||
+			!!options.principals?.length ||
+			!!options.notificationEmail ||
+			options.extensions !== undefined);
 	const body = hasSelection
 		? {
 				...(options.serviceAccount ? { service_account: options.serviceAccount } : {}),
 				...(options.principals?.length ? { principals: options.principals } : {}),
-				...(options.notificationEmail ? { notification_email: options.notificationEmail } : {})
+				...(options.notificationEmail ? { notification_email: options.notificationEmail } : {}),
+				...(options.extensions !== undefined ? { extensions: options.extensions } : {})
 			}
 		: undefined;
 	return request<ApproveResult>(`/certs/requests/${encodeURIComponent(id)}/approve`, {

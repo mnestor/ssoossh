@@ -61,6 +61,14 @@
 		userPrincipals?: string[];
 		/** Selected principals for approval (for user-type requests). */
 		selectedPrincipals?: string[];
+		/**
+		 * Extensions the approver has selected (service-type requests only).
+		 * Starts as what the enrollment asked for, NOT as the ceiling:
+		 * configuring cert_options.service.extensions makes toggles
+		 * available, and must not by itself change what an approval nobody
+		 * touched grants.
+		 */
+		selectedExtensions?: string[];
 		onapprove: () => void;
 		ondeny: () => void;
 	}
@@ -81,6 +89,7 @@
 		// it crashes the component on render. The approve route always binds
 		// it, which is why nothing caught this.
 		selectedPrincipals = $bindable([]),
+		selectedExtensions = $bindable([]),
 		onapprove,
 		ondeny
 	}: Props = $props();
@@ -152,6 +161,25 @@
 	// says instead. Once a decision has been sent the chips stay, disabled,
 	// so the page keeps showing what was actually chosen.
 	const showsPicker = $derived(picksPrincipals && !hasDecisionRecord && !blocked);
+
+	// The extension picker is the service type's counterpart to the
+	// principal picker, bounded by cert_options.service.extensions — the
+	// ceiling the server sends as selectable_extensions. Nothing configured
+	// means nothing to select and no picker.
+	//
+	// Unlike principals, an empty selection is a legitimate outcome and the
+	// approve button must not refuse it: a service certificate carrying no
+	// extensions is the default posture, not an unfinished form.
+	const selectableExtensions = $derived(detail.selectable_extensions ?? []);
+	const picksExtensions = $derived(isServiceRequest && selectableExtensions.length > 0);
+	const showsExtensionPicker = $derived(picksExtensions && !hasDecisionRecord && !blocked);
+
+	/** toggleExtension adds extension to the selection or removes it. */
+	function toggleExtension(extension: string) {
+		selectedExtensions = selectedExtensions.includes(extension)
+			? selectedExtensions.filter((e) => e !== extension)
+			: [...selectedExtensions, extension];
+	}
 
 	/** togglePrincipal adds principal to the selection or removes it. */
 	function togglePrincipal(principal: string) {
@@ -498,7 +526,44 @@
 			{#if !isLocalAuth}
 				<div>
 					<SectionLabel>Extensions this certificate will carry</SectionLabel>
-					<OptionDiffList entries={extensions} emptyLabel="No extensions requested." />
+					{#if showsExtensionPicker}
+						<!-- Same toggle-button group as the principal picker above,
+						     deliberately: this is the same kind of choice and should
+						     not look like a new mechanism. What differs is that an
+						     empty selection is allowed, and that nothing is
+						     preselected beyond what the enrollment itself asked
+						     for. -->
+						<span
+							class="flex flex-wrap items-center gap-1.5"
+							role="group"
+							aria-label="Extensions to include"
+						>
+							{#each selectableExtensions as extension (extension)}
+								{@const pressed = selectedExtensions.includes(extension)}
+								<button
+									type="button"
+									onclick={() => toggleExtension(extension)}
+									aria-pressed={pressed}
+									disabled={busy || outcome !== null}
+									class="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-xs break-all transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default"
+									class:border-accent={pressed}
+									class:bg-accent={pressed}
+									class:text-accent-ink={pressed}
+									class:border-border-control={!pressed}
+									class:text-ink-muted={!pressed}
+									class:hover:bg-surface-muted={!pressed && !busy && outcome === null}
+								>
+									{#if pressed}<Icon name="check" size="sm" />{/if}
+									{extension}
+								</button>
+							{/each}
+							<span class="font-sans text-ink-muted">
+								select the extensions to include; none is a valid choice
+							</span>
+						</span>
+					{:else}
+						<OptionDiffList entries={extensions} emptyLabel="No extensions requested." />
+					{/if}
 				</div>
 
 				<div>

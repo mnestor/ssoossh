@@ -15,6 +15,8 @@ The key files follow OpenSSH naming: the private key is &lt;name&gt;, the public
 
 With --retrieve, the command immediately redeems the code once, writing the certificate to &lt;name&gt;-cert.pub and reporting its details. If retrieval fails after the code is printed, an error is returned but the code is not lost.
 
+--extensions asks for certificate extensions. Nothing is requested by default, which is the right posture for an unattended account: a service certificate that needs no agent forwarding should not carry the permission to do it. What is asked for is a request, not a grant — the approver sees it, can change it, and the server bounds the result by cert_options.service.extensions either way, so this flag cannot obtain anything the deployment has not permitted.
+
 ## Synopsis
 
 ```
@@ -25,6 +27,7 @@ ssoossh service enroll [flags] [args]
 
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
+| `--extensions` | stringSlice |  | certificate extensions to request, comma-separated (e.g. permit-pty); none by default, and the approver may change the set |
 | `--key` | string |  | keypair path (relative or absolute); generates both if neither &lt;name&gt; nor &lt;name&gt;.pub exist, enrolls the existing &lt;name&gt;.pub otherwise |
 | `--retrieve` | bool | `false` | immediately redeem the code and write the certificate to &lt;name&gt;-cert.pub |
 
