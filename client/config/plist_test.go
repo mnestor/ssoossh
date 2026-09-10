@@ -1,6 +1,11 @@
 package config
 
-import "testing"
+import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestParsePolicyPlist_ShouldDecodeEachSupportedScalarType(t *testing.T) {
 	data := []byte(`<?xml version="1.0" encoding="UTF-8"?>
@@ -134,5 +139,98 @@ func TestParsePolicyPlist_ShouldParseArraysSkippingNonStringElements(t *testing.
 		}
 	} else {
 		t.Errorf("got mixed_array type %T, want []any", values["mixed_array"])
+	}
+}
+
+// TestParsePolicyPlist_BinaryFormat is the regression test for the bug an
+// XML-only fixture hid: macOS rewrites every file under /Library/Managed
+// Preferences as an Apple binary property list, so on a real managed Mac
+// the parser saw bplist00, reported it as "XML syntax error ... invalid
+// UTF-8", and failed the whole config load. Device-scoped policy had never
+// loaded on managed hardware.
+//
+// The fixture is a genuine binary plist written by CPython's plistlib, not
+// by the library under test: a round trip through one implementation's own
+// encoder would not have caught this and would not catch its successor.
+func TestParsePolicyPlist_ShouldDecodeABinaryPlist(t *testing.T) {
+	t.Parallel()
+
+	data, err := os.ReadFile(filepath.Join("testdata", "managed-preferences.binary.plist"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if !bytes.HasPrefix(data, []byte("bplist00")) {
+		t.Fatalf("fixture is not a binary plist; magic = %q", data[:8])
+	}
+
+	got, err := parsePolicyPlist(data)
+	if err != nil {
+		t.Fatalf("parsePolicyPlist() error = %v", err)
+	}
+
+	tests := []struct {
+		key  string
+		want any
+	}{
+		{"server", "https://ssoossh.nasa.gov"},
+		{"insecure_skip_verify", false},
+		{"use_agent", true},
+		{"fallback_file_agent", false},
+		{"try_open_browser", true},
+		// The flat dotted key, confirmed to survive the MDM round trip on
+		// a real managed Mac.
+		{"sshkey.type", "ecdsa"},
+		{"sshkey.size", int64(384)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			if got[tt.key] != tt.want {
+				t.Errorf("got %#v (%T), want %#v", got[tt.key], got[tt.key], tt.want)
+			}
+		})
+	}
+
+	ext, ok := got["forbidden_certificate_extensions"].([]any)
+	if !ok {
+		t.Fatalf("forbidden_certificate_extensions = %#v, want a list", got["forbidden_certificate_extensions"])
+	}
+	if len(ext) != 2 || ext[0] != "permit-agent-forwarding" || ext[1] != "permit-port-forwarding" {
+		t.Errorf("got extensions %#v, want the two configured names in order", ext)
+	}
+}
+
+// Which on-disk format macOS happened to write must not change which
+// settings apply, so the binary path skips exactly what the XML path skips.
+func TestParsePolicyPlist_ShouldSkipUnsupportedTypesInABinaryPlist(t *testing.T) {
+	t.Parallel()
+
+	data, err := os.ReadFile(filepath.Join("testdata", "managed-preferences.binary.plist"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	got, err := parsePolicyPlist(data)
+	if err != nil {
+		t.Fatalf("parsePolicyPlist() error = %v", err)
+	}
+
+	for _, key := range []string{"ignored_nested_dict", "ignored_real", "ignored_data"} {
+		if v, present := got[key]; present {
+			t.Errorf("%s should have been skipped, got %#v", key, v)
+		}
+	}
+}
+
+// A truncated binary plist is an error, not a panic and not a silent empty
+// policy: an unreadable file must never quietly mean "no settings locked".
+func TestParsePolicyPlist_ShouldErrorOnATruncatedBinaryPlist(t *testing.T) {
+	t.Parallel()
+
+	data, err := os.ReadFile(filepath.Join("testdata", "managed-preferences.binary.plist"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	if _, err := parsePolicyPlist(data[:len(data)/2]); err == nil {
+		t.Error("parsePolicyPlist() error = nil, want an error for a truncated binary plist")
 	}
 }

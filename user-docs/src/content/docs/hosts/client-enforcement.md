@@ -127,6 +127,13 @@ naming that domain (Jamf, Kandji, Mosyle, Apple Business Manager), or with
 
 ### The plist
 
+Write it as XML, as below. macOS rewrites what you upload: every file under
+`/Library/Managed Preferences` is stored as an Apple binary property list,
+Apple's own `com.apple.MCX.plist` included, so the file on disk will not be
+the XML you sent. The client reads both formats and does not care which one
+it finds -- `file -b` on a managed Mac reporting *Apple binary property list*
+is the expected state, not a sign the profile is wrong.
+
 This is the payload content, with every supported key set. Upload it as the
 custom settings payload for the domain above, or drop it in as the
 `PayloadContent` of a `.mobileconfig`. Delete the keys you do not want to

@@ -1,12 +1,20 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
-// FuzzParsePolicyPlist tests the plist XML parser for robustness against
-// malformed XML, unexpected element types, and edge cases. Catches issues
-// with XML parsing, entity handling, and type conversion.
+// FuzzParsePolicyPlist tests the policy plist parser for robustness against
+// malformed input, unexpected element types, and edge cases. Catches issues
+// with parsing, entity handling, and type conversion.
+//
+// Seeded with both formats. It was XML-only when macOS's binary rewrite of
+// every managed-preferences file went unnoticed, so a corpus that cannot
+// reach the binary decoder is the shape of that bug rather than a coverage
+// nicety: the real managed plist is the case least likely to be hand-written
+// into a test.
 func FuzzParsePolicyPlist(f *testing.F) {
 	// Valid plist fragments with a root dict
 	f.Add([]byte(`<?xml version="1.0"?>
@@ -70,6 +78,15 @@ func FuzzParsePolicyPlist(f *testing.F) {
 		longStr += "x"
 	}
 	f.Add([]byte(`<dict><key>longstring</key><string>` + longStr + `</string></dict>`))
+
+	// A real binary plist, so mutation explores the binary decoder's offset
+	// tables and reference widths rather than only the XML path.
+	if binary, err := os.ReadFile(filepath.Join("testdata", "managed-preferences.binary.plist")); err == nil {
+		f.Add(binary)
+	}
+	// The magic alone, which is what a truncated or empty binary file looks
+	// like at the point the parser decides which decoder to use.
+	f.Add([]byte("bplist00"))
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		// parsePolicyPlist should never panic on any input
