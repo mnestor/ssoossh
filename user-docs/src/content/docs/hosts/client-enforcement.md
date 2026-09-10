@@ -63,6 +63,7 @@ mechanisms, admin's choice.
 | `fips` | `FIPS` (REG_DWORD; absent = unset) | `fips` (bool; absent = unset) |
 | `sshkey.type` | `SSHKeyType` (REG_SZ) | `sshkey.type` (string) |
 | `sshkey.size` | `SSHKeySize` (REG_DWORD) | `sshkey.size` (integer) |
+| `forbidden_certificate_extensions` | `ForbiddenCertificateExtensions` (REG_MULTI_SZ) | `forbidden_certificate_extensions` (array of strings) |
 
 `fips: true` from any locked source -- the `enforce` file or a platform policy
 -- makes a non-FIPS-approved `sshkey.type` a hard error at startup rather than
@@ -123,6 +124,94 @@ user channel outranking the device channel for managed preferences generally.
 Push either through an MDM's Custom Settings or Managed Preferences payload
 naming that domain (Jamf, Kandji, Mosyle, Apple Business Manager), or with
 `profiles install` for local testing.
+
+### The plist
+
+This is the payload content, with every supported key set. Upload it as the
+custom settings payload for the domain above, or drop it in as the
+`PayloadContent` of a `.mobileconfig`. Delete the keys you do not want to
+enforce: **an omitted key leaves the user's own value in effect**, which is not
+the same as setting it to the default.
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>server</key>
+    <string>https://ssh.example.com</string>
+
+    <key>capubkey</key>
+    <string>ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... ssoossh-ca</string>
+
+    <key>insecure_skip_verify</key>
+    <false/>
+
+    <key>use_agent</key>
+    <true/>
+
+    <key>fallback_file_agent</key>
+    <true/>
+
+    <key>key_filename</key>
+    <string>~/.ssh/ssoossh</string>
+
+    <key>try_open_browser</key>
+    <true/>
+
+    <!-- Three-state: omit the key entirely to say nothing. Present-and-false
+         is a decision, not the absence of one. -->
+    <key>fips</key>
+    <true/>
+
+    <!-- These two key names contain a literal dot; they are flat keys, not a
+         nested <dict>. -->
+    <key>sshkey.type</key>
+    <string>ecdsa</string>
+
+    <key>sshkey.size</key>
+    <integer>384</integer>
+
+    <key>forbidden_certificate_extensions</key>
+    <array>
+        <string>permit-agent-forwarding</string>
+        <string>permit-port-forwarding</string>
+    </array>
+</dict>
+</plist>
+```
+
+Two things that catch people out, both visible above:
+
+- **`sshkey.type` and `sshkey.size` are flat keys containing a dot.** They are
+  not a nested `<dict>` under `sshkey`. A nested dict is skipped: the parser
+  reads a flat `<dict>` of scalars and string arrays, so the setting silently
+  does not apply.
+- **`fips` is three-state.** Omitted means unset, and unset is not `false`.
+  Only set it when you intend to decide.
+
+### Jamf custom profile schema
+
+[`packaging/macos/com.github.mnestor.ssoossh.json`](https://github.com/mnestor/ssoossh/blob/main/packaging/macos/com.github.mnestor.ssoossh.json)
+is a Jamf Pro custom profile schema for the same domain, so the settings can be
+filled in through the Jamf UI with titles, descriptions and validation instead
+of hand-written XML. In Jamf Pro: **Computers → Configuration Profiles → New →
+Application & Custom Settings → External Applications**, source *Custom Schema*,
+preference domain `com.github.mnestor.ssoossh`, then upload that file.
+
+It follows the conventions used across the
+[Jamf-Custom-Profile-Schemas](https://github.com/orgs/Jamf-Custom-Profile-Schemas/repositories)
+org: `propertyOrder`, `options.infoText` naming the raw key, `links` to this
+page, `enum`/`enum_titles` for the key algorithm, and the `anyOf` with a
+`"Not Configured"` null branch for the two settings where unset is meaningfully
+different from a value -- `fips` and `sshkey.size`. `remove_empty_properties`
+is on, so a field left blank in the UI is omitted from the profile rather than
+written as an empty value.
+
+The schema describes only what the client reads. It is not validated at load
+time by anything in this repository, so if you add a key here, add it there
+too.
 
 The client reads the plist files directly rather than going through
 `CFPreferencesCopyAppValue`, the officially documented API: that call requires

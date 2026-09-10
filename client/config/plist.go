@@ -8,11 +8,18 @@ import (
 )
 
 // parsePolicyPlist decodes a flat plist <dict> into a Go map, recognizing
-// only the scalar value types the platform-native policy settings use:
-// <string>, <integer>, <true/>, and <false/>. A key whose value is any
-// other plist type (<array>, <dict>, <date>, <data>, <real>) is skipped
-// rather than rejected — this parser only needs to extract the handful of
-// settings ssoossh understands, not to be a general-purpose plist decoder.
+// only the value types the platform-native policy settings use: the scalars
+// <string>, <integer>, <true/> and <false/>, plus an <array> of <string>
+// for the one list-valued setting (forbidden_certificate_extensions). A key
+// whose value is any other plist type (<dict>, <date>, <data>, <real>) is
+// skipped rather than rejected — this parser only needs to extract the
+// handful of settings ssoossh understands, not to be a general-purpose
+// plist decoder.
+//
+// Skipping <dict> is why sshkey.type and sshkey.size are flat keys with a
+// literal dot rather than a nested dictionary: a nested one would be
+// dropped in silence. See buildPolicyMap, which does the un-flattening.
+//
 // A document that isn't well-formed XML, or has no root <dict>, is an
 // error.
 func parsePolicyPlist(data []byte) (map[string]any, error) {

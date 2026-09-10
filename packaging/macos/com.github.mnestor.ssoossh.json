@@ -1,0 +1,225 @@
+{
+    "title": "com.github.mnestor.ssoossh",
+    "description": "Preference Domain: com.github.mnestor.ssoossh, Application: ssoossh client. Every key here is a locked setting: a value delivered this way outranks the user's own ssoossh.yaml and cannot be overridden by them. Omit any key you do not want to enforce -- an omitted key leaves the user's own value in effect, which is not the same as setting it to a default.",
+    "__version": "1.0.0",
+    "type": "object",
+    "options": {
+        "remove_empty_properties": true
+    },
+    "properties": {
+        "server": {
+            "title": "Server URL",
+            "description": "Base URL of the ssoosshd server the client authenticates against, e.g. https://ssh.example.com. Locking this is the usual reason to deploy this profile at all: it stops a client being pointed at another server.",
+            "propertyOrder": 10,
+            "type": "string",
+            "options": {
+                "infoText": "Key: server",
+                "inputAttributes": {
+                    "placeholder": "https://ssh.example.com"
+                }
+            },
+            "links": [
+                {
+                    "rel": "More information",
+                    "href": "https://mnestor.github.io/ssoossh/hosts/client-enforcement/"
+                }
+            ]
+        },
+        "capubkey": {
+            "title": "CA Public Key",
+            "description": "The server's CA public key in authorized_keys form, pinned so the client verifies the CA it was given rather than whichever one the server offers.",
+            "propertyOrder": 20,
+            "type": "string",
+            "options": {
+                "infoText": "Key: capubkey",
+                "inputAttributes": {
+                    "placeholder": "ssh-ed25519 AAAA... ssoossh-ca"
+                }
+            },
+            "links": [
+                {
+                    "rel": "More information",
+                    "href": "https://mnestor.github.io/ssoossh/hosts/client-enforcement/"
+                }
+            ]
+        },
+        "insecure_skip_verify": {
+            "title": "Skip TLS Verification",
+            "description": "Disables verification of the server's TLS certificate. Turns TLS into obfuscation -- anyone who can redirect the connection can also present their own certificate. Set this false to forbid users turning it on; there is no good reason to push it true outside a lab.",
+            "propertyOrder": 30,
+            "type": "boolean",
+            "options": {
+                "infoText": "Key: insecure_skip_verify"
+            },
+            "links": [
+                {
+                    "rel": "More information",
+                    "href": "https://mnestor.github.io/ssoossh/hosts/client-enforcement/"
+                }
+            ]
+        },
+        "use_agent": {
+            "title": "Use SSH Agent",
+            "description": "Load issued certificates into the running ssh-agent rather than writing them to disk.",
+            "propertyOrder": 40,
+            "type": "boolean",
+            "options": {
+                "infoText": "Key: use_agent"
+            },
+            "links": [
+                {
+                    "rel": "More information",
+                    "href": "https://mnestor.github.io/ssoossh/hosts/client-enforcement/"
+                }
+            ]
+        },
+        "fallback_file_agent": {
+            "title": "Fall Back To File Agent",
+            "description": "When no ssh-agent is reachable, fall back to writing the key and certificate to disk instead of failing.",
+            "propertyOrder": 50,
+            "type": "boolean",
+            "options": {
+                "infoText": "Key: fallback_file_agent"
+            },
+            "links": [
+                {
+                    "rel": "More information",
+                    "href": "https://mnestor.github.io/ssoossh/hosts/client-enforcement/"
+                }
+            ]
+        },
+        "key_filename": {
+            "title": "Key Filename",
+            "description": "Path the generated keypair and certificate are written to when the file agent is used.",
+            "propertyOrder": 60,
+            "type": "string",
+            "options": {
+                "infoText": "Key: key_filename",
+                "inputAttributes": {
+                    "placeholder": "~/.ssh/ssoossh"
+                }
+            },
+            "links": [
+                {
+                    "rel": "More information",
+                    "href": "https://mnestor.github.io/ssoossh/hosts/client-enforcement/"
+                }
+            ]
+        },
+        "try_open_browser": {
+            "title": "Open Browser Automatically",
+            "description": "Open the system browser for the OIDC login rather than only printing the URL.",
+            "propertyOrder": 70,
+            "type": "boolean",
+            "options": {
+                "infoText": "Key: try_open_browser"
+            },
+            "links": [
+                {
+                    "rel": "More information",
+                    "href": "https://mnestor.github.io/ssoossh/hosts/client-enforcement/"
+                }
+            ]
+        },
+        "fips": {
+            "title": "FIPS Mode",
+            "description": "Restricts key generation to FIPS-approved algorithms. Genuinely three-state: leave it Not Configured to say nothing, which is not the same as Configured-false. With it true, a non-approved SSH Key Type is a hard error at startup rather than a silent downgrade.",
+            "propertyOrder": 80,
+            "anyOf": [
+                {
+                    "title": "Not Configured",
+                    "type": "null"
+                },
+                {
+                    "title": "Configured",
+                    "type": "boolean"
+                }
+            ],
+            "options": {
+                "infoText": "Key: fips"
+            },
+            "links": [
+                {
+                    "rel": "More information",
+                    "href": "https://mnestor.github.io/ssoossh/hosts/client-enforcement/"
+                }
+            ]
+        },
+        "sshkey.type": {
+            "title": "SSH Key Type",
+            "description": "Key algorithm the client generates. The default is ecdsa (P-384) unconditionally. ed25519 stays selectable but is not FIPS-approved, so it is a hard error when FIPS Mode is on. Note the key name contains a literal dot.",
+            "propertyOrder": 90,
+            "type": "string",
+            "enum": [
+                "ecdsa",
+                "ed25519",
+                "rsa"
+            ],
+            "enum_titles": [
+                "ecdsa (default, FIPS-approved)",
+                "ed25519 (not FIPS-approved)",
+                "rsa (FIPS-approved)"
+            ],
+            "options": {
+                "infoText": "Key: sshkey.type"
+            },
+            "links": [
+                {
+                    "rel": "More information",
+                    "href": "https://mnestor.github.io/ssoossh/hosts/client-enforcement/"
+                }
+            ]
+        },
+        "sshkey.size": {
+            "title": "SSH Key Size",
+            "description": "Means a different thing per algorithm: for ecdsa it is the NIST curve (256, 384 or 521), for rsa the modulus size in bits (2048 minimum), and nothing at all for ed25519, which has one size. Omit it to take the default for the chosen algorithm. Note the key name contains a literal dot.",
+            "propertyOrder": 100,
+            "anyOf": [
+                {
+                    "title": "Not Configured",
+                    "type": "null"
+                },
+                {
+                    "title": "Configured",
+                    "type": "integer"
+                }
+            ],
+            "options": {
+                "infoText": "Key: sshkey.size",
+                "inputAttributes": {
+                    "placeholder": "384"
+                }
+            },
+            "links": [
+                {
+                    "rel": "More information",
+                    "href": "https://mnestor.github.io/ssoossh/hosts/client-enforcement/"
+                }
+            ]
+        },
+        "forbidden_certificate_extensions": {
+            "title": "Forbidden Certificate Extensions",
+            "description": "SSH certificate extensions the client refuses to request, on top of the ones it always subtracts. Each entry is an extension name such as permit-agent-forwarding or permit-port-forwarding.",
+            "propertyOrder": 110,
+            "type": "array",
+            "options": {
+                "infoText": "Key: forbidden_certificate_extensions"
+            },
+            "items": {
+                "type": "string",
+                "title": "Extension",
+                "options": {
+                    "inputAttributes": {
+                        "placeholder": "permit-agent-forwarding"
+                    }
+                }
+            },
+            "links": [
+                {
+                    "rel": "More information",
+                    "href": "https://mnestor.github.io/ssoossh/hosts/client-enforcement/"
+                }
+            ]
+        }
+    }
+}
