@@ -54,8 +54,19 @@ type nfpmPackage struct {
 	PackageName string        `yaml:"package_name"`
 	Meta        bool          `yaml:"meta"`
 	Bindir      string        `yaml:"bindir"`
+	Formats     []string      `yaml:"formats"`
+	APK         nfpmAPK       `yaml:"apk"`
 	Scripts     nfpmScripts   `yaml:"scripts"`
 	Contents    []nfpmContent `yaml:"contents"`
+}
+
+// nfpmAPK carries the apk-only signing block. apk cannot use the OpenPGP
+// key the deb and rpm are signed with, so this is a separate key entirely.
+type nfpmAPK struct {
+	Signature struct {
+		KeyFile string `yaml:"key_file"`
+		KeyName string `yaml:"key_name"`
+	} `yaml:"signature"`
 }
 
 // nfpmScripts are the install-time hooks. Every one named here has to exist
@@ -943,5 +954,55 @@ func TestReleaseRepoShouldUseReleaseverInTheBaseurl(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "$releasever") {
 		t.Error("the yum baseurl does not vary by $releasever")
+	}
+}
+
+// should sign every apk it builds, with an explicit key name.
+//
+// Two separate traps. The apk format cannot use the OpenPGP key the deb and
+// rpm are signed with -- it takes a bare RSA key -- so an apk is silently
+// unsigned unless its own signature block is present, which is how ssoossh
+// shipped an unsigned .apk until this was wired. And nfpm only requires
+// key_name implicitly: left unset it falls back to parsing `maintainer` as
+// a mail address, which for a bare name fails the build outright.
+func TestNFPMShouldSignEveryAPKItBuilds(t *testing.T) {
+	t.Parallel()
+
+	for _, pkg := range loadGoreleaser(t).NFPMs {
+		if !slices.Contains(pkg.Formats, "apk") {
+			continue
+		}
+		if pkg.APK.Signature.KeyFile == "" {
+			t.Errorf("nfpm %q builds an apk with no apk.signature.key_file; it would ship unsigned", pkg.ID)
+		}
+		if pkg.APK.Signature.KeyName == "" {
+			t.Errorf("nfpm %q builds an apk with no apk.signature.key_name; nfpm would fall back to parsing the maintainer as a mail address", pkg.ID)
+		}
+	}
+}
+
+// should publish the public half of the apk key with the release. A host
+// installing the .apk by direct download verifies against
+// /etc/apk/keys/<key_name>.rsa.pub and has nowhere else to obtain it.
+func TestReleaseShouldPublishTheAPKPublicKey(t *testing.T) {
+	t.Parallel()
+
+	var keyName string
+	for _, pkg := range loadGoreleaser(t).NFPMs {
+		if slices.Contains(pkg.Formats, "apk") && pkg.APK.Signature.KeyName != "" {
+			keyName = pkg.APK.Signature.KeyName
+		}
+	}
+	if keyName == "" {
+		t.Skip("no signed apk is built")
+	}
+
+	raw, err := os.ReadFile(filepath.Join(repoRoot(t), ".goreleaser.yml"))
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	want := "dist/" + keyName + ".rsa.pub"
+	if !strings.Contains(string(raw), want) {
+		t.Errorf("the release does not publish %s, so an apk installed by direct download cannot be verified", want)
 	}
 }

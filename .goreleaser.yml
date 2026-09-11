@@ -95,6 +95,12 @@ release:
     - glob: ./dist/*.pkg
     # Built by the windows-build post-hook, same story as the .pkg above.
     - glob: ./dist/*.msi
+    # The public half of the apk signing key. apk verifies a package against
+    # /etc/apk/keys/<name>.rsa.pub, so a host installing the .apk by direct
+    # download needs this file and has nowhere else to get it. Extracted
+    # from apk.pem by the release workflow, which is the only place the
+    # private key exists.
+    - glob: ./dist/ssoossh.rsa.pub
 
 before:
   hooks:
@@ -102,6 +108,9 @@ before:
     - ./scripts/gen-third-party-licenses.sh
     # Produces dist/ssoossh-archive-keyring.gpg for the ssoossh-release deb.
     - ./scripts/gen-repo-keyring.sh
+    # Produces dist/ssoossh.rsa.pub, the public half of the apk signing key.
+    # No-op when apk.pem is absent, which is every local snapshot build.
+    - ./scripts/gen-apk-pubkey.sh
 
 # Note: the server embeds server/frontend/dist, and only a placeholder
 # index.html is tracked. Building the real web UI is deliberately NOT a
@@ -391,6 +400,24 @@ nfpms:
     deb:
       signature:
         key_file: private.pgp
+    # apk does not use the OpenPGP key the other two formats are signed
+    # with: it is signed with a bare RSA key, and a host verifies it against
+    # a public half installed as /etc/apk/keys/<key_name>.rsa.pub.
+    #
+    # key_name is not optional here even though nfpm allows omitting it.
+    # Left unset, nfpm falls back to parsing `maintainer` as a mail address,
+    # and this project's maintainer is a bare name -- so the build fails
+    # with "key name not set and unable to parse maintainer mail address"
+    # rather than quietly defaulting. nfpm appends .rsa.pub itself.
+    #
+    # ssoossh, not pam-ssoossh: ssoossh-pam publishes its own
+    # pam-ssoossh.rsa.pub and its install docs name that file exactly, so
+    # each project's packages verify against a key named for the project
+    # that signed them. A host installing both gets two files.
+    apk:
+      signature:
+        key_file: apk.pem
+        key_name: ssoossh
     contents:
       - src: server/config/defaults.yaml
         dst: /etc/ssoossh/ssoosshd.yaml

@@ -264,6 +264,21 @@ jobs:
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
+      # The apk signing key: a bare RSA key, not the OpenPGP one above, because
+      # apk cannot use the OpenPGP key. This only materialises the private
+      # key in the workspace for nfpm to sign with. Its public half is
+      # derived into dist/ by the gen-apk-pubkey.sh before-hook and published
+      # with the release -- a host installing the .apk by direct download
+      # verifies against /etc/apk/keys/ssoossh.rsa.pub and has nowhere else
+      # to get it. The hook does it rather than this step because goreleaser
+      # runs with --clean and empties dist/ before anything staged here.
+      - name: Save apk signing key
+        run: |
+          op read "op://Github Actions/ifx7xxoazokhouv2z2cstg7f7a/apk.pem" > "${GITHUB_WORKSPACE}/apk.pem"
+          chmod 600 "${GITHUB_WORKSPACE}/apk.pem"
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
