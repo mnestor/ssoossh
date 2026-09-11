@@ -1,0 +1,163 @@
+# Rebuilds and republishes the package repository from already-published
+# releases, without cutting one.
+#
+# It exists because the repository is built during ssoossh's release, which
+# makes publication of anything it serves wait for ssoossh to tag. That is
+# fine for ssoossh's own packages, which arrive with the tag by definition,
+# and wrong for pam-ssoossh, which releases on its own schedule: a PAM fix
+# would otherwise sit unpublished until an unrelated ssoossh release carried
+# it. Run this instead.
+#
+# Nothing here builds software. It downloads packages that were built,
+# signed and published elsewhere, indexes them, signs the index, and uploads
+# it. So it cannot produce a package that no release contains.
+#
+# Manual only, and deliberately so. It writes to the location every
+# installed host reads for updates, which is not something a schedule should
+# do unattended.
+name: repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      ssoossh_tag:
+        description: "ssoossh release to serve (blank = latest)"
+        required: false
+        type: string
+      pam_tag:
+        description: "ssoossh-pam release to serve (blank = latest)"
+        required: false
+        type: string
+      dry_run:
+        description: "Build and sign, but upload nothing"
+        required: false
+        default: false
+        type: boolean
+
+# One writer at a time. The upload order is what keeps a client from ever
+# seeing metadata that names a package which is not there yet, and two runs
+# interleaving would break that with no error anywhere. A queued run waits
+# rather than cancelling, because the run in progress may already be partway
+# through uploading.
+concurrency:
+  group: package-repository
+  cancel-in-progress: false
+
+jobs:
+  republish:
+    name: rebuild and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # gh release download, from this repository and from ssoossh-pam.
+      contents: read
+    # createrepo_c, apt-ftparchive, rpm, gpg and rclone all live here.
+    container:
+      image: ghcr.io/mnestor/ssoossh-build:latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
+        id: secrets
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GPG_PASSPHRASE: "op://Github Actions/ifx7xxoazokhouv2z2cstg7f7a/password"
+          R2_KEY_ID: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/key_id
+          R2_ACCESS_KEY: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/access_key
+          R2_S3_ENDPOINT: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/s3_endpoint
+          R2_BUCKET: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/bucket_name
+          R2_PREFIX: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/repo_prefix
+
+      - name: Save gpg key
+        run: |
+          op read "op://Github Actions/ifx7xxoazokhouv2z2cstg7f7a/private.pgp" > "${GITHUB_WORKSPACE}/private.pgp"
+          git config --global --add safe.directory "$(pwd)"
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      # ssoossh's own packages, from the release rather than from a build.
+      # goreleaser's checksums file covers them, which is an integrity check
+      # on the download rather than a statement about origin -- authenticity
+      # comes from the repository metadata this run signs over them, and for
+      # rpm from each package's own signature.
+      - name: Fetch the ssoossh packages
+        run: |
+          mkdir -p dist
+          gh release download ${SSOOSSH_TAG} --repo "$GITHUB_REPOSITORY" \
+            --dir dist \
+            --pattern '*.rpm' --pattern '*.deb' --pattern '*checksums.txt'
+          cd dist
+          sums=$(ls *checksums.txt 2>/dev/null | head -1)
+          if [ -z "$sums" ]; then
+            echo "the release publishes no checksums file" >&2
+            exit 1
+          fi
+          for p in *.rpm *.deb; do
+            grep -q "  ${p}\$" "$sums" || {
+              echo "$p is not named in $sums" >&2
+              exit 1
+            }
+          done
+          grep -E '\.(rpm|deb)$' "$sums" > .expected
+          sha256sum --check --quiet .expected
+          rm -f .expected "$sums"
+          echo "verified $(ls *.rpm *.deb | wc -l) ssoossh package(s) against $sums"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SSOOSSH_TAG: ${{ inputs.ssoossh_tag }}
+
+      # Verified against the PAM release's signed manifest by the script.
+      - name: Fetch the PAM packages
+        run: |
+          if [ -n "$PAM_TAG" ]; then
+            ./scripts/fetch-pam-packages.sh --tag "$PAM_TAG"
+          else
+            ./scripts/fetch-pam-packages.sh
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PAM_TAG: ${{ inputs.pam_tag }}
+
+      - name: Build the package repository
+        run: |
+          gpg --batch --import private.pgp
+          # Read from the published key, so the repository can never be
+          # signed by a key that is not the one gpg-public.asc tells clients
+          # to expect.
+          key_id=$(gpg --show-keys --with-colons gpg-public.asc |
+            awk -F: '/^fpr:/{print $10; exit}')
+          if [ -z "$PREFIX" ]; then
+            echo "R2_PREFIX is empty; refusing to publish to the bucket root" >&2
+            exit 1
+          fi
+          if [ -z "$key_id" ]; then
+            echo "could not read a key fingerprint from gpg-public.asc" >&2
+            exit 1
+          fi
+          echo "signing repository metadata with $key_id"
+          ./scripts/gen-repo.sh \
+            --dist dist \
+            --out repo \
+            --base-url "https://packages.mikenestor.org/${PREFIX}" \
+            --key-id "$key_id" \
+            --skip-apk
+        env:
+          PREFIX: ${{ steps.secrets.outputs.R2_PREFIX }}
+          GPG_PASSPHRASE: ${{ steps.secrets.outputs.GPG_PASSPHRASE }}
+
+      # publish-repo.sh refuses a tree whose metadata carries no signature,
+      # so an unsigned build cannot reach the bucket from here either.
+      - name: Publish the package repository
+        run: |
+          ./scripts/publish-repo.sh \
+            --repo repo \
+            --bucket "$R2_BUCKET" \
+            --prefix "$PREFIX" \
+            ${DRY:+--dry-run}
+        env:
+          PREFIX: ${{ steps.secrets.outputs.R2_PREFIX }}
+          R2_KEY_ID: ${{ steps.secrets.outputs.R2_KEY_ID }}
+          R2_ACCESS_KEY: ${{ steps.secrets.outputs.R2_ACCESS_KEY }}
+          R2_S3_ENDPOINT: ${{ steps.secrets.outputs.R2_S3_ENDPOINT }}
+          R2_BUCKET: ${{ steps.secrets.outputs.R2_BUCKET }}
+          DRY: ${{ inputs.dry_run && '1' || '' }}

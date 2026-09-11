@@ -165,10 +165,12 @@ Packages are immutable at a given version and cached for a year; repository
 metadata is never cached. An upgrade is whatever your package manager does
 normally.
 
-Nothing is ever removed from the repository, so an older version stays
-installable:
+The repository advertises one version of each package: the current one. Its
+metadata is rebuilt from the latest release each time, so an older version
+stops being offered even though its files are never deleted from the
+repository. `dnf install ssoossh-client-1.3.0` will report no match.
 
-```bash
-sudo dnf install ssoossh-client-1.4.0
-sudo apt install ssoossh-client=1.4.0
-```
+To install a specific older version, take it from that release on the
+[releases page](https://github.com/mnestor/ssoossh/releases) and check it
+against the release's `SHA256SUMS` -- on Debian and Ubuntu especially, since
+nothing else will.

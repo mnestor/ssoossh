@@ -1017,9 +1017,20 @@ func TestReleaseShouldPublishTheAPKPublicKey(t *testing.T) {
 func TestWorkflowSecretsWrittenIntoTheCheckoutShouldBeGitignored(t *testing.T) {
 	root := repoRoot(t)
 
-	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "build.yaml"))
-	if err != nil {
-		t.Fatalf("read build workflow: %v", err)
+	// Every workflow, not just the release one: a second workflow that
+	// needs the same key writes it the same way, and the one most likely
+	// to be missed is the one added last.
+	workflows, err := filepath.Glob(filepath.Join(root, ".github", "workflows", "*.y*ml"))
+	if err != nil || len(workflows) == 0 {
+		t.Fatalf("find workflows: %v", err)
+	}
+	var workflow []byte
+	for _, w := range workflows {
+		b, err := os.ReadFile(w)
+		if err != nil {
+			t.Fatalf("read %s: %v", w, err)
+		}
+		workflow = append(workflow, b...)
 	}
 	ignores, err := os.ReadFile(filepath.Join(root, ".gitignore"))
 	if err != nil {
@@ -1031,7 +1042,7 @@ func TestWorkflowSecretsWrittenIntoTheCheckoutShouldBeGitignored(t *testing.T) {
 	written := regexp.MustCompile(`>\s*"\$\{GITHUB_WORKSPACE\}/([^"/]+)"`)
 	matches := written.FindAllStringSubmatch(string(workflow), -1)
 	if len(matches) == 0 {
-		t.Fatal("no workspace-root writes found in the workflow; this test has stopped watching anything")
+		t.Fatal("no workspace-root writes found in any workflow; this test has stopped watching anything")
 	}
 
 	ignored := make(map[string]bool)
@@ -1059,6 +1070,11 @@ func TestWorkflowSecretsWrittenIntoTheCheckoutShouldBeGitignored(t *testing.T) {
 //
 // The rule is structural and easy to lose in a refactor: whichever job runs
 // the upload must depend on the job that publishes the release.
+//
+// Scoped to build.yaml on purpose. The repository workflow uploads too, but
+// it serves releases that are already published -- it downloads their assets
+// rather than building any -- so there is no release for it to get ahead of.
+// The hazard this guards is a tag build racing its own verification.
 func TestRepositoryUploadShouldWaitForThePublishedRelease(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(repoRoot(t), ".github", "workflows", "build.yaml"))
 	if err != nil {
