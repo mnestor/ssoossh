@@ -194,12 +194,25 @@ if [ -n "$rpms" ]; then
 		mkdir -p "$out/yum/el/$releasever/packages"
 	done
 
+	# The dist tag is read from the package's Release field, NOT from its
+	# file name. They are unrelated: pam-ssoossh ships its EL major in
+	# Release (1.el8, 1.el9) while its file name is
+	# pam-ssoossh_<version>_<os>_<arch>.rpm for both, so a file-name match
+	# files both builds as untagged and lands them in every tree. This is
+	# the same mistake as apt-ftparchive's --arch filter above, in the other
+	# half of the script -- metadata is what the package manager reads, and
+	# a file name is a convention that no producer owes this script.
+	need rpm "rpm provides the query used to read each package's Release"
+
 	for rpm in $rpms; do
-		base=$(basename "$rpm")
+		release=$(rpm -qp --queryformat '%{RELEASE}' "$rpm")
 		matched=""
 		for releasever in $releasevers; do
-			case "$base" in
-			*".el$releasever."*)
+			# 1.el9 and, defensively, anything that appends to it. Anchored
+			# on the tag rather than matched loosely so that .el1 cannot
+			# swallow .el10.
+			case "$release" in
+			*".el$releasever" | *".el$releasever."*)
 				copy_unique "$rpm" "$out/yum/el/$releasever/packages"
 				matched=yes
 				;;

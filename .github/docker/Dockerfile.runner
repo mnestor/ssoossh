@@ -65,8 +65,11 @@ RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sourc
     # apt-utils supplies apt-ftparchive and createrepo-c supplies
     # createrepo_c: the two index writers scripts/gen-repo.sh shells out to
     # when it builds the signed apt and yum trees from the release's own
-    # packages. Neither ships in the base image.
-    apt-utils createrepo-c \
+    # packages. rpm is there for the same script's query of each package's
+    # Release field, which is what decides the EL major it is filed under --
+    # the file name does not carry it. None of the three ships in the base
+    # image.
+    apt-utils createrepo-c rpm \
     # The macOS installer is assembled here rather than on a macOS runner
     # (packaging/macos/flatpkg.sh): xar writes the flat package's archive,
     # and libarchive-tools supplies bsdcpio for its payload. bsdcpio and not
