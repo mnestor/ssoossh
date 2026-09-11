@@ -13,6 +13,7 @@ package packaging_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -1004,5 +1005,47 @@ func TestReleaseShouldPublishTheAPKPublicKey(t *testing.T) {
 	want := "dist/" + keyName + ".rsa.pub"
 	if !strings.Contains(string(raw), want) {
 		t.Errorf("the release does not publish %s, so an apk installed by direct download cannot be verified", want)
+	}
+}
+
+// Signing keys are written into the checkout so nfpm and gpg can reach them
+// by a workspace-relative path. That makes the tree dirty, which goreleaser
+// refuses to release from, and it puts a private key one `git add -A` away
+// from being committed. Both are avoided by the same line in .gitignore, so
+// the rule is derived from the workflow rather than listed here: whatever
+// the build writes into the workspace root must be ignored.
+func TestWorkflowSecretsWrittenIntoTheCheckoutShouldBeGitignored(t *testing.T) {
+	root := repoRoot(t)
+
+	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "build.yaml"))
+	if err != nil {
+		t.Fatalf("read build workflow: %v", err)
+	}
+	ignores, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+
+	// Matches the redirection the "Save ... key" steps use, e.g.
+	//   op read "op://..." > "${GITHUB_WORKSPACE}/apk.pem"
+	written := regexp.MustCompile(`>\s*"\$\{GITHUB_WORKSPACE\}/([^"/]+)"`)
+	matches := written.FindAllStringSubmatch(string(workflow), -1)
+	if len(matches) == 0 {
+		t.Fatal("no workspace-root writes found in the workflow; this test has stopped watching anything")
+	}
+
+	ignored := make(map[string]bool)
+	for _, line := range strings.Split(string(ignores), "\n") {
+		ignored[strings.TrimSpace(line)] = true
+	}
+
+	for _, m := range matches {
+		name := m[1]
+		t.Run(name, func(t *testing.T) {
+			if !ignored["/"+name] {
+				t.Errorf("the build writes %s into the checkout but .gitignore has no /%s entry: "+
+					"goreleaser will refuse to release from the dirty tree, and the key can be committed by accident", name, name)
+			}
+		})
 	}
 }

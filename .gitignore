@@ -80,6 +80,7 @@ yarn-error.log*
 .secrets
 /.envrc
 /private.pgp
+/apk.pem
 
 # Coverage and test artifacts.
 /coverage*
