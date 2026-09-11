@@ -78,10 +78,15 @@ need() {
 # An EL8 host is then offered a package built against an OpenSSL it does not
 # have.
 #
-# Failing the build is the only honest answer. The fix belongs in the
-# producing package -- distinct Release values, 1.el8 and 1.el9, which give
-# the variants distinct NEVRAs and let them be filed per release -- and it
-# is not something this script can paper over.
+# Failing the build is the only honest answer, but note carefully what the
+# failure does and does not tell you. It says two files claim one NEVRA. It
+# CANNOT say whether they are different packages that need distinct Release
+# values, or one package built twice in separate jobs -- because rpm stamps
+# BUILDTIME from the clock, so even a rebuild of identical input from the
+# same tarball differs in bytes and checksum. A comparison of contents can
+# never separate those two cases, and the error text says so rather than
+# asserting the first and sending someone hunting a payload difference that
+# does not exist.
 copy_unique() {
 	src=$1
 	destdir=$2
@@ -91,13 +96,25 @@ copy_unique() {
 		if cmp -s "$src" "$destdir/$base"; then
 			return 0
 		fi
-		echo "gen-repo: refusing to publish two different packages as $base" >&2
+		echo "gen-repo: refusing to publish two different files as $base" >&2
 		echo "gen-repo:   candidate: $src" >&2
 		echo "gen-repo:   already placed: $destdir/$base" >&2
-		echo "gen-repo: these share a NEVRA, so they are the same package as far as" >&2
-		echo "gen-repo: any repository is concerned. Give the variants distinct" >&2
-		echo "gen-repo: Release values (a dist tag: 1.el8, 1.el9) and they can be" >&2
-		echo "gen-repo: filed per release instead." >&2
+		echo "gen-repo:" >&2
+		echo "gen-repo: They share a NEVRA, so they are one package as far as any" >&2
+		echo "gen-repo: repository is concerned, and it cannot hold both. There are" >&2
+		echo "gen-repo: two ways to get here and they need opposite fixes:" >&2
+		echo "gen-repo:" >&2
+		echo "gen-repo:  1. Genuinely different packages sharing a version -- the" >&2
+		echo "gen-repo:     OpenSSL variants of a module, say. Give them distinct" >&2
+		echo "gen-repo:     Release values (a dist tag: 1.el8, 1.el9) so they can be" >&2
+		echo "gen-repo:     filed per release." >&2
+		echo "gen-repo:" >&2
+		echo "gen-repo:  2. ONE package built twice, in separate jobs. Do not chase a" >&2
+		echo "gen-repo:     payload difference: rpm stamps BUILDTIME from the clock," >&2
+		echo "gen-repo:     so two builds of identical input are never byte-identical" >&2
+		echo "gen-repo:     and this check cannot tell them apart from case 1. Build" >&2
+		echo "gen-repo:     it once and publish that, rather than picking a winner" >&2
+		echo "gen-repo:     here." >&2
 		exit 1
 	fi
 
