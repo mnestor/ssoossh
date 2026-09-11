@@ -74,8 +74,20 @@ will load a policy module and report success, and nothing will ever enforce
 it. A result from that arrangement describes packaging mechanics and says
 nothing about policy behaviour.
 
-The same missing resource blocks a question on the ssoossh-pam side: whether
-the rule its policy package ships actually clears the console-login denial
-it was written for. One disposable AlmaLinux 9 or Oracle Linux 9 VM, SELinux
-left at its default `Enforcing`, answers both. It is the cheapest way to
-turn two documented caveats into two facts.
+A VM would also settle a narrower question on the ssoossh-pam side. That
+project's `selinux/pam_ssoossh.te` records its allow rule as confirmed on a
+real enforcing Oracle Linux 9.8 host with the targeted policy, and re-run in
+permissive mode to establish that nothing denies after the `name_connect` --
+which is what says one rule is the whole answer for a domain rather than
+only its first wall. What that confirmation used was `semodule -i` by hand,
+which installs at the default priority 400; the rpm installs at priority 200,
+the vendor slot, so that a site's own module of the same name still wins.
+The rule is confirmed. The packaged delivery of it -- scriptlet, vendor
+priority, upgrade path -- is not.
+
+So one disposable AlmaLinux 9 or Oracle Linux 9 VM, SELinux left at its
+default `Enforcing`, would answer both. It is the cheapest way to turn two
+documented caveats into two facts.
+
+(The ssoossh-pam detail above is reported from that project rather than
+verified here; this repository has no visibility into it.)
