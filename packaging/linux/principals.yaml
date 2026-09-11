@@ -1,0 +1,22 @@
+# Maps a local account name to the certificate principals allowed to assume
+# it. Read by `ssoossh host principals`, which sshd calls through
+# AuthorizedPrincipalsCommand, and optionally by pam_ssoossh.
+#
+# Ships empty, which is valid and means "no account has extra principals".
+# An account always keeps its own name as a principal regardless of this
+# file, so an empty file takes nothing away.
+#
+# Format:
+#   alice:
+#     - alice
+#     - admin
+#   bob: [bob, ops]
+#
+# This is a fixed subset of YAML parsed by hand, not a full YAML document.
+# Anchors, nested mappings, multi-line scalars and document markers (---)
+# are errors. A file that will not parse is NOT a hard failure: the lookup
+# falls back to the account name alone and reports the problem on stderr,
+# so a broken file silently drops every mapped principal.
+#
+# Check it after editing -- this exits non-zero if the file will not load:
+#   runuser -u ssoossh-principals -- ssoossh host mapping list

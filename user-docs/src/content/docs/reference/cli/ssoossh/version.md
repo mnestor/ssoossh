@@ -7,11 +7,19 @@ description: "Print ssoossh version, commit, and build info."
 
 Print ssoossh version, commit, and build info.
 
+With --json, prints the same values as an object along with a list of the command paths this build implements. That list is the supported way for a deployment tool to tell releases apart: the command tree has changed shape across versions, and probing it by running --help and matching free text breaks on wording no release promises to keep.
+
 ## Synopsis
 
 ```
 ssoossh version [flags] [args]
 ```
+
+## Options
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--json` | bool | `false` | Print version and capability information as JSON. |
 
 ## Global options
 

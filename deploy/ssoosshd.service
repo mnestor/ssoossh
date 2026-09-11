@@ -5,11 +5,16 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-# The ssoossh-server package installs the binary at /usr/local/sbin/ssoosshd
-# (see .goreleaser.yml's "server" nfpm) and the annotated config sample at
+# The ssoossh-server package installs the binary at /usr/sbin/ssoosshd (see
+# .goreleaser.yml's "server" nfpm) and the annotated config sample at
 # /etc/ssoossh/ssoosshd.yaml. -c is redundant with that default search path
 # but kept explicit so this unit does not depend on it.
-ExecStart=/usr/local/sbin/ssoosshd -c /etc/ssoossh/ssoosshd.yaml
+#
+# Not the /usr/local/sbin compatibility symlink the same package ships: that
+# exists so an operator's own scripts survive the move, and it goes away two
+# releases after it appeared. A unit the package installs should name the
+# path the package owns.
+ExecStart=/usr/sbin/ssoosshd -c /etc/ssoossh/ssoosshd.yaml
 Restart=on-failure
 RestartSec=5s
 
@@ -28,6 +33,9 @@ RestartSec=5s
 # DynamicUser: the account needs a stable, predictable identity so the
 # operator can chown the config directory (which holds the CA private key)
 # and the sqlite data directory to it ahead of time.
+#
+# Created by the package (packaging/linux/server-preinstall.sh). For a
+# hand-installed server, the equivalent is:
 #   useradd --system --no-create-home --shell /usr/sbin/nologin ssoossh
 User=ssoossh
 Group=ssoossh

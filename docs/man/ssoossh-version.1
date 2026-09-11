@@ -12,10 +12,17 @@ ssoossh-version - Print ssoossh version, commit, and build info.
 .SH DESCRIPTION
 Print ssoossh version, commit, and build info.
 
+.PP
+With --json, prints the same values as an object along with a list of the command paths this build implements. That list is the supported way for a deployment tool to tell releases apart: the command tree has changed shape across versions, and probing it by running --help and matching free text breaks on wording no release promises to keep.
+
 
 .SH OPTIONS
 \fB-h\fP, \fB--help\fP[=false]
 	help for version
+
+.PP
+\fB--json\fP[=false]
+	Print version and capability information as JSON.
 
 
 .SH OPTIONS INHERITED FROM PARENT COMMANDS

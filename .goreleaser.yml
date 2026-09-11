@@ -280,7 +280,17 @@ nfpms:
     description: "client for ssoosshd to retrieve and manage ssh certificates"
     ids:
       - linux-build
-    bindir: /usr/local/bin
+    # /usr/bin, not /usr/local/bin. The FHS reserves /usr/local for software
+    # the package manager does not manage, so a distro package writing there
+    # is a defect on its own -- but the concrete failure is sshd's: it
+    # refuses an AuthorizedPrincipalsCommand whose path is writable by group
+    # or other, and /usr/local/bin is root:staff 2775 on Debian and Ubuntu.
+    # Every certificate login on those hosts failed with the documented
+    # configuration. hosts/sshd-trust.md has asserted /usr/bin all along.
+    bindir: /usr/bin
+    scripts:
+      preinstall: packaging/linux/client-preinstall.sh
+      postremove: packaging/linux/client-postremove.sh
     formats: &nfpmFormats
       - rpm
       - deb
@@ -294,6 +304,40 @@ nfpms:
       - src: client/config/defaults.yaml
         dst: /etc/ssoossh/ssoossh.yaml
         type: "config|noreplace"
+      # Compatibility shim for the move off /usr/local/bin, to be removed
+      # two releases after the one that introduced it. Anything already
+      # naming the old path -- an sshd_config line, a cron entry, a unit --
+      # keeps working across the upgrade.
+      #
+      # It is a shim, not a supported path: on Debian and Ubuntu the symlink
+      # sits in the same group-writable directory as before, so sshd still
+      # refuses to run it. An sshd_config pointing here has to move to
+      # /usr/bin to start working, which is the whole point of the change.
+      - src: /usr/bin/ssoossh
+        dst: /usr/local/bin/ssoossh
+        type: symlink
+      # Host integration, shipped inert. Installing the client must not
+      # change how a machine accepts or makes SSH connections, so both
+      # drop-ins are fully commented and carry the two lines to uncomment.
+      # They are config|noreplace, so an operator who activates them keeps
+      # their edits across upgrades.
+      - src: packaging/linux/sshd_config.d/50-ssoossh.conf
+        dst: /etc/ssh/sshd_config.d/50-ssoossh.conf
+        type: "config|noreplace"
+      - src: packaging/linux/ssh_config.d/50-ssoossh.conf
+        dst: /etc/ssh/ssh_config.d/50-ssoossh.conf
+        type: "config|noreplace"
+      # The mapping file, owned by the lookup account's group and readable
+      # only by root and it. The group exists by the time this lands because
+      # client-preinstall.sh runs first -- see that script for why the hook
+      # cannot be postinstall.
+      - src: packaging/linux/principals.yaml
+        dst: /etc/ssoossh/principals.yaml
+        type: "config|noreplace"
+        file_info:
+          owner: root
+          group: ssoossh-principals
+          mode: 0640
       - src: LICENSE
         dst: /usr/share/doc/ssoossh-client/LICENSE
       - src: NOTICE
@@ -322,7 +366,15 @@ nfpms:
     description: "server to authorize and sign ssh public keys with a certificate"
     ids:
       - server-linux-build
-    bindir: /usr/local/sbin
+    # /usr/sbin for the same reason the client moved to /usr/bin: a package
+    # manager's files do not belong under /usr/local. See the client package
+    # above, and the compatibility symlink below.
+    bindir: /usr/sbin
+    scripts:
+      preinstall: packaging/linux/server-preinstall.sh
+      postinstall: packaging/linux/server-postinstall.sh
+      preremove: packaging/linux/server-preremove.sh
+      postremove: packaging/linux/server-postremove.sh
     # apk as well as deb and rpm, from this one binary. Package format is
     # about the OS's package manager, not its libc, and a static binary
     # runs on Alpine as readily as on Debian -- so the separate musl build
@@ -341,6 +393,37 @@ nfpms:
       - src: server/config/defaults.yaml
         dst: /etc/ssoossh/ssoosshd.yaml
         type: "config|noreplace"
+      # Compatibility shim for the move off /usr/local/sbin. See the client
+      # package for the removal schedule.
+      - src: /usr/sbin/ssoosshd
+        dst: /usr/local/sbin/ssoosshd
+        type: symlink
+      # The units already existed in deploy/ and were referenced by the
+      # install docs; nothing shipped them. Installed, deliberately not
+      # enabled: ssoosshd will not start without a configured CA key and
+      # identity provider, so enabling it here would fail loudly on every
+      # fresh install. server-postinstall.sh reloads systemd and stops there.
+      #
+      # Modes are explicit rather than inherited from the working tree: git
+      # records only the executable bit, so a unit's mode on disk is the
+      # builder's umask, and a group-writable unit file is a unit anyone in
+      # that group can rewrite.
+      - src: deploy/ssoosshd.service
+        dst: /usr/lib/systemd/system/ssoosshd.service
+        file_info:
+          mode: 0644
+      - src: deploy/ssoossh-agent.service
+        dst: /usr/lib/systemd/system/ssoossh-agent.service
+        file_info:
+          mode: 0644
+      # The agent drop-in is for the minority of servers whose CA key lives
+      # in an ssh-agent, and it changes the unit's lifetime (BindsTo), so it
+      # ships as an example to copy rather than into /etc where it would be
+      # active. Its own header says where it goes.
+      - src: deploy/ssoosshd.service.d/ssh-agent.conf
+        dst: /usr/share/doc/ssoosshd/examples/ssoosshd.service.d/ssh-agent.conf
+        file_info:
+          mode: 0644
       - src: LICENSE
         dst: /usr/share/doc/ssoosshd/LICENSE
       - src: NOTICE
@@ -380,7 +463,12 @@ nfpms:
     description: "server to authorize and sign ssh public keys with a certificate (PKCS#11/HSM support, dynamically linked)"
     ids:
       - server-linux-pkcs11-build
-    bindir: /usr/local/sbin
+    bindir: /usr/sbin
+    scripts:
+      preinstall: packaging/linux/server-preinstall.sh
+      postinstall: packaging/linux/server-postinstall.sh
+      preremove: packaging/linux/server-preremove.sh
+      postremove: packaging/linux/server-postremove.sh
     formats: *nfpmFormats
     conflicts:
       - ssoosshd
@@ -398,6 +486,37 @@ nfpms:
       - src: server/config/defaults.yaml
         dst: /etc/ssoossh/ssoosshd.yaml
         type: "config|noreplace"
+      # Compatibility shim for the move off /usr/local/sbin. See the client
+      # package for the removal schedule.
+      - src: /usr/sbin/ssoosshd
+        dst: /usr/local/sbin/ssoosshd
+        type: symlink
+      # The units already existed in deploy/ and were referenced by the
+      # install docs; nothing shipped them. Installed, deliberately not
+      # enabled: ssoosshd will not start without a configured CA key and
+      # identity provider, so enabling it here would fail loudly on every
+      # fresh install. server-postinstall.sh reloads systemd and stops there.
+      #
+      # Modes are explicit rather than inherited from the working tree: git
+      # records only the executable bit, so a unit's mode on disk is the
+      # builder's umask, and a group-writable unit file is a unit anyone in
+      # that group can rewrite.
+      - src: deploy/ssoosshd.service
+        dst: /usr/lib/systemd/system/ssoosshd.service
+        file_info:
+          mode: 0644
+      - src: deploy/ssoossh-agent.service
+        dst: /usr/lib/systemd/system/ssoossh-agent.service
+        file_info:
+          mode: 0644
+      # The agent drop-in is for the minority of servers whose CA key lives
+      # in an ssh-agent, and it changes the unit's lifetime (BindsTo), so it
+      # ships as an example to copy rather than into /etc where it would be
+      # active. Its own header says where it goes.
+      - src: deploy/ssoosshd.service.d/ssh-agent.conf
+        dst: /usr/share/doc/ssoosshd/examples/ssoosshd.service.d/ssh-agent.conf
+        file_info:
+          mode: 0644
       - src: LICENSE
         dst: /usr/share/doc/ssoosshd/LICENSE
       - src: NOTICE

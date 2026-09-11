@@ -37,19 +37,46 @@ var retiredConfigs = []string{
 
 // goreleaserConfig is the subset of .goreleaser.yml these tests read.
 type goreleaserConfig struct {
-	NFPMs []struct {
-		ID       string `yaml:"id"`
-		Contents []struct {
-			Src string `yaml:"src"`
-			Dst string `yaml:"dst"`
-		} `yaml:"contents"`
-	} `yaml:"nfpms"`
+	NFPMs    []nfpmPackage `yaml:"nfpms"`
 	Archives []struct {
 		ID      string        `yaml:"id"`
 		Formats []string      `yaml:"formats"`
 		Files   []archiveFile `yaml:"files"`
 	} `yaml:"archives"`
 	Builds []goreleaserBuild `yaml:"builds"`
+}
+
+// nfpmPackage is one entry under nfpms:. Bindir and Scripts are read as
+// well as Contents because where the binary lands and what runs at install
+// time are both package behaviour these tests pin.
+type nfpmPackage struct {
+	ID       string        `yaml:"id"`
+	Bindir   string        `yaml:"bindir"`
+	Scripts  nfpmScripts   `yaml:"scripts"`
+	Contents []nfpmContent `yaml:"contents"`
+}
+
+// nfpmScripts are the install-time hooks. Every one named here has to exist
+// on disk and be executable, which is what TestNFPMScripts checks.
+type nfpmScripts struct {
+	PreInstall  string `yaml:"preinstall"`
+	PostInstall string `yaml:"postinstall"`
+	PreRemove   string `yaml:"preremove"`
+	PostRemove  string `yaml:"postremove"`
+}
+
+// nfpmContent is one shipped file. Type distinguishes a real file from a
+// symlink or a config, and FileInfo carries the ownership that makes the
+// mapping file readable by the lookup account.
+type nfpmContent struct {
+	Src      string `yaml:"src"`
+	Dst      string `yaml:"dst"`
+	Type     string `yaml:"type"`
+	FileInfo struct {
+		Owner string `yaml:"owner"`
+		Group string `yaml:"group"`
+		Mode  any    `yaml:"mode"`
+	} `yaml:"file_info"`
 }
 
 // goreleaserBuild is one entry under builds:. Flags carries the -tags
@@ -565,4 +592,233 @@ func TestPKCS11ServerBuildShouldEnableCgoAndTheHSMTag(t *testing.T) {
 	if !strings.Contains(strings.Join(build.Flags, " "), pkcs11Tag) {
 		t.Errorf("build %q is not compiled with the %q tag, so hsmkeysource.go is excluded and hsm: config is refused at startup: %q", pkcs11BuildID, pkcs11Tag, build.Flags)
 	}
+}
+
+// The packaging changes below are the kind that rot silently: nothing fails
+// to build when a binary moves back under /usr/local, when a drop-in gains
+// an active directive, or when a unit's ExecStart stops matching the path
+// the package installs. These pin each one.
+
+// should install binaries outside /usr/local, which the FHS reserves for
+// software the package manager does not manage. The concrete failure is
+// sshd's: it refuses an AuthorizedPrincipalsCommand whose path is writable
+// by group or other, and /usr/local/bin is root:staff 2775 on Debian and
+// Ubuntu, so every certificate login failed there.
+func TestNFPMShouldInstallBinariesOutsideUsrLocal(t *testing.T) {
+	t.Parallel()
+
+	want := map[string]string{
+		"client":        "/usr/bin",
+		"server":        "/usr/sbin",
+		"server-pkcs11": "/usr/sbin",
+	}
+
+	for _, pkg := range loadGoreleaser(t).NFPMs {
+		wantDir, ok := want[pkg.ID]
+		if !ok {
+			t.Errorf("nfpm %q is not covered by this test; add it", pkg.ID)
+			continue
+		}
+		if pkg.Bindir != wantDir {
+			t.Errorf("nfpm %q: bindir is %q, want %q", pkg.ID, pkg.Bindir, wantDir)
+		}
+	}
+}
+
+// should keep a compatibility symlink at each binary's former path, so an
+// sshd_config line, cron entry or unit naming the old location survives the
+// move. Scheduled for removal two releases after it was introduced; when it
+// goes, this test goes with it.
+func TestNFPMShouldShipCompatibilitySymlinks(t *testing.T) {
+	t.Parallel()
+
+	want := map[string]struct{ dst, src string }{
+		"client":        {dst: "/usr/local/bin/ssoossh", src: "/usr/bin/ssoossh"},
+		"server":        {dst: "/usr/local/sbin/ssoosshd", src: "/usr/sbin/ssoosshd"},
+		"server-pkcs11": {dst: "/usr/local/sbin/ssoosshd", src: "/usr/sbin/ssoosshd"},
+	}
+
+	for _, pkg := range loadGoreleaser(t).NFPMs {
+		link, ok := want[pkg.ID]
+		if !ok {
+			continue
+		}
+		found := false
+		for _, c := range pkg.Contents {
+			if c.Dst != link.dst {
+				continue
+			}
+			found = true
+			if c.Type != "symlink" {
+				t.Errorf("nfpm %q: %s has type %q, want symlink", pkg.ID, c.Dst, c.Type)
+			}
+			if c.Src != link.src {
+				t.Errorf("nfpm %q: %s points at %q, want %q", pkg.ID, c.Dst, c.Src, link.src)
+			}
+		}
+		if !found {
+			t.Errorf("nfpm %q: no compatibility symlink at %s", pkg.ID, link.dst)
+		}
+	}
+}
+
+// should name install hooks that actually exist and can be run. A scriptlet
+// path that does not resolve is not a build failure — it is a package that
+// ships without the hook it was supposed to carry.
+func TestNFPMScriptsShouldExistAndBeExecutable(t *testing.T) {
+	t.Parallel()
+
+	root := repoRoot(t)
+	for _, pkg := range loadGoreleaser(t).NFPMs {
+		for hook, path := range map[string]string{
+			"preinstall":  pkg.Scripts.PreInstall,
+			"postinstall": pkg.Scripts.PostInstall,
+			"preremove":   pkg.Scripts.PreRemove,
+			"postremove":  pkg.Scripts.PostRemove,
+		} {
+			if path == "" {
+				continue
+			}
+			info, err := os.Stat(filepath.Join(root, path))
+			if err != nil {
+				t.Errorf("nfpm %q %s: %v", pkg.ID, hook, err)
+				continue
+			}
+			if info.Mode().Perm()&0o111 == 0 {
+				t.Errorf("nfpm %q %s: %s is not executable (mode %v)", pkg.ID, hook, path, info.Mode().Perm())
+			}
+		}
+	}
+}
+
+// should create the principals lookup account before any file naming it is
+// unpacked. Both rpm and dpkg apply ownership as they unpack, so a group
+// created in postinstall is too late and the mapping file lands owned by
+// root — which fails silently, since the lookup then answers with the
+// account name alone and exits 0.
+func TestNFPMClientShouldCreateTheLookupAccountInPreinstall(t *testing.T) {
+	t.Parallel()
+
+	pkg := findNFPM(t, "client")
+	if pkg.Scripts.PreInstall == "" {
+		t.Fatal("the client package has no preinstall hook")
+	}
+
+	body, err := os.ReadFile(filepath.Join(repoRoot(t), pkg.Scripts.PreInstall))
+	if err != nil {
+		t.Fatalf("read preinstall: %v", err)
+	}
+	if !strings.Contains(string(body), "ssoossh-principals") {
+		t.Error("the client preinstall hook does not create ssoossh-principals")
+	}
+}
+
+// should give the mapping file to the lookup account's group, read-only,
+// with no access for anyone else. This is the pairing the deployer used to
+// have to get right by hand, and getting it wrong is invisible.
+func TestNFPMClientShouldOwnTheMappingFileByTheLookupGroup(t *testing.T) {
+	t.Parallel()
+
+	for _, c := range findNFPM(t, "client").Contents {
+		if c.Dst != "/etc/ssoossh/principals.yaml" {
+			continue
+		}
+		if c.FileInfo.Owner != "root" {
+			t.Errorf("owner is %q, want root", c.FileInfo.Owner)
+		}
+		if c.FileInfo.Group != "ssoossh-principals" {
+			t.Errorf("group is %q, want ssoossh-principals", c.FileInfo.Group)
+		}
+		if !strings.HasPrefix(c.Type, "config") {
+			t.Errorf("type is %q, want a config type so operator edits survive upgrades", c.Type)
+		}
+		return
+	}
+	t.Error("the client package does not ship /etc/ssoossh/principals.yaml")
+}
+
+// should ship both SSH drop-ins completely inert. Installing the client
+// package must not change how a machine accepts or makes SSH connections,
+// so every directive in them is commented and the operator uncomments two
+// lines to opt in.
+func TestShippedDropInsShouldBeFullyCommented(t *testing.T) {
+	t.Parallel()
+
+	dropIns := []string{
+		"packaging/linux/sshd_config.d/50-ssoossh.conf",
+		"packaging/linux/ssh_config.d/50-ssoossh.conf",
+	}
+	for _, rel := range dropIns {
+		t.Run(rel, func(t *testing.T) {
+			t.Parallel()
+
+			body, err := os.ReadFile(filepath.Join(repoRoot(t), rel))
+			if err != nil {
+				t.Fatalf("read drop-in: %v", err)
+			}
+			for i, line := range strings.Split(string(body), "\n") {
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+					continue
+				}
+				t.Errorf("line %d is an active directive: %q", i+1, trimmed)
+			}
+		})
+	}
+}
+
+// should keep the units' ExecStart on the path the package installs. The
+// unit and the bindir are two files that have to agree, and nothing else
+// notices when they stop: the package installs cleanly and the service
+// fails at start with a path that is no longer there.
+func TestUnitsShouldExecTheInstalledBinaryPath(t *testing.T) {
+	t.Parallel()
+
+	body, err := os.ReadFile(filepath.Join(repoRoot(t), "deploy/ssoosshd.service"))
+	if err != nil {
+		t.Fatalf("read unit: %v", err)
+	}
+
+	bindir := findNFPM(t, "server").Bindir
+	want := "ExecStart=" + bindir + "/ssoosshd"
+	if !strings.Contains(string(body), want) {
+		t.Errorf("deploy/ssoosshd.service does not ExecStart %s/ssoosshd (bindir is %q)", bindir, bindir)
+	}
+}
+
+// should ship every unit that exists in deploy/, since a unit referenced by
+// the install docs but absent from the package is one the operator has to
+// write out by hand.
+func TestNFPMServerShouldShipTheSystemdUnits(t *testing.T) {
+	t.Parallel()
+
+	want := []string{"deploy/ssoosshd.service", "deploy/ssoossh-agent.service"}
+	for _, id := range []string{"server", "server-pkcs11"} {
+		pkg := findNFPM(t, id)
+		for _, unit := range want {
+			found := false
+			for _, c := range pkg.Contents {
+				if c.Src == unit {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("nfpm %q does not ship %s", id, unit)
+			}
+		}
+	}
+}
+
+// findNFPM returns the named package, failing the test when it is missing.
+func findNFPM(t *testing.T, id string) nfpmPackage {
+	t.Helper()
+
+	for _, pkg := range loadGoreleaser(t).NFPMs {
+		if pkg.ID == id {
+			return pkg
+		}
+	}
+	t.Fatalf("no nfpm package with id %q", id)
+	return nfpmPackage{}
 }
