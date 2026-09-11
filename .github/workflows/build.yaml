@@ -259,17 +259,17 @@ jobs:
           # Cloudflare R2, for publishing the package repository. Scoped to
           # the one bucket: this is a long-lived credential with write
           # access to what every installed host trusts for package updates.
-          R2_KEY_ID: op://Github Actions/gsljjbwndypgomlag6ouj2s25e/key_id
-          R2_ACCESS_KEY: op://Github Actions/gsljjbwndypgomlag6ouj2s25e/access_key
-          R2_S3_ENDPOINT: op://Github Actions/gsljjbwndypgomlag6ouj2s25e/s3_endpoint
-          R2_BUCKET: op://Github Actions/gsljjbwndypgomlag6ouj2s25e/bucket_name
+          R2_KEY_ID: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/key_id
+          R2_ACCESS_KEY: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/access_key
+          R2_S3_ENDPOINT: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/s3_endpoint
+          R2_BUCKET: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/bucket_name
           # Not a secret, but it lives beside the bucket it addresses: the
           # bucket name and the path within it are one piece of
           # configuration, and splitting them across two systems means two
           # places to look when the published tree is not where it was
           # expected. Set it to "ssoossh-test" to publish somewhere nothing
           # points at, and to "ssoossh" to go live.
-          R2_PREFIX: op://Github Actions/gsljjbwndypgomlag6ouj2s25e/repo_prefix
+          R2_PREFIX: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/repo_prefix
 
       - name: Save gpg key
         run: |
