@@ -263,6 +263,13 @@ jobs:
           R2_ACCESS_KEY: op://Github Actions/gsljjbwndypgomlag6ouj2s25e/access_key
           R2_S3_ENDPOINT: op://Github Actions/gsljjbwndypgomlag6ouj2s25e/s3_endpoint
           R2_BUCKET: op://Github Actions/gsljjbwndypgomlag6ouj2s25e/bucket_name
+          # Not a secret, but it lives beside the bucket it addresses: the
+          # bucket name and the path within it are one piece of
+          # configuration, and splitting them across two systems means two
+          # places to look when the published tree is not where it was
+          # expected. Set it to "ssoossh-test" to publish somewhere nothing
+          # points at, and to "ssoossh" to go live.
+          R2_PREFIX: op://Github Actions/gsljjbwndypgomlag6ouj2s25e/repo_prefix
 
       - name: Save gpg key
         run: |
@@ -312,13 +319,16 @@ jobs:
       # what every installed host pulls on its next upgrade, with no release
       # having been cut.
       #
-      # The prefix comes from a repository variable so the first publish can
-      # land somewhere nothing points at. Leave SSOOSSH_REPO_PREFIX unset and
-      # it publishes to "ssoossh-test", a complete tree at a URL no
-      # ssoossh-release package names; set it to "ssoossh" to go live. That
-      # is one settings change rather than an edit here, and it means the
-      # first tree anyone looks at is not also the first tree hosts can
-      # install from.
+      # The prefix comes from 1Password beside the bucket name, so the first
+      # publish can land somewhere nothing points at: "ssoossh-test" is a
+      # complete tree at a URL no ssoossh-release package names, "ssoossh"
+      # is live. Changing it is a field edit rather than a change here, and
+      # it means the first tree anyone looks at is not also the first tree
+      # hosts can install from.
+      #
+      # There is no default. An empty prefix would publish to the bucket
+      # root, which is both wrong and awkward to undo given nothing here
+      # deletes, so the step stops instead.
       #
       # --skip-apk: the .apk is signed but Alpine is not served from the
       # repository, because indexing one needs Alpine's own tooling in this
@@ -336,6 +346,10 @@ jobs:
           # gpg-public.asc tells clients to expect.
           key_id=$(gpg --show-keys --with-colons gpg-public.asc |
             awk -F: '/^fpr:/{print $10; exit}')
+          if [ -z "$PREFIX" ]; then
+            echo "R2_PREFIX is empty; refusing to publish to the bucket root" >&2
+            exit 1
+          fi
           if [ -z "$key_id" ]; then
             echo "could not read a key fingerprint from gpg-public.asc" >&2
             exit 1
@@ -348,7 +362,7 @@ jobs:
             --key-id "$key_id" \
             --skip-apk
         env:
-          PREFIX: ${{ vars.SSOOSSH_REPO_PREFIX || 'ssoossh-test' }}
+          PREFIX: ${{ steps.secrets.outputs.R2_PREFIX }}
           GPG_PASSPHRASE: ${{ steps.secrets.outputs.GPG_PASSPHRASE }}
 
       - name: Publish the package repository
@@ -359,7 +373,7 @@ jobs:
             --bucket "$R2_BUCKET" \
             --prefix "$PREFIX"
         env:
-          PREFIX: ${{ vars.SSOOSSH_REPO_PREFIX || 'ssoossh-test' }}
+          PREFIX: ${{ steps.secrets.outputs.R2_PREFIX }}
           R2_KEY_ID: ${{ steps.secrets.outputs.R2_KEY_ID }}
           R2_ACCESS_KEY: ${{ steps.secrets.outputs.R2_ACCESS_KEY }}
           R2_S3_ENDPOINT: ${{ steps.secrets.outputs.R2_S3_ENDPOINT }}

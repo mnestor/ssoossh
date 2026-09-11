@@ -26,7 +26,7 @@
 #              fails on a checksum mismatch.
 #
 # Usage:
-#   scripts/publish-repo.sh --repo repo --bucket <name> [--prefix ssoossh] [--dry-run]
+#   scripts/publish-repo.sh --repo repo --bucket <name> --prefix <path> [--dry-run]
 #
 # Credentials come from the environment, never arguments:
 #   R2_KEY_ID, R2_ACCESS_KEY, R2_S3_ENDPOINT
@@ -34,7 +34,11 @@ set -euo pipefail
 
 repo=repo
 bucket=""
-prefix=ssoossh
+# No default. "ssoossh" is the live path, and a default that publishes live
+# is the wrong way round: a caller who forgets the flag, or passes a value
+# that came back empty from somewhere, should be stopped rather than quietly
+# sent to the location every installed host reads.
+prefix=""
 dry=""
 
 while [ $# -gt 0 ]; do
@@ -49,6 +53,7 @@ while [ $# -gt 0 ]; do
 done
 
 [ -n "$bucket" ] || { echo "publish-repo: --bucket is required" >&2; exit 2; }
+[ -n "$prefix" ] || { echo "publish-repo: --prefix is required (it has no default; 'ssoossh' is live)" >&2; exit 2; }
 [ -d "$repo" ] || { echo "publish-repo: no such directory: $repo" >&2; exit 2; }
 
 for var in R2_KEY_ID R2_ACCESS_KEY R2_S3_ENDPOINT; do
