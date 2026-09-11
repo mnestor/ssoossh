@@ -1,0 +1,22 @@
+# Installed by the ssoossh-release package.
+#
+# deb822 rather than a one-line sources.list entry: Signed-By is what binds
+# this repository to one key instead of every key apt trusts, and the
+# one-line form spells it as a bracketed option that is easy to drop when
+# editing by hand.
+#
+# The keyring is the dearmored binary form. sources.list(5) specifies
+# Signed-By as a list of paths to keyring files and recommends
+# /usr/share/keyrings for keyrings a package manages; it does not promise
+# that an ASCII-armoured file is accepted there, so the package ships the
+# form the documentation names.
+#
+# Unlike the yum side there is one apt tree, not one per release: the deb
+# packages carry no dist tag, because a dist tag in a Debian version would
+# be a revision string that sorts and reads wrong.
+Types: deb
+URIs: https://packages.mikenestor.org/ssoossh/apt
+Suites: stable
+Components: main
+Architectures: amd64 arm64
+Signed-By: /usr/share/keyrings/ssoossh-archive-keyring.gpg

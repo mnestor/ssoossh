@@ -50,10 +50,12 @@ type goreleaserConfig struct {
 // well as Contents because where the binary lands and what runs at install
 // time are both package behaviour these tests pin.
 type nfpmPackage struct {
-	ID       string        `yaml:"id"`
-	Bindir   string        `yaml:"bindir"`
-	Scripts  nfpmScripts   `yaml:"scripts"`
-	Contents []nfpmContent `yaml:"contents"`
+	ID          string        `yaml:"id"`
+	PackageName string        `yaml:"package_name"`
+	Meta        bool          `yaml:"meta"`
+	Bindir      string        `yaml:"bindir"`
+	Scripts     nfpmScripts   `yaml:"scripts"`
+	Contents    []nfpmContent `yaml:"contents"`
 }
 
 // nfpmScripts are the install-time hooks. Every one named here has to exist
@@ -614,6 +616,10 @@ func TestNFPMShouldInstallBinariesOutsideUsrLocal(t *testing.T) {
 	}
 
 	for _, pkg := range loadGoreleaser(t).NFPMs {
+		// A meta package ships no binary, so it has no bindir to check.
+		if pkg.Meta {
+			continue
+		}
 		wantDir, ok := want[pkg.ID]
 		if !ok {
 			t.Errorf("nfpm %q is not covered by this test; add it", pkg.ID)
@@ -821,4 +827,121 @@ func findNFPM(t *testing.T, id string) nfpmPackage {
 	}
 	t.Fatalf("no nfpm package with id %q", id)
 	return nfpmPackage{}
+}
+
+// repoHost is the one hostname the repository definitions may name. It is
+// baked into every installed /etc/yum.repos.d/ssoossh.repo and
+// /etc/apt/sources.list.d/ssoossh.sources and cannot be changed for hosts
+// that already have it, so it is pinned here rather than left to a typo.
+const repoHost = "packages.mikenestor.org"
+
+// should carry no binary. ssoossh-release exists only to place a repository
+// definition and a key; a build id leaking into it would ship a second copy
+// of the client at a path nothing expects.
+func TestNFPMReleasePackagesShouldBeMetaPackages(t *testing.T) {
+	t.Parallel()
+
+	for _, id := range []string{"release-rpm", "release-deb"} {
+		if pkg := findNFPM(t, id); !pkg.Meta {
+			t.Errorf("nfpm %q is not a meta package", id)
+		}
+	}
+}
+
+// should present one package name on both distributions, so the documented
+// install line does not have to branch even though the shipped files do.
+func TestNFPMReleasePackagesShouldShareOneName(t *testing.T) {
+	t.Parallel()
+
+	rpm := findNFPM(t, "release-rpm").PackageName
+	if deb := findNFPM(t, "release-deb").PackageName; deb != rpm {
+		t.Errorf("release packages are named %q and %q; they must match", rpm, deb)
+	}
+}
+
+// should point apt's Signed-By at the exact path the same package installs
+// the keyring to. These are two strings in two files that must agree, and
+// when they do not apt rejects the whole repository -- with a message about
+// a missing keyring, not about this package.
+func TestReleaseDebSignedByShouldMatchTheShippedKeyringPath(t *testing.T) {
+	t.Parallel()
+
+	var keyringDst string
+	for _, c := range findNFPM(t, "release-deb").Contents {
+		if strings.HasSuffix(c.Dst, ".gpg") {
+			keyringDst = c.Dst
+		}
+	}
+	if keyringDst == "" {
+		t.Fatal("the release deb ships no keyring")
+	}
+
+	body, err := os.ReadFile(filepath.Join(repoRoot(t), "packaging/linux/repo/ssoossh.sources"))
+	if err != nil {
+		t.Fatalf("read sources: %v", err)
+	}
+
+	want := "Signed-By: " + keyringDst
+	if !strings.Contains(string(body), want) {
+		t.Errorf("ssoossh.sources does not carry %q", want)
+	}
+}
+
+// should verify both the packages and the repository metadata. gpgcheck
+// alone leaves signed packages advertised by metadata nobody signed, which
+// is the half of the guarantee people forget.
+func TestReleaseRepoShouldEnableBothGPGChecks(t *testing.T) {
+	t.Parallel()
+
+	body, err := os.ReadFile(filepath.Join(repoRoot(t), "packaging/linux/repo/ssoossh.repo"))
+	if err != nil {
+		t.Fatalf("read repo file: %v", err)
+	}
+	for _, want := range []string{"gpgcheck=1", "repo_gpgcheck=1", "enabled=1"} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("ssoossh.repo does not set %s", want)
+		}
+	}
+}
+
+// should name only the pinned hostname, in both definitions.
+func TestRepoDefinitionsShouldNameThePinnedHost(t *testing.T) {
+	t.Parallel()
+
+	for _, rel := range []string{
+		"packaging/linux/repo/ssoossh.repo",
+		"packaging/linux/repo/ssoossh.sources",
+	} {
+		t.Run(rel, func(t *testing.T) {
+			t.Parallel()
+
+			body, err := os.ReadFile(filepath.Join(repoRoot(t), rel))
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			if !strings.Contains(string(body), repoHost) {
+				t.Errorf("does not name %s", repoHost)
+			}
+			// r2.dev is rate limited and explicitly not for production, and
+			// a baseurl is not temporary once it is installed.
+			if strings.Contains(string(body), "r2.dev") {
+				t.Error("names an r2.dev URL; the repository must be reached through its own hostname")
+			}
+		})
+	}
+}
+
+// should keep the yum baseurl per EL major. The variants of pam-ssoossh are
+// one package name at distinct NEVRAs, so a single flat tree would offer an
+// EL8 host a package built against an OpenSSL it does not have.
+func TestReleaseRepoShouldUseReleaseverInTheBaseurl(t *testing.T) {
+	t.Parallel()
+
+	body, err := os.ReadFile(filepath.Join(repoRoot(t), "packaging/linux/repo/ssoossh.repo"))
+	if err != nil {
+		t.Fatalf("read repo file: %v", err)
+	}
+	if !strings.Contains(string(body), "$releasever") {
+		t.Error("the yum baseurl does not vary by $releasever")
+	}
 }

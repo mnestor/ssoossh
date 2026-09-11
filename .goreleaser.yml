@@ -100,6 +100,8 @@ before:
   hooks:
     - go mod tidy
     - ./scripts/gen-third-party-licenses.sh
+    # Produces dist/ssoossh-archive-keyring.gpg for the ssoossh-release deb.
+    - ./scripts/gen-repo-keyring.sh
 
 # Note: the server embeds server/frontend/dist, and only a placeholder
 # index.html is tracked. Building the real web UI is deliberately NOT a
@@ -541,6 +543,70 @@ nfpms:
       # later release would stop the server from starting.
       - src: server/resources/mail/*.tmpl
         dst: /usr/share/ssoossh/mail-templates/
+
+  # The two halves of `dnf install ssoossh-client` working at all: a package
+  # whose only job is to install the repository definition and the key that
+  # verifies it. This is the Docker/Grafana/HashiCorp pattern.
+  #
+  # Split by format rather than one package shipping both files, because the
+  # files are not interchangeable -- a deb has no business writing
+  # /etc/yum.repos.d, and the keyring is armoured for rpm and dearmoured for
+  # apt. The package NAME is the same on both, so the documented install
+  # line does not have to branch on the distribution.
+  #
+  # meta: true -- these carry no binary at all.
+  #
+  # Note the bootstrap: this package cannot be verified by the repository it
+  # configures, because installing it is what makes that repository exist.
+  # It is downloaded and installed directly, and the key's fingerprint is
+  # published for checking out of band.
+  - id: release-rpm
+    package_name: ssoossh-release
+    file_name_template: 'ssoossh-release_{{ .Version }}_noarch'
+    license: *license
+    maintainer: *maintainer
+    homepage: *website
+    description: "ssoossh repository configuration and signing key"
+    meta: true
+    formats:
+      - rpm
+    rpm:
+      signature:
+        key_file: private.pgp
+    contents:
+      - src: packaging/linux/repo/ssoossh.repo
+        dst: /etc/yum.repos.d/ssoossh.repo
+        type: "config|noreplace"
+      # Armoured: this is the form gpgkey=file:// expects.
+      - src: gpg-public.asc
+        dst: /etc/pki/rpm-gpg/RPM-GPG-KEY-ssoossh
+        file_info:
+          mode: 0644
+
+  - id: release-deb
+    package_name: ssoossh-release
+    file_name_template: 'ssoossh-release_{{ .Version }}_all'
+    license: *license
+    maintainer: *maintainer
+    homepage: *website
+    description: "ssoossh repository configuration and signing key"
+    meta: true
+    formats:
+      - deb
+    deb:
+      signature:
+        key_file: private.pgp
+    contents:
+      - src: packaging/linux/repo/ssoossh.sources
+        dst: /etc/apt/sources.list.d/ssoossh.sources
+        type: "config|noreplace"
+      # Dearmoured by scripts/gen-repo-keyring.sh in the before hooks. Mode
+      # 0644 is required, not cosmetic: apt reads it as the _apt user, and a
+      # keyring it cannot read fails the repository rather than falling back.
+      - src: dist/ssoossh-archive-keyring.gpg
+        dst: /usr/share/keyrings/ssoossh-archive-keyring.gpg
+        file_info:
+          mode: 0644
 
 # The installers are not produced by a goreleaser pipe -- they come from
 # the macos-build and windows-build post-hooks above -- so they are named
