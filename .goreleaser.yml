@@ -100,15 +100,15 @@ release:
     # download needs this file and has nowhere else to get it. Extracted
     # from apk.pem by the release workflow, which is the only place the
     # private key exists.
-    - glob: ./dist/ssoossh.rsa.pub
+    - glob: ./build/ssoossh.rsa.pub
 
 before:
   hooks:
     - go mod tidy
     - ./scripts/gen-third-party-licenses.sh
-    # Produces dist/ssoossh-archive-keyring.gpg for the ssoossh-release deb.
+    # Produces build/ssoossh-archive-keyring.gpg for the ssoossh-release deb.
     - ./scripts/gen-repo-keyring.sh
-    # Produces dist/ssoossh.rsa.pub, the public half of the apk signing key.
+    # Produces build/ssoossh.rsa.pub, the public half of the apk signing key.
     # No-op when apk.pem is absent, which is every local snapshot build.
     - ./scripts/gen-apk-pubkey.sh
 
@@ -630,7 +630,7 @@ nfpms:
       # Dearmoured by scripts/gen-repo-keyring.sh in the before hooks. Mode
       # 0644 is required, not cosmetic: apt reads it as the _apt user, and a
       # keyring it cannot read fails the repository rather than falling back.
-      - src: dist/ssoossh-archive-keyring.gpg
+      - src: build/ssoossh-archive-keyring.gpg
         dst: /usr/share/keyrings/ssoossh-archive-keyring.gpg
         file_info:
           mode: 0644

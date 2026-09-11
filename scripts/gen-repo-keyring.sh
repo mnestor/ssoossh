@@ -6,12 +6,13 @@
 # gpg-public.asc is the one source, and a committed .gpg alongside it would
 # be a second copy to keep in step with no way to notice when it drifted.
 #
-# Runs from goreleaser's before hooks, so it must not assume dist/ exists
-# yet -- a --clean run removes it immediately beforehand.
+# Writes to build/, not dist/. goreleaser's before hooks run after --clean
+# has emptied dist/ but before it asserts dist/ is empty, so a hook that
+# stages anything there fails the run it is part of.
 set -eu
 
 src=gpg-public.asc
-out=dist/ssoossh-archive-keyring.gpg
+out=build/ssoossh-archive-keyring.gpg
 
 if [ ! -f "$src" ]; then
 	echo "gen-repo-keyring: $src not found" >&2

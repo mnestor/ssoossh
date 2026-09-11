@@ -1002,7 +1002,7 @@ func TestReleaseShouldPublishTheAPKPublicKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
-	want := "dist/" + keyName + ".rsa.pub"
+	want := "build/" + keyName + ".rsa.pub"
 	if !strings.Contains(string(raw), want) {
 		t.Errorf("the release does not publish %s, so an apk installed by direct download cannot be verified", want)
 	}
