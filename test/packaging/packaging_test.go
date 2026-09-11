@@ -1049,3 +1049,78 @@ func TestWorkflowSecretsWrittenIntoTheCheckoutShouldBeGitignored(t *testing.T) {
 		})
 	}
 }
+
+// Uploading to R2 is the only irreversible step in the release:
+// publish-repo.sh never deletes, so anything that reaches the bucket is
+// there for good. It therefore has to wait for every reversible verdict --
+// the Mac and Windows checks, and the flip of the draft to a published
+// release -- or the repository can end up serving signed metadata for a
+// version whose release page was deleted when a notary rejected it.
+//
+// The rule is structural and easy to lose in a refactor: whichever job runs
+// the upload must depend on the job that publishes the release.
+func TestRepositoryUploadShouldWaitForThePublishedRelease(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(repoRoot(t), ".github", "workflows", "build.yaml"))
+	if err != nil {
+		t.Fatalf("read build workflow: %v", err)
+	}
+
+	var wf struct {
+		Jobs map[string]struct {
+			Needs jobNeeds `yaml:"needs"`
+			Steps []struct {
+				Run string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(raw, &wf); err != nil {
+		t.Fatalf("parse build workflow: %v", err)
+	}
+
+	const uploader = "publish-repo.sh"
+	found := false
+	for name, job := range wf.Jobs {
+		runsUpload := false
+		for _, step := range job.Steps {
+			if strings.Contains(step.Run, uploader) {
+				runsUpload = true
+				break
+			}
+		}
+		if !runsUpload {
+			continue
+		}
+		found = true
+
+		if !slices.Contains(job.Needs, "publish") {
+			t.Errorf("job %q uploads the repository but does not need the publish job (needs: %v): "+
+				"packages would reach the bucket before the release is published, and nothing deletes them again",
+				name, job.Needs)
+		}
+	}
+
+	if !found {
+		t.Fatalf("no job runs %s; this test has stopped watching anything", uploader)
+	}
+}
+
+// jobNeeds reads a workflow job's `needs`, which GitHub accepts as either a
+// single job name or a list of them.
+type jobNeeds []string
+
+func (n *jobNeeds) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		var one string
+		if err := node.Decode(&one); err != nil {
+			return err
+		}
+		*n = jobNeeds{one}
+		return nil
+	}
+	var many []string
+	if err := node.Decode(&many); err != nil {
+		return err
+	}
+	*n = many
+	return nil
+}

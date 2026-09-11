@@ -256,13 +256,12 @@ jobs:
           # package around it must be signed with the Developer ID Installer one
           # or Gatekeeper refuses the download. Both share QUILL_SIGN_PASSWORD.
           QUILL_INSTALLER_P12: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_INSTALLER_P12
-          # Cloudflare R2, for publishing the package repository. Scoped to
-          # the one bucket: this is a long-lived credential with write
-          # access to what every installed host trusts for package updates.
-          R2_KEY_ID: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/key_id
-          R2_ACCESS_KEY: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/access_key
-          R2_S3_ENDPOINT: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/s3_endpoint
-          R2_BUCKET: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/bucket_name
+          # Only the prefix here, not the credentials. This job builds and
+          # signs the repository but no longer uploads it -- publish-repository
+          # does, after the release is published -- so the R2 write
+          # credential does not need to exist in the job that runs the
+          # build toolchain.
+          #
           # Not a secret, but it lives beside the bucket it addresses: the
           # bucket name and the path within it are one piece of
           # configuration, and splitting them across two systems means two
@@ -365,19 +364,29 @@ jobs:
           PREFIX: ${{ steps.secrets.outputs.R2_PREFIX }}
           GPG_PASSPHRASE: ${{ steps.secrets.outputs.GPG_PASSPHRASE }}
 
-      - name: Publish the package repository
+      # The signed tree is handed to the publish job rather than uploaded
+      # from here.
+      #
+      # Publishing to R2 is irreversible in a way drafting a release is
+      # not: publish-repo.sh never deletes, deliberately, because the
+      # deletion order that is safe for a repository is the reverse of the
+      # upload order. So an upload from this job would put packages in the
+      # bucket before macos-verify and windows-verify have given a verdict
+      # -- and either of them can delete the draft. That combination leaves
+      # signed metadata advertising a version with no release page and
+      # binaries a notary or a Windows host rejected.
+      #
+      # Signing stays here because this is where the gpg key is; only the
+      # upload waits. The artifact is the signed tree exactly as it will be
+      # served.
+      - name: Upload the package repository for the publish job
         if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          ./scripts/publish-repo.sh \
-            --repo repo \
-            --bucket "$R2_BUCKET" \
-            --prefix "$PREFIX"
-        env:
-          PREFIX: ${{ steps.secrets.outputs.R2_PREFIX }}
-          R2_KEY_ID: ${{ steps.secrets.outputs.R2_KEY_ID }}
-          R2_ACCESS_KEY: ${{ steps.secrets.outputs.R2_ACCESS_KEY }}
-          R2_S3_ENDPOINT: ${{ steps.secrets.outputs.R2_S3_ENDPOINT }}
-          R2_BUCKET: ${{ steps.secrets.outputs.R2_BUCKET }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package-repository
+          path: repo
+          if-no-files-found: error
+          retention-days: 7
 
       # The pkcs11 build, not the default one. Only that build is cgo, and
       # only that build is cross-linked by zig against glibc 2.28
@@ -1212,3 +1221,74 @@ jobs:
           else
             echo "no release for $TAG; nothing to remove"
           fi
+
+  # The repository upload, deliberately after publish rather than inside it.
+  #
+  # Uploading to R2 is the one irreversible step in this pipeline.
+  # publish-repo.sh never deletes -- the deletion order that is safe for a
+  # repository is the reverse of the upload order, so doing both in one pass
+  # gets one of them wrong -- which means anything written to the bucket is
+  # there for good. Everything reversible therefore has to have succeeded
+  # first: the Mac and Windows verdicts, the image promotion, and the flip
+  # of the draft to a published release.
+  #
+  # So the invariant is that a package served from the repository always has
+  # a release page behind it. The failure it prevents is the opposite order:
+  # packages uploaded from build-most, then macos-verify rejecting the
+  # notarization and deleting the draft, leaving signed metadata advertising
+  # a version that has no release and binaries a notary refused.
+  #
+  # A separate job rather than a step in publish, because publish deletes the
+  # release on failure. As its last step this would make an upload failure
+  # delete a release that is already public, which is worse than the repository
+  # being one tag behind -- a state the next publish corrects on its own.
+  publish-repository:
+    name: publish repository
+    needs: [build-most, publish]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # rclone is in the vendored image and not on the stock runner, which is
+    # why this job takes the container the build jobs use.
+    container:
+      image: ghcr.io/mnestor/ssoossh-build:latest
+    steps:
+      # Only for scripts/publish-repo.sh. The tree being uploaded is the
+      # artifact below, not anything in the checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The signed tree exactly as build-most produced it. Signing happens
+      # there because that is where the gpg key is; re-signing here would
+      # mean a second job holding it.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: package-repository
+          path: repo
+
+      - uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
+        id: secrets
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          # Scoped to the one bucket: a long-lived credential with write
+          # access to what every installed host trusts for package updates,
+          # so it is loaded in this job alone.
+          R2_KEY_ID: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/key_id
+          R2_ACCESS_KEY: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/access_key
+          R2_S3_ENDPOINT: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/s3_endpoint
+          R2_BUCKET: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/bucket_name
+          R2_PREFIX: op://Github Actions/5zqir3fu4wp4yh3w6fogu4p5nm/repo_prefix
+
+      # publish-repo.sh refuses a tree whose metadata carries no signature,
+      # so an unsigned build cannot reach the bucket even from here.
+      - name: Publish the package repository
+        run: |
+          ./scripts/publish-repo.sh \
+            --repo repo \
+            --bucket "$R2_BUCKET" \
+            --prefix "$PREFIX"
+        env:
+          PREFIX: ${{ steps.secrets.outputs.R2_PREFIX }}
+          R2_KEY_ID: ${{ steps.secrets.outputs.R2_KEY_ID }}
+          R2_ACCESS_KEY: ${{ steps.secrets.outputs.R2_ACCESS_KEY }}
+          R2_S3_ENDPOINT: ${{ steps.secrets.outputs.R2_S3_ENDPOINT }}
+          R2_BUCKET: ${{ steps.secrets.outputs.R2_BUCKET }}
