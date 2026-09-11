@@ -70,12 +70,15 @@ repository, which saves choosing an artifact by hand -- the metadata for your
 release offers only the build that matches it:
 
 ```bash
-sudo dnf install pam-ssoossh          # RHEL 8, 9, 10 and rebuilds
+sudo dnf install pam-ssoossh          # RHEL 8 and 9, and rebuilds
 sudo apt install pam-ssoossh          # Debian, Ubuntu
 ```
 
 On EL hosts running SELinux, `pam-ssoossh-selinux` carries the policy and is
 installed separately; nothing pulls it in for you.
+
+EL 10 is not built yet. The repository serves an EL 10 tree for the client
+and server, but it contains no `pam-ssoossh`.
 
 For deb hosts this is the path worth taking. `apt` verifies repositories
 rather than individual files and Debian disables per-package signature

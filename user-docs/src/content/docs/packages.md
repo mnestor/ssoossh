@@ -21,8 +21,8 @@ before choosing them on Debian or Ubuntu.
 | `ssoossh-client` | the `ssoossh` command users run |
 | `ssoosshd` | the server |
 | `ssoosshd-pkcs11` | the server built to load a PKCS#11 module |
-| `pam-ssoossh` | the PAM module, for `sudo` and console logins |
-| `pam-ssoossh-selinux` | SELinux policy for the PAM module, on EL hosts |
+| `pam-ssoossh` | the PAM module, for `sudo` and console logins (EL 8 and 9, Debian, Ubuntu) |
+| `pam-ssoossh-selinux` | SELinux policy for the PAM module (EL 8 and 9) |
 | `ssoossh-release` | the repository definition and signing key |
 
 `ssoosshd-pkcs11` conflicts with `ssoosshd` on purpose -- both install the
@@ -35,10 +35,16 @@ deployments want plain `ssoosshd`; see
 has its own metadata, and the one your host reads offers only the build for
 it.
 
+There is no EL 10 build of the PAM module yet. The EL 10 tree carries the
+client and the server, which are not tied to an EL major, but
+`dnf install pam-ssoossh` there will report no match rather than install
+something unsuitable.
+
 ## RHEL, Alma, Rocky, Oracle
 
-The repository serves EL 8, 9 and 10. Install the release package, which
-writes the `.repo` file and installs the signing key:
+The repository serves EL 8, 9 and 10, with the PAM module as noted above.
+Install the release package, which writes the `.repo` file and installs the
+signing key:
 
 ```bash
 sudo rpm -i https://packages.mikenestor.org/ssoossh/yum/pool/ssoossh-release_1.4.0_noarch.rpm
