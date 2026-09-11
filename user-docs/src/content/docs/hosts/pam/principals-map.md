@@ -175,6 +175,13 @@ is authoritative for every account once it loads.
 - Push it with configuration management like any other root-owned policy file,
   and template the per-host part -- who may become `root` on `db07` is not the
   same list as on `web01`.
+- Check it after every push. A file the module cannot read or parse is not a
+  denial: it falls back to requiring the certificate to carry the local account
+  name, so the host keeps authenticating while every mapping in the file is
+  ignored. `ssoossh host mapping list --file <path>` exits non-zero on a file
+  that will not load, and 0 on no file at all, which makes it the check to run
+  after templating. See
+  [checking the mapping actually loaded](/ssoossh/hosts/sshd-trust/#checking-the-mapping-actually-loaded).
 
 :::note
 `sshd` does not read this file, but it reads the same format. `sshd` maps

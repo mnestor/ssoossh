@@ -52,13 +52,13 @@ default `WARN` level until you set `logging.level: info`.
 ```ini
 # systemd drop-in for an API instance
 [Service]
-ExecStart=/usr/local/sbin/ssoosshd serve api
+ExecStart=/usr/sbin/ssoosshd serve api
 ```
 
 ```ini
 # systemd drop-in for a signer
 [Service]
-ExecStart=/usr/local/sbin/ssoosshd sign
+ExecStart=/usr/sbin/ssoosshd sign
 ```
 
 ## Splitting the signer is worth it on one instance too

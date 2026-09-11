@@ -23,7 +23,16 @@ Match exec (recommended). Runs before ssh connects, so a certificate that
 .EX
   Match host bastion.example.com exec "ssoossh ssh login"
       User youruser
+      IdentityFile ~/.ssh/id_ssoossh
 .EE
+
+.PP
+The IdentityFile line matters only when use_agent is false, and is
+  harmless with an agent. Without it an agentless host offers no key at all:
+  the client writes to whatever key_filename resolves to -- ~/.ssh/id_ssoossh
+  by default -- and that is not a name ssh tries on its own. No
+  CertificateFile line is needed; ssh derives id_ssoossh-cert.pub from
+  IdentityFile's own name.
 
 .PP
 ProxyCommand. Ensures a valid certificate, then hands off to whatever relay

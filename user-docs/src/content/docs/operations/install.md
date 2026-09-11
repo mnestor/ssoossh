@@ -27,7 +27,7 @@ holding the token reaches the same hardware from the default package. See
 
 | What | Where it lands |
 | --- | --- |
-| the binary | `/usr/local/sbin/ssoosshd` |
+| the binary | `/usr/sbin/ssoosshd` |
 | the annotated config sample | `/etc/ssoossh/ssoosshd.yaml` |
 | man pages | `ssoosshd(8)`, `ssoosshd-serve(8)`, `ssoosshd-sign(8)`, `ssoosshd.yaml(5)` |
 | reference mail templates | `/usr/share/ssoossh/mail-templates/` |
@@ -111,17 +111,28 @@ a token later.
 
 ## The systemd unit
 
-The package installs the binary and the config sample. It does not install a
-systemd unit and does not create a service account; do both by hand:
+The package installs the unit at `/usr/lib/systemd/system/ssoosshd.service` and
+creates the `ssoossh` service account it runs as. It does not enable or start
+anything: `ssoosshd` will not run without a CA key and an identity provider
+configured, so a service started at install time would only fail on every fresh
+install. Configure it first, then:
+
+```bash
+install -o ssoossh -g ssoossh -m 0750 -d /var/lib/ssoossh
+chown -R ssoossh:ssoossh /etc/ssoossh
+systemctl enable --now ssoosshd
+```
+
+:::note[Installing without the package]
+If you are not installing from a package, the unit and the account are yours to
+create:
 
 ```bash
 useradd --system --no-create-home --shell /usr/sbin/nologin ssoossh
-install -o ssoossh -g ssoossh -m 0750 -d /var/lib/ssoossh
-chown -R ssoossh:ssoossh /etc/ssoossh
 cp deploy/ssoosshd.service /etc/systemd/system/ssoosshd.service
 systemctl daemon-reload
-systemctl enable --now ssoosshd
 ```
+:::
 
 The shipped unit is
 [deploy/ssoosshd.service](https://github.com/mnestor/ssoossh/blob/main/deploy/ssoosshd.service).

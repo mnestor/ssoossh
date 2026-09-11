@@ -119,6 +119,14 @@ dedicated unprivileged account. `sshd` recommends exactly that: an account
 "that has no other role on the host than running authorized principals
 commands".
 
+The `.deb` and `.rpm` do this part for you. They create the
+`ssoossh-principals` account, ship `/etc/ssoossh/principals.yaml` owned
+`root:ssoossh-principals` and mode `0640`, and drop a fully commented
+`/etc/ssh/sshd_config.d/50-ssoossh.conf` carrying the two lines below. Installing
+the client changes nothing about how the host accepts SSH until you uncomment
+them; the rest of this section is what the package did, and what to do if you
+installed some other way.
+
 ```bash
 # A dedicated account: no login shell, no home directory, no group members.
 useradd --system --no-create-home --shell /usr/sbin/nologin ssoossh-principals
@@ -136,6 +144,16 @@ AuthorizedPrincipalsCommandUser ssoossh-principals
 
 `AuthorizedPrincipalsCommandUser` is not optional. `sshd` refuses to start
 when `AuthorizedPrincipalsCommand` is set without it.
+
+:::caution[Do not point this at `/usr/local/bin`]
+Packages before this release installed the binary at `/usr/local/bin/ssoossh`,
+and a compatibility symlink still answers there for two more releases. Do not
+name it here. On Debian and Ubuntu `/usr/local/bin` is `root:staff` mode `2775`,
+and `sshd` refuses to run an `AuthorizedPrincipalsCommand` whose path is
+writable by group or other -- so an `sshd_config` naming the old path fails
+every certificate login, with the refusal visible only in `sshd`'s log. Point it
+at `/usr/bin/ssoossh`.
+:::
 
 That is the whole setup, and no `chmod` is needed. If you would rather the
 mapping were not world-readable, tighten it once and it stays tightened:
@@ -167,6 +185,28 @@ The binary has its own rule, and it comes from `sshd` rather than from
 ssoossh: `AuthorizedPrincipalsCommand` must name an absolute path to a program
 **owned by root and not writable by group or others**, or `sshd` refuses to
 run it. A package-installed `/usr/bin/ssoossh` already satisfies that.
+
+### Checking the mapping actually loaded
+
+`ssoossh host principals` is deliberately not the thing to check with. It never
+fails: a mapping it cannot read or parse is reported on stderr, and it still
+prints the account name and exits 0, so a host with a broken mapping looks
+healthy while every mapped principal is being dropped. That behaviour is
+intentional -- see the caution above -- but it means a deployment tool that
+watches only the exit code learns nothing.
+
+Check with `host mapping list` instead, run as the lookup account:
+
+```bash
+runuser -u ssoossh-principals -- ssoossh host mapping list
+```
+
+This is the supported health check for an automated deployment. It exits
+non-zero when the file exists and will not load, and exits 0 printing nothing
+when there is no file at all, which is a legitimate state. Running it as the
+lookup account rather than as root tests the other half at the same time: that
+the account `sshd` will use can actually read the file. Both halves fail
+silently in production, and this is the one command that surfaces either.
 
 :::note
 Do not point the sshd line at a config file with `-c`. A `--config` path that

@@ -192,7 +192,7 @@ Description=Refresh the deploy-bot ssoossh certificate
 [Service]
 Type=oneshot
 User=deploy
-ExecStart=/usr/local/bin/ssoossh service retrieve --code K7M4QP2X --key /etc/deploy/id --grace 15m
+ExecStart=/usr/bin/ssoossh service retrieve --code K7M4QP2X --key /etc/deploy/id --grace 15m
 ```
 
 ```ini
@@ -211,7 +211,7 @@ WantedBy=timers.target
 The plain cron equivalent:
 
 ```text
-*/5 * * * * deploy /usr/local/bin/ssoossh service retrieve --code K7M4QP2X --key /etc/deploy/id --grace 15m
+*/5 * * * * deploy /usr/bin/ssoossh service retrieve --code K7M4QP2X --key /etc/deploy/id --grace 15m
 ```
 
 Running every five minutes with a fifteen-minute grace means the server is

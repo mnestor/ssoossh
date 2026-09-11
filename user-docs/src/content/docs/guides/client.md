@@ -18,7 +18,7 @@ Release packages are on the
 
 | Platform | Package | Where it lands |
 | --- | --- | --- |
-| Debian / Ubuntu | `ssoossh-client_*.deb` | `/usr/local/bin/ssoossh`, sample config at `/etc/ssoossh/ssoossh.yaml` |
+| Debian / Ubuntu | `ssoossh-client_*.deb` | `/usr/bin/ssoossh`, sample config at `/etc/ssoossh/ssoossh.yaml`, inert SSH drop-ins under `/etc/ssh` |
 | RHEL / Fedora | `ssoossh-client_*.rpm` | same |
 | Windows | `ssoossh-client_*.zip` | extract `ssoossh.exe` onto `PATH` |
 | macOS | `ssoossh-client_*_darwin_<arch>.pkg` | `/usr/local/bin/ssoossh`, man pages under `/usr/local/share/man`, the annotated defaults at `/usr/local/share/ssoossh/ssoossh.yaml` |
@@ -272,7 +272,7 @@ dedicated unprivileged account rather than as root:
 
 ```ini
 # /etc/ssh/sshd_config
-AuthorizedPrincipalsCommand /usr/local/bin/ssoossh host principals %u
+AuthorizedPrincipalsCommand /usr/bin/ssoossh host principals %u
 AuthorizedPrincipalsCommandUser ssoossh-principals
 ```
 

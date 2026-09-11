@@ -500,7 +500,7 @@ artifact.
 | pkcs11 | `.deb`, `.rpm`, `.tar.gz`, and the `:<version>-pkcs11` image | glibc 2.28 or newer (RHEL 8, Ubuntu 20.04, Debian 11+) |
 
 `ssoosshd-pkcs11` declares `Conflicts`, `Replaces` and `Provides` against
-`ssoosshd`: both install the same `/usr/local/sbin/ssoosshd`, so a host runs
+`ssoosshd`: both install the same `/usr/sbin/ssoosshd`, so a host runs
 one or the other, and anything depending on `ssoosshd` is satisfied by
 either.
 

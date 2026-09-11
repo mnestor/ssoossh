@@ -53,11 +53,26 @@ blocks the connection.
 ```ssh-config
 Match host bastion.example.com exec "ssoossh ssh login"
     User youruser
+    IdentityFile ~/.ssh/id_ssoossh
 ```
 
 Because the client exits before `ssh` reads its key files, this mode works with
 an agent or with key files on disk. It is the only mode that works with
 [`use_agent: false`](/ssoossh/reference/client-config/#use_agent).
+
+:::caution
+The `IdentityFile` line is what makes the key-file case work, and it is easy to
+leave out because it does nothing when an agent is running. Without an agent,
+`ssh` offers no key at all without it: the client writes its key to whatever
+[`key_filename`](/ssoossh/reference/client-config/#key_filename) resolves to,
+`~/.ssh/id_ssoossh` by default, and that is not one of the names `ssh` tries on
+its own. The connection then fails as though no certificate had ever been
+issued, which looks nothing like the cause.
+
+No `CertificateFile` line is needed: `ssh` derives `~/.ssh/id_ssoossh-cert.pub`
+from `IdentityFile`'s name, the same rule the service-account recipe below
+relies on.
+:::
 
 Widen the match to a whole estate with the usual `ssh_config` patterns:
 

@@ -71,7 +71,7 @@ sudo dpkg -i ssoossh-client_*.deb
 sudo rpm -i ssoossh-client_*.rpm
 ```
 
-Both packages put the binary in `/usr/local/bin` and an annotated copy of the
+Both packages put the binary in `/usr/bin` and an annotated copy of the
 client defaults at `/etc/ssoossh/ssoossh.yaml`.
 
 **Windows** -- run the `.msi`, or install it silently:
