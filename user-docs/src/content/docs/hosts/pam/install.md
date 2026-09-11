@@ -190,7 +190,7 @@ signature can be checked with `dpkg-sig --verify` where that tool exists.
 GitHub's own build provenance:
 
 ```console
-$ gh attestation verify pam-ssoossh_1.2.0_amd64.deb -R <owner>/<repo>
+$ gh attestation verify pam-ssoossh_1.2.0_linux-glibc-openssl3_amd64.deb -R <owner>/<repo>
 ```
 
 A release built without the signing secrets is unsigned, and the release job
