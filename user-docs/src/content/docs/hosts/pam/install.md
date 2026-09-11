@@ -214,3 +214,27 @@ $ make OPENSSL_PREFIX=/opt/openssl-3.5
    [the principals map](/ssoossh/hosts/pam/principals-map/).
 3. Add the module to one service, from a second root session --
    [sudo and su](/ssoossh/hosts/pam/sudo/).
+
+### There is no automatic stack registration on RHEL
+
+Step 3 is a per-service edit on every platform, and on RHEL and its rebuilds
+that is the whole story: no `authselect` feature is provided, and that is a
+decision rather than an omission.
+
+`authselect` features work by modifying `system-auth` and `password-auth`.
+Those are exactly the files that make a shared include dangerous for this
+module: a screen locker, display manager or `polkit` reads them too, and an
+approval prompt that nobody can see is a lock-out rather than a failed login.
+So an `authselect` feature could not be safer than editing the stack by hand
+-- it is the same trade with different filenames, applied to more services at
+once.
+
+Editing one service file directly is not a workaround here. `authselect` owns
+`system-auth` and `password-auth`; it does not own `/etc/pam.d/sudo` or the
+other per-service files, so an edit there is stable and survives
+`authselect apply-changes`.
+
+Debian and Ubuntu do ship a `pam-auth-update` profile, because that platform
+has no comparable per-service mechanism. It installs disabled and nothing
+enables it for you -- turning it on is an explicit, informed choice, and the
+same lock-out warning applies when you make it.
