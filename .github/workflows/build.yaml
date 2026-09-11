@@ -256,6 +256,13 @@ jobs:
           # package around it must be signed with the Developer ID Installer one
           # or Gatekeeper refuses the download. Both share QUILL_SIGN_PASSWORD.
           QUILL_INSTALLER_P12: op://Github Actions/7cyb7oo2m4hp3cmqnxeexghy2a/QUILL_INSTALLER_P12
+          # Cloudflare R2, for publishing the package repository. Scoped to
+          # the one bucket: this is a long-lived credential with write
+          # access to what every installed host trusts for package updates.
+          R2_KEY_ID: op://Github Actions/gsljjbwndypgomlag6ouj2s25e/key_id
+          R2_ACCESS_KEY: op://Github Actions/gsljjbwndypgomlag6ouj2s25e/access_key
+          R2_S3_ENDPOINT: op://Github Actions/gsljjbwndypgomlag6ouj2s25e/s3_endpoint
+          R2_BUCKET: op://Github Actions/gsljjbwndypgomlag6ouj2s25e/bucket_name
 
       - name: Save gpg key
         run: |

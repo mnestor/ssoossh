@@ -70,6 +70,10 @@ RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sourc
     # the file name does not carry it. None of the three ships in the base
     # image.
     apt-utils createrepo-c rpm \
+    # rclone uploads the generated repository to R2. Chosen over awscli for
+    # --header-upload, which is how the package files and the metadata get
+    # the different cache lifetimes they need.
+    rclone \
     # The macOS installer is assembled here rather than on a macOS runner
     # (packaging/macos/flatpkg.sh): xar writes the flat package's archive,
     # and libarchive-tools supplies bsdcpio for its payload. bsdcpio and not
