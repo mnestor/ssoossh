@@ -56,6 +56,34 @@ for var in R2_KEY_ID R2_ACCESS_KEY R2_S3_ENDPOINT; do
 	[ -n "$v" ] || { echo "publish-repo: $var is not set" >&2; exit 2; }
 done
 
+# Refuse to publish a tree nobody signed.
+#
+# gen-repo.sh builds unsigned when no --key-id is given, which is right for a
+# test run and catastrophic for a real one: an unsigned repository fails
+# verification, and the thing a user reaches for when a repository fails
+# verification is the flag that turns verification off. Publishing one would
+# train exactly the habit this whole effort exists to end.
+#
+# It is checked here rather than there because this is the step that does the
+# harm, and because an empty --key-id is easy to produce by accident -- a
+# shell substitution that returned nothing hands gen-repo.sh an empty string,
+# which it accepts with a warning nobody reads in a CI log.
+missing=""
+[ ! -d "$repo/apt/dists" ] || [ -f "$repo/apt/dists/stable/InRelease" ] || missing="$missing apt/dists/stable/InRelease"
+for rv_dir in "$repo"/yum/el/*/; do
+	[ -d "$rv_dir" ] || continue
+	[ -f "$rv_dir/repodata/repomd.xml.asc" ] || missing="$missing ${rv_dir}repodata/repomd.xml.asc"
+done
+
+if [ -n "$missing" ]; then
+	echo "publish-repo: refusing to publish an unsigned repository" >&2
+	echo "publish-repo: missing signatures:" >&2
+	for m in $missing; do echo "publish-repo:   $m" >&2; done
+	echo "publish-repo: re-run gen-repo.sh with --key-id; an empty value" >&2
+	echo "publish-repo: produces an unsigned tree and only warns." >&2
+	exit 1
+fi
+
 command -v rclone >/dev/null 2>&1 || { echo "publish-repo: rclone is not installed" >&2; exit 1; }
 
 # Configured entirely through the environment so no file holding the secret

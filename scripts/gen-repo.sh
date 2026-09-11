@@ -57,6 +57,22 @@ if [ ! -d "$dist" ]; then
 	exit 2
 fi
 
+# gpg_sign wraps gpg so the passphrase handling lives in one place.
+#
+# The release key is passphrase-protected and CI has no pinentry, so a bare
+# `gpg --clearsign` hangs waiting for a prompt nobody can answer and then
+# fails. Loopback mode is what lets the passphrase come from the
+# environment. Locally, with an unprotected key or an unlocked agent,
+# GPG_PASSPHRASE is unset and gpg is invoked plainly.
+gpg_sign() {
+	if [ -n "${GPG_PASSPHRASE:-}" ]; then
+		gpg --batch --yes --pinentry-mode loopback \
+			--passphrase "$GPG_PASSPHRASE" "$@"
+	else
+		gpg --batch --yes "$@"
+	fi
+}
+
 need() {
 	command -v "$1" >/dev/null 2>&1 || {
 		echo "gen-repo: $1 is not installed ($2)" >&2
@@ -185,9 +201,9 @@ if [ -n "$debs" ]; then
 			# older clients still look for, and serving only one of them
 			# fails a subset of hosts rather than all of them, which is the
 			# harder failure to notice.
-			gpg --batch --yes --local-user "$key_id" \
+			gpg_sign --local-user "$key_id" \
 				--clearsign -o "dists/$suite/InRelease" "dists/$suite/Release"
-			gpg --batch --yes --local-user "$key_id" \
+			gpg_sign --local-user "$key_id" \
 				-abs -o "dists/$suite/Release.gpg" "dists/$suite/Release"
 		fi
 	)
@@ -264,7 +280,7 @@ if [ -n "$rpms" ]; then
 			# dnf verifies repomd.xml's detached signature, and the
 			# checksums inside it cover everything else, so this one
 			# signature is what makes repo_gpgcheck meaningful.
-			gpg --batch --yes --local-user "$key_id" \
+			gpg_sign --local-user "$key_id" \
 				-abs -o "$out/yum/el/$releasever/repodata/repomd.xml.asc" \
 				"$out/yum/el/$releasever/repodata/repomd.xml"
 		fi

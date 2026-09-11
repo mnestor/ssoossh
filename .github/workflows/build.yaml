@@ -307,6 +307,64 @@ jobs:
           # refuses, because an Application certificate cannot sign a .pkg.
           QUILL_INSTALLER_P12: ${{ steps.secrets.outputs.QUILL_INSTALLER_P12 }}
 
+      # Build and publish the package repository. Tags only: a repository
+      # published from every push to main would let any merged commit change
+      # what every installed host pulls on its next upgrade, with no release
+      # having been cut.
+      #
+      # The prefix comes from a repository variable so the first publish can
+      # land somewhere nothing points at. Leave SSOOSSH_REPO_PREFIX unset and
+      # it publishes to "ssoossh-test", a complete tree at a URL no
+      # ssoossh-release package names; set it to "ssoossh" to go live. That
+      # is one settings change rather than an edit here, and it means the
+      # first tree anyone looks at is not also the first tree hosts can
+      # install from.
+      #
+      # --skip-apk: the .apk is signed but Alpine is not served from the
+      # repository, because indexing one needs Alpine's own tooling in this
+      # image. Those packages stay direct downloads. Passing it explicitly
+      # rather than letting the format be ignored is deliberate -- see
+      # scripts/gen-repo.sh.
+      - name: Build the package repository
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          # nfpm signs from the key file directly, but gpg signs the
+          # repository metadata and needs the key in its own keyring.
+          gpg --batch --import private.pgp
+          # Read from the published key rather than written down here, so the
+          # repository can never be signed by a key that is not the one
+          # gpg-public.asc tells clients to expect.
+          key_id=$(gpg --show-keys --with-colons gpg-public.asc |
+            awk -F: '/^fpr:/{print $10; exit}')
+          if [ -z "$key_id" ]; then
+            echo "could not read a key fingerprint from gpg-public.asc" >&2
+            exit 1
+          fi
+          echo "signing repository metadata with $key_id"
+          ./scripts/gen-repo.sh \
+            --dist dist \
+            --out repo \
+            --base-url "https://packages.mikenestor.org/${PREFIX}" \
+            --key-id "$key_id" \
+            --skip-apk
+        env:
+          PREFIX: ${{ vars.SSOOSSH_REPO_PREFIX || 'ssoossh-test' }}
+          GPG_PASSPHRASE: ${{ steps.secrets.outputs.GPG_PASSPHRASE }}
+
+      - name: Publish the package repository
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          ./scripts/publish-repo.sh \
+            --repo repo \
+            --bucket "$R2_BUCKET" \
+            --prefix "$PREFIX"
+        env:
+          PREFIX: ${{ vars.SSOOSSH_REPO_PREFIX || 'ssoossh-test' }}
+          R2_KEY_ID: ${{ steps.secrets.outputs.R2_KEY_ID }}
+          R2_ACCESS_KEY: ${{ steps.secrets.outputs.R2_ACCESS_KEY }}
+          R2_S3_ENDPOINT: ${{ steps.secrets.outputs.R2_S3_ENDPOINT }}
+          R2_BUCKET: ${{ steps.secrets.outputs.R2_BUCKET }}
+
       # The pkcs11 build, not the default one. Only that build is cgo, and
       # only that build is cross-linked by zig against glibc 2.28
       # (.goreleaser.yml); the default server build is CGO_ENABLED=0 and
