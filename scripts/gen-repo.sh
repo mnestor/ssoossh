@@ -31,6 +31,7 @@ key_id=""
 suite=stable
 component=main
 releasevers="8 9 10"
+skip_apk=""
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -41,6 +42,7 @@ while [ $# -gt 0 ]; do
 	--suite) suite=$2; shift 2 ;;
 	--component) component=$2; shift 2 ;;
 	--releasevers) releasevers=$2; shift 2 ;;
+	--skip-apk) skip_apk=yes; shift ;;
 	-h | --help) sed -n '2,30p' "$0"; exit 0 ;;
 	*) echo "unknown argument: $1" >&2; exit 2 ;;
 	esac
@@ -239,6 +241,43 @@ if [ -n "$rpms" ]; then
 				"$out/yum/el/$releasever/repodata/repomd.xml"
 		fi
 	done
+fi
+
+# ---------------------------------------------------------------- apk ------
+# Not built, and refused loudly rather than ignored.
+#
+# Silently dropping a package format is the exact failure this script has
+# already produced twice -- once through apt-ftparchive's file-name --arch
+# filter and once by reading an rpm's dist tag from its file name. Both left
+# a repository that resolved and installed correctly while being short a
+# package. An apk quietly absent from the tree is the same bug with a whole
+# distribution behind it.
+#
+# apk is not a small addition, because it cannot share the signing key.
+# nfpm signs deb and rpm with the OpenPGP key; apk is signed with a bare RSA
+# key whose public half a host installs as /etc/apk/keys/<name>.rsa.pub.
+# That is a second long-lived key to generate, publish, protect and commit
+# to -- the same class of decision as the repository hostname, and not one
+# this script should make by existing.
+#
+# Note ssoossh's apk is also unsigned today: .goreleaser.yml builds the apk
+# format for the server with no apk: signature: block.
+#
+# --skip-apk proceeds deliberately, and leaves a trace that says so.
+apks=$(find "$dist" -name '*.apk' -type f | sort)
+if [ -n "$apks" ]; then
+	if [ -z "$skip_apk" ]; then
+		echo "gen-repo: found .apk packages, which this script does not publish:" >&2
+		for apk in $apks; do echo "gen-repo:   $(basename "$apk")" >&2; done
+		echo "gen-repo:" >&2
+		echo "gen-repo: apk needs its own repository and its own RSA signing key" >&2
+		echo "gen-repo: (/etc/apk/keys/<name>.rsa.pub); it cannot use the OpenPGP key" >&2
+		echo "gen-repo: that signs the deb and rpm. Decide that, or pass --skip-apk to" >&2
+		echo "gen-repo: publish without Alpine and leave those packages to direct" >&2
+		echo "gen-repo: download." >&2
+		exit 1
+	fi
+	echo "gen-repo: skipping $(echo "$apks" | wc -l | tr -d ' ') apk package(s) -- Alpine is not served by this repository" >&2
 fi
 
 # The key every client needs to verify any of the above. Shipped in the tree
