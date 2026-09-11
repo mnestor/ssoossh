@@ -100,19 +100,17 @@ nothing, is supported policy from your distribution, and covers login domains
 the policy package deliberately does not name -- which matters if your site
 forbids third-party SELinux modules, as regulated environments often do.
 
-`sudo` is the exception, and only on a default host. It does not transition
-to a domain of its own, so it runs as the calling user -- and in the stock
-targeted policy an interactive user is `unconfined_t`, which reaches every
-port through `corenet_unconfined_type`. A host using `pam_ssoossh` only for
-`sudo` therefore needs neither.
+`sudo` needs neither, and it is worth knowing why rather than taking it on
+trust -- the reason says when it would stop being true. `sudo` does not
+transition to a domain of its own, so the module runs as the calling user.
+The question is therefore always about the user's domain and never about
+`sudo`, and every user domain the targeted policy ships already reaches
+`http_port_t`: `unconfined_t` through `corenet_unconfined_type`, and the
+confined ones -- `staff_t`, `user_t`, `sysadm_t` -- through an unconditional
+rule from their `*_usertype` attribute to `port_type`.
 
-:::caution[Confined users are the gap]
-If your users are mapped to `staff_t`, `user_t` or `sysadm_t`, that reasoning
-does not hold: those domains have no `name_connect` to `http_port_t`, and
-neither route above covers them -- the policy package names the login domains
-and the boolean covers `login_pgm`, which no confined user domain belongs to.
-Such a host needs a local policy module for the user domain in use.
-:::
+It is the login domains -- `sshd`, console login -- that need one of the two
+routes above.
 
 EL 10 is not built yet. The repository serves an EL 10 tree for the client
 and server, but it contains no `pam-ssoossh`.
