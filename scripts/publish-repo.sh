@@ -100,6 +100,12 @@ export RCLONE_CONFIG_R2_ACCESS_KEY_ID="$R2_KEY_ID"
 export RCLONE_CONFIG_R2_SECRET_ACCESS_KEY="$R2_ACCESS_KEY"
 export RCLONE_CONFIG_R2_ENDPOINT="$R2_S3_ENDPOINT"
 export RCLONE_CONFIG_R2_REGION=auto
+# The bucket is created by hand, and the token is scoped to it rather than
+# to the account. rclone otherwise checks the bucket exists before its first
+# write, which needs a bucket-level permission the token deliberately does
+# not carry; the S3 permissions documentation notes this is what lets the
+# bucket be left out of the policy entirely.
+export RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
 
 dest="R2:$bucket/$prefix"
 
@@ -117,7 +123,16 @@ upload() {
 		return 0
 	fi
 	echo "publish-repo: $what"
-	rclone copy $dry --checksum --header-upload "$cache" "$src" "$dst"
+
+	# `copy` treats its destination as a directory and puts the source
+	# inside it, so a single file named with its intended destination
+	# lands at <dst>/<basename> -- gpg-public.asc/gpg-public.asc rather
+	# than gpg-public.asc. `copyto` is the file-to-file form.
+	if [ -f "$src" ]; then
+		rclone copyto $dry --checksum --header-upload "$cache" "$src" "$dst"
+	else
+		rclone copy $dry --checksum --header-upload "$cache" "$src" "$dst"
+	fi
 }
 
 # --- 1. packages, immutable -------------------------------------------------
