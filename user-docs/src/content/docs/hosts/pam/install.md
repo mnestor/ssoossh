@@ -63,6 +63,30 @@ vague signature failure.
 8.8. It is refused on every platform. Check what your CA key is before you
 deploy: `ssh-keygen -l -f /etc/ssoossh/ca.pub`.
 
+## From the package repository
+
+On Linux, the module and its SELinux policy are served from ssoossh's signed
+repository, which saves choosing an artifact by hand -- the metadata for your
+release offers only the build that matches it:
+
+```bash
+sudo dnf install pam-ssoossh          # RHEL 8, 9, 10 and rebuilds
+sudo apt install pam-ssoossh          # Debian, Ubuntu
+```
+
+On EL hosts running SELinux, `pam-ssoossh-selinux` carries the policy and is
+installed separately; nothing pulls it in for you.
+
+For deb hosts this is the path worth taking. `apt` verifies repositories
+rather than individual files and Debian disables per-package signature
+checking by default, so a `.deb` fetched from the release page and installed
+with `dpkg -i` is verified by nothing unless you check `SHA256SUMS` yourself.
+See [Installing from packages](/ssoossh/packages/) for the one-time setup, and
+[Verifying a download](#verifying-a-download) below for the manual route.
+
+Alpine, FreeBSD and macOS are not served from the repository and stay direct
+downloads.
+
 ## Which package
 
 Releases are built per platform and wrapped as distribution packages by

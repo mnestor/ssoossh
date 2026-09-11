@@ -51,6 +51,7 @@ export default defineConfig({
 			sidebar: [
 				{ label: 'Why ssoossh', slug: 'why' },
 				{ label: 'Getting started', slug: 'getting-started' },
+				{ label: 'Installing from packages', slug: 'packages' },
 				{ label: 'How it works', items: [{ autogenerate: { directory: 'concepts' } }] },
 				{ label: 'User guide', items: [{ autogenerate: { directory: 'guides' } }] },
 				{ label: 'Host administration', items: [{ autogenerate: { directory: 'hosts' } }] },

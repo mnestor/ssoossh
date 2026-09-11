@@ -11,6 +11,11 @@ and multi-instance work comes later.
 
 ## Packages
 
+The quickest path is the signed repository -- `sudo dnf install ssoosshd`, or
+`sudo apt install ssoosshd`, once the release package is in place. See
+[Installing from packages](/ssoossh/packages/) for the one-time setup and for
+what each package manager verifies.
+
 The server ships as a `ssoosshd` package in `.deb`, `.rpm` and `.apk`, all
 carrying the same statically linked binary, built for linux/amd64 and
 linux/arm64. There is no libc to choose: the default build is cgo-free, so

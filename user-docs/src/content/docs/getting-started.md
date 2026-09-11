@@ -56,20 +56,28 @@ and 4 look like from the user's chair.
 
 ## 1. Install the client
 
-Download the release package for your platform from the
-[releases page](https://github.com/mnestor/ssoossh/releases).
+On Linux, install from the signed package repository -- one setup step, and
+upgrades then come through your package manager. See
+[Installing from the package repository](/ssoossh/packages/) for the full
+story, including what is and is not verified on each side.
 
 **Debian / Ubuntu**
 
 ```bash
-sudo dpkg -i ssoossh-client_*.deb
+curl -fsSLO https://packages.mikenestor.org/ssoossh/apt/pool/main/all/ssoossh-release_1.4.0_all.deb
+sudo dpkg -i ssoossh-release_1.4.0_all.deb
+sudo apt update && sudo apt install ssoossh-client
 ```
 
 **RHEL / Fedora**
 
 ```bash
-sudo rpm -i ssoossh-client_*.rpm
+sudo rpm -i https://packages.mikenestor.org/ssoossh/yum/pool/ssoossh-release_1.4.0_noarch.rpm
+sudo dnf install ssoossh-client
 ```
+
+Packages for every platform are also on the
+[releases page](https://github.com/mnestor/ssoossh/releases).
 
 Both packages put the binary in `/usr/bin` and an annotated copy of the
 client defaults at `/etc/ssoossh/ssoossh.yaml`.

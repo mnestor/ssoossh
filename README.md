@@ -84,6 +84,29 @@ certificate is requested, validated once, and discarded.
 | **ssoosshd** (server) | The trust anchor and policy decision point. Authenticates via OIDC, maps identity to certificate contents, signs with the CA key, and serves the web UI where issuance is approved. |
 | **pam_ssoossh** | A Linux PAM module for `sudo`/`su`. Requests a very short-lived certificate, validates it, and discards it. SSH login itself is not in scope here, since that path is already certificate-based. Ships from its own repository, [mnestor/ssoossh-pam](https://github.com/mnestor/ssoossh-pam); its documentation lives here. |
 
+## Installing
+
+Linux packages come from a signed repository at `packages.mikenestor.org`,
+which serves the client, the server, the PAM module and its SELinux policy.
+
+```bash
+# Debian / Ubuntu
+curl -fsSLO https://packages.mikenestor.org/ssoossh/apt/pool/main/all/ssoossh-release_1.4.0_all.deb
+sudo dpkg -i ssoossh-release_1.4.0_all.deb
+sudo apt update && sudo apt install ssoossh-client
+
+# RHEL / Alma / Rocky / Oracle
+sudo rpm -i https://packages.mikenestor.org/ssoossh/yum/pool/ssoossh-release_1.4.0_noarch.rpm
+sudo dnf install ssoossh-client
+```
+
+On Debian and Ubuntu this is worth preferring over a direct download: Debian
+disables per-package signature checking by default, so a `.deb` installed with
+`dpkg -i` is verified by nothing, while an apt install is covered by the
+repository's signed metadata.
+[Installing from packages](https://mnestor.github.io/ssoossh/packages/) covers
+Alpine, Windows, macOS and the signing key.
+
 ## Getting started
 
 Four pieces make a working login:
@@ -106,6 +129,7 @@ behind each step.
 | Document | What it covers |
 | --- | --- |
 | [Getting started](https://mnestor.github.io/ssoossh/getting-started/) | The shortest path to a working `ssh login` |
+| [Installing from packages](https://mnestor.github.io/ssoossh/packages/) | The signed apt and yum repositories, and what each one verifies |
 | [How it works](https://mnestor.github.io/ssoossh/concepts/) | What ssoossh solves, and everything it does today |
 | [How it works](https://mnestor.github.io/ssoossh/concepts/) | Sequence diagrams for every flow |
 | [FAQ](https://mnestor.github.io/ssoossh/guides/faq/) | Common questions: users, sshd host admins, server operators |
