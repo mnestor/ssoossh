@@ -62,6 +62,20 @@ enforcing one.
 
 ### Status
 
-Not yet run. No enforcing EL host has been available, so the answer is
-unknown rather than assumed -- and that is the reason this script exists
-rather than a paragraph asserting it is fine.
+**Not yet run.** No enforcing EL host has been available to anyone working
+on this, so the answer is unknown rather than assumed. That is the reason
+this exists as a script rather than a paragraph asserting the move is fine.
+
+Worth being precise about what "no host" means, because the trap here caught
+people already: an `almalinux:9` container on a non-SELinux host is not an
+EL9 SELinux environment. Containers share the host kernel's LSM, so a
+container on a Debian or Ubuntu machine has no SELinux at all -- `semodule`
+will load a policy module and report success, and nothing will ever enforce
+it. A result from that arrangement describes packaging mechanics and says
+nothing about policy behaviour.
+
+The same missing resource blocks a question on the ssoossh-pam side: whether
+the rule its policy package ships actually clears the console-login denial
+it was written for. One disposable AlmaLinux 9 or Oracle Linux 9 VM, SELinux
+left at its default `Enforcing`, answers both. It is the cheapest way to
+turn two documented caveats into two facts.
