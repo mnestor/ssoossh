@@ -74,8 +74,45 @@ sudo dnf install pam-ssoossh          # RHEL 8 and 9, and rebuilds
 sudo apt install pam-ssoossh          # Debian, Ubuntu
 ```
 
-On EL hosts running SELinux, `pam-ssoossh-selinux` carries the policy and is
-installed separately; nothing pulls it in for you.
+### SELinux on EL hosts
+
+With SELinux enforcing, the module cannot reach `ssoosshd` without policy for
+it. There are two ways to grant that, and neither happens on its own.
+
+**The policy package.** `pam-ssoossh-selinux` carries a policy module scoped
+to the domains where the denial has actually been reproduced. It is installed
+separately and nothing pulls it in for you.
+
+**A boolean Red Hat already ships.** The base policy carries the same access
+behind `authlogin_yubikey`, which is off by default:
+
+```bash
+sudo setsebool -P authlogin_yubikey on
+```
+
+It grants `name_connect` to `http_port_t` for the `login_pgm` attribute, which
+holds `sshd_t`, `local_login_t`, `remote_login_t` and `xdm_t` on EL 8, 9 and
+10 -- plus `cockpit_session_t` on EL 8 and `sshd_session_t` on EL 10.
+
+Which to choose is a real trade rather than a default. The policy package is
+narrower, versioned, and removable with the package. The boolean installs
+nothing, is supported policy from your distribution, and covers login domains
+the policy package deliberately does not name -- which matters if your site
+forbids third-party SELinux modules, as regulated environments often do.
+
+`sudo` is the exception, and only on a default host. It does not transition
+to a domain of its own, so it runs as the calling user -- and in the stock
+targeted policy an interactive user is `unconfined_t`, which reaches every
+port through `corenet_unconfined_type`. A host using `pam_ssoossh` only for
+`sudo` therefore needs neither.
+
+:::caution[Confined users are the gap]
+If your users are mapped to `staff_t`, `user_t` or `sysadm_t`, that reasoning
+does not hold: those domains have no `name_connect` to `http_port_t`, and
+neither route above covers them -- the policy package names the login domains
+and the boolean covers `login_pgm`, which no confined user domain belongs to.
+Such a host needs a local policy module for the user domain in use.
+:::
 
 EL 10 is not built yet. The repository serves an EL 10 tree for the client
 and server, but it contains no `pam-ssoossh`.
