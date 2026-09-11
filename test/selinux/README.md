@@ -46,6 +46,29 @@ It refuses to run on a Permissive host. Permissive logs denials without
 acting on them, so a clean result there would prove nothing about an
 enforcing one.
 
+### Handing it to someone else
+
+The script is self-contained. It uses only tools present on a stock EL9
+install plus the `ssoossh` binary from the package, reads nothing from this
+repository, and writes nothing outside `/tmp` and one `sshd_config` drop-in
+it removes again. So the whole handover is one file and two commands:
+
+```bash
+# send them test/selinux/authorized-principals-label.sh, then:
+sudo dnf install -y ./ssoossh-client-*.rpm
+sudo ./authorized-principals-label.sh
+```
+
+What to ask for back: the entire output, not a summary. The useful detail is
+in the `ls -Z` lines and in any AVC's `scontext` and `tcontext`, and a
+"worked fine" or "got a denial" loses exactly the part that decides what to
+do next.
+
+It is safe to run on a host that is not enforcing -- it refuses and exits
+before touching anything, so it cannot produce a false pass by being run in
+the wrong place. It is not safe to assume a pass from a host where SELinux
+is absent, which is a different thing and the reason for that refusal.
+
 ### Reading the result
 
 - **Both paths clean** -- the path move introduces no SELinux regression and
