@@ -17,6 +17,11 @@ ARG ZIG_VERSION=0.16.0
 # this is a commit rather than a version.
 ARG BOMUTILS_COMMIT=c247002e2f49878bab32dd0fcf805810ae0992cb
 ARG RCODESIGN_VERSION=0.29.0
+# rclone from upstream, not from apt. Ubuntu ships 1.60, which predates
+# rclone knowing that Cloudflare R2 implements no ACLs: it puts
+# "x-amz-acl: private" on every upload and R2 answers 501 NotImplemented.
+# Current rclone omits the header entirely when the provider is Cloudflare.
+ARG RCLONE_VERSION=1.75.1
 # Tools baked in so CI steps don't fetch them on every run. Each is pinned,
 # and each pin is the one the workflow that used to install it asked for:
 #   golangci-lint  was golangci/golangci-lint-action's `version:` in lint.yaml
@@ -70,10 +75,6 @@ RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sourc
     # the file name does not carry it. None of the three ships in the base
     # image.
     apt-utils createrepo-c rpm \
-    # rclone uploads the generated repository to R2. Chosen over awscli for
-    # --header-upload, which is how the package files and the metadata get
-    # the different cache lifetimes they need.
-    rclone \
     # The macOS installer is assembled here rather than on a macOS runner
     # (packaging/macos/flatpkg.sh): xar writes the flat package's archive,
     # and libarchive-tools supplies bsdcpio for its payload. bsdcpio and not
@@ -87,6 +88,15 @@ RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sourc
     # ubuntu base image enables by default. msitools is the sibling package
     # holding msiinfo, used to inspect a built package.
     wixl msitools \
+  # rclone uploads the generated repository to R2. Chosen over awscli for
+  # --header-upload, which is how the package files and the metadata get the
+  # different cache lifetimes they need. Installed from upstream for the
+  # reason given at RCLONE_VERSION above.
+  && curl -fsSL -o /tmp/rclone.zip \
+       https://downloads.rclone.org/v${RCLONE_VERSION}/rclone-v${RCLONE_VERSION}-linux-amd64.zip \
+  && unzip -q -j /tmp/rclone.zip "rclone-v${RCLONE_VERSION}-linux-amd64/rclone" -d /usr/local/bin \
+  && chmod 0755 /usr/local/bin/rclone \
+  && rm -f /tmp/rclone.zip \
   && curl -sL -o /tmp/quill.deb $(curl -s https://api.github.com/repos/anchore/quill/releases/latest | jq -r '.assets[] |select(.name|match("linux_amd64.deb$")) | .browser_download_url') \
   && dpkg -i /tmp/quill.deb \
   # mkbom, which writes the flat package's BOM. Pinned to a commit and not
