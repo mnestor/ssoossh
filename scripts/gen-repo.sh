@@ -189,25 +189,30 @@ if [ -n "$rpms" ]; then
 	# one package name at distinct NEVRAs, which is what lets the solver
 	# pick: the same name at the same version in one repository would BE
 	# the same package, and createrepo would collide rather than offer a
-	# choice. A package with no dist tag -- everything ssoossh itself
-	# builds, all static Go -- is the same file on every release and is
-	# published into each.
-	for releasever in $releasevers; do
-		mkdir -p "$out/yum/el/$releasever/packages"
-	done
-
-	# The dist tag is read from the package's Release field, NOT from its
-	# file name. They are unrelated: pam-ssoossh ships its EL major in
-	# Release (1.el8, 1.el9) while its file name is
-	# pam-ssoossh_<version>_<os>_<arch>.rpm for both, so a file-name match
-	# files both builds as untagged and lands them in every tree. This is
-	# the same mistake as apt-ftparchive's --arch filter above, in the other
-	# half of the script -- metadata is what the package manager reads, and
-	# a file name is a convention that no producer owes this script.
+	# choice.
+	#
+	# The packages themselves live once, in a shared pool, and each
+	# release's repodata points back at it with --location-prefix. Copying
+	# instead would store every dist-tag-free package -- everything ssoossh
+	# builds, all static Go -- once per release, tripling the rpm half of
+	# the tree for three EL majors. createrepo_c --pkglist selects which of
+	# the pool each tree offers, so an EL8 host is still never shown an
+	# el9 package.
 	need rpm "rpm provides the query used to read each package's Release"
+
+	pool="$out/yum/pool"
+	mkdir -p "$pool"
+
+	for releasever in $releasevers; do
+		mkdir -p "$out/yum/el/$releasever"
+		: > "$out/yum/el/$releasever/.pkglist"
+	done
 
 	for rpm in $rpms; do
 		release=$(rpm -qp --queryformat '%{RELEASE}' "$rpm")
+		base=$(basename "$rpm")
+		copy_unique "$rpm" "$pool"
+
 		matched=""
 		for releasever in $releasevers; do
 			# 1.el9 and, defensively, anything that appends to it. Anchored
@@ -215,22 +220,28 @@ if [ -n "$rpms" ]; then
 			# swallow .el10.
 			case "$release" in
 			*".el$releasever" | *".el$releasever."*)
-				copy_unique "$rpm" "$out/yum/el/$releasever/packages"
+				echo "$base" >> "$out/yum/el/$releasever/.pkglist"
 				matched=yes
 				;;
 			esac
 		done
 		if [ -z "$matched" ]; then
 			for releasever in $releasevers; do
-				copy_unique "$rpm" "$out/yum/el/$releasever/packages"
+				echo "$base" >> "$out/yum/el/$releasever/.pkglist"
 			done
 		fi
 	done
 
-	need createrepo_c "createrepo-c provides it"
-
 	for releasever in $releasevers; do
-		createrepo_c --quiet "$out/yum/el/$releasever"
+		# --location-prefix rewrites each location href to reach back out of
+		# this release's directory into the shared pool. Two levels up from
+		# yum/el/<releasever>/ is yum/, where pool/ sits.
+		createrepo_c --quiet \
+			--outputdir "$out/yum/el/$releasever" \
+			--pkglist "$out/yum/el/$releasever/.pkglist" \
+			--location-prefix ../../pool \
+			"$pool"
+		rm -f "$out/yum/el/$releasever/.pkglist"
 
 		if [ -n "$key_id" ]; then
 			# dnf verifies repomd.xml's detached signature, and the
