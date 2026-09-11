@@ -62,6 +62,46 @@ need() {
 	}
 }
 
+# copy_unique copies $1 into directory $2, refusing to overwrite a file of
+# the same name whose contents differ.
+#
+# This is the guard on the rule below that a package with no dist tag is
+# published into every release's tree. Two builds that differ only in what
+# they link against -- pam-ssoossh built in almalinux:8 against
+# libcrypto.so.1.1 and in almalinux:9 against libcrypto.so.3 -- produce the
+# same name, version and release, and therefore the same file name and the
+# same NEVRA. Same NEVRA IS the same package: a repository cannot hold both,
+# and without this the second copy silently overwrites the first, leaving
+# whichever the directory walk reached last to be offered to every release.
+# An EL8 host is then offered a package built against an OpenSSL it does not
+# have.
+#
+# Failing the build is the only honest answer. The fix belongs in the
+# producing package -- distinct Release values, 1.el8 and 1.el9, which give
+# the variants distinct NEVRAs and let them be filed per release -- and it
+# is not something this script can paper over.
+copy_unique() {
+	src=$1
+	destdir=$2
+	base=$(basename "$src")
+
+	if [ -e "$destdir/$base" ]; then
+		if cmp -s "$src" "$destdir/$base"; then
+			return 0
+		fi
+		echo "gen-repo: refusing to publish two different packages as $base" >&2
+		echo "gen-repo:   candidate: $src" >&2
+		echo "gen-repo:   already placed: $destdir/$base" >&2
+		echo "gen-repo: these share a NEVRA, so they are the same package as far as" >&2
+		echo "gen-repo: any repository is concerned. Give the variants distinct" >&2
+		echo "gen-repo: Release values (a dist tag: 1.el8, 1.el9) and they can be" >&2
+		echo "gen-repo: filed per release instead." >&2
+		exit 1
+	fi
+
+	cp "$src" "$destdir/$base"
+}
+
 rm -rf "$out"
 mkdir -p "$out"
 
@@ -71,7 +111,6 @@ mkdir -p "$out"
 # goreleaser target appears in the repository without editing this script.
 debs=$(find "$dist" -name '*.deb' -type f | sort)
 if [ -n "$debs" ]; then
-	need apt-ftparchive "apt-utils provides it"
 	echo "gen-repo: building apt repository"
 
 	# The pool is split by architecture so each index is generated from its
@@ -84,7 +123,7 @@ if [ -n "$debs" ]; then
 	for deb in $debs; do
 		arch=$(dpkg-deb -f "$deb" Architecture)
 		mkdir -p "$out/apt/pool/$component/$arch"
-		cp "$deb" "$out/apt/pool/$component/$arch/"
+		copy_unique "$deb" "$out/apt/pool/$component/$arch"
 		case " $arches " in
 		*" $arch "*) ;;
 		*) arches="$arches $arch" ;;
@@ -95,6 +134,12 @@ if [ -n "$debs" ]; then
 	for arch in $arches; do
 		mkdir -p "$out/apt/dists/$suite/$component/binary-$arch"
 	done
+
+	# Checked here rather than up front so that the collision guard in
+	# copy_unique runs first: a package set that cannot be published is a
+	# fault in the input, and reporting it only on a machine that happens
+	# to have the index writers installed would be the wrong order.
+	need apt-ftparchive "apt-utils provides it"
 
 	# Paths inside Packages must be relative to the repository root, which
 	# is why this runs from $out/apt rather than passing absolute paths.
@@ -132,7 +177,6 @@ fi
 # ---------------------------------------------------------------- yum ------
 rpms=$(find "$dist" -name '*.rpm' -type f | sort)
 if [ -n "$rpms" ]; then
-	need createrepo_c "createrepo-c provides it"
 	echo "gen-repo: building yum repository"
 
 	# One repository per EL major, addressed by $releasever in the .repo
@@ -156,17 +200,19 @@ if [ -n "$rpms" ]; then
 		for releasever in $releasevers; do
 			case "$base" in
 			*".el$releasever."*)
-				cp "$rpm" "$out/yum/el/$releasever/packages/"
+				copy_unique "$rpm" "$out/yum/el/$releasever/packages"
 				matched=yes
 				;;
 			esac
 		done
 		if [ -z "$matched" ]; then
 			for releasever in $releasevers; do
-				cp "$rpm" "$out/yum/el/$releasever/packages/"
+				copy_unique "$rpm" "$out/yum/el/$releasever/packages"
 			done
 		fi
 	done
+
+	need createrepo_c "createrepo-c provides it"
 
 	for releasever in $releasevers; do
 		createrepo_c --quiet "$out/yum/el/$releasever"
