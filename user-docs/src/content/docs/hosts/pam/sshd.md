@@ -13,6 +13,17 @@ either on its own, or as a second factor behind a public key.
 This is always the browser flow. `PAM_RHOST` is set for an SSH session, so
 `mode=auto` never picks the console flow here.
 
+:::caution[On an enforcing EL host, grant the policy first]
+`sshd_t` has no outbound TCP in the shipped SELinux policy, so with SELinux
+enforcing the module cannot reach `ssoosshd` and authentication fails. Install
+`pam-ssoossh-selinux`, or run `setsebool -P authlogin_yubikey on`. Setting
+SELinux permissive makes it work and is the diagnosis, not the fix. See
+[SELinux on EL hosts](/ssoossh/hosts/pam/install/#selinux-on-el-hosts).
+
+`sudo` is not affected by this, which is why a stack that works for `sudo`
+can still fail here.
+:::
+
 ## The sshd stanza
 
 ```ini

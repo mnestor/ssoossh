@@ -70,7 +70,7 @@ repository, which saves choosing an artifact by hand -- the metadata for your
 release offers only the build that matches it:
 
 ```bash
-sudo dnf install pam-ssoossh          # RHEL 8 and 9, and rebuilds
+sudo dnf install pam-ssoossh          # RHEL 8, 9 and 10, and rebuilds
 sudo apt install pam-ssoossh          # Debian, Ubuntu
 ```
 
@@ -81,7 +81,9 @@ it. There are two ways to grant that, and neither happens on its own.
 
 **The policy package.** `pam-ssoossh-selinux` carries a policy module scoped
 to the domains where the denial has actually been reproduced. It is installed
-separately and nothing pulls it in for you.
+separately and nothing pulls it in for you. It is published for EL 8 and EL 9
+only -- EL 10 is a different generation of the base policy, and shipping a
+module there would assert something nobody has observed on it.
 
 **A boolean Red Hat already ships.** The base policy carries the same access
 behind `authlogin_yubikey`, which is off by default:
@@ -93,6 +95,8 @@ sudo setsebool -P authlogin_yubikey on
 It grants `name_connect` to `http_port_t` for the `login_pgm` attribute, which
 holds `sshd_t`, `local_login_t`, `remote_login_t` and `xdm_t` on EL 8, 9 and
 10 -- plus `cockpit_session_t` on EL 8 and `sshd_session_t` on EL 10.
+
+On EL 10 this is the route, since no policy package is published for it.
 
 Which to choose is a real trade rather than a default. The policy package is
 narrower, versioned, and removable with the package. The boolean installs
@@ -112,9 +116,6 @@ rule from their `*_usertype` attribute to `port_type`.
 It is the login domains -- `sshd`, console login -- that need one of the two
 routes above.
 
-EL 10 is not built yet. The repository serves an EL 10 tree for the client
-and server, but it contains no `pam-ssoossh`.
-
 For deb hosts this is the path worth taking. `apt` verifies repositories
 rather than individual files and Debian disables per-package signature
 checking by default, so a `.deb` fetched from the release page and installed
@@ -133,7 +134,7 @@ built with Apple's own tools.
 
 | Artifact | For | Package formats |
 | --- | --- | --- |
-| `linux-{x86_64,aarch64}-glibc-openssl3` | RHEL 9 and rebuilds, Debian 12+, Ubuntu 22.04+, anything with `libcrypto.so.3` | `.deb`, `.rpm` |
+| `linux-{x86_64,aarch64}-glibc-openssl3` | RHEL 9 and 10 and rebuilds, Debian 12+, Ubuntu 22.04+, anything with `libcrypto.so.3` | `.deb`, `.rpm` |
 | `linux-{x86_64,aarch64}-glibc-openssl1.1` | RHEL 8 and rebuilds, anything with `libcrypto.so.1.1` | `.rpm` |
 | `linux-{x86_64,aarch64}-musl` | Alpine | `.apk` |
 | `freebsd14-x86_64` | FreeBSD 14 | tarball only |
