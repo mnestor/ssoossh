@@ -3,7 +3,7 @@ module github.com/mnestor/ssoossh
 go 1.27
 
 require (
-	github.com/DeRuina/timberjack v1.4.7
+	github.com/DeRuina/timberjack v1.4.8
 	github.com/Microsoft/go-winio v0.6.2
 	github.com/ThreeDotsLabs/watermill v1.5.3
 	github.com/ThreeDotsLabs/watermill-nats/v2 v2.2.0
@@ -12,7 +12,7 @@ require (
 	github.com/chromedp/chromedp v0.16.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/eclipse-keypont/crypto11 v1.6.8
-	github.com/gin-contrib/sessions v1.1.1
+	github.com/gin-contrib/sessions v1.1.2
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/go-sqlite v1.23.0
 	github.com/glebarez/sqlite v1.11.0
@@ -22,7 +22,7 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/google/uuid v1.6.0
-	github.com/italypaleale/go-kit v1.2.3
+	github.com/italypaleale/go-kit v1.2.4
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/kbolino/pageant v0.0.0-20180919004629-179b60797d9f
 	github.com/lmittmann/tint v1.2.0
