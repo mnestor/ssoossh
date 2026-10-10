@@ -152,6 +152,22 @@
 	--radius-md: 0.25rem;
 	--radius-lg: 0.375rem;
 	--radius-xl: 0.5rem;
+
+	/* The size of every standalone control, so no control states its own
+	   height: 36px with a mouse, raised to 44px on a touch screen below.
+	   Emits `min-h-target`, `min-w-target` and `size-target`. */
+	--spacing-target: 2.25rem;
+}
+
+@layer base {
+	/* Approvals happen in a desktop browser; a phone (a console login, say)
+	   is the exception, and gets the touch-sized target from the same
+	   token. Base comes after the theme layer, so this wins. */
+	@media (pointer: coarse) {
+		:root {
+			--spacing-target: 2.75rem;
+		}
+	}
 }
 
 @layer base {

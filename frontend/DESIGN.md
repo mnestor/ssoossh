@@ -5,10 +5,10 @@ unambiguous about the one thing to press.
 
 Rewritten 2026-10-10 from that day's Character decisions, the token layer in
 `src/app.css`, and the August and September notes this file used to carry.
-Where they disagreed, the Character decisions won. A decision marked
-**(assumed)** was made during the rewrite and is waiting for confirmation;
-"Open rulings" lists those and the questions still unanswered. "Not yet in
-code" lists where the components still trail this spec.
+Where they disagreed, the Character decisions won. The product owner's
+rulings from the 2026-10-10 review are written into the sections they govern;
+"Settled questions" lists the ones a later audit would otherwise raise again.
+"Not yet in code" lists where the components still trail this spec.
 
 **Using this file**
 
@@ -112,8 +112,8 @@ in a pager, tabs, checkboxes or decorative marks. The one exception is
 text-surface`), the `check` glyph before the label, and `aria-pressed`.
   Never cobalt.
 - **Current** (where the reader is): the rail item as above. The current page
-  in a `Pager` is an ink fill with `aria-current="page"` and no glyph
-  **(assumed)**: it is a location, not a choice.
+  in a `Pager` is an ink fill with `aria-current="page"` and no glyph: it is
+  a location, not a choice.
 - **Status** colours are semantic only. `granted` means approved, valid or
   granted; `trimmed` means narrowed, restricted or a warning; `danger` means
   an error, a denial or destruction. They never mark "configured", "came from
@@ -202,7 +202,7 @@ Base unit 4px, Tailwind's spacing scale.
 | Rows inside a panel, simplified level | `gap-4`, facts at `text-base`                                          | Fewer facts, so each gets more room.                          |
 | A list of row panels                  | `gap-2`                                                                | Each row is one event among several.                          |
 | Section panel padding                 | `p-5`                                                                  | One value for every `PageSection`.                            |
-| Row panel padding                     | `px-4 py-3` **(assumed)**                                              | One value for every row; the certificate rows already use it. |
+| Row panel padding                     | `px-4 py-3`                                                            | One value for every row; the certificate rows already use it. |
 | Between panels                        | `gap-8`, set by `PageShell`                                            | Released: the contrast with the inside is the rhythm.         |
 
 ### Layout constants
@@ -236,11 +236,11 @@ off-system.
 
 ### Planes
 
-| Plane           | What sits on it                                                                                                                                                                                                                                                                           | Why                                                                     |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `ground`        | Only `surface` panels.                                                                                                                                                                                                                                                                    | The page.                                                               |
-| `surface`       | Section panels (`PageSection`), row panels (`CertRow`, `DeniedRow`, `ServiceCodeRow`, `ServiceAccountRow`), `EmptyState`, `LoadingBlock` row shapes, tables, identity strips **(assumed)**, page-level `info` alerts **(assumed)**, the rail, the narrow-viewport bar, dialogs, popovers. | One device for "this is a thing on the page".                           |
-| `surface-muted` | Hover states, code wells, request-line tiles, chip fills, the directory probe box, `info` alerts inside a panel.                                                                                                                                                                          | A tint inside a panel. On the ground it measures 1.05:1 and disappears. |
+| Plane           | What sits on it                                                                                                                                                                                                                                               | Why                                                                     |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `ground`        | Only `surface` panels.                                                                                                                                                                                                                                        | The page.                                                               |
+| `surface`       | Section panels (`PageSection`), row panels (`CertRow`, `DeniedRow`, `ServiceCodeRow`, `ServiceAccountRow`), `EmptyState`, `LoadingBlock` row shapes, tables, identity strips, page-level `info` alerts, the rail, the narrow-viewport bar, dialogs, popovers. | One device for "this is a thing on the page".                           |
+| `surface-muted` | Hover states, code wells, request-line tiles, chip fills, the directory probe box, `info` alerts inside a panel.                                                                                                                                              | A tint inside a panel. On the ground it measures 1.05:1 and disappears. |
 
 Rule: anything that sits directly on the ground is `bg-surface`; anything
 tinted is inside a surface panel. A card inside a card says the inner thing is
@@ -254,9 +254,8 @@ panel gets a frame: a `dl` uses `divide-y divide-border-subtle`, a
 2. The edge of a control a reader operates (a field, a ghost button, a pager
    control, an unselected chip): `border-control`, 3:1 or better on every
    plane.
-3. The edge of a value chip (`MonoChip`): `border-subtle` **(assumed)**. A
-   set of principals has to show where one value ends; a fill alone is
-   1.08:1.
+3. The edge of a value chip (`MonoChip`): `border-subtle`. A set of
+   principals has to show where one value ends; a fill alone is 1.08:1.
 
 Nothing else takes a border: no panel edges, no rail edge, no header or
 footer rule, no alert outline, no side stripe.
@@ -317,13 +316,19 @@ infinite loop is a strobe.
 
 ## 7. Interaction
 
-- **Targets: 44px minimum** for every standalone control: buttons, every
-  chip a reader presses (filter, principal, extension), segmented controls,
-  pager controls, icon buttons (`size-11`), rail rows, menu rows, checkbox
-  and radio rows (the whole label is the target), the copy button and the
-  back chip. Use `min-h-11` (and `min-w-11` where the control is narrow).
-  The glyph inside stays at its size; the target grows around it. Inline
-  links inside a sentence are exempt.
+- **Targets: 36px with a mouse, 44px on touch.** One token,
+  `--spacing-target`: 2.25rem, raised to 2.75rem under
+  `@media (pointer: coarse)` in `app.css`. Every standalone control takes
+  it: buttons, every chip a reader presses (filter, principal, extension),
+  segmented controls, pager controls, icon buttons (`size-target`), rail
+  rows, menu rows, checkbox and radio rows (the whole label is the target),
+  the copy button and the back chip. Use `min-h-target` (and
+  `min-w-target` where the control is narrow); no control states its own
+  height. The glyph inside stays at its size; the target grows around it.
+  Inline links inside a sentence are exempt. Why: approvals happen in a
+  desktop browser, where 36px keeps rows dense and clears WCAG 2.2's 24px
+  minimum; the rare phone (a console login) gets the touch size from the
+  same token, on every control at once.
 - **Focus:** the base layer's `:focus-visible` outline (2px cobalt, 2px
   offset) is the focus ring. Never cancel it with `focus:outline-none`:
   utilities are emitted in a later layer and silently win.
@@ -479,7 +484,7 @@ that still trail it.
   - `ghost`: `border border-border-control text-ink hover:bg-surface-muted`.
   - `danger`: `bg-danger-surface text-danger`, for the confirming button of
     a destructive dialog.
-  - All: `inline-flex` row with a gap, `rounded-md`, `min-h-11 px-4`,
+  - All: `inline-flex` row with a gap, `rounded-md`, `min-h-target px-4`,
     `text-sm font-medium`, `active:scale-98`, `disabled:opacity-50`. `full`
     stretches it to the column (the sign-in button). `busy` shows the busy
     wording.
@@ -500,7 +505,7 @@ tracking-label uppercase text-ink-muted`, sans) and an optional line of
 - **Alert**: `error` (`alert-octagon`, `bg-danger-surface text-danger`,
   `role="alert"`), `warning` (`alert-triangle`, `bg-trimmed-surface
 text-trimmed`, `role="status"`), `info` (`info-circle`, `bg-surface` on the
-  ground or `bg-surface-muted` inside a panel **(assumed)**, `role="status"`).
+  ground or `bg-surface-muted` inside a panel, `role="status"`).
   `rounded-lg`, no border. An error Alert for a failed load carries its way
   out (see States).
 
@@ -545,16 +550,16 @@ bg-surface-muted`, decorative), a short title, the sentence that says what
   `PageMeta`. Renders nothing when one page holds everything; keeps first and
   last reachable behind an ellipsis; current page is an ink fill with
   `aria-current="page"`. Plain buttons with per-page names (`Page 3`), each
-  `min-h-11 min-w-11 rounded-md`, unselected edge `border-control`.
+  `min-h-target min-w-target rounded-md`, unselected edge `border-control`.
 - **SearchInput**: debounced search reporting the trimmed term once typing
   settles and only when it changed. Enter reports immediately; the clear
-  button (`x`, `size-11`) reports an empty term at once. `value` seeds the
+  button (`x`, `size-target`) reports an empty term at once. `value` seeds the
   box and is not watched; remount with a key to reset.
 - **FilterGroup**: one named group of chips ("Type: All User PAM ..."). The
   name is not decoration: below `sm` a chip is its icon alone. Every group
   has its own "any" chip (`filter-off`) rather than clearing by pressing the
   selected chip again.
-- **FilterChip**: glyph, label, pressed state. `rounded`, `min-h-11`,
+- **FilterChip**: glyph, label, pressed state. `rounded`, `min-h-target`,
   unselected `border-control text-ink-muted`, selected ink fill plus `check`
   plus `aria-pressed`. Named from `sm` up; below `sm` the label is `sr-only`,
   never `hidden`. Collapsing is the component's decision, not a prop.
@@ -567,13 +572,13 @@ bg-surface-muted`, decorative), a short title, the sentence that says what
 ### Identifiers and badges
 
 - **CopyableId**: the identifier a detail page is about, in full, one press
-  onto the clipboard, top right of every identity strip. A `min-h-11` button
+  onto the clipboard, top right of every identity strip. A `min-h-target` button
   with the value in mono and the `copy` glyph, `copy-check` once copied. The
   five-character prefix is the sub-`sm` fallback, both forms rendered and
   chosen by CSS. A rejected copy says so ("Copy failed. Select the value
   instead.").
 - **MonoChip**: one mono value in a set (a principal, an IP), `rounded`,
-  `bg-surface-muted`, hairline `border-subtle` **(assumed)**, `text-xs`.
+  `bg-surface-muted`, hairline `border-subtle`, `text-xs`.
   Chips rather than a comma list so set boundaries are unambiguous.
 - **TypeBadge**: the certificate type as a fixed 26px square, `rounded`,
   `bg-surface-muted`, glyph only, type in `sr-only` words. Fixed so rows
@@ -598,24 +603,25 @@ bg-surface-muted`, decorative), a short title, the sentence that says what
   - The reason is required whenever the server records one (every current
     caller), and the confirming button stays disabled until it is non-empty.
   - A `reasonless` mode, with no field and the button enabled, for an action
-    the server takes no reason for (the live LDAP sync) **(assumed)**.
+    the server takes no reason for (the live LDAP sync).
   - It captures `document.activeElement` before opening and restores it on
     teardown, because callers dismiss it by unmounting and the caret would
     otherwise land on `<body>`.
-- **ConsentModal**: the blocking sign-in notice. No visible title (the notice
-  is the deployment's own approved wording; the heading is `sr-only` and
-  names the dialog). A long notice scrolls inside a keyboard-reachable
+- **ConsentModal**: the blocking sign-in notice, typically a government
+  system-use warning that a reader must accept before anything works. No
+  visible title (the notice is the deployment's own approved wording; the
+  heading is `sr-only` and names the dialog). A long notice scrolls inside a keyboard-reachable
   region so "I Accept" is never pushed off screen. Escape is blocked.
 - **ExpireCodeAction**: the retire-this-code button and its `ConfirmModal`
   for a page heading's `action` slot, shared by the holder's and the
   operator's service code pages, which differ only in endpoint.
 - **RailUserMenu** drop-up: `rounded-lg bg-surface p-1.5 shadow-overlay`,
-  rows `min-h-11`.
+  rows `min-h-target`.
 
 ### Chrome
 
 - **AppRail**, **RailItem**, **RailGroup**: see The shell. Rail rows are
-  `min-h-11 rounded-md`; the current row is cobalt on `accent-wash`. A
+  `min-h-target rounded-md`; the current row is cobalt on `accent-wash`. A
   `RailGroup` head is a button (the group has no page of its own) labelled in
   sans `text-meta font-semibold tracking-widest uppercase text-ink-muted`.
 - **BrandMark**: the deployment's `branding.logo_url` when set
@@ -625,11 +631,11 @@ bg-surface-muted`, decorative), a short title, the sentence that says what
   `static/favicon.svg` carries the same geometry knocked out of a cobalt
   tile.
 - **ThemeToggle**: one button cycling system, light, dark. `rail` shape is a
-  full-width row; `icon` shape is a `size-11` square for the signed-out
+  full-width row; `icon` shape is a `size-target` square for the signed-out
   header. Its name says where it is and where pressing goes.
 - **Footer**: closes every page with the running version, a link to its
   release and links to the project, on the ground with no rule. Renders
-  nothing while the version is unknown. Links are `min-h-11` targets.
+  nothing while the version is unknown. Links are `min-h-target` targets.
 - **DetailToggle** (to build): a two-segment control, "Simplified" and
   "Advanced", in the heading row of each covered page. Selected segment per
   Colour; writes the same preference as `/preferences`.
@@ -638,8 +644,9 @@ bg-surface-muted`, decorative), a short title, the sentence that says what
 
 - **ApprovalView**: the approval page body. One panel with labelled groups
   inside it, not a stack of cards: an approval is one decision read straight
-  through. Principal and extension chips are toggles (`min-h-11`, selected
-  per Colour). The select and email field cap at 420px. See Detail levels.
+  through. Principal and extension chips are toggles (`min-h-target`,
+  selected per Colour). Approve and Deny act on one press, with no
+  confirmation: the page itself is the review step (see Settled questions). The select and email field cap at 420px. See Detail levels.
 - **ServiceCodeFacts**: the identity strip and facts shared by both service
   code pages: type, status, id, principal, certificate life, key id, bound
   key, validity, approver, options.
@@ -708,7 +715,7 @@ and the dialog keeps the reason field from competing with the page.
 
 A live LDAP sync is not an ending: it stays in the directory page's Sync
 section, defaults to dry run, shows the live-pass warning when dry run is
-off, and confirms through a reasonless `ConfirmModal` **(assumed)**.
+off, and confirms through a reasonless `ConfirmModal`.
 
 ### Lists
 
@@ -738,7 +745,7 @@ off, and confirms through a reasonless `ConfirmModal` **(assumed)**.
 
 ### Detail pages
 
-- **Identity strip:** the first panel, `bg-surface` **(assumed)**, carrying
+- **Identity strip:** the first panel, `bg-surface`, carrying
   the type chip, the status and the full id (`CopyableId`, top right), and no
   heading: it is the page's subject, not a part of it.
 - **Width:** `wide`, the width of the list that opened it, so the left edge
@@ -786,7 +793,7 @@ off, and confirms through a reasonless `ConfirmModal` **(assumed)**.
   `aria-label`. A placeholder is not a name.
 - Labels sit above their field; a field caps its width to what it holds.
 - A reason the server records is required and validated before submit.
-- Checkbox and radio rows make the whole label the 44px target.
+- Checkbox and radio rows make the whole label the target (`min-h-target`).
 
 ## 12. Detail levels: simplified and advanced
 
@@ -805,15 +812,22 @@ compares.
   simplified as a one-line warning naming it), the client-policy forbidden
   note, the console remote-host warning, the own-account notice, blocked and
   outcome alerts, action errors, the "reported by the client" marking on any
-  client-reported value still shown, a skewed host clock, and expired or
-  active status. A section whose only remaining content is one of these keeps
-  it.
+  client-reported value still shown, a skewed host clock, the pam-headless
+  note ("this looks like a script or a service"), and expired or active
+  status. A section whose only remaining content is one of these keeps it.
 - **Dropped in simplified:** request, certificate and enrollment ids; key
   ids, serials and fingerprints; public keys and host trusts; process ids,
   platform and client rows; registered IPs; request and decision timestamps
   other than validity; approver groups, lifetime-policy detail and
-  granted-option echoes; critical options with nothing trimmed; the
-  redemption history.
+  granted-option echoes; critical options with nothing trimmed; non-extension
+  option chips (`from=`, `command=`, `no-touch-required`); the redemption
+  history; and the approval page's decision record (Decision, Decided by,
+  Email, From IP, Decided at). Who decided is history, not part of a
+  decision: `/certs/<id>` keeps "Approved by" or "Denied by" at both levels,
+  and a decided approval page in simplified shows only its outcome alert.
+- **Kept in simplified:** the claimed-context rows (Service, Terminal,
+  Remote host, Invoked by), "Principals granted" on `/certs/<id>`, and the
+  "View the code this came from" link on a service certificate.
 - **Simplified approval:**
   - Opens with one request line in place of the description and the
     Account, Command, Host and Requested-from rows: three `surface-muted`
@@ -897,7 +911,26 @@ beneath it.
   with `prompt=login` and renders the decoded ID token, each claim annotated
   by the field that reads it, plus the `fields.extra` block that would
   capture the unread ones. Nothing is stored; the token arrives in the URL
-  fragment and the page clears it. The claims table is a `.data-table`.
+  fragment and the page clears it. The claims table is a `.data-table` built
+  for a token of any shape, since the claim count, the value lengths and
+  the value types all vary by identity provider and by user:
+  - Every claim, with no cap and no paging: the ones a field reads first,
+    then the rest alphabetically. The section description states the count
+    ("23 claims").
+  - Columns: Claim (mono, `wrap-anywhere`, so a long namespaced name wraps
+    only when it has to), Value (mono, the remaining width, `wrap-anywhere`)
+    and Used by (sans, `whitespace-nowrap`, sized to its text).
+  - Values by type: text, numbers and booleans as they are; an empty string
+    as `(empty string)` and null as `null`, both `ink-muted`, so the two are
+    told apart; an array one item per line (a comma list hides an item that
+    contains a comma); an object as JSON indented two spaces in a wrapping
+    `pre`. An array past 10 items or an object past 10 lines shows the first
+    10 and a "Show all N" button (`aria-expanded`) that expands it in place.
+  - Used by names the reading field in plain sans text, and an unread claim
+    says "unmapped" in `ink-muted`. No status colour: being read is not a
+    status.
+  - The table's own `overflow-x-auto` wrapper stays as a fallback; the page
+    never scrolls sideways.
 - **Audit log** (`/admin/audit`, `full`): the bounded table copy of the
   audit stream, with Load more. `AuditTimeline` sits in a surface panel and
   needs no frame of its own.
@@ -950,7 +983,9 @@ beneath it.
   the rail and 8rem in the header. Collapsed, only the mark remains.
 - **Sign-in consent:** with `login_notice` set, a `ConsentModal` overlays
   the form, which stays inert, blurred and dimmed with its button disabled
-  until "I Accept". Every "you need to sign in" path lands on `/login` first
+  until "I Accept". The notice is typically a government system-use warning:
+  nothing on the page may be used before it is accepted, and the dimmed form
+  shows that rather than hiding what accepting leads to. Every "you need to sign in" path lands on `/login` first
   (`auth.goToLogin`, carrying `return_to`), and only `/login` calls
   `auth.startLogin`, so the notice always stands in front of the identity
   provider. This matters most on `/approve/<id>`, the URL most people
@@ -982,8 +1017,8 @@ login` to request a certificate. It appears here as soon as it is
 
 ## 17. Accessibility
 
-WCAG 2.1 Level AA and Section 508 are hard requirements, plus the 44px
-target rule above. `make a11y` holds them.
+WCAG 2.1 Level AA and Section 508 are hard requirements, plus the target
+rule above (36px with a mouse, 44px on touch). `make a11y` holds them.
 
 - **Bypass:** the layout's first focusable element is a skip link to
   `#main-content`, visible on focus (`.skip-link`).
@@ -1027,8 +1062,8 @@ change.
   by extending the `variant` union in `Props` and the object, with token
   classes only.
 - **Token namespaces:** `--color-*`, `--font-*`, `--text-*`, `--leading-*`,
-  `--tracking-*`, `--font-weight-*`, `--radius-*`, `--shadow-*` are Tailwind
-  v4 namespaces and emit utilities. A token under any other spelling
+  `--tracking-*`, `--font-weight-*`, `--radius-*`, `--shadow-*`,
+  `--spacing-*` are Tailwind v4 namespaces and emit utilities. A token under any other spelling
   (`--font-family-*`, `--font-size-*`) emits nothing.
 - **Tests:** `@testing-library/svelte` and `vitest`, colocated, named
   "should [action] when [condition]", one assertion where possible, external
@@ -1037,23 +1072,27 @@ change.
   tab through it; run `corepack pnpm run test`, `corepack pnpm run check` and
   `corepack pnpm run build`.
 
-## 19. Open rulings
+## 19. Settled questions
 
-Waiting on the product owner:
+Ruled by the product owner on 2026-10-10, each against a check an audit
+runs by default. A later audit should not raise them again.
 
-- **Confirm the assumed decisions:** identity strips and page-level info
-  alerts on `surface`; `MonoChip`'s hairline as a third border job;
-  `ConfirmModal` reasonless mode for the live LDAP sync; the `Pager`
-  current page in ink with no glyph; one row-panel padding (`px-4 py-3`,
-  which the certificate rows use; the service code and account rows and the
-  `LoadingBlock` row use `px-5 py-3.5`).
-- **Detail level placement** for blocks section 12 does not name:
-  - the claimed-context rows (Service, Terminal, Remote host, Invoked by);
-  - "Principals granted" on `/certs/<id>`;
-  - the approval decision record and the pam-headless note;
-  - non-extension option chips (`from=`, `command=`,
-    `no-touch-required`);
-  - the "View the code this came from" link.
+- **Approve and Deny take one press, with no confirmation.** The approval
+  page is itself the review step, and a dialog in front of every approval
+  trains readers to click through it. Deny sits first as the ghost button,
+  Approve last as the primary.
+- **The own service codes page says nothing when the caller's held accounts
+  fail to load.** The accounts that appear on codes still render; only an
+  account with no codes is missing. Deliberate, and commented in
+  `src/routes/service-codes/+page.svelte`.
+- **The sign-in form behind the consent notice stays dimmed and blurred.**
+  See Branding: the notice must be accepted before anything is usable.
+- **Disabled controls fade to `opacity-50`.** WCAG 1.4.3 exempts them from
+  text contrast; the reason a control is disabled sits beside it.
+- **Targets are 36px with a mouse and 44px on touch,** not 44px everywhere.
+  Approvals happen in a desktop browser; see Interaction.
+
+No rulings are open.
 
 ## 20. Not yet in code
 
@@ -1069,8 +1108,9 @@ change lands.
 - `.data-table` column heads and `RailGroup` heads are in the mono.
 - Selected states are cobalt fills (`FilterChip`, `ApprovalView` chips,
   `Pager`, the users and directory segments); `FilterChip` has no `check`.
-- Targets under 44px across buttons, chips, pager, icon buttons and rail
-  rows.
+- No control uses the `target` utilities yet: chips and pager controls are
+  about 28px, and buttons, icon buttons and rail rows state their own
+  heights.
 - `copy-check` is not in the icon map; `CopyableId` still shows `check`.
 - `PageShell` puts `gap-5` between panels; several lists use `gap-2.5`.
 - Chips and badges on `rounded-full`; several fields on `rounded`.
@@ -1082,6 +1122,9 @@ change lands.
 - The directory probe views are tabs with no announced state, and a mapped
   attribute is marked by colour alone.
 - `ConfirmModal` has no reasonless mode, and a live LDAP sync runs unconfirmed.
+- The claims echo table is hand-rolled (its own frame, tinted head, green
+  `rounded-full` pills), joins arrays with commas, prints objects as one line
+  of JSON, and shows an empty string as a blank cell.
 - The detail-level feature, `DetailToggle`, `principals.svelte.ts` and the
   Login shell and Display preference sections are not built.
 
