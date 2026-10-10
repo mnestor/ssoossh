@@ -60,6 +60,12 @@ updates:
         applies-to: security-updates
         patterns:
           - "*"
+    # astro-mermaid 2.1.0 (latest) peers on mermaid ^10 || ^11, so a
+    # mermaid 12 bump fails `npm ci` with ERESOLVE. Hold mermaid at its
+    # current major until astro-mermaid supports 12, then drop this ignore.
+    ignore:
+      - dependency-name: "mermaid"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
