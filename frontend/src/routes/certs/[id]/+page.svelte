@@ -9,6 +9,9 @@
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import CopyableId from '#lib/components/CopyableId.svelte';
 	import DetailRow from '#lib/components/DetailRow.svelte';
+	import DetailToggle from '#lib/components/DetailToggle.svelte';
+	import SimplifiedHint from '#lib/components/SimplifiedHint.svelte';
+	import { coverWithDetail, detail } from '#lib/detail.svelte.js';
 	import Icon from '#lib/components/Icon.svelte';
 	import MonoChip from '#lib/components/MonoChip.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
@@ -26,6 +29,14 @@
 	import { parsePolicyExplanation } from '#lib/policyExplanation.js';
 
 	const id = $derived(page.params.id ?? '');
+
+	// One of the pages the detail level covers. Simplified keeps what a
+	// reader needs to understand the certificate and drops what an expert
+	// compares: ids, key id, serial, fingerprint, the decision's source and
+	// timing, approver groups, granted-option echoes and lifetime policy
+	// (DESIGN.md, "Detail levels").
+	coverWithDetail();
+	const simplified = $derived(detail.simplified);
 
 	// Where the reader came from, so the chip at the top of the page returns
 	// them to the list they opened this from rather than to one they were
@@ -193,7 +204,11 @@
 				['Machine ID', cert?.reported_machine_id],
 				['Client', cert?.reported_client]
 			] as [string, string | undefined][]
-		).filter((row): row is [string, string] => Boolean(row[1]))
+		)
+			.filter((row): row is [string, string] => Boolean(row[1]))
+			// The claimed context a reader needs stays at both levels; the
+			// machine id and the reporting client are diagnostics.
+			.filter(([label]) => !simplified || (label !== 'Machine ID' && label !== 'Client'))
 	);
 	const hasReportedContext = $derived(Boolean(askedBy) || reportedRows.length > 0);
 </script>
@@ -204,7 +219,9 @@
 	<PageHeading
 		title="Certificate details"
 		back={{ href: resolve(back.route), label: back.label, testid: 'cert-back' }}
-	/>
+	>
+		{#snippet action()}<DetailToggle />{/snippet}
+	</PageHeading>
 
 	{#if loadError}
 		<Alert variant="error" title="Could not load certificate">{loadError}</Alert>
@@ -233,7 +250,9 @@
 			     hand — it is what the audit events and the log lines carry. -->
 			<div class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-surface px-4 py-3">
 				<TypeChip type={cert.type} />
-				<span class="ml-auto"><CopyableId value={cert.id} testid="cert-id" /></span>
+				{#if !simplified}
+					<span class="ml-auto"><CopyableId value={cert.id} testid="cert-id" /></span>
+				{/if}
 			</div>
 
 			<PageSection
@@ -251,13 +270,15 @@
 						</DetailRow>
 					{/if}
 
-					<DetailRow label="Key ID" mono>
-						<span data-testid="cert-key-id">{cert.key_id}</span>
-					</DetailRow>
-					<DetailRow label="Serial number" mono>
-						<span data-testid="cert-serial-number">{cert.serial_number}</span>
-					</DetailRow>
-					<DetailRow label="Key fingerprint" mono>{cert.public_key_fingerprint}</DetailRow>
+					{#if !simplified}
+						<DetailRow label="Key ID" mono>
+							<span data-testid="cert-key-id">{cert.key_id}</span>
+						</DetailRow>
+						<DetailRow label="Serial number" mono>
+							<span data-testid="cert-serial-number">{cert.serial_number}</span>
+						</DetailRow>
+						<DetailRow label="Key fingerprint" mono>{cert.public_key_fingerprint}</DetailRow>
+					{/if}
 
 					<!-- One row, not three. Issued, expires and the lifetime
 					     between them are the two ends of a single fact and the
@@ -313,18 +334,22 @@
 							<!-- Stated even when empty: "no critical options" is a
 							     fact about the certificate worth reading, not an
 							     absence. A force-command that is not there is why an
-							     interactive shell works. -->
-							<DetailRow label="Critical options">
-								{#if criticalOptions.length > 0}
-									<span class="flex flex-col items-start gap-1.5">
-										{#each criticalOptions as [name, value] (name)}
-											<MonoChip>{name} <span class="text-ink-muted">=</span> {value}</MonoChip>
-										{/each}
-									</span>
-								{:else}
-									<span class="text-ink-muted">None</span>
-								{/if}
-							</DetailRow>
+							     interactive shell works. Advanced only: nothing is
+							     trimmed on an issued certificate, so there is no
+							     warning here a simplified reader would miss. -->
+							{#if !simplified}
+								<DetailRow label="Critical options">
+									{#if criticalOptions.length > 0}
+										<span class="flex flex-col items-start gap-1.5">
+											{#each criticalOptions as [name, value] (name)}
+												<MonoChip>{name} <span class="text-ink-muted">=</span> {value}</MonoChip>
+											{/each}
+										</span>
+									{:else}
+										<span class="text-ink-muted">None</span>
+									{/if}
+								</DetailRow>
+							{/if}
 						</div>
 					{/if}
 				</dl>
@@ -350,13 +375,15 @@
 						     window gives what is left of it. -->
 						<DetailRow label={decision === 'denied' ? 'Denied by' : 'Approved by'} icon="user">
 							<span data-testid="cert-decided-by">
-								{decidedBy}{#if decidedAt}<span class="text-ink-muted">{decidedAt}</span>{/if}
+								{decidedBy}{#if decidedAt && !simplified}<span class="text-ink-muted"
+										>{decidedAt}</span
+									>{/if}
 							</span>
 						</DetailRow>
-						{#if cert.decided_source_ip}
+						{#if cert.decided_source_ip && !simplified}
 							<DetailRow label="Source address" mono>{cert.decided_source_ip}</DetailRow>
 						{/if}
-						{#if decidedByGroups.length > 0}
+						{#if decidedByGroups.length > 0 && !simplified}
 							<DetailRow label="Approver groups">
 								<span class="flex flex-wrap gap-1.5">
 									{#each decidedByGroups as group (group)}
@@ -377,7 +404,7 @@
 								</span>
 							</DetailRow>
 						{/if}
-						{#if decidedGrantedOptions && !(isLocalAuthCert && decidedGrantedOptionsEmpty)}
+						{#if decidedGrantedOptions && !(isLocalAuthCert && decidedGrantedOptionsEmpty) && !simplified}
 							<!-- Recorded on the decision at approval time, which is a
 							     different source from the certificate's own Extensions
 							     and Critical options above: this is what the approval
@@ -412,7 +439,7 @@
 						{/if}
 					</dl>
 
-					{#if policyExplanation}
+					{#if policyExplanation && !simplified}
 						<!-- The lifetime policy engine's own record of how it arrived
 						     at this certificate's duration: the tier that matched, the
 						     ceiling and what it computed to, and the source rule that
@@ -482,7 +509,10 @@
 				</PageSection>
 			{/if}
 
-			{#if cert.retrieved_source_ip}
+			<!-- Simplified keeps only the way to the code (R5); the fetching
+			     address and time are diagnostics, and with no code to point at
+			     the section has nothing left to say. -->
+			{#if cert.retrieved_source_ip && (!simplified || cert.enrollment_id)}
 				<!-- Only a service certificate has one. The address here is the
 				     machine that ran `service retrieve`, which is a different
 				     question from the decision above: that names the human who
@@ -493,8 +523,10 @@
 					description="The redemption of the service code that produced this certificate."
 				>
 					<dl class="divide-y divide-border-subtle">
-						<DetailRow label="Source address" mono>{cert.retrieved_source_ip}</DetailRow>
-						{#if cert.retrieved_at}
+						{#if !simplified}
+							<DetailRow label="Source address" mono>{cert.retrieved_source_ip}</DetailRow>
+						{/if}
+						{#if cert.retrieved_at && !simplified}
 							<DetailRow label="Retrieved at">{formatDateTime(cert.retrieved_at)}</DetailRow>
 						{/if}
 						{#if cert.enrollment_id}
@@ -511,6 +543,8 @@
 					</dl>
 				</PageSection>
 			{/if}
+
+			<SimplifiedHint />
 		</div>
 	{/if}
 </PageShell>

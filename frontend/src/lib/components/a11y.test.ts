@@ -46,6 +46,7 @@ import ServiceAccountRow from './ServiceAccountRow.svelte';
 import ServiceCodeDetail from './ServiceCodeDetail.svelte';
 import ServiceCodeFacts from './ServiceCodeFacts.svelte';
 import ServiceCodeRow from './ServiceCodeRow.svelte';
+import SimplifiedHint from './SimplifiedHint.svelte';
 import StatusBadge from './StatusBadge.svelte';
 import ThemeToggle from './ThemeToggle.svelte';
 import TypeBadge from './TypeBadge.svelte';
@@ -279,6 +280,7 @@ const cases: [string, any, Record<string, unknown>][] = [
 		ServiceCodeRow,
 		{ enrollment: enrollment(), now, href: '/service-codes/enr-1' }
 	],
+	['SimplifiedHint', SimplifiedHint, {}],
 	['StatusBadge (pending)', StatusBadge, { status: 'pending' }],
 	['StatusBadge (denied)', StatusBadge, { status: 'denied' }],
 	['ThemeToggle (icon)', ThemeToggle, {}],

@@ -1,4 +1,5 @@
 import { browser } from '$app/env';
+import { getContext, setContext } from 'svelte';
 
 /** Where the detail level is kept. Read after first paint, like the rail:
  * one frame of the default is a smaller cost than blocking paint on a
@@ -71,3 +72,21 @@ class Detail {
 }
 
 export const detail = new Detail();
+
+const SCOPE = Symbol('detail-scope');
+
+/**
+ * coverWithDetail marks the calling page as one the detail level covers.
+ * Call it once in the page's script. DetailRows inside it then set their
+ * facts one size larger at the simplified level (DESIGN.md, "Simplified
+ * type"); everywhere else they keep the dense size, whatever the level.
+ */
+export function coverWithDetail(): void {
+	setContext(SCOPE, true);
+}
+
+/** inDetailScope reports whether the calling component sits on a page the
+ * detail level covers. Call it during component initialisation. */
+export function inDetailScope(): boolean {
+	return getContext<boolean | undefined>(SCOPE) ?? false;
+}

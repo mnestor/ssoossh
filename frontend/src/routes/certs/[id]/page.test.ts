@@ -1,8 +1,10 @@
 import { render, screen, within } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
 import type { CertificateResponse } from '#lib/api/types.js';
 import { formatDateTime, formatDateTimeRange } from '#lib/format.js';
+import { detail } from '#lib/detail.svelte.js';
 import Page from './+page.svelte';
 
 function mockFetch(response: object, status = 200) {
@@ -729,5 +731,97 @@ describe('Certificate detail page', () => {
 
 			expect(screen.queryByText('approved')).not.toBeInTheDocument();
 		});
+	});
+});
+
+describe('at the simplified detail level', () => {
+	// What a simplified reader of a PAM certificate is shown: the facts that
+	// explain it, without the ids and diagnostics an expert compares.
+	const pam: CertificateResponse = {
+		id: 'cert-pam',
+		type: 'pam',
+		serial_number: '42',
+		key_id: 'root@web01',
+		principals: 'mnestor',
+		public_key_fingerprint: 'SHA256:abcd1234',
+		issued_at: new Date('2024-08-24T10:00:00Z').toISOString(),
+		expires_at: new Date('2024-08-24T10:00:30Z').toISOString(),
+		reported_username: 'root',
+		reported_hostname: 'web01',
+		reported_pam_service: 'sudo',
+		reported_tty: 'pts/3',
+		reported_machine_id: '3f2c1e0d9b8a7f6e',
+		reported_client: 'pam_ssoossh-c/0.3.0'
+	};
+
+	/** renderSimplified loads the PAM certificate at the simplified level. */
+	async function renderSimplified() {
+		vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined });
+		detail.level = 'simplified';
+		mockFetch(pam);
+		render(Page);
+		await screen.findByTestId('cert-details');
+	}
+
+	afterEach(() => {
+		detail.level = 'advanced';
+	});
+
+	it('should drop the key id', async () => {
+		await renderSimplified();
+		expect(screen.queryByTestId('cert-key-id')).not.toBeInTheDocument();
+	});
+
+	it('should drop the certificate id', async () => {
+		await renderSimplified();
+		expect(screen.queryByTestId('cert-id')).not.toBeInTheDocument();
+	});
+
+	it('should keep whether the certificate is still valid', async () => {
+		await renderSimplified();
+		expect(screen.getByTestId('cert-validity')).toBeInTheDocument();
+	});
+
+	// R1: the claimed context is part of understanding what was approved.
+	it('should keep the claimed service', async () => {
+		await renderSimplified();
+		const context = screen.getByTestId('cert-reported-context');
+		expect(within(context).getByText('sudo')).toBeInTheDocument();
+	});
+
+	it('should drop the reporting machine id', async () => {
+		await renderSimplified();
+		expect(screen.queryByText('3f2c1e0d9b8a7f6e')).not.toBeInTheDocument();
+	});
+
+	it('should say what it left out', async () => {
+		await renderSimplified();
+		expect(screen.getByTestId('detail-hint')).toBeInTheDocument();
+	});
+
+	it('should show the key id again once the reader switches to Advanced', async () => {
+		await renderSimplified();
+
+		await userEvent.click(screen.getByTestId('detail-hint-advanced'));
+
+		expect(screen.getByTestId('cert-key-id')).toBeInTheDocument();
+	});
+});
+
+describe('at the advanced detail level', () => {
+	it('should not show the simplified hint', async () => {
+		mockFetch({
+			id: 'cert-1',
+			type: 'user',
+			serial_number: '1',
+			key_id: 'k',
+			principals: 'alice',
+			public_key_fingerprint: 'SHA256:x',
+			issued_at: new Date('2024-08-24T10:00:00Z').toISOString(),
+			expires_at: new Date('2024-08-24T18:00:00Z').toISOString()
+		});
+		render(Page);
+		await screen.findByTestId('cert-details');
+		expect(screen.queryByTestId('detail-hint')).not.toBeInTheDocument();
 	});
 });
