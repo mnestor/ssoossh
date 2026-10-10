@@ -217,9 +217,10 @@ and drops the diagnostic detail an expert compares.
 - **Controls:** a "Display" section on `/preferences`, and a two-option
   `DetailToggle` segmented control in the heading row of each covered page.
   Both write the same preference.
-- **Never hidden at either level:** trimmed entries in an `OptionDiffList`
-  and the `narrowed-warning` that points at them, the client-policy
-  forbidden note, the console remote-host warning, the own-account notice,
+- **Never hidden at either level:** a trimmed **critical option** (a
+  restriction the client asked for and policy removed, which makes the
+  certificate broader than requested; simplified shows it as a one-line
+  warning naming the option), the client-policy forbidden note, the console remote-host warning, the own-account notice,
   blocked and outcome alerts, action errors, the "reported by the client"
   marking on whatever client-reported data remains, a skewed host clock,
   and expired/active status. A section whose only remaining content
@@ -232,10 +233,16 @@ and drops the diagnostic detail an expert compares.
   redemption history.
 - **Simplified approval** opens with one request line in place of the
   description and the Account, Command, Host and Requested from rows:
-  "`user@source-ip` wants a certificate for `command` on `host`.", with
-  one muted line under it saying those values are reported by the client
-  and to approve only if you just ran it. Then Principals, Valid for, the
-  extensions, the warnings and the actions. "Approvable until" is
+  three labelled wells side by side (wrapping on a phone), each a
+  `surface-muted` tile with a mono eyebrow over a 16px mono value:
+  **Who** `user@source-ip`, **Runs** `command`, **On** `host`. One muted
+  line under them says those values are reported by the client and to
+  approve only if you just ran it. Then Principals, Valid for, the
+  extensions the certificate **will** carry (granted only: trimmed
+  extensions and the `narrowed-warning` are advanced-only, decided
+  2026-10-10, since the approver still sees exactly what is issued), the
+  remaining warnings and the actions. Critical options are advanced-only
+  unless one was trimmed (see above). "Approvable until" is
   advanced-only (decided 2026-10-10); an expired request is still caught by
   the blocked/outcome alerts when the reader acts.
 - **Simplified type:** the kept facts render one step larger
