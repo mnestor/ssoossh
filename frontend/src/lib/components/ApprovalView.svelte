@@ -676,7 +676,7 @@
 										bind:value={selectedServiceAccount}
 										aria-label="Service account to approve for"
 										data-testid="service-account-select"
-										class="rounded border border-border-control bg-surface px-3 py-2 text-dense text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+										class="rounded-md border border-border-control bg-surface px-3 py-2 text-dense text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 									>
 										<option value="">Select an account...</option>
 										<!-- Grouped only when there is something to
@@ -740,7 +740,7 @@
 										data-testid="notification-email-input"
 										placeholder="deploys@example.com"
 										aria-describedby="notification-email-help"
-										class="rounded border border-border-control bg-surface px-3 py-2 text-dense text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+										class="rounded-md border border-border-control bg-surface px-3 py-2 text-dense text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 									/>
 									<span id="notification-email-help" class="text-meta text-ink-muted">
 										Where notifications about this enrollment go — redemptions, the expiry reminder,

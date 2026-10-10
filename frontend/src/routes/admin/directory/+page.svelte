@@ -449,7 +449,7 @@
 								placeholder={mode === 'template'
 									? status.user_filter
 									: '(&(objectClass=person)(uid=mnestor))'}
-								class="w-full rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
+								class="w-full rounded-md border border-border-control bg-surface px-3 py-2 font-mono text-sm"
 							/>
 							<p id="ldap-filter-help" class="mt-1 text-dense text-ink-muted">
 								{#if mode === 'template'}
@@ -471,7 +471,7 @@
 								data-testid="ldap-attributes"
 								aria-describedby="ldap-attributes-help"
 								placeholder="* (every user attribute)"
-								class="w-full rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
+								class="w-full rounded-md border border-border-control bg-surface px-3 py-2 font-mono text-sm"
 							/>
 							<p id="ldap-attributes-help" class="mt-1 text-dense text-ink-muted">
 								Empty asks for everything. Attributes the configuration reads are marked "mapped" in
@@ -512,7 +512,7 @@
 											bind:value={bindUsername}
 											placeholder="alice"
 											data-testid="ldap-bind-username"
-											class="rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
+											class="rounded-md border border-border-control bg-surface px-3 py-2 font-mono text-sm"
 										/>
 									</label>
 									<label class="flex flex-col gap-1">
@@ -522,7 +522,7 @@
 											bind:value={bindEmail}
 											placeholder="alice@example.com"
 											data-testid="ldap-bind-email"
-											class="rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
+											class="rounded-md border border-border-control bg-surface px-3 py-2 font-mono text-sm"
 										/>
 									</label>
 									<label class="flex flex-col gap-1">
@@ -532,7 +532,7 @@
 											bind:value={bindSubject}
 											placeholder="0f8c…"
 											data-testid="ldap-bind-subject"
-											class="rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
+											class="rounded-md border border-border-control bg-surface px-3 py-2 font-mono text-sm"
 										/>
 									</label>
 								</div>

@@ -122,7 +122,7 @@
 						<span class="flex flex-wrap gap-1.5" data-testid="access-roles">
 							{#each roles as role (role)}
 								<span
-									class="inline-flex items-center gap-1.5 rounded-full bg-granted-surface px-2.5 py-1 text-xs font-semibold text-granted"
+									class="inline-flex items-center gap-1.5 rounded bg-granted-surface px-2.5 py-1 text-xs font-semibold text-granted"
 								>
 									{role}
 								</span>

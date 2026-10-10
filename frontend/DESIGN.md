@@ -1102,7 +1102,6 @@ The tokens and this spec are ahead of the components. Remove a line when its
 change lands.
 
 - `copy-check` is not in the icon map; `CopyableId` still shows `check`.
-- Chips and badges on `rounded-full`; several fields on `rounded`.
 - The claims echo table is hand-rolled (its own frame, tinted head, green
   `rounded-full` pills), joins arrays with commas, prints objects as one line
   of JSON, and shows an empty string as a blank cell.

@@ -46,7 +46,7 @@
 </script>
 
 <span
-	class="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold capitalize {styles[
+	class="inline-flex flex-shrink-0 items-center gap-1.5 rounded px-2.5 py-1 text-xs font-semibold capitalize {styles[
 		status
 	] ?? 'bg-surface-muted text-ink-muted'}"
 >

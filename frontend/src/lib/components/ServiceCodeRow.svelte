@@ -92,14 +92,14 @@
 
 	{#if expired}
 		<span
-			class="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full bg-surface-muted px-2.5 py-1 text-xs font-semibold text-ink-muted"
+			class="inline-flex flex-shrink-0 items-center gap-1.5 rounded bg-surface-muted px-2.5 py-1 text-xs font-semibold text-ink-muted"
 		>
 			<Icon name="alert-triangle" size="xs" />
 			Expired
 		</span>
 	{:else}
 		<span
-			class="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full bg-granted-surface px-2.5 py-1 text-xs font-semibold text-granted"
+			class="inline-flex flex-shrink-0 items-center gap-1.5 rounded bg-granted-surface px-2.5 py-1 text-xs font-semibold text-granted"
 		>
 			<Icon name="circle-check" size="xs" />
 			Active

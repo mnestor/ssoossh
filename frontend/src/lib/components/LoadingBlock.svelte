@@ -79,7 +79,7 @@
 								<div class="skeleton h-3.5 w-2/5"></div>
 								<div class="skeleton h-3 w-3/5"></div>
 							</div>
-							<div class="skeleton h-5 w-20 shrink-0 rounded-full"></div>
+							<div class="skeleton h-5 w-20 shrink-0 rounded"></div>
 						</div>
 					</div>
 				{/each}

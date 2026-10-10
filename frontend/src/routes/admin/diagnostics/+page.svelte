@@ -106,7 +106,7 @@
 								<p class="mt-1 text-sm text-ink-muted">{check.summary}</p>
 							</div>
 							<span
-								class="rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap {badge(
+								class="rounded px-2.5 py-1 text-xs font-semibold whitespace-nowrap {badge(
 									check.status
 								).class}"
 							>
