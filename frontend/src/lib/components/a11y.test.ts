@@ -179,6 +179,19 @@ const cases: [string, any, Record<string, unknown>][] = [
 			children: text('The code stops working immediately.')
 		}
 	],
+	[
+		'ConfirmModal (reasonless)',
+		ConfirmModal,
+		{
+			title: 'Run a live sync now?',
+			reasonless: true,
+			confirmLabel: 'Sync now',
+			busyLabel: 'Running…',
+			onconfirm: vi.fn(),
+			oncancel: vi.fn(),
+			children: text('A live pass can disable an account.')
+		}
+	],
 	['CopyableId', CopyableId, { value: 'cert-1', label: 'Request' }],
 	['EmptyState', EmptyState, { icon: 'certificate-off', title: 'No certificates yet' }],
 	[

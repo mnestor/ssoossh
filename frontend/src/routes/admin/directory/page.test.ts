@@ -219,9 +219,35 @@ describe('Directory admin page', () => {
 
 			await userEvent.click(await screen.findByTestId('ldap-dry-run'));
 			await userEvent.click(screen.getByTestId('ldap-run-sync'));
+			await userEvent.click(await screen.findByTestId('confirm-live-sync'));
 
 			const sync = calls.find((call) => call.url.includes('/admin/ldap/sync'));
 			expect(sync?.body).toEqual({ dry_run: false });
+		});
+
+		// A live pass can disable accounts, so one click must not run it.
+		it('should ask before a live pass runs', async () => {
+			signedInAsAdmin();
+			const calls = mockApi({ status: enabledStatus() });
+			render(Page);
+
+			await userEvent.click(await screen.findByTestId('ldap-dry-run'));
+			await userEvent.click(screen.getByTestId('ldap-run-sync'));
+
+			await screen.findByText('Run a live sync now?');
+			expect(calls.some((call) => call.url.includes('/admin/ldap/sync'))).toBe(false);
+		});
+
+		it('should run nothing when the live pass is cancelled', async () => {
+			signedInAsAdmin();
+			const calls = mockApi({ status: enabledStatus() });
+			render(Page);
+
+			await userEvent.click(await screen.findByTestId('ldap-dry-run'));
+			await userEvent.click(screen.getByTestId('ldap-run-sync'));
+			await userEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+
+			expect(calls.some((call) => call.url.includes('/admin/ldap/sync'))).toBe(false);
 		});
 
 		it('should warn before a live pass that it can disable accounts', async () => {

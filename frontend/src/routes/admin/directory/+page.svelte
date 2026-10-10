@@ -10,6 +10,7 @@
 	import Alert from '#lib/components/Alert.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import Button from '#lib/components/Button.svelte';
+	import ConfirmModal from '#lib/components/ConfirmModal.svelte';
 	import Icon from '#lib/components/Icon.svelte';
 	import MonoChip from '#lib/components/MonoChip.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
@@ -31,6 +32,9 @@
 	let lastRun = $state<LDAPSyncRunResponse | null>(null);
 	let syncError = $state<string | null>(null);
 	let dryRun = $state(true);
+	// A live pass can disable accounts, so it confirms first (DESIGN.md,
+	// "Destructive actions"); a dry run changes nothing and runs at once.
+	let showSyncConfirm = $state(false);
 
 	// Probe form. There is deliberately no connection here: the probe uses
 	// the running url, bind credentials and base DN, and cannot be
@@ -92,17 +96,41 @@
 		}
 	}
 
-	async function handleSync() {
+	/** runSync runs one pass and reports whether it ran. */
+	async function runSync(): Promise<boolean> {
 		syncing = true;
 		syncError = null;
 		try {
 			lastRun = await runLDAPSync({ dry_run: dryRun });
 			await refreshStatus();
+			return true;
 		} catch (cause) {
 			syncError = errorMessage(cause);
+			return false;
 		} finally {
 			syncing = false;
 		}
+	}
+
+	function handleSync() {
+		if (dryRun) {
+			void runSync();
+			return;
+		}
+		syncError = null;
+		showSyncConfirm = true;
+	}
+
+	// A failure stays in the dialog, beside the button that caused it.
+	async function confirmLiveSync() {
+		if (await runSync()) {
+			showSyncConfirm = false;
+		}
+	}
+
+	function cancelLiveSync() {
+		showSyncConfirm = false;
+		syncError = null;
 	}
 
 	async function handleProbe() {
@@ -324,10 +352,29 @@
 							</p>
 						{/if}
 
-						{#if syncError}
+						{#if syncError && !showSyncConfirm}
 							<Alert variant="error" title="The sync did not run" testid="ldap-sync-error">
 								{syncError}
 							</Alert>
+						{/if}
+
+						{#if showSyncConfirm}
+							<ConfirmModal
+								title="Run a live sync now?"
+								reasonless
+								confirmLabel="Sync now"
+								busyLabel="Running…"
+								busy={syncing}
+								error={syncError}
+								errorTitle="The sync did not run"
+								confirmTestid="confirm-live-sync"
+								onconfirm={confirmLiveSync}
+								oncancel={cancelLiveSync}
+							>
+								A live pass can disable an account whose directory entry has been missing longer
+								than {formatDuration(status.disable_after_seconds)}. It runs on this instance and
+								behaves exactly like the scheduled one.
+							</ConfirmModal>
 						{/if}
 					</div>
 				{/if}

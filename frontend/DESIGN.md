@@ -1104,7 +1104,6 @@ change lands.
 - `copy-check` is not in the icon map; `CopyableId` still shows `check`.
 - `PageShell` puts `gap-5` between panels; several lists use `gap-2.5`.
 - Chips and badges on `rounded-full`; several fields on `rounded`.
-- `ConfirmModal` has no reasonless mode, and a live LDAP sync runs unconfirmed.
 - The claims echo table is hand-rolled (its own frame, tinted head, green
   `rounded-full` pills), joins arrays with commas, prints objects as one line
   of JSON, and shows an empty string as a blank cell.

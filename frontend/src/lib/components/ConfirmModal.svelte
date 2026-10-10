@@ -17,9 +17,11 @@
 	// caller should have to supply.
 	//
 	// The reason is not decoration. The server validates one on every
-	// action that reaches here (see the audited actions in server/service),
-	// so a confirm button that could be pressed without one would be a
-	// button whose only outcome is a 400.
+	// audited action that reaches here (see server/service), so a confirm
+	// button that could be pressed without one would be a button whose only
+	// outcome is a 400. `reasonless` is for the one action the server takes
+	// no reason for, the live LDAP sync: the dialog then carries only the
+	// consequence and the two buttons.
 	interface Props {
 		/** The dialog's own heading. */
 		title: string;
@@ -33,6 +35,8 @@
 		/** The confirming button, at rest and while the call is in flight. */
 		confirmLabel: string;
 		busyLabel: string;
+		/** No reason field, for an action the server records no reason for. */
+		reasonless?: boolean;
 		/** `danger` for anything that takes access away. */
 		variant?: 'primary' | 'danger';
 		busy?: boolean;
@@ -42,7 +46,7 @@
 		/** Stable selectors for the e2e browser tier — see test/e2e/README.md. */
 		reasonTestid?: string;
 		confirmTestid?: string;
-		/** Called with the trimmed reason. */
+		/** Called with the trimmed reason (empty when `reasonless`). */
 		onconfirm: (reason: string) => void;
 		/** Called by Cancel and by Escape, which a native dialog gives free. */
 		oncancel: () => void;
@@ -57,6 +61,7 @@
 		confirmLabel,
 		busyLabel,
 		variant = 'danger',
+		reasonless = false,
 		busy = false,
 		error = null,
 		errorTitle = 'That did not go through',
@@ -72,7 +77,7 @@
 	let reason = $state('');
 	let dialogEl = $state<HTMLDialogElement | undefined>(undefined);
 
-	const ready = $derived(reason.trim().length > 0 && !busy);
+	const ready = $derived((reasonless || reason.trim().length > 0) && !busy);
 
 	// <dialog> only gets top-layer stacking, a ::backdrop and a focus trap
 	// from showModal(); the open attribute alone gives none of it. Same
@@ -126,20 +131,22 @@
 
 		<div class="text-sm text-ink-muted">{@render children()}</div>
 
-		<label class="block">
-			<span class="mb-1 block text-xs font-semibold text-ink-muted">{reasonLabel}</span>
-			<textarea
-				bind:value={reason}
-				rows="3"
-				disabled={busy}
-				data-testid={reasonTestid}
-				placeholder={reasonPlaceholder}
-				class="w-full rounded border border-border-control bg-surface-muted p-2 text-sm disabled:opacity-50"
-			></textarea>
-			{#if reasonHelp}
-				<span class="mt-1 block text-xs text-ink-muted">{reasonHelp}</span>
-			{/if}
-		</label>
+		{#if !reasonless}
+			<label class="block">
+				<span class="mb-1 block text-xs font-semibold text-ink-muted">{reasonLabel}</span>
+				<textarea
+					bind:value={reason}
+					rows="3"
+					disabled={busy}
+					data-testid={reasonTestid}
+					placeholder={reasonPlaceholder}
+					class="w-full rounded border border-border-control bg-surface-muted p-2 text-sm disabled:opacity-50"
+				></textarea>
+				{#if reasonHelp}
+					<span class="mt-1 block text-xs text-ink-muted">{reasonHelp}</span>
+				{/if}
+			</label>
+		{/if}
 
 		{#if error}
 			<Alert variant="error" title={errorTitle}>{error}</Alert>
