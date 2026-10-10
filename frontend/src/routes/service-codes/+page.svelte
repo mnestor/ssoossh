@@ -245,10 +245,10 @@
 			{/if}
 		{/if}
 	{:else if accounts.length === 0}
-		<p class="text-sm text-ink-muted">
+		<EmptyState icon="key" title="No service accounts" testid="service-accounts-empty">
 			You do not have access to any service accounts. Service enrollment codes are approved for an
 			account, and this page lists the accounts your identity carries.
-		</p>
+		</EmptyState>
 	{:else}
 		<div class="flex flex-col gap-2">
 			{#each accounts as entry (entry.account)}

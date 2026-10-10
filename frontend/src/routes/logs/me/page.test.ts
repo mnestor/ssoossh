@@ -498,6 +498,19 @@ describe('Certificate history page', () => {
 				).toBeInTheDocument()
 			);
 		});
+
+		// The filtered empty state offers its own way back, not just the
+		// filter chips above it.
+		it('should drop the narrowing when Clear filters is pressed', async () => {
+			mockFetch({ certificates: [] });
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			await userEvent.click(screen.getByTestId('type-filter-pam'));
+
+			await userEvent.click(await screen.findByTestId('history-clear-filters'));
+
+			expect(screen.getByTestId('type-filter-pam')).toHaveAttribute('aria-pressed', 'false');
+		});
 	});
 
 	// A request that never answers, so the wait itself is what is on screen.

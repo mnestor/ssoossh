@@ -13,6 +13,7 @@
 	import PageShell from '#lib/components/PageShell.svelte';
 	import ListStatus from '#lib/components/ListStatus.svelte';
 	import SearchInput from '#lib/components/SearchInput.svelte';
+	import EmptyState from '#lib/components/EmptyState.svelte';
 	import { outcomeFilters, statusFilters, typeFilters } from '#lib/filters.js';
 	import { describeList } from '#lib/listStatus.js';
 	import { watchNarrow } from '#lib/viewport.js';
@@ -136,6 +137,19 @@
 			selectedStatus !== '' ||
 			selectedOutcome !== 'approved'
 	);
+
+	// Clearing remounts the search box: it owns what is typed in it and does
+	// not watch `value` afterwards, so resetting the term alone would leave
+	// the old text on screen over an unfiltered list.
+	let searchKey = $state(0);
+
+	function clearFilters() {
+		searchQuery = '';
+		selectedType = '';
+		selectedStatus = '';
+		selectedOutcome = 'approved';
+		searchKey += 1;
+	}
 
 	// Narrowing the results while looking at page 4 should show the first
 	// page of the new set, not whatever lands at that offset.
@@ -324,13 +338,15 @@
 		<ListStatus message={listStatus} />
 
 		<div class="flex flex-col gap-3">
-			<SearchInput
-				label="Search your history"
-				placeholder="Key ID, principal, serial, fingerprint, host"
-				value={searchQuery}
-				onsearch={(term) => (searchQuery = term)}
-				testid="search-input"
-			/>
+			{#key searchKey}
+				<SearchInput
+					label="Search your history"
+					placeholder="Key ID, principal, serial, fingerprint, host"
+					value={searchQuery}
+					onsearch={(term) => (searchQuery = term)}
+					testid="search-input"
+				/>
+			{/key}
 
 			<!-- Type, then Status, then Outcome. Ordered by how often a
 			     reader reaches for one: the type of certificate is what most
@@ -385,12 +401,19 @@
 			</Alert>
 		{:else if isLoading && filtered.length === 0}
 			<LoadingBlock shape="rows" count={4} testid="history-loading" />
+		{:else if filtered.length === 0 && isFiltered}
+			<EmptyState icon="filter-off" title="Nothing matches" testid="history-empty">
+				{#snippet action()}
+					<Button variant="ghost" onclick={clearFilters} testid="history-clear-filters">
+						Clear filters
+					</Button>
+				{/snippet}
+				Nothing in your history matches the selected filter.
+			</EmptyState>
 		{:else if filtered.length === 0}
-			<p class="text-sm text-ink-muted">
-				{isFiltered
-					? 'Nothing in your history matches the selected filter.'
-					: 'You have not decided any certificate requests yet.'}
-			</p>
+			<EmptyState icon="certificate-off" title="No decisions yet" testid="history-empty">
+				You have not decided any certificate requests yet.
+			</EmptyState>
 		{:else}
 			<div class="flex flex-col gap-2">
 				<!-- Keyed on the kind as well as the id: a certificate and the
