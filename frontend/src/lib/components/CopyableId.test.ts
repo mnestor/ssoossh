@@ -84,15 +84,35 @@ describe('CopyableId', () => {
 		expect(screen.getByRole('button')).toHaveAttribute('title', FULL);
 	});
 
-	// A denied clipboard permission is not worth an error state: failing
-	// loudly over a copy would be worse than not copying.
-	it('should stay quiet when the browser refuses the clipboard', async () => {
+	it('should not claim a copy the browser refused', async () => {
 		stubClipboard(true);
 		render(CopyableId, { value: FULL });
 
 		await userEvent.click(screen.getByRole('button'));
 
 		expect(screen.getByRole('button')).not.toHaveAccessibleName('ID copied');
+	});
+
+	// A refused copy used to stay silent, so the reader pasted whatever was
+	// on the clipboard before.
+	it('should say the copy failed', async () => {
+		stubClipboard(true);
+		render(CopyableId, { value: FULL });
+
+		await userEvent.click(screen.getByRole('button'));
+
+		expect(screen.getByRole('status')).toHaveTextContent('Copy failed');
+	});
+
+	// Text inside a button cannot be drag-selected, so the way out is the
+	// value repeated as plain text.
+	it('should offer the value as selectable text when the copy fails', async () => {
+		stubClipboard(true);
+		render(CopyableId, { value: FULL });
+
+		await userEvent.click(screen.getByRole('button'));
+
+		expect(screen.getByRole('status')).toHaveTextContent(FULL);
 	});
 
 	it('should use a supplied label', () => {

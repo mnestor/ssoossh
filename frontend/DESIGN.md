@@ -377,8 +377,7 @@ vocabulary; an unmapped name renders a visible red `?`.
 - **Alert severity:** `info-circle`, `alert-triangle`, `alert-octagon`.
 - **Filters:** `filter-off` for the "All" / "Any" / "Both" chip.
 - **Selected toggle:** `check`. It means "chosen" and nothing else.
-- **Copy** (`CopyableId`): `copy`, then `copy-check` once copied (present in
-  `@tabler/icons-svelte` 3.48.0; add it to the map).
+- **Copy** (`CopyableId`): `copy`, then `copy-check` once copied.
 - **Rail destinations:** `layout-dashboard` Dashboard, `history` History,
   `key` Service codes (own), `keyboard` Console login, `shield-lock` the
   Admin group, `users` Users, `file-certificate` Certificates, `circle-key`
@@ -577,8 +576,9 @@ bg-surface-muted`, decorative), a short title, the sentence that says what
   onto the clipboard, top right of every identity strip. A `min-h-target` button
   with the value in mono and the `copy` glyph, `copy-check` once copied. The
   five-character prefix is the sub-`sm` fallback, both forms rendered and
-  chosen by CSS. A rejected copy says so ("Copy failed. Select the value
-  instead.").
+  chosen by CSS. A rejected copy says so and repeats the value as
+  selectable text beside the button ("Copy failed. Select it here: …"),
+  since text inside a button cannot be drag-selected.
 - **MonoChip**: one mono value in a set (a principal, an IP), `rounded`,
   `bg-surface-muted`, hairline `border-subtle`, `text-xs`.
   Chips rather than a comma list so set boundaries are unambiguous.
@@ -1101,7 +1101,6 @@ No rulings are open.
 The tokens and this spec are ahead of the components. Remove a line when its
 change lands.
 
-- `copy-check` is not in the icon map; `CopyableId` still shows `check`.
 - The claims echo table is hand-rolled (its own frame, tinted head, green
   `rounded-full` pills), joins arrays with commas, prints objects as one line
   of JSON, and shows an empty string as a blank cell.
