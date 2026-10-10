@@ -1,23 +1,25 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { listAdminEnrollments } from '#lib/api/endpoints.js';
-	import type { AdminEnrollment } from '#lib/api/types.js';
+	import type { AdminEnrollment, PageMeta } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
+	import ListStatus from '#lib/components/ListStatus.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
 	import Pager from '#lib/components/Pager.svelte';
 	import SearchInput from '#lib/components/SearchInput.svelte';
 	import ServiceCodeRow from '#lib/components/ServiceCodeRow.svelte';
+	import { describeList } from '#lib/listStatus.js';
 
 	let enrollments = $state<AdminEnrollment[]>([]);
 	let loadError = $state<string | null>(null);
 	let hasLoaded = $state(false);
 	// Bumped by Try again; the load below reads it, so a bump re-runs it.
 	let attempt = $state(0);
-	let meta = $state<any>(null);
+	let meta = $state<PageMeta | null>(null);
 	let searchQuery = $state('');
 	let currentOffset = $state(0);
 	const pageSize = 25;
@@ -65,6 +67,20 @@
 	function onPageChange(offset: number) {
 		currentOffset = offset;
 	}
+
+	// What the list just became, for a reader who cannot see the rows
+	// change under a search or a page turn (WCAG 4.1.3). See #lib/listStatus.
+	const status = $derived(
+		describeList({
+			noun: 'service code',
+			total: meta?.total ?? 0,
+			loading: !hasLoaded,
+			ready: meta !== null,
+			page: meta?.page,
+			pageCount: meta?.page_count,
+			query: searchQuery
+		})
+	);
 </script>
 
 <svelte:head>
@@ -90,6 +106,8 @@
 		onsearch={onSearch}
 		testid="search-enrollments"
 	/>
+
+	<ListStatus message={status} />
 
 	{#if loadError}
 		<Alert
