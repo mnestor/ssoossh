@@ -158,10 +158,30 @@ admin:
     max_auth_age: 5m       # how fresh auth_time must be on the elevation login
 ```
 
-`enabled: false` exists for providers that cannot force a fresh login or
-omit `auth_time`; the startup log then says admin powers are always on. It
-defaults to true for new installs. Existing installs get a release note,
-because admins will be asked to re-authenticate on first admin use.
+All four keys are configurable; the values above are the defaults.
+
+`enabled: false` is for deployments whose identity provider cannot force a
+fresh login or omits `auth_time` (the operator does not always control the
+provider). Held roles are then effective, as today, and the startup log says
+admin powers are always on. It defaults to true. Existing installs get a
+release note, because admins will be asked to re-authenticate on first
+admin use.
+
+Two checks help an operator find out which setting they need:
+
+- **At startup,** when `enabled` is true, read the provider's discovery
+  document (already fetched for login). If `claims_supported` is present and
+  does not list `auth_time`, log a warning naming
+  `admin.elevation.enabled`. A missing `claims_supported` is not a warning;
+  many providers omit it.
+- **At elevation,** a token with no `auth_time`, or a stale one, is refused
+  with `error_code: "elevation_unsupported_idp"` and a message telling an
+  admin that the provider did not re-authenticate and that
+  `admin.elevation.enabled: false` turns the feature off. The refusal is
+  audited with its reason.
+
+Pocket ID advertises `prompt=login` support; it is the provider to verify
+the flow against in e2e and by hand.
 
 ### Frontend
 
@@ -216,11 +236,13 @@ because admins will be asked to re-authenticate on first admin use.
 - e2e (`test/e2e`): admin and SOC flows elevate first; the mock IdP returns
   a fresh `auth_time` on `prompt=login`.
 
-## Open questions
+## Decisions
 
-1. Defaults: 15 minutes idle and 1 hour absolute. Shorter for SOC
-   containment only?
-2. Should *entering* admin mode email the person (as a new-login notice),
-   so an elevation they did not do is noticed?
-3. Does the provider in use honour `prompt=login` and return `auth_time`?
-   Verify against the deployed IdP before defaulting `enabled: true`.
+Taken 2026-10-10:
+
+- Timeouts: 15 minutes idle, 1 hour absolute, 5 minutes auth age, all
+  configurable; no separate SOC timeout.
+- No email on entering admin mode; the audit log records it.
+- The feature is switchable (`admin.elevation.enabled`), default on, for
+  deployments whose identity provider does not support a forced fresh
+  login. Pocket ID is the reference provider.
