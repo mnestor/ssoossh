@@ -486,7 +486,8 @@ that still trail it.
   - All: `inline-flex` row with a gap, `rounded-md`, `min-h-target px-4`,
     `text-sm font-medium`, `active:scale-98`, `disabled:opacity-50`. `full`
     stretches it to the column (the sign-in button). `busy` shows the busy
-    wording.
+    wording. `expanded` sets `aria-expanded` when the button opens something
+    in place.
 - **Icon**: see Iconography.
 - **PageShell**, **PageHeading**: see Page structure.
 - **PageSection**: one group of fields as a panel, `rounded-lg bg-surface
@@ -1101,9 +1102,6 @@ No rulings are open.
 The tokens and this spec are ahead of the components. Remove a line when its
 change lands.
 
-- The claims echo table is hand-rolled (its own frame, tinted head, green
-  `rounded-full` pills), joins arrays with commas, prints objects as one line
-  of JSON, and shows an empty string as a blank cell.
 - The detail-level feature, `DetailToggle`, `principals.svelte.ts` and the
   Login shell and Display preference sections are not built.
 

@@ -2,6 +2,12 @@
 	import { startIdentityEcho } from '#lib/api/endpoints.js';
 	import type { IdentityEchoPayload } from '#lib/api/types.js';
 	import { errorMessage } from '#lib/auth.js';
+	import {
+		COLLAPSE_AFTER,
+		describeClaimValue,
+		lengthOf,
+		type ClaimValue
+	} from '#lib/claimValue.js';
 	import Alert from '#lib/components/Alert.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import MonoChip from '#lib/components/MonoChip.svelte';
@@ -89,22 +95,70 @@
 	const claimRows = $derived.by(() => {
 		if (!payload) return [];
 		return Object.entries(payload.claims)
-			.map(([name, value]) => ({ name, value, consumer: consumers[name] }))
+			.map(([name, value]) => ({
+				name,
+				value: describeClaimValue(value),
+				consumer: consumers[name]
+			}))
 			.sort((a, b) => {
 				if (!!a.consumer !== !!b.consumer) return a.consumer ? -1 : 1;
 				return a.name.localeCompare(b.name);
 			});
 	});
 
-	function renderValue(value: unknown): string {
-		if (Array.isArray(value)) return value.join(', ');
-		if (value === null || value === undefined) return '—';
-		if (typeof value === 'object') return JSON.stringify(value);
-		return String(value);
+	// Which long values the reader has opened, by claim name. Rebuilt whole
+	// on each change rather than mutated, like `consumers` above.
+	let expanded = $state<Record<string, boolean>>({});
+
+	function toggle(name: string) {
+		expanded = { ...expanded, [name]: !expanded[name] };
 	}
 </script>
 
 <svelte:head><title>Claims echo · ssoossh</title></svelte:head>
+
+<!-- One claim's value in the shape its type calls for. A list is one item
+     per line, so an item containing a comma stays one item; an object is
+     indented JSON; past COLLAPSE_AFTER rows either shows the first ones and
+     a button that opens the rest in place. -->
+{#snippet claimValue(name: string, value: ClaimValue)}
+	{@const open = expanded[name] ?? false}
+	{@const total = lengthOf(value)}
+	{@const shown = open ? total : COLLAPSE_AFTER}
+	{#if value.kind === 'null'}
+		<span class="text-ink-muted">null</span>
+	{:else if value.kind === 'empty-string'}
+		<span class="text-ink-muted">(empty string)</span>
+	{:else if value.kind === 'text'}
+		{value.text}
+	{:else if value.kind === 'list'}
+		{#if total === 0}
+			<span class="text-ink-muted">(empty list)</span>
+		{:else}
+			<ul class="flex flex-col gap-0.5">
+				{#each value.items.slice(0, shown) as entry, i (i)}
+					<li>{entry}</li>
+				{/each}
+			</ul>
+		{/if}
+	{:else}
+		<pre class="font-mono wrap-anywhere whitespace-pre-wrap">{value.lines
+				.slice(0, shown)
+				.join('\n')}</pre>
+	{/if}
+	{#if total > COLLAPSE_AFTER}
+		<div class="mt-1 font-sans">
+			<Button
+				variant="ghost"
+				onclick={() => toggle(name)}
+				expanded={open}
+				testid="echo-expand-{name}"
+			>
+				{open ? 'Show fewer' : `Show all ${total}`}
+			</Button>
+		</div>
+	{/if}
+{/snippet}
 
 <PageShell width="wide">
 	<PageHeading title="Claims echo">
@@ -158,7 +212,9 @@
 	{#if payload}
 		<PageSection
 			title="Your ID token"
-			description="Every claim it carried, and which configured field consumes each one."
+			description="{claimRows.length} {claimRows.length === 1
+				? 'claim'
+				: 'claims'}, and which configured field reads each one."
 			testid="echo-result"
 		>
 			<div class="flex flex-col gap-4">
@@ -166,28 +222,30 @@
 					Issued {new Date(payload.issued_at).toLocaleString()}. Nothing here was stored.
 				</p>
 
-				<div class="overflow-x-auto rounded-md border border-border-subtle">
-					<table class="w-full text-dense">
+				<!-- The shared table, sized for a token of any shape (DESIGN.md,
+				     "The admin area"). Claim and value wrap only where a word
+				     cannot fit; "Used by" never wraps. The scroll is a fallback
+				     the wrapping should make rare, and the page itself never
+				     scrolls sideways. -->
+				<div class="overflow-x-auto">
+					<table class="data-table">
 						<thead>
-							<tr
-								class="border-b border-border-subtle bg-surface-muted text-left text-xs text-ink-muted"
-							>
-								<th scope="col" class="px-3 py-2 font-semibold">Claim</th>
-								<th scope="col" class="px-3 py-2 font-semibold">Value</th>
-								<th scope="col" class="px-3 py-2 font-semibold">Status</th>
+							<tr>
+								<th scope="col">Claim</th>
+								<th scope="col">Value</th>
+								<th scope="col">Used by</th>
 							</tr>
 						</thead>
 						<tbody data-testid="echo-claims">
 							{#each claimRows as row (row.name)}
-								<tr class="border-b border-border-subtle last:border-0">
-									<td class="px-3 py-2 font-mono break-all">{row.name}</td>
-									<td class="px-3 py-2 font-mono break-all">{renderValue(row.value)}</td>
-									<td class="px-3 py-2">
+								<tr>
+									<td class="align-top font-mono wrap-anywhere">{row.name}</td>
+									<td class="align-top font-mono wrap-anywhere">
+										{@render claimValue(row.name, row.value)}
+									</td>
+									<td class="align-top whitespace-nowrap">
 										{#if row.consumer}
-											<span
-												class="rounded-full bg-granted-surface px-2 py-0.5 text-xs font-semibold text-granted"
-												>{row.consumer}</span
-											>
+											{row.consumer}
 										{:else}
 											<span class="text-ink-muted">unmapped</span>
 										{/if}
