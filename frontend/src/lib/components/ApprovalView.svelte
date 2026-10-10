@@ -376,10 +376,7 @@
 	<!-- One card, not six. An approval is a single decision read straight
 	     through, so the frame goes round the whole of it and the groups
 	     inside are labels rather than panels. -->
-	<div
-		data-testid="approval-view"
-		class="flex flex-col rounded-lg border border-border-subtle bg-surface-muted p-4"
-	>
+	<div data-testid="approval-view" class="flex flex-col rounded-lg bg-surface p-5">
 		<!-- Live region for screen reader announcements of action outcomes. -->
 		<div aria-live="polite" aria-atomic="true" class="sr-only">{liveMessage}</div>
 

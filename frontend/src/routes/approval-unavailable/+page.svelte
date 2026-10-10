@@ -15,10 +15,7 @@
 
 <PageShell width="focus">
 	{#if cookiesBlocked}
-		<div
-			data-testid="claim-cookies-blocked"
-			class="rounded-lg border border-border-subtle bg-surface-muted p-4"
-		>
+		<div data-testid="claim-cookies-blocked" class="rounded-lg bg-surface p-5">
 			<PageHeading title="This site needs cookies to approve requests">
 				{#snippet sub()}
 					Approval links are tied to the first browser that opens them, and that tie is carried by a
@@ -32,10 +29,7 @@
 		     chat security scanner having fetched the link before the person
 		     it was sent to could, so this page must not read as an
 		     accusation. -->
-		<div
-			data-testid="claim-already-opened"
-			class="rounded-lg border border-border-subtle bg-surface-muted p-4"
-		>
+		<div data-testid="claim-already-opened" class="rounded-lg bg-surface p-5">
 			<PageHeading title="This approval link was already opened">
 				{#snippet sub()}
 					Approval links are single-use, and something opened this one first. If you did not open

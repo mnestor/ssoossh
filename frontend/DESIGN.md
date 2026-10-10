@@ -1099,10 +1099,9 @@ No rulings are open.
 The tokens and this spec are ahead of the components. Remove a line when its
 change lands.
 
-- Panels are still framed: `PageSection` (`border` on `surface-muted`,
-  `p-4`), the row components and `EmptyState` (`border`, `rounded-xl`), the
-  identity strips, `Alert`, both dialogs (`border`, `shadow-lg`), the rail
-  edge, the narrow bar and the footer rule.
+- Panels are still framed: the row components and `EmptyState` (`border`,
+  `rounded-xl`), the identity strips, `Alert`, both dialogs (`border`,
+  `shadow-lg`), the rail edge, the narrow bar and the footer rule.
 - `RailUserMenu` uses `shadow-lg`, not `shadow-overlay`.
 - `PageHeading`'s `h1` and the sign-in heading are sans `font-bold`.
 - `.data-table` column heads and `RailGroup` heads are in the mono.

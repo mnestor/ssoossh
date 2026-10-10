@@ -8,7 +8,7 @@
 <svelte:head><title>Page not found · ssoossh</title></svelte:head>
 
 <PageShell width="focus">
-	<div class="rounded-lg border border-border-subtle bg-surface-muted p-4">
+	<div class="rounded-lg bg-surface p-5">
 		<!-- The same heading every other screen opens with, rather than a
 		     hand-written h1. An error page is still a page, and it was one of
 		     five that copied the h1's classes out of PageHeading and would

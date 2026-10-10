@@ -175,10 +175,7 @@
 		<!-- Bound once: a snippet is its own closure, so the `failure` the
 		     branch narrowed does not reach inside one. -->
 		{@const loadFailure = failure}
-		<div
-			data-testid="load-failure-{failure.kind}"
-			class="rounded-lg border border-border-subtle bg-surface-muted p-4"
-		>
+		<div data-testid="load-failure-{failure.kind}" class="rounded-lg bg-surface p-5">
 			<!-- The failure names itself: "This link was already used" is
 			     the whole answer, and the card it sits in is what marks it
 			     as a refusal rather than the screen it replaced. -->

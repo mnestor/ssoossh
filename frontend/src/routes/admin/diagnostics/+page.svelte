@@ -99,7 +99,7 @@
 			     again rather than read down the same list. -->
 			<div data-testid="diagnostics-results" class="flex flex-col gap-4">
 				{#each report.checks as check (check.id)}
-					<section class="rounded-lg border border-border-subtle bg-surface-muted p-4">
+					<section class="rounded-lg bg-surface p-5">
 						<div class="flex items-start justify-between gap-4">
 							<div>
 								<h2 class="text-base font-semibold text-ink">{check.title}</h2>

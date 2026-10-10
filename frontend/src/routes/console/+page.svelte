@@ -106,10 +106,7 @@
 <PageShell width="focus">
 	<PageHeading title="Enter the code on the screen" />
 
-	<div
-		data-testid="console-code-entry"
-		class="rounded-lg border border-border-subtle bg-surface-muted p-4"
-	>
+	<div data-testid="console-code-entry" class="rounded-lg bg-surface p-5">
 		<p class="text-sm text-ink-muted">
 			A machine with no browser shows a short code when someone logs in at its console. Type it here
 			to see what is being asked for.

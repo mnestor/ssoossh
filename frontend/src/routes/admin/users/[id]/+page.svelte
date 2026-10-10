@@ -371,7 +371,7 @@
 						<p class="text-xs font-semibold text-ink-muted">{block.label}</p>
 						{#if block.source}
 							<span
-								class="rounded bg-surface px-2 py-0.5 text-micro text-ink-muted uppercase"
+								class="rounded bg-surface-muted px-2 py-0.5 text-micro text-ink-muted uppercase"
 								data-testid="user-account-source-{block.field}">{block.source}</span
 							>
 						{/if}
@@ -380,7 +380,7 @@
 					{#if block.values.length > 0}
 						<div class="mt-1 flex flex-wrap gap-2">
 							{#each block.values as acct (acct)}
-								<span class="rounded bg-surface px-2 py-1 text-sm">{acct}</span>
+								<span class="rounded bg-surface-muted px-2 py-1 text-sm">{acct}</span>
 							{/each}
 						</div>
 					{:else if block.unconfigured}
@@ -421,11 +421,11 @@
 						{#each Object.entries(user.extra_fields) as [key, value] (key)}
 							<div class="flex items-start gap-2">
 								<span
-									class="flex-shrink-0 rounded bg-surface px-2 py-1 font-mono text-sm text-ink-muted"
+									class="flex-shrink-0 rounded bg-surface-muted px-2 py-1 font-mono text-sm text-ink-muted"
 									>{key}</span
 								>
 								<span
-									class="flex-grow rounded bg-surface px-2 py-1 text-sm"
+									class="flex-grow rounded bg-surface-muted px-2 py-1 text-sm"
 									class:line-through={overrides[key]}
 									class:text-ink-muted={overrides[key]}
 								>
@@ -446,11 +446,11 @@
 						{#each ldapOnlyExtras as override (override.field)}
 							<div class="flex items-start gap-2" data-testid="user-override-{override.field}">
 								<span
-									class="flex-shrink-0 rounded bg-surface px-2 py-1 font-mono text-sm text-ink-muted"
+									class="flex-shrink-0 rounded bg-surface-muted px-2 py-1 font-mono text-sm text-ink-muted"
 									>{override.field}</span
 								>
 
-								<span class="flex-grow rounded bg-surface px-2 py-1 text-sm">
+								<span class="flex-grow rounded bg-surface-muted px-2 py-1 text-sm">
 									{override.effective.join(', ') || '—'}
 									<span class="text-xs text-accent">— from LDAP only, no OIDC claim</span>
 								</span>
@@ -507,7 +507,7 @@
 								<tr class="border-b border-border-subtle last:border-0">
 									<td class="font-mono">{group.name}</td>
 									<td class="pr-4">
-										<span class="rounded bg-surface px-2 py-0.5 text-xs uppercase"
+										<span class="rounded bg-surface-muted px-2 py-0.5 text-xs uppercase"
 											>{group.source}</span
 										>
 									</td>
@@ -569,7 +569,7 @@
 
 				{#if user.directory.first_missing_at}
 					<div
-						class="mt-4 rounded border-l-2 border-danger bg-surface p-3 text-sm"
+						class="mt-4 rounded border-l-2 border-danger bg-surface-muted p-3 text-sm"
 						data-testid="user-directory-missing"
 					>
 						<p class="font-semibold text-danger">Entry is currently missing</p>
@@ -589,10 +589,12 @@
 							{#each Object.entries(user.directory.attributes) as [field, values] (field)}
 								<div class="flex items-start gap-2">
 									<span
-										class="flex-shrink-0 rounded bg-surface px-2 py-1 font-mono text-sm text-ink-muted"
+										class="flex-shrink-0 rounded bg-surface-muted px-2 py-1 font-mono text-sm text-ink-muted"
 										>{field}</span
 									>
-									<span class="flex-grow rounded bg-surface px-2 py-1 font-mono text-sm break-all">
+									<span
+										class="flex-grow rounded bg-surface-muted px-2 py-1 font-mono text-sm break-all"
+									>
 										{values.length > 0 ? values.join(', ') : '—'}
 									</span>
 								</div>

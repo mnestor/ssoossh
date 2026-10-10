@@ -138,10 +138,7 @@
 			     key it belongs to. -->
 			<div class="flex flex-col gap-6">
 				{#each sections as section (section.name)}
-					<section
-						data-testid="config-section"
-						class="rounded-lg border border-border-subtle bg-surface-muted p-4"
-					>
+					<section data-testid="config-section" class="rounded-lg bg-surface p-5">
 						<h2
 							class="mb-1.5 font-mono text-meta font-semibold tracking-label text-ink-muted uppercase"
 						>

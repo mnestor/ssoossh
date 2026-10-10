@@ -1,17 +1,14 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
-	// One section of a page: a subtle card — a hairline border and a tinted
-	// ground, no shadow — holding a quiet uppercase heading, an optional
+	// One section of a page: a `surface` plane on the `ground`, with no
+	// border and no shadow, holding a quiet uppercase heading, an optional
 	// line of copy, and the fields themselves.
 	//
-	// This is what replaced Card. Card was a white panel with a shadow and a
-	// ruled-off header, which read as a component floating over the page;
-	// this reads as a region of it. The frame is still doing work — it is
-	// what says where one group of fields ends and the next begins, which on
-	// a page of six of them is the difference between a document and a list
-	// — but it says it once, quietly, instead of stacking a border, a tint,
-	// a shadow and a divider to say it four times.
+	// The plane is what says where one group of fields ends and the next
+	// begins (DESIGN.md, "Planes"). It says it once: a border, a tint and a
+	// shadow on one box would say the same thing three times. Tints inside
+	// a section are `surface-muted`, which on the ground would disappear.
 	//
 	// A real h2 rather than a styled div: a section is a landmark a screen
 	// reader navigates by, and it was Card's header that carried that, not
@@ -34,7 +31,7 @@
 	let { title, description, testid, children }: Props = $props();
 </script>
 
-<section data-testid={testid} class="rounded-lg border border-border-subtle bg-surface-muted p-4">
+<section data-testid={testid} class="rounded-lg bg-surface p-5">
 	<h2 class="text-meta font-semibold tracking-label text-ink-muted uppercase">
 		{title}
 	</h2>
