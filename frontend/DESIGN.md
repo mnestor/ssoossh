@@ -1107,7 +1107,7 @@ change lands.
 - `PageHeading`'s `h1` and the sign-in heading are sans `font-bold`.
 - `.data-table` column heads and `RailGroup` heads are in the mono.
 - Selected states are cobalt fills (`FilterChip`, `ApprovalView` chips,
-  `Pager`, the users and directory segments); `FilterChip` has no `check`.
+  `Pager`, the users segment); `FilterChip` has no `check`.
 - No control uses the `target` utilities yet: chips and pager controls are
   about 28px, and buttons, icon buttons and rail rows state their own
   heights.
@@ -1116,8 +1116,6 @@ change lands.
 - Chips and badges on `rounded-full`; several fields on `rounded`.
 - Cobalt outside its four jobs: stat figures and LDAP override notes on the
   user page, a label and a checkbox on the directory and config pages.
-- The directory probe views are tabs with no announced state, and a mapped
-  attribute is marked by colour alone.
 - `ConfirmModal` has no reasonless mode, and a live LDAP sync runs unconfirmed.
 - The claims echo table is hand-rolled (its own frame, tinted head, green
   `rounded-full` pills), joins arrays with commas, prints objects as one line

@@ -10,6 +10,7 @@
 	import Alert from '#lib/components/Alert.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import Button from '#lib/components/Button.svelte';
+	import Icon from '#lib/components/Icon.svelte';
 	import MonoChip from '#lib/components/MonoChip.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageSection from '#lib/components/PageSection.svelte';
@@ -42,26 +43,18 @@
 	let bindEmail = $state('');
 	let bindSubject = $state('');
 
-	/**
-	 * modeButton is the class for one option in a segmented control.
-	 *
-	 * A pressed option is filled, not merely tinted, and that is the point:
-	 * both of these rows used to mark their selection with the accent hue
-	 * alone. Matches FilterChip, which is the shape the rest of the app's
-	 * two-state controls already take.
-	 */
-	function modeButton(pressed: boolean): string {
-		const base =
-			'rounded border px-3 py-1 text-xs font-medium transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
-		return pressed
-			? `${base} border-accent bg-accent text-accent-ink`
-			: `${base} border-border-control text-ink-muted hover:bg-surface-muted`;
-	}
-
 	let probing = $state(false);
 	let probeResult = $state<LDAPProbeResponse | null>(null);
 	let probeError = $state<string | null>(null);
-	let tab = $state<'entry' | 'fields' | 'merge'>('entry');
+	let view = $state<'entry' | 'fields' | 'merge'>('entry');
+
+	// The probe result's three views, in the order a reader works through
+	// them: what came back, what each field made of it, what was kept.
+	const views = [
+		{ id: 'entry', label: 'Entry as returned' },
+		{ id: 'fields', label: 'Field mapping' },
+		{ id: 'merge', label: 'Merge and allowlist' }
+	] as const;
 
 	const isAdmin = $derived(session.user?.is_admin ?? false);
 
@@ -131,7 +124,7 @@
 				};
 			}
 			probeResult = await probeLDAP(body);
-			tab = 'entry';
+			view = 'entry';
 		} catch (cause) {
 			probeError = errorMessage(cause);
 		} finally {
@@ -166,6 +159,25 @@
 </script>
 
 <svelte:head><title>Directory · ssoossh</title></svelte:head>
+
+<!-- One option of a segmented control. Selected is an ink fill with the
+     check glyph and aria-pressed, never cobalt (DESIGN.md, "Selected,
+     current and status"): these rows used to mark their choice with the
+     accent hue alone. -->
+{#snippet toggle(label: string, pressed: boolean, testid: string, onclick: () => void)}
+	<button
+		type="button"
+		class="inline-flex min-h-target items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition {pressed
+			? 'border-ink bg-ink text-surface'
+			: 'border-border-control text-ink-muted hover:bg-surface-muted'}"
+		aria-pressed={pressed}
+		data-testid={testid}
+		{onclick}
+	>
+		{#if pressed}<Icon name="check" size="xs" />{/if}
+		{label}
+	</button>
+{/snippet}
 
 <PageShell width="wide">
 	<PageHeading title="Directory">
@@ -368,20 +380,18 @@
 							     nothing else — invisible to a screen reader, and to
 							     anyone who cannot separate teal from grey. -->
 							<div class="mb-2 flex gap-1" role="group" aria-label="Filter mode">
-								<button
-									type="button"
-									class={modeButton(mode === 'template')}
-									aria-pressed={mode === 'template'}
-									data-testid="ldap-mode-template"
-									onclick={() => (mode = 'template')}>Template</button
-								>
-								<button
-									type="button"
-									class={modeButton(mode === 'literal')}
-									aria-pressed={mode === 'literal'}
-									data-testid="ldap-mode-literal"
-									onclick={() => (mode = 'literal')}>Literal</button
-								>
+								{@render toggle(
+									'Template',
+									mode === 'template',
+									'ldap-mode-template',
+									() => (mode = 'template')
+								)}
+								{@render toggle(
+									'Literal',
+									mode === 'literal',
+									'ldap-mode-literal',
+									() => (mode = 'literal')
+								)}
 							</div>
 							<input
 								id="ldap-filter"
@@ -417,8 +427,8 @@
 								class="w-full rounded border border-border-control bg-surface px-3 py-2 font-mono text-sm"
 							/>
 							<p id="ldap-attributes-help" class="mt-1 text-dense text-ink-muted">
-								Empty asks for everything. Attributes the configuration reads are highlighted in the
-								result.
+								Empty asks for everything. Attributes the configuration reads are marked "mapped" in
+								the result.
 							</p>
 						</div>
 					</div>
@@ -427,20 +437,18 @@
 						<div>
 							<SectionLabel>Bindings</SectionLabel>
 							<div class="mb-2 flex gap-1" role="group" aria-label="Binding source">
-								<button
-									type="button"
-									class={modeButton(bindingSource === 'self')}
-									aria-pressed={bindingSource === 'self'}
-									data-testid="ldap-binding-self"
-									onclick={() => (bindingSource = 'self')}>My session</button
-								>
-								<button
-									type="button"
-									class={modeButton(bindingSource === 'custom')}
-									aria-pressed={bindingSource === 'custom'}
-									data-testid="ldap-binding-custom"
-									onclick={() => (bindingSource = 'custom')}>Typed values</button
-								>
+								{@render toggle(
+									'My session',
+									bindingSource === 'self',
+									'ldap-binding-self',
+									() => (bindingSource = 'self')
+								)}
+								{@render toggle(
+									'Typed values',
+									bindingSource === 'custom',
+									'ldap-binding-custom',
+									() => (bindingSource = 'custom')
+								)}
 							</div>
 							{#if bindingSource === 'custom'}
 								<!-- Three fields that differ only in what they hold, so
@@ -544,22 +552,26 @@
 									a failure: this is exactly what a login would see.
 								</p>
 							{:else}
-								<div class="flex overflow-x-auto border-b border-border-subtle bg-surface-muted">
-									{#each [['entry', 'Entry as returned'], ['fields', 'Field mapping'], ['merge', 'Merge and allowlist']] as [id, label] (id)}
-										<button
-											type="button"
-											class="border-b-2 px-4 py-2 text-dense font-medium whitespace-nowrap"
-											class:border-accent={tab === id}
-											class:text-accent={tab === id}
-											class:border-transparent={tab !== id}
-											class:text-ink-muted={tab !== id}
-											data-testid="ldap-tab-{id}"
-											onclick={() => (tab = id as typeof tab)}>{label}</button
-										>
+								<!-- A group of toggles, not tabs (DESIGN.md, "Accessibility"):
+								     the underline that marked the open view had no
+								     aria-selected behind it, so a screen reader could not
+								     tell which one was showing. -->
+								<div
+									class="flex flex-wrap gap-1 border-b border-border-subtle px-4 py-3"
+									role="group"
+									aria-label="Probe result view"
+								>
+									{#each views as v (v.id)}
+										{@render toggle(
+											v.label,
+											view === v.id,
+											`ldap-tab-${v.id}`,
+											() => (view = v.id)
+										)}
 									{/each}
 								</div>
 
-								{#if tab === 'entry' && probeResult.entry}
+								{#if view === 'entry' && probeResult.entry}
 									<div data-testid="ldap-panel-entry">
 										<div
 											class="border-b border-border-subtle px-4 py-2 font-mono text-dense break-all"
@@ -569,10 +581,17 @@
 										{#each probeResult.entry.attributes as attr (attr.name)}
 											<div
 												class="grid grid-cols-[minmax(9rem,14rem)_1fr] gap-4 border-b border-border-subtle px-4 py-2 text-dense last:border-0"
-												class:bg-granted-surface={attr.configured}
 											>
-												<span class="font-mono break-all" class:text-granted={attr.configured}>
-													{attr.name}
+												<!-- Said in words, not a green row: colour alone
+												     reached nobody who cannot see it, and green
+												     means "granted", which this is not. -->
+												<span class="flex flex-wrap items-baseline gap-x-2">
+													<span class="font-mono break-all">{attr.name}</span>
+													{#if attr.configured}
+														<span class="text-xs text-ink-muted" data-testid="ldap-attr-mapped"
+															>mapped</span
+														>
+													{/if}
 												</span>
 												<span class="flex flex-col gap-0.5 font-mono break-all">
 													{#each attr.values as value, i (i)}
@@ -587,7 +606,7 @@
 											</div>
 										{/each}
 									</div>
-								{:else if tab === 'fields'}
+								{:else if view === 'fields'}
 									<div data-testid="ldap-panel-fields">
 										{#each probeResult.fields ?? [] as field (field.name)}
 											<div class="border-b border-border-subtle px-4 py-3 text-dense last:border-0">
@@ -624,7 +643,7 @@
 											</div>
 										{/each}
 									</div>
-								{:else if tab === 'merge'}
+								{:else if view === 'merge'}
 									<div data-testid="ldap-panel-merge">
 										{#each probeResult.merge ?? [] as merge (merge.name)}
 											<div class="border-b border-border-subtle px-4 py-3 text-dense last:border-0">

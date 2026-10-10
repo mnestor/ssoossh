@@ -364,6 +364,41 @@ describe('Directory admin page', () => {
 			expect(entry).toHaveTextContent('departmentNumber');
 		});
 
+		// The open view used to be an accent underline with no state behind
+		// it, which a screen reader could not see.
+		it('should report which probe view is showing', async () => {
+			signedInAsAdmin();
+			mockApi({ status: enabledStatus() });
+			render(Page);
+
+			await userEvent.click(await screen.findByTestId('ldap-run-probe'));
+			await userEvent.click(await screen.findByTestId('ldap-tab-merge'));
+
+			expect(screen.getByTestId('ldap-tab-merge')).toHaveAttribute('aria-pressed', 'true');
+		});
+
+		it('should report the other probe views as not showing', async () => {
+			signedInAsAdmin();
+			mockApi({ status: enabledStatus() });
+			render(Page);
+
+			await userEvent.click(await screen.findByTestId('ldap-run-probe'));
+			await userEvent.click(await screen.findByTestId('ldap-tab-merge'));
+
+			expect(screen.getByTestId('ldap-tab-entry')).toHaveAttribute('aria-pressed', 'false');
+		});
+
+		// A mapped attribute used to differ only by a green tint.
+		it('should mark an attribute the configuration reads in words', async () => {
+			signedInAsAdmin();
+			mockApi({ status: enabledStatus() });
+			render(Page);
+
+			await userEvent.click(await screen.findByTestId('ldap-run-probe'));
+
+			expect(await screen.findAllByTestId('ldap-attr-mapped')).toHaveLength(1);
+		});
+
 		it('should name the group values the allowlist would drop', async () => {
 			signedInAsAdmin();
 			mockApi({ status: enabledStatus() });
