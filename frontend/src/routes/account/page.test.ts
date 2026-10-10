@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi, afterEach } from 'vitest';
 
-import type { CurrentUser } from '$lib/api/types';
+import type { CurrentUser } from '#lib/api/types.js';
 import Page from './+page.svelte';
 
 /** aliceUser is a fully populated identity, overridable per test. */

@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import Alert from '$lib/components/Alert.svelte';
-	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
-	import SearchInput from '$lib/components/SearchInput.svelte';
-	import { getAdminConfig } from '$lib/api/endpoints';
-	import type { ConfigSection, ConfigSetting, EffectiveConfigResponse } from '$lib/api/types';
+	import Alert from '#lib/components/Alert.svelte';
+	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
+	import SearchInput from '#lib/components/SearchInput.svelte';
+	import { getAdminConfig } from '#lib/api/endpoints.js';
+	import type { ConfigSection, ConfigSetting, EffectiveConfigResponse } from '#lib/api/types.js';
 
 	// The whole effective configuration, section by section. The server
 	// reflects over its own config struct to build this, so the page renders

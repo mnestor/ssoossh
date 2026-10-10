@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { ApiError } from '$lib/api/client';
-	import { listEnrollmentHolders } from '$lib/api/endpoints';
-	import type { AccountHolder } from '$lib/api/types';
+	import { ApiError } from '#lib/api/client.js';
+	import { listEnrollmentHolders } from '#lib/api/endpoints.js';
+	import type { AccountHolder } from '#lib/api/types.js';
 	import PageSection from './PageSection.svelte';
 	import LoadingBlock from './LoadingBlock.svelte';
 

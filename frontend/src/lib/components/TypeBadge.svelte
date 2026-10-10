@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { CertificateType } from '$lib/api/types';
+	import type { CertificateType } from '#lib/api/types.js';
 	import Icon from './Icon.svelte';
 
 	// The certificate type as a fixed-size square. Fixed rather than

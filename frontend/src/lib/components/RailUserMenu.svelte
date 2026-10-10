@@ -11,9 +11,9 @@
 	import ThemeToggle from './ThemeToggle.svelte';
 	import { railRowClass } from './railClasses';
 	import { scale } from 'svelte/transition';
-	import { easeEnter, easeExit, enterMs, exitMs } from '$lib/motion';
-	import { accountNav, isCurrent } from '$lib/nav';
-	import { session } from '$lib/session.svelte';
+	import { easeEnter, easeExit, enterMs, exitMs } from '#lib/motion.js';
+	import { accountNav, isCurrent } from '#lib/nav.js';
+	import { session } from '#lib/session.svelte.js';
 
 	// The rail's bottom edge, as one row that opens upward.
 	//
@@ -46,7 +46,7 @@
 	let root = $state<HTMLDivElement>();
 	let trigger = $state<HTMLButtonElement>();
 
-	const accountHref = $derived(resolve('/account'));
+	const accountHref = $derived(resolve('account'));
 	const onAccount = $derived(isCurrent(accountHref, page.url.pathname));
 
 	// The trigger carries the selected state for every page behind it.
@@ -107,6 +107,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
+
 <div bind:this={root} class="relative" {onkeydown}>
 	{#if open}
 		<!-- Anchored over the rail where there is width for labels, and flown

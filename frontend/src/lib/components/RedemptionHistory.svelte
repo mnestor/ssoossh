@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { EnrollmentRetrievalResponse } from '$lib/api/generated/webtypes';
-	import { formatDateTime } from '$lib/format';
+	import type { EnrollmentRetrievalResponse } from '#lib/api/generated/webtypes.js';
+	import { formatDateTime } from '#lib/format.js';
 	import MonoChip from './MonoChip.svelte';
 	import PageSection from './PageSection.svelte';
 

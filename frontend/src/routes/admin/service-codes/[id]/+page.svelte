@@ -2,20 +2,20 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { ApiError } from '$lib/api/client';
+	import { ApiError } from '#lib/api/client.js';
 	import {
 		expireEnrollment,
 		getAdminEnrollmentDetail,
 		type AdminEnrollmentDetail
-	} from '$lib/api/endpoints';
-	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
-	import AdminServiceCodeDetail from '$lib/components/AdminServiceCodeDetail.svelte';
-	import Alert from '$lib/components/Alert.svelte';
-	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
-	import ExpireCodeAction from '$lib/components/ExpireCodeAction.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
-	import { isExpired } from '$lib/format';
+	} from '#lib/api/endpoints.js';
+	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import AdminServiceCodeDetail from '#lib/components/AdminServiceCodeDetail.svelte';
+	import Alert from '#lib/components/Alert.svelte';
+	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
+	import ExpireCodeAction from '#lib/components/ExpireCodeAction.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
+	import { isExpired } from '#lib/format.js';
 
 	// One enrollment, addressed by id. This is where an operator lands from
 	// the list, and where they land with an id copied out of a notification
@@ -30,7 +30,7 @@
 	let loadError = $state<string | null>(null);
 	let hasLoaded = $state(false);
 
-	const listHref = resolve('/admin/service-codes');
+	const listHref = resolve('admin/service-codes');
 
 	// An already-expired code needs no control: the outcome it would produce
 	// is already true. Read here rather than inside the detail component

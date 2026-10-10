@@ -1,24 +1,24 @@
 <script lang="ts">
-	import type { RequestDetail } from '$lib/api/types';
+	import type { RequestDetail } from '#lib/api/types.js';
 	import {
 		anyTrimmed,
 		approvalBlockedReason,
 		criticalOptionDiff,
 		extensionDiff,
 		type BlockedReason
-	} from '$lib/approval';
-	import Alert from '$lib/components/Alert.svelte';
-	import Button from '$lib/components/Button.svelte';
-	import CopyableId from '$lib/components/CopyableId.svelte';
-	import DetailRow from '$lib/components/DetailRow.svelte';
-	import Icon from '$lib/components/Icon.svelte';
-	import MonoChip from '$lib/components/MonoChip.svelte';
-	import OptionDiffList from '$lib/components/OptionDiffList.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import SectionLabel from '$lib/components/SectionLabel.svelte';
-	import StatusBadge from '$lib/components/StatusBadge.svelte';
-	import TypeChip from '$lib/components/TypeChip.svelte';
-	import { clockSkewLabel, expiryLabel, formatDateTime, formatDuration } from '$lib/format';
+	} from '#lib/approval.js';
+	import Alert from '#lib/components/Alert.svelte';
+	import Button from '#lib/components/Button.svelte';
+	import CopyableId from '#lib/components/CopyableId.svelte';
+	import DetailRow from '#lib/components/DetailRow.svelte';
+	import Icon from '#lib/components/Icon.svelte';
+	import MonoChip from '#lib/components/MonoChip.svelte';
+	import OptionDiffList from '#lib/components/OptionDiffList.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import SectionLabel from '#lib/components/SectionLabel.svelte';
+	import StatusBadge from '#lib/components/StatusBadge.svelte';
+	import TypeChip from '#lib/components/TypeChip.svelte';
+	import { clockSkewLabel, expiryLabel, formatDateTime, formatDuration } from '#lib/format.js';
 
 	// Everything this component shows arrives as props, and both decisions
 	// leave as callbacks. Fetching and posting stay in +page.svelte so this

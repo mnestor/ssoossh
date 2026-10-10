@@ -1,8 +1,8 @@
 import { render, screen } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { AdminEnrollment } from '$lib/api/types';
-import { fakePage, resetFakePage } from '$lib/testing/page.svelte';
+import type { AdminEnrollment } from '#lib/api/types.js';
+import { fakePage, resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
 
 // Test methodology: render the admin detail route against a stubbed fetch,
@@ -14,7 +14,7 @@ import Page from './+page.svelte';
 // to see it, failed to load) read differently.
 
 vi.mock('$app/state', async () => {
-	const { fakePage } = await import('$lib/testing/page.svelte');
+	const { fakePage } = await import('#lib/testing/page.svelte.js');
 	return { page: fakePage };
 });
 

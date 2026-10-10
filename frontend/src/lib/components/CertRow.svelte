@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { CertificateRecord } from '$lib/api/types';
-	import { formatDuration, isExpired, relativeTime } from '$lib/format';
+	import type { CertificateRecord } from '#lib/api/types.js';
+	import { formatDuration, isExpired, relativeTime } from '#lib/format.js';
 	import type { Snippet } from 'svelte';
 	import Icon from './Icon.svelte';
 	import TypeBadge from './TypeBadge.svelte';

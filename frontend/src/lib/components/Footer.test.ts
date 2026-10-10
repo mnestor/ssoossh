@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 
-import type { BrandingResponse, VersionResponse } from '$lib/api/generated/webtypes';
+import type { BrandingResponse, VersionResponse } from '#lib/api/generated/webtypes.js';
 import Footer from './Footer.svelte';
 
 const release: VersionResponse = {

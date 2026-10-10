@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { AdminUserSummary } from '$lib/api/types';
+import type { AdminUserSummary } from '#lib/api/types.js';
 import Page from './+page.svelte';
 
 // The admin list is driven entirely by what the server returns, so these

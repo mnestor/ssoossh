@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { AuditEvent } from '$lib/api/types';
-	import { visibleAuditEvents } from '$lib/audit';
-	import { formatDateTime } from '$lib/format';
+	import type { AuditEvent } from '#lib/api/types.js';
+	import { visibleAuditEvents } from '#lib/audit.js';
+	import { formatDateTime } from '#lib/format.js';
 
 	interface Props {
 		events: AuditEvent[];
@@ -17,7 +17,7 @@
 	const { events, subjectUserId = '' }: Props = $props();
 
 	// The hidden privileged-view actions and the array guard both live in
-	// $lib/audit, so this and the page that counts what it rendered cannot
+	// #lib/audit, so this and the page that counts what it rendered cannot
 	// disagree about which rows are shown.
 	const rows = $derived(visibleAuditEvents(events));
 

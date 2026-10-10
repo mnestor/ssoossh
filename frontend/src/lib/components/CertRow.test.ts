@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 
-import type { CertificateRecord } from '$lib/api/types';
+import type { CertificateRecord } from '#lib/api/types.js';
 import CertRow from './CertRow.svelte';
 
 const now = new Date('2026-08-22T12:00:00Z');

@@ -1,21 +1,21 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { listAdminCertificates } from '$lib/api/endpoints';
-	import type { CertificateResponse } from '$lib/api/types';
-	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
-	import Alert from '$lib/components/Alert.svelte';
-	import Button from '$lib/components/Button.svelte';
-	import CertRow from '$lib/components/CertRow.svelte';
-	import EmptyState from '$lib/components/EmptyState.svelte';
-	import FilterGroup from '$lib/components/FilterGroup.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
-	import ListStatus from '$lib/components/ListStatus.svelte';
-	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
-	import Pager from '$lib/components/Pager.svelte';
-	import SearchInput from '$lib/components/SearchInput.svelte';
-	import { statusFilters, typeFilters } from '$lib/filters';
-	import { describeList } from '$lib/listStatus';
+	import { listAdminCertificates } from '#lib/api/endpoints.js';
+	import type { CertificateResponse } from '#lib/api/types.js';
+	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import Alert from '#lib/components/Alert.svelte';
+	import Button from '#lib/components/Button.svelte';
+	import CertRow from '#lib/components/CertRow.svelte';
+	import EmptyState from '#lib/components/EmptyState.svelte';
+	import FilterGroup from '#lib/components/FilterGroup.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
+	import ListStatus from '#lib/components/ListStatus.svelte';
+	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
+	import Pager from '#lib/components/Pager.svelte';
+	import SearchInput from '#lib/components/SearchInput.svelte';
+	import { statusFilters, typeFilters } from '#lib/filters.js';
+	import { describeList } from '#lib/listStatus.js';
 
 	let certificates = $state<CertificateResponse[]>([]);
 	let pageInfo = $state({ total: 0, limit: 25, offset: 0, page: 1, page_count: 1 });
@@ -148,7 +148,7 @@
 	}
 
 	// What the list just became, for a reader who cannot see the rows
-	// change under a filter. See $lib/listStatus.
+	// change under a filter. See #lib/listStatus.
 	const status = $derived(
 		describeList({
 			noun: 'certificate',
@@ -177,7 +177,7 @@
 	{/if}
 
 	<!-- Search, then the filter groups on one line. Both lists that show
-	     certificate rows open the same way; see $lib/filters. -->
+	     certificate rows open the same way; see #lib/filters. -->
 	<div class="flex flex-col gap-3">
 		{#key searchKey}
 			<SearchInput
@@ -251,7 +251,7 @@
 					}}
 					event="certificate issued"
 					testid="cert-row"
-					href={`${resolve(`/certs/${cert.id}`)}?from=admin`}
+					href={`${resolve(`certs/${cert.id}`)}?from=admin`}
 				/>
 			{/each}
 		</div>

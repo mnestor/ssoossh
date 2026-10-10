@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { RequestStatus } from '$lib/api/types';
+	import type { RequestStatus } from '#lib/api/types.js';
 	import Icon from './Icon.svelte';
 
 	interface Props {

@@ -4,7 +4,7 @@
 	   against this app's route tree. The URLs come from the server's
 	   /api/version payload, which the lint rule cannot see through. */
 	/* eslint-disable svelte/no-navigation-without-resolve */
-	import type { BrandingResponse, VersionResponse } from '$lib/api/generated/webtypes';
+	import type { BrandingResponse, VersionResponse } from '#lib/api/generated/webtypes.js';
 
 	// The bar closing every page: what build is running, and where the
 	// project lives. Presentational on purpose — the caller supplies the

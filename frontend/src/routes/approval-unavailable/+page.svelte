@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
 
 	// Where the server sends a document GET of /approve/<id> it refused to
 	// serve (middleware.ApprovalClaimMiddleware): approval pages are bound

@@ -1,8 +1,8 @@
 import { render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ServiceEnrollment } from '$lib/api/types';
-import { fakePage, resetFakePage } from '$lib/testing/page.svelte';
+import type { ServiceEnrollment } from '#lib/api/types.js';
+import { fakePage, resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
 
 // Test methodology: render the holder-facing code page against a stubbed
@@ -14,7 +14,7 @@ import Page from './+page.svelte';
 // to the account the code belongs to.
 
 vi.mock('$app/state', async () => {
-	const { fakePage } = await import('$lib/testing/page.svelte');
+	const { fakePage } = await import('#lib/testing/page.svelte.js');
 	return { page: fakePage };
 });
 

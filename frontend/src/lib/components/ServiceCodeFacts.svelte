@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { AdminEnrollment, ServiceEnrollment } from '$lib/api/types';
-	import { formatDateTimeRange, formatDuration, isExpired, remainingLabel } from '$lib/format';
+	import type { AdminEnrollment, ServiceEnrollment } from '#lib/api/types.js';
+	import { formatDateTimeRange, formatDuration, isExpired, remainingLabel } from '#lib/format.js';
 	import CopyableId from './CopyableId.svelte';
 	import DetailRow from './DetailRow.svelte';
 	import Icon from './Icon.svelte';

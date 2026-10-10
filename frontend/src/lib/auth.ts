@@ -1,6 +1,6 @@
-import { ApiError } from '$lib/api/client';
-import { loginURL } from '$lib/api/endpoints';
-import { isInternalPath } from '$lib/paths';
+import { ApiError } from '#lib/api/client.js';
+import { loginURL } from '#lib/api/endpoints.js';
+import { isInternalPath } from '#lib/paths.js';
 
 /**
  * startLogin sends the browser to the server's OIDC entry point, asking to

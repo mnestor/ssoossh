@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { theme, type ThemePreference } from '$lib/theme.svelte';
+	import { theme, type ThemePreference } from '#lib/theme.svelte.js';
 	import Icon from './Icon.svelte';
 	import { railRowClass } from './railClasses';
 

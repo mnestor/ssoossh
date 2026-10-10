@@ -1,4 +1,4 @@
-import type { BrandingResponse } from '$lib/api/generated/webtypes';
+import type { BrandingResponse } from '#lib/api/generated/webtypes.js';
 
 let branding = $state<BrandingResponse | null>(null);
 

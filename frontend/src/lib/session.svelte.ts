@@ -1,6 +1,6 @@
-import { ApiError } from '$lib/api/client';
-import { getCurrentUser } from '$lib/api/endpoints';
-import type { CurrentUser } from '$lib/api/types';
+import { ApiError } from '#lib/api/client.js';
+import { getCurrentUser } from '#lib/api/endpoints.js';
+import type { CurrentUser } from '#lib/api/types.js';
 
 /**
  * Session holds the caller's identity for the whole app.

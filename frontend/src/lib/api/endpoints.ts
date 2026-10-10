@@ -1,4 +1,4 @@
-import { isInternalPath } from '$lib/paths';
+import { isInternalPath } from '#lib/paths.js';
 
 import { ApiError, request } from './client';
 import type {

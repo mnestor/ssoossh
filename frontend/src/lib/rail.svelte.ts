@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 
 /**
  * Where the collapsed preference is kept. Unlike the theme, nothing reads

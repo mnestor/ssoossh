@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { CertificateType } from '$lib/api/types';
+	import type { CertificateType } from '#lib/api/types.js';
 	import Icon from './Icon.svelte';
 
 	// The labelled form of TypeBadge, for detail views where there is room to

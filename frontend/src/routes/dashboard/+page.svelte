@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { listCertificates } from '$lib/api/endpoints';
-	import type { CertificateListResponse, CertificateRecord } from '$lib/api/types';
-	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
-	import Alert from '$lib/components/Alert.svelte';
-	import Button from '$lib/components/Button.svelte';
-	import CertRow from '$lib/components/CertRow.svelte';
-	import EmptyState from '$lib/components/EmptyState.svelte';
-	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
+	import { listCertificates } from '#lib/api/endpoints.js';
+	import type { CertificateListResponse, CertificateRecord } from '#lib/api/types.js';
+	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import Alert from '#lib/components/Alert.svelte';
+	import Button from '#lib/components/Button.svelte';
+	import CertRow from '#lib/components/CertRow.svelte';
+	import EmptyState from '#lib/components/EmptyState.svelte';
+	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
 
 	// Your recent decisions, newest first — there is deliberately no list of
 	// requests awaiting approval. A request has no owner until someone opens
@@ -51,7 +51,7 @@
 	// list. `from` is what the back chip there reads, so a reader who came
 	// from this list is returned to it rather than to the full history.
 	function certHref(certId: string): string {
-		return `${resolve(`/certs/${certId}`)}?from=dashboard`;
+		return `${resolve(`certs/${certId}`)}?from=dashboard`;
 	}
 
 	async function loadMoreCertificates() {
@@ -100,11 +100,10 @@
 	<PageHeading title="Recent decisions">
 		{#snippet action()}
 			<a
-				href={resolve('/logs/me')}
+				href={resolve('logs/me')}
 				class="text-dense font-medium whitespace-nowrap text-accent hover:underline"
+				>View all history →</a
 			>
-				View all history &rarr;
-			</a>
 		{/snippet}
 	</PageHeading>
 

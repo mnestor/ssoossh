@@ -1,4 +1,4 @@
-import { ApiError } from '$lib/api/client';
+import { ApiError } from '#lib/api/client.js';
 
 // The browser half of the console login code: what the code-entry box does
 // to input as it is typed, and what the three ways a submission can fail

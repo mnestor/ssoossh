@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { expiryLabel, relativeTime } from '$lib/format';
+	import { expiryLabel, relativeTime } from '#lib/format.js';
 	import Icon from './Icon.svelte';
 	import TypeBadge from './TypeBadge.svelte';
 

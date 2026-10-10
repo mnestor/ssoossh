@@ -111,7 +111,7 @@
 	   waited on; an exit is about 40% faster, because a reader who has
 	   dismissed something has already stopped looking at it.
 
-	   Stated again as ENTER_MS and EXIT_MS in $lib/motion, for the overlays
+	   Stated again as ENTER_MS and EXIT_MS in #lib/motion, for the overlays
 	   that are animated by a Svelte transition rather than by CSS. The two
 	   have to agree and there is no way to read one from the other. */
 	--duration-enter: 220ms;
@@ -339,7 +339,7 @@
 
 	   The Svelte transitions on the drawer, the identity popover and the two
 	   dialogs are driven from JavaScript and cannot be reached from here;
-	   they ask $lib/motion for a duration instead, which returns zero under
+	   they ask #lib/motion for a duration instead, which returns zero under
 	   the same query. */
 	@media (prefers-reduced-motion: reduce) {
 		*,

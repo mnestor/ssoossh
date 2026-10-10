@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { AccountHolder } from '$lib/api/types';
+import type { AccountHolder } from '#lib/api/types.js';
 import AccountHoldersPanel from './AccountHoldersPanel.svelte';
 
 // Test methodology: render the panel against a stubbed fetch. What matters

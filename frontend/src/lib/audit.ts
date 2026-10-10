@@ -3,7 +3,7 @@
  * the page that counts its rows cannot disagree about what is shown.
  */
 
-import type { AuditEvent } from '$lib/api/types';
+import type { AuditEvent } from '#lib/api/types.js';
 
 /**
  * Actions the web UI does not render.

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getBranding } from '$lib/branding.svelte';
+	import { getBranding } from '#lib/branding.svelte.js';
 
 	// The mark that sits to the left of the "ssoossh" wordmark and above the
 	// login heading. It is the deployment logo slot: a deployment that sets

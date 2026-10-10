@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { EffectiveConfigResponse } from '$lib/api/types';
+import type { EffectiveConfigResponse } from '#lib/api/types.js';
 import Page from './+page.svelte';
 
 // Test methodology: render the effective-config view against a stubbed

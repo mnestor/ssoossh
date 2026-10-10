@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
 </script>
 
 <svelte:head><title>Page not found · ssoossh</title></svelte:head>
@@ -24,7 +24,7 @@
 			{/snippet}
 		</PageHeading>
 		<p class="mt-4 text-sm">
-			<a class="text-accent hover:underline" href={resolve('/dashboard')}>Back to the dashboard</a>
+			<a class="text-accent hover:underline" href={resolve('dashboard')}>Back to the dashboard</a>
 		</p>
 	</div>
 </PageShell>

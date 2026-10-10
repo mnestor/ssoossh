@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { PageMeta } from '$lib/api/types';
+	import type { PageMeta } from '#lib/api/types.js';
 
 	import Icon from './Icon.svelte';
 

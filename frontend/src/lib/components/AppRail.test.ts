@@ -3,9 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AppRail from './AppRail.svelte';
-import { rail } from '$lib/rail.svelte';
-import { session } from '$lib/session.svelte';
-import { resetFakePage } from '$lib/testing/page.svelte';
+import { rail } from '#lib/rail.svelte.js';
+import { session } from '#lib/session.svelte.js';
+import { resetFakePage } from '#lib/testing/page.svelte.js';
 
 // Test methodology: render the rail directly with the session singleton put
 // into each state and the page URL driven by the fake. The rail is now the
@@ -14,7 +14,7 @@ import { resetFakePage } from '$lib/testing/page.svelte';
 // which one reads as current, and whether the label survives a collapse.
 
 vi.mock('$app/state', async () => {
-	const { fakePage } = await import('$lib/testing/page.svelte');
+	const { fakePage } = await import('#lib/testing/page.svelte.js');
 	return { page: fakePage };
 });
 

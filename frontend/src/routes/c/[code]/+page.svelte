@@ -2,12 +2,17 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { resolveConsoleCode } from '$lib/api/endpoints';
-	import { redirectIfUnauthenticated } from '$lib/auth';
-	import Alert from '$lib/components/Alert.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
-	import { describeCodeError, formatCode, normalizeCode, type CodeFailure } from '$lib/consolecode';
+	import { resolveConsoleCode } from '#lib/api/endpoints.js';
+	import { redirectIfUnauthenticated } from '#lib/auth.js';
+	import Alert from '#lib/components/Alert.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
+	import {
+		describeCodeError,
+		formatCode,
+		normalizeCode,
+		type CodeFailure
+	} from '#lib/consolecode.js';
 
 	// The short form of the verification URL: /c/<code>, the equivalent of
 	// RFC 8628's verification_uri_complete. A console prints it alongside
@@ -75,7 +80,8 @@
 			<p class="mt-3 text-sm text-ink-muted">
 				<!-- Resolved route id, so a rename of /console fails the build
 				     rather than 404ing here. -->
-				<a class="text-accent underline" href={resolve('/console')}>Type the code instead</a>
+
+				<a class="text-accent underline" href={resolve('console')}>Type the code instead</a>
 			</p>
 		</div>
 	{:else}

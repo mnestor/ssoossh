@@ -2,11 +2,11 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { fakePage, resetFakePage } from '$lib/testing/page.svelte';
+import { fakePage, resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
 
 vi.mock('$app/state', async () => {
-	const { fakePage: p } = await import('$lib/testing/page.svelte');
+	const { fakePage: p } = await import('#lib/testing/page.svelte.js');
 	return { page: p };
 });
 

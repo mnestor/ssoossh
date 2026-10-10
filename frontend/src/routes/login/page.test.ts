@@ -18,8 +18,8 @@ const { pageState, startLogin, branding } = vi.hoisted(() => ({
 }));
 
 vi.mock('$app/state', () => ({ page: pageState }));
-vi.mock('$lib/auth', () => ({ startLogin }));
-vi.mock('$lib/branding.svelte', () => ({ getBranding: () => branding }));
+vi.mock('#lib/auth.js', () => ({ startLogin }));
+vi.mock('#lib/branding.svelte.js', () => ({ getBranding: () => branding }));
 
 import Page from './+page.svelte';
 

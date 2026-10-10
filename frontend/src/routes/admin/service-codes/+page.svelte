@@ -1,16 +1,16 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { listAdminEnrollments } from '$lib/api/endpoints';
-	import type { AdminEnrollment } from '$lib/api/types';
-	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
-	import Alert from '$lib/components/Alert.svelte';
-	import EmptyState from '$lib/components/EmptyState.svelte';
-	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
-	import Pager from '$lib/components/Pager.svelte';
-	import SearchInput from '$lib/components/SearchInput.svelte';
-	import ServiceCodeRow from '$lib/components/ServiceCodeRow.svelte';
+	import { listAdminEnrollments } from '#lib/api/endpoints.js';
+	import type { AdminEnrollment } from '#lib/api/types.js';
+	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import Alert from '#lib/components/Alert.svelte';
+	import EmptyState from '#lib/components/EmptyState.svelte';
+	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
+	import Pager from '#lib/components/Pager.svelte';
+	import SearchInput from '#lib/components/SearchInput.svelte';
+	import ServiceCodeRow from '#lib/components/ServiceCodeRow.svelte';
 
 	let enrollments = $state<AdminEnrollment[]>([]);
 	let loadError = $state<string | null>(null);
@@ -102,7 +102,7 @@
 				<ServiceCodeRow
 					{enrollment}
 					{now}
-					href={resolve(`/admin/service-codes/${enrollment.id}`)}
+					href={resolve(`admin/service-codes/${enrollment.id}`)}
 					testid="enrollment-row"
 				/>
 			{/each}

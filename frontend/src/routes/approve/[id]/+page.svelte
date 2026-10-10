@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { approveRequest, denyRequest, getRequestDetail } from '$lib/api/endpoints';
-	import type { RequestDetail } from '$lib/api/types';
-	import { describeLoadError, type LoadFailure } from '$lib/approval';
-	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
-	import { session } from '$lib/session.svelte';
-	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
-	import ApprovalView from '$lib/components/ApprovalView.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
+	import { approveRequest, denyRequest, getRequestDetail } from '#lib/api/endpoints.js';
+	import type { RequestDetail } from '#lib/api/types.js';
+	import { describeLoadError, type LoadFailure } from '#lib/approval.js';
+	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import { session } from '#lib/session.svelte.js';
+	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
+	import ApprovalView from '#lib/components/ApprovalView.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
 
 	// The page a client prints as approval_url. It is the only place a human
 	// authorizes certificate issuance, so it does two things and nothing
@@ -166,7 +166,7 @@
 <svelte:head><title>Approve a certificate request · ssoossh</title></svelte:head>
 
 <!-- `wide`, the width every signed-in page uses, and with the rail beside
-     it (see $lib/nav's focusRoutes). Reaching this page means signing in, so
+     it (see #lib/nav's focusRoutes). Reaching this page means signing in, so
      its reader is already inside the app; a 560px column floating in an
      otherwise empty window read as a different site rather than as a focused
      screen of this one. -->

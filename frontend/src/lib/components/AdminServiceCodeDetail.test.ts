@@ -2,8 +2,8 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 
-import type { AdminEnrollmentDetail } from '$lib/api/endpoints';
-import type { AdminEnrollment, EnrollmentRetrievalResponse } from '$lib/api/types';
+import type { AdminEnrollmentDetail } from '#lib/api/endpoints.js';
+import type { AdminEnrollment, EnrollmentRetrievalResponse } from '#lib/api/types.js';
 import AdminServiceCodeDetail from './AdminServiceCodeDetail.svelte';
 
 const now = new Date('2026-08-22T12:00:00Z');

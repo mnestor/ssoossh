@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { resolveConsoleCode } from '$lib/api/endpoints';
-	import { currentPath, goToLogin, redirectIfUnauthenticated } from '$lib/auth';
-	import Alert from '$lib/components/Alert.svelte';
-	import Button from '$lib/components/Button.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
-	import { session } from '$lib/session.svelte';
+	import { resolveConsoleCode } from '#lib/api/endpoints.js';
+	import { currentPath, goToLogin, redirectIfUnauthenticated } from '#lib/auth.js';
+	import Alert from '#lib/components/Alert.svelte';
+	import Button from '#lib/components/Button.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
+	import { session } from '#lib/session.svelte.js';
 	import {
 		CODE_LENGTH,
 		describeCodeError,
@@ -14,7 +14,7 @@
 		isComplete,
 		normalizeCode,
 		type CodeFailure
-	} from '$lib/consolecode';
+	} from '#lib/consolecode.js';
 
 	// The other end of a console login. A machine with no browser in front
 	// of it — a physical tty, a serial console, a BMC viewer — prints eight

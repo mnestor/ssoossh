@@ -7,9 +7,9 @@
 	import RailGroup from './RailGroup.svelte';
 	import RailItem from './RailItem.svelte';
 	import RailUserMenu from './RailUserMenu.svelte';
-	import { adminNav, isAdminRoute, isCurrent, primaryNav } from '$lib/nav';
-	import { rail } from '$lib/rail.svelte';
-	import { session } from '$lib/session.svelte';
+	import { adminNav, isAdminRoute, isCurrent, primaryNav } from '#lib/nav.js';
+	import { rail } from '#lib/rail.svelte.js';
+	import { session } from '#lib/session.svelte.js';
 
 	// The app's one navigation surface. It replaced a header nav of four
 	// links and a separate admin tab strip of eight, which between them meant
