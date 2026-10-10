@@ -109,8 +109,8 @@
 					send them to one place instead.
 				{/if}
 			</p>
-			<div class="flex max-w-[560px] flex-wrap items-start gap-2">
-				<label class="flex min-w-[220px] flex-1 flex-col gap-1">
+			<div class="flex max-w-140 flex-wrap items-start gap-2">
+				<label class="flex min-w-55 flex-1 flex-col gap-1">
 					<span class="sr-only">Notification address</span>
 					<input
 						type="email"

@@ -50,7 +50,7 @@
 	<div
 		data-testid="login-view"
 		class="mx-auto flex w-full max-w-[380px] flex-col items-center gap-6 text-center {blocked
-			? 'pointer-events-none opacity-50 blur-[2px]'
+			? 'pointer-events-none opacity-50 blur-inert'
 			: ''}"
 	>
 		<BrandMark size={40} strokeWidth={1.6} />

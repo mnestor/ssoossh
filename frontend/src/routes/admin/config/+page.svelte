@@ -152,7 +152,7 @@
 						<dl class="flex flex-col divide-y divide-border-subtle">
 							{#each section.settings as setting (setting.key)}
 								<div class="flex flex-col gap-0.5 py-1.5 sm:flex-row sm:items-baseline sm:gap-4">
-									<dt class="font-mono text-xs break-all text-ink-muted sm:w-[22rem] sm:shrink-0">
+									<dt class="font-mono text-xs break-all text-ink-muted sm:w-88 sm:shrink-0">
 										{setting.key}
 									</dt>
 									<dd class="flex items-baseline gap-2 font-mono text-xs break-all">

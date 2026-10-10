@@ -63,7 +63,7 @@
 				role="region"
 				aria-labelledby="consent-notice-heading"
 				tabindex="0"
-				class="max-h-[280px] overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap text-ink"
+				class="max-h-70 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap text-ink"
 			>
 				{notice}
 			</div>

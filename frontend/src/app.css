@@ -157,6 +157,11 @@
 	   height: 36px with a mouse, raised to 44px on a touch screen below.
 	   Emits `min-h-target`, `min-w-target` and `size-target`. */
 	--spacing-target: 2.25rem;
+
+	/* The blur on a form that cannot be used yet (the sign-in form behind
+	   the consent notice): enough to say "not now", little enough that the
+	   form is still recognisable as what accepting leads to. */
+	--blur-inert: 2px;
 }
 
 @layer base {

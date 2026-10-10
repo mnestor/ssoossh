@@ -122,7 +122,7 @@
 	<ListStatus message={listStatus} />
 
 	<div class="flex flex-wrap items-end justify-between gap-4">
-		<div class="min-w-[240px] flex-1">
+		<div class="min-w-60 flex-1">
 			<SearchInput
 				label="Search users"
 				placeholder="name, username, email, or subject..."

@@ -223,6 +223,8 @@ off-system.
 | Dialog panel           | `max-w-md` (ConfirmModal), 520px (ConsentModal)          | dialogs                                         |
 | Field cap              | 420px                                                    | the select and email field in `ApprovalView`    |
 | Row grid               | `minmax(0,1fr) minmax(0,1.1fr) minmax(0,1fr)` above `xl` | `CertRow`, `DeniedRow`                          |
+| Timeline grid          | `auto minmax(0,1fr)`                                     | `AuditTimeline` details                         |
+| Probe attribute grid   | `minmax(9rem,14rem) 1fr`                                 | the directory probe's entry view                |
 
 ### Breakpoints
 
@@ -985,8 +987,8 @@ beneath it.
   org name (if set) as a small tag after the wordmark, truncated at 6.5rem in
   the rail and 8rem in the header. Collapsed, only the mark remains.
 - **Sign-in consent:** with `login_notice` set, a `ConsentModal` overlays
-  the form, which stays inert, blurred and dimmed with its button disabled
-  until "I Accept". The notice is typically a government system-use warning:
+  the form, which stays inert, blurred (`blur-inert`, 2px) and dimmed with
+  its button disabled until "I Accept". The notice is typically a government system-use warning:
   nothing on the page may be used before it is accepted, and the dimmed form
   shows that rather than hiding what accepting leads to. Every "you need to sign in" path lands on `/login` first
   (`auth.goToLogin`, carrying `return_to`), and only `/login` calls
@@ -1066,7 +1068,7 @@ change.
   classes only.
 - **Token namespaces:** `--color-*`, `--font-*`, `--text-*`, `--leading-*`,
   `--tracking-*`, `--font-weight-*`, `--radius-*`, `--shadow-*`,
-  `--spacing-*` are Tailwind v4 namespaces and emit utilities. A token under any other spelling
+  `--spacing-*`, `--blur-*` are Tailwind v4 namespaces and emit utilities. A token under any other spelling
   (`--font-family-*`, `--font-size-*`) emits nothing.
 - **Tests:** `@testing-library/svelte` and `vitest`, colocated, named
   "should [action] when [condition]", one assertion where possible, external

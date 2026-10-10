@@ -120,7 +120,7 @@
 					     the wordmark out of its own row. -->
 					{#if orgName}
 						<span
-							class="max-w-[6.5rem] truncate border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
+							class="max-w-26 truncate border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
 						>
 							{orgName}
 						</span>

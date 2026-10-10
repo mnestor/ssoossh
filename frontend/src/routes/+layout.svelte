@@ -264,7 +264,7 @@
 					<span>ssoossh</span>
 					{#if branding.org_name}
 						<span
-							class="ml-0.5 max-w-[8rem] truncate border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
+							class="ml-0.5 max-w-32 truncate border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
 						>
 							{branding.org_name}
 						</span>
@@ -290,7 +290,7 @@
 					<span>ssoossh</span>
 					{#if branding.org_name}
 						<span
-							class="ml-0.5 max-w-[8rem] truncate border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
+							class="ml-0.5 max-w-32 truncate border-l border-border-subtle pl-2 text-xs font-normal text-ink-muted"
 						>
 							{branding.org_name}
 						</span>
