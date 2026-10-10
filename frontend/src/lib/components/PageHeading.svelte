@@ -61,7 +61,7 @@
 	let { title, sub, action, back, testid }: Props = $props();
 
 	const chip =
-		'inline-flex w-fit items-center gap-1 text-sm text-accent transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
+		'inline-flex min-h-target w-fit items-center gap-1 text-sm text-accent transition hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent';
 </script>
 
 <div data-testid={testid} class="flex flex-col gap-2">

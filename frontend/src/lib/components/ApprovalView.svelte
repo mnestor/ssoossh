@@ -411,15 +411,15 @@
 								onclick={() => togglePrincipal(principal)}
 								aria-pressed={pressed}
 								disabled={busy || outcome !== null}
-								class="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-xs break-all transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default"
-								class:border-accent={pressed}
-								class:bg-accent={pressed}
-								class:text-accent-ink={pressed}
+								class="inline-flex min-h-target items-center gap-1 rounded border px-3 font-mono text-xs break-all transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default"
+								class:border-ink={pressed}
+								class:bg-ink={pressed}
+								class:text-surface={pressed}
 								class:border-border-control={!pressed}
 								class:text-ink-muted={!pressed}
 								class:hover:bg-surface-muted={!pressed && !busy && outcome === null}
 							>
-								{#if pressed}<Icon name="check" size="sm" />{/if}
+								{#if pressed}<Icon name="check" size="xs" />{/if}
 								{principal}
 							</button>
 						{/each}
@@ -563,15 +563,15 @@
 									onclick={() => toggleExtension(extension)}
 									aria-pressed={pressed}
 									disabled={busy || outcome !== null}
-									class="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-xs break-all transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default"
-									class:border-accent={pressed}
-									class:bg-accent={pressed}
-									class:text-accent-ink={pressed}
+									class="inline-flex min-h-target items-center gap-1 rounded border px-3 font-mono text-xs break-all transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default"
+									class:border-ink={pressed}
+									class:bg-ink={pressed}
+									class:text-surface={pressed}
 									class:border-border-control={!pressed}
 									class:text-ink-muted={!pressed}
 									class:hover:bg-surface-muted={!pressed && !busy && outcome === null}
 								>
-									{#if pressed}<Icon name="check" size="sm" />{/if}
+									{#if pressed}<Icon name="check" size="xs" />{/if}
 									{extension}
 								</button>
 							{/each}

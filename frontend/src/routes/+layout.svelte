@@ -224,7 +224,7 @@
 					type="button"
 					onclick={() => rail.closeDrawer()}
 					aria-label="Close navigation menu"
-					class="absolute top-3 right-2 flex h-8 w-8 items-center justify-center rounded-md text-ink-muted transition hover:bg-surface-muted hover:text-ink"
+					class="absolute top-2 right-2 flex size-target items-center justify-center rounded-md text-ink-muted transition hover:bg-surface-muted hover:text-ink"
 				>
 					<Icon name="x" size="sm" />
 				</button>
@@ -256,7 +256,7 @@
 					aria-expanded={rail.drawerOpen}
 					aria-controls="app-rail-drawer"
 					aria-label="Open navigation menu"
-					class="-ml-1 flex shrink-0 p-1 text-ink-muted transition hover:text-ink"
+					class="-ml-2 flex size-target shrink-0 items-center justify-center rounded-md text-ink-muted transition hover:text-ink"
 				>
 					<Icon name="menu-2" size="md" />
 				</button>

@@ -67,7 +67,7 @@
 	}
 
 	const controlClass =
-		'inline-flex items-center justify-center gap-1.5 rounded-md border border-border-control px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50';
+		'inline-flex min-h-target items-center justify-center gap-1.5 rounded-md border border-border-control px-3 text-xs font-semibold transition disabled:opacity-50';
 </script>
 
 {#if meta.page_count > 1}
@@ -97,8 +97,8 @@
 						aria-current={value === meta.page ? 'page' : undefined}
 						disabled={busy}
 						onclick={() => onpage(offsetOf(value))}
-						class="{controlClass} min-w-8 {value === meta.page
-							? 'border-accent bg-accent text-accent-ink'
+						class="{controlClass} min-w-target {value === meta.page
+							? 'border-ink bg-ink text-surface'
 							: 'text-ink-muted hover:bg-surface-muted'}"
 					>
 						{value}

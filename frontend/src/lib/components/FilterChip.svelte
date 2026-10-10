@@ -38,14 +38,18 @@
 	aria-pressed={selected}
 	{disabled}
 	data-testid={testid}
-	class="inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
-	class:border-accent={selected}
-	class:bg-accent={selected}
-	class:text-accent-ink={selected}
+	class="inline-flex min-h-target items-center gap-1.5 rounded border px-3 text-xs font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50"
+	class:border-ink={selected}
+	class:bg-ink={selected}
+	class:text-surface={selected}
 	class:border-border-control={!selected}
 	class:text-ink-muted={!selected}
 	class:hover:bg-surface-muted={!selected && !disabled}
 >
+	<!-- Selected is an ink fill with the check glyph, never cobalt
+	     (DESIGN.md, "Selected, current and status"): cobalt is the primary
+	     action's, and a row of cobalt chips competed with it. -->
+	{#if selected}<Icon name="check" size="xs" />{/if}
 	<Icon name={icon} size="xs" />
 	<!-- Named on a desktop, an icon on a phone. Eight chips with their words
 	     wrap a filter row onto three lines on a narrow screen, and the icons

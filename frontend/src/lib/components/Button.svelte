@@ -47,7 +47,7 @@
 	{onclick}
 	aria-busy={busy}
 	data-testid={testid}
-	class="inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition duration-100 active:scale-98 disabled:opacity-50 {full
+	class="inline-flex min-h-target items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition duration-100 active:scale-98 disabled:opacity-50 {full
 		? 'w-full'
 		: ''} {variants[variant]}"
 >

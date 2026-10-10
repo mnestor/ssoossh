@@ -141,7 +141,7 @@
 				aria-label={collapseLabel}
 				title={collapseLabel}
 				data-testid="rail-collapse"
-				class="mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-ink-muted transition hover:bg-surface-muted hover:text-ink max-lg:hidden"
+				class="mr-2 flex size-target shrink-0 items-center justify-center rounded-md text-ink-muted transition hover:bg-surface-muted hover:text-ink max-lg:hidden"
 			>
 				<Icon name="layout-sidebar" size="sm" />
 			</button>

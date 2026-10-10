@@ -64,7 +64,7 @@
 						href={version.release_url}
 						target="_blank"
 						rel="noopener noreferrer"
-						class="hover:text-ink"
+						class="inline-flex min-h-target items-center hover:text-ink"
 						title={commit ? `commit ${commit}` : undefined}>{label}</a
 					>
 				{:else}
@@ -77,7 +77,7 @@
 					href={version.github_url}
 					target="_blank"
 					rel="noopener noreferrer"
-					class="flex items-center gap-1.5 hover:text-ink"
+					class="flex min-h-target items-center gap-1.5 hover:text-ink"
 				>
 					<!-- The GitHub mark, inline. Tabler does ship brand-github and
 					     brand-github-filled, but both are redrawn on its own grid;
@@ -98,13 +98,16 @@
 					GitHub
 				</a>
 				{#if supportEmail}
-					<a href={`mailto:${supportEmail}`} class="hover:text-ink">{supportLabel}</a>
+					<a
+						href={`mailto:${supportEmail}`}
+						class="inline-flex min-h-target items-center hover:text-ink">{supportLabel}</a
+					>
 				{:else}
 					<a
 						href={`${version.github_url}/issues`}
 						target="_blank"
 						rel="noopener noreferrer"
-						class="hover:text-ink">Report an issue</a
+						class="inline-flex min-h-target items-center hover:text-ink">Report an issue</a
 					>
 				{/if}
 			</nav>

@@ -102,14 +102,14 @@
 		bind:value={term}
 		oninput={schedule}
 		onkeydown={submit}
-		class="w-full rounded-md border border-border-control bg-surface py-2 pr-9 pl-9 text-sm text-ink placeholder:text-ink-muted focus:border-accent"
+		class="min-h-target w-full rounded-md border border-border-control bg-surface py-2 pr-target pl-9 text-sm text-ink placeholder:text-ink-muted focus:border-accent"
 	/>
 	{#if term !== ''}
 		<button
 			type="button"
 			aria-label="Clear search"
 			onclick={clear}
-			class="absolute right-2 rounded p-1 text-ink-muted transition hover:bg-surface-muted hover:text-ink"
+			class="absolute inset-y-0 right-0 flex w-target items-center justify-center rounded-md text-ink-muted transition hover:bg-surface-muted hover:text-ink"
 		>
 			<Icon name="x" size="sm" />
 		</button>

@@ -63,7 +63,7 @@
 	title={value}
 	aria-label={copied ? `${label} copied` : `Copy the full ${label}: ${value}`}
 	data-testid={testid}
-	class="inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs text-ink-muted transition hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+	class="inline-flex min-h-target items-center gap-1 rounded px-2 text-xs text-ink-muted transition hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 	class:text-granted={copied}
 >
 	{label}

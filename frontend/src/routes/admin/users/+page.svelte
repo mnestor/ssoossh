@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import Alert from '#lib/components/Alert.svelte';
+	import Icon from '#lib/components/Icon.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
@@ -118,7 +119,7 @@
 		     view am I looking at" has to be answerable without opening
 		     anything. -->
 		<div
-			class="inline-flex overflow-hidden rounded-lg border border-border-control"
+			class="inline-flex overflow-hidden rounded-md border border-border-control"
 			role="group"
 			aria-label="Filter by account state"
 			data-testid="status-filter"
@@ -129,12 +130,13 @@
 					onclick={() => selectStatus(filter.value)}
 					aria-pressed={status === filter.value}
 					data-testid="status-filter-{filter.value}"
-					class="px-3 py-2 text-sm transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
-					class:bg-accent={status === filter.value}
-					class:text-accent-ink={status === filter.value}
+					class="inline-flex min-h-target items-center gap-1.5 px-3 text-sm transition focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent"
+					class:bg-ink={status === filter.value}
+					class:text-surface={status === filter.value}
 					class:text-ink-muted={status !== filter.value}
 					class:hover:bg-surface-muted={status !== filter.value}
 				>
+					{#if status === filter.value}<Icon name="check" size="xs" />{/if}
 					{filter.label}
 				</button>
 			{/each}

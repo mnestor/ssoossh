@@ -138,7 +138,7 @@
 					aria-current={onAccount ? 'page' : undefined}
 					onclick={navigated}
 					data-testid="rail-user-account"
-					class="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 transition {onAccount
+					class="flex min-h-target w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 transition {onAccount
 						? 'bg-accent-wash text-accent'
 						: 'text-ink hover:bg-surface-muted'}"
 				>
