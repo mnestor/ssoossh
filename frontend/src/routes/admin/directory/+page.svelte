@@ -557,8 +557,8 @@
 					{/if}
 
 					{#if probeResult}
-						<div class="rounded-md border border-border-subtle" data-testid="ldap-probe-result">
-							<div class="border-b border-border-subtle bg-surface-muted px-4 py-3">
+						<div class="rounded-lg bg-surface-muted" data-testid="ldap-probe-result">
+							<div class="border-b border-border-subtle px-4 py-3">
 								<div class="flex flex-wrap items-baseline justify-between gap-2">
 									<code class="text-sm break-all">{probeResult.filter_sent}</code>
 									<span class="text-xs font-semibold tracking-wide text-ink-muted uppercase">
