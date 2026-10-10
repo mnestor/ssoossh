@@ -68,6 +68,11 @@
 	   a grey that reads as another surface. */
 	--color-scrim: rgb(0 0 0 / 0.55);
 
+	/* The one shadow in the system, for a layer that floats over a panel of
+	   the same plane: a popover or menu. Panels never take it; a dialog does
+	   not need it, because the scrim already separates it. */
+	--shadow-overlay: 0 1px 2px rgb(0 0 0 / 0.08), 0 8px 24px -8px rgb(0 0 0 / 0.28);
+
 	/* --font-* and not --font-family-*, because --font-* is Tailwind v4's
 	   font namespace and the longer names are not. Under the old names the
 	   theme emitted no font utilities, so `font-mono` fell through to

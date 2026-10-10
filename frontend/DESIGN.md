@@ -29,7 +29,10 @@ precise, quiet, and unambiguous about the one thing to press.
   dialogs carry **no border and no shadow**. Borders are reserved for two
   jobs: a hairline between rows inside a panel (`border-subtle`) and the edge
   of a control a reader operates (`border-control`, held to WCAG 1.4.11).
-  Radii are sharp: chips 3px, controls 4px, panels 6px, dialogs 8px.
+  Radii are sharp: chips 3px, controls 4px, panels 6px, dialogs 8px. The
+  one exception to "no shadow" is a layer floating over a panel of the same
+  plane (a popover, a menu): it takes `shadow-overlay`, the only shadow
+  token. A dialog sits on the scrim and needs none.
 
 ## Color Tokens
 
