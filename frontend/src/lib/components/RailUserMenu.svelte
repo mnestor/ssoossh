@@ -117,7 +117,7 @@
 			data-testid="rail-user-menu"
 			in:scale={{ start: 0.96, opacity: 0, duration: enterMs(), easing: easeEnter }}
 			out:scale={{ start: 0.96, opacity: 0, duration: exitMs(), easing: easeExit }}
-			class="absolute z-50 rounded-lg border border-border-subtle bg-surface p-1.5 shadow-lg"
+			class="absolute z-50 rounded-lg bg-surface p-1.5 shadow-overlay"
 			class:right-0={!collapsed}
 			class:left-0={!collapsed}
 			class:bottom-full={!collapsed}

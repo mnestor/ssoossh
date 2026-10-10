@@ -79,7 +79,7 @@
 <a
 	{href}
 	data-testid={testid}
-	class="flex w-full items-center justify-between gap-4 rounded-xl border border-border-subtle bg-surface px-5 py-3.5 text-left text-ink no-underline transition hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+	class="flex w-full items-center justify-between gap-4 rounded-lg bg-surface px-4 py-3 text-left text-ink no-underline transition hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 >
 	<span class="flex min-w-0 items-center gap-3">
 		<TypeBadge type="service" />

@@ -231,9 +231,7 @@
 			     The id is a CopyableId like every other strip's, so it is one
 			     click onto the clipboard rather than a value to select by
 			     hand — it is what the audit events and the log lines carry. -->
-			<div
-				class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border-subtle bg-surface-muted px-4 py-3"
-			>
+			<div class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-surface px-4 py-3">
 				<TypeChip type={cert.type} />
 				<span class="ml-auto"><CopyableId value={cert.id} testid="cert-id" /></span>
 			</div>

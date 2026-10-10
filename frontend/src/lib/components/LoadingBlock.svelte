@@ -73,7 +73,7 @@
 		{#if shape === 'rows'}
 			<div class="flex flex-col gap-2.5">
 				{#each { length: count }, i (i)}
-					<div class="rounded-xl border border-border-subtle bg-surface px-5 py-3.5">
+					<div class="rounded-lg bg-surface px-4 py-3">
 						<div class="flex items-center justify-between gap-4">
 							<div class="flex min-w-0 flex-1 flex-col gap-2">
 								<div class="skeleton h-3.5 w-2/5"></div>

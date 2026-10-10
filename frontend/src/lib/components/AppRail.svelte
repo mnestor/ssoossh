@@ -76,7 +76,7 @@
 <nav
 	aria-label="Main"
 	data-testid="app-rail"
-	class="flex h-full flex-col border-r border-border-subtle bg-surface transition-[width]"
+	class="flex h-full flex-col bg-surface transition-[width]"
 	class:w-[244px]={!collapsed}
 	class:w-[60px]={collapsed}
 >

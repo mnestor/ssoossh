@@ -66,13 +66,11 @@
 <!-- The identity strip, the same one the certificate page opens with: what
      kind of thing this is, whether it still works, and the id to quote in a
      ticket. -->
-<div
-	class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border-subtle bg-surface-muted px-4 py-3"
->
+<div class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-surface px-4 py-3">
 	<TypeChip type="service" />
 	{#if expired}
 		<span
-			class="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full bg-surface px-2.5 py-1 text-xs font-semibold text-ink-muted"
+			class="inline-flex flex-shrink-0 items-center gap-1.5 rounded-full bg-surface-muted px-2.5 py-1 text-xs font-semibold text-ink-muted"
 		>
 			<Icon name="alert-triangle" size="xs" />
 			Expired

@@ -50,7 +50,7 @@
 		<div
 			in:scale={{ start: 0.96, opacity: 0, duration: enterMs(), easing: easeEnter }}
 			out:scale={{ start: 0.96, opacity: 0, duration: exitMs(), easing: easeExit }}
-			class="flex w-full max-w-[520px] flex-col gap-4 rounded-xl border border-border-subtle bg-surface p-7 shadow-lg"
+			class="flex w-full max-w-[520px] flex-col gap-4 rounded-xl bg-surface p-7"
 		>
 			<h2 id="consent-notice-heading" class="sr-only">Notice</h2>
 

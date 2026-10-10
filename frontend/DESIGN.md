@@ -505,7 +505,8 @@ tracking-label uppercase text-ink-muted`, sans) and an optional line of
 - **Alert**: `error` (`alert-octagon`, `bg-danger-surface text-danger`,
   `role="alert"`), `warning` (`alert-triangle`, `bg-trimmed-surface
 text-trimmed`, `role="status"`), `info` (`info-circle`, `bg-surface` on the
-  ground or `bg-surface-muted` inside a panel, `role="status"`).
+  ground or, with `inset`, `bg-surface-muted` inside a panel,
+  `role="status"`).
   `rounded-lg`, no border. An error Alert for a failed load carries its way
   out (see States): `onretry` adds the one "Try again" ghost button, with
   the test id `<testid>-retry`.
@@ -1100,10 +1101,6 @@ No rulings are open.
 The tokens and this spec are ahead of the components. Remove a line when its
 change lands.
 
-- Panels are still framed: the row components and `EmptyState` (`border`,
-  `rounded-xl`), the identity strips, `Alert`, both dialogs (`border`,
-  `shadow-lg`), the rail edge, the narrow bar and the footer rule.
-- `RailUserMenu` uses `shadow-lg`, not `shadow-overlay`.
 - `copy-check` is not in the icon map; `CopyableId` still shows `check`.
 - `PageShell` puts `gap-5` between panels; several lists use `gap-2.5`.
 - Chips and badges on `rounded-full`; several fields on `rounded`.

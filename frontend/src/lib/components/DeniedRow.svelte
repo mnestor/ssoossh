@@ -68,7 +68,7 @@
 
 <div
 	data-testid={testid}
-	class="flex w-full items-center justify-between gap-4 rounded-xl border border-border-subtle bg-surface px-4 py-3 text-left text-ink"
+	class="flex w-full items-center justify-between gap-4 rounded-lg bg-surface px-4 py-3 text-left text-ink"
 >
 	<span class="flex min-w-0 flex-1 items-center gap-3">
 		<TypeBadge type={denial.type} />

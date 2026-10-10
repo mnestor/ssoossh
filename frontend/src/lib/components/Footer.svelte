@@ -53,7 +53,7 @@
 </script>
 
 {#if version}
-	<footer class="border-t border-border-subtle bg-surface">
+	<footer>
 		<div
 			class="flex flex-col items-center justify-between gap-3 px-8 py-4 text-xs text-ink-muted sm:flex-row"
 		>

@@ -237,9 +237,7 @@
 			     it back. Everything else — theme, identity, sign out — is
 			     inside the drawer, where it is one tap away and cannot
 			     drift out of step with the desktop copy. -->
-			<header
-				class="flex items-center gap-3 border-b border-border-subtle bg-surface px-4 py-3 lg:hidden"
-			>
+			<header class="flex items-center gap-3 bg-surface px-4 py-3 lg:hidden">
 				<!-- One name, not two. This label used to flip to "Close
 				     navigation menu" while the drawer was up, from when this
 				     really was the only way back — but the scrim covers it at
@@ -285,7 +283,7 @@
 	<!-- No rail: a signed-out visitor, or one of the single-task screens.
 	     The header carries only what such a screen can act on. -->
 	<div class="flex min-h-screen flex-col">
-		<header class="border-b border-border-subtle bg-surface">
+		<header class="bg-surface">
 			<div class="flex items-center gap-3 px-4 py-4 sm:gap-4 sm:px-8">
 				<a href={resolve('/')} class="flex min-w-0 items-center gap-2 font-semibold">
 					<BrandMark size={22} />

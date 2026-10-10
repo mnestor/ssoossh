@@ -644,7 +644,7 @@
 
 		<div class="mt-6 border-t border-border-subtle pt-5">
 			{#if outcome === 'approved'}
-				<Alert variant="info" title="Approved" testid="outcome-approved">
+				<Alert variant="info" inset title="Approved" testid="outcome-approved">
 					The certificate is being signed and will reach the waiting client on its own connection —
 					you can close this page.
 				</Alert>
@@ -657,7 +657,11 @@
 					{blockedText['no-service-accounts']}
 				</Alert>
 			{:else if blocked}
-				<Alert variant={blocked === 'in-progress' ? 'info' : 'warning'} testid="blocked-{blocked}">
+				<Alert
+					variant={blocked === 'in-progress' ? 'info' : 'warning'}
+					inset
+					testid="blocked-{blocked}"
+				>
 					{blockedText[blocked]}
 				</Alert>
 			{:else}

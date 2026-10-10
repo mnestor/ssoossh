@@ -10,22 +10,30 @@
 		role?: 'status' | 'alert';
 		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
 		testid?: string;
+		/**
+		 * True when the alert sits inside a panel. An info alert is a
+		 * `surface` panel on the ground and a `surface-muted` tint inside a
+		 * panel, where a second white box would vanish (DESIGN.md, "Planes").
+		 */
+		inset?: boolean;
 		/** A failed load's way out: adds a "Try again" button that calls this. */
 		onretry?: () => void;
 		children?: Snippet;
 	}
 
-	let { variant = 'info', title, role, testid, onretry, children }: Props = $props();
+	let { variant = 'info', title, role, testid, inset = false, onretry, children }: Props = $props();
 
 	// Errors use assertive role='alert' so screen readers announce immediately;
 	// info and warning use role='status' (polite announcement).
 	const computedRole = $derived(role || (variant === 'error' ? 'alert' : 'status'));
 
-	const variants = {
-		info: 'bg-surface-muted text-ink border-border-subtle',
-		warning: 'bg-trimmed-surface text-trimmed border-trimmed/30',
-		error: 'bg-danger-surface text-danger border-danger/30'
-	};
+	// No border on any of them: the fill is the plane, and an outline on top
+	// of it said the same thing twice.
+	const variants = $derived({
+		info: inset ? 'bg-surface-muted text-ink' : 'bg-surface text-ink',
+		warning: 'bg-trimmed-surface text-trimmed',
+		error: 'bg-danger-surface text-danger'
+	});
 
 	// Severity walks the road-sign ladder: circle, triangle, octagon. Info
 	// and error drew the same circle until now and let colour carry the
@@ -39,7 +47,7 @@
 </script>
 
 <div
-	class="rounded-md border px-4 py-3 text-sm {variants[variant]} flex items-start gap-3"
+	class="rounded-lg px-4 py-3 text-sm {variants[variant]} flex items-start gap-3"
 	role={computedRole}
 	data-testid={testid}
 >

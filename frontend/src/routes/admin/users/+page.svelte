@@ -159,7 +159,7 @@
 		be reached on a successful response.
 	-->
 	{:else if users?.users?.length}
-		<div class="overflow-x-auto">
+		<div class="overflow-x-auto rounded-lg bg-surface">
 			<table class="data-table">
 				<thead>
 					<tr>

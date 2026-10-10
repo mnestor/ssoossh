@@ -120,7 +120,7 @@
 	<div
 		in:scale={{ start: 0.96, opacity: 0, duration: enterMs(), easing: easeEnter }}
 		out:scale={{ start: 0.96, opacity: 0, duration: exitMs(), easing: easeExit }}
-		class="flex w-full max-w-md flex-col gap-4 rounded-xl border border-border-subtle bg-surface p-6 shadow-lg"
+		class="flex w-full max-w-md flex-col gap-4 rounded-xl bg-surface p-6"
 	>
 		<h2 id="confirm-modal-heading" class="text-lg font-semibold text-ink">{title}</h2>
 
