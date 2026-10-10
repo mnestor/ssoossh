@@ -813,6 +813,10 @@ compares.
   is accepted).
 - **Controls:** a "Display" section on `/preferences` and a `DetailToggle` in
   each covered page's heading row. Both write the same preference.
+- **Scope:** a covered page calls `coverWithDetail()` once in its script.
+  Components that only appear on covered pages (`ServiceCodeFacts`, the two
+  service code details, `ApprovalView`) and `DetailRow` read
+  `inDetailScope()`, so the same component stays full anywhere else.
 - **Never hidden at either level:** a trimmed critical option (shown in
   simplified as a one-line warning naming it), the client-policy forbidden
   note, the console remote-host warning, the own-account notice, blocked and
@@ -856,8 +860,9 @@ compares.
   validity, approver, granted extensions, the editable notification address
   and the redemption count; the holders list and the redemption history are
   advanced-only.
-- **Simplified type:** kept facts one step larger (`text-sm` to
-  `text-base`) with `gap-4` rows.
+- **Simplified type:** kept facts one step larger: a `DetailRow` on a
+  covered page moves its value from `text-dense` to `text-base` and its
+  label to `text-sm`, with `py-3` rows.
 - **Hint line** closing every simplified page: "Showing the essentials.
   Switch to Advanced for ids, fingerprints and policy detail."
 - **Remembered principals:** the principals an approver last approved with
@@ -1104,8 +1109,8 @@ No rulings are open.
 The tokens and this spec are ahead of the components. Remove a line when its
 change lands.
 
-- The detail-level feature, `DetailToggle`, `principals.svelte.ts` and the
-  Login shell and Display preference sections are not built.
+- Remembered principals (`principals.svelte.ts`) and the Login shell
+  preference section are not built.
 
 ## References
 

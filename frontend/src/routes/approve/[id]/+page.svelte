@@ -11,11 +11,16 @@
 	import ApprovalView from '#lib/components/ApprovalView.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
+	import { coverWithDetail } from '#lib/detail.svelte.js';
 
 	// The page a client prints as approval_url. It is the only place a human
 	// authorizes certificate issuance, so it does two things and nothing
 	// else: show what would be granted, and record one decision.
 	const id = $derived(page.params.id ?? '');
+
+	// One of the pages the detail level covers; ApprovalView reads the level
+	// (DESIGN.md, "Detail levels").
+	coverWithDetail();
 
 	let detail = $state<RequestDetail | null>(null);
 	let failure = $state<LoadFailure | null>(null);
