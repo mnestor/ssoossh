@@ -5,6 +5,7 @@
 	import Alert from '#lib/components/Alert.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import Button from '#lib/components/Button.svelte';
+	import DetailToggle from '#lib/components/DetailToggle.svelte';
 	import MonoChip from '#lib/components/MonoChip.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageSection from '#lib/components/PageSection.svelte';
@@ -109,7 +110,9 @@
 <svelte:head><title>Preferences · ssoossh</title></svelte:head>
 
 <PageShell width="wide">
-	<PageHeading title="Notification preferences" />
+	<!-- "Preferences", not "Notification preferences": the page now holds
+	     the display level as well, and will hold the login shell. -->
+	<PageHeading title="Preferences" />
 
 	{#if loadError}
 		<Alert
@@ -187,8 +190,36 @@
 
 		<div class="flex justify-end">
 			<Button onclick={save} disabled={!hasChanges} busy={saving} testid="save-preferences">
-				{saving ? 'Saving…' : 'Save'}
+				{saving ? 'Saving…' : 'Save notifications'}
 			</Button>
 		</div>
 	{/if}
+
+	<!-- Outside the notification load: it lives in this browser, not on the
+	     server, so a failed read of the notification settings must not take
+	     it with it. It applies at once, unlike the notifications above, and
+	     says so, since the Save button belongs to those alone. -->
+	<PageSection
+		title="Display"
+		description="How much the approval, certificate and service code pages show. Takes effect at once, in this browser."
+		testid="display-preferences"
+	>
+		<div class="flex max-w-[70ch] flex-col gap-3">
+			<DetailToggle testid="display-detail" />
+			<dl class="flex flex-col gap-1 text-dense">
+				<div>
+					<dt class="inline font-medium text-ink">Simplified</dt>
+					<dd class="inline text-ink-muted">
+						keeps what you need to decide or to understand the result.
+					</dd>
+				</div>
+				<div>
+					<dt class="inline font-medium text-ink">Advanced</dt>
+					<dd class="inline text-ink-muted">
+						adds the ids, fingerprints and policy detail an expert compares.
+					</dd>
+				</div>
+			</dl>
+		</div>
+	</PageSection>
 </PageShell>

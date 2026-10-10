@@ -21,6 +21,7 @@ import ConfirmModal from './ConfirmModal.svelte';
 import CopyableId from './CopyableId.svelte';
 import DeniedRow from './DeniedRow.svelte';
 import DetailRow from './DetailRow.svelte';
+import DetailToggle from './DetailToggle.svelte';
 import EmptyState from './EmptyState.svelte';
 import ExpireCodeAction from './ExpireCodeAction.svelte';
 import FilterChip from './FilterChip.svelte';
@@ -193,6 +194,7 @@ const cases: [string, any, Record<string, unknown>][] = [
 		}
 	],
 	['CopyableId', CopyableId, { value: 'cert-1', label: 'Request' }],
+	['DetailToggle', DetailToggle, {}],
 	['EmptyState', EmptyState, { icon: 'certificate-off', title: 'No certificates yet' }],
 	[
 		'EmptyState (with action)',

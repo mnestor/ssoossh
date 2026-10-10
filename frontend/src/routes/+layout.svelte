@@ -15,6 +15,7 @@
 	import ThemeToggle from '#lib/components/ThemeToggle.svelte';
 	import { isFocusRoute } from '#lib/nav.js';
 	import { rail } from '#lib/rail.svelte.js';
+	import { detail } from '#lib/detail.svelte.js';
 	import { session } from '#lib/session.svelte.js';
 	import { theme } from '#lib/theme.svelte.js';
 	import { loadVersion, getVersion } from '#lib/version.svelte.js';
@@ -50,6 +51,10 @@
 	// The rail width preference. Nothing reads it before paint, unlike the
 	// theme, so it runs here rather than in app.html.
 	$effect(() => rail.start());
+
+	// The detail level for the approval and information pages, read the same
+	// way: one frame of the default is accepted.
+	$effect(() => detail.start());
 
 	const branding = $derived(getBranding());
 	const version = $derived(getVersion());
