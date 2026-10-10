@@ -246,8 +246,9 @@ and drops the diagnostic detail an expert compares.
   2026-10-10, since the approver still sees exactly what is issued), the
   remaining warnings and the actions. Critical options are advanced-only
   unless one was trimmed (see above). "Approvable until" is
-  advanced-only (decided 2026-10-10); an expired request is still caught by
-  the blocked/outcome alerts when the reader acts.
+  advanced-only (decided 2026-10-10), except in its last minute: then
+  simplified shows a live countdown beside the actions ("Expires in 0:42"),
+  and the blocked/outcome alerts still catch a request that lapses.
 - **Simplified type:** the kept facts render one step larger
   (`text-sm` → `text-base`) with `gap-4` rows, because there are fewer of
   them to scan.
@@ -259,8 +260,9 @@ and drops the diagnostic detail an expert compares.
   offer are ignored, and with nothing stored the existing default applies.
   The chips stay visible and editable at both detail levels: a remembered
   selection pre-fills, it never approves. Written on Approve only, never on
-  Deny or on toggling. Open question: whether break-glass principals are
-  excluded from being remembered.
+  Deny or on toggling. Every principal is rememberable, break-glass ones
+  included (decided 2026-10-10: the approver's own choice, visible on the
+  chips every time).
 - A hint line closes a simplified page: "Showing the essentials. Switch to
   Advanced for ids, fingerprints and policy detail."
 
