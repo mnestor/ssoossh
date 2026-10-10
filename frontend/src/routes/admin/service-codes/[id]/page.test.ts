@@ -1,8 +1,9 @@
 import { render, screen } from '@testing-library/svelte';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AdminEnrollment } from '#lib/api/types.js';
 import { fakePage, resetFakePage } from '#lib/testing/page.svelte.js';
+import { detail } from '#lib/detail.svelte.js';
 import Page from './+page.svelte';
 
 // Test methodology: render the admin detail route against a stubbed fetch,
@@ -186,5 +187,35 @@ describe('admin service code detail page', () => {
 			'href',
 			'/admin/service-codes'
 		);
+	});
+});
+
+describe('at the simplified detail level', () => {
+	/** renderSimplified opens the code at the simplified level. */
+	async function renderSimplified() {
+		vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined });
+		detail.level = 'simplified';
+		stubDetail(adminEnrollment('enr-1'));
+		render(Page);
+		await screen.findByTestId('service-code-account');
+	}
+
+	afterEach(() => {
+		detail.level = 'advanced';
+	});
+
+	it('should drop the redemption history', async () => {
+		await renderSimplified();
+		expect(screen.queryByText('Redemption history')).not.toBeInTheDocument();
+	});
+
+	it('should say how often the code was redeemed instead', async () => {
+		await renderSimplified();
+		expect(screen.getByTestId('service-code-redeemed')).toHaveTextContent('3 times');
+	});
+
+	it('should drop the holders list', async () => {
+		await renderSimplified();
+		expect(screen.queryByTestId('account-holders')).not.toBeInTheDocument();
 	});
 });

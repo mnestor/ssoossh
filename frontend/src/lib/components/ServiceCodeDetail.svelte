@@ -4,6 +4,7 @@
 	import type { EnrollmentRetrievalsResponse, ServiceEnrollment } from '#lib/api/types.js';
 	import { errorMessage } from '#lib/auth.js';
 	import { session } from '#lib/session.svelte.js';
+	import { detail, inDetailScope } from '#lib/detail.svelte.js';
 	import AccountHoldersPanel from './AccountHoldersPanel.svelte';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
@@ -36,6 +37,9 @@
 	let { enrollment, now = new Date() }: Props = $props();
 
 	let retrievals = $state<EnrollmentRetrievalsResponse | null>(null);
+	// Scoped like every piece of a covered page: off one, it is always full.
+	const covered = inDetailScope();
+	const simplified = $derived(covered && detail.simplified);
 	// The log's own states, apart from the page's: it is one section of a
 	// detail that stands without it.
 	let retrievalsLoading = $state(false);
@@ -142,11 +146,13 @@
 	     the same question from opposite ends: this is who the code reaches by
 	     default, and the field below is how to send it somewhere else
 	     instead. -->
-	<AccountHoldersPanel
-		enrollmentId={enrollment.id}
-		serviceAccount={enrollment.service_account}
-		viewerUsername={session.user?.username ?? ''}
-	/>
+	{#if !simplified}
+		<AccountHoldersPanel
+			enrollmentId={enrollment.id}
+			serviceAccount={enrollment.service_account}
+			viewerUsername={session.user?.username ?? ''}
+		/>
+	{/if}
 
 	<!-- The only editable thing here. It exists for the cases fan-out cannot
 	     serve: an account whose holders have never logged in reaches nobody,
@@ -202,7 +208,11 @@
 	     retire it should not have to scroll past a year of cron redemptions
 	     to reach either. Absent entirely when the log did not load — a 404 or
 	     someone else's request — because the facts above stand without it. -->
-	{#if retrievals}
+	<!-- The holders list and the redemption history are advanced-only; the
+	     facts above carry the redemption count in their place. -->
+	{#if simplified}
+		<!-- nothing: see the count in the facts above -->
+	{:else if retrievals}
 		<RedemptionHistory retrievals={retrievals.retrievals} total={retrievals.total} />
 	{:else if retrievalsLoading}
 		<PageSection title="Redemption history">

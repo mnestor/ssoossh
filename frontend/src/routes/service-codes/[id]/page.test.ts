@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ServiceEnrollment } from '#lib/api/types.js';
 import { fakePage, resetFakePage } from '#lib/testing/page.svelte.js';
+import { detail } from '#lib/detail.svelte.js';
 import Page from './+page.svelte';
 
 // Test methodology: render the holder-facing code page against a stubbed
@@ -162,5 +163,71 @@ describe('Service code page', () => {
 		render(Page);
 		await screen.findByTestId('service-code-account');
 		expect(screen.queryByText(/super-secret-code/)).not.toBeInTheDocument();
+	});
+});
+
+describe('at the simplified detail level', () => {
+	/** renderSimplified opens a code redeemed twice, at the simplified level. */
+	async function renderSimplified() {
+		vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined });
+		detail.level = 'simplified';
+		mockFetch([
+			deployCode({
+				retrieval_count: 2,
+				options: {
+					extensions: ['permit-pty'],
+					no_touch_required: true,
+					source_addresses: ['10.0.0.0/8']
+				}
+			})
+		]);
+		render(Page);
+		await screen.findByTestId('service-code-account');
+	}
+
+	afterEach(() => {
+		detail.level = 'advanced';
+	});
+
+	it('should drop the enrollment id', async () => {
+		await renderSimplified();
+		expect(screen.queryByTestId('enrollment-id')).not.toBeInTheDocument();
+	});
+
+	it('should drop the bound key', async () => {
+		await renderSimplified();
+		expect(screen.queryByText('SHA256:abc123')).not.toBeInTheDocument();
+	});
+
+	// R4: the granted extensions stay; the other options are advanced-only.
+	it('should keep the granted extensions', async () => {
+		await renderSimplified();
+		expect(screen.getByTestId('certificate-options')).toHaveTextContent('permit-pty');
+	});
+
+	it('should drop the non-extension options', async () => {
+		await renderSimplified();
+		expect(screen.getByTestId('certificate-options')).not.toHaveTextContent('from=10.0.0.0/8');
+	});
+
+	// The count stands in for the redemption history.
+	it('should say how often the code was redeemed', async () => {
+		await renderSimplified();
+		expect(screen.getByTestId('service-code-redeemed')).toHaveTextContent('2 times');
+	});
+
+	it('should drop the holders list', async () => {
+		await renderSimplified();
+		expect(screen.queryByTestId('account-holders')).not.toBeInTheDocument();
+	});
+
+	it('should keep the notification address', async () => {
+		await renderSimplified();
+		expect(screen.getByTestId('notification-email-input')).toBeInTheDocument();
+	});
+
+	it('should say what it left out', async () => {
+		await renderSimplified();
+		expect(screen.getByTestId('detail-hint')).toBeInTheDocument();
 	});
 });

@@ -1,4 +1,6 @@
 <script lang="ts">
+	// `detail` is this component's prop, so the level store goes by another name.
+	import { detail as detailLevel, inDetailScope } from '#lib/detail.svelte.js';
 	import { setEnrollmentNotificationEmail } from '#lib/api/endpoints.js';
 	import type { AdminEnrollmentDetail } from '#lib/api/endpoints.js';
 	import { errorMessage } from '#lib/auth.js';
@@ -27,6 +29,11 @@
 	}
 
 	let { detail, now = new Date() }: Props = $props();
+
+	// Holders and the redemption history are advanced-only (DESIGN.md,
+	// "Detail levels"); scoped so the component is full off a covered page.
+	const covered = inDetailScope();
+	const simplified = $derived(covered && detailLevel.simplified);
 
 	const enrollment = $derived(detail.enrollment);
 
@@ -86,7 +93,9 @@
 	<!-- Immediately above the admin controls, because the first of them
 	     redirects notifications away from exactly these people. Provenance is
 	     the "Approved by" row above; this is ownership. -->
-	<AccountHoldersPanel enrollmentId={enrollment.id} serviceAccount={enrollment.service_account} />
+	{#if !simplified}
+		<AccountHoldersPanel enrollmentId={enrollment.id} serviceAccount={enrollment.service_account} />
+	{/if}
 
 	<!-- Admin controls, in their own card like every other block: what only
 	     an operator can do is separated from what any holder sees by being a
@@ -146,5 +155,7 @@
 	     bound — a year of an hourly cron's redemptions — and an operator who
 	     opened the code to read what it grants or to expire it should not have
 	     to scroll past all of it to reach either. -->
-	<RedemptionHistory retrievals={detail.retrievals} total={detail.retrieval_total} />
+	{#if !simplified}
+		<RedemptionHistory retrievals={detail.retrievals} total={detail.retrieval_total} />
+	{/if}
 </div>

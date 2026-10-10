@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { detail, inDetailScope } from '#lib/detail.svelte.js';
 	import type { AdminEnrollment, ServiceEnrollment } from '#lib/api/types.js';
 	import { formatDateTimeRange, formatDuration, isExpired, remainingLabel } from '#lib/format.js';
 	import CopyableId from './CopyableId.svelte';
@@ -34,6 +35,13 @@
 
 	let { enrollment, approvedBy, now = new Date() }: Props = $props();
 
+	// Simplified keeps the principal, certificate life, validity, approver,
+	// granted extensions and the redemption count; the enrollment id, key id,
+	// bound key and the non-extension options are advanced-only (DESIGN.md,
+	// "Detail levels", R4).
+	const covered = inDetailScope();
+	const simplified = $derived(covered && detail.simplified);
+
 	// The service account, which is both the certificate principal and who
 	// owns this code. principals is the fallback for a row from before the
 	// account had its own field.
@@ -61,6 +69,9 @@
 		...(enrollment.options.source_addresses ?? []).map((address) => `from=${address}`),
 		...(enrollment.options.force_command ? [`command=${enrollment.options.force_command}`] : [])
 	]);
+	// A simplified reader sees the granted extensions alone; the other
+	// options are advanced-only (R4).
+	const chips = $derived(simplified ? enrollment.options.extensions : optionChips);
 </script>
 
 <!-- The identity strip, the same one the certificate page opens with: what
@@ -83,7 +94,9 @@
 			Active
 		</span>
 	{/if}
-	<span class="ml-auto"><CopyableId value={enrollment.id} testid="enrollment-id" /></span>
+	{#if !simplified}
+		<span class="ml-auto"><CopyableId value={enrollment.id} testid="enrollment-id" /></span>
+	{/if}
 </div>
 
 <PageSection title="What it hands out">
@@ -95,8 +108,10 @@
 			<span data-testid="service-code-account">{subject}</span>
 		</DetailRow>
 		<DetailRow label="Certificate life" icon="clock">{certificateLifetime}</DetailRow>
-		<DetailRow label="Key ID" mono>{enrollment.key_id || '—'}</DetailRow>
-		<DetailRow label="Bound key" mono>{enrollment.public_key_fingerprint || '—'}</DetailRow>
+		{#if !simplified}
+			<DetailRow label="Key ID" mono>{enrollment.key_id || '—'}</DetailRow>
+			<DetailRow label="Bound key" mono>{enrollment.public_key_fingerprint || '—'}</DetailRow>
+		{/if}
 	</dl>
 </PageSection>
 
@@ -111,12 +126,22 @@
 			<span class="text-ink-muted">({remainingLabel(enrollment.expires_at, now)})</span>
 		</DetailRow>
 		<DetailRow label="Approved by">{approvedBy || '—'}</DetailRow>
-		<DetailRow label="Certificate options">
-			{#if optionChips.length === 0}
+		{#if simplified}
+			<!-- The count stands in for the redemption history, which is
+			     advanced-only. -->
+			<DetailRow label="Redeemed">
+				<span data-testid="service-code-redeemed"
+					>{enrollment.retrieval_count}
+					{enrollment.retrieval_count === 1 ? 'time' : 'times'}</span
+				>
+			</DetailRow>
+		{/if}
+		<DetailRow label={simplified ? 'Extensions' : 'Certificate options'}>
+			{#if chips.length === 0}
 				<span class="text-ink-muted">None — certificates carry the server's defaults.</span>
 			{:else}
 				<span class="flex flex-wrap gap-1.5" data-testid="certificate-options">
-					{#each optionChips as chip (chip)}
+					{#each chips as chip (chip)}
 						<MonoChip>{chip}</MonoChip>
 					{/each}
 				</span>
