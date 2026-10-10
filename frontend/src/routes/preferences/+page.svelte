@@ -16,6 +16,8 @@
 	let preferences = $state<NotificationPreferences | null>(null);
 	let loadError = $state<string | null>(null);
 	let hasLoaded = $state(false);
+	// Bumped by Try again; the load below reads it, so a bump re-runs it.
+	let attempt = $state(0);
 
 	// pending holds only the toggles the user has actually moved. Sending
 	// just those is what stops a tab loaded before an upgrade from resetting
@@ -27,7 +29,16 @@
 
 	const hasChanges = $derived(Object.keys(pending).length > 0);
 
+	// The way out of a failed load: back to the loading shape, then the
+	// same request again.
+	function retry() {
+		loadError = null;
+		hasLoaded = false;
+		attempt += 1;
+	}
+
 	$effect(() => {
+		void attempt;
 		const controller = new AbortController();
 
 		getNotificationPreferences(controller.signal)
@@ -101,7 +112,14 @@
 	<PageHeading title="Notification preferences" />
 
 	{#if loadError}
-		<Alert variant="error" title="Could not load your preferences">{loadError}</Alert>
+		<Alert
+			variant="error"
+			title="Could not load your preferences"
+			onretry={retry}
+			testid="preferences-error"
+		>
+			{loadError}
+		</Alert>
 	{:else if !hasLoaded}
 		<LoadingBlock
 			shape="lines"

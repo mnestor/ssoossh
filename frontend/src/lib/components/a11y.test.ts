@@ -158,6 +158,7 @@ const cases: [string, any, Record<string, unknown>][] = [
 	['Alert (info)', Alert, { children: text('Loading request…') }],
 	['Alert (warning)', Alert, { variant: 'warning', title: 'Certificate verification is off' }],
 	['Alert (error)', Alert, { variant: 'error', title: 'That did not go through' }],
+	['Alert (error, retry)', Alert, { variant: 'error', title: 'Could not load', onretry: vi.fn() }],
 	['AppRail', AppRail, { onsignout: vi.fn() }],
 	['AppRail (collapsed)', AppRail, { collapsed: true, onsignout: vi.fn() }],
 	['AuditTimeline', AuditTimeline, { events: [] }],

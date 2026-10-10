@@ -35,6 +35,9 @@
 	let nextCursor = $state<string | null>(null);
 	let nextDenialCursor = $state<string | null>(null);
 	let loadError = $state<string | null>(null);
+	// A failed "Load more" is its own error: the rows already shown are
+	// still right, so it sits by the button rather than replacing them.
+	let moreError = $state<string | null>(null);
 	let isLoading = $state(false);
 	let hasLoaded = $state(false);
 
@@ -218,6 +221,9 @@
 	}) {
 		const load = ++latestLoad;
 		isLoading = true;
+		// A new read starts clean: an earlier failure says nothing about it.
+		loadError = null;
+		moreError = null;
 		const controller = new AbortController();
 		try {
 			const [certs, denials] = await Promise.all([
@@ -234,7 +240,6 @@
 			nextCursor = certs?.next_cursor ?? null;
 			allDenials = Array.isArray(denials?.denials) ? denials.denials : [];
 			nextDenialCursor = denials?.next_cursor ?? null;
-			loadError = null;
 		} catch (cause) {
 			if (load !== latestLoad || controller.signal.aborted || redirectIfUnauthenticated(cause)) {
 				return;
@@ -254,6 +259,7 @@
 		}
 		const load = ++latestLoad;
 		isLoading = true;
+		moreError = null;
 		const controller = new AbortController();
 		try {
 			// Both pages in flight together: they are independent reads, and
@@ -279,12 +285,17 @@
 			if (load !== latestLoad || controller.signal.aborted || redirectIfUnauthenticated(cause)) {
 				return;
 			}
-			loadError = errorMessage(cause);
+			moreError = errorMessage(cause);
 		} finally {
 			if (load === latestLoad) {
 				isLoading = false;
 			}
 		}
+	}
+
+	// The way out of a failed read: the same filters, asked again.
+	function retry() {
+		load({ filter, certificates: wantsCertificates, denials: wantsDenials });
 	}
 
 	// Reads the filters, and only the filters. Everything it writes is
@@ -299,10 +310,6 @@
 
 <PageShell width="wide">
 	<PageHeading title="Certificate history" />
-
-	{#if loadError}
-		<Alert variant="error" title="Could not load your history">{loadError}</Alert>
-	{/if}
 
 	{#if !hasLoaded}
 		<LoadingBlock shape="rows" count={4} testid="history-loading" />
@@ -364,7 +371,21 @@
 			</div>
 		</div>
 
-		{#if filtered.length === 0}
+		<!-- The error takes the list's place: an empty-history message under a
+		     failed read told the reader they had decided nothing. A retry from
+		     an empty list shows the loading shape until it answers. -->
+		{#if loadError}
+			<Alert
+				variant="error"
+				title="Could not load your history"
+				onretry={retry}
+				testid="history-error"
+			>
+				{loadError}
+			</Alert>
+		{:else if isLoading && filtered.length === 0}
+			<LoadingBlock shape="rows" count={4} testid="history-loading" />
+		{:else if filtered.length === 0}
 			<p class="text-sm text-ink-muted">
 				{isFiltered
 					? 'Nothing in your history matches the selected filter.'
@@ -410,6 +431,17 @@
 						Next
 					</Button>
 				</div>
+
+				{#if moreError}
+					<Alert
+						variant="error"
+						title="Could not load more of your history"
+						onretry={loadMore}
+						testid="history-more-error"
+					>
+						{moreError}
+					</Alert>
+				{/if}
 
 				{#if hasMore}
 					<div class="flex justify-center">

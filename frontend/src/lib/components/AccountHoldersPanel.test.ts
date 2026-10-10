@@ -128,6 +128,22 @@ describe('AccountHoldersPanel', () => {
 		expect(screen.queryByTestId('account-holders-empty')).not.toBeInTheDocument();
 	});
 
+	it('should offer Try again when the load failed for a reason that may pass', async () => {
+		stubStatus(500);
+		render(AccountHoldersPanel, { enrollmentId: 'enr-1' });
+
+		expect(await screen.findByTestId('account-holders-retry')).toBeInTheDocument();
+	});
+
+	// A refusal answers the same way every time; a retry would only repeat it.
+	it('should offer no retry for a refusal', async () => {
+		stubStatus(403);
+		render(AccountHoldersPanel, { enrollmentId: 'enr-1' });
+
+		await screen.findByText(/do not have permission/);
+		expect(screen.queryByTestId('account-holders-retry')).not.toBeInTheDocument();
+	});
+
 	// The panel sits inside a dialog carrying everything else about the
 	// code; an unexpected shape must not take that down with it.
 	// The list is only as complete as the users table, and the panel has to

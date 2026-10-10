@@ -118,6 +118,25 @@ describe('Certificate history page', () => {
 			await new Promise((resolve) => setTimeout(resolve, 0));
 			expect(screen.getByText(/Could not load your history/)).toBeInTheDocument();
 		});
+
+		// A failed read is not "you have decided nothing".
+		it('should not show the empty-history message under the error', async () => {
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(
+				screen.queryByText('You have not decided any certificate requests yet.')
+			).not.toBeInTheDocument();
+		});
+
+		it('should read the history again when Try again is pressed', async () => {
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const calls = vi.mocked(fetch).mock.calls.length;
+
+			await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+			expect(vi.mocked(fetch).mock.calls.length).toBeGreaterThan(calls);
+		});
 	});
 
 	describe('when certificates load successfully with data', () => {

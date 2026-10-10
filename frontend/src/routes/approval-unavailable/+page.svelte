@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
@@ -13,6 +14,18 @@
 
 <svelte:head><title>Approval link unavailable · ssoossh</title></svelte:head>
 
+<!-- Neither case can be fixed from this page, so both lead back into the
+     app rather than leave the reader on a dead end (DESIGN.md, "States"). -->
+{#snippet wayOut()}
+	<div class="mt-4">
+		<a
+			href={resolve('dashboard')}
+			class="inline-flex min-h-target items-center text-dense font-medium text-accent hover:underline"
+			data-testid="claim-dashboard">Go to your dashboard</a
+		>
+	</div>
+{/snippet}
+
 <PageShell width="focus">
 	{#if cookiesBlocked}
 		<div data-testid="claim-cookies-blocked" class="rounded-lg bg-surface p-5">
@@ -23,6 +36,7 @@
 					again to get a fresh link.
 				{/snippet}
 			</PageHeading>
+			{@render wayOut()}
 		</div>
 	{:else}
 		<!-- Neutral on purpose: the most common way to land here is a mail or
@@ -37,6 +51,7 @@
 					Run the client again to get a fresh link, and open it directly in your browser.
 				{/snippet}
 			</PageHeading>
+			{@render wayOut()}
 		</div>
 	{/if}
 </PageShell>

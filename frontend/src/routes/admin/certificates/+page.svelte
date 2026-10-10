@@ -51,6 +51,9 @@
 	}) {
 		const load = ++latestLoad;
 		isLoading = true;
+		// A new load starts clean: an error from an earlier one says nothing
+		// about this one, and left in place it sat above a list that loaded.
+		loadError = null;
 		try {
 			const result = await listAdminCertificates(undefined, {
 				offset: query.offset,
@@ -125,7 +128,6 @@
 	// failed had to touch a filter to get a second attempt, and the page said
 	// nothing about that being the trick.
 	function retry() {
-		loadError = null;
 		loadCertificates({ offset, q: searchQuery, type: typeFilter, status: statusFilter });
 	}
 
@@ -167,15 +169,6 @@
 <PageShell width="wide">
 	<PageHeading title="All certificates" />
 
-	{#if loadError}
-		<Alert variant="error" title="Could not load certificates">
-			{loadError}
-			<div class="mt-3">
-				<Button variant="ghost" onclick={retry} testid="certificates-retry">Try again</Button>
-			</div>
-		</Alert>
-	{/if}
-
 	<!-- Search, then the filter groups on one line. Both lists that show
 	     certificate rows open the same way; see #lib/filters. -->
 	<div class="flex flex-col gap-3">
@@ -211,7 +204,20 @@
 
 	<ListStatus message={status} />
 
-	{#if !hasLoaded}
+	<!-- The error takes the list's place rather than sitting above it: an
+	     empty state under a failed load told the reader nothing had been
+	     issued. A retry from an empty list shows the loading shape, not the
+	     empty state, until it answers. -->
+	{#if loadError}
+		<Alert
+			variant="error"
+			title="Could not load certificates"
+			onretry={retry}
+			testid="certificates-error"
+		>
+			{loadError}
+		</Alert>
+	{:else if !hasLoaded || (isLoading && certificates.length === 0)}
 		<LoadingBlock shape="rows" count={5} testid="certificates-loading" />
 	{:else if certificates.length === 0 && filtered}
 		<EmptyState icon="filter-off" title="No certificates match" testid="certificates-empty">
@@ -257,5 +263,7 @@
 		</div>
 	{/if}
 
-	<Pager meta={pageInfo} onpage={handlePage} busy={isLoading} testid="pager" />
+	{#if !loadError}
+		<Pager meta={pageInfo} onpage={handlePage} busy={isLoading} testid="pager" />
+	{/if}
 </PageShell>

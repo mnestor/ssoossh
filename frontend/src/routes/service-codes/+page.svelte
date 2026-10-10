@@ -29,6 +29,8 @@
 	let heldAccounts = $state<string[]>([]);
 	let loadError = $state<string | null>(null);
 	let hasLoaded = $state(false);
+	// Bumped by Try again; the load below reads it, so a bump re-runs it.
+	let attempt = $state(0);
 
 	// Rows say how long ago something was and how long a code has left, so
 	// they need a clock that moves.
@@ -128,7 +130,16 @@
 
 	const closeAccountView = () => openAccountView(null);
 
+	// The way out of a failed load: back to the loading shape, then the
+	// same request again.
+	function retry() {
+		loadError = null;
+		hasLoaded = false;
+		attempt += 1;
+	}
+
 	$effect(() => {
+		void attempt;
 		const controller = new AbortController();
 
 		// The held accounts come from the session rather than from the codes,
@@ -187,7 +198,14 @@
 	{/if}
 
 	{#if loadError}
-		<Alert variant="error" title="Could not load your service codes">{loadError}</Alert>
+		<Alert
+			variant="error"
+			title="Could not load your service codes"
+			onretry={retry}
+			testid="service-codes-error"
+		>
+			{loadError}
+		</Alert>
 	{:else if !hasLoaded}
 		<LoadingBlock shape="rows" count={3} testid="service-codes-loading" />
 	{:else if openAccount}

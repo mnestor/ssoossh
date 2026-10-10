@@ -142,7 +142,14 @@
 	</div>
 
 	{#if error}
-		<Alert variant="error" title="Could not load the user list">{error}</Alert>
+		<Alert
+			variant="error"
+			title="Could not load the user list"
+			onretry={loadUsers}
+			testid="users-error"
+		>
+			{error}
+		</Alert>
 		<!--
 		Length, not the array itself: an empty array is truthy, so testing
 		`users?.users` renders a table of headers with no rows for a search

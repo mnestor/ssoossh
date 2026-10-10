@@ -133,6 +133,38 @@ describe('Approval page', () => {
 			await settle();
 			expect(screen.queryByTestId('sign-in-button')).not.toBeInTheDocument();
 		});
+
+		// A claimed request cannot be fixed by asking again, so the way out
+		// leads back into the app instead of offering a retry.
+		it('should lead back to the dashboard', async () => {
+			render(Page);
+			await settle();
+			expect(await screen.findByTestId('load-failure-dashboard')).toBeInTheDocument();
+		});
+	});
+
+	describe('when the server fails to answer', () => {
+		beforeEach(() => {
+			mockFetch(500);
+			redirectIfUnauthenticated.mockReturnValue(false);
+		});
+
+		it('should offer Try again', async () => {
+			render(Page);
+			await settle();
+			expect(await screen.findByTestId('load-failure-retry')).toBeInTheDocument();
+		});
+
+		it('should fetch the request again when Try again is pressed', async () => {
+			render(Page);
+			await settle();
+			const calls = vi.mocked(fetch).mock.calls.length;
+
+			await userEvent.click(await screen.findByTestId('load-failure-retry'));
+			await settle();
+
+			expect(vi.mocked(fetch).mock.calls.length).toBeGreaterThan(calls);
+		});
 	});
 
 	describe('when the request no longer exists', () => {

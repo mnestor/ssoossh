@@ -20,6 +20,8 @@
 	let status = $state<LDAPStatusResponse | null>(null);
 	let statusError = $state<string | null>(null);
 	let statusLoaded = $state(false);
+	// Bumped by Try again; the status load reads it, so a bump re-runs it.
+	let attempt = $state(0);
 
 	// Sync state. The run record is the answer whatever happened, including
 	// a pass that could not reach the directory, so it is rendered rather
@@ -63,7 +65,16 @@
 
 	const isAdmin = $derived(session.user?.is_admin ?? false);
 
+	// The way out of a failed status load: back to the loading shape, then
+	// the same request again.
+	function retryStatus() {
+		statusError = null;
+		statusLoaded = false;
+		attempt += 1;
+	}
+
 	$effect(() => {
+		void attempt;
 		const controller = new AbortController();
 		getLDAPStatus(controller.signal)
 			.then((result) => {
@@ -164,7 +175,14 @@
 	</PageHeading>
 
 	{#if statusError}
-		<Alert variant="error" title="Could not load the directory status">{statusError}</Alert>
+		<Alert
+			variant="error"
+			title="Could not load the directory status"
+			onretry={retryStatus}
+			testid="directory-error"
+		>
+			{statusError}
+		</Alert>
 	{:else if !statusLoaded}
 		<LoadingBlock
 			shape="lines"

@@ -100,7 +100,12 @@
 			testid="config-loading"
 		/>
 	{:else if error}
-		<Alert variant="error" title="Could not load the configuration" testid="config-error">
+		<Alert
+			variant="error"
+			title="Could not load the configuration"
+			onretry={loadConfig}
+			testid="config-error"
+		>
 			{error}
 		</Alert>
 	{:else if config}

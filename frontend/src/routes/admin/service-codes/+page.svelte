@@ -15,6 +15,8 @@
 	let enrollments = $state<AdminEnrollment[]>([]);
 	let loadError = $state<string | null>(null);
 	let hasLoaded = $state(false);
+	// Bumped by Try again; the load below reads it, so a bump re-runs it.
+	let attempt = $state(0);
 	let meta = $state<any>(null);
 	let searchQuery = $state('');
 	let currentOffset = $state(0);
@@ -28,6 +30,7 @@
 
 	// Load enrollments when search or offset changes
 	$effect(() => {
+		void attempt;
 		const controller = new AbortController();
 		hasLoaded = false;
 		loadError = null;
@@ -48,6 +51,11 @@
 
 		return () => controller.abort();
 	});
+
+	// The way out of a failed load: the same page of the same search again.
+	function retry() {
+		attempt += 1;
+	}
 
 	function onSearch(query: string) {
 		searchQuery = query;
@@ -84,7 +92,14 @@
 	/>
 
 	{#if loadError}
-		<Alert variant="error" title="Could not load service codes">{loadError}</Alert>
+		<Alert
+			variant="error"
+			title="Could not load service codes"
+			onretry={retry}
+			testid="service-codes-error"
+		>
+			{loadError}
+		</Alert>
 	{:else if !hasLoaded}
 		<LoadingBlock shape="rows" count={4} testid="enrollments-loading" />
 	{:else if enrollments.length === 0 && searchQuery}

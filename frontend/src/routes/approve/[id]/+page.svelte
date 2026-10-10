@@ -1,10 +1,12 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { approveRequest, denyRequest, getRequestDetail } from '#lib/api/endpoints.js';
 	import type { RequestDetail } from '#lib/api/types.js';
 	import { describeLoadError, type LoadFailure } from '#lib/approval.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import { session } from '#lib/session.svelte.js';
+	import Button from '#lib/components/Button.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import ApprovalView from '#lib/components/ApprovalView.svelte';
 	import PageHeading from '#lib/components/PageHeading.svelte';
@@ -27,6 +29,8 @@
 	let selectedExtensions = $state<string[]>([]);
 	let extensionsSeeded = $state(false);
 	let notificationEmail = $state('');
+	// Bumped by Try again; the load below reads it, so a bump re-runs it.
+	let attempt = $state(0);
 
 	// Build the list of principals the approver holds: username plus other accounts,
 	// deduplicated and in that order.
@@ -91,6 +95,7 @@
 	// click.
 	$effect(() => {
 		const requestID = id;
+		void attempt;
 		if (!requestID) {
 			return;
 		}
@@ -131,6 +136,13 @@
 
 		return () => controller.abort();
 	});
+
+	// The way out of a failure a second attempt can fix: the same request,
+	// fetched again. The effect clears the failure and shows the loading
+	// shape while it runs.
+	function retry() {
+		attempt += 1;
+	}
 
 	/** decide records one approve-or-deny decision and reflects the result.
 	 * The certificate itself never appears here — it is signed
@@ -182,6 +194,20 @@
 			<PageHeading title={loadFailure.title}>
 				{#snippet sub()}{loadFailure.message}{/snippet}
 			</PageHeading>
+			<!-- Every failure has a way out (DESIGN.md, "States"). One a
+			     second attempt can fix offers it; a claimed or missing request
+			     cannot be fixed from here, so it leads back into the app. -->
+			<div class="mt-4">
+				{#if loadFailure.kind === 'unknown'}
+					<Button variant="ghost" onclick={retry} testid="load-failure-retry">Try again</Button>
+				{:else}
+					<a
+						href={resolve('dashboard')}
+						class="inline-flex min-h-target items-center text-dense font-medium text-accent hover:underline"
+						data-testid="load-failure-dashboard">Go to your dashboard</a
+					>
+				{/if}
+			</div>
 		</div>
 	{:else if detail}
 		<ApprovalView

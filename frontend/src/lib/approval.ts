@@ -137,11 +137,12 @@ export function approvalBlockedReason(detail: RequestDetail): BlockedReason | nu
 }
 
 /** What the approval page should render instead of a request it could not
- * load. Every case here is terminal: a 401 never reaches this, because a
- * signed-out visitor is redirected to /login instead (see auth.goToLogin),
- * so nothing described here offers an action. `kind` is a stable identifier
- * for the e2e browser tier to select on, so it isn't matching against
- * `title`'s prose (see test/e2e/README.md). */
+ * load. A 401 never reaches this, because a signed-out visitor is
+ * redirected to /login instead (see auth.goToLogin). `forbidden` and
+ * `not-found` are terminal, so the page leads back to the dashboard;
+ * `unknown` (a network or server failure) offers Try again. `kind` is a
+ * stable identifier for the e2e browser tier to select on, so it isn't
+ * matching against `title`'s prose (see test/e2e/README.md). */
 export interface LoadFailure {
 	title: string;
 	message: string;

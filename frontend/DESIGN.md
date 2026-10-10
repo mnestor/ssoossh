@@ -507,7 +507,8 @@ tracking-label uppercase text-ink-muted`, sans) and an optional line of
 text-trimmed`, `role="status"`), `info` (`info-circle`, `bg-surface` on the
   ground or `bg-surface-muted` inside a panel, `role="status"`).
   `rounded-lg`, no border. An error Alert for a failed load carries its way
-  out (see States).
+  out (see States): `onretry` adds the one "Try again" ghost button, with
+  the test id `<testid>-retry`.
 
 ### Rows and lists
 
@@ -1113,8 +1114,7 @@ change lands.
 - `copy-check` is not in the icon map; `CopyableId` still shows `check`.
 - `PageShell` puts `gap-5` between panels; several lists use `gap-2.5`.
 - Chips and badges on `rounded-full`; several fields on `rounded`.
-- Load errors render the empty state beneath them, and most have no way out.
-  Disabling or re-enabling a user swaps the page for a loading state,
+- Disabling or re-enabling a user swaps the page for a loading state,
   unmounting the open dialog.
 - Cobalt outside its four jobs: stat figures and LDAP override notes on the
   user page, a label and a checkbox on the directory and config pages.
