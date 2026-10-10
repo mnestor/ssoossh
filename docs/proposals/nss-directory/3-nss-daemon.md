@@ -1,0 +1,380 @@
+# Part 3: NSS daemon `ssoosshd-nss`
+
+**Repo:** `mnestor/ssoossh`. **Depends on:** Part 1 wire JSON. **Owns:** the
+socket protocol consumed by Part 4. Shared context in [README.md](README.md).
+
+## Scope
+
+- New Linux-only binary `cmd/ssoosshd-nss`.
+- Daemon code in a new top-level `/nssd` (README R18), importing
+  only `internal/`, never `server/` or `client/`.
+- New shared package `internal/nsssock`: socket protocol codec, used by the
+  daemon and by `ssoossh host principals`.
+- `internal/api` additions: TLS pinning, SRV discovery, fleet key headers,
+  NSS lookup methods (none exist today; README R3).
+- Packaging: one `ssoosshd-nss` `.deb`/`.rpm` via this repo's nfpm holding
+  the daemon, its systemd unit, and `libnss_ssoossh.so.2` built here from a
+  pinned `mnestor/ssoossh-nss` source release (README R19, R21). No `.apk`:
+  musl cannot load NSS modules.
+- SELinux policy for the daemon and socket, shipped as
+  `ssoossh-nss-selinux` (`.rpm`) from this repo. Never linked into the cross-platform `ssoossh` client.
+- `docs/nss-socket-protocol.md`: the protocol spec below, versioned.
+
+## Layout
+
+| Path | Purpose |
+| --- | --- |
+| `cmd/ssoosshd-nss/main.go` | entrypoint only; `//go:build linux` |
+| `nssd/config` | `/etc/ssoossh/nss.yaml` load + validate (viper), override file |
+| `nssd/upstream` | wraps `internal/api` NSS calls, offline state, 401 latch, concurrency cap |
+| `nssd/cache` | memory and SQLite stores behind one interface, TTL logic, singleflight |
+| `nssd/policy` | sanity rules, host overrides, shell resolution, filters |
+| `nssd/server` | socket listeners, peer credential checks, request dispatch |
+| `nssd/cmd` | cobra commands: `run`, `cache`, `override`, `status`, `lookup` |
+| `internal/nsssock` | encode/decode, constants, fuzz tests; no Linux-only code so the client compiles everywhere |
+
+Struct-based DI per `.claude/rules/go.md`: one `Daemon` struct holds config,
+store, upstream client, clock and logger; handlers are methods on it.
+Interfaces (`Store`, `Upstream`, `PeerInspector`, `Clock`) are defined in the
+implementing package.
+
+## Socket protocol v1
+
+This section is copied verbatim into `docs/nss-socket-protocol.md` and into
+Part 4. Any change bumps the version byte and that doc.
+
+**Transport.** `AF_UNIX` `SOCK_STREAM` at `/run/ssoossh/nss.sock`. One
+request per connection; the daemon closes after the reply. All integers
+big-endian. Strings are `str := u16 len | len bytes`, no NUL, no terminator,
+`len <= 4095`.
+
+**Request**
+
+```
+u8  version        = 1
+u8  op
+u16 key_len        <= 255
+key bytes
+```
+
+| op | Name | Key |
+| --- | --- | --- |
+| 1 | `passwd_by_name` | name bytes |
+| 2 | `passwd_by_uid` | 4 bytes, u32 uid |
+| 3 | `group_by_name` | name bytes |
+| 4 | `group_by_gid` | 4 bytes, u32 gid |
+| 5 | `initgroups` | user name bytes |
+| 6 | `refresh_user` | user name bytes; fire-and-forget |
+
+**Reply header (8 bytes)**
+
+```
+u8  version        = 1
+u8  status         0=found 1=notfound 2=unavail 3=tryagain 4=bad_request
+u8  op             echo of request op
+u8  flags          bit0 members_truncated (op 3,4); bit1 user_disabled (op 1,2)
+u32 body_len       0 unless status=found; <= 65536
+```
+
+**Bodies (status=found)**
+
+```
+passwd (op 1,2):  u32 uid | u32 gid | str name | str passwd | str gecos
+                  | str home | str shell
+group  (op 3,4):  u32 gid | str name | str passwd | u32 nmem | str member * nmem
+initgroups (5):   u32 ngids | u32 gid * ngids        (all gids, primary included)
+refresh (6):      empty; status 0 sent at once, refresh runs in background
+```
+
+`passwd` is `*` for active users and `!` for disabled/deleted. Group
+`passwd` is always `*`. `body_len` must equal the sum of the parsed fields;
+any mismatch, oversize, embedded NUL, or version other than 1 is a protocol
+error the reader treats as `unavail`.
+
+**Timing.** The daemon reads the request within 1 s or closes. It answers
+within `socket_answer_deadline` (2.5 s); if an upstream fetch is still
+running it replies `tryagain` and lets the fetch complete into the cache
+(README R8). Clients use a 3 s total timeout.
+
+## `internal/api` additions
+
+- `Config.TLSCAFile`, `Config.TLSSPKIPins []string` (base64 SHA-256 of
+  SPKI). When either is set: system roots ignored, TLS 1.3 minimum,
+  `VerifyConnection` checks the leaf SPKI against pins. `Proxy: nil` on the
+  transport (do not use `http.ProxyFromEnvironment`). Existing callers keep
+  current behaviour when unset.
+- `Config.Headers` or a dedicated `KeyID/KeySecret` pair sent on NSS calls
+  only; secret redacted in `traceRequest`/`logHeaders`.
+- `DiscoverServer(ctx, domain)`: `net.Resolver.LookupSRV("ssoossh", "tcp",
+  domain)`, RFC 2782 priority/weight order. Pin unchanged: a spoofed SRV
+  points at a server that fails the pin.
+- `GetNSSUser(ctx, byName|byUID)`, `GetNSSGroup(ctx, byName|byGID)`
+  returning typed structs in `internal/apitypes`; distinguish 404, 401, 429
+  (honour `Retry-After`), other.
+
+## Configuration `/etc/ssoossh/nss.yaml`
+
+Root 0600; environment not consulted. Option names follow `sssd.conf(5)`.
+
+```yaml
+server: ""                        # https URL; empty -> SRV via dns_discovery_domain
+dns_discovery_domain: ""          # empty -> host's domain
+tls_ca_file: ""                   # one of these two is required
+tls_spki_pin: []
+api_key_file: /etc/ssoossh/nss.key  # 0600, line 1 key_id, line 2 key_secret
+timeout: 5s
+reconnection_retries: 3
+offline_timeout: 60s              # backoff base while offline
+socket_answer_deadline: 2.5s
+
+cache_mode: persistent            # persistent | memory
+entry_cache_timeout: 5400s
+entry_cache_user_timeout: 0       # 0 inherits
+entry_cache_group_timeout: 0
+entry_negative_timeout: 15s
+entry_cache_nowait_percentage: 50
+refresh_expired_interval: 0       # 0 -> 75% of TTL when persistent, off in memory
+refresh_rate: 2                   # upstream refreshes/s, background
+cache_expire_offline: 0           # 0 = never
+
+login_soft_ttl: 60s
+login_refresh_timeout: 1s
+sshd_paths: [/usr/sbin/sshd, /usr/sbin/sshd-session]
+
+min_id: 1000
+max_id: 0                         # 0 = no max
+override_gid: 0
+override_homedir: ""
+fallback_homedir: /home/%u        # %u user, %U uid, %d domain, %h original
+override_shell: ""
+shell_fallback: /bin/sh
+allowed_shells: []                # empty -> /etc/shells
+vetoed_shells: []
+shell_map: {}                     # zsh: /opt/homebrew/bin/zsh
+disabled_shell: /usr/sbin/nologin
+case_sensitive: true
+ignore_group_members: false
+filter_users: [root]
+filter_groups: [root]
+require_groups: []
+```
+
+`auto_private_groups` is server-only (README R12).
+
+## Request path
+
+1. Accept on `nss.sock`; read `SO_PEERCRED`.
+2. Decode; reject bad requests with status 4.
+3. Lower-case if `case_sensitive: false`; reject names failing
+   `^[a-z_][a-z0-9_-]{0,31}$` as `notfound` without going upstream (R17).
+4. `filter_users`/`filter_groups`: `notfound`, never sent upstream.
+5. Cache lookup:
+   - fresh (age < `nowait_percentage` of TTL): answer;
+   - stale-but-valid: answer, schedule background refresh;
+   - expired or miss: fetch upstream through singleflight, bounded by
+     `socket_answer_deadline`;
+   - negative cache hit within `entry_negative_timeout`: `notfound`.
+6. **sshd freshness**: for op 1 when the peer is sshd (below) and entry age
+   > `login_soft_ttl`, refresh synchronously within `login_refresh_timeout`;
+   on timeout answer from cache.
+7. Apply policy (next section) to the upstream answer **before** caching;
+   host overrides apply on read so editing overrides needs no cache flush.
+8. Encode and reply; close.
+
+**Peer is sshd** (README R5): peer uid is 0 **and**
+`readlink(/proc/<pid>/exe)` is in `sshd_paths`. `comm` alone is not trusted.
+
+**`refresh_user`** (op 6): reply status 0 immediately. Debounce per name:
+at most one refresh per name per `login_soft_ttl`, and all op-6 refreshes
+share the `refresh_rate` limiter (README R6). Sent by `ssoossh host
+principals` (below).
+
+**Upstream.** Concurrency cap 8; beyond it, `unavail`. Connect timeout 2 s,
+total `timeout`. `User-Agent: ssoosshd-nss/<version>`. On 401: latch
+`unauthorized`, stop fetching, log at error once per minute, serve cache as
+if offline until `cache_expire_offline`; latch clears on SIGHUP or key file
+change. Offline: exponential backoff from `offline_timeout`, serve cache.
+
+## Policy and sanity rules
+
+Applied to every upstream answer before caching; a failing entry is logged
+with the reason and treated as `notfound` (and negative-cached).
+
+- uid and gid within `min_id..max_id`.
+- Name absent from `/etc/passwd` / `/etc/group` (re-read on mtime change).
+- `require_groups`: user must be a member of one, else `notfound`.
+- Home: `override_homedir` -> server `home` -> `fallback_homedir`;
+  must be absolute after expansion.
+- Shell, first acceptable wins:
+  `override_shell` -> `shell_pref` resolved by `shell_map` then basename
+  match in `/etc/shells` -> server `shell` -> `shell_fallback`.
+  Acceptable = in `allowed_shells` (or `/etc/shells` when empty) and not in
+  `vetoed_shells`.
+- `status` `disabled`/`deleted`: shell = `disabled_shell`, **exempt from the
+  shells check** (README R4); passwd `!`; flag `user_disabled`; log warning
+  when served to sshd.
+- `override_gid` replaces the primary gid.
+- Group responses: drop members when `ignore_group_members`; set
+  `members_truncated` from the server flag; trim member list to fit the
+  65536-byte body and log if that trims further.
+- Host overrides from `/etc/ssoossh/nss-overrides.yaml` (same shape as
+  `principals.yaml`): per-user uid/gid/home/shell, applied after the
+  server's answer and before the sanity rules; cannot set a uid below
+  `min_id`.
+
+## Cache
+
+`Store` interface with `memory` and `sqlite` implementations. SQLite at
+`/var/lib/ssoossh/db/cache.db`, WAL, 0600 in 0700; use the SQLite driver
+already in `go.mod` (verify; prefer the pure-Go one so `CGO_ENABLED=0`
+builds work). Tables: users by name and uid, groups by name and gid, user to
+gids; each row stores the fetched JSON, fetched_at, expires_at, and a stale
+flag. Trust model is sssd's: entries are trusted on load; file permissions
+are the boundary. A host rebooted while the server is down resolves known
+users from disk.
+
+Background sweep at `refresh_expired_interval`, jittered, bounded by
+`refresh_rate`. Singleflight per `(op, key)`; use `golang.org/x/sync` only
+if already a dependency, else a small local implementation.
+
+## Admin interface and CLI
+
+A second socket `/run/ssoossh/nss-admin.sock`, 0600 root, carries admin ops
+(JSON lines; internal to this repo, not part of the v1 protocol) so the CLI
+never writes the SQLite file concurrently and works in memory mode.
+
+| Command | Behaviour |
+| --- | --- |
+| `ssoosshd-nss run` | default; the daemon |
+| `ssoosshd-nss cache -E \| -u NAME \| -g NAME \| -U \| -G` | `sss_cache` equivalent: mark stale, never delete |
+| `ssoosshd-nss override list \| set USER --uid --gid --home --shell \| unset USER` | edits `nss-overrides.yaml` atomically, signals reload |
+| `ssoosshd-nss status` | online/offline/unauthorized, server, key id, cache counts, last error |
+| `ssoosshd-nss lookup passwd NAME \| group NAME \| initgroups NAME` | goes through `nss.sock` exactly as the module does; for debugging |
+
+## Client change: `ssoossh host principals`
+
+Before printing principals, send op 6 for the user via `internal/nsssock`
+with a 50 ms deadline; ignore every error, including a missing socket and
+non-Linux platforms. It still never touches the network. Fix the stale
+"synced from the server" text at `client/cmd/host.go:12` in the same PR.
+
+## systemd unit
+
+```ini
+[Service]
+ExecStart=/usr/sbin/ssoosshd-nss run
+Restart=always
+RuntimeDirectory=ssoossh
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+StateDirectory=ssoossh
+StateDirectoryMode=0700
+ProtectSystem=strict
+ReadOnlyPaths=/etc/ssoossh
+PrivateTmp=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectHome=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+```
+
+`StateDirectory` is required for the persistent cache (README R7).
+`RuntimeDirectoryPreserve=yes` keeps the socket directory across restarts so
+callers see `ECONNREFUSED` (UNAVAIL) rather than `ENOENT` races. Reading
+`/proc/<pid>/exe` of root-owned sshd as root needs no capability with an
+empty bounding set only if `ptrace` access checks pass; verify on a host
+and add `CAP_SYS_PTRACE` to the bounding set only if `readlink` fails.
+Socket file mode 0666 is set after `Listen`. Ordering: `Before=nss-user-lookup.target`, `Wants=nss-user-lookup.target`.
+
+## Packaging
+
+**NSS module build.** `packaging/nss-module.lock` pins the module:
+
+```
+version=0.1.0
+url=https://github.com/mnestor/ssoossh-nss/releases/download/v0.1.0/ssoossh-nss-0.1.0.tar.gz
+sha256=<hex>
+```
+
+`scripts/build-nss-module.sh`, run from a goreleaser `before.hooks` entry:
+download, verify SHA-256 (fail closed), extract to `dist/nss-src/`, then
+per arch run `make CC="zig cc -target <x86_64|aarch64>-linux-gnu.2.28"`
+into `dist/nss/<amd64|arm64>/libnss_ssoossh.so.2`. Same zig binary and
+glibc floor as `server-linux-pkcs11-build` in `.goreleaser.yml`. The script
+then checks: `objdump -T`
+glibc floor <= 2.28, `nm -D` exports exactly the five `_nss_ssoossh_*`
+symbols, `readelf -d` has no `NEEDED` beyond `libc.so.6`. nfpm `contents.src` uses
+`dist/nss/{{ .Arch }}/libnss_ssoossh.so.2` (goreleaser templates `src`).
+
+Bumping the module is a PR here that edits the lock file; CI rebuilds and
+runs the integration test below.
+
+**nfpm `ssoosshd-nss`:**
+
+| Content | Destination |
+| --- | --- |
+| daemon binary | `/usr/sbin/ssoosshd-nss` |
+| unit | `/usr/lib/systemd/system/ssoosshd-nss.service`, not enabled |
+| example config | `/etc/ssoossh/nss.yaml`, 0600, `config\|noreplace` |
+| module, `packager: deb` | `/usr/lib/<multiarch>/libnss_ssoossh.so.2` |
+| module, `packager: rpm` | `/usr/lib64/libnss_ssoossh.so.2` (arm64 too) |
+| `nss_ssoossh(8)`, `ssoosshd-nss(8)` | man pages |
+
+postinstall: `ldconfig`, `systemctl daemon-reload`; never edits
+`nsswitch.conf`. postremove: `ldconfig`. `/etc/ssoossh/nss.key` is never
+shipped. `Recommends: ssoossh-nss-selinux` on rpm.
+
+**`ssoossh-nss-selinux` (rpm):** policy source in
+`packaging/selinux/ssoossh_nss.{te,fc,if}` (README R19):
+
+- `ssoosshd_nss_t` domain for `/usr/sbin/ssoosshd-nss`
+  (`ssoosshd_nss_exec_t`); config `ssoosshd_nss_conf_t`
+  (`/etc/ssoossh/nss.yaml`, `nss.key`, `nss-overrides.yaml`); state
+  `ssoosshd_nss_var_lib_t` (`/var/lib/ssoossh(/.*)?`); runtime
+  `ssoosshd_nss_var_run_t` (`/run/ssoossh(/.*)?`); outbound TCP 443 and
+  DNS; read `/etc/passwd`, `/etc/group`, `/etc/shells`; read
+  `/proc/<pid>/exe` of `sshd_t`.
+- `nsswitch_domain` may `connectto` the daemon's unix stream socket and
+  search the runtime dir.
+
+Built in a Fedora container job (`selinux-policy-devel`, `make -f
+/usr/share/selinux/devel/Makefile`) because the goreleaser host lacks the
+toolchain; the `.pp` is an input to an nfpm package with `post`
+`semodule -i` and `preun` `semodule -r`. Use `ssoossh-pam/selinux/` for
+house style.
+
+**Integration test** (CI, every PR touching `nssd/`, `internal/nsssock`
+or the lock file): container with the built package, daemon pointed at an
+httptest-style fake server with a test CA, `nsswitch.conf` set to `files
+ssoossh`; assert `getent passwd`, `getent group`, `id`, disabled-user
+shell, and `UNAVAIL` with the daemon stopped.
+
+- Release builds `linux/amd64`, `linux/arm64`; daemon `CGO_ENABLED=0`.
+- Release builds `linux/amd64`, `linux/arm64`; `CGO_ENABLED=0`.
+- No change to the `ssoossh` client package.
+
+## Tests
+
+- `internal/nsssock`: round-trip table tests for every op and status;
+  `FuzzDecodeRequest`, `FuzzDecodeReply` (oversize, short reads, NULs,
+  length mismatch).
+- `internal/api`: httptest TLS server with correct and wrong SPKI pin, CA
+  file, proxy env set and ignored, key headers redacted in trace output,
+  SRV ordering with a fake resolver.
+- `nssd/policy`: table tests for each sanity rule, shell precedence, home
+  expansion, disabled exemption, overrides cannot go below `min_id`.
+- `nssd/cache`: fake clock; fresh, nowait refresh, expired, negative,
+  offline serving, `cache_expire_offline`, persistence across reopen.
+- `nssd/server`: real Unix socket in `t.TempDir()`; peer inspector
+  interface faked for the sshd path; `tryagain` on slow upstream; op 6
+  debounce; concurrency cap returns `unavail`.
+- `upstream`: 401 latch and clear, 429 `Retry-After`, singleflight.
+- Code needing a live `SO_PEERCRED` or `/proc` carries a `not covered:`
+  comment only where a fake cannot reach it.
+
+## Done when
+
+`go test ./...` and `golangci-lint run` pass on Linux; `GOOS=darwin go
+build ./client/...` still passes (client imports `internal/nsssock` only);
+`ssoosshd-nss lookup passwd <user>` resolves against a Part 1 server;
+`docs/nss-socket-protocol.md` committed and identical to the section above.
