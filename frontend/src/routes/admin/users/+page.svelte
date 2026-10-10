@@ -30,23 +30,40 @@
 	let status: StatusFilter = $state('all');
 	let offset = $state(0);
 
+	// Which load is allowed to write to the page. Nothing cancels a request
+	// in flight and the search box stays live while one runs, so two can
+	// overlap and answer in whatever order the network settles on; without
+	// this, fast typing could land an older answer last. The certificate
+	// list arbitrates its reads the same way. Not $state: nothing renders
+	// from it.
+	let latestLoad = 0;
+
 	async function loadUsers() {
+		const load = ++latestLoad;
 		busy = true;
 		error = null;
 		try {
 			// 'all' is sent as no parameter rather than as a value: the
 			// server's filter is "active", "disabled", or absent, and an
 			// unrecognized value is a 400 rather than a silent widening.
-			users = await getAdminUsers({
+			const result = await getAdminUsers({
 				q: searchQuery,
 				limit: 25,
 				offset,
 				status: status === 'all' ? undefined : status
 			});
+			if (load === latestLoad) {
+				users = result;
+			}
 		} catch (cause) {
-			error = cause instanceof Error ? cause.message : 'Failed to load users';
+			if (load === latestLoad) {
+				error = cause instanceof Error ? cause.message : 'Failed to load users';
+			}
 		} finally {
-			busy = false;
+			// Only the newest load owns the busy state.
+			if (load === latestLoad) {
+				busy = false;
+			}
 		}
 	}
 
