@@ -97,7 +97,7 @@
 			     ran it: a masonry grid reordered it by height, and a reader
 			     comparing this run to the last one had to find each check
 			     again rather than read down the same list. -->
-			<div data-testid="diagnostics-results" class="flex flex-col gap-4">
+			<div data-testid="diagnostics-results" class="flex flex-col gap-8">
 				{#each report.checks as check (check.id)}
 					<section class="rounded-lg bg-surface p-5">
 						<div class="flex items-start justify-between gap-4">

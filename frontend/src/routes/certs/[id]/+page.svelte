@@ -223,7 +223,7 @@
 			testid="certificate-loading"
 		/>
 	{:else if cert}
-		<div data-testid="cert-details" class="flex flex-col gap-5">
+		<div data-testid="cert-details" class="flex flex-col gap-8">
 			<!-- The identity strip: what kind of certificate this is, what
 			     happened to the request behind it, and the id to quote in a
 			     ticket. Wraps rather than squeezes, because the id is a full

@@ -92,15 +92,15 @@
 	<div class="mx-auto w-full {caps[width]}">
 		{#if aside}
 			<div class="flex flex-col gap-8 xl:flex-row xl:items-start">
-				<div class="flex min-w-0 flex-1 flex-col gap-5">
+				<div class="flex min-w-0 flex-1 flex-col gap-8">
 					{@render children()}
 				</div>
-				<aside class="flex w-full flex-col gap-5 xl:w-[280px] xl:shrink-0">
+				<aside class="flex w-full flex-col gap-8 xl:w-[280px] xl:shrink-0">
 					{@render aside()}
 				</aside>
 			</div>
 		{:else}
-			<div class="flex flex-col gap-5">
+			<div class="flex flex-col gap-8">
 				{@render children()}
 			</div>
 		{/if}

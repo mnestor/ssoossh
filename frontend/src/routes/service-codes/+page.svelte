@@ -216,7 +216,7 @@
 			</EmptyState>
 		{:else}
 			{#if live.length > 0}
-				<div class="flex flex-col gap-2.5">
+				<div class="flex flex-col gap-2">
 					{#each live as enrollment (enrollment.id)}
 						<ServiceCodeRow
 							{enrollment}
@@ -230,7 +230,7 @@
 			{/if}
 
 			{#if dead.length > 0}
-				<div class="flex flex-col gap-2.5">
+				<div class="flex flex-col gap-2">
 					<SectionLabel>Expired codes</SectionLabel>
 					{#each dead as enrollment (enrollment.id)}
 						<ServiceCodeRow
@@ -250,7 +250,7 @@
 			account, and this page lists the accounts your identity carries.
 		</p>
 	{:else}
-		<div class="flex flex-col gap-2.5">
+		<div class="flex flex-col gap-2">
 			{#each accounts as entry (entry.account)}
 				<ServiceAccountRow
 					testid="service-account-row"

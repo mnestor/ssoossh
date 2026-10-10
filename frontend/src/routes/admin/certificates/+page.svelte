@@ -234,7 +234,7 @@
 			request is approved.
 		</EmptyState>
 	{:else}
-		<div data-testid="cert-list" class="flex flex-col gap-2.5">
+		<div data-testid="cert-list" class="flex flex-col gap-2">
 			{#each certificates as cert (cert.id)}
 				<CertRow
 					cert={{

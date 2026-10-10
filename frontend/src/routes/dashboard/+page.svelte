@@ -139,7 +139,7 @@
 			as it is issued.
 		</EmptyState>
 	{:else}
-		<div class="flex flex-col gap-2.5">
+		<div class="flex flex-col gap-2">
 			{#each allCertificates as cert (cert.id)}
 				<CertRow
 					{cert}

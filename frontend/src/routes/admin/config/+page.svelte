@@ -141,7 +141,7 @@
 			     key column is capped rather than a percentage: at this page's
 			     full width, 45% would put a value half a screen away from the
 			     key it belongs to. -->
-			<div class="flex flex-col gap-6">
+			<div class="flex flex-col gap-8">
 				{#each sections as section (section.name)}
 					<section data-testid="config-section" class="rounded-lg bg-surface p-5">
 						<h2 class="mb-1.5 text-meta font-semibold tracking-label text-ink-muted uppercase">

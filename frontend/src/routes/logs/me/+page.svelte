@@ -392,7 +392,7 @@
 					: 'You have not decided any certificate requests yet.'}
 			</p>
 		{:else}
-			<div class="flex flex-col gap-2.5">
+			<div class="flex flex-col gap-2">
 				<!-- Keyed on the kind as well as the id: a certificate and the
 				     decision that refused a different request are separate
 				     tables with separate id spaces, and nothing stops one from

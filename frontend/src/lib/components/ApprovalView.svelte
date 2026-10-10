@@ -370,7 +370,7 @@
      approval page moved to the app's own width. The controls inside still
      cap themselves — a select or an email field a thousand pixels wide
      looks like a bug. -->
-<div class="flex w-full flex-col gap-4">
+<div class="flex w-full flex-col gap-8">
 	<PageHeading title={pageCopy.title} />
 
 	<!-- One card, not six. An approval is a single decision read straight

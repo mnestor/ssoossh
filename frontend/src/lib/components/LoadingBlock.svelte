@@ -71,7 +71,7 @@
 	     `ListStatus` the page already carries. -->
 	<div data-testid={testid} aria-hidden="true">
 		{#if shape === 'rows'}
-			<div class="flex flex-col gap-2.5">
+			<div class="flex flex-col gap-2">
 				{#each { length: count }, i (i)}
 					<div class="rounded-lg bg-surface px-4 py-3">
 						<div class="flex items-center justify-between gap-4">
@@ -95,7 +95,7 @@
 				{/each}
 			</div>
 		{:else}
-			<div class="flex flex-col gap-2.5">
+			<div class="flex flex-col gap-2">
 				{#each { length: count }, i (i)}
 					<div class="skeleton h-3.5 {lineWidth(i)}"></div>
 				{/each}

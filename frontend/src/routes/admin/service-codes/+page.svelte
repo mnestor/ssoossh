@@ -130,7 +130,7 @@
 			None has been yet.
 		</EmptyState>
 	{:else}
-		<div class="flex flex-col gap-2.5">
+		<div class="flex flex-col gap-2">
 			{#each enrollments as enrollment (enrollment.id)}
 				<ServiceCodeRow
 					{enrollment}

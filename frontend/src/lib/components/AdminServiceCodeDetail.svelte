@@ -80,7 +80,7 @@
 	);
 </script>
 
-<div class="flex flex-col gap-5" data-testid="service-code-detail">
+<div class="flex flex-col gap-8" data-testid="service-code-detail">
 	<ServiceCodeFacts {enrollment} {now} {approvedBy} />
 
 	<!-- Immediately above the admin controls, because the first of them
