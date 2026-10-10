@@ -85,11 +85,15 @@
 
 	<div class="flex items-center justify-between gap-4">
 		<div class="min-w-0">
-			<!-- 26px is a desktop size. On a phone the same title runs to two
-			     or three lines and pushes the page's first real content off
-			     the screen, so it steps down to 20px below `sm` — still the
-			     largest thing on the page, which is all the h1 has to be. -->
-			<h1 class="text-xl leading-tight font-bold tracking-heading sm:text-display">{title}</h1>
+			<!-- The page's name in the mono, the app's voice (DESIGN.md,
+			     "Where the mono goes"). 28px is a desktop size. On a phone the
+			     same title runs to two or three lines and pushes the page's
+			     first real content off the screen, so it steps down to 20px
+			     below `sm` — still the largest thing on the page, which is all
+			     the h1 has to be. -->
+			<h1 class="font-mono text-xl leading-tight font-semibold tracking-heading sm:text-display">
+				{title}
+			</h1>
 			{#if sub}
 				<p class="mt-1.5 text-sm text-ink-muted">{@render sub()}</p>
 			{/if}

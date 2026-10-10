@@ -1104,8 +1104,6 @@ change lands.
   `rounded-xl`), the identity strips, `Alert`, both dialogs (`border`,
   `shadow-lg`), the rail edge, the narrow bar and the footer rule.
 - `RailUserMenu` uses `shadow-lg`, not `shadow-overlay`.
-- `PageHeading`'s `h1` and the sign-in heading are sans `font-bold`.
-- `.data-table` column heads and `RailGroup` heads are in the mono.
 - `copy-check` is not in the icon map; `CopyableId` still shows `check`.
 - `PageShell` puts `gap-5` between panels; several lists use `gap-2.5`.
 - Chips and badges on `rounded-full`; several fields on `rounded`.

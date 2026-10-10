@@ -144,9 +144,7 @@
 			<div class="flex flex-col gap-6">
 				{#each sections as section (section.name)}
 					<section data-testid="config-section" class="rounded-lg bg-surface p-5">
-						<h2
-							class="mb-1.5 font-mono text-meta font-semibold tracking-label text-ink-muted uppercase"
-						>
+						<h2 class="mb-1.5 text-meta font-semibold tracking-label text-ink-muted uppercase">
 							{section.name}
 						</h2>
 						<dl class="flex flex-col divide-y divide-border-subtle">

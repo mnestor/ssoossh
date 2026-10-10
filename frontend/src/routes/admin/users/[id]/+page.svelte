@@ -416,7 +416,7 @@
 					{#if block.values.length > 0}
 						<div class="mt-1 flex flex-wrap gap-2">
 							{#each block.values as acct (acct)}
-								<span class="rounded bg-surface-muted px-2 py-1 text-sm">{acct}</span>
+								<span class="rounded bg-surface-muted px-2 py-1 font-mono text-sm">{acct}</span>
 							{/each}
 						</div>
 					{:else if block.unconfigured}

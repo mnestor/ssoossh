@@ -299,9 +299,8 @@
 	.data-table thead th {
 		padding: 0.5rem 0.75rem;
 		text-align: left;
-		font-family: var(--font-mono);
-		font-size: var(--text-micro);
-		font-weight: var(--font-weight-medium);
+		font-size: var(--text-meta);
+		font-weight: var(--font-weight-semibold);
 		letter-spacing: var(--tracking-widest);
 		text-transform: uppercase;
 		white-space: nowrap;

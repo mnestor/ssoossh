@@ -33,7 +33,7 @@
 		aria-expanded={open}
 		title={collapsed ? label : undefined}
 		data-testid={testid}
-		class="flex min-h-target w-full items-center gap-2.5 rounded-md font-mono text-meta font-medium tracking-widest text-ink-muted uppercase transition hover:bg-surface-muted hover:text-ink"
+		class="flex min-h-target w-full items-center gap-2.5 rounded-md text-meta font-semibold tracking-widest text-ink-muted uppercase transition hover:bg-surface-muted hover:text-ink"
 		class:justify-center={collapsed}
 		class:px-2.5={!collapsed}
 	>
