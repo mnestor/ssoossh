@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { CertificateOptions, RequestDetail } from '$lib/api/types';
+import type { CertificateOptions, RequestDetail } from '#lib/api/types.js';
 import ApprovalView from './ApprovalView.svelte';
 
 /** options builds a CertificateOptions with everything empty by default. */

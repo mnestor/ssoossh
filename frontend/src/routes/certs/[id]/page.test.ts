@@ -1,8 +1,8 @@
 import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
-import type { CertificateResponse } from '$lib/api/types';
-import { formatDateTime, formatDateTimeRange } from '$lib/format';
+import type { CertificateResponse } from '#lib/api/types.js';
+import { formatDateTime, formatDateTimeRange } from '#lib/format.js';
 import Page from './+page.svelte';
 
 function mockFetch(response: object, status = 200) {

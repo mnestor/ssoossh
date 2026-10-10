@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { PageMeta } from '$lib/api/types';
+import type { PageMeta } from '#lib/api/types.js';
 import Pager from './Pager.svelte';
 
 /** meta builds a page envelope, overriding only what a case cares about. */

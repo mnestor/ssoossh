@@ -3,8 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import RailUserMenu from './RailUserMenu.svelte';
-import { session } from '$lib/session.svelte';
-import { resetFakePage } from '$lib/testing/page.svelte';
+import { session } from '#lib/session.svelte.js';
+import { resetFakePage } from '#lib/testing/page.svelte.js';
 
 // Test methodology: render the drop-up on its own with the session singleton
 // and the page URL driven by the fake. What is pinned here is the disclosure
@@ -14,7 +14,7 @@ import { resetFakePage } from '$lib/testing/page.svelte';
 // trigger.
 
 vi.mock('$app/state', async () => {
-	const { fakePage } = await import('$lib/testing/page.svelte');
+	const { fakePage } = await import('#lib/testing/page.svelte.js');
 	return { page: fakePage };
 });
 

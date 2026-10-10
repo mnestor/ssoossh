@@ -14,13 +14,13 @@ const { pageState, redirectIfUnauthenticated } = vi.hoisted(() => ({
 }));
 
 vi.mock('$app/state', () => ({ page: pageState }));
-vi.mock('$lib/auth', async () => {
-	const actual = await vi.importActual<typeof import('$lib/auth')>('$lib/auth');
+vi.mock('#lib/auth.js', async () => {
+	const actual = await vi.importActual<typeof import('#lib/auth.js')>('#lib/auth.js');
 	return { ...actual, redirectIfUnauthenticated };
 });
 
-import type { CurrentUser } from '$lib/api/types';
-import { session } from '$lib/session.svelte';
+import type { CurrentUser } from '#lib/api/types.js';
+import { session } from '#lib/session.svelte.js';
 
 import Page from './+page.svelte';
 

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { setEnrollmentNotificationEmail } from '$lib/api/endpoints';
-	import type { AdminEnrollmentDetail } from '$lib/api/endpoints';
-	import { errorMessage } from '$lib/auth';
+	import { setEnrollmentNotificationEmail } from '#lib/api/endpoints.js';
+	import type { AdminEnrollmentDetail } from '#lib/api/endpoints.js';
+	import { errorMessage } from '#lib/auth.js';
 	import AccountHoldersPanel from './AccountHoldersPanel.svelte';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';

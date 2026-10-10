@@ -14,8 +14,8 @@ const { goto, redirectIfUnauthenticated } = vi.hoisted(() => ({
 }));
 
 vi.mock('$app/navigation', () => ({ goto }));
-vi.mock('$lib/auth', async () => {
-	const actual = await vi.importActual<typeof import('$lib/auth')>('$lib/auth');
+vi.mock('#lib/auth.js', async () => {
+	const actual = await vi.importActual<typeof import('#lib/auth.js')>('#lib/auth.js');
 	return { ...actual, redirectIfUnauthenticated };
 });
 

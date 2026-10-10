@@ -2,9 +2,9 @@
  * A reactive stand-in for `$app/state`'s `page`, for tests that drive
  * shallow routing.
  *
- * The important detail is what `pushState` here does NOT do: SvelteKit's
- * real `pushState` updates the address bar and `page.state`, but never
- * reassigns `page.url`. A fake that updated the URL would let a page read
+ * The important detail is what a shallow `goto` here does NOT do:
+ * SvelteKit's real `goto(url, { shallow: true, state })` updates the
+ * address bar and `page.state`, but never reassigns `page.url`. A fake that updated the URL would let a page read
  * its shallow-routing data out of the search parameters and pass, then fail
  * in a browser. This one is deliberately as unhelpful as the real thing.
  */
@@ -28,7 +28,17 @@ export function resetFakePage(href: string): void {
 	fakePage.state = {};
 }
 
-/** fakePushState mirrors SvelteKit's shallow routing: state changes, URL does not. */
-export function fakePushState(_url: string | URL, state: App.PageState): void {
-	fakePage.state = state;
+/**
+ * fakeGoto mirrors SvelteKit's shallow routing: state changes, URL does not.
+ * A full navigation is not faked; it rejects so a test that reaches one
+ * fails instead of passing on a page that never moved.
+ */
+export async function fakeGoto(
+	_url: string | URL,
+	opts?: { shallow?: boolean; state?: App.PageState }
+): Promise<void> {
+	if (!opts?.shallow) {
+		throw new Error('fakeGoto: only shallow navigation is faked');
+	}
+	fakePage.state = opts.state ?? {};
 }

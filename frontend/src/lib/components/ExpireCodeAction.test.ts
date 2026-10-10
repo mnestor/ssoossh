@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { ApiError } from '$lib/api/client';
+import { ApiError } from '#lib/api/client.js';
 import ExpireCodeAction from './ExpireCodeAction.svelte';
 
 // Test methodology: render the control with a stub expiry and drive it the

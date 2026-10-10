@@ -40,16 +40,8 @@ updates:
     # its current major until typescript-eslint supports >=7.1
     # (https://github.com/typescript-eslint/typescript-eslint/issues/10940),
     # then drop this ignore.
-    #
-    # SvelteKit 3 drops svelte.config.js (config_file_unsupported), which
-    # failed every frontend job in #85. Hold kit and adapter-static at their
-    # current majors until the migration in #88 lands, then drop both.
     ignore:
       - dependency-name: "typescript"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@sveltejs/kit"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@sveltejs/adapter-static"
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"

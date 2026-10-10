@@ -6,7 +6,7 @@ import type {
 	AccountHolder,
 	EnrollmentRetrievalsResponse,
 	ServiceEnrollment
-} from '$lib/api/types';
+} from '#lib/api/types.js';
 import ServiceCodeDetail from './ServiceCodeDetail.svelte';
 
 const now = new Date('2026-08-22T12:00:00Z');

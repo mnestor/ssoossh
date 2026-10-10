@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$app/environment', () => ({ browser: true }));
 
-import { theme } from '$lib/theme.svelte';
+import { theme } from '#lib/theme.svelte.js';
 import ThemeToggle from './ThemeToggle.svelte';
 
 beforeEach(() => {

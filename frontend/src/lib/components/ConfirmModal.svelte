@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { scale } from 'svelte/transition';
-	import { easeEnter, easeExit, enterMs, exitMs } from '$lib/motion';
+	import { easeEnter, easeExit, enterMs, exitMs } from '#lib/motion.js';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';
 

@@ -1,29 +1,29 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import { getCertificateDetail } from '$lib/api/endpoints';
-	import type { CertificateResponse } from '$lib/api/types';
-	import { ApiError } from '$lib/api/client';
-	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
-	import Alert from '$lib/components/Alert.svelte';
-	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
-	import CopyableId from '$lib/components/CopyableId.svelte';
-	import DetailRow from '$lib/components/DetailRow.svelte';
-	import Icon from '$lib/components/Icon.svelte';
-	import MonoChip from '$lib/components/MonoChip.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageSection from '$lib/components/PageSection.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
-	import SectionLabel from '$lib/components/SectionLabel.svelte';
-	import TypeChip from '$lib/components/TypeChip.svelte';
+	import { getCertificateDetail } from '#lib/api/endpoints.js';
+	import type { CertificateResponse } from '#lib/api/types.js';
+	import { ApiError } from '#lib/api/client.js';
+	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import Alert from '#lib/components/Alert.svelte';
+	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
+	import CopyableId from '#lib/components/CopyableId.svelte';
+	import DetailRow from '#lib/components/DetailRow.svelte';
+	import Icon from '#lib/components/Icon.svelte';
+	import MonoChip from '#lib/components/MonoChip.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageSection from '#lib/components/PageSection.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
+	import SectionLabel from '#lib/components/SectionLabel.svelte';
+	import TypeChip from '#lib/components/TypeChip.svelte';
 	import {
 		formatDateTime,
 		formatDateTimeRange,
 		formatGoDuration,
 		isExpired,
 		remainingLabel
-	} from '$lib/format';
-	import { parsePolicyExplanation } from '$lib/policyExplanation';
+	} from '#lib/format.js';
+	import { parsePolicyExplanation } from '#lib/policyExplanation.js';
 
 	const id = $derived(page.params.id ?? '');
 
@@ -181,6 +181,7 @@
 			? `${cert.reported_username}@${cert.reported_hostname}`
 			: (cert?.reported_username ?? cert?.reported_hostname ?? '')
 	);
+
 	const reportedRows = $derived(
 		(
 			[
@@ -501,7 +502,7 @@
 						{#if cert.enrollment_id}
 							<DetailRow label="Service code">
 								<a
-									href={resolve(`/service-codes/${cert.enrollment_id}`)}
+									href={resolve(`service-codes/${cert.enrollment_id}`)}
 									class="inline-flex items-center gap-1.5 text-accent underline-offset-2 hover:underline"
 								>
 									View the code this came from

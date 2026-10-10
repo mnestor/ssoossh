@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { runDiagnostics } from '$lib/api/endpoints';
-	import type { DiagnosticCheckResult, DiagnosticsResponse } from '$lib/api/types';
-	import { errorMessage } from '$lib/auth';
-	import Alert from '$lib/components/Alert.svelte';
-	import Button from '$lib/components/Button.svelte';
-	import MonoChip from '$lib/components/MonoChip.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
-	import SectionLabel from '$lib/components/SectionLabel.svelte';
-	import { session } from '$lib/session.svelte';
+	import { runDiagnostics } from '#lib/api/endpoints.js';
+	import type { DiagnosticCheckResult, DiagnosticsResponse } from '#lib/api/types.js';
+	import { errorMessage } from '#lib/auth.js';
+	import Alert from '#lib/components/Alert.svelte';
+	import Button from '#lib/components/Button.svelte';
+	import MonoChip from '#lib/components/MonoChip.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
+	import SectionLabel from '#lib/components/SectionLabel.svelte';
+	import { session } from '#lib/session.svelte.js';
 
 	const isAdmin = $derived(session.user?.is_admin ?? false);
 

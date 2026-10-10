@@ -2,8 +2,8 @@ import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { LDAPProbeResponse, LDAPStatusResponse, LDAPSyncRunResponse } from '$lib/api/types';
-import { session } from '$lib/session.svelte';
+import type { LDAPProbeResponse, LDAPStatusResponse, LDAPSyncRunResponse } from '#lib/api/types.js';
+import { session } from '#lib/session.svelte.js';
 import Page from './+page.svelte';
 
 /** enabledStatus is a directory that is configured and syncing. */

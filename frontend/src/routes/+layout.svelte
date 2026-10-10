@@ -1,23 +1,23 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { fade, fly } from 'svelte/transition';
-	import { easeEnter, easeExit, enterMs, exitMs } from '$lib/motion';
+	import { easeEnter, easeExit, enterMs, exitMs } from '#lib/motion.js';
 	import { page } from '$app/state';
 	import '../app.css';
-	import { logout } from '$lib/api/endpoints';
-	import { errorMessage, goToLogin } from '$lib/auth';
-	import { loadBranding, getBranding } from '$lib/branding.svelte';
-	import AppRail from '$lib/components/AppRail.svelte';
-	import BrandMark from '$lib/components/BrandMark.svelte';
-	import Button from '$lib/components/Button.svelte';
-	import Footer from '$lib/components/Footer.svelte';
-	import Icon from '$lib/components/Icon.svelte';
-	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
-	import { isFocusRoute } from '$lib/nav';
-	import { rail } from '$lib/rail.svelte';
-	import { session } from '$lib/session.svelte';
-	import { theme } from '$lib/theme.svelte';
-	import { loadVersion, getVersion } from '$lib/version.svelte';
+	import { logout } from '#lib/api/endpoints.js';
+	import { errorMessage, goToLogin } from '#lib/auth.js';
+	import { loadBranding, getBranding } from '#lib/branding.svelte.js';
+	import AppRail from '#lib/components/AppRail.svelte';
+	import BrandMark from '#lib/components/BrandMark.svelte';
+	import Button from '#lib/components/Button.svelte';
+	import Footer from '#lib/components/Footer.svelte';
+	import Icon from '#lib/components/Icon.svelte';
+	import ThemeToggle from '#lib/components/ThemeToggle.svelte';
+	import { isFocusRoute } from '#lib/nav.js';
+	import { rail } from '#lib/rail.svelte.js';
+	import { session } from '#lib/session.svelte.js';
+	import { theme } from '#lib/theme.svelte.js';
+	import { loadVersion, getVersion } from '#lib/version.svelte.js';
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();
@@ -58,7 +58,7 @@
 
 	// The login page carries its own sign-in action, so the header's copy of
 	// it would be a second button pointing at the screen already on show.
-	const onLoginPage = $derived(page.url.pathname === resolve('/login'));
+	const onLoginPage = $derived(page.url.pathname === resolve('login'));
 
 	/**
 	 * Whether this screen gets the rail.
@@ -174,6 +174,7 @@
 		<!-- The rail proper, above `lg`. Sticky rather than scrolling with
 		     the page: it is the app's chrome now, and chrome that scrolls
 		     away leaves a long admin table with no way out of it. -->
+
 		<div class="sticky top-0 h-screen shrink-0 max-lg:hidden">
 			<AppRail orgName={branding.org_name} {signingOut} onsignout={signOut} />
 		</div>

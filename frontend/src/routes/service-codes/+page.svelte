@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { pushState } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { getCurrentUser, listServiceEnrollments } from '$lib/api/endpoints';
-	import type { ServiceEnrollment } from '$lib/api/types';
-	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
-	import Alert from '$lib/components/Alert.svelte';
-	import EmptyState from '$lib/components/EmptyState.svelte';
-	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
-	import SectionLabel from '$lib/components/SectionLabel.svelte';
-	import ServiceAccountRow from '$lib/components/ServiceAccountRow.svelte';
-	import ServiceCodeRow from '$lib/components/ServiceCodeRow.svelte';
-	import { isExpired } from '$lib/format';
+	import { getCurrentUser, listServiceEnrollments } from '#lib/api/endpoints.js';
+	import type { ServiceEnrollment } from '#lib/api/types.js';
+	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import Alert from '#lib/components/Alert.svelte';
+	import EmptyState from '#lib/components/EmptyState.svelte';
+	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
+	import SectionLabel from '#lib/components/SectionLabel.svelte';
+	import ServiceAccountRow from '#lib/components/ServiceAccountRow.svelte';
+	import ServiceCodeRow from '#lib/components/ServiceCodeRow.svelte';
+	import { isExpired } from '#lib/format.js';
 
 	// The service codes for every account this identity holds: the accounts,
 	// then one account's codes. One code is a page of its own,
@@ -113,14 +113,17 @@
 	// back to the search parameter — and on a page reached by a pasted link,
 	// that would reopen what was just closed.
 	function openAccountView(account: string | null) {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		if (account) {
 			url.searchParams.set('account', account);
 		} else {
 			url.searchParams.delete('account');
 		}
 		// eslint-disable-next-line svelte/no-navigation-without-resolve
-		pushState(url, { ...page.state, accountName: account });
+		goto(url, {
+			shallow: true,
+			state: { ...page.state, accountName: account }
+		});
 	}
 
 	const closeAccountView = () => openAccountView(null);
@@ -202,7 +205,7 @@
 							{now}
 							testid="service-code-row"
 							showAccount={false}
-							href={resolve(`/service-codes/${enrollment.id}`)}
+							href={resolve(`service-codes/${enrollment.id}`)}
 						/>
 					{/each}
 				</div>
@@ -217,7 +220,7 @@
 							{now}
 							testid="service-code-row"
 							showAccount={false}
-							href={resolve(`/service-codes/${enrollment.id}`)}
+							href={resolve(`service-codes/${enrollment.id}`)}
 						/>
 					{/each}
 				</div>

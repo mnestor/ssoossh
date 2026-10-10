@@ -2,16 +2,16 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { expireOwnEnrollment, listServiceEnrollments } from '$lib/api/endpoints';
-	import type { ServiceEnrollment } from '$lib/api/types';
-	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
-	import Alert from '$lib/components/Alert.svelte';
-	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
-	import ExpireCodeAction from '$lib/components/ExpireCodeAction.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
-	import ServiceCodeDetail from '$lib/components/ServiceCodeDetail.svelte';
-	import { isExpired } from '$lib/format';
+	import { expireOwnEnrollment, listServiceEnrollments } from '#lib/api/endpoints.js';
+	import type { ServiceEnrollment } from '#lib/api/types.js';
+	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import Alert from '#lib/components/Alert.svelte';
+	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
+	import ExpireCodeAction from '#lib/components/ExpireCodeAction.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
+	import ServiceCodeDetail from '#lib/components/ServiceCodeDetail.svelte';
+	import { isExpired } from '#lib/format.js';
 
 	// One service enrollment code, at its own address. This used to be a
 	// dialog over the list, which meant a code could not be linked to,
@@ -56,7 +56,7 @@
 	// and to the account list when there is not — a code that could not be
 	// resolved has no account to name.
 	const accountQuery = $derived(account ? `?account=${encodeURIComponent(account)}` : '');
-	const backHref = $derived(`${resolve('/service-codes')}${accountQuery}`);
+	const backHref = $derived(`${resolve('service-codes')}${accountQuery}`);
 	const backLabel = $derived(account ? `All codes for ${account}` : 'All service accounts');
 
 	$effect(() => {

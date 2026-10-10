@@ -3,9 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { createRawSnippet } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { rail } from '$lib/rail.svelte';
-import { session } from '$lib/session.svelte';
-import { resetFakePage } from '$lib/testing/page.svelte';
+import { rail } from '#lib/rail.svelte.js';
+import { session } from '#lib/session.svelte.js';
+import { resetFakePage } from '#lib/testing/page.svelte.js';
 import Layout from './+layout.svelte';
 
 // Test methodology: render the root layout around a marker child with fetch
@@ -19,7 +19,7 @@ import Layout from './+layout.svelte';
 // because the layout owns the call and the rail only raises the request.
 
 vi.mock('$app/state', async () => {
-	const { fakePage } = await import('$lib/testing/page.svelte');
+	const { fakePage } = await import('#lib/testing/page.svelte.js');
 	return { page: fakePage };
 });
 

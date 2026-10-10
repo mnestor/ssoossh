@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { session } from '$lib/session.svelte';
-	import { goToLogin } from '$lib/auth';
-	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
+	import { session } from '#lib/session.svelte.js';
+	import { goToLogin } from '#lib/auth.js';
+	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import type { Snippet } from 'svelte';
 
 	let { children }: { children: Snippet } = $props();

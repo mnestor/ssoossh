@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { NotificationPreferences } from '$lib/api/types';
+import type { NotificationPreferences } from '#lib/api/types.js';
 import Page from './+page.svelte';
 
 /** alicePreferences is a fully populated payload, overridable per test. */

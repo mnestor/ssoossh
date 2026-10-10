@@ -1,5 +1,5 @@
-import { ApiError } from '$lib/api/client';
-import type { CertificateOptions, RequestDetail } from '$lib/api/types';
+import { ApiError } from '#lib/api/client.js';
+import type { CertificateOptions, RequestDetail } from '#lib/api/types.js';
 
 /**
  * How one certificate option fared against server policy.

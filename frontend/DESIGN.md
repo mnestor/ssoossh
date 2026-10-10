@@ -52,10 +52,10 @@ no way to read one from the other:
 
 - `--duration-enter` / `--duration-exit` in `app.css`, for what CSS animates
   (the modal backdrop).
-- `ENTER_MS` / `EXIT_MS` in `$lib/motion`, for what a Svelte transition
+- `ENTER_MS` / `EXIT_MS` in `#lib/motion.js`, for what a Svelte transition
   animates (the navigation drawer, the identity popover, both dialogs).
 
-`$lib/motion` also exports `enterMs()` and `exitMs()`, which return **zero**
+`#lib/motion` also exports `enterMs()` and `exitMs()`, which return **zero**
 when the reader has asked their system for reduced motion. Use those rather
 than the constants: a Svelte transition runs from JavaScript, so the
 `prefers-reduced-motion` block in `app.css` cannot reach it.
@@ -624,7 +624,7 @@ than a part of it.
 `/logs/me` and `/admin/certificates` show the same rows, and they had grown
 their own answers to the same questions: different filter labels, different
 icons, different orders, the admin filters on two lines, and a search box on
-one page and not the other. `$lib/filters` states the vocabulary once —
+one page and not the other. `#lib/filters.js` states the vocabulary once —
 `typeFilters`, `statusFilters`, `outcomeFilters` — and both pages open the
 same way: search, then the filter groups on one line, then the rows, then
 the pager.
@@ -663,7 +663,7 @@ approval. Above `sm` both come back together — the group and the mark, since
 that is the width at which the list mixes the two. So the selection is pinned rather than merely hidden — a reader who
 chose "Denied" on a wide window and then narrowed it is moved back to
 approvals, not left looking at refusals no longer labelled as such.
-`$lib/viewport` states that width once (`NARROW_QUERY`, watched by
+`#lib/viewport` states that width once (`NARROW_QUERY`, watched by
 `watchNarrow`), so a page that hides a control at one width and pins its
 value at another cannot end up describing two different layouts.
 
@@ -723,7 +723,7 @@ none of that.
 
 - **ConfirmModal**: The one shape a confirmation takes — a native `<dialog>` holding the consequence, a required reason, Cancel and the confirming button. Callers supply the wording and the endpoint and nothing else. See Destructive actions.
 - **ExpireCodeAction**: The retire-this-code button and its `ConfirmModal`, for a page heading's `action` slot. One component for both sides of a code — an admin on `/admin/service-codes/<id>` and a holder on `/service-codes/<id>` — because the two differ only in which endpoint they call, and the reason field, the confirmation and the error wording are what is worth keeping identical.
-- **Lifetime policy rows** (certificate detail page): the policy engine records its ceiling and result by calling `String()` on a Go `time.Duration`, so they arrive as `8h0m0s`. `formatGoDuration` in `$lib/format` parses that and hands it to `formatDuration`, so a policy ceiling reads the way every other lifetime on the site does — `8h`, `1h 30m`, `7d`. Parsed on the client rather than fixed on the wire because the explanation document is stored on the decision: every certificate already issued carries the old spelling. A value that does not parse is passed through as it arrived, and so is anything under a second, which `formatDuration` would round to `0s`. The rows lost their `mono` for it: they are a length of time now, not a token to copy.
+- **Lifetime policy rows** (certificate detail page): the policy engine records its ceiling and result by calling `String()` on a Go `time.Duration`, so they arrive as `8h0m0s`. `formatGoDuration` in `#lib/format` parses that and hands it to `formatDuration`, so a policy ceiling reads the way every other lifetime on the site does — `8h`, `1h 30m`, `7d`. Parsed on the client rather than fixed on the wire because the explanation document is stored on the decision: every certificate already issued carries the old spelling. A value that does not parse is passed through as it arrived, and so is anything under a second, which `formatDuration` would round to `0s`. The rows lost their `mono` for it: they are a length of time now, not a token to copy.
 
 - **StatusBadge**: Maps request/certificate statuses (pending, approved, denied, etc.) to colored pills with status-appropriate icons. Rendered capitalised — the wire value is lowercase, the label is not.
 - **DetailRow**: A label–value pair for metadata lists, with optional icon and monospace rendering. A 140px label column at 13px, stacking on narrow viewports.
@@ -1071,7 +1071,7 @@ promise six things while the app broke four of them, because nothing checked.
   its life announcing nothing. Put the words in the document with `sr-only`.
 - **Reduced motion**: `prefers-reduced-motion: reduce` is honoured in both
   engines — a CSS block in `app.css` for what CSS animates, and `enterMs()` /
-  `exitMs()` in `$lib/motion` for the Svelte transitions CSS cannot reach.
+  `exitMs()` in `#lib/motion.js` for the Svelte transitions CSS cannot reach.
   See Motion.
 - **Colour alone**: state is never colour alone. A two-state control is
   filled when pressed and carries `aria-pressed` — see `FilterChip`, which

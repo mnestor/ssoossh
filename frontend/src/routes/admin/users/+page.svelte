@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import Alert from '$lib/components/Alert.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import EmptyState from '$lib/components/EmptyState.svelte';
-	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
-	import SearchInput from '$lib/components/SearchInput.svelte';
-	import ListStatus from '$lib/components/ListStatus.svelte';
-	import Pager from '$lib/components/Pager.svelte';
-	import { getAdminUsers } from '$lib/api/endpoints';
-	import type { AdminUsersListResponse } from '$lib/api/types';
-	import { describeList } from '$lib/listStatus';
+	import Alert from '#lib/components/Alert.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import EmptyState from '#lib/components/EmptyState.svelte';
+	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
+	import SearchInput from '#lib/components/SearchInput.svelte';
+	import ListStatus from '#lib/components/ListStatus.svelte';
+	import Pager from '#lib/components/Pager.svelte';
+	import { getAdminUsers } from '#lib/api/endpoints.js';
+	import type { AdminUsersListResponse } from '#lib/api/types.js';
+	import { describeList } from '#lib/listStatus.js';
 
 	/** The account-state filter, matching the server's `status` parameter. */
 	type StatusFilter = 'all' | 'active' | 'disabled';
@@ -72,7 +72,7 @@
 	}
 
 	// What the list just became, for a reader who cannot see the rows
-	// change under a search or a state filter. See $lib/listStatus.
+	// change under a search or a state filter. See #lib/listStatus.
 	// `$derived.by` rather than `$derived`: at this point in the module the
 	// only assignment TypeScript has seen to `users` is the `null` it was
 	// declared with, so it narrows the whole union away and `users?.meta`
@@ -173,13 +173,13 @@
 							     and emails are what actually need the space. -->
 							<td>
 								<a
-									href={resolve(`/admin/users/${user.id}`)}
+									href={resolve(`admin/users/${user.id}`)}
 									data-testid="user-link"
 									class="text-accent hover:underline">{user.name || '—'}</a
 								>
 							</td>
 							<td class="font-mono">
-								<a href={resolve(`/admin/users/${user.id}`)} class="text-accent hover:underline"
+								<a href={resolve(`admin/users/${user.id}`)} class="text-accent hover:underline"
 									>{user.username}</a
 								>
 							</td>

@@ -2,21 +2,21 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { getAdminUser, disableUser, enableUser, getUserAudit } from '$lib/api/endpoints';
-	import Alert from '$lib/components/Alert.svelte';
-	import AuditTimeline from '$lib/components/AuditTimeline.svelte';
-	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
-	import Button from '$lib/components/Button.svelte';
-	import ConfirmModal from '$lib/components/ConfirmModal.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageSection from '$lib/components/PageSection.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
+	import { getAdminUser, disableUser, enableUser, getUserAudit } from '#lib/api/endpoints.js';
+	import Alert from '#lib/components/Alert.svelte';
+	import AuditTimeline from '#lib/components/AuditTimeline.svelte';
+	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
+	import Button from '#lib/components/Button.svelte';
+	import ConfirmModal from '#lib/components/ConfirmModal.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageSection from '#lib/components/PageSection.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
 	import type {
 		AdminUserDetail,
 		AdminUserOverride,
 		AuditEvent,
 		DisableUserConsequences
-	} from '$lib/api/types';
+	} from '#lib/api/types.js';
 
 	let user: AdminUserDetail | null = $state(null);
 	let error: string | null = $state(null);
@@ -255,7 +255,11 @@
 		     and that is the way back to it. -->
 		<PageHeading
 			title={account.name || account.username}
-			back={{ href: resolve('/admin/users'), label: 'All users', testid: 'admin-user-back' }}
+			back={{
+				href: resolve('admin/users'),
+				label: 'All users',
+				testid: 'admin-user-back'
+			}}
 		>
 			<!-- The address alone. The username used to lead this line
 			     whenever the title was a display name, which restated the
@@ -270,10 +274,8 @@
 							variant="primary"
 							testid="enable-user"
 							disabled={actionBusy}
-							onclick={() => (showEnableConfirm = true)}
+							onclick={() => (showEnableConfirm = true)}>Re-enable</Button
 						>
-							Re-enable
-						</Button>
 					{:else}
 						<Button
 							variant="danger"
@@ -447,6 +449,7 @@
 									class="flex-shrink-0 rounded bg-surface px-2 py-1 font-mono text-sm text-ink-muted"
 									>{override.field}</span
 								>
+
 								<span class="flex-grow rounded bg-surface px-2 py-1 text-sm">
 									{override.effective.join(', ') || '—'}
 									<span class="text-xs text-accent">— from LDAP only, no OIDC claim</span>

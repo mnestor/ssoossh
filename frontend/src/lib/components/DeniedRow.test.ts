@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 
-import type { DeniedRequest } from '$lib/api/types';
+import type { DeniedRequest } from '#lib/api/types.js';
 import DeniedRow from './DeniedRow.svelte';
 
 // Test methodology: render the row against a fixed clock. What matters is

@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 
-import { formatDateTime } from '$lib/format';
+import { formatDateTime } from '#lib/format.js';
 import AuditTimeline from './AuditTimeline.svelte';
-import type { AuditEvent } from '$lib/api/types';
+import type { AuditEvent } from '#lib/api/types.js';
 
 /** event builds one timeline row with sensible defaults. */
 function event(overrides: Partial<AuditEvent> = {}): AuditEvent {

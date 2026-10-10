@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
-import type { CertificateListResponse } from '$lib/api/types';
+import type { CertificateListResponse } from '#lib/api/types.js';
 import Page from './+page.svelte';
 
 /** mockFetch stubs the global fetch with a response body and status. */

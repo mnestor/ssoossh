@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { DeniedRequest } from '$lib/api/types';
-	import { relativeTime } from '$lib/format';
+	import type { DeniedRequest } from '#lib/api/types.js';
+	import { relativeTime } from '#lib/format.js';
 	import Icon from './Icon.svelte';
 	import TypeBadge from './TypeBadge.svelte';
 

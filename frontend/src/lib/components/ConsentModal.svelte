@@ -2,7 +2,7 @@
 	import { scale } from 'svelte/transition';
 
 	import Button from './Button.svelte';
-	import { easeEnter, easeExit, enterMs, exitMs } from '$lib/motion';
+	import { easeEnter, easeExit, enterMs, exitMs } from '#lib/motion.js';
 
 	interface Props {
 		notice: string;

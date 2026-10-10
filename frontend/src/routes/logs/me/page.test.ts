@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
-import type { CertificateListResponse, DeniedRequest } from '$lib/api/types';
+import type { CertificateListResponse, DeniedRequest } from '#lib/api/types.js';
 import Page from './+page.svelte';
 
 /**

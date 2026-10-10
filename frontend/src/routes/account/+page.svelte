@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { getCurrentUser } from '$lib/api/endpoints';
-	import type { CurrentUser } from '$lib/api/types';
-	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
-	import Alert from '$lib/components/Alert.svelte';
-	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
-	import DetailRow from '$lib/components/DetailRow.svelte';
-	import MonoChip from '$lib/components/MonoChip.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageSection from '$lib/components/PageSection.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
+	import { getCurrentUser } from '#lib/api/endpoints.js';
+	import type { CurrentUser } from '#lib/api/types.js';
+	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import Alert from '#lib/components/Alert.svelte';
+	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
+	import DetailRow from '#lib/components/DetailRow.svelte';
+	import MonoChip from '#lib/components/MonoChip.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageSection from '#lib/components/PageSection.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
 
 	// Fetched here rather than read from the app-wide session store: this
 	// page's whole content is the identity, so it should reflect what the

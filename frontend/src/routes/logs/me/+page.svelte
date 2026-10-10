@@ -1,21 +1,21 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { listCertificates, listDeniedRequests } from '$lib/api/endpoints';
-	import type { CertificateRecord, DeniedRequest } from '$lib/api/types';
-	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
-	import Alert from '$lib/components/Alert.svelte';
-	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
-	import Button from '$lib/components/Button.svelte';
-	import CertRow from '$lib/components/CertRow.svelte';
-	import DeniedRow from '$lib/components/DeniedRow.svelte';
-	import FilterGroup from '$lib/components/FilterGroup.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
-	import ListStatus from '$lib/components/ListStatus.svelte';
-	import SearchInput from '$lib/components/SearchInput.svelte';
-	import { outcomeFilters, statusFilters, typeFilters } from '$lib/filters';
-	import { describeList } from '$lib/listStatus';
-	import { watchNarrow } from '$lib/viewport';
+	import { listCertificates, listDeniedRequests } from '#lib/api/endpoints.js';
+	import type { CertificateRecord, DeniedRequest } from '#lib/api/types.js';
+	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import Alert from '#lib/components/Alert.svelte';
+	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
+	import Button from '#lib/components/Button.svelte';
+	import CertRow from '#lib/components/CertRow.svelte';
+	import DeniedRow from '#lib/components/DeniedRow.svelte';
+	import FilterGroup from '#lib/components/FilterGroup.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
+	import ListStatus from '#lib/components/ListStatus.svelte';
+	import SearchInput from '#lib/components/SearchInput.svelte';
+	import { outcomeFilters, statusFilters, typeFilters } from '#lib/filters.js';
+	import { describeList } from '#lib/listStatus.js';
+	import { watchNarrow } from '#lib/viewport.js';
 
 	// Cursor-paginated decision history: what was issued, and what was
 	// refused. The type filter and client-side pagination apply only to
@@ -39,7 +39,7 @@
 	let hasLoaded = $state(false);
 
 	// Filter state. The vocabulary is shared with /admin/certificates —
-	// same labels, same icons, same order; see $lib/filters. Only the
+	// same labels, same icons, same order; see #lib/filters. Only the
 	// outcome group is this page's alone, because the admin list reads the
 	// certificates table and a denial never writes a row there — which is
 	// also why this is the only list whose rows carry an outcome mark at
@@ -152,7 +152,7 @@
 	// change under a filter chip. Counts what has been loaded rather than
 	// what exists: this list pages client-side over a growing window, so
 	// "loaded" is the honest number and the Load more button below says the
-	// rest. See $lib/listStatus.
+	// rest. See #lib/listStatus.
 	const listStatus = $derived(
 		describeList({
 			noun: 'certificate',
@@ -169,7 +169,7 @@
 	// list. `from` is what the back chip there reads: this list, not the
 	// reader's own history, is where they came from.
 	function certHref(certId: string): string {
-		return `${resolve(`/certs/${certId}`)}?from=history`;
+		return `${resolve(`certs/${certId}`)}?from=history`;
 	}
 
 	// True while either source has more to give. One button loads both, so a
@@ -308,7 +308,7 @@
 		<LoadingBlock shape="rows" count={4} testid="history-loading" />
 	{:else}
 		<!-- Search, then the filter groups on one line. The admin certificate
-		     list opens exactly the same way; see $lib/filters.
+		     list opens exactly the same way; see #lib/filters.
 
 		     Always rendered once the page has loaded, never inside the
 		     empty-state branch: the page opens on approvals, so somebody
@@ -394,12 +394,14 @@
 
 			{#if totalPages > 1 || hasMore}
 				<div class="flex items-center justify-between gap-3 border-t border-border-subtle pt-2">
-					<Button variant="ghost" disabled={currentPage === 1} onclick={() => currentPage--}>
-						Previous
-					</Button>
-					<span class="text-xs text-ink-muted">
-						Page {currentPage} of {totalPages} ({filtered.length} loaded)
-					</span>
+					<Button variant="ghost" disabled={currentPage === 1} onclick={() => currentPage--}
+						>Previous</Button
+					>
+
+					<span class="text-xs text-ink-muted"
+						>Page {currentPage} of {totalPages} ({filtered.length} loaded)</span
+					>
+
 					<Button
 						variant="ghost"
 						disabled={currentPage === totalPages}

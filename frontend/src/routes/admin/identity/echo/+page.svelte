@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { startIdentityEcho } from '$lib/api/endpoints';
-	import type { IdentityEchoPayload } from '$lib/api/types';
-	import { errorMessage } from '$lib/auth';
-	import Alert from '$lib/components/Alert.svelte';
-	import Button from '$lib/components/Button.svelte';
-	import MonoChip from '$lib/components/MonoChip.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageSection from '$lib/components/PageSection.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
-	import SectionLabel from '$lib/components/SectionLabel.svelte';
+	import { startIdentityEcho } from '#lib/api/endpoints.js';
+	import type { IdentityEchoPayload } from '#lib/api/types.js';
+	import { errorMessage } from '#lib/auth.js';
+	import Alert from '#lib/components/Alert.svelte';
+	import Button from '#lib/components/Button.svelte';
+	import MonoChip from '#lib/components/MonoChip.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageSection from '#lib/components/PageSection.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
+	import SectionLabel from '#lib/components/SectionLabel.svelte';
 
 	let payload = $state<IdentityEchoPayload | null>(null);
 	let readError = $state<string | null>(null);

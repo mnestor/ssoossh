@@ -1,4 +1,4 @@
-import { browser } from '$app/environment';
+import { browser } from '$app/env';
 
 /**
  * What the viewer asked for. `system` is the default and defers to the OS,

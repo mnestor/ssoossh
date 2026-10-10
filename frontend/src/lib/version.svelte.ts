@@ -1,4 +1,4 @@
-import type { VersionResponse } from '$lib/api/generated/webtypes';
+import type { VersionResponse } from '#lib/api/generated/webtypes.js';
 
 let version = $state<VersionResponse | null>(null);
 

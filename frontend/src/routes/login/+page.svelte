@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { startLogin } from '$lib/auth';
-	import { getBranding } from '$lib/branding.svelte';
-	import BrandMark from '$lib/components/BrandMark.svelte';
-	import Button from '$lib/components/Button.svelte';
-	import ConsentModal from '$lib/components/ConsentModal.svelte';
-	import Icon from '$lib/components/Icon.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
-	import { isInternalPath } from '$lib/paths';
-	import { session } from '$lib/session.svelte';
+	import { startLogin } from '#lib/auth.js';
+	import { getBranding } from '#lib/branding.svelte.js';
+	import BrandMark from '#lib/components/BrandMark.svelte';
+	import Button from '#lib/components/Button.svelte';
+	import ConsentModal from '#lib/components/ConsentModal.svelte';
+	import Icon from '#lib/components/Icon.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
+	import { isInternalPath } from '#lib/paths.js';
+	import { session } from '#lib/session.svelte.js';
 
 	// Where to land after login. Carried in ?return_to= so a redirect here
 	// from /approve/<id> comes back to that approval page rather than

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { ApiError } from '$lib/api/client';
-	import { listRetrievals, setEnrollmentNotificationEmail } from '$lib/api/endpoints';
-	import type { EnrollmentRetrievalsResponse, ServiceEnrollment } from '$lib/api/types';
-	import { errorMessage } from '$lib/auth';
-	import { session } from '$lib/session.svelte';
+	import { ApiError } from '#lib/api/client.js';
+	import { listRetrievals, setEnrollmentNotificationEmail } from '#lib/api/endpoints.js';
+	import type { EnrollmentRetrievalsResponse, ServiceEnrollment } from '#lib/api/types.js';
+	import { errorMessage } from '#lib/auth.js';
+	import { session } from '#lib/session.svelte.js';
 	import AccountHoldersPanel from './AccountHoldersPanel.svelte';
 	import Alert from './Alert.svelte';
 	import Button from './Button.svelte';

@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { IdentityEchoPayload } from '$lib/api/types';
+import type { IdentityEchoPayload } from '#lib/api/types.js';
 import Page from './+page.svelte';
 
 /** echoPayload is one decoded ID token with a claim nothing reads. */

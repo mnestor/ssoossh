@@ -3,7 +3,12 @@ import { axe, toHaveNoViolations } from 'jest-axe';
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { CertificateRecord, DeniedRequest, PageMeta, ServiceEnrollment } from '$lib/api/types';
+import type {
+	CertificateRecord,
+	DeniedRequest,
+	PageMeta,
+	ServiceEnrollment
+} from '#lib/api/types.js';
 
 import AccountHoldersPanel from './AccountHoldersPanel.svelte';
 import Alert from './Alert.svelte';

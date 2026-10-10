@@ -2,8 +2,8 @@ import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest';
 
-import type { ServiceEnrollment } from '$lib/api/types';
-import { resetFakePage } from '$lib/testing/page.svelte';
+import type { ServiceEnrollment } from '#lib/api/types.js';
+import { resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
 
 // $app/state and $app/navigation are replaced with a reactive fake so the
@@ -11,12 +11,12 @@ import Page from './+page.svelte';
 // See src/lib/testing/page.svelte.ts for why the fake refuses to update
 // page.url.
 vi.mock('$app/state', async () => {
-	const { fakePage } = await import('$lib/testing/page.svelte');
+	const { fakePage } = await import('#lib/testing/page.svelte.js');
 	return { page: fakePage };
 });
 vi.mock('$app/navigation', async () => {
-	const { fakePushState } = await import('$lib/testing/page.svelte');
-	return { pushState: fakePushState };
+	const { fakeGoto } = await import('#lib/testing/page.svelte.js');
+	return { goto: fakeGoto };
 });
 
 /** Timestamps relative to now, so the page's clock-relative copy is stable

@@ -2,8 +2,8 @@ import { render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { session } from '$lib/session.svelte';
-import { resetFakePage } from '$lib/testing/page.svelte';
+import { session } from '#lib/session.svelte.js';
+import { resetFakePage } from '#lib/testing/page.svelte.js';
 import Layout from './+layout.svelte';
 
 // Test methodology: render the admin gate around a marker child with the
@@ -18,7 +18,7 @@ import Layout from './+layout.svelte';
 // admin sections in two places that can disagree.
 
 vi.mock('$app/state', async () => {
-	const { fakePage } = await import('$lib/testing/page.svelte');
+	const { fakePage } = await import('#lib/testing/page.svelte.js');
 	return { page: fakePage };
 });
 

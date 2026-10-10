@@ -1,6 +1,10 @@
+import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig, loadEnv } from 'vite';
+
+import packageJson from './package.json' with { type: 'json' };
 
 // Config is a function so it can call loadEnv. Vite loads .env files for
 // application code automatically, but not for this file — vite.config.ts is
@@ -11,13 +15,28 @@ import { defineConfig, loadEnv } from 'vite';
 // The empty prefix ('') loads every variable rather than only VITE_-prefixed
 // ones. That is safe because none of these reach the browser — they only
 // configure the dev server. Anything the client should see has to go through
-// SvelteKit's $env/static/public with a PUBLIC_ prefix.
+// SvelteKit's $app/env/public with a PUBLIC_ prefix.
 export default defineConfig(({ mode }) => {
 	const env = loadEnv(mode, process.cwd(), '');
 	const backendURL = env.DEVELOPMENT_BACKEND_URL || 'http://localhost:8080';
 
 	return {
-		plugins: [sveltekit(), tailwindcss()],
+		plugins: [
+			// SvelteKit 3 takes its config here; svelte.config.js is no longer read.
+			sveltekit({
+				preprocess: vitePreprocess(),
+
+				// Output straight into the Go module that embeds it
+				// (server/frontend/frontend_included.go's //go:embed all:dist/*).
+				// BUILD_OUTPUT_PATH overrides it for one-off builds.
+				adapter: adapter({
+					fallback: 'index.html',
+					pages: process.env.BUILD_OUTPUT_PATH ?? '../server/frontend/dist'
+				}),
+				version: { name: packageJson.version }
+			}),
+			tailwindcss()
+		],
 
 		build: {
 			// Never inline a font as a data: URI, whatever its size.

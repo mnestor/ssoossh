@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { getNotificationPreferences, updateNotificationPreferences } from '$lib/api/endpoints';
-	import type { NotificationPreferences } from '$lib/api/types';
-	import { errorMessage, redirectIfUnauthenticated } from '$lib/auth';
-	import Alert from '$lib/components/Alert.svelte';
-	import LoadingBlock from '$lib/components/LoadingBlock.svelte';
-	import Button from '$lib/components/Button.svelte';
-	import MonoChip from '$lib/components/MonoChip.svelte';
-	import PageHeading from '$lib/components/PageHeading.svelte';
-	import PageSection from '$lib/components/PageSection.svelte';
-	import PageShell from '$lib/components/PageShell.svelte';
+	import { getNotificationPreferences, updateNotificationPreferences } from '#lib/api/endpoints.js';
+	import type { NotificationPreferences } from '#lib/api/types.js';
+	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import Alert from '#lib/components/Alert.svelte';
+	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
+	import Button from '#lib/components/Button.svelte';
+	import MonoChip from '#lib/components/MonoChip.svelte';
+	import PageHeading from '#lib/components/PageHeading.svelte';
+	import PageSection from '#lib/components/PageSection.svelte';
+	import PageShell from '#lib/components/PageShell.svelte';
 
 	// The list of notifications is served, not hardcoded here: adding a
 	// notification kind is a server-side change (see server/notify), and this

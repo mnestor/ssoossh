@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { OptionDiffEntry } from '$lib/approval';
+	import type { OptionDiffEntry } from '#lib/approval.js';
 
 	interface Props {
 		entries: OptionDiffEntry[];

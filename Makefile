@@ -125,7 +125,7 @@ frontend: ## Build the web UI into server/frontend/dist
 FRONTEND_DIST := server/frontend/dist/index.html
 FRONTEND_SRC := $(shell find frontend/src frontend/static -type f 2>/dev/null) \
 	frontend/package.json frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml \
-	frontend/svelte.config.js frontend/vite.config.ts frontend/tsconfig.json
+	frontend/vite.config.ts frontend/tsconfig.json
 
 $(FRONTEND_DIST): $(FRONTEND_SRC)
 	$(MAKE) frontend
