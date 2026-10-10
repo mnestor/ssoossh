@@ -195,15 +195,15 @@ Base unit 4px, Tailwind's spacing scale.
 
 ### Rhythm
 
-| Where                                 | Value                                                                  | Why                                                   |
-| ------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------- |
-| Inside a control or chip              | `gap-1.5` to `gap-2`                                                   | Glyph and label read as one thing.                    |
-| Rows inside a panel                   | `gap-2` / `gap-3`, or `divide-y divide-border-subtle` with `py-2` rows | Compressed: a panel is one group.                     |
-| Rows inside a panel, simplified level | `gap-4`, facts at `text-base`                                          | Fewer facts, so each gets more room.                  |
-| A list of row panels                  | `gap-2`                                                                | Each row is one event among several.                  |
-| Section panel padding                 | `p-5`                                                                  | One value for every `PageSection`.                    |
-| Row panel padding                     | `px-5 py-3.5` **(assumed)**                                            | One value for every row component.                    |
-| Between panels                        | `gap-8`, set by `PageShell`                                            | Released: the contrast with the inside is the rhythm. |
+| Where                                 | Value                                                                  | Why                                                           |
+| ------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Inside a control or chip              | `gap-1.5` to `gap-2`                                                   | Glyph and label read as one thing.                            |
+| Rows inside a panel                   | `gap-2` / `gap-3`, or `divide-y divide-border-subtle` with `py-2` rows | Compressed: a panel is one group.                             |
+| Rows inside a panel, simplified level | `gap-4`, facts at `text-base`                                          | Fewer facts, so each gets more room.                          |
+| A list of row panels                  | `gap-2`                                                                | Each row is one event among several.                          |
+| Section panel padding                 | `p-5`                                                                  | One value for every `PageSection`.                            |
+| Row panel padding                     | `px-4 py-3` **(assumed)**                                              | One value for every row; the certificate rows already use it. |
+| Between panels                        | `gap-8`, set by `PageShell`                                            | Released: the contrast with the inside is the rhythm.         |
 
 ### Layout constants
 
@@ -506,7 +506,7 @@ text-trimmed`, `role="status"`), `info` (`info-circle`, `bg-surface` on the
 
 ### Rows and lists
 
-- **Row panel**: `rounded-lg bg-surface px-5 py-3.5`, no border, hover
+- **Row panel**: `rounded-lg bg-surface px-4 py-3`, no border, hover
   `bg-surface-muted`, stacked `gap-2`. A row is one thing among several.
 - **Rows are links**: every `CertRow` and `ServiceCodeRow` is an `<a>` with
   an href its list resolved, so middle-click, copy-link and Back all work.
@@ -1044,8 +1044,9 @@ Waiting on the product owner:
 - **Confirm the assumed decisions:** identity strips and page-level info
   alerts on `surface`; `MonoChip`'s hairline as a third border job;
   `ConfirmModal` reasonless mode for the live LDAP sync; the `Pager`
-  current page in ink with no glyph; one row-panel padding (`px-5
-py-3.5`).
+  current page in ink with no glyph; one row-panel padding (`px-4 py-3`,
+  which the certificate rows use; the service code and account rows and the
+  `LoadingBlock` row use `px-5 py-3.5`).
 - **Detail level placement** for blocks section 12 does not name:
   - the claimed-context rows (Service, Terminal, Remote host, Invoked by);
   - "Principals granted" on `/certs/<id>`;
