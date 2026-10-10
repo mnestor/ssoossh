@@ -220,9 +220,9 @@ and drops the diagnostic detail an expert compares.
 - **Never hidden at either level:** trimmed entries in an `OptionDiffList`
   and the `narrowed-warning` that points at them, the client-policy
   forbidden note, the console remote-host warning, the own-account notice,
-  blocked and outcome alerts, action errors, "Approvable until", the
-  "reported by the client" tags on the rows that remain, a skewed host
-  clock, and expired/active status. A section whose only remaining content
+  blocked and outcome alerts, action errors, the "reported by the client"
+  marking on whatever client-reported data remains, a skewed host clock,
+  and expired/active status. A section whose only remaining content
   would be one of these keeps that content.
 - **Dropped in simplified:** request, certificate and enrollment ids; key
   ids, serials and fingerprints; public keys and host trusts; process ids,
@@ -230,6 +230,14 @@ and drops the diagnostic detail an expert compares.
   timestamps other than validity; approver groups, lifetime-policy detail
   and granted-option echoes; critical options with nothing trimmed; the
   redemption history.
+- **Simplified approval** opens with one request line in place of the
+  description and the Account, Command, Host and Requested from rows:
+  "`user@source-ip` wants a certificate for `command` on `host`.", with
+  one muted line under it saying those values are reported by the client
+  and to approve only if you just ran it. Then Principals, Valid for, the
+  extensions, the warnings and the actions. "Approvable until" is
+  advanced-only (decided 2026-10-10); an expired request is still caught by
+  the blocked/outcome alerts when the reader acts.
 - **Simplified type:** the kept facts render one step larger
   (`text-sm` → `text-base`) with `gap-4` rows, because there are fewer of
   them to scan.
