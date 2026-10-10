@@ -30,6 +30,9 @@
 	let actionError: string | null = $state(null);
 	let auditEvents: AuditEvent[] = $state([]);
 	let auditError: string | null = $state(null);
+	// False until the first timeline read answers, so the section shows the
+	// loading shape rather than an empty timeline while it is out.
+	let auditLoaded = $state(false);
 	// What the last disable or re-enable did, said where it happened.
 	let actionNotice: string | null = $state(null);
 	// A refresh after an action that failed. The action itself went
@@ -242,13 +245,22 @@
 	// The timeline is a separate, auditor-scoped read, so its failure is
 	// reported beside it rather than replacing the whole page with an error.
 	async function loadAudit() {
+		auditError = null;
 		try {
 			const page = await getUserAudit(userId, { limit: 25 });
 			auditEvents = page.events;
-			auditError = null;
 		} catch (cause) {
 			auditError = cause instanceof Error ? cause.message : 'Failed to load the audit timeline';
+		} finally {
+			auditLoaded = true;
 		}
+	}
+
+	// The timeline's way out of a failed read: the loading shape, then the
+	// same read again.
+	function retryAudit() {
+		auditLoaded = false;
+		void loadAudit();
 	}
 
 	onMount(() => {
@@ -794,7 +806,21 @@
 		     to it, from the same rows. -->
 		<PageSection title="Audit timeline">
 			{#if auditError}
-				<p class="text-sm text-danger">{auditError}</p>
+				<Alert
+					variant="error"
+					title="Could not load the audit timeline"
+					onretry={retryAudit}
+					testid="user-audit-error"
+				>
+					{auditError}
+				</Alert>
+			{:else if !auditLoaded}
+				<LoadingBlock
+					shape="lines"
+					count={3}
+					label="Loading the audit timeline…"
+					testid="user-audit-loading"
+				/>
 			{:else}
 				<AuditTimeline events={auditEvents} subjectUserId={userId} />
 			{/if}

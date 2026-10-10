@@ -828,3 +828,37 @@ describe('when an account is disabled', () => {
 		expect(screen.queryByTestId('user-error')).not.toBeInTheDocument();
 	});
 });
+
+describe('when the audit timeline fails to load', () => {
+	/** mockAuditFailure answers the account and fails the timeline read. */
+	function mockAuditFailure() {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn((input: RequestInfo | URL) =>
+				String(input).includes('/audit')
+					? Promise.reject(new Error('network down'))
+					: Promise.resolve(ok(userDetail(false)))
+			)
+		);
+	}
+
+	it('should say the timeline could not load', async () => {
+		mockAuditFailure();
+		render(Page);
+
+		expect(await screen.findByTestId('user-audit-error')).toBeInTheDocument();
+	});
+
+	it('should read the timeline again when Try again is pressed', async () => {
+		mockAuditFailure();
+		render(Page);
+		await screen.findByTestId('user-audit-error');
+		const auditReads = () =>
+			vi.mocked(fetch).mock.calls.filter(([input]) => String(input).includes('/audit')).length;
+		const before = auditReads();
+
+		await userEvent.click(screen.getByTestId('user-audit-error-retry'));
+
+		expect(auditReads()).toBeGreaterThan(before);
+	});
+});
