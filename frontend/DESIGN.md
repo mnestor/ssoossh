@@ -2,27 +2,58 @@
 
 This document describes the design tokens, typography, iconography, and component patterns that maintain visual and interaction consistency across the ssoossh frontend.
 
+## Character
+
+Decided 2026-10-10, replacing the teal / Public Sans / border-and-tint look.
+ssoossh hands out keys to machines. It should read like an instrument:
+precise, quiet, and unambiguous about the one thing to press.
+
+- **Type: the contrast is a change of family.** IBM Plex Sans for prose and
+  controls, IBM Plex Mono for the voice: page headings (600, `--text-display`
+  28px against a 14px body, tracking `-0.02em`) and every identifier a reader
+  compares (principals, key ids, fingerprints, serials). One superfamily, so
+  the two share proportions while differing in class.
+- **Color: one cool signature on warm neutrals.** Cobalt
+  (`oklch(50% 0.19 264)`) is used for primary actions, links, focus rings and
+  the current navigation item, and nowhere else. Neutrals are warm stone
+  (hue 70–75), so the signature is the only cool thing on the page. Status
+  colours (granted, trimmed, danger) are semantic only. Every pair is
+  measured: see the ratios in `src/app.css`.
+- **Space: compressed inside, released between.** Rows inside a panel sit
+  tight (`gap-2`/`gap-3`, hairline dividers); panels stand apart (`gap-8`).
+  The advanced detail level is dense; the simplified one is airier and
+  larger for the facts it keeps.
+- **Finish: planes, not frames.** Three planes: `ground` (the page),
+  `surface` (a panel on it) and `surface-muted` (a tint inside a panel). A
+  panel is told apart by plane alone, so sections, rows, the rail and
+  dialogs carry **no border and no shadow**. Borders are reserved for two
+  jobs: a hairline between rows inside a panel (`border-subtle`) and the edge
+  of a control a reader operates (`border-control`, held to WCAG 1.4.11).
+  Radii are sharp: chips 3px, controls 4px, panels 6px, dialogs 8px.
+
 ## Color Tokens
 
 The app uses a curated set of CSS custom properties defined in `src/app.css`. All colors are specified in [OKLch color space](https://oklch.com/) for perceptually uniform results. The palette is the same in light and dark modes; the mode switch inverts lightness while preserving hue and chroma.
 
 ### Light Mode (default)
 
-- `--color-surface`: `#ffffff` — main background
-- `--color-surface-muted`: `oklch(97% 0.002 200)` — the ground of every `PageSection`, the identity strip, light hover states
-- `--color-border-subtle`: `oklch(88% 0.003 200)` — borders, dividers
-- `--color-ink`: `oklch(20% 0.005 200)` — primary text
-- `--color-ink-muted`: `oklch(45% 0.005 200)` — secondary text, placeholders, hints
-- `--color-accent`: `oklch(45% 0.06 200)` — primary interactive element (teal)
-- `--color-accent-hover`: `oklch(38% 0.07 200)` — accent pressed state
+- `--color-ground`: `oklch(95.5% 0.006 75)` — the page, behind every panel
+- `--color-surface`: `#ffffff` — a panel: a `PageSection`, a row, the rail, a dialog
+- `--color-surface-muted`: `oklch(97.2% 0.005 75)` — a tint inside a panel: the identity strip, hover states, code wells
+- `--color-border-subtle`: `oklch(90% 0.006 75)` — hairlines between rows inside a panel; never a panel's edge
+- `--color-border-control`: `oklch(62% 0.01 70)` — the edge of a field, ghost button or unselected chip (3.65:1 on surface)
+- `--color-ink`: `oklch(22% 0.01 60)` — primary text
+- `--color-ink-muted`: `oklch(46% 0.012 65)` — secondary text, placeholders, hints
+- `--color-accent`: `oklch(50% 0.19 264)` — the signature (cobalt): primary action, links, focus, current item
+- `--color-accent-hover`: `oklch(43% 0.19 264)` — accent pressed state
 - `--color-accent-ink`: `#ffffff` — text on accent backgrounds
-- `--color-accent-wash`: `oklch(95% 0.018 200)` — the ground under the selected rail item; a tint of the accent light enough to keep an accent-coloured label legible on it
-- `--color-granted`: `oklch(46% 0.08 155)` — success/approved status (green)
-- `--color-granted-surface`: `oklch(95% 0.02 155)` — granted/success backgrounds
-- `--color-trimmed`: `oklch(52% 0.08 75)` — warning/restricted status (yellow)
-- `--color-trimmed-surface`: `oklch(95% 0.02 75)` — trimmed/warning backgrounds
-- `--color-danger`: `oklch(48% 0.13 25)` — error/denied status (red)
-- `--color-danger-surface`: `oklch(95% 0.03 25)` — danger/error backgrounds
+- `--color-accent-wash`: `oklch(94% 0.03 264)` — the ground under the selected rail item; a tint of the accent light enough to keep an accent-coloured label legible on it
+- `--color-granted`: `oklch(45% 0.11 150)` — success/approved status (green)
+- `--color-granted-surface`: `oklch(95% 0.03 150)` — granted/success backgrounds
+- `--color-trimmed`: `oklch(50% 0.11 70)` — warning/restricted status (amber)
+- `--color-trimmed-surface`: `oklch(95% 0.035 80)` — trimmed/warning backgrounds
+- `--color-danger`: `oklch(50% 0.18 27)` — error/denied status (red)
+- `--color-danger-surface`: `oklch(95% 0.03 27)` — danger/error backgrounds
 - `--color-scrim`: `rgb(0 0 0 / 0.55)` — the dim behind anything that takes over the screen
 
 `--color-scrim` is the one token that is not restated for dark mode. A scrim
@@ -119,10 +150,10 @@ The `.dark` class on `<html>` inverts all tokens while keeping the semantic mean
 
 ### Typefaces
 
-- **UI (sans-serif)**: Public Sans 400, 500, 600, 700 weights (self-hosted via `@fontsource/public-sans`)
-- **Monospace**: Fira Code 400, 500 weights (self-hosted via `@fontsource/fira-code`)
+- **UI (sans-serif)**: IBM Plex Sans 400, 500, 600 (self-hosted via `@fontsource/ibm-plex-sans`)
+- **Voice (monospace)**: IBM Plex Mono 400, 500, 600 (self-hosted via `@fontsource/ibm-plex-mono`)
 
-Both fonts are imported in `src/app.css` and serve the entire app; no fallback to Google Fonts or CDNs. Public Sans is a highly legible, geometric UI typeface suitable for a security product. Fira Code is used for SSH keys, fingerprints, principal names, and other cryptographic data where monospace clarity is essential.
+Both fonts are imported in `src/app.css` and serve the entire app; no fallback to Google Fonts or CDNs. Plex Sans carries prose and controls. Plex Mono is the voice: the page heading (`PageHeading`, 600 at `--text-display`) and every SSH key, fingerprint, principal and serial, where a reader compares character by character. Section titles stay in the sans at 600, so the mono marks either "this page" or "this exact value".
 
 ### Font Sizes
 
@@ -138,7 +169,7 @@ every one of them has a utility: `text-micro`, `text-meta`, `text-dense` and
 - `--text-base`: `1rem` (16px) — default base size
 - `--text-lg`: `1.125rem` (18px) — subheadings, prominent labels
 - `--text-xl`: `1.25rem` (20px) — main headings, and the page heading below `sm`
-- `--text-display`: `1.625rem` (26px) — the page heading above `sm`, the largest size in the app
+- `--text-display`: `1.75rem` (28px) — the page heading above `sm`, in the mono at 600; the largest size in the app
 
 The names matter as much as the values. `--font-size-*` and `--line-height-*`
 are not Tailwind v4 namespaces — `--text-*` and `--leading-*` are — so under
@@ -158,7 +189,7 @@ did not either: the line height keeps coming from whatever the row set.
 - `--leading-snug`: `1.375` — small text blocks
 - `--leading-normal`: `1.5` — body text (default)
 - `--leading-relaxed`: `1.625` — spacious, accessible reading
-- `--tracking-heading`: `-0.01em` — the two display headings (`PageHeading`, the login splash)
+- `--tracking-heading`: `-0.02em` — the two display headings (`PageHeading`, the login splash), set in the mono
 - `--tracking-label`: `0.06em` — small uppercase labels and chips
 - `tracking-widest`: `0.1em` (Tailwind's own) — the widest uppercase eyebrow: rail group heads, `.data-table` column heads
 - `--font-weight-normal`: `400`
@@ -171,6 +202,39 @@ uppercase labels and 0.09 and 0.1em on the widest of them, which is drift
 rather than a scale. The one deliberate exception is the console pairing-code
 input, which spaces its characters at `0.2em` so a code can be read back a
 character at a time; that is letter-spacing doing a different job.
+
+## Detail level: simplified and advanced
+
+A per-reader preference, `simplified` or `advanced`, for the approval page
+and the three information pages (certificate, service code, admin service
+code). `advanced` is the default and is the page as it has always been.
+`simplified` keeps what a reader needs to decide or to understand the result
+and drops the diagnostic detail an expert compares.
+
+- **Store:** `src/lib/detail.svelte.ts`, localStorage key `ssoossh:detail`,
+  modelled on `rail.svelte.ts` (not read before paint; one frame of the
+  default is accepted, as for the rail).
+- **Controls:** a "Display" section on `/preferences`, and a two-option
+  `DetailToggle` segmented control in the heading row of each covered page.
+  Both write the same preference.
+- **Never hidden at either level:** trimmed entries in an `OptionDiffList`
+  and the `narrowed-warning` that points at them, the client-policy
+  forbidden note, the console remote-host warning, the own-account notice,
+  blocked and outcome alerts, action errors, "Approvable until", the
+  "reported by the client" tags on the rows that remain, a skewed host
+  clock, and expired/active status. A section whose only remaining content
+  would be one of these keeps that content.
+- **Dropped in simplified:** request, certificate and enrollment ids; key
+  ids, serials and fingerprints; public keys and host trusts; process ids,
+  platform and client rows; registered IPs; request and decision
+  timestamps other than validity; approver groups, lifetime-policy detail
+  and granted-option echoes; critical options with nothing trimmed; the
+  redemption history.
+- **Simplified type:** the kept facts render one step larger
+  (`text-sm` → `text-base`) with `gap-4` rows, because there are fewer of
+  them to scan.
+- A hint line closes a simplified page: "Showing the essentials. Switch to
+  Advanced for ids, fingerprints and policy detail."
 
 ## Iconography
 
@@ -580,22 +644,25 @@ Three, and they mean specific things:
   where the page column reaches about 980px and a row has space to lay its
   fields out side by side.
 
-### Sections are subtle cards
+### Sections are planes
 
-Two frames, meaning two different things.
+One device, at two scales. Everything that separates sits on `surface` over
+the `ground`, with no border and no shadow (see Character).
 
-A **row card** — 1px border, 10px radius, `surface` (white) background — says
-"this is one discrete thing among several". `CertRow`, `ServiceCodeRow` and
+A **row panel** — `bg-surface`, `rounded-lg`, no border — says "this is one
+discrete thing among several". `CertRow`, `ServiceCodeRow` and
 `ServiceAccountRow` are each one event standing beside others of the same
-kind, and a list of them is a list of things that happened.
+kind, stacked with `gap-2`, and a list of them is a list of things that
+happened.
 
-A **section card** — 1px border, `rounded-lg`, `bg-surface-muted`, `p-4`, no
+A **section panel** — `bg-surface`, `rounded-lg`, `p-5`, no border, no
 shadow — says "this is one group of fields within this page". That is
-`PageSection`, and it is what every screen's own content sits in. It replaced
-`Card`, which was a white panel with a shadow and a ruled-off header: that
-read as a component floating over the page rather than as a region of it, and
-stacking a border, a shadow, a tint and a header divider said the same thing
-four times. The tint alone says it once.
+`PageSection`, and it is what every screen's own content sits in.
+
+Until 2026-10-10 both carried a 1px border and the section a tint as well.
+Before that, `PageSection` replaced `Card`, a white panel with a shadow and a
+ruled-off header: stacking a border, a shadow, a tint and a header divider
+said the same thing four times. The plane alone says it once.
 
 Inside a section, nothing gets a frame of its own. A card inside a card says
 the inner thing is separate from the page, which is the one thing it is not.
@@ -607,8 +674,9 @@ decision read straight through; and the "Last pass" block on
 `/admin/directory` is flat, because the Sync section it sits in is already
 the card.
 
-Above the section level, `PageShell` puts `gap-5` between sections and
-nothing else. There is no card grid: `/admin/config` and `/admin/diagnostics`
+Above the section level, `PageShell` puts `gap-8` between sections and
+nothing else: the release between panels is what makes the compression
+inside them read as intentional. There is no card grid: `/admin/config` and `/admin/diagnostics`
 used to balance boxes two abreast by weight, which reordered content by
 height. A configuration is read in the order the file is written and a
 diagnostics run in the order the checks ran, so both are one column of
@@ -708,7 +776,7 @@ none of that.
 - **RailGroup**: A named, collapsible band of rail items. The head is a button, not a link: the group has no page of its own, and giving it one would mean inventing an admin landing screen whose only content is the list already on show.
 - **RailUserMenu**: The rail's bottom row — the identity — and the drop-up behind it holding account, preferences, theme and sign out. A disclosure rather than a `role="menu"`; see The app shell.
 - **PageShell**: The container every page sits in. Three named widths, an optional `aside` column, and the `center` flag sign-in uses. See Page Structure.
-- **PageSection**: One group of fields as a subtle card — `rounded-lg border border-border-subtle bg-surface-muted p-4` — opening with a quiet uppercase `h2` and an optional line of copy. What replaced `Card`; see Sections are subtle cards. A real heading rather than a styled `div`, because a section is a landmark a screen reader navigates by and it was the card's header, not its border, that said so. Never nested inside another.
+- **PageSection**: One group of fields as a panel — `rounded-lg bg-surface p-5`, no border — opening with a quiet uppercase `h2` and an optional line of copy. What replaced `Card`; see Sections are planes. A real heading rather than a styled `div`, because a section is a landmark a screen reader navigates by and it was the card's header, not its border, that said so. Never nested inside another.
 - **Footer**: The bar closing every page — the running build's version, a link to the release it was cut from, and links back to the project on GitHub. Presentational: the build identity arrives as a prop, so the fetch happens once in the layout. Renders nothing at all while the version is unknown.
 - **Alert**: Variants: `error`, `warning`, `info`. Each includes an icon and a color from the token set.
 - **LoadingBlock**: What a surface shows while its content is on the way, in three shapes: `rows` for the card lists, `table` for the admin tables, `lines` for a detail panel. Replaced fourteen hand-written `<p>Loading…</p>` paragraphs — half of them spelled with three dots, one of them centred — which told a reader that a request was out and nothing about what was coming back. A shape that matches the answer stops the page jumping when the rows land.
@@ -1152,8 +1220,8 @@ When adding or modifying styles:
 ## References
 
 - [OKLch Color Space](https://oklch.com/) — perceptual color uniformity
-- [Public Sans](https://www.opensans.com/about) — UI typeface (OFL license)
-- [Fira Code](https://github.com/tonsky/FiraCode) — monospace typeface (OFL license)
+- [IBM Plex Sans](https://github.com/IBM/plex) — UI typeface (OFL license)
+- [IBM Plex Mono](https://github.com/IBM/plex) — monospace voice (OFL license)
 - [Tabler Icons](https://tabler.io/icons) — icon library (@tabler/icons-svelte, MIT)
 - [WCAG 2.1 Level AA](https://www.w3.org/WAI/WCAG21/quickref/?currentsetting=level%20aa) — accessibility guidelines
 - [Svelte Documentation](https://svelte.dev/docs) — framework reference
