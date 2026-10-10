@@ -1114,8 +1114,6 @@ change lands.
 - `copy-check` is not in the icon map; `CopyableId` still shows `check`.
 - `PageShell` puts `gap-5` between panels; several lists use `gap-2.5`.
 - Chips and badges on `rounded-full`; several fields on `rounded`.
-- Disabling or re-enabling a user swaps the page for a loading state,
-  unmounting the open dialog.
 - Cobalt outside its four jobs: stat figures and LDAP override notes on the
   user page, a label and a checkbox on the directory and config pages.
 - The directory probe views are tabs with no announced state, and a mapped

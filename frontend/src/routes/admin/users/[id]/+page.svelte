@@ -20,7 +20,6 @@
 
 	let user: AdminUserDetail | null = $state(null);
 	let error: string | null = $state(null);
-	let busy = $state(false);
 	let actionBusy = $state(false);
 	let showDisableConfirm = $state(false);
 	let disableConsequences: DisableUserConsequences | null = $state(null);
@@ -31,6 +30,11 @@
 	let actionError: string | null = $state(null);
 	let auditEvents: AuditEvent[] = $state([]);
 	let auditError: string | null = $state(null);
+	// What the last disable or re-enable did, said where it happened.
+	let actionNotice: string | null = $state(null);
+	// A refresh after an action that failed. The action itself went
+	// through, so this must not read as "could not load this account".
+	let refreshError: string | null = $state(null);
 
 	// $derived, not a plain const: on a client-side navigation the component
 	// initialises before the router has populated params, so capturing the
@@ -152,20 +156,18 @@
 		return Array.isArray(value) ? value : [value];
 	}
 
+	// loadUser is the first load and its retry. Until it answers there is
+	// no account, so the page shows the loading shape under the heading.
 	async function loadUser() {
-		busy = true;
 		error = null;
 		if (!userId) {
 			error = 'No user ID provided';
-			busy = false;
 			return;
 		}
 		try {
 			user = await getAdminUser(userId);
 		} catch (cause) {
 			error = cause instanceof Error ? cause.message : 'Failed to load user';
-		} finally {
-			busy = false;
 		}
 	}
 
@@ -178,34 +180,52 @@
 		showDisableConfirm = true;
 	}
 
+	// refreshUser re-reads the account in place after an action. Unlike
+	// loadUser it never swaps the page for the loading shape: that unmounted
+	// the open dialog and dropped focus onto <body>.
+	async function refreshUser() {
+		try {
+			user = await getAdminUser(userId);
+			refreshError = null;
+		} catch (cause) {
+			refreshError = cause instanceof Error ? cause.message : 'Failed to load user';
+		}
+	}
+
 	async function handleDisable(reason: string) {
 		actionBusy = true;
 		actionError = null;
+		actionNotice = null;
 		try {
 			await disableUser(userId, { reason });
-			await loadUser();
-			await loadAudit();
-			closeDisableConfirm();
 		} catch (cause) {
 			actionError = cause instanceof Error ? cause.message : 'Failed to disable user';
-		} finally {
 			actionBusy = false;
+			return;
 		}
+		// Closed before the refresh, so focus returns to the heading's
+		// action button, which stays the same element as its label changes.
+		closeDisableConfirm();
+		await Promise.all([refreshUser(), loadAudit()]);
+		actionNotice = 'This account was disabled.';
+		actionBusy = false;
 	}
 
 	async function handleEnable(reason: string) {
 		actionBusy = true;
 		actionError = null;
+		actionNotice = null;
 		try {
 			await enableUser(userId, { reason });
-			await loadUser();
-			await loadAudit();
-			closeEnableConfirm();
 		} catch (cause) {
 			actionError = cause instanceof Error ? cause.message : 'Failed to enable user';
-		} finally {
 			actionBusy = false;
+			return;
 		}
+		closeEnableConfirm();
+		await Promise.all([refreshUser(), loadAudit()]);
+		actionNotice = 'This account was re-enabled.';
+		actionBusy = false;
 	}
 
 	function closeDisableConfirm() {
@@ -239,56 +259,72 @@
 
 <svelte:head><title>User · ssoossh</title></svelte:head>
 
+<!-- The address alone. The username used to lead this line whenever the
+     title was a display name, which restated the "Username" field in the
+     OIDC record immediately below it; the address is the one identifier
+     not stated anywhere else on the page. -->
+{#snippet userSub()}{user?.email || 'No email'}{/snippet}
+
+<!-- One button whose label and variant follow the account, not two
+     swapped by an {#if}: the dialog returns focus to whatever opened it,
+     and an element replaced while the dialog was open would leave the
+     caret on <body>. -->
+{#snippet userAction()}
+	<Button
+		variant={user?.disabled_at ? 'primary' : 'danger'}
+		testid={user?.disabled_at ? 'enable-user' : 'disable-user'}
+		disabled={actionBusy}
+		onclick={user?.disabled_at ? () => (showEnableConfirm = true) : openDisableConfirm}
+	>
+		{user?.disabled_at ? 'Re-enable' : 'Disable'}
+	</Button>
+{/snippet}
+
 <PageShell width="full">
-	{#if busy}
-		<LoadingBlock shape="lines" count={5} label="Loading this account…" testid="user-loading" />
-	{:else if error}
-		<Alert variant="error" title="Could not load this account">{error}</Alert>
-	{:else if user}
-		<!-- A snippet is its own closure, so the `user` narrowed by the
-		     branch above does not reach inside one. Bind it once here and
-		     the heading's two snippets can read it without each re-testing
-		     a value the branch has already settled. -->
-		{@const account = user}
-		<!-- The chip is where the "Admin" eyebrow used to be, and says
-		     something the eyebrow could not: this page has a list behind it,
-		     and that is the way back to it. -->
-		<PageHeading
-			title={account.name || account.username}
-			back={{
-				href: resolve('admin/users'),
-				label: 'All users',
-				testid: 'admin-user-back'
-			}}
+	<!-- The heading and its back chip stand in every state (DESIGN.md,
+	     "States"), so a failed load still has a way back to the list. The
+	     chip is where the "Admin" eyebrow used to be, and says something the
+	     eyebrow could not: this page has a list behind it. -->
+	<PageHeading
+		title={user ? user.name || user.username : 'User'}
+		back={{
+			href: resolve('admin/users'),
+			label: 'All users',
+			testid: 'admin-user-back'
+		}}
+		sub={user ? userSub : undefined}
+		action={user ? userAction : undefined}
+	/>
+
+	{#if error}
+		<Alert
+			variant="error"
+			title="Could not load this account"
+			onretry={loadUser}
+			testid="user-error"
 		>
-			<!-- The address alone. The username used to lead this line
-			     whenever the title was a display name, which restated the
-			     "Username" field in the OIDC record immediately below it;
-			     the address is the one identifier not stated anywhere else
-			     on the page. -->
-			{#snippet sub()}{account.email || 'No email'}{/snippet}
-			{#snippet action()}
-				<div class="flex gap-2">
-					{#if account.disabled_at}
-						<Button
-							variant="primary"
-							testid="enable-user"
-							disabled={actionBusy}
-							onclick={() => (showEnableConfirm = true)}>Re-enable</Button
-						>
-					{:else}
-						<Button
-							variant="danger"
-							testid="disable-user"
-							disabled={actionBusy}
-							onclick={openDisableConfirm}
-						>
-							{actionBusy ? 'Disabling...' : 'Disable'}
-						</Button>
-					{/if}
-				</div>
-			{/snippet}
-		</PageHeading>
+			{error}
+		</Alert>
+	{:else if !user}
+		<LoadingBlock shape="lines" count={5} label="Loading this account…" testid="user-loading" />
+	{:else}
+		<!-- Bound once for the dialogs below, which read the account the
+		     branch has already settled. -->
+		{@const account = user}
+
+		{#if actionNotice}
+			<Alert variant="info" testid="user-action-notice">{actionNotice}</Alert>
+		{/if}
+		{#if refreshError}
+			<Alert
+				variant="error"
+				title="The change went through, but this page could not refresh"
+				onretry={refreshUser}
+				testid="user-refresh-error"
+			>
+				{refreshError}
+			</Alert>
+		{/if}
 
 		<!-- The OIDC record: exactly what the ID token carried at the last
 		     login, as stored on the users row. Deliberately not the merged
