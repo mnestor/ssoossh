@@ -6,9 +6,15 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
-    # One PR for all Go module updates instead of one per package.
+    # One PR for all Go module updates instead of one per package. Groups
+    # apply to version updates only by default, so security fixes get their
+    # own group or they arrive as one PR per package.
     groups:
       go:
+        patterns:
+          - "*"
+      go-security:
+        applies-to: security-updates
         patterns:
           - "*"
 
@@ -18,9 +24,14 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
-    # One PR for all frontend updates instead of one per package.
+    # One PR for all frontend updates instead of one per package, and one
+    # for all security fixes.
     groups:
       frontend:
+        patterns:
+          - "*"
+      frontend-security:
+        applies-to: security-updates
         patterns:
           - "*"
     # typescript-eslint cannot load TS 7 (it refuses at startup:
@@ -33,14 +44,36 @@ updates:
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
 
+  - package-ecosystem: "npm"
+    directory: "/user-docs"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    # One PR for all docs-site updates instead of one per package, and one
+    # for all security fixes.
+    groups:
+      user-docs:
+        patterns:
+          - "*"
+      user-docs-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     cooldown:
       default-days: 7
-    # One PR for all action bumps instead of one per action.
+    # One PR for all action bumps instead of one per action, and one for
+    # all security fixes.
     groups:
       actions:
+        patterns:
+          - "*"
+      actions-security:
+        applies-to: security-updates
         patterns:
           - "*"
