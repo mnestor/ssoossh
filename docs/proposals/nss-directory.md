@@ -23,10 +23,11 @@ Two repositories, one wire contract:
 | Piece | Where | Why there |
 | --- | --- | --- |
 | `/api/nss/*`, a `user_posix` table, LDAP field destinations, `admin.nss_key_group`, API-key admin UI | `mnestor/ssoossh` | It is the identity source. OIDC, LDAP, admin roles, audit and the web UI are already here; a second server would mean a second user store. |
-| `ssoosshd-nss` daemon, `libnss_ssoossh.so`, nfpm packages, `ssoossh-nss-selinux` | `mnestor/ssoossh-nss` (new) | Host software with its own toolchain, release cadence and failure mode, as `ssoossh-pam` is kept separate. |
-| JSON response shapes, endpoint paths | `docs/wire-contract.json` | The existing cross-repo contract; bumped on any wire change. |
+| `ssoosshd-nss` daemon: its own binary under `cmd/ssoosshd-nss`, Linux-only build tags, packaged by this repo's nfpm as `ssoosshd-nss` | `mnestor/ssoossh` (host, separate binary) | Needs the `internal/` API client, config loading, TLS pin handling and SRV discovery, which a separate Go module cannot import; the socket protocol is a shared `internal/nsssock` package used by the daemon and `ssoossh host principals`. Never part of the `ssoossh` client binary, which is short-lived and cross-platform and must not carry daemon code. |
+| `libnss_ssoossh.so`, `ssoossh-nss-selinux`, nsswitch docs; packages depend on `ssoosshd-nss` | `mnestor/ssoossh-nss` (new) | C-only host software with its own toolchain, fuzzing and release cadence, as `ssoossh-pam` is kept separate. |
+| JSON response shapes, endpoint paths, socket protocol | `docs/wire-contract.json` | The existing cross-repo contract; bumped on any wire change. |
 
-Server side it is behind `nss.enabled` and defaults off. The host package
+Server side it is behind `nss.enabled` and defaults off. The host side
 never needs the certificate pipeline.
 
 ## What exists today, and what this assumes
@@ -342,12 +343,17 @@ source-address allow list. Lookups for privileged or
 local-system names, and a single key seen from an unexpected number of
 source addresses, are alerted on.
 
-## Part B: host package (`mnestor/ssoossh-nss`)
+## Part B: host side
 
-A sibling of `ssoossh-pam` with the same shape: C module, Go daemon, nfpm
-`.deb`/`.rpm`/`.apk`, `ssoossh-nss-selinux` (socket in `/run/ssoossh`,
-outbound HTTPS, nothing else), fuzz targets, a pinned `SSOOSSHD_COMPAT`. It
-depends on the server only through `docs/wire-contract.json` and the TLS pin.
+Two deliverables. The daemon, `ssoosshd-nss`, is a separate Linux-only
+binary built from `cmd/ssoosshd-nss` in `mnestor/ssoossh` and packaged there
+(`.deb`/`.rpm`/`.apk`, systemd unit), sharing `internal/` packages with the
+server and client but never linked into the cross-platform `ssoossh` client.
+The module lives in `mnestor/ssoossh-nss`, a sibling of `ssoossh-pam` with
+the same shape: C, nfpm packages, `ssoossh-nss-selinux` (socket in
+`/run/ssoossh`, outbound HTTPS, nothing else), fuzz targets, a pinned
+`SSOOSSHD_COMPAT`; its package depends on `ssoosshd-nss`. Both depend on the
+server only through `docs/wire-contract.json` and the TLS pin.
 
 ### Daemon: cache
 
@@ -374,7 +380,7 @@ ephemeral images that want no identity state on disk. Layout
 directory. Trust model is sssd's: entries are stored as fetched over pinned
 TLS and trusted on load; filesystem permissions are the boundary, and every
 sshd login forces a fresh fetch anyway.
-`ssoossh-nss-cache` is the `sss_cache` equivalent (`-E`, `-u`, `-g`, `-U`,
+`ssoosshd-nss cache` is the `sss_cache` equivalent (`-E`, `-u`, `-g`, `-U`,
 `-G`; expiry marks stale, never deletes). A host that reboots while the
 server is down still resolves its known users from the persisted cache.
 
@@ -418,7 +424,7 @@ revocation remains the certificate.
 Per-host overrides (`sss_override` equivalent): `/etc/ssoossh/nss-overrides.yaml`,
 same shape as `principals.yaml`, per-user uid/gid/home/shell applied after the
 server's answer and before the sanity rules; managed with
-`ssoossh-nss-cache override`; never able to lower a uid below `min_id`.
+`ssoosshd-nss override`; never able to lower a uid below `min_id`.
 
 ### Daemon: sanity rules and hardening
 
@@ -507,6 +513,10 @@ Taken 2026-10-09 and 2026-10-10:
 - Service enrollment codes: left as is. A code is useless without the
   enrolled private key, which never reaches the server.
 - PAM hardening PRs ship first; SELinux ships as `ssoossh-nss-selinux`.
+- Daemon placement: `ssoosshd-nss` is its own binary (`cmd/ssoosshd-nss`,
+  Linux-only) in `mnestor/ssoossh`, sharing `internal/` packages; never a
+  subcommand of the `ssoossh` client, which is short-lived and
+  cross-platform. `mnestor/ssoossh-nss` is C-only, like `ssoossh-pam`.
 - No server-side group gate, global or per key. Narrowing is host config.
 - Response signing (2026-10-10): none. Plain JSON over pinned TLS with a
   fleet key, as sssd and hosted directories do. The JWS/JWKS layer, root pin,
