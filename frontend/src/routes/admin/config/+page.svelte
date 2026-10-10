@@ -119,7 +119,7 @@
 				/>
 			</div>
 			<label class="flex items-center gap-2 text-dense whitespace-nowrap text-ink-muted">
-				<input type="checkbox" bind:checked={showUnset} class="accent-accent" />
+				<input type="checkbox" bind:checked={showUnset} />
 				Show unset keys
 			</label>
 		</div>

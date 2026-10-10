@@ -353,7 +353,7 @@
 					<p class="text-xs font-semibold text-ink-muted">Name</p>
 					<p>{user.name || 'Not captured'}</p>
 					{#if overrides.name}
-						<p class="mt-0.5 text-xs text-accent" data-testid="user-name-overridden">
+						<p class="mt-0.5 text-xs text-ink-muted" data-testid="user-name-overridden">
 							{oidcConfigured('name') ? 'Overridden by LDAP' : 'Supplied by LDAP'}: {overrides.name.effective.join(
 								', '
 							) || 'none'}
@@ -469,7 +469,7 @@
 								</span>
 							</div>
 							{#if overrides[key]}
-								<p class="pl-2 text-xs text-accent" data-testid="user-override-{key}">
+								<p class="pl-2 text-xs text-ink-muted" data-testid="user-override-{key}">
 									{oidcConfigured(key) ? 'Overridden by LDAP' : 'Supplied by LDAP'}: {overrides[
 										key
 									].effective.join(', ') || 'none'}
@@ -488,7 +488,7 @@
 
 								<span class="flex-grow rounded bg-surface-muted px-2 py-1 text-sm">
 									{override.effective.join(', ') || '—'}
-									<span class="text-xs text-accent">— from LDAP only, no OIDC claim</span>
+									<span class="text-xs text-ink-muted">— from LDAP only, no OIDC claim</span>
 								</span>
 							</div>
 						{/each}
@@ -718,11 +718,11 @@
 			<div class="grid gap-4 sm:grid-cols-2">
 				<div>
 					<p class="text-xs font-semibold text-ink-muted">Certificates</p>
-					<p class="text-2xl font-bold text-accent">{user.certificate_count}</p>
+					<p class="text-2xl font-semibold text-ink">{user.certificate_count}</p>
 				</div>
 				<div>
 					<p class="text-xs font-semibold text-ink-muted">Active service enrollments</p>
-					<p class="text-2xl font-bold text-accent">{user.service_enrollment_count}</p>
+					<p class="text-2xl font-semibold text-ink">{user.service_enrollment_count}</p>
 				</div>
 			</div>
 		</PageSection>

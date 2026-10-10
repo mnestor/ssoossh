@@ -514,7 +514,7 @@
 							<div class="border-b border-border-subtle bg-surface-muted px-4 py-3">
 								<div class="flex flex-wrap items-baseline justify-between gap-2">
 									<code class="text-sm break-all">{probeResult.filter_sent}</code>
-									<span class="text-xs font-semibold tracking-wide text-accent uppercase">
+									<span class="text-xs font-semibold tracking-wide text-ink-muted uppercase">
 										Never writes
 									</span>
 								</div>
