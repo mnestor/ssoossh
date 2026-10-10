@@ -156,13 +156,13 @@
 				{/if}
 
 				{#each preferences.kinds as kind (kind.kind)}
-					<label class="flex cursor-pointer items-start gap-3">
+					<label class="flex min-h-target cursor-pointer items-start gap-3">
 						<input
 							type="checkbox"
 							checked={enabledFor(kind.kind, kind.enabled)}
 							onchange={() => toggle(kind.kind, kind.enabled)}
 							data-testid={`notification-${kind.kind}`}
-							class="mt-0.5 h-4 w-4 shrink-0 rounded border-border-subtle text-accent"
+							class="mt-0.5 size-4 shrink-0"
 						/>
 						<span class="flex flex-col gap-0.5">
 							<span class="text-sm font-medium text-ink">{kind.title}</span>

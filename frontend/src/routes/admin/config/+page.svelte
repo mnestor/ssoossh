@@ -118,7 +118,9 @@
 					onsearch={(term: string) => (query = term)}
 				/>
 			</div>
-			<label class="flex items-center gap-2 text-dense whitespace-nowrap text-ink-muted">
+			<label
+				class="flex min-h-target items-center gap-2 text-dense whitespace-nowrap text-ink-muted"
+			>
 				<input type="checkbox" bind:checked={showUnset} />
 				Show unset keys
 			</label>

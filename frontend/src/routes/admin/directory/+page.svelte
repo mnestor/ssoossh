@@ -322,7 +322,7 @@
 
 				{#if isAdmin}
 					<div class="flex flex-col gap-3 border-t border-border-subtle pt-4">
-						<label class="flex items-start gap-2 text-sm">
+						<label class="flex min-h-target items-start gap-2 text-sm">
 							<input
 								type="checkbox"
 								bind:checked={dryRun}
