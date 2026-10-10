@@ -543,7 +543,7 @@
 				<div class="overflow-x-auto">
 					<table class="data-table" data-testid="user-groups-table">
 						<thead>
-							<tr class="border-b border-border-subtle text-left text-xs text-ink-muted">
+							<tr>
 								<th scope="col">Group</th>
 								<th scope="col">Source</th>
 								<th scope="col">First seen</th>
@@ -552,7 +552,7 @@
 						</thead>
 						<tbody>
 							{#each user.groups as group (group.source + '/' + group.name)}
-								<tr class="border-b border-border-subtle last:border-0">
+								<tr>
 									<td class="font-mono">{group.name}</td>
 									<td class="pr-4">
 										<span class="rounded bg-surface-muted px-2 py-0.5 text-xs uppercase"
@@ -617,7 +617,7 @@
 
 				{#if user.directory.first_missing_at}
 					<div
-						class="mt-4 rounded border-l-2 border-danger bg-surface-muted p-3 text-sm"
+						class="mt-4 rounded-lg bg-danger-surface p-3 text-sm"
 						data-testid="user-directory-missing"
 					>
 						<p class="font-semibold text-danger">Entry is currently missing</p>
@@ -675,7 +675,7 @@
 				<div class="overflow-x-auto">
 					<table class="data-table" data-testid="user-notification-table">
 						<thead>
-							<tr class="border-b border-border-subtle text-left text-xs text-ink-muted">
+							<tr>
 								<th scope="col">Notification</th>
 								<th scope="col">Kind</th>
 								<th scope="col">Sends</th>
@@ -684,10 +684,7 @@
 						</thead>
 						<tbody>
 							{#each user.notification_preferences as pref (pref.kind)}
-								<tr
-									class="border-b border-border-subtle last:border-0"
-									data-testid="user-notification-{pref.kind}"
-								>
+								<tr data-testid="user-notification-{pref.kind}">
 									<td class="pr-4">
 										{pref.title || pref.kind}
 										{#if !pref.registered}
