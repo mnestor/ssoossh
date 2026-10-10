@@ -263,6 +263,26 @@ and drops the diagnostic detail an expert compares.
   Deny or on toggling. Every principal is rememberable, break-glass ones
   included (decided 2026-10-10: the approver's own choice, visible on the
   chips every time).
+- **Decisions from the design review (2026-10-10):**
+  - A selected state (pressed principal chip, the pressed DetailToggle
+    segment, a selected FilterChip) is an **ink fill** (`bg-ink
+    text-surface`) with a check glyph and `aria-pressed`, never cobalt;
+    cobalt stays for the primary action, links, focus and the current rail
+    item. This changes the filter chips on History and Admin certificates.
+  - No "forget remembered principals" control; unticking a chip on the next
+    approval is the way out.
+  - An expired request has its own notice: "This request expired before it
+    was approved. Run the client again."
+  - Simplified service code pages keep principal, certificate life,
+    validity, approver, granted extensions, the editable notification
+    address and the redemption count; the holders list and redemption
+    history are advanced-only.
+  - Roles: SOC may disable and enable users; `/api/users/me` gains
+    `is_nss_key_admin`; NSS keys are one top-level rail item, read-only for
+    auditors. Admin, SOC and auditor powers sit behind admin mode
+    (`docs/proposals/admin-elevation.md`).
+  - The NSS login shell setting is a "Login shell" section on
+    `/preferences`, between Email notifications and Display.
 - A hint line closes a simplified page: "Showing the essentials. Switch to
   Advanced for ids, fingerprints and policy detail."
 
