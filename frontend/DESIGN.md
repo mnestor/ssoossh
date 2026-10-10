@@ -248,6 +248,16 @@ and drops the diagnostic detail an expert compares.
 - **Simplified type:** the kept facts render one step larger
   (`text-sm` → `text-base`) with `gap-4` rows, because there are fewer of
   them to scan.
+- **Remembered principals.** The principals an approver last approved with
+  are stored in this browser per signed-in user (localStorage
+  `ssoossh:principals:<user>`, store `src/lib/principals.svelte.ts`, same
+  shape as `detail.svelte.ts`). On the next approval the picker pre-ticks
+  the stored principals that the request offers; stored ones it does not
+  offer are ignored, and with nothing stored the existing default applies.
+  The chips stay visible and editable at both detail levels: a remembered
+  selection pre-fills, it never approves. Written on Approve only, never on
+  Deny or on toggling. Open question: whether break-glass principals are
+  excluded from being remembered.
 - A hint line closes a simplified page: "Showing the essentials. Switch to
   Advanced for ids, fingerprints and policy detail."
 
