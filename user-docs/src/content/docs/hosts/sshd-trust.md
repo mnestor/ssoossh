@@ -88,6 +88,21 @@ Trusting the CA is not the same as accepting every certificate it signs.
   principals, or is allowed by `AuthorizedPrincipalsFile` /
   `AuthorizedPrincipalsCommand`.
 
+## Checking the host
+
+Once the host is set up, ask it:
+
+```bash
+sudo ssoossh host check
+```
+
+It reads `sshd`'s effective configuration and reports, one line per check,
+whether `sshd` will accept ssoossh certificates. That includes everything
+above, and it compares `TrustedUserCAKeys` with the CA keys the server signs
+with. It exits non-zero when a check fails, so configuration management can
+gate on it. The full list of checks is in the
+[client reference](/ssoossh/guides/client/#ssoossh-host-check).
+
 ## Principals and AuthorizedPrincipalsFile
 
 By default, `sshd` accepts a certificate for a login when the local account
@@ -217,12 +232,15 @@ Check with `host mapping list` instead, run as the lookup account:
 runuser -u ssoossh-principals -- ssoossh host mapping list
 ```
 
-This is the supported health check for an automated deployment. It exits
-non-zero when the file exists and will not load, and exits 0 printing nothing
-when there is no file at all, which is a legitimate state. Running it as the
-lookup account rather than as root tests the other half at the same time: that
-the account `sshd` will use can actually read the file. Both halves fail
-silently in production, and this is the one command that surfaces either.
+It exits non-zero when the file exists and will not load, and exits 0 printing
+nothing when there is no file at all, which is a legitimate state. Running it
+as the lookup account rather than as root tests the other half at the same
+time: that the account `sshd` will use can actually read the file. Both halves
+fail silently in production.
+
+[`ssoossh host check`](#checking-the-host) covers both halves as well, run as
+root: it loads the mapping, and checks the lookup account's permission to read
+it from the file's owner and mode.
 
 :::note
 Do not point the sshd line at a config file with `-c`. A `--config` path that

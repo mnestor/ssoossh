@@ -30,6 +30,24 @@ func isOffline(cmd simplecobra.Commander) bool {
 	return ok && oc.Offline()
 }
 
+// serverOptionalCommander is implemented by commands whose work is local
+// but which may ask the server one question themselves, as `host check`
+// asks for the CA keys to compare with. PreRun treats them like an offline
+// command -- config only, no CA fetch, no key storage -- because the local
+// findings must not depend on the server answering or on an ssh-agent
+// being there. The command builds its own API client for its one call, and
+// API() still refuses, so nothing reaches the server by accident.
+type serverOptionalCommander interface {
+	ServerOptional() bool
+}
+
+// isServerOptional reports whether cmd declared itself serverOptional. A
+// Commander that does not implement serverOptionalCommander is not.
+func isServerOptional(cmd simplecobra.Commander) bool {
+	sc, ok := cmd.(serverOptionalCommander)
+	return ok && sc.ServerOptional()
+}
+
 var _ api.Client = (*offlineAPIClient)(nil)
 
 // offlineAPIClient is the api.Client an offline command gets instead of a

@@ -22,7 +22,8 @@
   https://mnestor.github.io/ssoossh/concepts/console-flow/)
 - There is no host certificate type, and no secure host verification to
   justify one (https://mnestor.github.io/ssoossh/project/decisions/). `ssoossh host` is local
-  principal-mapping tooling only. Do not add a host type
+  principal-mapping tooling plus a read-only sshd check (`host check`). Do not
+  add a host type
 - Group membership never appears in a certificate — groups feed the lifetime
   decision only (see https://mnestor.github.io/ssoossh/internals/invariants/)
 - `verify-required` is never used; `no-touch-required` only applies to

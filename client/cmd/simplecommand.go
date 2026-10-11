@@ -39,6 +39,12 @@ type simpleCommand struct {
 	// serve it. See offlineCommander in offline.go.
 	offline bool
 
+	// serverOptional marks a command whose work is local but which may ask
+	// the server one question itself, so root's PreRun builds nothing for
+	// it either: an unreachable server or a host with no ssh-agent must not
+	// stop the local work. See serverOptionalCommander in offline.go.
+	serverOptional bool
+
 	run func(ctx context.Context, cd *simplecobra.Commandeer, root *RootCommand, args []string) error
 
 	// InitFunc optionally overrides default Init behavior for this command.
@@ -62,6 +68,9 @@ func (c *simpleCommand) Commands() []simplecobra.Commander { return c.commands }
 
 // Offline implements offlineCommander.
 func (c *simpleCommand) Offline() bool { return c.offline }
+
+// ServerOptional implements serverOptionalCommander.
+func (c *simpleCommand) ServerOptional() bool { return c.serverOptional }
 
 // Init implements simplecobra.Commander.
 func (c *simpleCommand) Init(cd *simplecobra.Commandeer) error {

@@ -77,6 +77,7 @@ command line belongs to `ssh` or cron. See
 | [`ca`](#ssoossh-ca) | yes | Print the server's CA public key |
 | [`host principals`](#ssoossh-host-principals) | no | Answer sshd's `AuthorizedPrincipalsCommand` |
 | [`host mapping`](#ssoossh-host-mapping) | no | Manage the local principal mapping file |
+| [`host check`](#ssoossh-host-check) | only for the CA keys | Check that this host's sshd will accept ssoossh certificates |
 | [`service enroll`](#ssoossh-service-enroll) | yes | Enroll a keypair for unattended issuance |
 | [`service retrieve`](#ssoossh-service-retrieve) | yes | Redeem an enrollment code for a certificate |
 | [`version`](#ssoossh-version) | no | Print version, commit, and build info |
@@ -240,8 +241,9 @@ sshd](/ssoossh/hosts/sshd-trust/) covers the host side.
 ## `ssoossh host`
 
 Configures the principal mapping used when `sshd` asks for authorized
-principals via `AuthorizedPrincipalsCommand`. Nothing under `host` talks to the
-server.
+principals via `AuthorizedPrincipalsCommand`, and checks that `sshd` will accept
+ssoossh certificates. Only `host check` talks to the server, and only to fetch
+the CA keys it compares the host's against.
 
 | Flag | Default | What it does |
 | --- | --- | --- |
@@ -304,9 +306,57 @@ sudo ssoossh host mapping list
 sudo ssoossh host mapping remove deploy alice@example.com
 ```
 
+### `ssoossh host check`
+
+Reports whether this host's `sshd` will accept ssoossh certificates. Run it as
+root after setting a host up, and from configuration management after every
+change: it exits non-zero when any check fails.
+
+```bash
+sudo ssoossh host check
+sudo ssoossh host check --user deploy --addr 10.0.0.5
+```
+
+It reads `sshd`'s own effective configuration (`sshd -T`), so `Include` order,
+built-in defaults and, with `--user`, `Match` blocks are resolved by `sshd`
+itself rather than by a parser that could disagree with it. It is read-only: it
+changes no file and reloads nothing.
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--user <account>` | none | Apply `sshd`'s `Match` blocks for this account, and list the principals that may log in as it |
+| `--addr <address>` | none | Apply `Match` blocks for this source address |
+| `--sshd <path>` | `sshd` on `PATH`, then `/usr/sbin/sshd` | The `sshd` to ask |
+
+| Check | Fails when |
+| --- | --- |
+| `pubkey-auth` | `PubkeyAuthentication` is off. A certificate login is public key authentication. |
+| `trusted-ca` | `TrustedUserCAKeys` is `none`, unreadable, or holds no key. `sshd` then refuses every certificate and logs only `Failed publickey`. |
+| `ca-match` | The host trusts none of the CA keys the server signs with. Missing only some of them is a warning: a rotation in progress. |
+| `ca-signature` | `CASignatureAlgorithms` does not allow the algorithm the CA signs with, as under a FIPS policy that drops `ssh-ed25519` |
+| `cert-types` | `PubkeyAcceptedAlgorithms` allows no certificate type the client generates. Refusing only some is a warning. |
+| `principals-command` | `AuthorizedPrincipalsCommand` is relative, or its resolved file or any directory above it is not root-owned or is group- or world-writable, so `sshd` refuses to run it |
+| `principals-user` | `AuthorizedPrincipalsCommandUser` is unset or does not exist |
+| `principals` | The command line passes no `%u` |
+| `principals-mapping` | The mapping file exists but will not load |
+| `mapping-access` | The command's account cannot read the mapping file |
+
+The rest are notes or warnings and never fail the run: `TrustedUserCAKeys`
+writable by someone other than root; an `AuthorizedPrincipalsCommand` naming the
+`/usr/local/bin/ssoossh` compatibility link, which `sshd` follows to
+`/usr/bin/ssoossh` and runs until the link is removed; plain public keys still
+accepted beside certificates (`plain-keys` asks whether that is intended; it is
+how the docs suggest adopting ssoossh); and a clock that is not synchronized.
+
+The CA keys to compare with come from a pinned `capubkey` when there is one,
+otherwise from the server, never from the CA cache. When neither is available
+`ca-match` is a warning and every other check still runs: the local findings do
+not depend on reaching the server, or on an ssh-agent.
+
 :::note
 There are no host certificates. `host mapping` and `host principals` are local
-tooling for `AuthorizedPrincipalsCommand`; they have no server side.
+tooling for `AuthorizedPrincipalsCommand`, with no server side, and `host check`
+only reads.
 :::
 
 ## `ssoossh service enroll`

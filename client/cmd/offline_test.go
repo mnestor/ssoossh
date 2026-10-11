@@ -80,6 +80,62 @@ func TestOfflineCommandsDeclareOffline(t *testing.T) {
 	}
 }
 
+func TestServerOptionalCommandsDeclareServerOptional(t *testing.T) {
+	tests := []struct {
+		name string
+		cmd  simplecobra.Commander
+		want bool
+	}{
+		{name: "should declare host check server-optional, since its findings are local", cmd: newHostCheckCommand(), want: true},
+		{name: "should leave host principals offline rather than server-optional", cmd: newHostPrincipalsCommand(noMappingFile), want: false},
+		{name: "should leave ca online", cmd: newCACommand(), want: false},
+		{name: "should treat an undeclared command as not server-optional", cmd: notACommander{}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isServerOptional(tt.cmd); got != tt.want {
+				t.Fatalf("expected isServerOptional to be %v, got %v", tt.want, got)
+			}
+		})
+	}
+}
+
+// should build nothing that reaches the server, and no key storage, for a
+// server-optional command: host check runs as root on a host with no
+// ssh-agent, and its local findings must not wait on the server.
+func TestRootCommandPreRunSkipsNetworkForServerOptionalCommands(t *testing.T) {
+	root := &RootCommand{
+		newConfig: func(cmd *cobra.Command) (*config.Config, error) {
+			return &config.Config{Server: "https://example.com", UseAgent: true}, nil
+		},
+		newAPIClient: func(cfg *config.Config) (api.Client, error) {
+			t.Fatal("newAPIClient should not be called by PreRun for a server-optional command")
+			return nil, nil
+		},
+		newSSHAgent: func() (agent.Agent, error) {
+			t.Fatal("newSSHAgent should not be called for a server-optional command")
+			return nil, nil
+		},
+		newFileAgent: func(path string) (agent.Agent, error) {
+			t.Fatal("newFileAgent should not be called for a server-optional command")
+			return nil, nil
+		},
+	}
+
+	cd := &simplecobra.Commandeer{
+		Command:      &simpleCommand{name: "check", serverOptional: true},
+		CobraCommand: &cobra.Command{Use: "check"},
+	}
+
+	if err := root.PreRun(cd, cd); err != nil {
+		t.Fatalf("PreRun returned an error: %v", err)
+	}
+	if root.InitErr() != nil || root.Config() == nil {
+		t.Fatalf("expected config loaded and no InitErr, got config %v, InitErr %v", root.Config(), root.InitErr())
+	}
+}
+
 // TestRootCommandPreRunSkipsNetworkForOfflineCommands is the actual
 // guarantee: for an offline command, PreRun builds nothing that could reach
 // the server, and reports no error for having skipped it.

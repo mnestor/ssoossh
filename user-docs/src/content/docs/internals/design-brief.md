@@ -92,7 +92,7 @@ session.
 
 ```text
 ssoossh ssh login | logout | proxycommand | inspect | config
-ssoossh host principals | mapping
+ssoossh host principals | mapping | check
 ssoossh service enroll | retrieve
 ssoossh ca
 ```
@@ -102,6 +102,8 @@ ssoossh ca
 - `host principals` -- implements sshd's `AuthorizedPrincipalsCommand`. Called
   on every login attempt, runs as root, **never touches the network**; answers
   from the local mapping file, which `host mapping` edits.
+- `host check` -- read-only report, from `sshd -T`, on whether the host will
+  accept certificates. Exits non-zero on a failed check.
 - `ca` -- prints the CA public key for `TrustedUserCAKeys` and
   `@cert-authority` lines.
 
