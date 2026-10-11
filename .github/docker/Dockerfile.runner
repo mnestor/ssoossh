@@ -146,3 +146,5 @@ RUN echo "deb [trusted=yes] https://repo.goreleaser.com/apt/ /" > /etc/apt/sourc
 ENV PNPM_HOME=/root/.local/share/pnpm
 ENV PATH=/usr/local/go/bin:/root/go/bin:$PNPM_HOME/bin:$PATH
 
+
+# Probe for PR #123: an image-only change to prove the rest of CI skips. Do not merge.
