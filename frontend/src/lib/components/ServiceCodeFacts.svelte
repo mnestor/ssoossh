@@ -1,7 +1,13 @@
 <script lang="ts">
 	import { detail, inDetailScope } from '#lib/detail.svelte.js';
 	import type { AdminEnrollment, ServiceEnrollment } from '#lib/api/types.js';
-	import { formatDateTimeRange, formatDuration, isExpired, remainingLabel } from '#lib/format.js';
+	import {
+		formatDateTime,
+		formatDateTimeRange,
+		formatDuration,
+		isExpired,
+		remainingLabel
+	} from '#lib/format.js';
 	import CopyableId from './CopyableId.svelte';
 	import DetailRow from './DetailRow.svelte';
 	import Icon from './Icon.svelte';
@@ -72,6 +78,10 @@
 	// A simplified reader sees the granted extensions alone; the other
 	// options are advanced-only (R4).
 	const chips = $derived(simplified ? enrollment.options.extensions : optionChips);
+
+	const identity = $derived(
+		enrollment.key_id || `approved ${formatDateTime(enrollment.created_at)}`
+	);
 </script>
 
 <!-- The identity strip, the same one the certificate page opens with: what
@@ -94,6 +104,13 @@
 			Active
 		</span>
 	{/if}
+	<!-- Which code this is, by what the account's list led its row with:
+	     the key ID, or the approval date for a code that has none. Shown at
+	     both levels, because two codes for one account are otherwise
+	     identical up here. -->
+	<span class="font-mono text-dense break-all text-ink" data-testid="service-code-identity"
+		>{identity}</span
+	>
 	{#if !simplified}
 		<span class="ml-auto"><CopyableId value={enrollment.id} testid="enrollment-id" /></span>
 	{/if}

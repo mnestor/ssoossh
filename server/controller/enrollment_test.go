@@ -121,11 +121,15 @@ func (f *fakeEnrollmentService) Reassign(_ context.Context, _ string, _ string, 
 	return f.err
 }
 
+// testExpiringSoon is the expiring-soon window the test routers report, set
+// apart from the week default so a test can tell it was passed through.
+const testExpiringSoon = 30 * 24 * time.Hour
+
 func newEnrollmentTestRouter(svc *fakeEnrollmentService) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
-	NewEnrollmentController(&r.RouterGroup, svc, nil, passthrough)
+	NewEnrollmentController(&r.RouterGroup, svc, testExpiringSoon, nil, passthrough)
 	return r
 }
 
@@ -200,7 +204,7 @@ func newRetrievalsTestRouter(svc *fakeEnrollmentService, identity *service.Ident
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(middleware.NewErrorHandlerMiddleware().Add())
-	NewEnrollmentController(&r.RouterGroup, svc, nil, func(c *gin.Context) {
+	NewEnrollmentController(&r.RouterGroup, svc, testExpiringSoon, nil, func(c *gin.Context) {
 		if identity != nil {
 			c.Set(middleware.IdentityContextKey, identity)
 		}
@@ -346,7 +350,7 @@ func newEnrollmentTestRouterRateLimited(svc *fakeEnrollmentService, seen *string
 		*seen = ExtractEnrollmentCodeForRateLimit(c)
 		c.Next()
 	}
-	NewEnrollmentController(&r.RouterGroup, svc, keyed, passthrough)
+	NewEnrollmentController(&r.RouterGroup, svc, testExpiringSoon, keyed, passthrough)
 	return r
 }
 
@@ -555,6 +559,25 @@ func TestEnrollmentsHandler_ShouldReturnTheApprovedEnrollments(t *testing.T) {
 	}
 	if got.Enrollments[0].ID != "enr-1" {
 		t.Errorf("got enrollment ID %q, want %q", got.Enrollments[0].ID, "enr-1")
+	}
+}
+
+// The page's "Expires soon" follows the server's reminder lead, which only
+// this response carries to it.
+func TestEnrollmentsHandler_ShouldReportTheExpiringSoonWindow(t *testing.T) {
+	t.Parallel()
+
+	svc := &fakeEnrollmentService{enrollments: []service.ServiceEnrollment{sampleServiceEnrollment()}}
+	r := newEnrollmentsTestRouter(svc, &service.Identity{Subject: "sub-1"})
+
+	req := httptest.NewRequest(http.MethodGet, "/certs/service/enrollments", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var got webtypes.ServiceEnrollmentsResponse
+	decodeEnvelope(t, w.Body.Bytes(), &got)
+	if want := int(testExpiringSoon / time.Second); got.ExpiringSoonSeconds != want {
+		t.Errorf("got expiring_soon_seconds %d, want %d", got.ExpiringSoonSeconds, want)
 	}
 }
 

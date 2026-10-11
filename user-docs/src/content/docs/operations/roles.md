@@ -25,10 +25,14 @@ admin:
   # the user directory, the audit feed.
   auditor_group: "ssh-auditors"
 
-  # Shown on the account-disabled page.
-  contact_email: "ssh-help@example.com"
+  # Shown on the account-disabled page, under the support contact.
   disabled_message: "Contact the security team with your ticket number."
 ```
+
+The account-disabled page names the same contact as the login page and the
+footer: [`branding.support_email`](/ssoossh/reference/config/branding/#support_email).
+The older `admin.contact_email` is still read when `branding.support_email` is
+unset, and the server logs a warning while it is the one in use.
 
 All three group names are optional, and every one of them
 [`fails closed`](/ssoossh/reference/config/admin/#require_group): no identity,

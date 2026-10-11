@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/mnestor/ssoossh/server/model"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 // IdentityRefresher re-reads the durable half of a session identity — the
@@ -68,6 +69,13 @@ func NewIdentityService(db *gorm.DB, ldap *LDAPService) *IdentityService {
 // mid-request would be a worse outage than briefly stale data. A missing
 // users row is not an error at all — it is a session whose row was deleted,
 // and there is nothing to refresh from.
+//
+// The one error that is not for logging is *errorresponses.UserDisabledError:
+// the account was disabled after this session signed in. Sign-in already
+// refuses a disabled account (AuthService.checkUserDisabled), but a session
+// opened before the disable used to keep working until it timed out, up to
+// the absolute cap, approving certificate requests the whole time. The
+// caller ends the session on it.
 func (s *IdentityService) RefreshIdentity(ctx context.Context, identity *Identity) error {
 	if s == nil || identity == nil || s.db == nil {
 		return nil
@@ -75,7 +83,7 @@ func (s *IdentityService) RefreshIdentity(ctx context.Context, identity *Identit
 
 	var user model.User
 	err := s.db.WithContext(ctx).
-		Select("id", "display_name", "other_accounts", "service_accounts", "extra_fields").
+		Select("id", "display_name", "other_accounts", "service_accounts", "extra_fields", "disabled_at").
 		Where("subject = ?", identity.Subject).
 		First(&user).Error
 	switch {
@@ -83,6 +91,10 @@ func (s *IdentityService) RefreshIdentity(ctx context.Context, identity *Identit
 		return nil
 	case err != nil:
 		return err
+	}
+
+	if user.DisabledAt != nil {
+		return &errorresponses.UserDisabledError{}
 	}
 
 	// Display only, but refreshed with the rest so a rename in the

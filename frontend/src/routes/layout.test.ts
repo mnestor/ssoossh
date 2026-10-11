@@ -273,4 +273,33 @@ describe('root layout', () => {
 		const logoutCall = spy.mock.calls.find(([input]) => String(input).includes('/auth/logout'));
 		expect(logoutCall).toBeDefined();
 	});
+
+	// A failed sign-out used to say nothing: the button came back and the
+	// session stayed live, so someone on a shared machine walked away still
+	// signed in.
+	it('should say a failed sign-out left the session active', async () => {
+		const spy = stubAppFetch(alice);
+		spy.mockImplementation((input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url.includes('/auth/logout')) return Promise.reject(new Error('offline'));
+			if (url.includes('/users/me')) {
+				return Promise.resolve(
+					new Response(JSON.stringify({ data: alice, error: null }), {
+						status: 200,
+						headers: { 'Content-Type': 'application/json' }
+					})
+				);
+			}
+			return Promise.resolve(new Response('not found', { status: 404 }));
+		});
+
+		render(Layout, { children });
+		const user = userEvent.setup();
+		await user.click(await screen.findByTestId('rail-user-trigger'));
+		await user.click(screen.getByTestId('rail-sign-out'));
+
+		expect(await screen.findByTestId('signout-error')).toHaveTextContent(
+			'You are still signed in.'
+		);
+	});
 });

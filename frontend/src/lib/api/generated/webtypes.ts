@@ -398,6 +398,12 @@ export interface ServiceEnrollmentResponse {
  */
 export interface ServiceEnrollmentsResponse {
 	enrollments: ServiceEnrollmentResponse[];
+	/**
+	 * ExpiringSoonSeconds is how far ahead of a code's expiry the page
+	 * calls it expiring soon: mail.expiry_reminder_lead, so the page and
+	 * the first reminder mail agree, or a week when that is zero.
+	 */
+	expiring_soon_seconds: number /* int */;
 }
 /**
  * SetNotificationEmailRequestBody is the request to point an enrollment's
@@ -542,6 +548,15 @@ export interface RequestDetailResponse {
 	type: CertificateType;
 	status: CertificateRequestStatus;
 	source_ip: string;
+	/**
+	 * ViewerIP is the address this server sees the approving browser
+	 * connect from, resolved the same way as SourceIP, so the approval page
+	 * can set the two side by side. Display only and never a reason to
+	 * refuse: plenty of people approve from one machine a request their
+	 * terminal made on another. A difference is something the approver can
+	 * check, where everything the requester reports about itself is not.
+	 */
+	viewer_ip?: string;
 	local_username?: string;
 	local_hostname?: string;
 	/**

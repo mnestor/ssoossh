@@ -9,6 +9,7 @@
 	import { loadBranding, getBranding } from '#lib/branding.svelte.js';
 	import AppRail from '#lib/components/AppRail.svelte';
 	import BrandMark from '#lib/components/BrandMark.svelte';
+	import Alert from '#lib/components/Alert.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import Footer from '#lib/components/Footer.svelte';
 	import Icon from '#lib/components/Icon.svelte';
@@ -66,6 +67,10 @@
 	const version = $derived(getVersion());
 
 	let signingOut = $state(false);
+	// A sign-out that did not complete. Shown on the page, not only in the
+	// menu that is about to close: the session is still live, and someone
+	// on a shared machine has to know before they walk away.
+	let signOutError = $state<string | null>(null);
 
 	// The login page carries its own sign-in action, so the header's copy of
 	// it would be a second button pointing at the screen already on show.
@@ -156,12 +161,13 @@
 	 * state belonging to the identity that just left. */
 	async function signOut() {
 		signingOut = true;
+		signOutError = null;
 		try {
 			await logout();
 			session.clear();
 			window.location.assign('/login');
 		} catch (cause) {
-			session.error = errorMessage(cause);
+			signOutError = errorMessage(cause);
 			signingOut = false;
 		}
 	}
@@ -284,6 +290,18 @@
 			</header>
 
 			<main id="main-content" class="flex flex-1 flex-col items-center px-4 py-8 sm:px-8 sm:py-10">
+				{#if signOutError}
+					<div class="mb-6 w-full max-w-[1120px]">
+						<Alert
+							variant="error"
+							title="Sign-out did not complete"
+							onretry={signOut}
+							testid="signout-error"
+						>
+							You are still signed in. {signOutError}
+						</Alert>
+					</div>
+				{/if}
 				{@render children()}
 			</main>
 

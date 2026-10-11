@@ -57,7 +57,7 @@ describe('Dashboard page', () => {
 		it('should display the empty-state prompt specifically', async () => {
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
-			expect(screen.getByText(/Nothing yet/)).toBeInTheDocument();
+			expect(screen.getByText(/No certificates yet/)).toBeInTheDocument();
 		});
 	});
 
@@ -75,7 +75,7 @@ describe('Dashboard page', () => {
 		it('should show the error message', async () => {
 			render(Page);
 			await new Promise((resolve) => setTimeout(resolve, 0));
-			expect(screen.getByText(/Could not load your certificates/)).toBeInTheDocument();
+			expect(screen.getByText(/Could not load your recent certificates/)).toBeInTheDocument();
 		});
 
 		// A network error is not "you hold no certificates": the empty
@@ -196,5 +196,72 @@ describe('Dashboard page', () => {
 				'/certs/cert-1?from=dashboard'
 			);
 		});
+	});
+
+	describe('as a summary rather than a second history', () => {
+		function stubMany(count: number, nextCursor: string | null = 'cursor-2') {
+			const certs = Array.from({ length: count }, (_, i) => ({
+				id: `cert-${i}`,
+				type: 'user',
+				serial_number: String(i),
+				principals: 'alice',
+				public_key_fingerprint: 'SHA256:abc',
+				issued_at: new Date(Date.now() - i * 60000).toISOString(),
+				expires_at: new Date(Date.now() + 86400000).toISOString(),
+				key_id: `key-${i}`
+			}));
+			const fetchMock = vi.fn(() =>
+				Promise.resolve(
+					new Response(
+						JSON.stringify({ data: { certificates: certs, next_cursor: nextCursor }, error: null }),
+						{ status: 200, headers: { 'Content-Type': 'application/json' } }
+					)
+				)
+			);
+			vi.stubGlobal('fetch', fetchMock);
+			return fetchMock;
+		}
+
+		it('should ask the server for the five most recent', async () => {
+			const fetchMock = stubMany(5);
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toContain('limit=5');
+		});
+
+		it('should show no more than five rows', async () => {
+			stubMany(8);
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(screen.getAllByTestId('cert-row')).toHaveLength(5);
+		});
+
+		// Older certificates are the history page's: paging here made the
+		// landing page a second history without refusals or filters.
+		it('should offer no Load more even when there is more', async () => {
+			stubMany(5);
+			render(Page);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(screen.queryByRole('button', { name: /Load more/ })).not.toBeInTheDocument();
+		});
+
+		it('should call the list what it shows', async () => {
+			stubMany(1);
+			render(Page);
+			expect(screen.getByRole('heading', { name: 'Recent certificates' })).toBeInTheDocument();
+		});
+
+		it('should lead to the full history', async () => {
+			stubMany(1);
+			render(Page);
+			expect(screen.getByTestId('dashboard-history-link')).toHaveAttribute('href', '/logs/me');
+		});
+	});
+
+	it('should point an empty dashboard at the console login too', async () => {
+		mockFetch({ certificates: [] });
+		render(Page);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(screen.getByTestId('dashboard-empty-console')).toHaveAttribute('href', '/console');
 	});
 });

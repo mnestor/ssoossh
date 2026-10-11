@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ApiError } from './api/client';
 import type { CertificateOptions, RequestDetail, RequestStatus } from './api/types';
+import { unknownErrorText } from './auth';
 import {
 	anyTrimmed,
 	approvalBlockedReason,
@@ -188,6 +189,6 @@ describe('describeLoadError', () => {
 	});
 
 	it('should describe a non-Error throw without inventing a message', () => {
-		expect(describeLoadError('boom').message).toBe('something went wrong');
+		expect(describeLoadError('boom').message).toBe(unknownErrorText);
 	});
 });

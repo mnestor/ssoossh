@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { listCertificates, listDeniedRequests } from '#lib/api/endpoints.js';
 	import type { CertificateRecord, DeniedRequest } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
@@ -16,21 +18,18 @@
 	import EmptyState from '#lib/components/EmptyState.svelte';
 	import { outcomeFilters, statusFilters, typeFilters } from '#lib/filters.js';
 	import { describeList } from '#lib/listStatus.js';
+	import { certificateEvent } from '#lib/rowEvents.js';
 	import { watchNarrow } from '#lib/viewport.js';
 
 	// Cursor-paginated decision history: what was issued, and what was
-	// refused. The type filter and client-side pagination apply only to
-	// loaded results — if the user filters to "console" and everything
-	// loaded so far is "user", they see nothing until they load more pages.
-	// This is the accepted tradeoff of load-more pagination over offset
-	// pagination.
+	// refused. The server takes the search and the type and status filters,
+	// and the outcome decides which of the two endpoints is read at all.
 	//
 	// Two sources because the server has two. /api/certs reads the
 	// certificates table, and a denial never writes a row there, so the half
 	// of somebody's decisions that says "no" is served by
 	// /api/decisions/denied and interleaved here by time. That half is the
-	// one an incident review asks about first, and until now this page could
-	// not show it at all.
+	// one an incident review asks about first.
 	let allCertificates = $state<CertificateRecord[]>([]);
 	let allDenials = $state<DeniedRequest[]>([]);
 	let nextCursor = $state<string | null>(null);
@@ -42,56 +41,27 @@
 	let isLoading = $state(false);
 	let hasLoaded = $state(false);
 
-	// Filter state. The vocabulary is shared with /admin/certificates —
-	// same labels, same icons, same order; see #lib/filters. Only the
-	// outcome group is this page's alone, because the admin list reads the
-	// certificates table and a denial never writes a row there — which is
-	// also why this is the only list whose rows carry an outcome mark at
-	// all.
+	// Filter state, read from the address the page opened at and written
+	// back to it, so returning from a certificate (whose back chip carries
+	// this search) lands on the same narrowed view instead of the defaults.
+	// The vocabulary is shared with /admin/certificates; see #lib/filters.
 	//
 	// Approved by default, not both. This page has always been the list of
-	// certificates somebody holds, and that is what most visits are for;
-	// opening it on a mixture would change what an existing reader gets
-	// without their asking. A refusal is one click away instead, which is
-	// the right place for a thing you go looking for.
-	let selectedOutcome = $state('approved');
-	let selectedType = $state('');
-	let selectedStatus = $state('');
-	let searchQuery = $state('');
+	// certificates somebody holds, and that is what most visits are for. A
+	// refusal is one click away instead.
+	const opened = page.url.searchParams;
+	let selectedOutcome = $state(opened.get('outcome') ?? 'approved');
+	let selectedType = $state(opened.get('type') ?? '');
+	let selectedStatus = $state(opened.get('status') ?? '');
+	let searchQuery = $state(opened.get('q') ?? '');
 
-	// Below `sm` this page shows approvals and nothing else, and the outcome
-	// group is not offered at all.
-	//
-	// The rows are why. A phone-width row has space for the subject, the
-	// detail line and one indicator, and the outcome mark was the thing that
-	// had to go for the rest to fit — but dropping it is only honest while
-	// every row on screen is an approval. So the filter is pinned rather
-	// than merely hidden: a reader who chose "Denied" on a wide window and
-	// then narrowed it gets moved back to approvals, not left looking at
-	// refusals no longer labelled as such.
-	//
-	// Above `sm` the mark comes back, because above `sm` the list mixes the
-	// two: `showOutcome` on the rows below.
+	// Below `sm` a certificate row has no room for its outcome mark. The
+	// list still mixes the two kinds when asked to: a refusal is a DeniedRow,
+	// which carries its own mark and says "denied" in its detail line, so
+	// the outcome filter stays on offer at every width. It used to be pinned
+	// to approvals on a phone, which left a refusal unreachable there.
 	let isNarrow = $state(false);
-	$effect(() =>
-		watchNarrow((narrow) => {
-			isNarrow = narrow;
-			if (narrow) {
-				selectedOutcome = 'approved';
-			}
-		})
-	);
-
-	let currentPage = $state(1);
-	const pageSize = 10;
-
-	// What each certificate type's row is a record of.
-	const rowEvents: Record<string, string> = {
-		user: 'certificate requested',
-		pam: 'certificate requested',
-		console: 'console login',
-		service: 'service key requested'
-	};
+	$effect(() => watchNarrow((narrow) => (isNarrow = narrow)));
 
 	// Rows say how long ago something was, so they need a clock that moves.
 	let now = $state(new Date());
@@ -122,11 +92,28 @@
 		].sort((a, b) => b.at - a.at)
 	);
 
-	// No client-side sieve any more: the server takes q/type/status and
-	// the outcome decides which of the two endpoints is read at all, so
-	// what is loaded is already what was asked for. All that is left here
-	// is the page-of-ten a reader steps through.
-	const filtered = $derived(sorted);
+	/** oldestAt is the earliest time in a loaded page, or -Infinity for none. */
+	function oldestAt(times: number[]): number {
+		return times.length ? Math.min(...times) : -Infinity;
+	}
+
+	// How far back the merged list is known to be complete. Each source with
+	// more to fetch is complete only back to its oldest loaded row; anything
+	// older may still have rows from that source to come. Showing past it
+	// gave a timeline with holes, and Load more then inserted rows above
+	// ones the reader had already passed. A single-source view is unchanged,
+	// because the other source has no cursor.
+	const horizon = $derived(
+		Math.max(
+			nextCursor
+				? oldestAt(allCertificates.map((c) => new Date(c.issued_at).getTime()))
+				: -Infinity,
+			nextDenialCursor
+				? oldestAt(allDenials.map((d) => new Date(d.decided_at).getTime()))
+				: -Infinity
+		)
+	);
+	const shown = $derived(sorted.filter((entry) => entry.at >= horizon));
 
 	// Whether anything has been narrowed, which is what separates "you have
 	// no history" from "nothing matches". Approved is the state the page
@@ -151,42 +138,62 @@
 		searchKey += 1;
 	}
 
-	// Narrowing the results while looking at page 4 should show the first
-	// page of the new set, not whatever lands at that offset.
-	$effect(() => {
-		void selectedType;
-		void selectedOutcome;
-		void selectedStatus;
-		void searchQuery;
-		currentPage = 1;
+	// The filters as a query string: what the address bar carries and what
+	// a certificate's back chip returns to. Defaults are left out, so an
+	// unfiltered history has a clean address.
+	const filterSearch = $derived.by(() => {
+		const parts: string[] = [];
+		const add = (key: string, value: string) => parts.push(`${key}=${encodeURIComponent(value)}`);
+		if (searchQuery.trim()) add('q', searchQuery.trim());
+		if (selectedType) add('type', selectedType);
+		if (selectedStatus) add('status', selectedStatus);
+		if (selectedOutcome !== 'approved') add('outcome', selectedOutcome);
+		return parts.length ? `?${parts.join('&')}` : '';
 	});
 
-	const paginated = $derived(filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+	$effect(() => {
+		const search = filterSearch;
+		if (search === page.url.search) {
+			return;
+		}
+		try {
+			replaceState(`${page.url.pathname}${search}`, page.state);
+		} catch {
+			// Before the router is ready (or in a test) the address simply
+			// stays as it was; the filters themselves still apply.
+		}
+	});
 
-	const totalPages = $derived(Math.ceil(filtered.length / pageSize));
+	// What the list holds, for the announcement and the empty states: a
+	// certificate, a refusal, or either.
+	const noun = $derived(
+		selectedOutcome === 'denied'
+			? 'denied request'
+			: selectedOutcome === 'approved'
+				? 'certificate'
+				: 'entry'
+	);
 
 	// What the list just became, for a reader who cannot see the rows
 	// change under a filter chip. Counts what has been loaded rather than
-	// what exists: this list pages client-side over a growing window, so
-	// "loaded" is the honest number and the Load more button below says the
-	// rest. See #lib/listStatus.
+	// what exists: "loaded" is the honest number, and the Load more button
+	// below says the rest. See #lib/listStatus.
 	const listStatus = $derived(
 		describeList({
-			noun: 'certificate',
-			total: filtered.length,
+			noun,
+			total: shown.length,
 			loading: isLoading,
 			ready: hasLoaded,
-			page: currentPage,
-			pageCount: totalPages,
 			query: searchQuery
 		})
 	);
 
 	// A row opens the certificate's own page rather than a dialog over the
-	// list. `from` is what the back chip there reads: this list, not the
-	// reader's own history, is where they came from.
+	// list. `from` is what the back chip there reads, and `back` the
+	// filters it returns to.
 	function certHref(certId: string): string {
-		return `${resolve(`certs/${certId}`)}?from=history`;
+		const back = filterSearch ? `&back=${encodeURIComponent(filterSearch)}` : '';
+		return `${resolve(`certs/${certId}`)}?from=history${back}`;
 	}
 
 	// True while either source has more to give. One button loads both, so a
@@ -204,18 +211,14 @@
 
 	// Which endpoints the outcome asks for. Approved reads certificates
 	// alone and Denied reads decisions alone, so the filter is not just a
-	// sieve over what arrived — it decides what is fetched. (A validity
-	// filter excludes denials too, but the server already answers that with
-	// an empty list, so there is no second rule here.)
+	// sieve over what arrived; it decides what is fetched.
 	const wantsCertificates = $derived(selectedOutcome !== 'denied');
 	const wantsDenials = $derived(selectedOutcome !== 'approved');
 
 	// Which load is allowed to write to the page. Nothing cancels a request
 	// in flight and the filters stay live while one runs, so two can
-	// overlap and answer in whatever order the network settles on. Without
-	// this, a slower earlier read landing last would replace the list with
-	// results for a filter the reader had already moved off. The admin
-	// certificate list arbitrates its own reads the same way.
+	// overlap and answer in whatever order the network settles on; this
+	// keeps a slower earlier read from landing last.
 	//
 	// Deliberately not $state: nothing renders from it, and the effect below
 	// reads the filters, so making it reactive would feed the loop it is
@@ -351,16 +354,17 @@
 			<!-- Type, then Status, then Outcome. Ordered by how often a
 			     reader reaches for one: the type of certificate is what most
 			     visits narrow by, and the outcome is the last thing they
-			     would change — this list is what somebody holds, and asking
-			     for refusals is a separate errand. It also puts the two
-			     groups the admin list shares first and in the same order, so
-			     the two lists open identically as far as they go. -->
+			     would change. It also puts the two groups the admin list
+			     shares first and in the same order.
+
+			     Not disabled while a load runs: the latestLoad guard already
+			     discards a stale answer, and disabling the chip just pressed
+			     took keyboard focus away from it. -->
 			<div class="flex flex-wrap items-center gap-x-5 gap-y-2">
 				<FilterGroup
 					label="Type"
 					options={typeFilters}
 					selected={selectedType}
-					disabled={isLoading}
 					onselect={(value) => (selectedType = value)}
 					testid="type-filter"
 				/>
@@ -368,22 +372,16 @@
 					label="Status"
 					options={statusFilters}
 					selected={selectedStatus}
-					disabled={isLoading}
 					onselect={(value) => (selectedStatus = value)}
 					testid="status-filter"
 				/>
-				<!-- Outcome is a wide-viewport control: see isNarrow above for
-				     why a phone gets approvals only. -->
-				{#if !isNarrow}
-					<FilterGroup
-						label="Outcome"
-						options={outcomeFilters}
-						selected={selectedOutcome}
-						disabled={isLoading}
-						onselect={(value) => (selectedOutcome = value)}
-						testid="outcome-filter"
-					/>
-				{/if}
+				<FilterGroup
+					label="Outcome"
+					options={outcomeFilters}
+					selected={selectedOutcome}
+					onselect={(value) => (selectedOutcome = value)}
+					testid="outcome-filter"
+				/>
 			</div>
 		</div>
 
@@ -399,20 +397,23 @@
 			>
 				{loadError}
 			</Alert>
-		{:else if isLoading && filtered.length === 0}
+		{:else if isLoading && shown.length === 0}
 			<LoadingBlock shape="rows" count={4} testid="history-loading" />
-		{:else if filtered.length === 0 && isFiltered}
+		{:else if shown.length === 0 && isFiltered}
 			<EmptyState icon="filter-off" title="Nothing matches" testid="history-empty">
 				{#snippet action()}
 					<Button variant="ghost" onclick={clearFilters} testid="history-clear-filters">
 						Clear filters
 					</Button>
 				{/snippet}
-				Nothing in your history matches the selected filter.
+				Nothing in your history matches this search or these filters.
 			</EmptyState>
-		{:else if filtered.length === 0}
-			<EmptyState icon="certificate-off" title="No decisions yet" testid="history-empty">
-				You have not decided any certificate requests yet.
+		{:else if shown.length === 0}
+			<!-- The page opens on approvals, so "no decisions" would be false
+			     for someone whose only decision was a refusal. -->
+			<EmptyState icon="certificate-off" title="No certificates yet" testid="history-empty">
+				Run <code class="font-mono">ssoossh login</code> to request one. Refused requests are under Outcome:
+				Denied.
 			</EmptyState>
 		{:else}
 			<div class="flex flex-col gap-2">
@@ -420,12 +421,12 @@
 				     decision that refused a different request are separate
 				     tables with separate id spaces, and nothing stops one from
 				     colliding with the other. -->
-				{#each paginated as entry (entry.kind + ':' + (entry.kind === 'certificate' ? entry.cert.id : entry.denial.id))}
+				{#each shown as entry (entry.kind + ':' + (entry.kind === 'certificate' ? entry.cert.id : entry.denial.id))}
 					{#if entry.kind === 'certificate'}
 						<CertRow
 							cert={entry.cert}
 							{now}
-							event={rowEvents[entry.cert.type] ?? 'certificate requested'}
+							event={certificateEvent(entry.cert.type)}
 							showOutcome={!isNarrow}
 							testid="cert-row"
 							href={certHref(entry.cert.id)}
@@ -436,43 +437,25 @@
 				{/each}
 			</div>
 
-			{#if totalPages > 1 || hasMore}
-				<div class="flex items-center justify-between gap-3 border-t border-border-subtle pt-2">
-					<Button variant="ghost" disabled={currentPage === 1} onclick={() => currentPage--}
-						>Previous</Button
-					>
-
-					<span class="text-xs text-ink-muted"
-						>Page {currentPage} of {totalPages} ({filtered.length} loaded)</span
-					>
-
-					<Button
-						variant="ghost"
-						disabled={currentPage === totalPages}
-						onclick={() => currentPage++}
-					>
-						Next
+			<!-- One pager. Loaded rows all show, and Load more fetches older
+			     ones: a page-of-ten pager over what had loaded used to sit on
+			     top of this, reading "Page 3 of 3" while more existed. -->
+			{#if moreError}
+				<Alert
+					variant="error"
+					title="Could not load more of your history"
+					onretry={loadMore}
+					testid="history-more-error"
+				>
+					{moreError}
+				</Alert>
+			{:else if hasMore}
+				<div class="flex flex-col items-center gap-1">
+					<Button variant="ghost" busy={isLoading} onclick={loadMore} testid="history-load-more">
+						{isLoading ? 'Loading…' : 'Load more'}
 					</Button>
+					<span class="text-xs text-ink-muted tabular-nums">{shown.length} shown</span>
 				</div>
-
-				{#if moreError}
-					<Alert
-						variant="error"
-						title="Could not load more of your history"
-						onretry={loadMore}
-						testid="history-more-error"
-					>
-						{moreError}
-					</Alert>
-				{/if}
-
-				{#if hasMore}
-					<div class="flex justify-center">
-						<Button variant="ghost" busy={isLoading} onclick={loadMore}>
-							{isLoading ? 'Loading…' : 'Load more results'}
-						</Button>
-					</div>
-				{/if}
 			{/if}
 		{/if}
 	{/if}

@@ -734,6 +734,33 @@ func TestDetailHandler_ShouldOmitDecisionFieldsForAPendingRequest(t *testing.T) 
 	}
 }
 
+// TestDetailHandler_ShouldReportTheViewersOwnAddress covers the approval
+// page's one check that does not rest on what the requester reports: the
+// address this server sees the approver's browser connect from, beside the
+// request's own.
+func TestDetailHandler_ShouldReportTheViewersOwnAddress(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	svc := &fakeCertRequestService{detail: &service.RequestDetail{
+		Request: model.CertificateRequest{ID: "req-1", Type: model.CertificateTypeUser, Status: model.CertificateRequestStatusPending, SourceIP: "198.51.100.7"},
+	}}
+
+	r := gin.New()
+	NewCertRequestController(&r.RouterGroup, svc, identityMiddleware(&service.Identity{Subject: "sub-alice"}), passthrough, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/certs/requests/req-1", nil)
+	req.RemoteAddr = "203.0.113.20:51234"
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	var resp webtypes.RequestDetailResponse
+	decodeEnvelope(t, w.Body.Bytes(), &resp)
+	if resp.ViewerIP != "203.0.113.20" {
+		t.Errorf("got viewer_ip %q, want %q", resp.ViewerIP, "203.0.113.20")
+	}
+}
+
 // TestDecodeDecisionStringList_ShouldReturnNilOnMalformedJSON covers the
 // parse-failure branch directly: malformed JSON in a decision's list column
 // (which should never happen, since it's only ever written by newDecision's

@@ -177,6 +177,39 @@
 		attempt += 1;
 	}
 
+	// The tab names what is being approved, not always "a certificate
+	// request": a PAM authentication and a console login read differently
+	// in a row of tabs too.
+	const tabTitle = $derived(
+		detail?.type === 'console'
+			? 'Approve a console login'
+			: detail?.type === 'pam'
+				? 'Approve a PAM authentication'
+				: 'Approve a certificate request'
+	);
+
+	/**
+	 * recheck reads the request again after a decision did not go through.
+	 * The commonest reason is that it closed in the meantime (expired, or
+	 * decided in another tab), and the server answers that only as a
+	 * failure; reading the request back lets the page say which. The pickers
+	 * are kept unless the request really changed.
+	 */
+	async function recheck() {
+		try {
+			const fresh = await getRequestDetail(id);
+			if (
+				detail &&
+				(fresh.status !== detail.status || fresh.already_closed !== detail.already_closed)
+			) {
+				detail = fresh;
+				actionError = null;
+			}
+		} catch {
+			// The decision error already on screen stands.
+		}
+	}
+
 	/** decide records one approve-or-deny decision and reflects the result.
 	 * The certificate itself never appears here — it is signed
 	 * asynchronously and delivered on the waiting client's own SSE stream
@@ -209,14 +242,18 @@
 			}
 			outcome = action;
 		} catch (cause) {
+			if (redirectIfUnauthenticated(cause)) {
+				return;
+			}
 			actionError = errorMessage(cause);
+			await recheck();
 		} finally {
 			busy = false;
 		}
 	}
 </script>
 
-<svelte:head><title>Approve a certificate request · ssoossh</title></svelte:head>
+<svelte:head><title>{tabTitle} · ssoossh</title></svelte:head>
 
 <!-- `wide`, the width every signed-in page uses, and with the rail beside
      it (see #lib/nav's focusRoutes). Reaching this page means signing in, so

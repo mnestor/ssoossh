@@ -17,7 +17,11 @@
 		meta: PageMeta;
 		/** Asked for another window, by the offset it starts at. */
 		onpage: (offset: number) => void;
-		/** Disables every control while a page is in flight. */
+		/**
+		 * Marks the pager busy while a page is in flight. The controls stay
+		 * usable: callers discard a stale answer themselves, and disabling the
+		 * button just pressed took keyboard focus away from it.
+		 */
 		busy?: boolean;
 		/** Stable selector for the e2e browser tier — see test/e2e/README.md. */
 		testid?: string;
@@ -73,13 +77,14 @@
 {#if meta.page_count > 1}
 	<nav
 		aria-label="Pagination"
+		aria-busy={busy}
 		data-testid={testid}
 		class="flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle pt-3"
 	>
 		<button
 			type="button"
 			class="{controlClass} text-ink hover:bg-surface-muted"
-			disabled={isFirst || busy}
+			disabled={isFirst}
 			onclick={() => onpage(Math.max(0, meta.offset - meta.limit))}
 		>
 			<Icon name="chevron-left" size="xs" />
@@ -95,7 +100,6 @@
 						type="button"
 						aria-label="Page {value}"
 						aria-current={value === meta.page ? 'page' : undefined}
-						disabled={busy}
 						onclick={() => onpage(offsetOf(value))}
 						class="{controlClass} min-w-target {value === meta.page
 							? 'border-ink bg-ink text-surface'
@@ -110,7 +114,7 @@
 		<button
 			type="button"
 			class="{controlClass} text-ink hover:bg-surface-muted"
-			disabled={isLast || busy}
+			disabled={isLast}
 			onclick={() => onpage(meta.offset + meta.limit)}
 		>
 			Next

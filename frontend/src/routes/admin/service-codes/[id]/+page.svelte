@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { ApiError } from '#lib/api/client.js';
@@ -19,6 +18,7 @@
 	import { coverWithDetail } from '#lib/detail.svelte.js';
 	import PageShell from '#lib/components/PageShell.svelte';
 	import { isExpired } from '#lib/format.js';
+	import { session } from '#lib/session.svelte.js';
 
 	// One of the pages the detail level covers (DESIGN.md, "Detail levels").
 	coverWithDetail();
@@ -41,9 +41,43 @@
 	// An already-expired code needs no control: the outcome it would produce
 	// is already true. Read here rather than inside the detail component
 	// because retiring is the page's action, not the reading's.
-	const expired = $derived(detail ? isExpired(detail.enrollment.expires_at) : false);
+	// The remaining lifetime needs a clock that moves, as on the holder's
+	// page; it used to be computed once, at load.
+	let now = $state(new Date());
+	$effect(() => {
+		const timer = setInterval(() => (now = new Date()), 30_000);
+		return () => clearInterval(timer);
+	});
+
+	const expired = $derived(detail ? isExpired(detail.enrollment.expires_at, now) : false);
+
+	// Expiring a code is SOC's (controller/admin.go, socGroup); the admin
+	// area also lets auditors in, so the action is offered only to a role
+	// that can take it.
+	const canExpire = $derived(session.user?.is_soc ?? false);
+
+	// Said here after an expiry instead of leaving for the list, where the
+	// row may be on another page and the search was lost.
+	let expiredNotice = $state<string | null>(null);
+	function afterExpired() {
+		expiredNotice = 'This code was expired. Nothing can redeem it again.';
+		attempt += 1;
+	}
+
+	// Bumped by Try again; the load below reads it, so a bump re-runs it.
+	let attempt = $state(0);
+	// Whether asking again could change the answer. A missing or forbidden
+	// enrollment stays that way, so those get no Try again.
+	let retryable = $state(true);
+
+	// The way out of a failed load: the same request again (DESIGN.md,
+	// "States"). The effect resets the loading shape itself.
+	function retry() {
+		attempt += 1;
+	}
 
 	$effect(() => {
+		void attempt;
 		const controller = new AbortController();
 		const id = page.params.id;
 		if (!id) {
@@ -66,11 +100,13 @@
 				}
 				// The three answers a reader has to be able to tell apart:
 				// no such code, a code they may not see, and a failure.
+				retryable = false;
 				if (cause instanceof ApiError && cause.status === 404) {
 					loadError = 'No enrollment with that ID.';
 				} else if (cause instanceof ApiError && cause.status === 403) {
 					loadError = 'You do not have permission to view this enrollment.';
 				} else {
+					retryable = true;
 					loadError = errorMessage(cause);
 				}
 				hasLoaded = true;
@@ -81,7 +117,9 @@
 </script>
 
 <svelte:head>
-	<title>Service code details · Admin · ssoossh</title>
+	<title
+		>{detail?.enrollment.key_id ? `${detail.enrollment.key_id} · ` : ''}Service code · ssoossh</title
+	>
 </svelte:head>
 
 <PageShell width="wide">
@@ -97,12 +135,13 @@
 		{#snippet action()}
 			<div class="flex flex-wrap items-center justify-end gap-2">
 				<DetailToggle />
-				{#if detail && !expired}
+				{#if detail && !expired && canExpire}
 					{@const enrollmentId = detail.enrollment.id}
 					<ExpireCodeAction
 						testid="admin-expire-code"
 						expire={(reason) => expireEnrollment(enrollmentId, reason)}
-						onexpired={() => goto(listHref)}
+						forbiddenMessage="Only a SOC operator or an admin can expire codes."
+						onexpired={afterExpired}
 					/>
 				{/if}
 			</div>
@@ -110,7 +149,12 @@
 	</PageHeading>
 
 	{#if loadError}
-		<Alert variant="error" title="Could not load enrollment">{loadError}</Alert>
+		<Alert
+			variant="error"
+			title="Could not load enrollment"
+			onretry={retryable ? retry : undefined}
+			testid="enrollment-error">{loadError}</Alert
+		>
 	{:else if !hasLoaded}
 		<LoadingBlock
 			shape="lines"
@@ -122,7 +166,10 @@
 		<!-- The detail is handed over rather than fetched again: the
 		     endpoint is audited, so a second read would write two
 		     admin.enrollment_viewed events for one look. -->
-		<AdminServiceCodeDetail {detail} />
+		{#if expiredNotice}
+			<Alert variant="info" testid="admin-expired-notice">{expiredNotice}</Alert>
+		{/if}
+		<AdminServiceCodeDetail {detail} {now} />
 	{/if}
 	{#if detail && !loadError}
 		<SimplifiedHint />

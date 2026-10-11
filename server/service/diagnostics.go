@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -128,6 +130,12 @@ func (s *DiagnosticsService) Run(ctx context.Context, req DiagnosticsRequest) Di
 type edgeProbe struct {
 	// reached is true when a response came back at all.
 	reached bool
+	// fromApp is true when that response was ssoosshd's own /healthz answer
+	// rather than one the edge produced itself, e.g. a dev server or a proxy
+	// that does not route /healthz to the app. Only then do the plain
+	// probe's headers say anything about what the app's responses look
+	// like after the edge.
+	fromApp bool
 	// err explains why reached is false.
 	err error
 	// status is the HTTP status of the plain (no-Origin) probe.
@@ -151,7 +159,7 @@ func (s *DiagnosticsService) probeEdge(ctx context.Context, origin string) edgeP
 		return edgeProbe{err: fmt.Errorf("http.public_url is not set")}
 	}
 
-	plainStatus, plainHeaders, err := s.fetch(ctx, origin+"/healthz", "")
+	plainStatus, plainHeaders, plainBody, err := s.fetch(ctx, origin+"/healthz", "")
 	if err != nil {
 		p := edgeProbe{err: err}
 		if strings.Contains(err.Error(), "x509") || strings.Contains(err.Error(), "certificate") {
@@ -164,35 +172,61 @@ func (s *DiagnosticsService) probeEdge(ctx context.Context, origin string) edgeP
 	// with Access-Control-Allow-Origin. A failure here is not fatal to the
 	// whole probe: reachability and headers already succeeded, so a nil
 	// header set just makes the CORS check report that it could not run.
-	_, corsHeaders, corsErr := s.fetch(ctx, origin+"/.well-known/openid-configuration", canaryOrigin)
+	_, corsHeaders, _, corsErr := s.fetch(ctx, origin+"/.well-known/openid-configuration", canaryOrigin)
 	if corsErr != nil {
 		corsHeaders = nil
 	}
 
 	return edgeProbe{
 		reached:     true,
+		fromApp:     isAppHealthz(plainStatus, plainBody),
 		status:      plainStatus,
 		headers:     plainHeaders,
 		corsHeaders: corsHeaders,
 	}
 }
 
+// isAppHealthz reports whether a /healthz response is ssoosshd's own: HTTP
+// 200 with {"status":"ok"} (healthzHandler in server/bootstrap/router.go).
+// The status alone is not enough, since an edge that answers health paths
+// itself commonly returns a bare 200.
+func isAppHealthz(status int, body []byte) bool {
+	if status != http.StatusOK {
+		return false
+	}
+	var payload struct {
+		Status string `json:"status"`
+	}
+	return json.Unmarshal(body, &payload) == nil && payload.Status == "ok"
+}
+
+// maxProbeBody caps how much of a probe response is read. The app's /healthz
+// body is a few bytes; anything larger is not it, so the cap only has to stop
+// an edge's error page from being read in full.
+const maxProbeBody = 4 << 10
+
 // fetch performs one GET, optionally with an Origin header, and returns the
-// status and response headers.
-func (s *DiagnosticsService) fetch(ctx context.Context, url, origin string) (int, http.Header, error) {
+// status, response headers and the start of the body.
+func (s *DiagnosticsService) fetch(ctx context.Context, url, origin string) (int, http.Header, []byte, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	if origin != "" {
 		httpReq.Header.Set("Origin", origin)
 	}
 	resp, err := s.client.Do(httpReq)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
 	defer resp.Body.Close()
-	return resp.StatusCode, resp.Header, nil
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxProbeBody))
+	if err != nil {
+		// A body cut off part-way cannot be confirmed as the app's, so it is
+		// dropped. The status and headers already arrived and still stand.
+		body = nil
+	}
+	return resp.StatusCode, resp.Header, body, nil
 }
 
 // DiagnosticsRunner is the diagnostics behaviour the controller depends on,

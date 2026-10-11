@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { replaceState } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { listAdminCertificates } from '#lib/api/endpoints.js';
 	import type { CertificateResponse } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
@@ -16,13 +18,18 @@
 	import SearchInput from '#lib/components/SearchInput.svelte';
 	import { statusFilters, typeFilters } from '#lib/filters.js';
 	import { describeList } from '#lib/listStatus.js';
+	import { certificateEvent } from '#lib/rowEvents.js';
 
 	let certificates = $state<CertificateResponse[]>([]);
 	let pageInfo = $state({ total: 0, limit: 25, offset: 0, page: 1, page_count: 1 });
-	let searchQuery = $state('');
-	let typeFilter = $state('');
-	let statusFilter = $state('');
-	let offset = $state(0);
+	// Read from the address the page opened at, and written back to it, so
+	// returning from a certificate (whose back chip carries this search)
+	// lands on the same narrowed view instead of the defaults.
+	const opened = page.url.searchParams;
+	let searchQuery = $state(opened.get('q') ?? '');
+	let typeFilter = $state(opened.get('type') ?? '');
+	let statusFilter = $state(opened.get('status') ?? '');
+	let offset = $state(Number(opened.get('offset')) || 0);
 	let loadError = $state<string | null>(null);
 	let isLoading = $state(false);
 	let hasLoaded = $state(false);
@@ -136,6 +143,38 @@
 	// offering a way back from.
 	const filtered = $derived(searchQuery !== '' || typeFilter !== '' || statusFilter !== '');
 
+	// The filters and page as a query string: what the address carries and
+	// what a certificate's back chip returns to. Defaults are left out.
+	const filterSearch = $derived.by(() => {
+		const parts: string[] = [];
+		const add = (key: string, value: string) => parts.push(`${key}=${encodeURIComponent(value)}`);
+		if (searchQuery.trim()) add('q', searchQuery.trim());
+		if (typeFilter) add('type', typeFilter);
+		if (statusFilter) add('status', statusFilter);
+		if (offset > 0) add('offset', String(offset));
+		return parts.length ? `?${parts.join('&')}` : '';
+	});
+
+	$effect(() => {
+		const search = filterSearch;
+		if (search === page.url.search) {
+			return;
+		}
+		try {
+			replaceState(`${page.url.pathname}${search}`, page.state);
+		} catch {
+			// Before the router is ready (or in a test) the address stays as
+			// it was; the filters themselves still apply.
+		}
+	});
+
+	// A row opens the certificate's own page, which returns here through its
+	// back chip with the filters it was opened from.
+	function certHref(certId: string): string {
+		const back = filterSearch ? `&back=${encodeURIComponent(filterSearch)}` : '';
+		return `${resolve(`certs/${certId}`)}?from=admin${back}`;
+	}
+
 	// Clearing the filters remounts the search box: it owns what is typed in
 	// it and does not watch `value` afterwards, so resetting the term alone
 	// would leave the old text on screen under an unfiltered list.
@@ -187,7 +226,6 @@
 				label="Type"
 				options={typeFilters}
 				selected={typeFilter}
-				disabled={isLoading}
 				onselect={handleTypeFilter}
 				testid="type-filter"
 			/>
@@ -195,7 +233,6 @@
 				label="Status"
 				options={statusFilters}
 				selected={statusFilter}
-				disabled={isLoading}
 				onselect={handleStatusFilter}
 				testid="status-filter"
 			/>
@@ -255,9 +292,10 @@
 						retrieved_at: cert.retrieved_at || undefined,
 						enrollment_id: cert.enrollment_id || undefined
 					}}
-					event="certificate issued"
+					event={certificateEvent(cert.type)}
+					approvedBy={cert.decided_by_username || cert.decided_by_email || undefined}
 					testid="cert-row"
-					href={`${resolve(`certs/${cert.id}`)}?from=admin`}
+					href={certHref(cert.id)}
 				/>
 			{/each}
 		</div>

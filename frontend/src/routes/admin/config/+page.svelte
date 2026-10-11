@@ -5,6 +5,12 @@
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
 	import SearchInput from '#lib/components/SearchInput.svelte';
+	import Button from '#lib/components/Button.svelte';
+	import EmptyState from '#lib/components/EmptyState.svelte';
+	import Icon from '#lib/components/Icon.svelte';
+	import ListStatus from '#lib/components/ListStatus.svelte';
+	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import { configDocsURL } from '#lib/configdocs.js';
 	import { getAdminConfig } from '#lib/api/endpoints.js';
 	import type { ConfigSection, ConfigSetting, EffectiveConfigResponse } from '#lib/api/types.js';
 
@@ -21,7 +27,7 @@
 	// below, which then cannot see a field on it.
 	let config = $state<EffectiveConfigResponse | null>(null);
 	let error: string | null = $state(null);
-	let busy = $state(false);
+	let busy = $state(true);
 	let query = $state('');
 
 	// Most of a deployment's keys sit at their defaults, and a wall of them
@@ -38,7 +44,11 @@
 		try {
 			config = await getAdminConfig();
 		} catch (cause) {
-			error = cause instanceof Error ? cause.message : 'Failed to load configuration';
+			// An expired session is a sign-in, not a failed load.
+			if (redirectIfUnauthenticated(cause)) {
+				return;
+			}
+			error = errorMessage(cause);
 		} finally {
 			busy = false;
 		}
@@ -80,6 +90,22 @@
 	// configuration rather than the size of the current search.
 	const all = $derived(loaded.flatMap((section) => section.settings));
 	const setCount = $derived(all.filter((setting) => setting.value !== '').length);
+
+	// How many keys the filter leaves on screen, announced so a screen
+	// reader hears the result of typing (WCAG 4.1.3).
+	const shownCount = $derived(sections.reduce((n, section) => n + section.settings.length, 0));
+	const filterStatus = $derived(
+		needle === ''
+			? ''
+			: `${shownCount} ${shownCount === 1 ? 'key matches' : 'keys match'} "${query}".`
+	);
+
+	// Clearing remounts the box: it owns what is typed in it.
+	let searchKey = $state(0);
+	function clearFilter() {
+		query = '';
+		searchKey += 1;
+	}
 </script>
 
 <svelte:head><title>Server configuration · ssoossh</title></svelte:head>
@@ -111,29 +137,45 @@
 	{:else if config}
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
 			<div class="flex-1">
-				<SearchInput
-					label="Filter configuration keys"
-					placeholder="Filter by key or value"
-					testid="config-search"
-					onsearch={(term: string) => (query = term)}
-				/>
+				{#key searchKey}
+					<SearchInput
+						label="Filter configuration keys"
+						placeholder="Filter by key or value"
+						testid="config-search"
+						value={query}
+						onsearch={(term: string) => (query = term)}
+					/>
+				{/key}
 			</div>
 			<label
 				class="flex min-h-target items-center gap-2 text-dense whitespace-nowrap text-ink-muted"
 			>
-				<input type="checkbox" bind:checked={showUnset} />
+				<input type="checkbox" bind:checked={showUnset} disabled={needle !== ''} />
 				Show unset keys
+				{#if needle !== ''}
+					<!-- A filter searches every key, set or not, so the box
+					     cannot narrow it; saying so keeps the box and the list
+					     from disagreeing. -->
+					<span class="text-xs" data-testid="config-unset-note">(included while filtering)</span>
+				{/if}
 			</label>
 		</div>
+
+		<ListStatus message={filterStatus} />
 
 		<p data-testid="config-count" class="text-xs text-ink-muted">
 			{setCount} of {all.length} keys set
 		</p>
 
 		{#if sections.length === 0}
-			<p data-testid="config-empty" class="text-sm text-ink-muted">
-				No configuration key matches this filter.
-			</p>
+			<EmptyState icon="filter-off" title="Nothing matches" testid="config-empty">
+				{#snippet action()}
+					<Button variant="ghost" onclick={clearFilter} testid="config-clear-filter"
+						>Clear filter</Button
+					>
+				{/snippet}
+				No configuration key or value matches this filter.
+			</EmptyState>
 		{:else}
 			<!-- One column, not a two-abreast grid of boxes. Sections run from
 			     one key to over fifty, so the grid was forever putting a wall
@@ -153,7 +195,17 @@
 							{#each section.settings as setting (setting.key)}
 								<div class="flex flex-col gap-0.5 py-1.5 sm:flex-row sm:items-baseline sm:gap-4">
 									<dt class="font-mono text-xs break-all text-ink-muted sm:w-88 sm:shrink-0">
-										{setting.key}
+										<!-- The key links to its reference entry, which says what it governs. -->
+										<a
+											href={configDocsURL(setting.key)}
+											target="_blank"
+											rel="noopener noreferrer"
+											class="inline-flex items-center gap-0.5 hover:text-accent hover:underline"
+											data-testid="config-key-link"
+											>{setting.key}<Icon name="arrow-up-right" size="xs" /><span class="sr-only"
+												>(reference, opens in a new tab)</span
+											></a
+										>
 									</dt>
 									<dd class="flex items-baseline gap-2 font-mono text-xs break-all">
 										{#if setting.value === ''}

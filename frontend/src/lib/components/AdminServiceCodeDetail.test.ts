@@ -116,7 +116,7 @@ describe('AdminServiceCodeDetail', () => {
 	it('should show the key id fixed at approval', () => {
 		stubHolders();
 		render(AdminServiceCodeDetail, { detail: detail(), now });
-		expect(screen.getByText('svc-deploy/req-1')).toBeInTheDocument();
+		expect(screen.getAllByText('svc-deploy/req-1').length).toBeGreaterThan(0);
 	});
 
 	it('should show the fingerprint of the bound keypair', () => {
@@ -304,5 +304,18 @@ describe('AdminServiceCodeDetail', () => {
 			expect(await screen.findByTestId('notification-email-saved')).toBeInTheDocument();
 			expect(screen.getByTestId('notification-email-input')).toHaveValue('deploys@example.com');
 		});
+	});
+
+	// An approver without an email used to read "alice ()".
+	it('should not print empty parentheses for an approver without an email', () => {
+		stubHolders();
+		render(AdminServiceCodeDetail, { detail: detail(enrollment({ approved_by_email: '' })), now });
+		expect(screen.queryByText(/\(\)/)).not.toBeInTheDocument();
+	});
+
+	it('should call the address section what it holds', () => {
+		stubHolders();
+		render(AdminServiceCodeDetail, { detail: detail(), now });
+		expect(screen.getByRole('heading', { name: 'Notifications' })).toBeInTheDocument();
 	});
 });

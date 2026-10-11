@@ -1,4 +1,5 @@
 import { ApiError } from '#lib/api/client.js';
+import { unknownErrorText } from '#lib/auth.js';
 import type { CertificateOptions, RequestDetail } from '#lib/api/types.js';
 
 /**
@@ -184,7 +185,7 @@ export function describeLoadError(error: unknown): LoadFailure {
 
 	return {
 		title: 'Could not load this request',
-		message: error instanceof Error ? error.message : 'something went wrong',
+		message: error instanceof Error ? error.message : unknownErrorText,
 		kind: 'unknown'
 	};
 }

@@ -15,17 +15,12 @@ import (
 	"github.com/mnestor/ssoossh/server/config"
 )
 
-// renderDisabledPage serves the disabled page once with the given admin
-// settings and returns the body.
-func renderDisabledPage(t *testing.T, contactEmail, disabledMessage string) (int, string) {
+// renderDisabledPage serves the disabled page once with the given
+// configuration and returns the status and body.
+func renderDisabledPage(t *testing.T, c *config.Config) (int, string) {
 	t.Helper()
 
 	gin.SetMode(gin.TestMode)
-	c := &config.Config{Admin: config.AdminConfig{
-		ContactEmail:    contactEmail,
-		DisabledMessage: disabledMessage,
-	}}
-
 	r := gin.New()
 	r.GET("/auth/disabled", disabledPageHandler(c))
 
@@ -34,71 +29,119 @@ func renderDisabledPage(t *testing.T, contactEmail, disabledMessage string) (int
 	return w.Code, w.Body.String()
 }
 
+// adminOnly is a configuration with only the superseded admin.* contact
+// settings, the shape every deployment had before branding.support_email.
+func adminOnly(contactEmail, disabledMessage string) *config.Config {
+	return &config.Config{Admin: config.AdminConfig{ContactEmail: contactEmail, DisabledMessage: disabledMessage}}
+}
+
 // TestDisabledPageHandler covers what the page says for each configuration,
 // and that it says it without a session.
 func TestDisabledPageHandler(t *testing.T) {
-	t.Run("should answer 403 without a session", func(t *testing.T) {
-		code, _ := renderDisabledPage(t, "", "")
-		if code != http.StatusForbidden {
-			t.Errorf("status = %d, want %d", code, http.StatusForbidden)
-		}
-	})
+	t.Parallel()
 
-	t.Run("should state the account is disabled", func(t *testing.T) {
-		_, body := renderDisabledPage(t, "", "")
-		if !strings.Contains(body, "Account Disabled") {
-			t.Errorf("body does not state the account is disabled:\n%s", body)
-		}
-	})
+	tests := []struct {
+		name    string
+		config  *config.Config
+		want    []string
+		wantNot []string
+	}{
+		{
+			name:   "should name the service and say access is disabled",
+			config: adminOnly("", ""),
+			want:   []string{"Your access to ssoossh is disabled", "<title>Access disabled · ssoossh</title>"},
+		},
+		{
+			name:   "should offer a way back to sign-in",
+			config: adminOnly("", ""),
+			want:   []string{`href="/login"`, "Back to sign in"},
+		},
+		{
+			name:   "should say who to ask when no contact is configured",
+			config: adminOnly("", ""),
+			want:   []string{"Contact your administrator."},
+		},
+		{
+			name:   "should offer the branding support address as a mailto",
+			config: &config.Config{Branding: config.BrandingSettings{SupportEmail: "help@corp.example", SupportLabel: "the IT service desk"}},
+			want:   []string{`href="mailto:help@corp.example"`, "the IT service desk"},
+		},
+		{
+			name:    "should prefer the branding support address over the superseded one",
+			config:  &config.Config{Branding: config.BrandingSettings{SupportEmail: "help@corp.example"}, Admin: config.AdminConfig{ContactEmail: "old@corp.example"}},
+			want:    []string{`href="mailto:help@corp.example"`},
+			wantNot: []string{"old@corp.example"},
+		},
+		{
+			name:   "should fall back to the superseded admin.contact_email",
+			config: adminOnly("it-help@corp.example", ""),
+			want:   []string{`href="mailto:it-help@corp.example"`},
+		},
+		{
+			name:   "should show the configured message",
+			config: adminOnly("it-help@corp.example", "Open a ticket at go/access"),
+			want:   []string{"Open a ticket at go/access"},
+		},
+		{
+			name:   "should show a message configured without an address",
+			config: adminOnly("", "Open a ticket at go/access"),
+			want:   []string{"Open a ticket at go/access", "Contact your administrator."},
+		},
+		{
+			name:   "should show the organization name beside the brand",
+			config: &config.Config{Branding: config.BrandingSettings{OrgName: "Acme Corp"}},
+			want:   []string{"Acme Corp"},
+		},
+		// Nothing about who disabled the account or why: a SOC disable after
+		// a compromise must not tip off whoever holds the session.
+		{
+			name:    "should not say who disabled the account or why",
+			config:  adminOnly("", ""),
+			wantNot: []string{"administrator disabled", "directory", "SOC"},
+		},
+		// The operator writes these values, so this is not a defence against
+		// an attacker. It is a defence against an apostrophe: an earlier
+		// implementation concatenated them into markup, where "your team's
+		// admin" or a stray angle bracket produced broken or executable HTML.
+		{
+			name:    "should escape markup in the configured message",
+			config:  adminOnly("", `<script>alert(1)</script>`),
+			want:    []string{"&lt;script&gt;"},
+			wantNot: []string{"<script>alert(1)</script>"},
+		},
+		{
+			name:    "should escape markup in the configured address",
+			config:  adminOnly(`a@b"><script>alert(1)</script>`, ""),
+			wantNot: []string{"<script>alert(1)</script>"},
+		},
+	}
 
-	t.Run("should offer the configured address as a mailto", func(t *testing.T) {
-		_, body := renderDisabledPage(t, "it-help@corp.example", "")
-		if !strings.Contains(body, `href="mailto:it-help@corp.example"`) {
-			t.Errorf("body carries no mailto for the configured address:\n%s", body)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("should show the configured message", func(t *testing.T) {
-		_, body := renderDisabledPage(t, "it-help@corp.example", "Open a ticket at go/access")
-		if !strings.Contains(body, "Open a ticket at go/access") {
-			t.Errorf("body does not carry the configured message:\n%s", body)
-		}
-	})
+			_, body := renderDisabledPage(t, tt.config)
+			for _, want := range tt.want {
+				if !strings.Contains(body, want) {
+					t.Errorf("body does not contain %q:\n%s", want, body)
+				}
+			}
+			for _, notWant := range tt.wantNot {
+				if strings.Contains(body, notWant) {
+					t.Errorf("body contains %q:\n%s", notWant, body)
+				}
+			}
+		})
+	}
+}
 
-	t.Run("should show a message configured without an address", func(t *testing.T) {
-		_, body := renderDisabledPage(t, "", "Open a ticket at go/access")
-		if !strings.Contains(body, "Open a ticket at go/access") {
-			t.Errorf("a message configured alone is not shown:\n%s", body)
-		}
-	})
+func TestDisabledPageHandler_ShouldAnswer403WithoutASession(t *testing.T) {
+	t.Parallel()
 
-	t.Run("should mention no contact when neither is configured", func(t *testing.T) {
-		_, body := renderDisabledPage(t, "", "")
-		if strings.Contains(body, "Contact Support") {
-			t.Errorf("body offers a contact that was never configured:\n%s", body)
-		}
-	})
-
-	// The operator writes these values, so this is not a defence against an
-	// attacker. It is a defence against an apostrophe: the previous
-	// implementation concatenated them into markup, where "your team's admin"
-	// or a stray angle bracket produced broken or executable HTML.
-	t.Run("should escape markup in the configured message", func(t *testing.T) {
-		_, body := renderDisabledPage(t, "", `<script>alert(1)</script>`)
-		if strings.Contains(body, "<script>alert(1)</script>") {
-			t.Errorf("the configured message was interpolated as live markup:\n%s", body)
-		}
-		if !strings.Contains(body, "&lt;script&gt;") {
-			t.Errorf("the configured message was not escaped:\n%s", body)
-		}
-	})
-
-	t.Run("should escape markup in the configured address", func(t *testing.T) {
-		_, body := renderDisabledPage(t, `a@b"><script>alert(1)</script>`, "")
-		if strings.Contains(body, "<script>alert(1)</script>") {
-			t.Errorf("the configured address escaped its attribute:\n%s", body)
-		}
-	})
+	code, _ := renderDisabledPage(t, adminOnly("", ""))
+	if code != http.StatusForbidden {
+		t.Errorf("status = %d, want %d", code, http.StatusForbidden)
+	}
 }
 
 // TestCallbackHandler_DisabledUserIsRedirected covers the hop the browser

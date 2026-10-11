@@ -895,9 +895,11 @@ ldap:
   # denies.
   # auditor_group: ""
 
-  # The email address shown on the account-disabled page so a disabled user
-  # can contact support. Empty disables the display (no mailto link on the
-  # page).
+  # Superseded by branding.support_email, which is the one setting for who to
+  # ask about this deployment and is shown on the account-disabled page along
+  # with the login page and the footer. It is still read, but only when
+  # branding.support_email is unset, so an existing configuration keeps its
+  # contact; the server logs a warning at startup while it is the one in use.
   # contact_email: ""
 
   # Free-text shown on the account-disabled page below the contact email.
@@ -1924,6 +1926,10 @@ mail:
   # without any of them duplicating it. Shortening this means an enrollment
   # past the new window gets no reminder until it re-enters it; lengthening it
   # picks enrollments up at the next sweep.
+  #
+  # The web UI's service codes page marks an account "Expires soon" over the
+  # same window, so the page and the first reminder agree. Zero turns the
+  # reminder off but not that warning, which then uses a week.
   expiry_reminder_lead: 168h
 
   # Rate-limits the service_enrollment_expired_attempt notification to at most
@@ -2051,13 +2057,15 @@ mail:
 
   # The address of whoever answers for this deployment — the local help
   # desk, not the project. Empty leaves the web UI pointing at its defaults:
-  # "contact your administrator" on the login page, and the project's GitHub
-  # issue tracker in the footer.
+  # "contact your administrator" on the login page and the account-disabled
+  # page, and the project's GitHub issue tracker in the footer.
   #
-  # Set it and both become a mailto: link to this address. One setting covers
-  # both because it is one question — "who do I ask about this deployment?"
-  # — and a second key would let an operator answer it in one place and
-  # forget the other, which is the failure this exists to prevent.
+  # Set it and all three become a mailto: link to this address. One setting
+  # covers them because it is one question — "who do I ask about this
+  # deployment?" — and a second key would let an operator answer it in one
+  # place and forget the other, which is the failure this exists to prevent.
+  # admin.contact_email was that second key; it is still read for the
+  # account-disabled page when this is unset.
   #
   # It is served by the unauthenticated /api/branding endpoint and rendered on
   # the login page, so it is public: use the shared support address, never a

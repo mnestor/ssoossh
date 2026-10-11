@@ -133,6 +133,9 @@
 	// Named here as well as inside ServiceCodeFacts, because the notification
 	// copy below is a sentence about the account rather than a field: "go to
 	// everyone with access to svc-deploy".
+	// How many redemptions the simplified page lists.
+	const recentRedemptions = 5;
+
 	const subject = $derived(
 		enrollment.service_account ||
 			(enrollment.principals.length > 0 ? enrollment.principals.join(', ') : 'unknown account')
@@ -159,7 +162,7 @@
 	     and a large holder set turns every redemption into a mailshot where a
 	     team alias would do. -->
 	<PageSection title="Notifications">
-		<p class="mb-2 text-dense text-ink-muted">
+		<p class="mb-2 text-dense text-ink-muted" id="notification-email-help-{enrollment.id}">
 			{#if storedEmail}
 				Notifications about this code go to
 				<span class="font-mono">{storedEmail}</span>. Clear the field to send them to everyone with
@@ -171,14 +174,15 @@
 		</p>
 		<div class="flex max-w-140 flex-wrap items-start gap-2">
 			<label class="flex min-w-55 flex-1 flex-col gap-1">
-				<span class="sr-only">Notification address</span>
+				<span class="text-dense font-medium text-ink">Send notifications to</span>
 				<input
 					type="email"
 					bind:value={emailDraft}
 					data-testid="notification-email-input"
 					placeholder="deploys@example.com"
 					disabled={savingEmail}
-					class="rounded-md border border-border-control bg-surface px-3 py-2 text-dense text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+					aria-describedby="notification-email-help-{enrollment.id}"
+					class="min-h-target rounded-md border border-border-control bg-surface px-3 py-2 text-dense text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 				/>
 			</label>
 			<Button
@@ -196,11 +200,15 @@
 					{emailError}
 				</Alert>
 			</div>
-		{:else if emailSaved}
-			<p class="mt-2 text-dense text-granted" data-testid="notification-email-saved">
-				{emailDraft ? 'Saved.' : 'Cleared — notifications go to everyone with access again.'}
-			</p>
 		{/if}
+		<!-- Always in the document, so a screen reader hears the confirmation:
+		     a status region that appears with its text already in it is often
+		     not announced at all. -->
+		<p class="mt-2 text-dense text-granted" role="status" data-testid="notification-email-saved">
+			{#if emailSaved && !emailError}
+				{emailDraft ? 'Saved.' : 'Cleared — notifications go to everyone with access again.'}
+			{/if}
+		</p>
 	</PageSection>
 
 	<!-- Last, as on the admin's page. It is the only part that grows without
@@ -208,14 +216,20 @@
 	     retire it should not have to scroll past a year of cron redemptions
 	     to reach either. Absent entirely when the log did not load — a 404 or
 	     someone else's request — because the facts above stand without it. -->
-	<!-- The holders list and the redemption history are advanced-only; the
-	     facts above carry the redemption count in their place. -->
-	{#if simplified}
-		<!-- nothing: see the count in the facts above -->
-	{:else if retrievals}
-		<RedemptionHistory retrievals={retrievals.retrievals} total={retrievals.total} />
+	<!-- At the simplified level, the latest few rather than just the count:
+	     when and from where a code was last redeemed is how a holder notices
+	     it being used from somewhere unexpected, and a count cannot show
+	     that. The full log stays at the advanced level. -->
+	{#if retrievals}
+		<RedemptionHistory
+			retrievals={simplified
+				? retrievals.retrievals.slice(0, recentRedemptions)
+				: retrievals.retrievals}
+			total={retrievals.total}
+			title={simplified ? 'Recent redemptions' : 'Redemption history'}
+		/>
 	{:else if retrievalsLoading}
-		<PageSection title="Redemption history">
+		<PageSection title={simplified ? 'Recent redemptions' : 'Redemption history'}>
 			<LoadingBlock
 				shape="lines"
 				count={3}
@@ -224,7 +238,7 @@
 			/>
 		</PageSection>
 	{:else if retrievalsFailed}
-		<PageSection title="Redemption history">
+		<PageSection title={simplified ? 'Recent redemptions' : 'Redemption history'}>
 			<Alert
 				variant="error"
 				title="Could not load the redemption history"

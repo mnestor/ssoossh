@@ -235,7 +235,8 @@ everything or nothing.
 
 Two pages serve the approver: **`/console`**, where a signed-in user types the
 code, and **`/c/<code>`**, the shortcut a QR code encodes so a phone lands
-straight on it. Both need a session.
+straight on it, showing the code to confirm against the screen before it
+resolves anything. Both need a session.
 [`http.console_code_rate_limit`](/ssoossh/reference/config/http/#console_code_rate_limit)
 bounds code submission, keyed on the submitting session **and** its source
 address, so one compromised account cannot grind through the code space from

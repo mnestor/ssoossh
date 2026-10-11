@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -20,8 +21,10 @@ import (
 // route and the web UI's enrollment-list and retrieval-log routes on group. When
 // retrieveRateLimitMiddleware is provided, it is applied to the
 // /certs/service/retrieve endpoint to protect against code brute-forcing.
-func NewEnrollmentController(group *gin.RouterGroup, enrollmentService service.EnrollmentProvider, retrieveRateLimitMiddleware gin.HandlerFunc, sessionAuthMiddleware gin.HandlerFunc) {
-	e := &enrollmentController{enrollmentService: enrollmentService}
+// expiringSoon is the window the enrollment list reports for the page's
+// "Expires soon" (config.MailConfig.ExpiringSoonWindow).
+func NewEnrollmentController(group *gin.RouterGroup, enrollmentService service.EnrollmentProvider, expiringSoon time.Duration, retrieveRateLimitMiddleware gin.HandlerFunc, sessionAuthMiddleware gin.HandlerFunc) {
+	e := &enrollmentController{enrollmentService: enrollmentService, expiringSoon: expiringSoon}
 
 	group.POST("/certs/service/retrieve", orPassThrough(retrieveRateLimitMiddleware), e.retrieveHandler)
 
@@ -39,6 +42,9 @@ func NewEnrollmentController(group *gin.RouterGroup, enrollmentService service.E
 // enrollmentController handles the service-enrollment HTTP routes.
 type enrollmentController struct {
 	enrollmentService service.EnrollmentProvider
+	// expiringSoon is reported with the enrollment list; see
+	// NewEnrollmentController.
+	expiringSoon time.Duration
 }
 
 // retrieveHandler handles POST /api/certs/service/retrieve (`service
@@ -154,7 +160,7 @@ func (e *enrollmentController) listHandler(g *gin.Context) {
 		return
 	}
 
-	respondData(g, newServiceEnrollmentsResponse(enrollments))
+	respondData(g, newServiceEnrollmentsResponse(enrollments, e.expiringSoon))
 }
 
 // holdersHandler handles GET

@@ -2,6 +2,9 @@ import { render, screen, waitFor } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { CurrentUser } from '#lib/api/types.js';
+import { formatDateTime } from '#lib/format.js';
+import { session } from '#lib/session.svelte.js';
 import { fakePage, resetFakePage } from '#lib/testing/page.svelte.js';
 import Page from './+page.svelte';
 
@@ -71,6 +74,13 @@ function mockDetail(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
 	resetFakePage('http://localhost/admin/users/user-1');
 	fakePage.params = { id: 'user-1' };
+	// An admin unless a case says otherwise: the actions are role-gated.
+	session.user = {
+		username: 'root-admin',
+		is_admin: true,
+		is_soc: true,
+		is_auditor: true
+	} as CurrentUser;
 });
 
 afterEach(() => {
@@ -150,13 +160,29 @@ describe('Admin user detail', () => {
 		expect(consequences).toHaveTextContent(/no live service enrollments/);
 	});
 
-	it('should say the account is blocked immediately', async () => {
+	// What disabling really does: no new sign-in, and the open session ends
+	// on its next request. The dialog used to promise an immediate lock-out
+	// while the server only stopped new sign-ins.
+	it('should say an open session ends on its next request', async () => {
 		mockDetail();
 		render(Page);
 		await screen.findByTestId('user-username');
 
 		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
-		expect(await screen.findByText(/immediately/)).toBeInTheDocument();
+		const consequences = await screen.findByTestId('disable-consequences');
+		expect(consequences).toHaveTextContent(
+			/session they already have open ends on its next request/
+		);
+	});
+
+	it('should say certificates already issued stay valid until they expire', async () => {
+		mockDetail();
+		render(Page);
+		await screen.findByTestId('user-username');
+
+		await userEvent.click(screen.getByRole('button', { name: /^Disable$/ }));
+		const consequences = await screen.findByTestId('disable-consequences');
+		expect(consequences).toHaveTextContent(/stay valid until they expire/);
 	});
 
 	it('should close the confirmation without disabling when cancelled', async () => {
@@ -178,7 +204,50 @@ describe('Admin user detail', () => {
 	it('should report who disabled an already-disabled user', async () => {
 		mockDetail({ disabled_at: '2026-08-20T09:00:00Z', disabled_by_username: 'root-admin' });
 		render(Page);
-		expect(await screen.findByText('root-admin')).toBeInTheDocument();
+		expect(await screen.findByTestId('user-state')).toHaveTextContent('By root-admin');
+	});
+
+	// The state used to be three red cells halfway down the OIDC record.
+	it('should state a disabled account at the top', async () => {
+		mockDetail({ disabled_at: '2026-08-20T09:00:00Z', disabled_by_username: 'root-admin' });
+		render(Page);
+		expect(await screen.findByTestId('user-state')).toHaveTextContent('Disabled since');
+	});
+
+	// Disabling needs SOC and re-enabling admin; an auditor used to be
+	// offered the button, write a reason, and get a raw 403.
+	it('should not offer an auditor the Disable action', async () => {
+		session.user = {
+			username: 'ann',
+			is_admin: false,
+			is_soc: false,
+			is_auditor: true
+		} as CurrentUser;
+		mockDetail();
+		render(Page);
+		await screen.findByTestId('user-username');
+		expect(screen.queryByRole('button', { name: /^Disable$/ })).not.toBeInTheDocument();
+	});
+
+	it('should tell SOC that re-enabling is an admin action', async () => {
+		session.user = {
+			username: 'sam',
+			is_admin: false,
+			is_soc: true,
+			is_auditor: true
+		} as CurrentUser;
+		mockDetail({ disabled_at: '2026-08-20T09:00:00Z', disabled_by_username: 'root-admin' });
+		render(Page);
+		expect(await screen.findByTestId('user-action-role')).toHaveTextContent(
+			'Only an admin can re-enable accounts.'
+		);
+	});
+
+	it('should name the user in the tab', async () => {
+		mockDetail();
+		render(Page);
+		await screen.findByTestId('user-username');
+		expect(document.title).toMatch(/ · User · ssoossh$/);
 	});
 
 	// The server requires a non-empty reason, so the button is gated rather
@@ -218,9 +287,7 @@ describe('Admin user detail', () => {
 			disabled_reason: 'offboarded, SEC-1234'
 		});
 		render(Page);
-		expect(await screen.findByTestId('user-disabled-reason')).toHaveTextContent(
-			'offboarded, SEC-1234'
-		);
+		expect(await screen.findByTestId('user-state')).toHaveTextContent('offboarded, SEC-1234');
 	});
 
 	it('should require a reason before re-enabling', async () => {
@@ -343,9 +410,7 @@ describe('Admin user detail', () => {
 				disabled_source: 'ldap_sync'
 			});
 			render(Page);
-			expect(await screen.findByTestId('user-disabled-source')).toHaveTextContent(
-				'the directory sync'
-			);
+			expect(await screen.findByTestId('user-state')).toHaveTextContent('the directory sync');
 		});
 
 		// The server sends the whole catalogue, not just the stored rows: a
@@ -456,7 +521,7 @@ describe('Admin user detail', () => {
 			render(Page);
 
 			const row = await screen.findByTestId('user-notification-service_enrollment_expiring');
-			expect(row).toHaveTextContent(new Date('2026-09-01T10:00:00Z').toLocaleDateString());
+			expect(row).toHaveTextContent(formatDateTime('2026-09-01T10:00:00Z'));
 			expect(row).not.toHaveTextContent('default');
 		});
 

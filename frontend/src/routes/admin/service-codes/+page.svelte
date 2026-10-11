@@ -4,6 +4,7 @@
 	import type { AdminEnrollment, PageMeta } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
+	import Button from '#lib/components/Button.svelte';
 	import EmptyState from '#lib/components/EmptyState.svelte';
 	import ListStatus from '#lib/components/ListStatus.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
@@ -21,6 +22,14 @@
 	let attempt = $state(0);
 	let meta = $state<PageMeta | null>(null);
 	let searchQuery = $state('');
+	// Clearing remounts the search box: it owns what is typed in it, so
+	// resetting the term alone would leave the old text over the full list.
+	let searchKey = $state(0);
+	function clearSearch() {
+		searchQuery = '';
+		currentOffset = 0;
+		searchKey += 1;
+	}
 	let currentOffset = $state(0);
 	const pageSize = 25;
 
@@ -84,15 +93,15 @@
 </script>
 
 <svelte:head>
-	<title>Service codes · Admin · ssoossh</title>
+	<title>Service codes · ssoossh</title>
 </svelte:head>
 
 <PageShell width="wide">
 	<PageHeading title="All service codes" />
 
 	<p class="text-sm text-ink-muted">
-		All approved service enrollment codes across users. Codes themselves are never shown. Open a row
-		to see what it hands out, how often it's been redeemed, and reassign it if needed.
+		Every approved service enrollment code, by account. The codes themselves are never shown. Open a
+		row to see what it hands out, where it has been redeemed, and to expire it.
 	</p>
 
 	<!-- The placeholder names what the search actually matches. The
@@ -100,12 +109,15 @@
 	     record of a code carries -- the notification email, the
 	     enrollment.* audit events, the server log lines -- and an operator
 	     arriving with one had no way to know it would work. -->
-	<SearchInput
-		label="Search enrollments"
-		placeholder="enrollment ID, account, key ID, request ID, or approver..."
-		onsearch={onSearch}
-		testid="search-enrollments"
-	/>
+	{#key searchKey}
+		<SearchInput
+			label="Search enrollments"
+			placeholder="enrollment ID, account, key ID, request ID, or approver..."
+			value={searchQuery}
+			onsearch={onSearch}
+			testid="search-enrollments"
+		/>
+	{/key}
 
 	<ListStatus message={status} />
 
@@ -122,6 +134,11 @@
 		<LoadingBlock shape="rows" count={4} testid="enrollments-loading" />
 	{:else if enrollments.length === 0 && searchQuery}
 		<EmptyState icon="filter-off" title="No service codes match" testid="enrollments-empty">
+			{#snippet action()}
+				<Button variant="ghost" onclick={clearSearch} testid="enrollments-clear-search">
+					Clear search
+				</Button>
+			{/snippet}
 			No service enrollment code on this deployment matches the search above.
 		</EmptyState>
 	{:else if enrollments.length === 0}

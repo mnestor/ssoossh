@@ -137,7 +137,7 @@ describe('admin config page', () => {
 		await screen.findByText('ssh_key');
 		await userEvent.click(screen.getByLabelText('Show unset keys'));
 
-		const row = screen.getByText('http.cookie_key').parentElement;
+		const row = screen.getByText('http.cookie_key').closest('div');
 		expect(row).toHaveTextContent('not set');
 	});
 
@@ -191,5 +191,42 @@ describe('admin config page', () => {
 		render(Page);
 
 		expect(await screen.findByText('not authorized as auditor')).toBeInTheDocument();
+	});
+
+	// The key names a setting; its reference entry says what it governs.
+	it('should link each key to its reference entry', async () => {
+		stubConfig(effectiveConfig());
+		render(Page);
+		await screen.findByText('http.port');
+		expect(screen.getByText('http.port').closest('a')).toHaveAttribute(
+			'href',
+			'https://mnestor.github.io/ssoossh/reference/config/http/#port'
+		);
+	});
+
+	it('should announce how many keys a filter leaves', async () => {
+		stubConfig(effectiveConfig());
+		render(Page);
+		await screen.findByText('http.port');
+		await userEvent.type(screen.getByTestId('config-search'), 'cookie');
+		await vi.waitFor(() =>
+			expect(screen.getByTestId('list-status')).toHaveTextContent(/keys? match/)
+		);
+	});
+
+	it('should offer a way back when nothing matches', async () => {
+		stubConfig(effectiveConfig());
+		render(Page);
+		await screen.findByText('http.port');
+		await userEvent.type(screen.getByTestId('config-search'), 'zzz-nothing');
+		expect(await screen.findByTestId('config-clear-filter')).toBeInTheDocument();
+	});
+
+	it('should say unset keys are included while a filter is on', async () => {
+		stubConfig(effectiveConfig());
+		render(Page);
+		await screen.findByText('http.port');
+		await userEvent.type(screen.getByTestId('config-search'), 'cookie');
+		expect(await screen.findByTestId('config-unset-note')).toBeInTheDocument();
 	});
 });

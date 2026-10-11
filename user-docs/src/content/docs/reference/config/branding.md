@@ -56,9 +56,9 @@ branding:
 
 `string`, default `empty`
 
-The address of whoever answers for this deployment — the local help desk, not the project. Empty leaves the web UI pointing at its defaults: "contact your administrator" on the login page, and the project's GitHub issue tracker in the footer.
+The address of whoever answers for this deployment — the local help desk, not the project. Empty leaves the web UI pointing at its defaults: "contact your administrator" on the login page and the account-disabled page, and the project's GitHub issue tracker in the footer.
 
-Set it and both become a mailto: link to this address. One setting covers both because it is one question — "who do I ask about this deployment?" — and a second key would let an operator answer it in one place and forget the other, which is the failure this exists to prevent.
+Set it and all three become a mailto: link to this address. One setting covers them because it is one question — "who do I ask about this deployment?" — and a second key would let an operator answer it in one place and forget the other, which is the failure this exists to prevent. admin.contact_email was that second key; it is still read for the account-disabled page when this is unset.
 
 It is served by the unauthenticated /api/branding endpoint and rendered on the login page, so it is public: use the shared support address, never a personal one. It is parsed at startup and a value that is not an address fails the server rather than producing a dead link on the one page a locked-out user can reach.
 

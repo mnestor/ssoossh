@@ -20,6 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/mnestor/ssoossh/server/service"
+	"github.com/mnestor/ssoossh/server/utils/errorresponses"
 )
 
 func newSessionTestRouter() *gin.Engine {
@@ -854,5 +855,86 @@ func TestSessionIdentity_ShouldStillReadAPreUpgradeSession(t *testing.T) {
 	}
 	if want := []string{"svc-web"}; !reflect.DeepEqual(got.ServiceAccounts, want) {
 		t.Errorf("got ServiceAccounts %#v, want %#v", got.ServiceAccounts, want)
+	}
+}
+
+// TestSessionAuthMiddleware_ShouldEndTheSessionOfADisabledAccount is the
+// other half of disabling someone: sign-in refuses them, and a session they
+// opened before the disable stops working on its next request instead of
+// at its absolute cap.
+func TestSessionAuthMiddleware_ShouldEndTheSessionOfADisabledAccount(t *testing.T) {
+	t.Parallel()
+
+	identity := &service.Identity{Subject: "sub-alice", Username: "alice"}
+	setResp := doSessionRequest(t, func(c *gin.Context) {
+		if err := SetIdentitySession(c, identity); err != nil {
+			t.Fatalf("SetIdentitySession() error = %v", err)
+		}
+	}, nil)
+
+	r := newSessionTestRouter()
+	r.Use(NewErrorHandlerMiddleware().Add())
+	refresher := &fakeIdentityRefresher{err: &errorresponses.UserDisabledError{}}
+	reached := false
+	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour, refresher).Add(), func(c *gin.Context) {
+		reached = true
+		c.String(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)
+	for _, c := range setResp.Result().Cookies() {
+		req.AddCookie(c)
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("got status %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+	if reached {
+		t.Error("the handler ran for a disabled account's session")
+	}
+}
+
+// TestSessionAuthMiddleware_ShouldClearTheSessionOfADisabledAccount keeps
+// the dead session from round-tripping: the next request carries no
+// identity at all, so re-enabling the account means signing in again.
+func TestSessionAuthMiddleware_ShouldClearTheSessionOfADisabledAccount(t *testing.T) {
+	t.Parallel()
+
+	identity := &service.Identity{Subject: "sub-alice", Username: "alice"}
+	setResp := doSessionRequest(t, func(c *gin.Context) {
+		if err := SetIdentitySession(c, identity); err != nil {
+			t.Fatalf("SetIdentitySession() error = %v", err)
+		}
+	}, nil)
+
+	r := newSessionTestRouter()
+	r.Use(NewErrorHandlerMiddleware().Add())
+	refresher := &fakeIdentityRefresher{err: &errorresponses.UserDisabledError{}}
+	reached := 0
+	r.GET("/whoami", NewSessionAuthMiddleware(5*time.Minute, time.Hour, refresher).Add(), func(c *gin.Context) {
+		reached++
+		c.String(http.StatusOK, "ok")
+	})
+	first := httptest.NewRequest(http.MethodGet, "/whoami", nil)
+	for _, c := range setResp.Result().Cookies() {
+		first.AddCookie(c)
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, first)
+
+	// A second request with whatever cookie came back, and a refresher that
+	// would now let it through: a cleared session has no subject to refresh.
+	refresher.err = nil
+	second := httptest.NewRequest(http.MethodGet, "/whoami", nil)
+	for _, c := range w.Result().Cookies() {
+		second.AddCookie(c)
+	}
+	w2 := httptest.NewRecorder()
+	r.ServeHTTP(w2, second)
+
+	if reached != 0 || w2.Code != http.StatusUnauthorized {
+		t.Errorf("the ended session still authenticated: handler ran %d times, second status %d", reached, w2.Code)
 	}
 }

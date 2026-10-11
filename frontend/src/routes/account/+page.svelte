@@ -3,6 +3,7 @@
 	import type { CurrentUser } from '#lib/api/types.js';
 	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
 	import Alert from '#lib/components/Alert.svelte';
+	import CopyableId from '#lib/components/CopyableId.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import DetailRow from '#lib/components/DetailRow.svelte';
 	import MonoChip from '#lib/components/MonoChip.svelte';
@@ -96,20 +97,36 @@
 				<!-- The identifier the whole account is keyed by, from the claim
 				     authentication.fields.subject names. Not the username: that
 				     changes when someone is renamed. -->
-				<DetailRow label="Account identifier" mono>{user.subject}</DetailRow>
+				<!-- Copyable: it is the one value support will ask for, and
+				     selecting a long opaque string by hand is fiddly. -->
+				<DetailRow label="Account identifier">
+					<CopyableId
+						value={user.subject}
+						label="Identifier"
+						length={12}
+						testid="account-subject"
+					/>
+				</DetailRow>
 				{#if user.extra}
 					{#each Object.entries(user.extra) as [name, value] (name)}
 						<div data-testid="extra-field-{name}">
 							<DetailRow label={name} mono={typeof value === 'string'}>
 								{#if Array.isArray(value)}
+									<!-- Keyed by position: a claim can carry the same value
+									     twice, and a keyed each throws on a duplicate. -->
 									<span class="flex flex-wrap gap-1.5">
-										{#each value as v (v)}
+										{#each value as v, i (i)}
 											<MonoChip>{v}</MonoChip>
 										{/each}
 									</span>
 								{:else if value === '' || value === null}
-									<!-- Missing extra field: display it visibly so operators can debug missing claims -->
-									<span class="text-ink-muted">MISSING</span>
+									<!-- Said as what happened, not as a fault in the account:
+									     the identity provider did not send it. The raw claim
+									     name stays as the label, which is what an operator
+									     debugging the mapping reads. -->
+									<span class="text-ink-muted">not provided by your identity provider</span>
+								{:else if typeof value === 'object'}
+									<span class="font-mono break-all">{JSON.stringify(value)}</span>
 								{:else}
 									{value}
 								{/if}
@@ -121,8 +138,10 @@
 					<DetailRow label="Access">
 						<span class="flex flex-wrap gap-1.5" data-testid="access-roles">
 							{#each roles as role (role)}
+								<!-- Neutral: a role is not a status, and the green the
+								     "Active" and "approved" chips use read as a health check. -->
 								<span
-									class="inline-flex items-center gap-1.5 rounded bg-granted-surface px-2.5 py-1 text-xs font-semibold text-granted"
+									class="inline-flex items-center gap-1.5 rounded bg-surface-muted px-2.5 py-1 text-xs font-semibold text-ink"
 								>
 									{role}
 								</span>
@@ -138,13 +157,13 @@
 		     there is no group to name, and the wrapper's own sentence said
 		     nothing the two sections below do not each say for themselves. -->
 		<PageSection
-			title="Principals for user certificates"
-			description="Your username and any alternate account names you can use as principals. Your username is the primary identity."
+			title="Principals you can approve with"
+			description="Your username and alternate account names, offered when you approve a user, PAM or console request. Your username is the primary identity."
 			testid="principals-section"
 		>
 			<span class="flex flex-wrap gap-1.5" data-testid="principals-list">
 				<MonoChip>{user.username} <span class="text-ink-muted">(primary)</span></MonoChip>
-				{#each user.other_accounts as account (account)}
+				{#each user.other_accounts as account, i (i)}
 					<MonoChip>{account}</MonoChip>
 				{/each}
 			</span>
@@ -167,7 +186,7 @@
 					certificate's principal.
 				</p>
 				<span class="flex flex-wrap gap-1.5">
-					{#each user.service_accounts as account (account)}
+					{#each user.service_accounts as account, i (i)}
 						<MonoChip>{account}</MonoChip>
 					{/each}
 				</span>
@@ -182,7 +201,7 @@
 				<p class="text-dense text-ink-muted">Your identity carries no groups.</p>
 			{:else}
 				<span class="flex flex-wrap gap-1.5">
-					{#each user.groups as group (group)}
+					{#each user.groups as group, i (i)}
 						<MonoChip>{group}</MonoChip>
 					{/each}
 				</span>

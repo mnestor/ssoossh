@@ -1,3 +1,4 @@
+import userEvent from '@testing-library/user-event';
 import { render, screen } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -128,5 +129,21 @@ describe('admin service codes page', () => {
 		render(Page);
 
 		expect(await screen.findByTestId('enrollments-pager')).toBeInTheDocument();
+	});
+});
+
+describe('a search that matches nothing', () => {
+	it('should offer a way back to the full list', async () => {
+		stubList([]);
+		render(Page);
+		await screen.findByTestId('enrollments-empty');
+		await userEvent.type(screen.getByTestId('search-enrollments'), 'nothing-like-this{Enter}');
+		expect(await screen.findByTestId('enrollments-clear-search')).toBeInTheDocument();
+	});
+
+	it('should promise only what the detail page can do', () => {
+		stubList([]);
+		render(Page);
+		expect(screen.queryByText(/reassign/)).not.toBeInTheDocument();
 	});
 });

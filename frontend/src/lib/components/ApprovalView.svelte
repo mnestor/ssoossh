@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import type { RequestDetail } from '#lib/api/types.js';
 	import {
 		anyTrimmed,
@@ -376,7 +377,9 @@
 	// The simplified page's opening line: who asked, running what, on which
 	// machine, as three tiles in place of the description and the Account,
 	// Command, Host and Requested-from rows. A tile with nothing to say is
-	// left out rather than shown empty.
+	// left out rather than shown empty. Every tile is a claim; the address
+	// the server itself saw is not, so it sits with the check by the buttons
+	// instead of under the "never verified" caption here.
 	const requestLine = $derived.by(() => {
 		const account = detail.target_account || detail.local_username;
 		const host = detail.hostname || detail.local_hostname;
@@ -384,7 +387,7 @@
 			{
 				key: 'who',
 				label: 'Who',
-				value: account ? `${account}@${detail.source_ip}` : detail.source_ip
+				value: account ?? ''
 			},
 			{ key: 'runs', label: 'Runs', value: detail.process ?? '' },
 			{ key: 'on', label: 'On', value: host ?? '' }
@@ -425,6 +428,31 @@
 		detail.client_time ? clockSkewLabel(detail.client_time, detail.created_at) : null
 	);
 
+	// The one check only the approver can make, said beside the buttons at
+	// both levels. Everything above it was reported by the requester and can
+	// be invented, so a person sent someone else's link has nothing on the
+	// page to catch them but this line. Worded per type, because "you just
+	// ran it" means a terminal for a user request, sudo for PAM and a
+	// keyboard for a console.
+	const requestHost = $derived(detail.hostname || detail.local_hostname || '');
+	const onHost = $derived(requestHost ? ` on ${requestHost}` : '');
+	const startedCheck = $derived(
+		isConsoleRequest
+			? `Approve only if you are at the console${onHost} right now and this is your own login.`
+			: detail.type === 'pam'
+				? `Approve only if you just ran sudo or a similar command yourself${onHost}.`
+				: isServiceRequest
+					? `Approve only if you just ran ssoossh service enroll yourself${onHost}.`
+					: `Approve only if you started this yourself, just now${onHost}.`
+	);
+
+	// The two addresses this server saw: the request's and this browser's.
+	// A difference is normal (a terminal on another machine, a VPN) and is
+	// never a reason the server refuses; it is the one fact here the
+	// approver can check rather than take on trust.
+	const viewerIP = $derived(detail.viewer_ip ?? '');
+	const sameAddress = $derived(!!viewerIP && viewerIP === detail.source_ip);
+
 	// Wording per blocked reason, so the page explains why there is no
 	// button rather than just not having one.
 	const blockedText: Record<BlockedReason, string> = {
@@ -432,10 +460,37 @@
 			'This request belongs to another account. Only the account that opened it can approve or deny it.',
 		'in-progress':
 			'This request has already been approved and its certificate is being signed. Nothing further is needed here.',
-		'already-resolved':
-			'This request is closed. Certificate requests are short-lived by design — run the client again to start a new one.',
+		'already-resolved': '',
 		'no-service-accounts': 'You have no service accounts to approve this for.'
 	};
+
+	// What a closed request means depends on how it closed. An approved one
+	// needs nothing, so telling its approver to run the client again (which
+	// this used to say for every status) made them start a second request.
+	const closedText = $derived(
+		detail.status === 'approved' || detail.status === 'enrolled'
+			? 'This request was already approved and its certificate delivered. There is nothing left to do here.'
+			: detail.status === 'denied'
+				? 'This request was denied and no certificate was issued. Run the client again if that was a mistake.'
+				: detail.status === 'failed'
+					? 'Signing this certificate failed. Run the client again to start a new request.'
+					: 'This request expired before it was approved. Run the client again to start a new one.'
+	);
+	const closedApproved = $derived(detail.status === 'approved' || detail.status === 'enrolled');
+
+	// The heading asks for a decision only while one can be made.
+	const headingTitle = $derived(
+		outcome !== null || blocked || expired ? 'Certificate request' : pageCopy.title
+	);
+
+	// After a decision the buttons are replaced by the outcome; focus moves
+	// to it so a keyboard reader is not left on an element that is gone.
+	let outcomeEl = $state<HTMLDivElement | undefined>(undefined);
+	$effect(() => {
+		if (outcome !== null) {
+			outcomeEl?.focus();
+		}
+	});
 </script>
 
 <!-- No width of its own: PageShell decides that, and this used to cap
@@ -444,7 +499,7 @@
      cap themselves — a select or an email field a thousand pixels wide
      looks like a bug. -->
 <div class="flex w-full flex-col gap-8">
-	<PageHeading title={pageCopy.title}>
+	<PageHeading title={headingTitle}>
 		{#snippet action()}<DetailToggle />{/snippet}
 	</PageHeading>
 
@@ -479,9 +534,7 @@
 						</div>
 					{/each}
 				</div>
-				<p class="mt-2 text-dense text-ink-muted">
-					Reported by the client and never verified. Approve only if you just ran it.
-				</p>
+				<p class="mt-2 text-dense text-ink-muted">Reported by the client and never verified.</p>
 			</div>
 		{:else}
 			<p class="pb-4 text-dense text-ink-muted">{pageCopy.description}</p>
@@ -746,22 +799,37 @@
 		</div>
 
 		<div class="mt-6 border-t border-border-subtle pt-5">
-			{#if outcome === 'approved'}
-				<Alert variant="info" inset title="Approved" testid="outcome-approved">
-					The certificate is being signed and will reach the waiting client on its own connection —
-					you can close this page.
-				</Alert>
-			{:else if outcome === 'denied'}
-				<Alert variant="warning" title="Denied" testid="outcome-denied">
-					The waiting client has been told, and no certificate was issued.
-				</Alert>
-			{:else if simplified && expired}
+			{#if outcome !== null}
+				<div bind:this={outcomeEl} tabindex="-1" data-testid="outcome">
+					{#if outcome === 'approved'}
+						<Alert variant="info" inset title="Approved" testid="outcome-approved">
+							The certificate is being signed and will reach the waiting client on its own
+							connection — you can close this page.
+						</Alert>
+					{:else}
+						<Alert variant="warning" title="Denied" testid="outcome-denied">
+							The waiting client has been told, and no certificate was issued.
+						</Alert>
+					{/if}
+				</div>
+			{:else if expired && blocked !== 'not-yours'}
+				<!-- Both levels: a deadline that passes with the page open used to
+				     leave Approve live at the advanced level, and pressing it only
+				     brought back the server's refusal. -->
 				<Alert variant="warning" testid="expired-notice">
 					This request expired before it was approved. Run the client again.
 				</Alert>
 			{:else if isServiceRequest && !hasServiceAccounts}
 				<Alert variant="warning" testid="blocked-no-service-accounts">
 					{blockedText['no-service-accounts']}
+				</Alert>
+			{:else if blocked === 'already-resolved'}
+				<Alert
+					variant={closedApproved ? 'info' : 'warning'}
+					inset
+					testid="blocked-already-resolved"
+				>
+					{closedText}
 				</Alert>
 			{:else if blocked}
 				<Alert
@@ -783,7 +851,7 @@
 										bind:value={selectedServiceAccount}
 										aria-label="Service account to approve for"
 										data-testid="service-account-select"
-										class="rounded-md border border-border-control bg-surface px-3 py-2 text-dense text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+										class="min-h-target rounded-md border border-border-control bg-surface px-3 py-2 text-dense text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 									>
 										<option value="">Select an account...</option>
 										<!-- Grouped only when there is something to
@@ -847,7 +915,7 @@
 										data-testid="notification-email-input"
 										placeholder="deploys@example.com"
 										aria-describedby="notification-email-help"
-										class="rounded-md border border-border-control bg-surface px-3 py-2 text-dense text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+										class="min-h-target rounded-md border border-border-control bg-surface px-3 py-2 text-dense text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
 									/>
 									<span id="notification-email-help" class="text-meta text-ink-muted">
 										Where notifications about this enrollment go — redemptions, the expiry reminder,
@@ -859,8 +927,28 @@
 						</div>
 					{/if}
 					{#if actionError}
-						<Alert variant="error" title="That did not go through">{actionError}</Alert>
+						<Alert variant="error" title="Could not record your decision" testid="action-error"
+							>{actionError}</Alert
+						>
 					{/if}
+					<div
+						class="flex items-start gap-2 rounded-md bg-trimmed-surface px-3 py-2.5 text-dense text-ink"
+						data-testid="approve-only-if"
+					>
+						<span class="mt-0.5 shrink-0 text-trimmed"
+							><Icon name="alert-triangle" size="sm" /></span
+						>
+						<span class="flex flex-col gap-1">
+							<span class="font-medium">{startedCheck}</span>
+							<span class="text-ink-muted" data-testid="approve-addresses">
+								The server received this request from
+								<span class="font-mono text-ink">{detail.source_ip}</span>{#if viewerIP}, and sees
+									you connecting from <span class="font-mono text-ink">{viewerIP}</span>.
+									{#if sameAddress}They match.{:else}They differ, which is normal when your terminal
+										is on another machine or network. If you can't account for it, deny the request.{/if}{:else}.{/if}
+							</span>
+						</span>
+					</div>
 					<!-- Deny first, Approve last: the affirming action sits where the
 					     eye finishes, and the destructive one is not the button a
 					     hurried hand lands on by default. -->
@@ -879,6 +967,13 @@
 							<Icon name="x" size="sm" />
 							Deny
 						</Button>
+						{#if picksPrincipals && selectedPrincipals.length === 0}
+							<!-- Beside the button it explains: the picker that
+							     emptied it can be a screen away at the advanced level. -->
+							<span class="mr-auto text-dense text-ink-muted" data-testid="approve-needs-principal">
+								Select at least one account to approve.
+							</span>
+						{/if}
 						<Button
 							testid="approve-button"
 							{busy}
@@ -898,6 +993,10 @@
 	<SimplifiedHint />
 
 	<p class="text-center text-meta text-ink-muted">
-		Requests are logged. See the audit trail for details.
+		Approvals and denials are logged. Yours are in
+		<a
+			class="inline-flex min-h-target items-center text-accent hover:underline"
+			href={resolve('logs/me')}>your history</a
+		>.
 	</p>
 </div>

@@ -85,6 +85,11 @@ describe('describeCodeError', () => {
 		{ name: 'should report a claimed request as claimed', status: 403, kind: 'claimed' },
 		{ name: 'should report an unknown code as not-found', status: 404, kind: 'not-found' },
 		{ name: 'should report a malformed code as invalid', status: 400, kind: 'invalid' },
+		{
+			name: 'should report too many submissions as rate-limited',
+			status: 429,
+			kind: 'rate-limited'
+		},
 		{ name: 'should report an unexpected status as unknown', status: 500, kind: 'unknown' }
 	];
 

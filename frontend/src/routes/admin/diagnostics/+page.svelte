@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { runDiagnostics } from '#lib/api/endpoints.js';
 	import type { DiagnosticCheckResult, DiagnosticsResponse } from '#lib/api/types.js';
-	import { errorMessage } from '#lib/auth.js';
+	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import ListStatus from '#lib/components/ListStatus.svelte';
 	import Alert from '#lib/components/Alert.svelte';
 	import Button from '#lib/components/Button.svelte';
 	import MonoChip from '#lib/components/MonoChip.svelte';
@@ -22,6 +23,10 @@
 		try {
 			report = await runDiagnostics();
 		} catch (cause) {
+			// An expired session is a sign-in, not a failed check.
+			if (redirectIfUnauthenticated(cause)) {
+				return;
+			}
 			error = errorMessage(cause);
 		} finally {
 			running = false;
@@ -52,6 +57,34 @@
 	function needsAttention(c: DiagnosticCheckResult): boolean {
 		return c.status !== 'ok';
 	}
+
+	// Worst first, so a critical check is never below several OKs.
+	const severityOrder: Record<string, number> = { critical: 0, warn: 1, ok: 2, skipped: 3 };
+	const orderedChecks = $derived(
+		report
+			? [...report.checks].sort(
+					(a, b) => (severityOrder[a.status] ?? 3) - (severityOrder[b.status] ?? 3)
+				)
+			: []
+	);
+
+	// One line before the detail: how many checks ran and how many need a
+	// look. Also the announcement, so pressing Run checks is answered for a
+	// screen reader too (WCAG 4.1.3).
+	const summary = $derived.by(() => {
+		if (!report) {
+			return '';
+		}
+		const count = (status: string) => report!.checks.filter((c) => c.status === status).length;
+		const critical = count('critical');
+		const warn = count('warn');
+		const parts = [`${report.checks.length} ${report.checks.length === 1 ? 'check' : 'checks'}`];
+		parts.push(critical ? `${critical} critical` : 'none critical');
+		if (warn) {
+			parts.push(`${warn} ${warn === 1 ? 'warning' : 'warnings'}`);
+		}
+		return parts.join(', ') + '.';
+	});
 </script>
 
 <svelte:head><title>Diagnostics · ssoossh</title></svelte:head>
@@ -61,7 +94,7 @@
 		{#snippet action()}
 			{#if isAdmin}
 				<Button onclick={run} busy={running} testid="run-diagnostics">
-					{running ? 'Running...' : 'Run checks'}
+					{running ? 'Running…' : 'Run checks'}
 				</Button>
 			{/if}
 		{/snippet}
@@ -82,10 +115,18 @@
 		</p>
 
 		{#if error}
-			<Alert variant="error" title="The checks could not run">{error}</Alert>
+			<Alert
+				variant="error"
+				title="The checks could not run"
+				onretry={run}
+				testid="diagnostics-error">{error}</Alert
+			>
 		{/if}
 
+		<ListStatus message={summary} />
+
 		{#if report}
+			<p class="text-sm font-medium text-ink" data-testid="diagnostics-summary">{summary}</p>
 			{#if report.public_origin}
 				<p class="text-sm text-ink-muted">
 					Probed <MonoChip>{report.public_origin}</MonoChip>.
@@ -98,7 +139,7 @@
 			     comparing this run to the last one had to find each check
 			     again rather than read down the same list. -->
 			<div data-testid="diagnostics-results" class="flex flex-col gap-8">
-				{#each report.checks as check (check.id)}
+				{#each orderedChecks as check (check.id)}
 					<section class="rounded-lg bg-surface p-5">
 						<div class="flex items-start justify-between gap-4">
 							<div>

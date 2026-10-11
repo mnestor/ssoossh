@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { startIdentityEcho } from '#lib/api/endpoints.js';
 	import type { IdentityEchoPayload } from '#lib/api/types.js';
-	import { errorMessage } from '#lib/auth.js';
+	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import { formatDateTime } from '#lib/format.js';
+	import { session } from '#lib/session.svelte.js';
+	import { describeSignInFailure, type SignInFailure } from '#lib/signin.js';
 	import {
 		COLLAPSE_AFTER,
 		describeClaimValue,
@@ -20,6 +23,14 @@
 	let readError = $state<string | null>(null);
 	let starting = $state(false);
 	let startError = $state<string | null>(null);
+	// Why the last echo did not complete, when the callback sent the
+	// browser back here with ?error= instead of a result.
+	let echoFailure = $state<SignInFailure | null>(null);
+
+	// Starting an echo is admin-only on the server (controller/identityecho.go);
+	// the admin area lets auditors and SOC in, so say so instead of offering
+	// a button that would fail.
+	const canEcho = $derived(session.user?.is_admin ?? false);
 
 	// The result arrives in the URL fragment, which is never sent to a
 	// server. Read it once, then drop it from the address bar and from
@@ -27,6 +38,12 @@
 	// database, not in the session, not in an access log, and not in a URL
 	// somebody screenshots.
 	$effect(() => {
+		const failed = new URLSearchParams(window.location.search).get('error');
+		if (failed) {
+			echoFailure = describeSignInFailure(failed);
+			history.replaceState(null, '', window.location.pathname);
+			return;
+		}
 		const fragment = window.location.hash.replace(/^#/, '');
 		if (!fragment) return;
 
@@ -54,8 +71,11 @@
 			const { authorization_url } = await startIdentityEcho();
 			window.location.href = authorization_url;
 		} catch (cause) {
-			startError = errorMessage(cause);
 			starting = false;
+			if (redirectIfUnauthenticated(cause)) {
+				return;
+			}
+			startError = errorMessage(cause);
 		}
 	}
 
@@ -189,11 +209,17 @@
 				missing a group" — the user detail page and the directory probe are for that.
 			</p>
 
-			<div>
-				<Button testid="echo-start" busy={starting} onclick={handleStart}>
-					{starting ? 'Redirecting…' : 'Show me what my IdP sends'}
-				</Button>
-			</div>
+			{#if canEcho}
+				<div>
+					<Button testid="echo-start" busy={starting} onclick={handleStart}>
+						{starting ? 'Redirecting…' : 'Show me what my IdP sends'}
+					</Button>
+				</div>
+			{:else}
+				<p class="text-ink-muted" data-testid="echo-admin-only">
+					Running an echo needs the admin role.
+				</p>
+			{/if}
 
 			{#if startError}
 				<Alert variant="error" title="Could not start the echo" testid="echo-start-error">
@@ -202,6 +228,12 @@
 			{/if}
 		</div>
 	</PageSection>
+
+	{#if echoFailure}
+		<Alert variant="error" title={echoFailure.title} testid="echo-failure">
+			{echoFailure.message}
+		</Alert>
+	{/if}
 
 	{#if readError}
 		<Alert variant="error" title="Could not read the result" testid="echo-read-error">
@@ -219,7 +251,7 @@
 		>
 			<div class="flex flex-col gap-4">
 				<p class="text-dense text-ink-muted">
-					Issued {new Date(payload.issued_at).toLocaleString()}. Nothing here was stored.
+					Issued {formatDateTime(payload.issued_at)}. Nothing here was stored.
 				</p>
 
 				<!-- The shared table, sized for a token of any shape (DESIGN.md,

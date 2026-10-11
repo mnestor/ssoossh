@@ -18,19 +18,38 @@ const untagged: VersionResponse = {
 };
 
 describe('Footer', () => {
-	it('should render nothing when the version is unknown', () => {
+	// The support contact lives in the footer, so a failed version fetch must
+	// not take it off the page with the build label.
+	it('should still render the footer when the version is unknown', () => {
 		const { container } = render(Footer, { props: { version: null } });
-		expect(container.querySelector('footer')).toBeNull();
+		expect(container.querySelector('footer')).not.toBeNull();
+	});
+
+	it('should keep the support contact when the version is unknown', () => {
+		render(Footer, {
+			props: { version: null, branding: { support_email: 'help@corp.example' } as never }
+		});
+		expect(screen.getByRole('link', { name: 'Contact support' })).toHaveAttribute(
+			'href',
+			'mailto:help@corp.example'
+		);
+	});
+
+	it('should say a link opens in a new tab', () => {
+		render(Footer, { props: { version: release } });
+		expect(screen.getByRole('link', { name: /^GitHub/ })).toHaveAccessibleName(
+			'GitHub (opens in a new tab)'
+		);
 	});
 
 	it('should show the tagged version with a leading v', () => {
 		render(Footer, { props: { version: release } });
-		expect(screen.getByRole('link', { name: 'v0.1.0' })).toBeInTheDocument();
+		expect(screen.getByRole('link', { name: /^v0\.1\.0/ })).toBeInTheDocument();
 	});
 
 	it('should link the tagged version to its release page', () => {
 		render(Footer, { props: { version: release } });
-		expect(screen.getByRole('link', { name: 'v0.1.0' })).toHaveAttribute(
+		expect(screen.getByRole('link', { name: /^v0\.1\.0/ })).toHaveAttribute(
 			'href',
 			release.release_url
 		);
@@ -38,7 +57,7 @@ describe('Footer', () => {
 
 	it('should link back to the repository', () => {
 		render(Footer, { props: { version: release } });
-		expect(screen.getByRole('link', { name: 'GitHub' })).toHaveAttribute(
+		expect(screen.getByRole('link', { name: /^GitHub/ })).toHaveAttribute(
 			'href',
 			'https://github.com/mnestor/ssoossh'
 		);
@@ -46,7 +65,7 @@ describe('Footer', () => {
 
 	it('should link to the repository issue tracker', () => {
 		render(Footer, { props: { version: release } });
-		expect(screen.getByRole('link', { name: 'Report an issue' })).toHaveAttribute(
+		expect(screen.getByRole('link', { name: /^Report an issue/ })).toHaveAttribute(
 			'href',
 			'https://github.com/mnestor/ssoossh/issues'
 		);
@@ -54,7 +73,7 @@ describe('Footer', () => {
 
 	it('should open outbound links in a new tab without leaking the referrer', () => {
 		render(Footer, { props: { version: release } });
-		expect(screen.getByRole('link', { name: 'GitHub' })).toHaveAttribute(
+		expect(screen.getByRole('link', { name: /^GitHub/ })).toHaveAttribute(
 			'rel',
 			'noopener noreferrer'
 		);
@@ -91,12 +110,12 @@ describe('Footer', () => {
 
 		it('should drop the issue tracker link', () => {
 			render(Footer, { props: { version: release, branding: support } });
-			expect(screen.queryByRole('link', { name: 'Report an issue' })).toBeNull();
+			expect(screen.queryByRole('link', { name: /^Report an issue/ })).toBeNull();
 		});
 
 		it('should keep the repository link, which is attribution rather than support', () => {
 			render(Footer, { props: { version: release, branding: support } });
-			expect(screen.getByRole('link', { name: 'GitHub' })).toBeInTheDocument();
+			expect(screen.getByRole('link', { name: /^GitHub/ })).toBeInTheDocument();
 		});
 
 		it('should fall back to a generic label when only an address is configured', () => {
@@ -113,7 +132,7 @@ describe('Footer', () => {
 			render(Footer, {
 				props: { version: release, branding: { support_label: 'the IT service desk' } }
 			});
-			expect(screen.getByRole('link', { name: 'Report an issue' })).toBeInTheDocument();
+			expect(screen.getByRole('link', { name: /^Report an issue/ })).toBeInTheDocument();
 		});
 	});
 });

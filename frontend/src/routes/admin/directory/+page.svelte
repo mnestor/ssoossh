@@ -6,7 +6,8 @@
 		LDAPStatusResponse,
 		LDAPSyncRunResponse
 	} from '#lib/api/types.js';
-	import { errorMessage } from '#lib/auth.js';
+	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import { formatDateTime } from '#lib/format.js';
 	import Alert from '#lib/components/Alert.svelte';
 	import LoadingBlock from '#lib/components/LoadingBlock.svelte';
 	import Button from '#lib/components/Button.svelte';
@@ -80,17 +81,25 @@
 				statusLoaded = true;
 			})
 			.catch((cause) => {
-				if (controller.signal.aborted) return;
+				if (controller.signal.aborted || redirectIfUnauthenticated(cause)) return;
 				statusError = errorMessage(cause);
 				statusLoaded = true;
 			});
 		return () => controller.abort();
 	});
 
+	// Set when the status could not be read back after a pass: the page then
+	// shows the pass's own counts over a status that may be out of date,
+	// and says so instead of failing silently.
+	let statusStale = $state(false);
+
 	async function refreshStatus() {
 		try {
 			status = await getLDAPStatus();
-		} catch {
+			statusStale = false;
+		} catch (cause) {
+			if (redirectIfUnauthenticated(cause)) return;
+			statusStale = true;
 			// The sync result is already on screen; a failed status refresh
 			// is not worth replacing it with an error.
 		}
@@ -105,6 +114,7 @@
 			await refreshStatus();
 			return true;
 		} catch (cause) {
+			if (redirectIfUnauthenticated(cause)) return false;
 			syncError = errorMessage(cause);
 			return false;
 		} finally {
@@ -154,6 +164,7 @@
 			probeResult = await probeLDAP(body);
 			view = 'entry';
 		} catch (cause) {
+			if (redirectIfUnauthenticated(cause)) return;
 			probeError = errorMessage(cause);
 		} finally {
 			probing = false;
@@ -182,7 +193,19 @@
 	}
 
 	function formatTime(value?: string | null): string {
-		return value ? new Date(value).toLocaleString() : '—';
+		return value ? formatDateTime(value) : '—';
+	}
+
+	// The counts that need a second look: a failure on any pass, and a
+	// disable on a live one. Every chip carries a number, so the reader
+	// used to have to find the non-zero ones themselves.
+	function countTone(
+		kind: 'failed' | 'disabled',
+		run: { dry_run?: boolean; failed: number; disabled: number }
+	): string {
+		const value = kind === 'failed' ? run.failed : run.disabled;
+		const flagged = value > 0 && (kind === 'failed' || !run.dry_run);
+		return flagged ? 'bg-trimmed-surface text-trimmed' : '';
 	}
 </script>
 
@@ -297,9 +320,20 @@
 						<div class="mt-3 flex flex-wrap gap-1.5">
 							<MonoChip>{lastRun.found} found</MonoChip>
 							<MonoChip>{lastRun.missing} missing</MonoChip>
-							<MonoChip>{lastRun.failed} failed</MonoChip>
-							<MonoChip
-								>{lastRun.disabled} {lastRun.dry_run ? 'would disable' : 'disabled'}</MonoChip
+							<span
+								class="rounded border border-border-subtle px-1.5 py-0.5 font-mono text-xs text-ink {countTone(
+									'failed',
+									lastRun
+								)}"
+								data-testid="ldap-count-failed">{lastRun.failed} failed</span
+							>
+							<span
+								class="rounded border border-border-subtle px-1.5 py-0.5 font-mono text-xs text-ink {countTone(
+									'disabled',
+									lastRun
+								)}"
+								data-testid="ldap-count-disabled"
+								>{lastRun.disabled} {lastRun.dry_run ? 'would disable' : 'disabled'}</span
 							>
 							<MonoChip
 								>{lastRun.reenabled} {lastRun.dry_run ? 'would re-enable' : 're-enabled'}</MonoChip
@@ -317,6 +351,26 @@
 				{:else}
 					<p class="text-sm text-ink-muted" data-testid="ldap-no-runs">
 						No sync pass has been recorded yet, on any instance.
+					</p>
+				{/if}
+
+				{#if statusStale}
+					<p class="text-dense text-trimmed" data-testid="ldap-status-stale">
+						The status above may be out of date: it could not be read again after the pass.
+						<button
+							type="button"
+							class="inline-flex min-h-target items-center font-medium text-accent hover:underline"
+							onclick={refreshStatus}>Try again</button
+						>
+					</p>
+				{/if}
+
+				{#if !isAdmin}
+					<!-- Running a pass or a probe is admin-only on the server
+					     (ldapadmin.go), so a SOC operator looking for "Sync now" is
+					     told where it went rather than left to search for it. -->
+					<p class="text-dense text-ink-muted" data-testid="ldap-admin-only">
+						Running a sync or a probe needs the admin role.
 					</p>
 				{/if}
 

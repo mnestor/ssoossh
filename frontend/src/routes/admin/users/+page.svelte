@@ -13,6 +13,9 @@
 	import { getAdminUsers } from '#lib/api/endpoints.js';
 	import type { AdminUsersListResponse } from '#lib/api/types.js';
 	import { describeList } from '#lib/listStatus.js';
+	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import { formatDateTime } from '#lib/format.js';
+	import Button from '#lib/components/Button.svelte';
 
 	/** The account-state filter, matching the server's `status` parameter. */
 	type StatusFilter = 'all' | 'active' | 'disabled';
@@ -25,7 +28,10 @@
 
 	let users: AdminUsersListResponse | null = $state(null);
 	let error: string | null = $state(null);
-	let busy = $state(false);
+	// True from the start: onMount starts the load after the first render,
+	// and a first frame with nothing loading and nothing loaded used to show
+	// "No users found".
+	let busy = $state(true);
 	let searchQuery = $state('');
 	let status: StatusFilter = $state('all');
 	let offset = $state(0);
@@ -56,8 +62,12 @@
 				users = result;
 			}
 		} catch (cause) {
+			// An expired session is a sign-in, not a failed list.
+			if (redirectIfUnauthenticated(cause)) {
+				return;
+			}
 			if (load === latestLoad) {
-				error = cause instanceof Error ? cause.message : 'Failed to load users';
+				error = errorMessage(cause);
 			}
 		} finally {
 			// Only the newest load owns the busy state.
@@ -96,6 +106,34 @@
 	// declared with, so it narrows the whole union away and `users?.meta`
 	// types as `never`. Reading it inside a function body resets that — the
 	// same reason the markup below can say `users.meta` after an `{#if}`.
+	// Clearing remounts the search box: it owns what is typed in it, so
+	// resetting the term alone would leave the old text over the full list.
+	let searchKey = $state(0);
+	function clearFilters() {
+		searchQuery = '';
+		status = 'all';
+		offset = 0;
+		searchKey += 1;
+		loadUsers();
+	}
+
+	// Read inside functions: at this point in the module TypeScript has seen
+	// only the 'all' that `status` was declared with, and narrows it away
+	// (the same reason listStatus below is a $derived.by).
+	const filtered = $derived.by(() => searchQuery.trim() !== '' || status !== 'all');
+
+	// The filtered empty state, worded for what is narrowing the list.
+	const emptyCopy = $derived.by((): { title: string; body: string } => {
+		const state: StatusFilter = status;
+		if (searchQuery.trim() === '' && state === 'disabled') {
+			return { title: 'No disabled users', body: 'Everyone who has signed in is active.' };
+		}
+		if (searchQuery.trim() === '' && state === 'active') {
+			return { title: 'No active users', body: 'Everyone who has signed in is disabled.' };
+		}
+		return { title: 'Nothing matches', body: 'No user matches this search and account state.' };
+	});
+
 	const listStatus = $derived.by(() => {
 		const meta = users?.meta;
 		return describeList({
@@ -116,19 +154,22 @@
 
 <PageShell width="full">
 	<PageHeading title="Users">
-		{#snippet sub()}Directory of all users, with disable controls.{/snippet}
+		{#snippet sub()}Everyone who has signed in. Open a user to disable or re-enable them.{/snippet}
 	</PageHeading>
 
 	<ListStatus message={listStatus} />
 
 	<div class="flex flex-wrap items-end justify-between gap-4">
 		<div class="min-w-60 flex-1">
-			<SearchInput
-				label="Search users"
-				placeholder="name, username, email, or subject..."
-				onsearch={handleSearch}
-				testid="search-users"
-			/>
+			{#key searchKey}
+				<SearchInput
+					label="Search users"
+					placeholder="name, username, email, or subject..."
+					value={searchQuery}
+					onsearch={handleSearch}
+					testid="search-users"
+				/>
+			{/key}
 		</div>
 
 		<!-- A segmented control rather than a select: three mutually
@@ -184,12 +225,12 @@
 						<th scope="col">Username</th>
 						<th scope="col">Email</th>
 						<th scope="col">Status</th>
-						<th scope="col">Created</th>
+						<th scope="col">First sign-in</th>
 					</tr>
 				</thead>
 				<tbody>
 					{#each users.users as user (user.id)}
-						<tr class="hover:bg-surface-muted">
+						<tr>
 							<!-- The name first, because an admin scanning this list is
 							     usually looking for a person rather than for an account
 							     name. Empty for anyone whose IdP sent no name claim.
@@ -198,15 +239,23 @@
 							     word per row cost more width than it earned, and names
 							     and emails are what actually need the space. -->
 							<td>
-								<a
-									href={resolve(`admin/users/${user.id}`)}
-									data-testid="user-link"
-									class="text-accent hover:underline">{user.name || '—'}</a
-								>
+								{#if user.name}
+									<a
+										href={resolve(`admin/users/${user.id}`)}
+										data-testid="user-link"
+										class="text-accent hover:underline">{user.name}</a
+									>
+								{:else}
+									<!-- No link whose whole text is a dash; the username beside it is
+									     the link to the record. -->
+									<span class="text-ink-muted">—</span>
+								{/if}
 							</td>
 							<td class="font-mono">
-								<a href={resolve(`admin/users/${user.id}`)} class="text-accent hover:underline"
-									>{user.username}</a
+								<a
+									href={resolve(`admin/users/${user.id}`)}
+									data-testid="user-username-link"
+									class="text-accent hover:underline">{user.username}</a
 								>
 							</td>
 							<td class="text-ink-muted">{user.email || '—'}</td>
@@ -218,7 +267,7 @@
 								{/if}
 							</td>
 							<td class="text-ink-muted">
-								{new Date(user.created_at).toLocaleDateString()}
+								{formatDateTime(user.created_at)}
 							</td>
 						</tr>
 					{/each}
@@ -230,9 +279,21 @@
 	{:else if busy}
 		<LoadingBlock shape="table" count={6} testid="users-loading" />
 	{:else}
-		<EmptyState icon="users" title="No users found" testid="users-empty">
-			Nobody matching the search above has signed in to this deployment. A record appears the first
-			time an identity completes a sign-in.
-		</EmptyState>
+		{#if filtered}
+			<!-- What excluded everyone, with the way back: one message used to
+			     blame a search that was not there and say nobody had signed in. -->
+			<EmptyState icon="filter-off" title={emptyCopy.title} testid="users-empty">
+				{#snippet action()}
+					<Button variant="ghost" onclick={clearFilters} testid="users-clear-filters"
+						>Clear filters</Button
+					>
+				{/snippet}
+				{emptyCopy.body}
+			</EmptyState>
+		{:else}
+			<EmptyState icon="users" title="No users yet" testid="users-empty">
+				A record appears the first time an identity completes a sign-in.
+			</EmptyState>
+		{/if}
 	{/if}
 </PageShell>

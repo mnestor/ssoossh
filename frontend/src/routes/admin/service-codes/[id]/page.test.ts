@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdminEnrollment } from '#lib/api/types.js';
 import { fakePage, resetFakePage } from '#lib/testing/page.svelte.js';
 import { detail } from '#lib/detail.svelte.js';
+import type { CurrentUser } from '#lib/api/types.js';
+import { session } from '#lib/session.svelte.js';
 import Page from './+page.svelte';
 
 // Test methodology: render the admin detail route against a stubbed fetch,
@@ -160,12 +162,27 @@ describe('admin service code detail page', () => {
 	// the same place an account is disabled from — rather than a control
 	// buried in the admin-actions section near the foot of the page.
 	it('should offer to expire a code that still works', async () => {
+		session.user = { username: 'sam', is_soc: true, is_auditor: true } as CurrentUser;
 		stubDetail(adminEnrollment('enr-1'));
 
 		render(Page);
 		await screen.findByTestId('enrollment-id');
 
 		expect(screen.getByTestId('admin-expire-code')).toBeInTheDocument();
+		session.user = null;
+	});
+
+	// Expiring is SOC's; an auditor was offered the button, filled in a
+	// reason, and got the holder's 403 wording.
+	it('should not offer an auditor the expire action', async () => {
+		session.user = { username: 'ann', is_soc: false, is_auditor: true } as CurrentUser;
+		stubDetail(adminEnrollment('enr-1'));
+
+		render(Page);
+		await screen.findByTestId('enrollment-id');
+
+		expect(screen.queryByTestId('admin-expire-code')).not.toBeInTheDocument();
+		session.user = null;
 	});
 
 	// An expired code needs no control: the outcome it would produce is
@@ -220,5 +237,20 @@ describe('at the simplified detail level', () => {
 	it('should drop the holders list', async () => {
 		await renderSimplified();
 		expect(screen.queryByTestId('account-holders')).not.toBeInTheDocument();
+	});
+});
+
+describe('when the enrollment fails to load', () => {
+	it('should offer Try again for a server failure', async () => {
+		stubStatus(500, 'database unavailable');
+		render(Page);
+		expect(await screen.findByRole('button', { name: 'Try again' })).toBeInTheDocument();
+	});
+
+	it('should offer no Try again when the enrollment does not exist', async () => {
+		stubStatus(404);
+		render(Page);
+		await screen.findByText('No enrollment with that ID.');
+		expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
 	});
 });

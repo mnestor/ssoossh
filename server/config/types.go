@@ -130,13 +130,15 @@ type BrandingSettings struct {
 	// SupportEmail is the address of whoever answers for this deployment —
 	// the local help desk, not the project. Empty leaves the web UI
 	// pointing at its defaults: "contact your administrator" on the login
-	// page, and the project's GitHub issue tracker in the footer.
+	// page and the account-disabled page, and the project's GitHub issue
+	// tracker in the footer.
 	//
-	// Set it and both become a mailto: link to this address. One setting
-	// covers both because it is one question — "who do I ask about this
-	// deployment?" — and a second key would let an operator answer it in
-	// one place and forget the other, which is the failure this exists to
-	// prevent.
+	// Set it and all three become a mailto: link to this address. One
+	// setting covers them because it is one question — "who do I ask about
+	// this deployment?" — and a second key would let an operator answer it
+	// in one place and forget the other, which is the failure this exists
+	// to prevent. admin.contact_email was that second key; it is still read
+	// for the account-disabled page when this is unset.
 	//
 	// It is served by the unauthenticated /api/branding endpoint and
 	// rendered on the login page, so it is public: use the shared support
@@ -170,6 +172,18 @@ func (b *BrandingSettings) Validate() error {
 		return fmt.Errorf("branding.support_email %q is not a valid email address: %w", b.SupportEmail, err)
 	}
 	return nil
+}
+
+// SupportContact is who a person is told to ask about this deployment:
+// branding.support_email and its label, or, only when that is unset, the
+// superseded admin.contact_email with no label. Both empty means no
+// contact is configured, and the caller falls back to "contact your
+// administrator".
+func (c *Config) SupportContact() (address, label string) {
+	if c.Branding.SupportEmail != "" {
+		return c.Branding.SupportEmail, c.Branding.SupportLabel
+	}
+	return c.Admin.ContactEmail, ""
 }
 
 // FIPSEnabled reports whether FIPS steering is in effect. See
@@ -390,9 +404,12 @@ type AdminConfig struct {
 	// or membership in no granting group, denies.
 	AuditorGroup string `mapstructure:"auditor_group" default:""`
 
-	// ContactEmail is the email address shown on the account-disabled page
-	// so a disabled user can contact support. Empty disables the display
-	// (no mailto link on the page).
+	// ContactEmail is superseded by branding.support_email, which is the one
+	// setting for who to ask about this deployment and is shown on the
+	// account-disabled page along with the login page and the footer. It is
+	// still read, but only when branding.support_email is unset, so an
+	// existing configuration keeps its contact; the server logs a warning
+	// at startup while it is the one in use.
 	ContactEmail string `mapstructure:"contact_email" default:""`
 
 	// DisabledMessage is free-text shown on the account-disabled page below

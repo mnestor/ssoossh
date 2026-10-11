@@ -3,6 +3,7 @@
   "type": "user",
   "status": "pending",
   "source_ip": "198.51.100.7",
+  "viewer_ip": "203.0.113.20",
   "local_username": "alice",
   "local_hostname": "alice-laptop",
   "target_account": "root",

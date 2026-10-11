@@ -104,3 +104,49 @@ describe('Diagnostics admin page', () => {
 		expect(screen.getAllByText('How to fix')).toHaveLength(1);
 	});
 });
+
+describe('after the checks run', () => {
+	it('should sum up how many need a look before the detail', async () => {
+		signedIn();
+		mockRun();
+		render(Page);
+		await userEvent.click(screen.getByTestId('run-diagnostics'));
+		expect(await screen.findByTestId('diagnostics-summary')).toHaveTextContent(
+			'2 checks, 1 critical.'
+		);
+	});
+
+	// Worst first: a critical check is never below a row of OKs.
+	it('should put a critical check ahead of a clean one', async () => {
+		signedIn();
+		mockRun(
+			report({
+				checks: [...report().checks].reverse()
+			})
+		);
+		render(Page);
+		await userEvent.click(screen.getByTestId('run-diagnostics'));
+		const titles = (await screen.findAllByRole('heading', { level: 2 })).map((h) => h.textContent);
+		expect(titles[0]).toBe('CORS / edge header attribution');
+	});
+
+	it('should announce the result for a screen reader', async () => {
+		signedIn();
+		mockRun();
+		render(Page);
+		await userEvent.click(screen.getByTestId('run-diagnostics'));
+		await screen.findByTestId('diagnostics-summary');
+		expect(screen.getByTestId('list-status')).toHaveTextContent('1 critical');
+	});
+
+	it('should offer Try again when the checks could not run', async () => {
+		signedIn();
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(() => Promise.reject(new Error('offline')))
+		);
+		render(Page);
+		await userEvent.click(screen.getByTestId('run-diagnostics'));
+		expect(await screen.findByTestId('diagnostics-error-retry')).toBeInTheDocument();
+	});
+});

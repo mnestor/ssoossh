@@ -159,10 +159,15 @@ viewer -- cannot print a URL anyone will transcribe. It shows an
 eight-character code instead, written like `K7M4-QP2X`.
 
 Sign in, open **Console login** in the navigation, and type the code. There is
-also a `/c/<code>` shortcut a phone can open directly. Resolving a code
-requires a session, so an unauthenticated caller can never turn a code into a
-request, and resolving it claims the request: a second person typing the same
-code is refused.
+also a `/c/<code>` shortcut a phone can open directly; it shows the code and
+asks whether it is the one on the screen in front of you before it goes any
+further, because a link, unlike a code on a screen, can be sent to anyone.
+Resolving a code requires a session, so an unauthenticated caller can never
+turn a code into a request, and resolving it claims the request: a second
+person typing the same code is refused.
+
+Only ever enter a code from a screen you are standing at. A code someone reads
+or sends to you is a login on their machine, carrying your accounts.
 
 ![The Console login page: a single code field showing the K7M4-QP2X placeholder, a note that case does not matter and the letters I, L and O are never used, and a Continue button](../../../assets/screens/console.png)
 
@@ -299,8 +304,12 @@ Admins inherit SOC and auditor access; SOC inherits auditor access but
 deliberately not the restorative operations, so re-enabling stays admin-only.
 
 **Disabling** takes effect immediately and is fail-closed at login: a transient
-database error denies rather than admits. A reason is required and is recorded;
-you land on a page that can carry an operator-set message and contact address.
+database error denies rather than admits. A session that is already open ends on
+its next request, so a disabled account cannot keep approving in a browser tab it
+signed in to earlier. Certificates already issued stay valid until they expire:
+ssoossh never stores them, so there is nothing to revoke. A reason is required
+and is recorded; you land on a page that can carry an operator-set message and
+contact address.
 
 Disabling does exactly that and no more. Service enrollments you approved keep
 working, because they belong to their service accounts rather than to you, so

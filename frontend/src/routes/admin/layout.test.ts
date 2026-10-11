@@ -74,6 +74,19 @@ describe('admin layout', () => {
 		expect(screen.queryByTestId('admin-child')).not.toBeInTheDocument();
 	});
 
+	// The denial used to be one muted sentence with no way out.
+	it('should lead a refused reader back to the dashboard', () => {
+		session.user = signedInUser(false);
+		session.resolved = true;
+
+		render(Layout, { children });
+
+		expect(screen.getByTestId('admin-access-denied-dashboard')).toHaveAttribute(
+			'href',
+			'/dashboard'
+		);
+	});
+
 	// The rail names the sections now. A second copy here would be a second
 	// list to keep in step.
 	it('should not carry a navigation of its own', () => {

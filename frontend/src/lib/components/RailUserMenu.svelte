@@ -114,6 +114,7 @@
 		     out to the right where there is not: a 60px-wide popover would
 		     truncate every row it exists to spell out. -->
 		<div
+			id="rail-user-menu"
 			data-testid="rail-user-menu"
 			in:scale={{ start: 0.96, opacity: 0, duration: enterMs(), easing: easeEnter }}
 			out:scale={{ start: 0.96, opacity: 0, duration: exitMs(), easing: easeExit }}
@@ -195,7 +196,8 @@
 		type="button"
 		onclick={() => (open = !open)}
 		aria-expanded={open}
-		aria-haspopup="true"
+		aria-controls="rail-user-menu"
+		aria-label="Account menu, {identity}"
 		title={collapsed ? identity : undefined}
 		data-testid="rail-user-trigger"
 		class={railRowClass(collapsed, ownsCurrentPage)}

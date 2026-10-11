@@ -79,10 +79,41 @@ describe('Admin users list', () => {
 		expect(await screen.findByText('Disabled')).toBeInTheDocument();
 	});
 
-	it('should show the empty state when no users match', async () => {
+	it('should show the empty state when nobody has signed in', async () => {
 		mockUsers([]);
 		render(Page);
-		expect(await screen.findByText('No users found')).toBeInTheDocument();
+		expect(await screen.findByText('No users yet')).toBeInTheDocument();
+	});
+
+	// "Disabled" with nobody disabled used to blame a search that was not
+	// there and say nobody had signed in.
+	it('should say nobody is disabled when the Disabled filter is empty', async () => {
+		mockUsers([]);
+		render(Page);
+		await screen.findByText('No users yet');
+		await userEvent.click(screen.getByTestId('status-filter-disabled'));
+		expect(await screen.findByTestId('users-empty')).toHaveTextContent('No disabled users');
+	});
+
+	it('should offer a way back to everyone from a filtered empty list', async () => {
+		mockUsers([]);
+		render(Page);
+		await screen.findByText('No users yet');
+		await userEvent.click(screen.getByTestId('status-filter-disabled'));
+		expect(await screen.findByTestId('users-clear-filters')).toBeInTheDocument();
+	});
+
+	it('should call the date column what it is', async () => {
+		mockUsers([user()]);
+		render(Page);
+		expect(await screen.findByRole('columnheader', { name: 'First sign-in' })).toBeInTheDocument();
+	});
+
+	it('should not make a dash into a link for a user with no name', async () => {
+		mockUsers([user({ name: '' })]);
+		render(Page);
+		await screen.findByTestId('user-username-link');
+		expect(screen.queryByTestId('user-link')).not.toBeInTheDocument();
 	});
 
 	it('should surface a load failure rather than an empty directory', async () => {

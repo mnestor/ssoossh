@@ -164,4 +164,35 @@ describe('the console code entry page', () => {
 		await userEvent.type(codeInput(), 'A');
 		expect(screen.queryByTestId('console-code-failure-not-found')).not.toBeInTheDocument();
 	});
+
+	// The defence against being talked into approving someone else's login
+	// starts here: a valid code comes from a screen in front of you.
+	it('should say only to enter a code from a screen in front of you', () => {
+		render(Page);
+		expect(screen.getByTestId('console-code-entry')).toHaveTextContent(
+			'Never enter one someone sends or reads to you.'
+		);
+	});
+
+	it('should say I, L and O count as digits rather than ask the reader to map them', () => {
+		render(Page);
+		expect(screen.getByText(/I, L and O count as 1 and 0/)).toBeInTheDocument();
+	});
+
+	it('should say how long a code lasts', () => {
+		render(Page);
+		expect(screen.getByText(/Codes last a minute or two/)).toBeInTheDocument();
+	});
+
+	// A typo in the middle used to send the caret to the end, so fixing it
+	// meant deleting back to it.
+	it('should keep the caret where a character was inserted mid-code', async () => {
+		render(Page);
+		const input = codeInput() as HTMLInputElement;
+		await userEvent.type(input, 'K7M4QP2');
+		input.value = 'K7XM4-QP2';
+		input.setSelectionRange(3, 3);
+		input.dispatchEvent(new Event('input', { bubbles: true }));
+		expect(input.selectionStart).toBe(3);
+	});
 });

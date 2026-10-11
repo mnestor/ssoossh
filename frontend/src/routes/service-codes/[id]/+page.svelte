@@ -65,7 +65,19 @@
 	const backHref = $derived(`${resolve('service-codes')}${accountQuery}`);
 	const backLabel = $derived(account ? `All codes for ${account}` : 'All service accounts');
 
+	// Bumped by Try again; the load below reads it, so a bump re-runs it.
+	let attempt = $state(0);
+
+	// The way out of a failed load: back to the loading shape, then the
+	// same request again (DESIGN.md, "States").
+	function retry() {
+		loadError = null;
+		hasLoaded = false;
+		attempt += 1;
+	}
+
 	$effect(() => {
+		void attempt;
 		const controller = new AbortController();
 
 		listServiceEnrollments(controller.signal)
@@ -94,7 +106,10 @@
 	}
 </script>
 
-<svelte:head><title>Service code · ssoossh</title></svelte:head>
+<svelte:head
+	><title>{enrollment?.key_id ? `${enrollment.key_id} · ` : ''}Service code · ssoossh</title
+	></svelte:head
+>
 
 <PageShell width="wide">
 	<!-- A visible heading, where there used to be an sr-only one. The page
@@ -133,7 +148,12 @@
 	</PageHeading>
 
 	{#if loadError}
-		<Alert variant="error" title="Could not load this service code">{loadError}</Alert>
+		<Alert
+			variant="error"
+			title="Could not load this service code"
+			onretry={retry}
+			testid="service-code-error">{loadError}</Alert
+		>
 	{:else if !hasLoaded}
 		<LoadingBlock
 			shape="lines"

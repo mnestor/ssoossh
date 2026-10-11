@@ -184,8 +184,9 @@ admin:
   # Read-only: effective configuration, cross-user certificate history.
   auditor_group: "ssh-auditors"
 
-  # Shown on the account-disabled page.
-  contact_email: "ssh-help@example.com"
+  # Shown on the account-disabled page. The contact it names is
+  # branding.support_email, the same address the login page shows.
+  disabled_message: "Contact the security team with your ticket number."
 ```
 
 Because authorization is evaluated from the session identity, the session

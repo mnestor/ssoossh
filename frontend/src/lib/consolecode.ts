@@ -1,4 +1,5 @@
 import { ApiError } from '#lib/api/client.js';
+import { unknownErrorText } from '#lib/auth.js';
 
 // The browser half of the console login code: what the code-entry box does
 // to input as it is typed, and what the three ways a submission can fail
@@ -72,7 +73,8 @@ export function isComplete(code: string): boolean {
  * The three server-side cases are deliberately distinct because they send
  * the user to three different next actions.
  */
-export type CodeFailureKind = 'not-found' | 'expired' | 'claimed' | 'invalid' | 'unknown';
+export type CodeFailureKind =
+	'not-found' | 'expired' | 'claimed' | 'invalid' | 'rate-limited' | 'unknown';
 
 /** What the code-entry page renders when a submission fails. */
 export interface CodeFailure {
@@ -114,6 +116,14 @@ export function describeCodeError(error: unknown): CodeFailure {
 					'Check the characters against the screen — 1 and 0 are digits here, never I, L or O — or start the login again at the machine.'
 			};
 		}
+		if (error.status === 429) {
+			return {
+				kind: 'rate-limited',
+				title: 'Too many tries',
+				message:
+					'Wait a moment, then try again. If the code has run out by then, start the login again at the machine.'
+			};
+		}
 		if (error.status === 400) {
 			return {
 				kind: 'invalid',
@@ -126,6 +136,6 @@ export function describeCodeError(error: unknown): CodeFailure {
 	return {
 		kind: 'unknown',
 		title: 'Could not check that code',
-		message: error instanceof Error ? error.message : 'something went wrong'
+		message: error instanceof Error ? error.message : unknownErrorText
 	};
 }

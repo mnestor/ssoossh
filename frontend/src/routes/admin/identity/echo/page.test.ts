@@ -2,7 +2,8 @@ import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { IdentityEchoPayload } from '#lib/api/types.js';
+import type { CurrentUser, IdentityEchoPayload } from '#lib/api/types.js';
+import { session } from '#lib/session.svelte.js';
 import Page from './+page.svelte';
 
 /** echoPayload is one decoded ID token with a claim nothing reads. */
@@ -50,6 +51,13 @@ const realLocation = Object.getOwnPropertyDescriptor(window, 'location');
 
 beforeEach(() => {
 	window.location.hash = '';
+	// Starting an echo is admin-only; most cases describe what an admin sees.
+	session.user = {
+		username: 'alice',
+		is_admin: true,
+		is_soc: true,
+		is_auditor: true
+	} as CurrentUser;
 });
 
 afterEach(() => {
@@ -211,6 +219,47 @@ describe('Claims echo page', () => {
 			window.location.hash = '#not-a-payload';
 			render(Page);
 			expect(await screen.findByTestId('echo-read-error')).toBeInTheDocument();
+		});
+	});
+
+	describe('for someone below the admin role', () => {
+		it('should say the echo needs the admin role instead of offering it', () => {
+			session.user = {
+				username: 'sam',
+				is_admin: false,
+				is_soc: true,
+				is_auditor: true
+			} as CurrentUser;
+			render(Page);
+			expect(screen.getByTestId('echo-admin-only')).toBeInTheDocument();
+		});
+
+		it('should not offer the start button', () => {
+			session.user = {
+				username: 'sam',
+				is_admin: false,
+				is_soc: true,
+				is_auditor: true
+			} as CurrentUser;
+			render(Page);
+			expect(screen.queryByTestId('echo-start')).not.toBeInTheDocument();
+		});
+	});
+
+	describe('when the callback sent the browser back with a reason', () => {
+		it('should explain why the echo did not complete', async () => {
+			window.history.replaceState(null, '', '/admin/identity/echo?error=refused');
+			render(Page);
+			expect(await screen.findByTestId('echo-failure')).toHaveTextContent(
+				'Your identity provider did not sign you in'
+			);
+		});
+
+		it('should clear the reason from the address bar', async () => {
+			window.history.replaceState(null, '', '/admin/identity/echo?error=expired');
+			render(Page);
+			await screen.findByTestId('echo-failure');
+			expect(window.location.search).toBe('');
 		});
 	});
 });

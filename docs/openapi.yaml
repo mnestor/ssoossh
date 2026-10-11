@@ -2631,6 +2631,15 @@ components:
           $ref: '#/components/schemas/model.CertificateType'
         valid_seconds:
           type: integer
+        viewer_ip:
+          description: |-
+            ViewerIP is the address this server sees the approving browser
+            connect from, resolved the same way as SourceIP, so the approval page
+            can set the two side by side. Display only and never a reason to
+            refuse: plenty of people approve from one machine a request their
+            terminal made on another. A difference is something the approver can
+            check, where everything the requester reports about itself is not.
+          type: string
       required:
       - already_closed
       - approval_url
@@ -2773,8 +2782,15 @@ components:
             $ref: '#/components/schemas/webtypes.ServiceEnrollmentResponse'
           type: array
           uniqueItems: false
+        expiring_soon_seconds:
+          description: |-
+            ExpiringSoonSeconds is how far ahead of a code's expiry the page
+            calls it expiring soon: mail.expiry_reminder_lead, so the page and
+            the first reminder mail agree, or a week when that is zero.
+          type: integer
       required:
       - enrollments
+      - expiring_soon_seconds
       type: object
     webtypes.SetNotificationEmailRequestBody:
       properties:
@@ -4782,7 +4798,9 @@ paths:
       description: |-
         Checks `state` against the value stored at login, exchanges the code,
         establishes the session, and redirects to the captured `return_to` (or
-        `/`).
+        `/`). A failure redirects to `/login?error=<reason>` (`expired`,
+        `refused`, `session` or `failed`), or for a claims echo to
+        `/admin/identity/echo?error=<reason>`.
       parameters:
       - description: Authorization code from the identity provider
         in: query
@@ -4802,13 +4820,8 @@ paths:
             application/json:
               schema:
                 type: string
-          description: Redirect back into the app
-        "401":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/openapidoc.ErrorEnvelope'
-          description: State mismatch, or the provider rejected the exchange
+          description: Redirect back into the app, or to the page that explains a
+            failure
       summary: OIDC callback
       tags:
       - auth

@@ -233,6 +233,8 @@ describe('rail user menu', () => {
 			onsignout: () => {}
 		});
 
-		expect(screen.getByTestId('rail-user-trigger')).toHaveAccessibleName('alice@example.com');
+		expect(screen.getByTestId('rail-user-trigger')).toHaveAccessibleName(
+			'Account menu, alice@example.com'
+		);
 	});
 });

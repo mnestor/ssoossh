@@ -47,7 +47,7 @@ export const typeFilters: FilterOption[] = [
  */
 export const statusFilters: FilterOption[] = [
 	{ value: '', label: 'Any', icon: ANY },
-	{ value: 'live', label: 'Live', icon: 'certificate' },
+	{ value: 'live', label: 'Valid', icon: 'certificate' },
 	{ value: 'expired', label: 'Expired', icon: 'certificate-off' }
 ];
 

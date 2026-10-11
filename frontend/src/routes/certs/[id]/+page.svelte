@@ -49,7 +49,7 @@
 	// that holds their certificates.
 	const backTargets = {
 		history: { route: '/logs/me', label: 'Certificate history' },
-		dashboard: { route: '/dashboard', label: 'Recent decisions' },
+		dashboard: { route: '/dashboard', label: 'Recent certificates' },
 		admin: { route: '/admin/certificates', label: 'All certificates' }
 	} as const;
 	const back = $derived.by(() => {
@@ -59,12 +59,34 @@
 			: backTargets.history;
 	});
 
+	// The list's own filters, so the chip returns to the view the reader was
+	// working in rather than its defaults. Only a query string is accepted,
+	// and it is only ever appended to one of the fixed routes above, so it
+	// cannot send the chip anywhere else.
+	const backSearch = $derived.by(() => {
+		const carried = page.url.searchParams.get('back') ?? '';
+		return carried.startsWith('?') && !carried.includes('#') ? carried : '';
+	});
+	const backHref = $derived(`${resolve(back.route)}${backSearch}`);
+
 	let cert = $state<CertificateResponse | null>(null);
 	let loadError = $state<string | null>(null);
 	let isAccessDenied = $state(false);
 	let hasLoaded = $state(false);
+	// Bumped by Try again; the load below reads it, so a bump re-runs it.
+	let attempt = $state(0);
+
+	// The way out of a failed load: back to the loading shape, then the
+	// same request again (DESIGN.md, "States"). A not-found answer gets no
+	// retry, because asking again cannot change it.
+	function retry() {
+		loadError = null;
+		hasLoaded = false;
+		attempt += 1;
+	}
 
 	$effect(() => {
+		void attempt;
 		const controller = new AbortController();
 
 		getCertificateDetail(id, controller.signal)
@@ -211,25 +233,60 @@
 			.filter(([label]) => !simplified || (label !== 'Machine ID' && label !== 'Client'))
 	);
 	const hasReportedContext = $derived(Boolean(askedBy) || reportedRows.length > 0);
+
+	// Which certificate this is, by the same rule the list row it was opened
+	// from uses: the machine that redeemed the code for a service
+	// certificate, the requesting client for the rest.
+	const subject = $derived(
+		cert
+			? cert.type === 'service'
+				? cert.retrieved_source_ip || askedBy || cert.key_id
+				: askedBy || cert.retrieved_source_ip || cert.key_id
+			: ''
+	);
+
+	// "Principals granted" repeats "Principals" on almost every certificate.
+	// At the simplified level it shows only when the approval chose a
+	// different set, which is the one case worth a second look.
+	const grantedDiffers = $derived(
+		decidedPrincipals.length > 0 &&
+			[...decidedPrincipals].sort().join(',') !== [...principals].sort().join(',')
+	);
+
+	// The service code a service certificate came from, on the page the
+	// reader can open: an auditor's own list holds only their own codes, so
+	// arriving from the admin list keeps them in the admin area.
+	const serviceCodeHref = $derived(
+		cert?.enrollment_id
+			? back === backTargets.admin
+				? resolve(`admin/service-codes/${cert.enrollment_id}`)
+				: resolve(`service-codes/${cert.enrollment_id}`)
+			: ''
+	);
 </script>
 
-<svelte:head><title>Certificate · ssoossh</title></svelte:head>
+<svelte:head><title>{subject ? `${subject} · ` : ''}Certificate · ssoossh</title></svelte:head>
 
 <PageShell width="wide">
 	<PageHeading
 		title="Certificate details"
-		back={{ href: resolve(back.route), label: back.label, testid: 'cert-back' }}
+		back={{ href: backHref, label: back.label, testid: 'cert-back' }}
 	>
 		{#snippet action()}<DetailToggle />{/snippet}
 	</PageHeading>
 
 	{#if loadError}
-		<Alert variant="error" title="Could not load certificate">{loadError}</Alert>
+		<Alert variant="error" title="Could not load certificate" onretry={retry} testid="cert-error"
+			>{loadError}</Alert
+		>
 	{:else if isAccessDenied}
 		<div data-testid="access-denied">
-			<Alert variant="error" title="Access denied">
-				You don't have permission to view this certificate. It may not exist or you may not have the
-				required permissions.
+			<!-- One answer for "not found" and "not yours": the server returns
+			     404 for both so it never says which certificates exist. The
+			     wording names neither, rather than asserting a permission
+			     problem a pruned certificate or a mistyped link does not have. -->
+			<Alert variant="error" title="Certificate not found">
+				It may have been removed, or it isn't one you can view.
 			</Alert>
 		</div>
 	{:else if !hasLoaded}
@@ -250,6 +307,22 @@
 			     hand — it is what the audit events and the log lines carry. -->
 			<div class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-surface px-4 py-3">
 				<TypeChip type={cert.type} />
+				<!-- Which certificate, and whether it still works: the two
+				     things the row it was opened from led with. -->
+				{#if subject}
+					<span class="font-mono text-dense break-all text-ink" data-testid="cert-subject"
+						>{subject}</span
+					>
+				{/if}
+				<span
+					class="inline-flex flex-shrink-0 items-center gap-1.5 rounded px-2.5 py-1 text-xs font-semibold {expired
+						? 'bg-surface-muted text-ink-muted'
+						: 'bg-granted-surface text-granted'}"
+					data-testid="cert-state"
+				>
+					<Icon name={expired ? 'certificate-off' : 'certificate'} size="xs" />
+					{expired ? 'Expired' : `Valid, ${remaining}`}
+				</span>
 				{#if !simplified}
 					<span class="ml-auto"><CopyableId value={cert.id} testid="cert-id" /></span>
 				{/if}
@@ -293,7 +366,7 @@
 							     same pair a history row uses. -->
 							<span
 								title={expired ? 'Expired' : 'Still valid'}
-								aria-label={expired ? 'Expired' : 'Still valid'}
+								aria-hidden="true"
 								data-testid="cert-validity"
 								data-valid={expired ? 'false' : 'true'}
 								class="flex flex-shrink-0 items-center {expired
@@ -392,7 +465,7 @@
 								</span>
 							</DetailRow>
 						{/if}
-						{#if decidedPrincipals.length > 0}
+						{#if decidedPrincipals.length > 0 && (!simplified || grantedDiffers)}
 							<!-- What the approval selected, which is not always every
 							     principal on the certificate above: an approver may
 							     hold more accounts than they chose to include. -->
@@ -531,9 +604,12 @@
 						{/if}
 						{#if cert.enrollment_id}
 							<DetailRow label="Service code">
+								<!-- Resolved above, per back target. -->
+								<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
 								<a
-									href={resolve(`service-codes/${cert.enrollment_id}`)}
-									class="inline-flex items-center gap-1.5 text-accent underline-offset-2 hover:underline"
+									href={serviceCodeHref}
+									class="inline-flex min-h-target items-center gap-1.5 text-accent underline-offset-2 hover:underline"
+									data-testid="cert-service-code-link"
 								>
 									View the code this came from
 									<Icon name="arrow-right" size="xs" />

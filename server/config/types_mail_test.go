@@ -352,3 +352,30 @@ func TestMailConfig_shouldNotWarnWhenDisabled(t *testing.T) {
 		t.Errorf("disabled mail produced warnings: %v", got)
 	}
 }
+
+// The service codes page warns over the reminder window, so the warning and
+// the first reminder mail agree; a lead of zero turns the mail off, not the
+// warning.
+func TestMailConfig_shouldUseTheReminderLeadAsTheExpiringSoonWindow(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		lead time.Duration
+		want time.Duration
+	}{
+		{name: "should use the configured lead", lead: 30 * 24 * time.Hour, want: 30 * 24 * time.Hour},
+		{name: "should use the default lead as is", lead: 168 * time.Hour, want: 168 * time.Hour},
+		{name: "should fall back to a week when the reminder is off", lead: 0, want: 7 * 24 * time.Hour},
+		{name: "should fall back to a week for an unvalidated negative lead", lead: -time.Hour, want: 7 * 24 * time.Hour},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			c := MailConfig{ExpiryReminderLead: tc.lead}
+			if got := c.ExpiringSoonWindow(); got != tc.want {
+				t.Errorf("got %s, want %s", got, tc.want)
+			}
+		})
+	}
+}

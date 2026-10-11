@@ -80,6 +80,13 @@ export function redirectIfUnauthenticated(error: unknown): boolean {
 	return false;
 }
 
+/**
+ * unknownErrorText is what an error alert says when the throw carried no
+ * message at all. It sits under a title that already names what failed, so
+ * it only has to say what to do next; "something went wrong" said neither.
+ */
+export const unknownErrorText = 'No reason was given. Try again in a moment.';
+
 /** errorMessage extracts a displayable message from an unknown throw. */
 export function errorMessage(error: unknown): string {
 	if (error instanceof ApiError) {
@@ -88,5 +95,5 @@ export function errorMessage(error: unknown): string {
 	if (error instanceof Error) {
 		return error.message;
 	}
-	return 'something went wrong';
+	return unknownErrorText;
 }

@@ -52,7 +52,7 @@ describe('admin audit page', () => {
 
 		expect(await screen.findByTestId('audit-timeline')).toBeInTheDocument();
 		expect(screen.getAllByTestId('audit-event')).toHaveLength(2);
-		expect(screen.getByText('Showing 2 of 2')).toBeInTheDocument();
+		expect(screen.getByTestId('audit-count')).toHaveTextContent('2 shown');
 	});
 
 	it('should not offer to load more on the last page', async () => {
@@ -76,7 +76,7 @@ describe('admin audit page', () => {
 		await user.click(await screen.findByText('Load more'));
 
 		await waitFor(() => expect(screen.getAllByTestId('audit-event')).toHaveLength(2));
-		expect(screen.getByText('Showing 2 of 2')).toBeInTheDocument();
+		expect(screen.getByTestId('audit-count')).toHaveTextContent('2 shown');
 		expect(screen.queryByText('Load more')).not.toBeInTheDocument();
 
 		const secondURL = String(spy.mock.calls[1][0]);
@@ -118,7 +118,9 @@ describe('admin audit page', () => {
 
 		await screen.findByTestId('audit-timeline');
 		expect(screen.getAllByTestId('audit-event')).toHaveLength(1);
-		expect(screen.getByText('Showing 1 of 2')).toBeInTheDocument();
+		expect(screen.getByTestId('audit-count')).toHaveTextContent('1 shown');
+		// Everything is loaded; the hidden row is not "missing".
+		expect(screen.getByTestId('audit-count')).not.toHaveTextContent('not loaded');
 	});
 
 	it('should surface a load failure instead of an empty feed', async () => {
@@ -137,5 +139,40 @@ describe('admin audit page', () => {
 		render(Page);
 
 		expect(await screen.findByTestId('audit-error')).toHaveTextContent('not authorized as auditor');
+	});
+
+	// "No audit events recorded" under a failed load read as "nothing
+	// happened" during exactly the kind of incident the page is for.
+	it('should not say there are no events when the first load failed', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(() => Promise.reject(new Error('offline')))
+		);
+		render(Page);
+		await screen.findByTestId('audit-error');
+		expect(screen.queryByText('No audit events recorded.')).not.toBeInTheDocument();
+	});
+
+	it('should keep the loaded events when an older page fails', async () => {
+		let calls = 0;
+		const first = feedPage([auditEvent('e1', 'user.disabled')], 2, 1);
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(() => {
+				calls += 1;
+				if (calls > 1) return Promise.reject(new Error('offline'));
+				return Promise.resolve(
+					new Response(JSON.stringify({ data: first, error: null }), {
+						status: 200,
+						headers: { 'Content-Type': 'application/json' }
+					})
+				);
+			})
+		);
+		render(Page);
+		const user = userEvent.setup();
+		await user.click(await screen.findByTestId('audit-load-more'));
+		await screen.findByTestId('audit-more-error');
+		expect(screen.getAllByTestId('audit-event')).toHaveLength(1);
 	});
 });

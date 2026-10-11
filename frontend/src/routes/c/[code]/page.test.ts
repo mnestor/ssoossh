@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/svelte';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // The complete-verification-URL shortcut: /c/<code> resolves on load and
@@ -40,6 +41,13 @@ function settle(): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+/** confirm answers the page's "is this your code?" with yes and lets the
+ * resolve that follows settle. */
+async function confirm(): Promise<void> {
+	await userEvent.click(screen.getByTestId('console-link-yes'));
+	await settle();
+}
+
 afterEach(() => {
 	vi.unstubAllGlobals();
 	goto.mockClear();
@@ -48,11 +56,12 @@ afterEach(() => {
 });
 
 describe('the console verification link', () => {
-	it('should redirect to the approval page once the code resolves', async () => {
+	it('should redirect to the approval page once the code is confirmed', async () => {
 		mockFetch(200, { request_id: 'req-1', approval_url: '/approve/req-1' });
 
 		render(Page);
 		await settle();
+		await confirm();
 
 		expect(goto).toHaveBeenCalledWith('/approve/req-1');
 	});
@@ -65,6 +74,7 @@ describe('the console verification link', () => {
 
 		render(Page);
 		await settle();
+		await confirm();
 
 		const [, init] = fetchMock.mock.calls[0];
 		const body = JSON.parse(String(init.body));
@@ -83,6 +93,7 @@ describe('the console verification link', () => {
 
 			render(Page);
 			await settle();
+			await confirm();
 
 			expect(screen.getByTestId(testid)).toBeInTheDocument();
 			expect(goto).not.toHaveBeenCalled();
@@ -95,6 +106,7 @@ describe('the console verification link', () => {
 
 		render(Page);
 		await settle();
+		await confirm();
 
 		expect(screen.queryByTestId('console-link-failure-unknown')).not.toBeInTheDocument();
 	});
@@ -109,4 +121,54 @@ describe('the console verification link', () => {
 		expect(screen.getByTestId('console-link-failure-unknown')).toBeInTheDocument();
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
+
+	// RFC 8628 §3.3.1 and §5.4: a link carries its code, so the page shows
+	// it and asks before claiming the login for whoever clicked.
+	it('should show the code and ask before resolving it', async () => {
+		const fetchMock = mockFetch(200, { request_id: 'req-1', approval_url: '/approve/req-1' });
+
+		render(Page);
+		await settle();
+
+		expect(screen.getByTestId('console-link-code')).toHaveTextContent('K7M4-QP2X');
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it('should resolve nothing when the code does not match', async () => {
+		const fetchMock = mockFetch(200, { request_id: 'req-1', approval_url: '/approve/req-1' });
+
+		render(Page);
+		await settle();
+		await userEvent.click(screen.getByTestId('console-link-no'));
+		await settle();
+
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it('should tell someone whose code does not match that nothing was approved', async () => {
+		mockFetch(200);
+
+		render(Page);
+		await settle();
+		await userEvent.click(screen.getByTestId('console-link-no'));
+
+		expect(screen.getByTestId('console-link-declined')).toHaveTextContent('Nothing was approved');
+	});
+
+	it.each([
+		{ status: 404, offered: true },
+		{ status: 410, offered: false },
+		{ status: 403, offered: false }
+	])(
+		'should offer typing the code after a $status only where retyping can help',
+		async ({ status, offered }) => {
+			mockFetch(status);
+
+			render(Page);
+			await settle();
+			await confirm();
+
+			expect(screen.queryByTestId('console-link-type-instead') !== null).toBe(offered);
+		}
+	);
 });

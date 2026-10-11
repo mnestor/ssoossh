@@ -57,7 +57,11 @@ function deployCode(overrides: Partial<ServiceEnrollment> = {}): ServiceEnrollme
  * heldAccounts defaults to the accounts on the codes, which is the ordinary
  * case; a test passes it explicitly to cover an account with no codes, or an
  * identity that has lost one it still has codes for. */
-function mockFetch(enrollments: ServiceEnrollment[], heldAccounts?: string[]) {
+function mockFetch(
+	enrollments: ServiceEnrollment[],
+	heldAccounts?: string[],
+	expiringSoonSeconds = 7 * 86400
+) {
 	const service_accounts = heldAccounts ?? [
 		...new Set(enrollments.map((e) => e.service_account).filter(Boolean))
 	];
@@ -66,7 +70,7 @@ function mockFetch(enrollments: ServiceEnrollment[], heldAccounts?: string[]) {
 		'fetch',
 		vi.fn((input: RequestInfo | URL) => {
 			const url = String(input);
-			let body: unknown = { enrollments };
+			let body: unknown = { enrollments, expiring_soon_seconds: expiringSoonSeconds };
 			if (url.includes('/users/me')) {
 				body = { service_accounts };
 			}
@@ -114,7 +118,7 @@ describe('Service codes page', () => {
 			render(Page);
 			await screen.findByText('svc-deploy');
 			expect(screen.getByText('svc-backup')).toBeInTheDocument();
-			expect(screen.getAllByRole('button')).toHaveLength(2);
+			expect(screen.getAllByTestId('service-account-row')).toHaveLength(2);
 		});
 
 		it('should count the live codes behind an account', async () => {
@@ -234,6 +238,58 @@ describe('Service codes page', () => {
 			mockFetchError('boom');
 			render(Page);
 			expect(await screen.findByText('Could not load your service codes')).toBeInTheDocument();
+		});
+	});
+
+	describe('an account row', () => {
+		// A real link, so middle-click and "copy link address" work on an
+		// account as they do on a code.
+		it('should link to the account view', async () => {
+			mockFetch([deployCode()]);
+			render(Page);
+			await screen.findByText('svc-deploy');
+			expect(screen.getByTestId('service-account-row')).toHaveAttribute(
+				'href',
+				'/service-codes?account=svc-deploy'
+			);
+		});
+
+		// No live code on an account that had some is the job that stopped.
+		it('should warn when every code an account had has expired', async () => {
+			mockFetch([deployCode({ expires_at: new Date(Date.now() - 1000).toISOString() })]);
+			render(Page);
+			await screen.findByText('svc-deploy');
+			expect(screen.getByTestId('service-account-state')).toHaveClass('text-trimmed');
+		});
+
+		it('should warn when the soonest code expires within a week', async () => {
+			mockFetch([deployCode({ expires_at: new Date(Date.now() + 2 * 86400000).toISOString() })]);
+			render(Page);
+			await screen.findByText('svc-deploy');
+			expect(screen.getByTestId('service-account-state')).toHaveTextContent('Expires soon');
+		});
+
+		// The warning follows the server's reminder lead, not a week fixed
+		// in the page: a 30-day lead warns about a code 20 days out.
+		it.each([
+			{ lead: 30, state: 'Expires soon' },
+			{ lead: 7, state: 'Active' }
+		])('should read $state 20 days out with a $lead-day lead', async ({ lead, state }) => {
+			mockFetch(
+				[deployCode({ expires_at: new Date(Date.now() + 20 * 86400000).toISOString() })],
+				undefined,
+				lead * 86400
+			);
+			render(Page);
+			await screen.findByText('svc-deploy');
+			expect(screen.getByTestId('service-account-state')).toHaveTextContent(state);
+		});
+
+		it('should call a code far from expiry active', async () => {
+			mockFetch([deployCode()]);
+			render(Page);
+			await screen.findByText('svc-deploy');
+			expect(screen.getByTestId('service-account-state')).toHaveTextContent('Active');
 		});
 	});
 });

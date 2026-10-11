@@ -11,6 +11,9 @@
 	import PageHeading from '#lib/components/PageHeading.svelte';
 	import PageSection from '#lib/components/PageSection.svelte';
 	import PageShell from '#lib/components/PageShell.svelte';
+	import { errorMessage, redirectIfUnauthenticated } from '#lib/auth.js';
+	import { formatDateTime, relativeTime } from '#lib/format.js';
+	import { session } from '#lib/session.svelte.js';
 	import type {
 		AdminUserDetail,
 		AdminUserOverride,
@@ -161,6 +164,25 @@
 
 	// loadUser is the first load and its retry. Until it answers there is
 	// no account, so the page shows the loading shape under the heading.
+	// Disabling is SOC's and re-enabling an admin's (controller/admin.go);
+	// the admin area lets auditors in, so each action is offered only to a
+	// role the server will let take it.
+	const canDisable = $derived(session.user?.is_soc ?? false);
+	const canEnable = $derived(session.user?.is_admin ?? false);
+
+	// Who disabled the account, as one phrase: the account name when there
+	// is one, with what kind of disable it was.
+	const disabledBy = $derived.by(() => {
+		if (!user?.disabled_at) {
+			return '';
+		}
+		const source = user.disabled_source ? disabledSourceLabel(user.disabled_source) : '';
+		if (user.disabled_by_username && source) {
+			return `${user.disabled_by_username} (${source})`;
+		}
+		return user.disabled_by_username || source || 'unknown';
+	});
+
 	async function loadUser() {
 		error = null;
 		if (!userId) {
@@ -170,7 +192,10 @@
 		try {
 			user = await getAdminUser(userId);
 		} catch (cause) {
-			error = cause instanceof Error ? cause.message : 'Failed to load user';
+			if (redirectIfUnauthenticated(cause)) {
+				return;
+			}
+			error = errorMessage(cause);
 		}
 	}
 
@@ -191,7 +216,10 @@
 			user = await getAdminUser(userId);
 			refreshError = null;
 		} catch (cause) {
-			refreshError = cause instanceof Error ? cause.message : 'Failed to load user';
+			if (redirectIfUnauthenticated(cause)) {
+				return;
+			}
+			refreshError = errorMessage(cause);
 		}
 	}
 
@@ -202,8 +230,11 @@
 		try {
 			await disableUser(userId, { reason });
 		} catch (cause) {
-			actionError = cause instanceof Error ? cause.message : 'Failed to disable user';
 			actionBusy = false;
+			if (redirectIfUnauthenticated(cause)) {
+				return;
+			}
+			actionError = errorMessage(cause);
 			return;
 		}
 		// Closed before the refresh, so focus returns to the heading's
@@ -221,8 +252,11 @@
 		try {
 			await enableUser(userId, { reason });
 		} catch (cause) {
-			actionError = cause instanceof Error ? cause.message : 'Failed to enable user';
 			actionBusy = false;
+			if (redirectIfUnauthenticated(cause)) {
+				return;
+			}
+			actionError = errorMessage(cause);
 			return;
 		}
 		closeEnableConfirm();
@@ -250,7 +284,10 @@
 			const page = await getUserAudit(userId, { limit: 25 });
 			auditEvents = page.events;
 		} catch (cause) {
-			auditError = cause instanceof Error ? cause.message : 'Failed to load the audit timeline';
+			if (redirectIfUnauthenticated(cause)) {
+				return;
+			}
+			auditError = errorMessage(cause);
 		} finally {
 			auditLoaded = true;
 		}
@@ -269,7 +306,7 @@
 	});
 </script>
 
-<svelte:head><title>User · ssoossh</title></svelte:head>
+<svelte:head><title>{user ? `${user.username} · ` : ''}User · ssoossh</title></svelte:head>
 
 <!-- The address alone. The username used to lead this line whenever the
      title was a display name, which restated the "Username" field in the
@@ -282,14 +319,22 @@
      and an element replaced while the dialog was open would leave the
      caret on <body>. -->
 {#snippet userAction()}
-	<Button
-		variant={user?.disabled_at ? 'primary' : 'danger'}
-		testid={user?.disabled_at ? 'enable-user' : 'disable-user'}
-		disabled={actionBusy}
-		onclick={user?.disabled_at ? () => (showEnableConfirm = true) : openDisableConfirm}
-	>
-		{user?.disabled_at ? 'Re-enable' : 'Disable'}
-	</Button>
+	{#if user?.disabled_at ? canEnable : canDisable}
+		<Button
+			variant={user?.disabled_at ? 'primary' : 'danger'}
+			testid={user?.disabled_at ? 'enable-user' : 'disable-user'}
+			disabled={actionBusy}
+			onclick={user?.disabled_at ? () => (showEnableConfirm = true) : openDisableConfirm}
+		>
+			{user?.disabled_at ? 'Re-enable' : 'Disable'}
+		</Button>
+	{:else}
+		<span class="text-dense text-ink-muted" data-testid="user-action-role">
+			{user?.disabled_at
+				? 'Only an admin can re-enable accounts.'
+				: 'Disabling needs the SOC or admin role.'}
+		</span>
+	{/if}
 {/snippet}
 
 <PageShell width="full">
@@ -324,6 +369,28 @@
 		     branch has already settled. -->
 		{@const account = user}
 
+		<!-- The account's state first: whether it is active, and if not why,
+		     by whom and since when. These were three red cells in the middle
+		     of the OIDC record, and an impending auto-disable was in the third
+		     section down. -->
+		{#if user.disabled_at}
+			<Alert
+				variant="error"
+				title="Disabled since {formatDateTime(user.disabled_at)}"
+				testid="user-state"
+			>
+				By {disabledBy}: {user.disabled_reason || 'no reason recorded'}
+			</Alert>
+		{:else if user.directory_enabled && user.directory?.first_missing_at}
+			<Alert variant="warning" title="Directory entry missing" testid="user-state">
+				Missing since {formatDateTime(user.directory.first_missing_at)}. The directory sync disables
+				the account once it has been missing for its configured window.
+			</Alert>
+		{/if}
+		<!-- Always in the document, so the outcome of a disable or re-enable
+		     is announced: a status region that appears with its text already
+		     in it often is not. -->
+		<p class="sr-only" role="status" data-testid="user-action-status">{actionNotice ?? ''}</p>
 		{#if actionNotice}
 			<Alert variant="info" testid="user-action-notice">{actionNotice}</Alert>
 		{/if}
@@ -374,30 +441,12 @@
 				</div>
 				<div>
 					<p class="text-xs font-semibold text-ink-muted">Created</p>
-					<p>{new Date(user.created_at).toLocaleString()}</p>
+					<p>{formatDateTime(user.created_at)}</p>
 				</div>
 				<div>
-					<p class="text-xs font-semibold text-ink-muted">Last Updated</p>
-					<p>{new Date(user.updated_at).toLocaleString()}</p>
+					<p class="text-xs font-semibold text-ink-muted">Last updated</p>
+					<p>{formatDateTime(user.updated_at)}</p>
 				</div>
-				{#if user.disabled_at}
-					<div data-testid="user-disabled-badge">
-						<p class="text-xs font-semibold text-danger">Disabled At</p>
-						<p>{new Date(user.disabled_at).toLocaleString()}</p>
-					</div>
-					<div data-testid="user-disabled-reason">
-						<p class="text-xs font-semibold text-danger">Disable Reason</p>
-						<p>{user.disabled_reason || 'No reason recorded'}</p>
-					</div>
-					{#if user.disabled_source}
-						<div data-testid="user-disabled-source">
-							<p class="text-xs font-semibold text-danger">Disabled By</p>
-							<!-- The source, not the person: it is what decides whether the
-							     directory sync may clear this disable automatically. -->
-							<p>{disabledSourceLabel(user.disabled_source)}</p>
-						</div>
-					{/if}
-				{/if}
 			</div>
 
 			<!-- Shown even when empty and even when overridden. An empty
@@ -507,13 +556,6 @@
 					</div>
 				</div>
 			{/if}
-
-			{#if user.disabled_by_username}
-				<div class="mt-4">
-					<p class="text-xs font-semibold text-danger">Disabled By</p>
-					<p>{user.disabled_by_username}</p>
-				</div>
-			{/if}
 		</PageSection>
 
 		<!-- Group membership. Never an authorization input: this is what the
@@ -559,8 +601,8 @@
 											>{group.source}</span
 										>
 									</td>
-									<td class="text-ink-muted">{new Date(group.first_seen_at).toLocaleString()}</td>
-									<td class="text-ink-muted">{new Date(group.last_seen_at).toLocaleString()}</td>
+									<td class="text-ink-muted">{formatDateTime(group.first_seen_at)}</td>
+									<td class="text-ink-muted">{formatDateTime(group.last_seen_at)}</td>
 								</tr>
 							{/each}
 						</tbody>
@@ -601,7 +643,7 @@
 						<p class="text-xs font-semibold text-ink-muted">Entry last seen</p>
 						<p>
 							{user.directory.last_seen_at
-								? new Date(user.directory.last_seen_at).toLocaleString()
+								? `${relativeTime(user.directory.last_seen_at, new Date())} (${formatDateTime(user.directory.last_seen_at)})`
 								: 'never'}
 						</p>
 					</div>
@@ -609,7 +651,7 @@
 						<p class="text-xs font-semibold text-ink-muted">Last sync attempt</p>
 						<p>
 							{user.directory.last_synced_at
-								? new Date(user.directory.last_synced_at).toLocaleString()
+								? formatDateTime(user.directory.last_synced_at)
 								: 'never'}
 						</p>
 					</div>
@@ -622,8 +664,8 @@
 					>
 						<p class="font-semibold text-danger">Entry is currently missing</p>
 						<p class="text-ink-muted">
-							First missing {new Date(user.directory.first_missing_at).toLocaleString()}, observed
-							by {user.directory.consecutive_misses} sync
+							First missing {formatDateTime(user.directory.first_missing_at)}, observed by {user
+								.directory.consecutive_misses} sync
 							{user.directory.consecutive_misses === 1 ? 'pass' : 'passes'}. The auto-disable is
 							decided on how long it has been missing, not on how many passes have seen it.
 						</p>
@@ -708,9 +750,7 @@
 									     column has to stay narrow enough to sit beside
 									     three others. -->
 									<td class="text-ink-muted">
-										{pref.explicit && pref.updated_at
-											? new Date(pref.updated_at).toLocaleDateString()
-											: 'default'}
+										{pref.explicit && pref.updated_at ? formatDateTime(pref.updated_at) : 'default'}
 									</td>
 								</tr>
 							{/each}
@@ -758,7 +798,9 @@
 				oncancel={closeDisableConfirm}
 			>
 				<span data-testid="disable-consequences">
-					This will prevent <strong>{account.username}</strong> from authenticating immediately.
+					<strong>{account.username}</strong> can no longer sign in, and a session they already have
+					open ends on its next request. Certificates already issued to them stay valid until they
+					expire.
 					{#if disableConsequences.service_enrollment_count > 0}
 						The <strong>{disableConsequences.service_enrollment_count}</strong> live service enrollment(s)
 						they approved keep working: those belong to their service accounts, not to this person, and

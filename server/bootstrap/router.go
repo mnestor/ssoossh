@@ -505,7 +505,7 @@ func (a *app) registerRoutes(r *gin.Engine) error {
 			controller.ExtractEnrollmentCodeForRateLimit,
 		)
 	}
-	controller.NewEnrollmentController(apiGroup, a.svc.enrollment, enrollmentRateLimit, sessionAuth)
+	controller.NewEnrollmentController(apiGroup, a.svc.enrollment, a.config.Mail.ExpiringSoonWindow(), enrollmentRateLimit, sessionAuth)
 	controller.NewAdminController(apiGroup, a.config, a.db, sessionAuth, adminAuth, socAuth, auditorAuth, csrf, a.svc.enrollment, a.svc.audit)
 
 	// The directory probe makes the server open an outbound connection and

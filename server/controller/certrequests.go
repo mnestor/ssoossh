@@ -669,5 +669,10 @@ func (cr *certRequestController) detailHandler(g *gin.Context) {
 		return
 	}
 
-	respondData(g, newRequestDetailResponse(detail))
+	resp := newRequestDetailResponse(detail)
+	// The approver's own address, beside the requester's, for the page to
+	// compare (webtypes.RequestDetailResponse.ViewerIP). Read per request,
+	// never stored: it describes this page load, not the request.
+	resp.ViewerIP = g.ClientIP()
+	respondData(g, resp)
 }
