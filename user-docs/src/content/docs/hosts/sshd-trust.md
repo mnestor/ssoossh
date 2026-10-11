@@ -96,9 +96,11 @@ that answers the same question.
 `ssoossh host principals` implements that contract: it is called on every
 login attempt and never touches the network -- it answers only from the local
 mapping file, `/etc/ssoossh/principals.yaml` by default (`--file` changes it).
-One principal per line on stdout; an unknown account or a missing file exits 0
-with no output, which `sshd` reads as no principals; an unreadable or
-malformed file exits non-zero. Edit the mapping with `ssoossh host mapping
+One principal per line on stdout: the principals the mapping lists for the
+account, plus the account's own name, which is always printed. It always exits
+0, even when the mapping is missing or will not parse (that is reported on
+stderr), so an unmapped account still admits a certificate that names it
+directly; see [below](#checking-the-mapping-actually-loaded). Edit the mapping with `ssoossh host mapping
 add`, `list` and `remove`.
 
 The file lists, per local account, the principals allowed to assume it:
@@ -110,7 +112,7 @@ deploy:
   - bob
 alice:
   - alice
-root:          # listed with nothing: nobody becomes root this way
+root:          # listed with nothing: only a certificate naming root itself
 ```
 
 Reading that file is the only privilege it needs. It opens no socket, writes

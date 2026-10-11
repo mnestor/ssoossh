@@ -127,9 +127,8 @@ day pruning lands.
 So the compact set is snapshotted onto the decision at Approve/Deny time,
 beside the approver's identity, address and headers, by `service.newDecision`
 -- which takes the whole request rather than its id precisely so no call site
-can resolve a request without recording what asked. The migration backfills
-it from `certificate_requests` for every decision whose request is still
-present, so the history that already had the data one join away gets it too.
+can resolve a request without recording what asked. The columns are part of
+the schema from its first migration, so every decision carries them.
 
 The long tail -- `caller_uid`/`caller_pid`/`caller_ppid`, `os`,
 `client_mode`, `client_time`, `trusted_ca_fingerprints` -- is not

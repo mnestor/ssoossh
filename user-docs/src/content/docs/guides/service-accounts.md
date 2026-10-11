@@ -116,7 +116,7 @@ connection:
 | Situation | Result |
 | --- | --- |
 | A certificate at `<path>-cert.pub` is valid beyond `--grace` | Nothing fetched, exit 0 |
-| Retrieval fails but a still-valid certificate exists | Warning printed, exit 0 |
+| Retrieval fails but a still-valid certificate exists | Warning printed, exit 0, provided the client has cached the CA key from an earlier run; with no cached key it cannot start and exits non-zero |
 | No readable, valid certificate and retrieval fails | Error, non-zero exit |
 
 `--grace` is what keeps a job that runs every minute from asking the server for
@@ -324,7 +324,7 @@ to run `ssoossh service enroll` again rather than offering anything to reuse.
 "Expired enrollment code used" is rate-limited rather than one-shot, because
 what it usually reports is a cron job holding a dead code and failing on its own
 schedule indefinitely. Each holder's own
-[preferences](/ssoossh/guides/approving/#notification-preferences) gate their
+[preferences](/ssoossh/guides/approving/#email-notifications) gate their
 own copy.
 
 Set the notification address on the approval page, or afterwards from the

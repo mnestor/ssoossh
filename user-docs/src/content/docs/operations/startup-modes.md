@@ -75,7 +75,7 @@ flowchart LR
       Browsers and clients reach ssoosshd serve api, which owns the database.
       Signing goes out over NATS: serve api publishes on certrequest.sign, the
       separate ssoosshd sign process consumes it, signs with the CA key held
-      in ssh_key or on a PKCS#11 token, and publishes on certrequest.signed
+      in ssh_key or ssh_key_file, in an ssh-agent or on a PKCS#11 token, and publishes on certrequest.signed
       for serve api to consume. The signer also announces its CA key on
       ca.key.announce. The CA key is only ever in the sign process, never in
       the one facing the network.
@@ -86,7 +86,7 @@ flowchart LR
     N -- "certrequest.signed" --> A
     N -- "certrequest.sign" --> S["ssoosshd sign"]
     S -- "certrequest.signed" --> N
-    S --> K["CA key: ssh_key or PKCS#11"]
+    S --> K["CA key: ssh_key, ssh_key_file,<br/>ssh-agent or PKCS#11"]
     S -- "ca.key.announce" --> N
     N -- "ca.key.announce" --> A
 ```

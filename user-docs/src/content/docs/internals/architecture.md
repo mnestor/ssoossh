@@ -10,8 +10,10 @@ for anyone reading or changing the server's code. It consolidates the six
 implementation phase documents that built the pipeline; those are gone, but
 every decision that still constrains the code is recorded here.
 
-**Status: built and working for user certificates.**
-`server/service/pipeline_test.go` drives the whole path with a real Router,
+**Status: built and working for all four certificate types.** User, PAM and
+console certificates go through the signer; service certificates go through
+enrollment and are signed when a code is redeemed.
+`server/service/pipeline_test.go` drives the user path with a real Router,
 real gochannel transport, real signer, and in-memory sqlite, and asserts a
 CA-verifiable certificate comes out the far end.
 
@@ -78,8 +80,9 @@ listener ever subscribes to it -- there is no fan-out concern.
 ## How the processes and NATS fit together
 
 The split topology: a `serve api` process (HTTP handlers plus the
-listener), a `sign` process, NATS carrying the three subjects between
-them, and the database on the api side only. Numbers trace one request.
+listener), a `sign` process, NATS carrying the signing subjects
+(`certrequest.sign`, `certrequest.signed`) and the CA key subjects
+(`ca.key.announce`, `ca.key.request`) between them, and the database on the api side only. Numbers trace one request.
 
 ```mermaid
 flowchart LR
@@ -246,7 +249,7 @@ latency problem a reconnect resolves, not a correctness one.
 ### Nacks busy-loop, so retries live in middleware
 
 gochannel redelivers a Nack **immediately, with no backoff**
-(`watermill@v1.5.2 /pubsub/gochannel/pubsub.go:412`), so "return an error to
+(`watermill@v1.5.3 /pubsub/gochannel/pubsub.go:412`), so "return an error to
 retry" is a CPU spin, not a retry policy.
 
 `pubsub.New` installs `middleware.Retry` (backoff) wrapped in a
@@ -264,7 +267,10 @@ a successful handle (ack); only transport failures nack.
 
 **Not** achieved: at-least-once redelivery across a restart. gochannel is
 in-memory and non-persistent, so a crash loses in-flight jobs outright
-regardless of ack timing. That guarantee arrives with JetStream.
+regardless of ack timing. NATS core is at-most-once too, and JetStream is
+declined by design: the flow is short and interactive, so the person waiting
+is the retry mechanism (see
+[Decisions](/ssoossh/project/decisions/#declined-durability-and-availability-machinery)).
 
 ### Router lifecycle
 
@@ -279,48 +285,34 @@ to 3s so it cannot overrun bootstrap's 5s shutdown budget.
 
 ## What `Approve` actually decides
 
-`Approve` resolves policy and hands off; it never signs. Two items it was
-originally meant to "compute" turned out to be undecided product design
-(certificate lifetime policy, LDAP to principals), so it implements the
-mechanically well-defined parts and takes the most conservative default for
-the rest:
+`Approve` resolves policy and hands off; it never signs.
 
 | Field | Behavior |
 | --- | --- |
-| Extensions | Intersection of requested and configured-permitted |
-| ValidDuration | Flat per-type config value -- no per-signal shortening |
-| ForceCommand | **Dropped entirely** -- no config concept to bound it against |
-| SourceAddresses | **Dropped entirely** -- same reason |
-| NoTouchRequired | Only ever granted for service certificates |
-| RequireGroup | Enforced where configured |
-| Principals | `[identity.Username]`, or `[hostname]` for host -- provisional |
+| Extensions | Requested, intersected with the type's configured ceiling, then with the lifetime policy's grant set, minus its remove set (`narrowRequestedOptions`, then `policyOutcome.narrowOptions`) |
+| ValidDuration | The type's ceiling, narrowed by the [lifetime policy](/ssoossh/operations/certificate-policy/)'s tiers and source rules; it only ever shortens |
+| ForceCommand | **Dropped** from the request -- no config concept to bound it against |
+| SourceAddresses | **Dropped** from the request; a source rule may pin a service certificate to the address the request came from |
+| NoTouchRequired | Only ever granted where the type allows it (service certificates) |
+| Who may approve | The type's `require` conditions. `require_group` is retired, and setting it is a startup error rather than a silently ignored key |
+| Principals | The approver's selection, validated against the accounts they hold (username plus `other_accounts`); with none, the username for a user request and every held account for PAM or console. A service certificate takes the selected service account, which must be one the approver holds |
 
-Dropping `ForceCommand`/`SourceAddresses` is fail-closed, not an oversight:
-granting an unbounded client-requested critical option would violate "server
-config is the outer bound on every option."
-
-The principal default is explicitly provisional. Extending it later only ever
-*adds* principals, so it cannot cause an existing deployment to regress in
-permissiveness when the real policy lands.
+Dropping a client-requested `ForceCommand` or `SourceAddresses` is
+fail-closed, not an oversight: granting an unbounded critical option would
+violate "server config is the outer bound on every option." 
 
 ### Type routing
 
-- **User** -- through the queue. The only fully working path.
-- **Service** -- **bypasses the queue entirely.** There is no signer round trip
-  to wait on, because the certificate isn't produced until a later
-  `service retrieve` redeems the token. `Approve` marks the row `enrolled`,
-  persists the *narrowed* options (overwriting the client-submitted ones, so
-  only what was approved is ever retrievable), generates an
-  `EnrollmentToken`, and calls `notifyWaiter` synchronously.
-- **Host / PAM** -- rejected outright at `Approve`, so the approving human gets
-  an immediate error rather than the request quietly resolving to `failed` a
-  moment later. The signer keeps its own guard as defense in depth.
-
-**Open question preserved:** the enrollment token is a column on
-`certificate_requests`, *not* a `model.Enrollment` row. The `enrollments`
-table already exists and is entirely unused. Whichever way
-`EnrollmentService.Retrieve` is eventually finished, one of the two has to
-give.
+- **User, PAM and console** -- through the queue (`flowSigning`, via
+  `approveForSigning`): `Approve` publishes a signing job and the listener
+  delivers the result.
+- **Service** -- **bypasses the queue** (`flowEnrollment`). There is no signer
+  round trip to wait on, because the certificate isn't produced until a later
+  `service retrieve` redeems the code. `Approve` creates an `enrollments` row
+  holding the code, the public key, and the option set, key ID, principals
+  and lifetimes fixed at approval, marks the request `enrolled`, and calls
+  `notifyWaiter` synchronously. Redemption signs from that row and never
+  re-derives policy.
 
 ## The stranded-request sweep
 
@@ -400,13 +392,6 @@ overwritten.
 
 ## Known gaps
 
-- `Certificate.UserID` / `CertificateRequest.UserID` are never written --
-  nothing resolves the approving identity to a `users` row. Addressed in the
-  security-hardening delivery phase, done before this release plan started.
-- No foreign key from `certificates` back to `certificate_requests`, so an
-  audit row can't be traced to what was requested. Needs a migration.
-- `CAService` and the signer both parse `config.SSHKey`. When they split
-  across processes, CAService should read a `ca_public_keys` list instead.
 - `signing_started_at` column would remove the sweep's imprecision, which is
   that a request approved immediately still waits the whole approval share
   before being swept. Reconsider if that becomes a practical problem.

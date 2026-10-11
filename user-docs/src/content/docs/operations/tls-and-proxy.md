@@ -55,10 +55,16 @@ connections accepted after it. Nothing restarts and no connection drops.
 certbot renew --deploy-hook 'systemctl reload ssoosshd'
 ```
 
+The shipped unit has no `ExecReload`, so `systemctl reload` fails until you
+add one in a drop-in:
+
 ```ini
-# in the systemd unit
+# /etc/systemd/system/ssoosshd.service.d/reload.conf
+[Service]
 ExecReload=/bin/kill -HUP $MAINPID
 ```
+
+Then `systemctl daemon-reload`.
 
 Where nothing can signal the process, poll instead:
 

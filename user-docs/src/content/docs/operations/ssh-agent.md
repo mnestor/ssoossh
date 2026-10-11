@@ -187,15 +187,20 @@ than a limitation: a key that exists only in an agent's memory does not
 survive a reboot, so a reboot is supposed to need a human. Until one loads
 the key, no certificates are issued.
 
-Two files carry the arrangement:
+Two files carry the arrangement. The server package installs the agent's unit
+as `/usr/lib/systemd/system/ssoossh-agent.service`, and ships the drop-in for
+`ssoosshd` as an example rather than in `/etc`, where it would be active on
+every server:
 
 ```bash
-cp deploy/ssoossh-agent.service /etc/systemd/system/ssoossh-agent.service
-install -Dm644 deploy/ssoosshd.service.d/ssh-agent.conf \
+install -Dm644 /usr/share/doc/ssoosshd/examples/ssoosshd.service.d/ssh-agent.conf \
   /etc/systemd/system/ssoosshd.service.d/ssh-agent.conf
 systemctl daemon-reload
 systemctl disable ssoosshd
 ```
+
+From a source checkout, the same two files are `deploy/ssoossh-agent.service`
+and `deploy/ssoosshd.service.d/ssh-agent.conf`.
 
 `systemctl disable ssoosshd` is the part a drop-in cannot express: the base
 unit's `WantedBy=multi-user.target` has to be undone, or the server tries to

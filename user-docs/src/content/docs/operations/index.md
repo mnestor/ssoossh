@@ -24,7 +24,7 @@ flowchart LR
       SQLite or PostgreSQL. Optionally it also uses an SMTP relay for mail, an
       LDAP directory for enrichment and sync, and a NATS broker — which in
       turn allows a separate ssoosshd sign process holding the CA key in
-      configuration or on a PKCS#11 token. Clients present certificates to
+      configuration, a key file, an ssh-agent or a PKCS#11 token. Clients present certificates to
       target hosts, whose sshd trusts the CA.
     }
     Browser["Approver browser"] --> D
@@ -36,7 +36,7 @@ flowchart LR
     D -. optional .-> Dir["LDAP directory"]
     D -. optional .-> Nats["NATS broker"]
     Nats -. optional .-> Signer["ssoosshd sign"]
-    Signer --> CA["CA key: config or PKCS#11"]
+    Signer --> CA["CA key: config, key file,<br/>ssh-agent or PKCS#11"]
     Client --> Hosts["Target hosts: sshd trusts the CA"]
 ```
 
@@ -77,7 +77,7 @@ Delivery to the waiting client is the only copy of a certificate.
 9. [Roles and containment](/ssoossh/operations/roles/) -- admin, SOC, and
    auditor, and what each may do.
 10. [Email notifications](/ssoossh/operations/email-notifications/) -- off by
-    default; turn it on by naming a relay and a sender.
+    default; turn it on with `mail.enabled`, a relay and a sender.
 11. [LDAP enrichment](/ssoossh/operations/ldap/) -- optional directory data on
     top of the OIDC identity.
 12. [Audit log](/ssoossh/operations/audit-log/) -- the shipped archive and the

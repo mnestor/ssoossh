@@ -24,8 +24,10 @@ looks like.
 
 ## Do I get a browser prompt every time I ssh?
 
-No. A valid certificate is reused until it expires, so one browser approval
-typically covers a workday. The certificate is checked once at session start;
+Not if your certificate is still valid: it is reused until it expires, so you
+approve again only when a new one is needed. How often that is depends on the
+lifetime your administrator sets; the shipped default is 30 seconds, and a
+deployment that sets eight hours asks about once a working day. The certificate is checked once at session start;
 an established SSH session does not drop when the certificate expires.
 
 `ssoossh ssh login --force` replaces a loaded certificate when you want a new
@@ -42,9 +44,9 @@ certificate refreshed on disk after that goes unseen. With the recommended
 ## Can I approve from a different device than the one running ssh?
 
 Yes. The approval URL can be opened in any browser; the client just waits for
-the outcome on its own stream. Be aware that the deployment's lifetime policy
-may correlate the browser's address with the client's, and weak correlation can
-shorten the issued lifetime -- never lengthen it. See
+the outcome on its own stream. The browser's address does not affect the
+certificate: the lifetime policy is judged on the address the client's
+request came from. See
 [Options and lifetime resolution](/ssoossh/concepts/options-and-lifetime/).
 
 ## Does it work on Windows and macOS?
@@ -110,9 +112,11 @@ file explicitly, exactly as you would with `chown` on Linux. See
 
 ## Which of my accounts does the certificate name?
 
-The ones you pick on the approval page, from the accounts you hold. For a PAM
-or console request the page defaults to the local account being acted as, when
-you hold it, because that is what the host matches against. Which of your names
+The ones you pick on the approval page, from the accounts you hold. The page
+starts at the accounts you last approved a request of the same type with, in
+this browser. With nothing remembered, a PAM or console request starts at the
+local account being acted as, when you hold it, because that is what the host
+matches against, and a user request starts at your username. Which of your names
 may assume which local account is the host's decision, not the server's -- see
 [The principals map](/ssoossh/hosts/pam/principals-map/).
 
@@ -156,13 +160,13 @@ back to the code they were redeemed from. See
 Because you turned that kind on. The three "was this you?" notifications --
 user, PAM, and console certificate issued -- are off by default; the four about
 service enrollments are on. Choose at `/preferences` in the web UI:
-[Notification preferences](/ssoossh/guides/approving/#notification-preferences).
+[Email notifications](/ssoossh/guides/approving/#email-notifications).
 
 ## Can my administrator lock my client settings?
 
 Yes: an `enforce` file on Linux, Group Policy on Windows, or managed
 preferences on macOS. `--debug` marks those tiers in the source chain so you
-can see which settings you cannot argue with. They are guardrails rather than a
+can see which settings your administrator has locked. They are guardrails rather than a
 security boundary -- the client runs as you. See
 [Client configuration](/ssoossh/guides/client-config/) and
 [Client settings enforcement](/ssoossh/hosts/client-enforcement/).

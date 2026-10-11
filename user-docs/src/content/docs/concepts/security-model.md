@@ -162,7 +162,7 @@ load-bearing, is [Invariants](/ssoossh/internals/invariants/).
 
 ## Where the CA private key lives
 
-Exactly one of two sources, and startup fails without one:
+Exactly one of four sources, and startup fails without one:
 
 | Source | Configured by | What the process holds |
 | --- | --- | --- |

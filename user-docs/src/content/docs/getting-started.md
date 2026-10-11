@@ -156,8 +156,11 @@ ssh bastion.example.com
 The client prints an approval URL (and opens a browser if
 [`try_open_browser`](/ssoossh/reference/client-config/#try_open_browser) is
 set). Approve it in the browser, and `ssh` proceeds: the certificate is loaded
-into your agent and reused for every later connection until it expires, so one
-approval typically covers a workday.
+into your agent and reused for every later connection until it expires. How
+long that is depends on
+[`cert_options.user.valid_duration`](/ssoossh/reference/config/cert_options/user/#valid_duration):
+30 seconds out of the box, so set it to the length you want, such as `8h`
+for about one approval a working day.
 
 If it takes more than this to get a certificate, something is wrong with the
 deployment rather than with you. `-v` says what the client did and `--debug`

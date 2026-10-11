@@ -1,6 +1,6 @@
 ---
 title: Approving in the browser
-description: "What the ssoossh web UI shows you: the approval page, your history, service codes, and notification preferences."
+description: "What the ssoossh web UI shows you: the approval page, your history, service codes, and your preferences."
 sidebar:
   order: 4
 ---
@@ -22,9 +22,9 @@ when you open the link, you land on the sign-in screen first, including any
 consent notice the deployment sets, and come back to the request afterwards.
 
 The URL can be opened in any browser, including one on a different device from
-the machine running `ssh`. Be aware that the deployment's lifetime policy may
-compare the browser's address with the client's, and weak correlation can
-shorten the issued lifetime -- never lengthen it.
+the machine running `ssh`. The browser's address does not affect the
+certificate: the lifetime policy is judged on the address the client's request
+came from.
 
 ```mermaid
 sequenceDiagram
@@ -68,8 +68,14 @@ What the page shows depends on the certificate type, but the shape is constant:
 
 - **Principals** -- which of your accounts the certificate will name. For a
   user, PAM, or console request you pick them from your own accounts as toggle
-  chips. A PAM or console request defaults to the local account being acted as,
-  when you hold it, because that is the account the host will match against.
+  chips. The chips start at the accounts you last approved a request of the
+  same type with, in this browser, where the request offers them. With nothing
+  remembered, a PAM or console request starts at the local account being acted
+  as, when you hold it, because that is the account the host will match
+  against, and a user request starts at your username. What you approve with
+  is remembered on **Approve**, never on Deny; untick a chip to change it. A
+  remembered selection only fills in the chips: nothing is approved until you
+  press Approve.
 - **Valid for**, **Requested at**, **Approvable until** -- the certificate's
   lifetime and the deadline on the decision itself.
 - **Requested from** and the client's registered IPs -- where the request came
@@ -92,6 +98,23 @@ has nobody connecting to it over the network.
 For a service enrollment, you also pick which of your service accounts the code
 mints for, and may set a notification address for it. See
 [Service accounts](/ssoossh/guides/service-accounts/).
+
+### The simplified approval page
+
+With the heading's switch on **Simplified** (see
+[Simplified and Advanced](/ssoossh/guides/web-ui/#simplified-and-advanced)),
+the page opens with one line instead of the description and the account,
+command, host and address rows: three tiles reading **Who** (the account and
+the address the request came from, such as `root@10.0.0.5`), **Runs** (the
+command) and **On** (the machine), with a reminder that the client reported
+them and to approve only a request you just ran. Below that come the
+principals, the claimed service, terminal, remote host and invoking user, how
+long the certificate is valid for, the extensions it will carry, any
+warnings, and the buttons.
+
+The deadline is not shown until its last minute, when **Expires in 0:42**
+counts down beside the buttons. A request that expired before anyone approved
+it says so and tells you to run the client again.
 
 ### Choosing extensions on a service enrollment
 
@@ -121,9 +144,10 @@ between one retrieval and the next.
 
 ### Approve or deny
 
-Both record a decision, and the decision is final for that request. Denial
-resolves the waiting client cleanly rather than leaving it hanging; a request
-nobody decides expires on its own.
+Both record a decision, and the decision is final for that request. Neither
+asks you to confirm: the page itself is the review. Denial resolves the
+waiting client cleanly rather than leaving it hanging; a request nobody
+decides expires on its own.
 
 An administrator cannot approve someone else's request. Approval is bound to
 the identity that claimed the request, and there is no override.
@@ -160,7 +184,7 @@ the rail, with preferences and sign-out.
 | Page | What it holds |
 | --- | --- |
 | **Dashboard** | Your recent certificates, newest first |
-| **History** (`/logs/me`) | Your full certificate history, filterable by type |
+| **History** (`/logs/me`) | Your full certificate history: search, then filters for type, status and outcome |
 | **Service codes** | The service accounts you hold, then the codes approved for each |
 | **Account** (identity drop-up) | Your identity, the accounts you can mint certificates for, your service accounts, and your groups |
 
@@ -174,6 +198,9 @@ actually fetched from, falling back to the key ID. The row is a link to the
 certificate's own page, `/certs/<id>`, which can be reloaded and shared and
 carries a back chip to the list it was opened from.
 
+A search or filter that matches nothing says so and offers **Clear filters**,
+which is different from a history that is genuinely empty.
+
 Each certificate is traceable to what produced it. A service certificate links
 back to the code it was redeemed from and shows where it was fetched from,
 which is a different fact from the approval's source address -- that one
@@ -182,9 +209,10 @@ certificate the code mints.
 
 The **Service codes** view never shows a code. It lists the accounts you hold
 and, inside each, the codes approved for it. A code's own page shows what a
-redemption grants, the code's **valid period** with the time remaining, when it
-was **last redeemed** and how many times, and a redemption history naming
-each fetch's address and serial. Every holder of an account sees its codes,
+redemption grants, the code's **valid period** with the time remaining, who
+holds the account, and a redemption history naming each fetch's address and
+serial; at Simplified it shows how many times the code was redeemed instead of
+the history and the holders. Every holder of an account sees its codes,
 whoever approved them, and every holder can end one early with **Expire this
 code**, which asks for a reason and records it. There is no endpoint that
 returns a code: it exists on the wire exactly once, in the output of the
@@ -194,11 +222,17 @@ returns a code: it exists on the wire exactly once, in the output of the
 
 <p class="screen-caption">Service codes, at the account level. Opening an account lists its codes; opening a code shows what it hands out and who can see it. See [Service accounts](/ssoossh/guides/service-accounts/) for that page.</p>
 
-## Notification preferences
+## Preferences
+
+**Preferences**, in the drop-up behind your identity in the rail, holds two
+sections: which notification emails you receive, and how much detail the
+approval and detail pages show.
+
+### Email notifications
 
 Email is optional and off unless the deployment turned it on. When it is on,
-**Preferences**, in the drop-up behind your identity in the rail, is where you
-choose which kinds you receive, one toggle per kind.
+this is where you choose which kinds you receive, one toggle per kind, saved
+with **Save notifications**.
 
 ![The Preferences page: an Email notifications card showing the address they are sent to and seven toggles, one per notification kind, each with a sentence saying when it is sent](../../../assets/screens/preferences.png)
 
@@ -228,6 +262,15 @@ being disabled server-side, and an identity whose provider releases no email
 address.
 
 The enrollment code is in no message and must not be added to one.
+
+### Display
+
+The **Display** section sets the level the approval page and the
+certificate and service code pages open at: **Simplified** or **Advanced**
+(see [Simplified and Advanced](/ssoossh/guides/web-ui/#simplified-and-advanced)).
+It takes effect at once, needs no saving, and is kept in this browser rather
+than on your account. The switch in each of those pages' headings is the same
+setting.
 
 ## What administrators can do to your account
 

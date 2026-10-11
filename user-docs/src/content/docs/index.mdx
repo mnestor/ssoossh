@@ -88,7 +88,7 @@ sequenceDiagram
     accDescr {
       The user runs ssh to a host. Through Match exec or ProxyCommand, ssh
       invokes the ssoossh client, which sends its public key and requested
-      options to ssoosshd and opens a browser. The user signs in at the
+      options to ssoosshd and prints an approval URL. The user opens it, signs in at the
       identity provider, which returns their identity and groups, and
       approves. ssoosshd returns a signed certificate; the client loads it
       into ssh-agent; ssh connects to the target host, which verifies the
@@ -105,7 +105,7 @@ sequenceDiagram
     U->>S: ssh host
     S->>C: Match exec / ProxyCommand
     C->>D: public key, requested options
-    C-->>U: opens browser
+    C-->>U: approval URL
     U->>I: sign in
     I-->>D: identity and groups
     U->>D: approve

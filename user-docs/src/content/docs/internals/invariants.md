@@ -50,8 +50,8 @@ generates or stores a private key; it records public key material and issuance
 metadata only. The client manages its own keypair.
 
 **The CA key is reached through a `CAKeySource` interface**, never hardcoded
-to one backend. The config file and a PKCS#11 token are the sources behind
-that seam, which is also what lets the signer run as a separate,
+to one backend. Four sources sit behind that seam (an inline PEM, a key file,
+an `ssh-agent` and a PKCS#11 token), which is also what lets the signer run as a separate,
 minimally-privileged process.
 
 ## Identity

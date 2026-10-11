@@ -388,12 +388,17 @@ and gives an admin a button. The pass is the **same code path** the scheduler
 runs: a manual sync that behaved differently from a scheduled one would be a
 diagnostic that lies.
 
-Three rules make the button safe:
+Four rules make the button safe:
 
 - **Dry run is the default.** A dry run reads the directory and changes
   nothing -- no refreshed attributes, no group rows, no miss windows, no
   disables and no re-enables -- and reports the disables and re-enables it
-  *would* have performed. It is the version to press during an incident.
+  *would* have performed. It is the version to press during an incident, and
+  it runs on one press.
+- **A live pass asks first.** With **Dry run** cleared, the page warns that a
+  live pass can disable accounts, and pressing **Sync now** opens a
+  confirmation naming the same consequence; nothing runs until it is
+  confirmed. A failure is reported in that dialog.
 - **One at a time.** A pass already in progress makes the request a `409`
   rather than a second pass stacked over the same users.
 - **It cannot bring a disable forward.** The threshold is elapsed absence
@@ -422,7 +427,8 @@ resolution -- and stops before the write. Three views of one probe, in the
 order the questions come up:
 
 1. **Entry as returned.** Every attribute the directory sent back, not just
-   the ones the configuration names, with the configured ones highlighted.
+   the ones the configuration names, with the configured ones labelled
+   "mapped".
    This is the view that shows you the field you should have mapped.
 2. **Field mapping.** What each configured field resolved to, which attribute
    or search it came from, and whether the attribute was on the entry at all
@@ -447,7 +453,7 @@ is the only way to see what your configured filter really sends:
 ```
 config   (&(objectClass=person)(uid={{.Username}}))
 binding  Username = "o'brien)"
-sent     (&(objectClass=person)(uid=o'brien9))
+sent     (&(objectClass=person)(uid=o'brien\29))
 ```
 
 In **literal** mode the string is sent exactly as typed. Nothing is

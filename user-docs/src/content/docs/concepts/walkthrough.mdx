@@ -29,15 +29,15 @@ export const figure = {
 <circle cx="44" cy="52" r="3" fill="currentColor" opacity="0.5" />
 <circle cx="56" cy="52" r="3" fill="currentColor" opacity="0.5" />
 <text x="30" y="90" font-family="var(--sl-font-mono)" font-size="11" fill="currentColor">$ ssoossh ssh login</text>
-<text x="30" y="110" font-family="var(--sl-font-mono)" font-size="11" fill="var(--sl-color-accent)">Opening browser...</text>
+<text x="30" y="110" font-family="var(--sl-font-mono)" font-size="11" fill="var(--sl-color-accent)">Approve this request in your browser:</text>
 {/* The URL goes through a JSX expression rather than being written as text.
     As text, remark-gfm's autolink rule turned it into an <a href> — a real,
     focusable link, sitting inside an SVG that declares role="img". A picture
     of a terminal is not somewhere a keyboard can tab into, and the link led
     to a domain that does not exist. */}
-<text x="30" y="135" font-family="var(--sl-font-mono)" font-size="11" fill="currentColor">Visit: {'https://ssh.company.com/auth/xyz123'}</text>
+<text x="30" y="135" font-family="var(--sl-font-mono)" font-size="11" fill="currentColor">{'https://ssh.company.com/approve/7f3c…'}</text>
 <rect x="30" y="145" width="8" height="2" fill="var(--sl-color-green)" opacity="0.7" />
-<text x="30" y="170" font-family="var(--sl-font-mono)" font-size="10" fill="var(--sl-color-gray-3)">Waiting for approval...</text>
+<text x="30" y="170" font-family="var(--sl-font-mono)" font-size="10" fill="var(--sl-color-gray-3)">Waiting for approval…</text>
 </svg>
 </div>
 
@@ -52,25 +52,28 @@ Your terminal prints that URL and then waits patiently. Nothing leaves your
 laptop except the public key: the private key stays right there, on your
 machine.
 
-## Step 2: Your browser opens automatically
+## Step 2: You open the link in your browser
 
 <div style={figure}>
-<svg viewBox="0 0 280 240" focusable="false" role="img" aria-label="A browser window on the ssoossh sign-in page, offering a login with SSO button">
+<svg viewBox="0 0 280 240" focusable="false" role="img" aria-label="A browser window on the ssoossh sign-in page, offering a Continue with SSO button">
 <rect x="20" y="30" width="240" height="180" fill="currentColor" opacity="0.08" rx="4" />
 <rect x="20" y="30" width="240" height="180" fill="none" stroke="currentColor" stroke-width="2" rx="4" />
 <rect x="20" y="30" width="240" height="28" fill="currentColor" opacity="0.12" rx="4" />
-<text x="35" y="50" font-size="10" fill="currentColor" opacity="0.7">ssh.company.com/auth/xyz123</text>
-<text x="40" y="90" font-size="14" font-weight="600" fill="currentColor">Sign In</text>
+<text x="35" y="50" font-size="10" fill="currentColor" opacity="0.7">ssh.company.com/login</text>
+<text x="40" y="90" font-size="14" font-weight="600" font-family="var(--sl-font-mono)" fill="currentColor">Sign in to ssoossh</text>
 <text x="40" y="115" font-size="11" fill="var(--sl-color-gray-3)">Use your company account</text>
 <rect x="40" y="135" width="200" height="40" fill="var(--sl-color-accent)" rx="4" />
-<text x="140" y="163" font-size="12" font-weight="600" fill="var(--sl-color-accent-low)" text-anchor="middle">Login with SSO</text>
+<text x="140" y="163" font-size="12" font-weight="600" fill="var(--sl-color-text-invert)" text-anchor="middle">Continue with SSO</text>
 </svg>
 </div>
 
-ssoossh tries to open the URL in your default browser. If that does not work,
-or you would rather do it yourself, paste the link into a browser by hand.
+Open the link your terminal printed, in any browser, even one on another
+device. If your administrator turned on
+[`try_open_browser`](/ssoossh/guides/client-config/), the client opens it for
+you.
 
-You land on the ssoossh login page, which immediately sends you to your
+You land on the ssoossh sign-in page. If your organisation shows a notice
+there, you accept it first; **Continue with SSO** then takes you to your
 company's identity provider: the same place you log into everything else.
 
 Nothing special happens here. You log in exactly the way you normally do,
@@ -79,7 +82,7 @@ including any multi-factor step your company requires.
 ## Step 3: You see exactly what you are approving
 
 <div style={figure}>
-<svg viewBox="0 0 280 240" focusable="false" role="img" aria-label="An approval page listing what is granted in green and what policy trimmed in amber, with approve and decline buttons">
+<svg viewBox="0 0 280 240" focusable="false" role="img" aria-label="An approval page listing what is granted in green and what policy trimmed in amber, with Deny and Approve buttons">
 <rect x="20" y="20" width="240" height="200" fill="currentColor" opacity="0.08" rx="4" />
 <rect x="20" y="20" width="240" height="200" fill="none" stroke="currentColor" stroke-width="2" rx="4" />
 <rect x="20" y="20" width="240" height="32" fill="currentColor" opacity="0.12" rx="4" />
@@ -88,12 +91,12 @@ including any multi-factor step your company requires.
 <text x="40" y="87" font-size="10" fill="currentColor">SSH to prod servers</text>
 <text x="40" y="102" font-size="10" fill="currentColor">Expires in 12 hours</text>
 <text x="40" y="125" font-size="11" font-weight="600" fill="var(--sl-color-orange)">Not allowed</text>
-<text x="40" y="142" font-size="10" fill="var(--sl-color-gray-3)">File transfer (denied by policy)</text>
-<text x="40" y="157" font-size="10" fill="var(--sl-color-gray-3)">Agent forwarding (denied by policy)</text>
-<rect x="40" y="180" width="85" height="28" fill="var(--sl-color-green)" rx="3" />
-<text x="82.5" y="200" font-size="11" font-weight="600" fill="var(--sl-color-accent-low)" text-anchor="middle">Approve</text>
-<rect x="155" y="180" width="85" height="28" fill="currentColor" opacity="0.1" stroke="currentColor" stroke-width="1" rx="3" />
-<text x="197.5" y="200" font-size="11" font-weight="600" fill="currentColor" text-anchor="middle">Decline</text>
+<text x="40" y="142" font-size="10" fill="var(--sl-color-gray-3)">X11 forwarding (not permitted)</text>
+<text x="40" y="157" font-size="10" fill="var(--sl-color-gray-3)">Agent forwarding (not permitted)</text>
+<rect x="155" y="180" width="85" height="28" fill="var(--sl-color-accent)" rx="3" />
+<text x="197.5" y="200" font-size="11" font-weight="600" fill="var(--sl-color-text-invert)" text-anchor="middle">Approve</text>
+<rect x="40" y="180" width="85" height="28" fill="none" stroke="currentColor" stroke-width="1" opacity="0.6" rx="3" />
+<text x="82.5" y="200" font-size="11" font-weight="600" fill="currentColor" text-anchor="middle">Deny</text>
 </svg>
 </div>
 
@@ -102,11 +105,11 @@ the certificate it is about to issue.
 
 In green you see what you have been granted: which servers you can log into,
 and how long the certificate lasts. In amber you see anything you asked for
-that policy does not allow, such as file transfer or agent forwarding.
+that policy does not allow, such as X11 or agent forwarding.
 
 That difference is the point. You can see what you requested against what you
-are actually getting, and if something looks wrong you can decline and ask your
-administrator to adjust the policy.
+are actually getting, and if something looks wrong you can deny it and ask
+your administrator to adjust the policy.
 
 The real page carries more than this picture -- who asked, from where, and
 the public key being signed -- and
@@ -118,15 +121,15 @@ it as a screenshot.
 <div style={figure}>
 <svg viewBox="0 0 280 240" focusable="false" role="img" aria-label="A pointer clicking the approve button, with a confirmation checkmark appearing">
 <path d="M 100 80 L 110 60 L 115 70 L 120 55 L 120 75 L 115 80 Z" fill="var(--sl-color-accent)" opacity="0.8" />
-<rect x="80" y="120" width="120" height="45" fill="var(--sl-color-green)" rx="4" opacity="0.8" />
-<text x="140" y="150" font-size="14" font-weight="600" fill="var(--sl-color-accent-low)" text-anchor="middle">Approve</text>
+<rect x="80" y="120" width="120" height="45" fill="var(--sl-color-accent)" rx="4" />
+<text x="140" y="150" font-size="14" font-weight="600" fill="var(--sl-color-text-invert)" text-anchor="middle">Approve</text>
 <circle cx="180" cy="100" r="30" fill="none" stroke="var(--sl-color-green)" stroke-width="2" opacity="0.6" />
 <path d="M 170 105 L 178 115 L 200 90" fill="none" stroke="var(--sl-color-green)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.6" />
 </svg>
 </div>
 
-You click Approve. That is it for you: the browser shows a confirmation page
-and you are done.
+You click Approve. That is it for you: the page confirms the approval and you
+can close it.
 
 Meanwhile your terminal has not gone anywhere. It is still sitting on that
 event stream, waiting for the certificate to arrive. The server signs the
@@ -145,14 +148,14 @@ certificate is never stored on the server, so that delivery is the only copy.
 <circle cx="44" cy="52" r="3" fill="currentColor" opacity="0.5" />
 <circle cx="56" cy="52" r="3" fill="currentColor" opacity="0.5" />
 <text x="30" y="90" font-family="var(--sl-font-mono)" font-size="11" fill="currentColor">$ ssoossh ssh login</text>
-<text x="30" y="110" font-family="var(--sl-font-mono)" font-size="11" fill="var(--sl-color-accent)">Opening browser...</text>
-<text x="30" y="135" font-family="var(--sl-font-mono)" font-size="11" fill="currentColor">Certificate received!</text>
+<text x="30" y="110" font-family="var(--sl-font-mono)" font-size="11" fill="var(--sl-color-gray-3)">Waiting for approval…</text>
+<text x="30" y="135" font-family="var(--sl-font-mono)" font-size="11" fill="currentColor">Certificate loaded</text>
 <g transform="translate(180, 85)">
 <rect x="0" y="0" width="60" height="70" fill="var(--sl-color-green)" rx="3" opacity="0.8" />
-<text x="30" y="20" font-size="10" font-weight="600" fill="var(--sl-color-accent-low)" text-anchor="middle">Badge</text>
-<text x="30" y="38" font-size="8" fill="var(--sl-color-accent-low)" text-anchor="middle">Loaded</text>
-<circle cx="30" cy="55" r="6" fill="none" stroke="var(--sl-color-accent-low)" stroke-width="1" />
-<text x="30" y="59" font-size="7" fill="var(--sl-color-accent-low)" text-anchor="middle">12h</text>
+<text x="30" y="20" font-size="10" font-weight="600" fill="var(--sl-color-text-invert)" text-anchor="middle">Badge</text>
+<text x="30" y="38" font-size="8" fill="var(--sl-color-text-invert)" text-anchor="middle">Loaded</text>
+<circle cx="30" cy="55" r="6" fill="none" stroke="var(--sl-color-text-invert)" stroke-width="1" />
+<text x="30" y="59" font-size="7" fill="var(--sl-color-text-invert)" text-anchor="middle">12h</text>
 </g>
 </svg>
 </div>
@@ -184,7 +187,7 @@ the time you spent logging in.
 <text x="55" y="130" font-size="10" fill="currentColor" text-anchor="middle">Your laptop</text>
 <g transform="translate(35, 65)">
 <rect x="0" y="0" width="40" height="25" fill="var(--sl-color-green)" rx="2" opacity="0.8" />
-<text x="20" y="16" font-size="7" fill="var(--sl-color-accent-low)" text-anchor="middle" font-weight="600">Badge</text>
+<text x="20" y="16" font-size="7" fill="var(--sl-color-text-invert)" text-anchor="middle" font-weight="600">Badge</text>
 </g>
 <path d="M 100 120 L 160 120" stroke="currentColor" stroke-width="2" fill="none" marker-end="url(#wt-arrow)" />
 <text x="130" y="110" font-size="9" fill="currentColor" text-anchor="middle">present</text>
@@ -192,7 +195,7 @@ the time you spent logging in.
 <rect x="180" y="100" width="80" height="50" fill="currentColor" opacity="0.08" stroke="currentColor" stroke-width="1" rx="3" />
 <text x="220" y="130" font-size="10" fill="currentColor" text-anchor="middle">Server</text>
 <circle cx="220" cy="75" r="12" fill="var(--sl-color-green)" opacity="0.7" />
-<path d="M 214 75 L 219 81 L 227 69" fill="none" stroke="var(--sl-color-accent-low)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+<path d="M 214 75 L 219 81 L 227 69" fill="none" stroke="var(--sl-color-text-invert)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
 <path d="M 160 160 L 100 160" stroke="var(--sl-color-green)" stroke-width="2" fill="none" marker-end="url(#wt-arrow-ok)" />
 <text x="130" y="175" font-size="9" fill="var(--sl-color-green)" text-anchor="middle" font-weight="600">Verified</text>
 </svg>
@@ -233,17 +236,18 @@ worthless. Nobody has to revoke it and nobody has to rotate anything; it just
 stops working.
 
 Next time you need a server, run the command again. You go through the same
-flow, get a new badge, and keep working. It stays out of your way because
-ssoossh reuses a certificate that has not expired yet, so you see the browser
-only when a new one is needed: typically once a workday, not once per
-connection.
+flow, get a new badge, and keep working. ssoossh reuses a certificate that has
+not expired yet, so you see the browser only when a new one is needed. How
+often that is depends on the lifetime your administrator sets: the shipped
+default is 30 seconds, close to once per connection, while a deployment that
+sets eight hours asks about once a working day.
 
 That is the whole story. A certificate is a visitor badge, issued for a
 moment, checked at the door, and discarded when its time is up.
 
 :::note
-Twelve hours is the example above, not a default. How long your certificate
-lasts is set by your administrator, and can vary by group and by the network
+Twelve hours is the example above, not a default; the shipped default is 30
+seconds. How long your certificate lasts is set by your administrator, and can vary by group and by the network
 you are on -- see
 [options and lifetime resolution](/ssoossh/concepts/options-and-lifetime/).
 :::

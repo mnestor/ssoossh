@@ -20,8 +20,10 @@ what is *not* in there is as important as what is.
 | Good for | a single instance, development, testing | multi-instance, or an existing database estate |
 
 SQLite is the right answer for a single instance and stays the right answer
-until you need a second one. Multi-instance requires PostgreSQL: SQLite is
-single-connection and cannot be shared between processes.
+until you need a second one. Multi-instance requires PostgreSQL: a SQLite file
+cannot be shared safely between instances on different hosts. (Within one
+process a file-backed SQLite database uses the configured connection pool;
+only an in-memory database is held to a single connection.)
 
 ## Connection strings
 
@@ -95,8 +97,10 @@ not allowed (set ALLOW_DOWNGRADE=true to enable)
 ```
 
 That is the message a rolled-back deployment produces. `ALLOW_DOWNGRADE=true`
-in the environment turns the refusal into a warning; it is an escape hatch,
-not a routine step. In a multi-instance deployment it means the oldest
+in the environment lets the older build start anyway, and it does so by
+migrating the schema **down** to the version it knows: the newer migrations'
+down steps run, dropping whatever they added, data included. It is an escape
+hatch, not a routine step; back up first. In a multi-instance deployment it means the oldest
 instance decides what schema version is safe, so upgrade the fleet before you
 migrate, not after.
 
@@ -112,6 +116,8 @@ migrate, not after.
 | Users | one row per person who has logged in, their captured extra claims, and the disable state (`disabled_at`, `disabled_by_user_id`, `disabled_reason`, `disabled_source`) |
 | `user_groups` | one row per (user, group, source), where source is `oidc` or `ldap`. Never an authorization input |
 | `user_ldap` | the directory anchor for a user: DN, attributes, `last_seen_at`, `first_missing_at` (the auto-disable window), and the consecutive-miss counter |
+| `ldap_sync_runs` | one row per LDAP sync pass, scheduled or manual: when it ran, what triggered it, who pressed the button, which instance ran it, its counts and any error |
+| `notification_preferences` | each user's choice per notification kind, where they changed one from its default |
 | Audit events | the bounded cache behind the web UI's history views |
 | Sessions | the web session store |
 | `server_secrets` | the generated session cookie key, when `http.cookie_key` is unset |

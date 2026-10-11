@@ -20,7 +20,8 @@ Release packages are on the
 | --- | --- | --- |
 | Debian / Ubuntu | `ssoossh-client_*.deb` | `/usr/bin/ssoossh`, sample config at `/etc/ssoossh/ssoossh.yaml`, inert SSH drop-ins under `/etc/ssh` |
 | RHEL / Fedora | `ssoossh-client_*.rpm` | same |
-| Windows | `ssoossh-client_*.zip` | extract `ssoossh.exe` onto `PATH` |
+| Windows (amd64) | `ssoossh-client_*_windows_amd64.msi` | per machine into `Program Files\ssoossh`, added to the system `PATH`; installs silently with `msiexec /i … /qn` |
+| Windows | `ssoossh-client_*.zip` | extract `ssoossh.exe` onto `PATH` (the only Windows package for arm64) |
 | macOS | `ssoossh-client_*_darwin_<arch>.pkg` | `/usr/local/bin/ssoossh`, man pages under `/usr/local/share/man`, the annotated defaults at `/usr/local/share/ssoossh/ssoossh.yaml` |
 | macOS | `ssoossh-client_*.zip` | the same files, unpacked by hand -- extract `ssoossh` onto `PATH` |
 
@@ -87,8 +88,10 @@ files live.
 
 ## `ssoossh ssh login`
 
-Generates a fresh keypair, sends the public key to the server, opens the
-browser for OIDC approval, and waits over SSE for the signed certificate. This
+Generates a fresh keypair, sends the public key to the server, prints the
+approval URL (and opens it in a browser when
+[`try_open_browser`](/ssoossh/reference/client-config/#try_open_browser) is
+set), and waits over SSE for the signed certificate. This
 is what an `ssh_config` `Match exec` line runs.
 
 A certificate that is already loaded and still valid is reused rather than
@@ -314,7 +317,7 @@ already present on disk.
 
 | Flag | Default | What it does |
 | --- | --- | --- |
-| `--key <path>` | none, required | Keypair path, relative or absolute. Generates both files if neither `<path>` nor `<path>.pub` exists; enrolls the existing `<path>.pub` otherwise |
+| `--key <path>` | none, required | Keypair path, relative or absolute. Generates both files if neither `<path>` nor `<path>.pub` exists; enrolls the existing pair if both do; refuses if only one does |
 | `--retrieve` | off | Immediately redeem the code once and write the certificate to `<path>-cert.pub` |
 | `--extensions <list>` | none | Certificate extensions to request, comma-separated. The approver sees them and can change the set |
 
@@ -365,7 +368,13 @@ Prints version, commit, and build info. Offline: it makes no network call.
 
 ```bash
 ssoossh version
+ssoossh version --json
 ```
+
+With `--json` it prints the same values as an object, plus the list of command
+paths this build implements. That list is the supported way for a deployment
+tool to tell releases apart: probing `--help` output breaks on wording no
+release promises to keep.
 
 ## Where to go next
 

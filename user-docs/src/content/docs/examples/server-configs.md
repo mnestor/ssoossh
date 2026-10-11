@@ -136,8 +136,10 @@ multi_instance: true
 
 http:
   public_url: "https://ssh.example.com"
-  # The same value on every instance. Without it, each process would sign
-  # sessions with its own random key and users would be logged out at random.
+  # The same value on every instance. Without it, the first instance to start
+  # generates a key and stores it in the database for the rest to share; an
+  # explicit key is still the clearer choice, since it does not depend on
+  # which instance won that race.
   cookie_key: "your-secret-key-here-32-bytes-minimum"
 
 db:
@@ -159,13 +161,13 @@ The startup modes that go with it:
 | --- | --- | --- |
 | `ssoosshd serve` | HTTP, listener, and in-process signer | nothing extra |
 | `ssoosshd serve api` | HTTP and listener; publishes signing jobs | `pubsub.backend: nats` |
-| `ssoosshd sign` | the signer only; holds the CA key, no database or HTTP | `pubsub.backend: nats` and `ssh_key` |
+| `ssoosshd sign` | the signer only; holds the CA key, no database or HTTP | `pubsub.backend: nats` and a CA key source (`ssh_key`, `ssh_key_file`, `ssh_key_agent` or `hsm`) |
 
 Both split modes fail at startup if the in-process pubsub backend is configured.
 
 ## Roles and containment
 
-All four group names are optional, and each is an OIDC group name. Empty
+All three group names are optional, and each is an OIDC group name. Empty
 disables or narrows the role rather than opening it up -- authorization fails
 closed.
 
@@ -192,14 +194,16 @@ identity provider takes effect at their next login.
 
 ## Email notifications
 
-Off by default. Naming a relay and a sender turns it on.
+Off by default: `mail.enabled: true` turns it on, and then a sender and a
+relay are required. The relay is `smtp.host`, which defaults to `localhost`.
 
 ```yaml
 mail:
+  enabled: true
   from: "ssoossh@example.com"
   reply_to: "ssh-admins@example.com"
   smtp:
-    server_name: "smtp.example.com"
+    host: "smtp.example.com"
     username: "ssoossh@example.com"
     # Read from a file so the secret is not in this config.
     password_file: "/run/secrets/ssoossh-smtp-password"

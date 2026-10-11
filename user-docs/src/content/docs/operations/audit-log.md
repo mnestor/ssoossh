@@ -100,6 +100,10 @@ client must render an unknown action rather than assume the list is closed.
 | `auth.login` | Snapshots the groups the identity carried. Since membership is never persisted as authorization, this is the only durable record of what access an identity held on a given day |
 | `auth.login_denied` | A disabled account attempting to log in, which otherwise vanishes entirely |
 | `cert.requested`, `cert.approved`, `cert.denied` | |
+| `cert.code_resolved` | A console code typed into the web UI and resolved to its request |
+| `cert.claimed` | An approval link bound to the first browser that opened it; a later browser is sent to the "link already opened" page |
+| `cert.expired` | A request that reached its deadline with nobody answering it. A system action, so it carries no actor |
+| `cert.sign_failed` | A request approved but never signed: the signer reported a failure, or the sweep found it stranded |
 | `cert.issued` | **Shipped log only.** The UI already has certificate history from the `certificates` table, so a table copy would be duplication; the archive line is the row an incident reviewer joins against target-host `sshd` logs |
 | `enrollment.code_created`, `.redeemed`, `.expired` | Never carries the enrollment code: it is a bearer credential, and the never-log-sensitive-data rule covers payloads and log lines alike |
 | `enrollment.notification_email_set` | Carries both the old and the new address. Redirecting where an enrollment's notifications go is also the quiet way to stop an account's holders hearing about their own credential, so "who changed it, and to what" is the question this exists to answer |

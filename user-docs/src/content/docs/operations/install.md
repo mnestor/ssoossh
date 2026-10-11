@@ -34,7 +34,7 @@ holding the token reaches the same hardware from the default package. See
 | --- | --- |
 | the binary | `/usr/sbin/ssoosshd` |
 | the annotated config sample | `/etc/ssoossh/ssoosshd.yaml` |
-| man pages | `ssoosshd(8)`, `ssoosshd-serve(8)`, `ssoosshd-sign(8)`, `ssoosshd.yaml(5)` |
+| man pages | `ssoosshd(8)` and one page per subcommand (`ssoosshd-serve(8)`, `ssoosshd-serve-api(8)`, `ssoosshd-serve-full(8)`, `ssoosshd-sign(8)`, `ssoosshd-ldap(8)`, `ssoosshd-ldap-probe(8)`, `ssoosshd-version(8)`), and `ssoosshd.yaml(5)` |
 | reference mail templates | `/usr/share/ssoossh/mail-templates/` |
 
 The config sample is installed as a no-replace config file, so an upgrade
@@ -103,8 +103,11 @@ the file as the private key it contains: owned by the service account, mode
 plaintext.
 :::
 
-Exactly one of `ssh_key` or [`hsm`](/ssoossh/reference/config/hsm/) may be
-set, and a signing process needs one of them: startup fails with neither. To
+Exactly one of `ssh_key`,
+[`ssh_key_file`](/ssoossh/reference/config/top-level/#ssh_key_file),
+[`ssh_key_agent`](/ssoossh/operations/ssh-agent/) or
+[`hsm`](/ssoossh/reference/config/hsm/) may be set, and a signing process
+needs one of them: startup fails with none. To
 keep the private key out of the process entirely, source it from a PKCS#11
 token ([HSM and PKCS#11](/ssoossh/operations/hsm/)) or split the signer into
 its own process ([Startup modes](/ssoossh/operations/startup-modes/)) -- or

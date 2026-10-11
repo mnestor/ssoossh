@@ -57,11 +57,14 @@ someone is a change at the identity provider, not a sweep of
 `authorized_keys` files, and a leaked certificate stops working on its own
 when its window closes rather than when somebody remembers to revoke it.
 
-The CA private key comes from one of exactly two places, and one of them must
-be set or the server does not start: an inline PEM in
-[`ssh_key`](/ssoossh/reference/config/top-level/#ssh_key), or a PKCS#11 token
-under [`hsm`](/ssoossh/reference/config/hsm/), where the private half never
-leaves the hardware.
+The CA private key comes from exactly one of four places, and one of them
+must be set or the server does not start: an inline PEM in
+[`ssh_key`](/ssoossh/reference/config/top-level/#ssh_key), a key file named by
+[`ssh_key_file`](/ssoossh/reference/config/top-level/#ssh_key_file), an
+`ssh-agent` named by [`ssh_key_agent`](/ssoossh/operations/ssh-agent/), where
+the server never holds the key, or a PKCS#11 token under
+[`hsm`](/ssoossh/reference/config/hsm/), where the private half never leaves
+the hardware.
 
 ## Certificate types and status
 
@@ -101,14 +104,15 @@ server side.
 flowchart LR
     accTitle: The four certificate types and what trusts them
     accDescr {
-      One CA, held by ssoosshd either as a PEM in configuration or on a
-      PKCS#11 token, issues four kinds of certificate: user certificates for
+      One CA, held by ssoosshd as a PEM in configuration or a key file, or
+      kept in an ssh-agent or on a PKCS#11 token, issues four kinds of
+      certificate: user certificates for
       interactive SSH, service certificates for non-interactive jobs, PAM
       certificates for sudo and su, and console certificates for logging in at
       a machine with no browser. User and service certificates are presented
       to target hosts, which trust the same CA.
     }
-    CA["ssoossh CA<br/>config PEM or PKCS#11 token"]
+    CA["ssoossh CA<br/>PEM, key file, ssh-agent<br/>or PKCS#11 token"]
     CA --> U["User certificate<br/>interactive SSH<br/>shipped"]
     CA --> S["Service certificate<br/>non-interactive<br/>shipped"]
     CA --> P["PAM certificate<br/>sudo/su<br/>shipped"]

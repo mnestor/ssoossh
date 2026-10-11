@@ -19,15 +19,15 @@ defines what exists at all; nothing reachable over HTTP can exceed it.
 flowchart TD
     accTitle: How a request’s options are narrowed before signing
     accDescr {
-      The client asks for principals, extensions, a force-command and a
-      source-address restriction. Each is tested against what the server
+      The client asks for extensions, a force-command and a source-address
+      restriction; principals are never part of the request. Each is tested against what the server
       configuration permits. Anything not permitted is trimmed and recorded as
       removed rather than silently dropped; anything permitted is kept. The
       approval page then shows the candidate set together with the trimmed
       options, the user narrows it further or approves as-is, the lifetime
       policy is applied, and the certificate is signed.
     }
-    A["Client request:<br/>principals, extensions,<br/>force-command, source-address"] --> B{"Permitted by<br/>server config?"}
+    A["Client request:<br/>extensions, force-command,<br/>source-address"] --> B{"Permitted by<br/>server config?"}
     B -- "no" --> C["Trim, record as removed"]
     B -- "yes" --> D["Keep"]
     C --> E["Approval page:<br/>candidate set +<br/>trimmed options shown"]
@@ -37,8 +37,9 @@ flowchart TD
     G --> H["Sign"]
 ```
 
-1. The client's request states what it wants: principals, extensions, a
-   `force-command`, `source-address` restrictions.
+1. The client's request states what it wants: extensions, a `force-command`,
+   `source-address` restrictions, and whether a hardware key may skip touch.
+   It names no principals; the approver picks those (see below).
 2. The server checks each against the type's configuration.
 3. Anything the config does not permit is **trimmed, not rejected**, and
    recorded as removed. A request asking for too much still succeeds; it just

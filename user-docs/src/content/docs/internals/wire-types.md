@@ -45,7 +45,7 @@ server/webtypes/webtypes.go ─┘
 
 **Workflow.** Change the Go struct, run `make types`, commit the result.
 `make types-check` asserts that regenerating changes nothing, and CI runs it
-(`.github/workflows/build-test.yaml`).
+(`.github/workflows/build.yaml`).
 
 ### What generation buys beyond field names
 

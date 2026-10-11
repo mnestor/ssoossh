@@ -35,7 +35,8 @@ flowchart TB
 
 ## What it requires
 
-- A shared PostgreSQL database. SQLite is single-connection and will not do.
+- A shared PostgreSQL database. A SQLite file cannot be shared between
+  instances on different hosts, so it will not do.
 - NATS as the message broker. `ssoosshd` always speaks TLS to it, and always
   presents a client certificate; there is no unauthenticated mode.
 - An explicit session cookie key, the same on every instance.
@@ -410,11 +411,13 @@ pubsub:
 
 logging:
   level: info
-  format: json
+  log_json: true
 ```
 
 Replace `ssh_key` with an [`hsm`](/ssoossh/operations/hsm/) block to keep the
-CA key in a PKCS#11 token. Exactly one of the two must be set.
+CA key in a PKCS#11 token, or with `ssh_key_file` or
+[`ssh_key_agent`](/ssoossh/operations/ssh-agent/). Exactly one of the four must
+be set.
 
 Run it with `ssoosshd sign --config /etc/ssoossh/signer.yaml`. Several signers
 may run at once; they compete for jobs through the `signer` queue group, and
